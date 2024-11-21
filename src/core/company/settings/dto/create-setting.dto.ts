@@ -9,6 +9,7 @@ export class CreateReasonDto {
 
   @ApiProperty({
     description: 'Tipo de motivo (REJECTION ou CANCELLATION)',
+    example: 'REJECTION || CANCELLATION',
     enum: ['REJECTION', 'CANCELLATION'],
   })
   @IsEnum(['REJECTION', 'CANCELLATION'])

@@ -66,7 +66,6 @@ export class SettingsController {
     enum: ['REJECTION', 'CANCELLATION'],
     description: 'Tipo de motivo',
   })
-  @ApiQuery({ name: 'companyId', description: 'ID da empresa' })
   @Get()
   findAll(@Query('type') type: 'REJECTION' | 'CANCELLATION', @Req() req) {
     const companyId = req.user.companyId;
