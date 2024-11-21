@@ -40,7 +40,7 @@ Certifique-se de ter as seguintes dependências instaladas em seu sistema:
    docker compose -f docker-compose.yml up -d --build --remove-orphans
    ```
 
-3. A API estará disponível em `http://localhost:3000` ou na porta configurada no `.env`.
+3. A API estará disponível em `http://localhost:5000` ou na porta configurada no `.env`.
 
 ## Documentação
 
