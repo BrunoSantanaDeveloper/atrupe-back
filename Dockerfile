@@ -2,7 +2,7 @@
 # BUILD FOR LOCAL DEVELOPMENT
 ###################
 
-FROM node:18 As development
+FROM node:18 AS development
 
 # Create app directory
 WORKDIR /usr/src/app
@@ -28,7 +28,7 @@ USER node
 # BUILD FOR PRODUCTION
 ###################
 
-FROM node:18 As build
+FROM node:18 AS build
 
 WORKDIR /usr/src/app
 
@@ -45,7 +45,7 @@ RUN npm run build
 # Set NODE_ENV environment variable
 ENV NODE_ENV production
 
-# Running `npm ci` removes the existing node_modules directory and passing in --only=production ensures that only the production dependencies are installed. This ensures that the node_modules directory is as optimized as possible
+# Running `npm ci` removes the existing node_modules directory and passing in --only=production ensures that only the production dependencies are installed. This ensures that the node_modules directory is AS optimized AS possible
 RUN npm ci --only=production && npm cache clean --force
 
 USER node
@@ -54,7 +54,7 @@ USER node
 # PRODUCTION
 ###################
 
-FROM node:18 As production
+FROM node:18 AS production
 
 # Copy the bundled code from the build stage to the production image
 COPY --chown=node:node --from=build /usr/src/app/node_modules ./node_modules
