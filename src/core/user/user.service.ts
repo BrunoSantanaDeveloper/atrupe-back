@@ -89,10 +89,12 @@ export class UserService {
       id: user.id,
       name: user.name,
       email: user.email,
-      employee: {
-        company: user.employee.company,
-        role: user.employee?.role?.name,
-      },
+      employee: user.employee
+        ? {
+            company: user.employee.company,
+            role: user.employee?.role?.name,
+          }
+        : null,
       policies: user.userRole
         .flatMap((userRole) => userRole.role.rolePolicy)
         .map((rolePolicy) => rolePolicy.policy),
@@ -108,7 +110,16 @@ export class UserService {
   }
 
   findByEmail(email: string) {
-    return this.prisma.user.findFirst({ where: { email: email } });
+    return this.prisma.user.findFirst({
+      where: { email: email },
+      include: {
+        employee: {
+          select: {
+            companyId: true,
+          },
+        },
+      },
+    });
   }
 
   update() {

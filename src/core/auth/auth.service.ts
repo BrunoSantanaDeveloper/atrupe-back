@@ -14,6 +14,7 @@ export class AuthService {
     const user = await this.usersService.findByEmail(email);
     if (user && (await argon2.verify(user.password, pass))) {
       const { ...result } = user;
+      console.log(result);
       return result;
     }
 
@@ -21,7 +22,11 @@ export class AuthService {
   }
 
   async login(user: any) {
-    const payload = { username: user.email, sub: user.id };
+    const payload = {
+      username: user.email,
+      sub: user.id,
+      companyId: user.employee?.companyId,
+    };
     return {
       access_token: this.jwtService.sign(payload),
     };

@@ -8,6 +8,8 @@ import {
   Delete,
   Query,
   UseGuards,
+  Req,
+  BadGatewayException,
 } from '@nestjs/common';
 import { BankService } from './bank.service';
 import { CreateBankDto } from './dto/create-bank.dto';
@@ -23,12 +25,14 @@ import {
   ApiBody,
   ApiParam,
   ApiQuery,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 
 const RESOURCE = 'bank';
 
 @ApiTags('Banco e Conta bancária')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(RESOURCE)
 export class BankController {
   constructor(
@@ -50,7 +54,9 @@ export class BankController {
     status: 201,
     description: 'Banco criado com sucesso.',
   })
-  create(@Body() createBankDto: CreateBankDto) {
+  create(@Body() createBankDto: CreateBankDto, @Req() req) {
+    console.log(req.user.companyId);
+    // ID do usuário logado
     return this.bankService.create(createBankDto);
   }
 
@@ -79,7 +85,11 @@ export class BankController {
     status: 201,
     description: 'Conta bancária criada com sucesso.',
   })
-  createAccount(@Body() dto: CreateBankAccountDto) {
+  createAccount(@Req() req, @Body() dto: CreateBankAccountDto) {
+    if (req.user.companyId === null) {
+      throw new BadGatewayException('Usuário não possui empresa vinculada');
+    }
+    dto.companyId = req.user.companyId;
     return this.accountService.create(dto);
   }
 

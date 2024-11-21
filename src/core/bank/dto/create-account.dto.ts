@@ -77,12 +77,6 @@ export class CreateBankAccountDto {
   })
   bankId: string;
 
-  @IsNotEmpty()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da empresa associada',
-    example: '123e4567-e89b-12d3-a456-426614174001',
-  })
   companyId: string;
 
   @IsOptional()

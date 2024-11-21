@@ -28,6 +28,11 @@ export class BankService {
   }
 
   remove(id: string) {
-    return this.prisma.bank.delete({ where: { id } });
+    return this.prisma.bank.update({
+      where: { id },
+      data: {
+        isActive: false,
+      },
+    });
   }
 }

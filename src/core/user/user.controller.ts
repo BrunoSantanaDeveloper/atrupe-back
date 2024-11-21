@@ -19,11 +19,12 @@ import {
   ApiResponse,
   ApiBody,
   ApiParam,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 
 @ApiTags('Usuário')
-@UseGuards(JwtAuthGuard)
 @Controller('user')
+@ApiBearerAuth()
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
@@ -36,7 +37,7 @@ export class UserController {
       example: {
         summary: 'Exemplo de payload para criação de usuário',
         value: {
-          username: 'johndoe',
+          name: 'johndoe',
           email: 'johndoe@example.com',
           password: 'securepassword123',
         },
@@ -55,6 +56,7 @@ export class UserController {
     return this.userService.create(body);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get('me')
   @ApiOperation({ summary: 'Obtém os dados do usuário autenticado' })
   @ApiResponse({
@@ -71,10 +73,10 @@ export class UserController {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-
     return user;
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get('check/:doc')
   @ApiOperation({
     summary: 'Verifica os dados de um usuário pelo documento fornecido',
@@ -103,6 +105,7 @@ export class UserController {
   }
 
   @Patch()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Atualiza os dados do usuário' })
   @ApiResponse({
     status: 200,
@@ -117,6 +120,7 @@ export class UserController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Obtém a lista de todos os usuários' })
   @ApiResponse({
     status: 200,
@@ -129,6 +133,7 @@ export class UserController {
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Obtém um usuário pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do usuário' })
   @ApiResponse({

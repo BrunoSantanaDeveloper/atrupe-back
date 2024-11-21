@@ -25,6 +25,7 @@ async function bootstrap() {
     .setTitle('Atrupe - API Documentação')
     .setDescription('Documentação da API para o projeto Atrupe')
     .setVersion('1.0')
+    .addBearerAuth()
     .build();
 
   const document = SwaggerModule.createDocument(app, doc);
