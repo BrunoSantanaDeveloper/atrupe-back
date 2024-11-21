@@ -5,9 +5,16 @@ import { PrismaModule } from 'nestjs-prisma';
 import { AuthModule } from '../auth/auth.module';
 import { AddressModule } from '../address/address.module';
 import { PlugModule } from '../../svc/plug/plug.module';
+import { SettingsModule } from './settings/settings.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, AddressModule, PlugModule],
+  imports: [
+    PrismaModule,
+    AuthModule,
+    AddressModule,
+    PlugModule,
+    SettingsModule,
+  ],
   controllers: [CompanyController],
   providers: [CompanyService],
   exports: [CompanyService],

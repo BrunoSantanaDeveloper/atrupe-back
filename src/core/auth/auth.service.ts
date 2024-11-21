@@ -14,7 +14,6 @@ export class AuthService {
     const user = await this.usersService.findByEmail(email);
     if (user && (await argon2.verify(user.password, pass))) {
       const { ...result } = user;
-      console.log(result);
       return result;
     }
 

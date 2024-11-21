@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateRoleDto {
@@ -11,21 +11,50 @@ export class CreateRoleDto {
   })
   name: string;
 
-  @IsNotEmpty()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da empresa associada à função',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-    required: true,
-  })
   companyId: string;
-
-  @IsNotEmpty()
-  @IsUUID()
+  @IsOptional()
   @ApiProperty({
     description: 'ID do setor associado à função',
     example: '456e7890-e12d-34a6-b789-567890123456',
     required: true,
   })
-  sectorId: string;
+  sectorId?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Porcentagem de comissão (0 a 100)',
+    example: '10.00',
+    required: false,
+  })
+  commission: number;
+  @IsOptional()
+  @ApiProperty({
+    description: 'Porcentagem máxima de desconto (0 a 100)',
+    example: '10.00',
+    required: false,
+  })
+  maxDiscount: number;
+  @IsOptional()
+  @ApiProperty({
+    description: 'Valor mínimo',
+    example: '150.00',
+    required: false,
+  })
+  minValue: number;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Pode aprovar pré-cadastro',
+    example: false,
+    required: false,
+  })
+  canApprovePreRegistration: boolean;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Pode cancelar vendas',
+    example: false,
+    required: false,
+  })
+  canCancelSale: boolean;
 }

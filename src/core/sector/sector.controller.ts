@@ -22,12 +22,14 @@ import {
   ApiBody,
   ApiParam,
   ApiQuery,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 
 const RESOURCE = 'sector';
 
 @ApiTags('Setores')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(RESOURCE)
 export class SectorController {
   constructor(private readonly sectorService: SectorService) {}

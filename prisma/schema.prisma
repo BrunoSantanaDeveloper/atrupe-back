@@ -50,6 +50,7 @@ model Company {
   paymentConfigurations PaymentConfiguration[]
   unitOfMeasure         UnitOfMeasure[]
   language              Language[]
+  Reasons               Reasons[]
 
   @@map("companies")
 }
@@ -135,6 +136,12 @@ model Role {
   sector   Sector? @relation(fields: [sectorId], references: [id])
 
   employees Employee[]
+
+  commission                Float?
+  maxDiscount               Float?
+  minValue                  Float?
+  canApprovePreRegistration Boolean @default(false)
+  canCancelSale             Boolean @default(false)
 
   userRole   UserRole[]
   rolePolicy RolePolicy[]
@@ -888,4 +895,19 @@ model Language {
   company   Company @relation(fields: [companyId], references: [id])
 
   @@map("languages")
+}
+
+model Reasons {
+  id        String     @id @default(uuid())
+  reason    String
+  type      ReasonType
+  companyId String
+  company   Company    @relation(fields: [companyId], references: [id])
+
+  @@map("reasons")
+}
+
+enum ReasonType {
+  REJECTION
+  CANCELLATION
 }

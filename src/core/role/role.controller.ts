@@ -8,6 +8,8 @@ import {
   Delete,
   UseGuards,
   Query,
+  Req,
+  BadRequestException,
 } from '@nestjs/common';
 import { RoleService } from './role.service';
 import { CreateRoleDto } from './dto/create-role.dto';
@@ -21,12 +23,14 @@ import {
   ApiBody,
   ApiParam,
   ApiQuery,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 
 const RESOURCE = 'role';
 
 @ApiTags('Cargos')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(RESOURCE)
 export class RoleController {
   constructor(private readonly roleService: RoleService) {}
@@ -41,8 +45,15 @@ export class RoleController {
     status: 201,
     description: 'Cargo criada com sucesso.',
   })
-  create(@Body() createRoleDto: CreateRoleDto) {
-    return this.roleService.create(createRoleDto);
+  async create(@Req() req, @Body() createRoleDto: CreateRoleDto) {
+    console.log(req.user);
+    createRoleDto.companyId = req.user.companyId;
+    try {
+      return await this.roleService.create(createRoleDto);
+    } catch (error) {
+      console.log(error.message);
+      throw new BadRequestException(error.message);
+    }
   }
 
   @Get()
@@ -112,6 +123,25 @@ export class RoleController {
     description: 'Cargo não encontrado.',
   })
   remove(@Param('id') id: string) {
-    return this.roleService.remove(+id);
+    return this.roleService.remove(id);
+  }
+
+  @Get('employees/list')
+  async listEmployess(@Req() req) {
+    const companyId = req.user.companyId;
+    return await this.roleService.listEmployees(companyId);
+  }
+
+  @Patch(':roleId/add/:employeeId')
+  async addEmployee(
+    @Param('roleId') roleId: string,
+    @Param('employeeId') employeeId: string,
+  ) {
+    return await this.roleService.addEmployee(roleId, employeeId);
+  }
+
+  @Patch('remove/:employeeId')
+  async removeEmployee(@Param('employeeId') employeeId: string) {
+    return this.roleService.removeEmployee(employeeId);
   }
 }

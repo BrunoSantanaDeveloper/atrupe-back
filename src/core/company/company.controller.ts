@@ -18,11 +18,13 @@ import {
   ApiResponse,
   ApiTags,
   ApiParam,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { Company } from '@prisma/client';
 
 const RESOURCE = 'company';
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(RESOURCE)
 @ApiTags('Empresa')
 export class CompanyController {

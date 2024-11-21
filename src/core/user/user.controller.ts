@@ -24,7 +24,6 @@ import {
 
 @ApiTags('Usuário')
 @Controller('user')
-@ApiBearerAuth()
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
@@ -57,6 +56,7 @@ export class UserController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Get('me')
   @ApiOperation({ summary: 'Obtém os dados do usuário autenticado' })
   @ApiResponse({
@@ -77,6 +77,7 @@ export class UserController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Get('check/:doc')
   @ApiOperation({
     summary: 'Verifica os dados de um usuário pelo documento fornecido',
@@ -106,6 +107,7 @@ export class UserController {
 
   @Patch()
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Atualiza os dados do usuário' })
   @ApiResponse({
     status: 200,
@@ -121,6 +123,7 @@ export class UserController {
 
   @Get()
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtém a lista de todos os usuários' })
   @ApiResponse({
     status: 200,
@@ -134,6 +137,7 @@ export class UserController {
 
   @Get(':id')
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtém um usuário pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do usuário' })
   @ApiResponse({
