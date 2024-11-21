@@ -19,8 +19,6 @@ COPY --chown=node:node . .
 # Gerar o cliente Prisma
 RUN npx prisma generate
 
-# Usar o usuário `node` para maior segurança
-USER node
 
 # Comando padrão (mude se necessário para seu fluxo)
 CMD ["npm", "run", "start:dev"]
