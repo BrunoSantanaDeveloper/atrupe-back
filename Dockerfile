@@ -19,6 +19,8 @@ COPY --chown=node:node . .
 # Gerar o cliente Prisma
 RUN npx prisma generate
 
+# Expor a porta usada pelo app
+EXPOSE 5000
 
 # Comando padrão (mude se necessário para seu fluxo)
 CMD ["npm", "run", "start:dev"]
