@@ -1,0 +1,47 @@
+
+@hostname = localhost
+@port = 3999
+@host = {{hostname}}:{{port}}
+@contentType = application/json
+@createdAt = {{$datetime iso8601}}
+@modifiedBy = {{$processEnv USERNAME}}
+
+# Healthcheck
+GET http://{{host}}/
+
+### 
+
+# @name login
+POST http://{{host}}/auth/login
+Content-Type: {{contentType}}
+
+{
+  "username": "eder@email.com",
+  "password": "1234abc@"
+}
+
+@authToken = {{login.response.body.access_token}}
+
+###
+# @name me
+GET http://{{host}}/user/me
+Authorization: Bearer {{authToken}}
+Content-Type: {{contentType}}
+
+###
+# @name sectors
+GET http://{{host}}/sector
+Authorization: Bearer {{authToken}}
+Content-Type: {{contentType}}
+
+###
+# @name createPaymentMethod
+POST http://{{host}}/payment/method
+Authorization: Bearer {{authToken}}
+Content-Type: {{contentType}}
+
+{
+  "name": "Credit
+}
+
+

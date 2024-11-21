@@ -1,0 +1,891 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "fullTextIndex"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  name                  String
+  legalName             String?
+  cnpj                  String?
+  stateRegistration     String?
+  municipalRegistration String?
+  phoneNumber           String?
+  website               String?
+  isActive              Boolean @default(true)
+
+  sectors      Sector[]
+  clients      Client[]
+  employees    Employee[]
+  products     Product[]
+  assets       Asset[]
+  roles        Role[]
+  suppliers    Supplier[]
+  bankAccounts BankAccount[]
+  assetTypes   AssetType[]
+  categories   Category[]
+  saleSeries   SaleSeries[]
+  quotation    Quotation[]
+
+  payables          Payable[]
+  receivables       Receivable[]
+  financialFlows    FinancialFlow[]
+  cashControls      CashControl[]
+  scheduledExpenses ScheduledExpense[]
+  invoices          Invoice[]
+
+  paymentMethods        PaymentMethod[]
+  paymentConditions     PaymentCondition[]
+  paymentConfigurations PaymentConfiguration[]
+  unitOfMeasure         UnitOfMeasure[]
+  language              Language[]
+
+  @@map("companies")
+}
+
+enum OwnerType {
+  COMPANY
+  EMPLOYEE
+  CLIENT
+  SUPPLIER
+  CONTACT
+}
+
+model Address {
+  id           String  @id @default(uuid())
+  street       String?
+  number       String?
+  neighborhood String?
+  country      String?
+  zipcode      String?
+  complement   String?
+
+  cityId String?
+  city   City?   @relation(fields: [cityId], references: [id])
+
+  stateId String?
+  state   State?  @relation(fields: [stateId], references: [id])
+
+  ownerType OwnerType @default(COMPANY)
+  ownerId   String
+
+  client   Client[]
+  Supplier Supplier[]
+
+  @@index([ownerId, ownerType])
+  @@map("addresses")
+}
+
+enum SectorKind {
+  ADMINISTRATIVE
+  OPERATIONAL
+  FINANCIAL
+  COMMERCIAL
+  MARKETING
+  IT
+  HUMAN_RESOURCES
+  LEGAL
+  PRODUCTION
+  LOGISTICS
+  QUALITY
+  SECURITY
+  MAINTENANCE
+  CLEANING
+  OTHER
+}
+
+model Sector {
+  id       String     @id @default(uuid())
+  name     String
+  icon     String?
+  isActive Boolean    @default(true)
+  kind     SectorKind @default(PRODUCTION)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  employees Employee[]
+  asset     Asset[]
+  Role      Role[]
+  Product   Product[]
+
+  @@map("sectors")
+}
+
+model Role {
+  id       String  @id @default(uuid())
+  name     String  @unique
+  isActive Boolean @default(true)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  sectorId String?
+  sector   Sector? @relation(fields: [sectorId], references: [id])
+
+  employees Employee[]
+
+  userRole   UserRole[]
+  rolePolicy RolePolicy[]
+
+  @@map("roles")
+}
+
+enum CategoryKind {
+  PRODUCT
+  SERVICE
+  CLIENT
+  SUPPLIER
+  PAYABLE
+  PAYABLE_ORIGIN
+  RECEIVABLE
+  RECEIVABLE_ORIGIN
+}
+
+model Category {
+  id         String       @id @default(uuid())
+  name       String
+  kind       CategoryKind @default(PRODUCT)
+  isActive   Boolean      @default(true)
+  isStandard Boolean      @default(false)
+  companyId  String?
+  parentId   String?
+
+  parent   Category?  @relation("CategoryToCategory", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryToCategory")
+
+  company   Company?   @relation(fields: [companyId], references: [id])
+  clients   Client[]
+  products  Product[]
+  suppliers Supplier[]
+
+  payableCategory    Payable[] @relation("CategoryPayable")
+  payableSubCategory Payable[] @relation("SubCategoryPayable")
+
+  receivableCategory    Receivable[] @relation("CategoryReceivable")
+  receivableSubCategory Receivable[] @relation("SubCategoryReceivable")
+
+  @@map("categories")
+}
+
+enum ClientStatus {
+  PROSPECT
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum ClientKind {
+  PERSON
+  COMPANY
+}
+
+model Contact {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  name   String
+  email  String? @unique
+  phone  String?
+  mobile String?
+  sector String?
+
+  observations String?
+
+  client     Client?   @relation(fields: [clientId], references: [id])
+  clientId   String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+  supplierId String?
+
+  @@map("contacts")
+}
+
+model Client {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  kind   ClientKind   @default(PERSON)
+  status ClientStatus @default(PROSPECT)
+
+  name           String
+  email          String?   @unique
+  phoneNumber    String?
+  mobilePhone    String?
+  notes          String?
+  financialNotes String?
+  nickname       String?
+  site           String?
+  birthdate      DateTime?
+
+  addressId String?
+  address   Address? @relation(fields: [addressId], references: [id])
+
+  details Json
+
+  contacts      Contact[]
+  responsibleId String?
+  responsible   Employee?    @relation(fields: [responsibleId], references: [id])
+  companyId     String
+  company       Company      @relation(fields: [companyId], references: [id])
+  category      Category?    @relation(fields: [categoryId], references: [id])
+  categoryId    String?
+  quotation     Quotation[]
+  Receivable    Receivable[]
+  Payable       Payable[]
+
+  @@map("clients")
+}
+
+model Supplier {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  kind   ClientKind   @default(PERSON)
+  status ClientStatus @default(ACTIVE)
+
+  name           String
+  email          String?   @unique
+  phoneNumber    String?
+  mobilePhone    String?
+  notes          String?
+  financialNotes String?
+  nickname       String?
+  site           String?
+  birthdate      DateTime?
+
+  details Json
+
+  addressId String?
+  address   Address? @relation(fields: [addressId], references: [id])
+
+  contacts   Contact[]
+  companyId  String
+  company    Company   @relation(fields: [companyId], references: [id])
+  category   Category? @relation(fields: [categoryId], references: [id])
+  categoryId String?
+
+  @@map("suppliers")
+}
+
+model Employee {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+  isActive  Boolean   @default(true)
+
+  sallary Float?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  userId String @unique
+  user   User?  @relation(fields: [userId], references: [id])
+
+  roleId String?
+  role   Role?   @relation(fields: [roleId], references: [id])
+
+  sectorId String?
+  sector   Sector? @relation(fields: [sectorId], references: [id])
+
+  client    Client[]
+  quotation Quotation[]
+
+  @@map("employees")
+}
+
+model User {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  employee Employee?
+  name     String
+  password String
+  email    String    @unique
+
+  attributes Attribute[]
+  userRole   UserRole[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Asset {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  name                       String
+  purchaseValue              Float
+  residualValue              Float
+  usefulLife                 Int
+  costGroupId                Int?
+  fixedMonthlyCost           Float?
+  variableTotalMonthlyCost   Float?
+  variableQualityMonthlyCost Float?
+  companyId                  String?
+  typeId                     String?
+  sectorId                   String?
+
+  // costGroup        CostGroup?       @relation(fields: [costGroupId], references: [id])
+  // costs            Cost[]
+  company Company?   @relation(fields: [companyId], references: [id])
+  type    AssetType? @relation(fields: [typeId], references: [id])
+  sector  Sector?    @relation(fields: [sectorId], references: [id])
+
+  @@map("assets")
+}
+
+model AssetType {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  name       String
+  details    String?
+  isActive   Boolean @default(true)
+  isStandard Boolean @default(false)
+  companyId  String?
+
+  company Company? @relation(fields: [companyId], references: [id])
+  assets  Asset[]
+
+  @@map("asset_types")
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  CANCELED
+}
+
+model Receivable {
+  id      String   @id @default(uuid())
+  amount  Float
+  dueDate DateTime
+
+  reference     String
+  referenceDate DateTime
+
+  description String?
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  bankAccountId String
+  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
+
+  paymentMethodId String
+  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+
+  categoryId String
+  category   Category @relation("CategoryReceivable", fields: [categoryId], references: [id])
+
+  subCategoryId String?
+  subCategory   Category? @relation("SubCategoryReceivable", fields: [subCategoryId], references: [id])
+
+  status PaymentStatus @default(PENDING)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("receivables")
+}
+
+model Payable {
+  id      String   @id @default(uuid())
+  amount  Float
+  dueDate DateTime
+
+  reference     String
+  referenceDate DateTime
+
+  description String?
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  bankAccountId String
+  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
+
+  paymentMethodId String
+  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+
+  categoryId String
+  category   Category @relation("CategoryPayable", fields: [categoryId], references: [id])
+
+  subCategoryId String?
+  subCategory   Category? @relation("SubCategoryPayable", fields: [subCategoryId], references: [id])
+
+  status PaymentStatus @default(PENDING)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("payables")
+}
+
+enum FinancialFlowType {
+  INCOME
+  EXPENSE
+}
+
+model FinancialFlow {
+  id          String            @id @default(uuid())
+  amount      Float
+  type        FinancialFlowType
+  description String
+  date        DateTime
+  companyId   String
+  company     Company           @relation(fields: [companyId], references: [id])
+  createdAt   DateTime          @default(now())
+
+  @@map("financial_flows")
+}
+
+model CashControl {
+  id        String   @id @default(uuid())
+  opening   Float
+  closing   Float
+  date      DateTime
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@map("cash_controls")
+}
+
+model ScheduledExpense {
+  id          String   @id @default(uuid())
+  description String
+  amount      Float
+  dueDate     DateTime
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@map("scheduled_expenses")
+}
+
+model Invoice {
+  id        String   @id @default(uuid())
+  number    String   @unique
+  date      DateTime
+  amount    Float
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@map("invoices")
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id])
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Attribute {
+  id     String @id @default(uuid())
+  key    String
+  value  String
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@map("attributes")
+}
+
+model RolePolicy {
+  roleId   String
+  policyId String
+  role     Role   @relation(fields: [roleId], references: [id])
+  policy   Policy @relation(fields: [policyId], references: [id])
+
+  @@id([roleId, policyId])
+  @@map("role_policies")
+}
+
+model Policy {
+  id         String       @id @default(uuid())
+  name       String
+  definition Json
+  rolePolicy RolePolicy[]
+
+  @@map("policies")
+}
+
+model Bank {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  name     String
+  code     String
+  details  Json?
+  isActive Boolean @default(true)
+
+  accounts BankAccount[]
+
+  @@map("banks")
+}
+
+model BankAccount {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  name        String
+  description String?
+  isActive    Boolean @default(true)
+
+  cashControl Boolean @default(false)
+
+  bankAccountCashControl BankAccountCashControl[]
+
+  companyId  String
+  company    Company      @relation(fields: [companyId], references: [id])
+  bankId     String
+  bank       Bank         @relation(fields: [bankId], references: [id])
+  Receivable Receivable[]
+  Payable    Payable[]
+
+  @@map("bank_accounts")
+}
+
+enum BankAccountCashControlType {
+  PAYSOFF
+  PROVISION
+}
+
+model BankAccountCashControl {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  acceptPayments Boolean                    @default(true)
+  paymentType    BankAccountCashControlType @default(PAYSOFF)
+  acceptIncomes  Boolean                    @default(true)
+  incomeType     BankAccountCashControlType @default(PAYSOFF)
+
+  paymentMethodId String
+  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+
+  bankAccountId String
+  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
+
+  @@map("bank_account_cash_controls")
+}
+
+model PaymentMethod {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  isActive    Boolean  @default(true)
+
+  companyId              String
+  company                Company                  @relation(fields: [companyId], references: [id])
+  paymentConfigurations  PaymentConfiguration[]
+  bankAccountCashControl BankAccountCashControl[]
+  Receivable             Receivable[]
+  Payable                Payable[]
+  PaymentCondition       PaymentCondition[]
+
+  @@map("payment_methods")
+}
+
+enum PaymentConditionCostType {
+  PERCENT
+  FIXED
+}
+
+model PaymentCondition {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  isActive  Boolean  @default(true)
+
+  name                String
+  acceptInstallments  Boolean
+  costType            PaymentConditionCostType
+  operatorFeeRate     Float?
+  operatorFeeTransfer Float?
+
+  minInstallments Int?
+  maxInstallments Int?
+  installments    Json?
+
+  paymentMethodId       String
+  paymentMethod         PaymentMethod          @relation(fields: [paymentMethodId], references: [id])
+  companyId             String
+  company               Company                @relation(fields: [companyId], references: [id])
+  paymentConfigurations PaymentConfiguration[]
+
+  @@map("payment_conditions")
+}
+
+model PaymentConfiguration {
+  id                 String           @id @default(uuid())
+  paymentMethodId    String
+  paymentMethod      PaymentMethod    @relation(fields: [paymentMethodId], references: [id])
+  paymentConditionId String
+  paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
+  companyId          String
+  company            Company          @relation(fields: [companyId], references: [id])
+  createdAt          DateTime         @default(now())
+
+  @@map("payment_configurations")
+}
+
+model SaleSeries {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  name String
+  code String
+
+  taxCosts Json?
+
+  deliveryDuration  Int
+  quotationDuration Int
+
+  isActive Boolean @default(true)
+
+  companyId String
+  company   Company     @relation(fields: [companyId], references: [id])
+  Quotation Quotation[]
+
+  @@map("sale_series")
+}
+
+enum QuotationStatus {
+  APPROVED
+  OPEN
+  DONE
+  CLOSED
+  CANCELED
+  REJECTED
+  OVERDUE
+}
+
+model Quotation {
+  id         String    @id @default(uuid())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime? @updatedAt
+  approvedAt DateTime?
+
+  name        String?
+  description String?
+  isActive    Boolean         @default(true)
+  status      QuotationStatus @default(OPEN)
+  dueDate     DateTime        @default(now())
+
+  totalValue Float?
+
+  sellerId  String
+  seriesId  String?
+  clientId  String?
+  companyId String
+
+  seller  Employee    @relation(fields: [sellerId], references: [id])
+  series  SaleSeries? @relation(fields: [seriesId], references: [id])
+  client  Client?     @relation(fields: [clientId], references: [id])
+  company Company     @relation(fields: [companyId], references: [id])
+
+  products         Product[]          @relation("QuotationToProduct")
+  quotationProduct QuotationProduct[]
+  Order            Order[]
+
+  @@index([id, companyId])
+  @@map("quotations")
+}
+
+model QuotationProduct {
+  quotation   Quotation @relation(fields: [quotationId], references: [id])
+  quotationId String
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  quantity Int @default(1)
+
+  totalValue Float?
+
+  items QuotationProductItem[]
+
+  @@id([quotationId, productId])
+  @@map("quotation_products")
+}
+
+model QuotationProductItem {
+  quotationId String
+  productId   String
+
+  quotationProduct QuotationProduct @relation(fields: [quotationId, productId], references: [quotationId, productId])
+
+  productItemId String
+  productItem   ProductItem @relation(fields: [productItemId], references: [id])
+
+  quantity Int @default(1)
+
+  totalValue Float?
+
+  @@id([quotationId, productId, productItemId])
+  @@map("quotation_product_items")
+}
+
+enum OrderStatus {
+  IN_PRODUCTION
+  DELIVERY
+  COMPLETED
+  CANCELED
+}
+
+model Order {
+  id          String    @id @default(uuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime? @updatedAt
+  canceledAt  DateTime?
+  deliveredAt DateTime?
+
+  quotationId String
+  quotation   Quotation @relation(fields: [quotationId], references: [id])
+
+  status   OrderStatus @default(IN_PRODUCTION)
+  isActive Boolean     @default(true)
+
+  @@index([id])
+  @@map("orders")
+}
+
+model Product {
+  id   String @id @default(uuid())
+  name String
+  code String @unique
+
+  isActive   Boolean @default(true)
+  isStandard Boolean @default(false)
+
+  unitOfMeasureId String?
+  unitOfMeasure   UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id])
+  unitCost        Float?
+  salePrice       Float?
+
+  items ProductItem[]
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  sectorId String
+  sector   Sector @relation(fields: [sectorId], references: [id])
+
+  quotations       Quotation[]        @relation("QuotationToProduct")
+  QuotationProduct QuotationProduct[]
+
+  @@map("products")
+}
+
+model ProductItem {
+  id   String @id @default(uuid())
+  name String
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  unitOfMeasureId String
+  unitOfMeasure   UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
+
+  unitCost             Float
+  salePrice            Float
+  QuotationProductItem QuotationProductItem[]
+
+  @@map("product_items")
+}
+
+model State {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  name     String
+  code     String
+  isActive Boolean @default(true)
+
+  cities  City[]
+  Address Address[]
+
+  @@index([code])
+  @@map("states")
+}
+
+model City {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  name     String
+  code     String
+  isActive Boolean @default(true)
+
+  stateId String
+  state   State     @relation(fields: [stateId], references: [id])
+  Address Address[]
+
+  @@map("cities")
+}
+
+model UnitOfMeasure {
+  id          String  @id @default(uuid())
+  name        String
+  code        String  @unique
+  description String?
+
+  isActive Boolean @default(true)
+
+  products     Product[]
+  productItems ProductItem[]
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  @@map("unit_measures")
+}
+
+model Language {
+  id          String  @id @default(uuid())
+  name        String
+  code        String  @unique
+  description String?
+
+  isActive Boolean @default(true)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  @@map("languages")
+}

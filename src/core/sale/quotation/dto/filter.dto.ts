@@ -1,0 +1,67 @@
+import {
+  IsDateString,
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
+import { QuotationStatus } from '@prisma/client';
+import { BaseFilterDTO } from '../../../../shared/dto/filter.dto';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class FilterQuotationDto extends BaseFilterDTO {
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Texto de busca para filtrar os orçamentos',
+    example: 'Produto exemplo',
+    required: false,
+  })
+  search?: string;
+
+  @IsOptional()
+  @IsEnum(QuotationStatus)
+  @ApiProperty({
+    description: 'Status do orçamento para filtrar os resultados',
+    example: QuotationStatus.OPEN,
+    enum: QuotationStatus,
+    required: false,
+  })
+  status?: QuotationStatus;
+
+  @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description: 'ID do vendedor para filtrar os orçamentos',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  sellerId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description: 'ID da série para filtrar os orçamentos',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  serieId?: string;
+
+  @IsOptional()
+  @IsDateString()
+  @ApiProperty({
+    description: 'Data para filtrar os orçamentos',
+    example: '2023-05-28',
+    required: false,
+  })
+  date?: string;
+
+  @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description: 'ID do cliente para filtrar os orçamentos',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  clientId?: string;
+}

@@ -1,0 +1,9 @@
+config:
+  target: 'http://localhost:3999'
+  phases:
+    - duration: 60 # Duração do teste em segundos
+      arrivalRate: 20 # Novos usuários virtuais por segundo
+scenarios:
+  - flow:
+      - get:
+          url: "/" # Rota a ser testada
