@@ -1,38 +1,72 @@
 import { Injectable } from '@nestjs/common';
-import { CreateSeriesDto } from './dto/create-series.dto';
-import { PrismaService } from 'nestjs-prisma';
-import { UpdateSeriesDto } from './dto/update-serie.dto';
+import { PrismaService } from 'src/config/prisma/prisma.service';
+import { CreateSaleSeriesDto } from './dto/create-series.dto';
+import { UpdateSaleSeriesDto } from './dto/update-serie.dto';
 
 @Injectable()
-export class SeriesService {
-  constructor(private prisma: PrismaService) {}
+export class SaleSeriesService {
+  constructor(private readonly prisma: PrismaService) {}
 
-  create(dto: CreateSeriesDto) {
-    return this.prisma.saleSeries.create({
-      data: {
-        ...dto,
-      },
+  create(createSaleSeriesDto: CreateSaleSeriesDto) {
+    return this.prisma.saleSeries.create({ data: createSaleSeriesDto });
+  }
+
+  async findAll(companyId) {
+    const saleSeries = await this.prisma.saleSeries.findMany({
+      where: { isActive: true, companyId },
+      orderBy: { title: 'asc' },
     });
+
+    return saleSeries.map((series) => this.formatSeries(series));
   }
 
-  findAll() {
-    return this.prisma.saleSeries.findMany();
+  async findOne(id: string) {
+    const series = await this.prisma.saleSeries.findUnique({
+      where: { id },
+    });
+
+    if (!series) {
+      throw new Error(`Sale series with ID ${id} not found`);
+    }
+
+    return this.formatSeries(series);
   }
 
-  findOne(id: string) {
-    return this.prisma.saleSeries.findFirst({ where: { id } });
+  private formatSeries(series: any) {
+    return {
+      ...series,
+      billing: {
+        value: series.billing,
+        label: this.toCapitalCase(series.billing),
+      },
+      sendToProduction: {
+        value: series.sendToProduction,
+        label: this.toCapitalCase(series.sendToProduction),
+      },
+      productionStatus: {
+        value: series.productionStatus,
+        label: this.toCapitalCase(series.productionStatus),
+      },
+    };
+  }
+  private toCapitalCase(value: string | null): string | null {
+    if (!value) return null;
+
+    const all = value.split('-').join(' ');
+    return all[0].toUpperCase() + all.slice(1);
   }
 
-  update(id: string, dto: UpdateSeriesDto) {
+  update(id: string, updateSaleSeriesDto: UpdateSaleSeriesDto) {
     return this.prisma.saleSeries.update({
       where: { id },
-      data: dto,
+      data: updateSaleSeriesDto,
     });
   }
 
   remove(id: string) {
-    return this.prisma.saleSeries.delete({
+    return this.prisma.saleSeries.update({
       where: { id },
+      data: { isActive: false },
     });
   }
 }

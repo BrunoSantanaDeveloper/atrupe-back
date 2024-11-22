@@ -196,7 +196,7 @@ export class QuotationService {
         series: {
           select: {
             id: true,
-            name: true,
+            title: true,
             code: true,
           },
         },

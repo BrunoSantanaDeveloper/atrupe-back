@@ -1,111 +1,74 @@
 import {
   Controller,
-  Get,
   Post,
   Body,
-  Patch,
+  Get,
   Param,
+  Put,
   Delete,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
-import { SeriesService } from './series.service';
-import { CreateSeriesDto } from './dto/create-series.dto';
-import { UpdateSeriesDto } from './dto/update-serie.dto';
+
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBody,
   ApiParam,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
+import { CreateSaleSeriesDto } from './dto/create-series.dto';
+import { SaleSeriesService } from './series.service';
+import { UpdateSaleSeriesDto } from './dto/update-serie.dto';
+import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 
-@ApiTags('Séries de Vendas')
+@ApiTags('Série de vendas')
 @Controller('sale/series')
-export class SeriesController {
-  constructor(private readonly service: SeriesService) {}
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
+export class SaleSeriesController {
+  constructor(private readonly saleSeriesService: SaleSeriesService) {}
 
+  @ApiOperation({ summary: 'Create a new sale series' })
+  @ApiResponse({ status: 201, description: 'Sale series created successfully' })
   @Post()
-  @ApiOperation({ summary: 'Cria uma nova série de vendas' })
-  @ApiBody({
-    description: 'Dados da nova série de vendas',
-    type: CreateSeriesDto,
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Série de vendas criada com sucesso.',
-  })
-  create(@Body() dto: CreateSeriesDto) {
-    return this.service.create(dto);
+  create(@Req() req, @Body() createSaleSeriesDto: CreateSaleSeriesDto) {
+    createSaleSeriesDto.companyId = req.user.companyId;
+    return this.saleSeriesService.create(createSaleSeriesDto);
   }
 
+  @ApiOperation({ summary: 'Get all sale series' })
+  @ApiResponse({ status: 200, description: 'List of sale series' })
   @Get()
-  @ApiOperation({ summary: 'Obtém a lista de todas as séries de vendas' })
-  @ApiResponse({
-    status: 200,
-    description: 'Lista de séries de vendas retornada com sucesso.',
-    isArray: true,
-  })
-  findAll() {
-    return this.service.findAll();
+  async findAll(@Req() req) {
+    const companyId = req.user.companyId;
+    return await this.saleSeriesService.findAll(companyId);
   }
 
+  @ApiOperation({ summary: 'Get a sale series by ID' })
+  @ApiParam({ name: 'id', description: 'ID of the sale series' })
+  @ApiResponse({ status: 200, description: 'Sale series details' })
   @Get(':id')
-  @ApiOperation({ summary: 'Obtém uma série de vendas pelo ID' })
-  @ApiParam({
-    name: 'id',
-    required: true,
-    description: 'ID da série de vendas',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Série de vendas retornada com sucesso.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Série de vendas não encontrada.',
-  })
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  async findOne(@Param('id') id: string) {
+    return await this.saleSeriesService.findOne(id);
   }
 
-  @Patch(':id')
-  @ApiOperation({ summary: 'Atualiza uma série de vendas pelo ID' })
-  @ApiParam({
-    name: 'id',
-    required: true,
-    description: 'ID da série de vendas',
-  })
-  @ApiBody({
-    description: 'Dados para atualização da série de vendas',
-    type: CreateSeriesDto,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Série de vendas atualizada com sucesso.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Série de vendas não encontrada.',
-  })
-  update(@Param('id') id: string, @Body() dto: UpdateSeriesDto) {
-    return this.service.update(id, dto);
+  @ApiOperation({ summary: 'Update a sale series by ID' })
+  @ApiParam({ name: 'id', description: 'ID of the sale series' })
+  @ApiResponse({ status: 200, description: 'Sale series updated successfully' })
+  @Put(':id')
+  update(
+    @Param('id') id: string,
+    @Body() updateSaleSeriesDto: UpdateSaleSeriesDto,
+  ) {
+    return this.saleSeriesService.update(id, updateSaleSeriesDto);
   }
 
+  @ApiOperation({ summary: 'Delete a sale series by ID' })
+  @ApiParam({ name: 'id', description: 'ID of the sale series' })
+  @ApiResponse({ status: 200, description: 'Sale series deleted successfully' })
   @Delete(':id')
-  @ApiOperation({ summary: 'Remove uma série de vendas pelo ID' })
-  @ApiParam({
-    name: 'id',
-    required: true,
-    description: 'ID da série de vendas',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Série de vendas removida com sucesso.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Série de vendas não encontrada.',
-  })
   remove(@Param('id') id: string) {
-    return this.service.remove(id);
+    return this.saleSeriesService.remove(id);
   }
 }

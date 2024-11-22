@@ -51,6 +51,7 @@ model Company {
   unitOfMeasure         UnitOfMeasure[]
   language              Language[]
   Reasons               Reasons[]
+  StatusQuotation       StatusQuotation[]
 
   @@map("companies")
 }
@@ -669,16 +670,21 @@ model SaleSeries {
   id        String    @id @default(uuid())
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
+  isActive  Boolean   @default(true)
 
-  name String
-  code String
+  code                String  @unique
+  description         String?
+  title               String
+  currentBudgetNumber Int     @default(0)
+  proposalValidity    Int?
+  deliveryDeadline    Int?
 
-  taxCosts Json?
+  billing          String?
+  sendToProduction String?
+  productionStatus String?
 
-  deliveryDuration  Int
-  quotationDuration Int
-
-  isActive Boolean @default(true)
+  textBeforeItems String?
+  textAfterItems  String?
 
   companyId String
   company   Company     @relation(fields: [companyId], references: [id])
@@ -695,6 +701,19 @@ enum QuotationStatus {
   CANCELED
   REJECTED
   OVERDUE
+}
+
+model StatusQuotation {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+  isActive  Boolean   @default(true)
+  title     String
+  color     String // Cor no formato hexadecimal, ex: "#FF5733"
+  companyId String
+  company   Company   @relation(fields: [companyId], references: [id])
+
+  @@map("status_quotation")
 }
 
 model Quotation {

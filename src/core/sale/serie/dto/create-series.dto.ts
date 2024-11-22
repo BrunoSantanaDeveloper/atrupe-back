@@ -1,44 +1,86 @@
-import { IsNotEmpty, IsNumber, IsString, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsInt, IsOptional } from 'class-validator';
 
-export class CreateSeriesDto {
-  @IsNotEmpty()
-  @IsString()
+export class CreateSaleSeriesDto {
   @ApiProperty({
-    description: 'Nome da série de vendas',
-    example: 'Série 2023',
+    description: 'Código único da série de vendas.',
+    example: 'T1',
   })
-  name: string;
-
-  @IsNotEmpty()
   @IsString()
-  @ApiProperty({
-    description: 'Código da série de vendas',
-    example: 'SER2023',
-  })
   code: string;
 
-  @IsNotEmpty()
-  @IsNumber()
   @ApiProperty({
-    description: 'Duração da cotação em dias',
-    example: 30,
+    description: 'Descrição da série de vendas.',
+    example: 'Treinamento',
   })
-  quotationDuration: number;
+  @IsString()
+  @IsOptional()
+  description?: string;
 
-  @IsNotEmpty()
-  @IsNumber()
   @ApiProperty({
-    description: 'Duração da entrega em dias',
-    example: 7,
+    description: 'Título da série de vendas.',
+    example: 'Orçamento',
   })
-  deliveryDuration: number;
+  @IsString()
+  title: string;
 
-  @IsNotEmpty()
-  @IsUUID()
   @ApiProperty({
-    description: 'ID da empresa associada à série de vendas',
-    example: '123e4567-e89b-12d3-a456-426614174000',
+    description: 'Validade da proposta em dias.',
+    example: 6,
   })
+  @IsInt()
+  @IsOptional()
+  proposalValidity?: number;
+
+  @ApiProperty({
+    description: 'Prazo de entrega em dias.',
+    example: 6,
+  })
+  @IsInt()
+  @IsOptional()
+  deliveryDeadline?: number;
+
+  @ApiProperty({
+    description: 'Informação de faturamento.',
+    example: 'na-entrega',
+  })
+  @IsString()
+  @IsOptional()
+  billing?: string;
+
+  @ApiProperty({
+    description: 'Opção de envio para produção.',
+    example: 'enviar-diretamente',
+  })
+  @IsString()
+  @IsOptional()
+  sendToProduction?: string;
+
+  @ApiProperty({
+    description: 'Status de produção.',
+    example: 'entrar-em-producao',
+  })
+  @IsString()
+  @IsOptional()
+  productionStatus?: string;
+
+  @ApiProperty({
+    description: 'Texto a ser incluído antes dos itens.',
+    example: 'Segue abaixo confome sua solicitação:',
+  })
+  @IsString()
+  @IsOptional()
+  textBeforeItems?: string;
+
+  @ApiProperty({
+    description: 'Texto a ser incluído após os itens.',
+    example:
+      '1) Crédito e condição de pagamento sujeito à aprovação;\n\n2) Impressos c/ alta exigência colorimétrica exige-se prova de cor;\n\n3) Não nos responsabilizamos por características e especificações dos projetos gráficos fornecidos pelo cliente;',
+  })
+  @IsString()
+  @IsOptional()
+  textAfterItems?: string;
+  isActive?: boolean;
+
   companyId: string;
 }

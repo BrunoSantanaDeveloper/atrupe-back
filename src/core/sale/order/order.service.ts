@@ -132,7 +132,7 @@ export class OrderService {
             series: {
               select: {
                 id: true,
-                name: true,
+                title: true,
               },
             },
             seller: {
