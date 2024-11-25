@@ -29,10 +29,21 @@ export class SettingsService {
     });
   }
 
-  // Listar motivos por tipo
   async findAllByType(type: 'REJECTION' | 'CANCELLATION', companyId: string) {
-    return this.prisma.reasons.findMany({
-      where: { type, companyId },
-    });
+    const [total, reasons] = await Promise.all([
+      this.prisma.reasons.count({
+        where: { type, companyId },
+      }),
+      this.prisma.reasons.findMany({
+        where: { type, companyId },
+      }),
+    ]);
+
+    return [
+      {
+        total,
+        data: reasons,
+      },
+    ];
   }
 }

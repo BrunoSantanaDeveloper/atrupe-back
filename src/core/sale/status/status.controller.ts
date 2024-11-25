@@ -8,12 +8,14 @@ import {
   Delete,
   UseGuards,
   Req,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { StatusQuotation } from '@prisma/client';
 import { CreateStatusQuotationDto } from './dto/create-status.dto';
@@ -42,12 +44,30 @@ export class StatusController {
     return this.statusQuotationService.create(createStatusQuotationDto);
   }
 
-  @Get()
   @ApiOperation({ summary: 'Listar todos os status de orçamento' })
   @ApiResponse({ status: 200, description: 'Lista de status de orçamento.' })
-  findAll(@Req() req): Promise<StatusQuotation[]> {
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    example: 1,
+    description: 'Número da página',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    example: 10,
+    description: 'Número de itens por página',
+  })
+  @Get()
+  async findAll(
+    @Req() req,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 10,
+  ): Promise<any> {
     const companyId = req.user.companyId;
-    return this.statusQuotationService.findAll(companyId);
+    return await this.statusQuotationService.findAll(companyId, +page, +limit);
   }
 
   @Get(':id')

@@ -67,8 +67,8 @@ export class SettingsController {
     description: 'Tipo de motivo',
   })
   @Get()
-  findAll(@Query('type') type: 'REJECTION' | 'CANCELLATION', @Req() req) {
+  async findAll(@Query('type') type: 'REJECTION' | 'CANCELLATION', @Req() req) {
     const companyId = req.user.companyId;
-    return this.settingsService.findAllByType(type, companyId);
+    return await this.settingsService.findAllByType(type, companyId);
   }
 }

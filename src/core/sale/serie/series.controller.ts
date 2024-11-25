@@ -8,6 +8,7 @@ import {
   Delete,
   Req,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 
 import {
@@ -16,6 +17,7 @@ import {
   ApiResponse,
   ApiParam,
   ApiBearerAuth,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { CreateSaleSeriesDto } from './dto/create-series.dto';
 import { SaleSeriesService } from './series.service';
@@ -40,9 +42,27 @@ export class SaleSeriesController {
   @ApiOperation({ summary: 'Get all sale series' })
   @ApiResponse({ status: 200, description: 'List of sale series' })
   @Get()
-  async findAll(@Req() req) {
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    example: 1,
+    description: 'Page number',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    example: 10,
+    description: 'Number of items per page',
+  })
+  async findAll(
+    @Req() req,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 10,
+  ) {
     const companyId = req.user.companyId;
-    return await this.saleSeriesService.findAll(companyId);
+    return await this.saleSeriesService.findAll(companyId, +page, +limit);
   }
 
   @ApiOperation({ summary: 'Get a sale series by ID' })

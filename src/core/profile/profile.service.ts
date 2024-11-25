@@ -16,7 +16,7 @@ export class ProfileService {
     });
   }
 
-  findAll(filter: ProfileFilterDTO) {
+  async findAll(filter: ProfileFilterDTO) {
     let where = {};
     if (filter.companyId) {
       where = {
@@ -24,29 +24,47 @@ export class ProfileService {
       };
     }
 
-    if (filter.sectorId) {
-      where = {
-        ...where,
-        sectorId: filter.sectorId,
-      };
-    }
-
-    return this.prisma.sellerProfile.findMany({
-      where: where,
-      include: {
-        employees: {
-          select: {
-            user: {
-              select: {
-                name: true,
+    const [total, profiles] = await Promise.all([
+      this.prisma.sellerProfile.count({
+        where: where,
+      }),
+      this.prisma.sellerProfile.findMany({
+        where: where,
+        include: {
+          employees: {
+            select: {
+              user: {
+                select: {
+                  name: true,
+                },
+              },
+              role: {
+                select: {
+                  id: true,
+                  name: true,
+                },
               },
             },
           },
         },
-      },
-      take: +filter.limit,
-      skip: (+filter.page - 1) * +filter.limit,
-    });
+        take: +filter.limit,
+        skip: (+filter.page - 1) * +filter.limit,
+      }),
+    ]);
+
+    const mappedProfiles = profiles.map((profile) => ({
+      profile,
+      employees: profile.employees.map((employee) => ({
+        id: employee.role.id,
+        name: employee.user.name,
+        role: employee.role.name,
+      })),
+    }));
+
+    return {
+      total,
+      profiles: mappedProfiles,
+    };
   }
 
   findOne(id: string) {

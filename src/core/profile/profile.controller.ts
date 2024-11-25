@@ -63,9 +63,9 @@ export class ProfileController {
     description: 'Lista de cargos retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() filter: ProfileFilterDTO, @Req() req) {
+  async findAll(@Query() filter: ProfileFilterDTO, @Req() req) {
     filter.companyId = req.user.companyId;
-    return this.profileService.findAll(filter);
+    return await this.profileService.findAll(filter);
   }
 
   @Get(':id')

@@ -17,12 +17,32 @@ export class StatusService {
     });
   }
 
-  async findAll(companyId: string): Promise<any[]> {
-    return this.prisma.statusQuotation.findMany({
-      where: { isActive: true, companyId },
-      select: { id: true, title: true, color: true },
-      orderBy: { title: 'asc' },
-    });
+  async findAll(
+    companyId: string,
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<any> {
+    const skip = (page - 1) * limit;
+
+    const [total, statusQuotations] = await Promise.all([
+      this.prisma.statusQuotation.count({
+        where: { isActive: true, companyId },
+      }),
+      this.prisma.statusQuotation.findMany({
+        where: { isActive: true, companyId },
+        select: { id: true, title: true, color: true },
+        orderBy: { title: 'asc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return {
+      total,
+      page,
+      limit,
+      statusQuotations,
+    };
   }
 
   async findOne(id: string): Promise<StatusQuotation> {

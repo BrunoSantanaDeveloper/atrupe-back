@@ -11,13 +11,27 @@ export class SaleSeriesService {
     return this.prisma.saleSeries.create({ data: createSaleSeriesDto });
   }
 
-  async findAll(companyId) {
-    const saleSeries = await this.prisma.saleSeries.findMany({
-      where: { isActive: true, companyId },
-      orderBy: { title: 'asc' },
-    });
+  async findAll(companyId: string, page: number = 1, limit: number = 10) {
+    const skip = (page - 1) * limit;
 
-    return saleSeries.map((series) => this.formatSeries(series));
+    const [total, saleSeries] = await Promise.all([
+      this.prisma.saleSeries.count({
+        where: { isActive: true, companyId },
+      }),
+      this.prisma.saleSeries.findMany({
+        where: { isActive: true, companyId },
+        orderBy: { title: 'asc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return {
+      total,
+      page,
+      limit,
+      saleSeries: saleSeries.map((series) => this.formatSeries(series)),
+    };
   }
 
   async findOne(id: string) {
