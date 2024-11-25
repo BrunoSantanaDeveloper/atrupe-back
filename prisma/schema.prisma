@@ -52,6 +52,7 @@ model Company {
   language              Language[]
   Reasons               Reasons[]
   StatusQuotation       StatusQuotation[]
+  SellerProfile         SellerProfile[]
 
   @@map("companies")
 }
@@ -138,16 +139,30 @@ model Role {
 
   employees Employee[]
 
-  commission                Float?
-  maxDiscount               Float?
-  minValue                  Float?
-  canApprovePreRegistration Boolean @default(false)
-  canCancelSale             Boolean @default(false)
 
   userRole   UserRole[]
   rolePolicy RolePolicy[]
 
   @@map("roles")
+}
+
+model SellerProfile {
+  id       String  @id @default(uuid())
+  name     String  @unique
+  isActive Boolean @default(true)
+
+  companyId                 String
+  company Company @relation(fields: [companyId], references: [id])
+
+  employees Employee[]
+
+  commission                Float?
+  maxDiscount               Float?
+  minValue                  Float?
+  canApprovePreRegistration Boolean @default(false)
+  canCancelSale             Boolean @default(false)
+  
+  @@map("seller_profile")
 }
 
 enum CategoryKind {
@@ -309,8 +324,10 @@ model Employee {
   sectorId String?
   sector   Sector? @relation(fields: [sectorId], references: [id])
 
-  client    Client[]
-  quotation Quotation[]
+  client          Client[]
+  quotation       Quotation[]
+  sellerProfileId String?
+  SellerProfile   SellerProfile? @relation(fields: [sellerProfileId], references: [id])
 
   @@map("employees")
 }
@@ -694,24 +711,25 @@ model SaleSeries {
 }
 
 enum QuotationStatus {
-  APPROVED
-  OPEN
-  DONE
+  APPROVED //Aprovado
+  OPEN //Digitação
+  DONE //Aguardando
   CLOSED
   CANCELED
-  REJECTED
-  OVERDUE
+  REJECTED //Rejeitado
+  OVERDUE //Vencido
 }
 
 model StatusQuotation {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-  isActive  Boolean   @default(true)
+  id        String      @id @default(uuid())
+  createdAt DateTime    @default(now())
+  updatedAt DateTime?   @updatedAt
+  isActive  Boolean     @default(true)
   title     String
   color     String // Cor no formato hexadecimal, ex: "#FF5733"
   companyId String
-  company   Company   @relation(fields: [companyId], references: [id])
+  company   Company     @relation(fields: [companyId], references: [id])
+  Quotation Quotation[]
 
   @@map("status_quotation")
 }
@@ -721,24 +739,26 @@ model Quotation {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime? @updatedAt
   approvedAt DateTime?
+  isActive   Boolean   @default(true)
 
-  name        String?
   description String?
-  isActive    Boolean         @default(true)
   status      QuotationStatus @default(OPEN)
   dueDate     DateTime        @default(now())
+  contactType String?
 
-  totalValue Float?
+  totalValue Float @default(0)
 
   sellerId  String
   seriesId  String?
   clientId  String?
   companyId String
+  tagId     String?
 
-  seller  Employee    @relation(fields: [sellerId], references: [id])
-  series  SaleSeries? @relation(fields: [seriesId], references: [id])
-  client  Client?     @relation(fields: [clientId], references: [id])
-  company Company     @relation(fields: [companyId], references: [id])
+  seller  Employee         @relation(fields: [sellerId], references: [id])
+  series  SaleSeries?      @relation(fields: [seriesId], references: [id])
+  client  Client?          @relation(fields: [clientId], references: [id])
+  company Company          @relation(fields: [companyId], references: [id])
+  tag     StatusQuotation? @relation(fields: [tagId], references: [id])
 
   products         Product[]          @relation("QuotationToProduct")
   quotationProduct QuotationProduct[]
@@ -755,7 +775,8 @@ model QuotationProduct {
   product   Product @relation(fields: [productId], references: [id])
   productId String
 
-  quantity Int @default(1)
+  quantity    Int    @default(1)
+  description String
 
   totalValue Float?
 

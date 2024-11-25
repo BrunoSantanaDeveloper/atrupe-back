@@ -22,13 +22,12 @@ import {
   ApiResponse,
   ApiBody,
   ApiParam,
-  ApiQuery,
   ApiBearerAuth,
 } from '@nestjs/swagger';
 
 const RESOURCE = 'role';
 
-@ApiTags('Cargos')
+@ApiTags('Roles')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 @Controller(RESOURCE)
@@ -36,14 +35,14 @@ export class RoleController {
   constructor(private readonly roleService: RoleService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Cria um novo Cargo' })
+  @ApiOperation({ summary: 'Cria um nova Role' })
   @ApiBody({
-    description: 'Dados da novo Cargo',
+    description: 'Dados da nova Role',
     type: CreateRoleDto,
   })
   @ApiResponse({
     status: 201,
-    description: 'Cargo criada com sucesso.',
+    description: 'Role criada com sucesso.',
   })
   async create(@Req() req, @Body() createRoleDto: CreateRoleDto) {
     console.log(req.user);
@@ -58,40 +57,40 @@ export class RoleController {
 
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todos os cargos' })
-  @ApiQuery({ name: 'filter', type: RoleFilterDTO, required: false })
   @ApiResponse({
     status: 200,
     description: 'Lista de cargos retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() filter: RoleFilterDTO) {
+  findAll(@Query() filter: RoleFilterDTO, @Req() req) {
+    filter.companyId = req.user.companyId;
     return this.roleService.findAll(filter);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Obtém um Cargo pelo ID' })
-  @ApiParam({ name: 'id', required: true, description: 'ID da Cargo' })
+  @ApiOperation({ summary: 'Obtém um Role pelo ID' })
+  @ApiParam({ name: 'id', required: true, description: 'ID da Role' })
   @ApiResponse({
     status: 200,
-    description: 'Cargo retornado com sucesso.',
+    description: 'Role retornado com sucesso.',
   })
   @ApiResponse({
     status: 404,
-    description: 'Cargo não encontrado.',
+    description: 'Role não encontrado.',
   })
   findOne(@Param('id') id: string) {
     return this.roleService.findOne(id);
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Atualiza um Cargo pelo ID' })
-  @ApiParam({ name: 'id', required: true, description: 'ID da Cargo' })
+  @ApiOperation({ summary: 'Atualiza um Role pelo ID' })
+  @ApiParam({ name: 'id', required: true, description: 'ID da Role' })
   @ApiBody({
-    description: 'Dados para atualização da Cargo',
+    description: 'Dados para atualização da Role',
     type: UpdateRoleDto,
     examples: {
       example: {
-        summary: 'Exemplo de payload para atualização de Cargo',
+        summary: 'Exemplo de payload para atualização de Role',
         value: {
           name: 'Updated Admin',
           sectorId: '456e7890-e12d-34a6-b789-567890123456',
@@ -101,26 +100,26 @@ export class RoleController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Cargo atualizado com sucesso.',
+    description: 'Role atualizado com sucesso.',
   })
   @ApiResponse({
     status: 404,
-    description: 'Cargo não encontrado.',
+    description: 'Role não encontrado.',
   })
   update(@Param('id') id: string, @Body() updateRoleDto: UpdateRoleDto) {
     return this.roleService.update(+id, updateRoleDto);
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Remove um Cargo pelo ID' })
-  @ApiParam({ name: 'id', required: true, description: 'ID da Cargo' })
+  @ApiOperation({ summary: 'Remove um Role pelo ID' })
+  @ApiParam({ name: 'id', required: true, description: 'ID da Role' })
   @ApiResponse({
     status: 200,
-    description: 'Cargo removida com sucesso.',
+    description: 'Role removida com sucesso.',
   })
   @ApiResponse({
     status: 404,
-    description: 'Cargo não encontrado.',
+    description: 'Role não encontrado.',
   })
   remove(@Param('id') id: string) {
     return this.roleService.remove(id);

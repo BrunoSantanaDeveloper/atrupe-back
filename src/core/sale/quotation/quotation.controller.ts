@@ -24,22 +24,20 @@ import {
   ApiBody,
   ApiParam,
   ApiQuery,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 
 const RESOURCE = 'quotation';
 
 @ApiTags('Orçamentos')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(`sale/${RESOURCE}`)
 export class QuotationController {
   constructor(private readonly quotationService: QuotationService) {}
 
   @Post()
   @ApiOperation({ summary: 'Cria um novo orçamento' })
-  @ApiBody({
-    description: 'Dados do novo orçamento',
-    type: CreateQuotationDto,
-  })
   @ApiResponse({
     status: 201,
     description: 'Orçamento criado com sucesso.',

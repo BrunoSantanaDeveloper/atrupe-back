@@ -5,14 +5,16 @@ import {
   QuotationProductItemDto,
 } from './create-quotation.dto';
 import {
-  IsDateString,
+  IsEnum,
   IsOptional,
+  IsString,
   IsUUID,
   Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { QuotationContactType } from '../entities/quotation.entity';
 
 export class UpdateQuotationProductItemDto extends PartialType(
   OmitType(QuotationProductItemDto, ['productItemId'] as const),
@@ -58,75 +60,42 @@ export class UpdateQuotationProductDto extends PartialType(
   items?: UpdateQuotationProductItemDto[];
 }
 
-export class UpdateQuotationDto extends PartialType(
-  OmitType(CreateQuotationDto, [
-    'companyId',
-    'sellerId',
-    'products',
-    'serieId',
-  ] as const),
-) {
+export class UpdateQuotationDto extends PartialType(CreateQuotationDto) {
   @IsOptional()
   @IsUUID()
   @ApiProperty({
-    description: 'ID da empresa associada ao orçamento',
+    description:
+      'ID do cliente associado ao orçamento (opcional para atualização)',
     example: '123e4567-e89b-12d3-a456-426614174000',
     required: false,
   })
-  companyId?: string;
+  clientId?: string;
 
   @IsOptional()
   @IsUUID()
   @ApiProperty({
-    description: 'ID do vendedor associado ao orçamento',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-    required: false,
-  })
-  sellerId?: string;
-
-  @IsOptional()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da série do orçamento',
+    description: 'ID da série do orçamento (opcional para atualização)',
     example: '123e4567-e89b-12d3-a456-426614174000',
     required: false,
   })
   serieId?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsEnum(QuotationContactType)
   @ApiProperty({
-    description: 'ID do cliente associado ao orçamento',
-    example: '123e4567-e89b-12d3-a456-426614174000',
+    description: 'Tipo de contato do orçamento (opcional para atualização)',
+    example: QuotationContactType.DIRECT,
+    enum: QuotationContactType,
     required: false,
   })
-  customerId?: string;
+  contactType?: QuotationContactType;
 
   @IsOptional()
-  @ValidateNested({ each: true })
-  @Type(() => UpdateQuotationProductDto)
+  @IsString()
   @ApiProperty({
-    description: 'Produtos associados ao orçamento',
-    type: [UpdateQuotationProductDto],
+    description: 'Descrição do orçamento (opcional para atualização)',
+    example: 'Este é um orçamento de exemplo.',
     required: false,
   })
-  products?: UpdateQuotationProductDto[];
-
-  @IsOptional()
-  @IsDateString()
-  @ApiProperty({
-    description: 'Data de vencimento do orçamento',
-    example: '2023-06-30',
-    required: false,
-  })
-  dueDate?: string;
-
-  @IsOptional()
-  @IsDateString()
-  @ApiProperty({
-    description: 'Data de criação do orçamento',
-    example: '2023-05-28',
-    required: false,
-  })
-  createdAt?: string;
+  description?: string;
 }

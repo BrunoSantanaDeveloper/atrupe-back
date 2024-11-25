@@ -33,6 +33,17 @@ export class RoleService {
 
     return this.prisma.role.findMany({
       where: where,
+      include: {
+        employees: {
+          select: {
+            user: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+      },
       take: +filter.limit,
       skip: (+filter.page - 1) * +filter.limit,
     });

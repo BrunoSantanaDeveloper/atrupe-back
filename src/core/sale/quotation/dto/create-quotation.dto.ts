@@ -57,15 +57,6 @@ export class QuotationProductDto {
 
 export class CreateQuotationDto {
   @IsOptional()
-  @IsString()
-  @ApiProperty({
-    description: 'Nome do orçamento',
-    example: 'Orçamento de exemplo',
-    required: false,
-  })
-  name: string;
-
-  @IsOptional()
   @IsUUID()
   @ApiProperty({
     description: 'ID do cliente associado ao orçamento',
@@ -118,12 +109,12 @@ export class CreateQuotationDto {
   })
   description: string;
 
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => QuotationProductDto)
-  @ApiProperty({
-    description: 'Produtos associados ao orçamento',
-    type: [QuotationProductDto],
-  })
-  products: QuotationProductDto[];
+  // @IsArray()
+  // @ValidateNested({ each: true })
+  // @Type(() => QuotationProductDto)
+  // @ApiProperty({
+  //   description: 'Produtos associados ao orçamento',
+  //   type: [QuotationProductDto],
+  // })
+  // products: QuotationProductDto[];
 }

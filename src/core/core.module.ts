@@ -19,6 +19,7 @@ import { PaymentModule } from './payment/payment.module';
 import { CategoryModule } from './category/category.module';
 import { UnitOfMeasureModule } from './unit-of-measure/unit-of-measure.module';
 import { LanguageModule } from './language/language.module';
+import { ProfileModule } from './profile/profile.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { LanguageModule } from './language/language.module';
     CategoryModule,
     UnitOfMeasureModule,
     LanguageModule,
+    ProfileModule,
   ],
 })
 export class CoreModule {}

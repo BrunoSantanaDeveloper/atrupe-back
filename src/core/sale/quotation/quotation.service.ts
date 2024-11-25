@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -7,8 +8,7 @@ import {
 import { CreateQuotationDto } from './dto/create-quotation.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { FilterQuotationDto } from './dto/filter.dto';
-import { PrismaClient, Quotation, QuotationStatus } from '@prisma/client';
-import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { Quotation, QuotationStatus } from '@prisma/client';
 import { UpdateQuotationDto } from './dto/update-quotation.dto';
 import { DuplicateQuotationDto } from './dto/duplicate-quotation.dto';
 import { QuotationContactType } from './entities/quotation.entity';
@@ -25,80 +25,132 @@ export class QuotationService {
     private prisma: PrismaService,
     private orderService: OrderService,
   ) {}
-
-  async create(dto: CreateQuotationDto) {
-    const prisma = new PrismaClient();
+  async create(createQuotationDto: CreateQuotationDto): Promise<Quotation> {
+    const {
+      description,
+      contactType = 'DIRECT', // Valor padrão
+      companyId,
+      sellerId,
+      clientId,
+      serieId,
+    } = createQuotationDto;
 
     try {
-      const productData = await Promise.all(
-        dto.products.map(async (product) => {
-          const items = await Promise.all(
-            product.items.map(async (item) => {
-              const productItem = await prisma.productItem.findUnique({
-                where: { id: item.productItemId },
-              });
-              if (!productItem) {
-                throw new Error('ProductItem not found');
-              }
-              return {
-                productItemId: item.productItemId,
-                quantity: item.quantity,
-                totalValue: productItem.salePrice * item.quantity,
-              };
-            }),
-          );
-
-          const totalValue = items.reduce(
-            (acc, item) => acc + item.totalValue,
-            0,
-          );
-
-          return {
-            productId: product.productId,
-            quantity: product.quantity,
-            totalValue: totalValue,
-            items: {
-              create: items,
-            },
-          };
-        }),
-      );
-
-      // Criar a cotação
-      return await prisma.quotation.create({
+      // Criação do orçamento no banco
+      const newQuotation = await this.prisma.quotation.create({
         data: {
-          name: dto.name,
-          description: dto.description,
-          sellerId: dto.sellerId,
-          seriesId: dto.serieId,
-          clientId: dto.clientId,
-          companyId: dto.companyId,
-          totalValue: productData.reduce(
-            (acc, product) => acc + product.totalValue,
-            0,
-          ),
-          quotationProduct: {
-            create: productData,
-          },
+          description,
+          contactType,
+          companyId,
+          sellerId,
+          clientId,
+          seriesId: serieId || undefined,
         },
       });
-    } catch (error) {
-      if (error instanceof PrismaClientKnownRequestError) {
-        console.error('Prisma error:', error);
-        throw new HttpException(
-          'Database error',
-          HttpStatus.INTERNAL_SERVER_ERROR,
-        );
+
+      if (serieId) {
+        const series = await this.prisma.saleSeries.findUnique({
+          where: { id: serieId },
+        });
+
+        if (!series) {
+          throw new NotFoundException(`Série com ID ${serieId} não encontrada`);
+        }
+
+        await this.prisma.saleSeries.update({
+          where: {
+            id: serieId,
+          },
+          data: {
+            currentBudgetNumber: { increment: 1 },
+          },
+        });
       }
-      console.error('General error:', error);
-      throw new HttpException(
-        'Internal server error',
-        HttpStatus.INTERNAL_SERVER_ERROR,
+
+      return newQuotation;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error; // Propaga o erro caso a série não seja encontrada
+      }
+      // Adiciona o erro original ao lançar uma exceção com uma mensagem mais detalhada
+      throw new BadRequestException(
+        `Erro ao criar orçamento: ${error.message}`,
       );
-    } finally {
-      await prisma.$disconnect();
     }
   }
+
+  // async createWithItems(dto: CreateQuotationDto) {
+  //   const prisma = new PrismaClient();
+
+  //   try {
+  //     const productData = await Promise.all(
+  //       dto.products.map(async (product) => {
+  //         const items = await Promise.all(
+  //           product.items.map(async (item) => {
+  //             const productItem = await prisma.productItem.findUnique({
+  //               where: { id: item.productItemId },
+  //             });
+  //             if (!productItem) {
+  //               throw new Error('ProductItem not found');
+  //             }
+  //             return {
+  //               productItemId: item.productItemId,
+  //               quantity: item.quantity,
+  //               totalValue: productItem.salePrice * item.quantity,
+  //             };
+  //           }),
+  //         );
+
+  //         const totalValue = items.reduce(
+  //           (acc, item) => acc + item.totalValue,
+  //           0,
+  //         );
+
+  //         return {
+  //           productId: product.productId,
+  //           quantity: product.quantity,
+  //           totalValue: totalValue,
+  //           items: {
+  //             create: items,
+  //           },
+  //         };
+  //       }),
+  //     );
+
+  //     // Criar a cotação
+  //     return await prisma.quotation.create({
+  //       data: {
+  //         clientId: dto.clientId,
+  //         seriesId: dto.serieId,
+  //         description: dto.description,
+  //         sellerId: dto.sellerId,
+  //         companyId: dto.companyId,
+  //         totalValue: productData.reduce(
+  //           (acc, product) => acc + product.totalValue,
+  //           0,
+  //         ),
+  //         quotationProduct: {
+  //           create: productData,
+  //         },
+  //       },
+  //     });
+  //   } catch (error) {
+  //     if (error instanceof PrismaClientKnownRequestError) {
+  //       console.error('Prisma error:', error);
+  //       throw new HttpException(
+  //         'Database error',
+  //         HttpStatus.INTERNAL_SERVER_ERROR,
+  //       );
+  //     }
+  //     console.error('General error:', error);
+  //     throw new HttpException(
+  //       'Internal server error',
+  //       HttpStatus.INTERNAL_SERVER_ERROR,
+  //     );
+  //   } finally {
+  //     await prisma.$disconnect();
+  //   }
+  // }
 
   async findAll(dto: FilterQuotationDto) {
     try {
@@ -250,21 +302,20 @@ export class QuotationService {
     }
 
     const createDto: CreateQuotationDto = {
-      name: quotation.name,
       description: `${quotation.description} (Cópia)`,
       clientId: quotation.clientId,
       companyId: quotation.companyId,
       sellerId: quotation.sellerId,
       serieId: quotation.seriesId,
       contactType: QuotationContactType.DIRECT,
-      products: quotation.quotationProduct.map((product) => ({
-        productId: product.productId,
-        quantity: product.quantity,
-        items: product.items.map((item) => ({
-          productItemId: item.productItemId,
-          quantity: item.quantity,
-        })),
-      })),
+      // products: quotation.quotationProduct.map((product) => ({
+      //   productId: product.productId,
+      //   quantity: product.quantity,
+      //   items: product.items.map((item) => ({
+      //     productItemId: item.productItemId,
+      //     quantity: item.quantity,
+      //   })),
+      // })),
     };
 
     return this.create(createDto);
@@ -325,10 +376,6 @@ export class QuotationService {
 
     const update = {};
 
-    if (updateQuotationDto.name) {
-      update['name'] = updateQuotationDto.name;
-    }
-
     if (updateQuotationDto.description) {
       update['description'] = updateQuotationDto.description;
     }
@@ -341,12 +388,12 @@ export class QuotationService {
       update['sellerId'] = updateQuotationDto.sellerId;
     }
 
-    if (updateQuotationDto.dueDate) {
-      update['dueDate'] = updateQuotationDto.dueDate;
-    }
+    // if (updateQuotationDto.dueDate) {
+    //   update['dueDate'] = updateQuotationDto.dueDate;
+    // }
 
-    if (updateQuotationDto.customerId) {
-      update['clientId'] = updateQuotationDto.customerId;
+    if (updateQuotationDto.clientId) {
+      update['clientId'] = updateQuotationDto.clientId;
     }
 
     if (!Object.keys(update).length) {

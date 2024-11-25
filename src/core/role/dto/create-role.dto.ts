@@ -19,42 +19,4 @@ export class CreateRoleDto {
     required: true,
   })
   sectorId?: string;
-
-  @IsOptional()
-  @ApiProperty({
-    description: 'Porcentagem de comissão (0 a 100)',
-    example: '10.00',
-    required: false,
-  })
-  commission: number;
-  @IsOptional()
-  @ApiProperty({
-    description: 'Porcentagem máxima de desconto (0 a 100)',
-    example: '10.00',
-    required: false,
-  })
-  maxDiscount: number;
-  @IsOptional()
-  @ApiProperty({
-    description: 'Valor mínimo',
-    example: '150.00',
-    required: false,
-  })
-  minValue: number;
-
-  @IsOptional()
-  @ApiProperty({
-    description: 'Pode aprovar pré-cadastro',
-    example: false,
-    required: false,
-  })
-  canApprovePreRegistration: boolean;
-
-  @IsOptional()
-  @ApiProperty({
-    description: 'Pode cancelar vendas',
-    example: false,
-    required: false,
-  })
-  canCancelSale: boolean;
 }
