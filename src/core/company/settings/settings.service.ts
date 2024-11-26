@@ -38,6 +38,7 @@ export class SettingsService {
         where: { type, companyId },
       }),
     ]);
+    console.log(reasons);
 
     return [
       {

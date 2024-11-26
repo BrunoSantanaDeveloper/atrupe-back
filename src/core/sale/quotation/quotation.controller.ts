@@ -9,23 +9,26 @@ import {
   Query,
   BadRequestException,
   Patch,
+  NotFoundException,
+  Put,
+  Req,
 } from '@nestjs/common';
 import { QuotationService } from './quotation.service';
-import { CreateQuotationDto } from './dto/create-quotation.dto';
+import { AddItemDto, CreateQuotationDto } from './dto/create-quotation.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import { FilterQuotationDto } from './dto/filter.dto';
 import { isUUID } from 'class-validator';
 import { DuplicateQuotationDto } from './dto/duplicate-quotation.dto';
-import { UpdateQuotationDto } from './dto/update-quotation.dto';
+import { UpdateItemDto, UpdateQuotationDto } from './dto/update-quotation.dto';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBody,
   ApiParam,
-  ApiQuery,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { QuotationProduct } from '@prisma/client';
 
 const RESOURCE = 'quotation';
 
@@ -45,10 +48,90 @@ export class QuotationController {
   create(@Body() createQuotationDto: CreateQuotationDto) {
     return this.quotationService.create(createQuotationDto);
   }
+  @Post(':id/add-product')
+  @ApiOperation({ summary: 'Adiciona um produto a um orçamento' })
+  @ApiParam({ name: 'id', description: 'ID do orçamento' })
+  async addProductToQuotation(
+    @Param('id') id: string,
+    @Body() addItemDto: AddItemDto,
+  ) {
+    return this.quotationService.addProductToQuotation(id, addItemDto);
+  }
 
+  @Put(':quotationId/update-product/:productId')
+  @ApiOperation({
+    summary: 'Atualiza um produto dentro de um orçamento',
+    description:
+      'Atualiza os detalhes de um produto e seus itens dentro de um orçamento.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Produto atualizado com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Erro na validação dos dados.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Orçamento ou produto não encontrados.',
+  })
+  async updateProduct(
+    @Param('quotationId') quotationId: string,
+    @Param('productId') productId: string,
+    @Body() updateQuotationProductDto: UpdateItemDto,
+  ): Promise<QuotationProduct> {
+    const updatedProduct = await this.quotationService.updateProductInQuotation(
+      quotationId,
+      productId,
+      updateQuotationProductDto,
+    );
+    if (!updatedProduct) {
+      throw new NotFoundException('Produto ou orçamento não encontrados.');
+    }
+    return updatedProduct;
+  }
+
+  @Delete(':quotationId/remove-product/:productId')
+  @ApiOperation({
+    summary: 'Remove um produto de um orçamento',
+    description: 'Remove um produto do orçamento especificado.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Produto removido com sucesso.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Orçamento ou produto não encontrados.',
+  })
+  async deleteProduct(
+    @Param('quotationId') quotationId: string,
+    @Param('productId') productId: string,
+  ): Promise<void> {
+    const isDeleted = await this.quotationService.removeProductFromQuotation(
+      quotationId,
+      productId,
+    );
+    if (!isDeleted) {
+      throw new NotFoundException('Produto ou orçamento não encontrados.');
+    }
+  }
+
+  @Get('quantity')
+  @ApiOperation({
+    summary: 'Obtém a quantidade de todos os status de orçamentos',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de quantidade de orçamentos retornada com sucesso.',
+  })
+  async findAllQuantity(@Req() req) {
+    const companyId = req.user.companyId;
+    return this.quotationService.findAllQuantity(companyId);
+  }
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todos os orçamentos' })
-  @ApiQuery({ name: 'filter', type: FilterQuotationDto, required: false })
   @ApiResponse({
     status: 200,
     description: 'Lista de orçamentos retornada com sucesso.',
@@ -80,7 +163,6 @@ export class QuotationController {
 
     return this.quotationService.duplicate(id, dto);
   }
-
   @Post(':id/approve')
   @ApiOperation({ summary: 'Aprova um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })

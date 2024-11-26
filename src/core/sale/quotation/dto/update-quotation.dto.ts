@@ -1,11 +1,13 @@
 import { PartialType, OmitType } from '@nestjs/mapped-types';
 import {
+  AddItemDto,
   CreateQuotationDto,
   QuotationProductDto,
   QuotationProductItemDto,
 } from './create-quotation.dto';
 import {
   IsEnum,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -98,4 +100,32 @@ export class UpdateQuotationDto extends PartialType(CreateQuotationDto) {
     required: false,
   })
   description?: string;
+}
+
+export class UpdateItemDto extends PartialType(AddItemDto) {
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Nota sobre o orçamento (opcional para atualização)',
+    example: 'Este é um orçamento de exemplo.',
+    required: false,
+  })
+  notes?: string;
+  @IsOptional()
+  @IsNumber()
+  @ApiProperty({
+    description: 'Valor do disconto (opcional para ataulização)',
+    example: 100,
+    required: false,
+  })
+  discount?: number;
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description:
+      'Tipo do disconto (PERCENT ou VALUE) (opcional para ataulização)',
+    example: 'PERCENT',
+    required: false,
+  })
+  discountType?: string;
 }

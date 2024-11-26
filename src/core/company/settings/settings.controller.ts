@@ -6,9 +6,9 @@ import {
   Param,
   Delete,
   UseGuards,
-  Put,
   Query,
   Req,
+  Patch,
 } from '@nestjs/common';
 import { SettingsService } from './settings.service';
 import { CreateReasonDto } from './dto/create-setting.dto';
@@ -23,7 +23,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 
-const RESOURCE = 'company/settings';
+const RESOURCE = 'settings/company';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 @Controller(RESOURCE)
@@ -39,24 +39,6 @@ export class SettingsController {
     createReasonDto.companyId = req.user.companyId;
     return this.settingsService.create(createReasonDto);
   }
-
-  @ApiOperation({ summary: 'Editar motivo de rejeição ou cancelamento' })
-  @ApiResponse({ status: 200, description: 'Motivo atualizado com sucesso' })
-  @ApiResponse({ status: 400, description: 'Requisição inválida' })
-  @ApiParam({ name: 'id', description: 'ID do motivo' })
-  @Put(':id')
-  update(@Param('id') id: string, @Body() updateReasonDto: UpdateReasonDto) {
-    return this.settingsService.update(id, updateReasonDto);
-  }
-
-  @ApiOperation({ summary: 'Remover motivo de rejeição ou cancelamento' })
-  @ApiResponse({ status: 200, description: 'Motivo removido com sucesso' })
-  @ApiParam({ name: 'id', description: 'ID do motivo' })
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.settingsService.remove(id);
-  }
-
   @ApiOperation({
     summary: 'Listar motivos de rejeição ou cancelamento por tipo',
   })
@@ -69,6 +51,24 @@ export class SettingsController {
   @Get()
   async findAll(@Query('type') type: 'REJECTION' | 'CANCELLATION', @Req() req) {
     const companyId = req.user.companyId;
+
     return await this.settingsService.findAllByType(type, companyId);
+  }
+
+  @ApiOperation({ summary: 'Editar motivo de rejeição ou cancelamento' })
+  @ApiResponse({ status: 200, description: 'Motivo atualizado com sucesso' })
+  @ApiResponse({ status: 400, description: 'Requisição inválida' })
+  @ApiParam({ name: 'id', description: 'ID do motivo' })
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() updateReasonDto: UpdateReasonDto) {
+    return this.settingsService.update(id, updateReasonDto);
+  }
+
+  @ApiOperation({ summary: 'Remover motivo de rejeição ou cancelamento' })
+  @ApiResponse({ status: 200, description: 'Motivo removido com sucesso' })
+  @ApiParam({ name: 'id', description: 'ID do motivo' })
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.settingsService.remove(id);
   }
 }

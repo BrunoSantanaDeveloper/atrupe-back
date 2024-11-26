@@ -139,7 +139,6 @@ model Role {
 
   employees Employee[]
 
-
   userRole   UserRole[]
   rolePolicy RolePolicy[]
 
@@ -151,8 +150,8 @@ model SellerProfile {
   name     String  @unique
   isActive Boolean @default(true)
 
-  companyId                 String
-  company Company @relation(fields: [companyId], references: [id])
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
 
   employees Employee[]
 
@@ -161,7 +160,7 @@ model SellerProfile {
   minValue                  Float?
   canApprovePreRegistration Boolean @default(false)
   canCancelSale             Boolean @default(false)
-  
+
   @@map("seller_profile")
 }
 
@@ -775,27 +774,45 @@ model QuotationProduct {
   product   Product @relation(fields: [productId], references: [id])
   productId String
 
-  quantity    Int    @default(1)
-  description String
+  quantity             Int     @default(1)
+  description          String?
+  technicalDescription String?
+  imageUrl             String?
+  totalValue           Float?
 
-  totalValue Float?
-
-  items QuotationProductItem[]
+  items                QuotationProductItem[]
+  allowEditDescription Boolean                @default(true)
+  allowEditValues      Boolean                @default(true)
 
   @@id([quotationId, productId])
   @@map("quotation_products")
 }
 
 model QuotationProductItem {
-  quotationId String
-  productId   String
-
+  quotationId      String
+  productId        String
   quotationProduct QuotationProduct @relation(fields: [quotationId, productId], references: [quotationId, productId])
 
   productItemId String
   productItem   ProductItem @relation(fields: [productItemId], references: [id])
 
-  quantity Int @default(1)
+  name            String
+  quantity        Int           @default(1)
+  unitOfMeasureId String
+  unitOfMeasure   UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
+  width           Float? //largura
+  height          Float? //altura
+  length          Float? //comprimento
+  weight          Float? //peso
+  volume          Float? //volume
+  distance        Float? //distancia
+  duration        Float? //duração (em dias)
+  notes           String?
+  discount        Float?
+  discountType    String?
+
+  unitCost  Float?
+  salePrice Float?
 
   totalValue Float?
 
@@ -835,14 +852,10 @@ model Product {
   isActive   Boolean @default(true)
   isStandard Boolean @default(false)
 
-  unitOfMeasureId String?
-  unitOfMeasure   UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id])
-  unitCost        Float?
-  salePrice       Float?
   technicalDescription String?
-  allowEditValues Boolean @default(true)
+  allowEditValues      Boolean @default(true)
   allowEditDescription Boolean @default(true)
-  imageUrl String?
+  imageUrl             String?
 
   items ProductItem[]
 
@@ -870,9 +883,16 @@ model ProductItem {
 
   unitOfMeasureId String
   unitOfMeasure   UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
+  width           Float? //largura
+  height          Float? //altura
+  length          Float? //comprimento
+  weight          Float? //peso
+  volume          Float? //volume
+  distance        Float? //distancia
+  duration        Float? //duração (em dias)
 
-  unitCost             Float
-  salePrice            Float
+  unitCost             Float?
+  salePrice            Float?
   QuotationProductItem QuotationProductItem[]
 
   @@map("product_items")
@@ -916,13 +936,12 @@ model UnitOfMeasure {
   code        String  @unique
   description String?
 
-  isActive Boolean @default(true)
-
-  products     Product[]
+  isActive     Boolean       @default(true)
   productItems ProductItem[]
 
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
+  companyId            String
+  company              Company                @relation(fields: [companyId], references: [id])
+  QuotationProductItem QuotationProductItem[]
 
   @@map("unit_measures")
 }

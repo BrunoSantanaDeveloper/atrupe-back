@@ -64,6 +64,76 @@ export class CreateProductItemDto {
     required: true,
   })
   salePrice: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  @ApiProperty({
+    description: 'Largura do item',
+    example: 15.5,
+    required: false,
+  })
+  width?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  @ApiProperty({
+    description: 'Altura do item',
+    example: 20.0,
+    required: false,
+  })
+  height?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  @ApiProperty({
+    description: 'Comprimento do item',
+    example: 30.0,
+    required: false,
+  })
+  length?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  @ApiProperty({
+    description: 'Peso do item',
+    example: 5.0,
+    required: false,
+  })
+  weight?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  @ApiProperty({
+    description: 'Volume do item',
+    example: 50.0,
+    required: false,
+  })
+  volume?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  @ApiProperty({
+    description: 'Distância relacionada ao item',
+    example: 100.0,
+    required: false,
+  })
+  distance?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  @ApiProperty({
+    description: 'Duração relacionada ao item (em dias)',
+    example: 7.0,
+    required: false,
+  })
+  duration?: number;
 }
 
 export class CreateProductDto {

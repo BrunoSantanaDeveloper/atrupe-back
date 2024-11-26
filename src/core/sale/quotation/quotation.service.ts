@@ -5,14 +5,19 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CreateQuotationDto } from './dto/create-quotation.dto';
+import { AddItemDto, CreateQuotationDto } from './dto/create-quotation.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { FilterQuotationDto } from './dto/filter.dto';
-import { Quotation, QuotationStatus } from '@prisma/client';
-import { UpdateQuotationDto } from './dto/update-quotation.dto';
-import { DuplicateQuotationDto } from './dto/duplicate-quotation.dto';
-import { QuotationContactType } from './entities/quotation.entity';
+import { Prisma, Quotation, QuotationStatus } from '@prisma/client';
+import { UpdateItemDto, UpdateQuotationDto } from './dto/update-quotation.dto';
+
 import { OrderService } from '../order/order.service';
+import {
+  DuplicateQuotationDto,
+  DuplicateQuotationProductDto,
+  DuplicateQuotationProductItemDto,
+} from './dto/duplicate-quotation.dto';
+import { QuotationContactType } from './entities/quotation.entity';
 
 export interface QuotationGroup {
   date: string;
@@ -32,7 +37,7 @@ export class QuotationService {
       companyId,
       sellerId,
       clientId,
-      serieId,
+      seriesId,
     } = createQuotationDto;
 
     try {
@@ -44,22 +49,24 @@ export class QuotationService {
           companyId,
           sellerId,
           clientId,
-          seriesId: serieId || undefined,
+          seriesId: seriesId || undefined,
         },
       });
 
-      if (serieId) {
+      if (seriesId) {
         const series = await this.prisma.saleSeries.findUnique({
-          where: { id: serieId },
+          where: { id: seriesId },
         });
 
         if (!series) {
-          throw new NotFoundException(`Série com ID ${serieId} não encontrada`);
+          throw new NotFoundException(
+            `Série com ID ${seriesId} não encontrada`,
+          );
         }
 
         await this.prisma.saleSeries.update({
           where: {
-            id: serieId,
+            id: seriesId,
           },
           data: {
             currentBudgetNumber: { increment: 1 },
@@ -75,6 +82,335 @@ export class QuotationService {
       // Adiciona o erro original ao lançar uma exceção com uma mensagem mais detalhada
       throw new BadRequestException(
         `Erro ao criar orçamento: ${error.message}`,
+      );
+    }
+  }
+
+  async addProductToQuotation(quotationId: string, data: AddItemDto) {
+    const quotation = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+    });
+    if (!quotation) {
+      throw new NotFoundException('Orçamento não encontrado');
+    }
+
+    // Busca o produto e verifica se ele existe
+    const product = await this.prisma.product.findUnique({
+      where: { id: data.productId },
+      include: { items: true }, // Inclui os itens do produto
+    });
+    if (!product) {
+      throw new NotFoundException('Produto não encontrado');
+    }
+    // Verifica se o front enviou as propriedades que podem ser editadas
+    const hasEditableFields =
+      data.technicalDescription !== undefined ||
+      data.items.some(
+        (item) => item.unitCost !== undefined || item.salePrice !== undefined,
+      );
+    if (
+      data.technicalDescription !== undefined &&
+      !product.allowEditDescription &&
+      data.technicalDescription !== product.technicalDescription
+    ) {
+      throw new BadRequestException(
+        `Descrição técnica não pode ser editada para o produto ${product.name}`,
+      );
+    }
+
+    // Validação de `allowEditValues` (apenas se algum campo editável for enviado)
+    if (
+      hasEditableFields &&
+      !product.allowEditValues &&
+      data.items.some((item) => {
+        const originalItem = product.items.find(
+          (pItem) => pItem.id === item.id,
+        );
+        if (!originalItem) {
+          throw new BadRequestException(
+            `Item ${item.id} não encontrado no produto`,
+          );
+        }
+        // Verifica campos de valores
+        return (
+          (item.unitCost !== undefined &&
+            item.unitCost !== originalItem.unitCost) ||
+          (item.salePrice !== undefined &&
+            item.salePrice !== originalItem.salePrice)
+        );
+      })
+    ) {
+      throw new BadRequestException(
+        `Valores não podem ser editados para o produto ${product.name}`,
+      );
+    }
+    const totalValue = data.items.reduce((total, item) => {
+      const originalItem = product.items.find((pItem) => pItem.id === item.id);
+      if (!originalItem) {
+        throw new BadRequestException(
+          `Item ${item.id} não encontrado no produto`,
+        );
+      }
+      return (
+        total + item.quantity * (item.salePrice || originalItem.salePrice || 0)
+      );
+    }, 0);
+
+    // Cria o QuotationProduct
+    await this.prisma.quotationProduct.create({
+      data: {
+        quotationId,
+        productId: product.id,
+        quantity: data.quantity,
+        description: data.description || undefined,
+        technicalDescription:
+          data.technicalDescription || product.technicalDescription,
+        imageUrl: data.imageUrl || product.imageUrl,
+        totalValue, // Valor total inicial
+        allowEditDescription: product.allowEditDescription,
+        allowEditValues: product.allowEditValues,
+      },
+    });
+
+    // Cria os QuotationProductItems
+    const quotationProductItems = data.items.map((item) => {
+      const originalItem = product.items.find((pItem) => pItem.id === item.id);
+      if (!originalItem) {
+        throw new BadRequestException(
+          `Item ${item.id} não encontrado no produto`,
+        );
+      }
+
+      return {
+        quotationId,
+        productId: product.id,
+        productItemId: originalItem.id,
+        name: originalItem.name,
+        unitOfMeasureId: item.unitOfMeasureId,
+        width: item.width || originalItem.width,
+        height: item.height || originalItem.height,
+        length: item.length || originalItem.length,
+        weight: item.weight || originalItem.weight,
+        volume: item.volume || originalItem.volume,
+        distance: item.distance || originalItem.distance,
+        duration: item.duration || originalItem.duration,
+        unitCost: item.unitCost || originalItem.unitCost,
+        salePrice: item.salePrice || originalItem.salePrice,
+        quantity: item.quantity,
+        totalValue:
+          item.quantity * (item.salePrice || originalItem.salePrice || 0),
+      };
+    });
+
+    await this.prisma.quotationProductItem.createMany({
+      data: quotationProductItems,
+    });
+
+    return this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      include: {
+        quotationProduct: { include: { items: true } },
+      },
+    });
+  }
+
+  async updateProductInQuotation(
+    quotationId: string,
+    productId: string,
+    data: UpdateItemDto,
+  ) {
+    try {
+      // Busca o orçamento e o produto
+      const quotation = await this.prisma.quotation.findUnique({
+        where: { id: quotationId },
+        include: {
+          products: true,
+          quotationProduct: {
+            where: { productId },
+            include: {
+              items: true,
+            },
+          },
+        },
+      });
+
+      if (!quotation) {
+        throw new NotFoundException(`Orçamento não encontrado`);
+      }
+
+      const product = await this.prisma.product.findUnique({
+        where: { id: productId },
+        include: {
+          items: true,
+        },
+      });
+
+      if (!product) {
+        throw new NotFoundException(`Produto não encontrado`);
+      }
+
+      // Validação: technicalDescription e campos editáveis
+      const hasEditableFields =
+        data.technicalDescription !== undefined ||
+        (data.items?.some(
+          (item) => item.unitCost !== undefined || item.salePrice !== undefined,
+        ) ??
+          false);
+
+      if (
+        data.technicalDescription !== undefined &&
+        !product.allowEditDescription &&
+        data.technicalDescription !== product.technicalDescription
+      ) {
+        throw new BadRequestException(
+          `Descrição técnica não pode ser editada para o produto ${product.name}`,
+        );
+      }
+
+      if (
+        hasEditableFields &&
+        !product.allowEditValues &&
+        (data.items?.some((item) => {
+          const originalItem = product.items.find(
+            (pItem) => pItem.id === item.id,
+          );
+          if (!originalItem) {
+            throw new BadRequestException(
+              `Item ${item.id} não encontrado no produto`,
+            );
+          }
+          return (
+            (item.unitCost !== undefined &&
+              item.unitCost !== originalItem.unitCost) ||
+            (item.salePrice !== undefined &&
+              item.salePrice !== originalItem.salePrice)
+          );
+        }) ??
+          false)
+      ) {
+        throw new BadRequestException(
+          `Valores não podem ser editados para o produto ${product.name}`,
+        );
+      }
+
+      // Atualiza o produto dentro do orçamento
+      const updatedQuotationProduct = await this.prisma.quotationProduct.update(
+        {
+          where: { quotationId_productId: { quotationId, productId } },
+          data: {
+            description: data.description || undefined,
+            quantity: data.quantity,
+            imageUrl: data.imageUrl || undefined,
+            technicalDescription: data.technicalDescription || undefined,
+            totalValue:
+              data.quantity *
+              product.items.reduce(
+                (acc, item) => acc + (item.salePrice || 0),
+                0,
+              ),
+            ...(data.items && {
+              items: {
+                update: data.items.map((item) => ({
+                  where: {
+                    quotationId_productId_productItemId: {
+                      quotationId,
+                      productId,
+                      productItemId: item.id,
+                    },
+                  },
+                  data: {
+                    unitOfMeasureId: item.unitOfMeasureId,
+                    quantity: item.quantity,
+                    width: item.width,
+                    height: item.height,
+                    length: item.length,
+                    weight: item.weight,
+                    volume: item.volume,
+                    distance: item.distance,
+                    duration: item.duration,
+                    unitCost: item.unitCost,
+                    salePrice: item.salePrice,
+                    totalValue: item.quantity * item.salePrice,
+                  },
+                })),
+              },
+            }),
+          },
+        },
+      );
+
+      return updatedQuotationProduct;
+    } catch (error) {
+      throw new BadRequestException(
+        'Failed to update product in quotation',
+        error.message,
+      );
+    }
+  }
+
+  async removeProductFromQuotation(quotationId: string, productId: string) {
+    try {
+      const quotation = await this.prisma.quotation.findUnique({
+        where: { id: quotationId },
+        include: {
+          quotationProduct: {
+            where: {
+              productId: productId,
+            },
+            include: {
+              items: true,
+            },
+          },
+        },
+      });
+
+      if (!quotation) {
+        throw new NotFoundException(`Orçamento não encontrado`);
+      }
+
+      const quotationProduct = quotation.quotationProduct[0];
+
+      if (!quotationProduct) {
+        throw new NotFoundException(
+          `Produto ${productId} não encontrado no orçamento ${quotationId}.`,
+        );
+      }
+
+      const productItemIds = quotationProduct.items?.map(
+        (item) => item.productItemId,
+      );
+
+      if (productItemIds.length > 0) {
+        await this.prisma.quotationProductItem.deleteMany({
+          where: {
+            quotationId,
+            productId,
+            productItemId: {
+              in: productItemIds,
+            },
+          },
+        });
+      }
+
+      await this.prisma.quotationProduct.delete({
+        where: { quotationId_productId: { quotationId, productId } },
+      });
+
+      return {
+        message: 'Produto removido com sucesso do orçamento',
+        deletedItems: productItemIds.length,
+      };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') {
+          throw new NotFoundException(
+            `Produto no orçamento não encontrado. Talvez ele já tenha sido removido.`,
+          );
+        }
+      }
+      throw new BadRequestException(
+        'Erro ao remover o produto do orçamento',
+        error.message,
       );
     }
   }
@@ -151,6 +487,27 @@ export class QuotationService {
   //     await prisma.$disconnect();
   //   }
   // }
+
+  async findAllQuantity(companyId: string) {
+    const result = await this.prisma.quotation.groupBy({
+      by: ['status'],
+      where: { companyId },
+      _count: true,
+    });
+
+    const total = result.reduce((acc, cur) => acc + cur._count, 0);
+
+    return {
+      TOTAL: total,
+      ...result.reduce(
+        (acc, cur) => {
+          acc[cur.status] = cur._count;
+          return acc;
+        },
+        {} as { [K in QuotationStatus]: number },
+      ),
+    };
+  }
 
   async findAll(dto: FilterQuotationDto) {
     try {
@@ -279,17 +636,15 @@ export class QuotationService {
 
   async duplicate(
     quotationId: string,
-    dto: DuplicateQuotationDto,
+    duplicateDto: DuplicateQuotationDto,
   ): Promise<Quotation> {
-    // TODO: implementar o controle de preço
-    console.log('Duplicate price:', dto.price);
-
+    // Buscar o orçamento original, incluindo os produtos e itens
     const quotation = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
       include: {
         quotationProduct: {
           include: {
-            items: true,
+            items: true, // Inclui os itens dos produtos
           },
         },
       },
@@ -301,24 +656,84 @@ export class QuotationService {
       );
     }
 
+    // Criar o DTO para o novo orçamento com as possíveis alterações
     const createDto: CreateQuotationDto = {
-      description: `${quotation.description} (Cópia)`,
-      clientId: quotation.clientId,
-      companyId: quotation.companyId,
-      sellerId: quotation.sellerId,
-      serieId: quotation.seriesId,
-      contactType: QuotationContactType.DIRECT,
-      // products: quotation.quotationProduct.map((product) => ({
-      //   productId: product.productId,
-      //   quantity: product.quantity,
-      //   items: product.items.map((item) => ({
-      //     productItemId: item.productItemId,
-      //     quantity: item.quantity,
-      //   })),
-      // })),
+      description:
+        duplicateDto.description || `${quotation.description} (Cópia)`, // Modifica a descrição, se fornecida
+      clientId: duplicateDto.clientId || quotation.clientId, // Mantém o clientId original, a menos que fornecido
+      contactType: quotation.contactType as QuotationContactType, // Mantém o contactType original
+      totalValue: quotation.totalValue, // Mantém o totalValue original
+      sellerId: quotation.sellerId, // Mantém o sellerId original
+      seriesId: quotation.seriesId, // Mantém o seriesId original
+      companyId: quotation.companyId, // Mantém o companyId original
     };
 
-    return this.create(createDto);
+    // Criar o novo orçamento
+    const newQuotation = await this.prisma.quotation.create({
+      data: createDto,
+    });
+
+    // Criar os produtos e itens duplicados
+    for (const product of quotation.quotationProduct) {
+      // Criar o produto duplicado
+      const productDto: DuplicateQuotationProductDto = {
+        description: product.description,
+        quantity: product.quantity,
+        technicalDescription: product.technicalDescription,
+        imageUrl: product.imageUrl,
+        totalValue: product.totalValue,
+        allowEditDescription: product.allowEditDescription,
+        allowEditValues: product.allowEditValues,
+        quotationId: newQuotation.id,
+        productId: product.productId,
+      };
+
+      const newProduct = await this.prisma.quotationProduct.create({
+        data: productDto,
+      });
+
+      // Criar os itens do produto duplicado
+      for (const item of product.items) {
+        const itemDto: DuplicateQuotationProductItemDto = {
+          quotationId: newQuotation.id, // Certifique-se de que `quotationId` está disponível no contexto
+          productId: newProduct.productId, // Certifique-se de que `productId` está disponível no contexto
+          productItemId: item.productItemId, // Use o id do item específico
+          name: item.name,
+          quantity: item.quantity,
+          unitOfMeasureId: item.unitOfMeasureId,
+          width: item.width,
+          height: item.height,
+          length: item.length,
+          weight: item.weight,
+          volume: item.volume,
+          distance: item.distance,
+          duration: item.duration,
+          notes: item.notes,
+          discount: item.discount,
+          discountType: item.discountType,
+          unitCost: item.unitCost,
+          salePrice: item.salePrice,
+          totalValue: item.totalValue,
+        };
+
+        try {
+          await this.prisma.quotationProductItem.create({
+            data: itemDto,
+          });
+        } catch (error) {
+          console.error(
+            'Error creating quotation product item:',
+            error.message,
+          );
+          throw new HttpException(
+            'Internal server error',
+            HttpStatus.INTERNAL_SERVER_ERROR,
+          );
+        }
+      }
+    }
+
+    return newQuotation; // Retorna o novo orçamento criado
   }
 
   async approve(quotationId: string): Promise<Quotation> {

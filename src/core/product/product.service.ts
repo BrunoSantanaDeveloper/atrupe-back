@@ -15,6 +15,13 @@ export class ProductService {
         unitOfMeasureId: item.unitOfMeasureId,
         unitCost: item.unitCost,
         salePrice: item.salePrice,
+        width: item.width || undefined,
+        height: item.height || undefined,
+        length: item.length || undefined,
+        weight: item.weight || undefined,
+        volume: item.volume || undefined,
+        distance: item.distance || undefined,
+        duration: item.duration || undefined,
       }));
 
       // Criação do produto com tratamento para inserção condicional de itens
@@ -116,6 +123,13 @@ export class ProductService {
         unitOfMeasureId: item.unitOfMeasureId,
         unitCost: item.unitCost,
         salePrice: item.salePrice,
+        width: item.width || undefined,
+        height: item.height || undefined,
+        length: item.length || undefined,
+        weight: item.weight || undefined,
+        volume: item.volume || undefined,
+        distance: item.distance || undefined,
+        duration: item.duration || undefined,
       }));
 
       return this.prisma.product.update({
