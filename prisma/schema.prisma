@@ -839,6 +839,10 @@ model Product {
   unitOfMeasure   UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id])
   unitCost        Float?
   salePrice       Float?
+  technicalDescription String?
+  allowEditValues Boolean @default(true)
+  allowEditDescription Boolean @default(true)
+  imageUrl String?
 
   items ProductItem[]
 

@@ -27,9 +27,10 @@ export class ProductService {
           companyId: createProductDto.companyId || undefined,
           categoryId: createProductDto.categoryId || undefined,
           sectorId: createProductDto.sectorId || undefined,
-          unitOfMeasureId: createProductDto.unitOfMeasureId || null,
-          unitCost: createProductDto.unitCost || undefined,
-          salePrice: createProductDto.salePrice || undefined,
+          technicalDescription:
+            createProductDto.technicalDescription || undefined,
+          allowEditDescription: createProductDto.allowEditDescription,
+          allowEditValues: createProductDto.allowEditDescription,
           items: {
             create: items,
           },
@@ -38,7 +39,6 @@ export class ProductService {
 
       return this.findOne(created.id);
     } catch (error) {
-      // Lança uma exceção se algo der errado durante a criação do produto
       throw new BadRequestException('Failed to create product', error.message);
     }
   }
@@ -69,19 +69,23 @@ export class ProductService {
       const products = await this.prisma.product.findMany({
         where: where,
         include: {
-          items: true,
+          items: {
+            orderBy: {
+              name: 'asc',
+            },
+          },
         },
         take: +filter.limit,
         skip: (+filter.page - 1) * +filter.limit,
+        orderBy: { name: 'asc' },
       });
-
       return {
         data: products,
         total: await this.prisma.product.count({ where }),
       };
-    } catch (e) {
-      console.error(e);
-      throw e;
+    } catch (error) {
+      console.error(error.message);
+      throw error;
     }
   }
 
@@ -89,7 +93,11 @@ export class ProductService {
     return this.prisma.product.findUnique({
       where: { id },
       include: {
-        items: true,
+        items: {
+          orderBy: {
+            name: 'asc',
+          },
+        },
       },
     });
   }
@@ -120,9 +128,10 @@ export class ProductService {
           companyId: updateProductDto.companyId || undefined,
           categoryId: updateProductDto.categoryId || undefined,
           sectorId: updateProductDto.sectorId || undefined,
-          unitOfMeasureId: updateProductDto.unitOfMeasureId || null,
-          unitCost: updateProductDto.unitCost || undefined,
-          salePrice: updateProductDto.salePrice || undefined,
+          technicalDescription:
+            updateProductDto.technicalDescription || undefined,
+          allowEditDescription: updateProductDto.allowEditDescription,
+          allowEditValues: updateProductDto.allowEditDescription,
           items: {
             upsert: items?.map((item) => ({
               where: { id: item.id },
@@ -137,7 +146,28 @@ export class ProductService {
     }
   }
 
-  remove(id: string) {
-    return this.prisma.product.delete({ where: { id } });
+  async remove(id: string) {
+    try {
+      const product = await this.findOne(id);
+      if (!product) {
+        throw new BadRequestException('Product not found');
+      }
+      return this.prisma.product.delete({ where: { id } });
+    } catch (error) {
+      throw new BadRequestException('Failed to delete product', error.message);
+    }
+  }
+
+  async removeItem(id: string) {
+    try {
+      return this.prisma.productItem.delete({
+        where: { id },
+      });
+    } catch (error) {
+      throw new BadRequestException(
+        'Failed to delete product item',
+        error.message,
+      );
+    }
   }
 }

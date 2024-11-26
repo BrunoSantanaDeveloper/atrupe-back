@@ -10,7 +10,7 @@ import {
   IsNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateProductItemDto {
   @IsUUID()
@@ -93,28 +93,21 @@ export class CreateProductDto {
   code: string;
 
   @IsBoolean()
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Indica se o produto está ativo',
     example: true,
-    required: true,
-  })
-  isActive: boolean = true;
-
-  @IsBoolean()
-  @ApiProperty({
-    description: 'Indica se o produto é padrão',
-    example: false,
-    required: true,
-  })
-  isStandard: boolean = false;
-
-  @IsUUID()
-  @IsOptional()
-  @ApiProperty({
-    description: 'ID da empresa associada ao produto',
-    example: '123e4567-e89b-12d3-a456-426614174000',
     required: false,
   })
+  isActive?: boolean = true;
+
+  @IsBoolean()
+  @ApiPropertyOptional({
+    description: 'Indica se o produto é padrão',
+    example: false,
+    required: false,
+  })
+  isStandard?: boolean = false;
+
   companyId?: string;
 
   @IsUUID()
@@ -135,34 +128,29 @@ export class CreateProductDto {
   })
   sectorId: string;
 
-  @IsUUID()
-  @IsOptional()
-  @ApiProperty({
-    description: 'ID da unidade de medida do produto',
-    example: '123e4567-e89b-12d3-a456-426614174000',
+  @IsBoolean()
+  @ApiPropertyOptional({
+    description: 'Indica se é possível editar valores',
+    example: true,
     required: false,
   })
-  unitOfMeasureId?: string;
+  allowEditValues: boolean = true;
 
-  @IsNumber()
-  @IsOptional()
-  @Min(0)
-  @ApiProperty({
-    description: 'Custo unitário do produto',
-    example: 100.0,
+  @IsBoolean()
+  @ApiPropertyOptional({
+    description: 'Indica se é possível editar descrição',
+    example: true,
     required: false,
   })
-  unitCost?: number;
+  allowEditDescription: boolean = true;
 
-  @IsNumber()
-  @IsOptional()
-  @Min(0)
-  @ApiProperty({
-    description: 'Preço de venda do produto',
-    example: 200.0,
+  @IsString()
+  @ApiPropertyOptional({
+    description: 'Descrição  técnica do produto',
+    example: 'Descrição técnica do produto',
     required: false,
   })
-  salePrice?: number;
+  technicalDescription?: string;
 
   @IsArray()
   @ValidateNested({ each: true })

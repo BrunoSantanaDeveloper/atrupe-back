@@ -8,6 +8,7 @@ import {
   Query,
   UseGuards,
   Patch,
+  Req,
 } from '@nestjs/common';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -20,13 +21,14 @@ import {
   ApiResponse,
   ApiBody,
   ApiParam,
-  ApiQuery,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 
 const RESOURCE = 'product';
 
 @ApiTags('Produtos')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(RESOURCE)
 export class ProductController {
   constructor(private readonly productService: ProductService) {}
@@ -41,20 +43,21 @@ export class ProductController {
     status: 201,
     description: 'Produto criado com sucesso.',
   })
-  create(@Body() createProductDto: CreateProductDto) {
+  create(@Req() req, @Body() createProductDto: CreateProductDto) {
+    createProductDto.companyId = req.user.companyId;
     return this.productService.create(createProductDto);
   }
 
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todos os produtos' })
-  @ApiQuery({ name: 'filter', type: ProductFilterDTO, required: false })
   @ApiResponse({
     status: 200,
     description: 'Lista de produtos retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() filter: ProductFilterDTO) {
-    return this.productService.findAll(filter);
+  async findAll(@Req() req, @Query() filter: ProductFilterDTO) {
+    filter.companyId = req.user.companyId;
+    return await this.productService.findAll(filter);
   }
 
   @Get(':id')
@@ -104,5 +107,24 @@ export class ProductController {
   })
   remove(@Param('id') id: string) {
     return this.productService.remove(id);
+  }
+
+  @Delete('item/:id')
+  @ApiOperation({ summary: 'Remove um item de um produto pelo ID' })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    description: 'ID do item de um produto',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Item de Produto removido com sucesso.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Item de Produto não encontrado.',
+  })
+  async removeItem(@Param('id') id: string) {
+    return this.productService.removeItem(id);
   }
 }
