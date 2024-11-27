@@ -8,6 +8,7 @@ import {
   Query,
   UseGuards,
   BadRequestException,
+  Req,
 } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -20,13 +21,14 @@ import {
   ApiResponse,
   ApiBody,
   ApiParam,
-  ApiQuery,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 
 const RESOURCE = 'order';
 
 @ApiTags('Ordem de serviço')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(`sale/${RESOURCE}`)
 export class OrderController {
   constructor(private readonly orderService: OrderService) {}
@@ -47,14 +49,27 @@ export class OrderController {
 
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todas as ordens de serviço' })
-  @ApiQuery({ name: 'filter', type: FilterOrderDto, required: false })
   @ApiResponse({
     status: 200,
     description: 'Lista de ordens de serviço retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() query: FilterOrderDto) {
+  findAll(@Req() req, @Query() query: FilterOrderDto) {
+    query.companyId = req.user.companyId;
     return this.orderService.findAll(query);
+  }
+
+  @Get('quantity')
+  @ApiOperation({
+    summary: 'Obtém a quantidade de todos os status de orçamentos',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de quantidade de orçamentos retornada com sucesso.',
+  })
+  async findAllQuantity(@Req() req) {
+    const companyId = req.user.companyId;
+    return this.orderService.findAllQuantity(companyId);
   }
 
   @Post(':id/cancel')

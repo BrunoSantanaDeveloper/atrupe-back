@@ -650,9 +650,9 @@ model PaymentCondition {
   createdAt DateTime @default(now())
   isActive  Boolean  @default(true)
 
-  name                String
-  acceptInstallments  Boolean                  @default(false)
-  costType            PaymentConditionCostType
+  name               String
+  acceptInstallments Boolean                  @default(false)
+  costType           PaymentConditionCostType
 
   minInstallments Int?
   maxInstallments Int?
@@ -836,6 +836,7 @@ enum OrderStatus {
   IN_PRODUCTION
   DELIVERY
   COMPLETED
+  FINISHED
   CANCELED
 }
 
@@ -849,8 +850,9 @@ model Order {
   quotationId String
   quotation   Quotation @relation(fields: [quotationId], references: [id])
 
-  status   OrderStatus @default(IN_PRODUCTION)
-  isActive Boolean     @default(true)
+  status           OrderStatus        @default(IN_PRODUCTION)
+  isActive         Boolean            @default(true)
+  DeliverySchedule DeliverySchedule[]
 
   @@index([id])
   @@map("orders")
@@ -985,4 +987,54 @@ model Reasons {
 enum ReasonType {
   REJECTION
   CANCELLATION
+}
+
+enum DeliveryScheduleStatus {
+  IN_PRODUCTION
+  DELIVERING
+  DONE
+}
+
+model DeliverySchedule {
+  id String @id @default(uuid())
+
+  status             DeliveryScheduleStatus
+  completed          Boolean                @default(false)
+  notes              String? // Notas adicionais
+  scheduledDate      DateTime // Data de entrega agendada
+  addScheduleTime    Boolean                @default(false)
+  pendingDescription String? // Descrição do pendente
+
+  orderId String // Relacionamento com Order
+  order   Order  @relation(fields: [orderId], references: [id])
+
+  productionStages ProductionStage[] // Estágios de produção relacionados
+
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+}
+
+enum ProductionStageStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  PAUSED
+  PENDING
+  DONE
+  CANCELED
+  WAITING_PRODUCTION
+  OVERDUE
+}
+
+model ProductionStage {
+  id         String                @id @default(cuid())
+  stage      String
+  status     ProductionStageStatus
+  prevStatus String?
+  scheduleId String
+
+  schedule DeliverySchedule @relation(fields: [scheduleId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

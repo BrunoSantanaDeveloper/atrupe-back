@@ -52,11 +52,23 @@ export class OrderService {
       let where: any = {};
 
       if (dto.companyId) {
-        where = { ...where, companyId: dto.companyId };
+        where = {
+          ...where,
+          quotation: {
+            ...where.quotation,
+            companyId: dto.companyId,
+          },
+        };
       }
 
       if (dto.search) {
-        where = { ...where, quotation: { name: { contains: dto.search } } };
+        where = {
+          ...where,
+          quotation: {
+            ...where.quotation,
+            name: { contains: dto.search },
+          },
+        };
       }
 
       if (dto.status) {
@@ -64,16 +76,36 @@ export class OrderService {
       }
 
       if (dto.sellerId) {
-        where = { ...where, quotation: { sellerId: dto.sellerId } };
+        where = {
+          ...where,
+          quotation: {
+            ...where.quotation,
+            sellerId: dto.sellerId,
+          },
+        };
       }
 
       if (dto.serieId) {
-        where = { ...where, quotation: { seriesId: dto.serieId } };
+        where = {
+          ...where,
+          quotation: {
+            ...where.quotation,
+            seriesId: dto.serieId,
+          },
+        };
       }
 
       if (dto.clientId) {
-        where = { ...where, quotation: { clientId: dto.clientId } };
+        where = {
+          ...where,
+          quotation: {
+            ...where.quotation,
+            clientId: dto.clientId,
+          },
+        };
       }
+
+      const totalOrders = await this.prisma.order.count({ where });
 
       const orders = await this.prisma.order.findMany({
         where,
@@ -89,34 +121,87 @@ export class OrderService {
                   },
                 },
               },
+              series: {
+                select: {
+                  code: true,
+                },
+              },
+              client: {
+                select: {
+                  name: true,
+                },
+              },
             },
           },
         },
         take: Number(dto.limit),
         skip: (Number(dto.page) - 1) * Number(dto.limit),
+        orderBy: {
+          createdAt: 'desc',
+        },
       });
 
-      const grouped: Record<string, OrderGroup> = orders.reduce(
-        (acc, order) => {
+      const grouped: Record<string, { date: string; orders: any[] }> =
+        orders.reduce((acc, order) => {
           const date = order.createdAt.toISOString().split('T')[0];
           if (!acc[date]) {
-            acc[date] = {
-              date: date,
-              orders: [],
-            };
+            acc[date] = { date, orders: [] };
           }
-          acc[date].orders.push(order);
-          return acc;
-        },
-        {},
-      );
 
-      return Object.values(grouped).sort((a, b) =>
-        b.date.localeCompare(a.date),
-      );
+          const quotation = order.quotation;
+          acc[date].orders.push({
+            id: order.id,
+            status: order.status,
+            quotation: {
+              id: quotation.id,
+              clientName: quotation.client?.name || null,
+              serieQuotation: `${quotation.id}-${quotation.series?.code || 'N/A'}`,
+              description: quotation.description,
+              totalValue: quotation.totalValue,
+              sellerName: quotation.seller?.user?.name || null,
+            },
+          });
+
+          return acc;
+        }, {});
+
+      const result = Object.values(grouped).map((group) => ({
+        date: group.date,
+        orders: group.orders,
+      }));
+
+      const lastPage = Math.ceil(totalOrders / Number(dto.limit));
+
+      return {
+        total: totalOrders,
+        lastPage,
+        data: result,
+      };
     } catch (error) {
       console.error(error);
+      throw new Error('Erro ao buscar os pedidos.');
     }
+  }
+
+  async findAllQuantity(companyId: string) {
+    const result = await this.prisma.order.groupBy({
+      by: ['status'],
+      where: { quotation: { companyId } },
+      _count: true,
+    });
+
+    const total = result.reduce((acc, cur) => acc + cur._count, 0);
+
+    return {
+      TOTAL: total,
+      ...result.reduce(
+        (acc, cur) => {
+          acc[cur.status] = cur._count;
+          return acc;
+        },
+        {} as { [K in OrderStatus]: number },
+      ),
+    };
   }
 
   async count() {
