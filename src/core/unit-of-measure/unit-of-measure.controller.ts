@@ -8,6 +8,7 @@ import {
   Delete,
   Query,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { UnitOfMeasureService } from './unit-of-measure.service';
 import { CreateUnitOfMeasureDto } from './dto/create-unit-of-measure.dto';
@@ -21,12 +22,14 @@ import {
   ApiBody,
   ApiParam,
   ApiQuery,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 
 const RESOURCE = 'unit-of-measure';
 
 @ApiTags('Unidades de Medida')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(RESOURCE)
 export class UnitOfMeasureController {
   constructor(private readonly unitOfMeasureService: UnitOfMeasureService) {}
@@ -41,7 +44,8 @@ export class UnitOfMeasureController {
     status: 201,
     description: 'Unidade de medida criada com sucesso.',
   })
-  create(@Body() createUnitOfMeasureDto: CreateUnitOfMeasureDto) {
+  create(@Req() req, @Body() createUnitOfMeasureDto: CreateUnitOfMeasureDto) {
+    createUnitOfMeasureDto.companyId = req.user.companyId;
     return this.unitOfMeasureService.create(createUnitOfMeasureDto);
   }
 
@@ -58,7 +62,8 @@ export class UnitOfMeasureController {
     description: 'Lista de unidades de medida retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() filter: UnitOfMeasureFilterDTO) {
+  findAll(@Req() req, @Query() filter: UnitOfMeasureFilterDTO) {
+    filter.companyId = req.user.companyId;
     return this.unitOfMeasureService.findAll(filter);
   }
 

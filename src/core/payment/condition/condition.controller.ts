@@ -8,6 +8,7 @@ import {
   Delete,
   UseGuards,
   Query,
+  Req,
 } from '@nestjs/common';
 import { ConditionService } from './condition.service';
 import { CreateConditionDto } from './dto/create-condition.dto';
@@ -21,6 +22,7 @@ import {
   ApiBody,
   ApiParam,
   ApiQuery,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 
 const GROUP = 'payment';
@@ -28,6 +30,7 @@ const RESOURCE = 'condition';
 
 @ApiTags('Condições de Pagamento')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class ConditionController {
   constructor(private readonly conditionService: ConditionService) {}
@@ -42,7 +45,8 @@ export class ConditionController {
     status: 201,
     description: 'Condição de pagamento criada com sucesso.',
   })
-  create(@Body() createConditionDto: CreateConditionDto) {
+  create(@Req() req, @Body() createConditionDto: CreateConditionDto) {
+    createConditionDto.companyId = req.user.companyId;
     return this.conditionService.create(createConditionDto);
   }
 
@@ -59,7 +63,8 @@ export class ConditionController {
     description: 'Lista de condições de pagamento retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() filter: ConditionFilterDto) {
+  findAll(@Req() req, @Query() filter: ConditionFilterDto) {
+    filter.companyId = req.user.companyId;
     return this.conditionService.findAll(filter);
   }
 

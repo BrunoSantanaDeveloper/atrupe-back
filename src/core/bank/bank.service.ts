@@ -16,7 +16,14 @@ export class BankService {
   }
 
   findAll() {
-    return this.prisma.bank.findMany();
+    return this.prisma.bank.findMany({
+      where: {
+        isActive: true,
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
   }
 
   findOne(id: string) {

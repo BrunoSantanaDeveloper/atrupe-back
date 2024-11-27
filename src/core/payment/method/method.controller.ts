@@ -7,6 +7,8 @@ import {
   Param,
   Delete,
   UseGuards,
+  Req,
+  Query,
 } from '@nestjs/common';
 import { MethodService } from './method.service';
 import { CreateMethodDto } from './dto/create-method.dto';
@@ -18,13 +20,16 @@ import {
   ApiResponse,
   ApiBody,
   ApiParam,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 const GROUP = 'payment';
 const RESOURCE = 'method';
 
 @ApiTags('Métodos de Pagamento')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class MethodController {
   constructor(private readonly methodService: MethodService) {}
@@ -39,7 +44,8 @@ export class MethodController {
     status: 201,
     description: 'Método de pagamento criado com sucesso.',
   })
-  create(@Body() createMethodDto: CreateMethodDto) {
+  create(@Req() req, @Body() createMethodDto: CreateMethodDto) {
+    createMethodDto.companyId = req.user.companyId;
     return this.methodService.create(createMethodDto);
   }
 
@@ -50,8 +56,9 @@ export class MethodController {
     description: 'Lista de métodos de pagamento retornada com sucesso.',
     isArray: true,
   })
-  findAll() {
-    return this.methodService.findAll();
+  findAll(@Query() filter: BaseFilterDTO, @Req() req) {
+    filter.companyId = req.user.companyId;
+    return this.methodService.findAll(filter);
   }
 
   @Get(':id')

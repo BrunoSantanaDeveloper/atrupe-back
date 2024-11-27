@@ -10,26 +10,31 @@ export class ConditionService {
 
   async create(dto: CreateConditionDto) {
     try {
-      const condition = {
-        ...dto,
-        operatorFeeRate: +dto.operatorFeeRate,
-        operatorFeeTransfer: +dto.operatorFeeTransfer,
-        minInstallments: +dto.minInstallments,
-        maxInstallments: +dto.maxInstallments,
-        installments: dto.installments
-          ? dto.installments.map((installment) => ({
+      const { installments, ...conditionData } = dto;
+
+      // Cria a condição de pagamento com as parcelas relacionadas
+      const paymentCondition = await this.prisma.paymentCondition.create({
+        data: {
+          ...conditionData,
+          minInstallments: +dto.minInstallments,
+          maxInstallments: +dto.maxInstallments,
+          installments: {
+            create: installments.map((installment) => ({
               installment: +installment.installment,
               operatorFeeRate: +installment.operatorFeeRate,
               operatorFeeTransfer: +installment.operatorFeeTransfer,
-            }))
-          : [],
-      };
-
-      return await this.prisma.paymentCondition.create({
-        data: condition,
+            })),
+          },
+        },
+        include: {
+          installments: true,
+        },
       });
+
+      return paymentCondition;
     } catch (error) {
       console.error(error);
+      throw new Error('Error creating payment condition');
     }
   }
 
@@ -43,6 +48,7 @@ export class ConditionService {
       const conditions = await this.prisma.paymentCondition.findMany({
         where,
         include: {
+          installments: true, // Inclui as parcelas
           company: {
             select: {
               id: true,
@@ -60,25 +66,18 @@ export class ConditionService {
         skip: (+filter.page - 1) * +filter.limit,
       });
 
-      // Agrupando as condições por método de pagamento
-      const groupedByPaymentMethod: any = conditions.reduce(
-        (acc, condition) => {
-          const { paymentMethod } = condition;
-          // Utiliza o ID do método de pagamento como chave para agrupar
-          if (!acc[paymentMethod.id]) {
-            acc[paymentMethod.id] = {
-              paymentMethod,
-              conditions: [],
-            };
-          }
-          acc[paymentMethod.id].conditions.push(condition);
+      const groupedByPaymentMethod = conditions.reduce((acc, condition) => {
+        const { paymentMethod } = condition;
+        if (!acc[paymentMethod.id]) {
+          acc[paymentMethod.id] = {
+            paymentMethod,
+            conditions: [],
+          };
+        }
+        acc[paymentMethod.id].conditions.push(condition);
+        return acc;
+      }, {});
 
-          return acc;
-        },
-        {},
-      );
-
-      // Convertendo o objeto agrupado para a estrutura de array desejada
       const result = Object.values(groupedByPaymentMethod).map(
         (group: any) => ({
           paymentMethod: group.paymentMethod,
@@ -96,33 +95,55 @@ export class ConditionService {
     }
   }
 
-  findOne(id: string) {
+  async findOne(id: string) {
     return this.prisma.paymentCondition.findUnique({
       where: {
         id,
       },
-    });
-  }
-
-  update(id: string, updateConditionDto: UpdateConditionDto) {
-    return this.prisma.paymentCondition.update({
-      where: {
-        id,
-      },
-      data: {
-        ...updateConditionDto,
-        installments: updateConditionDto.installments.map((installment) => ({
-          ...installment,
-        })),
+      include: {
+        installments: true, // Inclui as parcelas na consulta
       },
     });
   }
 
-  remove(id: string) {
-    return this.prisma.paymentCondition.delete({
-      where: {
-        id,
-      },
-    });
+  async update(id: string, dto: UpdateConditionDto) {
+    try {
+      const { installments, ...conditionData } = dto;
+
+      // Atualiza a condição de pagamento
+      const updatedCondition = await this.prisma.paymentCondition.update({
+        where: { id },
+        data: {
+          ...conditionData,
+          installments: {
+            deleteMany: {}, // Remove todas as parcelas antigas
+            create: installments.map((installment) => ({
+              installment: +installment.installment,
+              operatorFeeRate: +installment.operatorFeeRate,
+              operatorFeeTransfer: +installment.operatorFeeTransfer,
+            })),
+          },
+        },
+        include: {
+          installments: true,
+        },
+      });
+
+      return updatedCondition;
+    } catch (error) {
+      console.error(error);
+      throw new Error('Error updating payment condition');
+    }
+  }
+
+  async remove(id: string) {
+    try {
+      return await this.prisma.paymentCondition.delete({
+        where: { id },
+      });
+    } catch (error) {
+      console.error(error);
+      throw new Error('Error removing payment condition');
+    }
   }
 }

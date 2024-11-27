@@ -5,7 +5,7 @@ import {
   IsBoolean,
   IsEnum,
   IsNotEmpty,
-  IsNumberString,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -15,7 +15,7 @@ import {
 import { ApiProperty } from '@nestjs/swagger';
 
 export class InstallmentDto {
-  @IsNumberString()
+  @IsNumber()
   @IsNotEmpty()
   @ApiProperty({
     description: 'Número da parcela',
@@ -24,7 +24,7 @@ export class InstallmentDto {
   installment: number;
 
   @IsNotEmpty()
-  @IsNumberString()
+  @IsNumber()
   @ApiProperty({
     description: 'Taxa de operador para a parcela',
     example: 2.5,
@@ -32,7 +32,7 @@ export class InstallmentDto {
   operatorFeeRate: number;
 
   @IsOptional()
-  @IsNumberString()
+  @IsNumber()
   @ApiProperty({
     description: 'Taxa de transferência do operador para a parcela',
     example: 1.0,
@@ -67,26 +67,6 @@ export class CreateConditionDto {
   })
   costType: PaymentConditionCostType;
 
-  @ValidateIf((o) => o.acceptInstallments === false)
-  @IsNotEmpty()
-  @IsNumberString()
-  @ApiProperty({
-    description: 'Taxa de operador quando não aceita parcelas',
-    example: 2.5,
-    required: false,
-  })
-  operatorFeeRate: number;
-
-  @ValidateIf((o) => o.acceptInstallments === false)
-  @IsOptional()
-  @IsNumberString()
-  @ApiProperty({
-    description: 'Taxa de transferência do operador quando não aceita parcelas',
-    example: 1.0,
-    required: false,
-  })
-  operatorFeeTransfer: number;
-
   @IsNotEmpty()
   @IsUUID()
   @ApiProperty({
@@ -95,16 +75,30 @@ export class CreateConditionDto {
   })
   paymentMethodId: string;
 
-  @IsNotEmpty()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da empresa associada à condição de pagamento',
-    example: '123e4567-e89b-12d3-a456-426614174001',
-  })
+  // @IsNotEmpty()
+  // @IsUUID()
+  // @ApiProperty({
+  //   description: 'ID da empresa associada à condição de pagamento',
+  //   example: '123e4567-e89b-12d3-a456-426614174001',
+  // })
   companyId: string;
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Nome da condição de recebimento',
+    example: 'A vista',
+  })
+  receivingType: string;
+  @IsOptional()
+  @IsNumber()
+  @ApiProperty({
+    description: 'Quantidade de dias de intervalo de recebimento',
+    example: 'A vista',
+  })
+  dayInterval: number;
 
   @ValidateIf((o) => o.acceptInstallments === true)
-  @IsNumberString()
+  @IsNumber()
   @IsNotEmpty()
   @ApiProperty({
     description: 'Número mínimo de parcelas',
@@ -114,7 +108,7 @@ export class CreateConditionDto {
   minInstallments?: number;
 
   @ValidateIf((o) => o.acceptInstallments === true)
-  @IsNumberString()
+  @IsNumber()
   @IsNotEmpty()
   @ApiProperty({
     description: 'Número máximo de parcelas',

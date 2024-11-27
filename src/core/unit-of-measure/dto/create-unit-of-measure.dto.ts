@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateUnitOfMeasureDto {
@@ -18,11 +18,11 @@ export class CreateUnitOfMeasureDto {
   })
   code: string;
 
-  @IsNotEmpty()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da empresa associada à unidade de medida',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
+  // @IsNotEmpty()
+  // @IsUUID()
+  // @ApiProperty({
+  //   description: 'ID da empresa associada à unidade de medida',
+  //   example: '123e4567-e89b-12d3-a456-426614174000',
+  // })
   companyId: string;
 }

@@ -651,14 +651,15 @@ model PaymentCondition {
   isActive  Boolean  @default(true)
 
   name                String
-  acceptInstallments  Boolean
+  acceptInstallments  Boolean                  @default(false)
   costType            PaymentConditionCostType
-  operatorFeeRate     Float?
-  operatorFeeTransfer Float?
 
   minInstallments Int?
   maxInstallments Int?
-  installments    Json?
+  installments    Installment[]
+
+  receivingType String?
+  dayInterval   Int?
 
   paymentMethodId       String
   paymentMethod         PaymentMethod          @relation(fields: [paymentMethodId], references: [id])
@@ -667,6 +668,17 @@ model PaymentCondition {
   paymentConfigurations PaymentConfiguration[]
 
   @@map("payment_conditions")
+}
+
+model Installment {
+  id                  String           @id @default(uuid())
+  installment         Int // Número da parcela
+  operatorFeeRate     Float
+  operatorFeeTransfer Float
+  paymentConditionId  String
+  paymentCondition    PaymentCondition @relation(fields: [paymentConditionId], references: [id])
+
+  @@map("installments")
 }
 
 model PaymentConfiguration {

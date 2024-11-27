@@ -15,8 +15,21 @@ export class MethodService {
     });
   }
 
-  findAll() {
-    return this.prisma.paymentMethod.findMany();
+  findAll(filter) {
+    try {
+      const where = {
+        companyId: filter.companyId,
+        isActive: true,
+      };
+      return this.prisma.paymentMethod.findMany({
+        where,
+        take: +filter.limit,
+        skip: ((+filter.page || 1) - 1) * +filter.limit,
+      });
+    } catch (error) {
+      console.error(error);
+      throw new Error('Error on find payment method');
+    }
   }
 
   findOne(id: string) {
