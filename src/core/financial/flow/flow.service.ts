@@ -83,7 +83,7 @@ export class FlowService {
 
         acc[date].items.push(curr);
         acc[date].total[curr.type === 'payable' ? 'payables' : 'receivables'] +=
-          curr.amount;
+          curr.totalAmount;
 
         return acc;
       }, {});

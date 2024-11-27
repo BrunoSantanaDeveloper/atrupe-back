@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateSectorDto {
@@ -20,12 +20,12 @@ export class CreateSectorDto {
   })
   icon: string;
 
-  @IsNotEmpty()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da empresa associada ao setor',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-    required: true,
-  })
+  // @IsNotEmpty()
+  // @IsUUID()
+  // @ApiProperty({
+  //   description: 'ID da empresa associada ao setor',
+  //   example: '123e4567-e89b-12d3-a456-426614174000',
+  //   required: true,
+  // })
   companyId: string;
 }

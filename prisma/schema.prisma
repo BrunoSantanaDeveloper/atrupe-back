@@ -398,14 +398,21 @@ enum PaymentStatus {
 }
 
 model Receivable {
-  id      String   @id @default(uuid())
-  amount  Float
-  dueDate DateTime
+  id String @id @default(uuid())
 
   reference     String
   referenceDate DateTime
+  dueDate       DateTime
 
-  description String?
+  description    String?
+  observations   String?
+  nature         String?
+  status         PaymentStatus           @default(PENDING)
+  totalAmount    Float // Valor total da movimentação
+  installmentQty Int? // Número de parcelas
+  installments   ReceivableInstallment[] // Relacionamento com parcelas
+  history        ReceivableHistory[] // Relacionamento com histórico
+  cancelReason   String?
 
   clientId String
   client   Client @relation(fields: [clientId], references: [id])
@@ -422,14 +429,47 @@ model Receivable {
   subCategoryId String?
   subCategory   Category? @relation("SubCategoryReceivable", fields: [subCategoryId], references: [id])
 
-  status PaymentStatus @default(PENDING)
-
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
 
   createdAt DateTime @default(now())
 
   @@map("receivables")
+}
+
+model ReceivableInstallment {
+  id           String     @id @default(uuid())
+  receivableId String
+  receivable   Receivable @relation(fields: [receivableId], references: [id])
+
+  installmentNumber Int // Número da parcela (1, 2, 3, ...)
+  dueDate           DateTime // Data de vencimento da parcela
+  amount            Float // Valor da parcela
+  paymentMethodId   String // Forma de pagamento específica da parcela
+  paymentMethod     PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  additionalFee     Float? // Acréscimos (opcional)
+  status            PaymentStatus @default(PENDING) // Status da parcela (PENDENTE, PAGO, CANCELADO)
+  paidDate          DateTime? // Data de pagamento (se pago)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("receivable_installments")
+}
+
+model ReceivableHistory {
+  id           String     @id @default(uuid())
+  receivableId String
+  receivable   Receivable @relation(fields: [receivableId], references: [id])
+
+  action      String // Ação realizada (e.g., "PARCELA ALTERADA", "PAGAMENTO REALIZADO")
+  description String // Descrição detalhada da alteração
+  timestamp   DateTime @default(now()) // Data/hora do evento
+
+  createdBy String // Quem realizou a ação (pode ser um ID de usuário)
+  createdAt DateTime @default(now())
+
+  @@map("receivable_history")
 }
 
 model Payable {
@@ -440,7 +480,16 @@ model Payable {
   reference     String
   referenceDate DateTime
 
-  description String?
+  description    String?
+  observations   String?
+  nature         String?
+  status         PaymentStatus @default(PENDING)
+  totalAmount    Float // Valor total da movimentação
+  installmentQty Int? // Número de parcelas
+
+  installments PayableInstallment[] // Relacionamento com parcelas
+  history      PayableHistory[] // Relacionamento com histórico
+  cancelReason String?
 
   clientId String
   client   Client @relation(fields: [clientId], references: [id])
@@ -457,14 +506,47 @@ model Payable {
   subCategoryId String?
   subCategory   Category? @relation("SubCategoryPayable", fields: [subCategoryId], references: [id])
 
-  status PaymentStatus @default(PENDING)
-
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
 
   createdAt DateTime @default(now())
 
   @@map("payables")
+}
+
+model PayableInstallment {
+  id        String  @id @default(uuid())
+  payableId String
+  payable   Payable @relation(fields: [payableId], references: [id])
+
+  installmentNumber Int // Número da parcela (1, 2, 3, ...)
+  dueDate           DateTime // Data de vencimento da parcela
+  amount            Float // Valor da parcela
+  paymentMethodId   String // Forma de pagamento específica da parcela
+  paymentMethod     PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  additionalFee     Float? // Acréscimos (opcional)
+  status            PaymentStatus @default(PENDING) // Status da parcela (PENDENTE, PAGO, CANCELADO)
+  paidDate          DateTime? // Data de pagamento (se pago)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payable_installments")
+}
+
+model PayableHistory {
+  id        String  @id @default(uuid())
+  payableId String
+  payable   Payable @relation(fields: [payableId], references: [id])
+
+  action      String // Ação realizada (e.g., "PARCELA ALTERADA", "PAGAMENTO REALIZADO")
+  description String // Descrição detalhada da alteração
+  timestamp   DateTime @default(now()) // Data/hora do evento
+
+  createdBy String // Quem realizou a ação (pode ser um ID de usuário)
+  createdAt DateTime @default(now())
+
+  @@map("payable_history")
 }
 
 enum FinancialFlowType {
@@ -636,6 +718,8 @@ model PaymentMethod {
   Receivable             Receivable[]
   Payable                Payable[]
   PaymentCondition       PaymentCondition[]
+  ReceivableInstallment  ReceivableInstallment[]
+  PayableInstallment     PayableInstallment[]
 
   @@map("payment_methods")
 }

@@ -9,6 +9,7 @@ import {
   UseGuards,
   Req,
   Query,
+  Request,
 } from '@nestjs/common';
 import { SectorService } from './sector.service';
 import { CreateSectorDto } from './dto/create-sector.dto';
@@ -44,7 +45,8 @@ export class SectorController {
     status: 201,
     description: 'Setor criado com sucesso.',
   })
-  create(@Body() createSectorDto: CreateSectorDto) {
+  create(@Request() req, @Body() createSectorDto: CreateSectorDto) {
+    createSectorDto.companyId = req.user.companyId;
     return this.sectorService.create(createSectorDto);
   }
 
@@ -57,6 +59,7 @@ export class SectorController {
     isArray: true,
   })
   findAll(@Req() req, @Query() filter: SectorFilterDto) {
+    filter.companyId = req.user.companyId;
     return this.sectorService.findAll(filter);
   }
 

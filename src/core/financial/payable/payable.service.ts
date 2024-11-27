@@ -12,7 +12,7 @@ export class PayableService {
       const payable = await this.prisma.payable.create({
         data: {
           ...dto,
-          amount: parseFloat(dto.amount.toString()),
+          totalAmount: parseFloat(dto.amount.toString()),
         },
       });
 

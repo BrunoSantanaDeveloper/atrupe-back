@@ -1,116 +1,171 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
-  IsDateString,
-  IsEnum,
-  IsNotEmpty,
-  IsNumberString,
-  IsOptional,
   IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsDateString,
+  IsOptional,
+  IsArray,
   IsUUID,
 } from 'class-validator';
-import { PaymentStatus } from '@prisma/client';
-import { ApiProperty } from '@nestjs/swagger';
-
-export class CreateReceivableDto {
-  @IsNotEmpty()
-  @IsNumberString()
+export class CreateReceivableInstallmentDto {
   @ApiProperty({
-    description: 'Valor da conta a receber',
-    example: '1000.00',
+    description: 'Data de vencimento da parcela',
+    example: '2024-12-15',
   })
+  @IsDateString()
+  dueDate: string;
+
+  @ApiProperty({
+    description: 'Valor da parcela',
+    example: 150.75,
+  })
+  @IsNumber()
   amount: number;
 
-  @IsNotEmpty()
-  @IsDateString()
   @ApiProperty({
-    description: 'Data de referência da conta a receber',
-    example: '2023-06-01',
-    type: 'string', // Swagger espera uma string para datas
-    format: 'date',
+    description: 'ID da forma de pagamento específica da parcela',
+    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
   })
-  referenceDate: Date;
-
-  @IsNotEmpty()
-  @IsDateString()
-  @ApiProperty({
-    description: 'Data de vencimento da conta a receber',
-    example: '2023-07-01',
-    type: 'string', // Swagger espera uma string para datas
-    format: 'date',
-  })
-  dueDate: Date;
-
-  @IsOptional()
-  @IsEnum(PaymentStatus)
-  @ApiProperty({
-    description: 'Status do pagamento da conta a receber',
-    example: PaymentStatus.PENDING,
-    enum: PaymentStatus,
-    required: false,
-  })
-  status: PaymentStatus;
-
-  @IsNotEmpty()
   @IsUUID()
-  @ApiProperty({
-    description: 'ID da empresa associada à conta a receber',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  companyId: string;
-
-  @IsNotEmpty()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID do cliente associado à conta a receber',
-    example: '123e4567-e89b-12d3-a456-426614174001',
-  })
-  clientId: string;
-
-  @IsNotEmpty()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da conta bancária associada à conta a receber',
-    example: '123e4567-e89b-12d3-a456-426614174002',
-  })
-  bankAccountId: string;
-
-  @IsNotEmpty()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID do método de pagamento associado à conta a receber',
-    example: '123e4567-e89b-12d3-a456-426614174003',
-  })
   paymentMethodId: string;
 
-  @IsNotEmpty()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da categoria associada à conta a receber',
-    example: '123e4567-e89b-12d3-a456-426614174004',
+  @ApiPropertyOptional({
+    description: 'Acréscimos na parcela (opcional)',
+    example: 10.5,
   })
-  categoryId: string;
+  @IsOptional()
+  @IsNumber()
+  additionalFee?: number;
 
-  @IsNotEmpty()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da subcategoria associada à conta a receber',
-    example: '123e4567-e89b-12d3-a456-426614174005',
+  @ApiPropertyOptional({
+    description: 'Status da parcela (PENDING, PAID, CANCELED)',
+    example: 'PENDING',
+    enum: ['PENDING', 'PAID', 'CANCELED'],
   })
-  subCategoryId: string;
-
   @IsOptional()
   @IsString()
-  @ApiProperty({
-    description: 'Descrição da conta a receber',
-    example: 'Recebível de cliente',
-    required: false,
-  })
-  description: string;
+  status?: 'PENDING' | 'PAID' | 'CANCELED';
 
-  @IsNotEmpty()
-  @IsString()
-  @ApiProperty({
-    description: 'Referência da conta a receber',
-    example: 'REF123456',
+  @ApiPropertyOptional({
+    description: 'Data de pagamento da parcela (se pago)',
+    example: '2024-12-20',
   })
+  @IsOptional()
+  @IsDateString()
+  paidDate?: string;
+}
+export class CreateReceivableDto {
+  @ApiProperty({
+    description: 'Referência da conta a receber (exemplo: número da fatura)',
+    example: 'INV-2024-001',
+  })
+  @IsString()
+  @IsNotEmpty()
   reference: string;
+
+  @ApiProperty({
+    description: 'Data de referência da conta a receber',
+    example: '2024-11-27',
+  })
+  @IsDateString()
+  referenceDate: string;
+
+  @ApiProperty({
+    description: 'Data de vencimento da conta a receber',
+    example: '2024-12-15',
+  })
+  @IsDateString()
+  dueDate: string;
+
+  @ApiPropertyOptional({
+    description: 'Descrição adicional da conta a receber',
+    example: 'Pagamento referente à prestação de serviços de novembro.',
+  })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional({
+    description: 'Observações adicionais',
+    example: 'Cliente solicitou envio da nota fiscal por e-mail.',
+  })
+  @IsOptional()
+  @IsString()
+  observations?: string;
+
+  @ApiPropertyOptional({
+    description: 'Natureza da conta (exemplo: receita recorrente)',
+    example: 'Receita recorrente',
+  })
+  @IsOptional()
+  @IsString()
+  nature?: string;
+
+  @ApiProperty({
+    description: 'ID do cliente associado à conta',
+    example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
+  })
+  @IsString()
+  @IsUUID()
+  clientId: string;
+
+  @ApiProperty({
+    description: 'ID da conta bancária onde será realizado o pagamento',
+    example: '7b3d32c3-2d4c-4efb-9149-7345c2e68810',
+  })
+  @IsString()
+  @IsUUID()
+  bankAccountId: string;
+
+  @ApiProperty({
+    description: 'ID da forma de pagamento padrão',
+    example: '68b92507-1c6e-48a3-927c-91ef2b567c3d',
+  })
+  @IsString()
+  @IsUUID()
+  paymentMethodId: string;
+
+  @ApiProperty({
+    description: 'ID da categoria associada à conta',
+    example: 'f5b934f6-4c45-4e93-85f4-6e418af93210',
+  })
+  @IsString()
+  @IsUUID()
+  categoryId: string;
+
+  @ApiPropertyOptional({
+    description: 'ID da subcategoria associada (opcional)',
+    example: 'e3b9d6a5-4c1e-41e7-bb74-74f2dcf2f5bc',
+  })
+  @IsOptional()
+  @IsString()
+  @IsUUID()
+  subCategoryId?: string;
+
+  // @ApiProperty({
+  //   description: 'ID da empresa associada à conta',
+  //   example: '75c934d6-0c45-4e93-95f4-6e418af93210',
+  // })
+  // @IsString()
+  // @IsUUID()
+  companyId: string;
+
+  totalAmount: number;
+
+  @ApiProperty({
+    description: 'Quantidade de parcelas',
+    example: 3,
+  })
+  @IsNumber()
+  installmentQty: number;
+
+  @ApiProperty({
+    description: 'Array com as parcelas associadas à conta',
+    type: [CreateReceivableInstallmentDto],
+  })
+  @IsArray()
+  @Type(() => CreateReceivableInstallmentDto)
+  installments: CreateReceivableInstallmentDto[];
 }
