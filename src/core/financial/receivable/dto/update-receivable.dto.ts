@@ -123,3 +123,12 @@ export class AddInstallmentArrayDto {
   })
   installments: AddReceivableInstallmentDto[];
 }
+
+export class CancelReceivableDto {
+  @ApiProperty({
+    description: 'Razão do cancelamento do título',
+    example: 'Cliente desistiu da compra.',
+  })
+  @IsString()
+  cancelReason: string; // Razão do cancelamento
+}

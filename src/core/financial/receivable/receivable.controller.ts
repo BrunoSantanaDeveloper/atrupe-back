@@ -14,6 +14,7 @@ import { ReceivableService } from './receivable.service';
 import { CreateReceivableDto } from './dto/create-receivable.dto';
 import {
   AddInstallmentArrayDto,
+  CancelReceivableDto,
   UpdateReceivableDto,
   UpdateReceivableInstallmentDto,
 } from './dto/update-receivable.dto';
@@ -156,8 +157,12 @@ export class ReceivableController {
     status: 200,
     description: 'Conta a receber cancelada com sucesso.',
   })
-  async cancel(@Param('id') id: string) {
-    return await this.receivableService.cancel(id);
+  async cancel(
+    @Param('id') id: string,
+    @Body() cancelReceivableDto: CancelReceivableDto,
+  ) {
+    const { cancelReason } = cancelReceivableDto;
+    return await this.receivableService.cancel(id, cancelReason);
   }
   @Delete(':id/installments/:installmentId')
   @ApiOperation({ summary: 'Remover parcelas do título' })

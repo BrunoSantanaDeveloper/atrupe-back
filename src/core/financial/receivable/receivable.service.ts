@@ -214,8 +214,15 @@ export class ReceivableService {
     });
   }
 
-  async cancel(id: string) {
+  async cancel(id: string, cancelReason: string) {
     const receivable = await this.findOne(id);
+
+    // Verifica se o título já está cancelado
+    if (receivable.status === 'CANCELED') {
+      throw new Error('A conta a receber já foi cancelada.');
+    }
+
+    // Atualiza o status de todas as parcelas com status "PENDING" para "CANCELED"
     const updates = receivable.installments
       .filter((installment) => installment.status === 'PENDING')
       .map((installment) =>
@@ -225,7 +232,15 @@ export class ReceivableService {
         }),
       );
 
+    // Realiza a transação
     await this.prisma.$transaction(updates);
+    await this.prisma.receivable.update({
+      where: { id },
+      data: {
+        status: 'CANCELED',
+        cancelReason,
+      },
+    });
     return { message: 'Conta a receber cancelada com sucesso.' };
   }
 
