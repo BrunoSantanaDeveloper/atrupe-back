@@ -473,23 +473,21 @@ model ReceivableHistory {
 }
 
 model Payable {
-  id      String   @id @default(uuid())
-  amount  Float
-  dueDate DateTime
+   id String @id @default(uuid())
 
   reference     String
   referenceDate DateTime
+  dueDate       DateTime
 
   description    String?
   observations   String?
   nature         String?
-  status         PaymentStatus @default(PENDING)
+  status         PaymentStatus           @default(PENDING)
   totalAmount    Float // Valor total da movimentação
   installmentQty Int? // Número de parcelas
-
-  installments PayableInstallment[] // Relacionamento com parcelas
-  history      PayableHistory[] // Relacionamento com histórico
-  cancelReason String?
+  installments   PayableInstallment[] // Relacionamento com parcelas
+  history        PayableHistory[] // Relacionamento com histórico
+  cancelReason   String?
 
   clientId String
   client   Client @relation(fields: [clientId], references: [id])
