@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsArray,
   IsUUID,
+  ValidateNested,
 } from 'class-validator';
 export class CreateReceivableInstallmentDto {
   @ApiProperty({
@@ -168,4 +169,54 @@ export class CreateReceivableDto {
   @IsArray()
   @Type(() => CreateReceivableInstallmentDto)
   installments: CreateReceivableInstallmentDto[];
+}
+
+export class ReceivableInstallmentDto {
+  @ApiProperty({
+    description: 'ID da parcela (se existir, significa que é para atualizar)',
+    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
+    required: false,
+  })
+  @IsUUID()
+  @IsOptional()
+  id?: string;
+
+  @ApiProperty({
+    description: 'Valor da parcela',
+    example: 200.75,
+    required: false,
+  })
+  @IsNumber()
+  @IsOptional()
+  amount?: number;
+
+  @ApiProperty({
+    description: 'Data de vencimento',
+    example: '2024-12-25',
+    required: false,
+  })
+  @IsDateString()
+  @IsOptional()
+  dueDate?: string;
+
+  @ApiProperty({
+    description: 'ID da forma de pagamento',
+    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
+    required: false,
+  })
+  @IsUUID()
+  @IsOptional()
+  paymentMethodId?: string;
+}
+
+export class UpdateReceivableInstallmentsDto {
+  @ApiProperty({
+    description:
+      'Lista de parcelas que serão adicionadas, editadas ou removidas',
+    type: [ReceivableInstallmentDto],
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ReceivableInstallmentDto)
+  installments: ReceivableInstallmentDto[];
 }

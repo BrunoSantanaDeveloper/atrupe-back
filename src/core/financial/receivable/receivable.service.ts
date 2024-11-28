@@ -1,11 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
-import { CreateReceivableDto } from './dto/create-receivable.dto';
+import {
+  CreateReceivableDto,
+  UpdateReceivableInstallmentsDto,
+} from './dto/create-receivable.dto';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import {
-  AddInstallmentArrayDto,
+  PayInstallmentDto,
   UpdateReceivableDto,
-  UpdateReceivableInstallmentDto,
 } from './dto/update-receivable.dto';
 
 @Injectable()
@@ -90,130 +92,6 @@ export class ReceivableService {
     }
   }
 
-  async updateInstallments(
-    id: string,
-    installmentId: string,
-    updateData: UpdateReceivableInstallmentDto,
-  ) {
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        let totalAmountChanged = false;
-
-        // Atualiza a parcela específica
-        const { amount, ...rest } = updateData;
-
-        // Atualiza a parcela
-        await tx.receivableInstallment.update({
-          where: { id: installmentId },
-          data: {
-            ...rest,
-            dueDate: new Date(rest.dueDate),
-            // Se o valor da parcela for enviado, atualiza o valor
-            ...(amount && { amount }),
-          },
-        });
-
-        // Verifica se o valor da parcela foi alterado
-        if (amount) {
-          totalAmountChanged = true;
-        }
-
-        // Atualiza o valor total do título, se necessário
-        if (totalAmountChanged) {
-          const updatedTotal = await tx.receivableInstallment.aggregate({
-            where: { receivableId: id },
-            _sum: { amount: true },
-          });
-
-          await tx.receivable.update({
-            where: { id },
-            data: {
-              totalAmount: parseFloat(updatedTotal._sum.amount.toFixed(2)),
-            },
-          });
-        }
-      });
-    } catch (error) {
-      console.error(error);
-      throw new Error('Error updating installment' + error.message);
-    }
-  }
-
-  async addInstallments(
-    receivableId: string,
-    newInstallments: AddInstallmentArrayDto,
-  ) {
-    return await this.prisma.$transaction(async (tx) => {
-      // Busca a quantidade atual de parcelas para determinar o próximo installmentNumber
-      const existingInstallments = await tx.receivableInstallment.findMany({
-        where: { receivableId },
-        orderBy: { installmentNumber: 'asc' }, // Certifica que as parcelas estão em ordem
-      });
-
-      const nextInstallmentNumber = existingInstallments.length + 1;
-
-      // Adiciona as novas parcelas
-      await tx.receivableInstallment.createMany({
-        data: newInstallments.installments.map((installment, index) => ({
-          ...installment,
-          receivableId,
-          dueDate: new Date(installment.dueDate), // Ajusta a data para o formato correto
-          installmentNumber: nextInstallmentNumber + index, // Gera o número da parcela dinamicamente
-        })),
-      });
-
-      // Recalcula o valor total do título, incluindo taxas adicionais
-      const updatedTotal = await tx.receivableInstallment.aggregate({
-        where: { receivableId },
-        _sum: {
-          amount: true,
-          additionalFee: true,
-        },
-      });
-
-      const totalAmount =
-        (updatedTotal._sum.amount ?? 0) +
-        (updatedTotal._sum.additionalFee ?? 0);
-
-      // Atualiza o título com o novo valor total e quantidade de parcelas
-      await tx.receivable.update({
-        where: { id: receivableId },
-        data: {
-          totalAmount: parseFloat(totalAmount.toFixed(2)), // Formata para dois dígitos
-          installmentQty:
-            existingInstallments.length + newInstallments.installments.length,
-        },
-      });
-    });
-  }
-
-  async removeInstallment(receivableId: string, installmentId: string) {
-    return await this.prisma.$transaction(async (tx) => {
-      // Remove a parcela específica
-      await tx.receivableInstallment.delete({
-        where: { id: installmentId },
-      });
-
-      // Atualiza o valor total e a quantidade de parcelas
-      const updatedTotal = await tx.receivableInstallment.aggregate({
-        where: { receivableId },
-        _sum: { amount: true },
-      });
-
-      const updatedQty = await tx.receivableInstallment.count({
-        where: { receivableId },
-      });
-
-      await tx.receivable.update({
-        where: { id: receivableId },
-        data: {
-          totalAmount: parseFloat(updatedTotal._sum.amount?.toFixed(2) || '0'),
-          installmentQty: updatedQty,
-        },
-      });
-    });
-  }
-
   async cancel(id: string, cancelReason: string) {
     const receivable = await this.findOne(id);
 
@@ -256,5 +134,135 @@ export class ReceivableService {
 
   async count() {
     return this.prisma.receivable.count();
+  }
+
+  async payInstallment(payInstallmentDto: PayInstallmentDto) {
+    const { installmentId, amount, paidDate } = payInstallmentDto;
+
+    return await this.prisma.$transaction(async (tx) => {
+      // Atualiza o status da parcela para "PAGO" e adiciona a data do pagamento
+      const installment = await tx.receivableInstallment.update({
+        where: { id: installmentId },
+        data: {
+          status: 'PAID',
+          paidDate: new Date(paidDate),
+          amount, // Pode ser que precise ajustar se houver um pagamento parcial
+        },
+      });
+
+      // Atualiza o valor total do título
+      const updatedTotal = await tx.receivableInstallment.aggregate({
+        where: { receivableId: installment.receivableId },
+        _sum: { amount: true },
+      });
+
+      await tx.receivable.update({
+        where: { id: installment.receivableId },
+        data: { totalAmount: updatedTotal._sum.amount },
+      });
+
+      return { message: 'Parcela paga com sucesso.' };
+    });
+  }
+
+  async updateInstallments(
+    receivableId: string,
+    dto: UpdateReceivableInstallmentsDto,
+  ): Promise<any> {
+    const { installments } = dto;
+
+    let totalAmount = 0;
+
+    const updatedReceivable = await this.prisma.$transaction(async (prisma) => {
+      const updatedInstallments = [];
+      for (const installmentDto of installments) {
+        const { id, ...rest } = installmentDto;
+
+        if (id) {
+          const updateData: Record<string, any> = { ...rest };
+          console.log('Parcela existe');
+          if (updateData.dueDate) {
+            updateData.dueDate = new Date(updateData.dueDate);
+          }
+
+          // Se a parcela existe, atualiza
+          try {
+            const updatedInstallment =
+              await prisma.receivableInstallment.update({
+                where: { id: installmentDto.id },
+                data: updateData,
+              });
+            updatedInstallments.push(updatedInstallment);
+          } catch (error) {
+            console.error('Error updating installment:', error);
+          }
+        } else {
+          console.log('Parcela não existe');
+          const newInstallment = await prisma.receivableInstallment.create({
+            data: {
+              receivableId,
+              amount: installmentDto.amount,
+              dueDate: new Date(installmentDto.dueDate),
+              paymentMethodId: installmentDto.paymentMethodId,
+              installmentNumber: installments.indexOf(installmentDto) + 1,
+            },
+          });
+          updatedInstallments.push(newInstallment);
+        }
+        totalAmount += installmentDto.amount;
+      }
+
+      // Busca parcelas existentes no banco
+      const existingInstallments = await prisma.receivableInstallment.findMany({
+        where: { receivableId },
+      });
+
+      const installmentIdsToKeep = updatedInstallments.map((inst) => inst.id);
+
+      // Filtra parcelas a serem deletadas
+      const installmentsToDelete = existingInstallments.filter(
+        (inst) => !installmentIdsToKeep.includes(inst.id),
+      );
+
+      // Deleta parcelas que não estão no array de entrada
+      for (const installment of installmentsToDelete) {
+        await prisma.receivableInstallment.delete({
+          where: { id: installment.id },
+        });
+      }
+
+      // Rearranja os números das parcelas restantes
+      const allInstallments = await prisma.receivableInstallment.findMany({
+        where: { receivableId },
+        orderBy: { installmentNumber: 'asc' }, // Ordena por data de vencimento para manter a sequência lógica
+      });
+
+      for (let i = 0; i < allInstallments.length; i++) {
+        await prisma.receivableInstallment.update({
+          where: { id: allInstallments[i].id },
+          data: { installmentNumber: i + 1 }, // Rearranja os números
+        });
+      }
+
+      // Recalcula o totalAmount, incluindo taxas
+      totalAmount = allInstallments.reduce(
+        (sum, installment) =>
+          sum + installment.amount + (installment.additionalFee || 0),
+        0,
+      );
+
+      // Atualiza o totalAmount no título principal
+      try {
+        const updatedReceivable = await prisma.receivable.update({
+          where: { id: receivableId },
+          data: { totalAmount },
+        });
+        return updatedReceivable;
+      } catch (error) {
+        console.error(error.message);
+      }
+    });
+
+    return updatedReceivable;
   }
 }

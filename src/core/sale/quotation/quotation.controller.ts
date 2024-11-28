@@ -10,7 +10,6 @@ import {
   BadRequestException,
   Patch,
   NotFoundException,
-  Put,
   Req,
 } from '@nestjs/common';
 import { QuotationService } from './quotation.service';
@@ -58,7 +57,7 @@ export class QuotationController {
     return this.quotationService.addProductToQuotation(id, addItemDto);
   }
 
-  @Put(':quotationId/update-product/:productId')
+  @Patch(':quotationId/update-product/:productId')
   @ApiOperation({
     summary: 'Atualiza um produto dentro de um orçamento',
     description:

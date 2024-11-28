@@ -4,11 +4,11 @@ import {
   Post,
   Body,
   Param,
-  Put,
   Delete,
   UseGuards,
   Req,
   Query,
+  Patch,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -81,7 +81,7 @@ export class StatusController {
     return this.statusQuotationService.findOne(id);
   }
 
-  @Put(':id')
+  @Patch(':id')
   @ApiOperation({ summary: 'Atualizar um status de orçamento' })
   @ApiResponse({
     status: 200,

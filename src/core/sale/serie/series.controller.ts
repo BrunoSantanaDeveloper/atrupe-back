@@ -4,7 +4,7 @@ import {
   Body,
   Get,
   Param,
-  Put,
+  Patch,
   Delete,
   Req,
   UseGuards,
@@ -76,7 +76,7 @@ export class SaleSeriesController {
   @ApiOperation({ summary: 'Update a sale series by ID' })
   @ApiParam({ name: 'id', description: 'ID of the sale series' })
   @ApiResponse({ status: 200, description: 'Sale series updated successfully' })
-  @Put(':id')
+  @Patch(':id')
   update(
     @Param('id') id: string,
     @Body() updateSaleSeriesDto: UpdateSaleSeriesDto,

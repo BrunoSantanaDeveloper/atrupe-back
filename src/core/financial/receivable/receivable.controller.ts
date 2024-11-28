@@ -11,12 +11,14 @@ import {
   Req,
 } from '@nestjs/common';
 import { ReceivableService } from './receivable.service';
-import { CreateReceivableDto } from './dto/create-receivable.dto';
 import {
-  AddInstallmentArrayDto,
+  CreateReceivableDto,
+  UpdateReceivableInstallmentsDto,
+} from './dto/create-receivable.dto';
+import {
   CancelReceivableDto,
+  PayInstallmentDto,
   UpdateReceivableDto,
-  UpdateReceivableInstallmentDto,
 } from './dto/update-receivable.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import {
@@ -94,54 +96,28 @@ export class ReceivableController {
     return await this.receivableService.updateTitle(id, dto);
   }
 
-  @Post(':id/installments')
-  @ApiOperation({ summary: 'Adicionar novas parcelas ao título' })
-  @ApiParam({
-    name: 'id',
-    description: 'ID do título',
-    example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Parcelas adicionadas com sucesso.',
-  })
-  @ApiResponse({ status: 404, description: 'Título não encontrado.' })
-  async addInstallments(
-    @Param('id') id: string,
-    @Body() newInstallments: AddInstallmentArrayDto,
-  ) {
-    return await this.receivableService.addInstallments(id, newInstallments);
-  }
-
-  @Patch(':id/installments/:installmentId')
-  @ApiOperation({ summary: 'Atualizar parcelas do título' })
-  @ApiParam({
-    name: 'id',
-    description: 'ID do título',
-    example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
-  })
-  @ApiParam({
-    name: 'installmentId',
-    description: 'ID da parcela',
-    example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
-  })
+  @Patch(':id/upsert-installments')
   @ApiResponse({
     status: 200,
-    description: 'Parcelas atualizadas com sucesso.',
+    description: 'Parcelas adicionadas, editadas ou removidas com sucesso',
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    description: 'ID da conta a receber',
   })
   @ApiResponse({
-    status: 404,
-    description: 'Título ou parcela não encontrados.',
+    status: 400,
+    description: 'Erro ao processar as parcelas',
   })
-  async updateInstallments(
+  async upsertInstallments(
     @Param('id') id: string,
-    @Param('installmentId') installmentId: string,
-    @Body() installments: UpdateReceivableInstallmentDto,
+    @Body()
+    updateReceivableInstallmentsDto: UpdateReceivableInstallmentsDto,
   ) {
-    return await this.receivableService.updateInstallments(
+    return this.receivableService.updateInstallments(
       id,
-      installmentId,
-      installments,
+      updateReceivableInstallmentsDto,
     );
   }
   @Patch(':id/cancel')
@@ -164,28 +140,18 @@ export class ReceivableController {
     const { cancelReason } = cancelReceivableDto;
     return await this.receivableService.cancel(id, cancelReason);
   }
-  @Delete(':id/installments/:installmentId')
-  @ApiOperation({ summary: 'Remover parcelas do título' })
-  @ApiParam({
-    name: 'id',
-    description: 'ID do título',
-    example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
-  })
-  @ApiParam({
-    name: 'installmentId',
-    description: 'ID da parcela',
-    example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
-  })
-  @ApiResponse({ status: 200, description: 'Parcelas removidas com sucesso.' })
+
+  @Patch('pay-installment')
   @ApiResponse({
-    status: 404,
-    description: 'Título ou parcela não encontrados.',
+    status: 200,
+    description: 'Parcela paga com sucesso',
   })
-  async removeInstallments(
-    @Param('id') id: string,
-    @Param('installmentId') installmentId: string,
-  ) {
-    return await this.receivableService.removeInstallment(id, installmentId);
+  @ApiResponse({
+    status: 400,
+    description: 'Erro ao pagar a parcela',
+  })
+  async payInstallment(@Body() payInstallmentDto: PayInstallmentDto) {
+    return this.receivableService.payInstallment(payInstallmentDto);
   }
 
   @Delete(':id')
