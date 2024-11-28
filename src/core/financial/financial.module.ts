@@ -5,6 +5,7 @@ import { FlowModule } from './flow/flow.module';
 import { CashControlModule } from './cash-control/cash-control.module';
 import { ScheduledExpenseModule } from './scheduled-expense/scheduled-expense.module';
 import { InvoiceModule } from './invoice/invoice.module';
+import { SalariesModule } from './salaries/salaries.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { InvoiceModule } from './invoice/invoice.module';
     CashControlModule,
     ScheduledExpenseModule,
     InvoiceModule,
+    SalariesModule,
   ],
   exports: [
     ReceivableModule,

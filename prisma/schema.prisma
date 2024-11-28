@@ -53,6 +53,7 @@ model Company {
   Reasons               Reasons[]
   StatusQuotation       StatusQuotation[]
   SellerProfile         SellerProfile[]
+  SalarySheet           SalarySheet[]
 
   @@map("companies")
 }
@@ -327,6 +328,7 @@ model Employee {
   quotation       Quotation[]
   sellerProfileId String?
   SellerProfile   SellerProfile? @relation(fields: [sellerProfileId], references: [id])
+  SalarySheet     SalarySheet[]
 
   @@map("employees")
 }
@@ -473,7 +475,7 @@ model ReceivableHistory {
 }
 
 model Payable {
-   id String @id @default(uuid())
+  id String @id @default(uuid())
 
   reference     String
   referenceDate DateTime
@@ -482,7 +484,7 @@ model Payable {
   description    String?
   observations   String?
   nature         String?
-  status         PaymentStatus           @default(PENDING)
+  status         PaymentStatus        @default(PENDING)
   totalAmount    Float // Valor total da movimentação
   installmentQty Int? // Número de parcelas
   installments   PayableInstallment[] // Relacionamento com parcelas
@@ -550,6 +552,74 @@ model PayableHistory {
 enum FinancialFlowType {
   INCOME
   EXPENSE
+}
+
+model SalarySheet {
+  id         String            @id @default(uuid()) // ID da folha de pagamento
+  month      Int // Mês de referência (0 a 11)
+  year       Int // Ano de referência
+  status     SheetStatus       @default(EMPTY) // Status da folha (aberta ou fechada)
+  
+  companyId String
+  company    Company           @relation(fields: [companyId], references: [id])
+  
+  employeeId String // Relacionamento com o funcionário
+  employee   Employee          @relation(fields: [employeeId], references: [id])
+  
+  items      SalaryItem[] // Relacionamento com os itens da folha (acréscimos, descontos)
+  movements  PaymentMovement[] // Relacionamento com as movimentações de pagamento (contas a pagar)
+  
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime? @updatedAt
+
+  @@unique([employeeId, month, year])
+}
+
+enum SheetStatus {
+  EMPTY //Sem Lançamento
+  OPEN // Folha aberta
+  CLOSED // Folha fechada
+}
+
+model SalaryItem {
+  id            String      @id @default(uuid()) // ID do item
+  salarySheetId String // Relacionamento com a folha de pagamento
+  salarySheet   SalarySheet @relation(fields: [salarySheetId], references: [id])
+
+  type        ItemType // Tipo do item (Acréscimo, Desconto, Adiantamento)
+  description String // Descrição do item (ex: Salário Base, Bonus, etc.)
+  amount      Float // Valor do item
+  reference   String // Referência do item (ex: mês de referência)
+
+  createdAt DateTime @default(now()) // Data de criação
+  updatedAt DateTime @updatedAt // Data de atualização
+}
+
+enum ItemType {
+  INCREASE // Acréscimo
+  DISCOUNT // Desconto
+  ADVANCE // Adiantamento
+}
+
+model PaymentMovement {
+  id            String      @id @default(uuid()) // ID da movimentação de pagamento
+  salarySheetId String // Relacionamento com a folha de pagamento
+  salarySheet   SalarySheet @relation(fields: [salarySheetId], references: [id])
+
+  amount          Float // Valor pago
+  paidDate        DateTime // Data do pagamento
+  paymentStatus   PaymentSalaryStatus @default(PENDING) // Status do pagamento (PENDENTE, PAGO)
+  paymentMethodId String // Forma de pagamento (referência à tabela de PaymentMethod)
+  paymentMethod   PaymentMethod       @relation(fields: [paymentMethodId], references: [id])
+
+  createdAt DateTime @default(now()) // Data de criação
+  updatedAt DateTime @updatedAt // Data de atualização
+}
+
+enum PaymentSalaryStatus {
+  PENDING // Pago ou pendente
+  PAID // Pago
 }
 
 model FinancialFlow {
@@ -718,6 +788,7 @@ model PaymentMethod {
   PaymentCondition       PaymentCondition[]
   ReceivableInstallment  ReceivableInstallment[]
   PayableInstallment     PayableInstallment[]
+  PaymentMovement        PaymentMovement[]
 
   @@map("payment_methods")
 }
