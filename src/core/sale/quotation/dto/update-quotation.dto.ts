@@ -67,20 +67,21 @@ export class UpdateQuotationDto extends PartialType(CreateQuotationDto) {
   @IsUUID()
   @ApiProperty({
     description:
+      'ID da empresa associada ao orçamento (opcional para atualização)',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  companyId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description:
       'ID do cliente associado ao orçamento (opcional para atualização)',
     example: '123e4567-e89b-12d3-a456-426614174000',
     required: false,
   })
   clientId?: string;
-
-  @IsOptional()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da série do orçamento (opcional para atualização)',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-    required: false,
-  })
-  serieId?: string;
 
   @IsOptional()
   @IsEnum(QuotationContactType)
@@ -100,6 +101,15 @@ export class UpdateQuotationDto extends PartialType(CreateQuotationDto) {
     required: false,
   })
   description?: string;
+
+  @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description: 'ID da Tag do orçamento (opcional para atualização)',
+    example: 'Este é um orçamento de exemplo.',
+    required: false,
+  })
+  tagId?: string;
 }
 
 export class UpdateItemDto extends PartialType(AddItemDto) {

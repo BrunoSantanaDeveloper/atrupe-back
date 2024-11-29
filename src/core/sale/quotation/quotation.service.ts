@@ -18,6 +18,7 @@ import {
   DuplicateQuotationProductItemDto,
 } from './dto/duplicate-quotation.dto';
 import { QuotationContactType } from './entities/quotation.entity';
+import { add, endOfDay } from 'date-fns';
 
 export interface QuotationGroup {
   date: string;
@@ -415,100 +416,39 @@ export class QuotationService {
     }
   }
 
-  // async createWithItems(dto: CreateQuotationDto) {
-  //   const prisma = new PrismaClient();
-
-  //   try {
-  //     const productData = await Promise.all(
-  //       dto.products.map(async (product) => {
-  //         const items = await Promise.all(
-  //           product.items.map(async (item) => {
-  //             const productItem = await prisma.productItem.findUnique({
-  //               where: { id: item.productItemId },
-  //             });
-  //             if (!productItem) {
-  //               throw new Error('ProductItem not found');
-  //             }
-  //             return {
-  //               productItemId: item.productItemId,
-  //               quantity: item.quantity,
-  //               totalValue: productItem.salePrice * item.quantity,
-  //             };
-  //           }),
-  //         );
-
-  //         const totalValue = items.reduce(
-  //           (acc, item) => acc + item.totalValue,
-  //           0,
-  //         );
-
-  //         return {
-  //           productId: product.productId,
-  //           quantity: product.quantity,
-  //           totalValue: totalValue,
-  //           items: {
-  //             create: items,
-  //           },
-  //         };
-  //       }),
-  //     );
-
-  //     // Criar a cotação
-  //     return await prisma.quotation.create({
-  //       data: {
-  //         clientId: dto.clientId,
-  //         seriesId: dto.serieId,
-  //         description: dto.description,
-  //         sellerId: dto.sellerId,
-  //         companyId: dto.companyId,
-  //         totalValue: productData.reduce(
-  //           (acc, product) => acc + product.totalValue,
-  //           0,
-  //         ),
-  //         quotationProduct: {
-  //           create: productData,
-  //         },
-  //       },
-  //     });
-  //   } catch (error) {
-  //     if (error instanceof PrismaClientKnownRequestError) {
-  //       console.error('Prisma error:', error);
-  //       throw new HttpException(
-  //         'Database error',
-  //         HttpStatus.INTERNAL_SERVER_ERROR,
-  //       );
-  //     }
-  //     console.error('General error:', error);
-  //     throw new HttpException(
-  //       'Internal server error',
-  //       HttpStatus.INTERNAL_SERVER_ERROR,
-  //     );
-  //   } finally {
-  //     await prisma.$disconnect();
-  //   }
-  // }
-
   async findAllQuantity(companyId: string) {
+    const allStatuses: QuotationStatus[] = [
+      'OPEN',
+      'REJECTED',
+      'DONE',
+      'OVERDUE',
+    ];
+
     const result = await this.prisma.quotation.groupBy({
       by: ['status'],
       where: { companyId },
       _count: true,
     });
 
-    const total = result.reduce((acc, cur) => acc + cur._count, 0);
+    const statusCount = allStatuses.reduce(
+      (acc, status) => {
+        acc[status] = 0;
+        return acc;
+      },
+      {} as { [K in QuotationStatus]: number },
+    );
+
+    result.forEach((cur) => {
+      statusCount[cur.status] = cur._count;
+    });
+
+    const total = Object.values(statusCount).reduce((acc, cur) => acc + cur, 0);
 
     return {
+      ...statusCount,
       TOTAL: total,
-      ...result.reduce(
-        (acc, cur) => {
-          acc[cur.status] = cur._count;
-          return acc;
-        },
-        {} as { [K in QuotationStatus]: number },
-      ),
     };
   }
-
   async findAll(dto: FilterQuotationDto) {
     try {
       let where: any = {
@@ -520,7 +460,10 @@ export class QuotationService {
       }
 
       if (dto.search) {
-        where = { ...where, name: { contains: dto.search } };
+        where = {
+          ...where,
+          name: { contains: dto.search, mode: 'insensitive' },
+        };
       }
 
       if (dto.status) {
@@ -540,18 +483,16 @@ export class QuotationService {
       }
 
       if (dto.date) {
-        const date = new Date(dto.date);
-        const endDate = new Date(date);
-        endDate.setHours(23, 59, 59, 999);
-
+        const date = add(new Date(dto.date), { days: 1 });
+        console.log(date);
         where = {
           ...where,
           createdAt: {
-            lte: endDate,
+            lte: endOfDay(date),
           },
         };
       }
-
+      console.log(where);
       const [quotations, total] = await Promise.all([
         this.prisma.quotation.findMany({
           where,
@@ -795,26 +736,26 @@ export class QuotationService {
       update['description'] = updateQuotationDto.description;
     }
 
-    if (updateQuotationDto.serieId) {
-      update['seriesId'] = updateQuotationDto.serieId;
-    }
-
     if (updateQuotationDto.sellerId) {
       update['sellerId'] = updateQuotationDto.sellerId;
     }
 
-    // if (updateQuotationDto.dueDate) {
-    //   update['dueDate'] = updateQuotationDto.dueDate;
-    // }
+    if (updateQuotationDto.companyId) {
+      update['companyId'] = updateQuotationDto.companyId;
+    }
 
     if (updateQuotationDto.clientId) {
       update['clientId'] = updateQuotationDto.clientId;
     }
 
+    if (updateQuotationDto.tagId) {
+      update['tagId'] = updateQuotationDto.tagId;
+    }
+
     if (!Object.keys(update).length) {
       return existingQuotation;
     }
-
+    console.log(update);
     // Realize a atualização com os dados fornecidos
     return this.prisma.quotation.update({
       where: { id },

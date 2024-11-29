@@ -129,7 +129,7 @@ model Sector {
 
 model Role {
   id       String  @id @default(uuid())
-  name     String  @unique
+  name     String
   isActive Boolean @default(true)
 
   companyId String
@@ -148,7 +148,7 @@ model Role {
 
 model SellerProfile {
   id       String  @id @default(uuid())
-  name     String  @unique
+  name     String
   isActive Boolean @default(true)
 
   companyId String
@@ -162,6 +162,7 @@ model SellerProfile {
   canApprovePreRegistration Boolean @default(false)
   canCancelSale             Boolean @default(false)
 
+  @@unique([name, companyId])
   @@map("seller_profile")
 }
 
@@ -342,6 +343,7 @@ model User {
   name     String
   password String
   email    String    @unique
+  avatar   String?
 
   attributes Attribute[]
   userRole   UserRole[]
@@ -705,13 +707,14 @@ model ScheduledExpense {
 
 model Invoice {
   id        String   @id @default(uuid())
-  number    String   @unique
+  number    String
   date      DateTime
   amount    Float
   companyId String
   company   Company  @relation(fields: [companyId], references: [id])
   createdAt DateTime @default(now())
 
+  @@unique([number, companyId])
   @@map("invoices")
 }
 
@@ -1063,7 +1066,7 @@ model Order {
 model Product {
   id   String @id @default(uuid())
   name String
-  code String @unique
+  code String
 
   isActive   Boolean @default(true)
   isStandard Boolean @default(false)
@@ -1087,6 +1090,7 @@ model Product {
   quotations       Quotation[]        @relation("QuotationToProduct")
   QuotationProduct QuotationProduct[]
 
+  @@unique([code, companyId])
   @@map("products")
 }
 

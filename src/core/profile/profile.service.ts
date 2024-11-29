@@ -41,6 +41,7 @@ export class ProfileService {
               user: {
                 select: {
                   name: true,
+                  avatar: true,
                 },
               },
               role: {
@@ -54,6 +55,9 @@ export class ProfileService {
         },
         take: +filter.limit,
         skip: (+filter.page - 1) * +filter.limit,
+        orderBy: {
+          name: 'asc',
+        },
       }),
     ]);
 
@@ -61,13 +65,17 @@ export class ProfileService {
       profile,
       employees: profile.employees.map((employee) => ({
         id: employee.role.id,
+        avatar: employee.user.avatar,
         name: employee.user.name,
         role: employee.role.name,
       })),
     }));
 
+    const lastPage = Math.ceil(total / +filter.limit);
+
     return {
       total,
+      lastPage,
       profiles: mappedProfiles,
     };
   }
