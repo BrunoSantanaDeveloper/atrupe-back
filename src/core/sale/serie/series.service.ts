@@ -28,10 +28,10 @@ export class SaleSeriesService {
 
     const [total, saleSeries] = await Promise.all([
       this.prisma.saleSeries.count({
-        where: { isActive: true, companyId },
+        where: { companyId },
       }),
       this.prisma.saleSeries.findMany({
-        where: { isActive: true, companyId },
+        where: { companyId },
         orderBy: { title: 'asc' },
         skip,
         take: limit,

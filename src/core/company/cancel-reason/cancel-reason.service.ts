@@ -32,6 +32,8 @@ export class CancelReasonService {
 
   async findAllByType(filter: BaseFilterDTO) {
     const { companyId, page, limit } = filter;
+
+    // Buscar o total de razões e as razões paginadas
     const [total, reasons] = await Promise.all([
       this.prisma.reasons.count({
         where: { companyId },
@@ -40,27 +42,38 @@ export class CancelReasonService {
         where: { companyId },
         skip: (+page - 1) * +limit,
         take: +limit,
+        orderBy: { reason: 'asc' },
       }),
     ]);
 
     // Calcular a última página
     const lastPage = Math.ceil(total / +limit);
 
-    // Agrupar os dados pelo `type`
-    const grouped = reasons.reduce(
-      (acc, reason) => {
-        if (!acc[reason.type]) {
-          acc[reason.type] = [];
-        }
-        acc[reason.type].push(reason);
-        return acc;
-      },
-      { total },
-    );
+    // Agrupar as razões pelo `type` e formatar os dados conforme desejado
+    const grouped = Object.entries(
+      reasons.reduce(
+        (acc, reason) => {
+          if (!acc[reason.type]) {
+            acc[reason.type] = [];
+          }
+          acc[reason.type].push({
+            id: reason.id,
+            reason: reason.reason,
+          });
+          return acc;
+        },
+        {} as Record<string, any[]>,
+      ),
+    ).map(([type, reasons]) => ({
+      type,
+      reasons,
+    }));
 
+    // Retornar os dados no formato desejado
     return {
-      ...grouped,
+      total,
       lastPage,
+      data: grouped,
     };
   }
 }

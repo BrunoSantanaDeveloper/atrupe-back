@@ -1,4 +1,11 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateProfileDto {
@@ -13,11 +20,12 @@ export class CreateProfileDto {
 
   companyId: string;
 
-  @IsOptional()
+  @IsNotEmpty()
+  @IsNumber()
   @ApiProperty({
     description: 'Porcentagem de comissão (0 a 100)',
     example: '10.00',
-    required: false,
+    required: true,
   })
   commission: number;
   @IsOptional()
@@ -26,6 +34,7 @@ export class CreateProfileDto {
     example: '10.00',
     required: false,
   })
+  @IsNumber()
   maxDiscount: number;
   @IsOptional()
   @ApiProperty({
@@ -33,6 +42,7 @@ export class CreateProfileDto {
     example: '150.00',
     required: false,
   })
+  @IsNumber()
   minValue: number;
 
   @IsOptional()
@@ -41,6 +51,7 @@ export class CreateProfileDto {
     example: false,
     required: false,
   })
+  @IsBoolean()
   canApprovePreRegistration: boolean;
 
   @IsOptional()
@@ -49,12 +60,13 @@ export class CreateProfileDto {
     example: false,
     required: false,
   })
+  @IsBoolean()
   canCancelSale: boolean;
 }
 
 export class AddEmployeeOnProfileDto {
   @IsNotEmpty()
-  @IsString()
+  @IsUUID()
   @ApiProperty({
     description: 'ID do funcionário',
     example: '123e4567-e89b-12d3-a456-426614174000',

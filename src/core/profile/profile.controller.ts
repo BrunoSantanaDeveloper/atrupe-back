@@ -27,7 +27,7 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { ProfileFilterDTO } from './dto/filter.dto';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 const RESOURCE = 'profile';
 
@@ -36,6 +36,30 @@ const RESOURCE = 'profile';
 @Controller(RESOURCE)
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
+  @ApiTags('Gerenciamento dos perfis')
+  @Get('employees')
+  @ApiOperation({ summary: 'Lista os funcionários sem Perfil' })
+  async listEmployess(@Req() req) {
+    const companyId = req.user.companyId;
+    return await this.profileService.listEmployees(companyId);
+  }
+
+  @ApiTags('Gerenciamento dos perfis')
+  @Post('employees/:profileId')
+  @ApiOperation({ summary: 'Adiciona um perfil ao funcionário' })
+  async addEmployee(
+    @Param('profileId') profileId: string,
+    @Body() dto: AddEmployeeOnProfileDto,
+  ) {
+    return await this.profileService.addEmployee(profileId, dto);
+  }
+
+  @ApiTags('Gerenciamento dos perfis')
+  @Delete('employees/:employeeId')
+  @ApiOperation({ summary: 'Remove um perfil do funcionário' })
+  async removeEmployee(@Param('employeeId') employeeId: string) {
+    return this.profileService.removeEmployee(employeeId);
+  }
 
   @ApiTags('Perfil de vendedor')
   @Post()
@@ -67,11 +91,11 @@ export class ProfileController {
     description: 'Lista de cargos retornada com sucesso.',
     isArray: true,
   })
-  async findAll(@Query() filter: ProfileFilterDTO, @Req() req) {
+  async findAll(@Query() filter: BaseFilterDTO, @Req() req) {
     filter.companyId = req.user.companyId;
     return await this.profileService.findAll(filter);
   }
-
+  @ApiTags('Perfil de vendedor')
   @Get(':id')
   @ApiOperation({ summary: 'Obtém um Perfil pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID da Perfil' })
@@ -84,6 +108,7 @@ export class ProfileController {
     description: 'Perfil não encontrado.',
   })
   findOne(@Param('id') id: string) {
+    console.log('aq');
     return this.profileService.findOne(id);
   }
 
@@ -97,10 +122,6 @@ export class ProfileController {
     examples: {
       example: {
         summary: 'Exemplo de payload para atualização de Perfil',
-        value: {
-          name: 'Updated Admin',
-          sectorId: '456e7890-e12d-34a6-b789-567890123456',
-        },
       },
     },
   })
@@ -133,30 +154,5 @@ export class ProfileController {
   })
   remove(@Param('id') id: string) {
     return this.profileService.remove(id);
-  }
-
-  @ApiTags('Gerenciamento dos perfis')
-  @Get('employees')
-  @ApiOperation({ summary: 'Lista os funcionários sem Perfil' })
-  async listEmployess(@Req() req) {
-    const companyId = req.user.companyId;
-    return await this.profileService.listEmployees(companyId);
-  }
-
-  @ApiTags('Gerenciamento dos perfis')
-  @Post('employees/:profileId')
-  @ApiOperation({ summary: 'Adiciona um perfil ao funcionário' })
-  async addEmployee(
-    @Param('profileId') profileId: string,
-    @Body() dto: AddEmployeeOnProfileDto,
-  ) {
-    return await this.profileService.addEmployee(profileId, dto);
-  }
-
-  @ApiTags('Gerenciamento dos perfis')
-  @Delete('employees/:employeeId')
-  @ApiOperation({ summary: 'Remove um perfil do funcionário' })
-  async removeEmployee(@Param('employeeId') employeeId: string) {
-    return this.profileService.removeEmployee(employeeId);
   }
 }

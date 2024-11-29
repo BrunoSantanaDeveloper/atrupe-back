@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsEnum, IsNotEmpty, IsOptional } from 'class-validator';
+import { ReasonType } from '@prisma/client';
+import { IsString, IsEnum, IsNotEmpty } from 'class-validator';
 
 export class CreateReasonDto {
   @ApiProperty({ description: 'Texto do motivo' })
@@ -10,12 +11,10 @@ export class CreateReasonDto {
   @ApiProperty({
     description: 'Tipo de motivo (REJECTION ou CANCELLATION)',
     example: 'REJECTION || CANCELLATION',
-    enum: ['REJECTION', 'CANCELLATION'],
+    enum: ReasonType,
   })
-  @IsEnum(['REJECTION', 'CANCELLATION'])
-  type: 'REJECTION' | 'CANCELLATION';
+  @IsEnum(ReasonType)
+  type: ReasonType;
 
-  @ApiProperty({ description: 'ID da empresa relacionada' })
-  @IsOptional()
   companyId: string;
 }

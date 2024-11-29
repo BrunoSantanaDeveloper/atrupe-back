@@ -8,8 +8,8 @@ import {
   CreateProfileDto,
 } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { ProfileFilterDTO } from './dto/filter.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 @Injectable()
 export class ProfileService {
@@ -23,13 +23,11 @@ export class ProfileService {
     });
   }
 
-  async findAll(filter: ProfileFilterDTO) {
-    let where = {};
-    if (filter.companyId) {
-      where = {
-        companyId: filter.companyId,
-      };
-    }
+  async findAll(filter: BaseFilterDTO) {
+    const where = {
+      isActive: true,
+      ...(filter.companyId && { companyId: filter.companyId }),
+    };
 
     const [total, profiles] = await Promise.all([
       this.prisma.sellerProfile.count({
@@ -124,7 +122,9 @@ export class ProfileService {
         },
       },
     });
-
+    if (employes.length === 0) {
+      throw new NotFoundException('No employees found');
+    }
     const data = employes.map((employee) => {
       return { id: employee.id, name: employee.user.name };
     });
