@@ -41,7 +41,7 @@ model Company {
   payables          Payable[]
   receivables       Receivable[]
   financialFlows    FinancialFlow[]
-  cashControls      CashControl[]
+  cashControls      CashRegister[]
   scheduledExpenses ScheduledExpense[]
   invoices          Invoice[]
 
@@ -555,22 +555,21 @@ enum FinancialFlowType {
 }
 
 model SalarySheet {
-  id         String            @id @default(uuid()) // ID da folha de pagamento
-  month      Int // Mês de referência (0 a 11)
-  year       Int // Ano de referência
-  status     SheetStatus       @default(EMPTY) // Status da folha (aberta ou fechada)
-  
-  companyId String
-  company    Company           @relation(fields: [companyId], references: [id])
-  
-  employeeId String // Relacionamento com o funcionário
-  employee   Employee          @relation(fields: [employeeId], references: [id])
-  
-  items      SalaryItem[] // Relacionamento com os itens da folha (acréscimos, descontos)
-  movements  PaymentMovement[] // Relacionamento com as movimentações de pagamento (contas a pagar)
-  
+  id     String      @id @default(uuid()) // ID da folha de pagamento
+  month  Int // Mês de referência (0 a 11)
+  year   Int // Ano de referência
+  status SheetStatus @default(EMPTY) // Status da folha (aberta ou fechada)
 
-  createdAt DateTime @default(now())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  employeeId String // Relacionamento com o funcionário
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  items     SalaryItem[] // Relacionamento com os itens da folha (acréscimos, descontos)
+  movements PaymentMovement[] // Relacionamento com as movimentações de pagamento (contas a pagar)
+
+  createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
 
   @@unique([employeeId, month, year])
@@ -635,16 +634,61 @@ model FinancialFlow {
   @@map("financial_flows")
 }
 
-model CashControl {
-  id        String   @id @default(uuid())
-  opening   Float
-  closing   Float
-  date      DateTime
-  companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
-  createdAt DateTime @default(now())
+model CashRegister {
+  id          String             @id @default(uuid())
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime?          @updatedAt
+  description String?
+  status      CashRegisterStatus @default(OPEN)
+  observation String?
 
-  @@map("cash_controls")
+  openingDate    DateTime
+  closingDate    DateTime?
+  openingBalance Float
+  totalIncomes   Float     @default(0)
+  totalOutcomes  Float     @default(0)
+  retroactive    Float     @default(0) // Diferença acumulada de reaberturas
+  closingBalance Float? // Calculado apenas ao fechar
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  bankAccountId String
+  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
+
+  cashControls BankAccountCashControl[]
+
+  transactions Transaction[]
+
+  @@map("cash_registers")
+}
+
+model Transaction {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  type            TransactionType
+  amount          Float
+  description     String?
+  transactionDate DateTime        @default(now())
+  reason          String? // Motivo para edição ou transferência
+
+  cashRegisterId String
+  cashRegister   CashRegister @relation(fields: [cashRegisterId], references: [id])
+
+  @@map("transactions")
+}
+
+enum TransactionType {
+  INCOME
+  OUTCOME
+  TRANSFER
+}
+
+enum CashRegisterStatus {
+  OPEN
+  CLOSED
 }
 
 model ScheduledExpense {
@@ -738,12 +782,13 @@ model BankAccount {
 
   bankAccountCashControl BankAccountCashControl[]
 
-  companyId  String
-  company    Company      @relation(fields: [companyId], references: [id])
-  bankId     String
-  bank       Bank         @relation(fields: [bankId], references: [id])
-  Receivable Receivable[]
-  Payable    Payable[]
+  companyId    String
+  company      Company        @relation(fields: [companyId], references: [id])
+  bankId       String
+  bank         Bank           @relation(fields: [bankId], references: [id])
+  Receivable   Receivable[]
+  Payable      Payable[]
+  CashRegister CashRegister[]
 
   @@map("bank_accounts")
 }
@@ -768,6 +813,9 @@ model BankAccountCashControl {
 
   bankAccountId String
   bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
+
+  cashRegisterId String?
+  cashRegister   CashRegister? @relation(fields: [cashRegisterId], references: [id])
 
   @@map("bank_account_cash_controls")
 }
@@ -853,7 +901,7 @@ model SaleSeries {
   updatedAt DateTime? @updatedAt
   isActive  Boolean   @default(true)
 
-  code                String  @unique
+  code                String
   description         String?
   title               String
   currentBudgetNumber Int     @default(0)
@@ -871,6 +919,7 @@ model SaleSeries {
   company   Company     @relation(fields: [companyId], references: [id])
   Quotation Quotation[]
 
+  @@unique([code, companyId])
   @@map("sale_series")
 }
 

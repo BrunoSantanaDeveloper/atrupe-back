@@ -17,17 +17,17 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
-  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
-const RESOURCE = 'settings/company';
+const RESOURCE = 'cancel-reason';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 @Controller(RESOURCE)
-@ApiTags('Configurações da empresa')
+@ApiTags('Configurações de motivo de cancelamento ou rejeição')
 export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
@@ -43,16 +43,11 @@ export class SettingsController {
     summary: 'Listar motivos de rejeição ou cancelamento por tipo',
   })
   @ApiResponse({ status: 200, description: 'Motivos listados com sucesso' })
-  @ApiQuery({
-    name: 'type',
-    enum: ['REJECTION', 'CANCELLATION'],
-    description: 'Tipo de motivo',
-  })
   @Get()
-  async findAll(@Query('type') type: 'REJECTION' | 'CANCELLATION', @Req() req) {
-    const companyId = req.user.companyId;
+  async findAll(@Req() req, @Query() filter: BaseFilterDTO) {
+    filter.companyId = req.user.companyId;
 
-    return await this.settingsService.findAllByType(type, companyId);
+    return await this.settingsService.findAllByType(filter);
   }
 
   @ApiOperation({ summary: 'Editar motivo de rejeição ou cancelamento' })

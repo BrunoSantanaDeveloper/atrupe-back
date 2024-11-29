@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CreateSaleSeriesDto } from './dto/create-series.dto';
 import { UpdateSaleSeriesDto } from './dto/update-serie.dto';
@@ -7,8 +11,16 @@ import { UpdateSaleSeriesDto } from './dto/update-serie.dto';
 export class SaleSeriesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(createSaleSeriesDto: CreateSaleSeriesDto) {
-    return this.prisma.saleSeries.create({ data: createSaleSeriesDto });
+  async create(createSaleSeriesDto: CreateSaleSeriesDto) {
+    try {
+      return await this.prisma.saleSeries.create({ data: createSaleSeriesDto });
+    } catch (error) {
+      console.error(error);
+      if (error.code === 'P2002') {
+        throw new BadRequestException('Sale series code already exists');
+      }
+      throw new BadRequestException('Error on create sale series');
+    }
   }
 
   async findAll(companyId: string, page: number = 1, limit: number = 10) {
@@ -36,11 +48,11 @@ export class SaleSeriesService {
 
   async findOne(id: string) {
     const series = await this.prisma.saleSeries.findUnique({
-      where: { id },
+      where: { id, isActive: true },
     });
 
     if (!series) {
-      throw new Error(`Sale series with ID ${id} not found`);
+      throw new NotFoundException(`Sale series not found`);
     }
 
     return this.formatSeries(series);
@@ -70,11 +82,18 @@ export class SaleSeriesService {
     return all[0].toUpperCase() + all.slice(1);
   }
 
-  update(id: string, updateSaleSeriesDto: UpdateSaleSeriesDto) {
-    return this.prisma.saleSeries.update({
-      where: { id },
-      data: updateSaleSeriesDto,
-    });
+  async update(id: string, updateSaleSeriesDto: UpdateSaleSeriesDto) {
+    try {
+      return await this.prisma.saleSeries.update({
+        where: { id },
+        data: updateSaleSeriesDto,
+      });
+    } catch (error) {
+      if ((error.code = 'P2002')) {
+        throw new BadRequestException('Sale series code already exists');
+      }
+      throw new BadRequestException('Error on update sale series');
+    }
   }
 
   remove(id: string) {

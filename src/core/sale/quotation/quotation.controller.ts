@@ -10,7 +10,6 @@ import {
   BadRequestException,
   Patch,
   NotFoundException,
-  Req,
 } from '@nestjs/common';
 import { QuotationService } from './quotation.service';
 import { AddItemDto, CreateQuotationDto } from './dto/create-quotation.dto';
@@ -117,18 +116,6 @@ export class QuotationController {
     }
   }
 
-  @Get('quantity')
-  @ApiOperation({
-    summary: 'Obtém a quantidade de todos os status de orçamentos',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Lista de quantidade de orçamentos retornada com sucesso.',
-  })
-  async findAllQuantity(@Req() req) {
-    const companyId = req.user.companyId;
-    return this.quotationService.findAllQuantity(companyId);
-  }
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todos os orçamentos' })
   @ApiResponse({

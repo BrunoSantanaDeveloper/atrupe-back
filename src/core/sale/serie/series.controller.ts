@@ -34,9 +34,9 @@ export class SaleSeriesController {
   @ApiOperation({ summary: 'Create a new sale series' })
   @ApiResponse({ status: 201, description: 'Sale series created successfully' })
   @Post()
-  create(@Req() req, @Body() createSaleSeriesDto: CreateSaleSeriesDto) {
+  async create(@Req() req, @Body() createSaleSeriesDto: CreateSaleSeriesDto) {
     createSaleSeriesDto.companyId = req.user.companyId;
-    return this.saleSeriesService.create(createSaleSeriesDto);
+    return await this.saleSeriesService.create(createSaleSeriesDto);
   }
 
   @ApiOperation({ summary: 'Get all sale series' })

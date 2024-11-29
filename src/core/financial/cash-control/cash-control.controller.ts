@@ -1,120 +1,81 @@
 import {
   Controller,
-  Get,
   Post,
   Body,
   Patch,
-  Param,
-  Delete,
   UseGuards,
+  Req,
+  Query,
+  Get,
+  Param,
 } from '@nestjs/common';
 import { CashControlService } from './cash-control.service';
-import { CreateCashControlDto } from './dto/create-cash-control.dto';
-import { UpdateCashControlDto } from './dto/update-cash-control.dto';
-import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiBody,
-  ApiParam,
-} from '@nestjs/swagger';
+  CloseCashRegisterDto,
+  CreateCashRegisterDto,
+} from './dto/create-cash-control.dto';
+import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { ApiBearerAuth, ApiParam, ApiTags } from '@nestjs/swagger';
+import {
+  EditCashRegisterDto,
+  TransferDto,
+} from './dto/update-cash-control.dto';
+import { ListCashRegistersDto } from './dto/cash-control-filters.dto';
 
 const RESOURCE = 'cash-control';
 const GROUP = 'financial';
 
 @ApiTags('Controle de Caixa')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class CashControlController {
   constructor(private readonly cashControlService: CashControlService) {}
-
-  @Post()
-  @ApiOperation({ summary: 'Cria um novo controle de caixa' })
-  @ApiBody({
-    description: 'Dados do novo controle de caixa',
-    type: CreateCashControlDto,
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Controle de caixa criado com sucesso.',
-  })
-  create(@Body() createCashControlDto: CreateCashControlDto) {
-    return this.cashControlService.create(createCashControlDto);
+  @Post('open')
+  async openCashRegister(
+    @Req() req,
+    @Body() createCashRegisterDto: CreateCashRegisterDto,
+  ) {
+    createCashRegisterDto.companyId = req.user.companyId;
+    return this.cashControlService.openCashRegister(createCashRegisterDto);
   }
 
-  @Get()
-  @ApiOperation({ summary: 'Obtém a lista de todos os controles de caixa' })
-  @ApiResponse({
-    status: 200,
-    description: 'Lista de controles de caixa retornada com sucesso.',
-    isArray: true,
-  })
-  findAll() {
-    return this.cashControlService.findAll();
+  @Patch('close/:cashRegisterId')
+  async closeCashRegister(
+    @Param('cashRegisterId') cashRegisterId: string,
+    @Body() closeCashRegisterDto: CloseCashRegisterDto,
+  ) {
+    closeCashRegisterDto.cashRegisterId = cashRegisterId;
+    return this.cashControlService.closeCashRegister(closeCashRegisterDto);
+  }
+
+  @Get('')
+  async listCashRegisters(@Req() req, @Query() query: ListCashRegistersDto) {
+    query.companyId = req.user.companyId;
+    return this.cashControlService.listCashRegisters(query);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Obtém um controle de caixa pelo ID' })
   @ApiParam({
     name: 'id',
-    required: true,
-    description: 'ID do controle de caixa',
+    description: 'ID do caixa',
+    example: 'cashRegisterId123',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'Controle de caixa retornado com sucesso.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Controle de caixa não encontrado.',
-  })
-  findOne(@Param('id') id: string) {
-    return this.cashControlService.findOne(id);
+  async findOneCashRegister(@Param('id') id: string) {
+    return this.cashControlService.findOneCashRegister(id);
   }
 
-  @Patch(':id')
-  @ApiOperation({ summary: 'Atualiza um controle de caixa pelo ID' })
-  @ApiParam({
-    name: 'id',
-    required: true,
-    description: 'ID do controle de caixa',
-  })
-  @ApiBody({
-    description: 'Dados para atualização do controle de caixa',
-    type: CreateCashControlDto,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Controle de caixa atualizado com sucesso.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Controle de caixa não encontrado.',
-  })
-  update(
-    @Param('id') id: string,
-    @Body() updateCashControlDto: UpdateCashControlDto,
+  @Patch(':cashRegisterId')
+  async editCashRegister(
+    @Param('cashRegisterId') cashRegisterId: string,
+    @Body() editDto: EditCashRegisterDto,
   ) {
-    return this.cashControlService.update(id, updateCashControlDto);
+    editDto.cashRegisterId = cashRegisterId;
+    return this.cashControlService.editCashRegister(editDto);
   }
 
-  @Delete(':id')
-  @ApiOperation({ summary: 'Remove um controle de caixa pelo ID' })
-  @ApiParam({
-    name: 'id',
-    required: true,
-    description: 'ID do controle de caixa',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Controle de caixa removido com sucesso.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Controle de caixa não encontrado.',
-  })
-  remove(@Param('id') id: string) {
-    return this.cashControlService.remove(id);
+  @Post('transfer')
+  async transferFunds(@Body() transferDto: TransferDto) {
+    return this.cashControlService.transferFunds(transferDto);
   }
 }

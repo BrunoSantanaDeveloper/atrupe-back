@@ -1,38 +1,44 @@
-import { IsDate, IsDecimal, IsNotEmpty, IsUUID } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class CreateCashControlDto {
-  @IsNotEmpty()
-  @IsDecimal()
+export class CreateCashRegisterDto {
   @ApiProperty({
-    description: 'Saldo de abertura do caixa',
-    example: 1000.0,
+    description: 'Data de abertura do caixa (padrão: hoje)',
+    example: '2024-11-29',
   })
-  opening: number;
+  @IsOptional()
+  @IsString()
+  openingDate?: string;
 
+  @ApiProperty({ description: 'Saldo inicial do caixa', example: 1000.0 })
   @IsNotEmpty()
-  @IsDecimal()
-  @ApiProperty({
-    description: 'Saldo de fechamento do caixa',
-    example: 1500.0,
-  })
-  closing: number;
+  @IsNumber()
+  openingBalance: number;
 
-  @IsNotEmpty()
-  @IsDate()
   @ApiProperty({
-    description: 'Data do controle de caixa',
-    example: '2023-06-01T00:00:00.000Z',
-    type: 'string', // Swagger espera uma string para datas
-    format: 'date-time',
+    description: 'ID da conta bancária associada',
+    example: 'b305cdc3-3fef-4f49-95d8-0bc48b02c00c',
   })
-  date: Date;
-
   @IsNotEmpty()
   @IsUUID()
-  @ApiProperty({
-    description: 'ID da empresa associada ao controle de caixa',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
+  bankAccountId: string;
   companyId: string;
+}
+
+export class CloseCashRegisterDto {
+  cashRegisterId: string;
+
+  @ApiProperty({
+    description: 'Observações do fechamento do caixa',
+    example: 'Caixa fechado com sucesso',
+  })
+  @IsOptional()
+  @IsString()
+  observation?: string;
 }

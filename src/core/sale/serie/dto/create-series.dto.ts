@@ -80,6 +80,7 @@ export class CreateSaleSeriesDto {
   @IsString()
   @IsOptional()
   textAfterItems?: string;
+
   isActive?: boolean;
 
   companyId: string;

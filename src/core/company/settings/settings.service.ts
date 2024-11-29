@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { CreateReasonDto } from './dto/create-setting.dto';
 import { UpdateReasonDto } from './dto/update-setting.dto';
 import { PrismaService } from 'nestjs-prisma';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 @Injectable()
 export class SettingsService {
@@ -29,22 +30,37 @@ export class SettingsService {
     });
   }
 
-  async findAllByType(type: 'REJECTION' | 'CANCELLATION', companyId: string) {
+  async findAllByType(filter: BaseFilterDTO) {
+    const { companyId, page, limit } = filter;
     const [total, reasons] = await Promise.all([
       this.prisma.reasons.count({
-        where: { type, companyId },
+        where: { companyId },
       }),
       this.prisma.reasons.findMany({
-        where: { type, companyId },
+        where: { companyId },
+        skip: (+page - 1) * +limit,
+        take: +limit,
       }),
     ]);
-    console.log(reasons);
 
-    return [
-      {
-        total,
-        data: reasons,
+    // Calcular a última página
+    const lastPage = Math.ceil(total / +limit);
+
+    // Agrupar os dados pelo `type`
+    const grouped = reasons.reduce(
+      (acc, reason) => {
+        if (!acc[reason.type]) {
+          acc[reason.type] = [];
+        }
+        acc[reason.type].push(reason);
+        return acc;
       },
-    ];
+      { total },
+    );
+
+    return {
+      ...grouped,
+      lastPage,
+    };
   }
 }
