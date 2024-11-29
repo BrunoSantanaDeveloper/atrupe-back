@@ -102,6 +102,6 @@ export class EmployeeController {
     description: 'Colaborador não encontrado.',
   })
   remove(@Param('id') id: string) {
-    return this.employeeService.remove(+id);
+    return this.employeeService.remove(id);
   }
 }

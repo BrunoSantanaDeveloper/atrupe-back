@@ -823,6 +823,9 @@ export class QuotationService {
   }
 
   remove(id: string) {
-    return this.prisma.quotation.delete({ where: { id } });
+    return this.prisma.quotation.update({
+      where: { id },
+      data: { isActive: false },
+    });
   }
 }

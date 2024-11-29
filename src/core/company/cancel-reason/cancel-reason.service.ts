@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { CreateReasonDto } from './dto/create-setting.dto';
-import { UpdateReasonDto } from './dto/update-setting.dto';
+import { CreateReasonDto } from './dto/create-cancel-reason.dto';
+import { UpdateReasonDto } from './dto/update-cancel-reason.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 @Injectable()
-export class SettingsService {
+export class CancelReasonService {
   constructor(private readonly prisma: PrismaService) {}
 
   // Criar motivo

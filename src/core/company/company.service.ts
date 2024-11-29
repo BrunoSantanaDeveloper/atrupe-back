@@ -61,8 +61,11 @@ export class CompanyService {
   }
 
   remove(id: string) {
-    return this.prisma.company.delete({
+    return this.prisma.company.update({
       where: { id: id },
+      data: {
+        isActive: false,
+      },
     });
   }
 }

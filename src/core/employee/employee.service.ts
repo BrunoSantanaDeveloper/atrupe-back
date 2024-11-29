@@ -87,7 +87,12 @@ export class EmployeeService {
     return `This action updates a #${id} employee` + updateEmployeeDto;
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} employee`;
+  async remove(id: string) {
+    return await this.prisma.employee.update({
+      where: { id },
+      data: {
+        isActive: false,
+      },
+    });
   }
 }

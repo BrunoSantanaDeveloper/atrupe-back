@@ -5,7 +5,7 @@ import { PrismaModule } from 'nestjs-prisma';
 import { AuthModule } from '../auth/auth.module';
 import { AddressModule } from '../address/address.module';
 import { PlugModule } from '../../svc/plug/plug.module';
-import { SettingsModule } from './settings/settings.module';
+import { CancelReasonModule } from './cancel-reason/cancel-reason.module';
 
 @Module({
   imports: [
@@ -13,7 +13,7 @@ import { SettingsModule } from './settings/settings.module';
     AuthModule,
     AddressModule,
     PlugModule,
-    SettingsModule,
+    CancelReasonModule,
   ],
   controllers: [CompanyController],
   providers: [CompanyService],

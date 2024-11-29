@@ -90,8 +90,11 @@ export class StatusService {
       );
     }
 
-    return this.prisma.statusQuotation.delete({
+    return this.prisma.statusQuotation.update({
       where: { id },
+      data: {
+        isActive: false,
+      },
     });
   }
 }

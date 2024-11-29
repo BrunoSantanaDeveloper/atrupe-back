@@ -125,8 +125,4 @@ export class UserService {
   update() {
     return 'This action updates a user';
   }
-
-  remove() {
-    return 'This action removes a user';
-  }
 }

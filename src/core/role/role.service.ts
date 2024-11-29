@@ -70,44 +70,4 @@ export class RoleService {
       data: { isActive: false },
     });
   }
-
-  async listEmployees(companyId) {
-    const employes = await this.prisma.employee.findMany({
-      where: {
-        role: null,
-        companyId: companyId,
-      },
-      select: {
-        id: true,
-        user: {
-          select: {
-            name: true,
-          },
-        },
-      },
-      orderBy: {
-        user: {
-          name: 'asc',
-        },
-      },
-    });
-
-    const data = employes.map((employee) => {
-      return { id: employee.id, name: employee.user.name };
-    });
-    return data;
-  }
-
-  async removeEmployee(employeeId: string) {
-    return this.prisma.employee.update({
-      where: { id: employeeId },
-      data: { role: { disconnect: true } },
-    });
-  }
-  async addEmployee(roleId: string, employeeId: string) {
-    return this.prisma.employee.update({
-      where: { id: employeeId },
-      data: { role: { connect: { id: roleId } } },
-    });
-  }
 }

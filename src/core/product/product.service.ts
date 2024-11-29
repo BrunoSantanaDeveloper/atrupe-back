@@ -166,7 +166,12 @@ export class ProductService {
       if (!product) {
         throw new BadRequestException('Product not found');
       }
-      return this.prisma.product.delete({ where: { id } });
+      return this.prisma.product.update({
+        where: { id },
+        data: {
+          isActive: false,
+        },
+      });
     } catch (error) {
       throw new BadRequestException('Failed to delete product', error.message);
     }

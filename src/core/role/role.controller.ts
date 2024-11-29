@@ -124,23 +124,4 @@ export class RoleController {
   remove(@Param('id') id: string) {
     return this.roleService.remove(id);
   }
-
-  @Get('employees/list')
-  async listEmployess(@Req() req) {
-    const companyId = req.user.companyId;
-    return await this.roleService.listEmployees(companyId);
-  }
-
-  @Patch(':roleId/add/:employeeId')
-  async addEmployee(
-    @Param('roleId') roleId: string,
-    @Param('employeeId') employeeId: string,
-  ) {
-    return await this.roleService.addEmployee(roleId, employeeId);
-  }
-
-  @Patch('remove/:employeeId')
-  async removeEmployee(@Param('employeeId') employeeId: string) {
-    return this.roleService.removeEmployee(employeeId);
-  }
 }

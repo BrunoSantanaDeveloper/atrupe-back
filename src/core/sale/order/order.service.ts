@@ -248,6 +248,9 @@ export class OrderService {
   }
 
   remove(id: string) {
-    return this.prisma.order.delete({ where: { id } });
+    return this.prisma.order.update({
+      where: { id },
+      data: { isActive: false },
+    });
   }
 }

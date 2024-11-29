@@ -30,6 +30,9 @@ export class DeliveryScheduleService {
   }
 
   remove(id: string) {
-    return this.prisma.deliverySchedule.delete({ where: { id } });
+    return this.prisma.deliverySchedule.update({
+      where: { id },
+      data: { isActive: false },
+    });
   }
 }

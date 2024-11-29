@@ -52,9 +52,12 @@ export class MethodService {
   }
 
   remove(id: string) {
-    return this.prisma.paymentMethod.delete({
+    return this.prisma.paymentMethod.update({
       where: {
         id,
+      },
+      data: {
+        isActive: false,
       },
     });
   }

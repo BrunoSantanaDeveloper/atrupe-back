@@ -138,8 +138,9 @@ export class ConditionService {
 
   async remove(id: string) {
     try {
-      return await this.prisma.paymentCondition.delete({
+      return await this.prisma.paymentCondition.update({
         where: { id },
+        data: { isActive: false },
       });
     } catch (error) {
       console.error(error);

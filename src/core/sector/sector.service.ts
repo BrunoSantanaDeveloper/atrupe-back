@@ -67,8 +67,9 @@ export class SectorService {
   }
 
   remove(id: string) {
-    return this.prisma.sector.delete({
+    return this.prisma.sector.update({
       where: { id: id },
+      data: { isActive: false },
     });
   }
 }
