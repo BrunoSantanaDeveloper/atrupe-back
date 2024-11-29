@@ -1,5 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { CreateProfileDto } from './dto/create-profile.dto';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  AddEmployeeOnProfileDto,
+  CreateProfileDto,
+} from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ProfileFilterDTO } from './dto/filter.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
@@ -125,15 +132,24 @@ export class ProfileService {
   }
 
   async removeEmployee(employeeId: string) {
-    return this.prisma.employee.update({
-      where: { id: employeeId },
-      data: { sellerProfileId: null },
-    });
+    try {
+      return await this.prisma.employee.update({
+        where: { id: employeeId },
+        data: { sellerProfileId: null },
+      });
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
   }
-  async addEmployee(profileId: string, employeeId: string) {
-    return this.prisma.employee.update({
-      where: { id: employeeId },
-      data: { sellerProfileId: profileId },
-    });
+  async addEmployee(profileId: string, dto: AddEmployeeOnProfileDto) {
+    const { employeeId } = dto;
+    try {
+      return await this.prisma.employee.update({
+        where: { id: employeeId },
+        data: { sellerProfileId: profileId },
+      });
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
   }
 }

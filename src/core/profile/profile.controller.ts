@@ -12,7 +12,10 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ProfileService } from './profile.service';
-import { CreateProfileDto } from './dto/create-profile.dto';
+import {
+  AddEmployeeOnProfileDto,
+  CreateProfileDto,
+} from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 
@@ -28,22 +31,22 @@ import { ProfileFilterDTO } from './dto/filter.dto';
 
 const RESOURCE = 'profile';
 
-@ApiTags('Cargos')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 @Controller(RESOURCE)
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
 
+  @ApiTags('Perfil de vendedor')
   @Post()
-  @ApiOperation({ summary: 'Cria um novo Cargo' })
+  @ApiOperation({ summary: 'Cria um novo Perfil' })
   @ApiBody({
-    description: 'Dados da novo Cargo',
+    description: 'Dados da novo Perfil',
     type: CreateProfileDto,
   })
   @ApiResponse({
     status: 201,
-    description: 'Cargo criada com sucesso.',
+    description: 'Perfil criada com sucesso.',
   })
   async create(@Req() req, @Body() createProfileDto: CreateProfileDto) {
     console.log(req.user);
@@ -56,6 +59,7 @@ export class ProfileController {
     }
   }
 
+  @ApiTags('Perfil de vendedor')
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todos os cargos' })
   @ApiResponse({
@@ -69,29 +73,30 @@ export class ProfileController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Obtém um Cargo pelo ID' })
-  @ApiParam({ name: 'id', required: true, description: 'ID da Cargo' })
+  @ApiOperation({ summary: 'Obtém um Perfil pelo ID' })
+  @ApiParam({ name: 'id', required: true, description: 'ID da Perfil' })
   @ApiResponse({
     status: 200,
-    description: 'Cargo retornado com sucesso.',
+    description: 'Perfil retornado com sucesso.',
   })
   @ApiResponse({
     status: 404,
-    description: 'Cargo não encontrado.',
+    description: 'Perfil não encontrado.',
   })
   findOne(@Param('id') id: string) {
     return this.profileService.findOne(id);
   }
 
+  @ApiTags('Perfil de vendedor')
   @Patch(':id')
-  @ApiOperation({ summary: 'Atualiza um Cargo pelo ID' })
-  @ApiParam({ name: 'id', required: true, description: 'ID da Cargo' })
+  @ApiOperation({ summary: 'Atualiza um Perfil pelo ID' })
+  @ApiParam({ name: 'id', required: true, description: 'ID da Perfil' })
   @ApiBody({
-    description: 'Dados para atualização da Cargo',
+    description: 'Dados para atualização da Perfil',
     type: UpdateProfileDto,
     examples: {
       example: {
-        summary: 'Exemplo de payload para atualização de Cargo',
+        summary: 'Exemplo de payload para atualização de Perfil',
         value: {
           name: 'Updated Admin',
           sectorId: '456e7890-e12d-34a6-b789-567890123456',
@@ -101,11 +106,11 @@ export class ProfileController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Cargo atualizado com sucesso.',
+    description: 'Perfil atualizado com sucesso.',
   })
   @ApiResponse({
     status: 404,
-    description: 'Cargo não encontrado.',
+    description: 'Perfil não encontrado.',
   })
   async update(
     @Param('id') id: string,
@@ -114,36 +119,43 @@ export class ProfileController {
     return await this.profileService.update(id, updateProfileDto);
   }
 
+  @ApiTags('Perfil de vendedor')
   @Delete(':id')
-  @ApiOperation({ summary: 'Remove um Cargo pelo ID' })
-  @ApiParam({ name: 'id', required: true, description: 'ID da Cargo' })
+  @ApiOperation({ summary: 'Remove um Perfil pelo ID' })
+  @ApiParam({ name: 'id', required: true, description: 'ID da Perfil' })
   @ApiResponse({
     status: 200,
-    description: 'Cargo removida com sucesso.',
+    description: 'Perfil removida com sucesso.',
   })
   @ApiResponse({
     status: 404,
-    description: 'Cargo não encontrado.',
+    description: 'Perfil não encontrado.',
   })
   remove(@Param('id') id: string) {
     return this.profileService.remove(id);
   }
 
-  @Get('employees/list')
+  @ApiTags('Gerenciamento dos perfis')
+  @Get('employees')
+  @ApiOperation({ summary: 'Lista os funcionários sem Perfil' })
   async listEmployess(@Req() req) {
     const companyId = req.user.companyId;
     return await this.profileService.listEmployees(companyId);
   }
 
-  @Patch(':profileId/add/:employeeId')
+  @ApiTags('Gerenciamento dos perfis')
+  @Post('employees/:profileId')
+  @ApiOperation({ summary: 'Adiciona um perfil ao funcionário' })
   async addEmployee(
     @Param('profileId') profileId: string,
-    @Param('employeeId') employeeId: string,
+    @Body() dto: AddEmployeeOnProfileDto,
   ) {
-    return await this.profileService.addEmployee(profileId, employeeId);
+    return await this.profileService.addEmployee(profileId, dto);
   }
 
-  @Patch('remove/:employeeId')
+  @ApiTags('Gerenciamento dos perfis')
+  @Delete('employees/:employeeId')
+  @ApiOperation({ summary: 'Remove um perfil do funcionário' })
   async removeEmployee(@Param('employeeId') employeeId: string) {
     return this.profileService.removeEmployee(employeeId);
   }

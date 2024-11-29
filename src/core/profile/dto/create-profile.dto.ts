@@ -51,3 +51,14 @@ export class CreateProfileDto {
   })
   canCancelSale: boolean;
 }
+
+export class AddEmployeeOnProfileDto {
+  @IsNotEmpty()
+  @IsString()
+  @ApiProperty({
+    description: 'ID do funcionário',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: true,
+  })
+  employeeId: string;
+}
