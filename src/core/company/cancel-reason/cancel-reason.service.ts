@@ -2,20 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { CreateReasonDto } from './dto/create-cancel-reason.dto';
 import { UpdateReasonDto } from './dto/update-cancel-reason.dto';
 import { PrismaService } from 'nestjs-prisma';
-import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
+import { CancelReasonFilterDto } from './dto/cancel-reason-filters.dto';
 
 @Injectable()
 export class CancelReasonService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // Criar motivo
   async create(createReasonDto: CreateReasonDto) {
     return this.prisma.reasons.create({
       data: createReasonDto,
     });
   }
 
-  // Atualizar motivo
   async update(id: string, updateReasonDto: UpdateReasonDto) {
     return this.prisma.reasons.update({
       where: { id },
@@ -23,57 +21,64 @@ export class CancelReasonService {
     });
   }
 
-  // Remover motivo
   async remove(id: string) {
     return this.prisma.reasons.delete({
       where: { id },
     });
   }
 
-  async findAllByType(filter: BaseFilterDTO) {
-    const { companyId, page, limit } = filter;
+  async findAllByType(filter: CancelReasonFilterDto) {
+    const { companyId, page, limit, type, search } = filter;
 
-    // Buscar o total de razões e as razões paginadas
     const [total, reasons] = await Promise.all([
       this.prisma.reasons.count({
-        where: { companyId },
+        where: {
+          companyId,
+          type,
+          reason: search
+            ? { contains: search, mode: 'insensitive' }
+            : undefined,
+        },
       }),
       this.prisma.reasons.findMany({
-        where: { companyId },
+        where: {
+          companyId,
+          type,
+          reason: search
+            ? { contains: search, mode: 'insensitive' }
+            : undefined,
+        },
         skip: (+page - 1) * +limit,
         take: +limit,
         orderBy: { reason: 'asc' },
       }),
     ]);
 
-    // Calcular a última página
     const lastPage = Math.ceil(total / +limit);
 
-    // Agrupar as razões pelo `type` e formatar os dados conforme desejado
-    const grouped = Object.entries(
-      reasons.reduce(
-        (acc, reason) => {
-          if (!acc[reason.type]) {
-            acc[reason.type] = [];
-          }
-          acc[reason.type].push({
-            id: reason.id,
-            reason: reason.reason,
-          });
-          return acc;
-        },
-        {} as Record<string, any[]>,
-      ),
-    ).map(([type, reasons]) => ({
-      type,
-      reasons,
-    }));
+    const grouped = reasons.reduce(
+      (acc, reason) => {
+        if (!acc[reason.type]) {
+          acc[reason.type] = [];
+        }
+        acc[reason.type].push({
+          id: reason.id,
+          reason: reason.reason,
+        });
+        return acc;
+      },
+      {} as Record<string, any[]>,
+    );
 
-    // Retornar os dados no formato desejado
+    const result = [
+      { type: 'REJECTION', reasons: grouped['REJECTION'] || [] },
+      { type: 'CANCELLATION', reasons: grouped['CANCELLATION'] || [] },
+    ];
+
     return {
       total,
       lastPage,
-      data: grouped,
+      data: result,
     };
   }
 }

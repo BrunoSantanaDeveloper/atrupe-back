@@ -1,16 +1,21 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateStatusQuotationDto } from './create-status.dto';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional } from 'class-validator';
+import { IsHexColor, IsOptional, IsString } from 'class-validator';
 
-export class UpdateStatusQuotationDto extends PartialType(
-  CreateStatusQuotationDto,
-) {
+export class UpdateStatusQuotationDto {
   @ApiProperty({
-    description: 'Indica se o status de orçamento está ativo',
-    required: false,
-    default: true,
+    description: 'Título do status de orçamento',
+    example: 'Cliente não encontado',
   })
+  @IsString()
   @IsOptional()
-  isActive?: boolean;
+  title?: string;
+
+  @ApiProperty({
+    description:
+      'Cor associada ao status de orçamento (em formato hexadecimal)',
+    example: '#FF0000',
+  })
+  @IsHexColor()
+  @IsOptional()
+  color?: string;
 }

@@ -21,7 +21,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
-import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
+import { CancelReasonFilterDto } from './dto/cancel-reason-filters.dto';
 
 const RESOURCE = 'cancel-reason';
 @UseGuards(JwtAuthGuard)
@@ -39,12 +39,13 @@ export class CancelReasonController {
     createReasonDto.companyId = req.user.companyId;
     return this.cancelReasonService.create(createReasonDto);
   }
+
   @ApiOperation({
     summary: 'Listar motivos de rejeição ou cancelamento por tipo',
   })
   @ApiResponse({ status: 200, description: 'Motivos listados com sucesso' })
   @Get()
-  async findAll(@Req() req, @Query() filter: BaseFilterDTO) {
+  async findAll(@Req() req, @Query() filter: CancelReasonFilterDto) {
     filter.companyId = req.user.companyId;
 
     return await this.cancelReasonService.findAllByType(filter);
