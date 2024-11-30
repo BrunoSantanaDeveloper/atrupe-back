@@ -7,6 +7,8 @@ import {
   Param,
   Delete,
   UseGuards,
+  Query,
+  Req,
 } from '@nestjs/common';
 import { EmployeeService } from './employee.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
@@ -20,6 +22,7 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 @ApiTags('Employees')
 @UseGuards(JwtAuthGuard)
@@ -49,8 +52,9 @@ export class EmployeeController {
     description: 'Lista de empregados retornada com sucesso.',
     isArray: true,
   })
-  findAll() {
-    return this.employeeService.findAll();
+  findAll(@Query() filter: BaseFilterDTO, @Req() req) {
+    filter.companyId = req.user.companyId;
+    return this.employeeService.findAll(filter);
   }
 
   @Get(':id')

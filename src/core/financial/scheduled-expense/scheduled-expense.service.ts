@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { CreateScheduledExpenseDto } from './dto/create-scheduled-expense.dto';
 import { UpdateScheduledExpenseDto } from './dto/update-scheduled-expense.dto';
 import { PrismaService } from 'nestjs-prisma';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 @Injectable()
 export class ScheduledExpenseService {
@@ -15,7 +16,8 @@ export class ScheduledExpenseService {
     });
   }
 
-  findAll() {
+  findAll(filter: BaseFilterDTO) {
+    console.log(filter);
     return this.prisma.scheduledExpense.findMany();
   }
 

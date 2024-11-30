@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { PrismaService } from 'nestjs-prisma';
 import * as argon2 from 'argon2';
 import { StringHelper } from 'src/helpers/string/random';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 @Injectable()
 export class EmployeeService {
@@ -46,37 +47,80 @@ export class EmployeeService {
     }
   }
 
-  async findAll() {
-    const employees = await this.prisma.employee.findMany({
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
+  async findAll(filter: BaseFilterDTO) {
+    console.log(filter);
+    try {
+      const totalEmployees = await this.prisma.employee.count({
+        where: {
+          companyId: filter.companyId,
+        },
+      });
+
+      const employees = await this.prisma.employee.findMany({
+        where: {
+          companyId: filter.companyId,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+          role: true,
+          sector: true,
+        },
+        take: +filter.limit,
+        skip: (+filter.page - 1) * +filter.limit,
+        orderBy: {
+          user: {
+            name: 'asc',
           },
         },
-        role: true,
-        sector: true,
-      },
-    });
+      });
+      const groupedBySector = employees.reduce(
+        (acc, employee) => {
+          const sectorId = employee.sector?.id || 'no-sector'; // Agrupar os sem setor na chave 'no-sector'
 
-    const groupedBySector = employees.reduce((acc, employee) => {
-      const sectorId = employee.sector.id;
-      if (!acc[sectorId]) {
-        acc[sectorId] = { sector: employee.sector, employees: [] };
-      }
-      acc[sectorId].employees.push(employee);
+          if (!acc[sectorId]) {
+            acc[sectorId] = {
+              sector: employee.sector
+                ? employee.sector
+                : { id: 'no-sector', name: 'Sem Setor' },
+              employees: [],
+            };
+          }
+          acc[sectorId].employees.push(employee);
 
-      return acc;
-    }, {});
+          return acc;
+        },
+        {} as {
+          [key: string]: {
+            sector: { id: string; name: string };
+            employees: any[];
+          };
+        },
+      );
 
-    const result = Object.values(groupedBySector);
+      // Organizar a resposta para garantir que "Sem Setor" apareça por último
+      const result = Object.values(groupedBySector).sort((a, b) => {
+        // Garantir que 'a' e 'b' tenham a propriedade 'sector' corretamente tipada
+        if (a.sector.name === 'Sem Setor') return 1;
+        if (b.sector.name === 'Sem Setor') return -1;
+        return 0;
+      });
+      const lastPage = Math.ceil(totalEmployees / +filter.limit);
 
-    return {
-      data: result,
-      total: employees.length,
-    };
+      return {
+        total: totalEmployees,
+        lastPage,
+        data: result,
+      };
+    } catch (error) {
+      console.log(error);
+      throw new BadRequestException(error.message);
+    }
   }
 
   findOne(id: number) {

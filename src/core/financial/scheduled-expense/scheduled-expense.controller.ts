@@ -7,6 +7,8 @@ import {
   Param,
   Delete,
   UseGuards,
+  Query,
+  Req,
 } from '@nestjs/common';
 import { ScheduledExpenseService } from './scheduled-expense.service';
 import { CreateScheduledExpenseDto } from './dto/create-scheduled-expense.dto';
@@ -18,13 +20,16 @@ import {
   ApiResponse,
   ApiBody,
   ApiParam,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 const RESOURCE = 'scheduled-expense';
 const GROUP = 'financial';
 
-@ApiTags('Despesas Agendadas')
+@ApiTags('Despesas Fixas')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class ScheduledExpenseController {
   constructor(
@@ -32,67 +37,68 @@ export class ScheduledExpenseController {
   ) {}
 
   @Post()
-  @ApiOperation({ summary: 'Cria uma nova despesa agendada' })
+  @ApiOperation({ summary: 'Cria uma nova despesa fixa' })
   @ApiBody({
-    description: 'Dados da nova despesa agendada',
+    description: 'Dados da nova despesa fixa',
     type: CreateScheduledExpenseDto,
   })
   @ApiResponse({
     status: 201,
-    description: 'Despesa agendada criada com sucesso.',
+    description: 'Despesa fixa criada com sucesso.',
   })
   create(@Body() createScheduledExpenseDto: CreateScheduledExpenseDto) {
     return this.scheduledExpenseService.create(createScheduledExpenseDto);
   }
 
   @Get()
-  @ApiOperation({ summary: 'Obtém a lista de todas as despesas agendadas' })
+  @ApiOperation({ summary: 'Obtém a lista de todas as despesas fixas' })
   @ApiResponse({
     status: 200,
-    description: 'Lista de despesas agendadas retornada com sucesso.',
+    description: 'Lista de despesas fixas retornada com sucesso.',
     isArray: true,
   })
-  findAll() {
-    return this.scheduledExpenseService.findAll();
+  findAll(@Query() filter: BaseFilterDTO, @Req() req) {
+    filter.companyId = req.user.companyId;
+    return this.scheduledExpenseService.findAll(filter);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Obtém uma despesa agendada pelo ID' })
+  @ApiOperation({ summary: 'Obtém uma despesa fixa pelo ID' })
   @ApiParam({
     name: 'id',
     required: true,
-    description: 'ID da despesa agendada',
+    description: 'ID da despesa fixa',
   })
   @ApiResponse({
     status: 200,
-    description: 'Despesa agendada retornada com sucesso.',
+    description: 'Despesa fixa retornada com sucesso.',
   })
   @ApiResponse({
     status: 404,
-    description: 'Despesa agendada não encontrada.',
+    description: 'Despesa fixa não encontrada.',
   })
   findOne(@Param('id') id: string) {
     return this.scheduledExpenseService.findOne(id);
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Atualiza uma despesa agendada pelo ID' })
+  @ApiOperation({ summary: 'Atualiza uma despesa fixa pelo ID' })
   @ApiParam({
     name: 'id',
     required: true,
-    description: 'ID da despesa agendada',
+    description: 'ID da despesa fixa',
   })
   @ApiBody({
-    description: 'Dados para atualização da despesa agendada',
+    description: 'Dados para atualização da despesa fixa',
     type: CreateScheduledExpenseDto,
   })
   @ApiResponse({
     status: 200,
-    description: 'Despesa agendada atualizada com sucesso.',
+    description: 'Despesa fixa atualizada com sucesso.',
   })
   @ApiResponse({
     status: 404,
-    description: 'Despesa agendada não encontrada.',
+    description: 'Despesa fixa não encontrada.',
   })
   update(
     @Param('id') id: string,
@@ -102,19 +108,19 @@ export class ScheduledExpenseController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Remove uma despesa agendada pelo ID' })
+  @ApiOperation({ summary: 'Remove uma despesa fixa pelo ID' })
   @ApiParam({
     name: 'id',
     required: true,
-    description: 'ID da despesa agendada',
+    description: 'ID da despesa fixa',
   })
   @ApiResponse({
     status: 200,
-    description: 'Despesa agendada removida com sucesso.',
+    description: 'Despesa fixa removida com sucesso.',
   })
   @ApiResponse({
     status: 404,
-    description: 'Despesa agendada não encontrada.',
+    description: 'Despesa fixa não encontrada.',
   })
   remove(@Param('id') id: string) {
     return this.scheduledExpenseService.remove(id);

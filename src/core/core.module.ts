@@ -20,6 +20,7 @@ import { CategoryModule } from './category/category.module';
 import { UnitOfMeasureModule } from './unit-of-measure/unit-of-measure.module';
 import { LanguageModule } from './language/language.module';
 import { ProfileModule } from './profile/profile.module';
+import { SellersModule } from './sellers/sellers.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { ProfileModule } from './profile/profile.module';
     UnitOfMeasureModule,
     LanguageModule,
     ProfileModule,
+    SellersModule,
   ],
 })
 export class CoreModule {}
