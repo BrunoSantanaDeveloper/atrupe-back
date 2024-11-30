@@ -42,6 +42,17 @@ export class QuotationService {
     } = createQuotationDto;
 
     try {
+      if (!seriesId) {
+        throw new BadRequestException(
+          `Não é possível criar um orçamento sem uma série`,
+        );
+      }
+      const series = await this.prisma.saleSeries.findUnique({
+        where: { id: seriesId },
+      });
+      if (!series) {
+        throw new NotFoundException(`Serie não encontrada`);
+      }
       // Criação do orçamento no banco
       const newQuotation = await this.prisma.quotation.create({
         data: {
@@ -54,27 +65,34 @@ export class QuotationService {
         },
       });
 
-      if (seriesId) {
-        const series = await this.prisma.saleSeries.findUnique({
-          where: { id: seriesId },
-        });
+      await this.prisma.saleSeries.update({
+        where: {
+          id: seriesId,
+        },
+        data: {
+          currentBudgetNumber: { increment: 1 },
+        },
+      });
 
-        if (!series) {
-          throw new NotFoundException(
-            `Série com ID ${seriesId} não encontrada`,
-          );
-        }
-
-        await this.prisma.saleSeries.update({
-          where: {
-            id: seriesId,
+      await this.prisma.deliveryInfo.create({
+        data: {
+          quotation: {
+            connect: {
+              id: newQuotation.id,
+            },
           },
-          data: {
-            currentBudgetNumber: { increment: 1 },
-          },
-        });
-      }
+        },
+      });
 
+      await this.prisma.quotationPayment.create({
+        data: {
+          quotation: {
+            connect: { id: newQuotation.id },
+          },
+          billing: series.billing,
+          totalValue: 0,
+        },
+      });
       return newQuotation;
     } catch (error) {
       if (error instanceof NotFoundException) {
@@ -206,6 +224,7 @@ export class QuotationService {
     await this.prisma.quotationProductItem.createMany({
       data: quotationProductItems,
     });
+    await this.recalculateQuotationTotalValue(quotationId);
 
     return this.prisma.quotation.findUnique({
       where: { id: quotationId },
@@ -340,6 +359,7 @@ export class QuotationService {
         },
       );
 
+      await this.recalculateQuotationTotalValue(quotationId);
       return updatedQuotationProduct;
     } catch (error) {
       throw new BadRequestException(
@@ -397,6 +417,7 @@ export class QuotationService {
         where: { quotationId_productId: { quotationId, productId } },
       });
 
+      await this.recalculateQuotationTotalValue(quotationId);
       return {
         message: 'Produto removido com sucesso do orçamento',
         deletedItems: productItemIds.length,
@@ -416,6 +437,26 @@ export class QuotationService {
     }
   }
 
+  private async recalculateQuotationTotalValue(quotationId: string) {
+    const quotationProducts = await this.prisma.quotationProduct.findMany({
+      where: { quotationId },
+      include: {
+        items: true,
+      },
+    });
+
+    const totalValue = quotationProducts.reduce((total, product) => {
+      const productTotal = product.items.reduce((itemTotal, item) => {
+        return itemTotal + item.quantity * (item.salePrice || 0);
+      }, 0);
+      return total + productTotal;
+    }, 0);
+
+    await this.prisma.quotation.update({
+      where: { id: quotationId },
+      data: { totalValue },
+    });
+  }
   async findAllQuantity(companyId: string) {
     const allStatuses: QuotationStatus[] = [
       'OPEN',
@@ -572,40 +613,258 @@ export class QuotationService {
     return this.prisma.quotation.count();
   }
 
-  findOne(id: string) {
-    return this.prisma.quotation.findUnique({
-      where: { id },
-      include: {
-        series: {
-          select: {
-            id: true,
-            title: true,
-            code: true,
+  async findOne(id: string) {
+    try {
+      const quotation = await this.prisma.quotation.findUnique({
+        where: { id },
+        include: {
+          series: {
+            select: {
+              id: true,
+              title: true,
+              code: true,
+              currentBudgetNumber: true,
+            },
           },
-        },
-        client: true,
-        seller: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
+          client: {
+            select: {
+              id: true,
+              type: true,
+              name: true,
+              status: true,
+              cnpj: true,
+              cpf: true,
+              email: true,
+              phone: true,
+            },
+          },
+          seller: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+          company: {
+            select: {
+              id: true,
+              name: true,
+              cnpj: true,
+            },
+          },
+          deliveryInfo: {
+            select: {
+              deliveryType: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+              daysAfterApproval: true, // Prazo após aprovação (dias)
+              estimatedDate: true,
+              cost: true,
+              value: true,
+              notes: true,
+              supplier: true,
+            },
+          },
+          quotationPayment: {
+            select: {
+              id: true,
+              billing: true,
+              discount: true,
+              downPayment: true,
+              paymentMethod: {
+                select: {
+                  id: true,
+                  name: true, // Forma de pagamento
+                },
+              },
+              paymentCondition: {
+                select: {
+                  id: true,
+                  name: true, // Condição de pagamento
+                },
+              },
+              totalValue: true,
+              finalValue: true,
+              description: true,
+              commission: {
+                select: {
+                  type: true, // Tipo de comissão: adição ou subtração
+                  supplier: {
+                    select: {
+                      id: true,
+                      name: true, // Nome do fornecedor
+                    },
+                  },
+                  transferMethod: true,
+                  commissionValue: true,
+                  totalCommission: true,
+                },
+              },
+            },
+          },
+          quotationProduct: {
+            select: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+              productId: true,
+              description: true, // Nome do produto
+              quantity: true,
+              totalValue: true,
+              items: {
+                select: {
+                  productItemId: true,
+                  name: true,
+                  unitOfMeasure: true,
+                  quantity: true,
+                  unitCost: true,
+                  totalValue: true,
+                },
               },
             },
           },
         },
-        quotationProduct: {
-          include: {
-            product: true,
-            items: {
-              include: {
-                productItem: true,
-              },
-            },
+      });
+
+      return {
+        id: quotation.id,
+        createdAt: quotation.createdAt,
+        updatedAt: quotation.updatedAt,
+        dueDate: quotation.dueDate,
+        description: quotation.description,
+        status: quotation.status,
+        totalValue: quotation.totalValue,
+        quickSale: quotation.quickSale || false, // Se não for informado, assume-se como 'false'
+        serie: quotation.series
+          ? {
+              id: quotation.series.id,
+              name: quotation.series.title,
+              code: quotation.series.code,
+              quotation: quotation.series.currentBudgetNumber,
+            }
+          : null,
+        seller: quotation.seller
+          ? {
+              id: quotation.seller.user.id,
+              name: quotation.seller.user.name,
+            }
+          : null,
+        company: quotation.company
+          ? {
+              id: quotation.company.id,
+              name: quotation.company.name,
+              cnpj: quotation.company.cnpj,
+            }
+          : null,
+        client: quotation.client
+          ? {
+              id: quotation.client.id,
+              type: quotation.client.type,
+              name: quotation.client.name,
+              status: quotation.client.status,
+              cnpj: quotation.client.cnpj,
+              cpf: quotation.client.cpf,
+              email: quotation.client.email,
+              phoneNumber: quotation.client.phone,
+            }
+          : null,
+        deliveryInfo: quotation.deliveryInfo
+          ? {
+              type: quotation.deliveryInfo.deliveryType
+                ? {
+                    id: quotation.deliveryInfo.deliveryType.id,
+                    name: quotation.deliveryInfo.deliveryType.name,
+                  }
+                : null,
+              timeFrame: quotation.deliveryInfo.daysAfterApproval,
+              estimateDate: quotation.deliveryInfo.estimatedDate,
+              cost: quotation.deliveryInfo.cost,
+              value: quotation.deliveryInfo.value,
+              notes: quotation.deliveryInfo.notes,
+              supplier: quotation.deliveryInfo.supplier
+                ? {
+                    id: quotation.deliveryInfo.supplier.id,
+                    name: quotation.deliveryInfo.supplier.name,
+                  }
+                : null,
+            }
+          : null,
+        paymentConditions: quotation.quotationPayment
+          ? {
+              id: quotation.quotationPayment.id,
+              billing: quotation.quotationPayment.billing,
+              discount: quotation.quotationPayment.discount,
+              downPayment: quotation.quotationPayment.downPayment,
+              paymentMethod: quotation.quotationPayment.paymentMethod
+                ? {
+                    id: quotation.quotationPayment.paymentMethod.id,
+                    name: quotation.quotationPayment.paymentMethod.name,
+                  }
+                : null,
+              paymentCondition: quotation.quotationPayment.paymentCondition
+                ? {
+                    id: quotation.quotationPayment.paymentCondition.id,
+                    name: quotation.quotationPayment.paymentCondition.name,
+                  }
+                : null,
+              totalValue: quotation.quotationPayment.totalValue,
+              finalValue: quotation.quotationPayment.finalValue,
+              description: quotation.quotationPayment.description,
+              commission: quotation.quotationPayment.commission
+                ? {
+                    type: quotation.quotationPayment.commission.type,
+                    supplier: {
+                      id: quotation.quotationPayment.commission.supplier.id,
+                      name: quotation.quotationPayment.commission.supplier.name,
+                    },
+                    transferMethod:
+                      quotation.quotationPayment.commission.transferMethod,
+                    commissionValue:
+                      quotation.quotationPayment.commission.commissionValue,
+                    totalCommission:
+                      quotation.quotationPayment.commission.totalCommission,
+                  }
+                : null,
+            }
+          : null,
+        quotationItems: quotation.quotationProduct.map((qp) => ({
+          description: qp.description,
+          notes: '',
+          discount: 0,
+          discountType: 'VALUE',
+          finalValue: qp.totalValue,
+          image: {
+            id: '', // Coloque a ID da imagem ou deixe vazio
+            url: '', // Coloque a URL da imagem ou deixe vazio
+            original: true, // Marcar como original ou não
           },
-        },
-      },
-    });
+          product: {
+            id: qp.productId,
+            name: qp.product.name,
+            quantity: qp.quantity,
+            compositions: qp.items.map((item) => ({
+              id: item.productItemId,
+              name: item.name,
+              unitOfMeasure: item.unitOfMeasure,
+              quantity: item.quantity,
+              unitValue: item.unitCost,
+              finalValue: item.totalValue,
+            })),
+          },
+        })),
+      };
+    } catch (error) {
+      console.log(error);
+    }
   }
 
   async duplicate(

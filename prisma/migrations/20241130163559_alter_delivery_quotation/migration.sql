@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "DeliveryInfo" ALTER COLUMN "deliveryType" DROP NOT NULL,
+ALTER COLUMN "daysAfterApproval" DROP NOT NULL,
+ALTER COLUMN "estimatedDate" DROP NOT NULL,
+ALTER COLUMN "cost" DROP NOT NULL,
+ALTER COLUMN "value" DROP NOT NULL,
+ALTER COLUMN "updatedAt" DROP NOT NULL;

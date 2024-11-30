@@ -19,6 +19,7 @@ import {
   ApiResponse,
   ApiBody,
   ApiParam,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import {
@@ -36,6 +37,7 @@ const GROUP = 'financial';
 
 @ApiTags('Contas a Pagar')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class PayableController {
   constructor(private readonly payableService: PayableService) {}

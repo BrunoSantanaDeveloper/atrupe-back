@@ -54,6 +54,7 @@ model Company {
   StatusQuotation       StatusQuotation[]
   SellerProfile         SellerProfile[]
   SalarySheet           SalarySheet[]
+  DeliveryType          DeliveryType[]
 
   @@map("companies")
 }
@@ -309,11 +310,13 @@ model Supplier {
   addressId String?
   address   Address? @relation(fields: [addressId], references: [id])
 
-  contacts   Contact[]
-  companyId  String
-  company    Company   @relation(fields: [companyId], references: [id])
-  category   Category? @relation(fields: [categoryId], references: [id])
-  categoryId String?
+  contacts     Contact[]
+  companyId    String
+  company      Company        @relation(fields: [companyId], references: [id])
+  category     Category?      @relation(fields: [categoryId], references: [id])
+  categoryId   String?
+  DeliveryInfo DeliveryInfo[]
+  Commission   Commission[]
 
   @@unique([email, companyId])
   @@map("suppliers")
@@ -854,6 +857,8 @@ model PaymentMethod {
   ReceivableInstallment  ReceivableInstallment[]
   PayableInstallment     PayableInstallment[]
   PaymentMovement        PaymentMovement[]
+  QuotationPayment       QuotationPayment[]
+  QuotationInstallment   QuotationInstallment[]
 
   @@map("payment_methods")
 }
@@ -884,17 +889,20 @@ model PaymentCondition {
   companyId             String
   company               Company                @relation(fields: [companyId], references: [id])
   paymentConfigurations PaymentConfiguration[]
+  QuotationPayment      QuotationPayment[]
 
   @@map("payment_conditions")
 }
 
 model Installment {
-  id                  String           @id @default(uuid())
+  id                  String            @id @default(uuid())
   installment         Int // Número da parcela
   operatorFeeRate     Float
   operatorFeeTransfer Float
   paymentConditionId  String
-  paymentCondition    PaymentCondition @relation(fields: [paymentConditionId], references: [id])
+  paymentCondition    PaymentCondition  @relation(fields: [paymentConditionId], references: [id])
+  QuotationPayment    QuotationPayment? @relation(fields: [quotationPaymentId], references: [id])
+  quotationPaymentId  String?
 
   @@map("installments")
 }
@@ -993,7 +1001,9 @@ model Quotation {
 
   products         Product[]          @relation("QuotationToProduct")
   quotationProduct QuotationProduct[]
-  Order            Order[]
+  order            Order[]
+  deliveryInfo     DeliveryInfo?
+  quotationPayment QuotationPayment?
 
   @@index([id, companyId])
   @@map("quotations")
@@ -1052,12 +1062,107 @@ model QuotationProductItem {
   @@map("quotation_product_items")
 }
 
+model QuotationPayment {
+  id                   String                 @id @default(uuid())
+  quotationId          String                 @unique
+  quotation            Quotation              @relation(fields: [quotationId], references: [id])
+  // typeId               String? // Nota Fiscal
+  // type                 Invoice?               @relation(fields: [invoiceId], references: [id]) // Relacionamento com Nota Fiscal
+  billing              String? // Faturamento (vem da configuração da série)
+  discount             Float                  @default(0) // Desconto
+  downPayment          Float                  @default(0) // Entrada
+  paymentMethodId      String? // Relação com a tabela de métodos de pagamento
+  paymentCondition     PaymentCondition?      @relation(fields: [paymentConditionId], references: [id])
+  paymentMethod        PaymentMethod?         @relation(fields: [paymentMethodId], references: [id])
+  paymentConditionId   String? // Relação com a tabela de condições de pagamento
+  commissionId         String?                @unique
+  commission           Commission?            @relation(fields: [commissionId], references: [id])
+  totalValue           Float // Valor total do orçamento
+  description          String? // Observações
+  finalValue           Float?
+  installments         Installment[] // Parcelas geradas para pagamento parcelado
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime?              @updatedAt
+  QuotationInstallment QuotationInstallment[]
+}
+
+model Commission {
+  id               String                   @id @default(uuid())
+  type             CommissionType           @default(ADD)
+  transferMethod   transferMethodCommission @default(SINGLE)
+  commissionValue  Float?
+  totalCommission  Float?
+  supplierId       String
+  supplier         Supplier                 @relation(fields: [supplierId], references: [id])
+  QuotationPayment QuotationPayment?
+}
+
+enum transferMethodCommission {
+  SINGLE
+  CONFORMING
+}
+
+enum CommissionType {
+  ADD
+  SUB
+}
+
+model QuotationInstallment {
+  id                 String           @id @default(uuid())
+  quotationPaymentId String // Relação com o pagamento do orçamento
+  quotationPayment   QuotationPayment @relation(fields: [quotationPaymentId], references: [id])
+  dueDate            DateTime // Data de vencimento da parcela
+  paymentMethodId    String // Forma de pagamento para a parcela
+  paymentMethod      PaymentMethod    @relation(fields: [paymentMethodId], references: [id])
+  surcharge          Float            @default(0) // Acréscimo
+  value              Float // Valor da parcela
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+}
+
 enum OrderStatus {
   IN_PRODUCTION
   DELIVERY
   COMPLETED
   FINISHED
   CANCELED
+}
+
+model DeliveryInfo {
+  id          String    @id @default(uuid())
+  quotationId String    @unique
+  quotation   Quotation @relation(fields: [quotationId], references: [id])
+
+  deliveryTypeId String?
+  deliveryType   DeliveryType? @relation(fields: [deliveryTypeId], references: [id])
+
+  daysAfterApproval Int?
+  estimatedDate     DateTime?
+  modality          String    @default("Indefinida")
+  cost              Float?
+  value             Float?
+  notes             String?
+
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  @@index([quotationId])
+}
+
+model DeliveryType {
+  id        String    @id @default(uuid())
+  name      String
+  isCarrier Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  deliveries DeliveryInfo[] // Relacionamento com a tabela de DeliveryInfo
 }
 
 model Order {
