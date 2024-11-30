@@ -241,13 +241,21 @@ model Client {
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
 
-  kind   ClientKind   @default(PERSON)
+  type   ClientKind   @default(PERSON)
   status ClientStatus @default(PROSPECT)
 
-  name           String
-  email          String?   @unique
-  phoneNumber    String?
-  mobilePhone    String?
+  name   String
+  email  String?
+  phone  String?
+  mobile String?
+
+  rg            String?
+  cpf           String?
+  cnpj          String?
+  activity      String?
+  tradeName     String?
+  corporateName String?
+
   notes          String?
   financialNotes String?
   nickname       String?
@@ -256,8 +264,6 @@ model Client {
 
   addressId String?
   address   Address? @relation(fields: [addressId], references: [id])
-
-  details Json
 
   contacts      Contact[]
   responsibleId String?
@@ -270,6 +276,7 @@ model Client {
   Receivable    Receivable[]
   Payable       Payable[]
 
+  @@unique([email, companyId])
   @@map("clients")
 }
 
@@ -278,20 +285,26 @@ model Supplier {
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
 
-  kind   ClientKind   @default(PERSON)
+  type   ClientKind   @default(PERSON)
   status ClientStatus @default(ACTIVE)
 
-  name           String
-  email          String?   @unique
-  phoneNumber    String?
-  mobilePhone    String?
+  name   String
+  email  String?
+  phone  String?
+  mobile String?
+
+  rg            String?
+  cpf           String?
+  cnpj          String?
+  activity      String?
+  tradeName     String?
+  corporateName String?
+
   notes          String?
   financialNotes String?
   nickname       String?
   site           String?
   birthdate      DateTime?
-
-  details Json
 
   addressId String?
   address   Address? @relation(fields: [addressId], references: [id])
@@ -302,6 +315,7 @@ model Supplier {
   category   Category? @relation(fields: [categoryId], references: [id])
   categoryId String?
 
+  @@unique([email, companyId])
   @@map("suppliers")
 }
 
@@ -1076,7 +1090,7 @@ model Product {
   allowEditDescription Boolean @default(true)
   imageUrl             String?
 
-  items ProductItem[]
+  items            ProductItem[]
   productionStages Json?
 
   companyId String?

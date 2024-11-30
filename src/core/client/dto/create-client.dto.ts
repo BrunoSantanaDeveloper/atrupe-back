@@ -21,7 +21,7 @@ export class CreateClientDto {
     example: 'PERSON',
     enum: ClientKind,
   })
-  kind: ClientKind;
+  type: ClientKind;
 
   @IsNotEmpty()
   @IsString()
@@ -47,7 +47,7 @@ export class CreateClientDto {
     example: '+55 11 91234-5678',
     required: false,
   })
-  phoneNumber?: string;
+  phone?: string;
 
   @IsOptional()
   @IsString()
@@ -56,7 +56,7 @@ export class CreateClientDto {
     example: '+55 11 98765-4321',
     required: false,
   })
-  mobilePhone?: string;
+  mobile?: string;
 
   @IsNotEmpty()
   @IsUUID()
@@ -66,12 +66,6 @@ export class CreateClientDto {
   })
   categoryId: string;
 
-  @IsNotEmpty()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da empresa associada ao cliente',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
   companyId: string;
 
   @ValidateIf((o) => o.kind === ClientKind.PERSON)
@@ -109,11 +103,31 @@ export class CreateClientDto {
   @IsOptional()
   @ApiProperty({
     description:
-      'Inscrição estadual do cliente, válido apenas para clientes do tipo COMPANY',
+      'Ramo de ativivdade do cliente, válido apenas para clientes do tipo COMPANY',
     example: '123456789',
     required: false,
   })
-  stateRegistration?: string;
+  activity?: string;
+  @ValidateIf((o) => o.kind === ClientKind.COMPANY)
+  @IsString()
+  @IsOptional()
+  @ApiProperty({
+    description:
+      'Nome fantasia do cliente, válido apenas para clientes do tipo COMPANY',
+    example: '123456789',
+    required: false,
+  })
+  tradeName?: string;
+  @ValidateIf((o) => o.kind === ClientKind.COMPANY)
+  @IsString()
+  @IsOptional()
+  @ApiProperty({
+    description:
+      'Nome corporativo do cliente, válido apenas para clientes do tipo COMPANY',
+    example: '123456789',
+    required: false,
+  })
+  corporateName?: string;
 
   @ValidateIf((o) => o.kind === ClientKind.PERSON)
   @IsDateString()

@@ -8,6 +8,8 @@ import {
   Delete,
   UseGuards,
   Query,
+  Req,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ClientService } from './client.service';
 import { CreateClientDto } from './dto/create-client.dto';
@@ -20,7 +22,6 @@ import {
   ApiResponse,
   ApiBody,
   ApiParam,
-  ApiQuery,
   ApiBearerAuth,
 } from '@nestjs/swagger';
 
@@ -43,19 +44,23 @@ export class ClientController {
     status: 201,
     description: 'Cliente criado com sucesso.',
   })
-  create(@Body() createClientDto: CreateClientDto) {
+  create(@Req() req, @Body() createClientDto: CreateClientDto) {
+    createClientDto.companyId = req.user.companyId;
+    if (createClientDto.companyId !== req.user.companyId) {
+      throw new UnauthorizedException('Unauthorized');
+    }
     return this.clientService.create(createClientDto);
   }
 
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todos os clientes' })
-  @ApiQuery({ name: 'filter', type: ClientFilterDTO, required: false })
   @ApiResponse({
     status: 200,
     description: 'Lista de clientes retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() filter: ClientFilterDTO) {
+  findAll(@Req() req, @Query() filter: ClientFilterDTO) {
+    filter.companyId = req.user.companyId;
     return this.clientService.findAll(filter);
   }
 

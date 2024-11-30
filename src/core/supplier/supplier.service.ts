@@ -3,7 +3,7 @@ import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { SupplierFilterDTO } from './dto/filter.dto';
-import { OwnerType, Prisma, Supplier } from '@prisma/client';
+import { OwnerType, Prisma } from '@prisma/client';
 
 @Injectable()
 export class SupplierService {
@@ -11,28 +11,22 @@ export class SupplierService {
 
   async create(createDto: CreateSupplierDto) {
     try {
-      const details =
-        createDto.kind === 'PERSON'
-          ? {
-              cpf: createDto.cpf,
-              rg: createDto.rg,
-            }
-          : {
-              cnpj: createDto.cnpj,
-              stateRegistration: createDto.stateRegistration || '',
-            };
-
       const created = await this.prisma.supplier.create({
         data: {
           name: createDto.name,
-          kind: createDto.kind,
+          type: createDto.type,
           email: createDto.email,
-          birthdate: createDto.birthdate,
-          phoneNumber: createDto.phoneNumber,
-          mobilePhone: createDto.mobilePhone,
+          birthdate: new Date(createDto.birthdate) || null,
+          phone: createDto.phone,
+          mobile: createDto.mobile,
           companyId: createDto.companyId,
           categoryId: createDto.categoryId,
-          details: details,
+          cpf: createDto.cpf,
+          rg: createDto.rg,
+          cnpj: createDto.cnpj,
+          activity: createDto.activity,
+          tradeName: createDto.tradeName,
+          corporateName: createDto.corporateName,
         },
       });
 
@@ -118,17 +112,12 @@ export class SupplierService {
       }
 
       const update = this.buildUpdateObject(updateDto);
-      const details = this.buildDetailsObject(updateDto, supplier);
       const address = this.buildAddressObject(updateDto, supplier);
 
       if (supplier.addressId) {
         update['address'] = { update: address };
       } else {
         update['address'] = { create: address };
-      }
-
-      if (Object.keys(details).length) {
-        update['details'] = details;
       }
 
       if (!Object.keys(update).length) {
@@ -184,10 +173,7 @@ export class SupplierService {
     return update;
   }
 
-  private buildDetailsObject(
-    dto: UpdateSupplierDto,
-    supplier: Supplier,
-  ): Prisma.JsonValue {
+  private buildDetailsObject(dto: UpdateSupplierDto): Prisma.JsonValue {
     const fieldsToUpdate = ['ie', 'cnpj', 'stateRegistration', 'cpf', 'rg'];
 
     const updatedDetails = fieldsToUpdate.reduce(
@@ -200,15 +186,7 @@ export class SupplierService {
       {} as Record<string, any>,
     );
 
-    if (
-      supplier?.details &&
-      typeof supplier?.details === 'object' &&
-      !Array.isArray(supplier?.details)
-    ) {
-      return { ...supplier?.details, ...updatedDetails };
-    } else {
-      return updatedDetails;
-    }
+    return updatedDetails;
   }
 
   private buildAddressObject(

@@ -3,35 +3,33 @@ import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { ClientFilterDTO } from './dto/filter.dto';
-import { Client, OwnerType, Prisma } from '@prisma/client';
+import { OwnerType, Prisma } from '@prisma/client';
 
 @Injectable()
 export class ClientService {
   constructor(private readonly prisma: PrismaService) {}
   async create(createClientDto: CreateClientDto) {
+    console.log(createClientDto);
     try {
-      const details =
-        createClientDto.kind === 'PERSON'
-          ? {
-              cpf: createClientDto.cpf,
-              rg: createClientDto.rg,
-            }
-          : {
-              cnpj: createClientDto.cnpj,
-              stateRegistration: createClientDto.stateRegistration || '',
-            };
-
       const created = await this.prisma.client.create({
         data: {
           name: createClientDto.name,
-          kind: createClientDto.kind,
+          type: createClientDto.type,
           email: createClientDto.email,
-          birthdate: createClientDto.birthdate,
-          phoneNumber: createClientDto.phoneNumber,
-          mobilePhone: createClientDto.mobilePhone,
+          birthdate:
+            (createClientDto.birthdate &&
+              new Date(createClientDto.birthdate)) ||
+            null,
+          phone: createClientDto.phone,
+          mobile: createClientDto.mobile,
           companyId: createClientDto.companyId,
           categoryId: createClientDto.categoryId,
-          details: details,
+          cpf: createClientDto.cpf,
+          rg: createClientDto.rg,
+          cnpj: createClientDto.cnpj,
+          activity: createClientDto.activity,
+          tradeName: createClientDto.tradeName,
+          corporateName: createClientDto.corporateName,
         },
       });
 
@@ -86,15 +84,21 @@ export class ClientService {
         where = { ...where, status: filter.status };
       }
 
-      const clients = await this.prisma.client.findMany({
-        where: where,
-        take: +filter.limit,
-        skip: (+filter.page - 1) * +filter.limit,
-      });
+      const [total, clients] = await Promise.all([
+        this.prisma.client.count({ where }),
+        this.prisma.client.findMany({
+          where: where,
+          take: +filter.limit,
+          skip: (+filter.page - 1) * +filter.limit,
+        }),
+      ]);
+
+      const lastPage = Math.ceil(total / +filter.limit);
 
       return {
+        total,
+        lastPage,
         data: clients,
-        total: await this.prisma.client.count({ where }),
       };
     } catch (e) {
       console.error(e);
@@ -117,17 +121,12 @@ export class ClientService {
       }
 
       const update = this.buildUpdateObject(updateClientDto);
-      const details = this.buildDetailsObject(updateClientDto, client);
       const address = this.buildAddressObject(updateClientDto, client);
 
       if (client.addressId) {
         update['address'] = { update: address };
       } else {
         update['address'] = { create: address };
-      }
-
-      if (Object.keys(details).length) {
-        update['details'] = details;
       }
 
       if (!Object.keys(update).length) {
@@ -160,7 +159,7 @@ export class ClientService {
       'financialNotes',
       'responsibleId',
       'activityId',
-      'kind',
+      'type',
     ];
     const update = fieldsToUpdate.reduce((acc, field) => {
       if (dto[field]) {
@@ -183,10 +182,7 @@ export class ClientService {
     return update;
   }
 
-  private buildDetailsObject(
-    dto: UpdateClientDto,
-    client: Client,
-  ): Prisma.JsonValue {
+  private buildDetailsObject(dto: UpdateClientDto): Prisma.JsonValue {
     const fieldsToUpdate = ['ie', 'cnpj', 'stateRegistration', 'cpf', 'rg'];
 
     const updatedDetails = fieldsToUpdate.reduce(
@@ -199,15 +195,7 @@ export class ClientService {
       {} as Record<string, any>,
     );
 
-    if (
-      client?.details &&
-      typeof client?.details === 'object' &&
-      !Array.isArray(client?.details)
-    ) {
-      return { ...client?.details, ...updatedDetails };
-    } else {
-      return updatedDetails;
-    }
+    return updatedDetails;
   }
 
   private buildAddressObject(
