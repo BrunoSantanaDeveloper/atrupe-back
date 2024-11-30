@@ -1077,6 +1077,7 @@ model Product {
   imageUrl             String?
 
   items ProductItem[]
+  productionStages Json?
 
   companyId String?
   company   Company? @relation(fields: [companyId], references: [id])

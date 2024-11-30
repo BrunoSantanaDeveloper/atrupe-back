@@ -35,10 +35,6 @@ export class ProductController {
 
   @Post()
   @ApiOperation({ summary: 'Cria um novo produto' })
-  @ApiBody({
-    description: 'Dados do novo produto',
-    type: CreateProductDto,
-  })
   @ApiResponse({
     status: 201,
     description: 'Produto criado com sucesso.',

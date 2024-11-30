@@ -23,7 +23,7 @@ export class ProductService {
         distance: item.distance || undefined,
         duration: item.duration || undefined,
       }));
-
+      const productionStages = createProductDto.productionStages || [];
       // Criação do produto com tratamento para inserção condicional de itens
       const created = await this.prisma.product.create({
         data: {
@@ -41,6 +41,7 @@ export class ProductService {
           items: {
             create: items,
           },
+          productionStages: JSON.parse(JSON.stringify(productionStages)),
         },
       });
 
@@ -132,6 +133,7 @@ export class ProductService {
         duration: item.duration || undefined,
       }));
 
+      const productionStages = updateProductDto.productionStages || [];
       return this.prisma.product.update({
         where: { id },
         data: {
@@ -153,6 +155,7 @@ export class ProductService {
               update: item,
             })),
           },
+          productionStages: JSON.parse(JSON.stringify(productionStages)), // Corrigido
         },
       });
     } catch (error) {

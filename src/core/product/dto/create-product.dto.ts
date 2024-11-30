@@ -12,6 +12,24 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+export class SectorDto {
+  @ApiProperty({
+    description: 'ID do setor para a etapa de produção',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsOptional()
+  @IsUUID()
+  id: string;
+
+  @ApiProperty({
+    description: 'Se etapa está ativa ou não',
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isActive: boolean = false;
+}
+
 export class CreateProductItemDto {
   @IsUUID()
   @IsOptional()
@@ -232,4 +250,15 @@ export class CreateProductDto {
     required: false,
   })
   items?: CreateProductItemDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SectorDto)
+  @IsOptional()
+  @ApiProperty({
+    description: 'Lista de etapas de produção (setores) do produto',
+    type: [SectorDto],
+    required: false,
+  })
+  productionStages?: SectorDto[];
 }
