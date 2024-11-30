@@ -15,13 +15,13 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiQuery,
 } from '@nestjs/swagger';
 import { StatusQuotation } from '@prisma/client';
 import { CreateStatusQuotationDto } from './dto/create-status.dto';
 import { StatusService } from './status.service';
 import { UpdateStatusQuotationDto } from './dto/update-status.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 @ApiTags('Status de Orçamento')
 @Controller('sale/status')
@@ -46,28 +46,10 @@ export class StatusController {
 
   @ApiOperation({ summary: 'Listar todos os status de orçamento' })
   @ApiResponse({ status: 200, description: 'Lista de status de orçamento.' })
-  @ApiQuery({
-    name: 'page',
-    required: false,
-    type: Number,
-    example: 1,
-    description: 'Número da página',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    example: 10,
-    description: 'Número de itens por página',
-  })
   @Get()
-  async findAll(
-    @Req() req,
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 10,
-  ): Promise<any> {
-    const companyId = req.user.companyId;
-    return await this.statusQuotationService.findAll(companyId, +page, +limit);
+  async findAll(@Req() req, @Query() filter: BaseFilterDTO): Promise<any> {
+    filter.companyId = req.user.companyId;
+    return await this.statusQuotationService.findAll(filter);
   }
 
   @Get(':id')

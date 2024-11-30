@@ -6,6 +6,7 @@ import {
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CreateSaleSeriesDto } from './dto/create-series.dto';
 import { UpdateSaleSeriesDto } from './dto/update-serie.dto';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 @Injectable()
 export class SaleSeriesService {
@@ -23,27 +24,34 @@ export class SaleSeriesService {
     }
   }
 
-  async findAll(companyId: string, page: number = 1, limit: number = 10) {
-    const skip = (page - 1) * limit;
+  async findAll(filter: BaseFilterDTO) {
+    const { companyId, page, limit } = filter;
+    console.log(page, limit);
+    try {
+      const skip = (+page - 1) * +limit;
 
-    const [total, saleSeries] = await Promise.all([
-      this.prisma.saleSeries.count({
-        where: { companyId },
-      }),
-      this.prisma.saleSeries.findMany({
-        where: { companyId },
-        orderBy: { title: 'asc' },
-        skip,
-        take: limit,
-      }),
-    ]);
+      const [total, saleSeries] = await Promise.all([
+        this.prisma.saleSeries.count({
+          where: { companyId },
+        }),
+        this.prisma.saleSeries.findMany({
+          where: { companyId },
+          orderBy: { title: 'asc' },
+          skip,
+          take: +limit,
+        }),
+      ]);
 
-    return {
-      total,
-      page,
-      limit,
-      saleSeries: saleSeries.map((series) => this.formatSeries(series)),
-    };
+      return {
+        total,
+        page,
+        limit,
+        saleSeries: saleSeries.map((series) => this.formatSeries(series)),
+      };
+    } catch (error) {
+      console.error(error);
+      throw new BadRequestException('Error on find sale series');
+    }
   }
 
   async findOne(id: string) {

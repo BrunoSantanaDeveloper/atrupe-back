@@ -4,6 +4,7 @@ import { CreateStatusQuotationDto } from './dto/create-status.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { UpdateStatusQuotationDto } from './dto/update-status.dto';
 import { StatusQuotation } from '@prisma/client';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 @Injectable()
 export class StatusService {
@@ -17,12 +18,9 @@ export class StatusService {
     });
   }
 
-  async findAll(
-    companyId: string,
-    page: number = 1,
-    limit: number = 10,
-  ): Promise<any> {
-    const skip = (page - 1) * limit;
+  async findAll(filter: BaseFilterDTO): Promise<any> {
+    const { page = 1, limit = 10, companyId } = filter;
+    const skip = (+page - 1) * +limit;
 
     const [total, statusQuotations] = await Promise.all([
       this.prisma.statusQuotation.count({
@@ -33,7 +31,7 @@ export class StatusService {
         select: { id: true, title: true, color: true },
         orderBy: { title: 'asc' },
         skip,
-        take: limit,
+        take: +limit,
       }),
     ]);
 
