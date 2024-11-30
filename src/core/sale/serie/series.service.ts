@@ -44,8 +44,7 @@ export class SaleSeriesService {
 
       return {
         total,
-        page,
-        limit,
+        lastPage: Math.ceil(total / +limit),
         saleSeries: saleSeries.map((series) => this.formatSeries(series)),
       };
     } catch (error) {

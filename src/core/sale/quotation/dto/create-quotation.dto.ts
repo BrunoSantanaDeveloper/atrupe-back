@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsEnum,
   IsNotEmpty,
   IsNumber,
@@ -285,6 +286,14 @@ export class CreateQuotationDto {
     required: false,
   })
   totalValue?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({
+    description: 'É venda rápida',
+    example: false,
+  })
+  quickSale?: boolean;
 
   // @IsArray()
   // @ValidateNested({ each: true })

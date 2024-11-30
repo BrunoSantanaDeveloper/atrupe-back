@@ -983,6 +983,7 @@ model Quotation {
   clientId  String?
   companyId String
   tagId     String?
+  quickSale Boolean @default(false)
 
   seller  Employee         @relation(fields: [sellerId], references: [id])
   series  SaleSeries?      @relation(fields: [seriesId], references: [id])

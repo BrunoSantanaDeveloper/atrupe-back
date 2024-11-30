@@ -496,6 +496,11 @@ export class QuotationService {
       const [quotations, total] = await Promise.all([
         this.prisma.quotation.findMany({
           where,
+          include: {
+            tag: true,
+            series: true,
+            client: true,
+          },
           take: Number(dto.limit),
           skip: (Number(dto.page) - 1) * Number(dto.limit),
           orderBy: {
@@ -514,7 +519,36 @@ export class QuotationService {
               quotations: [],
             };
           }
-          acc[date].quotations.push(quotation);
+          acc[date].quotations.push({
+            id: quotation.id,
+            description: quotation.description,
+            status: quotation.status,
+            dueDate: quotation.dueDate,
+            totalValue: quotation.totalValue,
+            tag: quotation.tag
+              ? {
+                  id: quotation.tag.id,
+                  text: quotation.tag.title,
+                  color: quotation.tag.color,
+                }
+              : null,
+            quickSale: quotation.quickSale || false, // Adiciona o campo quickSale
+            serie: quotation.series
+              ? {
+                  id: quotation.series.id,
+                  name: quotation.series.title,
+                  code: quotation.series.code,
+                  quotation: quotation.series.currentBudgetNumber,
+                }
+              : null,
+            client: quotation.client
+              ? {
+                  id: quotation.client.id,
+                  name: quotation.client.name,
+                  email: quotation.client.email,
+                }
+              : null,
+          });
           return acc;
         },
         {},
