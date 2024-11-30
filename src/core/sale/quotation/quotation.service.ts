@@ -492,7 +492,6 @@ export class QuotationService {
           },
         };
       }
-      console.log(where);
       const [quotations, total] = await Promise.all([
         this.prisma.quotation.findMany({
           where,
@@ -764,36 +763,10 @@ export class QuotationService {
       throw new NotFoundException(`Quotation with ID '${id}' not found.`);
     }
 
-    const update = {};
-
-    if (updateQuotationDto.description) {
-      update['description'] = updateQuotationDto.description;
-    }
-
-    if (updateQuotationDto.sellerId) {
-      update['sellerId'] = updateQuotationDto.sellerId;
-    }
-
-    if (updateQuotationDto.companyId) {
-      update['companyId'] = updateQuotationDto.companyId;
-    }
-
-    if (updateQuotationDto.clientId) {
-      update['clientId'] = updateQuotationDto.clientId;
-    }
-
-    if (updateQuotationDto.tagId) {
-      update['tagId'] = updateQuotationDto.tagId;
-    }
-
-    if (!Object.keys(update).length) {
-      return existingQuotation;
-    }
-    console.log(update);
     // Realize a atualização com os dados fornecidos
     return this.prisma.quotation.update({
       where: { id },
-      data: update,
+      data: updateQuotationDto,
     });
   }
 

@@ -88,6 +88,15 @@ export class StatusService {
       );
     }
 
+    await this.prisma.quotation.updateMany({
+      where: {
+        tagId: id,
+      },
+      data: {
+        tagId: null,
+      },
+    });
+
     return this.prisma.statusQuotation.update({
       where: { id },
       data: {
