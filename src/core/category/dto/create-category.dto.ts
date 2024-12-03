@@ -1,11 +1,5 @@
 import { CategoryKind } from '@prisma/client';
-import {
-  IsEnum,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsUUID,
-} from 'class-validator';
+import { IsEnum, IsNotEmpty, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateCategoryDto {
@@ -26,12 +20,5 @@ export class CreateCategoryDto {
   })
   kind: CategoryKind;
 
-  @IsOptional()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da empresa associada à categoria',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-    required: false,
-  })
   companyId: string;
 }

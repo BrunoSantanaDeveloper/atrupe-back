@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { Category } from '@prisma/client';
 import { CategoryFilterDTO } from './dto/filter.dto';
 import { PrismaService } from 'nestjs-prisma';
 
@@ -18,7 +17,8 @@ export class CategoryService {
     }
   }
 
-  findAll(filter: CategoryFilterDTO): Promise<Category[]> {
+  async findAll(filter: CategoryFilterDTO): Promise<any> {
+    const { page = 1, limit = 10 } = filter;
     let where = {};
 
     if (filter.companyId) {
@@ -36,13 +36,24 @@ export class CategoryService {
     if (filter.kind) {
       where = { ...where, kind: filter.kind };
     }
+    const [total, data] = await Promise.all([
+      this.prisma.category.count({
+        where,
+      }),
+      this.prisma.category.findMany({
+        where,
+        include: { children: true },
+        take: +limit,
+        skip: (+page - 1) * +limit,
+      }),
+    ]);
+    const lastPage = Math.ceil(total / +limit);
 
-    return this.prisma.category.findMany({
-      where,
-      include: { children: true },
-      take: +filter.limit,
-      skip: (+filter.page - 1) * +filter.limit,
-    });
+    return {
+      total,
+      lastPage,
+      data,
+    };
   }
 
   findOne(id: string) {

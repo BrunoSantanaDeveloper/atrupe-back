@@ -8,6 +8,7 @@ import {
   Delete,
   Query,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { CategoryService } from './category.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
@@ -20,13 +21,14 @@ import {
   ApiResponse,
   ApiBody,
   ApiParam,
-  ApiQuery,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 
 const RESOURCE = 'category';
 
 @ApiTags('Categorias')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(RESOURCE)
 export class CategoryController {
   constructor(private readonly categoryService: CategoryService) {}
@@ -41,25 +43,21 @@ export class CategoryController {
     status: 201,
     description: 'Categoria criada com sucesso.',
   })
-  create(@Body() createCategoryDto: CreateCategoryDto) {
+  create(@Req() req, @Body() createCategoryDto: CreateCategoryDto) {
+    createCategoryDto.companyId = req.user.companyId;
     return this.categoryService.create(createCategoryDto);
   }
 
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todas as categorias' })
-  @ApiQuery({
-    name: 'filter',
-    description: 'Filtros opcionais para a busca de categorias',
-    type: CategoryFilterDTO,
-    required: false,
-  })
   @ApiResponse({
     status: 200,
     description: 'Lista de categorias retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() filter: CategoryFilterDTO) {
-    return this.categoryService.findAll(filter);
+  async findAll(@Req() req, @Query() filter: CategoryFilterDTO) {
+    filter.companyId = req.user.companyId;
+    return await this.categoryService.findAll(filter);
   }
 
   @Get(':id')
