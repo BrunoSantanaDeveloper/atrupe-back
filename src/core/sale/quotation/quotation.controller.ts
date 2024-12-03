@@ -57,7 +57,7 @@ export class QuotationController {
     return this.quotationService.addProductToQuotation(id, addItemDto);
   }
 
-  @Patch(':quotationId/update-product/:productId')
+  @Patch('update-product/:productId')
   @ApiOperation({
     summary: 'Atualiza um produto dentro de um orçamento',
     description:
@@ -76,12 +76,10 @@ export class QuotationController {
     description: 'Orçamento ou produto não encontrados.',
   })
   async updateProduct(
-    @Param('quotationId') quotationId: string,
     @Param('productId') productId: string,
     @Body() updateQuotationProductDto: UpdateItemDto,
   ): Promise<QuotationProduct> {
     const updatedProduct = await this.quotationService.updateProductInQuotation(
-      quotationId,
       productId,
       updateQuotationProductDto,
     );
@@ -91,7 +89,36 @@ export class QuotationController {
     return updatedProduct;
   }
 
-  @Delete(':quotationId/remove-product/:productId')
+  @Post('duplicate-product/:productId')
+  @ApiOperation({
+    summary: 'Duplica um produto dentro de um orçamento',
+    description:
+      'Duplica os detalhes de um produto e seus itens dentro de um orçamento.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Produto atualizado com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Erro na validação dos dados.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Orçamento ou produto não encontrados.',
+  })
+  async duplicateProduct(
+    @Param('productId') productId: string,
+  ): Promise<QuotationProduct> {
+    const updatedProduct =
+      await this.quotationService.duplicateProductInQuotation(productId);
+    if (!updatedProduct) {
+      throw new NotFoundException('Produto ou orçamento não encontrados.');
+    }
+    return updatedProduct;
+  }
+
+  @Delete('remove-product/:productId')
   @ApiOperation({
     summary: 'Remove um produto de um orçamento',
     description: 'Remove um produto do orçamento especificado.',
@@ -104,14 +131,9 @@ export class QuotationController {
     status: 404,
     description: 'Orçamento ou produto não encontrados.',
   })
-  async deleteProduct(
-    @Param('quotationId') quotationId: string,
-    @Param('productId') productId: string,
-  ): Promise<void> {
-    const isDeleted = await this.quotationService.removeProductFromQuotation(
-      quotationId,
-      productId,
-    );
+  async deleteProduct(@Param('productId') productId: string): Promise<void> {
+    const isDeleted =
+      await this.quotationService.removeProductFromQuotation(productId);
     if (!isDeleted) {
       throw new NotFoundException('Produto ou orçamento não encontrados.');
     }

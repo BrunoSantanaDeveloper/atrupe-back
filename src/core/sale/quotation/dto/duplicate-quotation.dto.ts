@@ -35,6 +35,7 @@ export class DuplicateQuotationProductDto {
 }
 
 export class DuplicateQuotationProductItemDto {
+  quotationProductId: string;
   quotationId: string;
   productId: string;
   productItemId: string;

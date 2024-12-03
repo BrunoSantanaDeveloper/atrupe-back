@@ -1010,6 +1010,7 @@ model Quotation {
 }
 
 model QuotationProduct {
+  id          String    @id @default(uuid())
   quotation   Quotation @relation(fields: [quotationId], references: [id])
   quotationId String
 
@@ -1021,19 +1022,21 @@ model QuotationProduct {
   technicalDescription String?
   imageUrl             String?
   totalValue           Float?
+  notes                String?
 
   items                QuotationProductItem[]
   allowEditDescription Boolean                @default(true)
   allowEditValues      Boolean                @default(true)
 
-  @@id([quotationId, productId])
   @@map("quotation_products")
 }
 
 model QuotationProductItem {
-  quotationId      String
-  productId        String
-  quotationProduct QuotationProduct @relation(fields: [quotationId, productId], references: [quotationId, productId])
+  id                 String           @id @default(uuid())
+  quotationId        String
+  productId          String
+  quotationProductId String
+  quotationProduct   QuotationProduct @relation(fields: [quotationProductId], references: [id])
 
   productItemId String
   productItem   ProductItem @relation(fields: [productItemId], references: [id])
@@ -1049,7 +1052,6 @@ model QuotationProductItem {
   volume          Float? //volume
   distance        Float? //distancia
   duration        Float? //duração (em dias)
-  notes           String?
   discount        Float?
   discountType    String?
 
@@ -1058,7 +1060,6 @@ model QuotationProductItem {
 
   totalValue Float?
 
-  @@id([quotationId, productId, productItemId])
   @@map("quotation_product_items")
 }
 
