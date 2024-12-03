@@ -467,7 +467,7 @@ export class QuotationService {
 
     const result = await this.prisma.quotation.groupBy({
       by: ['status'],
-      where: { companyId },
+      where: { companyId, status: { in: allStatuses } },
       _count: true,
     });
 

@@ -33,7 +33,6 @@ export class MinioService {
   }
 
   async uploadFile(file: Express.Multer.File) {
-    console.log(file);
     const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const randomSuffix = Math.round(Math.random() * 1e9);
     const fileName = `${datePrefix}-${Date.now()}${randomSuffix}${extname(
