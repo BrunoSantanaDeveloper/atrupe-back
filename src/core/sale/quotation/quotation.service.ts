@@ -8,7 +8,7 @@ import {
 import { AddItemDto, CreateQuotationDto } from './dto/create-quotation.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { FilterQuotationDto } from './dto/filter.dto';
-import { Prisma, Quotation, QuotationStatus } from '@prisma/client';
+import { Order, Prisma, Quotation, QuotationStatus } from '@prisma/client';
 import { UpdateItemDto, UpdateQuotationDto } from './dto/update-quotation.dto';
 
 import { OrderService } from '../order/order.service';
@@ -1008,8 +1008,8 @@ export class QuotationService {
     return newQuotation; // Retorna o novo orçamento criado
   }
 
-  async approve(quotationId: string): Promise<Quotation> {
-    const approved = await this.prisma.quotation.update({
+  async approve(quotationId: string): Promise<Order> {
+    const quotation = await this.prisma.quotation.update({
       where: { id: quotationId },
       data: {
         status: QuotationStatus.APPROVED,
@@ -1018,11 +1018,9 @@ export class QuotationService {
     });
 
     // Criar um pedido com base na cotação aprovada
-    await this.orderService.create({
-      quotationId: approved.id,
+    return await this.orderService.create({
+      quotationId: quotation.id,
     });
-
-    return approved;
   }
 
   async reject(quotationId: string): Promise<Quotation> {
