@@ -327,18 +327,26 @@ export class QuotationService {
                     id: item.id,
                   },
                   data: {
-                    unitOfMeasureId: item.unitOfMeasureId,
-                    quantity: item.quantity,
-                    width: item.width,
-                    height: item.height,
-                    length: item.length,
-                    weight: item.weight,
-                    volume: item.volume,
-                    distance: item.distance,
-                    duration: item.duration,
-                    unitCost: item.unitCost,
-                    salePrice: item.salePrice,
-                    totalValue: item.quantity * item.salePrice,
+                    ...(item.unitOfMeasureId && {
+                      unitOfMeasureId: item.unitOfMeasureId,
+                    }),
+                    ...(item.quantity && {
+                      quantity: item.quantity,
+                      totalValue: item.quantity * item.salePrice,
+                    }),
+                    ...(item.width && { width: item.width }),
+                    ...(item.height && { height: item.height }),
+                    ...(item.length && { length: item.length }),
+                    ...(item.weight && { weight: item.weight }),
+                    ...(item.volume && { volume: item.volume }),
+                    ...(item.distance && { distance: item.distance }),
+                    ...(item.duration && { duration: item.duration }),
+                    ...(item.unitCost && { unitCost: item.unitCost }),
+                    ...(item.salePrice && { salePrice: item.salePrice }),
+                    ...(item.quantity &&
+                      item.salePrice && {
+                        totalValue: item.quantity * item.salePrice,
+                      }),
                   },
                 })),
               },
@@ -490,7 +498,7 @@ export class QuotationService {
       }, 0);
       return total + productTotal;
     }, 0);
-
+    console.log(totalValue);
     await this.prisma.quotation.update({
       where: { id: quotationId },
       data: { totalValue },
@@ -749,6 +757,9 @@ export class QuotationService {
           },
           quotationProduct: {
             select: {
+              id: true,
+              notes: true,
+              imageUrl: true,
               product: {
                 select: {
                   id: true,
@@ -761,6 +772,7 @@ export class QuotationService {
               totalValue: true,
               items: {
                 select: {
+                  id: true,
                   productItemId: true,
                   name: true,
                   unitOfMeasure: true,
@@ -876,14 +888,14 @@ export class QuotationService {
             }
           : null,
         quotationItems: quotation.quotationProduct.map((qp) => ({
+          id: qp.id,
           description: qp.description,
-          notes: '',
+          notes: qp.notes,
           discount: 0,
           discountType: 'VALUE',
           finalValue: qp.totalValue,
           image: {
-            id: '', // Coloque a ID da imagem ou deixe vazio
-            url: '', // Coloque a URL da imagem ou deixe vazio
+            url: qp.imageUrl, // Coloque a URL da imagem ou deixe vazio
             original: true, // Marcar como original ou não
           },
           product: {
@@ -891,7 +903,8 @@ export class QuotationService {
             name: qp.product.name,
             quantity: qp.quantity,
             compositions: qp.items.map((item) => ({
-              id: item.productItemId,
+              id: item.id,
+              productItemId: item.productItemId,
               name: item.name,
               unitOfMeasure: item.unitOfMeasure,
               quantity: item.quantity,
