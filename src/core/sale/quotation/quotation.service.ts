@@ -899,12 +899,12 @@ export class QuotationService {
             original: true, // Marcar como original ou não
           },
           product: {
-            id: qp.productId,
+            originalProductId: qp.productId,
             name: qp.product.name,
             quantity: qp.quantity,
             compositions: qp.items.map((item) => ({
               id: item.id,
-              productItemId: item.productItemId,
+              originalCompositionId: item.productItemId,
               name: item.name,
               unitOfMeasure: item.unitOfMeasure,
               quantity: item.quantity,
