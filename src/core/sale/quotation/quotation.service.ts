@@ -897,7 +897,10 @@ export class QuotationService {
           notes: qp.notes,
           discountType: qp.discountType,
           discount: qp.discount,
-          unitValue: qp.items.map((item) => item.quantity * item.unitCost),
+          unitValue: qp.items.reduce(
+            (total, item) => total + item.quantity * item.unitCost,
+            0,
+          ),
           finalValue: qp.totalValue,
           image: {
             url: qp.imageUrl, // Coloque a URL da imagem ou deixe vazio
@@ -907,7 +910,10 @@ export class QuotationService {
             originalProductId: qp.productId,
             name: qp.product.name,
             quantity: qp.quantity,
-            unitValue: qp.items.map((item) => item.quantity * item.unitCost),
+            unitValue: qp.items.reduce(
+              (total, item) => total + item.quantity * item.unitCost,
+              0,
+            ),
             finalValue: qp.totalValue,
             compositions: qp.items.map((item) => ({
               id: item.id,
