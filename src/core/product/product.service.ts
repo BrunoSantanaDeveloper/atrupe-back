@@ -3,6 +3,7 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { ProductFilterDTO } from './dto/filter.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { ProductStatus } from '@prisma/client';
 
 @Injectable()
 export class ProductService {
@@ -51,6 +52,34 @@ export class ProductService {
     }
   }
 
+  async findAllQuantity(companyId: string) {
+    const allStatuses: ProductStatus[] = ['ACTIVE', 'INACTIVE'];
+
+    const result = await this.prisma.product.groupBy({
+      by: ['status'],
+      where: { companyId, status: { in: allStatuses } },
+      _count: true,
+    });
+
+    const statusCount = allStatuses.reduce(
+      (acc, status) => {
+        acc[status] = 0;
+        return acc;
+      },
+      {} as { [K in ProductStatus]: number },
+    );
+
+    result.forEach((cur) => {
+      statusCount[cur.status] = cur._count;
+    });
+
+    const total = Object.values(statusCount).reduce((acc, cur) => acc + cur, 0);
+
+    return {
+      ...statusCount,
+      TOTAL: total,
+    };
+  }
   async findAll(filter: ProductFilterDTO) {
     try {
       let where = {};
@@ -70,8 +99,24 @@ export class ProductService {
         where = { ...where, sectorId: filter.sectorId };
       }
 
-      if (filter.isActive) {
-        where = { ...where, isActive: filter.isActive === 'true' };
+      if (filter.status) {
+        where = { ...where, status: filter.status };
+      }
+
+      if (filter.search) {
+        where = {
+          ...where,
+          OR: [
+            { name: { contains: filter.search, mode: 'insensitive' } },
+            { code: { contains: filter.search, mode: 'insensitive' } },
+            {
+              technicalDescription: {
+                contains: filter.search,
+                mode: 'insensitive',
+              },
+            },
+          ],
+        };
       }
 
       const products = await this.prisma.product.findMany({

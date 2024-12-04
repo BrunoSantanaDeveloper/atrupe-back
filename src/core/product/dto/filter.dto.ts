@@ -1,6 +1,7 @@
-import { IsBooleanString, IsOptional, IsUUID } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ApiProperty } from '@nestjs/swagger';
+import { ProductStatus } from '@prisma/client';
 
 export class ProductFilterDTO extends BaseFilterDTO {
   @IsOptional()
@@ -31,11 +32,20 @@ export class ProductFilterDTO extends BaseFilterDTO {
   sectorId: string;
 
   @IsOptional()
-  @IsBooleanString()
+  @IsString()
   @ApiProperty({
-    description: 'Filtrar produtos ativos (true/false)',
-    example: 'true',
+    description: 'Campo de busca',
+    example: 'Camisa',
     required: false,
   })
-  isActive: string;
+  search?: string;
+
+  @IsOptional()
+  @IsEnum(ProductStatus)
+  @ApiProperty({
+    description: 'Filtrar produtos ativos ou inativos',
+    example: ProductStatus.ACTIVE,
+    required: false,
+  })
+  status: ProductStatus;
 }

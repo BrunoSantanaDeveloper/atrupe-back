@@ -17,6 +17,7 @@ export class OrderService {
     return this.prisma.order.create({
       data: {
         quotationId: createOrderDto.quotationId,
+        status: OrderStatus.PENDING,
       },
     });
   }
@@ -184,23 +185,45 @@ export class OrderService {
   }
 
   async findAllQuantity(companyId: string) {
+    const allStatuses: OrderStatus[] = [
+      'PENDING',
+      'IN_PRODUCTION',
+      'CANCELED',
+      'FINISHED',
+    ];
+
     const result = await this.prisma.order.groupBy({
       by: ['status'],
-      where: { quotation: { companyId } },
+      where: {
+        quotation: { companyId },
+        status: {
+          in: ['PENDING', 'IN_PRODUCTION', 'CANCELED', 'COMPLETED', 'FINISHED'],
+        },
+      },
       _count: true,
     });
 
-    const total = result.reduce((acc, cur) => acc + cur._count, 0);
+    const statusCount = allStatuses.reduce(
+      (acc, status) => {
+        acc[status] = 0;
+        return acc;
+      },
+      {} as { [K in OrderStatus]: number },
+    );
+
+    result.forEach((cur) => {
+      if (cur.status === 'COMPLETED') {
+        statusCount['IN_PRODUCTION'] += cur._count;
+      } else {
+        statusCount[cur.status] = cur._count;
+      }
+    });
+
+    const total = Object.values(statusCount).reduce((acc, cur) => acc + cur, 0);
 
     return {
+      ...statusCount,
       TOTAL: total,
-      ...result.reduce(
-        (acc, cur) => {
-          acc[cur.status] = cur._count;
-          return acc;
-        },
-        {} as { [K in OrderStatus]: number },
-      ),
     };
   }
 

@@ -56,6 +56,19 @@ export class ProductController {
     return await this.productService.findAll(filter);
   }
 
+  @Get('quantity')
+  @ApiOperation({
+    summary: 'Obtém a quantidade de todos os status de produtos',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de quantidade de produtos retornada com sucesso.',
+  })
+  async findAllQuantity(@Req() req) {
+    const companyId = req.user.companyId;
+    return this.productService.findAllQuantity(companyId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Obtém um produto pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do produto' })

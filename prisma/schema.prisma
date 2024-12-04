@@ -973,11 +973,11 @@ model StatusQuotation {
 }
 
 model Quotation {
-  id         String    @id @default(uuid())
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime? @updatedAt
-  approvedAt DateTime?
-  isActive   Boolean   @default(true)
+  id              String    @id @default(uuid())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime? @updatedAt
+  approvedAt      DateTime?
+  isActive        Boolean   @default(true)
   quotationNumber Int?
 
   description String?
@@ -1130,6 +1130,7 @@ model QuotationInstallment {
 }
 
 enum OrderStatus {
+  PENDING
   IN_PRODUCTION
   DELIVERY
   COMPLETED
@@ -1192,13 +1193,19 @@ model Order {
   @@map("orders")
 }
 
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+}
+
 model Product {
   id   String @id @default(uuid())
   name String
   code String
 
-  isActive   Boolean @default(true)
-  isStandard Boolean @default(false)
+  isActive   Boolean       @default(true)
+  status     ProductStatus @default(ACTIVE)
+  isStandard Boolean       @default(false)
 
   technicalDescription String?
   allowEditValues      Boolean @default(true)
