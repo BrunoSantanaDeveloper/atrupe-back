@@ -901,6 +901,13 @@ export class QuotationService {
             (total, item) => total + item.quantity * item.unitCost,
             0,
           ),
+          totalValue: (() => {
+            const unitValue = qp.items.reduce(
+              (total, item) => total + item.quantity * item.unitCost,
+              0,
+            );
+            return qp.quantity * unitValue;
+          })(),
           finalValue: (() => {
             const unitValue = qp.items.reduce(
               (total, item) => total + item.quantity * item.unitCost,
@@ -927,6 +934,7 @@ export class QuotationService {
               (total, item) => total + item.quantity * item.unitCost,
               0,
             ),
+
             finalValue:
               qp.quantity *
               qp.items.reduce(
