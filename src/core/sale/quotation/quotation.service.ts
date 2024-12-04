@@ -305,9 +305,11 @@ export class QuotationService {
         {
           where: { id: productId },
           data: {
-            ...(data.description && { description: data.description }),
+            ...(data.description !== undefined && {
+              description: data.description,
+            }),
             ...(data.imageUrl && { imageUrl: data.imageUrl }),
-            ...(data.notes && { notes: data.notes }),
+            ...(data.notes !== undefined && { notes: data.notes }),
             ...(data.discount && { discount: data.discount }),
             ...(data.discountType && { discountType: data.discountType }),
             ...(data.technicalDescription && {
@@ -822,7 +824,13 @@ export class QuotationService {
                   unitCost: true,
                   totalValue: true,
                 },
+                orderBy: {
+                  createdAt: 'asc',
+                },
               },
+            },
+            orderBy: {
+              createdAt: 'asc',
             },
           },
         },

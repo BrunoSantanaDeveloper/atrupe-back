@@ -1031,6 +1031,9 @@ model QuotationProduct {
   allowEditDescription Boolean                @default(true)
   allowEditValues      Boolean                @default(true)
 
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
   @@map("quotation_products")
 }
 
@@ -1060,6 +1063,9 @@ model QuotationProductItem {
   salePrice Float?
 
   totalValue Float?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
 
   @@map("quotation_product_items")
 }
