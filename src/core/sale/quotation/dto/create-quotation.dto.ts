@@ -295,6 +295,8 @@ export class CreateQuotationDto {
   })
   quickSale?: boolean;
 
+  quotationNumber: number;
+
   // @IsArray()
   // @ValidateNested({ each: true })
   // @Type(() => QuotationProductDto)

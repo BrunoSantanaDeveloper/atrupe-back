@@ -1014,6 +1014,14 @@ export class QuotationService {
       );
     }
 
+    const serie = await this.prisma.saleSeries.findUnique({
+      where: { id: quotation.seriesId },
+      select: {
+        id: true,
+        currentBudgetNumber: true,
+      },
+    });
+
     // Criar o DTO para o novo orçamento com as possíveis alterações
     const createDto: CreateQuotationDto = {
       description:
@@ -1023,7 +1031,8 @@ export class QuotationService {
       totalValue: quotation.totalValue, // Mantém o totalValue original
       sellerId: quotation.sellerId, // Mantém o sellerId original
       seriesId: quotation.seriesId, // Mantém o seriesId original
-      companyId: quotation.companyId, // Mantém o companyId original
+      companyId: quotation.companyId,
+      quotationNumber: serie.currentBudgetNumber,
     };
 
     // Criar o novo orçamento
@@ -1031,6 +1040,14 @@ export class QuotationService {
       data: createDto,
     });
 
+    await this.prisma.saleSeries.update({
+      where: {
+        id: serie.id,
+      },
+      data: {
+        currentBudgetNumber: { increment: 1 },
+      },
+    });
     // Criar os produtos e itens duplicados
     for (const product of quotation.quotationProduct) {
       // Criar o produto duplicado

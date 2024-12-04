@@ -929,7 +929,7 @@ model SaleSeries {
   code                String
   description         String?
   title               String
-  currentBudgetNumber Int     @default(0)
+  currentBudgetNumber Int     @default(1)
   proposalValidity    Int?
   deliveryDeadline    Int?
 
