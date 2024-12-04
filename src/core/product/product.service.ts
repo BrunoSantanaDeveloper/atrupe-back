@@ -233,6 +233,7 @@ export class ProductService {
           companyId: updateProductDto.companyId || undefined,
           categoryId: updateProductDto.categoryId || undefined,
           sectorId: updateProductDto.sectorId || undefined,
+          status: updateProductDto.status,
           technicalDescription:
             updateProductDto.technicalDescription || undefined,
           allowEditDescription: updateProductDto.allowEditDescription,
