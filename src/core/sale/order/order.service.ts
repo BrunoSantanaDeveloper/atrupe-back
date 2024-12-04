@@ -160,11 +160,16 @@ export class OrderService {
         orderBy: { createdAt: 'desc' },
       });
 
-      // Mapear para o formato solicitado
-      const data = orders.map((order) => {
+      const grouped = orders.reduce((acc, order) => {
+        const date = order.createdAt.toISOString().split('T')[0];
+        if (!acc[date]) {
+          acc[date] = { date, orders: [] };
+        }
+
         const quotation = order.quotation;
-        return {
+        acc[date].orders.push({
           id: order.id,
+          description: quotation.description,
           status: order.status,
           quotation: {
             description: quotation.description,
@@ -176,8 +181,13 @@ export class OrderService {
               quotation: quotation.quotationNumber || null,
             },
           },
-        };
-      });
+        });
+
+        return acc;
+      }, {});
+
+      // Transformar o agrupamento em um array de objetos
+      const data = Object.values(grouped);
 
       const lastPage = Math.ceil(totalOrders / Number(dto.limit));
 
