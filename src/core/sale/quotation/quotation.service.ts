@@ -220,7 +220,7 @@ export class QuotationService {
         duration: item.duration || originalItem.duration,
         unitCost: item.unitCost || originalItem.unitCost,
         salePrice: item.salePrice || originalItem.salePrice,
-        quantity: item.quantity,
+        quantity: data.quantity * item.quantity,
         totalValue:
           item.quantity * (item.salePrice || originalItem.salePrice || 0),
       };
