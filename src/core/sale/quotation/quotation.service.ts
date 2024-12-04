@@ -349,6 +349,7 @@ export class QuotationService {
       await this.recalculateQuotationProductsTotalValue(product.id);
       return updatedQuotationProduct;
     } catch (error) {
+      console.error(error);
       throw new BadRequestException(
         'Failed to update product in quotation',
         error.message,
@@ -477,7 +478,7 @@ export class QuotationService {
   private async recalculateQuotationProductsTotalValue(quotationId: string) {
     // Obter os produtos e itens relacionados
     const quotationProducts = await this.prisma.quotationProduct.findFirst({
-      where: { quotationId },
+      where: { id: quotationId },
       include: { items: true },
     });
 
