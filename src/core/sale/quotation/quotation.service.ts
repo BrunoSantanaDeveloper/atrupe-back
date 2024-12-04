@@ -527,6 +527,8 @@ export class QuotationService {
         finalValue,
       },
     });
+
+    await this.recalculateQuotationTotalValue(quotationProducts.quotationId);
   }
 
   private async recalculateQuotationTotalValue(quotationId: string) {
