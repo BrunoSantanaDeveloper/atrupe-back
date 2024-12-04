@@ -119,22 +119,66 @@ export class ProductService {
         };
       }
 
-      const products = await this.prisma.product.findMany({
-        where: where,
-        include: {
-          items: {
-            orderBy: {
-              name: 'asc',
+      const [total, products] = await Promise.all([
+        this.prisma.product.count({ where }),
+        this.prisma.product.findMany({
+          where: where,
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            sector: {
+              select: {
+                name: true,
+              },
+            },
+            items: {
+              select: {
+                unitCost: true,
+                salePrice: true,
+                unitOfMeasure: {
+                  select: {
+                    name: true,
+                  },
+                },
+              },
             },
           },
-        },
-        take: +filter.limit,
-        skip: (+filter.page - 1) * +filter.limit,
-        orderBy: { name: 'asc' },
+          take: +filter.limit,
+          skip: (+filter.page - 1) * +filter.limit,
+          orderBy: { name: 'asc' },
+        }),
+      ]);
+
+      // Mapear os produtos para calcular os totais de unitCost e salePrice
+      const data = products.map((product) => {
+        const { id, name, code, sector, items } = product;
+
+        // Calculando os totais
+        const totalUnitCost = items.reduce(
+          (sum, item) => sum + (item.unitCost || 0),
+          0,
+        );
+        const totalSalePrice = items.reduce(
+          (sum, item) => sum + (item.salePrice || 0),
+          0,
+        );
+
+        return {
+          id,
+          name,
+          code,
+          sectorName: sector?.name || null,
+          unitOfMeasureCode: 'UN',
+          totalUnitCost,
+          totalSalePrice,
+        };
       });
+
       return {
-        data: products,
-        total: await this.prisma.product.count({ where }),
+        total,
+        lastPage: Math.ceil(total / +filter.limit),
+        data,
       };
     } catch (error) {
       console.error(error.message);
