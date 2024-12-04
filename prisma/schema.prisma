@@ -1025,6 +1025,7 @@ model QuotationProduct {
   notes                String?
   discount             Float?
   discountType         String?
+  finalValue           Float?
 
   items                QuotationProductItem[]
   allowEditDescription Boolean                @default(true)

@@ -230,7 +230,7 @@ export class QuotationService {
     });
 
     // Recalcula o valor total do orçamento
-    await this.recalculateQuotationTotalValue(quotationId);
+    await this.recalculateQuotationProductsTotalValue(quotationProduct.id);
 
     // Retorna o orçamento atualizado
     return this.prisma.quotation.findUnique({
@@ -315,12 +315,6 @@ export class QuotationService {
             }),
             ...(data.quantity && {
               quantity: data.quantity,
-              totalValue:
-                data.quantity *
-                product.items.reduce(
-                  (acc, item) => acc + (item.salePrice || 0),
-                  0,
-                ),
             }),
             ...(data.items && {
               items: {
@@ -334,7 +328,6 @@ export class QuotationService {
                     }),
                     ...(item.quantity && {
                       quantity: item.quantity,
-                      totalValue: item.quantity * item.salePrice,
                     }),
                     ...(item.width && { width: item.width }),
                     ...(item.height && { height: item.height }),
@@ -345,10 +338,6 @@ export class QuotationService {
                     ...(item.duration && { duration: item.duration }),
                     ...(item.unitCost && { unitCost: item.unitCost }),
                     ...(item.salePrice && { salePrice: item.salePrice }),
-                    ...(item.quantity &&
-                      item.salePrice && {
-                        totalValue: item.quantity * item.salePrice,
-                      }),
                   },
                 })),
               },
@@ -357,7 +346,7 @@ export class QuotationService {
         },
       );
 
-      await this.recalculateQuotationTotalValue(product.quotationId);
+      await this.recalculateQuotationProductsTotalValue(product.id);
       return updatedQuotationProduct;
     } catch (error) {
       throw new BadRequestException(
@@ -423,8 +412,8 @@ export class QuotationService {
     });
 
     // Atualizar o valor total do orçamento
-    await this.recalculateQuotationTotalValue(
-      originalQuotationProduct.quotationId,
+    await this.recalculateQuotationProductsTotalValue(
+      duplicatedQuotationProduct.id,
     );
 
     return this.prisma.quotation.findUnique({
@@ -485,6 +474,56 @@ export class QuotationService {
       );
     }
   }
+  private async recalculateQuotationProductsTotalValue(quotationId: string) {
+    // Obter os produtos e itens relacionados
+    const quotationProducts = await this.prisma.quotationProduct.findFirst({
+      where: { quotationId },
+      include: { items: true },
+    });
+
+    // Calcular e atualizar `totalValue` para cada item (em memória)
+    const updatedItems = quotationProducts.items.map((item) => ({
+      id: item.id,
+      totalValue: item.quantity * item.unitCost,
+    }));
+
+    // Atualizar os itens no banco em batch (bulk update)
+    await Promise.all(
+      updatedItems.map((item) =>
+        this.prisma.quotationProductItem.update({
+          where: { id: item.id },
+          data: { totalValue: item.totalValue },
+        }),
+      ),
+    );
+
+    // Calcular `totalValue` acumulado e aplicar quantidade do produto
+    const totalValue = updatedItems.reduce(
+      (acc, item) => acc + item.totalValue,
+      0,
+    );
+
+    // Aplicar quantidade total
+    const overallTotalValue = quotationProducts.quantity * totalValue;
+
+    // Calcular o `finalValue` com desconto
+    const finalValue =
+      quotationProducts.discountType === 'VALUE'
+        ? overallTotalValue - quotationProducts.discount
+        : quotationProducts.discountType === 'PERCENT'
+          ? overallTotalValue -
+            overallTotalValue * (quotationProducts.discount / 100)
+          : overallTotalValue;
+
+    // Atualizar o produto com os valores finais
+    await this.prisma.quotationProduct.update({
+      where: { id: quotationId },
+      data: {
+        totalValue: overallTotalValue,
+        finalValue,
+      },
+    });
+  }
 
   private async recalculateQuotationTotalValue(quotationId: string) {
     const quotationProducts = await this.prisma.quotationProduct.findMany({
@@ -495,12 +534,9 @@ export class QuotationService {
     });
 
     const totalValue = quotationProducts.reduce((total, product) => {
-      const productTotal = product.items.reduce((itemTotal, item) => {
-        return itemTotal + item.quantity * (item.salePrice || 0);
-      }, 0);
-      return total + productTotal;
+      return total + product.finalValue;
     }, 0);
-    console.log(totalValue);
+
     await this.prisma.quotation.update({
       where: { id: quotationId },
       data: { totalValue },
@@ -764,6 +800,7 @@ export class QuotationService {
               imageUrl: true,
               discount: true,
               discountType: true,
+              finalValue: true,
               product: {
                 select: {
                   id: true,
@@ -908,20 +945,7 @@ export class QuotationService {
             );
             return qp.quantity * unitValue;
           })(),
-          finalValue: (() => {
-            const unitValue = qp.items.reduce(
-              (total, item) => total + item.quantity * item.unitCost,
-              0,
-            );
-            const totalValue = qp.quantity * unitValue;
-            if (qp.discountType === 'VALUE') {
-              return totalValue - qp.discount;
-            } else if (qp.discountType === 'PERCENT') {
-              return totalValue - totalValue * (qp.discount / 100);
-            } else {
-              return totalValue;
-            }
-          })(),
+          finalValue: qp.finalValue,
           image: {
             url: qp.imageUrl,
             original: true, // Marcar como original ou não
