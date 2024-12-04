@@ -349,6 +349,22 @@ export class QuotationService {
         },
       );
 
+      if (data.quantity) {
+        const items = await this.prisma.quotationProductItem.findMany({
+          where: {
+            quotationProductId: productId,
+          },
+        });
+        for (const item of items) {
+          await this.prisma.quotationProductItem.update({
+            where: { id: item.id },
+            data: {
+              quantity: data.quantity * item.quantity,
+            },
+          });
+        }
+      }
+
       await this.recalculateQuotationProductsTotalValue(product.id);
       return updatedQuotationProduct;
     } catch (error) {
