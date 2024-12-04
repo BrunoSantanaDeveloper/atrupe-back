@@ -32,6 +32,8 @@ export class DuplicateQuotationProductDto {
   totalValue?: number;
   allowEditDescription?: boolean;
   allowEditValues?: boolean;
+  discount?: number;
+  discountType?: string;
 }
 
 export class DuplicateQuotationProductItemDto {
@@ -50,8 +52,6 @@ export class DuplicateQuotationProductItemDto {
   distance?: number;
   duration?: number;
   notes?: string;
-  discount?: number;
-  discountType?: string;
   unitCost?: number;
   salePrice?: number;
   totalValue?: number;

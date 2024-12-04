@@ -1023,6 +1023,8 @@ model QuotationProduct {
   imageUrl             String?
   totalValue           Float?
   notes                String?
+  discount             Float?
+  discountType         String?
 
   items                QuotationProductItem[]
   allowEditDescription Boolean                @default(true)
@@ -1052,8 +1054,6 @@ model QuotationProductItem {
   volume          Float? //volume
   distance        Float? //distancia
   duration        Float? //duração (em dias)
-  discount        Float?
-  discountType    String?
 
   unitCost  Float?
   salePrice Float?

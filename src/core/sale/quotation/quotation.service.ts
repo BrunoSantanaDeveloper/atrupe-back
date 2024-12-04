@@ -308,6 +308,8 @@ export class QuotationService {
             ...(data.description && { description: data.description }),
             ...(data.imageUrl && { imageUrl: data.imageUrl }),
             ...(data.notes && { notes: data.notes }),
+            ...(data.discount && { discount: data.discount }),
+            ...(data.discountType && { discountType: data.discountType }),
             ...(data.technicalDescription && {
               technicalDescription: data.technicalDescription,
             }),
@@ -760,6 +762,8 @@ export class QuotationService {
               id: true,
               notes: true,
               imageUrl: true,
+              discount: true,
+              discountType: true,
               product: {
                 select: {
                   id: true,
@@ -891,8 +895,9 @@ export class QuotationService {
           id: qp.id,
           description: qp.description,
           notes: qp.notes,
-          discount: 0,
-          discountType: 'VALUE',
+          discountType: qp.discountType,
+          discount: qp.discount,
+          unitValue: qp.items.map((item) => item.quantity * item.unitCost),
           finalValue: qp.totalValue,
           image: {
             url: qp.imageUrl, // Coloque a URL da imagem ou deixe vazio
@@ -902,13 +907,15 @@ export class QuotationService {
             originalProductId: qp.productId,
             name: qp.product.name,
             quantity: qp.quantity,
+            unitValue: qp.items.map((item) => item.quantity * item.unitCost),
+            finalValue: qp.totalValue,
             compositions: qp.items.map((item) => ({
               id: item.id,
               originalCompositionId: item.productItemId,
               name: item.name,
               unitOfMeasure: item.unitOfMeasure,
               quantity: item.quantity,
-              unitValue: item.unitCost,
+              unitValue: item.quantity * item.unitCost,
               finalValue: item.totalValue,
             })),
           },
@@ -971,6 +978,8 @@ export class QuotationService {
         allowEditValues: product.allowEditValues,
         quotationId: newQuotation.id,
         productId: product.productId,
+        discount: product.discount,
+        discountType: product.discountType,
       };
 
       const newProduct = await this.prisma.quotationProduct.create({
@@ -994,8 +1003,6 @@ export class QuotationService {
           volume: item.volume,
           distance: item.distance,
           duration: item.duration,
-          discount: item.discount,
-          discountType: item.discountType,
           unitCost: item.unitCost,
           salePrice: item.salePrice,
           totalValue: item.totalValue,
