@@ -998,7 +998,7 @@ export class QuotationService {
               originalCompositionId: item.productItemId,
               name: item.name,
               unitOfMeasure: item.unitOfMeasure,
-              quantity: qp.quantity * item.quantity,
+              quantity: item.quantity,
               unitValue: item.unitCost,
               totalValue: item.quantity * item.unitCost,
             })),
