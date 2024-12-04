@@ -173,6 +173,7 @@ export class OrderService {
           status: order.status,
           quotation: {
             description: quotation.description,
+            clientName: quotation.client?.name || null,
             sellerName: quotation.seller?.user?.name || null,
             totalValue: quotation.totalValue,
             serie: {
