@@ -62,6 +62,7 @@ export class QuotationService {
           sellerId,
           clientId,
           seriesId: seriesId || undefined,
+          quotationNumber: series.currentBudgetNumber,
         },
       });
 
@@ -666,7 +667,7 @@ export class QuotationService {
                   id: quotation.series.id,
                   name: quotation.series.title,
                   code: quotation.series.code,
-                  quotation: quotation.series.currentBudgetNumber,
+                  quotation: quotation.quotationNumber,
                 }
               : null,
             client: quotation.client
@@ -850,7 +851,7 @@ export class QuotationService {
               id: quotation.series.id,
               name: quotation.series.title,
               code: quotation.series.code,
-              quotation: quotation.series.currentBudgetNumber,
+              quotation: quotation.quotationNumber,
             }
           : null,
         seller: quotation.seller

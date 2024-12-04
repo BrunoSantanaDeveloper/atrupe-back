@@ -978,6 +978,7 @@ model Quotation {
   updatedAt  DateTime? @updatedAt
   approvedAt DateTime?
   isActive   Boolean   @default(true)
+  quotationNumber Int?
 
   description String?
   status      QuotationStatus @default(OPEN)
