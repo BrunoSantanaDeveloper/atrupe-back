@@ -1091,12 +1091,11 @@ export class QuotationService {
           totalValue: item.totalValue,
         };
 
-        await this.recalculateQuotationProductsTotalValue(newQuotation.id);
-
         try {
           await this.prisma.quotationProductItem.create({
             data: itemDto,
           });
+          await this.recalculateQuotationProductsTotalValue(newProduct.id);
         } catch (error) {
           console.error(
             'Error creating quotation product item:',
