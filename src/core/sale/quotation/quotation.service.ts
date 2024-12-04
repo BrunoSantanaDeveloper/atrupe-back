@@ -901,9 +901,22 @@ export class QuotationService {
             (total, item) => total + item.quantity * item.unitCost,
             0,
           ),
-          finalValue: qp.totalValue,
+          finalValue: (() => {
+            const unitValue = qp.items.reduce(
+              (total, item) => total + item.quantity * item.unitCost,
+              0,
+            );
+            const totalValue = qp.quantity * unitValue;
+            if (qp.discountType === 'VALUE') {
+              return totalValue - qp.discount;
+            } else if (qp.discountType === 'PERCENT') {
+              return totalValue - totalValue * (qp.discount / 100);
+            } else {
+              return totalValue;
+            }
+          })(),
           image: {
-            url: qp.imageUrl, // Coloque a URL da imagem ou deixe vazio
+            url: qp.imageUrl,
             original: true, // Marcar como original ou não
           },
           product: {
@@ -914,7 +927,12 @@ export class QuotationService {
               (total, item) => total + item.quantity * item.unitCost,
               0,
             ),
-            finalValue: qp.totalValue,
+            finalValue:
+              qp.quantity *
+              qp.items.reduce(
+                (total, item) => total + item.quantity * item.unitCost,
+                0,
+              ),
             compositions: qp.items.map((item) => ({
               id: item.id,
               originalCompositionId: item.productItemId,
