@@ -52,22 +52,13 @@ export class OrderService {
     try {
       let where: any = {};
 
+      // Filtros básicos
       if (dto.companyId) {
         where = {
           ...where,
           quotation: {
             ...where.quotation,
             companyId: dto.companyId,
-          },
-        };
-      }
-
-      if (dto.search) {
-        where = {
-          ...where,
-          quotation: {
-            ...where.quotation,
-            name: { contains: dto.search },
           },
         };
       }
@@ -106,6 +97,37 @@ export class OrderService {
         };
       }
 
+      // Adicionando filtro para busca por texto
+      if (dto.search) {
+        where = {
+          ...where,
+          OR: [
+            {
+              quotation: {
+                description: { contains: dto.search, mode: 'insensitive' },
+              },
+            },
+            {
+              quotation: {
+                client: { name: { contains: dto.search, mode: 'insensitive' } },
+              },
+            },
+            {
+              quotation: {
+                seller: {
+                  user: { name: { contains: dto.search, mode: 'insensitive' } },
+                },
+              },
+            },
+            {
+              quotation: {
+                quotationNumber: { contains: dto.search, mode: 'insensitive' },
+              },
+            },
+          ],
+        };
+      }
+
       const totalOrders = await this.prisma.order.count({ where });
 
       const orders = await this.prisma.order.findMany({
@@ -116,67 +138,53 @@ export class OrderService {
               seller: {
                 include: {
                   user: {
-                    select: {
-                      name: true,
-                    },
+                    select: { name: true },
                   },
                 },
               },
               series: {
                 select: {
+                  id: true,
+                  title: true,
                   code: true,
                 },
               },
               client: {
-                select: {
-                  name: true,
-                },
+                select: { name: true },
               },
             },
           },
         },
         take: Number(dto.limit),
         skip: (Number(dto.page) - 1) * Number(dto.limit),
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: { createdAt: 'desc' },
       });
 
-      const grouped: Record<string, { date: string; orders: any[] }> =
-        orders.reduce((acc, order) => {
-          const date = order.createdAt.toISOString().split('T')[0];
-          if (!acc[date]) {
-            acc[date] = { date, orders: [] };
-          }
-
-          const quotation = order.quotation;
-          acc[date].orders.push({
-            id: order.id,
-            status: order.status,
-            quotation: {
-              id: quotation.id,
-              clientName: quotation.client?.name || null,
-              serieQuotation: `${quotation.id}-${quotation.series?.code || 'N/A'}`,
-              description: quotation.description,
-              totalValue: quotation.totalValue,
-              sellerName: quotation.seller?.user?.name || null,
+      // Mapear para o formato solicitado
+      const data = orders.map((order) => {
+        const quotation = order.quotation;
+        return {
+          id: order.id,
+          status: order.status,
+          quotation: {
+            description: quotation.description,
+            sellerName: quotation.seller?.user?.name || null,
+            totalValue: quotation.totalValue,
+            serie: {
+              name: quotation.series?.title || null,
+              code: quotation.series?.code || null,
+              quotation: quotation.quotationNumber || null,
             },
-          });
-
-          return acc;
-        }, {});
-
-      const result = Object.values(grouped).map((group) => ({
-        date: group.date,
-        orders: group.orders,
-      }));
+          },
+        };
+      });
 
       const lastPage = Math.ceil(totalOrders / Number(dto.limit));
 
       return {
         total: totalOrders,
         lastPage,
-        data: result,
+        data,
       };
     } catch (error) {
       console.error(error);

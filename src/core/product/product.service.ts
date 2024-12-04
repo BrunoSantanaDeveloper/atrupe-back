@@ -155,11 +155,11 @@ export class ProductService {
         const { id, name, code, sector, items } = product;
 
         // Calculando os totais
-        const totalUnitCost = items.reduce(
+        const unitCost = items.reduce(
           (sum, item) => sum + (item.unitCost || 0),
           0,
         );
-        const totalSalePrice = items.reduce(
+        const salePrice = items.reduce(
           (sum, item) => sum + (item.salePrice || 0),
           0,
         );
@@ -170,8 +170,8 @@ export class ProductService {
           code,
           sectorName: sector?.name || null,
           unitOfMeasureCode: 'UN',
-          totalUnitCost,
-          totalSalePrice,
+          unitCost,
+          salePrice,
         };
       });
 
