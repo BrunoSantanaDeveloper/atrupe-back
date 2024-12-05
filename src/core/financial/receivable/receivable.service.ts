@@ -123,7 +123,7 @@ export class ReceivableService {
         dueDate: { in: dueDates },
         ...filters,
       },
-      orderBy: { dueDate: 'asc' },
+      orderBy: { dueDate: 'desc' },
       select: {
         id: true,
         status: true,
@@ -154,7 +154,7 @@ export class ReceivableService {
                 dueDate: true,
                 paidDate: true,
               },
-              orderBy: { dueDate: 'asc' },
+              orderBy: { dueDate: 'desc' },
             },
           },
         },
