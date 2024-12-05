@@ -104,13 +104,14 @@ export class CreateReceivableDto {
   @IsUUID()
   clientId: string;
 
+  @IsOptional()
   @ApiProperty({
     description: 'ID da natureza associado à conta',
     example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
   })
   @IsString()
   @IsUUID()
-  natureId: string;
+  natureId?: string;
 
   @ApiProperty({
     description: 'ID da conta bancária onde será realizado o pagamento',

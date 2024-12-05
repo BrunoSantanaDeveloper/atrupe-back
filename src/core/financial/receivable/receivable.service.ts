@@ -104,14 +104,15 @@ export class ReceivableService {
       _count: true,
     });
 
-    // 2. Calcular o total e as últimas páginas
-    const totalGroups = await this.prisma.receivableInstallment.groupBy({
-      by: ['dueDate'],
-      where: filters,
-      _count: true,
-    });
+    // // 2. Calcular o total e as últimas páginas
+    // const totalGroups = await this.prisma.receivableInstallment.groupBy({
+    //   by: ['dueDate'],
+    //   where: filters,
+    //   _count: true,
+    // });
+    const totalInstallments = await this.prisma.receivableInstallment.count();
 
-    const total = totalGroups.length;
+    const total = totalInstallments;
     const lastPage = Math.ceil(total / +limit);
 
     // 3. Buscar os detalhes das parcelas apenas para os grupos retornados
@@ -168,12 +169,8 @@ export class ReceivableService {
         .filter(
           (inst) => inst.dueDate.toISOString() === group.dueDate.toISOString(),
         )
-        .map((inst) => ({
-          id: inst.id,
-          value: (inst.amount || 0) + (inst.additionalFee || 0),
-          dueDate: inst.dueDate,
-          status: inst.status,
-          receivable: {
+        .map((inst) => {
+          return {
             id: inst.receivable?.id || null,
             totalValue: inst.receivable?.totalAmount || 0,
             description: inst.receivable?.description || '',
@@ -195,12 +192,6 @@ export class ReceivableService {
                   name: inst.receivable.paymentMethod.name,
                 }
               : null,
-            // supplier: inst.receivable?.supplier
-            //   ? {
-            //       id: inst.receivable.supplier.id,
-            //       name: inst.receivable.supplier.name,
-            //     }
-            //   : null,
             nature: inst.receivable?.nature
               ? {
                   id: inst.receivable.nature.id,
@@ -211,8 +202,9 @@ export class ReceivableService {
             period: inst.receivable?.referenceDate || null,
             notes: inst.receivable?.observations || '',
             status: inst.receivable?.status || 'UNKNOWN',
-            installments: (inst.receivable?.installments || []).map(
-              (installment) => ({
+            installments: (inst.receivable?.installments || [])
+              .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime()) // Ordenando as parcelas pela data de vencimento
+              .map((installment) => ({
                 id: installment.id || null,
                 status: installment.status || 'UNKNOWN',
                 paymentMethod: installment.paymentMethod?.name || 'N/A',
@@ -221,10 +213,10 @@ export class ReceivableService {
                 dueDate: installment.dueDate || null,
                 paidValue: installment.amount || 0, // Ajuste baseado nos requisitos.
                 paymentDate: installment.paidDate || null,
-              }),
-            ),
-          },
-        }));
+                current: installment.id === inst.id, // Definindo se a parcela é a atual
+              })),
+          };
+        });
 
       return {
         date: group.dueDate || null,
