@@ -227,7 +227,7 @@ model Contact {
   mobile String?
   sector String?
 
-  observations String?
+  notes String?
 
   client     Client?   @relation(fields: [clientId], references: [id])
   clientId   String?
@@ -424,10 +424,9 @@ model Receivable {
 
   reference     String?
   referenceDate DateTime
-  dueDate       DateTime?
 
-  description  String?
-  observations String?
+  description String?
+  notes       String?
 
   natureId String?
   nature   Nature? @relation(fields: [natureId], references: [id])
@@ -441,12 +440,6 @@ model Receivable {
 
   clientId String
   client   Client @relation(fields: [clientId], references: [id])
-
-  bankAccountId String
-  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
-
-  paymentMethodId String
-  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
 
   categoryId String?
   category   Category? @relation("CategoryReceivable", fields: [categoryId], references: [id])
@@ -500,12 +493,11 @@ model ReceivableHistory {
 model Payable {
   id String @id @default(uuid())
 
-  reference     String
+  reference     String?
   referenceDate DateTime
-  dueDate       DateTime
 
-  description  String?
-  observations String?
+  description String?
+  notes       String?
 
   natureId String?
   nature   Nature? @relation(fields: [natureId], references: [id])
@@ -520,12 +512,6 @@ model Payable {
   supplierId String
   supplier   Supplier @relation(fields: [supplierId], references: [id])
 
-  bankAccountId String
-  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
-
-  paymentMethodId String
-  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
-
   categoryId String
   category   Category @relation("CategoryPayable", fields: [categoryId], references: [id])
 
@@ -536,7 +522,6 @@ model Payable {
   company   Company @relation(fields: [companyId], references: [id])
 
   createdAt DateTime @default(now())
-
 
   @@map("payables")
 }
@@ -810,12 +795,11 @@ model BankAccount {
 
   bankAccountCashControl BankAccountCashControl[]
 
-  companyId    String
-  company      Company        @relation(fields: [companyId], references: [id])
-  bankId       String
-  bank         Bank           @relation(fields: [bankId], references: [id])
-  receivable   Receivable[]
-  payable      Payable[]
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  bankId    String
+  bank      Bank    @relation(fields: [bankId], references: [id])
+
   cashRegister CashRegister[]
 
   @@map("bank_accounts")
@@ -859,8 +843,6 @@ model PaymentMethod {
   company                Company                  @relation(fields: [companyId], references: [id])
   paymentConfigurations  PaymentConfiguration[]
   bankAccountCashControl BankAccountCashControl[]
-  receivable             Receivable[]
-  payable                Payable[]
   paymentCondition       PaymentCondition[]
   receivableInstallment  ReceivableInstallment[]
   payableInstallment     PayableInstallment[]

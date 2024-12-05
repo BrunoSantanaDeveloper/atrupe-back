@@ -36,7 +36,6 @@ export class ReceivableService {
         const receivable = await tx.receivable.create({
           data: {
             ...receivableData,
-            dueDate: new Date(receivableData.dueDate),
             referenceDate: new Date(receivableData.referenceDate),
             totalAmount: parseFloat(totalAmount),
             installmentQty: installments.length,
@@ -136,12 +135,11 @@ export class ReceivableService {
             id: true,
             totalAmount: true,
             description: true,
-            observations: true,
+            notes: true,
             status: true,
             referenceDate: true,
             client: { select: { id: true, name: true } },
             category: { select: { id: true, name: true } },
-            paymentMethod: { select: { id: true, name: true } },
             // supplier: { select: { id: true, name: true } },
             nature: { select: { id: true, name: true } },
             installments: {
@@ -186,12 +184,6 @@ export class ReceivableService {
                   name: inst.receivable.category.name,
                 }
               : null,
-            paymentMethod: inst.receivable?.paymentMethod
-              ? {
-                  id: inst.receivable.paymentMethod.id,
-                  name: inst.receivable.paymentMethod.name,
-                }
-              : null,
             nature: inst.receivable?.nature
               ? {
                   id: inst.receivable.nature.id,
@@ -200,7 +192,7 @@ export class ReceivableService {
               : null,
             installmentsQuantity: inst.receivable?.installments?.length || 0,
             period: inst.receivable?.referenceDate || null,
-            notes: inst.receivable?.observations || '',
+            notes: inst.receivable?.notes || '',
             status: inst.receivable?.status || 'UNKNOWN',
             installments: (inst.receivable?.installments || [])
               .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime()) // Ordenando as parcelas pela data de vencimento

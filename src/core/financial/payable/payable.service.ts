@@ -29,7 +29,6 @@ export class PayableService {
         const payable = await tx.payable.create({
           data: {
             ...payableData,
-            dueDate: new Date(payableData.dueDate),
             referenceDate: new Date(payableData.referenceDate),
             totalAmount: parseFloat(totalAmount),
             installmentQty: installments.length,

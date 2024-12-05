@@ -30,40 +30,19 @@ export class FlowService {
       if (filter.paymentMethodId)
         where['paymentMethodId'] = filter.paymentMethodId;
 
-      const includes = {
-        client: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        bankAccount: {
-          include: {
-            bank: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        },
-        paymentMethod: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      };
-
       // Buscar todos os recebíveis e pagáveis
       const payables = await this.prisma.payable.findMany({
         where: where,
-        include: includes,
+        include: {
+          supplier: true,
+        },
       });
 
       const receivables = await this.prisma.receivable.findMany({
         where: where,
-        include: includes,
+        include: {
+          client: true,
+        },
       });
 
       // Marcar cada item com seu tipo e combinar os arrays

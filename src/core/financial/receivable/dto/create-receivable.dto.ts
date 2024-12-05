@@ -57,12 +57,6 @@ export class CreateReceivableInstallmentDto {
   paidDate?: string;
 }
 export class CreateReceivableDto {
-  @ApiProperty({
-    description: 'Referência da conta a receber (exemplo: número da fatura)',
-    example: 'INV-2024-001',
-  })
-  @IsString()
-  @IsOptional()
   reference?: string;
 
   @ApiProperty({
@@ -71,14 +65,6 @@ export class CreateReceivableDto {
   })
   @IsDateString()
   referenceDate?: string;
-
-  @ApiProperty({
-    description: 'Data de vencimento da conta a receber',
-    example: '2024-12-15',
-  })
-  @IsDateString()
-  @IsOptional()
-  dueDate?: string;
 
   @ApiPropertyOptional({
     description: 'Descrição adicional da conta a receber',
@@ -94,7 +80,7 @@ export class CreateReceivableDto {
   })
   @IsOptional()
   @IsString()
-  observations?: string;
+  notes?: string;
 
   @ApiProperty({
     description: 'ID do cliente associado à conta',
@@ -112,22 +98,6 @@ export class CreateReceivableDto {
   @IsString()
   @IsUUID()
   natureId?: string;
-
-  @ApiProperty({
-    description: 'ID da conta bancária onde será realizado o pagamento',
-    example: '7b3d32c3-2d4c-4efb-9149-7345c2e68810',
-  })
-  @IsString()
-  @IsUUID()
-  bankAccountId: string;
-
-  @ApiProperty({
-    description: 'ID da forma de pagamento padrão',
-    example: '68b92507-1c6e-48a3-927c-91ef2b567c3d',
-  })
-  @IsString()
-  @IsUUID()
-  paymentMethodId: string;
 
   @ApiProperty({
     description: 'ID da categoria associada à conta',

@@ -2,7 +2,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsString,
-  IsNotEmpty,
   IsNumber,
   IsDateString,
   IsOptional,
@@ -58,13 +57,7 @@ export class CreatePayableInstallmentDto {
   paidDate?: string;
 }
 export class CreatePayableDto {
-  @ApiProperty({
-    description: 'Referência da conta a receber (exemplo: número da fatura)',
-    example: 'INV-2024-001',
-  })
-  @IsString()
-  @IsNotEmpty()
-  reference: string;
+  reference?: string;
 
   @ApiProperty({
     description: 'Data de referência da conta a receber',
@@ -72,13 +65,6 @@ export class CreatePayableDto {
   })
   @IsDateString()
   referenceDate: string;
-
-  @ApiProperty({
-    description: 'Data de vencimento da conta a receber',
-    example: '2024-12-15',
-  })
-  @IsDateString()
-  dueDate: string;
 
   @ApiPropertyOptional({
     description: 'Descrição adicional da conta a receber',
@@ -94,7 +80,7 @@ export class CreatePayableDto {
   })
   @IsOptional()
   @IsString()
-  observations?: string;
+  notes?: string;
 
   @ApiPropertyOptional({
     description: 'Natureza da conta (exemplo: receita recorrente)',
@@ -112,22 +98,6 @@ export class CreatePayableDto {
   @IsString()
   @IsUUID()
   supplierId: string;
-
-  @ApiProperty({
-    description: 'ID da conta bancária onde será realizado o pagamento',
-    example: '7b3d32c3-2d4c-4efb-9149-7345c2e68810',
-  })
-  @IsString()
-  @IsUUID()
-  bankAccountId: string;
-
-  @ApiProperty({
-    description: 'ID da forma de pagamento padrão',
-    example: '68b92507-1c6e-48a3-927c-91ef2b567c3d',
-  })
-  @IsString()
-  @IsUUID()
-  paymentMethodId: string;
 
   @ApiProperty({
     description: 'ID da categoria associada à conta',
