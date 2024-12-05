@@ -57,8 +57,6 @@ export class CreatePayableInstallmentDto {
   paidDate?: string;
 }
 export class CreatePayableDto {
-  reference?: string;
-
   @ApiProperty({
     description: 'Data de referência da conta a receber',
     example: '2024-11-27',
@@ -91,21 +89,23 @@ export class CreatePayableDto {
   @IsUUID()
   natureId?: string;
 
+  @IsOptional()
   @ApiProperty({
     description: 'ID do fornecedor associado à conta',
     example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
   })
   @IsString()
   @IsUUID()
-  supplierId: string;
+  supplierId?: string;
 
+  @IsOptional()
   @ApiProperty({
     description: 'ID da categoria associada à conta',
     example: 'f5b934f6-4c45-4e93-85f4-6e418af93210',
   })
   @IsString()
   @IsUUID()
-  categoryId: string;
+  categoryId?: string;
 
   @ApiPropertyOptional({
     description: 'ID da subcategoria associada (opcional)',
