@@ -427,9 +427,9 @@ model Receivable {
 
   description String?
   notes       String?
-
-  natureId String?
-  nature   Nature? @relation(fields: [natureId], references: [id])
+  totalValue  Float?
+  natureId    String?
+  nature      Nature? @relation(fields: [natureId], references: [id])
 
   status         PaymentStatus           @default(PENDING)
   totalAmount    Float // Valor total da movimentação
@@ -498,6 +498,7 @@ model Payable {
 
   description String?
   notes       String?
+
 
   natureId String?
   nature   Nature? @relation(fields: [natureId], references: [id])

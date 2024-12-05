@@ -213,7 +213,7 @@ export class ReceivableService {
       return {
         date: group.dueDate || null,
         expectedRevenue,
-        receivables,
+        transactions: receivables,
       };
     });
     return {

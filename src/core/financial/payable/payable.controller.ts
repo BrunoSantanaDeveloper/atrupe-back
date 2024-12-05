@@ -21,7 +21,6 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import {
   CreatePayableDto,
   UpdatePayableInstallmentsDto,
@@ -31,6 +30,7 @@ import {
   CancelPayableDto,
   PayInstallmentDto,
 } from './dto/update-payable.dto';
+import { ReceivableFilterDto } from '../receivable/dto/receivable-filter.dto';
 
 const RESOURCE = 'payable';
 const GROUP = 'financial';
@@ -64,8 +64,9 @@ export class PayableController {
     description: 'Lista de contas a pagar retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() paginationDto: BaseFilterDTO) {
-    return this.payableService.findAll(paginationDto);
+  async findAll(@Req() req, @Query() paginationDto: ReceivableFilterDto) {
+    paginationDto.companyId = req.user.companyId;
+    return await this.payableService.findAll(paginationDto);
   }
 
   @Get(':id')
