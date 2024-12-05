@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { CreateBankAccountDto } from './dto/create-account.dto';
 import { BankAccountFilterDTO } from './dto/filter-account.dto';
@@ -27,7 +27,7 @@ export class AccountService {
     return bankAccount;
   }
 
-  findAll(filter: BankAccountFilterDTO) {
+  async findAll(filter: BankAccountFilterDTO) {
     try {
       let where = {};
       if (filter.companyId) {
@@ -61,23 +61,32 @@ export class AccountService {
           },
         };
       }
-
-      return this.prisma.bankAccount.findMany({
-        where: where,
-        include: {
-          bank: true,
-          bankAccountCashControl: {
-            include: {
-              paymentMethod: true,
+      const [total, data] = await Promise.all([
+        this.prisma.bankAccount.count({ where: where }),
+        this.prisma.bankAccount.findMany({
+          where: where,
+          include: {
+            bank: true,
+            bankAccountCashControl: {
+              include: {
+                paymentMethod: true,
+              },
             },
           },
-        },
-        take: +filter.limit || undefined,
-        skip: ((+filter.page || 1) - 1) * +filter.limit,
-      });
+          orderBy: { name: 'asc' },
+          take: +filter.limit || 10,
+          skip: ((+filter.page || 1) - 1) * +filter.limit,
+        }),
+      ]);
+
+      return {
+        total,
+        lastPage: Math.ceil(total / +filter.limit),
+        data,
+      };
     } catch (e) {
       console.error(e);
-      throw e;
+      throw new BadRequestException('Error on find bank accounts');
     }
   }
 }

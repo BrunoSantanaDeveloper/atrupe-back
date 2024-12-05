@@ -24,7 +24,6 @@ import {
   ApiResponse,
   ApiBody,
   ApiParam,
-  ApiQuery,
   ApiBearerAuth,
 } from '@nestjs/swagger';
 
@@ -95,19 +94,14 @@ export class BankController {
 
   @Get('account')
   @ApiOperation({ summary: 'Obtém a lista de todas as contas bancárias' })
-  @ApiQuery({
-    name: 'filter',
-    description: 'Filtros opcionais para a busca de contas bancárias',
-    type: BankAccountFilterDTO,
-    required: false,
-  })
   @ApiResponse({
     status: 200,
     description: 'Lista de contas bancárias retornada com sucesso.',
     isArray: true,
   })
-  listAccounts(@Query() filter: BankAccountFilterDTO) {
-    return this.accountService.findAll(filter);
+  async listAccounts(@Req() req, @Query() filter: BankAccountFilterDTO) {
+    filter.companyId = req.user.companyId;
+    return await this.accountService.findAll(filter);
   }
 
   //---------------------------------------------------------------------------------
