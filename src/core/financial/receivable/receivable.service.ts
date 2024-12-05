@@ -94,7 +94,7 @@ export class ReceivableService {
     const grouped = await this.prisma.receivableInstallment.groupBy({
       by: ['dueDate'],
       where: filters,
-      orderBy: { dueDate: 'asc' },
+      orderBy: { dueDate: 'desc' },
       skip: (+page - 1) * +limit,
       take: +limit,
       _sum: {
