@@ -96,14 +96,6 @@ export class CreateReceivableDto {
   @IsString()
   observations?: string;
 
-  @ApiPropertyOptional({
-    description: 'Natureza da conta (exemplo: receita recorrente)',
-    example: 'Receita recorrente',
-  })
-  @IsOptional()
-  @IsString()
-  nature?: string;
-
   @ApiProperty({
     description: 'ID do cliente associado à conta',
     example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
@@ -111,6 +103,14 @@ export class CreateReceivableDto {
   @IsString()
   @IsUUID()
   clientId: string;
+
+  @ApiProperty({
+    description: 'ID da natureza associado à conta',
+    example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
+  })
+  @IsString()
+  @IsUUID()
+  natureId: string;
 
   @ApiProperty({
     description: 'ID da conta bancária onde será realizado o pagamento',

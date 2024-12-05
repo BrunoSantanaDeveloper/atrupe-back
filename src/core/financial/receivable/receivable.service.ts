@@ -1,14 +1,18 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import {
   CreateReceivableDto,
   UpdateReceivableInstallmentsDto,
 } from './dto/create-receivable.dto';
-import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import {
   PayInstallmentDto,
   UpdateReceivableDto,
 } from './dto/update-receivable.dto';
+import { ReceivableFilterDto } from './dto/receivable-filter.dto';
 
 @Injectable()
 export class ReceivableService {
@@ -57,15 +61,180 @@ export class ReceivableService {
     }
   }
 
-  async findAll(paginationDto: BaseFilterDTO) {
-    const { page = 1, limit = 10 } = paginationDto;
-    const skip = (+page - 1) * +limit;
+  async findAll(paginationDto: ReceivableFilterDto) {
+    if (!paginationDto.companyId) {
+      throw new BadRequestException('companyId is required');
+    }
 
-    return this.prisma.receivable.findMany({
-      skip,
+    const { page = 1, limit = 10, search, dueDate } = paginationDto;
+
+    const filters: any = {
+      receivable: {
+        companyId: paginationDto.companyId,
+      },
+    };
+
+    // Filtro de data baseado em dueDate
+    if (dueDate) {
+      filters.dueDate = {
+        gt: new Date(dueDate),
+      };
+    }
+
+    // Filtro de pesquisa para cliente, categoria ou subcategoria
+    if (search) {
+      filters.receivable.OR = [
+        { client: { name: { contains: search, mode: 'insensitive' } } },
+        { category: { name: { contains: search, mode: 'insensitive' } } },
+        { subCategory: { name: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    // 1. Agrupamento no banco de dados com somatório e paginação
+    const grouped = await this.prisma.receivableInstallment.groupBy({
+      by: ['dueDate'],
+      where: filters,
+      orderBy: { dueDate: 'asc' },
+      skip: (+page - 1) * +limit,
       take: +limit,
-      include: { installments: true },
+      _sum: {
+        amount: true,
+        additionalFee: true,
+      },
+      _count: true,
     });
+
+    // 2. Calcular o total e as últimas páginas
+    const totalGroups = await this.prisma.receivableInstallment.groupBy({
+      by: ['dueDate'],
+      where: filters,
+      _count: true,
+    });
+
+    const total = totalGroups.length;
+    const lastPage = Math.ceil(total / +limit);
+
+    // 3. Buscar os detalhes das parcelas apenas para os grupos retornados
+    const dueDates = grouped.map((g) => g.dueDate);
+
+    const installments = await this.prisma.receivableInstallment.findMany({
+      where: {
+        dueDate: { in: dueDates },
+        ...filters,
+      },
+      orderBy: { dueDate: 'asc' },
+      select: {
+        id: true,
+        status: true,
+        amount: true,
+        additionalFee: true,
+        paidDate: true,
+        dueDate: true,
+        receivable: {
+          select: {
+            id: true,
+            totalAmount: true,
+            description: true,
+            observations: true,
+            status: true,
+            referenceDate: true,
+            client: { select: { id: true, name: true } },
+            category: { select: { id: true, name: true } },
+            paymentMethod: { select: { id: true, name: true } },
+            // supplier: { select: { id: true, name: true } },
+            nature: { select: { id: true, name: true } },
+            installments: {
+              select: {
+                id: true,
+                status: true,
+                paymentMethod: { select: { id: true, name: true } },
+                amount: true,
+                dueDate: true,
+                paidDate: true,
+              },
+              orderBy: { dueDate: 'asc' },
+            },
+          },
+        },
+      },
+    });
+
+    const groupedByDate = grouped.map((group) => {
+      const expectedRevenue =
+        (group._sum.amount || 0) + (group._sum.additionalFee || 0);
+
+      const receivables = installments
+        .filter(
+          (inst) => inst.dueDate.toISOString() === group.dueDate.toISOString(),
+        )
+        .map((inst) => ({
+          id: inst.id,
+          value: (inst.amount || 0) + (inst.additionalFee || 0),
+          dueDate: inst.dueDate,
+          status: inst.status,
+          receivable: {
+            id: inst.receivable?.id || null,
+            totalValue: inst.receivable?.totalAmount || 0,
+            description: inst.receivable?.description || '',
+            client: inst.receivable?.client
+              ? {
+                  id: inst.receivable.client.id,
+                  name: inst.receivable.client.name,
+                }
+              : null,
+            category: inst.receivable?.category
+              ? {
+                  id: inst.receivable.category.id,
+                  name: inst.receivable.category.name,
+                }
+              : null,
+            paymentMethod: inst.receivable?.paymentMethod
+              ? {
+                  id: inst.receivable.paymentMethod.id,
+                  name: inst.receivable.paymentMethod.name,
+                }
+              : null,
+            // supplier: inst.receivable?.supplier
+            //   ? {
+            //       id: inst.receivable.supplier.id,
+            //       name: inst.receivable.supplier.name,
+            //     }
+            //   : null,
+            nature: inst.receivable?.nature
+              ? {
+                  id: inst.receivable.nature.id,
+                  name: inst.receivable.nature.name,
+                }
+              : null,
+            installmentsQuantity: inst.receivable?.installments?.length || 0,
+            period: inst.receivable?.referenceDate || null,
+            notes: inst.receivable?.observations || '',
+            status: inst.receivable?.status || 'UNKNOWN',
+            installments: (inst.receivable?.installments || []).map(
+              (installment) => ({
+                id: installment.id || null,
+                status: installment.status || 'UNKNOWN',
+                paymentMethod: installment.paymentMethod?.name || 'N/A',
+                value: installment.amount || 0,
+                dueDate: installment.dueDate || null,
+                paidValue: installment.amount || 0, // Ajuste baseado nos requisitos.
+                paymentDate: installment.paidDate || null,
+              }),
+            ),
+          },
+        }));
+
+      return {
+        date: group.dueDate || null,
+        expectedRevenue,
+        receivables,
+      };
+    });
+    return {
+      total,
+      lastPage,
+      data: groupedByDate,
+    };
   }
 
   async findOne(id: string) {

@@ -1,0 +1,18 @@
+import { ApiProperty } from '@nestjsx/crud/lib/crud';
+import { IsDateString, IsOptional, IsString } from 'class-validator';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
+
+export class ReceivableFilterDto extends BaseFilterDTO {
+  @IsOptional()
+  @IsDateString()
+  dueDate?: Date;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Busca por nome do clienete, fornecedor ou contato',
+    example: 'John Doe',
+    required: false,
+  })
+  search?: string;
+}

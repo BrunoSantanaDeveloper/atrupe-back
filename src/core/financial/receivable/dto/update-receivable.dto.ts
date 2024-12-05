@@ -22,7 +22,8 @@ export class UpdateReceivableDto {
   })
   @IsOptional()
   @IsString()
-  nature?: string;
+  @IsUUID()
+  natureId?: string;
 
   @ApiPropertyOptional({
     description: 'Descrição adicional',

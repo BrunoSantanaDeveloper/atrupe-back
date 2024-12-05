@@ -29,7 +29,7 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
+import { ReceivableFilterDto } from './dto/receivable-filter.dto';
 
 const RESOURCE = 'receivable';
 const GROUP = 'financial';
@@ -63,8 +63,9 @@ export class ReceivableController {
     description: 'Lista de contas a receber retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() paginationDto: BaseFilterDTO) {
-    return this.receivableService.findAll(paginationDto);
+  async findAll(@Req() req, @Query() paginationDto: ReceivableFilterDto) {
+    paginationDto.companyId = req.user.companyId;
+    return await this.receivableService.findAll(paginationDto);
   }
 
   @Get(':id')

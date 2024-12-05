@@ -102,7 +102,8 @@ export class CreatePayableDto {
   })
   @IsOptional()
   @IsString()
-  nature?: string;
+  @IsUUID()
+  natureId?: string;
 
   @ApiProperty({
     description: 'ID do cliente associado à conta',

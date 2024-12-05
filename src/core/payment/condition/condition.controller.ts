@@ -21,7 +21,6 @@ import {
   ApiResponse,
   ApiBody,
   ApiParam,
-  ApiQuery,
   ApiBearerAuth,
 } from '@nestjs/swagger';
 
@@ -52,12 +51,6 @@ export class ConditionController {
 
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todas as condições de pagamento' })
-  @ApiQuery({
-    name: 'filter',
-    description: 'Filtros opcionais para a busca de condições de pagamento',
-    type: ConditionFilterDto,
-    required: false,
-  })
   @ApiResponse({
     status: 200,
     description: 'Lista de condições de pagamento retornada com sucesso.',
