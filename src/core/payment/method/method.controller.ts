@@ -56,9 +56,9 @@ export class MethodController {
     description: 'Lista de métodos de pagamento retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() filter: BaseFilterDTO, @Req() req) {
+  async findAll(@Query() filter: BaseFilterDTO, @Req() req) {
     filter.companyId = req.user.companyId;
-    return this.methodService.findAll(filter);
+    return await this.methodService.findAll(filter);
   }
 
   @Get(':id')
