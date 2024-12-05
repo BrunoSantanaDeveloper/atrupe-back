@@ -415,7 +415,7 @@ model AssetType {
 enum PaymentStatus {
   PENDING
   PAID
-  CANCELED
+  OVERDUE
 }
 
 model Receivable {
@@ -447,8 +447,8 @@ model Receivable {
   paymentMethodId String
   paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
 
-  categoryId String
-  category   Category @relation("CategoryReceivable", fields: [categoryId], references: [id])
+  categoryId String?
+  category   Category? @relation("CategoryReceivable", fields: [categoryId], references: [id])
 
   subCategoryId String?
   subCategory   Category? @relation("SubCategoryReceivable", fields: [subCategoryId], references: [id])
@@ -535,7 +535,7 @@ model Payable {
   company   Company @relation(fields: [companyId], references: [id])
 
   createdAt DateTime @default(now())
-  
+
 
   @@map("payables")
 }

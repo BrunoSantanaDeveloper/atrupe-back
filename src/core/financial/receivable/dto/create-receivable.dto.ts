@@ -135,7 +135,8 @@ export class CreateReceivableDto {
   })
   @IsString()
   @IsUUID()
-  categoryId: string;
+  @IsOptional()
+  categoryId?: string;
 
   @ApiPropertyOptional({
     description: 'ID da subcategoria associada (opcional)',
