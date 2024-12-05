@@ -41,13 +41,13 @@ export class CreateReceivableInstallmentDto {
   additionalFee?: number;
 
   @ApiPropertyOptional({
-    description: 'Status da parcela (PENDING, PAID, CANCELED)',
+    description: 'Status da parcela (PENDING, PAID, OVERDUE,CANCELED)',
     example: 'PENDING',
-    enum: ['PENDING', 'PAID', 'CANCELED'],
+    enum: ['PENDING', 'PAID', 'OVERDUE', 'CANCELED'],
   })
   @IsOptional()
   @IsString()
-  status?: 'PENDING' | 'PAID' | 'CANCELED';
+  status?: 'PENDING' | 'PAID' | 'OVERDUE' | 'CANCELED';
 
   @ApiPropertyOptional({
     description: 'Data de pagamento da parcela (se pago)',

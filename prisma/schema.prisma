@@ -416,6 +416,7 @@ enum PaymentStatus {
   PENDING
   PAID
   OVERDUE
+  CANCELED
 }
 
 model Receivable {
