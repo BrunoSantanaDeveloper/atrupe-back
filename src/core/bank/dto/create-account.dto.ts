@@ -14,6 +14,15 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class BankAccountCashControlDto {
   @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description: 'ID do controle de caixa (obrigatório para atualização)',
+    example: '123e4567-e89b-12d3-a456-426614174002',
+    required: false,
+  })
+  id?: string;
+
+  @IsOptional()
   @IsBoolean()
   @ApiProperty({
     description: 'Indica se aceita pagamentos',
@@ -51,7 +60,7 @@ export class BankAccountCashControlDto {
   })
   incomeType: BankAccountCashControlType;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsUUID()
   @ApiProperty({
     description: 'ID do método de pagamento associado',

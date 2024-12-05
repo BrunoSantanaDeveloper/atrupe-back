@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { BankService } from './bank.service';
 import { CreateBankDto } from './dto/create-bank.dto';
-import { UpdateBankDto } from './dto/update-bank.dto';
+import { UpdateBankAccountDto, UpdateBankDto } from './dto/update-bank.dto';
 import { CreateBankAccountDto } from './dto/create-account.dto';
 import { AccountService } from './account.service';
 import { BankAccountFilterDTO } from './dto/filter-account.dto';
@@ -102,6 +102,51 @@ export class BankController {
   async listAccounts(@Req() req, @Query() filter: BankAccountFilterDTO) {
     filter.companyId = req.user.companyId;
     return await this.accountService.findAll(filter);
+  }
+
+  @Patch('account/:accountId')
+  @ApiOperation({ summary: 'Atualiza uma conta bancária pelo ID' })
+  @ApiParam({
+    name: 'accountId',
+    required: true,
+    description: 'ID da conta bancária',
+  })
+  @ApiBody({
+    description: 'Dados para atualização da conta bancária',
+    type: CreateBankAccountDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Conta bancária atualizada com sucesso.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Conta bancária não encontrada.',
+  })
+  async updateAccount(
+    @Param('accountId') accountId: string,
+    @Body() updateBankAccountDto: UpdateBankAccountDto,
+  ) {
+    return await this.accountService.update(accountId, updateBankAccountDto);
+  }
+
+  @Delete('account/:accountId')
+  @ApiOperation({ summary: 'Remove uma conta bancária pelo ID' })
+  @ApiParam({
+    name: 'accountId',
+    required: true,
+    description: 'ID da conta bancária',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Conta bancária removida com sucesso.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Conta bancária não encontrada.',
+  })
+  async removeAccount(@Param('accountId') accountId: string) {
+    return await this.accountService.remove(accountId);
   }
 
   //---------------------------------------------------------------------------------

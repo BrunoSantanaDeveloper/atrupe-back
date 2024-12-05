@@ -1,8 +1,13 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { CreateBankAccountDto } from './dto/create-account.dto';
 import { BankAccountFilterDTO } from './dto/filter-account.dto';
-import { BankAccount } from '@prisma/client';
+import { BankAccount, Prisma } from '@prisma/client';
+import { UpdateBankAccountDto } from './dto/update-bank.dto';
 
 @Injectable()
 export class AccountService {
@@ -29,7 +34,8 @@ export class AccountService {
 
   async findAll(filter: BankAccountFilterDTO) {
     try {
-      let where = {};
+      let where: Prisma.BankAccountWhereInput = {};
+      where = { ...where, isActive: true };
       if (filter.companyId) {
         where = { ...where, companyId: filter.companyId };
       }
@@ -87,6 +93,99 @@ export class AccountService {
     } catch (e) {
       console.error(e);
       throw new BadRequestException('Error on find bank accounts');
+    }
+  }
+
+  async update(
+    accountId: string,
+    updateBankAccountDto: UpdateBankAccountDto,
+  ): Promise<BankAccount> {
+    const existingAccount = await this.prisma.bankAccount.findUnique({
+      where: { id: accountId },
+      include: { bankAccountCashControl: true },
+    });
+
+    if (!existingAccount) {
+      throw new NotFoundException(
+        `Conta bancária com ID '${accountId}' não encontrada.`,
+      );
+    }
+
+    const currentCashControl = existingAccount.cashControl;
+    const { cashControl, bankAccountCashControl, ...updateFields } =
+      updateBankAccountDto;
+    const finalCashControl =
+      cashControl !== undefined ? cashControl : currentCashControl;
+
+    if (bankAccountCashControl !== undefined && !finalCashControl) {
+      throw new BadRequestException(
+        'O controle de caixa (cashControl) deve estar ativo para atualizar bankAccountCashControl.',
+      );
+    }
+
+    if (bankAccountCashControl !== undefined && finalCashControl) {
+      // Atualizar itens existentes ou criar novos no controle de caixa
+      for (const item of bankAccountCashControl) {
+        if (item.id) {
+          // Atualizar item existente
+          const existingItem =
+            await this.prisma.bankAccountCashControl.findUnique({
+              where: { id: item.id },
+            });
+
+          if (!existingItem) {
+            throw new NotFoundException(
+              `Controle de caixa com ID '${item.id}' não encontrado.`,
+            );
+          }
+
+          await this.prisma.bankAccountCashControl.update({
+            where: { id: item.id },
+            data: {
+              acceptPayments: item.acceptPayments,
+              paymentType: item.paymentType,
+              acceptIncomes: item.acceptIncomes,
+              incomeType: item.incomeType,
+              paymentMethodId: item.paymentMethodId,
+            },
+          });
+        } else {
+          // Criar novo item
+          await this.prisma.bankAccountCashControl.create({
+            data: {
+              acceptPayments: item.acceptPayments,
+              paymentType: item.paymentType,
+              acceptIncomes: item.acceptIncomes,
+              incomeType: item.incomeType,
+              paymentMethodId: item.paymentMethodId,
+              bankAccountId: accountId,
+            },
+          });
+        }
+      }
+    }
+
+    const updatedAccount = await this.prisma.bankAccount.update({
+      where: { id: accountId },
+      data: {
+        ...updateFields,
+        ...(cashControl !== undefined && { cashControl: finalCashControl }),
+      },
+      include: { bankAccountCashControl: true },
+    });
+
+    return updatedAccount;
+  }
+
+  remove(accountId: string) {
+    try {
+      return this.prisma.bankAccount.update({
+        where: { id: accountId },
+        data: { isActive: false },
+      });
+    } catch (error) {
+      console.error(error);
+      throw new BadRequestException('Error removing bank account');
     }
   }
 }
