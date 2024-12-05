@@ -149,6 +149,7 @@ export class ReceivableService {
                 status: true,
                 paymentMethod: { select: { id: true, name: true } },
                 amount: true,
+                additionalFee: true,
                 dueDate: true,
                 paidDate: true,
               },
@@ -216,6 +217,7 @@ export class ReceivableService {
                 status: installment.status || 'UNKNOWN',
                 paymentMethod: installment.paymentMethod?.name || 'N/A',
                 value: installment.amount || 0,
+                additionalFee: installment.additionalFee || 0,
                 dueDate: installment.dueDate || null,
                 paidValue: installment.amount || 0, // Ajuste baseado nos requisitos.
                 paymentDate: installment.paidDate || null,
