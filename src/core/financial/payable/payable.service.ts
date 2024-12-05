@@ -160,7 +160,7 @@ export class PayableService {
       const expectedRevenue =
         (group._sum.amount || 0) + (group._sum.additionalFee || 0);
 
-      const payables = installments
+      const payableList = installments
         .filter(
           (inst) => inst.dueDate.toISOString() === group.dueDate.toISOString(),
         )
@@ -210,7 +210,7 @@ export class PayableService {
       return {
         date: group.dueDate || null,
         expectedRevenue,
-        transactions: payables,
+        transactions: payableList,
       };
     });
     return {
