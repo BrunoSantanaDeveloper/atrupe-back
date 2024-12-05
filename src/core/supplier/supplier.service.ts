@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { PrismaService } from 'nestjs-prisma';
@@ -80,20 +80,24 @@ export class SupplierService {
       if (filter.status) {
         where = { ...where, status: filter.status };
       }
-
+      const total = await this.prisma.supplier.count({ where });
       const suppliers = await this.prisma.supplier.findMany({
         where: where,
         take: +filter.limit,
         skip: (+filter.page - 1) * +filter.limit,
+        orderBy: {
+          name: 'asc',
+        },
       });
 
       return {
+        total,
+        lastPage: Math.ceil(total / +filter.limit),
         data: suppliers,
-        total: await this.prisma.supplier.count({ where }),
       };
     } catch (e) {
       console.error(e);
-      throw e;
+      throw new BadRequestException('Supplier list error');
     }
   }
 

@@ -8,6 +8,7 @@ import {
   Delete,
   UseGuards,
   Query,
+  Req,
 } from '@nestjs/common';
 import { SupplierService } from './supplier.service';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
@@ -20,7 +21,7 @@ import {
   ApiResponse,
   ApiBody,
   ApiParam,
-  ApiQuery,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { CreateClientDto } from '../client/dto/create-client.dto';
 import { UpdateClientDto } from '../client/dto/update-client.dto';
@@ -29,6 +30,7 @@ const RESOURCE = 'supplier';
 
 @ApiTags('Fornecedores')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(RESOURCE)
 export class SupplierController {
   constructor(private readonly supplierService: SupplierService) {}
@@ -43,20 +45,21 @@ export class SupplierController {
     status: 201,
     description: 'Fornecedor criado com sucesso.',
   })
-  create(@Body() createSupplierDto: CreateSupplierDto) {
+  create(@Req() req, @Body() createSupplierDto: CreateSupplierDto) {
+    createSupplierDto.companyId = req.user.companyId;
     return this.supplierService.create(createSupplierDto);
   }
 
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todos os fornecedores' })
-  @ApiQuery({ name: 'filter', type: SupplierFilterDTO, required: false })
   @ApiResponse({
     status: 200,
     description: 'Lista de fornecedores retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() filter: SupplierFilterDTO) {
-    return this.supplierService.findAll(filter);
+  async findAll(@Req() req, @Query() filter: SupplierFilterDTO) {
+    filter.companyId = req.user.companyId;
+    return await this.supplierService.findAll(filter);
   }
 
   @Get(':id')
