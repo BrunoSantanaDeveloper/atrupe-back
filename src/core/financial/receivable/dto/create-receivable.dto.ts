@@ -2,7 +2,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsString,
-  IsNotEmpty,
   IsNumber,
   IsDateString,
   IsOptional,
@@ -63,22 +62,23 @@ export class CreateReceivableDto {
     example: 'INV-2024-001',
   })
   @IsString()
-  @IsNotEmpty()
-  reference: string;
+  @IsOptional()
+  reference?: string;
 
   @ApiProperty({
     description: 'Data de referência da conta a receber',
     example: '2024-11-27',
   })
   @IsDateString()
-  referenceDate: string;
+  referenceDate?: string;
 
   @ApiProperty({
     description: 'Data de vencimento da conta a receber',
     example: '2024-12-15',
   })
   @IsDateString()
-  dueDate: string;
+  @IsOptional()
+  dueDate?: string;
 
   @ApiPropertyOptional({
     description: 'Descrição adicional da conta a receber',

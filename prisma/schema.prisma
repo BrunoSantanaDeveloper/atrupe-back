@@ -422,9 +422,9 @@ enum PaymentStatus {
 model Receivable {
   id String @id @default(uuid())
 
-  reference     String
+  reference     String?
   referenceDate DateTime
-  dueDate       DateTime
+  dueDate       DateTime?
 
   description  String?
   observations String?
