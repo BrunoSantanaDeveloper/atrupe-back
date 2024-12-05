@@ -19,6 +19,7 @@ export class ReceivableService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateReceivableDto) {
+    //TODO: ajustar o status da parcela para OVERDUE caso a data tiver velha
     const { installments, ...receivableData } = dto;
 
     if (installments.length === 0) {

@@ -53,7 +53,6 @@ export class ReceivableController {
   })
   create(@Req() req, @Body() createReceivableDto: CreateReceivableDto) {
     createReceivableDto.companyId = req.user.companyId;
-    return createReceivableDto;
     return this.receivableService.create(createReceivableDto);
   }
 

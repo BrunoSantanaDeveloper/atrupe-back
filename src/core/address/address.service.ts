@@ -19,7 +19,6 @@ export class AddressService {
     ownerType: OwnerType,
     ownerId: string,
   ) {
-    // TODO: Implement this method
     console.log(createAddressDto, ownerType, ownerId);
     // return this.prisma.address.create({
     //   data: {

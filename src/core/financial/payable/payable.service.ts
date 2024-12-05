@@ -16,6 +16,7 @@ export class PayableService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreatePayableDto) {
+    //TODO: ajustar o status da parcela para OVERDUE caso a data tiver velha
     const { installments, ...payableData } = dto;
 
     if (installments.length === 0) {
