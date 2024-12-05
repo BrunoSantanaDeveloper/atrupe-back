@@ -9,12 +9,12 @@ import {
 
 export class UpdatePayableDto {
   @ApiPropertyOptional({
-    description: 'ID do cliente associado',
+    description: 'ID do Fornecedor associado',
     example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
   })
   @IsOptional()
   @IsUUID()
-  clientId?: string;
+  supplierId?: string;
 
   @ApiPropertyOptional({
     description: 'Natureza do título',

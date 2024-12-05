@@ -50,11 +50,11 @@ model Company {
   paymentConfigurations PaymentConfiguration[]
   unitOfMeasure         UnitOfMeasure[]
   language              Language[]
-  Reasons               Reasons[]
-  StatusQuotation       StatusQuotation[]
-  SellerProfile         SellerProfile[]
-  SalarySheet           SalarySheet[]
-  DeliveryType          DeliveryType[]
+  reasons               Reasons[]
+  statusQuotation       StatusQuotation[]
+  sellerProfile         SellerProfile[]
+  salarySheet           SalarySheet[]
+  deliveryType          DeliveryType[]
 
   @@map("companies")
 }
@@ -86,7 +86,7 @@ model Address {
   ownerId   String
 
   client   Client[]
-  Supplier Supplier[]
+  supplier Supplier[]
 
   @@index([ownerId, ownerType])
   @@map("addresses")
@@ -122,8 +122,8 @@ model Sector {
 
   employees Employee[]
   asset     Asset[]
-  Role      Role[]
-  Product   Product[]
+  role      Role[]
+  product   Product[]
 
   @@map("sectors")
 }
@@ -274,8 +274,7 @@ model Client {
   category      Category?    @relation(fields: [categoryId], references: [id])
   categoryId    String?
   quotation     Quotation[]
-  Receivable    Receivable[]
-  Payable       Payable[]
+  receivable    Receivable[]
 
   @@unique([email, companyId])
   @@map("clients")
@@ -315,8 +314,9 @@ model Supplier {
   company      Company        @relation(fields: [companyId], references: [id])
   category     Category?      @relation(fields: [categoryId], references: [id])
   categoryId   String?
-  DeliveryInfo DeliveryInfo[]
-  Commission   Commission[]
+  deliveryInfo DeliveryInfo[]
+  commission   Commission[]
+  payable      Payable[]
 
   @@unique([email, companyId])
   @@map("suppliers")
@@ -345,8 +345,8 @@ model Employee {
   client          Client[]
   quotation       Quotation[]
   sellerProfileId String?
-  SellerProfile   SellerProfile? @relation(fields: [sellerProfileId], references: [id])
-  SalarySheet     SalarySheet[]
+  sellerProfile   SellerProfile? @relation(fields: [sellerProfileId], references: [id])
+  salarySheet     SalarySheet[]
 
   @@map("employees")
 }
@@ -516,8 +516,8 @@ model Payable {
   history        PayableHistory[] // Relacionamento com histórico
   cancelReason   String?
 
-  clientId String
-  client   Client @relation(fields: [clientId], references: [id])
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
 
   bankAccountId String
   bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
@@ -535,6 +535,7 @@ model Payable {
   company   Company @relation(fields: [companyId], references: [id])
 
   createdAt DateTime @default(now())
+  
 
   @@map("payables")
 }
@@ -812,9 +813,9 @@ model BankAccount {
   company      Company        @relation(fields: [companyId], references: [id])
   bankId       String
   bank         Bank           @relation(fields: [bankId], references: [id])
-  Receivable   Receivable[]
-  Payable      Payable[]
-  CashRegister CashRegister[]
+  receivable   Receivable[]
+  payable      Payable[]
+  cashRegister CashRegister[]
 
   @@map("bank_accounts")
 }
@@ -857,14 +858,14 @@ model PaymentMethod {
   company                Company                  @relation(fields: [companyId], references: [id])
   paymentConfigurations  PaymentConfiguration[]
   bankAccountCashControl BankAccountCashControl[]
-  Receivable             Receivable[]
-  Payable                Payable[]
-  PaymentCondition       PaymentCondition[]
-  ReceivableInstallment  ReceivableInstallment[]
-  PayableInstallment     PayableInstallment[]
-  PaymentMovement        PaymentMovement[]
-  QuotationPayment       QuotationPayment[]
-  QuotationInstallment   QuotationInstallment[]
+  receivable             Receivable[]
+  payable                Payable[]
+  paymentCondition       PaymentCondition[]
+  receivableInstallment  ReceivableInstallment[]
+  payableInstallment     PayableInstallment[]
+  paymentMovement        PaymentMovement[]
+  quotationPayment       QuotationPayment[]
+  quotationInstallment   QuotationInstallment[]
 
   @@map("payment_methods")
 }
@@ -895,7 +896,7 @@ model PaymentCondition {
   companyId             String
   company               Company                @relation(fields: [companyId], references: [id])
   paymentConfigurations PaymentConfiguration[]
-  QuotationPayment      QuotationPayment[]
+  quotationPayment      QuotationPayment[]
 
   @@map("payment_conditions")
 }
@@ -907,7 +908,7 @@ model Installment {
   operatorFeeTransfer Float
   paymentConditionId  String
   paymentCondition    PaymentCondition  @relation(fields: [paymentConditionId], references: [id])
-  QuotationPayment    QuotationPayment? @relation(fields: [quotationPaymentId], references: [id])
+  quotationPayment    QuotationPayment? @relation(fields: [quotationPaymentId], references: [id])
   quotationPaymentId  String?
 
   @@map("installments")
@@ -948,7 +949,7 @@ model SaleSeries {
 
   companyId String
   company   Company     @relation(fields: [companyId], references: [id])
-  Quotation Quotation[]
+  quotation Quotation[]
 
   @@unique([code, companyId])
   @@map("sale_series")
@@ -973,7 +974,7 @@ model StatusQuotation {
   color     String // Cor no formato hexadecimal, ex: "#FF5733"
   companyId String
   company   Company     @relation(fields: [companyId], references: [id])
-  Quotation Quotation[]
+  quotation Quotation[]
 
   @@map("status_quotation")
 }
@@ -1098,7 +1099,7 @@ model QuotationPayment {
   installments         Installment[] // Parcelas geradas para pagamento parcelado
   createdAt            DateTime               @default(now())
   updatedAt            DateTime?              @updatedAt
-  QuotationInstallment QuotationInstallment[]
+  quotationInstallment QuotationInstallment[]
 }
 
 model Commission {
@@ -1109,7 +1110,7 @@ model Commission {
   totalCommission  Float?
   supplierId       String
   supplier         Supplier                 @relation(fields: [supplierId], references: [id])
-  QuotationPayment QuotationPayment?
+  quotationPayment QuotationPayment?
 }
 
 enum transferMethodCommission {
@@ -1193,7 +1194,7 @@ model Order {
 
   status           OrderStatus        @default(IN_PRODUCTION)
   isActive         Boolean            @default(true)
-  DeliverySchedule DeliverySchedule[]
+  deliverySchedule DeliverySchedule[]
 
   @@index([id])
   @@map("orders")
@@ -1231,7 +1232,7 @@ model Product {
   sector   Sector @relation(fields: [sectorId], references: [id])
 
   quotations       Quotation[]        @relation("QuotationToProduct")
-  QuotationProduct QuotationProduct[]
+  quotationProduct QuotationProduct[]
 
   @@unique([code, companyId])
   @@map("products")
@@ -1256,7 +1257,7 @@ model ProductItem {
 
   unitCost             Float?
   salePrice            Float?
-  QuotationProductItem QuotationProductItem[]
+  quotationProductItem QuotationProductItem[]
 
   @@map("product_items")
 }
@@ -1271,7 +1272,7 @@ model State {
   isActive Boolean @default(true)
 
   cities  City[]
-  Address Address[]
+  address Address[]
 
   @@index([code])
   @@map("states")
@@ -1288,7 +1289,7 @@ model City {
 
   stateId String
   state   State     @relation(fields: [stateId], references: [id])
-  Address Address[]
+  address Address[]
 
   @@map("cities")
 }
@@ -1304,7 +1305,7 @@ model UnitOfMeasure {
 
   companyId            String
   company              Company                @relation(fields: [companyId], references: [id])
-  QuotationProductItem QuotationProductItem[]
+  quotationProductItem QuotationProductItem[]
 
   @@map("unit_measures")
 }
@@ -1396,6 +1397,6 @@ model Nature {
   createdAt  DateTime     @default(now())
   updatedAt  DateTime?    @updatedAt
   isActive   Boolean      @default(true)
-  Receivable Receivable[]
-  Payable    Payable[]
+  receivable Receivable[]
+  payable    Payable[]
 }
