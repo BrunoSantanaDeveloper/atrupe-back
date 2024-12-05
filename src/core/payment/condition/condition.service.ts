@@ -45,6 +45,16 @@ export class ConditionService {
       if (filter.clientId) where['clientId'] = filter.clientId;
       if (filter.companyId) where['companyId'] = filter.companyId;
 
+      // Obter o total de condições para paginação
+      const total = await this.prisma.paymentCondition.count({
+        where,
+      });
+
+      // Calcular o número da última página
+      const limit = +filter.limit || 10; // Limite padrão de 10 se não for fornecido
+      const page = +filter.page || 1; // Página padrão 1 se não for fornecida
+      const lastPage = Math.ceil(total / limit);
+
       const conditions = await this.prisma.paymentCondition.findMany({
         where,
         include: {
@@ -62,8 +72,8 @@ export class ConditionService {
             },
           },
         },
-        take: +filter.limit,
-        skip: (+filter.page - 1) * +filter.limit,
+        take: limit,
+        skip: (page - 1) * limit,
       });
 
       const groupedByPaymentMethod = conditions.reduce((acc, condition) => {
@@ -88,7 +98,11 @@ export class ConditionService {
         }),
       );
 
-      return result;
+      return {
+        total,
+        lastPage,
+        data: result,
+      };
     } catch (error) {
       console.error(error);
       throw new Error('Error fetching conditions');
