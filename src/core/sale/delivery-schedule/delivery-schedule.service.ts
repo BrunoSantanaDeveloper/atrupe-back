@@ -58,6 +58,7 @@ export class DeliveryScheduleService {
               quotation: {
                 include: {
                   series: true,
+                  client: true,
                   seller: {
                     include: {
                       user: {
@@ -121,17 +122,36 @@ export class DeliveryScheduleService {
             ? {
                 id: delivery.order.id,
                 status: delivery.order.status,
-                seller: delivery.order.quotation.seller
+                quotation: delivery.order.quotation
                   ? {
-                      id: delivery.order.quotation.seller.id,
-                      name: delivery.order.quotation.seller.user.name,
-                    }
-                  : null,
-                serie: delivery.order.quotation.series
-                  ? {
-                      id: delivery.order.quotation.series.id,
-                      code: delivery.order.quotation.series.code,
-                      name: delivery.order.quotation.series.title,
+                      id: delivery.order.quotation.id,
+                      description: delivery.order.quotation.description,
+                      serie: delivery.order.quotation.series
+                        ? {
+                            id: delivery.order.quotation.series.id,
+                            title: delivery.order.quotation.series.title,
+                            code: delivery.order.quotation.series.code,
+                            quotation: delivery.order.quotation.quotationNumber,
+                          }
+                        : null,
+                      seller: delivery.order.quotation.seller
+                        ? {
+                            id: delivery.order.quotation.seller.id,
+                            name: delivery.order.quotation.seller.user.name,
+                          }
+                        : null,
+                      client: delivery.order.quotation.client
+                        ? {
+                            id: delivery.order.quotation.client.id,
+                            type: delivery.order.quotation.client.type,
+                            name: delivery.order.quotation.client.name,
+                            status: delivery.order.quotation.client.status,
+                            cnpj: delivery.order.quotation.client.cnpj,
+                            cpf: delivery.order.quotation.client.cpf,
+                            email: delivery.order.quotation.client.email,
+                            phoneNumber: delivery.order.quotation.client.phone,
+                          }
+                        : null,
                     }
                   : null,
               }
