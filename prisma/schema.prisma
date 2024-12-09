@@ -55,6 +55,7 @@ model Company {
   sellerProfile         SellerProfile[]
   salarySheet           SalarySheet[]
   deliveryType          DeliveryType[]
+  DeliverySchedule      DeliverySchedule[]
 
   @@map("companies")
 }
@@ -498,7 +499,6 @@ model Payable {
 
   description String?
   notes       String?
-
 
   natureId String?
   nature   Nature? @relation(fields: [natureId], references: [id])
@@ -968,6 +968,7 @@ model Quotation {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime? @updatedAt
   approvedAt      DateTime?
+  finishedAt      DateTime?
   isActive        Boolean   @default(true)
   quotationNumber Int?
 
@@ -991,11 +992,15 @@ model Quotation {
   company Company          @relation(fields: [companyId], references: [id])
   tag     StatusQuotation? @relation(fields: [tagId], references: [id])
 
+  reasonId String?
+  reasons  Reasons? @relation(fields: [reasonId], references: [id])
+
   products         Product[]          @relation("QuotationToProduct")
   quotationProduct QuotationProduct[]
-  order            Order[]
+  order            Order?
   deliveryInfo     DeliveryInfo?
   quotationPayment QuotationPayment?
+  DeliverySchedule DeliverySchedule?
 
   @@index([id, companyId])
   @@map("quotations")
@@ -1039,17 +1044,18 @@ model QuotationProductItem {
   productItemId String
   productItem   ProductItem @relation(fields: [productItemId], references: [id])
 
-  name            String
-  quantity        Int           @default(1)
-  unitOfMeasureId String
-  unitOfMeasure   UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
-  width           Float? //largura
-  height          Float? //altura
-  length          Float? //comprimento
-  weight          Float? //peso
-  volume          Float? //volume
-  distance        Float? //distancia
-  duration        Float? //duração (em dias)
+  name             String
+  quantity         Int           @default(1)
+  originalQuantity Int           @default(1)
+  unitOfMeasureId  String
+  unitOfMeasure    UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
+  width            Float? //largura
+  height           Float? //altura
+  length           Float? //comprimento
+  weight           Float? //peso
+  volume           Float? //volume
+  distance         Float? //distancia
+  duration         Float? //duração (em dias)
 
   unitCost  Float?
   salePrice Float?
@@ -1147,8 +1153,9 @@ model DeliveryInfo {
   supplierId String?
   supplier   Supplier? @relation(fields: [supplierId], references: [id])
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime?         @updatedAt
+  deliverySchedule DeliverySchedule?
 
   @@index([quotationId])
 }
@@ -1173,11 +1180,15 @@ model Order {
   canceledAt  DateTime?
   deliveredAt DateTime?
 
-  quotationId String
+  quotationId String    @unique
   quotation   Quotation @relation(fields: [quotationId], references: [id])
 
-  status           OrderStatus        @default(IN_PRODUCTION)
-  isActive         Boolean            @default(true)
+  status   OrderStatus @default(IN_PRODUCTION)
+  isActive Boolean     @default(true)
+
+  reasonId     String?
+  cancelReason Reasons? @relation(fields: [reasonId], references: [id])
+
   deliverySchedule DeliverySchedule[]
 
   @@index([id])
@@ -1309,11 +1320,13 @@ model Language {
 }
 
 model Reasons {
-  id        String     @id @default(uuid())
+  id        String      @id @default(uuid())
   reason    String
   type      ReasonType
   companyId String
-  company   Company    @relation(fields: [companyId], references: [id])
+  company   Company     @relation(fields: [companyId], references: [id])
+  order     Order[]
+  quotation Quotation[]
 
   @@map("reasons")
 }
@@ -1332,17 +1345,26 @@ enum DeliveryScheduleStatus {
 model DeliverySchedule {
   id String @id @default(uuid())
 
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  quotationId String?    @unique
+  quotation   Quotation? @relation(fields: [quotationId], references: [id])
+
+  deliveryInfoId String?       @unique
+  deliveryInfo   DeliveryInfo? @relation(fields: [deliveryInfoId], references: [id])
+
+  orderId String? @unique
+  order   Order?  @relation(fields: [orderId], references: [id])
+
   status             DeliveryScheduleStatus
   completed          Boolean                @default(false)
-  notes              String? // Notas adicionais
-  scheduledDate      DateTime // Data de entrega agendada
+  notes              String?
+  scheduledDate      DateTime
   addScheduleTime    Boolean                @default(false)
-  pendingDescription String? // Descrição do pendente
+  pendingDescription String?
 
-  orderId String // Relacionamento com Order
-  order   Order  @relation(fields: [orderId], references: [id])
-
-  productionStages ProductionStage[] // Estágios de produção relacionados
+  productionStages ProductionStage[]
 
   isActive  Boolean   @default(true)
   createdAt DateTime  @default(now())

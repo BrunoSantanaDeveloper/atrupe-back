@@ -108,7 +108,6 @@ export class ProfileController {
     description: 'Perfil não encontrado.',
   })
   findOne(@Param('id') id: string) {
-    console.log('aq');
     return this.profileService.findOne(id);
   }
 

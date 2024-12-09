@@ -7,6 +7,8 @@ import {
   Param,
   Delete,
   UseGuards,
+  Req,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,6 +20,7 @@ import { DeliveryScheduleService } from './delivery-schedule.service';
 import { CreateDeliveryScheduleDto } from './dto/create-delivery-schedule.dto';
 import { UpdateDeliveryScheduleDto } from './dto/update-delivery-schedule.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { DeliveryScheduleFitlerDto } from './dto/filter.dto';
 const RESOURCE = 'delivery-schedule';
 
 @ApiTags('Agenda de entrega')
@@ -35,11 +38,31 @@ export class DeliveryScheduleController {
   create(@Body() createDeliveryScheduleDto: CreateDeliveryScheduleDto) {
     return this.deliveryScheduleService.create(createDeliveryScheduleDto);
   }
-
   @Get()
-  @ApiOperation({ summary: 'Listar todos os agendamentos de entrega' })
-  findAll() {
-    return this.deliveryScheduleService.findAll();
+  @ApiOperation({
+    summary: 'Obtém a lista de todos os agendamentos de entrega',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de orçamentos retornada com sucesso.',
+    isArray: true,
+  })
+  async findAll(@Req() req, @Query() query: DeliveryScheduleFitlerDto) {
+    query.companyId = req.user.companyId;
+    return await this.deliveryScheduleService.findAll(query);
+  }
+
+  @Get('quantity')
+  @ApiOperation({
+    summary: 'Obtém a quantidade de todos os status de orçamentos',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de quantidade de orçamentos retornada com sucesso.',
+  })
+  async findAllQuantity(@Req() req) {
+    const companyId = req.user.companyId;
+    return this.deliveryScheduleService.findAllQuantity(companyId);
   }
 
   @Get(':id')

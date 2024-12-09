@@ -1,12 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsInt,
-  IsOptional,
-  IsString,
-  IsDate,
-  IsNumber,
-  IsUUID,
-} from 'class-validator';
+import { IsInt, IsOptional, IsString, IsNumber } from 'class-validator';
 
 export class UpdateDeliveryInfoDto {
   @ApiProperty({
@@ -15,7 +8,6 @@ export class UpdateDeliveryInfoDto {
     example: 'f3a4d45d-7c75-4a9b-9edb-03d222dedb2e',
     required: false,
   })
-  @IsUUID()
   @IsOptional()
   deliveryTypeId?: string;
 
@@ -30,10 +22,9 @@ export class UpdateDeliveryInfoDto {
 
   @ApiProperty({
     description: 'Data estimada para a entrega',
-    type: String,
+    type: Date,
     required: false,
   })
-  @IsDate()
   @IsOptional()
   estimatedDate?: Date;
 

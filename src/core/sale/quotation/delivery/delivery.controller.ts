@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   UseGuards,
+  Get,
 } from '@nestjs/common';
 import { DeliveryService } from './delivery.service';
 import { CreateDeliveryInfoDto } from './dto/create-delivery.dto';
@@ -57,5 +58,10 @@ export class DeliveryController {
     @Body() updateDeliveryInfoDto: UpdateDeliveryInfoDto,
   ) {
     return this.deliveryService.updateDeliveryInfo(id, updateDeliveryInfoDto);
+  }
+
+  @Get()
+  async findAll() {
+    return await this.deliveryService.findAll();
   }
 }

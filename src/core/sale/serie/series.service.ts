@@ -26,7 +26,6 @@ export class SaleSeriesService {
 
   async findAll(filter: BaseFilterDTO) {
     const { companyId, page, limit } = filter;
-    console.log(page, limit);
     try {
       const skip = (+page - 1) * +limit;
 

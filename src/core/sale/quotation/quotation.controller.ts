@@ -28,6 +28,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { QuotationProduct } from '@prisma/client';
+import { CancelOrderDto } from '../order/dto/create-order.dto';
 
 const RESOURCE = 'quotation';
 
@@ -146,8 +147,9 @@ export class QuotationController {
     description: 'Lista de orçamentos retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() query: FilterQuotationDto) {
-    return this.quotationService.findAll(query);
+  async findAll(@Req() req, @Query() query: FilterQuotationDto) {
+    query.companyId = req.user.companyId;
+    return await this.quotationService.findAll(query);
   }
 
   @Get('quantity')
@@ -214,11 +216,11 @@ export class QuotationController {
     status: 400,
     description: 'ID inválido.',
   })
-  async reject(@Param('id') id: string) {
+  async reject(@Param('id') id: string, @Body() dto: CancelOrderDto) {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
-    return this.quotationService.reject(id);
+    return this.quotationService.reject(id, dto);
   }
 
   @Post(':id/finish')

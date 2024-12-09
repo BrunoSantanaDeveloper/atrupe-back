@@ -11,7 +11,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { OrderService } from './order.service';
-import { CreateOrderDto } from './dto/create-order.dto';
+import { CancelOrderDto, CreateOrderDto } from './dto/create-order.dto';
 import { FilterOrderDto } from './dto/filter.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import { isUUID } from 'class-validator';
@@ -54,9 +54,9 @@ export class OrderController {
     description: 'Lista de ordens de serviço retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Req() req, @Query() query: FilterOrderDto) {
+  async findAll(@Req() req, @Query() query: FilterOrderDto) {
     query.companyId = req.user.companyId;
-    return this.orderService.findAll(query);
+    return await this.orderService.findAll(query);
   }
 
   @Get('quantity')
@@ -70,29 +70,6 @@ export class OrderController {
   async findAllQuantity(@Req() req) {
     const companyId = req.user.companyId;
     return this.orderService.findAllQuantity(companyId);
-  }
-
-  @Post(':id/cancel')
-  @ApiOperation({ summary: 'Cancela uma ordem de serviço pelo ID' })
-  @ApiParam({
-    name: 'id',
-    required: true,
-    description: 'ID da ordem de serviço',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Ordem de serviço cancelada com sucesso.',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'ID inválido.',
-  })
-  async cancel(@Param('id') id: string) {
-    if (!isUUID(id, '4')) {
-      throw new BadRequestException('Invalid id');
-    }
-
-    return this.orderService.cancel(id);
   }
 
   @Post(':id/duplicate')
@@ -135,6 +112,19 @@ export class OrderController {
   })
   findOne(@Param('id') id: string) {
     return this.orderService.findOne(id);
+  }
+
+  @Post(':id/cancel')
+  @ApiOperation({ summary: 'Cancelar uma ordem de serviço' })
+  @ApiResponse({ status: 200, description: 'Ordem cancelada com sucesso.' })
+  @ApiResponse({ status: 404, description: 'Motivo ou ordem não encontrada.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Erro na validação ou no banco de dados.',
+  })
+  @ApiResponse({ status: 500, description: 'Erro interno no servidor.' })
+  async cancelOrder(@Param('id') id: string, @Body() dto: CancelOrderDto) {
+    return this.orderService.cancelOrder(id, dto);
   }
 
   @Delete(':id')

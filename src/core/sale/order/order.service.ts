@@ -1,8 +1,14 @@
-import { Injectable } from '@nestjs/common';
-import { CreateOrderDto } from './dto/create-order.dto';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
+import { CancelOrderDto, CreateOrderDto } from './dto/create-order.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { FilterOrderDto } from './dto/filter.dto';
-import { Order, OrderStatus } from '@prisma/client';
+import { Order, OrderStatus, Prisma } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 
 export interface OrderGroup {
   date: string;
@@ -18,16 +24,6 @@ export class OrderService {
       data: {
         quotationId: createOrderDto.quotationId,
         status: OrderStatus.PENDING,
-      },
-    });
-  }
-
-  async cancel(id: string) {
-    return this.prisma.order.update({
-      where: { id },
-      data: {
-        status: OrderStatus.CANCELED,
-        canceledAt: new Date(),
       },
     });
   }
@@ -50,81 +46,53 @@ export class OrderService {
 
   async findAll(dto: FilterOrderDto) {
     try {
-      let where: any = {};
+      const where: Prisma.OrderWhereInput = {};
 
       // Filtros básicos
       if (dto.companyId) {
-        where = {
-          ...where,
-          quotation: {
-            ...where.quotation,
-            companyId: dto.companyId,
-          },
+        where.quotation = {
+          is: { companyId: dto.companyId },
         };
       }
 
       if (dto.status) {
-        where = { ...where, status: dto.status };
+        where.status = dto.status;
       }
 
       if (dto.sellerId) {
-        where = {
-          ...where,
-          quotation: {
-            ...where.quotation,
-            sellerId: dto.sellerId,
-          },
+        where.quotation = {
+          is: { sellerId: dto.sellerId },
         };
       }
 
       if (dto.serieId) {
-        where = {
-          ...where,
-          quotation: {
-            ...where.quotation,
-            seriesId: dto.serieId,
-          },
+        where.quotation = {
+          is: { seriesId: dto.serieId },
         };
       }
 
       if (dto.clientId) {
-        where = {
-          ...where,
-          quotation: {
-            ...where.quotation,
-            clientId: dto.clientId,
-          },
+        where.quotation = {
+          is: { clientId: dto.clientId },
         };
       }
 
-      // Adicionando filtro para busca por texto
+      // Busca por texto
       if (dto.search) {
-        where = {
-          ...where,
-          OR: [
-            {
-              quotation: {
-                description: { contains: dto.search, mode: 'insensitive' },
-              },
-            },
-            {
-              quotation: {
+        where.quotation = {
+          is: {
+            OR: [
+              { description: { contains: dto.search, mode: 'insensitive' } },
+              {
                 client: { name: { contains: dto.search, mode: 'insensitive' } },
               },
-            },
-            {
-              quotation: {
+              {
                 seller: {
                   user: { name: { contains: dto.search, mode: 'insensitive' } },
                 },
               },
-            },
-            {
-              quotation: {
-                quotationNumber: { contains: dto.search, mode: 'insensitive' },
-              },
-            },
-          ],
+            ],
+          },
         };
       }
 
@@ -150,8 +118,9 @@ export class OrderService {
                 },
               },
               client: {
-                select: { name: true },
+                select: { id: true, name: true, email: true },
               },
+              tag: true,
             },
           },
         },
@@ -169,24 +138,48 @@ export class OrderService {
         const quotation = order.quotation;
         acc[date].orders.push({
           id: order.id,
-          description: quotation.description,
           status: order.status,
           quotation: {
+            id: quotation.id,
             description: quotation.description,
-            clientName: quotation.client?.name || null,
-            sellerName: quotation.seller?.user?.name || null,
+            status: quotation.status,
+            dueDate: quotation.dueDate,
             totalValue: quotation.totalValue,
-            serie: {
-              name: quotation.series?.title || null,
-              code: quotation.series?.code || null,
-              quotation: quotation.quotationNumber || null,
-            },
+            approvedAt: quotation.approvedAt,
+            tag: quotation.tag
+              ? {
+                  id: quotation.tag.id,
+                  text: quotation.tag.title,
+                  color: quotation.tag.color,
+                }
+              : null,
+            quickSale: quotation.quickSale || false,
+            serie: quotation.series
+              ? {
+                  id: quotation.series.id,
+                  name: quotation.series.title,
+                  code: quotation.series.code,
+                  quotation: quotation.quotationNumber,
+                }
+              : null,
+            client: quotation.client
+              ? {
+                  id: quotation.client.id,
+                  name: quotation.client.name,
+                  email: quotation.client.email,
+                }
+              : null,
+            seller: quotation.seller
+              ? {
+                  id: quotation.seller.id,
+                  name: quotation.seller.user.name,
+                }
+              : null,
           },
         });
 
         return acc;
       }, {});
-
       // Transformar o agrupamento em um array de objetos
       const data = Object.values(grouped);
 
@@ -216,7 +209,14 @@ export class OrderService {
       where: {
         quotation: { companyId },
         status: {
-          in: ['PENDING', 'IN_PRODUCTION', 'CANCELED', 'COMPLETED', 'FINISHED'],
+          in: [
+            'PENDING',
+            'IN_PRODUCTION',
+            'CANCELED',
+            'COMPLETED',
+            'FINISHED',
+            'DELIVERY',
+          ],
         },
       },
       _count: true,
@@ -231,7 +231,7 @@ export class OrderService {
     );
 
     result.forEach((cur) => {
-      if (cur.status === 'COMPLETED') {
+      if (cur.status === 'COMPLETED' || cur.status === 'DELIVERY') {
         statusCount['IN_PRODUCTION'] += cur._count;
       } else {
         statusCount[cur.status] = cur._count;
@@ -250,45 +250,266 @@ export class OrderService {
     return this.prisma.order.count();
   }
 
-  findOne(id: string) {
-    return this.prisma.order.findUnique({
-      where: { id },
-      include: {
-        quotation: {
-          include: {
-            series: {
-              select: {
-                id: true,
-                title: true,
+  async findOne(id: string) {
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id },
+        include: {
+          quotation: {
+            include: {
+              series: {
+                select: {
+                  id: true,
+                  title: true,
+                  code: true,
+                },
               },
-            },
-            seller: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    name: true,
+              seller: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
                   },
                 },
               },
-            },
-            client: true,
-            quotationProduct: {
-              include: {
-                product: true,
-                items: {
-                  include: {
-                    productItem: true,
+              company: {
+                select: {
+                  id: true,
+                  name: true,
+                  cnpj: true,
+                },
+              },
+              client: {
+                select: {
+                  id: true,
+                  type: true,
+                  name: true,
+                  status: true,
+                  cnpj: true,
+                  cpf: true,
+                  email: true,
+                  phone: true,
+                },
+              },
+              deliveryInfo: {
+                include: {
+                  deliveryType: true,
+                  supplier: true,
+                },
+              },
+              DeliverySchedule: true,
+              quotationProduct: {
+                include: {
+                  product: true,
+                  items: {
+                    select: {
+                      id: true,
+                      productItemId: true,
+                      name: true,
+                      unitOfMeasure: true,
+                      salePrice: true,
+                      quantity: true,
+                      unitCost: true,
+                      totalValue: true,
+                    },
+                    orderBy: {
+                      createdAt: 'asc',
+                    },
                   },
+                },
+                orderBy: {
+                  createdAt: 'asc',
+                },
+              },
+              tag: {
+                select: {
+                  id: true,
+                  title: true,
+                  color: true,
                 },
               },
             },
           },
         },
-      },
-    });
+      });
+
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      const quotation = order.quotation;
+
+      const formattedQuotation = {
+        id: quotation.id,
+        description: quotation.description,
+        createdAt: quotation.createdAt,
+        approvedAt: quotation.approvedAt,
+        finishedAt: quotation.finishedAt,
+        status: quotation.status,
+        dueDate: quotation.dueDate,
+        totalValue: quotation.totalValue,
+        quickSale: quotation.quickSale || false,
+        serie: quotation.series
+          ? {
+              id: quotation.series.id,
+              name: quotation.series.title,
+              code: quotation.series.code,
+              quotation: quotation.quotationNumber,
+            }
+          : null,
+        seller: quotation.seller
+          ? {
+              id: quotation.seller.id,
+              name: quotation.seller.user.name,
+            }
+          : null,
+        company: quotation.company
+          ? {
+              id: quotation.company.id,
+              name: quotation.company.name,
+              cnpj: quotation.company.cnpj,
+            }
+          : null,
+        deliveryInfo: quotation.deliveryInfo
+          ? {
+              id: quotation.deliveryInfo.id,
+              status: quotation.DeliverySchedule.status,
+              type: quotation.deliveryInfo.deliveryType
+                ? {
+                    id: quotation.deliveryInfo.deliveryType.id,
+                    name: quotation.deliveryInfo.deliveryType.name,
+                  }
+                : null,
+              timeFrame: quotation.deliveryInfo.daysAfterApproval,
+              estimateDate: quotation.deliveryInfo.estimatedDate,
+              cost: quotation.deliveryInfo.cost,
+              value: quotation.deliveryInfo.value,
+              notes: quotation.deliveryInfo.notes,
+              supplier: quotation.deliveryInfo.supplier
+                ? {
+                    id: quotation.deliveryInfo.supplier.id,
+                    name: quotation.deliveryInfo.supplier.name,
+                  }
+                : null,
+            }
+          : null,
+        client: quotation.client
+          ? {
+              id: quotation.client.id,
+              type: quotation.client.type,
+              name: quotation.client.name,
+              status: quotation.client.status,
+              cnpj: quotation.client.cnpj,
+              cpf: quotation.client.cpf,
+              email: quotation.client.email,
+              phoneNumber: quotation.client.phone,
+            }
+          : null,
+        tag: quotation.tag
+          ? {
+              id: quotation.tag.id,
+              text: quotation.tag.title,
+              color: quotation.tag.color,
+            }
+          : null,
+        quotationItems: quotation.quotationProduct.map((qp) => ({
+          id: qp.id,
+          description: qp.description,
+          notes: qp.notes,
+          discountType: qp.discountType,
+          discount: qp.discount,
+          unitValue: qp.items.reduce(
+            (total, item) => total + item.totalValue,
+            0,
+          ),
+          totalValue: (() => {
+            const unitValue = qp.items.reduce(
+              (total, item) => total + item.totalValue,
+              0,
+            );
+
+            return qp.quantity * unitValue;
+          })(),
+          finalValue: qp.finalValue,
+          image: {
+            url: qp.imageUrl,
+            original: true, // Marcar como original ou não
+          },
+          product: {
+            originalProductId: qp.productId,
+            name: qp.product.name,
+            quantity: qp.quantity,
+            unitValue: qp.items.reduce(
+              (total, item) => total + item.totalValue,
+              0,
+            ),
+
+            finalValue:
+              qp.quantity *
+              qp.items.reduce((total, item) => total + item.totalValue, 0),
+            compositions: qp.items.map((item) => ({
+              id: item.id,
+              originalCompositionId: item.productItemId,
+              name: item.name,
+              unitOfMeasure: item.unitOfMeasure,
+              quantity: item.quantity,
+              unitValue: item.salePrice,
+              totalValue: item.totalValue,
+            })),
+          },
+        })),
+      };
+
+      return {
+        id: order.id,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        canceledAt: order.canceledAt,
+        deliveredAt: order.deliveredAt,
+        status: order.status,
+        quotation: formattedQuotation,
+      };
+    } catch (error) {
+      console.error(error);
+      throw new Error('Erro ao buscar a ordem de serviço.');
+    }
   }
 
+  async cancelOrder(orderId: string, dto: CancelOrderDto) {
+    try {
+      // Verifica se o motivo do cancelamento existe
+      const reason = await this.prisma.reasons.findFirst({
+        where: { id: dto.reasonId },
+      });
+
+      if (!reason) {
+        throw new NotFoundException('Motivo de cancelamento não encontrado.');
+      }
+
+      // Atualiza o pedido para status cancelado
+      return await this.prisma.order.update({
+        where: { id: orderId },
+        data: {
+          canceledAt: new Date(),
+          status: OrderStatus.CANCELED,
+          reasonId: dto.reasonId,
+        },
+      });
+    } catch (error) {
+      if (error instanceof PrismaClientKnownRequestError) {
+        // Tratamento específico para erros do Prisma
+        throw new BadRequestException(
+          'Erro na base de dados ao cancelar a ordem.',
+        );
+      }
+      console.error(error); // Log para depuração
+      throw new InternalServerErrorException(
+        'Erro interno ao cancelar a ordem.',
+      );
+    }
+  }
   remove(id: string) {
     return this.prisma.order.update({
       where: { id },

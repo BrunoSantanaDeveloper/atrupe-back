@@ -19,6 +19,8 @@ import {
 } from './dto/duplicate-quotation.dto';
 import { QuotationContactType } from './entities/quotation.entity';
 import { add, endOfDay } from 'date-fns';
+import { CancelOrderDto } from '../order/dto/create-order.dto';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 
 export interface QuotationGroup {
   date: string;
@@ -221,6 +223,7 @@ export class QuotationService {
         unitCost: item.unitCost || originalItem.unitCost,
         salePrice: item.salePrice || originalItem.salePrice,
         quantity: data.quantity * item.quantity,
+        originalQuantity: item.quantity,
         totalValue:
           item.quantity * (item.salePrice || originalItem.salePrice || 0),
       };
@@ -311,7 +314,7 @@ export class QuotationService {
             }),
             ...(data.imageUrl && { imageUrl: data.imageUrl }),
             ...(data.notes !== undefined && { notes: data.notes }),
-            ...(data.discount && { discount: data.discount }),
+            ...(data.discount !== undefined && { discount: data.discount }),
             ...(data.discountType && { discountType: data.discountType }),
             ...(data.technicalDescription && {
               technicalDescription: data.technicalDescription,
@@ -359,7 +362,7 @@ export class QuotationService {
           await this.prisma.quotationProductItem.update({
             where: { id: item.id },
             data: {
-              quantity: data.quantity * item.quantity,
+              quantity: data.quantity * item.originalQuantity,
             },
           });
         }
@@ -504,7 +507,7 @@ export class QuotationService {
     // Calcular e atualizar `totalValue` para cada item (em memória)
     const updatedItems = quotationProducts.items.map((item) => ({
       id: item.id,
-      totalValue: item.quantity * item.unitCost,
+      totalValue: item.salePrice * item.quantity,
     }));
 
     // Atualizar os itens no banco em batch (bulk update)
@@ -733,6 +736,11 @@ export class QuotationService {
               currentBudgetNumber: true,
             },
           },
+          order: {
+            select: {
+              id: true,
+            },
+          },
           client: {
             select: {
               id: true,
@@ -764,6 +772,7 @@ export class QuotationService {
           },
           deliveryInfo: {
             select: {
+              id: true,
               deliveryType: {
                 select: {
                   id: true,
@@ -776,6 +785,7 @@ export class QuotationService {
               value: true,
               notes: true,
               supplier: true,
+              modality: true,
             },
           },
           quotationPayment: {
@@ -839,6 +849,7 @@ export class QuotationService {
                   productItemId: true,
                   name: true,
                   unitOfMeasure: true,
+                  salePrice: true,
                   quantity: true,
                   unitCost: true,
                   totalValue: true,
@@ -857,6 +868,7 @@ export class QuotationService {
 
       return {
         id: quotation.id,
+        orderId: quotation.order?.id ?? null,
         createdAt: quotation.createdAt,
         updatedAt: quotation.updatedAt,
         dueDate: quotation.dueDate,
@@ -899,6 +911,7 @@ export class QuotationService {
           : null,
         deliveryInfo: quotation.deliveryInfo
           ? {
+              id: quotation.deliveryInfo.id,
               type: quotation.deliveryInfo.deliveryType
                 ? {
                     id: quotation.deliveryInfo.deliveryType.id,
@@ -910,6 +923,7 @@ export class QuotationService {
               cost: quotation.deliveryInfo.cost,
               value: quotation.deliveryInfo.value,
               notes: quotation.deliveryInfo.notes,
+              modality: quotation.deliveryInfo.modality,
               supplier: quotation.deliveryInfo.supplier
                 ? {
                     id: quotation.deliveryInfo.supplier.id,
@@ -963,14 +977,15 @@ export class QuotationService {
           discountType: qp.discountType,
           discount: qp.discount,
           unitValue: qp.items.reduce(
-            (total, item) => total + item.quantity * item.unitCost,
+            (total, item) => total + item.totalValue,
             0,
           ),
           totalValue: (() => {
             const unitValue = qp.items.reduce(
-              (total, item) => total + item.quantity * item.unitCost,
+              (total, item) => total + item.totalValue,
               0,
             );
+
             return qp.quantity * unitValue;
           })(),
           finalValue: qp.finalValue,
@@ -983,24 +998,21 @@ export class QuotationService {
             name: qp.product.name,
             quantity: qp.quantity,
             unitValue: qp.items.reduce(
-              (total, item) => total + item.quantity * item.unitCost,
+              (total, item) => total + item.totalValue,
               0,
             ),
 
             finalValue:
               qp.quantity *
-              qp.items.reduce(
-                (total, item) => total + item.quantity * item.unitCost,
-                0,
-              ),
+              qp.items.reduce((total, item) => total + item.totalValue, 0),
             compositions: qp.items.map((item) => ({
               id: item.id,
               originalCompositionId: item.productItemId,
               name: item.name,
               unitOfMeasure: item.unitOfMeasure,
               quantity: item.quantity,
-              unitValue: item.unitCost,
-              totalValue: item.quantity * item.unitCost,
+              unitValue: item.salePrice,
+              totalValue: item.totalValue,
             })),
           },
         })),
@@ -1131,27 +1143,87 @@ export class QuotationService {
   }
 
   async approve(quotationId: string): Promise<Order> {
-    const quotation = await this.prisma.quotation.update({
-      where: { id: quotationId },
-      data: {
-        status: QuotationStatus.APPROVED,
-        approvedAt: new Date(),
-      },
-    });
+    return await this.prisma.$transaction(async (prisma) => {
+      // Atualizar a cotação como aprovada
+      const quotation = await prisma.quotation.update({
+        where: { id: quotationId },
+        data: {
+          status: QuotationStatus.APPROVED,
+          approvedAt: new Date(),
+        },
+        include: {
+          deliveryInfo: {
+            select: {
+              id: true,
+              estimatedDate: true,
+            },
+          },
+        },
+      });
 
-    // Criar um pedido com base na cotação aprovada
-    return await this.orderService.create({
-      quotationId: quotation.id,
+      if (!quotation.deliveryInfo) {
+        throw new Error('Informações de entrega ausentes na cotação.');
+      }
+
+      // Criar o pedido diretamente no Prisma
+      const order = await prisma.order.create({
+        data: {
+          quotationId: quotation.id,
+        },
+      });
+
+      // Criar o agendamento de entrega diretamente no Prisma
+      await prisma.deliverySchedule.create({
+        data: {
+          company: {
+            connect: { id: quotation.companyId },
+          },
+          quotation: {
+            connect: { id: quotation.id },
+          },
+          order: {
+            connect: { id: order.id },
+          },
+          deliveryInfo: {
+            connect: { id: quotation.deliveryInfo.id },
+          },
+          scheduledDate: quotation.deliveryInfo.estimatedDate,
+          status: 'IN_PRODUCTION',
+        },
+      });
+
+      return order;
     });
   }
 
-  async reject(quotationId: string): Promise<Quotation> {
-    return this.prisma.quotation.update({
-      where: { id: quotationId },
-      data: {
-        status: QuotationStatus.REJECTED,
-      },
-    });
+  async reject(quotationId: string, dto: CancelOrderDto): Promise<Quotation> {
+    try {
+      // Verifica se o motivo do cancelamento existe
+      const reason = await this.prisma.reasons.findFirst({
+        where: { id: dto.reasonId },
+      });
+
+      if (!reason) {
+        throw new NotFoundException('Motivo de cancelamento não encontrado.');
+      }
+
+      // Atualiza o pedido para status cancelado
+      return await this.prisma.quotation.update({
+        where: { id: quotationId },
+        data: {
+          status: QuotationStatus.REJECTED,
+          reasonId: dto.reasonId,
+        },
+      });
+    } catch (error) {
+      if (error instanceof PrismaClientKnownRequestError) {
+        throw new BadRequestException(
+          'Erro na base de dados ao cancelar a ordem.',
+        );
+      }
+      console.error(error); // Log para depuração
+      throw new BadRequestException('Erro interno ao cancelar a ordem.');
+    }
   }
 
   async finish(quotationId: string): Promise<Quotation> {
@@ -1159,6 +1231,7 @@ export class QuotationService {
       where: { id: quotationId },
       data: {
         status: QuotationStatus.DONE,
+        finishedAt: new Date(),
       },
     });
   }
@@ -1168,6 +1241,7 @@ export class QuotationService {
       where: { id: quotationId },
       data: {
         status: QuotationStatus.OPEN,
+        reasonId: null,
       },
     });
   }

@@ -48,7 +48,6 @@ export class EmployeeService {
   }
 
   async findAll(filter: BaseFilterDTO) {
-    console.log(filter);
     try {
       const totalEmployees = await this.prisma.employee.count({
         where: {

@@ -10,7 +10,11 @@ import { PrismaService } from 'src/config/prisma/prisma.service';
 @Injectable()
 export class DeliveryService {
   constructor(private prisma: PrismaService) {}
-
+  async findAll() {
+    return await this.prisma.deliveryType.findMany({
+      orderBy: { name: 'asc' },
+    });
+  }
   async createDeliveryInfo(
     quotationId: string,
     createDeliveryInfoDto: CreateDeliveryInfoDto,
@@ -49,38 +53,49 @@ export class DeliveryService {
     id: string,
     updateDeliveryInfoDto: UpdateDeliveryInfoDto,
   ) {
-    const existingDeliveryInfo = await this.prisma.deliveryInfo.findUnique({
-      where: { id },
-    });
-
-    if (!existingDeliveryInfo) {
-      throw new NotFoundException('Informações de entrega não encontradas');
-    }
-
-    // Verificar se o tipo de entrega existe
-    if (updateDeliveryInfoDto.deliveryTypeId) {
-      const deliveryType = await this.prisma.deliveryType.findUnique({
-        where: { id: updateDeliveryInfoDto.deliveryTypeId },
+    console.log(updateDeliveryInfoDto);
+    try {
+      const existingDeliveryInfo = await this.prisma.deliveryInfo.findUnique({
+        where: { id },
       });
 
-      if (!deliveryType) {
-        throw new BadRequestException('Tipo de entrega não encontrado');
+      if (!existingDeliveryInfo) {
+        throw new NotFoundException('Informações de entrega não encontradas');
       }
 
-      // Verificação do tipo de entrega para transportadora
-      if (deliveryType.isCarrier && !updateDeliveryInfoDto.supplierId) {
-        throw new BadRequestException(
-          'Fornecedor é necessário quando o tipo de entrega for Transportadora',
+      // Verificar se o tipo de entrega existe
+      // if (updateDeliveryInfoDto.deliveryTypeId) {
+      //   const deliveryType = await this.prisma.deliveryType.findUnique({
+      //     where: { id: updateDeliveryInfoDto.deliveryTypeId },
+      //   });
+
+      //   if (!deliveryType) {
+      //     throw new BadRequestException('Tipo de entrega não encontrado');
+      //   }
+
+      //   // Verificação do tipo de entrega para transportadora
+      //   if (deliveryType.isCarrier && !updateDeliveryInfoDto.supplierId) {
+      //     throw new BadRequestException(
+      //       'Fornecedor é necessário quando o tipo de entrega for Transportadora',
+      //     );
+      //   }
+      // }
+
+      // Atualizar o DeliveryInfo
+
+      if (updateDeliveryInfoDto.estimatedDate) {
+        updateDeliveryInfoDto.estimatedDate = new Date(
+          updateDeliveryInfoDto.estimatedDate,
         );
       }
+      const updatedDeliveryInfo = await this.prisma.deliveryInfo.update({
+        where: { id },
+        data: updateDeliveryInfoDto,
+      });
+
+      return updatedDeliveryInfo;
+    } catch (error) {
+      console.error(error);
     }
-
-    // Atualizar o DeliveryInfo
-    const updatedDeliveryInfo = await this.prisma.deliveryInfo.update({
-      where: { id },
-      data: updateDeliveryInfoDto,
-    });
-
-    return updatedDeliveryInfo;
   }
 }

@@ -11,3 +11,14 @@ export class CreateOrderDto {
   })
   quotationId: string;
 }
+
+export class CancelOrderDto {
+  @IsNotEmpty()
+  @IsUUID()
+  @ApiProperty({
+    description: 'ID do motivo de cancelamento',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: true,
+  })
+  reasonId: string;
+}

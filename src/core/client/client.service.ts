@@ -72,6 +72,8 @@ export class ClientService {
           OR: [
             { name: { contains: filter.search, mode: 'insensitive' } },
             { email: { contains: filter.search, mode: 'insensitive' } },
+            { cpf: { contains: filter.search, mode: 'insensitive' } },
+            { cnpj: { contains: filter.search, mode: 'insensitive' } },
           ],
         };
       }
