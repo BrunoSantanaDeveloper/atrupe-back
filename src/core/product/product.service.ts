@@ -1,9 +1,14 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { ProductFilterDTO } from './dto/filter.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductStatus } from '@prisma/client';
+import { JsonArray } from '@prisma/client/runtime/library';
 
 @Injectable()
 export class ProductService {
@@ -186,8 +191,8 @@ export class ProductService {
     }
   }
 
-  findOne(id: string) {
-    return this.prisma.product.findUnique({
+  async findOne(id: string) {
+    const product = await this.prisma.product.findUnique({
       where: { id },
       include: {
         items: {
@@ -197,11 +202,66 @@ export class ProductService {
         },
       },
     });
-  }
 
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    const productionStages = product.productionStages as JsonArray | null;
+
+    if (!Array.isArray(productionStages)) {
+      throw new Error('Invalid data for productionStages');
+    }
+
+    const allSectors = await this.prisma.sector.findMany({
+      where: { isProductionStage: true },
+      select: { id: true, name: true, icon: true },
+    });
+
+    const existingSectorIds = productionStages.map((stage: any) => stage.id);
+
+    const newSectors = allSectors.filter(
+      (sector) => !existingSectorIds.includes(sector.id),
+    );
+
+    const existingProductionStagesWithDetails = await Promise.all(
+      productionStages.map(async (stage: any) => {
+        const sector = await this.prisma.sector.findUnique({
+          where: { id: stage.id },
+          select: { name: true, icon: true },
+        });
+        return {
+          id: stage.id,
+          isActive: stage.isActive,
+          ...sector,
+        };
+      }),
+    );
+
+    const newProductionStages = newSectors.map((sector) => ({
+      id: sector.id,
+      isActive: false,
+
+      name: sector.name,
+      icon: sector.icon,
+    }));
+
+    const productionStagesWithDetails = [
+      ...existingProductionStagesWithDetails,
+      ...newProductionStages,
+    ];
+
+    return {
+      ...product,
+      productionStages: productionStagesWithDetails,
+    };
+  }
   async update(id: string, updateProductDto: UpdateProductDto) {
+    console.log(updateProductDto);
     try {
-      const product = await this.findOne(id);
+      const product = await this.prisma.product.findUnique({
+        where: { id },
+      });
 
       if (!product) {
         throw new BadRequestException('Product not found');
@@ -229,6 +289,7 @@ export class ProductService {
           name: updateProductDto.name,
           code: updateProductDto.code,
           isActive: updateProductDto.isActive,
+          imageUrl: updateProductDto.imageUrl,
           isStandard: updateProductDto.isStandard,
           companyId: updateProductDto.companyId || undefined,
           categoryId: updateProductDto.categoryId || undefined,
@@ -255,7 +316,10 @@ export class ProductService {
 
   async remove(id: string) {
     try {
-      const product = await this.findOne(id);
+      const product = await this.prisma.product.findUnique({
+        where: { id },
+      });
+
       if (!product) {
         throw new BadRequestException('Product not found');
       }

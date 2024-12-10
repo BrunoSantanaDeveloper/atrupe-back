@@ -89,7 +89,7 @@ export class ProductController {
   @ApiParam({ name: 'id', required: true, description: 'ID do produto' })
   @ApiBody({
     description: 'Dados para atualização do produto',
-    type: UpdateProductDto,
+    type: CreateProductDto,
   })
   @ApiResponse({
     status: 200,

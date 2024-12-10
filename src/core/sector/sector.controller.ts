@@ -22,7 +22,6 @@ import {
   ApiResponse,
   ApiBody,
   ApiParam,
-  ApiQuery,
   ApiBearerAuth,
 } from '@nestjs/swagger';
 
@@ -52,7 +51,6 @@ export class SectorController {
 
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todos os setores' })
-  @ApiQuery({ name: 'filter', type: SectorFilterDto, required: false })
   @ApiResponse({
     status: 200,
     description: 'Lista de setores retornada com sucesso.',

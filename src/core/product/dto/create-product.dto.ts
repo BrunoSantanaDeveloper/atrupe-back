@@ -207,6 +207,15 @@ export class CreateProductDto {
   })
   categoryId: string;
 
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'url da imagem do produto',
+    example: 'imageUrl.com',
+    required: true,
+  })
+  imageUrl?: string;
+
   @IsUUID()
   @IsNotEmpty()
   @ApiProperty({

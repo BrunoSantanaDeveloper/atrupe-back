@@ -112,19 +112,21 @@ enum SectorKind {
 }
 
 model Sector {
-  id       String     @id @default(uuid())
-  name     String
-  icon     String?
-  isActive Boolean    @default(true)
-  kind     SectorKind @default(PRODUCTION)
+  id                String     @id @default(uuid())
+  name              String
+  icon              String?
+  isActive          Boolean    @default(true)
+  isProductionStage Boolean    @default(true)
+  kind              SectorKind @default(PRODUCTION)
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
 
-  employees Employee[]
-  asset     Asset[]
-  role      Role[]
-  product   Product[]
+  employees       Employee[]
+  asset           Asset[]
+  role            Role[]
+  product         Product[]
+  productionStage ProductionStage[]
 
   @@map("sectors")
 }
@@ -1383,9 +1385,12 @@ enum ProductionStageStatus {
 }
 
 model ProductionStage {
-  id         String                @id @default(cuid())
-  stage      String
-  status     ProductionStageStatus
+  id         String                @id @default(uuid())
+  stageId    String?
+  stage      Sector?               @relation(fields: [stageId], references: [id])
+  status     ProductionStageStatus @default(NOT_STARTED)
+  notes      String?
+  order      Int?
   prevStatus String?
   scheduleId String
 

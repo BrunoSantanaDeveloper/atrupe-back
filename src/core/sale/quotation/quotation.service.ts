@@ -109,44 +109,68 @@ export class QuotationService {
   }
 
   async addProductToQuotation(quotationId: string, data: AddItemDto) {
-    // Busca o orçamento e verifica se existe
-    const quotation = await this.prisma.quotation.findUnique({
-      where: { id: quotationId },
-    });
-    if (!quotation) {
-      throw new NotFoundException('Orçamento não encontrado');
-    }
+    try {
+      // Busca o orçamento e verifica se existe
+      const quotation = await this.prisma.quotation.findUnique({
+        where: { id: quotationId },
+      });
+      if (!quotation) {
+        throw new NotFoundException('Orçamento não encontrado');
+      }
 
-    // Busca o produto e verifica se ele existe
-    const product = await this.prisma.product.findUnique({
-      where: { id: data.productId },
-      include: { items: true }, // Inclui os itens do produto
-    });
-    if (!product) {
-      throw new NotFoundException('Produto não encontrado');
-    }
+      // Busca o produto e verifica se ele existe
+      const product = await this.prisma.product.findUnique({
+        where: { id: data.productId },
+        include: { items: true }, // Inclui os itens do produto
+      });
+      if (!product) {
+        throw new NotFoundException('Produto não encontrado');
+      }
 
-    // Verifica se o front enviou propriedades editáveis e realiza validações
-    const hasEditableFields =
-      data.technicalDescription !== undefined ||
-      data.items.some(
-        (item) => item.unitCost !== undefined || item.salePrice !== undefined,
-      );
+      // Verifica se o front enviou propriedades editáveis e realiza validações
+      const hasEditableFields =
+        data.technicalDescription !== undefined ||
+        data.items.some(
+          (item) => item.unitCost !== undefined || item.salePrice !== undefined,
+        );
 
-    if (
-      data.technicalDescription !== undefined &&
-      !product.allowEditDescription &&
-      data.technicalDescription !== product.technicalDescription
-    ) {
-      throw new BadRequestException(
-        `Descrição técnica não pode ser editada para o produto ${product.name}`,
-      );
-    }
+      if (
+        data.technicalDescription !== undefined &&
+        !product.allowEditDescription &&
+        data.technicalDescription !== product.technicalDescription
+      ) {
+        throw new BadRequestException(
+          `Descrição técnica não pode ser editada para o produto ${product.name}`,
+        );
+      }
 
-    if (
-      hasEditableFields &&
-      !product.allowEditValues &&
-      data.items.some((item) => {
+      if (
+        hasEditableFields &&
+        !product.allowEditValues &&
+        data.items.some((item) => {
+          const originalItem = product.items.find(
+            (pItem) => pItem.id === item.id,
+          );
+          if (!originalItem) {
+            throw new BadRequestException(
+              `Item ${item.id} não encontrado no produto`,
+            );
+          }
+          return (
+            (item.unitCost !== undefined &&
+              item.unitCost !== originalItem.unitCost) ||
+            (item.salePrice !== undefined &&
+              item.salePrice !== originalItem.salePrice)
+          );
+        })
+      ) {
+        throw new BadRequestException(
+          `Valores não podem ser editados para o produto ${product.name}`,
+        );
+      }
+
+      // Calcula o valor total do produto
+      const totalValue = data.items.reduce((total, item) => {
         const originalItem = product.items.find(
           (pItem) => pItem.id === item.id,
         );
@@ -156,93 +180,78 @@ export class QuotationService {
           );
         }
         return (
-          (item.unitCost !== undefined &&
-            item.unitCost !== originalItem.unitCost) ||
-          (item.salePrice !== undefined &&
-            item.salePrice !== originalItem.salePrice)
+          total +
+          item.quantity * (item.salePrice || originalItem.salePrice || 0)
         );
-      })
-    ) {
-      throw new BadRequestException(
-        `Valores não podem ser editados para o produto ${product.name}`,
-      );
+      }, 0);
+
+      // Cria o QuotationProduct com ID único
+      const quotationProduct = await this.prisma.quotationProduct.create({
+        data: {
+          quotationId,
+          productId: product.id,
+          quantity: data.quantity,
+          description: data.description || undefined,
+          technicalDescription:
+            data.technicalDescription || product.technicalDescription,
+          imageUrl: data.imageUrl || product.imageUrl,
+          totalValue, // Valor total inicial
+          allowEditDescription: product.allowEditDescription,
+          allowEditValues: product.allowEditValues,
+        },
+      });
+
+      // Cria os QuotationProductItems associados ao QuotationProduct
+      const quotationProductItems = data.items.map((item) => {
+        const originalItem = product.items.find(
+          (pItem) => pItem.id === item.id,
+        );
+        if (!originalItem) {
+          throw new BadRequestException(
+            `Item ${item.id} não encontrado no produto`,
+          );
+        }
+
+        return {
+          quotationProductId: quotationProduct.id, // ID único do QuotationProduct
+          productItemId: originalItem.id,
+          quotationId,
+          productId: product.id,
+          name: originalItem.name,
+          unitOfMeasureId: item.unitOfMeasureId,
+          width: item.width || originalItem.width,
+          height: item.height || originalItem.height,
+          length: item.length || originalItem.length,
+          weight: item.weight || originalItem.weight,
+          volume: item.volume || originalItem.volume,
+          distance: item.distance || originalItem.distance,
+          duration: item.duration || originalItem.duration,
+          unitCost: item.unitCost || originalItem.unitCost,
+          salePrice: item.salePrice || originalItem.salePrice,
+          quantity: data.quantity * item.quantity,
+          originalQuantity: item.quantity,
+          totalValue:
+            item.quantity * (item.salePrice || originalItem.salePrice || 0),
+        };
+      });
+
+      await this.prisma.quotationProductItem.createMany({
+        data: quotationProductItems,
+      });
+
+      // Recalcula o valor total do orçamento
+      await this.recalculateQuotationProductsTotalValue(quotationProduct.id);
+
+      // Retorna o orçamento atualizado
+      return this.prisma.quotation.findUnique({
+        where: { id: quotationId },
+        include: {
+          quotationProduct: { include: { items: true } },
+        },
+      });
+    } catch (error) {
+      console.error(error);
     }
-
-    // Calcula o valor total do produto
-    const totalValue = data.items.reduce((total, item) => {
-      const originalItem = product.items.find((pItem) => pItem.id === item.id);
-      if (!originalItem) {
-        throw new BadRequestException(
-          `Item ${item.id} não encontrado no produto`,
-        );
-      }
-      return (
-        total + item.quantity * (item.salePrice || originalItem.salePrice || 0)
-      );
-    }, 0);
-
-    // Cria o QuotationProduct com ID único
-    const quotationProduct = await this.prisma.quotationProduct.create({
-      data: {
-        quotationId,
-        productId: product.id,
-        quantity: data.quantity,
-        description: data.description || undefined,
-        technicalDescription:
-          data.technicalDescription || product.technicalDescription,
-        imageUrl: data.imageUrl || product.imageUrl,
-        totalValue, // Valor total inicial
-        allowEditDescription: product.allowEditDescription,
-        allowEditValues: product.allowEditValues,
-      },
-    });
-
-    // Cria os QuotationProductItems associados ao QuotationProduct
-    const quotationProductItems = data.items.map((item) => {
-      const originalItem = product.items.find((pItem) => pItem.id === item.id);
-      if (!originalItem) {
-        throw new BadRequestException(
-          `Item ${item.id} não encontrado no produto`,
-        );
-      }
-
-      return {
-        quotationProductId: quotationProduct.id, // ID único do QuotationProduct
-        productItemId: originalItem.id,
-        quotationId,
-        productId: product.id,
-        name: originalItem.name,
-        unitOfMeasureId: item.unitOfMeasureId,
-        width: item.width || originalItem.width,
-        height: item.height || originalItem.height,
-        length: item.length || originalItem.length,
-        weight: item.weight || originalItem.weight,
-        volume: item.volume || originalItem.volume,
-        distance: item.distance || originalItem.distance,
-        duration: item.duration || originalItem.duration,
-        unitCost: item.unitCost || originalItem.unitCost,
-        salePrice: item.salePrice || originalItem.salePrice,
-        quantity: data.quantity * item.quantity,
-        originalQuantity: item.quantity,
-        totalValue:
-          item.quantity * (item.salePrice || originalItem.salePrice || 0),
-      };
-    });
-
-    await this.prisma.quotationProductItem.createMany({
-      data: quotationProductItems,
-    });
-
-    // Recalcula o valor total do orçamento
-    await this.recalculateQuotationProductsTotalValue(quotationProduct.id);
-
-    // Retorna o orçamento atualizado
-    return this.prisma.quotation.findUnique({
-      where: { id: quotationId },
-      include: {
-        quotationProduct: { include: { items: true } },
-      },
-    });
   }
 
   async updateProductInQuotation(productId: string, data: UpdateItemDto) {
@@ -875,6 +884,7 @@ export class QuotationService {
         description: quotation.description,
         status: quotation.status,
         totalValue: quotation.totalValue,
+        contactType: quotation.contactType,
         quickSale: quotation.quickSale || false, // Se não for informado, assume-se como 'false'
         serie: quotation.series
           ? {
@@ -886,7 +896,7 @@ export class QuotationService {
           : null,
         seller: quotation.seller
           ? {
-              id: quotation.seller.user.id,
+              id: quotation.seller.id,
               name: quotation.seller.user.name,
             }
           : null,
@@ -1143,57 +1153,126 @@ export class QuotationService {
   }
 
   async approve(quotationId: string): Promise<Order> {
-    return await this.prisma.$transaction(async (prisma) => {
-      // Atualizar a cotação como aprovada
-      const quotation = await prisma.quotation.update({
-        where: { id: quotationId },
-        data: {
-          status: QuotationStatus.APPROVED,
-          approvedAt: new Date(),
-        },
-        include: {
-          deliveryInfo: {
-            select: {
-              id: true,
-              estimatedDate: true,
+    return await this.prisma
+      .$transaction(async (prisma) => {
+        // Atualizar a cotação como aprovada
+        const quotation = await prisma.quotation.update({
+          where: { id: quotationId },
+          data: {
+            status: QuotationStatus.APPROVED,
+            approvedAt: new Date(),
+          },
+          include: {
+            deliveryInfo: {
+              select: {
+                id: true,
+                estimatedDate: true,
+              },
             },
           },
-        },
-      });
+        });
 
-      if (!quotation.deliveryInfo) {
-        throw new Error('Informações de entrega ausentes na cotação.');
+        if (!quotation.deliveryInfo) {
+          throw new Error('Informações de entrega ausentes na cotação.');
+        }
+
+        // Criar o pedido diretamente no Prisma
+        const order = await prisma.order.create({
+          data: {
+            quotationId: quotation.id,
+          },
+        });
+
+        // Criar o agendamento de entrega diretamente no Prisma
+        await prisma.deliverySchedule.create({
+          data: {
+            company: {
+              connect: { id: quotation.companyId },
+            },
+            quotation: {
+              connect: { id: quotation.id },
+            },
+            order: {
+              connect: { id: order.id },
+            },
+            deliveryInfo: {
+              connect: { id: quotation.deliveryInfo.id },
+            },
+            scheduledDate: quotation.deliveryInfo.estimatedDate,
+            status: 'IN_PRODUCTION',
+          },
+        });
+
+        return order;
+      })
+      .then(async (order) => {
+        await this.createProductionStages(order.quotationId);
+        return order;
+      })
+      .catch((error) => {
+        console.error('Error creating order:', error);
+        throw error;
+      });
+  }
+
+  async createProductionStages(quotationId: string) {
+    console.log(quotationId);
+    try {
+      const quotation = await this.prisma.quotation.findUnique({
+        where: { id: quotationId },
+        include: { quotationProduct: true, DeliverySchedule: true },
+      });
+      if (!quotation) {
+        console.error('Orçamento não encontrado.');
       }
+      console.log(quotation.DeliverySchedule);
 
-      // Criar o pedido diretamente no Prisma
-      const order = await prisma.order.create({
-        data: {
-          quotationId: quotation.id,
+      const quotationProductsIds = quotation.quotationProduct.map(
+        (product) => product.productId,
+      );
+
+      const products = await this.prisma.product.findMany({
+        where: {
+          id: {
+            in: quotationProductsIds,
+          },
+        },
+        select: {
+          id: true,
+          productionStages: true,
         },
       });
+      // Construir as etapas de produção
+      const allStages = products.flatMap((product) => {
+        // Verificar e converter productionStages em JSON manipulável
+        const stages =
+          typeof product.productionStages === 'string'
+            ? JSON.parse(product.productionStages)
+            : product.productionStages;
 
-      // Criar o agendamento de entrega diretamente no Prisma
-      await prisma.deliverySchedule.create({
-        data: {
-          company: {
-            connect: { id: quotation.companyId },
-          },
-          quotation: {
-            connect: { id: quotation.id },
-          },
-          order: {
-            connect: { id: order.id },
-          },
-          deliveryInfo: {
-            connect: { id: quotation.deliveryInfo.id },
-          },
-          scheduledDate: quotation.deliveryInfo.estimatedDate,
-          status: 'IN_PRODUCTION',
-        },
+        // Retornar somente etapas ativas
+        return stages.filter((stage: any) => stage.isActive);
       });
 
-      return order;
-    });
+      // Remover duplicatas, mantendo a ordem
+      const uniqueStages = Array.from(
+        new Map(allStages.map((stage) => [stage.id, stage])).values(),
+      );
+
+      const productionStages = uniqueStages.map((stage, index) => ({
+        stageId: stage.id,
+        order: index + 1, // Definir a ordem
+        prevStatus: null,
+        scheduleId: quotation.DeliverySchedule.id, // Vincular à agenda de entrega
+      }));
+
+      await this.prisma.productionStage.createMany({
+        data: productionStages,
+      });
+      console.log('Etapas de produção criadas com sucesso!');
+    } catch (error) {
+      console.error(error);
+    }
   }
 
   async reject(quotationId: string, dto: CancelOrderDto): Promise<Quotation> {
@@ -1247,19 +1326,21 @@ export class QuotationService {
   }
 
   async update(id: string, updateQuotationDto: UpdateQuotationDto) {
-    const existingQuotation = await this.prisma.quotation.findUnique({
-      where: { id },
-    });
+    try {
+      const existingQuotation = await this.prisma.quotation.findUnique({
+        where: { id },
+      });
 
-    if (!existingQuotation) {
-      throw new NotFoundException(`Quotation with ID '${id}' not found.`);
-    }
+      if (!existingQuotation) {
+        throw new NotFoundException(`Quotation with ID '${id}' not found.`);
+      }
 
-    // Realize a atualização com os dados fornecidos
-    return this.prisma.quotation.update({
-      where: { id },
-      data: updateQuotationDto,
-    });
+      // Realize a atualização com os dados fornecidos
+      return await this.prisma.quotation.update({
+        where: { id },
+        data: updateQuotationDto,
+      });
+    } catch (error) {}
   }
 
   remove(id: string) {

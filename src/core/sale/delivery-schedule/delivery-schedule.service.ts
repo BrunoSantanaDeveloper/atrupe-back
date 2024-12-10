@@ -30,10 +30,19 @@ export class DeliveryScheduleService {
     }
 
     if (dto.search) {
-      where = {
-        ...where,
-        quotation: {
-          description: { contains: dto.search, mode: 'insensitive' },
+      where.quotation = {
+        is: {
+          OR: [
+            { description: { contains: dto.search, mode: 'insensitive' } },
+            {
+              client: { name: { contains: dto.search, mode: 'insensitive' } },
+            },
+            {
+              seller: {
+                user: { name: { contains: dto.search, mode: 'insensitive' } },
+              },
+            },
+          ],
         },
       };
     }
@@ -85,6 +94,24 @@ export class DeliveryScheduleService {
             },
           },
           deliveryInfo: true,
+          productionStages: {
+            select: {
+              id: true,
+              status: true,
+              prevStatus: true,
+              order: true,
+              stage: {
+                select: {
+                  id: true,
+                  name: true,
+                  icon: true,
+                },
+              },
+            },
+            orderBy: {
+              order: 'asc',
+            },
+          },
         },
         take: Number(dto.limit),
         skip: (Number(dto.page) - 1) * Number(dto.limit),
@@ -157,12 +184,16 @@ export class DeliveryScheduleService {
               }
             : null,
 
-          // productionStages: {
-          //   id: string
-          //   stage: string
-          //   status: string
-          //   prevStatus: string
-          // }[]
+          productionStages: delivery.productionStages.map((stage) => ({
+            id: stage.id,
+            status: stage.status,
+            prevStatus: stage.prevStatus,
+            stage: {
+              id: stage.stage.id,
+              name: stage.stage.name,
+              icon: stage.stage.icon,
+            },
+          })),
           createdAt: delivery.createdAt,
           updatedAt: delivery.updatedAt,
         });

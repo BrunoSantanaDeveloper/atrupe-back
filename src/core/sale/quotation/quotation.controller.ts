@@ -296,11 +296,11 @@ export class QuotationController {
     status: 400,
     description: 'ID inválido.',
   })
-  update(
+  async update(
     @Param('id') id: string,
     @Body() updateQuotationDto: UpdateQuotationDto,
   ) {
-    return this.quotationService.update(id, updateQuotationDto);
+    return await this.quotationService.update(id, updateQuotationDto);
   }
 
   @Delete(':id')

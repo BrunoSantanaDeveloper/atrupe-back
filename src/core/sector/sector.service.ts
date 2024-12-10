@@ -27,16 +27,20 @@ export class SectorService {
   async findAll(filter: SectorFilterDto) {
     try {
       let where = {};
-      if (filter.toService) {
-        where = { ...where, toService: filter.toService };
-      }
+      // if (filter.toService) {
+      //   where = { ...where, toService: filter.toService };
+      // }
 
       if (filter.companyId) {
         where = { ...where, companyId: filter.companyId };
       }
 
-      if (filter.kind) {
-        where = { ...where, kind: filter.kind };
+      // if (filter.kind) {
+      //   where = { ...where, kind: filter.kind };
+      // }
+
+      if (filter.isProductionStage !== undefined) {
+        where = { ...where, isProductionStage: filter.isProductionStage };
       }
 
       const sectors = await this.prisma.sector.findMany({
