@@ -188,21 +188,11 @@ model Category {
   isActive   Boolean      @default(true)
   isStandard Boolean      @default(false)
   companyId  String?
-  parentId   String?
-
-  parent   Category?  @relation("CategoryToCategory", fields: [parentId], references: [id])
-  children Category[] @relation("CategoryToCategory")
 
   company   Company?   @relation(fields: [companyId], references: [id])
   clients   Client[]
   products  Product[]
   suppliers Supplier[]
-
-  payableCategory    Payable[] @relation("CategoryPayable")
-  payableSubCategory Payable[] @relation("SubCategoryPayable")
-
-  receivableCategory    Receivable[] @relation("CategoryReceivable")
-  receivableSubCategory Receivable[] @relation("SubCategoryReceivable")
 
   @@map("categories")
 }
@@ -440,15 +430,15 @@ model Receivable {
   installments   ReceivableInstallment[] // Relacionamento com parcelas
   history        ReceivableHistory[] // Relacionamento com histórico
   cancelReason   String?
+  cancelNotes    String?
+  changeReason   String?
+  changeNotes    String?
 
   clientId String
   client   Client @relation(fields: [clientId], references: [id])
 
-  categoryId String?
-  category   Category? @relation("CategoryReceivable", fields: [categoryId], references: [id])
-
   subCategoryId String?
-  subCategory   Category? @relation("SubCategoryReceivable", fields: [subCategoryId], references: [id])
+  subCategory   SubCategory? @relation(fields: [subCategoryId], references: [id])
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
@@ -505,21 +495,21 @@ model Payable {
   natureId String?
   nature   Nature? @relation(fields: [natureId], references: [id])
 
+  subCategoryId String?
+  subCategory   SubCategory? @relation(fields: [subCategoryId], references: [id])
+
   status         PaymentStatus        @default(PENDING)
   totalAmount    Float // Valor total da movimentação
   installmentQty Int? // Número de parcelas
   installments   PayableInstallment[] // Relacionamento com parcelas
   history        PayableHistory[] // Relacionamento com histórico
   cancelReason   String?
+  cancelNotes    String?
+  changeReason   String?
+  changeNotes    String?
 
   supplierId String?
   supplier   Supplier? @relation(fields: [supplierId], references: [id])
-
-  categoryId String?
-  category   Category? @relation("CategoryPayable", fields: [categoryId], references: [id])
-
-  subCategoryId String?
-  subCategory   Category? @relation("SubCategoryPayable", fields: [subCategoryId], references: [id])
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
@@ -1404,6 +1394,22 @@ model Nature {
   id          String  @id @default(uuid())
   name        String
   description String?
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime?     @updatedAt
+  isActive    Boolean       @default(true)
+  receivable  Receivable[]
+  payable     Payable[]
+  subCategory SubCategory[]
+}
+
+model SubCategory {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+
+  natureId String
+  category Nature @relation(fields: [natureId], references: [id])
 
   createdAt  DateTime     @default(now())
   updatedAt  DateTime?    @updatedAt

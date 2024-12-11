@@ -139,8 +139,7 @@ export class PayableController {
     @Param('id') id: string,
     @Body() cancelPayableDto: CancelPayableDto,
   ) {
-    const { cancelReason } = cancelPayableDto;
-    return await this.payableService.cancel(id, cancelReason);
+    return await this.payableService.cancel(id, cancelPayableDto);
   }
 
   @Patch('pay-installment')

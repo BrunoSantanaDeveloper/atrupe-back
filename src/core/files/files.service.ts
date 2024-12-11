@@ -7,6 +7,7 @@ export class FilesService {
   async uploadFiles(image: Express.Multer.File) {
     try {
       const fileUrl = await this.minioService.uploadFile(image);
+      console.log(fileUrl);
       return fileUrl;
     } catch (error) {
       return {

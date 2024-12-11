@@ -19,9 +19,9 @@ export class UpdateReceivableDto {
   @ApiPropertyOptional({
     description: 'Natureza do título',
     example: 'Receita recorrente',
+    required: false,
   })
   @IsOptional()
-  @IsString()
   @IsUUID()
   natureId?: string;
 
@@ -34,16 +34,9 @@ export class UpdateReceivableDto {
   description?: string;
 
   @ApiPropertyOptional({
-    description: 'ID da categoria',
-    example: 'f5b934f6-4c45-4e93-85f4-6e418af93210',
-  })
-  @IsOptional()
-  @IsUUID()
-  categoryId?: string;
-
-  @ApiPropertyOptional({
     description: 'ID da subcategoria',
     example: 'e3b9d6a5-4c1e-41e7-bb74-74f2dcf2f5bc',
+    required: false,
   })
   @IsOptional()
   @IsUUID()
@@ -55,7 +48,7 @@ export class UpdateReceivableDto {
   })
   @IsOptional()
   @IsString()
-  observations?: string;
+  notes?: string;
 
   @ApiPropertyOptional({
     description: 'Valor total do título',
@@ -67,12 +60,21 @@ export class UpdateReceivableDto {
 }
 
 export class CancelReceivableDto {
+  @IsOptional()
   @ApiProperty({
     description: 'Razão do cancelamento do título',
     example: 'Cliente desistiu da compra.',
   })
   @IsString()
-  cancelReason: string; // Razão do cancelamento
+  cancelReason?: string; // Razão do cancelamento
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Razão do cancelamento do título',
+    example: 'Cliente desistiu da compra.',
+  })
+  @IsString()
+  cancelNotes?: string; // Razão do cancelamento
 }
 
 export class PayInstallmentDto {

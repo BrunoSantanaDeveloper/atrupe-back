@@ -9,10 +9,13 @@ import {
   UpdateReceivableInstallmentsDto,
 } from './dto/create-receivable.dto';
 import {
+  CancelReceivableDto,
   PayInstallmentDto,
   UpdateReceivableDto,
 } from './dto/update-receivable.dto';
 import { ReceivableFilterDto } from './dto/receivable-filter.dto';
+import { PaymentStatus } from '@prisma/client';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Injectable()
 export class ReceivableService {
@@ -85,7 +88,7 @@ export class ReceivableService {
     if (search) {
       filters.receivable.OR = [
         { client: { name: { contains: search, mode: 'insensitive' } } },
-        { category: { name: { contains: search, mode: 'insensitive' } } },
+        { nature: { name: { contains: search, mode: 'insensitive' } } },
         { subCategory: { name: { contains: search, mode: 'insensitive' } } },
       ];
     }
@@ -140,9 +143,9 @@ export class ReceivableService {
             status: true,
             referenceDate: true,
             client: { select: { id: true, name: true } },
-            category: { select: { id: true, name: true } },
             // supplier: { select: { id: true, name: true } },
             nature: { select: { id: true, name: true } },
+            subCategory: { select: { id: true, name: true } },
             installments: {
               select: {
                 id: true,
@@ -161,8 +164,16 @@ export class ReceivableService {
     });
 
     const groupedByDate = grouped.map((group) => {
-      const expectedRevenue =
-        (group._sum.amount || 0) + (group._sum.additionalFee || 0);
+      const expectedRevenue = installments
+        .filter(
+          (inst) =>
+            inst.dueDate.toISOString() === group.dueDate.toISOString() &&
+            inst.receivable?.status !== 'CANCELED',
+        )
+        .reduce(
+          (sum, inst) => sum + (inst.amount || 0) + (inst.additionalFee || 0),
+          0,
+        );
 
       const receivables = installments
         .filter(
@@ -179,10 +190,10 @@ export class ReceivableService {
                   name: inst.receivable.client.name,
                 }
               : null,
-            category: inst.receivable?.category
+            subCategory: inst.receivable?.subCategory
               ? {
-                  id: inst.receivable.category.id,
-                  name: inst.receivable.category.name,
+                  id: inst.receivable.subCategory.id,
+                  name: inst.receivable.subCategory.name,
                 }
               : null,
             nature: inst.receivable?.nature
@@ -200,7 +211,10 @@ export class ReceivableService {
               .map((installment) => ({
                 id: installment.id || null,
                 status: installment.status || 'UNKNOWN',
-                paymentMethod: installment.paymentMethod?.name || 'N/A',
+                paymentMethod: {
+                  id: installment.paymentMethod?.id || null,
+                  name: installment.paymentMethod?.name || null,
+                },
                 value: installment.amount || 0,
                 additionalFee: installment.additionalFee || 0,
                 dueDate: installment.dueDate || null,
@@ -248,34 +262,38 @@ export class ReceivableService {
     }
   }
 
-  async cancel(id: string, cancelReason: string) {
-    const receivable = await this.findOne(id);
+  async cancel(id: string, dto: CancelReceivableDto) {
+    try {
+      const receivable = await this.findOne(id);
 
-    // Verifica se o título já está cancelado
-    if (receivable.status === 'CANCELED') {
-      throw new Error('A conta a receber já foi cancelada.');
+      // Verifica se o título já está cancelado
+      if (receivable.status === 'CANCELED') {
+        throw new Error('A conta a receber já foi cancelada.');
+      }
+
+      // Atualiza o status de todas as parcelas com status "PENDING" para "CANCELED"
+      const updates = receivable.installments
+        .filter((installment) => installment.status === 'PENDING')
+        .map((installment) =>
+          this.prisma.receivableInstallment.update({
+            where: { id: installment.id },
+            data: { status: 'CANCELED' },
+          }),
+        );
+
+      // Realiza a transação
+      await this.prisma.$transaction(updates);
+      await this.prisma.receivable.update({
+        where: { id },
+        data: {
+          status: 'CANCELED',
+          ...dto,
+        },
+      });
+      return { message: 'Conta a receber cancelada com sucesso.' };
+    } catch (error) {
+      console.error('Error canceling receivable:', error);
     }
-
-    // Atualiza o status de todas as parcelas com status "PENDING" para "CANCELED"
-    const updates = receivable.installments
-      .filter((installment) => installment.status === 'PENDING')
-      .map((installment) =>
-        this.prisma.receivableInstallment.update({
-          where: { id: installment.id },
-          data: { status: 'CANCELED' },
-        }),
-      );
-
-    // Realiza a transação
-    await this.prisma.$transaction(updates);
-    await this.prisma.receivable.update({
-      where: { id },
-      data: {
-        status: 'CANCELED',
-        cancelReason,
-      },
-    });
-    return { message: 'Conta a receber cancelada com sucesso.' };
   }
 
   async remove(id: string) {
@@ -316,7 +334,7 @@ export class ReceivableService {
         where: { id: installment.receivableId },
         data: { totalAmount: updatedTotal._sum.amount },
       });
-
+      await this.updateReceivableStatus(installment.receivableId);
       return { message: 'Parcela paga com sucesso.' };
     });
   }
@@ -325,100 +343,228 @@ export class ReceivableService {
     receivableId: string,
     dto: UpdateReceivableInstallmentsDto,
   ): Promise<any> {
-    const { installments } = dto;
+    console.log('updateInstallments', dto);
+    try {
+      const { installments, totalAmount, changeNotes, changeReason } = dto;
 
-    let totalAmount = 0;
+      // let totalAmount = 0;
 
-    const updatedReceivable = await this.prisma.$transaction(async (prisma) => {
-      const updatedInstallments = [];
-      for (const installmentDto of installments) {
-        const { id, ...rest } = installmentDto;
+      const updatedReceivable = await this.prisma.$transaction(
+        async (prisma) => {
+          const updatedInstallments = [];
+          for (const installmentDto of installments) {
+            const { id, ...rest } = installmentDto;
 
-        if (id) {
-          const updateData: Record<string, any> = { ...rest };
-          console.log('Parcela existe');
-          if (updateData.dueDate) {
-            updateData.dueDate = new Date(updateData.dueDate);
-          }
+            if (id) {
+              const updateData: Record<string, any> = { ...rest };
+              if (updateData.dueDate) {
+                updateData.dueDate = new Date(updateData.dueDate);
+              }
 
-          // Se a parcela existe, atualiza
-          try {
-            const updatedInstallment =
-              await prisma.receivableInstallment.update({
-                where: { id: installmentDto.id },
-                data: updateData,
+              // Se a parcela existe, atualiza
+              try {
+                const updatedInstallment =
+                  await prisma.receivableInstallment.update({
+                    where: { id: installmentDto.id },
+                    data: updateData,
+                  });
+                updatedInstallments.push(updatedInstallment);
+              } catch (error) {
+                console.error('Error updating installment:', error);
+              }
+            } else {
+              const newInstallment = await prisma.receivableInstallment.create({
+                data: {
+                  receivableId,
+                  amount: installmentDto.amount,
+                  dueDate: new Date(installmentDto.dueDate),
+                  paymentMethodId: installmentDto.paymentMethodId,
+                  installmentNumber: installments.indexOf(installmentDto) + 1,
+                },
               });
-            updatedInstallments.push(updatedInstallment);
-          } catch (error) {
-            console.error('Error updating installment:', error);
+              updatedInstallments.push(newInstallment);
+            }
+            // totalAmount += installmentDto.amount;
           }
-        } else {
-          console.log('Parcela não existe');
-          const newInstallment = await prisma.receivableInstallment.create({
-            data: {
+
+          // Busca parcelas existentes no banco
+          const existingInstallments =
+            await prisma.receivableInstallment.findMany({
+              where: { receivableId },
+            });
+
+          const installmentIdsToKeep = updatedInstallments.map(
+            (inst) => inst.id,
+          );
+
+          // Filtra parcelas a serem deletadas
+          const installmentsToDelete = existingInstallments
+            .filter((inst) => !installmentIdsToKeep.includes(inst.id))
+            .map((inst) => inst.id);
+
+          // Deleta parcelas que não estão no array de entrada
+          await prisma.receivableInstallment.deleteMany({
+            where: {
+              id: { in: installmentsToDelete },
               receivableId,
-              amount: installmentDto.amount,
-              dueDate: new Date(installmentDto.dueDate),
-              paymentMethodId: installmentDto.paymentMethodId,
-              installmentNumber: installments.indexOf(installmentDto) + 1,
             },
           });
-          updatedInstallments.push(newInstallment);
-        }
-        totalAmount += installmentDto.amount;
-      }
 
-      // Busca parcelas existentes no banco
-      const existingInstallments = await prisma.receivableInstallment.findMany({
-        where: { receivableId },
-      });
+          // Rearranja os números das parcelas restantes
+          const allInstallments = await prisma.receivableInstallment.findMany({
+            where: { receivableId },
+            orderBy: { installmentNumber: 'asc' }, // Ordena por data de vencimento para manter a sequência lógica
+          });
 
-      const installmentIdsToKeep = updatedInstallments.map((inst) => inst.id);
+          for (const [index, installment] of allInstallments.entries()) {
+            await prisma.receivableInstallment.update({
+              where: { id: installment.id },
+              data: { installmentNumber: index + 1 },
+            });
+          }
+          const updateData: Record<string, any> = {};
+          if (totalAmount !== undefined) updateData.totalAmount = totalAmount;
+          if (changeReason !== undefined)
+            updateData.changeReason = changeReason;
+          if (changeNotes !== undefined) updateData.changeNotes = changeNotes;
 
-      // Filtra parcelas a serem deletadas
-      const installmentsToDelete = existingInstallments.filter(
-        (inst) => !installmentIdsToKeep.includes(inst.id),
+          if (Object.keys(updateData).length > 0) {
+            await this.prisma.receivable.update({
+              where: { id: receivableId },
+              data: updateData,
+            });
+          }
+
+          // // Recalcula o totalAmount, incluindo taxas
+          // totalAmount = allInstallments.reduce(
+          //   (sum, installment) =>
+          //     sum + installment.amount + (installment.additionalFee || 0),
+          //   0,
+          // );
+
+          // // Atualiza o totalAmount no título principal
+          // try {
+          //   const updatedReceivable = await prisma.receivable.update({
+          //     where: { id: receivableId },
+          //     data: { totalAmount },
+          //   });
+          //   return updatedReceivable;
+          // } catch (error) {
+          //   console.error(error.message);
+          // }
+        },
       );
 
-      // Deleta parcelas que não estão no array de entrada
-      for (const installment of installmentsToDelete) {
-        await prisma.receivableInstallment.delete({
-          where: { id: installment.id },
-        });
-      }
+      await this.updateReceivableStatus(receivableId);
 
-      // Rearranja os números das parcelas restantes
-      const allInstallments = await prisma.receivableInstallment.findMany({
-        where: { receivableId },
-        orderBy: { installmentNumber: 'asc' }, // Ordena por data de vencimento para manter a sequência lógica
-      });
+      return updatedReceivable;
+    } catch (error) {
+      console.error(error);
+    }
+  }
 
-      for (let i = 0; i < allInstallments.length; i++) {
-        await prisma.receivableInstallment.update({
-          where: { id: allInstallments[i].id },
-          data: { installmentNumber: i + 1 }, // Rearranja os números
-        });
-      }
-
-      // Recalcula o totalAmount, incluindo taxas
-      totalAmount = allInstallments.reduce(
-        (sum, installment) =>
-          sum + installment.amount + (installment.additionalFee || 0),
-        0,
-      );
-
-      // Atualiza o totalAmount no título principal
-      try {
-        const updatedReceivable = await prisma.receivable.update({
-          where: { id: receivableId },
-          data: { totalAmount },
-        });
-        return updatedReceivable;
-      } catch (error) {
-        console.error(error.message);
-      }
+  async updateReceivableStatus(receivableId: string): Promise<void> {
+    // Busca as parcelas vinculadas à movimentação
+    const installments = await this.prisma.receivableInstallment.findMany({
+      where: { receivableId },
+      select: {
+        status: true,
+        dueDate: true,
+      },
     });
 
-    return updatedReceivable;
+    if (!installments || installments.length === 0) {
+      console.warn(
+        `Nenhuma parcela encontrada para a movimentação ${receivableId}`,
+      );
+      return;
+    }
+
+    // Define as condições para os diferentes status da movimentação
+    const hasCancelled = installments.some(
+      (inst) => inst.status === PaymentStatus.CANCELED,
+    );
+    const hasOverdue = installments.some(
+      (inst) =>
+        inst.status === PaymentStatus.PENDING && inst.dueDate < new Date(),
+    );
+    const hasPending = installments.some(
+      (inst) => inst.status === PaymentStatus.PENDING,
+    );
+    const allPaid = installments.every(
+      (inst) => inst.status === PaymentStatus.PAID,
+    );
+
+    let newStatus: PaymentStatus;
+
+    if (hasCancelled) {
+      newStatus = PaymentStatus.CANCELED;
+    } else if (hasOverdue) {
+      newStatus = PaymentStatus.OVERDUE;
+    } else if (hasPending) {
+      newStatus = PaymentStatus.PENDING;
+    } else if (allPaid) {
+      newStatus = PaymentStatus.PAID;
+    } else {
+      console.error(
+        `Não foi possível determinar o status para a movimentação ${receivableId}`,
+      );
+      return;
+    }
+
+    // Atualiza o status da movimentação
+    await this.prisma.receivable.update({
+      where: { id: receivableId },
+      data: { status: newStatus },
+    });
+
+    console.log(
+      `Movimentação ${receivableId} atualizada para o status ${newStatus}`,
+    );
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_1AM)
+  async checkOverdueInstallments(): Promise<void> {
+    const currentDate = new Date();
+
+    // Busca parcelas pendentes vencidas
+    const overdueInstallments =
+      await this.prisma.receivableInstallment.findMany({
+        where: {
+          status: PaymentStatus.PENDING,
+          dueDate: {
+            lt: currentDate,
+          },
+        },
+        select: {
+          id: true,
+          receivableId: true,
+        },
+      });
+
+    if (overdueInstallments.length === 0) {
+      console.log('Nenhuma parcela vencida encontrada.');
+      return;
+    }
+
+    // Atualiza o status das parcelas para OVERDUE
+    const updatePromises = overdueInstallments.map((installment) =>
+      this.prisma.receivableInstallment.update({
+        where: { id: installment.id },
+        data: { status: PaymentStatus.OVERDUE },
+      }),
+    );
+
+    await Promise.all(updatePromises);
+
+    const receivableIds = Array.from(
+      new Set(overdueInstallments.map((inst) => inst.receivableId)),
+    );
+
+    const receivableUpdatePromises = receivableIds.map((id) =>
+      this.updateReceivableStatus(id),
+    );
+
+    await Promise.all(receivableUpdatePromises);
   }
 }

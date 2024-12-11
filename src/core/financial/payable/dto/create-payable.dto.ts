@@ -98,15 +98,6 @@ export class CreatePayableDto {
   @IsUUID()
   supplierId?: string;
 
-  @IsOptional()
-  @ApiProperty({
-    description: 'ID da categoria associada à conta',
-    example: 'f5b934f6-4c45-4e93-85f4-6e418af93210',
-  })
-  @IsString()
-  @IsUUID()
-  categoryId?: string;
-
   @ApiPropertyOptional({
     description: 'ID da subcategoria associada (opcional)',
     example: 'e3b9d6a5-4c1e-41e7-bb74-74f2dcf2f5bc',
@@ -181,6 +172,32 @@ export class PayableInstallmentDto {
 }
 
 export class UpdatePayableInstallmentsDto {
+  @ApiProperty({
+    description: 'Valor da movimentação',
+    example: 200.75,
+    required: false,
+  })
+  @IsNumber()
+  @IsOptional()
+  totalAmount?: number;
+
+  @ApiProperty({
+    description: 'Motivo de alteração',
+    example: 'Altrado o valor',
+    required: false,
+  })
+  @IsNumber()
+  @IsOptional()
+  changeReason?: string;
+
+  @ApiProperty({
+    description: 'Motivo de alteração',
+    example: 'Altrado o valor',
+    required: false,
+  })
+  @IsNumber()
+  @IsOptional()
+  changeNotes?: string;
   @ApiProperty({
     description:
       'Lista de parcelas que serão adicionadas, editadas ou removidas',

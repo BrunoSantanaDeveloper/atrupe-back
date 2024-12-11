@@ -138,8 +138,7 @@ export class ReceivableController {
     @Param('id') id: string,
     @Body() cancelReceivableDto: CancelReceivableDto,
   ) {
-    const { cancelReason } = cancelReceivableDto;
-    return await this.receivableService.cancel(id, cancelReason);
+    return await this.receivableService.cancel(id, cancelReceivableDto);
   }
 
   @Patch('pay-installment')

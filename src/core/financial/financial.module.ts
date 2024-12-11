@@ -6,6 +6,7 @@ import { CashControlModule } from './cash-control/cash-control.module';
 import { ScheduledExpenseModule } from './scheduled-expense/scheduled-expense.module';
 import { InvoiceModule } from './invoice/invoice.module';
 import { SalariesModule } from './salaries/salaries.module';
+import { NatureModule } from './nature/nature.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { SalariesModule } from './salaries/salaries.module';
     ScheduledExpenseModule,
     InvoiceModule,
     SalariesModule,
+    NatureModule,
   ],
   exports: [
     ReceivableModule,

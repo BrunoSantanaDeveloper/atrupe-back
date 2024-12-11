@@ -7,8 +7,14 @@ import {
   CreatePayableDto,
   UpdatePayableInstallmentsDto,
 } from './dto/create-payable.dto';
-import { PayInstallmentDto, UpdatePayableDto } from './dto/update-payable.dto';
+import {
+  CancelPayableDto,
+  PayInstallmentDto,
+  UpdatePayableDto,
+} from './dto/update-payable.dto';
 import { PrismaService } from 'nestjs-prisma';
+import { PaymentStatus } from '@prisma/client';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { ReceivableFilterDto } from '../receivable/dto/receivable-filter.dto';
 
 @Injectable()
@@ -103,7 +109,7 @@ export class PayableService {
       });
 
       // // 2. Calcular o total e as últimas páginas
-      // const totalGroups = await this.prisma.receivableInstallment.groupBy({
+      // const totalGroups = await this.prisma.payableInstallment.groupBy({
       //   by: ['dueDate'],
       //   where: filters,
       //   _count: true,
@@ -138,7 +144,7 @@ export class PayableService {
               status: true,
               referenceDate: true,
               supplier: { select: { id: true, name: true } },
-              category: { select: { id: true, name: true } },
+              subCategory: { select: { id: true, name: true } },
               // supplier: { select: { id: true, name: true } },
               nature: { select: { id: true, name: true } },
               installments: {
@@ -159,9 +165,16 @@ export class PayableService {
       });
 
       const groupedByDate = grouped.map((group) => {
-        const expectedRevenue =
-          (group._sum.amount || 0) + (group._sum.additionalFee || 0);
-
+        const expectedRevenue = installments
+          .filter(
+            (inst) =>
+              inst.dueDate.toISOString() === group.dueDate.toISOString() &&
+              inst.payable?.status !== 'CANCELED', // Filtro por status
+          )
+          .reduce(
+            (sum, inst) => sum + (inst.amount || 0) + (inst.additionalFee || 0),
+            0,
+          );
         const payableList = installments
           .filter(
             (inst) =>
@@ -178,10 +191,10 @@ export class PayableService {
                     name: inst.payable.supplier.name,
                   }
                 : null,
-              category: inst.payable?.category
+              subCategory: inst.payable?.subCategory
                 ? {
-                    id: inst.payable.category.id,
-                    name: inst.payable.category.name,
+                    id: inst.payable.subCategory.id,
+                    name: inst.payable.subCategory.name,
                   }
                 : null,
               nature: inst.payable?.nature
@@ -199,7 +212,10 @@ export class PayableService {
                 .map((installment) => ({
                   id: installment.id || null,
                   status: installment.status || 'UNKNOWN',
-                  paymentMethod: installment.paymentMethod?.name || 'N/A',
+                  paymentMethod: {
+                    id: installment.paymentMethod?.id || null,
+                    name: installment.paymentMethod?.name || null,
+                  },
                   value: installment.amount || 0,
                   additionalFee: installment.additionalFee || 0,
                   dueDate: installment.dueDate || null,
@@ -231,8 +247,7 @@ export class PayableService {
       where: { id },
       include: { installments: true },
     });
-    if (!payable)
-      throw new NotFoundException('Conta a receber não encontrada.');
+    if (!payable) throw new NotFoundException('Conta a pagar não encontrada.');
     return payable;
   }
 
@@ -250,12 +265,12 @@ export class PayableService {
     }
   }
 
-  async cancel(id: string, cancelReason: string) {
+  async cancel(id: string, dto: CancelPayableDto) {
     const payable = await this.findOne(id);
 
     // Verifica se o título já está cancelado
     if (payable.status === 'CANCELED') {
-      throw new Error('A conta a receber já foi cancelada.');
+      throw new Error('A conta a pagar já foi cancelada.');
     }
 
     // Atualiza o status de todas as parcelas com status "PENDING" para "CANCELED"
@@ -274,10 +289,10 @@ export class PayableService {
       where: { id },
       data: {
         status: 'CANCELED',
-        cancelReason,
+        ...dto,
       },
     });
-    return { message: 'Conta a receber cancelada com sucesso.' };
+    return { message: 'Conta a pagar cancelada com sucesso.' };
   }
 
   async remove(id: string) {
@@ -327,99 +342,222 @@ export class PayableService {
     payableId: string,
     dto: UpdatePayableInstallmentsDto,
   ): Promise<any> {
-    const { installments } = dto;
+    console.log('updateInstallments', dto);
+    try {
+      const { installments, totalAmount, changeNotes, changeReason } = dto;
 
-    let totalAmount = 0;
+      // let totalAmount = 0;
 
-    const updatedPayable = await this.prisma.$transaction(async (prisma) => {
-      const updatedInstallments = [];
-      for (const installmentDto of installments) {
-        const { id, ...rest } = installmentDto;
+      const updatedPayable = await this.prisma.$transaction(async (prisma) => {
+        const updatedInstallments = [];
+        for (const installmentDto of installments) {
+          const { id, ...rest } = installmentDto;
 
-        if (id) {
-          const updateData: Record<string, any> = { ...rest };
-          console.log('Parcela existe');
-          if (updateData.dueDate) {
-            updateData.dueDate = new Date(updateData.dueDate);
-          }
+          if (id) {
+            const updateData: Record<string, any> = { ...rest };
+            if (updateData.dueDate) {
+              updateData.dueDate = new Date(updateData.dueDate);
+            }
 
-          // Se a parcela existe, atualiza
-          try {
-            const updatedInstallment = await prisma.payableInstallment.update({
-              where: { id: installmentDto.id },
-              data: updateData,
+            // Se a parcela existe, atualiza
+            try {
+              const updatedInstallment = await prisma.payableInstallment.update(
+                {
+                  where: { id: installmentDto.id },
+                  data: updateData,
+                },
+              );
+              updatedInstallments.push(updatedInstallment);
+            } catch (error) {
+              console.error('Error updating installment:', error);
+            }
+          } else {
+            const newInstallment = await prisma.payableInstallment.create({
+              data: {
+                payableId,
+                amount: installmentDto.amount,
+                dueDate: new Date(installmentDto.dueDate),
+                paymentMethodId: installmentDto.paymentMethodId,
+                installmentNumber: installments.indexOf(installmentDto) + 1,
+              },
             });
-            updatedInstallments.push(updatedInstallment);
-          } catch (error) {
-            console.error('Error updating installment:', error);
+            updatedInstallments.push(newInstallment);
           }
-        } else {
-          console.log('Parcela não existe');
-          const newInstallment = await prisma.payableInstallment.create({
-            data: {
-              payableId,
-              amount: installmentDto.amount,
-              dueDate: new Date(installmentDto.dueDate),
-              paymentMethodId: installmentDto.paymentMethodId,
-              installmentNumber: installments.indexOf(installmentDto) + 1,
-            },
-          });
-          updatedInstallments.push(newInstallment);
+          // totalAmount += installmentDto.amount;
         }
-        totalAmount += installmentDto.amount;
-      }
 
-      // Busca parcelas existentes no banco
-      const existingInstallments = await prisma.payableInstallment.findMany({
-        where: { payableId },
+        // Busca parcelas existentes no banco
+        const existingInstallments = await prisma.payableInstallment.findMany({
+          where: { payableId },
+        });
+
+        const installmentIdsToKeep = updatedInstallments.map((inst) => inst.id);
+
+        // Filtra parcelas a serem deletadas
+        const installmentsToDelete = existingInstallments
+          .filter((inst) => !installmentIdsToKeep.includes(inst.id))
+          .map((inst) => inst.id);
+
+        // Deleta parcelas que não estão no array de entrada
+        await prisma.payableInstallment.deleteMany({
+          where: {
+            id: { in: installmentsToDelete },
+            payableId,
+          },
+        });
+
+        // Rearranja os números das parcelas restantes
+        const allInstallments = await prisma.payableInstallment.findMany({
+          where: { payableId },
+          orderBy: { installmentNumber: 'asc' }, // Ordena por data de vencimento para manter a sequência lógica
+        });
+
+        for (const [index, installment] of allInstallments.entries()) {
+          await prisma.payableInstallment.update({
+            where: { id: installment.id },
+            data: { installmentNumber: index + 1 },
+          });
+        }
+        const updateData: Record<string, any> = {};
+        if (totalAmount !== undefined) updateData.totalAmount = totalAmount;
+        if (changeReason !== undefined) updateData.changeReason = changeReason;
+        if (changeNotes !== undefined) updateData.changeNotes = changeNotes;
+
+        if (Object.keys(updateData).length > 0) {
+          await this.prisma.payable.update({
+            where: { id: payableId },
+            data: updateData,
+          });
+        }
+
+        // // Recalcula o totalAmount, incluindo taxas
+        // totalAmount = allInstallments.reduce(
+        //   (sum, installment) =>
+        //     sum + installment.amount + (installment.additionalFee || 0),
+        //   0,
+        // );
+
+        // // Atualiza o totalAmount no título principal
+        // try {
+        //   const updatedPayable = await prisma.payable.update({
+        //     where: { id: payableId },
+        //     data: { totalAmount },
+        //   });
+        //   return updatedPayable;
+        // } catch (error) {
+        //   console.error(error.message);
+        // }
       });
 
-      const installmentIdsToKeep = updatedInstallments.map((inst) => inst.id);
+      await this.updatePayableStatus(payableId);
 
-      // Filtra parcelas a serem deletadas
-      const installmentsToDelete = existingInstallments.filter(
-        (inst) => !installmentIdsToKeep.includes(inst.id),
-      );
+      return updatedPayable;
+    } catch (error) {
+      console.error(error);
+    }
+  }
 
-      // Deleta parcelas que não estão no array de entrada
-      for (const installment of installmentsToDelete) {
-        await prisma.payableInstallment.delete({
-          where: { id: installment.id },
-        });
-      }
-
-      // Rearranja os números das parcelas restantes
-      const allInstallments = await prisma.payableInstallment.findMany({
-        where: { payableId },
-        orderBy: { installmentNumber: 'asc' }, // Ordena por data de vencimento para manter a sequência lógica
-      });
-
-      for (let i = 0; i < allInstallments.length; i++) {
-        await prisma.payableInstallment.update({
-          where: { id: allInstallments[i].id },
-          data: { installmentNumber: i + 1 }, // Rearranja os números
-        });
-      }
-
-      // Recalcula o totalAmount, incluindo taxas
-      totalAmount = allInstallments.reduce(
-        (sum, installment) =>
-          sum + installment.amount + (installment.additionalFee || 0),
-        0,
-      );
-
-      // Atualiza o totalAmount no título principal
-      try {
-        const updatedPayable = await prisma.payable.update({
-          where: { id: payableId },
-          data: { totalAmount },
-        });
-        return updatedPayable;
-      } catch (error) {
-        console.error(error.message);
-      }
+  async updatePayableStatus(payableId: string): Promise<void> {
+    // Busca as parcelas vinculadas à movimentação
+    const installments = await this.prisma.payableInstallment.findMany({
+      where: { payableId },
+      select: {
+        status: true,
+        dueDate: true,
+      },
     });
 
-    return updatedPayable;
+    if (!installments || installments.length === 0) {
+      console.warn(
+        `Nenhuma parcela encontrada para a movimentação ${payableId}`,
+      );
+      return;
+    }
+
+    // Define as condições para os diferentes status da movimentação
+    const hasCancelled = installments.some(
+      (inst) => inst.status === PaymentStatus.CANCELED,
+    );
+    const hasOverdue = installments.some(
+      (inst) =>
+        inst.status === PaymentStatus.PENDING && inst.dueDate < new Date(),
+    );
+    const hasPending = installments.some(
+      (inst) => inst.status === PaymentStatus.PENDING,
+    );
+    const allPaid = installments.every(
+      (inst) => inst.status === PaymentStatus.PAID,
+    );
+
+    let newStatus: PaymentStatus;
+
+    if (hasCancelled) {
+      newStatus = PaymentStatus.CANCELED;
+    } else if (hasOverdue) {
+      newStatus = PaymentStatus.OVERDUE;
+    } else if (hasPending) {
+      newStatus = PaymentStatus.PENDING;
+    } else if (allPaid) {
+      newStatus = PaymentStatus.PAID;
+    } else {
+      console.error(
+        `Não foi possível determinar o status para a movimentação ${payableId}`,
+      );
+      return;
+    }
+
+    // Atualiza o status da movimentação
+    await this.prisma.payable.update({
+      where: { id: payableId },
+      data: { status: newStatus },
+    });
+
+    console.log(
+      `Movimentação ${payableId} atualizada para o status ${newStatus}`,
+    );
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_2AM)
+  async checkOverdueInstallments(): Promise<void> {
+    const currentDate = new Date();
+
+    // Busca parcelas pendentes vencidas
+    const overdueInstallments = await this.prisma.payableInstallment.findMany({
+      where: {
+        status: PaymentStatus.PENDING,
+        dueDate: {
+          lt: currentDate,
+        },
+      },
+      select: {
+        id: true,
+        payableId: true,
+      },
+    });
+
+    if (overdueInstallments.length === 0) {
+      console.log('Nenhuma parcela vencida encontrada.');
+      return;
+    }
+
+    // Atualiza o status das parcelas para OVERDUE
+    const updatePromises = overdueInstallments.map((installment) =>
+      this.prisma.payableInstallment.update({
+        where: { id: installment.id },
+        data: { status: PaymentStatus.OVERDUE },
+      }),
+    );
+
+    await Promise.all(updatePromises);
+
+    const payableIds = Array.from(
+      new Set(overdueInstallments.map((inst) => inst.payableId)),
+    );
+
+    const payableUpdatePromises = payableIds.map((id) =>
+      this.updatePayableStatus(id),
+    );
+
+    await Promise.all(payableUpdatePromises);
   }
 }

@@ -30,16 +30,7 @@ export class UpdatePayableDto {
     example: 'Pagamento de prestação de serviços',
   })
   @IsOptional()
-  @IsString()
   description?: string;
-
-  @ApiPropertyOptional({
-    description: 'ID da categoria',
-    example: 'f5b934f6-4c45-4e93-85f4-6e418af93210',
-  })
-  @IsOptional()
-  @IsUUID()
-  categoryId?: string;
 
   @ApiPropertyOptional({
     description: 'ID da subcategoria',
@@ -55,7 +46,7 @@ export class UpdatePayableDto {
   })
   @IsOptional()
   @IsString()
-  observations?: string;
+  notes?: string;
 
   @ApiPropertyOptional({
     description: 'Valor total do título',
@@ -67,12 +58,21 @@ export class UpdatePayableDto {
 }
 
 export class CancelPayableDto {
+  @IsOptional()
   @ApiProperty({
     description: 'Razão do cancelamento do título',
     example: 'Cliente desistiu da compra.',
   })
   @IsString()
-  cancelReason: string; // Razão do cancelamento
+  cancelReason?: string; // Razão do cancelamento
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Razão do cancelamento do título',
+    example: 'Cliente desistiu da compra.',
+  })
+  @IsString()
+  cancelNotes?: string; // Razão do cancelamento
 }
 
 export class PayInstallmentDto {

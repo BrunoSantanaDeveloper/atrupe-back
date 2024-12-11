@@ -11,10 +11,12 @@ import { CacheModule } from './svc/cache/cache.module';
 import { UtilsModule } from './svc/utils/utils.module';
 import { PdfService } from './svc/pdf/pdf.service';
 import { PrismaModule } from './config/prisma/prisma.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     CoreModule,
     ReportModule,

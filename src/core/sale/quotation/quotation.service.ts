@@ -109,6 +109,7 @@ export class QuotationService {
   }
 
   async addProductToQuotation(quotationId: string, data: AddItemDto) {
+    console.log(data);
     try {
       // Busca o orçamento e verifica se existe
       const quotation = await this.prisma.quotation.findUnique({
@@ -269,49 +270,49 @@ export class QuotationService {
         throw new NotFoundException(`Produto não encontrado`);
       }
 
-      // Validação: technicalDescription e campos editáveis
-      const hasEditableFields =
-        data.technicalDescription !== undefined ||
-        (data.items?.some(
-          (item) => item.unitCost !== undefined || item.salePrice !== undefined,
-        ) ??
-          false);
+      // // Validação: technicalDescription e campos editáveis
+      // const hasEditableFields =
+      //   data.technicalDescription !== undefined ||
+      //   (data.items?.some(
+      //     (item) => item.unitCost !== undefined || item.salePrice !== undefined,
+      //   ) ??
+      //     false);
 
-      if (
-        data.technicalDescription !== undefined &&
-        !product.allowEditDescription &&
-        data.technicalDescription !== product.technicalDescription
-      ) {
-        throw new BadRequestException(
-          `Descrição técnica não pode ser editada para o produto ${product.product.name}`,
-        );
-      }
+      // if (
+      //   data.technicalDescription !== undefined &&
+      //   !product.allowEditDescription &&
+      //   data.technicalDescription !== product.technicalDescription
+      // ) {
+      //   throw new BadRequestException(
+      //     `Descrição técnica não pode ser editada para o produto ${product.product.name}`,
+      //   );
+      // }
 
-      if (
-        hasEditableFields &&
-        !product.allowEditValues &&
-        (data.items?.some((item) => {
-          const originalItem = product.items.find(
-            (pItem) => pItem.id === item.id,
-          );
-          if (!originalItem) {
-            throw new BadRequestException(
-              `Item ${item.id} não encontrado no produto`,
-            );
-          }
-          return (
-            (item.unitCost !== undefined &&
-              item.unitCost !== originalItem.unitCost) ||
-            (item.salePrice !== undefined &&
-              item.salePrice !== originalItem.salePrice)
-          );
-        }) ??
-          false)
-      ) {
-        throw new BadRequestException(
-          `Valores não podem ser editados para o produto ${product.product.name}`,
-        );
-      }
+      // if (
+      //   hasEditableFields &&
+      //   !product.allowEditValues &&
+      //   (data.items?.some((item) => {
+      //     const originalItem = product.items.find(
+      //       (pItem) => pItem.id === item.id,
+      //     );
+      //     if (!originalItem) {
+      //       throw new BadRequestException(
+      //         `Item ${item.id} não encontrado no produto`,
+      //       );
+      //     }
+      //     return (
+      //       (item.unitCost !== undefined &&
+      //         item.unitCost !== originalItem.unitCost) ||
+      //       (item.salePrice !== undefined &&
+      //         item.salePrice !== originalItem.salePrice)
+      //     );
+      //   }) ??
+      //     false)
+      // ) {
+      //   throw new BadRequestException(
+      //     `Valores não podem ser editados para o produto ${product.product.name}`,
+      //   );
+      // }
 
       // Atualiza o produto dentro do orçamento
       const updatedQuotationProduct = await this.prisma.quotationProduct.update(
@@ -840,12 +841,16 @@ export class QuotationService {
               notes: true,
               imageUrl: true,
               discount: true,
+              technicalDescription: true,
               discountType: true,
               finalValue: true,
+              allowEditDescription: true,
+              allowEditValues: true,
               product: {
                 select: {
                   id: true,
                   name: true,
+                  imageUrl: true,
                 },
               },
               productId: true,
@@ -862,6 +867,13 @@ export class QuotationService {
                   quantity: true,
                   unitCost: true,
                   totalValue: true,
+                  weight: true,
+                  width: true,
+                  height: true,
+                  duration: true,
+                  length: true,
+                  distance: true,
+                  volume: true,
                 },
                 orderBy: {
                   createdAt: 'asc',
@@ -983,6 +995,9 @@ export class QuotationService {
         quotationItems: quotation.quotationProduct.map((qp) => ({
           id: qp.id,
           description: qp.description,
+          allowEditDescription: qp.allowEditDescription,
+          allowEditValues: qp.allowEditValues,
+          technicalDescription: qp.technicalDescription,
           notes: qp.notes,
           discountType: qp.discountType,
           discount: qp.discount,
@@ -999,13 +1014,17 @@ export class QuotationService {
             return qp.quantity * unitValue;
           })(),
           finalValue: qp.finalValue,
-          image: {
-            url: qp.imageUrl,
-            original: true, // Marcar como original ou não
-          },
+          image: (() => {
+            if (qp.imageUrl) {
+              return { url: qp.imageUrl, original: false };
+            } else {
+              return { url: qp.product.imageUrl, original: true };
+            }
+          })(),
           product: {
             originalProductId: qp.productId,
             name: qp.product.name,
+
             quantity: qp.quantity,
             unitValue: qp.items.reduce(
               (total, item) => total + item.totalValue,
@@ -1023,6 +1042,13 @@ export class QuotationService {
               quantity: item.quantity,
               unitValue: item.salePrice,
               totalValue: item.totalValue,
+              weight: item.weight,
+              width: item.width,
+              height: item.height,
+              duration: item.duration,
+              length: item.length,
+              distance: item.distance,
+              volume: item.volume,
             })),
           },
         })),

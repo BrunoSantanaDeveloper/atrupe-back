@@ -42,7 +42,7 @@ export class CategoryService {
       }),
       this.prisma.category.findMany({
         where,
-        include: { children: true },
+
         take: +limit,
         skip: (+page - 1) * +limit,
       }),
