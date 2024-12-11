@@ -186,7 +186,6 @@ export class UpdatePayableInstallmentsDto {
     example: 'Altrado o valor',
     required: false,
   })
-  @IsNumber()
   @IsOptional()
   changeReason?: string;
 
@@ -195,9 +194,9 @@ export class UpdatePayableInstallmentsDto {
     example: 'Altrado o valor',
     required: false,
   })
-  @IsNumber()
   @IsOptional()
   changeNotes?: string;
+
   @ApiProperty({
     description:
       'Lista de parcelas que serão adicionadas, editadas ou removidas',
