@@ -77,13 +77,6 @@ export class CancelPayableDto {
 
 export class PayInstallmentDto {
   @ApiProperty({
-    description: 'ID da parcela que será paga',
-    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
-  })
-  @IsUUID()
-  installmentId: string;
-
-  @ApiProperty({
     description: 'Valor pago na parcela',
     example: 200.75,
   })
@@ -96,4 +89,22 @@ export class PayInstallmentDto {
   })
   @IsDateString()
   paidDate: string;
+
+  @ApiProperty({
+    description: 'ID da forma de pagamento',
+    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
+    required: false,
+  })
+  @IsUUID()
+  @IsOptional()
+  paymentMethodId?: string;
+
+  @ApiProperty({
+    description: 'ID da conta de banco',
+    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
+    required: false,
+  })
+  @IsUUID()
+  @IsOptional()
+  bankAccountId?: string;
 }

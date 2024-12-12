@@ -145,6 +145,14 @@ export class ReceivableInstallmentDto {
   id?: string;
 
   @ApiProperty({
+    description: 'ID original (descartar)',
+    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
+    required: false,
+  })
+  @IsOptional()
+  originalId?: string;
+
+  @ApiProperty({
     description: 'Valor da parcela',
     example: 200.75,
     required: false,

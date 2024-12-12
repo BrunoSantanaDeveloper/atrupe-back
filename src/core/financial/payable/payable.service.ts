@@ -22,9 +22,8 @@ export class PayableService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreatePayableDto) {
-    //TODO: ajustar o status da parcela para OVERDUE caso a data tiver velha
     const { installments, ...payableData } = dto;
-
+    const currentDate = new Date();
     if (installments.length === 0) {
       throw new Error('At least one installment is required.');
     }
@@ -52,6 +51,10 @@ export class PayableService {
             ...installment,
             installmentNumber: index + 1,
             dueDate: new Date(installment.dueDate),
+            status:
+              new Date(installment.dueDate) < currentDate
+                ? 'OVERDUE'
+                : 'PENDING',
             payableId: payable.id,
           })),
         });
@@ -153,6 +156,7 @@ export class PayableService {
                   status: true,
                   paymentMethod: { select: { id: true, name: true } },
                   amount: true,
+                  paidAmount: true,
                   additionalFee: true,
                   dueDate: true,
                   paidDate: true,
@@ -184,6 +188,12 @@ export class PayableService {
             return {
               id: inst.payable?.id || null,
               totalValue: inst.payable?.totalAmount || 0,
+              totalPaid: (inst.payable?.installments || []).reduce(
+                (sum, item) => {
+                  return sum + (item.paidAmount ?? 0);
+                },
+                0,
+              ),
               description: inst.payable?.description || '',
               supplier: inst.payable?.supplier
                 ? {
@@ -219,7 +229,7 @@ export class PayableService {
                   value: installment.amount || 0,
                   additionalFee: installment.additionalFee || 0,
                   dueDate: installment.dueDate || null,
-                  paidValue: installment.amount || 0, // Ajuste baseado nos requisitos.
+                  paidValue: installment.paidAmount || 0, // Ajuste baseado nos requisitos.
                   paymentDate: installment.paidDate || null,
                   current: installment.id === inst.id, // Definindo se a parcela é a atual
                 })),
@@ -309,54 +319,66 @@ export class PayableService {
     return this.prisma.payable.count();
   }
 
-  async payInstallment(payInstallmentDto: PayInstallmentDto) {
-    const { installmentId, amount, paidDate } = payInstallmentDto;
+  async payInstallment(installmentId, payInstallmentDto: PayInstallmentDto) {
+    const { paymentMethodId, bankAccountId, amount, paidDate } =
+      payInstallmentDto;
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const installment = await tx.payableInstallment.update({
+          where: { id: installmentId },
+          data: {
+            status: 'PAID',
+            paidDate: new Date(paidDate),
+            paidAmount: amount,
+            paymentMethodId,
+            bankAccountId,
+          },
+        });
 
-    return await this.prisma.$transaction(async (tx) => {
-      // Atualiza o status da parcela para "PAGO" e adiciona a data do pagamento
-      const installment = await tx.payableInstallment.update({
-        where: { id: installmentId },
-        data: {
-          status: 'PAID',
-          paidDate: new Date(paidDate),
-          amount, // Pode ser que precise ajustar se houver um pagamento parcial
-        },
-      });
+        // // Atualiza o valor total do título
+        // const updatedTotal = await tx.payableInstallment.aggregate({
+        //   where: { payableId: installment.payableId },
+        //   _sum: { amount: true },
+        // });
 
-      // Atualiza o valor total do título
-      const updatedTotal = await tx.payableInstallment.aggregate({
-        where: { payableId: installment.payableId },
-        _sum: { amount: true },
-      });
+        // await tx.payable.update({
+        //   where: { id: installment.payableId },
+        //   data: { totalAmount: updatedTotal._sum.amount },
+        // });
 
-      await tx.payable.update({
-        where: { id: installment.payableId },
-        data: { totalAmount: updatedTotal._sum.amount },
+        return installment;
       });
+      await this.updatePayableStatus(result.payableId);
 
       return { message: 'Parcela paga com sucesso.' };
-    });
+    } catch (error) {
+      console.error(error);
+    }
   }
 
   async updateInstallments(
     payableId: string,
     dto: UpdatePayableInstallmentsDto,
   ): Promise<any> {
-    console.log('updateInstallments', dto);
     try {
       const { installments, totalAmount, changeNotes, changeReason } = dto;
-
+      const currentDate = new Date();
       // let totalAmount = 0;
 
       const updatedPayable = await this.prisma.$transaction(async (prisma) => {
         const updatedInstallments = [];
         for (const installmentDto of installments) {
-          const { id, ...rest } = installmentDto;
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { id, originalId, ...rest } = installmentDto;
 
           if (id) {
             const updateData: Record<string, any> = { ...rest };
             if (updateData.dueDate) {
               updateData.dueDate = new Date(updateData.dueDate);
+              if (updateData.status === 'PENDING') {
+                updateData.status =
+                  updateData.dueDate < currentDate ? 'OVERDUE' : 'PENDING';
+              }
             }
 
             // Se a parcela existe, atualiza
@@ -377,6 +399,10 @@ export class PayableService {
                 payableId,
                 amount: installmentDto.amount,
                 dueDate: new Date(installmentDto.dueDate),
+                status:
+                  new Date(installmentDto.dueDate) < currentDate
+                    ? 'OVERDUE'
+                    : 'PENDING',
                 paymentMethodId: installmentDto.paymentMethodId,
                 installmentNumber: installments.indexOf(installmentDto) + 1,
               },
@@ -511,10 +537,6 @@ export class PayableService {
       where: { id: payableId },
       data: { status: newStatus },
     });
-
-    console.log(
-      `Movimentação ${payableId} atualizada para o status ${newStatus}`,
-    );
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_2AM)
@@ -536,7 +558,6 @@ export class PayableService {
     });
 
     if (overdueInstallments.length === 0) {
-      console.log('Nenhuma parcela vencida encontrada.');
       return;
     }
 

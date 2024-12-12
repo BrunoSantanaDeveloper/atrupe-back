@@ -152,6 +152,7 @@ export class ReceivableService {
                 status: true,
                 paymentMethod: { select: { id: true, name: true } },
                 amount: true,
+                paidAmount: true,
                 additionalFee: true,
                 dueDate: true,
                 paidDate: true,
@@ -183,6 +184,12 @@ export class ReceivableService {
           return {
             id: inst.receivable?.id || null,
             totalValue: inst.receivable?.totalAmount || 0,
+            totalPaid: (inst.receivable?.installments || []).reduce(
+              (sum, item) => {
+                return sum + (item.paidAmount ?? 0);
+              },
+              0,
+            ),
             description: inst.receivable?.description || '',
             client: inst.receivable?.client
               ? {
@@ -218,7 +225,7 @@ export class ReceivableService {
                 value: installment.amount || 0,
                 additionalFee: installment.additionalFee || 0,
                 dueDate: installment.dueDate || null,
-                paidValue: installment.amount || 0, // Ajuste baseado nos requisitos.
+                paidValue: installment.paidAmount || 0, // Ajuste baseado nos requisitos.
                 paymentDate: installment.paidDate || null,
                 current: installment.id === inst.id, // Definindo se a parcela é a atual
               })),
@@ -310,55 +317,69 @@ export class ReceivableService {
     return this.prisma.receivable.count();
   }
 
-  async payInstallment(payInstallmentDto: PayInstallmentDto) {
-    const { installmentId, amount, paidDate } = payInstallmentDto;
+  async payInstallment(installmentId, payInstallmentDto: PayInstallmentDto) {
+    const { paymentMethodId, bankAccountId, amount, paidDate } =
+      payInstallmentDto;
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Atualiza o status da parcela para "PAGO" e adiciona a data do pagamento
 
-    return await this.prisma.$transaction(async (tx) => {
-      // Atualiza o status da parcela para "PAGO" e adiciona a data do pagamento
-      const installment = await tx.receivableInstallment.update({
-        where: { id: installmentId },
-        data: {
-          status: 'PAID',
-          paidDate: new Date(paidDate),
-          amount, // Pode ser que precise ajustar se houver um pagamento parcial
-        },
+        const installment = await tx.receivableInstallment.update({
+          where: { id: installmentId },
+          data: {
+            status: 'PAID',
+            paidDate: new Date(paidDate),
+            paidAmount: amount,
+            paymentMethodId,
+            bankAccountId,
+          },
+        });
+
+        // Atualiza o valor total do título
+
+        // const updatedTotal = await tx.receivableInstallment.aggregate({
+        //   where: { receivableId: installment.receivableId },
+        //   _sum: { amount: true },
+        // });
+        // const receivable = await tx.receivable.update({
+        //   where: { id: installment.receivableId },
+        //   data: { totalAmount: updatedTotal._sum.amount },
+        // });
+        return installment;
       });
 
-      // Atualiza o valor total do título
-      const updatedTotal = await tx.receivableInstallment.aggregate({
-        where: { receivableId: installment.receivableId },
-        _sum: { amount: true },
-      });
+      await this.updateReceivableStatus(result.receivableId);
 
-      await tx.receivable.update({
-        where: { id: installment.receivableId },
-        data: { totalAmount: updatedTotal._sum.amount },
-      });
-      await this.updateReceivableStatus(installment.receivableId);
       return { message: 'Parcela paga com sucesso.' };
-    });
+    } catch (error) {
+      console.error(error);
+    }
   }
 
   async updateInstallments(
     receivableId: string,
     dto: UpdateReceivableInstallmentsDto,
   ): Promise<any> {
-    console.log('updateInstallments', dto);
     try {
       const { installments, totalAmount, changeNotes, changeReason } = dto;
-
+      const currentDate = new Date();
       // let totalAmount = 0;
 
       const updatedReceivable = await this.prisma.$transaction(
         async (prisma) => {
           const updatedInstallments = [];
           for (const installmentDto of installments) {
-            const { id, ...rest } = installmentDto;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { id, originalId, ...rest } = installmentDto;
 
             if (id) {
               const updateData: Record<string, any> = { ...rest };
               if (updateData.dueDate) {
                 updateData.dueDate = new Date(updateData.dueDate);
+                if (updateData.status === 'PENDING') {
+                  updateData.status =
+                    updateData.dueDate < currentDate ? 'OVERDUE' : 'PENDING';
+                }
               }
 
               // Se a parcela existe, atualiza
@@ -378,6 +399,10 @@ export class ReceivableService {
                   receivableId,
                   amount: installmentDto.amount,
                   dueDate: new Date(installmentDto.dueDate),
+                  status:
+                    new Date(installmentDto.dueDate) < currentDate
+                      ? 'OVERDUE'
+                      : 'PENDING',
                   paymentMethodId: installmentDto.paymentMethodId,
                   installmentNumber: installments.indexOf(installmentDto) + 1,
                 },
@@ -517,10 +542,6 @@ export class ReceivableService {
       where: { id: receivableId },
       data: { status: newStatus },
     });
-
-    console.log(
-      `Movimentação ${receivableId} atualizada para o status ${newStatus}`,
-    );
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_1AM)
@@ -543,7 +564,6 @@ export class ReceivableService {
       });
 
     if (overdueInstallments.length === 0) {
-      console.log('Nenhuma parcela vencida encontrada.');
       return;
     }
 

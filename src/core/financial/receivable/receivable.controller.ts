@@ -141,7 +141,7 @@ export class ReceivableController {
     return await this.receivableService.cancel(id, cancelReceivableDto);
   }
 
-  @Patch('pay-installment')
+  @Patch('pay-installment/:installmentId')
   @ApiResponse({
     status: 200,
     description: 'Parcela paga com sucesso',
@@ -150,8 +150,19 @@ export class ReceivableController {
     status: 400,
     description: 'Erro ao pagar a parcela',
   })
-  async payInstallment(@Body() payInstallmentDto: PayInstallmentDto) {
-    return this.receivableService.payInstallment(payInstallmentDto);
+  @ApiParam({
+    name: 'installmentId',
+    required: true,
+    description: 'ID da parcela a ser paga',
+  })
+  async payInstallment(
+    @Param('installmentId') installmentId: string,
+    @Body() payInstallmentDto: PayInstallmentDto,
+  ) {
+    return this.receivableService.payInstallment(
+      installmentId,
+      payInstallmentDto,
+    );
   }
 
   @Delete(':id')
