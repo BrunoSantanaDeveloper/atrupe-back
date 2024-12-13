@@ -28,6 +28,9 @@ export class MethodService {
           where,
           take: +filter.limit,
           skip: ((+filter.page || 1) - 1) * +filter.limit,
+          orderBy: {
+            name: 'asc',
+          },
         }),
       ]);
       return {

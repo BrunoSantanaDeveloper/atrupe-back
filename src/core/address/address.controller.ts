@@ -1,7 +1,5 @@
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
-import { MessagePattern, Payload } from '@nestjs/microservices';
 import { AddressService } from './address.service';
-import { UpdateAddressDto } from './dto/update-address.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 
 const RESOURCE = 'address';
@@ -15,23 +13,23 @@ export class AddressController {
     return this.addressService.zipCode(zipcode);
   }
 
-  @MessagePattern('findAllAddress')
-  findAll() {
-    return this.addressService.findAll();
-  }
+  // @MessagePattern('findAllAddress')
+  // findAll() {
+  //   return this.addressService.findAll();
+  // }
 
-  @MessagePattern('findOneAddress')
-  findOne(@Payload() id: number) {
-    return this.addressService.findOne(id);
-  }
+  // @MessagePattern('findOneAddress')
+  // findOne(@Payload() id: number) {
+  //   return this.addressService.findOne(id);
+  // }
 
-  @MessagePattern('updateAddress')
-  update(@Payload() updateAddressDto: UpdateAddressDto) {
-    return this.addressService.update(updateAddressDto.id, updateAddressDto);
-  }
+  // @MessagePattern('updateAddress')
+  // update(@Payload() updateAddressDto: UpdateAddressDto) {
+  //   return this.addressService.update(updateAddressDto.id, updateAddressDto);
+  // }
 
-  @MessagePattern('removeAddress')
-  remove(@Payload() id: number) {
-    return this.addressService.remove(id);
-  }
+  // @MessagePattern('removeAddress')
+  // remove(@Payload() id: number) {
+  //   return this.addressService.remove(id);
+  // }
 }

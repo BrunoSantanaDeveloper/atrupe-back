@@ -19,8 +19,8 @@ export class ConditionService {
           minInstallments: +dto.minInstallments,
           maxInstallments: +dto.maxInstallments,
           installments: {
-            create: installments.map((installment) => ({
-              installment: +installment.installment,
+            create: installments.map((installment, index) => ({
+              installment: index + 1,
               operatorFeeRate: +installment.operatorFeeRate,
               operatorFeeTransfer: +installment.operatorFeeTransfer,
             })),
@@ -115,7 +115,7 @@ export class ConditionService {
         id,
       },
       include: {
-        installments: true, // Inclui as parcelas na consulta
+        installments: true,
       },
     });
   }
@@ -130,9 +130,9 @@ export class ConditionService {
         data: {
           ...conditionData,
           installments: {
-            deleteMany: {}, // Remove todas as parcelas antigas
-            create: installments.map((installment) => ({
-              installment: +installment.installment,
+            deleteMany: {},
+            create: installments.map((installment, index) => ({
+              installment: index + 1,
               operatorFeeRate: +installment.operatorFeeRate,
               operatorFeeTransfer: +installment.operatorFeeTransfer,
             })),

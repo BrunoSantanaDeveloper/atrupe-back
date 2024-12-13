@@ -1,0 +1,17 @@
+# local env files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+
+# node_modules
+/node_modules
+
+# dist
+/dist
+
+# build
+/build
+

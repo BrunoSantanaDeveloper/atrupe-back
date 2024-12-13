@@ -25,6 +25,7 @@ export class EditCashRegisterDto {
   @ApiProperty({
     description: 'Motivo da transação',
     example: 'Transferência bancária',
+    required: false,
   })
   @IsOptional()
   @IsString()

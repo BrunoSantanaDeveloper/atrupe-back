@@ -13,9 +13,10 @@ import {
   UpdatePayableDto,
 } from './dto/update-payable.dto';
 import { PrismaService } from 'nestjs-prisma';
-import { PaymentStatus } from '@prisma/client';
+import { PaymentStatus, TransactionType } from '@prisma/client';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ReceivableFilterDto } from '../receivable/dto/receivable-filter.dto';
+import { endOfDay, startOfDay } from 'date-fns';
 
 @Injectable()
 export class PayableService {
@@ -333,6 +334,37 @@ export class PayableService {
             paymentMethodId,
             bankAccountId,
           },
+        });
+
+        // Busca o caixa aberto
+        const openCashRegister = await tx.cashRegister.findFirst({
+          where: {
+            bankAccountId,
+            status: 'OPEN',
+            openingDate: {
+              gte: startOfDay(new Date(paidDate)),
+              lt: endOfDay(new Date(paidDate))
+            }
+          }
+        }); 
+
+        if (!openCashRegister) {
+          throw new BadRequestException('Nenhum caixa aberto encontrado para esta data.');
+        }   
+
+        await tx.transaction.create({
+          data: {
+            type: TransactionType.OUTCOME,
+            amount: amount,
+            description: `Pagamento da parcela ${installment.id}`,
+            transactionDate: new Date(paidDate),
+            payableInstallment: {
+              connect: { id: installment.id }
+            },
+            cashRegister: {
+              connect: { id: openCashRegister.id }
+            }
+          }
         });
 
         // // Atualiza o valor total do título

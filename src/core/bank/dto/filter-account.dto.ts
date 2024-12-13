@@ -1,6 +1,7 @@
-import { IsBooleanString, IsOptional, IsUUID } from 'class-validator';
+import { IsBoolean, IsBooleanString, IsOptional, IsUUID } from 'class-validator';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 
 export class BankAccountFilterDTO extends BaseFilterDTO {
   @IsOptional()
@@ -13,7 +14,8 @@ export class BankAccountFilterDTO extends BaseFilterDTO {
   bankId: string;
 
   @IsOptional()
-  @IsBooleanString()
+  @IsBoolean()
+  @Transform(({ value }) => value === 'true')
   @ApiProperty({
     description: 'Indica se a conta aceita rendimentos',
     example: 'true',
@@ -22,11 +24,22 @@ export class BankAccountFilterDTO extends BaseFilterDTO {
   acceptIncomes: boolean;
 
   @IsOptional()
-  @IsBooleanString()
+  @IsBoolean()
+  @Transform(({ value }) => value === 'true')
   @ApiProperty({
     description: 'Indica se a conta aceita pagamentos',
     example: 'false',
     required: false,
   })
   acceptPayments: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === 'true')
+  @ApiProperty({
+    description: 'Indica se a conta tem controle de caixa',
+    example: false,
+    required: false,
+  })
+  cashControl?: boolean;
 }

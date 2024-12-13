@@ -70,6 +70,7 @@ enum OwnerType {
 
 model Address {
   id           String  @id @default(uuid())
+  type         String  @default("Principal")
   street       String?
   number       String?
   neighborhood String?
@@ -77,16 +78,15 @@ model Address {
   zipcode      String?
   complement   String?
 
-  cityId String?
-  city   City?   @relation(fields: [cityId], references: [id])
-
-  stateId String?
-  state   State?  @relation(fields: [stateId], references: [id])
+  city  String?
+  state String?
 
   ownerType OwnerType @default(COMPANY)
-  ownerId   String
 
-  client   Client[]
+
+  ownerId String?
+  client   Client?    @relation(fields: [ownerId], references: [id])
+  
   supplier Supplier[]
 
   @@index([ownerId, ownerType])
@@ -189,10 +189,9 @@ model Category {
   isStandard Boolean      @default(false)
   companyId  String?
 
-  company   Company?   @relation(fields: [companyId], references: [id])
-  clients   Client[]
-  products  Product[]
-  suppliers Supplier[]
+  company Company? @relation(fields: [companyId], references: [id])
+
+  products Product[]
 
   @@map("categories")
 }
@@ -215,7 +214,7 @@ model Contact {
   updatedAt DateTime? @updatedAt
 
   name   String
-  email  String? @unique
+  email  String?
   phone  String?
   mobile String?
   sector String?
@@ -256,18 +255,24 @@ model Client {
   site           String?
   birthdate      DateTime?
 
-  addressId String?
-  address   Address? @relation(fields: [addressId], references: [id])
+  address Address[]
 
   contacts      Contact[]
   responsibleId String?
-  responsible   Employee?    @relation(fields: [responsibleId], references: [id])
+  responsible   Employee? @relation(fields: [responsibleId], references: [id])
   companyId     String
-  company       Company      @relation(fields: [companyId], references: [id])
-  category      Category?    @relation(fields: [categoryId], references: [id])
-  categoryId    String?
-  quotation     Quotation[]
-  receivable    Receivable[]
+  company       Company   @relation(fields: [companyId], references: [id])
+  category      String?
+
+  minValue Float?
+  maxValue Float?
+
+  blockClient Boolean @default(false)
+
+  quotation  Quotation[]
+  receivable Receivable[]
+
+  paymentConditions ClientPaymentCondition[]
 
   @@unique([email, companyId])
   @@map("clients")
@@ -305,11 +310,17 @@ model Supplier {
   contacts     Contact[]
   companyId    String
   company      Company        @relation(fields: [companyId], references: [id])
-  category     Category?      @relation(fields: [categoryId], references: [id])
-  categoryId   String?
+  category     String?
   deliveryInfo DeliveryInfo[]
   commission   Commission[]
   payable      Payable[]
+
+  paymentConditions SupplierPaymentCondition[]
+
+  minValue Float?
+  maxValue Float?
+
+  blockClient Boolean @default(false)
 
   @@unique([email, companyId])
   @@map("suppliers")
@@ -466,6 +477,9 @@ model ReceivableInstallment {
   bankAccountId     String?
   bankAccount       BankAccount?  @relation(fields: [bankAccountId], references: [id])
 
+  transactionId String?
+  transactions  Transaction? @relation(fields: [transactionId], references: [id])
+
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
 
@@ -541,6 +555,9 @@ model PayableInstallment {
 
   bankAccountId String?
   bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id])
+
+  transactionId String?
+  transactions  Transaction? @relation(fields: [transactionId], references: [id])
 
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
@@ -654,7 +671,7 @@ model CashRegister {
   updatedAt   DateTime?          @updatedAt
   description String?
   status      CashRegisterStatus @default(OPEN)
-  observation String?
+  notes       String?
 
   openingDate    DateTime
   closingDate    DateTime?
@@ -683,7 +700,7 @@ model Transaction {
   updatedAt DateTime? @updatedAt
 
   type            TransactionType
-  amount          Float
+  amount          Float           @default(0)
   description     String?
   transactionDate DateTime        @default(now())
   reason          String? // Motivo para edição ou transferência
@@ -691,13 +708,17 @@ model Transaction {
   cashRegisterId String
   cashRegister   CashRegister @relation(fields: [cashRegisterId], references: [id])
 
+  receivableInstallment ReceivableInstallment[]
+  payableInstallment    PayableInstallment[]
+
   @@map("transactions")
 }
 
 enum TransactionType {
   INCOME
   OUTCOME
-  TRANSFER
+  TRANSFER_INCOME
+  TRANSFER_OUTCOME
 }
 
 enum CashRegisterStatus {
@@ -775,6 +796,7 @@ model Bank {
   updatedAt DateTime? @updatedAt
 
   name     String
+  icon     String?
   code     String
   details  Json?
   isActive Boolean @default(true)
@@ -823,6 +845,8 @@ model BankAccountCashControl {
   paymentType    BankAccountCashControlType @default(PAYSOFF)
   acceptIncomes  Boolean                    @default(true)
   incomeType     BankAccountCashControlType @default(PAYSOFF)
+
+  acceptMultipleCashRegisters Boolean @default(false)
 
   paymentMethodId String
   paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
@@ -884,6 +908,9 @@ model PaymentCondition {
   company               Company                @relation(fields: [companyId], references: [id])
   paymentConfigurations PaymentConfiguration[]
   quotationPayment      QuotationPayment[]
+
+  clients   ClientPaymentCondition[]
+  suppliers SupplierPaymentCondition[]
 
   @@map("payment_conditions")
 }
@@ -1260,38 +1287,6 @@ model ProductItem {
   @@map("product_items")
 }
 
-model State {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  name     String
-  code     String
-  isActive Boolean @default(true)
-
-  cities  City[]
-  address Address[]
-
-  @@index([code])
-  @@map("states")
-}
-
-model City {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  name     String
-  code     String
-  isActive Boolean @default(true)
-
-  stateId String
-  state   State     @relation(fields: [stateId], references: [id])
-  address Address[]
-
-  @@map("cities")
-}
-
 model UnitOfMeasure {
   id          String  @id @default(uuid())
   name        String
@@ -1427,4 +1422,32 @@ model SubCategory {
   isActive   Boolean      @default(true)
   receivable Receivable[]
   payable    Payable[]
+}
+
+model ClientPaymentCondition {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  isActive  Boolean  @default(true)
+
+  clientId           String
+  client             Client           @relation(fields: [clientId], references: [id])
+  paymentConditionId String
+  paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
+
+  @@unique([clientId, paymentConditionId])
+  @@map("client_payment_conditions")
+}
+
+model SupplierPaymentCondition {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  isActive  Boolean  @default(true)
+
+  supplierId         String
+  supplier           Supplier         @relation(fields: [supplierId], references: [id])
+  paymentConditionId String
+  paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
+
+  @@unique([supplierId, paymentConditionId])
+  @@map("supplier_payment_conditions")
 }

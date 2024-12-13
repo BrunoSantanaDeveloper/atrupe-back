@@ -15,7 +15,13 @@ import {
   CreateCashRegisterDto,
 } from './dto/create-cash-control.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
-import { ApiBearerAuth, ApiParam, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import {
   EditCashRegisterDto,
   TransferDto,
@@ -47,6 +53,20 @@ export class CashControlController {
   ) {
     closeCashRegisterDto.cashRegisterId = cashRegisterId;
     return this.cashControlService.closeCashRegister(closeCashRegisterDto);
+  }
+
+  @Get('quantity')
+  @ApiOperation({
+    summary:
+      'Obtém a quantidade de todos os status de caixas abertos ou fechados.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de quantidade de caixas retornada com sucesso.',
+  })
+  async findAllQuantity(@Req() req) {
+    const companyId = req.user.companyId;
+    return this.cashControlService.findAllQuantity(companyId);
   }
 
   @Get('')

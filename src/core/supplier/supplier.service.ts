@@ -11,45 +11,83 @@ export class SupplierService {
 
   async create(createDto: CreateSupplierDto) {
     try {
-      const created = await this.prisma.supplier.create({
+      // Criar o fornecedor
+      const supplier = await this.prisma.supplier.create({
         data: {
-          name: createDto.name,
           type: createDto.type,
-          email: createDto.email,
-          birthdate: new Date(createDto.birthdate) || null,
-          phone: createDto.phone,
-          mobile: createDto.mobile,
+          name: createDto.general.name,
+          email: createDto.general.email,
+          phone: createDto.general.phone,
+          mobile: createDto.general.mobile,
           companyId: createDto.companyId,
-          categoryId: createDto.categoryId,
-          cpf: createDto.cpf,
-          rg: createDto.rg,
-          cnpj: createDto.cnpj,
-          activity: createDto.activity,
-          tradeName: createDto.tradeName,
-          corporateName: createDto.corporateName,
+          category: createDto.general.category,
+          cpf: createDto.general.cpf,
+          rg: createDto.general.rg,
+          cnpj: createDto.general.cnpj,
+          activity: createDto.general.activity,
+          notes: createDto.general.notes,
+          minValue: createDto.creditLimit.minValue,
+          maxValue: createDto.creditLimit.maxValue,
+          blockClient: createDto.creditLimit.blockClient,
         },
       });
 
-      if (created && createDto.street) {
-        try {
-          const address = await this.prisma.address.create({
-            data: this.buildAddressObject(createDto, created),
-          });
-
-          if (!address) {
-            throw new Error('Error creating address');
-          }
-
-          return await this.prisma.client.update({
-            where: { id: created.id },
-            data: { address: { connect: address } },
-          });
-        } catch (error) {
-          console.error('Error creating address:', error);
-        }
+      // Criar endereços
+      if (createDto.addresses?.length > 0) {
+        await Promise.all(
+          createDto.addresses.map((address) =>
+            this.prisma.address.create({
+              data: {
+                type: address.type,
+                zipcode: address.zipcode,
+                state: address.state,
+                city: address.city,
+                neighborhood: address.neighborhood,
+                street: address.street,
+                number: address.number,
+                complement: address.complement,
+                ownerId: supplier.id,
+                ownerType: 'SUPPLIER',
+              },
+            }),
+          ),
+        );
       }
 
-      return created;
+      // Criar contatos
+      if (createDto.contacts?.length > 0) {
+        await Promise.all(
+          createDto.contacts.map((contact) =>
+            this.prisma.contact.create({
+              data: {
+                name: contact.name,
+                email: contact.email,
+                phone: contact.phone,
+                mobile: contact.mobile,
+                notes: contact.notes,
+                supplierId: supplier.id,
+              },
+            }),
+          ),
+        );
+      }
+
+      // Criar condições de pagamento do fornecedor
+      if (createDto.creditLimit.conditions?.length > 0) {
+        await Promise.all(
+          createDto.creditLimit.conditions.map((condition) =>
+            this.prisma.supplierPaymentCondition.create({
+              data: {
+                supplierId: supplier.id,
+                paymentConditionId: condition.id,
+                isActive: condition.isActive,
+              },
+            }),
+          ),
+        );
+      }
+
+      return this.findOne(supplier.id);
     } catch (error) {
       console.error('Error creating supplier:', error);
       throw error;
@@ -101,10 +139,18 @@ export class SupplierService {
     }
   }
 
-  findOne(id: string) {
+  async findOne(id: string) {
     return this.prisma.supplier.findUnique({
-      where: { id: id },
-      include: { contacts: true, address: true },
+      where: { id },
+      include: {
+        contacts: true,
+        address: true,
+        paymentConditions: {
+          include: {
+            paymentCondition: true,
+          },
+        },
+      },
     });
   }
 
@@ -115,24 +161,94 @@ export class SupplierService {
         throw new Error('Supplier not found');
       }
 
-      const update = this.buildUpdateObject(updateDto);
-      const address = this.buildAddressObject(updateDto, supplier);
-
-      if (supplier.addressId) {
-        update['address'] = { update: address };
-      } else {
-        update['address'] = { create: address };
-      }
-
-      if (!Object.keys(update).length) {
-        return supplier;
-      }
-
-      return await this.prisma.supplier.update({
+      // Atualizar dados do fornecedor
+      await this.prisma.supplier.update({
         where: { id },
-        data: update,
-        include: { contacts: true, address: true },
+        data: {
+          name: updateDto.general?.name,
+          email: updateDto.general?.email,
+          phone: updateDto.general?.phone,
+          mobile: updateDto.general?.mobile,
+          category: updateDto.general?.category,
+          cpf: updateDto.general?.cpf,
+          rg: updateDto.general?.rg,
+          cnpj: updateDto.general?.cnpj,
+          activity: updateDto.general?.activity,
+          notes: updateDto.general?.notes,
+          minValue: updateDto.creditLimit?.minValue,
+          maxValue: updateDto.creditLimit?.maxValue,
+          blockClient: updateDto.creditLimit?.blockClient,
+        },
       });
+
+      // Atualizar endereços
+      if (updateDto.addresses) {
+        await this.prisma.address.deleteMany({
+          where: { ownerId: id, ownerType: 'SUPPLIER' },
+        });
+
+        await Promise.all(
+          updateDto.addresses.map((address) =>
+            this.prisma.address.create({
+              data: {
+                type: address.type,
+                zipcode: address.zipcode,
+                state: address.state,
+                city: address.city,
+                neighborhood: address.neighborhood,
+                street: address.street,
+                number: address.number,
+                complement: address.complement,
+                ownerId: id,
+                ownerType: 'SUPPLIER',
+              },
+            }),
+          ),
+        );
+      }
+
+      // Atualizar contatos
+      if (updateDto.contacts) {
+        await this.prisma.contact.deleteMany({
+          where: { supplierId: id },
+        });
+
+        await Promise.all(
+          updateDto.contacts.map((contact) =>
+            this.prisma.contact.create({
+              data: {
+                name: contact.name,
+                email: contact.email,
+                phone: contact.phone,
+                mobile: contact.mobile,
+                notes: contact.notes,
+                supplierId: id,
+              },
+            }),
+          ),
+        );
+      }
+
+      // Atualizar condições de pagamento
+      if (updateDto.creditLimit?.conditions) {
+        await this.prisma.supplierPaymentCondition.deleteMany({
+          where: { supplierId: id },
+        });
+
+        await Promise.all(
+          updateDto.creditLimit.conditions.map((condition) =>
+            this.prisma.supplierPaymentCondition.create({
+              data: {
+                supplierId: id,
+                paymentConditionId: condition.id,
+                isActive: condition.isActive,
+              },
+            }),
+          ),
+        );
+      }
+
+      return this.findOne(id);
     } catch (error) {
       console.error('Error updating supplier:', error);
       throw error;
@@ -167,9 +283,6 @@ export class SupplierService {
       update['responsible'] = { connect: { id: dto.responsibleId } };
     }
 
-    if (dto.categoryId) {
-      update['category'] = { connect: { id: dto.categoryId } };
-    }
     if (dto.companyId) {
       update['company'] = { connect: { id: dto.companyId } };
     }

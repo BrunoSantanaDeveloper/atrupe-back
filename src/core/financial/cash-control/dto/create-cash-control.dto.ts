@@ -16,10 +16,10 @@ export class CreateCashRegisterDto {
   @IsString()
   openingDate?: string;
 
-  @ApiProperty({ description: 'Saldo inicial do caixa', example: 1000.0 })
-  @IsNotEmpty()
-  @IsNumber()
-  openingBalance: number;
+  // @ApiProperty({ description: 'Saldo inicial do caixa', example: 1000.0 })
+  // @IsNotEmpty()
+  // @IsNumber()
+  // openingBalance: number;
 
   @ApiProperty({
     description: 'ID da conta bancária associada',
@@ -40,5 +40,5 @@ export class CloseCashRegisterDto {
   })
   @IsOptional()
   @IsString()
-  observation?: string;
+  notes?: string;
 }

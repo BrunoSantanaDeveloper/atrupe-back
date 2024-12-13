@@ -15,14 +15,6 @@ import {
 import { ApiProperty } from '@nestjs/swagger';
 
 export class InstallmentDto {
-  @IsNumber()
-  @IsNotEmpty()
-  @ApiProperty({
-    description: 'Número da parcela',
-    example: 1,
-  })
-  installment: number;
-
   @IsNotEmpty()
   @IsNumber()
   @ApiProperty({

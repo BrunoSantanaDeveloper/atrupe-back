@@ -14,30 +14,78 @@ import {
 } from './dto/update-cash-control.dto';
 import { ListCashRegistersDto } from './dto/cash-control-filters.dto';
 import { startOfDay, endOfDay } from 'date-fns';
+import { CashRegisterStatus } from '@prisma/client';
 
 @Injectable()
 export class CashControlService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async findAllQuantity(companyId: string) {
+    const allStatuses: CashRegisterStatus[] = ['OPEN', 'CLOSED'];
+
+    const result = await this.prisma.cashRegister.groupBy({
+      by: ['status'],
+      where: { companyId, status: { in: allStatuses } },
+      _count: true,
+    });
+
+    const statusCount = allStatuses.reduce(
+      (acc, status) => {
+        acc[status] = 0;
+        return acc;
+      },
+      {} as { [K in CashRegisterStatus]: number },
+    );
+
+    result.forEach((cur) => {
+      statusCount[cur.status] = cur._count;
+    });
+
+    const total = Object.values(statusCount).reduce((acc, cur) => acc + cur, 0);
+
+    return {
+      ...statusCount,
+      TOTAL: total,
+    };
+  }
   async openCashRegister(createCashRegisterDto: CreateCashRegisterDto) {
-    const { companyId, openingDate, openingBalance, bankAccountId } =
+    try{
+    const { companyId, openingDate, bankAccountId } =
       createCashRegisterDto;
+    const date = openingDate ? startOfDay(new Date(openingDate)) : startOfDay(new Date());
 
-    const date = openingDate ? startOfDay(new Date(openingDate)) : new Date();
-
+    // Verifica se existe qualquer caixa nesta data para esta conta
     const existingRegister = await this.prisma.cashRegister.findFirst({
       where: {
-        openingDate: date,
+        openingDate: {
+          gte: startOfDay(date),
+          lt: endOfDay(date)
+        },
         bankAccountId,
-        status: 'OPEN',
       },
     });
 
     if (existingRegister) {
       throw new BadRequestException(
-        'Já existe um caixa aberto para essa data.',
+        'Já existe um caixa para esta conta nesta data.',
       );
     }
+    
+
+    // Busca o último caixa fechado para esta conta
+    const lastClosedRegister = await this.prisma.cashRegister.findFirst({
+      where: {
+        bankAccountId,
+        status: 'CLOSED',
+      },
+      orderBy: {
+        closingDate: 'desc',
+      },
+    });
+
+    // Define o saldo inicial baseado no último caixa fechado
+    const openingBalance = lastClosedRegister?.closingBalance ?? 0;
+
     const cashControls = await this.prisma.bankAccountCashControl.findMany({
       where: {
         bankAccountId,
@@ -67,10 +115,13 @@ export class CashControlService {
         },
       },
     });
+  }catch(error){
+    throw new BadRequestException('Erro ao abrir caixa ' + error.message);
+  }
   }
 
   async closeCashRegister(closeCashRegisterDto: CloseCashRegisterDto) {
-    const { cashRegisterId, observation } = closeCashRegisterDto;
+    const { cashRegisterId, notes } = closeCashRegisterDto;
 
     const register = await this.prisma.cashRegister.findUnique({
       where: { id: cashRegisterId },
@@ -102,7 +153,7 @@ export class CashControlService {
         totalIncomes,
         totalOutcomes,
         closingBalance,
-        observation,
+        notes,
         status: 'CLOSED',
       },
     });
@@ -197,7 +248,7 @@ export class CashControlService {
       this.prisma.transaction.create({
         data: {
           cashRegisterId: sourceCashRegister.id,
-          type: 'OUTCOME',
+          type: 'TRANSFER_OUTCOME',
           amount,
           description: `Transferência para caixa ${targetCashRegister.id}`,
           reason: transferMethod,
@@ -207,7 +258,7 @@ export class CashControlService {
       this.prisma.transaction.create({
         data: {
           cashRegisterId: targetCashRegister.id,
-          type: 'INCOME',
+          type: 'TRANSFER_INCOME',
           amount,
           description: `Transferência do caixa ${sourceCashRegister.id}`,
           reason: transferMethod,
@@ -293,22 +344,24 @@ export class CashControlService {
     // Formatar resposta
     const formattedData = Object.entries(groupedByDate).map(
       ([date, registers]) => ({
-        date: new Date(date).toLocaleDateString('pt-BR', {
-          weekday: 'long',
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-        }),
+        date: new Date(date).toISOString().split('T')[0],
         //TODO: Ajustar o retorno para incluir: movimentações: (totalIncomes - totalOutcomes)  e Saldo (abertura - movimentações)
         cashRegisters: (registers as typeof cashRegisters).map((register) => ({
+          id: register.id,
           bankAccountName: register.bankAccount.name,
-          bank: register.bankAccount.bank.name,
+          bank:{
+            name: register.bankAccount.bank.name,
+            icon: register.bankAccount.bank.icon,
+            code: register.bankAccount.bank.code
+          },
           status: register.status,
+          value: register.openingBalance +( register.totalIncomes - register.totalOutcomes),
           openingBalance: register.openingBalance,
           totalIncomes: register.totalIncomes,
           totalOutcomes: register.totalOutcomes,
           retroactive: register.retroactive,
           closingBalance: register.closingBalance,
+          transactionsAmount: register.totalIncomes - register.totalOutcomes,
         })),
       }),
     );

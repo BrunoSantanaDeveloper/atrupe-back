@@ -8,6 +8,7 @@ import { CreateBankAccountDto } from './dto/create-account.dto';
 import { BankAccountFilterDTO } from './dto/filter-account.dto';
 import { BankAccount, Prisma } from '@prisma/client';
 import { UpdateBankAccountDto } from './dto/update-bank.dto';
+import { endOfDay, startOfDay } from 'date-fns';
 
 @Injectable()
 export class AccountService {
@@ -33,6 +34,7 @@ export class AccountService {
   }
 
   async findAll(filter: BankAccountFilterDTO) {
+    const {cashControl} = filter;
     try {
       let where: Prisma.BankAccountWhereInput = {};
       where = { ...where, isActive: true };
@@ -44,6 +46,12 @@ export class AccountService {
         where = { ...where, bankId: filter.bankId };
       }
 
+      if (cashControl !== undefined) {
+        where = { 
+          ...where, 
+          cashControl: cashControl 
+        };
+      }
       const bankAccountCashControlConditions = [];
       if (filter.acceptIncomes) {
         bankAccountCashControlConditions.push({
@@ -72,10 +80,29 @@ export class AccountService {
         this.prisma.bankAccount.findMany({
           where: where,
           include: {
-            bank: true,
+            bank: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                icon: true,
+              },
+            },
             bankAccountCashControl: {
               include: {
                 paymentMethod: true,
+              },
+            },
+            cashRegister: {
+              where: {
+                status: 'OPEN',
+                openingDate: {
+                  gte: startOfDay(new Date()),
+                  lt: endOfDay(new Date()),
+                },
+              },
+              select: {
+                id: true,
               },
             },
           },
