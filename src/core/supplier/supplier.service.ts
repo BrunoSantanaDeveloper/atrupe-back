@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { PrismaService } from 'nestjs-prisma';
@@ -11,32 +15,32 @@ export class SupplierService {
 
   async create(createDto: CreateSupplierDto) {
     try {
-      // Criar o fornecedor
-      const supplier = await this.prisma.supplier.create({
-        data: {
-          type: createDto.type,
-          name: createDto.general.name,
-          email: createDto.general.email,
-          phone: createDto.general.phone,
-          mobile: createDto.general.mobile,
-          companyId: createDto.companyId,
-          category: createDto.general.category,
-          cpf: createDto.general.cpf,
-          rg: createDto.general.rg,
-          cnpj: createDto.general.cnpj,
-          activity: createDto.general.activity,
-          notes: createDto.general.notes,
-          minValue: createDto.creditLimit.minValue,
-          maxValue: createDto.creditLimit.maxValue,
-          blockClient: createDto.creditLimit.blockClient,
-        },
-      });
+      return await this.prisma.$transaction(async (prisma) => {
+        // Criar o cliente
+        const supplier = await prisma.supplier.create({
+          data: {
+            type: createDto.type,
+            name: createDto.general.name,
+            email: createDto.general.email,
+            phone: createDto.general.phone,
+            mobile: createDto.general.mobile,
+            companyId: createDto.companyId,
+            category: createDto.general.category,
+            cpf: createDto.general.cpf,
+            rg: createDto.general.rg,
+            cnpj: createDto.general.cnpj,
+            activity: createDto.general.activity,
+            notes: createDto.general.notes,
+            minValue: createDto.creditLimit.minValue,
+            maxValue: createDto.creditLimit.maxValue,
+            blockClient: createDto.creditLimit.blockClient,
+          },
+        });
 
-      // Criar endereços
-      if (createDto.addresses?.length > 0) {
-        await Promise.all(
-          createDto.addresses.map((address) =>
-            this.prisma.address.create({
+        // Criar endereços e associar ao cliente
+        if (createDto.addresses?.length > 0) {
+          for (const address of createDto.addresses) {
+            await prisma.address.create({
               data: {
                 type: address.type,
                 zipcode: address.zipcode,
@@ -45,20 +49,27 @@ export class SupplierService {
                 neighborhood: address.neighborhood,
                 street: address.street,
                 number: address.number,
-                complement: address.complement,
                 ownerId: supplier.id,
                 ownerType: 'SUPPLIER',
+                complement: address.complement,
               },
-            }),
-          ),
-        );
-      }
+            });
 
-      // Criar contatos
-      if (createDto.contacts?.length > 0) {
-        await Promise.all(
-          createDto.contacts.map((contact) =>
-            this.prisma.contact.create({
+            // await prisma.supplier.update({
+            //   where: { id: client.id },
+            //   data: {
+            //     address: {
+            //       connect: { id: createdAddress.id },
+            //     },
+            //   },
+            // });
+          }
+        }
+
+        // Criar contatos
+        if (createDto.contacts?.length > 0) {
+          for (const contact of createDto.contacts) {
+            await prisma.contact.create({
               data: {
                 name: contact.name,
                 email: contact.email,
@@ -67,29 +78,28 @@ export class SupplierService {
                 notes: contact.notes,
                 supplierId: supplier.id,
               },
-            }),
-          ),
-        );
-      }
+            });
+          }
+        }
 
-      // Criar condições de pagamento do fornecedor
-      if (createDto.creditLimit.conditions?.length > 0) {
-        await Promise.all(
-          createDto.creditLimit.conditions.map((condition) =>
-            this.prisma.supplierPaymentCondition.create({
+        // Criar condições de pagamento do cliente
+        if (createDto.creditLimit.conditions?.length > 0) {
+          for (const condition of createDto.creditLimit.conditions) {
+            await prisma.supplierPaymentCondition.create({
               data: {
                 supplierId: supplier.id,
                 paymentConditionId: condition.id,
                 isActive: condition.isActive,
               },
-            }),
-          ),
-        );
-      }
+            });
+          }
+        }
 
-      return this.findOne(supplier.id);
+        // Retorna o cliente completo após criação
+        return this.findOne(supplier.id);
+      });
     } catch (error) {
-      console.error('Error creating supplier:', error);
+      console.error('Error creating client:', error);
       throw error;
     }
   }
@@ -100,13 +110,14 @@ export class SupplierService {
       if (filter.companyId) {
         where = { ...where, companyId: filter.companyId };
       }
-
       if (filter.search) {
         where = {
           ...where,
           OR: [
             { name: { contains: filter.search, mode: 'insensitive' } },
             { email: { contains: filter.search, mode: 'insensitive' } },
+            { cpf: { contains: filter.search, mode: 'insensitive' } },
+            { cnpj: { contains: filter.search, mode: 'insensitive' } },
           ],
         };
       }
@@ -118,19 +129,20 @@ export class SupplierService {
       if (filter.status) {
         where = { ...where, status: filter.status };
       }
-      const total = await this.prisma.supplier.count({ where });
-      const suppliers = await this.prisma.supplier.findMany({
-        where: where,
-        take: +filter.limit,
-        skip: (+filter.page - 1) * +filter.limit,
-        orderBy: {
-          name: 'asc',
-        },
-      });
+      const [total, suppliers] = await Promise.all([
+        this.prisma.supplier.count({ where }),
+        this.prisma.supplier.findMany({
+          where: where,
+          take: +filter.limit,
+          skip: (+filter.page - 1) * +filter.limit,
+        }),
+      ]);
+
+      const lastPage = Math.ceil(total / +filter.limit);
 
       return {
         total,
-        lastPage: Math.ceil(total / +filter.limit),
+        lastPage,
         data: suppliers,
       };
     } catch (e) {
@@ -140,56 +152,120 @@ export class SupplierService {
   }
 
   async findOne(id: string) {
-    return this.prisma.supplier.findUnique({
+    const supplier = await this.prisma.supplier.findUnique({
       where: { id },
       include: {
         contacts: true,
         address: true,
         paymentConditions: {
           include: {
-            paymentCondition: true,
+            paymentCondition: {
+              include: {
+                paymentMethod: true,
+              },
+            },
           },
         },
       },
     });
+
+    if (!supplier) {
+      throw new NotFoundException('Supplier not found');
+    }
+    const paymentMethodsMap = new Map();
+    supplier.paymentConditions.forEach((pc) => {
+      const method = pc.paymentCondition.paymentMethod;
+      if (!paymentMethodsMap.has(method.id)) {
+        paymentMethodsMap.set(method.id, {
+          id: method.id,
+          name: method.name,
+          conditions: [],
+        });
+      }
+      paymentMethodsMap.get(method.id).conditions.push({
+        id: pc.paymentCondition.id,
+        name: pc.paymentCondition.name,
+        isActive: pc.isActive,
+      });
+    });
+
+    // Transformar para o formato esperado pelo front
+    return {
+      type: supplier.type,
+      general: {
+        name: supplier.name,
+        email: supplier.email,
+        cpf: supplier.cpf,
+        rg: supplier.rg,
+        cnpj: supplier.cnpj,
+        activity: supplier.activity,
+        category: supplier.category,
+        phone: supplier.phone,
+        mobile: supplier.mobile,
+        notes: supplier.notes,
+      },
+      addresses: supplier.address.map((address) => ({
+        type: address.type,
+        zipcode: address.zipcode,
+        state: address.state,
+        city: address.city,
+        neighborhood: address.neighborhood,
+        street: address.street,
+        number: address.number,
+        complement: address.complement,
+      })),
+      contacts: supplier.contacts.map((contact) => ({
+        name: contact.name,
+        email: contact.email,
+        phone: contact.phone,
+        mobile: contact.mobile,
+        notes: contact.notes,
+      })),
+      creditLimit: {
+        minValue: supplier.minValue || 0,
+        maxValue: supplier.maxValue || 0,
+        paymentMethods: Array.from(paymentMethodsMap.values()),
+        blockClient: supplier.blockClient,
+      },
+    };
   }
 
-  async update(id: string, updateDto: UpdateSupplierDto) {
+  async update(id: string, updateSupplierDto: UpdateSupplierDto) {
     try {
-      const supplier = await this.findOne(id);
-      if (!supplier) {
-        throw new Error('Supplier not found');
+      const client = await this.prisma.supplier.findUnique({ where: { id } });
+      if (!client) {
+        throw new NotFoundException('SUPPLIER not found');
       }
 
-      // Atualizar dados do fornecedor
-      await this.prisma.supplier.update({
-        where: { id },
-        data: {
-          name: updateDto.general?.name,
-          email: updateDto.general?.email,
-          phone: updateDto.general?.phone,
-          mobile: updateDto.general?.mobile,
-          category: updateDto.general?.category,
-          cpf: updateDto.general?.cpf,
-          rg: updateDto.general?.rg,
-          cnpj: updateDto.general?.cnpj,
-          activity: updateDto.general?.activity,
-          notes: updateDto.general?.notes,
-          minValue: updateDto.creditLimit?.minValue,
-          maxValue: updateDto.creditLimit?.maxValue,
-          blockClient: updateDto.creditLimit?.blockClient,
-        },
-      });
-
-      // Atualizar endereços
-      if (updateDto.addresses) {
-        await this.prisma.address.deleteMany({
-          where: { ownerId: id, ownerType: 'SUPPLIER' },
+      return await this.prisma.$transaction(async (prisma) => {
+        // Atualizar dados do cliente
+        await prisma.supplier.update({
+          where: { id },
+          data: {
+            name: updateSupplierDto.general?.name,
+            email: updateSupplierDto.general?.email,
+            phone: updateSupplierDto.general?.phone,
+            mobile: updateSupplierDto.general?.mobile,
+            category: updateSupplierDto.general?.category,
+            cpf: updateSupplierDto.general?.cpf,
+            rg: updateSupplierDto.general?.rg,
+            cnpj: updateSupplierDto.general?.cnpj,
+            activity: updateSupplierDto.general?.activity,
+            notes: updateSupplierDto.general?.notes,
+            minValue: updateSupplierDto.creditLimit?.minValue,
+            maxValue: updateSupplierDto.creditLimit?.maxValue,
+            blockClient: updateSupplierDto.creditLimit?.blockClient,
+          },
         });
 
-        await Promise.all(
-          updateDto.addresses.map((address) =>
-            this.prisma.address.create({
+        // Atualizar endereços
+        if (updateSupplierDto.addresses) {
+          await prisma.address.deleteMany({
+            where: { ownerId: id, ownerType: 'SUPPLIER' },
+          });
+
+          for (const address of updateSupplierDto.addresses) {
+            await prisma.address.create({
               data: {
                 type: address.type,
                 zipcode: address.zipcode,
@@ -202,20 +278,27 @@ export class SupplierService {
                 ownerId: id,
                 ownerType: 'SUPPLIER',
               },
-            }),
-          ),
-        );
-      }
+            });
 
-      // Atualizar contatos
-      if (updateDto.contacts) {
-        await this.prisma.contact.deleteMany({
-          where: { supplierId: id },
-        });
+            // await prisma.supplier.update({
+            //   where: { id },
+            //   data: {
+            //     address: {
+            //       connect: { id: createdAddress.id },
+            //     },
+            //   },
+            // });
+          }
+        }
 
-        await Promise.all(
-          updateDto.contacts.map((contact) =>
-            this.prisma.contact.create({
+        // Atualizar contatos
+        if (updateSupplierDto.contacts) {
+          await prisma.contact.deleteMany({
+            where: { supplierId: id },
+          });
+
+          for (const contact of updateSupplierDto.contacts) {
+            await prisma.contact.create({
               data: {
                 name: contact.name,
                 email: contact.email,
@@ -224,37 +307,34 @@ export class SupplierService {
                 notes: contact.notes,
                 supplierId: id,
               },
-            }),
-          ),
-        );
-      }
+            });
+          }
+        }
 
-      // Atualizar condições de pagamento
-      if (updateDto.creditLimit?.conditions) {
-        await this.prisma.supplierPaymentCondition.deleteMany({
-          where: { supplierId: id },
-        });
+        // Atualizar condições de pagamento
+        if (updateSupplierDto.creditLimit?.conditions) {
+          await prisma.supplierPaymentCondition.deleteMany({
+            where: { supplierId: id },
+          });
 
-        await Promise.all(
-          updateDto.creditLimit.conditions.map((condition) =>
-            this.prisma.supplierPaymentCondition.create({
+          for (const condition of updateSupplierDto.creditLimit.conditions) {
+            await prisma.supplierPaymentCondition.create({
               data: {
                 supplierId: id,
                 paymentConditionId: condition.id,
                 isActive: condition.isActive,
               },
-            }),
-          ),
-        );
-      }
+            });
+          }
+        }
 
-      return this.findOne(id);
+        return this.findOne(id);
+      });
     } catch (error) {
-      console.error('Error updating supplier:', error);
+      console.error('Error updating client:', error);
       throw error;
     }
   }
-
   private buildUpdateObject(dto: UpdateSupplierDto): any {
     const fieldsToUpdate = [
       'name',

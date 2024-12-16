@@ -257,7 +257,6 @@ export class ProductService {
     };
   }
   async update(id: string, updateProductDto: UpdateProductDto) {
-    console.log(updateProductDto);
     try {
       const product = await this.prisma.product.findUnique({
         where: { id },

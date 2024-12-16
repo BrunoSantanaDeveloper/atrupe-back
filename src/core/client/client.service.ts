@@ -230,7 +230,6 @@ export class ClientService {
   }
 
   async update(id: string, updateClientDto: UpdateClientDto) {
-    console.log(updateClientDto);
     try {
       const client = await this.prisma.client.findUnique({ where: { id } });
       if (!client) {
@@ -265,7 +264,7 @@ export class ClientService {
           });
 
           for (const address of updateClientDto.addresses) {
-            const createdAddress = await prisma.address.create({
+            await prisma.address.create({
               data: {
                 type: address.type,
                 zipcode: address.zipcode,
@@ -280,14 +279,14 @@ export class ClientService {
               },
             });
 
-            await prisma.client.update({
-              where: { id },
-              data: {
-                address: {
-                  connect: { id: createdAddress.id },
-                },
-              },
-            });
+            // await prisma.client.update({
+            //   where: { id },
+            //   data: {
+            //     address: {
+            //       connect: { id: createdAddress.id },
+            //     },
+            //   },
+            // });
           }
         }
 

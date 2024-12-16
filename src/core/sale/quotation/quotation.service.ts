@@ -109,7 +109,6 @@ export class QuotationService {
   }
 
   async addProductToQuotation(quotationId: string, data: AddItemDto) {
-    console.log(data);
     try {
       // Busca o orçamento e verifica se existe
       const quotation = await this.prisma.quotation.findUnique({
@@ -645,10 +644,9 @@ export class QuotationService {
 
       if (dto.date) {
         const date = add(new Date(dto.date), { days: 1 });
-        console.log(date);
         where = {
           ...where,
-          createdAt: {
+          finishedAt: {
             lte: endOfDay(date),
           },
         };
@@ -1242,7 +1240,6 @@ export class QuotationService {
   }
 
   async createProductionStages(quotationId: string) {
-    console.log(quotationId);
     try {
       const quotation = await this.prisma.quotation.findUnique({
         where: { id: quotationId },
@@ -1251,7 +1248,6 @@ export class QuotationService {
       if (!quotation) {
         console.error('Orçamento não encontrado.');
       }
-      console.log(quotation.DeliverySchedule);
 
       const quotationProductsIds = quotation.quotationProduct.map(
         (product) => product.productId,

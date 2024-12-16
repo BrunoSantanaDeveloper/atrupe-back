@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { CreateMethodDto } from './dto/create-method.dto';
 import { UpdateMethodDto } from './dto/update-method.dto';
 import { PrismaService } from 'nestjs-prisma';
@@ -63,14 +63,29 @@ export class MethodService {
     });
   }
 
-  remove(id: string) {
-    return this.prisma.paymentMethod.update({
-      where: {
-        id,
-      },
-      data: {
-        isActive: false,
-      },
-    });
+  async remove(id: string) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const updatedMethod = await tx.paymentMethod.update({
+          where: {
+            id,
+          },
+          data: {
+            isActive: false,
+          },
+        });
+
+        await tx.bankAccountCashControl.deleteMany({
+          where: {
+            paymentMethodId: updatedMethod.id,
+          },
+        });
+
+        return { message: 'Payment method removed successfully' };
+      });
+    } catch (error) {
+      console.error(error);
+      throw new BadRequestException('Error removing payment method');
+    }
   }
 }

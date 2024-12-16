@@ -45,7 +45,6 @@ export class RoleController {
     description: 'Role criada com sucesso.',
   })
   async create(@Req() req, @Body() createRoleDto: CreateRoleDto) {
-    console.log(req.user);
     createRoleDto.companyId = req.user.companyId;
     try {
       return await this.roleService.create(createRoleDto);

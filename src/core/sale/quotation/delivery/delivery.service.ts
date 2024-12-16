@@ -53,7 +53,6 @@ export class DeliveryService {
     id: string,
     updateDeliveryInfoDto: UpdateDeliveryInfoDto,
   ) {
-    console.log(updateDeliveryInfoDto);
     try {
       const existingDeliveryInfo = await this.prisma.deliveryInfo.findUnique({
         where: { id },

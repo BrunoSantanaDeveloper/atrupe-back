@@ -73,7 +73,6 @@ export class ProfileController {
     description: 'Perfil criada com sucesso.',
   })
   async create(@Req() req, @Body() createProfileDto: CreateProfileDto) {
-    console.log(req.user);
     createProfileDto.companyId = req.user.companyId;
     try {
       return await this.profileService.create(createProfileDto);

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreateConditionDto } from './dto/create-condition.dto';
 import { UpdateConditionDto } from './dto/update-condition.dto';
 import { PrismaService } from 'nestjs-prisma';
@@ -34,7 +34,7 @@ export class ConditionService {
       return paymentCondition;
     } catch (error) {
       console.error(error);
-      throw new Error('Error creating payment condition');
+      throw new BadRequestException('You shall not pass!');
     }
   }
 

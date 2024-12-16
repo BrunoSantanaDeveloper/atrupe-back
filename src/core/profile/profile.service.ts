@@ -35,9 +35,19 @@ export class ProfileService {
       }),
       this.prisma.sellerProfile.findMany({
         where: where,
-        include: {
+        select: {
+          id: true,
+          name: true,
+          isActive: true,
+          companyId: true,
+          commission: true,
+          maxDiscount: true,
+          minValue: true,
+          canApprovePreRegistration: true,
+          canCancelSale: true,
           employees: {
             select: {
+              id: true,
               user: {
                 select: {
                   name: true,
@@ -62,9 +72,19 @@ export class ProfileService {
     ]);
 
     const mappedProfiles = profiles.map((profile) => ({
-      profile,
+      profile: {
+        id: profile.id,
+        name: profile.name,
+        isActive: profile.isActive,
+        companyId: profile.companyId,
+        commission: profile.commission,
+        maxDiscount: profile.maxDiscount,
+        minValue: profile.minValue,
+        canApprovePreRegistration: profile.canApprovePreRegistration,
+        canCancelSale: profile.canCancelSale,
+      },
       employees: profile.employees.map((employee) => ({
-        id: employee.role.id,
+        id: employee.id,
         avatar: employee.user.avatar,
         name: employee.user.name,
         role: employee.role.name,
@@ -131,7 +151,7 @@ export class ProfileService {
       },
     });
     if (employes.length === 0) {
-      throw new NotFoundException('No employees found');
+      return [];
     }
     const data = employes.map((employee) => {
       return { id: employee.id, name: employee.user.name };

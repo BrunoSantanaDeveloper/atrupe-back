@@ -53,9 +53,7 @@ export class BankController {
     status: 201,
     description: 'Banco criado com sucesso.',
   })
-  create(@Body() createBankDto: CreateBankDto, @Req() req) {
-    console.log(req.user.companyId);
-    // ID do usuário logado
+  create(@Body() createBankDto: CreateBankDto) {
     return this.bankService.create(createBankDto);
   }
 
@@ -84,12 +82,12 @@ export class BankController {
     status: 201,
     description: 'Conta bancária criada com sucesso.',
   })
-  createAccount(@Req() req, @Body() dto: CreateBankAccountDto) {
+  async createAccount(@Req() req, @Body() dto: CreateBankAccountDto) {
     if (req.user.companyId === null) {
       throw new BadGatewayException('Usuário não possui empresa vinculada');
     }
     dto.companyId = req.user.companyId;
-    return this.accountService.create(dto);
+    return await this.accountService.create(dto);
   }
 
   @Get('account')
