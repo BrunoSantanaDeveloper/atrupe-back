@@ -1,4 +1,9 @@
-import { IsBoolean, IsBooleanString, IsOptional, IsUUID } from 'class-validator';
+import {
+  IsBoolean,
+  IsBooleanString,
+  IsOptional,
+  IsUUID,
+} from 'class-validator';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';

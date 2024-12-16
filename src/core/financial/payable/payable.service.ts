@@ -343,14 +343,16 @@ export class PayableService {
             status: 'OPEN',
             openingDate: {
               gte: startOfDay(new Date(paidDate)),
-              lt: endOfDay(new Date(paidDate))
-            }
-          }
-        }); 
+              lt: endOfDay(new Date(paidDate)),
+            },
+          },
+        });
 
         if (!openCashRegister) {
-          throw new BadRequestException('Nenhum caixa aberto encontrado para esta data.');
-        }   
+          throw new BadRequestException(
+            'Nenhum caixa aberto encontrado para esta data.',
+          );
+        }
 
         await tx.transaction.create({
           data: {
@@ -359,12 +361,12 @@ export class PayableService {
             description: `Pagamento da parcela ${installment.id}`,
             transactionDate: new Date(paidDate),
             payableInstallment: {
-              connect: { id: installment.id }
+              connect: { id: installment.id },
             },
             cashRegister: {
-              connect: { id: openCashRegister.id }
-            }
-          }
+              connect: { id: openCashRegister.id },
+            },
+          },
         });
 
         // // Atualiza o valor total do título

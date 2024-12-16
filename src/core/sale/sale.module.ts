@@ -7,7 +7,14 @@ import { DeliveryScheduleModule } from './delivery-schedule/delivery-schedule.mo
 import { ProductionStageModule } from './production-stage/production-stage.module';
 
 @Module({
-  imports: [SeriesModule, QuotationModule, OrderModule, StatusModule, DeliveryScheduleModule, ProductionStageModule],
+  imports: [
+    SeriesModule,
+    QuotationModule,
+    OrderModule,
+    StatusModule,
+    DeliveryScheduleModule,
+    ProductionStageModule,
+  ],
   exports: [SeriesModule, QuotationModule, OrderModule],
 })
 export class SaleModule {}

@@ -34,7 +34,7 @@ export class AccountService {
   }
 
   async findAll(filter: BankAccountFilterDTO) {
-    const {cashControl} = filter;
+    const { cashControl } = filter;
     try {
       let where: Prisma.BankAccountWhereInput = {};
       where = { ...where, isActive: true };
@@ -47,9 +47,9 @@ export class AccountService {
       }
 
       if (cashControl !== undefined) {
-        where = { 
-          ...where, 
-          cashControl: cashControl 
+        where = {
+          ...where,
+          cashControl: cashControl,
         };
       }
       const bankAccountCashControlConditions = [];

@@ -8,7 +8,13 @@ import { DeliveryModule } from './delivery/delivery.module';
 import { PaymentModule } from './payment/payment.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, OrderModule, DeliveryModule, PaymentModule],
+  imports: [
+    PrismaModule,
+    AuthModule,
+    OrderModule,
+    DeliveryModule,
+    PaymentModule,
+  ],
   controllers: [QuotationController],
   providers: [QuotationService],
   exports: [QuotationService],

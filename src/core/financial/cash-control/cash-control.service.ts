@@ -49,75 +49,75 @@ export class CashControlService {
     };
   }
   async openCashRegister(createCashRegisterDto: CreateCashRegisterDto) {
-    try{
-    const { companyId, openingDate, bankAccountId } =
-      createCashRegisterDto;
-    const date = openingDate ? startOfDay(new Date(openingDate)) : startOfDay(new Date());
+    try {
+      const { companyId, openingDate, bankAccountId } = createCashRegisterDto;
+      const date = openingDate
+        ? startOfDay(new Date(openingDate))
+        : startOfDay(new Date());
 
-    // Verifica se existe qualquer caixa nesta data para esta conta
-    const existingRegister = await this.prisma.cashRegister.findFirst({
-      where: {
-        openingDate: {
-          gte: startOfDay(date),
-          lt: endOfDay(date)
+      // Verifica se existe qualquer caixa nesta data para esta conta
+      const existingRegister = await this.prisma.cashRegister.findFirst({
+        where: {
+          openingDate: {
+            gte: startOfDay(date),
+            lt: endOfDay(date),
+          },
+          bankAccountId,
         },
-        bankAccountId,
-      },
-    });
+      });
 
-    if (existingRegister) {
-      throw new BadRequestException(
-        'Já existe um caixa para esta conta nesta data.',
-      );
-    }
-    
+      if (existingRegister) {
+        throw new BadRequestException(
+          'Já existe um caixa para esta conta nesta data.',
+        );
+      }
 
-    // Busca o último caixa fechado para esta conta
-    const lastClosedRegister = await this.prisma.cashRegister.findFirst({
-      where: {
-        bankAccountId,
-        status: 'CLOSED',
-      },
-      orderBy: {
-        closingDate: 'desc',
-      },
-    });
-
-    // Define o saldo inicial baseado no último caixa fechado
-    const openingBalance = lastClosedRegister?.closingBalance ?? 0;
-
-    const cashControls = await this.prisma.bankAccountCashControl.findMany({
-      where: {
-        bankAccountId,
-      },
-    });
-
-    if (!cashControls.length) {
-      throw new BadRequestException(
-        'Nenhuma configuração de método de pagamento encontrada para esta conta bancária.',
-      );
-    }
-
-    return this.prisma.cashRegister.create({
-      data: {
-        openingDate: date,
-        openingBalance,
-        bankAccount: {
-          connect: { id: bankAccountId },
+      // Busca o último caixa fechado para esta conta
+      const lastClosedRegister = await this.prisma.cashRegister.findFirst({
+        where: {
+          bankAccountId,
+          status: 'CLOSED',
         },
-        company: {
-          connect: {
-            id: companyId,
+        orderBy: {
+          closingDate: 'desc',
+        },
+      });
+
+      // Define o saldo inicial baseado no último caixa fechado
+      const openingBalance = lastClosedRegister?.closingBalance ?? 0;
+
+      const cashControls = await this.prisma.bankAccountCashControl.findMany({
+        where: {
+          bankAccountId,
+        },
+      });
+
+      if (!cashControls.length) {
+        throw new BadRequestException(
+          'Nenhuma configuração de método de pagamento encontrada para esta conta bancária.',
+        );
+      }
+
+      return this.prisma.cashRegister.create({
+        data: {
+          openingDate: date,
+          openingBalance,
+          bankAccount: {
+            connect: { id: bankAccountId },
+          },
+          company: {
+            connect: {
+              id: companyId,
+            },
+          },
+          cashControls: {
+            connect: cashControls.map((control) => ({ id: control.id })),
           },
         },
-        cashControls: {
-          connect: cashControls.map((control) => ({ id: control.id })),
-        },
-      },
-    });
-  }catch(error){
-    throw new BadRequestException('Erro ao abrir caixa ' + error.message);
-  }
+      });
+    } catch (error) {
+      throw new BadRequestException('Erro ao abrir caixa ' + error.message);
+    }
   }
 
   async closeCashRegister(closeCashRegisterDto: CloseCashRegisterDto) {
@@ -349,13 +349,15 @@ export class CashControlService {
         cashRegisters: (registers as typeof cashRegisters).map((register) => ({
           id: register.id,
           bankAccountName: register.bankAccount.name,
-          bank:{
+          bank: {
             name: register.bankAccount.bank.name,
             icon: register.bankAccount.bank.icon,
-            code: register.bankAccount.bank.code
+            code: register.bankAccount.bank.code,
           },
           status: register.status,
-          value: register.openingBalance +( register.totalIncomes - register.totalOutcomes),
+          value:
+            register.openingBalance +
+            (register.totalIncomes - register.totalOutcomes),
           openingBalance: register.openingBalance,
           totalIncomes: register.totalIncomes,
           totalOutcomes: register.totalOutcomes,
