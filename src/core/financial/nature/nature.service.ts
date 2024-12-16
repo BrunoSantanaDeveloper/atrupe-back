@@ -5,6 +5,7 @@ import { UpdateNatureDto } from './dto/update-nature.dto';
 @Injectable()
 export class NatureService {
   create(createNatureDto: CreateNatureDto) {
+    console.log(createNatureDto);
     return 'This action adds a new nature';
   }
 
@@ -17,6 +18,7 @@ export class NatureService {
   }
 
   update(id: number, updateNatureDto: UpdateNatureDto) {
+    console.log(updateNatureDto);
     return `This action updates a #${id} nature`;
   }
 
