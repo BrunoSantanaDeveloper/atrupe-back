@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { CreateRoleDto } from './dto/create-role.dto';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { CreatePolicyDto, CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { RoleFilterDTO } from './dto/filter.dto';
@@ -14,6 +14,44 @@ export class RoleService {
         ...createRoleDto,
       },
     });
+  }
+
+  async createPolicyAndLinkToRole(
+    createPolicyDto: CreatePolicyDto,
+    roleId: string,
+  ) {
+    const role = await this.prisma.role.findUnique({
+      where: {
+        id: roleId,
+      },
+    });
+
+    if (!role) {
+      throw new NotFoundException('Role not found');
+    }
+
+    const { resource, actions } = createPolicyDto;
+
+    // Criação da Policy
+    const policy = await this.prisma.policy.create({
+      data: {
+        name: resource, // Nome da Policy será o nome do resource
+        definition: {
+          resource: resource,
+          actions: actions,
+        },
+      },
+    });
+
+    // Vincula a policy à role
+    await this.prisma.rolePolicy.create({
+      data: {
+        roleId: roleId,
+        policyId: policy.id,
+      },
+    });
+
+    return policy;
   }
 
   findAll(filter: RoleFilterDTO) {

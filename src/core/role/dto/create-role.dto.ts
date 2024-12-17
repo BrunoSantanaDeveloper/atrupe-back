@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateRoleDto {
@@ -19,4 +19,22 @@ export class CreateRoleDto {
     required: true,
   })
   sectorId?: string;
+}
+
+export class CreatePolicyDto {
+  @ApiProperty({
+    description: 'Nome do Resource',
+    example: 'Cadastro de Clientes',
+  })
+  @IsNotEmpty()
+  @IsString()
+  resource: string;
+
+  @ApiProperty({
+    description: 'Lista de Ações permitidas para o Resource',
+    example: ['view', 'edit', 'create', 'delete'],
+  })
+  @IsArray()
+  @IsNotEmpty()
+  actions: string[];
 }

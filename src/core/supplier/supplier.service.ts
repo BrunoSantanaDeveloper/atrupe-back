@@ -7,7 +7,7 @@ import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { SupplierFilterDTO } from './dto/filter.dto';
-import { OwnerType, Prisma } from '@prisma/client';
+import { ClientStatus, OwnerType, Prisma } from '@prisma/client';
 
 @Injectable()
 export class SupplierService {
@@ -154,6 +154,40 @@ export class SupplierService {
       console.error(e);
       throw new BadRequestException('Supplier list error');
     }
+  }
+
+  async findAllQuantity(companyId: string) {
+    const allStatuses: ClientStatus[] = [
+      'PROSPECT',
+      'ACTIVE',
+      'INACTIVE',
+      'SUSPENDED',
+    ];
+
+    const result = await this.prisma.client.groupBy({
+      by: ['status'],
+      where: { companyId, status: { in: allStatuses } },
+      _count: true,
+    });
+
+    const statusCount = allStatuses.reduce(
+      (acc, status) => {
+        acc[status] = 0;
+        return acc;
+      },
+      {} as { [K in ClientStatus]: number },
+    );
+
+    result.forEach((cur) => {
+      statusCount[cur.status] = cur._count;
+    });
+
+    const total = Object.values(statusCount).reduce((acc, cur) => acc + cur, 0);
+
+    return {
+      ...statusCount,
+      TOTAL: total,
+    };
   }
 
   async findOne(id: string) {

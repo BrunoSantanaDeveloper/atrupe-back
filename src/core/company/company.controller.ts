@@ -38,8 +38,8 @@ export class CompanyController {
     type: Promise<Company>,
   })
   @ApiBody({ type: CreateCompanyDto })
-  create(@Body() createCompanyDto: CreateCompanyDto): Promise<Company> {
-    return this.companyService.create(createCompanyDto);
+  async create(@Body() createCompanyDto: CreateCompanyDto): Promise<Company> {
+    return await this.companyService.create(createCompanyDto);
   }
 
   @Get('check/:cnpj')

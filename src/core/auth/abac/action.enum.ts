@@ -1,9 +1,6 @@
 export enum AbacAction {
+  View = 'view',
+  Edit = 'edit',
   Create = 'create',
-  List = 'list',
-  Get = 'get',
-  Update = 'update',
   Delete = 'delete',
-  Manage = 'manage',
-  Open = 'open',
 }

@@ -12,7 +12,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { RoleService } from './role.service';
-import { CreateRoleDto } from './dto/create-role.dto';
+import { CreatePolicyDto, CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { RoleFilterDTO } from './dto/filter.dto';
@@ -48,6 +48,31 @@ export class RoleController {
     createRoleDto.companyId = req.user.companyId;
     try {
       return await this.roleService.create(createRoleDto);
+    } catch (error) {
+      console.log(error.message);
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Post(':roleId/policy')
+  @ApiOperation({ summary: 'Cria uma Policy e a vincula a uma Role' })
+  @ApiBody({
+    description: 'Dados da Policy e Ações',
+    type: CreatePolicyDto,
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Policy criada e vinculada à role com sucesso.',
+  })
+  async createPolicy(
+    @Param('roleId') roleId: string,
+    @Body() createPolicyDto: CreatePolicyDto,
+  ) {
+    try {
+      return await this.roleService.createPolicyAndLinkToRole(
+        createPolicyDto,
+        roleId,
+      );
     } catch (error) {
       console.log(error.message);
       throw new BadRequestException(error.message);

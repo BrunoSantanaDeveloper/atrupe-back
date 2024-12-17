@@ -4,13 +4,78 @@ import {
   IsString,
   IsUrl,
   ValidateNested,
+  IsEmail,
 } from 'class-validator';
 import { IsCnpj } from '../../../helpers/validators/cnpj';
-import { CreateAddressDto } from '../../address/dto/create-address.dto';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class CreateCompanyDto {
+export class CreateAddressDto {
+  @IsNotEmpty()
+  @IsString()
+  @ApiProperty({
+    description: 'CEP',
+    required: true,
+    example: '12345-678',
+  })
+  zipcode: string;
+
+  @IsNotEmpty()
+  @IsString()
+  @ApiProperty({
+    description: 'Estado',
+    required: true,
+    example: 'São Paulo',
+  })
+  state: string;
+
+  @IsNotEmpty()
+  @IsString()
+  @ApiProperty({
+    description: 'Cidade',
+    required: true,
+    example: 'São Paulo',
+  })
+  city: string;
+
+  @IsNotEmpty()
+  @IsString()
+  @ApiProperty({
+    description: 'Bairro',
+    required: true,
+    example: 'Centro',
+  })
+  neighborhood: string;
+
+  @IsNotEmpty()
+  @IsString()
+  @ApiProperty({
+    description: 'Rua',
+    required: true,
+    example: 'Rua das Inovações',
+  })
+  street: string;
+
+  @IsNotEmpty()
+  @IsString()
+  @ApiProperty({
+    description: 'Número',
+    required: true,
+    example: '123',
+  })
+  number: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Complemento',
+    required: false,
+    example: 'Sala 456',
+  })
+  complement?: string;
+}
+
+export class CreateGeneralInfoDto {
   @IsNotEmpty()
   @IsString()
   @ApiProperty({
@@ -22,6 +87,15 @@ export class CreateCompanyDto {
 
   @IsNotEmpty()
   @IsString()
+  @ApiProperty({
+    description: 'Razão social',
+    required: true,
+    example: 'Tech Innovators',
+  })
+  legalName: string;
+
+  @IsNotEmpty()
+  @IsString()
   @IsCnpj()
   @ApiProperty({
     description: 'CNPJ da empresa',
@@ -30,41 +104,14 @@ export class CreateCompanyDto {
   })
   cnpj: string;
 
-  @IsOptional()
-  @IsString()
+  @IsNotEmpty()
+  @IsEmail()
   @ApiProperty({
-    description: 'Razão social',
-    required: false,
-    example: 'Tech Innovators',
+    description: 'Email',
+    required: true,
+    example: 'contato@techinnovators.com',
   })
-  legalName?: string; // Razão Social
-
-  @IsOptional()
-  @IsString()
-  @ApiProperty({
-    description: 'Inscrição Estadual',
-    required: false,
-    example: '123456789',
-  })
-  stateRegistration?: string; // Inscrição Estadual (opcional)
-
-  @IsOptional()
-  @IsString()
-  @ApiProperty({
-    description: 'Inscrição Municipal',
-    required: false,
-    example: '987654321',
-  })
-  municipalRegistration?: string; // Inscrição Municipal (opcional)
-
-  @IsOptional()
-  @IsString()
-  @ApiProperty({
-    description: 'Telefone',
-    required: false,
-    example: '+55 11 1234-5678',
-  })
-  phoneNumber?: string; // Telefone (opcional)
+  email: string;
 
   @IsOptional()
   @IsUrl()
@@ -73,21 +120,102 @@ export class CreateCompanyDto {
     required: false,
     example: 'https://www.techinnovators.com',
   })
-  website?: string; // Site (opcional)
+  siteUrl?: string;
 
   @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Telefone fixo',
+    required: false,
+    example: '+55 11 1234-5678',
+  })
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Telefone celular',
+    required: false,
+    example: '+55 11 98765-4321',
+  })
+  mobile?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Inscrição Municipal',
+    required: false,
+    example: '987654321',
+  })
+  municipalRegistration?: string;
+}
+
+export class CreatePersonalizationDto {
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'URL do logo',
+    required: false,
+    example: 'https://example.com/logo.png',
+  })
+  logoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'URL do favicon',
+    required: false,
+    example: 'https://example.com/favicon.ico',
+  })
+  favIconUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Textos antes dos itens',
+    required: false,
+    example: 'Observações importantes:',
+  })
+  textsBeforeItems?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Textos depois dos itens',
+    required: false,
+    example: 'Agradecemos a preferência!',
+  })
+  textsAfterItems?: string;
+}
+
+export class CreateCompanyDto {
+  @IsNotEmpty()
+  @ValidateNested()
+  @Type(() => CreateGeneralInfoDto)
+  @ApiProperty({
+    description: 'Informações gerais',
+    required: true,
+    type: () => CreateGeneralInfoDto,
+  })
+  general: CreateGeneralInfoDto;
+
+  @IsNotEmpty()
   @ValidateNested()
   @Type(() => CreateAddressDto)
   @ApiProperty({
     description: 'Endereço',
-    required: false,
-    example: {
-      street: 'Rua das Inovações, 123',
-      cityId: '16d23eb1-6763-46e3-b2a2-7b1a05037768',
-      stateId: '16d23eb1-6763-46e3-b2a2-7b1a05037768',
-      zipCode: '12345-678',
-      country: 'Brasil',
-    },
+    required: true,
+    type: () => CreateAddressDto,
   })
-  address?: CreateAddressDto;
+  address: CreateAddressDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreatePersonalizationDto)
+  @ApiProperty({
+    description: 'Personalização',
+    required: false,
+    type: () => CreatePersonalizationDto,
+  })
+  personalization?: CreatePersonalizationDto;
 }

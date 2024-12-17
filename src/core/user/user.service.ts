@@ -47,6 +47,19 @@ export class UserService {
     });
   }
 
+  async findOneRoles(id: string) {
+    return this.prisma.user.findFirst({
+      where: { id: id },
+      include: {
+        userRole: {
+          include: {
+            role: { include: { rolePolicy: { include: { policy: true } } } },
+          },
+        },
+      },
+    });
+  }
+
   async findOne(id: string) {
     const cachedUser = await this.cache.get<UserResponseDto>(`user:${id}`);
     if (cachedUser) {

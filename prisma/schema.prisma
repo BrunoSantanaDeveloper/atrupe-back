@@ -21,9 +21,16 @@ model Company {
   cnpj                  String?
   stateRegistration     String?
   municipalRegistration String?
-  phoneNumber           String?
-  website               String?
+  phone                 String?
+  mobile                String?
+  email                 String?
+  siteUrl               String?
   isActive              Boolean @default(true)
+
+  logoUrl         String?
+  favIconUrl      String?
+  textBeforeItems String?
+  textAfterItems  String?
 
   sectors      Sector[]
   clients      Client[]
@@ -55,7 +62,8 @@ model Company {
   sellerProfile         SellerProfile[]
   salarySheet           SalarySheet[]
   deliveryType          DeliveryType[]
-  DeliverySchedule      DeliverySchedule[]
+  deliverySchedule      DeliverySchedule[]
+  address               Address[]
 
   @@map("companies")
 }
@@ -83,12 +91,14 @@ model Address {
 
   ownerType OwnerType @default(COMPANY)
 
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
   ownerId String?
   client  Client? @relation(fields: [ownerId], references: [id])
 
   supplierId String?
   supplier   Supplier? @relation(fields: [supplierId], references: [id])
-
 
   @@index([ownerId, ownerType])
   @@index([supplierId, ownerType])

@@ -50,6 +50,19 @@ export class SupplierController {
     return this.supplierService.create(createSupplierDto);
   }
 
+  @Get('quantity')
+  @ApiOperation({
+    summary: 'Obtém a quantidade de todos os fornecedores em seus status.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de quantidade de caixas retornada com sucesso.',
+  })
+  async findAllQuantity(@Req() req) {
+    const companyId = req.user.companyId;
+    return this.supplierService.findAllQuantity(companyId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todos os fornecedores' })
   @ApiResponse({
