@@ -22,6 +22,10 @@ class GeneralInfoDto {
   name: string;
 
   @IsOptional()
+  @IsString()
+  tradeName?: string;
+
+  @IsOptional()
   @IsEmail()
   email?: string;
 

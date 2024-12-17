@@ -15,12 +15,13 @@ export class SupplierService {
 
   async create(createDto: CreateSupplierDto) {
     try {
-      return await this.prisma.$transaction(async (prisma) => {
+      const supplier = await this.prisma.$transaction(async (prisma) => {
         // Criar o cliente
         const supplier = await prisma.supplier.create({
           data: {
             type: createDto.type,
             name: createDto.general.name,
+            tradeName: createDto.general?.tradeName ?? null,
             email: createDto.general.email,
             phone: createDto.general.phone,
             mobile: createDto.general.mobile,
@@ -31,9 +32,9 @@ export class SupplierService {
             cnpj: createDto.general.cnpj,
             activity: createDto.general.activity,
             notes: createDto.general.notes,
-            minValue: createDto.creditLimit.minValue,
-            maxValue: createDto.creditLimit.maxValue,
-            blockClient: createDto.creditLimit.blockClient,
+            // minValue: createDto.creditLimit.minValue,
+            // maxValue: createDto.creditLimit.maxValue,
+            // blockClient: createDto.creditLimit.blockClient,
           },
         });
 
@@ -49,7 +50,7 @@ export class SupplierService {
                 neighborhood: address.neighborhood,
                 street: address.street,
                 number: address.number,
-                ownerId: supplier.id,
+                supplierId: supplier.id,
                 ownerType: 'SUPPLIER',
                 complement: address.complement,
               },
@@ -83,21 +84,25 @@ export class SupplierService {
         }
 
         // Criar condições de pagamento do cliente
-        if (createDto.creditLimit.conditions?.length > 0) {
-          for (const condition of createDto.creditLimit.conditions) {
-            await prisma.supplierPaymentCondition.create({
-              data: {
-                supplierId: supplier.id,
-                paymentConditionId: condition.id,
-                isActive: condition.isActive,
-              },
-            });
-          }
-        }
+        // if (createDto.creditLimit.conditions?.length > 0) {
+        //   for (const condition of createDto.creditLimit.conditions) {
+        //     await prisma.supplierPaymentCondition.create({
+        //       data: {
+        //         supplierId: supplier.id,
+        //         paymentConditionId: condition.id,
+        //         isActive: condition.isActive,
+        //       },
+        //     });
+        //   }
+        // }
 
         // Retorna o cliente completo após criação
-        return this.findOne(supplier.id);
+        console.log('supplier', supplier);
+
+        return supplier;
       });
+
+      return this.findOne(supplier.id);
     } catch (error) {
       console.error('Error creating client:', error);
       throw error;
@@ -275,7 +280,7 @@ export class SupplierService {
                 street: address.street,
                 number: address.number,
                 complement: address.complement,
-                ownerId: id,
+                supplierId: id,
                 ownerType: 'SUPPLIER',
               },
             });

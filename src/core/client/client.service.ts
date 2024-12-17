@@ -10,7 +10,7 @@ export class ClientService {
   constructor(private readonly prisma: PrismaService) {}
   async create(createClientDto: CreateClientDto) {
     try {
-      return await this.prisma.$transaction(async (prisma) => {
+      const client = await this.prisma.$transaction(async (prisma) => {
         // Criar o cliente
         const client = await prisma.client.create({
           data: {
@@ -25,6 +25,7 @@ export class ClientService {
             rg: createClientDto.general.rg,
             cnpj: createClientDto.general.cnpj,
             activity: createClientDto.general.activity,
+            tradeName: createClientDto.general.tradeName,
             notes: createClientDto.general.notes,
             minValue: createClientDto.creditLimit.minValue,
             maxValue: createClientDto.creditLimit.maxValue,
@@ -91,8 +92,9 @@ export class ClientService {
         }
 
         // Retorna o cliente completo após criação
-        return this.findOne(client.id);
+        return client;
       });
+      return this.findOne(client.id);
     } catch (error) {
       console.error('Error creating client:', error);
       throw error;
