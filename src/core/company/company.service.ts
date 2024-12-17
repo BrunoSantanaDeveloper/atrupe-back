@@ -5,6 +5,7 @@ import { AddressService } from '../address/address.service';
 import { PlugService } from '../../svc/plug/plug.service';
 import { Company } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 @Injectable()
 export class CompanyService {
@@ -14,8 +15,19 @@ export class CompanyService {
     private readonly plugService: PlugService,
   ) {}
 
-  async create(createCompanyDto: CreateCompanyDto): Promise<Company> {
+  async create(
+    createCompanyDto: CreateCompanyDto,
+    parentCompanyId: string,
+  ): Promise<Company> {
     try {
+      const company = await this.prisma.company.findUnique({
+        where: { id: parentCompanyId },
+      });
+
+      if (!company) {
+        throw new Error('Company not found');
+      }
+
       const { general, address, personalization } = createCompanyDto;
 
       return await this.prisma.company.create({
@@ -28,7 +40,7 @@ export class CompanyService {
           mobile: general.mobile,
           municipalRegistration: general.municipalRegistration,
           siteUrl: general.siteUrl,
-
+          principalCompanyId: parentCompanyId,
           // Personalization fields
           logoUrl: personalization?.logoUrl,
           favIconUrl: personalization?.favIconUrl,
@@ -70,8 +82,71 @@ export class CompanyService {
     }
   }
 
-  findAll() {
-    return `This action returns all company`;
+  async findAll(filter: BaseFilterDTO) {
+    const { page = 1, limit = 10, companyId } = filter;
+    const [total, companies] = await Promise.all([
+      this.prisma.company.count({
+        where: {
+          OR: [{ id: companyId }, { principalCompanyId: companyId }],
+        },
+      }),
+      this.prisma.company.findMany({
+        where: {
+          OR: [{ id: companyId }, { principalCompanyId: companyId }],
+        },
+        include: {
+          address: true,
+        },
+        orderBy: {
+          principalCompanyId: 'desc',
+        },
+        skip: (Number(page) - 1) * Number(limit),
+        take: Number(limit),
+      }),
+    ]);
+
+    const sortedCompanies = companies.sort((a, b) => {
+      if (a.id === companyId) return -1;
+      if (b.id === companyId) return 1;
+      return 0;
+    });
+
+    const formattedCompanies = sortedCompanies.map((company) => ({
+      status: company.isActive,
+      general: {
+        name: company.name,
+        legalName: company.legalName,
+        municipalRegistration: company.municipalRegistration,
+        cnpj: company.cnpj,
+        email: company.email,
+        siteUrl: company.siteUrl,
+        phone: company.phone,
+        mobile: company.mobile,
+      },
+      address: company.address?.length
+        ? {
+            zipcode: company.address[0].zipcode,
+            state: company.address[0].state,
+            city: company.address[0].city,
+            neighborhood: company.address[0].neighborhood,
+            street: company.address[0].street,
+            number: company.address[0].number,
+            complement: company.address[0].complement,
+          }
+        : null,
+      personalization: {
+        logoUrl: company.logoUrl,
+        favIconUrl: company.favIconUrl,
+        textsBeforeItems: company.textBeforeItems,
+        textsAfterItems: company.textAfterItems,
+      },
+    }));
+
+    return {
+      total,
+      lastPage: Math.ceil(total / Number(limit)),
+      data: formattedCompanies,
+    };
   }
 
   findOne(id: string) {

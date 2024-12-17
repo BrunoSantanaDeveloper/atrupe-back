@@ -27,6 +27,11 @@ model Company {
   siteUrl               String?
   isActive              Boolean @default(true)
 
+
+  principalCompanyId String? // ID da empresa-mãe
+  parentCompany      Company?  @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
+  subsidiaries       Company[] @relation("CompanyHierarchy")
+
   logoUrl         String?
   favIconUrl      String?
   textBeforeItems String?

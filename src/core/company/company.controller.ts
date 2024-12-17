@@ -7,6 +7,8 @@ import {
   Param,
   Delete,
   UseGuards,
+  Req,
+  Query,
 } from '@nestjs/common';
 import { CompanyService } from './company.service';
 import { CreateCompanyDto } from './dto/create-company.dto';
@@ -21,6 +23,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { Company } from '@prisma/client';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 const RESOURCE = 'company';
 @UseGuards(JwtAuthGuard)
@@ -38,8 +41,12 @@ export class CompanyController {
     type: Promise<Company>,
   })
   @ApiBody({ type: CreateCompanyDto })
-  async create(@Body() createCompanyDto: CreateCompanyDto): Promise<Company> {
-    return await this.companyService.create(createCompanyDto);
+  async create(
+    @Req() req,
+    @Body() createCompanyDto: CreateCompanyDto,
+  ): Promise<Company> {
+    const companyId = req.user.companyId;
+    return await this.companyService.create(createCompanyDto, companyId);
   }
 
   @Get('check/:cnpj')
@@ -53,6 +60,22 @@ export class CompanyController {
   })
   check(@Param('cnpj') cnpj: string) {
     return this.companyService.check(cnpj);
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'Obtém a lista de empresas pelo ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'A empresa foi encontrada.',
+    type: Promise<Company>,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Empresa não encontrada.',
+  })
+  async findAll(@Req() req, @Query() filter: BaseFilterDTO) {
+    filter.companyId = req.user.companyId;
+    return this.companyService.findAll(filter);
   }
 
   @Get(':id')
