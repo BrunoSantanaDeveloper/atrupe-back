@@ -77,6 +77,7 @@ export class UserService {
             company: true,
             role: true,
           },
+          take: 1,
         },
         userRole: {
           select: {
@@ -102,10 +103,10 @@ export class UserService {
       id: user.id,
       name: user.name,
       email: user.email,
-      employee: user.employee
+      employee: user.employee?.[0]
         ? {
-            company: user.employee.company,
-            role: user.employee?.role?.name,
+            company: user.employee[0].company,
+            role: user.employee[0]?.role?.name,
           }
         : null,
       policies: user.userRole

@@ -41,7 +41,8 @@ export class EmployeeController {
     status: 201,
     description: 'Colaborador criado com sucesso.',
   })
-  create(@Body() createEmployeeDto: CreateEmployeeDto) {
+  create(@Req() req, @Body() createEmployeeDto: CreateEmployeeDto) {
+    createEmployeeDto.companyId = req.user.companyId;
     return this.employeeService.create(createEmployeeDto);
   }
 

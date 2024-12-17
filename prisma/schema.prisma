@@ -27,7 +27,6 @@ model Company {
   siteUrl               String?
   isActive              Boolean @default(true)
 
-
   principalCompanyId String? // ID da empresa-mãe
   parentCompany      Company?  @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
   subsidiaries       Company[] @relation("CompanyHierarchy")
@@ -348,13 +347,15 @@ model Employee {
   updatedAt DateTime? @updatedAt
   isActive  Boolean   @default(true)
 
-  sallary Float?
+  name      String?
+  avatarUrl String?
+  sallary   Float?
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
 
-  userId String @unique
-  user   User?  @relation(fields: [userId], references: [id])
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
 
   roleId String?
   role   Role?   @relation(fields: [roleId], references: [id])
@@ -375,15 +376,16 @@ model User {
   id        String    @id @default(uuid())
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
+  isActive  Boolean   @default(true)
 
-  employee Employee?
   name     String
   password String
-  email    String    @unique
+  email    String  @unique
   avatar   String?
 
   attributes Attribute[]
   userRole   UserRole[]
+  employee   Employee[]
 
   @@index([email])
   @@map("users")

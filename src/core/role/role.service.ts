@@ -54,7 +54,7 @@ export class RoleService {
     return policy;
   }
 
-  findAll(filter: RoleFilterDTO) {
+  async findAll(filter: RoleFilterDTO) {
     let where = {};
     if (filter.companyId) {
       where = {
@@ -69,9 +69,20 @@ export class RoleService {
       };
     }
 
-    return this.prisma.role.findMany({
-      where: where,
+    // Primeiro, vamos buscar o total de registros para calcular a paginação
+    const total = await this.prisma.role.count({ where });
+    const lastPage = Math.ceil(total / +filter.limit);
+
+    // Buscar as roles com os setores relacionados
+    const roles = await this.prisma.role.findMany({
+      where,
       include: {
+        sector: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         employees: {
           select: {
             user: {
@@ -85,6 +96,34 @@ export class RoleService {
       take: +filter.limit,
       skip: (+filter.page - 1) * +filter.limit,
     });
+
+    // Agrupar as roles por setor
+    const rolesBySector = roles.reduce((acc, role) => {
+      const sectorId = role.sector.id;
+
+      if (!acc[sectorId]) {
+        acc[sectorId] = {
+          sector: {
+            id: role.sector.id,
+            name: role.sector.name,
+          },
+          roles: [],
+        };
+      }
+
+      // Remove o campo sector antes de adicionar ao array de roles
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { sector, ...roleWithoutSector } = role;
+      acc[sectorId].roles.push(roleWithoutSector);
+
+      return acc;
+    }, {});
+
+    return {
+      total,
+      lastPage,
+      data: Object.values(rolesBySector),
+    };
   }
 
   findOne(id: string) {

@@ -2,8 +2,6 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { PrismaService } from 'nestjs-prisma';
-import * as argon2 from 'argon2';
-import { StringHelper } from 'src/helpers/string/random';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 @Injectable()
@@ -12,19 +10,10 @@ export class EmployeeService {
 
   async create(createEmployeeDto: CreateEmployeeDto) {
     try {
-      const hashedPassword = await argon2.hash(
-        StringHelper.generateRandomString(8),
-      );
       return await this.prisma.employee.create({
         data: {
-          sallary: parseFloat(createEmployeeDto.sallary),
-          user: {
-            create: {
-              name: createEmployeeDto.name,
-              email: createEmployeeDto.email,
-              password: hashedPassword,
-            },
-          },
+          name: createEmployeeDto.name,
+          avatarUrl: createEmployeeDto.avatarUrl ?? null,
           role: {
             connect: {
               id: createEmployeeDto.roleId,
@@ -44,6 +33,7 @@ export class EmployeeService {
       });
     } catch (error) {
       console.log(error);
+      throw new BadRequestException(error.message);
     }
   }
 
@@ -65,6 +55,7 @@ export class EmployeeService {
               id: true,
               name: true,
               email: true,
+              isActive: true,
             },
           },
           role: true,
