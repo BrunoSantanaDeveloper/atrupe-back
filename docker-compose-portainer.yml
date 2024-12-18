@@ -10,7 +10,7 @@ services:
           - node.role == manager
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.atrupe.rule=Host(`atrupe.xprop.com.br`)"
+        - "traefik.http.routers.atrupe.rule=Host(`dev.atrupe.com.br`)"
         - "traefik.http.routers.atrupe.entrypoints=websecure"
         - "traefik.http.routers.atrupe.tls.certresolver=letsencryptresolver"
         - "traefik.http.routers.atrupe.priority=1"
@@ -20,11 +20,11 @@ services:
         - "traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto=https"
         - "traefik.http.routers.atrupe.middlewares=sslheader@docker"
     networks:
-      - xprop_network_prod
+      - atrupe_network
     environment:
       - NODE_ENV=production
       - PORT=5000
 
 networks:
-  xprop_network_prod:
+  atrupe_network:
     external: true
