@@ -72,6 +72,7 @@ export class UserService {
         id: true,
         name: true,
         email: true,
+        avatar: true,
         employee: {
           select: {
             company: true,
@@ -103,6 +104,7 @@ export class UserService {
       id: user.id,
       name: user.name,
       email: user.email,
+      avatar: user.avatar,
       employee: user.employee?.[0]
         ? {
             company: user.employee[0].company,
