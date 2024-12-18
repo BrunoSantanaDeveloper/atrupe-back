@@ -1,9 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { CreateClientDto } from './dto/create-client.dto';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { CreateClientDto, PreRegisterClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { ClientFilterDTO } from './dto/filter.dto';
-import { ClientStatus, OwnerType, Prisma } from '@prisma/client';
+import { ClientKind, ClientStatus, OwnerType, Prisma } from '@prisma/client';
 
 @Injectable()
 export class ClientService {
@@ -98,6 +102,53 @@ export class ClientService {
     } catch (error) {
       console.error('Error creating client:', error);
       throw error;
+    }
+  }
+
+  async preRegisterClient(preRegisterClientDto: PreRegisterClientDto) {
+    try {
+      return await this.prisma.client.create({
+        data: {
+          type: preRegisterClientDto.type,
+          name: preRegisterClientDto.name,
+          email: preRegisterClientDto.email,
+          phone: preRegisterClientDto.phone,
+          mobile: preRegisterClientDto.mobile,
+          category: preRegisterClientDto.category,
+          status: 'PROSPECT',
+          companyId: preRegisterClientDto.companyId,
+          rg:
+            preRegisterClientDto.type === ClientKind.PERSON
+              ? preRegisterClientDto.rg
+              : null,
+          cpf:
+            preRegisterClientDto.type === ClientKind.PERSON
+              ? preRegisterClientDto.cpf
+              : null,
+          cnpj:
+            preRegisterClientDto.type === ClientKind.COMPANY
+              ? preRegisterClientDto.cnpj
+              : null,
+          activity:
+            preRegisterClientDto.type === ClientKind.COMPANY
+              ? preRegisterClientDto.activity
+              : null,
+          tradeName:
+            preRegisterClientDto.type === ClientKind.COMPANY
+              ? preRegisterClientDto.tradeName
+              : null,
+          corporateName:
+            preRegisterClientDto.type === ClientKind.COMPANY
+              ? preRegisterClientDto.corporateName
+              : null,
+        },
+      });
+    } catch (error) {
+      console.error('Erro durante o pré-registro:', error.message);
+      throw new BadRequestException(
+        'Erro durante o pré-registro:',
+        error.message,
+      );
     }
   }
 

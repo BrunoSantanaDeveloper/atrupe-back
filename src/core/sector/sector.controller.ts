@@ -79,19 +79,6 @@ export class SectorController {
   @Patch(':id')
   @ApiOperation({ summary: 'Atualiza um setor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do setor' })
-  @ApiBody({
-    description: 'Dados para atualização do setor',
-    type: UpdateSectorDto,
-    examples: {
-      example: {
-        summary: 'Exemplo de payload para atualização de setor',
-        value: {
-          name: 'Tecnologia',
-          icon: 'icon.png',
-        },
-      },
-    },
-  })
   @ApiResponse({
     status: 200,
     description: 'Setor atualizado com sucesso.',

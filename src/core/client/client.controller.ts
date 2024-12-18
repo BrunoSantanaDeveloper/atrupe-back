@@ -12,7 +12,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ClientService } from './client.service';
-import { CreateClientDto } from './dto/create-client.dto';
+import { CreateClientDto, PreRegisterClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { ClientFilterDTO } from './dto/filter.dto';
@@ -50,6 +50,24 @@ export class ClientController {
       throw new UnauthorizedException('Unauthorized');
     }
     return this.clientService.create(createClientDto);
+  }
+  @Post('pre-register')
+  @ApiOperation({ summary: 'Pré-registro do cliente' })
+  @ApiBody({
+    description: 'Dados do novo cliente',
+    type: PreRegisterClientDto,
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Client pre-registered successfully.',
+  })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  async preRegister(
+    @Req() req,
+    @Body() preRegisterClientDto: PreRegisterClientDto,
+  ) {
+    preRegisterClientDto.companyId = req.user.companyId;
+    return this.clientService.preRegisterClient(preRegisterClientDto);
   }
 
   @Get('quantity')

@@ -3,6 +3,7 @@ import { CreatePolicyDto, CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { RoleFilterDTO } from './dto/filter.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class RoleService {
@@ -55,9 +56,12 @@ export class RoleService {
   }
 
   async findAll(filter: RoleFilterDTO) {
-    let where = {};
+    let where: Prisma.RoleWhereInput = {
+      isActive: true,
+    };
     if (filter.companyId) {
       where = {
+        ...where,
         companyId: filter.companyId,
       };
     }
@@ -141,10 +145,25 @@ export class RoleService {
     return `This action updates a #${id} role with ${updateRoleDto}`;
   }
 
-  remove(id: string) {
-    return this.prisma.role.update({
-      where: { id },
-      data: { isActive: false },
+  async remove(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      // Atualiza os employees
+      await tx.employee.updateMany({
+        where: {
+          roleId: id,
+        },
+        data: {
+          roleId: null,
+        },
+      });
+
+      // Desativa o cargo
+      const role = await tx.role.update({
+        where: { id },
+        data: { isActive: false },
+      });
+
+      return role;
     });
   }
 }

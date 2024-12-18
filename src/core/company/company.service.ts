@@ -112,7 +112,8 @@ export class CompanyService {
     });
 
     const formattedCompanies = sortedCompanies.map((company) => ({
-      status: company.isActive,
+      id: company.id,
+      isActive: company.isActive,
       general: {
         name: company.name,
         legalName: company.legalName,

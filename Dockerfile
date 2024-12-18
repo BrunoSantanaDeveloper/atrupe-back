@@ -2,28 +2,28 @@
 # # BUILD FOR LOCAL DEVELOPMENT - TRIBO
 # ###################
 
-FROM node:18
+# FROM node:18
 
-# Criar diretório do app
-WORKDIR /usr/src/app
+# # Criar diretório do app
+# WORKDIR /usr/src/app
 
-# Copiar os manifests de dependências
-COPY --chown=node:node package*.json ./
+# # Copiar os manifests de dependências
+# COPY --chown=node:node package*.json ./
 
-# Instalar dependências
-RUN npm ci && npm cache clean --force
+# # Instalar dependências
+# RUN npm ci && npm cache clean --force
 
-# Copiar o código-fonte
-COPY --chown=node:node . .
+# # Copiar o código-fonte
+# COPY --chown=node:node . .
 
-# Gerar o cliente Prisma
-RUN npx prisma generate
+# # Gerar o cliente Prisma
+# RUN npx prisma generate
 
-# Expor a porta usada pelo app
-EXPOSE 5000
+# # Expor a porta usada pelo app
+# EXPOSE 5000
 
-# Comando padrão (mude se necessário para seu fluxo)
-CMD ["npm", "run", "start:dev"]
+# # Comando padrão (mude se necessário para seu fluxo)
+# CMD ["npm", "run", "start:dev"]
 
 
 # ###################
@@ -56,37 +56,43 @@ CMD ["npm", "run", "start:dev"]
 # # BUILD FOR PRODUCTION
 # ###################
 
-# FROM node:18 AS build
+# Etapa 1: Build
+FROM node:18 AS builder
 
-# WORKDIR /usr/src/app
+# Diretório de trabalho
+WORKDIR /usr/src/app
 
-# COPY --chown=node:node package*.json ./
+# Copiar apenas os arquivos necessários para instalar as dependências
+COPY package*.json ./
 
-# # In order to run `npm run build` we need access to the Nest CLI which is a dev dependency. In the previous development stage we ran `npm ci` which installed all dependencies, so we can copy over the node_modules directory from the development image
-# COPY --chown=node:node --from=development /usr/src/app/node_modules ./node_modules
+# Instalar as dependências
+RUN npm ci
 
-# COPY --chown=node:node . .
+# Copiar o restante do código-fonte
+COPY . .
 
-# # Run the build command which creates the production bundle
-# RUN npm run build
+# Gerar o cliente Prisma
+RUN npx prisma generate
 
-# # Set NODE_ENV environment variable
-# ENV NODE_ENV production
+# Construir o projeto
+RUN npm run build
 
-# # Running `npm ci` removes the existing node_modules directory and passing in --only=production ensures that only the production dependencies are installed. This ensures that the node_modules directory is AS optimized AS possible
-# RUN npm ci --only=production && npm cache clean --force
+# Etapa 2: Final
+FROM node:18-alpine
 
-# USER node
+# Diretório de trabalho
+WORKDIR /usr/src/app
 
-# ###################
-# # PRODUCTION
-# ###################
+# Copiar dependências de produção da etapa de build
+COPY --from=builder /usr/src/app/node_modules ./node_modules
 
-# FROM node:18 AS production
+# Copiar o build e arquivos necessários
+COPY --from=builder /usr/src/app/dist ./dist
+COPY --from=builder /usr/src/app/prisma ./prisma
+COPY --from=builder /usr/src/app/package*.json ./
 
-# # Copy the bundled code from the build stage to the production image
-# COPY --chown=node:node --from=build /usr/src/app/node_modules ./node_modules
-# COPY --chown=node:node --from=build /usr/src/app/dist ./dist
+# Expor a porta usada pelo app
+EXPOSE 5000
 
-# # Start the server using the production build
-# CMD [ "node", "dist/main.js" ]
+# Comando padrão usando script do npm
+CMD ["npm", "run", "start:prod"]

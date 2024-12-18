@@ -122,11 +122,28 @@ export class EmployeeService {
   }
 
   async remove(id: string) {
-    return await this.prisma.employee.update({
-      where: { id },
-      data: {
-        isActive: false,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      // Busca o employee para verificar se tem usuário associado
+      const employee = await tx.employee.findUnique({
+        where: { id },
+        select: { userId: true },
+      });
+
+      // Se tiver um usuário associado, inativa ele também
+      if (employee?.userId) {
+        await tx.user.update({
+          where: { id: employee.userId },
+          data: { isActive: false },
+        });
+      }
+
+      // Inativa o employee
+      return await tx.employee.update({
+        where: { id },
+        data: {
+          isActive: false,
+        },
+      });
     });
   }
 }
