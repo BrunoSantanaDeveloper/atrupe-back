@@ -78,6 +78,7 @@ RUN npx prisma generate
 RUN npm run build
 
 # Etapa 2: Final
+FROM node:18
 
 # Diretório de trabalho
 WORKDIR /usr/src/app
