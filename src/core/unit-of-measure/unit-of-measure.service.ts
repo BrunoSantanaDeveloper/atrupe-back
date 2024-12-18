@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { UnitOfMeasureFilterDTO } from './dto/filter.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { CreateUnitOfMeasureDto } from './dto/create-unit-of-measure.dto';
 import { UpdateUnitOfMeasureDto } from './dto/update-unit-of-measure.dto';
@@ -16,14 +15,8 @@ export class UnitOfMeasureService {
     });
   }
 
-  findAll(filter: UnitOfMeasureFilterDTO) {
-    let where = {};
-    if (filter.companyId) {
-      where = { ...where, companyId: filter.companyId };
-    }
-    return this.prisma.unitOfMeasure.findMany({
-      where: where,
-    });
+  findAll() {
+    return this.prisma.unitOfMeasure.findMany({});
   }
 
   findOne(id: string) {

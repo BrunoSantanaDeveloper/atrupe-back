@@ -59,7 +59,6 @@ model Company {
   paymentMethods        PaymentMethod[]
   paymentConditions     PaymentCondition[]
   paymentConfigurations PaymentConfiguration[]
-  unitOfMeasure         UnitOfMeasure[]
   language              Language[]
   reasons               Reasons[]
   statusQuotation       StatusQuotation[]
@@ -622,6 +621,7 @@ model SalarySheet {
   updatedAt DateTime? @updatedAt
 
   @@unique([employeeId, month, year])
+  @@map("salary_sheets")
 }
 
 enum SheetStatus {
@@ -642,6 +642,7 @@ model SalaryItem {
 
   createdAt DateTime @default(now()) // Data de criação
   updatedAt DateTime @updatedAt // Data de atualização
+  @@map("salary_items")
 }
 
 enum ItemType {
@@ -663,6 +664,7 @@ model PaymentMovement {
 
   createdAt DateTime @default(now()) // Data de criação
   updatedAt DateTime @updatedAt // Data de atualização
+  @@map("payment_movements")
 }
 
 enum PaymentSalaryStatus {
@@ -1138,6 +1140,7 @@ model QuotationPayment {
   createdAt            DateTime               @default(now())
   updatedAt            DateTime?              @updatedAt
   quotationInstallment QuotationInstallment[]
+  @@map("quotation_payments")
 }
 
 model Commission {
@@ -1148,7 +1151,10 @@ model Commission {
   totalCommission  Float?
   supplierId       String
   supplier         Supplier                 @relation(fields: [supplierId], references: [id])
+
   quotationPayment QuotationPayment?
+
+  @@map("commissions")
 }
 
 enum transferMethodCommission {
@@ -1172,6 +1178,7 @@ model QuotationInstallment {
   value              Float // Valor da parcela
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
+  @@map("quotation_installments")
 }
 
 enum OrderStatus {
@@ -1206,6 +1213,7 @@ model DeliveryInfo {
   deliverySchedule DeliverySchedule?
 
   @@index([quotationId])
+  @@map("delivery_info")
 }
 
 model DeliveryType {
@@ -1219,6 +1227,7 @@ model DeliveryType {
   company   Company @relation(fields: [companyId], references: [id])
 
   deliveries DeliveryInfo[] // Relacionamento com a tabela de DeliveryInfo
+  @@map("delivery_types")
 }
 
 model Order {
@@ -1314,8 +1323,6 @@ model UnitOfMeasure {
   isActive     Boolean       @default(true)
   productItems ProductItem[]
 
-  companyId            String
-  company              Company                @relation(fields: [companyId], references: [id])
   quotationProductItem QuotationProductItem[]
 
   @@map("unit_measures")
@@ -1385,6 +1392,7 @@ model DeliverySchedule {
   isActive  Boolean   @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
+  @@map("delivery_schedules")
 }
 
 enum ProductionStageStatus {
@@ -1412,6 +1420,7 @@ model ProductionStage {
 
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
+  @@map("production_stages")
 }
 
 model Nature {
@@ -1425,6 +1434,7 @@ model Nature {
   receivable  Receivable[]
   payable     Payable[]
   subCategory SubCategory[]
+  @@map("natures")
 }
 
 model SubCategory {
@@ -1440,6 +1450,7 @@ model SubCategory {
   isActive   Boolean      @default(true)
   receivable Receivable[]
   payable    Payable[]
+  @@map("sub_categories")
 }
 
 model ClientPaymentCondition {

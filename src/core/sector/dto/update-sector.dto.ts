@@ -1,8 +1,18 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateSectorDto } from './create-sector.dto';
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsBoolean, IsOptional, IsString } from 'class-validator';
 
-export class UpdateSectorDto extends PartialType(CreateSectorDto) {
+export class UpdateSectorDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  icon?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isProductionStage?: boolean;
+
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;

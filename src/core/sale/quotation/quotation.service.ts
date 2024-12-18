@@ -907,7 +907,7 @@ export class QuotationService {
         seller: quotation.seller
           ? {
               id: quotation.seller.id,
-              name: quotation.seller.user.name,
+              name: quotation.seller[0].user?.name || '',
             }
           : null,
         company: quotation.company

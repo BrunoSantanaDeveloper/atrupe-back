@@ -6,14 +6,12 @@ import {
   Patch,
   Param,
   Delete,
-  Query,
   UseGuards,
   Req,
 } from '@nestjs/common';
 import { UnitOfMeasureService } from './unit-of-measure.service';
 import { CreateUnitOfMeasureDto } from './dto/create-unit-of-measure.dto';
 import { UpdateUnitOfMeasureDto } from './dto/update-unit-of-measure.dto';
-import { UnitOfMeasureFilterDTO } from './dto/filter.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import {
   ApiTags,
@@ -21,7 +19,6 @@ import {
   ApiResponse,
   ApiBody,
   ApiParam,
-  ApiQuery,
   ApiBearerAuth,
 } from '@nestjs/swagger';
 
@@ -45,26 +42,18 @@ export class UnitOfMeasureController {
     description: 'Unidade de medida criada com sucesso.',
   })
   create(@Req() req, @Body() createUnitOfMeasureDto: CreateUnitOfMeasureDto) {
-    createUnitOfMeasureDto.companyId = req.user.companyId;
     return this.unitOfMeasureService.create(createUnitOfMeasureDto);
   }
 
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todas as unidades de medida' })
-  @ApiQuery({
-    name: 'filter',
-    description: 'Filtros opcionais para a busca de unidades de medida',
-    type: UnitOfMeasureFilterDTO,
-    required: false,
-  })
   @ApiResponse({
     status: 200,
     description: 'Lista de unidades de medida retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Req() req, @Query() filter: UnitOfMeasureFilterDTO) {
-    filter.companyId = req.user.companyId;
-    return this.unitOfMeasureService.findAll(filter);
+  findAll() {
+    return this.unitOfMeasureService.findAll();
   }
 
   @Get(':id')
