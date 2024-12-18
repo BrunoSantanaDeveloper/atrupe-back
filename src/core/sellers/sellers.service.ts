@@ -17,6 +17,7 @@ export class SellersService {
         },
         select: {
           id: true,
+          name: true,
           user: {
             select: {
               id: true,
@@ -34,7 +35,7 @@ export class SellersService {
       // Mapeia os funcionários para um array de objetos com id e userName
       return employees.map((employee) => ({
         id: employee.id,
-        name: employee.user.name,
+        name: employee.name ?? employee.user.name,
       }));
     } catch (error) {
       console.error('Error fetching employees:', error);
