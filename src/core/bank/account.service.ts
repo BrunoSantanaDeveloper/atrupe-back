@@ -15,7 +15,6 @@ export class AccountService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateBankAccountDto): Promise<BankAccount> {
-    console.log(dto);
     try {
       const bankAccount = await this.prisma.bankAccount.create({
         data: {
@@ -179,7 +178,6 @@ export class AccountService {
     accountId: string,
     updateBankAccountDto: UpdateBankAccountDto,
   ): Promise<BankAccount> {
-    console.log(updateBankAccountDto);
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existingAccount = await tx.bankAccount.findUnique({

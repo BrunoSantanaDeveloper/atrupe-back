@@ -48,6 +48,8 @@ export class ProfileService {
           employees: {
             select: {
               id: true,
+              name: true,
+              avatarUrl: true,
               user: {
                 select: {
                   name: true,
@@ -71,33 +73,40 @@ export class ProfileService {
       }),
     ]);
 
-    const mappedProfiles = profiles.map((profile) => ({
-      profile: {
-        id: profile.id,
-        name: profile.name,
-        isActive: profile.isActive,
-        companyId: profile.companyId,
-        commission: profile.commission,
-        maxDiscount: profile.maxDiscount,
-        minValue: profile.minValue,
-        canApprovePreRegistration: profile.canApprovePreRegistration,
-        canCancelSale: profile.canCancelSale,
-      },
-      employees: profile.employees.map((employee) => ({
-        id: employee.id,
-        avatar: employee.user.avatar,
-        name: employee.user.name,
-        role: employee.role.name,
-      })),
-    }));
+    try {
+      const mappedProfiles = profiles.map((profile) => ({
+        profile: {
+          id: profile.id,
+          name: profile.name,
+          isActive: profile.isActive,
+          companyId: profile.companyId,
+          commission: profile.commission,
+          maxDiscount: profile.maxDiscount,
+          minValue: profile.minValue,
+          canApprovePreRegistration: profile.canApprovePreRegistration,
+          canCancelSale: profile.canCancelSale,
+        },
+        employees: profile.employees.map((employee) => ({
+          id: employee.id,
+          avatar: employee.avatarUrl
+            ? employee.avatarUrl
+            : employee.user?.avatar || '',
+          name: employee.name ? employee.name : employee.user?.name || '',
+          role: employee.role?.name || '',
+        })),
+      }));
 
-    const lastPage = Math.ceil(total / +filter.limit);
+      const lastPage = Math.ceil(total / +filter.limit);
 
-    return {
-      total,
-      lastPage,
-      profiles: mappedProfiles,
-    };
+      return {
+        total,
+        lastPage,
+        profiles: mappedProfiles,
+      };
+    } catch (error) {
+      console.log(error);
+      throw new BadRequestException(error.message);
+    }
   }
 
   findOne(id: string) {
@@ -130,7 +139,7 @@ export class ProfileService {
     });
   }
 
-  async listEmployees(companyId) {
+  async listEmployeesWithoutProfile(companyId) {
     const employes = await this.prisma.employee.findMany({
       where: {
         sellerProfileId: null,
@@ -138,6 +147,7 @@ export class ProfileService {
       },
       select: {
         id: true,
+        name: true,
         user: {
           select: {
             name: true,
@@ -154,7 +164,14 @@ export class ProfileService {
       return [];
     }
     const data = employes.map((employee) => {
-      return { id: employee.id, name: employee.user.name };
+      return {
+        id: employee.id,
+        name: employee.name
+          ? employee.name
+          : employee.user
+            ? employee.user.name
+            : '',
+      };
     });
     return data;
   }

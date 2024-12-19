@@ -46,7 +46,15 @@ export class CompanyController {
     @Body() createCompanyDto: CreateCompanyDto,
   ): Promise<Company> {
     const companyId = req.user.companyId;
+    console.log(companyId);
     return await this.companyService.create(createCompanyDto, companyId);
+  }
+
+  @Post('default-items/:companyId')
+  @ApiOperation({ summary: 'Cria uma empresa' })
+  @ApiParam({ name: 'companyId', required: true, description: 'ID da empresa' })
+  async createDefaultItems(@Param('companyId') companyId: string) {
+    return await this.companyService.createDefaultItems(companyId);
   }
 
   @Get('check/:cnpj')

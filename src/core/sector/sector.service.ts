@@ -17,7 +17,7 @@ export class SectorService {
       throw new NotFoundException('Company not found');
     }
 
-    return this.prisma.sector.create({
+    return this.prisma.companySector.create({
       data: {
         ...createSectorDto,
       },
@@ -42,16 +42,22 @@ export class SectorService {
       if (filter.isProductionStage !== undefined) {
         where = { ...where, isProductionStage: filter.isProductionStage };
       }
-
-      const sectors = await this.prisma.sector.findMany({
-        where: where,
-        take: +filter.limit,
-        skip: (+filter.page - 1) * +filter.limit,
-      });
+      const [total, sectors] = await this.prisma.$transaction([
+        this.prisma.companySector.count({ where }),
+        this.prisma.companySector.findMany({
+          where: where,
+          take: +filter.limit,
+          skip: (+filter.page - 1) * +filter.limit,
+          orderBy: {
+            name: 'asc',
+          },
+        }),
+      ]);
 
       return {
+        total,
+        lastPage: Math.ceil(total / +filter.limit),
         data: sectors,
-        total: await this.prisma.sector.count({ where }),
       };
     } catch (e) {
       console.error(e);
@@ -60,18 +66,18 @@ export class SectorService {
   }
 
   findOne(id: string) {
-    return this.prisma.sector.findFirst({ where: { id: id } });
+    return this.prisma.companySector.findFirst({ where: { id: id } });
   }
 
   update(id: string, updateSectorDto: UpdateSectorDto) {
-    return this.prisma.sector.update({
+    return this.prisma.companySector.update({
       where: { id: id },
       data: updateSectorDto,
     });
   }
 
   remove(id: string) {
-    return this.prisma.sector.update({
+    return this.prisma.companySector.update({
       where: { id: id },
       data: { isActive: false },
     });

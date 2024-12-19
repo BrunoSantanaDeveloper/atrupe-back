@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateDeliveryInfoDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryInfoDto } from './dto/update-delivery.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
@@ -10,39 +6,26 @@ import { PrismaService } from 'src/config/prisma/prisma.service';
 @Injectable()
 export class DeliveryService {
   constructor(private prisma: PrismaService) {}
-  async findAll() {
-    return await this.prisma.deliveryType.findMany({
-      orderBy: { name: 'asc' },
-    });
-  }
+
   async createDeliveryInfo(
     quotationId: string,
     createDeliveryInfoDto: CreateDeliveryInfoDto,
   ) {
-    const { deliveryTypeId, supplierId } = createDeliveryInfoDto;
-
-    // Verificar se o tipo de entrega existe
-    const deliveryType = await this.prisma.deliveryType.findUnique({
-      where: { id: deliveryTypeId },
-    });
-
-    if (!deliveryType) {
-      throw new BadRequestException('Tipo de entrega não encontrado');
-    }
+    const { deliveryType } = createDeliveryInfoDto;
 
     // Verificação do tipo de entrega para transportadora
-    if (deliveryType.isCarrier && !supplierId) {
-      throw new BadRequestException(
-        'Fornecedor é necessário quando o tipo de entrega for Transportadora',
-      );
-    }
+    // if (deliveryType === 'CARRIER' && !supplierId) {
+    //   throw new BadRequestException(
+    //     'Fornecedor é necessário quando o tipo de entrega for Transportadora',
+    //   );
+    // }
 
     // Criar o DeliveryInfo
     const deliveryInfo = await this.prisma.deliveryInfo.create({
       data: {
         ...createDeliveryInfoDto,
         quotationId,
-        deliveryTypeId, // Vincular o deliveryTypeId
+        deliveryType, // Vincular o deliveryTypeId
       },
     });
 

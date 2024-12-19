@@ -149,15 +149,6 @@ export class CreateGeneralInfoDto {
     example: '987654321',
   })
   municipalRegistration?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  @ApiProperty({
-    description: 'Ativo',
-    required: false,
-    example: true,
-  })
-  isActive?: boolean;
 }
 
 export class CreatePersonalizationDto {
@@ -199,6 +190,14 @@ export class CreatePersonalizationDto {
 }
 
 export class CreateCompanyDto {
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({
+    description: 'Ativo',
+    required: false,
+    example: true,
+  })
+  isActive?: boolean;
   @IsNotEmpty()
   @ValidateNested()
   @Type(() => CreateGeneralInfoDto)

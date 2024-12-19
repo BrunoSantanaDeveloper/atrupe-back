@@ -22,7 +22,7 @@ import { CreateSaleSeriesDto } from './dto/create-series.dto';
 import { SaleSeriesService } from './series.service';
 import { UpdateSaleSeriesDto } from './dto/update-serie.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
-import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
+import { SeriesFilterDTO } from './dto/series-filter.dto';
 
 @ApiTags('Série de vendas')
 @Controller('sale/series')
@@ -42,7 +42,7 @@ export class SaleSeriesController {
   @ApiOperation({ summary: 'Get all sale series' })
   @ApiResponse({ status: 200, description: 'List of sale series' })
   @Get()
-  async findAll(@Req() req, @Query() filter: BaseFilterDTO) {
+  async findAll(@Req() req, @Query() filter: SeriesFilterDTO) {
     filter.companyId = req.user.companyId;
     return await this.saleSeriesService.findAll(filter);
   }

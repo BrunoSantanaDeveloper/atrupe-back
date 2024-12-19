@@ -3,7 +3,7 @@ import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { AddressService } from '../address/address.service';
 import { PlugService } from '../../svc/plug/plug.service';
-import { Company } from '@prisma/client';
+import { Company, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
@@ -14,7 +14,134 @@ export class CompanyService {
     private readonly addressService: AddressService,
     private readonly plugService: PlugService,
   ) {}
+  async createMainCompany(createCompanyDto: CreateCompanyDto) {
+    try {
+      const { general, address, personalization } = createCompanyDto;
 
+      const company = await this.prisma.$transaction(async (tx) => {
+        const company = await tx.company.create({
+          data: {
+            name: general.name,
+            legalName: general.legalName,
+            cnpj: general.cnpj.replace(/\D/g, ''),
+            email: general.email,
+            phone: general.phone,
+            mobile: general.mobile,
+            municipalRegistration: general.municipalRegistration,
+            siteUrl: general.siteUrl,
+            // Personalization fields
+            logoUrl: personalization?.logoUrl,
+            favIconUrl: personalization?.favIconUrl,
+            textBeforeItems: personalization?.textsBeforeItems,
+            textAfterItems: personalization?.textsAfterItems,
+
+            // Create related address
+            address: address
+              ? {
+                  create: {
+                    street: address.street,
+                    number: address.number,
+                    complement: address.complement,
+                    neighborhood: address.neighborhood,
+                    city: address.city,
+                    state: address.state,
+                    zipcode: address.zipcode,
+                    ownerType: 'COMPANY',
+                  },
+                }
+              : undefined,
+          },
+          include: {
+            address: true,
+          },
+        });
+        return company;
+      });
+
+      await this.createDefaultItems(company.id);
+
+      return company;
+    } catch (e) {
+      console.error(e);
+      throw e;
+    }
+  }
+
+  async createDefaultItems(companyId: string) {
+    const defaultSectors = await this.prisma.defaultSector.findMany();
+
+    const companySectors = defaultSectors.map((sector) => ({
+      name: sector.name,
+      icon: sector.icon,
+      kind: sector.kind,
+      isProductionStage: sector.kind === 'PRODUCTION',
+      companyId: companyId,
+      defaultSectorId: sector.id,
+    }));
+
+    await this.prisma.companySector.createMany({ data: companySectors });
+
+    const defaultUnitOfMeasures =
+      await this.prisma.defaultUnitOfMeasure.findMany();
+
+    const companyUnitOfMeasures = defaultUnitOfMeasures.map(
+      (unitOfMeasure) => ({
+        name: unitOfMeasure.name,
+        code: unitOfMeasure.code,
+        companyId: companyId,
+        defaultUnitOfMeasureId: unitOfMeasure.id,
+      }),
+    );
+
+    await this.prisma.companyUnitOfMeasure.createMany({
+      data: companyUnitOfMeasures,
+    });
+
+    const deafultSeries: Prisma.SaleSeriesCreateManyInput[] = [
+      {
+        code: 'T1',
+        title: 'Orçamento',
+        description: 'Treinamento',
+        companyId: companyId,
+        proposalValidity: 30,
+        deliveryDeadline: 30,
+        billing: 'ON_ORDER',
+        sendToProduction: 'DIRECT',
+        productionStatus: 'MANAGE_PRODUCTION',
+      },
+      {
+        code: 'V1',
+        title: 'Orçamento',
+        description: 'Vendas Diversas',
+        companyId: companyId,
+        proposalValidity: 30,
+        deliveryDeadline: 30,
+        billing: 'ON_ORDER',
+        sendToProduction: 'DIRECT',
+        productionStatus: 'MANAGE_PRODUCTION',
+      },
+      {
+        code: 'V2',
+        title: 'Orçamento',
+        description: 'Vendas Diversas',
+        companyId: companyId,
+        proposalValidity: 30,
+        deliveryDeadline: 30,
+        billing: 'ON_ORDER',
+        sendToProduction: 'DIRECT',
+        productionStatus: 'MANAGE_PRODUCTION',
+      },
+    ];
+
+    try {
+      await this.prisma.saleSeries.createMany({
+        data: deafultSeries,
+      });
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  }
   async create(
     createCompanyDto: CreateCompanyDto,
     parentCompanyId: string,
@@ -111,9 +238,10 @@ export class CompanyService {
       return 0;
     });
 
-    const formattedCompanies = sortedCompanies.map((company) => ({
+    const formattedCompanies = sortedCompanies.map((company, index) => ({
       id: company.id,
       isActive: company.isActive,
+      principal: index === 0,
       general: {
         name: company.name,
         legalName: company.legalName,
@@ -156,28 +284,31 @@ export class CompanyService {
 
   async update(id: string, updateCompanyDto: UpdateCompanyDto) {
     const { general, address, personalization } = updateCompanyDto;
+    const data = {
+      name: general?.name,
+      legalName: general?.legalName,
+      cnpj: general?.cnpj.replace(/\D/g, ''),
+      email: general?.email,
+      phone: general?.phone,
+      mobile: general?.mobile,
+      municipalRegistration: general?.municipalRegistration,
+      siteUrl: general?.siteUrl,
+      // Personalization fields
+      logoUrl: personalization?.logoUrl,
+      favIconUrl: personalization?.favIconUrl,
+      textBeforeItems: personalization?.textsBeforeItems,
+      textAfterItems: personalization?.textsAfterItems,
+    };
+
+    if (updateCompanyDto.isActive !== undefined) {
+      data['isActive'] = updateCompanyDto.isActive;
+    }
 
     try {
       // First update the company
       const updatedCompany = await this.prisma.company.update({
         where: { id },
-        data: {
-          name: general?.name,
-          legalName: general?.legalName,
-          cnpj: general?.cnpj.replace(/\D/g, ''),
-          email: general?.email,
-          phone: general?.phone,
-          mobile: general?.mobile,
-          municipalRegistration: general?.municipalRegistration,
-          siteUrl: general?.siteUrl,
-          isActive: general?.isActive,
-
-          // Personalization fields
-          logoUrl: personalization?.logoUrl,
-          favIconUrl: personalization?.favIconUrl,
-          textBeforeItems: personalization?.textsBeforeItems,
-          textAfterItems: personalization?.textsAfterItems,
-        },
+        data: data,
         include: {
           address: true,
         },

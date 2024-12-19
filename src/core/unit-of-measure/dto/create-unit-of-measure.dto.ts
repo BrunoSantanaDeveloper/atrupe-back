@@ -17,4 +17,6 @@ export class CreateUnitOfMeasureDto {
     example: 'kg',
   })
   code: string;
+
+  companyId: string;
 }

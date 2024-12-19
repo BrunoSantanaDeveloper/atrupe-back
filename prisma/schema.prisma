@@ -36,7 +36,7 @@ model Company {
   textBeforeItems String?
   textAfterItems  String?
 
-  sectors      Sector[]
+  sectors      CompanySector[] @relation("CompanyToCompanySector")
   clients      Client[]
   employees    Employee[]
   products     Product[]
@@ -47,7 +47,6 @@ model Company {
   assetTypes   AssetType[]
   categories   Category[]
   saleSeries   SaleSeries[]
-  quotation    Quotation[]
 
   payables          Payable[]
   receivables       Receivable[]
@@ -67,6 +66,9 @@ model Company {
   deliveryType          DeliveryType[]
   deliverySchedule      DeliverySchedule[]
   address               Address[]
+  companyUnitOfMeasure  CompanyUnitOfMeasure[]
+  mainQuotations        Quotation[]            @relation("MainCompany")
+  fiscalQuotations      Quotation[]            @relation("FiscalSubCompany")
 
   @@map("companies")
 }
@@ -126,16 +128,30 @@ enum SectorKind {
   OTHER
 }
 
-model Sector {
+model DefaultSector {
+  id   String     @id @default(uuid())
+  name String
+  icon String?
+  kind SectorKind @default(PRODUCTION)
+
+  companySectors CompanySector[] @relation("DefaultToCompanySector")
+
+  @@map("default_sectors")
+}
+
+model CompanySector {
   id                String     @id @default(uuid())
   name              String
   icon              String?
-  isActive          Boolean    @default(true)
-  isProductionStage Boolean    @default(true)
   kind              SectorKind @default(PRODUCTION)
+  isProductionStage Boolean    @default(true)
+  isActive          Boolean    @default(true)
 
   companyId String
-  company   Company @relation(fields: [companyId], references: [id])
+  company   Company @relation("CompanyToCompanySector", fields: [companyId], references: [id])
+
+  defaultSectorId String?
+  defaultSector   DefaultSector? @relation("DefaultToCompanySector", fields: [defaultSectorId], references: [id])
 
   employees       Employee[]
   asset           Asset[]
@@ -155,7 +171,7 @@ model Role {
   company   Company @relation(fields: [companyId], references: [id])
 
   sectorId String?
-  sector   Sector? @relation(fields: [sectorId], references: [id])
+  sector   CompanySector? @relation(fields: [sectorId], references: [id])
 
   employees Employee[]
 
@@ -360,7 +376,7 @@ model Employee {
   role   Role?   @relation(fields: [roleId], references: [id])
 
   sectorId String?
-  sector   Sector? @relation(fields: [sectorId], references: [id])
+  sector   CompanySector? @relation(fields: [sectorId], references: [id])
 
   client          Client[]
   quotation       Quotation[]
@@ -409,9 +425,9 @@ model Asset {
 
   // costGroup        CostGroup?       @relation(fields: [costGroupId], references: [id])
   // costs            Cost[]
-  company Company?   @relation(fields: [companyId], references: [id])
-  type    AssetType? @relation(fields: [typeId], references: [id])
-  sector  Sector?    @relation(fields: [sectorId], references: [id])
+  company Company?       @relation(fields: [companyId], references: [id])
+  type    AssetType?     @relation(fields: [typeId], references: [id])
+  sector  CompanySector? @relation(fields: [sectorId], references: [id])
 
   @@map("assets")
 }
@@ -642,6 +658,7 @@ model SalaryItem {
 
   createdAt DateTime @default(now()) // Data de criação
   updatedAt DateTime @updatedAt // Data de atualização
+
   @@map("salary_items")
 }
 
@@ -664,6 +681,7 @@ model PaymentMovement {
 
   createdAt DateTime @default(now()) // Data de criação
   updatedAt DateTime @updatedAt // Data de atualização
+
   @@map("payment_movements")
 }
 
@@ -961,6 +979,21 @@ model PaymentConfiguration {
   @@map("payment_configurations")
 }
 
+enum BiilingKind {
+  ON_ORDER
+  ON_DELIVERY
+  ON_CHECKOUT
+}
+
+enum SendToProductionKind {
+  DIRECT
+}
+
+enum ProductionStatusKind {
+  MANAGE_PRODUCTION
+  PRODUCTION_COMPLETED
+}
+
 model SaleSeries {
   id        String    @id @default(uuid())
   createdAt DateTime  @default(now())
@@ -970,13 +1003,13 @@ model SaleSeries {
   code                String
   description         String?
   title               String
-  currentBudgetNumber Int     @default(1)
+  currentBudgetNumber Int     @default(0)
   proposalValidity    Int?
   deliveryDeadline    Int?
 
-  billing          String?
-  sendToProduction String?
-  productionStatus String?
+  billing          BiilingKind          @default(ON_ORDER)
+  sendToProduction SendToProductionKind @default(DIRECT)
+  productionStatus ProductionStatusKind @default(MANAGE_PRODUCTION)
 
   textBeforeItems String?
   textAfterItems  String?
@@ -1029,18 +1062,22 @@ model Quotation {
 
   totalValue Float @default(0)
 
-  sellerId  String
-  seriesId  String?
-  clientId  String?
-  companyId String
+  sellerId     String
+  seriesId     String?
+  clientId     String?
+  companyId    String
+  subCompanyId String?
+
   tagId     String?
   quickSale Boolean @default(false)
 
-  seller  Employee         @relation(fields: [sellerId], references: [id])
-  series  SaleSeries?      @relation(fields: [seriesId], references: [id])
-  client  Client?          @relation(fields: [clientId], references: [id])
-  company Company          @relation(fields: [companyId], references: [id])
-  tag     StatusQuotation? @relation(fields: [tagId], references: [id])
+  seller     Employee    @relation(fields: [sellerId], references: [id])
+  subCompany Company?    @relation("FiscalSubCompany", fields: [subCompanyId], references: [id])
+  company    Company     @relation("MainCompany", fields: [companyId], references: [id])
+  series     SaleSeries? @relation(fields: [seriesId], references: [id])
+  client     Client?     @relation(fields: [clientId], references: [id])
+
+  tag StatusQuotation? @relation(fields: [tagId], references: [id])
 
   reasonId String?
   reasons  Reasons? @relation(fields: [reasonId], references: [id])
@@ -1095,10 +1132,10 @@ model QuotationProductItem {
   productItem   ProductItem @relation(fields: [productItemId], references: [id])
 
   name             String
-  quantity         Int           @default(1)
-  originalQuantity Int           @default(1)
+  quantity         Int                  @default(1)
+  originalQuantity Int                  @default(1)
   unitOfMeasureId  String
-  unitOfMeasure    UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
+  unitOfMeasure    CompanyUnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
   width            Float? //largura
   height           Float? //altura
   length           Float? //comprimento
@@ -1140,17 +1177,18 @@ model QuotationPayment {
   createdAt            DateTime               @default(now())
   updatedAt            DateTime?              @updatedAt
   quotationInstallment QuotationInstallment[]
+
   @@map("quotation_payments")
 }
 
 model Commission {
-  id               String                   @id @default(uuid())
-  type             CommissionType           @default(ADD)
-  transferMethod   transferMethodCommission @default(SINGLE)
-  commissionValue  Float?
-  totalCommission  Float?
-  supplierId       String
-  supplier         Supplier                 @relation(fields: [supplierId], references: [id])
+  id              String                   @id @default(uuid())
+  type            CommissionType           @default(ADD)
+  transferMethod  transferMethodCommission @default(SINGLE)
+  commissionValue Float?
+  totalCommission Float?
+  supplierId      String
+  supplier        Supplier                 @relation(fields: [supplierId], references: [id])
 
   quotationPayment QuotationPayment?
 
@@ -1178,6 +1216,7 @@ model QuotationInstallment {
   value              Float // Valor da parcela
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
+
   @@map("quotation_installments")
 }
 
@@ -1195,8 +1234,7 @@ model DeliveryInfo {
   quotationId String    @unique
   quotation   Quotation @relation(fields: [quotationId], references: [id])
 
-  deliveryTypeId String?
-  deliveryType   DeliveryType? @relation(fields: [deliveryTypeId], references: [id])
+  deliveryType   DeliveryType @default(CARRIER)
 
   daysAfterApproval Int?
   estimatedDate     DateTime?
@@ -1216,18 +1254,10 @@ model DeliveryInfo {
   @@map("delivery_info")
 }
 
-model DeliveryType {
-  id        String    @id @default(uuid())
-  name      String
-  isCarrier Boolean   @default(false)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  deliveries DeliveryInfo[] // Relacionamento com a tabela de DeliveryInfo
-  @@map("delivery_types")
+enum DeliveryType {
+  INSTALLATION
+  CARRIER
+  PICKUP
 }
 
 model Order {
@@ -1281,7 +1311,7 @@ model Product {
   category   Category @relation(fields: [categoryId], references: [id])
 
   sectorId String
-  sector   Sector @relation(fields: [sectorId], references: [id])
+  sector   CompanySector @relation(fields: [sectorId], references: [id])
 
   quotations       Quotation[]        @relation("QuotationToProduct")
   quotationProduct QuotationProduct[]
@@ -1298,7 +1328,7 @@ model ProductItem {
   product   Product @relation(fields: [productId], references: [id])
 
   unitOfMeasureId String
-  unitOfMeasure   UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
+  unitOfMeasure   CompanyUnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
   width           Float? //largura
   height          Float? //altura
   length          Float? //comprimento
@@ -1314,11 +1344,24 @@ model ProductItem {
   @@map("product_items")
 }
 
-model UnitOfMeasure {
-  id          String  @id @default(uuid())
+enum UnitOfMeasureKind {
+  LENGTH
+  WEIGHT
+  CAPACITY
+}
+
+model CompanyUnitOfMeasure {
+  id          String             @id @default(uuid())
   name        String
-  code        String  @unique
+  code        String             @unique
+  kind        UnitOfMeasureKind?
   description String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  defaultUnitOfMeasureId String?
+  defaultUnitOfMeasure   DefaultUnitOfMeasure? @relation(fields: [defaultUnitOfMeasureId], references: [id])
 
   isActive     Boolean       @default(true)
   productItems ProductItem[]
@@ -1326,6 +1369,19 @@ model UnitOfMeasure {
   quotationProductItem QuotationProductItem[]
 
   @@map("unit_measures")
+}
+
+model DefaultUnitOfMeasure {
+  id          String             @id @default(uuid())
+  name        String
+  code        String             @unique
+  kind        UnitOfMeasureKind?
+  description String?
+
+  isActive             Boolean                @default(true)
+  CompanyUnitOfMeasure CompanyUnitOfMeasure[]
+
+  @@map("defalt_unit_measures")
 }
 
 model Language {
@@ -1392,6 +1448,7 @@ model DeliverySchedule {
   isActive  Boolean   @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
+
   @@map("delivery_schedules")
 }
 
@@ -1409,7 +1466,7 @@ enum ProductionStageStatus {
 model ProductionStage {
   id         String                @id @default(uuid())
   stageId    String?
-  stage      Sector?               @relation(fields: [stageId], references: [id])
+  stage      CompanySector?        @relation(fields: [stageId], references: [id])
   status     ProductionStageStatus @default(NOT_STARTED)
   notes      String?
   order      Int?
@@ -1420,6 +1477,7 @@ model ProductionStage {
 
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
+
   @@map("production_stages")
 }
 
@@ -1434,6 +1492,7 @@ model Nature {
   receivable  Receivable[]
   payable     Payable[]
   subCategory SubCategory[]
+
   @@map("natures")
 }
 
@@ -1450,6 +1509,7 @@ model SubCategory {
   isActive   Boolean      @default(true)
   receivable Receivable[]
   payable    Payable[]
+
   @@map("sub_categories")
 }
 

@@ -41,7 +41,7 @@ export class ProfileController {
   @ApiOperation({ summary: 'Lista os funcionários sem Perfil' })
   async listEmployess(@Req() req) {
     const companyId = req.user.companyId;
-    return await this.profileService.listEmployees(companyId);
+    return await this.profileService.listEmployeesWithoutProfile(companyId);
   }
 
   @ApiTags('Gerenciamento dos perfis')

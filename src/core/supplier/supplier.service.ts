@@ -21,7 +21,7 @@ export class SupplierService {
           data: {
             type: createDto.type,
             name: createDto.general.name,
-            tradeName: createDto.general?.tradeName ?? null,
+            corporateName: createDto.general?.corporateName ?? null,
             email: createDto.general.email,
             phone: createDto.general.phone,
             mobile: createDto.general.mobile,
@@ -97,7 +97,6 @@ export class SupplierService {
         // }
 
         // Retorna o cliente completo após criação
-        console.log('supplier', supplier);
 
         return supplier;
       });
@@ -120,6 +119,7 @@ export class SupplierService {
           ...where,
           OR: [
             { name: { contains: filter.search, mode: 'insensitive' } },
+            { corporateName: { contains: filter.search, mode: 'insensitive' } },
             { email: { contains: filter.search, mode: 'insensitive' } },
             { cpf: { contains: filter.search, mode: 'insensitive' } },
             { cnpj: { contains: filter.search, mode: 'insensitive' } },

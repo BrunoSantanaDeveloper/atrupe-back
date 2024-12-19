@@ -29,7 +29,7 @@ export class ClientService {
             rg: createClientDto.general.rg,
             cnpj: createClientDto.general.cnpj,
             activity: createClientDto.general.activity,
-            tradeName: createClientDto.general.tradeName,
+            corporateName: createClientDto.general.corporateName,
             notes: createClientDto.general.notes,
             minValue: createClientDto.creditLimit.minValue,
             maxValue: createClientDto.creditLimit.maxValue,
@@ -144,7 +144,15 @@ export class ClientService {
         },
       });
     } catch (error) {
-      console.error('Erro durante o pré-registro:', error.message);
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new BadRequestException(
+          `O e-mail já está registrado na empresa.`,
+        );
+      }
+      console.error('Erro durante o pré-registro:', error);
       throw new BadRequestException(
         'Erro durante o pré-registro:',
         error.message,
@@ -198,6 +206,7 @@ export class ClientService {
           ...where,
           OR: [
             { name: { contains: filter.search, mode: 'insensitive' } },
+            { corporateName: { contains: filter.search, mode: 'insensitive' } },
             { email: { contains: filter.search, mode: 'insensitive' } },
             { cpf: { contains: filter.search, mode: 'insensitive' } },
             { cnpj: { contains: filter.search, mode: 'insensitive' } },

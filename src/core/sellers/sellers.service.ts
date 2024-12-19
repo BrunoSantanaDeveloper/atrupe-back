@@ -14,6 +14,9 @@ export class SellersService {
       const employees = await this.prisma.employee.findMany({
         where: {
           companyId,
+          sellerProfile: {
+            isNot: null,
+          },
         },
         select: {
           id: true,
@@ -33,10 +36,13 @@ export class SellersService {
       });
 
       // Mapeia os funcionários para um array de objetos com id e userName
-      return employees.map((employee) => ({
-        id: employee.id,
-        name: employee.name ?? employee.user.name,
-      }));
+      const data = employees.map((employee) => {
+        return {
+          id: employee.id,
+          name: employee.name ?? employee.user.name,
+        };
+      });
+      return data;
     } catch (error) {
       console.error('Error fetching employees:', error);
       throw new BadRequestException('Error fetching employees');

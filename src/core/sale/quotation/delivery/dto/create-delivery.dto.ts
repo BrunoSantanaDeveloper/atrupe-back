@@ -1,21 +1,22 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { DeliveryType } from '@prisma/client';
 import {
   IsInt,
   IsOptional,
   IsString,
   IsDate,
   IsNumber,
-  IsUUID,
+  IsEnum,
 } from 'class-validator';
 
 export class CreateDeliveryInfoDto {
   @ApiProperty({
     description: 'ID do tipo de entrega',
     type: String,
-    example: 'f3a4d45d-7c75-4a9b-9edb-03d222dedb2e',
+    example: 'CARRIER',
   })
-  @IsUUID()
-  deliveryTypeId: string;
+  @IsEnum(DeliveryType)
+  deliveryType: DeliveryType;
 
   @ApiProperty({
     description: 'Número de dias após a aprovação para a entrega',

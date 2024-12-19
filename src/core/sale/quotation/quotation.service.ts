@@ -55,16 +55,24 @@ export class QuotationService {
       if (!series) {
         throw new NotFoundException(`Serie não encontrada`);
       }
+      const mainCompany = await this.prisma.company.findUnique({
+        where: { id: companyId },
+        select: {
+          id: true,
+          principalCompanyId: true,
+        },
+      });
       // Criação do orçamento no banco
       const newQuotation = await this.prisma.quotation.create({
         data: {
           description,
           contactType,
-          companyId,
+          companyId: mainCompany.principalCompanyId,
+          subCompanyId: mainCompany.id,
           sellerId,
           clientId,
           seriesId: seriesId || undefined,
-          quotationNumber: series.currentBudgetNumber,
+          quotationNumber: series.currentBudgetNumber + 1,
         },
       });
 
@@ -651,6 +659,7 @@ export class QuotationService {
           },
         };
       }
+      console.log(where);
       const [quotations, total] = await Promise.all([
         this.prisma.quotation.findMany({
           where,
@@ -781,12 +790,7 @@ export class QuotationService {
           deliveryInfo: {
             select: {
               id: true,
-              deliveryType: {
-                select: {
-                  id: true,
-                  name: true,
-                },
-              },
+              deliveryType: true,
               daysAfterApproval: true, // Prazo após aprovação (dias)
               estimatedDate: true,
               cost: true,
@@ -907,7 +911,7 @@ export class QuotationService {
         seller: quotation.seller
           ? {
               id: quotation.seller.id,
-              name: quotation.seller[0].user?.name || '',
+              name: quotation.seller.name ?? quotation.seller.user.name,
             }
           : null,
         company: quotation.company
@@ -932,12 +936,7 @@ export class QuotationService {
         deliveryInfo: quotation.deliveryInfo
           ? {
               id: quotation.deliveryInfo.id,
-              type: quotation.deliveryInfo.deliveryType
-                ? {
-                    id: quotation.deliveryInfo.deliveryType.id,
-                    name: quotation.deliveryInfo.deliveryType.name,
-                  }
-                : null,
+              type: quotation.deliveryInfo.deliveryType,
               timeFrame: quotation.deliveryInfo.daysAfterApproval,
               estimateDate: quotation.deliveryInfo.estimatedDate,
               cost: quotation.deliveryInfo.cost,
@@ -1069,6 +1068,8 @@ export class QuotationService {
             items: true, // Inclui os itens dos produtos
           },
         },
+        deliveryInfo: true,
+        quotationPayment: true,
       },
     });
 
@@ -1096,7 +1097,7 @@ export class QuotationService {
       sellerId: quotation.sellerId, // Mantém o sellerId original
       seriesId: quotation.seriesId, // Mantém o seriesId original
       companyId: quotation.companyId,
-      quotationNumber: serie.currentBudgetNumber,
+      quotationNumber: serie.currentBudgetNumber + 1,
     };
 
     // Criar o novo orçamento
@@ -1172,7 +1173,30 @@ export class QuotationService {
         }
       }
     }
+    try {
+      await this.prisma.deliveryInfo.create({
+        data: {
+          quotationId: newQuotation.id,
+          deliveryType: quotation.deliveryInfo.deliveryType,
+          daysAfterApproval: quotation.deliveryInfo.daysAfterApproval,
+          estimatedDate: quotation.deliveryInfo.estimatedDate,
+          modality: quotation.deliveryInfo.modality,
+          supplierId: quotation.deliveryInfo.supplierId,
+        },
+      });
 
+      await this.prisma.quotationPayment.create({
+        data: {
+          quotationId: newQuotation.id,
+          paymentMethodId: quotation.quotationPayment.paymentMethodId,
+          paymentConditionId: quotation.quotationPayment.paymentConditionId,
+          totalValue: quotation.quotationPayment.totalValue,
+          finalValue: quotation.quotationPayment.finalValue,
+        },
+      });
+    } catch (error) {
+      console.error(error);
+    }
     return newQuotation; // Retorna o novo orçamento criado
   }
 
@@ -1328,6 +1352,39 @@ export class QuotationService {
   }
 
   async finish(quotationId: string): Promise<Quotation> {
+    //checkout do orçamento
+    const quotation = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      include: {
+        seller: {
+          select: {
+            sellerProfile: {
+              select: {
+                id: true,
+                maxDiscount: true,
+                minValue: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const minValue = quotation.seller.sellerProfile.minValue;
+    // const maxDiscount = quotation.seller.sellerProfile.maxDiscount;
+
+    if (quotation.totalValue < minValue) {
+      throw new BadRequestException(
+        'O valor total do orçamento deve ser maior que o valor mínimo de venda do vendedor.',
+      );
+    }
+
+    // if (quotation.totalValue > maxDiscount) {
+    //   throw new BadRequestException(
+    //     'O valor total do orçamento deve ser menor que o valor máximo de desconto.',
+    //   );
+    // }
+
     return this.prisma.quotation.update({
       where: { id: quotationId },
       data: {

@@ -6,7 +6,8 @@ import {
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CreateSaleSeriesDto } from './dto/create-series.dto';
 import { UpdateSaleSeriesDto } from './dto/update-serie.dto';
-import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
+import { SeriesFilterDTO } from './dto/series-filter.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class SaleSeriesService {
@@ -24,17 +25,21 @@ export class SaleSeriesService {
     }
   }
 
-  async findAll(filter: BaseFilterDTO) {
+  async findAll(filter: SeriesFilterDTO) {
     const { companyId, page, limit } = filter;
+    const where: Prisma.SaleSeriesWhereInput = { companyId };
+    if (filter.isActive !== undefined) {
+      where.isActive = filter.isActive;
+    }
     try {
       const skip = (+page - 1) * +limit;
 
       const [total, saleSeries] = await Promise.all([
         this.prisma.saleSeries.count({
-          where: { companyId },
+          where,
         }),
         this.prisma.saleSeries.findMany({
-          where: { companyId },
+          where,
           orderBy: { title: 'asc' },
           skip,
           take: +limit,
@@ -44,7 +49,7 @@ export class SaleSeriesService {
       return {
         total,
         lastPage: Math.ceil(total / +limit),
-        saleSeries: saleSeries.map((series) => this.formatSeries(series)),
+        data: saleSeries.map((series) => this.formatSeries(series)),
       };
     } catch (error) {
       console.error(error);
@@ -65,27 +70,40 @@ export class SaleSeriesService {
   }
 
   private formatSeries(series: any) {
+    const billingMap = {
+      ON_ORDER: 'Faturar no pedido',
+      ON_DELIVERY: 'Faturar na entrega',
+      ON_CASHIER: 'Faturar na frente de caixa',
+    };
+
+    const sendToProductionMap = {
+      DIRECT: 'Enviar Diretamente',
+    };
+
+    const productionStatusMap = {
+      MANAGE_PRODUCTION: 'Gerenciar produção',
+      PRODUCTION_COMPLETED: 'Produção concluída',
+    };
+
     return {
       ...series,
       billing: {
         value: series.billing,
-        label: this.toCapitalCase(series.billing),
+        label: billingMap[series.billing] || series.billing,
       },
       sendToProduction: {
         value: series.sendToProduction,
-        label: this.toCapitalCase(series.sendToProduction),
+        label:
+          sendToProductionMap[series.sendToProduction] ||
+          series.sendToProduction,
       },
       productionStatus: {
         value: series.productionStatus,
-        label: this.toCapitalCase(series.productionStatus),
+        label:
+          productionStatusMap[series.productionStatus] ||
+          series.productionStatus,
       },
     };
-  }
-  private toCapitalCase(value: string | null): string | null {
-    if (!value) return null;
-
-    const all = value.split('-').join(' ');
-    return all[0].toUpperCase() + all.slice(1);
   }
 
   async update(id: string, updateSaleSeriesDto: UpdateSaleSeriesDto) {
@@ -95,6 +113,7 @@ export class SaleSeriesService {
         data: updateSaleSeriesDto,
       });
     } catch (error) {
+      console.error(error);
       if ((error.code = 'P2002')) {
         throw new BadRequestException('Sale series code already exists');
       }

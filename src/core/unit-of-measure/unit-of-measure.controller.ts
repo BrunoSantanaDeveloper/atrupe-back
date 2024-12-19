@@ -42,6 +42,7 @@ export class UnitOfMeasureController {
     description: 'Unidade de medida criada com sucesso.',
   })
   create(@Req() req, @Body() createUnitOfMeasureDto: CreateUnitOfMeasureDto) {
+    createUnitOfMeasureDto.companyId = req.user.companyId;
     return this.unitOfMeasureService.create(createUnitOfMeasureDto);
   }
 
@@ -52,8 +53,8 @@ export class UnitOfMeasureController {
     description: 'Lista de unidades de medida retornada com sucesso.',
     isArray: true,
   })
-  findAll() {
-    return this.unitOfMeasureService.findAll();
+  findAll(@Req() req) {
+    return this.unitOfMeasureService.findAll(req.user.companyId);
   }
 
   @Get(':id')

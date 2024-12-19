@@ -28,22 +28,6 @@ export class OrderService {
     });
   }
 
-  async duplicate(id: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-    });
-
-    if (!order) {
-      throw new Error('Order not found');
-    }
-
-    return this.prisma.order.create({
-      data: {
-        quotationId: order.quotationId,
-      },
-    });
-  }
-
   async findAll(dto: FilterOrderDto) {
     try {
       const where: Prisma.OrderWhereInput = {};
@@ -172,7 +156,7 @@ export class OrderService {
             seller: quotation.seller
               ? {
                   id: quotation.seller.id,
-                  name: quotation.seller.user.name,
+                  name: quotation.seller.name ?? quotation.seller.user.name,
                 }
               : null,
           },
@@ -295,7 +279,6 @@ export class OrderService {
               },
               deliveryInfo: {
                 include: {
-                  deliveryType: true,
                   supplier: true,
                 },
               },
@@ -362,7 +345,7 @@ export class OrderService {
         seller: quotation.seller
           ? {
               id: quotation.seller.id,
-              name: quotation.seller.user.name,
+              name: quotation.seller.name ?? quotation.seller.user.name,
             }
           : null,
         company: quotation.company
@@ -376,12 +359,7 @@ export class OrderService {
           ? {
               id: quotation.deliveryInfo.id,
               status: quotation.DeliverySchedule.status,
-              type: quotation.deliveryInfo.deliveryType
-                ? {
-                    id: quotation.deliveryInfo.deliveryType.id,
-                    name: quotation.deliveryInfo.deliveryType.name,
-                  }
-                : null,
+              type: quotation.deliveryInfo.deliveryType,
               timeFrame: quotation.deliveryInfo.daysAfterApproval,
               estimateDate: quotation.deliveryInfo.estimatedDate,
               cost: quotation.deliveryInfo.cost,

@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreatePolicyDto, CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { PrismaService } from 'nestjs-prisma';
@@ -78,56 +82,61 @@ export class RoleService {
     const lastPage = Math.ceil(total / +filter.limit);
 
     // Buscar as roles com os setores relacionados
-    const roles = await this.prisma.role.findMany({
-      where,
-      include: {
-        sector: {
-          select: {
-            id: true,
-            name: true,
+    try {
+      const roles = await this.prisma.role.findMany({
+        where,
+        include: {
+          sector: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
-        },
-        employees: {
-          select: {
-            user: {
-              select: {
-                name: true,
+          employees: {
+            select: {
+              user: {
+                select: {
+                  name: true,
+                },
               },
             },
           },
         },
-      },
-      take: +filter.limit,
-      skip: (+filter.page - 1) * +filter.limit,
-    });
+        take: +filter.limit,
+        skip: (+filter.page - 1) * +filter.limit,
+      });
+      console.log(roles);
 
-    // Agrupar as roles por setor
-    const rolesBySector = roles.reduce((acc, role) => {
-      const sectorId = role.sector.id;
+      // Agrupar as roles por setor
+      const rolesBySector = roles.reduce((acc, role) => {
+        const sectorId = role.sector.id;
 
-      if (!acc[sectorId]) {
-        acc[sectorId] = {
-          sector: {
-            id: role.sector.id,
-            name: role.sector.name,
-          },
-          roles: [],
-        };
-      }
+        if (!acc[sectorId]) {
+          acc[sectorId] = {
+            sector: {
+              id: role.sector.id,
+              name: role.sector.name,
+            },
+            roles: [],
+          };
+        }
 
-      // Remove o campo sector antes de adicionar ao array de roles
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { sector, ...roleWithoutSector } = role;
-      acc[sectorId].roles.push(roleWithoutSector);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { sector, ...roleWithoutSector } = role;
+        acc[sectorId].roles.push(roleWithoutSector);
 
-      return acc;
-    }, {});
+        return acc;
+      }, {});
 
-    return {
-      total,
-      lastPage,
-      data: Object.values(rolesBySector),
-    };
+      return {
+        total,
+        lastPage,
+        data: Object.values(rolesBySector),
+      };
+    } catch (error) {
+      console.log(error);
+      throw new BadRequestException('Error fetching roles');
+    }
   }
 
   findOne(id: string) {

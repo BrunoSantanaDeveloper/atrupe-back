@@ -8,25 +8,30 @@ export class UnitOfMeasureService {
   constructor(private readonly prisma: PrismaService) {}
 
   create(createUnitOfMeasureDto: CreateUnitOfMeasureDto) {
-    return this.prisma.unitOfMeasure.create({
+    return this.prisma.companyUnitOfMeasure.create({
       data: {
         ...createUnitOfMeasureDto,
       },
     });
   }
 
-  findAll() {
-    return this.prisma.unitOfMeasure.findMany({});
+  findAll(companyId: string) {
+    return this.prisma.companyUnitOfMeasure.findMany({
+      where: { companyId },
+      orderBy: {
+        name: 'asc',
+      },
+    });
   }
 
   findOne(id: string) {
-    return this.prisma.unitOfMeasure.findUnique({
+    return this.prisma.companyUnitOfMeasure.findUnique({
       where: { id },
     });
   }
 
   update(id: string, updateUnitOfMeasureDto: UpdateUnitOfMeasureDto) {
-    return this.prisma.unitOfMeasure.update({
+    return this.prisma.companyUnitOfMeasure.update({
       where: { id },
       data: updateUnitOfMeasureDto,
     });

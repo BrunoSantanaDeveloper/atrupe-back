@@ -1,5 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsInt, IsOptional, IsBoolean } from 'class-validator';
+import {
+  BiilingKind,
+  ProductionStatusKind,
+  SendToProductionKind,
+} from '@prisma/client';
+import {
+  IsString,
+  IsInt,
+  IsOptional,
+  IsBoolean,
+  IsEnum,
+} from 'class-validator';
 
 export class UpdateSaleSeriesDto {
   @ApiProperty({
@@ -44,44 +55,27 @@ export class UpdateSaleSeriesDto {
 
   @ApiProperty({
     description: 'Informação de faturamento.',
-    example: 'na-entrega',
+    example: 'ON_ORDER',
   })
-  @IsString()
+  @IsEnum(BiilingKind)
   @IsOptional()
-  billing?: string;
+  billing?: BiilingKind;
 
   @ApiProperty({
     description: 'Opção de envio para produção.',
-    example: 'enviar-diretamente',
+    example: 'DIRECT',
   })
-  @IsString()
+  @IsEnum(SendToProductionKind)
   @IsOptional()
-  sendToProduction?: string;
+  sendToProduction?: SendToProductionKind;
 
   @ApiProperty({
     description: 'Status de produção.',
-    example: 'entrar-em-producao',
+    example: 'MANAGE_PRODUCTION',
   })
-  @IsString()
+  @IsEnum(ProductionStatusKind)
   @IsOptional()
-  productionStatus?: string;
-
-  @ApiProperty({
-    description: 'Texto a ser incluído antes dos itens.',
-    example: 'Segue abaixo conforme sua solicitação:',
-  })
-  @IsString()
-  @IsOptional()
-  textBeforeItems?: string;
-
-  @ApiProperty({
-    description: 'Texto a ser incluído após os itens.',
-    example:
-      '1) Crédito e condição de pagamento sujeito à aprovação;\n\n2) Impressos c/ alta exigência colorimétrica exige-se prova de cor;\n\n3) Não nos responsabilizamos por características e especificações dos projetos gráficos fornecidos pelo cliente;',
-  })
-  @IsString()
-  @IsOptional()
-  textAfterItems?: string;
+  productionStatus?: ProductionStatusKind;
 
   @ApiProperty({
     description: 'Indica se a série está ativa.',

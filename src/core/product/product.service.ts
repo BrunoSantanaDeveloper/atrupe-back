@@ -134,6 +134,7 @@ export class ProductService {
             code: true,
             sector: {
               select: {
+                id: true,
                 name: true,
               },
             },
@@ -173,6 +174,7 @@ export class ProductService {
           id,
           name,
           code,
+          sectorId: sector?.id || null,
           sectorName: sector?.name || null,
           unitOfMeasureCode: 'UN',
           unitCost,
@@ -213,7 +215,7 @@ export class ProductService {
       throw new Error('Invalid data for productionStages');
     }
 
-    const allSectors = await this.prisma.sector.findMany({
+    const allSectors = await this.prisma.companySector.findMany({
       where: { isProductionStage: true },
       select: { id: true, name: true, icon: true },
     });
@@ -226,7 +228,7 @@ export class ProductService {
 
     const existingProductionStagesWithDetails = await Promise.all(
       productionStages.map(async (stage: any) => {
-        const sector = await this.prisma.sector.findUnique({
+        const sector = await this.prisma.companySector.findUnique({
           where: { id: stage.id },
           select: { name: true, icon: true },
         });
