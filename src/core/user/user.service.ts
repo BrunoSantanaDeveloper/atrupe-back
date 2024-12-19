@@ -61,11 +61,6 @@ export class UserService {
   }
 
   async findOne(id: string) {
-    // const cachedUser = await this.cache.get<UserResponseDto>(`user:${id}`);
-    // // if (cachedUser) {
-    // //   return cachedUser;
-    // // }
-
     const user = await this.prisma.user.findFirst({
       where: { id: id },
       select: {

@@ -170,6 +170,7 @@ export class CompanyService {
           mobile: general?.mobile,
           municipalRegistration: general?.municipalRegistration,
           siteUrl: general?.siteUrl,
+          isActive: general?.isActive,
 
           // Personalization fields
           logoUrl: personalization?.logoUrl,

@@ -5,6 +5,7 @@ import {
   IsUrl,
   ValidateNested,
   IsEmail,
+  IsBoolean,
 } from 'class-validator';
 import { IsCnpj } from '../../../helpers/validators/cnpj';
 import { Type } from 'class-transformer';
@@ -148,6 +149,15 @@ export class CreateGeneralInfoDto {
     example: '987654321',
   })
   municipalRegistration?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({
+    description: 'Ativo',
+    required: false,
+    example: true,
+  })
+  isActive?: boolean;
 }
 
 export class CreatePersonalizationDto {
