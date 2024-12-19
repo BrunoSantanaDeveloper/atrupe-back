@@ -67,7 +67,9 @@ export class QuotationService {
         data: {
           description,
           contactType,
-          companyId: mainCompany.principalCompanyId,
+          companyId: mainCompany.principalCompanyId
+            ? mainCompany.principalCompanyId
+            : mainCompany.id,
           subCompanyId: mainCompany.id,
           sellerId,
           clientId,
@@ -106,6 +108,7 @@ export class QuotationService {
       });
       return newQuotation;
     } catch (error) {
+      console.log(error);
       if (error instanceof NotFoundException) {
         throw error; // Propaga o erro caso a série não seja encontrada
       }
