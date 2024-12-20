@@ -1,4 +1,10 @@
-import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateUserDto {
@@ -28,4 +34,13 @@ export class CreateUserDto {
     required: true,
   })
   password: string;
+
+  @ApiProperty({
+    description: 'ID do funcionário',
+    example: '1234567890',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID()
+  employeeId?: string;
 }

@@ -21,6 +21,7 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @ApiTags('Usuário')
 @Controller('user')
@@ -39,6 +40,7 @@ export class UserController {
           name: 'johndoe',
           email: 'johndoe@example.com',
           password: 'securepassword123',
+          employeeId: '1234567890',
         },
       },
     },
@@ -105,8 +107,9 @@ export class UserController {
     return user;
   }
 
-  @Patch()
+  @Patch(':id')
   @UseGuards(JwtAuthGuard)
+  @ApiParam({ name: 'id', required: true, description: 'ID do usuário' })
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Atualiza os dados do usuário' })
   @ApiResponse({
@@ -117,8 +120,8 @@ export class UserController {
     status: 400,
     description: 'Dados inválidos.',
   })
-  update() {
-    return this.userService.update();
+  update(@Param('id') id: string, @Body() body: UpdateUserDto) {
+    return this.userService.update(id, body);
   }
 
   @Get()

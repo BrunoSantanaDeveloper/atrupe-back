@@ -21,8 +21,9 @@ import {
   ApiBody,
   ApiParam,
   ApiBearerAuth,
+  ApiQuery,
 } from '@nestjs/swagger';
-import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
+import { FilterEmployeeDto } from './dto/filter-employee.dto';
 
 @ApiTags('Employees')
 @UseGuards(JwtAuthGuard)
@@ -46,14 +47,28 @@ export class EmployeeController {
     return this.employeeService.create(createEmployeeDto);
   }
 
+  @Get('quantity')
+  @ApiOperation({
+    summary: 'Obtém a quantidade de todos os colaboradores em seus status.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de quantidade de colaboradores retornada com sucesso.',
+  })
+  async findAllQuantity(@Req() req) {
+    const companyId = req.user.companyId;
+    return this.employeeService.findAllQuantity(companyId);
+  }
+
   @Get()
+  @ApiQuery({ type: FilterEmployeeDto })
   @ApiOperation({ summary: 'Obtém a lista de todos os empregados' })
   @ApiResponse({
     status: 200,
     description: 'Lista de empregados retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() filter: BaseFilterDTO, @Req() req) {
+  findAll(@Query() filter: FilterEmployeeDto, @Req() req) {
     filter.companyId = req.user.companyId;
     return this.employeeService.findAll(filter);
   }
@@ -78,7 +93,7 @@ export class EmployeeController {
   @ApiParam({ name: 'id', required: true, description: 'ID do colaborador' })
   @ApiBody({
     description: 'Dados para atualização do colaborador',
-    type: CreateEmployeeDto,
+    type: UpdateEmployeeDto,
   })
   @ApiResponse({
     status: 200,
@@ -92,7 +107,7 @@ export class EmployeeController {
     @Param('id') id: string,
     @Body() updateEmployeeDto: UpdateEmployeeDto,
   ) {
-    return this.employeeService.update(+id, updateEmployeeDto);
+    return this.employeeService.update(id, updateEmployeeDto);
   }
 
   @Delete(':id')

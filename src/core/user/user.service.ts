@@ -1,5 +1,9 @@
-import { ConflictException, Injectable } from '@nestjs/common';
-import { User } from '@prisma/client';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma, User } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { CreateUserDto } from './dto/create.dto';
@@ -7,6 +11,7 @@ import * as argon2 from 'argon2';
 import { UserResponseDto } from './dto/response.dto';
 import { CacheService } from 'src/svc/cache/cache.service';
 import { PlugService } from 'src/svc/plug/plug.service';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UserService {
@@ -19,12 +24,28 @@ export class UserService {
   async create(createUserDto: CreateUserDto): Promise<User> {
     try {
       const hashedPassword = await argon2.hash(createUserDto.password);
+      const data: Prisma.UserCreateInput = {
+        name: createUserDto.name,
+        email: createUserDto.email,
+        password: hashedPassword,
+      };
+
+      if (createUserDto.employeeId) {
+        const employee = await this.prisma.employee.findFirst({
+          where: { id: createUserDto.employeeId },
+        });
+
+        if (!employee) {
+          throw new NotFoundException('Employee not found');
+        }
+
+        data.employee = {
+          connect: { id: employee.id },
+        };
+      }
+
       return await this.prisma.user.create({
-        data: {
-          name: createUserDto.name,
-          email: createUserDto.email,
-          password: hashedPassword,
-        },
+        data: data,
       });
     } catch (error) {
       console.error(error);
@@ -133,7 +154,35 @@ export class UserService {
     });
   }
 
-  update() {
-    return 'This action updates a user';
+  async update(id: string, updateUserDto: UpdateUserDto) {
+    const { isActive, ...rest } = updateUserDto;
+
+    return this.prisma.$transaction(async (tx) => {
+      // Atualiza os dados do usuário
+      const userUpdate = await tx.user.update({
+        where: { id },
+        data: {
+          ...rest,
+          isActive,
+        },
+      });
+
+      // Caso o usuário seja ativado, ativa o colaborador vinculado (se existir)
+      if (isActive) {
+        const user = await tx.user.findUnique({
+          where: { id },
+          select: { employee: { select: { id: true } } },
+        });
+
+        if (user?.employee) {
+          await tx.employee.update({
+            where: { id: user.employee[0].id },
+            data: { isActive: true },
+          });
+        }
+      }
+
+      return userUpdate;
+    });
   }
 }

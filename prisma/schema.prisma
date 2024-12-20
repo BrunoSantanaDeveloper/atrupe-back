@@ -104,6 +104,9 @@ model Address {
 
   supplierId String?
   supplier   Supplier? @relation(fields: [supplierId], references: [id])
+  
+  employeeId String?
+  employee   Employee? @relation(fields: [employeeId], references: [id])
 
   @@index([ownerId, ownerType])
   @@index([supplierId, ownerType])
@@ -364,6 +367,11 @@ model Employee {
 
   name      String?
   avatarUrl String?
+  cpf       String?
+  rg        String?
+  phone     String?
+  mobile    String?
+  address   Address[]
   sallary   Float?
 
   companyId String
@@ -1234,7 +1242,7 @@ model DeliveryInfo {
   quotationId String    @unique
   quotation   Quotation @relation(fields: [quotationId], references: [id])
 
-  deliveryType   DeliveryType @default(CARRIER)
+  deliveryType DeliveryType @default(CARRIER)
 
   daysAfterApproval Int?
   estimatedDate     DateTime?
