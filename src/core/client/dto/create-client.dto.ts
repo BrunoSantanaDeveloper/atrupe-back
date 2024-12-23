@@ -113,7 +113,8 @@ class ContactDto {
 
 class PaymentConditionDto {
   @IsUUID()
-  id: string;
+  @IsOptional()
+  id?: string;
 
   @IsBoolean()
   isActive: boolean;
@@ -155,6 +156,7 @@ export class CreateClientDto {
   contacts: ContactDto[];
 
   @ValidateNested()
+  @IsOptional()
   @Type(() => CreditLimitDto)
   creditLimit: CreditLimitDto;
 

@@ -266,8 +266,21 @@ export class ClientService {
       throw new NotFoundException('Client not found');
     }
 
+    // Obter todas as condições de pagamento
+    const allPaymentConditions = await this.prisma.paymentCondition.findMany({
+      include: {
+        paymentMethod: true,
+      },
+    });
+
     // Agrupar condições de pagamento por método de pagamento
     const paymentMethodsMap = new Map();
+
+    // Rastrear condições de pagamento associadas
+    const associatedConditionIds = new Set(
+      client.paymentConditions.map((pc) => pc.paymentCondition.id),
+    );
+
     client.paymentConditions.forEach((pc) => {
       const method = pc.paymentCondition.paymentMethod;
       if (!paymentMethodsMap.has(method.id)) {
@@ -284,11 +297,31 @@ export class ClientService {
       });
     });
 
+    // Adicionar condições de pagamento não associadas
+    allPaymentConditions.forEach((condition) => {
+      if (!associatedConditionIds.has(condition.id)) {
+        const method = condition.paymentMethod;
+        if (!paymentMethodsMap.has(method.id)) {
+          paymentMethodsMap.set(method.id, {
+            id: method.id,
+            name: method.name,
+            conditions: [],
+          });
+        }
+        paymentMethodsMap.get(method.id).conditions.push({
+          id: condition.id,
+          name: condition.name,
+          isActive: false,
+        });
+      }
+    });
+
     // Transformar para o formato esperado pelo front
     return {
       type: client.type,
       general: {
         name: client.name,
+        corporateName: client.corporateName,
         email: client.email,
         cpf: client.cpf,
         rg: client.rg,
@@ -324,7 +357,6 @@ export class ClientService {
       },
     };
   }
-
   async update(id: string, updateClientDto: UpdateClientDto) {
     try {
       const client = await this.prisma.client.findUnique({ where: { id } });

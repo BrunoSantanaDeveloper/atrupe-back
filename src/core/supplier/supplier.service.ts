@@ -211,7 +211,22 @@ export class SupplierService {
     if (!supplier) {
       throw new NotFoundException('Supplier not found');
     }
+
+    // Obter todas as condições de pagamento
+    const allPaymentConditions = await this.prisma.paymentCondition.findMany({
+      include: {
+        paymentMethod: true,
+      },
+    });
+
+    // Agrupar condições de pagamento por método de pagamento
     const paymentMethodsMap = new Map();
+
+    // Rastrear condições de pagamento associadas
+    const associatedConditionIds = new Set(
+      supplier.paymentConditions.map((pc) => pc.paymentCondition.id),
+    );
+
     supplier.paymentConditions.forEach((pc) => {
       const method = pc.paymentCondition.paymentMethod;
       if (!paymentMethodsMap.has(method.id)) {
@@ -226,6 +241,25 @@ export class SupplierService {
         name: pc.paymentCondition.name,
         isActive: pc.isActive,
       });
+    });
+
+    // Adicionar condições de pagamento não associadas
+    allPaymentConditions.forEach((condition) => {
+      if (!associatedConditionIds.has(condition.id)) {
+        const method = condition.paymentMethod;
+        if (!paymentMethodsMap.has(method.id)) {
+          paymentMethodsMap.set(method.id, {
+            id: method.id,
+            name: method.name,
+            conditions: [],
+          });
+        }
+        paymentMethodsMap.get(method.id).conditions.push({
+          id: condition.id,
+          name: condition.name,
+          isActive: false,
+        });
+      }
     });
 
     // Transformar para o formato esperado pelo front

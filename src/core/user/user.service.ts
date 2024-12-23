@@ -158,31 +158,36 @@ export class UserService {
     const { isActive, ...rest } = updateUserDto;
 
     return this.prisma.$transaction(async (tx) => {
-      // Atualiza os dados do usuário
-      const userUpdate = await tx.user.update({
-        where: { id },
-        data: {
-          ...rest,
-          isActive,
-        },
-      });
-
-      // Caso o usuário seja ativado, ativa o colaborador vinculado (se existir)
-      if (isActive) {
-        const user = await tx.user.findUnique({
+      try {
+        // Atualiza os dados do usuário
+        const userUpdate = await tx.user.update({
           where: { id },
-          select: { employee: { select: { id: true } } },
+          data: {
+            ...rest,
+            isActive,
+          },
         });
 
-        if (user?.employee) {
-          await tx.employee.update({
-            where: { id: user.employee[0].id },
-            data: { isActive: true },
+        // Caso o usuário seja ativado, ativa o colaborador vinculado (se existir)
+        if (isActive) {
+          const user = await tx.user.findUnique({
+            where: { id },
+            select: { employee: { select: { id: true } } },
           });
-        }
-      }
 
-      return userUpdate;
+          if (user?.employee) {
+            await tx.employee.update({
+              where: { id: user.employee[0].id },
+              data: { isActive: true },
+            });
+          }
+        }
+
+        return userUpdate;
+      } catch (error) {
+        console.error(error);
+        throw error;
+      }
     });
   }
 }
