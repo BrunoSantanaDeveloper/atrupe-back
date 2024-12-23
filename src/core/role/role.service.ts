@@ -105,7 +105,6 @@ export class RoleService {
         take: +filter.limit,
         skip: (+filter.page - 1) * +filter.limit,
       });
-      console.log(roles);
 
       // Agrupar as roles por setor
       const rolesBySector = roles.reduce((acc, role) => {
@@ -150,10 +149,19 @@ export class RoleService {
     });
   }
 
-  update(id: number, updateRoleDto: UpdateRoleDto) {
-    return `This action updates a #${id} role with ${updateRoleDto}`;
+  async update(id: string, updateRoleDto: UpdateRoleDto) {
+    try {
+      return this.prisma.role.update({
+        where: { id },
+        data: {
+          ...updateRoleDto,
+        },
+      });
+    } catch (error) {
+      console.log(error);
+      throw new BadRequestException('Error updating role');
+    }
   }
-
   async remove(id: string) {
     return this.prisma.$transaction(async (tx) => {
       // Atualiza os employees

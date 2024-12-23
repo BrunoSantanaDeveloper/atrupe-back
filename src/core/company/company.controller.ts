@@ -46,7 +46,6 @@ export class CompanyController {
     @Body() createCompanyDto: CreateCompanyDto,
   ): Promise<Company> {
     const companyId = req.user.companyId;
-    console.log(companyId);
     return await this.companyService.create(createCompanyDto, companyId);
   }
 

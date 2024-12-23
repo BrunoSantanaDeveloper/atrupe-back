@@ -42,6 +42,11 @@ export class AuthController {
   })
   @UseGuards(LocalAuthGuard)
   async login(@Req() req) {
+    const ip = req.headers['x-forwarded-for'] || req.ip;
+    const userAgent = req.headers['user-agent'];
+
+    console.log('IP da requisição:', ip);
+    console.log('User-Agent:', userAgent);
     return this.authService.login(req.user);
   }
 }

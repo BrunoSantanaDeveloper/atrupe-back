@@ -662,7 +662,6 @@ export class QuotationService {
           },
         };
       }
-      console.log(where);
       const [quotations, total] = await Promise.all([
         this.prisma.quotation.findMany({
           where,

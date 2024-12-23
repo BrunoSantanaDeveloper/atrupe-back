@@ -143,11 +143,14 @@ export class UserService {
 
   findByEmail(email: string) {
     return this.prisma.user.findFirst({
-      where: { email: email },
+      where: { email: email, isActive: true },
       include: {
         employee: {
           select: {
-            companyId: true,
+            id: true,
+            role: true,
+            avatarUrl: true,
+            company: true,
           },
         },
       },
