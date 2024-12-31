@@ -1,4 +1,5 @@
 import {
+  IsDateString,
   IsEnum,
   IsNotEmpty,
   IsNumber,
@@ -61,4 +62,12 @@ export class TransferDto {
   @IsNotEmpty()
   @IsString()
   transferMethod: string;
+
+  @ApiProperty({
+    description: 'Data da transferência',
+    example: '2024-01-11T12:00:00Z',
+  })
+  @IsNotEmpty()
+  @IsDateString()
+  transferDate: Date;
 }

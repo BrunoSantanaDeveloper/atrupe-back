@@ -199,8 +199,13 @@ export class CashControlService {
   }
 
   async transferFunds(transferDto: TransferDto) {
-    const { sourceBankAccountId, targetBankAccountId, amount, transferMethod } =
-      transferDto;
+    const {
+      sourceBankAccountId,
+      targetBankAccountId,
+      amount,
+      transferMethod,
+      transferDate,
+    } = transferDto;
 
     const sourceCashRegister = await this.prisma.cashRegister.findFirst({
       where: {
@@ -252,7 +257,7 @@ export class CashControlService {
           amount,
           description: `Transferência para caixa ${targetCashRegister.id}`,
           reason: transferMethod,
-          transactionDate: new Date(),
+          transactionDate: new Date(transferDate),
         },
       }),
       this.prisma.transaction.create({
@@ -262,7 +267,7 @@ export class CashControlService {
           amount,
           description: `Transferência do caixa ${sourceCashRegister.id}`,
           reason: transferMethod,
-          transactionDate: new Date(),
+          transactionDate: new Date(transferDate),
         },
       }),
       this.prisma.cashRegister.update({
