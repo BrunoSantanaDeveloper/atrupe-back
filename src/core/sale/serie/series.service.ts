@@ -40,7 +40,7 @@ export class SaleSeriesService {
         }),
         this.prisma.saleSeries.findMany({
           where,
-          orderBy: { title: 'asc' },
+          orderBy: { description: 'asc' },
           skip,
           take: +limit,
         }),
@@ -126,5 +126,118 @@ export class SaleSeriesService {
       where: { id },
       data: { isActive: false },
     });
+  }
+
+  async removeTrainingSerieData(serieId: string) {
+    try {
+      const serie = await this.prisma.saleSeries.findUnique({
+        where: { id: serieId },
+      });
+
+      if (!serie) {
+        throw new NotFoundException(`Serie nao encontrada`);
+      }
+
+      //deletar orçamento/agenda de entrega/pedido/financeiro
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.productionStage.deleteMany({
+          where: {
+            schedule: {
+              quotation: {
+                series: {
+                  id: serieId,
+                },
+              },
+            },
+          },
+        });
+        await tx.deliverySchedule.deleteMany({
+          where: {
+            quotation: {
+              series: {
+                id: serieId,
+              },
+            },
+          },
+        });
+
+        await tx.order.deleteMany({
+          where: {
+            quotation: {
+              series: {
+                id: serieId,
+              },
+            },
+          },
+        });
+
+        await tx.deliveryInfo.deleteMany({
+          where: {
+            quotation: {
+              series: {
+                id: serieId,
+              },
+            },
+          },
+        });
+        await tx.quotationInstallment.deleteMany({
+          where: {
+            quotationPayment: {
+              quotation: {
+                series: {
+                  id: serieId,
+                },
+              },
+            },
+          },
+        });
+
+        await tx.quotationPayment.deleteMany({
+          where: {
+            quotation: {
+              series: {
+                id: serieId,
+              },
+            },
+          },
+        });
+
+        await tx.quotationProductItem.deleteMany({
+          where: {
+            quotationProduct: {
+              quotation: {
+                series: {
+                  id: serieId,
+                },
+              },
+            },
+          },
+        });
+
+        await tx.quotationProduct.deleteMany({
+          where: {
+            quotation: {
+              series: {
+                id: serieId,
+              },
+            },
+          },
+        });
+
+        await tx.quotation.deleteMany({
+          where: {
+            series: {
+              id: serieId,
+            },
+          },
+        });
+      });
+    } catch (error) {
+      if (error.code === 'P2024') {
+        // Tratamento específico para timeout
+        throw new Error('A transação demorou muito para ser concluída.');
+      }
+      throw error; // Re-throw outros erros
+    }
   }
 }

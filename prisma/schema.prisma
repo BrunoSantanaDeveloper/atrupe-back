@@ -104,7 +104,7 @@ model Address {
 
   supplierId String?
   supplier   Supplier? @relation(fields: [supplierId], references: [id])
-  
+
   employeeId String?
   employee   Employee? @relation(fields: [employeeId], references: [id])
 
@@ -200,7 +200,6 @@ model SellerProfile {
   canApprovePreRegistration Boolean @default(false)
   canCancelSale             Boolean @default(false)
 
-  @@unique([name, companyId])
   @@map("seller_profile")
 }
 
@@ -1003,10 +1002,11 @@ enum ProductionStatusKind {
 }
 
 model SaleSeries {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-  isActive  Boolean   @default(true)
+  id         String    @id @default(uuid())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime? @updatedAt
+  isActive   Boolean   @default(true)
+  isTraining Boolean   @default(false)
 
   code                String
   description         String?

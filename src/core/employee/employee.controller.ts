@@ -103,11 +103,11 @@ export class EmployeeController {
     status: 404,
     description: 'Colaborador não encontrado.',
   })
-  update(
+  async update(
     @Param('id') id: string,
     @Body() updateEmployeeDto: UpdateEmployeeDto,
   ) {
-    return this.employeeService.update(id, updateEmployeeDto);
+    return await this.employeeService.update(id, updateEmployeeDto);
   }
 
   @Delete(':id')

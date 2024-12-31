@@ -102,6 +102,7 @@ export class CompanyService {
         code: 'T1',
         title: 'Orçamento',
         description: 'Treinamento',
+        isTraining: true,
         companyId: companyId,
         proposalValidity: 30,
         deliveryDeadline: 30,

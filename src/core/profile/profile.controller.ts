@@ -9,7 +9,6 @@ import {
   UseGuards,
   Query,
   Req,
-  BadRequestException,
 } from '@nestjs/common';
 import { ProfileService } from './profile.service';
 import {
@@ -74,12 +73,7 @@ export class ProfileController {
   })
   async create(@Req() req, @Body() createProfileDto: CreateProfileDto) {
     createProfileDto.companyId = req.user.companyId;
-    try {
-      return await this.profileService.create(createProfileDto);
-    } catch (error) {
-      console.log(error.message);
-      throw new BadRequestException(error.message);
-    }
+    return await this.profileService.create(createProfileDto);
   }
 
   @ApiTags('Perfil de vendedor')
@@ -150,7 +144,7 @@ export class ProfileController {
     status: 404,
     description: 'Perfil não encontrado.',
   })
-  remove(@Param('id') id: string) {
-    return this.profileService.remove(id);
+  async remove(@Param('id') id: string) {
+    return await this.profileService.remove(id);
   }
 }

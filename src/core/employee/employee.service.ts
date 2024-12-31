@@ -104,6 +104,7 @@ export class EmployeeService {
                 isActive: true,
               },
             },
+            address: true,
             role: true,
             sector: true,
           },
@@ -164,8 +165,9 @@ export class EmployeeService {
   }
 
   async update(id: string, updateEmployeeDto: UpdateEmployeeDto) {
-    const { isActive, addresses, ...rest } = updateEmployeeDto;
-
+    const { isActive, address, ...rest } = updateEmployeeDto;
+    console.log(address);
+    console.log(rest);
     return this.prisma.$transaction(async (tx) => {
       // Atualiza os dados do Employee
       const employeeUpdate = await tx.employee.update({
@@ -193,7 +195,7 @@ export class EmployeeService {
       }
 
       // Gerenciamento de endereços
-      if (addresses) {
+      if (address) {
         // Verifica se o Employee já possui endereços associados
         const existingAddresses = await tx.address.findMany({
           where: { employeeId: id },
@@ -207,7 +209,7 @@ export class EmployeeService {
         }
 
         // Cria os novos endereços fornecidos no DTO
-        const newAddresses = Array.isArray(addresses) ? addresses : [addresses];
+        const newAddresses = Array.isArray(address) ? address : [address];
         for (const address of newAddresses) {
           await tx.address.create({
             data: {

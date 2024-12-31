@@ -70,6 +70,20 @@ export class UpdateEmployeeDto {
   @IsOptional()
   isActive?: boolean;
 
+  @IsOptional()
+  @ApiProperty({
+    description: 'ID do setor associado ao colaborador',
+    example: '123e4567-e89b-12d3-a456-426614174001',
+  })
+  sectorId?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'ID do cargo associado ao colaborador',
+    example: '123e4567-e89b-12d3-a456-426614174002',
+  })
+  roleId?: string;
+
   @ApiPropertyOptional({
     description: 'Nome completo do funcionário',
     example: 'João Silva',
@@ -126,10 +140,11 @@ export class UpdateEmployeeDto {
   @IsOptional()
   sallary?: number;
 
+  @IsOptional()
   @ApiPropertyOptional({
-    description: 'Lista de endereços do funcionário',
+    description: 'Endereço do funcionário',
     type: AddressDto,
   })
   @Type(() => AddressDto)
-  addresses?: AddressDto;
+  address?: AddressDto; // singular
 }

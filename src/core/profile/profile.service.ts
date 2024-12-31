@@ -16,11 +16,17 @@ export class ProfileService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createProfileDto: CreateProfileDto) {
-    return this.prisma.sellerProfile.create({
-      data: {
-        ...createProfileDto,
-      },
-    });
+    try {
+      console.log(createProfileDto);
+      return await this.prisma.sellerProfile.create({
+        data: {
+          ...createProfileDto,
+        },
+      });
+    } catch (error) {
+      console.error(error);
+      throw new BadRequestException(error.message);
+    }
   }
 
   async findAll(filter: BaseFilterDTO) {
@@ -132,8 +138,12 @@ export class ProfileService {
     });
   }
 
-  remove(id: string) {
-    return this.prisma.sellerProfile.update({
+  async remove(id: string) {
+    await this.prisma.employee.updateMany({
+      where: { sellerProfileId: id },
+      data: { sellerProfileId: null },
+    });
+    return await this.prisma.sellerProfile.update({
       where: { id },
       data: { isActive: false },
     });

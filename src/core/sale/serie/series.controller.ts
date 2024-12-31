@@ -66,11 +66,22 @@ export class SaleSeriesController {
     return this.saleSeriesService.update(id, updateSaleSeriesDto);
   }
 
-  @ApiOperation({ summary: 'Delete a sale series by ID' })
+  @ApiOperation({ summary: 'Inactivate a sale series by ID' })
   @ApiParam({ name: 'id', description: 'ID of the sale series' })
-  @ApiResponse({ status: 200, description: 'Sale series deleted successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Sale series inactivated successfully',
+  })
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.saleSeriesService.remove(id);
+  }
+
+  @ApiOperation({ summary: 'Delete a sale series by ID and purge data' })
+  @ApiParam({ name: 'id', description: 'ID of the sale series' })
+  @ApiResponse({ status: 200, description: 'Sale series deleted successfully' })
+  @Delete('purge/:id')
+  async purge(@Param('id') id: string) {
+    return this.saleSeriesService.removeTrainingSerieData(id);
   }
 }
