@@ -299,7 +299,7 @@ export class ProductService {
           technicalDescription:
             updateProductDto.technicalDescription || undefined,
           allowEditDescription: updateProductDto.allowEditDescription,
-          allowEditValues: updateProductDto.allowEditDescription,
+          allowEditValues: updateProductDto.allowEditValues,
           items: {
             upsert: items?.map((item) => ({
               where: { id: item.id },
@@ -307,7 +307,7 @@ export class ProductService {
               update: item,
             })),
           },
-          productionStages: JSON.parse(JSON.stringify(productionStages)), // Corrigido
+          productionStages: JSON.parse(JSON.stringify(productionStages)),
         },
       });
     } catch (error) {

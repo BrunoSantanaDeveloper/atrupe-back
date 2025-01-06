@@ -622,18 +622,30 @@ export class QuotationService {
   }
   async findAll(dto: FilterQuotationDto) {
     try {
-      let where: any = {
+      let where: Prisma.QuotationWhereInput = {
         status: { not: QuotationStatus.APPROVED },
       };
 
       if (dto.companyId) {
-        where = { ...where, companyId: dto.companyId };
+        where = {
+          ...where,
+          OR: [
+            { companyId: dto.companyId },
+            { subCompany: { id: dto.companyId } },
+            { subCompany: { principalCompanyId: dto.companyId } },
+          ],
+        };
       }
 
       if (dto.search) {
         where = {
           ...where,
-          name: { contains: dto.search, mode: 'insensitive' },
+          seller: {
+            name: {
+              contains: dto.search,
+              mode: 'insensitive',
+            },
+          },
         };
       }
 
