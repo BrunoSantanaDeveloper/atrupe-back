@@ -268,6 +268,9 @@ export class ClientService {
 
     // Obter todas as condições de pagamento
     const allPaymentConditions = await this.prisma.paymentCondition.findMany({
+      where: {
+        companyId: client.companyId,
+      },
       include: {
         paymentMethod: true,
       },

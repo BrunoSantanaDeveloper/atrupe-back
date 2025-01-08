@@ -274,11 +274,11 @@ export class QuotationController {
     status: 404,
     description: 'Orçamento não encontrado.',
   })
-  findOne(@Param('id') id: string) {
+  async findOne(@Param('id') id: string) {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
-    return this.quotationService.findOne(id);
+    return await this.quotationService.findOne(id);
   }
 
   @Patch(':id')

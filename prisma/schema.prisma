@@ -69,6 +69,7 @@ model Company {
   companyUnitOfMeasure  CompanyUnitOfMeasure[]
   mainQuotations        Quotation[]            @relation("MainCompany")
   fiscalQuotations      Quotation[]            @relation("FiscalSubCompany")
+  CreditLimitDefault    CreditLimitDefault[]
 
   @@map("companies")
 }
@@ -260,6 +261,38 @@ model Contact {
   supplierId String?
 
   @@map("contacts")
+}
+
+model CreditLimitDefault {
+  id        String     @id @default(uuid())
+  createdAt DateTime   @default(now())
+  updatedAt DateTime?  @updatedAt
+  type      ClientKind @default(PERSON)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  minValue Float?
+  maxValue Float?
+
+  paymentConditions CreditLimitPaymentCondition[]
+
+  @@map("credit_limit_default")
+}
+
+model CreditLimitPaymentCondition {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  isActive  Boolean  @default(true)
+
+  creditLimitDefaultId String
+  creditLimitDefault   CreditLimitDefault @relation(fields: [creditLimitDefaultId], references: [id])
+
+  paymentConditionId String
+  paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
+
+  @@unique([creditLimitDefaultId, paymentConditionId])
+  @@map("credit_limit_payment_conditions")
 }
 
 model Client {
@@ -954,8 +987,9 @@ model PaymentCondition {
   paymentConfigurations PaymentConfiguration[]
   quotationPayment      QuotationPayment[]
 
-  clients   ClientPaymentCondition[]
-  suppliers SupplierPaymentCondition[]
+  clients                     ClientPaymentCondition[]
+  suppliers                   SupplierPaymentCondition[]
+  CreditLimitPaymentCondition CreditLimitPaymentCondition[]
 
   @@map("payment_conditions")
 }

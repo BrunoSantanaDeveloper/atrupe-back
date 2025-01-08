@@ -12,5 +12,21 @@ export class CategoryFilterDTO extends BaseFilterDTO {
     enum: CategoryKind,
     required: false,
   })
-  kind: CategoryKind;
+  kind?: CategoryKind;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Texto de busca para filtrar as categorias',
+    example: 'Categoria exemplo',
+    required: false,
+  })
+  search?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Status da categoria para filtrar os resultados',
+    example: 'ACTIVE',
+    required: false,
+  })
+  status?: string;
 }

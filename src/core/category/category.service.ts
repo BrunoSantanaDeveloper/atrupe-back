@@ -17,6 +17,37 @@ export class CategoryService {
     }
   }
 
+  async findAllQuantity(companyId: string) {
+    const result = await this.prisma.category.groupBy({
+      by: ['isActive'],
+      where: { companyId },
+      _count: true,
+    });
+
+    // Inicializa os contadores com zero
+    const statusCount = {
+      actives: 0,
+      inactives: 0,
+    };
+
+    // Mapeia os resultados para os contadores
+    result.forEach((cur) => {
+      if (cur.isActive) {
+        statusCount.actives = cur._count;
+      } else {
+        statusCount.inactives = cur._count;
+      }
+    });
+
+    // Calcula o total
+    const total = statusCount.actives + statusCount.inactives;
+
+    return {
+      ACTIVES: statusCount.actives,
+      INACTIVES: statusCount.inactives,
+      TOTAL: total,
+    };
+  }
   async findAll(filter: CategoryFilterDTO): Promise<any> {
     const { page = 1, limit = 10 } = filter;
     let where = {};
@@ -24,7 +55,7 @@ export class CategoryService {
     if (filter.companyId) {
       where = {
         ...where,
-        OR: [{ company: null }, { company: { id: filter.companyId } }],
+        company: { id: filter.companyId },
       };
     } else {
       where = {
@@ -35,6 +66,13 @@ export class CategoryService {
 
     if (filter.kind) {
       where = { ...where, kind: filter.kind };
+    }
+    if (filter.status) {
+      if (filter.status === 'ACTIVE') {
+        where = { ...where, isActive: true };
+      } else if (filter.status === 'INACTIVE') {
+        where = { ...where, isActive: false };
+      }
     }
     const [total, data] = await Promise.all([
       this.prisma.category.count({

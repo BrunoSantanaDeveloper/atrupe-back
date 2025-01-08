@@ -142,6 +142,23 @@ export class CompanyService {
       console.error(error);
       throw error;
     }
+
+    await this.prisma.creditLimitDefault.create({
+      data: {
+        companyId: companyId,
+        type: 'PERSON',
+        minValue: 0,
+        maxValue: 0,
+      },
+    });
+    await this.prisma.creditLimitDefault.create({
+      data: {
+        companyId: companyId,
+        type: 'COMPANY',
+        minValue: 0,
+        maxValue: 0,
+      },
+    });
   }
   async create(
     createCompanyDto: CreateCompanyDto,

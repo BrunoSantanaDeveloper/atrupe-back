@@ -7,6 +7,7 @@ import { ScheduledExpenseModule } from './scheduled-expense/scheduled-expense.mo
 import { InvoiceModule } from './invoice/invoice.module';
 import { SalariesModule } from './salaries/salaries.module';
 import { NatureModule } from './nature/nature.module';
+import { CreditLimitModule } from './credit-limit/credit-limit.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { NatureModule } from './nature/nature.module';
     InvoiceModule,
     SalariesModule,
     NatureModule,
+    CreditLimitModule,
   ],
   exports: [
     ReceivableModule,

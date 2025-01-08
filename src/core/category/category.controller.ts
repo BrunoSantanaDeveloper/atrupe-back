@@ -48,6 +48,19 @@ export class CategoryController {
     return this.categoryService.create(createCategoryDto);
   }
 
+  @Get('quantity')
+  @ApiOperation({
+    summary: 'Obtém a quantidade de todos os colaboradores em seus status.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de quantidade de colaboradores retornada com sucesso.',
+  })
+  async findAllQuantity(@Req() req) {
+    const companyId = req.user.companyId;
+    return this.categoryService.findAllQuantity(companyId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todas as categorias' })
   @ApiResponse({

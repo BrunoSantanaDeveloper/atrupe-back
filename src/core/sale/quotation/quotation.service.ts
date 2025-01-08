@@ -794,7 +794,7 @@ export class QuotationService {
               },
             },
           },
-          company: {
+          subCompany: {
             select: {
               id: true,
               name: true,
@@ -928,11 +928,11 @@ export class QuotationService {
               name: quotation.seller.name ?? quotation.seller.user.name,
             }
           : null,
-        company: quotation.company
+        company: quotation.subCompany
           ? {
-              id: quotation.company.id,
-              name: quotation.company.name,
-              cnpj: quotation.company.cnpj,
+              id: quotation.subCompany.id,
+              name: quotation.subCompany.name,
+              cnpj: quotation.subCompany.cnpj,
             }
           : null,
         client: quotation.client
