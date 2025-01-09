@@ -995,14 +995,16 @@ model PaymentCondition {
 }
 
 model Installment {
-  id                  String            @id @default(uuid())
+  id String @id @default(uuid())
+
   installment         Int // Número da parcela
-  operatorFeeRate     Float
-  operatorFeeTransfer Float
-  paymentConditionId  String
-  paymentCondition    PaymentCondition  @relation(fields: [paymentConditionId], references: [id])
-  quotationPayment    QuotationPayment? @relation(fields: [quotationPaymentId], references: [id])
-  quotationPaymentId  String?
+  dueDate             DateTime?
+  operatorFeeRate     Float     @default(0)
+  operatorFeeTransfer Float     @default(0)
+
+  paymentConditionId String
+  paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
+
 
   @@map("installments")
 }
@@ -1197,25 +1199,36 @@ model QuotationProductItem {
   @@map("quotation_product_items")
 }
 
+enum InvoiceType {
+  NFE
+  NFSE
+  OTHER
+}
+
 model QuotationPayment {
-  id                   String                 @id @default(uuid())
-  quotationId          String                 @unique
-  quotation            Quotation              @relation(fields: [quotationId], references: [id])
-  // typeId               String? // Nota Fiscal
-  // type                 Invoice?               @relation(fields: [invoiceId], references: [id]) // Relacionamento com Nota Fiscal
-  billing              String? // Faturamento (vem da configuração da série)
-  discount             Float                  @default(0) // Desconto
-  downPayment          Float                  @default(0) // Entrada
-  paymentMethodId      String? // Relação com a tabela de métodos de pagamento
-  paymentCondition     PaymentCondition?      @relation(fields: [paymentConditionId], references: [id])
-  paymentMethod        PaymentMethod?         @relation(fields: [paymentMethodId], references: [id])
-  paymentConditionId   String? // Relação com a tabela de condições de pagamento
-  commissionId         String?                @unique
-  commission           Commission?            @relation(fields: [commissionId], references: [id])
-  totalValue           Float // Valor total do orçamento
-  description          String? // Observações
-  finalValue           Float?
-  installments         Installment[] // Parcelas geradas para pagamento parcelado
+  id              String      @id @default(uuid())
+  quotationId     String      @unique
+  quotation       Quotation   @relation(fields: [quotationId], references: [id])
+  type            InvoiceType @default(OTHER)
+  billing         BiilingKind @default(ON_ORDER)
+  discount        Float       @default(0) // Desconto
+  discountType    String      @default("VALUE")
+  downPayment     Float       @default(0) // Entrada
+  downPaymentType String      @default("VALUE")
+
+  paymentMethodId String? // Relação com a tabela de métodos de pagamento
+  paymentMethod   PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+
+  paymentConditionId String? // Relação com a tabela de condições de pagamento
+  paymentCondition   PaymentCondition? @relation(fields: [paymentConditionId], references: [id])
+
+  commissionId String?     @unique
+  commission   Commission? @relation(fields: [commissionId], references: [id])
+
+  totalValue  Float // Valor total do orçamento
+  description String? // Observações
+  finalValue  Float?
+
   createdAt            DateTime               @default(now())
   updatedAt            DateTime?              @updatedAt
   quotationInstallment QuotationInstallment[]
@@ -1224,13 +1237,19 @@ model QuotationPayment {
 }
 
 model Commission {
-  id              String                   @id @default(uuid())
-  type            CommissionType           @default(ADD)
-  transferMethod  transferMethodCommission @default(SINGLE)
-  commissionValue Float?
-  totalCommission Float?
-  supplierId      String
-  supplier        Supplier                 @relation(fields: [supplierId], references: [id])
+  id String @id @default(uuid())
+
+  type CommissionType @default(ADD)
+
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+
+  transferMethod transferMethodCommission @default(SINGLE)
+
+  commissionValue Float  @default(0)
+  commissionType  String @default("VALUE")
+
+  totalCommission Float @default(0)
 
   quotationPayment QuotationPayment?
 
@@ -1239,7 +1258,7 @@ model Commission {
 
 enum transferMethodCommission {
   SINGLE
-  CONFORMING
+  PAYMENT_BASED
 }
 
 enum CommissionType {

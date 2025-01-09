@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import { PaymentService } from './payment.service';
 
 import {
@@ -8,7 +8,10 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
-import { UpdateQuotationPaymentDto } from './dto/update-payment.dto';
+import {
+  UpdateCommissionDto,
+  UpdatePaymentDto,
+} from './dto/create-payment.dto';
 
 const RESOURCE = 'payment';
 const GROUP = 'quotation';
@@ -29,18 +32,33 @@ export class PaymentController {
     return this.paymentService.findOne(id);
   }
 
-  @Put(':id')
+  @Patch(':quotationId')
   @ApiOperation({
-    summary: 'Atualizar as informações de pagamento de um orçamento',
+    summary: 'Atualizar o pagamento da cota com base no ID da cota',
   })
-  @ApiParam({
-    name: 'id',
-    description: 'ID do registro de pagamento a ser atualizado',
-  })
-  async update(
-    @Param('id') id: string,
-    @Body() updateQuotationPaymentDto: UpdateQuotationPaymentDto,
+  async updatePayment(
+    @Param('quotationId') quotationId: string,
+    @Body() updatePaymentDto: UpdatePaymentDto,
   ) {
-    return this.paymentService.update(id, updateQuotationPaymentDto);
+    const updatedPayment = await this.paymentService.updatePayment(
+      quotationId,
+      updatePaymentDto,
+    );
+    return updatedPayment;
+  }
+
+  @Patch('commission/:quotationId')
+  async updateCommission(
+    @Param('quotationId') quotationId: string,
+    @Body() updateCommissionDto: UpdateCommissionDto,
+  ) {
+    await this.paymentService.updateCommission(
+      quotationId,
+      updateCommissionDto,
+    );
+    return {
+      message: 'Commission updated successfully',
+      data: updateCommissionDto,
+    };
   }
 }

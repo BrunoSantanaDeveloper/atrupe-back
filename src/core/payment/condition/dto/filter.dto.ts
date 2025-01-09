@@ -5,4 +5,8 @@ export class ConditionFilterDto extends BaseFilterDTO {
   @IsOptional()
   @IsUUID()
   clientId: string;
+
+  @IsOptional()
+  @IsUUID()
+  paymentMethodId: string;
 }

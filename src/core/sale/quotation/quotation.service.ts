@@ -586,6 +586,13 @@ export class QuotationService {
       where: { id: quotationId },
       data: { totalValue },
     });
+
+    await this.prisma.quotationPayment.update({
+      where: {
+        quotationId: quotationId,
+      },
+      data: { totalValue },
+    });
   }
   async findAllQuantity(companyId: string) {
     const allStatuses: QuotationStatus[] = [
@@ -817,9 +824,12 @@ export class QuotationService {
           quotationPayment: {
             select: {
               id: true,
+              type: true,
               billing: true,
               discount: true,
+              discountType: true,
               downPayment: true,
+              downPaymentType: true,
               paymentMethod: {
                 select: {
                   id: true,
@@ -847,6 +857,12 @@ export class QuotationService {
                   transferMethod: true,
                   commissionValue: true,
                   totalCommission: true,
+                  commissionType: true,
+                },
+              },
+              quotationInstallment: {
+                include: {
+                  paymentMethod: true,
                 },
               },
             },
@@ -968,9 +984,12 @@ export class QuotationService {
         paymentConditions: quotation.quotationPayment
           ? {
               id: quotation.quotationPayment.id,
+              type: quotation.quotationPayment.type,
               billing: quotation.quotationPayment.billing,
               discount: quotation.quotationPayment.discount,
+              discountType: quotation.quotationPayment.discountType,
               downPayment: quotation.quotationPayment.downPayment,
+              downPaymentType: quotation.quotationPayment.downPaymentType,
               paymentMethod: quotation.quotationPayment.paymentMethod
                 ? {
                     id: quotation.quotationPayment.paymentMethod.id,
@@ -997,10 +1016,35 @@ export class QuotationService {
                       quotation.quotationPayment.commission.transferMethod,
                     commissionValue:
                       quotation.quotationPayment.commission.commissionValue,
+                    commissionType:
+                      quotation.quotationPayment.commission.commissionType,
                     totalCommission:
-                      quotation.quotationPayment.commission.totalCommission,
+                      quotation.quotationPayment.commission.commissionType ===
+                      'VALUE'
+                        ? quotation.quotationPayment.commission.totalCommission
+                        : (quotation.quotationPayment.discountType === 'VALUE'
+                            ? quotation.totalValue -
+                              quotation.quotationPayment.discount
+                            : quotation.totalValue *
+                              (quotation.quotationPayment.discount / 100)) *
+                          (quotation.quotationPayment.commission
+                            .commissionValue /
+                            100),
                   }
                 : null,
+              installments:
+                quotation.quotationPayment.quotationInstallment.length > 0
+                  ? quotation.quotationPayment.quotationInstallment.map(
+                      (installment, index) => ({
+                        id: installment.id,
+                        installmentNumber: index + 1,
+                        dueDate: installment.dueDate,
+                        paymentMethodId: installment.paymentMethodId,
+                        surcharge: installment.surcharge,
+                        amount: installment.value,
+                      }),
+                    )
+                  : null,
             }
           : null,
         quotationItems: quotation.quotationProduct.map((qp) => ({
@@ -1260,7 +1304,9 @@ export class QuotationService {
             deliveryInfo: {
               connect: { id: quotation.deliveryInfo.id },
             },
-            scheduledDate: quotation.deliveryInfo.estimatedDate,
+            scheduledDate: quotation.deliveryInfo.estimatedDate
+              ? quotation.deliveryInfo.estimatedDate
+              : new Date(),
             status: 'IN_PRODUCTION',
           },
         });

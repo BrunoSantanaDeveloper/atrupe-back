@@ -24,7 +24,6 @@ export class CreditLimitService {
         },
       },
     });
-    console.log(creditLimits);
 
     if (creditLimits.length === 0) {
       return null;
