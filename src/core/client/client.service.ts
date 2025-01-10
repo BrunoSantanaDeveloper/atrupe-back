@@ -161,12 +161,7 @@ export class ClientService {
   }
 
   async findAllQuantity(companyId: string) {
-    const allStatuses: ClientStatus[] = [
-      'PROSPECT',
-      'ACTIVE',
-      'INACTIVE',
-      'SUSPENDED',
-    ];
+    const allStatuses: ClientStatus[] = ['PROSPECT', 'ACTIVE', 'INACTIVE'];
 
     const result = await this.prisma.client.groupBy({
       by: ['status'],

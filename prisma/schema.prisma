@@ -234,7 +234,6 @@ enum ClientStatus {
   PROSPECT
   ACTIVE
   INACTIVE
-  SUSPENDED
 }
 
 enum ClientKind {
@@ -527,6 +526,9 @@ model Receivable {
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
 
+  quotationId String?
+  quotation   Quotation? @relation(fields: [quotationId], references: [id])
+
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
 
@@ -552,9 +554,10 @@ model ReceivableInstallment {
 
   transactionId String?
   transactions  Transaction? @relation(fields: [transactionId], references: [id])
+  quotationInstallment QuotationInstallment[]
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime?              @updatedAt
 
   @@map("receivable_installments")
 }
@@ -605,6 +608,9 @@ model Payable {
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
 
+  quotationId String?
+  quotation   Quotation? @relation(fields: [quotationId], references: [id])
+
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
 
@@ -631,9 +637,11 @@ model PayableInstallment {
 
   transactionId String?
   transactions  Transaction? @relation(fields: [transactionId], references: [id])
+  quotationInstallment QuotationInstallment[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
+
 
   @@map("payable_installments")
 }
@@ -1005,7 +1013,6 @@ model Installment {
   paymentConditionId String
   paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
 
-
   @@map("installments")
 }
 
@@ -1132,6 +1139,8 @@ model Quotation {
   deliveryInfo     DeliveryInfo?
   quotationPayment QuotationPayment?
   DeliverySchedule DeliverySchedule?
+  payable          Payable[]
+  receivable       Receivable[]
 
   @@index([id, companyId])
   @@map("quotations")
@@ -1277,6 +1286,12 @@ model QuotationInstallment {
   value              Float // Valor da parcela
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
+
+  payableInstallment   PayableInstallment? @relation(fields: [payableInstallmentId], references: [id])
+  payableInstallmentId String?
+
+  receivableInstallment   ReceivableInstallment? @relation(fields: [receivableInstallmentId], references: [id])
+  receivableInstallmentId String?
 
   @@map("quotation_installments")
 }

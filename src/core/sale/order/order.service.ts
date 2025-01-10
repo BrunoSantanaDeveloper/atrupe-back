@@ -313,17 +313,45 @@ export class OrderService {
                   color: true,
                 },
               },
+              payable: true,
+              receivable: true,
+              quotationPayment: {
+                include: {
+                  commission: {
+                    include: {
+                      supplier: {
+                        select: {
+                          id: true,
+                          name: true,
+                        },
+                      },
+                    },
+                  },
+                  paymentMethod: true,
+                  paymentCondition: true,
+                  quotationInstallment: {
+                    include: {
+                      paymentMethod: true,
+                      payableInstallment: true,
+                      receivableInstallment: true,
+                    },
+                  },
+                },
+              },
             },
           },
         },
       });
-
       if (!order) {
         throw new Error('Order not found');
       }
 
       const quotation = order.quotation;
 
+      const financialTableData = buildFinancialTableData(
+        quotation.client,
+        quotation.quotationPayment,
+      );
       const formattedQuotation = {
         id: quotation.id,
         description: quotation.description,
@@ -438,6 +466,11 @@ export class OrderService {
             })),
           },
         })),
+        financial: {
+          status:
+            quotation.receivable.length > 0 ? 'BIILED' : 'BILLING_PENDING',
+          ...financialTableData,
+        },
       };
 
       return {
@@ -494,4 +527,108 @@ export class OrderService {
       data: { isActive: false },
     });
   }
+}
+
+function buildFinancialTableData(client, quotationPayment) {
+  const { quotationInstallment, commission, totalValue } = quotationPayment;
+  const paymentInstallments = [];
+  const commissionInstallments = [];
+  const deliveryInstallments = [];
+
+  // Processar Payment
+  quotationInstallment.forEach((installment, index) => {
+    const installmentStatus = installment.receivableInstallmentId
+      ? installment.receivableInstallment?.status || 'PAID'
+      : 'PENDING';
+
+    paymentInstallments.push({
+      id: index + 1,
+      company: client.name,
+      method: installment.paymentMethod?.name || 'Unknown',
+      installmentNumber: index + 1,
+      installmentTotal: quotationInstallment.length,
+      status: installmentStatus,
+      dueAmount: installment.value,
+      dueDate: new Date(installment.dueDate).toLocaleDateString('pt-BR'),
+      paidAmount: installment.receivableInstallment?.paidAmount || 0,
+      paidDate: installment.receivableInstallment?.paidDate
+        ? new Date(
+            installment.receivableInstallment.paidDate,
+          ).toLocaleDateString('pt-BR')
+        : null,
+    });
+  });
+
+  // Processar Commission
+  if (commission) {
+    const commissionValue =
+      commission.commissionType === 'PERCENT'
+        ? (totalValue * commission.commissionValue) / 100
+        : commission.commissionValue;
+
+    if (commission.transferMethod === 'SINGLE') {
+      const commissionStatus = commission.receivableInstallmentId
+        ? commission.receivableInstallment?.status || 'PAID'
+        : 'PENDING';
+
+      commissionInstallments.push({
+        id: paymentInstallments.length + 1,
+        company: commission.supplier?.name || 'Vendedor',
+        method: 'Comissão',
+        installmentNumber: 1,
+        installmentTotal: 1,
+        status: commissionStatus,
+        dueAmount: commissionValue,
+        dueDate: new Date().toLocaleDateString('pt-BR'), // Ajustar conforme necessário
+        paidAmount: commission.receivableInstallment?.paidAmount || 0,
+        paidDate: commission.receivableInstallment?.paidDate
+          ? new Date(
+              commission.receivableInstallment.paidDate,
+            ).toLocaleDateString('pt-BR')
+          : null,
+      });
+    } else if (commission.transferMethod === 'PAYMENT_BASED') {
+      const installmentValue = commissionValue / quotationInstallment.length;
+      quotationInstallment.forEach((installment, index) => {
+        const commissionStatus = installment.receivableInstallmentId
+          ? installment.receivableInstallment?.status || 'PAID'
+          : 'PENDING';
+
+        commissionInstallments.push({
+          id: paymentInstallments.length + index + 1,
+          company: commission.supplier?.name || 'Vendedor',
+          method: 'Comissão',
+          installmentNumber: index + 1,
+          installmentTotal: quotationInstallment.length,
+          status: commissionStatus,
+          dueAmount: installmentValue,
+          dueDate: new Date(installment.dueDate).toLocaleDateString('pt-BR'),
+          paidAmount: installment.receivableInstallment?.paidAmount || 0,
+          paidDate: installment.receivableInstallment?.paidDate
+            ? new Date(
+                installment.receivableInstallment.paidDate,
+              ).toLocaleDateString('pt-BR')
+            : null,
+        });
+      });
+    }
+  }
+
+  // Processar Delivery (se aplicável)
+  deliveryInstallments.push({
+    id: paymentInstallments.length + commissionInstallments.length + 1,
+    company: 'Transportadora',
+    method: 'Frete',
+    status: 'Realizado',
+    dueAmount: 100, // Valor fixo ou calculado
+    dueDate: '05/01/2025', // Data fixa ou baseada em dados
+    paidAmount: 100,
+    paidDate: '05/01/2025',
+  });
+
+  return {
+    payment: paymentInstallments,
+    commission: commissionInstallments,
+    delivery: deliveryInstallments,
+  };
 }

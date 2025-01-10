@@ -39,6 +39,8 @@ export class AuthService {
           id: user.employee[0].company.id,
           name: user.employee[0].company.name,
           legalName: user.employee[0].company.legalName,
+          logo: user.employee[0].company.logoUrl,
+          favicon: user.employee[0].company.favIconUrl,
         },
         access_token: this.jwtService.sign(payload),
       };
