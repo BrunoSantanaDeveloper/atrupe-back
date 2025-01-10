@@ -38,6 +38,14 @@ export class DeliveryScheduleController {
   create(@Body() createDeliveryScheduleDto: CreateDeliveryScheduleDto) {
     return this.deliveryScheduleService.create(createDeliveryScheduleDto);
   }
+
+  @Post('bill/:quotationId')
+  @ApiOperation({ summary: 'Criar um agendamento de entrega' })
+  @ApiResponse({ status: 201, description: 'Agendamento criado com sucesso.' })
+  async bill(@Param('quotationId') quotationId: string) {
+    return this.deliveryScheduleService.bill(quotationId);
+  }
+
   @Get()
   @ApiOperation({
     summary: 'Obtém a lista de todos os agendamentos de entrega',

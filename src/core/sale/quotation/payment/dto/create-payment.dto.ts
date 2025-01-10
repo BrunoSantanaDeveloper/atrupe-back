@@ -30,12 +30,12 @@ class InstallmentDto {
   @ApiProperty({ description: 'Taxa de acréscimo na parcela' })
   @IsNumber()
   @IsOptional()
-  surcharge?: number;
+  additionalFee?: number;
 
   @ApiProperty({ description: 'Valor da parcela' })
   @IsNumber()
   @IsOptional()
-  value?: number;
+  amount?: number;
 }
 
 export class UpdatePaymentDto {

@@ -269,4 +269,183 @@ export class DeliveryScheduleService {
       data: { isActive: false },
     });
   }
+
+  async bill(quotationId: string) {
+    const quotation = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      include: {
+        series: {
+          select: {
+            id: true,
+            title: true,
+            code: true,
+          },
+        },
+        seller: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        company: {
+          select: {
+            id: true,
+            name: true,
+            cnpj: true,
+          },
+        },
+        client: {
+          select: {
+            id: true,
+            type: true,
+            name: true,
+            status: true,
+            cnpj: true,
+            cpf: true,
+            email: true,
+            phone: true,
+          },
+        },
+        deliveryInfo: {
+          include: {
+            supplier: true,
+          },
+        },
+        DeliverySchedule: true,
+        quotationProduct: {
+          include: {
+            product: true,
+            items: {
+              select: {
+                id: true,
+                productItemId: true,
+                name: true,
+                unitOfMeasure: true,
+                salePrice: true,
+                quantity: true,
+                unitCost: true,
+                totalValue: true,
+              },
+              orderBy: {
+                createdAt: 'asc',
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
+        tag: {
+          select: {
+            id: true,
+            title: true,
+            color: true,
+          },
+        },
+        payable: true,
+        receivable: true,
+        quotationPayment: {
+          include: {
+            commission: {
+              include: {
+                supplier: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+            paymentMethod: true,
+            paymentCondition: true,
+            quotationInstallment: {
+              include: {
+                paymentMethod: true,
+                payableInstallment: true,
+                receivableInstallment: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!quotation) {
+      throw new Error('Orçamento não encontrado.');
+    }
+
+    const receivable = await this.generateReceivableFromQuotation(quotation);
+
+    // Retorne ou processe a conta a receber conforme necessário
+    return { quotation, receivable };
+  }
+
+  private async generateReceivableFromQuotation(quotation: any) {
+    const quotationInstallments =
+      quotation.quotationPayment.quotationInstallment;
+
+    if (!quotationInstallments || quotationInstallments.length === 0) {
+      throw new Error('Não há parcelas para gerar contas a receber.');
+    }
+
+    // Calcular o valor total das parcelas
+    const totalAmount = quotationInstallments.reduce(
+      (sum: number, installment: any) =>
+        sum + installment.value + (installment.surcharge || 0),
+      0,
+    );
+
+    try {
+      // Iniciar uma transação Prisma
+      return await this.prisma.$transaction(async (prisma) => {
+        // Criar o Receivable
+        const receivable = await prisma.receivable.create({
+          data: {
+            referenceDate: new Date(),
+            description: `Pagamento referente ao orçamento ${quotation.description || ''}`,
+            notes: quotation.quotationPayment.description || '',
+            totalAmount,
+            installmentQty: quotationInstallments.length,
+            status: 'PENDING',
+            clientId: quotation.clientId,
+            companyId: quotation.companyId, // Certifique-se de passar o `companyId`
+            natureId: null, // Substitua se houver uma natureza predefinida
+            subCategoryId: null, // Substitua se houver uma subcategoria predefinida
+            quotationId: quotation.id, // Associar ao orçamento, se necessário
+          },
+        });
+
+        // Preparar as parcelas
+        const installments = quotationInstallments.map(
+          (installment: any, index: number) => ({
+            receivableId: receivable.id,
+            installmentNumber: index + 1, // Adicionar o número da parcela
+            dueDate: installment.dueDate,
+            amount: installment.value,
+            additionalFee: installment.surcharge || 0,
+            paymentMethodId: installment.paymentMethodId,
+            status: 'PENDING',
+            paidDate: null,
+          }),
+        );
+        // Criar as parcelas
+        await prisma.receivableInstallment.createMany({
+          data: installments,
+        });
+
+        return receivable;
+      });
+    } catch (error) {
+      // Log do erro para análise
+      console.error('Erro ao gerar contas a receber:', error);
+
+      // Lançar o erro novamente para que o chamador possa tratá-lo
+      throw new Error(
+        'Erro ao gerar contas a receber. Detalhes: ' + error.message,
+      );
+    }
+  }
 }

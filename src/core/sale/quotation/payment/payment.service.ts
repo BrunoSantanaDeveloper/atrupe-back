@@ -42,13 +42,13 @@ export class PaymentService {
 
           const conditionConfig = await prisma.paymentCondition.findUnique({
             where: {
-              id: existingPayment.paymentConditionId,
+              id: rest.paymentConditionId,
             },
           });
           // Busca a configuração das parcelas
           const installmentsConfig = await prisma.installment.findMany({
             where: {
-              paymentConditionId: existingPayment.paymentConditionId,
+              paymentConditionId: rest.paymentConditionId,
             },
           });
 
@@ -59,8 +59,8 @@ export class PaymentService {
               conditionConfig.costType === 'FIXED'
                 ? installmentsConfig[index]?.operatorFeeTransfer || 0
                 : (installmentsConfig[index]?.operatorFeeTransfer / 100) *
-                  installmentDto.value;
-            const amount = installmentDto.value || 0;
+                  installmentDto.amount;
+            const amount = installmentDto.amount || 0;
 
             if (id) {
               // Parcela existente, atualiza

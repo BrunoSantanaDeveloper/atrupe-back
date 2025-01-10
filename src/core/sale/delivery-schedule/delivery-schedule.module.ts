@@ -5,5 +5,6 @@ import { DeliveryScheduleController } from './delivery-schedule.controller';
 @Module({
   controllers: [DeliveryScheduleController],
   providers: [DeliveryScheduleService],
+  exports: [DeliveryScheduleService],
 })
 export class DeliveryScheduleModule {}

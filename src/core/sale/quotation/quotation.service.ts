@@ -21,6 +21,7 @@ import { QuotationContactType } from './entities/quotation.entity';
 import { add, endOfDay } from 'date-fns';
 import { CancelOrderDto } from '../order/dto/create-order.dto';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.service';
 
 export interface QuotationGroup {
   date: string;
@@ -32,6 +33,7 @@ export class QuotationService {
   constructor(
     private prisma: PrismaService,
     private orderService: OrderService,
+    private deliveryScheduleService: DeliveryScheduleService,
   ) {}
   async create(createQuotationDto: CreateQuotationDto): Promise<Quotation> {
     const {
@@ -1275,6 +1277,7 @@ export class QuotationService {
                 estimatedDate: true,
               },
             },
+            quotationPayment: true,
           },
         });
 
@@ -1310,6 +1313,10 @@ export class QuotationService {
             status: 'IN_PRODUCTION',
           },
         });
+
+        if (quotation.quotationPayment.billing === 'ON_ORDER') {
+          await this.deliveryScheduleService.bill(quotation.id);
+        }
 
         return order;
       })

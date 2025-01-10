@@ -468,7 +468,7 @@ export class OrderService {
         })),
         financial: {
           status:
-            quotation.receivable.length > 0 ? 'BIILED' : 'BILLING_PENDING',
+            quotation.receivable.length > 0 ? 'BILLED' : 'BILLING_PENDING',
           ...financialTableData,
         },
       };
@@ -614,16 +614,15 @@ function buildFinancialTableData(client, quotationPayment) {
     }
   }
 
-  // Processar Delivery (se aplicável)
   deliveryInstallments.push({
     id: paymentInstallments.length + commissionInstallments.length + 1,
     company: 'Transportadora',
     method: 'Frete',
-    status: 'Realizado',
-    dueAmount: 100, // Valor fixo ou calculado
-    dueDate: '05/01/2025', // Data fixa ou baseada em dados
-    paidAmount: 100,
-    paidDate: '05/01/2025',
+    status: 'PENDING',
+    dueAmount: 100,
+    dueDate: '05/01/2025',
+    paidAmount: null,
+    paidDate: null,
   });
 
   return {

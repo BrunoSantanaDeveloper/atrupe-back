@@ -6,6 +6,7 @@ import { AuthModule } from '../../auth/auth.module';
 import { OrderModule } from '../order/order.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { PaymentModule } from './payment/payment.module';
+import { DeliveryScheduleModule } from '../delivery-schedule/delivery-schedule.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { PaymentModule } from './payment/payment.module';
     OrderModule,
     DeliveryModule,
     PaymentModule,
+    DeliveryScheduleModule,
   ],
   controllers: [QuotationController],
   providers: [QuotationService],
