@@ -317,6 +317,7 @@ export class ClientService {
     // Transformar para o formato esperado pelo front
     return {
       type: client.type,
+      status: client.status,
       general: {
         name: client.name,
         corporateName: client.corporateName,
@@ -380,6 +381,7 @@ export class ClientService {
             minValue: updateClientDto.creditLimit?.minValue,
             maxValue: updateClientDto.creditLimit?.maxValue,
             blockClient: updateClientDto.creditLimit?.blockClient,
+            status: updateClientDto.status,
           },
         });
 

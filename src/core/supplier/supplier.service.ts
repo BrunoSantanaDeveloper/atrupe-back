@@ -260,6 +260,7 @@ export class SupplierService {
     // Transformar para o formato esperado pelo front
     return {
       type: supplier.type,
+      status: supplier.status,
       general: {
         name: supplier.name,
         email: supplier.email,
@@ -323,6 +324,7 @@ export class SupplierService {
             minValue: updateSupplierDto.creditLimit?.minValue,
             maxValue: updateSupplierDto.creditLimit?.maxValue,
             blockClient: updateSupplierDto.creditLimit?.blockClient,
+            status: updateSupplierDto.status,
           },
         });
 
