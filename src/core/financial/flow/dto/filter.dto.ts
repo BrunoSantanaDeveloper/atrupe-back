@@ -12,7 +12,7 @@ export class FinancialFlowFilterDTO extends BaseFilterDTO {
     type: 'string', // Swagger espera uma string para datas
     format: 'date',
   })
-  startDate: Date;
+  startDate?: Date;
 
   @IsOptional()
   @IsDateString()
@@ -23,16 +23,16 @@ export class FinancialFlowFilterDTO extends BaseFilterDTO {
     type: 'string', // Swagger espera uma string para datas
     format: 'date',
   })
-  endDate: Date;
+  endDate?: Date;
 
-  @IsOptional()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da conta bancária para filtrar os fluxos financeiros',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-    required: false,
-  })
-  bankAccountId: string;
+  // @IsOptional()
+  // @IsUUID()
+  // @ApiProperty({
+  //   description: 'ID da conta bancária para filtrar os fluxos financeiros',
+  //   example: '123e4567-e89b-12d3-a456-426614174000',
+  //   required: false,
+  // })
+  // bankAccountId?: string;
 
   @IsOptional()
   @IsUUID()
@@ -41,14 +41,50 @@ export class FinancialFlowFilterDTO extends BaseFilterDTO {
     example: '123e4567-e89b-12d3-a456-426614174001',
     required: false,
   })
-  paymentMethodId: string;
+  paymentMethodId?: string;
 
   @IsOptional()
   @IsString()
   @ApiProperty({
-    description: 'Ordenação dos resultados (ASC ou DESC)',
+    description: 'Status do fluxo financeiro para filtrar os resultados',
+    example: 'PAID',
+    required: false,
+  })
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Busca de resultados',
+    example: 'Teste',
+    required: false,
+  })
+  search?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Ordena os resultados("DESC" ou "ASC")',
     example: 'DESC',
     required: false,
   })
-  sort: string = 'DESC';
+  sort?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Mostrar valores("ON" ou "OFF")',
+    example: 'ON',
+    required: false,
+  })
+  showValues?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Filtrar por datas("dueDate" ou "paidDate)',
+    example: 'dueDate',
+    required: false,
+  })
+  dateType?: string;
 }
