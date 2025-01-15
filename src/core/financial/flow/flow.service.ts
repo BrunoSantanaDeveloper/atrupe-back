@@ -30,7 +30,7 @@ export class FlowService {
       paymentMethodId,
       sort = 'desc',
       dateType = 'dueDate',
-      showValues = 'ON',
+      showValues = 'on',
     } = paginationDto;
 
     if (!['dueDate', 'paidDate'].includes(dateType)) {
@@ -161,6 +161,7 @@ export class FlowService {
         const receivables = receivableDetails
           .filter((inst) => inst[dateType]?.toISOString() === date)
           .map((inst) => ({
+            type: 'receivable',
             id: inst.receivable.id,
             totalValue: inst.receivable.totalAmount || 0,
             totalPaid: inst.receivable.installments.reduce(
@@ -206,7 +207,7 @@ export class FlowService {
               paymentDate: new Date(i.paidDate) || null,
               current: inst.id === i.id,
             })),
-            ...(showValues === 'ON' && {
+            ...(showValues === 'on' && {
               expectedRevenue: inst.receivable.totalAmount || 0,
               realizedRevenue: inst.receivable.installments.reduce(
                 (sum, i) => sum + (i.paidAmount || 0),
@@ -218,6 +219,7 @@ export class FlowService {
         const payables = payableDetails
           .filter((inst) => inst[dateType]?.toISOString() === date)
           .map((inst) => ({
+            type: 'payable',
             id: inst.payable.id,
             totalValue: inst.payable.totalAmount || 0,
             totalPaid: inst.payable.installments.reduce(
@@ -261,7 +263,7 @@ export class FlowService {
               current: inst.id === i.id,
             })),
 
-            ...(showValues === 'ON' && {
+            ...(showValues === 'on' && {
               expectedExpense: inst.payable.totalAmount || 0,
               realizedExpense: inst.payable.installments.reduce(
                 (sum, i) => sum + (i.paidAmount || 0),
@@ -272,7 +274,7 @@ export class FlowService {
 
         return {
           date: new Date(date),
-          ...(showValues === 'ON' && {
+          ...(showValues === 'on' && {
             expectedRevenue: receivables.reduce(
               (acc, rec) => acc + rec.expectedRevenue,
               0,
@@ -321,7 +323,7 @@ export class FlowService {
       where: filtersReceivables,
       orderBy: { dueDate: sort },
       _sum:
-        showValues === 'ON'
+        showValues === 'on'
           ? { amount: true, additionalFee: true }
           : { additionalFee: true },
       _count: true,
@@ -332,7 +334,7 @@ export class FlowService {
       where: filtersPayables,
       orderBy: { dueDate: sort },
       _sum:
-        showValues === 'ON'
+        showValues === 'on'
           ? { amount: true, additionalFee: true }
           : { additionalFee: true },
       _count: true,
@@ -363,7 +365,7 @@ export class FlowService {
       where: filtersReceivables,
       orderBy: { paidDate: sort },
       _sum:
-        showValues === 'ON' ? { amount: true, additionalFee: true } : undefined,
+        showValues === 'on' ? { amount: true, additionalFee: true } : undefined,
       _count: true,
     });
 
@@ -372,7 +374,7 @@ export class FlowService {
       where: filtersPayables,
       orderBy: { paidDate: sort },
       _sum:
-        showValues === 'ON' ? { amount: true, additionalFee: true } : undefined,
+        showValues === 'on' ? { amount: true, additionalFee: true } : undefined,
       _count: true,
     });
 

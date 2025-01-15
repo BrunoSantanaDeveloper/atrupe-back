@@ -73,8 +73,8 @@ export class FinancialFlowFilterDTO extends BaseFilterDTO {
   @IsOptional()
   @IsString()
   @ApiProperty({
-    description: 'Mostrar valores("ON" ou "OFF")',
-    example: 'ON',
+    description: 'Mostrar valores("on" ou "off")',
+    example: 'on',
     required: false,
   })
   showValues?: string;
