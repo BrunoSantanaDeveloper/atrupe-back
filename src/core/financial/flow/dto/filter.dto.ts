@@ -64,8 +64,8 @@ export class FinancialFlowFilterDTO extends BaseFilterDTO {
   @IsOptional()
   @IsString()
   @ApiProperty({
-    description: 'Ordena os resultados("DESC" ou "ASC")',
-    example: 'DESC',
+    description: 'Ordena os resultados("desc" ou "asc")',
+    example: 'desc',
     required: false,
   })
   sort?: string;

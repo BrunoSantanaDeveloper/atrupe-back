@@ -28,7 +28,7 @@ export class FlowService {
       endDate,
       status,
       paymentMethodId,
-      sort = 'DESC',
+      sort = 'desc',
       dateType = 'dueDate',
       showValues = 'ON',
     } = paginationDto;
@@ -38,6 +38,7 @@ export class FlowService {
         'Invalid dateType. Use "dueDate" or "paidDate".',
       );
     }
+
     const filtersReceivables: any = {
       receivable: {
         companyId: paginationDto.companyId,
@@ -48,6 +49,7 @@ export class FlowService {
         companyId: paginationDto.companyId,
       },
     };
+
     if (startDate || endDate) {
       const dateFilter: any = {};
       if (startDate) dateFilter.gte = new Date(startDate);
@@ -72,10 +74,18 @@ export class FlowService {
     // Filtro de busca
     if (search) {
       filtersReceivables.OR = [
-        { client: { name: { contains: search, mode: 'insensitive' } } },
+        {
+          receivable: {
+            client: { name: { contains: search, mode: 'insensitive' } },
+          },
+        },
       ];
       filtersPayables.OR = [
-        { supplier: { name: { contains: search, mode: 'insensitive' } } },
+        {
+          payable: {
+            supplier: { name: { contains: search, mode: 'insensitive' } },
+          },
+        },
       ];
     }
 
@@ -87,13 +97,15 @@ export class FlowService {
               filtersReceivables,
               filtersPayables,
               showValues,
+              sort,
             )
           : await this.fetchDataPaidDate(
               filtersReceivables,
               filtersPayables,
               showValues,
+              sort,
             );
-      console.log(receivablesGrouped);
+
       // Extrair as datas para busca detalhada
       const dueDates = [
         ...new Set([
@@ -101,6 +113,7 @@ export class FlowService {
           ...payablesGrouped.map((g) => g[dateType]?.toISOString()),
         ]),
       ];
+
       const receivableDetails =
         await this.prisma.receivableInstallment.findMany({
           where: {
@@ -114,7 +127,10 @@ export class FlowService {
                 client: true,
                 nature: true,
                 subCategory: true,
-                installments: { orderBy: { [dateType]: 'desc' } },
+                installments: {
+                  include: { paymentMethod: true },
+                  orderBy: { [dateType]: 'desc' },
+                },
               },
             },
           },
@@ -132,7 +148,10 @@ export class FlowService {
               supplier: true,
               nature: true,
               subCategory: true,
-              installments: { orderBy: { [dateType]: 'desc' } },
+              installments: {
+                include: { paymentMethod: true },
+                orderBy: { [dateType]: 'desc' },
+              },
             },
           },
         },
@@ -142,19 +161,17 @@ export class FlowService {
         const receivables = receivableDetails
           .filter((inst) => inst[dateType]?.toISOString() === date)
           .map((inst) => ({
-            type: 'receivable',
             id: inst.receivable.id,
+            totalValue: inst.receivable.totalAmount || 0,
+            totalPaid: inst.receivable.installments.reduce(
+              (sum, i) => sum + (i.paidAmount || 0),
+              0,
+            ),
             description: inst.receivable.description || '',
             client: inst.receivable.client
               ? {
                   id: inst.receivable.client.id,
                   name: inst.receivable.client.name,
-                }
-              : null,
-            nature: inst.receivable.nature
-              ? {
-                  id: inst.receivable.nature.id,
-                  name: inst.receivable.nature.name,
                 }
               : null,
             subCategory: inst.receivable.subCategory
@@ -163,22 +180,50 @@ export class FlowService {
                   name: inst.receivable.subCategory.name,
                 }
               : null,
-            installments:
-              showValues === 'ON'
-                ? inst.receivable.installments.map((i) => ({
-                    id: i.id,
-                    value: i.amount || 0,
-                    paidValue: i.paidAmount || 0,
-                    dueDate: i.dueDate,
-                  }))
-                : [],
+            nature: inst.receivable.nature
+              ? {
+                  id: inst.receivable.nature.id,
+                  name: inst.receivable.nature.name,
+                }
+              : null,
+            installmentsQuantity: inst.receivable.installments.length,
+            period: inst.receivable.installments[0]?.dueDate || null,
+            notes: inst.receivable.notes || '',
+            status: inst.receivable.status,
+            installments: inst.receivable.installments.map((i) => ({
+              id: i.id,
+              status: i.status,
+              paymentMethod: i.paymentMethod
+                ? {
+                    id: i.paymentMethod.id,
+                    name: i.paymentMethod.name,
+                  }
+                : null,
+              value: i.amount || 0,
+              additionalFee: i.additionalFee || 0,
+              dueDate: i.dueDate,
+              paidValue: i.paidAmount || 0,
+              paymentDate: new Date(i.paidDate) || null,
+              current: inst.id === i.id,
+            })),
+            ...(showValues === 'ON' && {
+              expectedRevenue: inst.receivable.totalAmount || 0,
+              realizedRevenue: inst.receivable.installments.reduce(
+                (sum, i) => sum + (i.paidAmount || 0),
+                0,
+              ),
+            }),
           }));
 
         const payables = payableDetails
           .filter((inst) => inst[dateType]?.toISOString() === date)
           .map((inst) => ({
-            type: 'payable',
             id: inst.payable.id,
+            totalValue: inst.payable.totalAmount || 0,
+            totalPaid: inst.payable.installments.reduce(
+              (sum, i) => sum + (i.paidAmount || 0),
+              0,
+            ),
             description: inst.payable.description || '',
             supplier: inst.payable.supplier
               ? {
@@ -186,28 +231,65 @@ export class FlowService {
                   name: inst.payable.supplier.name,
                 }
               : null,
-            nature: inst.payable.nature
-              ? { id: inst.payable.nature.id, name: inst.payable.nature.name }
-              : null,
             subCategory: inst.payable.subCategory
               ? {
                   id: inst.payable.subCategory.id,
                   name: inst.payable.subCategory.name,
                 }
               : null,
-            installments:
-              showValues === 'ON'
-                ? inst.payable.installments.map((i) => ({
-                    id: i.id,
-                    value: i.amount || 0,
-                    paidValue: i.paidAmount || 0,
-                    dueDate: i.dueDate,
-                  }))
-                : [],
+            nature: inst.payable.nature
+              ? { id: inst.payable.nature.id, name: inst.payable.nature.name }
+              : null,
+            installmentsQuantity: inst.payable.installments.length,
+            period: inst.payable.installments[0]?.dueDate || null,
+            notes: inst.payable.notes || '',
+            status: inst.payable.status,
+            installments: inst.payable.installments.map((i) => ({
+              id: i.id,
+              status: i.status,
+              paymentMethod: i.paymentMethod
+                ? {
+                    id: i.paymentMethod.id,
+                    name: i.paymentMethod.name,
+                  }
+                : null,
+              value: i.amount || 0,
+              additionalFee: i.additionalFee || 0,
+              dueDate: i.dueDate,
+              paidValue: i.paidAmount || 0,
+              paymentDate: new Date(i.paidDate) || null,
+              current: inst.id === i.id,
+            })),
+
+            ...(showValues === 'ON' && {
+              expectedExpense: inst.payable.totalAmount || 0,
+              realizedExpense: inst.payable.installments.reduce(
+                (sum, i) => sum + (i.paidAmount || 0),
+                0,
+              ),
+            }),
           }));
 
         return {
           date: new Date(date),
+          ...(showValues === 'ON' && {
+            expectedRevenue: receivables.reduce(
+              (acc, rec) => acc + rec.expectedRevenue,
+              0,
+            ),
+            expectedExpense: payables.reduce(
+              (acc, pay) => acc + pay.expectedExpense,
+              0,
+            ),
+            realizedRevenue: receivables.reduce(
+              (acc, rec) => acc + rec.realizedRevenue,
+              0,
+            ),
+            realizedExpense: payables.reduce(
+              (acc, pay) => acc + pay.realizedExpense,
+              0,
+            ),
+          }),
           transactions: [...receivables, ...payables],
         };
       });
@@ -232,22 +314,27 @@ export class FlowService {
     filtersReceivables,
     filtersPayables,
     showValues,
+    sort,
   ) {
     const receivablesGrouped = await this.prisma.receivableInstallment.groupBy({
       by: ['dueDate'],
       where: filtersReceivables,
-      orderBy: { dueDate: 'desc' },
+      orderBy: { dueDate: sort },
       _sum:
-        showValues === 'ON' ? { amount: true, additionalFee: true } : undefined,
+        showValues === 'ON'
+          ? { amount: true, additionalFee: true }
+          : { additionalFee: true },
       _count: true,
     });
 
     const payablesGrouped = await this.prisma.payableInstallment.groupBy({
       by: ['dueDate'], // Adiciona o campo de agrupamento conforme o `dateType`
       where: filtersPayables,
-      orderBy: { dueDate: 'desc' },
+      orderBy: { dueDate: sort },
       _sum:
-        showValues === 'ON' ? { amount: true, additionalFee: true } : undefined,
+        showValues === 'ON'
+          ? { amount: true, additionalFee: true }
+          : { additionalFee: true },
       _count: true,
     });
 
@@ -257,6 +344,7 @@ export class FlowService {
     filtersReceivables,
     filtersPayables,
     showValues,
+    sort,
   ) {
     filtersReceivables = {
       ...filtersReceivables,
@@ -273,7 +361,7 @@ export class FlowService {
     const receivablesGrouped = await this.prisma.receivableInstallment.groupBy({
       by: ['paidDate'],
       where: filtersReceivables,
-      orderBy: { paidDate: 'desc' },
+      orderBy: { paidDate: sort },
       _sum:
         showValues === 'ON' ? { amount: true, additionalFee: true } : undefined,
       _count: true,
@@ -282,7 +370,7 @@ export class FlowService {
     const payablesGrouped = await this.prisma.payableInstallment.groupBy({
       by: ['paidDate'], // Adiciona o campo de agrupamento conforme o `dateType`
       where: filtersPayables,
-      orderBy: { paidDate: 'desc' },
+      orderBy: { paidDate: sort },
       _sum:
         showValues === 'ON' ? { amount: true, additionalFee: true } : undefined,
       _count: true,
