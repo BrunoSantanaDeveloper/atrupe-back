@@ -3,8 +3,6 @@ import {
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { CreateFlowDto } from './dto/create-flow.dto';
-import { UpdateFlowDto } from './dto/update-flow.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { FinancialFlowFilterDTO } from './dto/filter.dto';
 
@@ -12,13 +10,6 @@ import { FinancialFlowFilterDTO } from './dto/filter.dto';
 export class FlowService {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(dto: CreateFlowDto) {
-    return this.prisma.financialFlow.create({
-      data: {
-        ...dto,
-      },
-    });
-  }
   async findAll(paginationDto: FinancialFlowFilterDTO) {
     const {
       page = 1,
@@ -28,6 +19,7 @@ export class FlowService {
       endDate,
       status,
       paymentMethodId,
+      bankAccountId,
       sort = 'desc',
       dateType = 'dueDate',
       showValues = 'on',
@@ -69,6 +61,11 @@ export class FlowService {
     if (paymentMethodId) {
       filtersReceivables.paymentMethodId = paymentMethodId;
       filtersPayables.paymentMethodId = paymentMethodId;
+    }
+
+    if (bankAccountId) {
+      filtersReceivables.bankAccountId = bankAccountId;
+      filtersPayables.bankAccountId = bankAccountId;
     }
 
     // Filtro de busca
@@ -118,7 +115,6 @@ export class FlowService {
         await this.prisma.receivableInstallment.findMany({
           where: {
             [dateType]: { in: dueDates.map((d) => new Date(d)) },
-            ...filtersReceivables,
           },
           orderBy: { [dateType]: sort.toLowerCase() },
           include: {
@@ -128,7 +124,7 @@ export class FlowService {
                 nature: true,
                 subCategory: true,
                 installments: {
-                  include: { paymentMethod: true },
+                  include: { paymentMethod: true, bankAccount: true },
                   orderBy: { [dateType]: 'desc' },
                 },
               },
@@ -149,7 +145,7 @@ export class FlowService {
               nature: true,
               subCategory: true,
               installments: {
-                include: { paymentMethod: true },
+                include: { paymentMethod: true, bankAccount: true },
                 orderBy: { [dateType]: 'desc' },
               },
             },
@@ -160,117 +156,158 @@ export class FlowService {
       const groupedData = dueDates.map((date) => {
         const receivables = receivableDetails
           .filter((inst) => inst[dateType]?.toISOString() === date)
-          .map((inst) => ({
-            type: 'receivable',
-            id: inst.receivable.id,
-            totalValue: inst.receivable.totalAmount || 0,
-            totalPaid: inst.receivable.installments.reduce(
-              (sum, i) => sum + (i.paidAmount || 0),
-              0,
-            ),
-            description: inst.receivable.description || '',
-            client: inst.receivable.client
-              ? {
-                  id: inst.receivable.client.id,
-                  name: inst.receivable.client.name,
-                }
-              : null,
-            subCategory: inst.receivable.subCategory
-              ? {
-                  id: inst.receivable.subCategory.id,
-                  name: inst.receivable.subCategory.name,
-                }
-              : null,
-            nature: inst.receivable.nature
-              ? {
-                  id: inst.receivable.nature.id,
-                  name: inst.receivable.nature.name,
-                }
-              : null,
-            installmentsQuantity: inst.receivable.installments.length,
-            period: inst.receivable.installments[0]?.dueDate || null,
-            notes: inst.receivable.notes || '',
-            status: inst.receivable.status,
-            installments: inst.receivable.installments.map((i) => ({
-              id: i.id,
-              status: i.status,
-              paymentMethod: i.paymentMethod
-                ? {
-                    id: i.paymentMethod.id,
-                    name: i.paymentMethod.name,
-                  }
-                : null,
-              value: i.amount || 0,
-              additionalFee: i.additionalFee || 0,
-              dueDate: i.dueDate,
-              paidValue: i.paidAmount || 0,
-              paymentDate: new Date(i.paidDate) || null,
-              current: inst.id === i.id,
-            })),
-            ...(showValues === 'on' && {
-              expectedRevenue: inst.receivable.totalAmount || 0,
-              realizedRevenue: inst.receivable.installments.reduce(
-                (sum, i) => sum + (i.paidAmount || 0),
+          .map((inst) => {
+            // Filtrar apenas as parcelas com a mesma data do grupo
+            const relevantInstallments = inst.receivable.installments.filter(
+              (i) => i[dateType]?.toISOString() === date,
+            );
+
+            return {
+              type: 'receivable',
+              id: inst.receivable.id,
+              totalValue: inst.receivable?.totalAmount || 0,
+              totalPaid: (inst.receivable?.installments || []).reduce(
+                (sum, item) => {
+                  return sum + (item.paidAmount ?? 0);
+                },
                 0,
               ),
-            }),
-          }));
+              description: inst.receivable.description || '',
+              client: inst.receivable.client
+                ? {
+                    id: inst.receivable.client.id,
+                    name: inst.receivable.client.name,
+                  }
+                : null,
+              subCategory: inst.receivable.subCategory
+                ? {
+                    id: inst.receivable.subCategory.id,
+                    name: inst.receivable.subCategory.name,
+                  }
+                : null,
+              nature: inst.receivable.nature
+                ? {
+                    id: inst.receivable.nature.id,
+                    name: inst.receivable.nature.name,
+                  }
+                : null,
+              installmentsQuantity: inst.receivable.installmentQty || 0,
+              period: inst.receivable?.referenceDate || null,
+              notes: inst.receivable.notes || '',
+              status: inst.receivable.status,
+              isSale: inst.receivable.quotationId ? true : false,
+              installments: (inst.receivable?.installments || [])
+                .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
+                .map((i) => ({
+                  id: i.id,
+                  status: i.status,
+                  paymentMethod: i.paymentMethod
+                    ? {
+                        id: i.paymentMethod.id,
+                        name: i.paymentMethod.name,
+                      }
+                    : null,
+                  bankAccount: i.bankAccount
+                    ? {
+                        id: i.bankAccount.id,
+                        name: i.bankAccount.name,
+                      }
+                    : null,
+                  value: i.amount || 0,
+                  additionalFee: i.additionalFee || 0,
+                  dueDate: i.dueDate,
+                  paidValue: i.paidAmount || 0,
+                  paymentDate: i.paidDate ? new Date(i.paidDate) : null,
+                  current: inst.id === i.id,
+                })),
+              ...(showValues === 'on' && {
+                expectedRevenue: relevantInstallments.reduce(
+                  (sum, i) => sum + (i.amount || 0) + (i.additionalFee || 0),
+                  0,
+                ),
+                realizedRevenue: relevantInstallments.reduce(
+                  (sum, i) => sum + (i.paidAmount || 0),
+                  0,
+                ),
+              }),
+            };
+          });
 
         const payables = payableDetails
           .filter((inst) => inst[dateType]?.toISOString() === date)
-          .map((inst) => ({
-            type: 'payable',
-            id: inst.payable.id,
-            totalValue: inst.payable.totalAmount || 0,
-            totalPaid: inst.payable.installments.reduce(
-              (sum, i) => sum + (i.paidAmount || 0),
-              0,
-            ),
-            description: inst.payable.description || '',
-            supplier: inst.payable.supplier
-              ? {
-                  id: inst.payable.supplier.id,
-                  name: inst.payable.supplier.name,
-                }
-              : null,
-            subCategory: inst.payable.subCategory
-              ? {
-                  id: inst.payable.subCategory.id,
-                  name: inst.payable.subCategory.name,
-                }
-              : null,
-            nature: inst.payable.nature
-              ? { id: inst.payable.nature.id, name: inst.payable.nature.name }
-              : null,
-            installmentsQuantity: inst.payable.installments.length,
-            period: inst.payable.installments[0]?.dueDate || null,
-            notes: inst.payable.notes || '',
-            status: inst.payable.status,
-            installments: inst.payable.installments.map((i) => ({
-              id: i.id,
-              status: i.status,
-              paymentMethod: i.paymentMethod
-                ? {
-                    id: i.paymentMethod.id,
-                    name: i.paymentMethod.name,
-                  }
-                : null,
-              value: i.amount || 0,
-              additionalFee: i.additionalFee || 0,
-              dueDate: i.dueDate,
-              paidValue: i.paidAmount || 0,
-              paymentDate: new Date(i.paidDate) || null,
-              current: inst.id === i.id,
-            })),
+          .map((inst) => {
+            // Filtrar apenas as parcelas com a mesma data do grupo
+            const relevantInstallments = inst.payable.installments.filter(
+              (i) => i[dateType]?.toISOString() === date,
+            );
 
-            ...(showValues === 'on' && {
-              expectedExpense: inst.payable.totalAmount || 0,
-              realizedExpense: inst.payable.installments.reduce(
-                (sum, i) => sum + (i.paidAmount || 0),
+            return {
+              type: 'payable',
+              id: inst.payable.id,
+              totalValue: inst.payable?.totalAmount || 0,
+              totalPaid: (inst.payable?.installments || []).reduce(
+                (sum, item) => {
+                  return sum + (item.paidAmount ?? 0);
+                },
                 0,
               ),
-            }),
-          }));
+              description: inst.payable.description || '',
+              supplier: inst.payable.supplier
+                ? {
+                    id: inst.payable.supplier.id,
+                    name: inst.payable.supplier.name,
+                  }
+                : null,
+              subCategory: inst.payable.subCategory
+                ? {
+                    id: inst.payable.subCategory.id,
+                    name: inst.payable.subCategory.name,
+                  }
+                : null,
+              nature: inst.payable.nature
+                ? { id: inst.payable.nature.id, name: inst.payable.nature.name }
+                : null,
+              installmentsQuantity: inst.payable.installmentQty || 0,
+              period: inst.payable?.referenceDate || null,
+              notes: inst.payable.notes || '',
+              status: inst.payable.status,
+              isSale: inst.payable.quotationId ? true : false,
+              installments: (inst.payable?.installments || [])
+                .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
+                .map((i) => ({
+                  id: i.id,
+                  status: i.status,
+                  paymentMethod: i.paymentMethod
+                    ? {
+                        id: i.paymentMethod.id,
+                        name: i.paymentMethod.name,
+                      }
+                    : null,
+                  bankAccount: i.bankAccount
+                    ? {
+                        id: i.bankAccount.id,
+                        name: i.bankAccount.name,
+                      }
+                    : null,
+                  value: i.amount || 0,
+                  additionalFee: i.additionalFee || 0,
+                  dueDate: i.dueDate,
+                  paidValue: i.paidAmount || 0,
+                  paymentDate: i.paidDate ? new Date(i.paidDate) : null,
+                  current: inst.id === i.id,
+                })),
+              ...(showValues === 'on' && {
+                expectedExpense: relevantInstallments.reduce(
+                  (sum, i) => sum + (i.amount || 0) + (i.additionalFee || 0),
+                  0,
+                ),
+                realizedExpense: relevantInstallments.reduce(
+                  (sum, i) => sum + (i.paidAmount || 0),
+                  0,
+                ),
+              }),
+            };
+          });
 
         return {
           date: new Date(date),
@@ -379,32 +416,5 @@ export class FlowService {
     });
 
     return [receivablesGrouped, payablesGrouped];
-  }
-
-  findOne(id: string) {
-    return this.prisma.financialFlow.findUnique({
-      where: {
-        id,
-      },
-    });
-  }
-
-  update(id: string, updateFlowDto: UpdateFlowDto) {
-    return this.prisma.financialFlow.update({
-      where: {
-        id,
-      },
-      data: {
-        ...updateFlowDto,
-      },
-    });
-  }
-
-  remove(id: string) {
-    return this.prisma.financialFlow.delete({
-      where: {
-        id,
-      },
-    });
   }
 }

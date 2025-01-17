@@ -44,6 +44,15 @@ export class FinancialFlowFilterDTO extends BaseFilterDTO {
   paymentMethodId?: string;
 
   @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description: 'ID da conta de banco para filtrar os fluxos financeiros',
+    example: '123e4567-e89b-12d3-a456-426614174001',
+    required: false,
+  })
+  bankAccountId?: string;
+
+  @IsOptional()
   @IsString()
   @ApiProperty({
     description: 'Status do fluxo financeiro para filtrar os resultados',

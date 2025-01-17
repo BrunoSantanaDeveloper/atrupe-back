@@ -379,7 +379,6 @@ export class DeliveryScheduleService {
 
     const receivable = await this.generateReceivableFromQuotation(quotation);
 
-    // Retorne ou processe a conta a receber conforme necessário
     return { quotation, receivable };
   }
 
@@ -405,7 +404,7 @@ export class DeliveryScheduleService {
         const receivable = await prisma.receivable.create({
           data: {
             referenceDate: new Date(),
-            description: `Pagamento referente ao orçamento ${quotation.description || ''}`,
+            description: `Venda ${quotation.quotationNumber}-${quotation.series.code} - ${quotation.description || ''}`,
             notes: quotation.quotationPayment.description || '',
             totalAmount,
             installmentQty: quotationInstallments.length,
