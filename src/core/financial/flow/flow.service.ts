@@ -9,7 +9,119 @@ import { FinancialFlowFilterDTO } from './dto/filter.dto';
 @Injectable()
 export class FlowService {
   constructor(private readonly prisma: PrismaService) {}
+  async findAllTotals(filter: FinancialFlowFilterDTO) {
+    const {
+      search,
+      startDate,
+      endDate,
+      status,
+      paymentMethodId,
+      bankAccountId,
+      dateType = 'dueDate',
+    } = filter;
 
+    const filtersReceivables: any = {
+      receivable: {
+        companyId: filter.companyId,
+      },
+    };
+    const filtersPayables: any = {
+      payable: {
+        companyId: filter.companyId,
+      },
+    };
+
+    if (startDate || endDate) {
+      const dateFilter: any = {};
+      if (startDate) dateFilter.gte = new Date(startDate);
+      if (endDate) dateFilter.lte = new Date(endDate);
+
+      filtersReceivables[dateType] = dateFilter;
+      filtersPayables[dateType] = dateFilter;
+    }
+
+    // Filtro de status
+    if (status) {
+      filtersReceivables.status = status;
+      filtersPayables.status = status;
+    }
+
+    // Filtro de método de pagamento
+    if (paymentMethodId) {
+      filtersReceivables.paymentMethodId = paymentMethodId;
+      filtersPayables.paymentMethodId = paymentMethodId;
+    }
+
+    if (bankAccountId) {
+      filtersReceivables.bankAccountId = bankAccountId;
+      filtersPayables.bankAccountId = bankAccountId;
+    }
+
+    // Filtro de busca
+    if (search) {
+      filtersReceivables.OR = [
+        {
+          receivable: {
+            client: { name: { contains: search, mode: 'insensitive' } },
+          },
+        },
+      ];
+      filtersPayables.OR = [
+        {
+          payable: {
+            supplier: { name: { contains: search, mode: 'insensitive' } },
+          },
+        },
+      ];
+    }
+
+    // Obter os detalhes dos recebíveis
+    const receivableDetails = await this.prisma.receivableInstallment.findMany({
+      where: {
+        ...filtersReceivables,
+      },
+    });
+
+    // Obter os detalhes dos pagáveis
+    const payableDetails = await this.prisma.payableInstallment.findMany({
+      where: {
+        ...filtersPayables,
+      },
+    });
+    console.log(receivableDetails, payableDetails);
+    // Calcular totais para recebíveis
+    const totalReceivables = receivableDetails.reduce(
+      (acc, inst) => {
+        const expected = inst.status !== 'CANCELED' ? inst.amount ?? 0 : 0;
+        const totalPaid = inst.paidAmount ?? 0;
+
+        return {
+          expected: acc.expected + expected,
+          totalPaid: acc.totalPaid + totalPaid,
+        };
+      },
+      { expected: 0, totalPaid: 0 },
+    );
+
+    // Calcular totais para pagáveis
+    const totalPayables = payableDetails.reduce(
+      (acc, inst) => {
+        const expected = inst.status !== 'CANCELED' ? inst.amount ?? 0 : 0;
+        const totalPaid = inst.paidAmount ?? 0;
+
+        return {
+          expected: acc.expected + expected,
+          totalPaid: acc.totalPaid + totalPaid,
+        };
+      },
+      { expected: 0, totalPaid: 0 },
+    );
+
+    return {
+      receivables: totalReceivables,
+      payables: totalPayables,
+    };
+  }
   async findAll(paginationDto: FinancialFlowFilterDTO) {
     const {
       page = 1,
@@ -115,6 +227,7 @@ export class FlowService {
         await this.prisma.receivableInstallment.findMany({
           where: {
             [dateType]: { in: dueDates.map((d) => new Date(d)) },
+            ...filtersReceivables,
           },
           orderBy: { [dateType]: sort.toLowerCase() },
           include: {

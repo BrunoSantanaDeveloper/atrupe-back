@@ -30,4 +30,16 @@ export class FlowController {
     filter.companyId = req.user.companyId;
     return this.flowService.findAll(filter);
   }
+
+  @Get('totals')
+  @ApiOperation({ summary: 'Obtém os totais de todos os fluxos financeiros' })
+  @ApiResponse({
+    status: 200,
+    description: 'Valores totais de fluxos financeiros retornada com sucesso.',
+    isArray: true,
+  })
+  findAllTotals(@Req() req, @Query() filter: FinancialFlowFilterDTO) {
+    filter.companyId = req.user.companyId;
+    return this.flowService.findAllTotals(filter);
+  }
 }
