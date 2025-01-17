@@ -88,7 +88,6 @@ export class FlowService {
         ...filtersPayables,
       },
     });
-    console.log(receivableDetails, payableDetails);
     // Calcular totais para recebíveis
     const totalReceivables = receivableDetails.reduce(
       (acc, inst) => {
