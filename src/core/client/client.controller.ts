@@ -51,6 +51,19 @@ export class ClientController {
     }
     return this.clientService.create(createClientDto);
   }
+
+  @Post('import-csv')
+  async importCsv(@Req() req) {
+    const companyId = req.user.companyId;
+    const filePath =
+      '/home/tribodev/atrupe-back/src/helpers/payload/clients.csv';
+    try {
+      return await this.clientService.createClientsFromCsv(filePath, companyId);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
   @Post('pre-register')
   @ApiOperation({ summary: 'Pré-registro do cliente' })
   @ApiBody({

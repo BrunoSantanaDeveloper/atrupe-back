@@ -1,0 +1,7 @@
+type,name,email,phone,mobile,category,cpf,rg,cnpj,activity,corporateName,notes,zipcode,state,city,neighborhood,street,number,complement,contactName,contactEmail,contactPhone,contactMobile,contactNotes,blockClient
+PERSON,John Doe,john.doe@example.com,123456789,987654321,Standard,12345678901,1234567,,,,Some notes,47655-000,SP,São Paulo,Centro,Rua Principal,123,Apto 12,Jane Doe,jane.doe@example.com,987654321,123456789,Main contact,true
+PERSON,Mary Jane,mary.jane@example.com,1122334455,5566778899,Premium,98765432109,9876543,,,,VIP notes,47655-000,RJ,Rio de Janeiro,Barra,Rua Secundária,456,,Maria Silva,maria.silva@example.com,123443211,554433221,Another contact,true
+PERSON,Incomplete Person,,,,Standard,,,,,,Incomplete notes,,,,,,,,,false,,,,false
+COMPANY,Acme Corp,contact@acmecorp.com,444555666,999888777,Corporate,,,12345678000123,Tech,Acme Corporation,,47655-000,SP,São Paulo,Moema,Av. das Empresas,789,,Peter Parker,peter.parker@example.com,456789123,321654987,Sales contact,true
+COMPANY,Global Ltd,info@globalltd.com,9988776655,5566778899,Enterprise,,,98765432000198,Logistics,Global Logistics Ltd,,47655-000,MG,Belo Horizonte,Lourdes,Rua das Startups,321,,Clark Kent,clark.kent@example.com,9988776655,5566778899,Key account,true
+COMPANY,Incomplete Company,,,,Corporate,,,12345678000123,,,,,,,,false

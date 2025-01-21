@@ -8,6 +8,8 @@ import { UpdateClientDto } from './dto/update-client.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { ClientFilterDTO } from './dto/filter.dto';
 import { ClientKind, ClientStatus, OwnerType, Prisma } from '@prisma/client';
+import * as fs from 'fs';
+import * as fastCsv from 'fast-csv';
 
 @Injectable()
 export class ClientService {
@@ -545,6 +547,183 @@ export class ClientService {
   remove(id: string) {
     return this.prisma.client.delete({
       where: { id: id },
+    });
+  }
+
+  async createClientsFromCsv(filePath: string, companyId: string) {
+    const clients: CreateClientDto[] = [];
+
+    // Buscar limites de crédito padrão
+    const companyCreditLimits = await this.prisma.creditLimitDefault.findMany({
+      where: {
+        companyId: companyId,
+        type: 'COMPANY',
+      },
+      include: {
+        paymentConditions: true,
+      },
+    });
+    const personCreditLimits = await this.prisma.creditLimitDefault.findMany({
+      where: {
+        companyId: companyId,
+        type: 'PERSON',
+      },
+      include: {
+        paymentConditions: true,
+      },
+    });
+
+    return new Promise<void>((resolve, reject) => {
+      fs.createReadStream(filePath)
+        .pipe(fastCsv.parse({ headers: true, skipRows: 1 })) // skip header and expect dynamic columns
+        .on('data', (row) => {
+          const clientDto: CreateClientDto = {
+            type: row.type || null,
+            general: {
+              name: row.name || null,
+              email: row.email || null,
+              phone: row.phone || null,
+              mobile: row.mobile || null,
+              category: row.category || null,
+              cpf: row.cpf || null,
+              rg: row.rg || null,
+              cnpj: row.cnpj || null,
+              activity: row.activity || null,
+              corporateName: row.corporateName || null,
+              notes: row.notes || null,
+            },
+            companyId: row.companyId || null,
+            creditLimit: {
+              minValue: null,
+              maxValue: null,
+              blockClient: row.blockClient === 'true',
+              conditions: [],
+            },
+            addresses: row.zipcode
+              ? [
+                  {
+                    type: 'MAIN',
+                    zipcode: row.zipcode || null,
+                    state: row.state || null,
+                    city: row.city || null,
+                    neighborhood: row.neighborhood || null,
+                    street: row.street || null,
+                    number: row.number || null,
+                    complement: row.complement || null,
+                  },
+                ]
+              : null, // se endereço estiver faltando, coloca null
+            contacts: row.contactName
+              ? [
+                  {
+                    name: row.contactName || null,
+                    email: row.contactEmail || null,
+                    phone: row.contactPhone || null,
+                    mobile: row.contactMobile || null,
+                    notes: row.contactNotes || null,
+                  },
+                ]
+              : [],
+          };
+
+          // Define os limites de crédito e condições padrão com base no tipo do cliente
+          const creditDefaults =
+            row.type === 'COMPANY'
+              ? companyCreditLimits[0]
+              : personCreditLimits[0];
+
+          if (creditDefaults) {
+            clientDto.creditLimit.minValue = creditDefaults.minValue;
+            clientDto.creditLimit.maxValue = creditDefaults.maxValue;
+            clientDto.creditLimit.conditions =
+              creditDefaults.paymentConditions.map((condition) => ({
+                id: condition.paymentConditionId,
+                isActive: condition.isActive,
+              }));
+          }
+
+          clients.push(clientDto);
+        })
+        .on('end', async () => {
+          try {
+            for (const clientDto of clients) {
+              const client = await this.prisma.client.create({
+                data: {
+                  type: clientDto.type,
+                  name: clientDto.general.name,
+                  email: clientDto.general.email,
+                  phone: clientDto.general.phone,
+                  mobile: clientDto.general.mobile,
+                  companyId: companyId,
+                  category: clientDto.general.category,
+                  cpf: clientDto.general.cpf,
+                  rg: clientDto.general.rg,
+                  cnpj: clientDto.general.cnpj,
+                  activity: clientDto.general.activity,
+                  corporateName: clientDto.general.corporateName,
+                  notes: clientDto.general.notes,
+                  maxValue: clientDto.creditLimit.maxValue,
+                  minValue: clientDto.creditLimit.minValue,
+                },
+              });
+
+              // Salva endereço (opcional)
+              if (clientDto.addresses) {
+                const address = clientDto.addresses[0];
+                if (address) {
+                  await this.prisma.address.create({
+                    data: {
+                      type: address.type,
+                      zipcode: address.zipcode,
+                      state: address.state,
+                      city: address.city,
+                      neighborhood: address.neighborhood,
+                      street: address.street,
+                      number: address.number,
+                      complement: address.complement,
+                      ownerId: client.id,
+                      ownerType: 'CLIENT',
+                    },
+                  });
+                }
+              }
+
+              // Salva contato (opcional)
+              if (clientDto.contacts?.length > 0) {
+                const contact = clientDto.contacts[0];
+                await this.prisma.contact.create({
+                  data: {
+                    name: contact.name,
+                    email: contact.email,
+                    phone: contact.phone,
+                    mobile: contact.mobile,
+                    notes: contact.notes,
+                    clientId: client.id,
+                  },
+                });
+              }
+
+              // Salva condições de pagamento
+              for (const condition of clientDto.creditLimit.conditions) {
+                await this.prisma.clientPaymentCondition.create({
+                  data: {
+                    clientId: client.id,
+                    paymentConditionId: condition.id,
+                    isActive: condition.isActive,
+                  },
+                });
+              }
+            }
+            resolve();
+          } catch (error) {
+            console.error('Erro ao salvar clientes:', error);
+            reject(error);
+          }
+        })
+        .on('error', (error) => {
+          console.error('Erro ao processar CSV:', error);
+          reject(error);
+        });
     });
   }
 }

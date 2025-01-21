@@ -19,18 +19,19 @@ export class FilesService {
     }
   }
 
-  // async uploadFilesS3(image: Express.MulterS3.File) {
-  //   try {
-  //     return image.location;
-  //   } catch (error) {
-  //     return {
-  //       success: false,
-  //       data: {
-  //         where: 'files',
-  //         code: 403,
-  //         msg: error,
-  //       },
-  //     };
-  //   }
-  // }
+  async uploadFilesS3(image: Express.MulterS3.File) {
+    try {
+      return image.location;
+    } catch (error) {
+      console.error(error);
+      return {
+        success: false,
+        data: {
+          where: 'files',
+          code: 403,
+          msg: error,
+        },
+      };
+    }
+  }
 }
