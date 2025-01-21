@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Post,
   UploadedFile,
@@ -22,13 +23,10 @@ export class FilesController {
   @Post('upload-image')
   @UseInterceptors(FileInterceptor('image', multerConfigS3))
   public async uploadFilesS3(@UploadedFile() image: Express.MulterS3.File) {
-    console.log('Executing uploadFilesS3...');
     if (image) {
-      console.log('File received:');
-      console.log(image);
-      // return await this.filesService.uploadFilesS3(image);
+      return await this.filesService.uploadFilesS3(image);
     } else {
-      console.log('No file received.');
+      throw new BadRequestException('Image not found');
     }
   }
 }
