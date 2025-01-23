@@ -294,13 +294,13 @@ export class FlowService {
               subCategory: inst.receivable.subCategory
                 ? {
                     id: inst.receivable.subCategory.id,
-                    name: inst.receivable.subCategory.name,
+                    name: inst.receivable.subCategory.description,
                   }
                 : null,
               nature: inst.receivable.nature
                 ? {
                     id: inst.receivable.nature.id,
-                    name: inst.receivable.nature.name,
+                    name: inst.receivable.nature.description,
                   }
                 : null,
               installmentsQuantity: inst.receivable.installmentQty || 0,
@@ -373,11 +373,14 @@ export class FlowService {
               subCategory: inst.payable.subCategory
                 ? {
                     id: inst.payable.subCategory.id,
-                    name: inst.payable.subCategory.name,
+                    name: inst.payable.subCategory.description,
                   }
                 : null,
               nature: inst.payable.nature
-                ? { id: inst.payable.nature.id, name: inst.payable.nature.name }
+                ? {
+                    id: inst.payable.nature.id,
+                    name: inst.payable.nature.description,
+                  }
                 : null,
               installmentsQuantity: inst.payable.installmentQty || 0,
               period: inst.payable?.referenceDate || null,

@@ -1,4 +1,51 @@
-import { PartialType } from '@nestjs/swagger';
-import { CreateNatureDto } from './create-nature.dto';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString, IsBoolean } from 'class-validator';
 
-export class UpdateNatureDto extends PartialType(CreateNatureDto) {}
+export class UpdateNatureDto {
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  level1?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  level2?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateSubCategoryDto {
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  natureId?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}

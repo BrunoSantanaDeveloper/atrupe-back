@@ -133,11 +133,11 @@ export class CashControlService {
     }
 
     const totalIncomes = register.transactions
-      .filter((t) => t.type === 'INCOME')
+      .filter((t) => t.type.includes('INCOME'))
       .reduce((sum, t) => sum + t.amount, 0);
 
     const totalOutcomes = register.transactions
-      .filter((t) => t.type === 'OUTCOME')
+      .filter((t) => t.type.includes('OUTCOME'))
       .reduce((sum, t) => sum + t.amount, 0);
 
     const closingBalance =
@@ -145,7 +145,6 @@ export class CashControlService {
       totalIncomes -
       totalOutcomes +
       register.retroactive;
-
     return this.prisma.cashRegister.update({
       where: { id: cashRegisterId },
       data: {
@@ -276,6 +275,7 @@ export class CashControlService {
           totalOutcomes: sourceCashRegister.totalOutcomes + amount,
         },
       }),
+
       this.prisma.cashRegister.update({
         where: { id: targetCashRegister.id },
         data: {
@@ -422,5 +422,22 @@ export class CashControlService {
         date: transaction.transactionDate,
       })),
     };
+  }
+
+  async reopenCashRegister(id: string) {
+    const cashRegister = await this.prisma.cashRegister.findUnique({
+      where: { id },
+    });
+    if (!cashRegister) {
+      throw new NotFoundException('Caixa nao encontrado.');
+    }
+    await this.prisma.cashRegister.update({
+      where: { id },
+      data: {
+        status: 'OPEN',
+      },
+    });
+
+    //TODO: calcular o q quer q seja calculado quando um caixa for reaberto.
   }
 }

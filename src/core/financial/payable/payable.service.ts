@@ -148,9 +148,9 @@ export class PayableService {
               status: true,
               referenceDate: true,
               supplier: { select: { id: true, name: true } },
-              subCategory: { select: { id: true, name: true } },
+              subCategory: { select: { id: true, description: true } },
               // supplier: { select: { id: true, name: true } },
-              nature: { select: { id: true, name: true } },
+              nature: { select: { id: true, description: true } },
               installments: {
                 select: {
                   id: true,
@@ -205,13 +205,13 @@ export class PayableService {
               subCategory: inst.payable?.subCategory
                 ? {
                     id: inst.payable.subCategory.id,
-                    name: inst.payable.subCategory.name,
+                    name: inst.payable.subCategory.description,
                   }
                 : null,
               nature: inst.payable?.nature
                 ? {
                     id: inst.payable.nature.id,
-                    name: inst.payable.nature.name,
+                    name: inst.payable.nature.description,
                   }
                 : null,
               installmentsQuantity: inst.payable?.installments?.length || 0,

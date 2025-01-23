@@ -145,8 +145,8 @@ export class ReceivableService {
             referenceDate: true,
             client: { select: { id: true, name: true } },
             // supplier: { select: { id: true, name: true } },
-            nature: { select: { id: true, name: true } },
-            subCategory: { select: { id: true, name: true } },
+            nature: { select: { id: true, description: true } },
+            subCategory: { select: { id: true, description: true } },
             installments: {
               select: {
                 id: true,
@@ -201,13 +201,13 @@ export class ReceivableService {
             subCategory: inst.receivable?.subCategory
               ? {
                   id: inst.receivable.subCategory.id,
-                  name: inst.receivable.subCategory.name,
+                  name: inst.receivable.subCategory.description,
                 }
               : null,
             nature: inst.receivable?.nature
               ? {
                   id: inst.receivable.nature.id,
-                  name: inst.receivable.nature.name,
+                  name: inst.receivable.nature.description,
                 }
               : null,
             installmentsQuantity: inst.receivable?.installments?.length || 0,

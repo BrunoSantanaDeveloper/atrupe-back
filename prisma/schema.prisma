@@ -69,7 +69,9 @@ model Company {
   companyUnitOfMeasure  CompanyUnitOfMeasure[]
   mainQuotations        Quotation[]            @relation("MainCompany")
   fiscalQuotations      Quotation[]            @relation("FiscalSubCompany")
-  CreditLimitDefault    CreditLimitDefault[]
+  creditLimitDefault    CreditLimitDefault[]
+  nature                Nature[]
+  subCategory           SubCategory[]
 
   @@map("companies")
 }
@@ -528,11 +530,11 @@ model Receivable {
 
   quotationId String?
   quotation   Quotation? @relation(fields: [quotationId], references: [id])
-  
+
   commission Commission[]
 
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime?    @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
 
   @@map("receivables")
 }
@@ -1562,8 +1564,12 @@ model ProductionStage {
 
 model Nature {
   id          String  @id @default(uuid())
-  name        String
   description String?
+  level1      String?
+  level2      String?
+  code        String?
+  companyId   String
+  company     Company @relation(fields: [companyId], references: [id])
 
   createdAt   DateTime      @default(now())
   updatedAt   DateTime?     @updatedAt
@@ -1577,17 +1583,20 @@ model Nature {
 
 model SubCategory {
   id          String  @id @default(uuid())
-  name        String
   description String?
+  code        String?
+  companyId  String
+  company Company @relation(fields: [companyId], references: [id])
 
   natureId String
-  category Nature @relation(fields: [natureId], references: [id])
+  nature Nature @relation(fields: [natureId], references: [id])
 
   createdAt  DateTime     @default(now())
   updatedAt  DateTime?    @updatedAt
   isActive   Boolean      @default(true)
   receivable Receivable[]
   payable    Payable[]
+
 
   @@map("sub_categories")
 }

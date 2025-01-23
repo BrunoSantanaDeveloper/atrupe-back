@@ -98,4 +98,9 @@ export class CashControlController {
   async transferFunds(@Body() transferDto: TransferDto) {
     return this.cashControlService.transferFunds(transferDto);
   }
+
+  @Post('reopen/:id')
+  async reopenCashRegister(@Req() req, @Param('id') id: string) {
+    return this.cashControlService.reopenCashRegister(id);
+  }
 }

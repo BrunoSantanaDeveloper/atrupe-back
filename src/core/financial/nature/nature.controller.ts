@@ -6,37 +6,99 @@ import {
   Patch,
   Param,
   Delete,
+  UseGuards,
+  Req,
+  Query,
 } from '@nestjs/common';
 import { NatureService } from './nature.service';
-import { CreateNatureDto } from './dto/create-nature.dto';
-import { UpdateNatureDto } from './dto/update-nature.dto';
+import { CreateNatureDto, CreateSubCategoryDto } from './dto/create-nature.dto';
+import { UpdateNatureDto, UpdateSubCategoryDto } from './dto/update-nature.dto';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+} from '@nestjs/swagger';
+import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { NatureFilterDto } from './dto/nature-filter.dto';
 
-@Controller('nature')
+const RESOURCE = 'nature';
+const GROUP = 'financial';
+
+@ApiTags('Plano de contas')
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
+@Controller(`${GROUP}/${RESOURCE}`)
 export class NatureController {
   constructor(private readonly natureService: NatureService) {}
 
   @Post()
-  create(@Body() createNatureDto: CreateNatureDto) {
+  create(@Req() req, @Body() createNatureDto: CreateNatureDto) {
+    createNatureDto.companyId = req.user.companyId;
     return this.natureService.create(createNatureDto);
+  }
+  @Post('sub-category/:id')
+  async createSubCategory(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() createSubCategoryDto: CreateSubCategoryDto,
+  ) {
+    createSubCategoryDto.companyId = req.user.companyId;
+    createSubCategoryDto.natureId = id;
+    return await this.natureService.createSubCategory(createSubCategoryDto);
+  }
+
+  @Get('natures')
+  findAllSubCategory(@Req() req) {
+    const companyId = req.user.companyId;
+    return this.natureService.findAllNatures(companyId);
+  }
+  @Get('sub-category/:id')
+  findOneSubCategory(@Param('id') id: string) {
+    return this.natureService.findOneSubCategory(id);
+  }
+
+  @Get('quantity')
+  @ApiOperation({
+    summary: 'Obtém a quantidade de todos as categorias em seus status.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de quantidade de categorias retornada com sucesso.',
+  })
+  async findAllQuantity(@Req() req) {
+    const companyId = req.user.companyId;
+    return this.natureService.findAllQuantity(companyId);
   }
 
   @Get()
-  findAll() {
-    return this.natureService.findAll();
+  findAll(@Query() filterDto: NatureFilterDto) {
+    return this.natureService.findAll(filterDto);
   }
-
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.natureService.findOne(+id);
+    return this.natureService.findOne(id);
+  }
+  @Patch('sub-category/:id')
+  updateSubCategory(
+    @Param('id') id: string,
+    @Body() updateSubCategoryDto: UpdateSubCategoryDto,
+  ) {
+    return this.natureService.updateSubCategory(id, updateSubCategoryDto);
+  }
+
+  @Delete('sub-category/:id')
+  removeSubCategory(@Param('id') id: string) {
+    return this.natureService.removeSubCategory(id);
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateNatureDto: UpdateNatureDto) {
-    return this.natureService.update(+id, updateNatureDto);
+    return this.natureService.update(id, updateNatureDto);
   }
 
   @Delete(':id')
   remove(@Param('id') id: string) {
-    return this.natureService.remove(+id);
+    return this.natureService.remove(id);
   }
 }
