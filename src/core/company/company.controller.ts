@@ -49,6 +49,21 @@ export class CompanyController {
     return await this.companyService.create(createCompanyDto, companyId);
   }
 
+  @Post('main')
+  @ApiOperation({ summary: 'Cria uma empresa principal' })
+  @ApiResponse({
+    status: 201,
+    description: 'A empresa foi criada com sucesso.',
+    type: Promise<Company>,
+  })
+  @ApiBody({ type: CreateCompanyDto })
+  async createMain(
+    @Req() req,
+    @Body() createCompanyDto: CreateCompanyDto,
+  ): Promise<Company> {
+    return await this.companyService.createMainCompany(createCompanyDto);
+  }
+
   @Post('default-items/:companyId')
   @ApiOperation({ summary: 'Cria uma empresa' })
   @ApiParam({ name: 'companyId', required: true, description: 'ID da empresa' })

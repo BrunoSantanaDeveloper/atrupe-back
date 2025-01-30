@@ -2,7 +2,6 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUrl,
   ValidateNested,
   IsEmail,
   IsBoolean,
@@ -115,7 +114,6 @@ export class CreateGeneralInfoDto {
   email: string;
 
   @IsOptional()
-  @IsUrl()
   @ApiProperty({
     description: 'Site',
     required: false,

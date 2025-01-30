@@ -1,6 +1,6 @@
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateClientDto } from './create-client.dto';
-import { IsEnum, IsOptional, IsString, IsUrl, IsUUID } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ClientStatus } from '@prisma/client';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -24,7 +24,6 @@ export class UpdateClientDto extends PartialType(CreateClientDto) {
   ie: string;
 
   @IsOptional()
-  @IsUrl()
   @ApiProperty({
     description: 'Website do cliente',
     example: 'https://example.com',

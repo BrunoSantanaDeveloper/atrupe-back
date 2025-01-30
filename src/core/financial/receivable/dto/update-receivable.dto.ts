@@ -109,4 +109,22 @@ export class PayInstallmentDto {
   @IsUUID()
   @IsOptional()
   bankAccountId?: string;
+
+  @ApiProperty({
+    description: 'Natureza caso fique devendo',
+    example: 'Enviar comprovante ao cliente.',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID()
+  natureId?: string;
+
+  @ApiProperty({
+    description: 'Categoria caso fique devendo',
+    example: 'Enviar comprovante ao cliente.',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID()
+  subCategoryId?: string;
 }

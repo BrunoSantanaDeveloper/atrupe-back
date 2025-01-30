@@ -216,3 +216,17 @@ export class UpdateReceivableInstallmentsDto {
   @Type(() => ReceivableInstallmentDto)
   installments: ReceivableInstallmentDto[];
 }
+
+export class CompensateDto {
+  @ApiProperty()
+  @IsUUID()
+  bankAccountId: string;
+
+  @ApiProperty()
+  @IsNumber()
+  amount: number;
+
+  @ApiProperty()
+  @IsDateString()
+  paidDate: string;
+}

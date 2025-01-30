@@ -387,7 +387,9 @@ export class DeliveryScheduleService {
       quotation.quotationPayment.quotationInstallment;
 
     if (!quotationInstallments || quotationInstallments.length === 0) {
-      throw new Error('Não há parcelas para gerar contas a receber.');
+      throw new BadRequestException(
+        'Não há parcelas para gerar contas a receber.',
+      );
     }
 
     // Calcular o valor total das parcelas

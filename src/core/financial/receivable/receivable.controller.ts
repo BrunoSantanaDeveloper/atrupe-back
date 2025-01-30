@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ReceivableService } from './receivable.service';
 import {
+  CompensateDto,
   CreateReceivableDto,
   UpdateReceivableInstallmentsDto,
 } from './dto/create-receivable.dto';
@@ -163,6 +164,36 @@ export class ReceivableController {
       installmentId,
       payInstallmentDto,
     );
+  }
+
+  @Patch('compensate/:installmentId')
+  async compensateInstallment(
+    @Param('installmentId') installmentId: string,
+    @Body() compensateDto: CompensateDto,
+  ) {
+    await this.receivableService.compensateInstallment(
+      installmentId,
+      compensateDto,
+    );
+    return { message: 'Compensação realizada com sucesso.' };
+  }
+
+  @Patch('unpay-installment/:installmentId')
+  @ApiResponse({
+    status: 200,
+    description: 'Parcela paga com sucesso',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Erro ao pagar a parcela',
+  })
+  @ApiParam({
+    name: 'installmentId',
+    required: true,
+    description: 'ID da parcela a ser paga',
+  })
+  async undoPaymentInstallment(@Param('installmentId') installmentId: string) {
+    return this.receivableService.undoPaymentInstallment(installmentId);
   }
 
   @Delete(':id')

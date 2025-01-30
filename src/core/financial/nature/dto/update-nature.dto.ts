@@ -42,7 +42,7 @@ export class UpdateSubCategoryDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
-  natureId?: string;
+  level3?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()

@@ -28,20 +28,23 @@ export class AuthService {
         companyId: user.employee[0]?.company.id,
         role: user.employee[0]?.role?.name,
       };
+
       return {
         id: user.id,
         name: user.name,
         email: user.email,
-        avatar: user.employee[0].avatarUrl,
-        role: user.employee[0].role ? user.employee[0].role.name : null,
-        employeeId: user.employee[0].id,
-        company: {
-          id: user.employee[0].company.id,
-          name: user.employee[0].company.name,
-          legalName: user.employee[0].company.legalName,
-          logo: user.employee[0].company.logoUrl,
-          favicon: user.employee[0].company.favIconUrl,
-        },
+        avatar: user.employee[0]?.avatarUrl,
+        role: user.employee[0] ? user.employee[0].role?.name : null,
+        employeeId: user.employee[0]?.id,
+        company: user.employee[0]?.company
+          ? {
+              id: user.employee[0].company.id,
+              name: user.employee[0].company.name,
+              legalName: user.employee[0].company.legalName,
+              logo: user.employee[0].company.logoUrl,
+              favicon: user.employee[0].company.favIconUrl,
+            }
+          : null,
         access_token: this.jwtService.sign(payload),
       };
     } catch (error) {

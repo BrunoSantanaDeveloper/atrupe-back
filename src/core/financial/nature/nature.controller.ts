@@ -72,8 +72,8 @@ export class NatureController {
   }
 
   @Get()
-  findAll(@Query() filterDto: NatureFilterDto) {
-    return this.natureService.findAll(filterDto);
+  async findAll(@Query() filterDto: NatureFilterDto) {
+    return await this.natureService.findAll(filterDto);
   }
   @Get(':id')
   findOne(@Param('id') id: string) {
@@ -83,8 +83,14 @@ export class NatureController {
   updateSubCategory(
     @Param('id') id: string,
     @Body() updateSubCategoryDto: UpdateSubCategoryDto,
+    @Req() req,
   ) {
-    return this.natureService.updateSubCategory(id, updateSubCategoryDto);
+    const companyId = req.user.companyId;
+    return this.natureService.updateSubCategory(
+      id,
+      updateSubCategoryDto,
+      companyId,
+    );
   }
 
   @Delete('sub-category/:id')
@@ -93,8 +99,11 @@ export class NatureController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateNatureDto: UpdateNatureDto) {
-    return this.natureService.update(id, updateNatureDto);
+  async update(
+    @Param('id') id: string,
+    @Body() updateNatureDto: UpdateNatureDto,
+  ) {
+    return await this.natureService.update(id, updateNatureDto);
   }
 
   @Delete(':id')

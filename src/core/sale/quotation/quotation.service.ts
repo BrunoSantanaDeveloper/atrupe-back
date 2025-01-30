@@ -831,7 +831,10 @@ export class QuotationService {
               discount: true,
               discountType: true,
               downPayment: true,
-              downPaymentType: true,
+              downPaymentConditionId: true,
+              downPaymentDueDate: true,
+              downPaymentSurcharge: true,
+
               paymentMethod: {
                 select: {
                   id: true,
@@ -990,8 +993,18 @@ export class QuotationService {
               billing: quotation.quotationPayment.billing,
               discount: quotation.quotationPayment.discount,
               discountType: quotation.quotationPayment.discountType,
-              downPayment: quotation.quotationPayment.downPayment,
-              downPaymentType: quotation.quotationPayment.downPaymentType,
+              downPayment:
+                quotation.quotationPayment.downPayment > 0
+                  ? {
+                      amount: quotation.quotationPayment.downPayment,
+                      dueDate: quotation.quotationPayment.downPaymentDueDate,
+                      additionalFee:
+                        quotation.quotationPayment.downPaymentSurcharge,
+                      paymentConditionId:
+                        quotation.quotationPayment.downPaymentConditionId,
+                    }
+                  : null,
+
               paymentMethod: quotation.quotationPayment.paymentMethod
                 ? {
                     id: quotation.quotationPayment.paymentMethod.id,

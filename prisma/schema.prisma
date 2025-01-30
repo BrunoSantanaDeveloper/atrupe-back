@@ -96,6 +96,7 @@ model Address {
 
   city  String?
   state String?
+  // ibgeCode String?
 
   ownerType OwnerType @default(COMPANY)
 
@@ -172,6 +173,7 @@ model Role {
   id       String  @id @default(uuid())
   name     String
   isActive Boolean @default(true)
+  isAdmin  Boolean @default(false)
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
@@ -341,6 +343,10 @@ model Client {
 
   paymentConditions ClientPaymentCondition[]
 
+  // entityId     Int?
+  // legacyId     Int?
+  // legacyDbCode String?
+
   @@unique([email, companyId])
   @@map("clients")
 }
@@ -492,6 +498,7 @@ model AssetType {
 
 enum PaymentStatus {
   PENDING
+  PROVISIONED
   PAID
   OVERDUE
   CANCELED
@@ -553,6 +560,7 @@ model ReceivableInstallment {
   additionalFee     Float?
   status            PaymentStatus @default(PENDING)
   paidDate          DateTime?
+  provisionDate     DateTime?
   bankAccountId     String?
   bankAccount       BankAccount?  @relation(fields: [bankAccountId], references: [id])
 
@@ -634,6 +642,7 @@ model PayableInstallment {
   paymentMethod     PaymentMethod @relation(fields: [paymentMethodId], references: [id])
   additionalFee     Float?
   status            PaymentStatus @default(PENDING)
+  provisionDate     DateTime?
   paidDate          DateTime?
 
   bankAccountId String?
@@ -996,11 +1005,12 @@ model PaymentCondition {
   companyId             String
   company               Company                @relation(fields: [companyId], references: [id])
   paymentConfigurations PaymentConfiguration[]
-  quotationPayment      QuotationPayment[]
 
   clients                     ClientPaymentCondition[]
   suppliers                   SupplierPaymentCondition[]
   CreditLimitPaymentCondition CreditLimitPaymentCondition[]
+  downPaymentConditions       QuotationPayment[]            @relation(name: "downPaymentRelation")
+  quotationPayments           QuotationPayment[]            @relation(name: "defaultRelation")
 
   @@map("payment_conditions")
 }
@@ -1036,6 +1046,7 @@ enum BiilingKind {
   ON_ORDER
   ON_DELIVERY
   ON_CHECKOUT
+  NO_INVOICE
 }
 
 enum SendToProductionKind {
@@ -1218,21 +1229,25 @@ enum InvoiceType {
 }
 
 model QuotationPayment {
-  id              String      @id @default(uuid())
-  quotationId     String      @unique
-  quotation       Quotation   @relation(fields: [quotationId], references: [id])
-  type            InvoiceType @default(OTHER)
-  billing         BiilingKind @default(ON_ORDER)
-  discount        Float       @default(0) // Desconto
-  discountType    String      @default("VALUE")
-  downPayment     Float       @default(0) // Entrada
-  downPaymentType String      @default("VALUE")
+  id           String      @id @default(uuid())
+  quotationId  String      @unique
+  quotation    Quotation   @relation(fields: [quotationId], references: [id])
+  type         InvoiceType @default(OTHER)
+  billing      BiilingKind @default(ON_ORDER)
+  discount     Float       @default(0) // Desconto
+  discountType String      @default("VALUE")
+
+  downPayment            Float             @default(0) // Entrada
+  downPaymentConditionId String?
+  downPaymentCondition   PaymentCondition? @relation(name: "downPaymentRelation", fields: [downPaymentConditionId], references: [id])
+  downPaymentSurcharge   Float             @default(0) //Acrescimo da entrada
+  downPaymentDueDate     DateTime?
 
   paymentMethodId String? // Relação com a tabela de métodos de pagamento
   paymentMethod   PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
 
   paymentConditionId String? // Relação com a tabela de condições de pagamento
-  paymentCondition   PaymentCondition? @relation(fields: [paymentConditionId], references: [id])
+  paymentCondition   PaymentCondition? @relation(name: "defaultRelation", fields: [paymentConditionId], references: [id])
 
   commissionId String?     @unique
   commission   Commission? @relation(fields: [commissionId], references: [id])
@@ -1434,7 +1449,7 @@ enum UnitOfMeasureKind {
 model CompanyUnitOfMeasure {
   id          String             @id @default(uuid())
   name        String
-  code        String             @unique
+  code        String
   kind        UnitOfMeasureKind?
   description String?
 
@@ -1585,18 +1600,17 @@ model SubCategory {
   id          String  @id @default(uuid())
   description String?
   code        String?
-  companyId  String
-  company Company @relation(fields: [companyId], references: [id])
+  companyId   String
+  company     Company @relation(fields: [companyId], references: [id])
 
   natureId String
-  nature Nature @relation(fields: [natureId], references: [id])
+  nature   Nature @relation(fields: [natureId], references: [id])
 
   createdAt  DateTime     @default(now())
   updatedAt  DateTime?    @updatedAt
   isActive   Boolean      @default(true)
   receivable Receivable[]
   payable    Payable[]
-
 
   @@map("sub_categories")
 }

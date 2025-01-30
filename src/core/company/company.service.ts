@@ -69,7 +69,6 @@ export class CompanyService {
 
   async createDefaultItems(companyId: string) {
     const defaultSectors = await this.prisma.defaultSector.findMany();
-
     const companySectors = defaultSectors.map((sector) => ({
       name: sector.name,
       icon: sector.icon,

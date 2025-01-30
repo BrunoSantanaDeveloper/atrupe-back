@@ -5,7 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/config/prisma/prisma.service';
-import { UpdatePaymentDto } from './dto/create-payment.dto';
+import {
+  UpdateCommissionDto,
+  UpdatePaymentDto,
+} from './dto/create-payment.dto';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
@@ -29,7 +32,35 @@ export class PaymentService {
     }
 
     try {
-      const { installments, ...rest } = updateData;
+      const {
+        installments,
+        commission,
+        downPayment,
+        paymentConditionId,
+        paymentMethodId,
+        ...rest
+      } = updateData;
+      if (downPayment) {
+        Object.assign(rest, {
+          downPayment: downPayment.amount || 0,
+          downPaymentCondition: {
+            connect: { id: downPayment.paymentConditionId },
+          },
+          downPaymentDueDate: new Date(downPayment.dueDate),
+          downPaymentSurcharge: downPayment.additionalFee || 0,
+        });
+      }
+
+      if (paymentMethodId) {
+        rest['paymentMethod'] = {
+          connect: { id: paymentMethodId },
+        };
+      }
+      if (rest) {
+        rest['paymentCondition'] = {
+          connect: { id: paymentConditionId },
+        };
+      }
 
       // Inicia uma transação para manter atomicidade
       const updatedPaymentData = await this.prisma.$transaction(
@@ -42,13 +73,13 @@ export class PaymentService {
 
           const conditionConfig = await prisma.paymentCondition.findUnique({
             where: {
-              id: rest.paymentConditionId,
+              id: paymentConditionId,
             },
           });
           // Busca a configuração das parcelas
           const installmentsConfig = await prisma.installment.findMany({
             where: {
-              paymentConditionId: rest.paymentConditionId,
+              paymentConditionId: paymentConditionId,
             },
           });
 
@@ -88,8 +119,12 @@ export class PaymentService {
             }
           }
 
+          if (commission) {
+            await this.updateCommission(quotationId, commission);
+          }
           return updatedPayment;
         },
+        { timeout: 10000 },
       );
 
       return updatedPaymentData;
@@ -98,7 +133,10 @@ export class PaymentService {
       throw new Error('Error updating payment: ' + error.message);
     }
   }
-  async updateCommission(quotationId: string, commissionData: any) {
+  async updateCommission(
+    quotationId: string,
+    commissionData: UpdateCommissionDto,
+  ) {
     try {
       // Busca o pagamento relacionado à cotação
       const quotationPayment = await this.prisma.quotationPayment.findUnique({

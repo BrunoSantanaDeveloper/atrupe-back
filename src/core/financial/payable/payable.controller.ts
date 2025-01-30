@@ -31,6 +31,7 @@ import {
   PayInstallmentDto,
 } from './dto/update-payable.dto';
 import { ReceivableFilterDto } from '../receivable/dto/receivable-filter.dto';
+import { CompensateDto } from '../receivable/dto/create-receivable.dto';
 
 const RESOURCE = 'payable';
 const GROUP = 'financial';
@@ -161,6 +162,36 @@ export class PayableController {
     @Body() payInstallmentDto: PayInstallmentDto,
   ) {
     return this.payableService.payInstallment(installmentId, payInstallmentDto);
+  }
+
+  @Patch('compensate/:installmentId')
+  async compensateInstallment(
+    @Param('installmentId') installmentId: string,
+    @Body() compensateDto: CompensateDto,
+  ) {
+    await this.payableService.compensateInstallment(
+      installmentId,
+      compensateDto,
+    );
+    return { message: 'Compensação realizada com sucesso.' };
+  }
+
+  @Patch('unpay-installment/:installmentId')
+  @ApiResponse({
+    status: 200,
+    description: 'Parcela paga com sucesso',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Erro ao pagar a parcela',
+  })
+  @ApiParam({
+    name: 'installmentId',
+    required: true,
+    description: 'ID da parcela a ser paga',
+  })
+  async undoPaymentInstallment(@Param('installmentId') installmentId: string) {
+    return this.payableService.undoPaymentInstallment(installmentId);
   }
 
   @Delete(':id')

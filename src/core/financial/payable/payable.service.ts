@@ -17,6 +17,7 @@ import { PaymentStatus, TransactionType } from '@prisma/client';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ReceivableFilterDto } from '../receivable/dto/receivable-filter.dto';
 import { endOfDay, startOfDay } from 'date-fns';
+import { CompensateDto } from '../receivable/dto/create-receivable.dto';
 
 @Injectable()
 export class PayableService {
@@ -323,51 +324,42 @@ export class PayableService {
   async payInstallment(installmentId, payInstallmentDto: PayInstallmentDto) {
     const { paymentMethodId, bankAccountId, amount, paidDate } =
       payInstallmentDto;
+
+    const bankAccountData = await this.prisma.bankAccountCashControl.findFirst({
+      where: {
+        bankAccountId: bankAccountId,
+        paymentMethodId: paymentMethodId,
+      },
+    });
+
     try {
       const result = await this.prisma.$transaction(async (tx) => {
-        const installment = await tx.payableInstallment.update({
-          where: { id: installmentId },
-          data: {
-            status: 'PAID',
-            paidDate: new Date(paidDate),
-            paidAmount: amount,
-            paymentMethodId,
-            bankAccountId,
-          },
-        });
-
-        // Busca o caixa aberto
-        const openCashRegister = await tx.cashRegister.findFirst({
-          where: {
-            bankAccountId,
-            status: 'OPEN',
-            openingDate: {
-              gte: startOfDay(new Date(paidDate)),
-              lt: endOfDay(new Date(paidDate)),
-            },
-          },
-        });
-
-        if (!openCashRegister) {
-          throw new BadRequestException(
-            'Nenhum caixa aberto encontrado para esta data.',
-          );
+        const data: any = {
+          status:
+            bankAccountData.paymentType === 'PROVISION'
+              ? 'PROVISIONED'
+              : 'PAID',
+          paidAmount: amount,
+          paymentMethodId,
+          bankAccountId,
+        };
+        if (bankAccountData.paymentType === 'PROVISION') {
+          data['provisionDate'] = new Date(paidDate);
+        } else {
+          data['paidDate'] = new Date(paidDate);
         }
 
-        await tx.transaction.create({
-          data: {
-            type: TransactionType.OUTCOME,
-            amount: amount,
-            description: `Pagamento da parcela ${installment.id}`,
-            transactionDate: new Date(paidDate),
-            payableInstallment: {
-              connect: { id: installment.id },
-            },
-            cashRegister: {
-              connect: { id: openCashRegister.id },
-            },
-          },
+        const installment = await tx.payableInstallment.update({
+          where: { id: installmentId },
+          data: data,
         });
+        if (bankAccountData.paymentType !== 'PROVISION') {
+          await this.compensateInstallment(installmentId, {
+            amount,
+            bankAccountId,
+            paidDate,
+          });
+        }
 
         // // Atualiza o valor total do título
         // const updatedTotal = await tx.payableInstallment.aggregate({
@@ -390,6 +382,138 @@ export class PayableService {
     }
   }
 
+  async compensateInstallment(
+    installmentId: string,
+    compensateDto: CompensateDto,
+  ): Promise<void> {
+    const { amount, bankAccountId, paidDate } = compensateDto;
+
+    await this.prisma.$transaction(async (tx) => {
+      const installment = await tx.payableInstallment.findFirst({
+        where: { id: installmentId },
+      });
+
+      if (!installment) {
+        throw new BadRequestException('Parcela não encontrada.');
+      }
+
+      // Busca o caixa aberto
+      const openCashRegister = await tx.cashRegister.findFirst({
+        where: {
+          bankAccountId,
+          status: 'OPEN',
+          openingDate: {
+            gte: startOfDay(new Date(paidDate)),
+            lt: endOfDay(new Date(paidDate)),
+          },
+        },
+      });
+
+      if (!openCashRegister) {
+        throw new BadRequestException(
+          'Nenhum caixa aberto encontrado para esta data.',
+        );
+      }
+
+      await tx.transaction.create({
+        data: {
+          type: TransactionType.OUTCOME,
+          amount: amount,
+          description: `Pagamento da parcela ${installment.id}`,
+          transactionDate: new Date(paidDate),
+          payableInstallment: { connect: { id: installment.id } },
+          cashRegister: { connect: { id: openCashRegister.id } },
+        },
+      });
+
+      // Atualiza o valor total do caixa
+      await tx.cashRegister.update({
+        where: { id: openCashRegister.id },
+        data: { totalOutcomes: { increment: amount } },
+      });
+    });
+  }
+
+  async undoPaymentInstallment(installmentId: string) {
+    try {
+      const installmentData = await this.prisma.payableInstallment.findFirst({
+        where: { id: installmentId },
+      });
+
+      if (!installmentData) {
+        throw new BadRequestException('Parcela não encontrada.');
+      }
+
+      if (
+        installmentData.status !== 'PAID' &&
+        installmentData.status !== 'PROVISIONED'
+      ) {
+        throw new BadRequestException(
+          'A parcela não está paga ou provisionada.',
+        );
+      }
+
+      const paymentAmount = installmentData.paidAmount;
+
+      await this.prisma.$transaction(async (tx) => {
+        // Reverte o status da parcela e remove os dados de pagamento/provisionamento
+        await tx.payableInstallment.update({
+          where: { id: installmentId },
+          data: {
+            status: 'PENDING',
+            paidAmount: null,
+            paidDate: null,
+            provisionDate: null,
+            paymentMethodId: null,
+            bankAccountId: null,
+          },
+        });
+
+        // Busca o caixa aberto relacionado ao pagamento original
+        const relatedTransaction = await tx.transaction.findFirst({
+          where: {
+            payableInstallment: {
+              every: {
+                id: installmentId,
+              },
+            },
+          },
+        });
+
+        if (!relatedTransaction) {
+          throw new BadRequestException(
+            'Nenhuma transação relacionada encontrada para desfazer o pagamento.',
+          );
+        }
+
+        // Remove a transação de pagamento
+        await tx.transaction.delete({ where: { id: relatedTransaction.id } });
+
+        // Atualiza o valor total do caixa se houver um caixa aberto
+        if (relatedTransaction.cashRegisterId) {
+          const cashRegister = await tx.cashRegister.findUnique({
+            where: { id: relatedTransaction.cashRegisterId },
+          });
+
+          if (cashRegister) {
+            await tx.cashRegister.update({
+              where: { id: cashRegister.id },
+              data: {
+                totalOutcomes: { decrement: paymentAmount },
+              },
+            });
+          }
+        }
+      });
+
+      await this.updatePayableStatus(installmentData.payableId);
+
+      return { message: 'Pagamento da parcela desfeito com sucesso.' };
+    } catch (error) {
+      console.error(error);
+      throw new BadRequestException(error.message);
+    }
+  }
   async updateInstallments(
     payableId: string,
     dto: UpdatePayableInstallmentsDto,
