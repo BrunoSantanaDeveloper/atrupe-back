@@ -327,7 +327,6 @@ export class QuotationService {
       // }
 
       // Atualiza o produto dentro do orçamento
-      console.log(data.items);
       const updatedQuotationProduct = await this.prisma.quotationProduct.update(
         {
           where: { id: productId },
@@ -1454,9 +1453,11 @@ export class QuotationService {
       },
     });
 
+    if (!quotation || !quotation.seller || !quotation.seller.sellerProfile) {
+      throw new BadRequestException('Informações do vendedor não encontradas.');
+    }
     const minValue = quotation.seller.sellerProfile.minValue;
     // const maxDiscount = quotation.seller.sellerProfile.maxDiscount;
-
     if (quotation.totalValue < minValue) {
       throw new BadRequestException(
         'O valor total do orçamento deve ser maior que o valor mínimo de venda do vendedor.',
@@ -1468,14 +1469,18 @@ export class QuotationService {
     //     'O valor total do orçamento deve ser menor que o valor máximo de desconto.',
     //   );
     // }
-
-    return this.prisma.quotation.update({
-      where: { id: quotationId },
-      data: {
-        status: QuotationStatus.DONE,
-        finishedAt: new Date(),
-      },
-    });
+    try {
+      return this.prisma.quotation.update({
+        where: { id: quotationId },
+        data: {
+          status: QuotationStatus.DONE,
+          finishedAt: new Date(),
+        },
+      });
+    } catch (error) {
+      console.error(error);
+      throw new BadRequestException('Erro ao atualizar o status do orçamento.');
+    }
   }
 
   async open(quotationId: string): Promise<Quotation> {

@@ -40,16 +40,15 @@ export class PaymentService {
         paymentMethodId,
         ...rest
       } = updateData;
-      if (downPayment.amount > 0) {
-        Object.assign(rest, {
-          downPayment: downPayment.amount || 0,
-          downPaymentCondition: {
-            connect: { id: downPayment.paymentConditionId },
-          },
-          downPaymentDueDate: new Date(downPayment.dueDate),
-          downPaymentSurcharge: downPayment.additionalFee || 0,
-        });
-      }
+
+      Object.assign(rest, {
+        downPayment: downPayment.amount || 0,
+        downPaymentCondition: {
+          connect: { id: downPayment.paymentConditionId },
+        },
+        downPaymentDueDate: new Date(downPayment.dueDate),
+        downPaymentSurcharge: downPayment.additionalFee || 0,
+      });
 
       if (paymentMethodId) {
         rest['paymentMethod'] = {
@@ -89,8 +88,9 @@ export class PaymentService {
             const additionalFee =
               conditionConfig.costType === 'FIXED'
                 ? installmentsConfig[index]?.operatorFeeTransfer || 0
-                : (installmentsConfig[index]?.operatorFeeTransfer / 100) *
-                  installmentDto.amount;
+                : ((installmentsConfig[index]?.operatorFeeTransfer || 0) /
+                    100) *
+                  (installmentDto.amount || 0);
             const amount = installmentDto.amount || 0;
 
             if (id) {
@@ -106,7 +106,6 @@ export class PaymentService {
                 },
               });
             } else {
-              // Nova parcela, cria
               await prisma.quotationInstallment.create({
                 data: {
                   quotationPaymentId: updatedPayment.id,
@@ -128,7 +127,7 @@ export class PaymentService {
           }
           return updatedPayment;
         },
-        { timeout: 20000 },
+        { timeout: 30000 },
       );
 
       return updatedPaymentData;

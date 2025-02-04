@@ -166,8 +166,7 @@ export class EmployeeService {
 
   async update(id: string, updateEmployeeDto: UpdateEmployeeDto) {
     const { isActive, address, ...rest } = updateEmployeeDto;
-    console.log(address);
-    console.log(rest);
+
     return this.prisma.$transaction(async (tx) => {
       // Atualiza os dados do Employee
       const employeeUpdate = await tx.employee.update({

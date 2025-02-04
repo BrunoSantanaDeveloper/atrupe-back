@@ -17,7 +17,6 @@ export class ProfileService {
 
   async create(createProfileDto: CreateProfileDto) {
     try {
-      console.log(createProfileDto);
       return await this.prisma.sellerProfile.create({
         data: {
           ...createProfileDto,

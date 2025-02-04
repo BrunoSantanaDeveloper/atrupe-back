@@ -238,7 +238,7 @@ export class QuotationController {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
-    return this.quotationService.finish(id);
+    return await this.quotationService.finish(id);
   }
 
   @Post(':id/open')
