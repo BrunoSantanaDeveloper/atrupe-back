@@ -40,7 +40,7 @@ export class PaymentService {
         paymentMethodId,
         ...rest
       } = updateData;
-      if (downPayment) {
+      if (downPayment.amount > 0) {
         Object.assign(rest, {
           downPayment: downPayment.amount || 0,
           downPaymentCondition: {
@@ -120,11 +120,15 @@ export class PaymentService {
           }
 
           if (commission) {
-            await this.updateCommission(quotationId, commission);
+            await this.updateCommission(
+              quotationId,
+              commission,
+              updatedPayment.totalValue,
+            );
           }
           return updatedPayment;
         },
-        { timeout: 10000 },
+        { timeout: 20000 },
       );
 
       return updatedPaymentData;
@@ -136,6 +140,7 @@ export class PaymentService {
   async updateCommission(
     quotationId: string,
     commissionData: UpdateCommissionDto,
+    baseValue?: number,
   ) {
     try {
       // Busca o pagamento relacionado à cotação
@@ -148,6 +153,20 @@ export class PaymentService {
         throw new Error('Quotation payment not found.');
       }
 
+      if (
+        commissionData.commissionValue === 0 ||
+        commissionData.commissionValue === undefined ||
+        commissionData.commissionValue === null
+      ) {
+        if (!quotationPayment.commission) {
+          return 'Commission not created';
+        }
+        const deletedCommission = await this.prisma.commission.delete({
+          where: { id: quotationPayment.commission.id },
+        });
+        return deletedCommission;
+      }
+
       const commissionPayload: Prisma.CommissionCreateInput = {
         type: commissionData.type,
         supplier: { connect: { id: commissionData.supplierId } },
@@ -155,8 +174,11 @@ export class PaymentService {
         commissionType: commissionData.commissionType,
         commissionValue: commissionData.commissionValue,
         quotationPayment: { connect: { id: quotationPayment.id } },
+        totalCommission:
+          commissionData.commissionType === 'PERCENT'
+            ? (baseValue * commissionData.commissionValue) / 100
+            : commissionData.commissionValue,
       };
-
       let updatedCommission;
 
       if (quotationPayment.commission) {

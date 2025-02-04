@@ -44,6 +44,7 @@ export class ProductService {
             createProductDto.technicalDescription || undefined,
           allowEditDescription: createProductDto.allowEditDescription,
           allowEditValues: createProductDto.allowEditDescription,
+          imageUrl: createProductDto.imageUrl || undefined,
           items: {
             create: items,
           },
@@ -300,6 +301,7 @@ export class ProductService {
             updateProductDto.technicalDescription || undefined,
           allowEditDescription: updateProductDto.allowEditDescription,
           allowEditValues: updateProductDto.allowEditValues,
+
           items: {
             upsert: items?.map((item) => ({
               where: { id: item.id },

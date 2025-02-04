@@ -327,6 +327,7 @@ export class QuotationService {
       // }
 
       // Atualiza o produto dentro do orçamento
+      console.log(data.items);
       const updatedQuotationProduct = await this.prisma.quotationProduct.update(
         {
           where: { id: productId },
@@ -356,6 +357,7 @@ export class QuotationService {
                     }),
                     ...(item.quantity && {
                       quantity: item.quantity,
+                      originalQuantity: item.quantity,
                     }),
                     ...(item.width && { width: item.width }),
                     ...(item.height && { height: item.height }),
@@ -902,6 +904,7 @@ export class QuotationService {
                   unitOfMeasure: true,
                   salePrice: true,
                   quantity: true,
+                  originalQuantity: true,
                   unitCost: true,
                   totalValue: true,
                   weight: true,
@@ -1110,6 +1113,7 @@ export class QuotationService {
               name: item.name,
               unitOfMeasure: item.unitOfMeasure,
               quantity: item.quantity,
+              originalQuantity: item.originalQuantity,
               unitValue: item.salePrice,
               totalValue: item.totalValue,
               weight: item.weight,
