@@ -589,7 +589,12 @@ export class QuotationService {
       where: { id: quotationId },
       data: { totalValue },
     });
-
+    const quotationPayment = await this.prisma.quotationPayment.findFirst({
+      where: {
+        quotationId: quotationId,
+      },
+    });
+    console.log(quotationPayment);
     await this.prisma.quotationPayment.update({
       where: {
         quotationId: quotationId,
@@ -1173,6 +1178,7 @@ export class QuotationService {
       sellerId: quotation.sellerId, // Mantém o sellerId original
       seriesId: quotation.seriesId, // Mantém o seriesId original
       companyId: quotation.companyId,
+      subCompanyId: quotation.subCompanyId,
       quotationNumber: serie.currentBudgetNumber + 1,
     };
 
@@ -1189,6 +1195,32 @@ export class QuotationService {
         currentBudgetNumber: { increment: 1 },
       },
     });
+
+    try {
+      await this.prisma.deliveryInfo.create({
+        data: {
+          quotationId: newQuotation.id,
+          deliveryType: quotation.deliveryInfo.deliveryType,
+          daysAfterApproval: quotation.deliveryInfo.daysAfterApproval,
+          estimatedDate: quotation.deliveryInfo.estimatedDate,
+          modality: quotation.deliveryInfo.modality,
+          supplierId: quotation.deliveryInfo.supplierId,
+        },
+      });
+
+      const newQuo = await this.prisma.quotationPayment.create({
+        data: {
+          quotationId: newQuotation.id,
+          paymentMethodId: quotation.quotationPayment.paymentMethodId,
+          paymentConditionId: quotation.quotationPayment.paymentConditionId,
+          totalValue: quotation.quotationPayment.totalValue,
+          finalValue: quotation.quotationPayment.finalValue,
+        },
+      });
+      console.log('criação do quotation payment: ' + newQuo);
+    } catch (error) {
+      console.error(error);
+    }
     // Criar os produtos e itens duplicados
     for (const product of quotation.quotationProduct) {
       // Criar o produto duplicado
@@ -1249,30 +1281,7 @@ export class QuotationService {
         }
       }
     }
-    try {
-      await this.prisma.deliveryInfo.create({
-        data: {
-          quotationId: newQuotation.id,
-          deliveryType: quotation.deliveryInfo.deliveryType,
-          daysAfterApproval: quotation.deliveryInfo.daysAfterApproval,
-          estimatedDate: quotation.deliveryInfo.estimatedDate,
-          modality: quotation.deliveryInfo.modality,
-          supplierId: quotation.deliveryInfo.supplierId,
-        },
-      });
 
-      await this.prisma.quotationPayment.create({
-        data: {
-          quotationId: newQuotation.id,
-          paymentMethodId: quotation.quotationPayment.paymentMethodId,
-          paymentConditionId: quotation.quotationPayment.paymentConditionId,
-          totalValue: quotation.quotationPayment.totalValue,
-          finalValue: quotation.quotationPayment.finalValue,
-        },
-      });
-    } catch (error) {
-      console.error(error);
-    }
     return newQuotation; // Retorna o novo orçamento criado
   }
 

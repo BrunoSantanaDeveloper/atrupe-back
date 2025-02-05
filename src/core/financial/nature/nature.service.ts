@@ -389,6 +389,20 @@ export class NatureService {
     });
   }
 
+  async findAllSubCategoryByNature(natureId: string) {
+    return this.prisma.subCategory.findMany({
+      where: { isActive: true, natureId },
+      select: {
+        id: true,
+        code: true,
+        description: true,
+      },
+      orderBy: {
+        code: 'asc',
+      },
+    });
+  }
+
   async findOneSubCategory(id: string) {
     return this.prisma.subCategory.findUnique({
       where: { id },

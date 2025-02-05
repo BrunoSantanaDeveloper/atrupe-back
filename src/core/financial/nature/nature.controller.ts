@@ -49,9 +49,13 @@ export class NatureController {
   }
 
   @Get('natures')
-  findAllSubCategory(@Req() req) {
+  findAllSubNatures(@Req() req) {
     const companyId = req.user.companyId;
     return this.natureService.findAllNatures(companyId);
+  }
+  @Get('sub-category/:id')
+  findAllSubCategory(@Param('natureId') natureId: string) {
+    return this.natureService.findAllNatures(natureId);
   }
   @Get('sub-category/:id')
   findOneSubCategory(@Param('id') id: string) {
