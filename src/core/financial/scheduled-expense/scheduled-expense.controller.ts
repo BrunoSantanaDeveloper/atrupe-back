@@ -7,8 +7,6 @@ import {
   Param,
   Delete,
   UseGuards,
-  Query,
-  Req,
 } from '@nestjs/common';
 import { ScheduledExpenseService } from './scheduled-expense.service';
 import { CreateScheduledExpenseDto } from './dto/create-scheduled-expense.dto';
@@ -22,7 +20,6 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 const RESOURCE = 'scheduled-expense';
 const GROUP = 'financial';
@@ -57,9 +54,9 @@ export class ScheduledExpenseController {
     description: 'Lista de despesas fixas retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() filter: BaseFilterDTO, @Req() req) {
-    filter.companyId = req.user.companyId;
-    return this.scheduledExpenseService.findAll(filter);
+  findAll() {
+    // filter.companyId = req.user.companyId;
+    return this.scheduledExpenseService.findAll();
   }
 
   @Get(':id')

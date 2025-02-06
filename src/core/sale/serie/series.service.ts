@@ -224,6 +224,48 @@ export class SaleSeriesService {
           },
         });
 
+        await tx.payableInstallment.deleteMany({
+          where: {
+            payable: {
+              quotation: {
+                series: {
+                  id: serieId,
+                },
+              },
+            },
+          },
+        });
+        await tx.receivableInstallment.deleteMany({
+          where: {
+            receivable: {
+              quotation: {
+                series: {
+                  id: serieId,
+                },
+              },
+            },
+          },
+        });
+
+        await tx.payable.deleteMany({
+          where: {
+            quotation: {
+              series: {
+                id: serieId,
+              },
+            },
+          },
+        });
+
+        await tx.receivable.deleteMany({
+          where: {
+            quotation: {
+              series: {
+                id: serieId,
+              },
+            },
+          },
+        });
         await tx.quotation.deleteMany({
           where: {
             series: {

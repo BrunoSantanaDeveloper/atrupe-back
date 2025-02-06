@@ -330,10 +330,11 @@ export class CompanyService {
           address: true,
         },
       });
-
+      console.log(address);
       // If address is provided, update or create it
       if (address) {
         if (updatedCompany.address?.length > 0) {
+          console.log('endereço existe');
           // Update existing address
           await this.prisma.address.updateMany({
             where: {
@@ -351,20 +352,25 @@ export class CompanyService {
             },
           });
         } else {
+          console.log('endereço não existe');
           // Create new address
-          await this.prisma.address.create({
-            data: {
-              street: address.street,
-              number: address.number,
-              complement: address.complement,
-              neighborhood: address.neighborhood,
-              city: address.city,
-              state: address.state,
-              zipcode: address.zipcode,
-              ownerType: 'COMPANY',
-              ownerId: id,
-            },
-          });
+          try {
+            await this.prisma.address.create({
+              data: {
+                street: address.street,
+                number: address.number,
+                complement: address.complement,
+                neighborhood: address.neighborhood,
+                city: address.city,
+                state: address.state,
+                zipcode: address.zipcode,
+                ownerType: 'COMPANY',
+                companyId: updatedCompany.id,
+              },
+            });
+          } catch (error) {
+            console.error(error);
+          }
         }
       }
 

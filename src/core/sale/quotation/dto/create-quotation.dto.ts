@@ -261,12 +261,6 @@ export class CreateQuotationDto {
   })
   companyId: string;
 
-  @IsNotEmpty()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da empresa associada ao orçamento',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
   subCompanyId: string;
 
   @IsNotEmpty()

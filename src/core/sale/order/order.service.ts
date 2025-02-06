@@ -296,6 +296,7 @@ export class OrderService {
                       quantity: true,
                       unitCost: true,
                       totalValue: true,
+                      originalQuantity: true,
                     },
                     orderBy: {
                       createdAt: 'asc',
@@ -427,17 +428,13 @@ export class OrderService {
           discountType: qp.discountType,
           discount: qp.discount,
           unitValue: qp.items.reduce(
+            (total, item) => total + item.totalValue * item.originalQuantity,
+            0,
+          ),
+          totalValue: qp.items.reduce(
             (total, item) => total + item.totalValue,
             0,
           ),
-          totalValue: (() => {
-            const unitValue = qp.items.reduce(
-              (total, item) => total + item.totalValue,
-              0,
-            );
-
-            return qp.quantity * unitValue;
-          })(),
           finalValue: qp.finalValue,
           image: {
             url: qp.imageUrl,
@@ -448,13 +445,14 @@ export class OrderService {
             name: qp.product.name,
             quantity: qp.quantity,
             unitValue: qp.items.reduce(
-              (total, item) => total + item.totalValue,
+              (total, item) => total + item.totalValue * item.originalQuantity,
               0,
             ),
 
-            finalValue:
-              qp.quantity *
-              qp.items.reduce((total, item) => total + item.totalValue, 0),
+            finalValue: qp.items.reduce(
+              (total, item) => total + item.totalValue,
+              0,
+            ),
             compositions: qp.items.map((item) => ({
               id: item.id,
               originalCompositionId: item.productItemId,

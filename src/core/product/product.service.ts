@@ -263,6 +263,7 @@ export class ProductService {
     try {
       const product = await this.prisma.product.findUnique({
         where: { id },
+        include: { items: true }, // Inclui os itens existentes no produto
       });
 
       if (!product) {
@@ -284,8 +285,28 @@ export class ProductService {
         duration: item.duration || undefined,
       }));
 
+      const itemsWithId = items?.filter((item) => item.id);
+      const itemsWithoutId = items?.filter((item) => !item.id);
+
+      // Identificar IDs dos itens presentes no banco e não enviados no body
+      const existingItemIds = product.items.map((item) => item.id);
+      const incomingItemIds = itemsWithId?.map((item) => item.id) || [];
+      const itemsToRemove = existingItemIds.filter(
+        (id) => !incomingItemIds.includes(id),
+      );
+
       const productionStages = updateProductDto.productionStages || [];
-      return this.prisma.product.update({
+
+      // Remover itens que não foram enviados no body
+      if (itemsToRemove.length > 0) {
+        await this.prisma.productItem.deleteMany({
+          where: {
+            id: { in: itemsToRemove },
+          },
+        });
+      }
+
+      return await this.prisma.product.update({
         where: { id },
         data: {
           name: updateProductDto.name,
@@ -301,18 +322,19 @@ export class ProductService {
             updateProductDto.technicalDescription || undefined,
           allowEditDescription: updateProductDto.allowEditDescription,
           allowEditValues: updateProductDto.allowEditValues,
-
           items: {
-            upsert: items?.map((item) => ({
+            upsert: itemsWithId?.map((item) => ({
               where: { id: item.id },
               create: item,
               update: item,
             })),
+            create: itemsWithoutId?.map((item) => ({ ...item })),
           },
           productionStages: JSON.parse(JSON.stringify(productionStages)),
         },
       });
     } catch (error) {
+      console.log(error);
       throw new BadRequestException('Failed to update product', error.message);
     }
   }

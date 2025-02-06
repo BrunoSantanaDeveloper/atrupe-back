@@ -99,8 +99,11 @@ export class ProductController {
     status: 404,
     description: 'Produto não encontrado.',
   })
-  update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
-    return this.productService.update(id, updateProductDto);
+  async update(
+    @Param('id') id: string,
+    @Body() updateProductDto: UpdateProductDto,
+  ) {
+    return await this.productService.update(id, updateProductDto);
   }
 
   @Delete(':id')

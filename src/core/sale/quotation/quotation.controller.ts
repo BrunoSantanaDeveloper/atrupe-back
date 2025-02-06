@@ -38,6 +38,10 @@ const RESOURCE = 'quotation';
 @Controller(`sale/${RESOURCE}`)
 export class QuotationController {
   constructor(private readonly quotationService: QuotationService) {}
+  @Get('test')
+  async test() {
+    return await this.quotationService.test();
+  }
 
   @Post()
   @ApiOperation({ summary: 'Cria um novo orçamento' })

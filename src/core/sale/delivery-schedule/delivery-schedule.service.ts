@@ -142,6 +142,8 @@ export class DeliveryScheduleService {
             scheduledDate: delivery.scheduledDate,
             addScheduleTime: delivery.addScheduleTime,
             pendingDescription: delivery.pendingDescription,
+            //TODO: COLOCAR BILLED PARA RETORNAR DE ACORDO COM O FATURAMENTO
+
             // financial: {
             //   billed: boolean
             //   invoiceStatus: string
@@ -378,6 +380,7 @@ export class DeliveryScheduleService {
     }
 
     const receivable = await this.generateReceivableFromQuotation(quotation);
+    //TODO: CRIAR CONTA A PAGAR (COMISSÃO, ENTREGA)
 
     return { quotation, receivable };
   }

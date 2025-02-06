@@ -43,9 +43,9 @@ export class PaymentService {
 
       Object.assign(rest, {
         downPayment: downPayment.amount || 0,
-        downPaymentCondition: {
-          connect: { id: downPayment.paymentConditionId },
-        },
+        downPaymentCondition: downPayment.paymentConditionId
+          ? { connect: { id: downPayment.paymentConditionId } }
+          : { disconnect: true },
         downPaymentDueDate: new Date(downPayment.dueDate),
         downPaymentSurcharge: downPayment.additionalFee || 0,
       });

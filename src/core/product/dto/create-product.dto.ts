@@ -65,14 +65,13 @@ export class CreateProductItemDto {
   })
   unitOfMeasureId: string;
 
-  @IsNumber()
-  @Min(0)
+  @IsOptional()
   @ApiProperty({
     description: 'Custo unitário do item',
     example: 10.0,
     required: true,
   })
-  unitCost: number;
+  unitCost?: number;
 
   @IsNumber()
   @Min(0)

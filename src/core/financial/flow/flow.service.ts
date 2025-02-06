@@ -127,6 +127,8 @@ export class FlowService {
       limit = 10,
       search,
       startDate,
+      clientId,
+      supplierId,
       endDate,
       status,
       paymentMethodId,
@@ -141,7 +143,6 @@ export class FlowService {
         'Invalid dateType. Use "dueDate" or "paidDate".',
       );
     }
-
     const filtersReceivables: any = {
       receivable: {
         companyId: paginationDto.companyId,
@@ -152,6 +153,26 @@ export class FlowService {
         companyId: paginationDto.companyId,
       },
     };
+    if (clientId) {
+      filtersReceivables.receivable = {
+        ...filtersReceivables.receivable,
+        clientId: clientId,
+      };
+      filtersPayables.payable = {
+        ...filtersPayables.payable,
+        clientId: { not: null },
+      };
+    }
+    if (supplierId) {
+      filtersReceivables.receivable = {
+        ...filtersReceivables.receivable,
+        supplierId: { not: null },
+      };
+      filtersPayables.payable = {
+        ...filtersPayables.payable,
+        supplierId: supplierId,
+      };
+    }
 
     if (startDate || endDate) {
       const dateFilter: any = {};
@@ -196,7 +217,6 @@ export class FlowService {
         },
       ];
     }
-
     try {
       // Buscar dados agrupados para recebíveis
       const [receivablesGrouped, payablesGrouped] =

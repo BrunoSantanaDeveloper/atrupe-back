@@ -96,4 +96,22 @@ export class FinancialFlowFilterDTO extends BaseFilterDTO {
     required: false,
   })
   dateType?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'ID do cliente  para filtrar os fluxos financeiros',
+    example: '123e4567-e89b-12d3-a456-426614174001',
+    required: false,
+  })
+  clientId?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'ID do cliente  para filtrar os fluxos financeiros',
+    example: '123e4567-e89b-12d3-a456-426614174001',
+    required: false,
+  })
+  supplierId?: string;
 }

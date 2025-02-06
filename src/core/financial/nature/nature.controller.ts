@@ -53,14 +53,14 @@ export class NatureController {
     const companyId = req.user.companyId;
     return this.natureService.findAllNatures(companyId);
   }
-  @Get('sub-category/:id')
+  @Get('sub-category/:natureId')
   findAllSubCategory(@Param('natureId') natureId: string) {
-    return this.natureService.findAllNatures(natureId);
+    return this.natureService.findAllSubCategoryByNature(natureId);
   }
-  @Get('sub-category/:id')
-  findOneSubCategory(@Param('id') id: string) {
-    return this.natureService.findOneSubCategory(id);
-  }
+  // @Get('sub-category/:id')
+  // findOneSubCategory(@Param('id') id: string) {
+  //   return this.natureService.findOneSubCategory(id);
+  // }
 
   @Get('quantity')
   @ApiOperation({

@@ -342,10 +342,13 @@ model Client {
   receivable Receivable[]
 
   paymentConditions ClientPaymentCondition[]
+  supplierId        String?
+  supplier          Supplier?                @relation(fields: [supplierId], references: [id])
 
   // entityId     Int?
   // legacyId     Int?
   // legacyDbCode String?
+  payable Payable[]
 
   @@unique([email, companyId])
   @@map("clients")
@@ -392,7 +395,9 @@ model Supplier {
   minValue Float?
   maxValue Float?
 
-  blockClient Boolean @default(false)
+  blockClient Boolean      @default(false)
+  client      Client[]
+  receivable  Receivable[]
 
   @@unique([email, companyId])
   @@map("suppliers")
@@ -526,8 +531,10 @@ model Receivable {
   changeReason   String?
   changeNotes    String?
 
-  clientId String
-  client   Client @relation(fields: [clientId], references: [id])
+  clientId   String?
+  client     Client?   @relation(fields: [clientId], references: [id])
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
 
   subCategoryId String?
   subCategory   SubCategory? @relation(fields: [subCategoryId], references: [id])
@@ -616,9 +623,10 @@ model Payable {
 
   supplierId String?
   supplier   Supplier? @relation(fields: [supplierId], references: [id])
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
+  clientId   String?
+  client     Client?   @relation(fields: [clientId], references: [id])
+  companyId  String
+  company    Company   @relation(fields: [companyId], references: [id])
 
   quotationId String?
   quotation   Quotation? @relation(fields: [quotationId], references: [id])

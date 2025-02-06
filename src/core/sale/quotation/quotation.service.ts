@@ -193,8 +193,7 @@ export class QuotationService {
           );
         }
         return (
-          total +
-          item.quantity * (item.salePrice || originalItem.salePrice || 0)
+          total + item.quantity * (item.unitCost || originalItem.salePrice || 0)
         );
       }, 0);
 
@@ -239,12 +238,12 @@ export class QuotationService {
           volume: item.volume || originalItem.volume,
           distance: item.distance || originalItem.distance,
           duration: item.duration || originalItem.duration,
-          unitCost: item.unitCost || originalItem.unitCost,
+          unitCost: item.unitCost || originalItem.salePrice,
           salePrice: item.salePrice || originalItem.salePrice,
           quantity: data.quantity * item.quantity,
           originalQuantity: item.quantity,
           totalValue:
-            item.quantity * (item.salePrice || originalItem.salePrice || 0),
+            item.quantity * (item.unitCost || originalItem.salePrice || 0),
         };
       });
 
@@ -520,6 +519,11 @@ export class QuotationService {
       );
     }
   }
+  async test() {
+    return await this.recalculateQuotationProductsTotalValue(
+      '3299fcd5-8d1b-492c-8d20-29374b4eafbe',
+    );
+  }
   private async recalculateQuotationProductsTotalValue(quotationId: string) {
     // Obter os produtos e itens relacionados
     const quotationProducts = await this.prisma.quotationProduct.findFirst({
@@ -530,10 +534,9 @@ export class QuotationService {
     // Calcular e atualizar `totalValue` para cada item (em memória)
     const updatedItems = quotationProducts.items.map((item) => ({
       id: item.id,
-      totalValue: item.salePrice * item.quantity,
+      totalValue: item.unitCost * item.quantity,
     }));
 
-    // Atualizar os itens no banco em batch (bulk update)
     await Promise.all(
       updatedItems.map((item) =>
         this.prisma.quotationProductItem.update({
@@ -548,10 +551,8 @@ export class QuotationService {
       (acc, item) => acc + item.totalValue,
       0,
     );
-
     // Aplicar quantidade total
-    const overallTotalValue = quotationProducts.quantity * totalValue;
-
+    const overallTotalValue = totalValue;
     // Calcular o `finalValue` com desconto
     const finalValue =
       quotationProducts.discountType === 'VALUE'
@@ -589,12 +590,11 @@ export class QuotationService {
       where: { id: quotationId },
       data: { totalValue },
     });
-    const quotationPayment = await this.prisma.quotationPayment.findFirst({
-      where: {
-        quotationId: quotationId,
-      },
-    });
-    console.log(quotationPayment);
+    // const quotationPayment = await this.prisma.quotationPayment.findFirst({
+    //   where: {
+    //     quotationId: quotationId,
+    //   },
+    // });
     await this.prisma.quotationPayment.update({
       where: {
         quotationId: quotationId,
@@ -1078,18 +1078,24 @@ export class QuotationService {
           notes: qp.notes,
           discountType: qp.discountType,
           discount: qp.discount,
-          unitValue: qp.items.reduce(
+          unitValue: (() => {
+            const unitValue = qp.items.reduce(
+              (total, item) => total + item.unitCost * item.originalQuantity,
+              0,
+            );
+            return unitValue;
+          })(),
+          totalValue: qp.items.reduce(
             (total, item) => total + item.totalValue,
             0,
           ),
-          totalValue: (() => {
-            const unitValue = qp.items.reduce(
-              (total, item) => total + item.totalValue,
-              0,
-            );
-
-            return qp.quantity * unitValue;
-          })(),
+          // totalValue: (() => {
+          //   const unitValue = qp.items.reduce(
+          //     (total, item) => total + item.totalValue,
+          //     0,
+          //   );
+          //   return qp.quantity * unitValue;
+          // })(),
           finalValue: qp.finalValue,
           image: (() => {
             if (qp.imageUrl) {
@@ -1104,13 +1110,14 @@ export class QuotationService {
 
             quantity: qp.quantity,
             unitValue: qp.items.reduce(
-              (total, item) => total + item.totalValue,
+              (total, item) => total + item.unitCost * item.originalQuantity,
               0,
             ),
 
-            finalValue:
-              qp.quantity *
-              qp.items.reduce((total, item) => total + item.totalValue, 0),
+            finalValue: qp.items.reduce(
+              (total, item) => total + item.totalValue,
+              0,
+            ),
             compositions: qp.items.map((item) => ({
               id: item.id,
               originalCompositionId: item.productItemId,
