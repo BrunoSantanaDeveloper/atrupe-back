@@ -47,7 +47,7 @@ export class PaymentService {
           ? { connect: { id: downPayment.paymentConditionId } }
           : { disconnect: true },
         downPaymentDueDate: new Date(downPayment.dueDate),
-        downPaymentSurcharge: downPayment.additionalFee || 0,
+        downPaymentAdditionalFee: downPayment.additionalFee || 0,
       });
 
       if (paymentMethodId) {
@@ -75,7 +75,31 @@ export class PaymentService {
               id: paymentConditionId,
             },
           });
-          // Busca a configuração das parcelas
+
+          // Busca as parcelas existentes para o pagamento
+          const existingInstallments =
+            await prisma.quotationInstallment.findMany({
+              where: { quotationPaymentId: updatedPayment.id },
+            });
+
+          // IDs das parcelas enviadas na atualização
+          const updateInstallmentIds = installments
+            .map((i) => i.id)
+            .filter(Boolean);
+
+          // Identifica parcelas que precisam ser removidas
+          const installmentsToDelete = existingInstallments.filter(
+            (installment) => !updateInstallmentIds.includes(installment.id),
+          );
+
+          // Remove as parcelas desnecessárias
+          for (const installment of installmentsToDelete) {
+            await prisma.quotationInstallment.delete({
+              where: { id: installment.id },
+            });
+          }
+
+          // Configuração das parcelas vinculadas à condição de pagamento
           const installmentsConfig = await prisma.installment.findMany({
             where: {
               paymentConditionId: paymentConditionId,
@@ -100,17 +124,18 @@ export class PaymentService {
                 data: {
                   quotationPaymentId: updatedPayment.id,
                   dueDate: new Date(installmentDto.dueDate),
-                  surcharge: additionalFee,
+                  additionalFee: additionalFee,
                   value: amount,
                   paymentMethodId: rest.paymentMethodId,
                 },
               });
             } else {
+              // Nova parcela, cria
               await prisma.quotationInstallment.create({
                 data: {
                   quotationPaymentId: updatedPayment.id,
                   dueDate: new Date(installmentDto.dueDate),
-                  surcharge: additionalFee,
+                  additionalFee: additionalFee,
                   value: amount,
                   paymentMethodId: rest.paymentMethodId,
                 },
@@ -129,7 +154,6 @@ export class PaymentService {
         },
         { timeout: 30000 },
       );
-
       return updatedPaymentData;
     } catch (error) {
       console.error(error);

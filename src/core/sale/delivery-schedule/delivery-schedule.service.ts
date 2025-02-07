@@ -398,7 +398,7 @@ export class DeliveryScheduleService {
     // Calcular o valor total das parcelas
     const totalAmount = quotationInstallments.reduce(
       (sum: number, installment: any) =>
-        sum + installment.value + (installment.surcharge || 0),
+        sum + installment.value + (installment.additionalFee || 0),
       0,
     );
 
@@ -429,7 +429,7 @@ export class DeliveryScheduleService {
             installmentNumber: index + 1, // Adicionar o número da parcela
             dueDate: installment.dueDate,
             amount: installment.value,
-            additionalFee: installment.surcharge || 0,
+            additionalFee: installment.additionalFee || 0,
             paymentMethodId: installment.paymentMethodId,
             status: 'PENDING',
             paidDate: null,

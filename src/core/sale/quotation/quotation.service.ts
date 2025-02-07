@@ -449,6 +449,7 @@ export class QuotationService {
       unitCost: item.unitCost,
       salePrice: item.salePrice,
       quantity: item.quantity,
+      originalQuantity: item.originalQuantity,
       totalValue: item.totalValue,
     }));
 
@@ -839,7 +840,7 @@ export class QuotationService {
               downPayment: true,
               downPaymentConditionId: true,
               downPaymentDueDate: true,
-              downPaymentSurcharge: true,
+              downPaymentAdditionalFee: true,
 
               paymentMethod: {
                 select: {
@@ -1006,7 +1007,7 @@ export class QuotationService {
                       amount: quotation.quotationPayment.downPayment,
                       dueDate: quotation.quotationPayment.downPaymentDueDate,
                       additionalFee:
-                        quotation.quotationPayment.downPaymentSurcharge,
+                        quotation.quotationPayment.downPaymentAdditionalFee,
                       paymentConditionId:
                         quotation.quotationPayment.downPaymentConditionId,
                     }
@@ -1062,7 +1063,7 @@ export class QuotationService {
                         installmentNumber: index + 1,
                         dueDate: installment.dueDate,
                         paymentMethodId: installment.paymentMethodId,
-                        surcharge: installment.surcharge,
+                        additionalFee: installment.additionalFee,
                         amount: installment.value,
                       }),
                     )
@@ -1510,6 +1511,7 @@ export class QuotationService {
   }
 
   async update(id: string, updateQuotationDto: UpdateQuotationDto) {
+    //TODO: AJUSTAR CASO MUDAR DE EMPRESA NO UPDATE
     try {
       const existingQuotation = await this.prisma.quotation.findUnique({
         where: { id },

@@ -1245,11 +1245,11 @@ model QuotationPayment {
   discount     Float       @default(0) // Desconto
   discountType String      @default("VALUE")
 
-  downPayment            Float             @default(0) // Entrada
-  downPaymentConditionId String?
-  downPaymentCondition   PaymentCondition? @relation(name: "downPaymentRelation", fields: [downPaymentConditionId], references: [id])
-  downPaymentSurcharge   Float             @default(0) //Acrescimo da entrada
-  downPaymentDueDate     DateTime?
+  downPayment              Float             @default(0) // Entrada
+  downPaymentConditionId   String?
+  downPaymentCondition     PaymentCondition? @relation(name: "downPaymentRelation", fields: [downPaymentConditionId], references: [id])
+  downPaymentAdditionalFee Float             @default(0) //Acrescimo da entrada
+  downPaymentDueDate       DateTime?
 
   paymentMethodId String? // Relação com a tabela de métodos de pagamento
   paymentMethod   PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
@@ -1310,7 +1310,7 @@ model QuotationInstallment {
   dueDate            DateTime // Data de vencimento da parcela
   paymentMethodId    String // Forma de pagamento para a parcela
   paymentMethod      PaymentMethod    @relation(fields: [paymentMethodId], references: [id])
-  surcharge          Float            @default(0) // Acréscimo
+  additionalFee      Float            @default(0) // Acréscimo
   value              Float // Valor da parcela
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
