@@ -20,12 +20,9 @@ export class AbacService {
     if (!userWithRoles) return false;
 
     return userWithRoles.userRole.some((userRole) => {
-      return userRole.role.rolePolicy.some((rolePolicy) => {
-        const policy = rolePolicy.policy;
-        return (
-          policy.definition['resource'] === resource &&
-          policy.definition['actions'].includes(action)
-        );
+      return userRole.role.permissions.some((rolePolicy) => {
+        const [userResource, userActions] = rolePolicy.split(':');
+        return userResource === resource && userActions.includes(action);
       });
     });
   }

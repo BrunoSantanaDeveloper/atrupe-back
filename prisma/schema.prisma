@@ -183,8 +183,8 @@ model Role {
 
   employees Employee[]
 
-  userRole   UserRole[]
-  rolePolicy RolePolicy[]
+  userRole    UserRole[]
+  permissions String[]
 
   @@map("roles")
 }
@@ -875,25 +875,6 @@ model Attribute {
   user   User   @relation(fields: [userId], references: [id])
 
   @@map("attributes")
-}
-
-model RolePolicy {
-  roleId   String
-  policyId String
-  role     Role   @relation(fields: [roleId], references: [id])
-  policy   Policy @relation(fields: [policyId], references: [id])
-
-  @@id([roleId, policyId])
-  @@map("role_policies")
-}
-
-model Policy {
-  id         String       @id @default(uuid())
-  name       String
-  definition Json
-  rolePolicy RolePolicy[]
-
-  @@map("policies")
 }
 
 model Bank {

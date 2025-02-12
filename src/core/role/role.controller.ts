@@ -12,7 +12,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { RoleService } from './role.service';
-import { CreatePolicyDto, CreateRoleDto } from './dto/create-role.dto';
+import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { RoleFilterDTO } from './dto/filter.dto';
@@ -20,7 +20,6 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBody,
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
@@ -36,10 +35,6 @@ export class RoleController {
 
   @Post()
   @ApiOperation({ summary: 'Cria um nova Role' })
-  @ApiBody({
-    description: 'Dados da nova Role',
-    type: CreateRoleDto,
-  })
   @ApiResponse({
     status: 201,
     description: 'Role criada com sucesso.',
@@ -48,31 +43,6 @@ export class RoleController {
     createRoleDto.companyId = req.user.companyId;
     try {
       return await this.roleService.create(createRoleDto);
-    } catch (error) {
-      console.log(error.message);
-      throw new BadRequestException(error.message);
-    }
-  }
-
-  @Post(':roleId/policy')
-  @ApiOperation({ summary: 'Cria uma Policy e a vincula a uma Role' })
-  @ApiBody({
-    description: 'Dados da Policy e Ações',
-    type: CreatePolicyDto,
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Policy criada e vinculada à role com sucesso.',
-  })
-  async createPolicy(
-    @Param('roleId') roleId: string,
-    @Body() createPolicyDto: CreatePolicyDto,
-  ) {
-    try {
-      return await this.roleService.createPolicyAndLinkToRole(
-        createPolicyDto,
-        roleId,
-      );
     } catch (error) {
       console.log(error.message);
       throw new BadRequestException(error.message);
@@ -109,19 +79,6 @@ export class RoleController {
   @Patch(':id')
   @ApiOperation({ summary: 'Atualiza um Role pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID da Role' })
-  @ApiBody({
-    description: 'Dados para atualização da Role',
-    type: UpdateRoleDto,
-    examples: {
-      example: {
-        summary: 'Exemplo de payload para atualização de Role',
-        value: {
-          name: 'Updated Admin',
-          sectorId: '456e7890-e12d-34a6-b789-567890123456',
-        },
-      },
-    },
-  })
   @ApiResponse({
     status: 200,
     description: 'Role atualizado com sucesso.',
@@ -130,8 +87,8 @@ export class RoleController {
     status: 404,
     description: 'Role não encontrado.',
   })
-  update(@Param('id') id: string, @Body() updateRoleDto: UpdateRoleDto) {
-    return this.roleService.update(id, updateRoleDto);
+  async update(@Param('id') id: string, @Body() updateRoleDto: UpdateRoleDto) {
+    return await this.roleService.update(id, updateRoleDto);
   }
 
   @Delete(':id')

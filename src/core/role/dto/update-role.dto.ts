@@ -1,10 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsNotEmpty, IsString } from 'class-validator';
+import { IsOptional } from 'class-validator';
 
 export class UpdateRoleDto {
   @IsOptional()
-  @IsNotEmpty()
-  @IsString()
   @ApiProperty({
     description: 'Nome atualizado da função',
     example: 'Manager',
@@ -17,4 +15,11 @@ export class UpdateRoleDto {
     example: '123e4567-e89b-12d3-a456-426614174001',
   })
   sectorId?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Array de permissões do cargo',
+    example: '["home:create", "users:read", "users:update", "users:delete"]',
+  })
+  permissions?: string[];
 }

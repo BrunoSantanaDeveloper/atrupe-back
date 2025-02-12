@@ -1,5 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Policy } from '@prisma/client';
 
 export class UserResponseDto {
   @ApiProperty({
@@ -59,5 +58,5 @@ export class UserResponseDto {
       },
     ],
   })
-  policies?: Policy[];
+  policies?: string[];
 }

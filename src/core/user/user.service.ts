@@ -74,7 +74,7 @@ export class UserService {
       include: {
         userRole: {
           include: {
-            role: { include: { rolePolicy: { include: { policy: true } } } },
+            role: true,
           },
         },
       },
@@ -100,11 +100,7 @@ export class UserService {
           select: {
             role: {
               select: {
-                rolePolicy: {
-                  select: {
-                    policy: true,
-                  },
-                },
+                permissions: true,
               },
             },
           },
@@ -127,9 +123,7 @@ export class UserService {
             role: user.employee[0]?.role?.name,
           }
         : null,
-      policies: user.userRole
-        .flatMap((userRole) => userRole.role.rolePolicy)
-        .map((rolePolicy) => rolePolicy.policy),
+      policies: user.employee[0]?.role?.permissions,
     };
 
     await this.cache.set(`user:${id}`, response);
