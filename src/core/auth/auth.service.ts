@@ -36,6 +36,7 @@ export class AuthService {
         avatar: user.employee[0]?.avatarUrl,
         role: user.employee[0] ? user.employee[0].role?.name : null,
         employeeId: user.employee[0]?.id,
+        isAdmin: user.employee[0]?.role?.isAdmin,
         permissions: user.employee[0]?.role?.permissions,
         company: user.employee[0]?.company
           ? {

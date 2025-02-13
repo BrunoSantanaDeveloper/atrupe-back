@@ -32,6 +32,7 @@ export class UserResponseDto {
   employee: {
     company: any;
     role: string;
+    isAdmin: boolean;
   };
 
   @ApiProperty({

@@ -101,6 +101,7 @@ export class UserService {
             role: {
               select: {
                 permissions: true,
+                isAdmin: true,
               },
             },
           },
@@ -121,6 +122,7 @@ export class UserService {
         ? {
             company: user.employee[0].company,
             role: user.employee[0]?.role?.name,
+            isAdmin: user.employee[0]?.role?.isAdmin,
           }
         : null,
       policies: user.employee[0]?.role?.permissions,
@@ -152,15 +154,24 @@ export class UserService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
-    const { isActive, ...rest } = updateUserDto;
+    const { isActive, password, ...rest } = updateUserDto;
 
-    return this.prisma.$transaction(async (tx) => {
+    const updatedUser = await this.prisma.$transaction(async (tx) => {
       try {
+        let updatedData: any = { ...rest };
+
+        // Verifica se a senha foi enviada para ser atualizada
+        if (password) {
+          // Criptografa a nova senha
+          const hashedPassword = await argon2.hash(password);
+          updatedData = { ...updatedData, password: hashedPassword };
+        }
+
         // Atualiza os dados do usuário
         const userUpdate = await tx.user.update({
           where: { id },
           data: {
-            ...rest,
+            ...updatedData,
             isActive,
           },
         });
@@ -186,5 +197,10 @@ export class UserService {
         throw error;
       }
     });
+
+    if (updatedUser.password) {
+      delete updatedUser.password;
+    }
+    return updatedUser;
   }
 }
