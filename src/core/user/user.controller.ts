@@ -22,11 +22,21 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { PermissionsGuard } from '../auth/abac/permissions.guard';
+import { HasPermission } from '../auth/abac/has-permission.decorator';
 
 @ApiTags('Usuário')
 @Controller('user')
 export class UserController {
   constructor(private readonly userService: UserService) {}
+
+  @Get('teste')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @ApiBearerAuth()
+  @HasPermission('view', 'register:client')
+  testPermission() {
+    return 'YOU HAVE PERMISSION';
+  }
 
   @Post()
   @ApiOperation({ summary: 'Cria um novo usuário' })

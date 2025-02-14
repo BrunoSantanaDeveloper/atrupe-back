@@ -70,6 +70,7 @@ export class DeliveryService {
           updateDeliveryInfoDto.estimatedDate,
         );
       }
+
       const updatedDeliveryInfo = await this.prisma.deliveryInfo.update({
         where: { id },
         data: updateDeliveryInfoDto,

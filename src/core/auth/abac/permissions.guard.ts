@@ -13,18 +13,28 @@ export class PermissionsGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
+    console.log('user', user);
 
-    const permissions = this.reflector.get<{
+    if (!user || !user.role) return false;
+
+    const requiredPermission = this.reflector.get<{
       action: string;
       resource: string;
     }>(HAS_PERMISSION_KEY, context.getHandler());
 
-    if (!permissions || !user) return false;
+    if (!requiredPermission) return true;
 
-    return await this.abacService.hasPermission(
-      user,
-      permissions.action,
-      permissions.resource,
+    const userPermissions = await this.abacService.getPermissionsByRole(
+      user.role,
     );
+    if (userPermissions.isAdmin) {
+      return true;
+    }
+    if (!userPermissions || userPermissions.permissions.length === 0)
+      return false;
+
+    const permissionString = `${requiredPermission.resource}:${requiredPermission.action}`;
+
+    return userPermissions.permissions.includes(permissionString);
   }
 }

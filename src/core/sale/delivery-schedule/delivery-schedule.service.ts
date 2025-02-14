@@ -69,6 +69,8 @@ export class DeliveryScheduleService {
                   include: {
                     series: true,
                     client: true,
+                    payable: true,
+                    receivable: true,
                     seller: {
                       include: {
                         user: {
@@ -143,11 +145,9 @@ export class DeliveryScheduleService {
             addScheduleTime: delivery.addScheduleTime,
             pendingDescription: delivery.pendingDescription,
             //TODO: COLOCAR BILLED PARA RETORNAR DE ACORDO COM O FATURAMENTO
-
-            // financial: {
-            //   billed: boolean
-            //   invoiceStatus: string
-            // }
+            financial: {
+              billed: delivery.order.quotation.receivable.length > 0,
+            },
             order: delivery.order
               ? {
                   id: delivery.order.id,
@@ -168,7 +168,7 @@ export class DeliveryScheduleService {
                         seller: delivery.order.quotation.seller
                           ? {
                               id: delivery.order.quotation.seller.id,
-                              name: delivery.order.quotation.seller.user.name,
+                              name: delivery.order.quotation.seller.name,
                             }
                           : null,
                         client: delivery.order.quotation.client

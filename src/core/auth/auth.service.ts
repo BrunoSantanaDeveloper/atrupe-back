@@ -26,7 +26,8 @@ export class AuthService {
         username: user.email,
         sub: user.id,
         companyId: user.employee[0]?.company.id,
-        role: user.employee[0]?.role?.name,
+        role: user.employee[0]?.role?.id,
+        isAdmin: user.employee[0]?.role?.isAdmin,
       };
 
       return {
