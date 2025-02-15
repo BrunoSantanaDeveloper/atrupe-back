@@ -93,4 +93,24 @@ export class DeliveryScheduleController {
   remove(@Param('id') id: string) {
     return this.deliveryScheduleService.remove(id);
   }
+
+  @Patch('finish/:deliveryScheduleId')
+  @ApiOperation({ summary: 'Finalizar um agendamento de entrega' })
+  @ApiResponse({
+    status: 200,
+    description: 'Agendamento de entrega finalizado com sucesso',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Agendamento de entrega não encontrado',
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Erro interno ao finalizar agendamento',
+  })
+  async finish(@Param('deliveryScheduleId') deliveryScheduleId: string) {
+    return await this.deliveryScheduleService.finishDeliverySchedule(
+      deliveryScheduleId,
+    );
+  }
 }

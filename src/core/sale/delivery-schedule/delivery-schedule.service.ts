@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 
 import { CreateDeliveryScheduleDto } from './dto/create-delivery-schedule.dto';
 import { UpdateDeliveryScheduleDto } from './dto/update-delivery-schedule.dto';
@@ -103,6 +108,7 @@ export class DeliveryScheduleService {
                 status: true,
                 prevStatus: true,
                 order: true,
+                notes: true,
                 stage: {
                   select: {
                     id: true,
@@ -125,9 +131,27 @@ export class DeliveryScheduleService {
         this.prisma.deliverySchedule.count({ where }),
       ]);
 
-      const grouped: Record<string, DeliveryScheduleGroup> = deliveries.reduce(
-        (acc, delivery) => {
+      // Create an array of promises for all the financial data
+      const deliveriesWithFinancial = await Promise.all(
+        deliveries.map(async (delivery) => {
+          let getData = null;
+          if (delivery.order.quotation.receivable[0]) {
+            getData = await this.getFinancialDataById(
+              delivery.order.quotation.receivable[0].id,
+            );
+          }
           const date = delivery.createdAt.toISOString().split('T')[0];
+          return {
+            date,
+            delivery,
+            getData,
+          };
+        }),
+      );
+
+      // Now group the results
+      const grouped: Record<string, DeliveryScheduleGroup> =
+        deliveriesWithFinancial.reduce((acc, { date, delivery, getData }) => {
           if (!acc[date]) {
             acc[date] = {
               date: date,
@@ -144,9 +168,12 @@ export class DeliveryScheduleService {
             scheduledDate: delivery.scheduledDate,
             addScheduleTime: delivery.addScheduleTime,
             pendingDescription: delivery.pendingDescription,
-            //TODO: COLOCAR BILLED PARA RETORNAR DE ACORDO COM O FATURAMENTO
+
             financial: {
-              billed: delivery.order.quotation.receivable.length > 0,
+              billed: delivery.order.quotation
+                ? delivery.order.quotation.receivable.length > 0
+                : false,
+              data: getData,
             },
             order: delivery.order
               ? {
@@ -193,6 +220,7 @@ export class DeliveryScheduleService {
               id: stage.id,
               status: stage.status,
               prevStatus: stage.prevStatus,
+              notes: stage.notes,
               stage: {
                 id: stage.stage.id,
                 name: stage.stage.name,
@@ -203,9 +231,7 @@ export class DeliveryScheduleService {
             updatedAt: delivery.updatedAt,
           });
           return acc;
-        },
-        {},
-      );
+        }, {});
 
       return {
         total,
@@ -449,6 +475,159 @@ export class DeliveryScheduleService {
       // Lançar o erro novamente para que o chamador possa tratá-lo
       throw new Error(
         'Erro ao gerar contas a receber. Detalhes: ' + error.message,
+      );
+    }
+  }
+
+  async getFinancialDataById(quotationId: string) {
+    const installments = await this.prisma.receivableInstallment.findMany({
+      where: {
+        receivable: {
+          id: quotationId,
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+        amount: true,
+        additionalFee: true,
+        paidDate: true,
+        dueDate: true,
+        receivable: {
+          select: {
+            id: true,
+            totalAmount: true,
+            description: true,
+            notes: true,
+            status: true,
+            referenceDate: true,
+            client: { select: { id: true, name: true } },
+            // supplier: { select: { id: true, name: true } },
+            nature: { select: { id: true, description: true } },
+            subCategory: { select: { id: true, description: true } },
+            installments: {
+              select: {
+                id: true,
+                status: true,
+                paymentMethod: { select: { id: true, name: true } },
+                amount: true,
+                paidAmount: true,
+                additionalFee: true,
+                dueDate: true,
+                paidDate: true,
+              },
+              orderBy: { dueDate: 'desc' },
+            },
+          },
+        },
+      },
+    });
+
+    if (!installments || installments.length === 0) {
+      return null;
+    }
+
+    const receivables = installments.map((inst) => {
+      return {
+        id: inst.receivable?.id || null,
+        totalValue: inst.receivable?.totalAmount || 0,
+        totalPaid: (inst.receivable?.installments || []).reduce((sum, item) => {
+          return sum + (item.paidAmount ?? 0);
+        }, 0),
+        description: inst.receivable?.description || '',
+        client: inst.receivable?.client
+          ? {
+              id: inst.receivable.client.id,
+              name: inst.receivable.client.name,
+            }
+          : null,
+        subCategory: inst.receivable?.subCategory
+          ? {
+              id: inst.receivable.subCategory.id,
+              name: inst.receivable.subCategory.description,
+            }
+          : null,
+        nature: inst.receivable?.nature
+          ? {
+              id: inst.receivable.nature.id,
+              name: inst.receivable.nature.description,
+            }
+          : null,
+        installmentsQuantity: inst.receivable?.installments?.length || 0,
+        period: inst.receivable?.referenceDate || null,
+        notes: inst.receivable?.notes || '',
+        status: inst.receivable?.status || 'UNKNOWN',
+        installments: (inst.receivable?.installments || [])
+          .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime()) // Ordenando as parcelas pela data de vencimento
+          .map((installment) => ({
+            id: installment.id || null,
+            status: installment.status || 'UNKNOWN',
+            paymentMethod: {
+              id: installment.paymentMethod?.id || null,
+              name: installment.paymentMethod?.name || null,
+            },
+            value: installment.amount || 0,
+            additionalFee: installment.additionalFee || 0,
+            dueDate: installment.dueDate || null,
+            paidValue: installment.paidAmount || 0, // Ajuste baseado nos requisitos.
+            paymentDate: installment.paidDate || null,
+            current: installment.id === inst.id, // Definindo se a parcela é a atual
+          })),
+      };
+    });
+    return receivables[0];
+  }
+
+  async finishDeliverySchedule(id: string) {
+    try {
+      const deliverySchedule = await this.prisma.deliverySchedule.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          order: {
+            select: {
+              id: true,
+            },
+          },
+        },
+      });
+
+      if (!deliverySchedule) {
+        throw new NotFoundException('Delivery Schedule not found');
+      }
+
+      return await this.prisma.$transaction(async (prisma) => {
+        try {
+          await prisma.deliverySchedule.update({
+            where: { id },
+            data: { status: 'DONE' },
+          });
+
+          await prisma.order.update({
+            where: { id: deliverySchedule.order.id },
+            data: { status: 'FINISHED' },
+          });
+        } catch (error) {
+          throw new InternalServerErrorException(
+            'Failed to update delivery schedule and order status',
+            {
+              cause: error,
+            },
+          );
+        }
+      });
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      if (error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'An unexpected error occurred while finishing delivery schedule',
+        {
+          cause: error,
+        },
       );
     }
   }
