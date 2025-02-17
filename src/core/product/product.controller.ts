@@ -80,8 +80,8 @@ export class ProductController {
     status: 404,
     description: 'Produto não encontrado.',
   })
-  findOne(@Param('id') id: string) {
-    return this.productService.findOne(id);
+  async findOne(@Param('id') id: string) {
+    return await this.productService.findOne(id);
   }
 
   @Patch(':id')

@@ -218,39 +218,49 @@ export class ProductService {
 
     const allSectors = await this.prisma.companySector.findMany({
       where: { isProductionStage: true },
-      select: { id: true, name: true, icon: true },
+      select: { id: true, name: true, icon: true, isActive: true },
     });
 
-    const existingSectorIds = productionStages.map((stage: any) => stage.id);
+    // Filtra apenas setores ativos
+    const activeSectors = allSectors.filter((sector) => sector.isActive);
 
-    const newSectors = allSectors.filter(
-      (sector) => !existingSectorIds.includes(sector.id),
+    const existingSectorIds = productionStages
+      .filter((stage) => (stage as { id: string; isActive: boolean }).isActive)
+      .map((stage: { id: string; isActive: boolean }) => ({
+        id: stage.id,
+        isActive: stage.isActive,
+      }));
+
+    const newSectors = activeSectors.filter(
+      (sector) => !existingSectorIds.some((stage) => stage.id === sector.id),
     );
 
     const existingProductionStagesWithDetails = await Promise.all(
-      productionStages.map(async (stage: any) => {
-        const sector = await this.prisma.companySector.findUnique({
-          where: { id: stage.id },
-          select: { name: true, icon: true },
-        });
-        return {
-          id: stage.id,
-          isActive: stage.isActive,
-          ...sector,
-        };
+      existingSectorIds.map(async (stage) => {
+        const sector = activeSectors.find((s) => s.id === stage.id);
+        return sector
+          ? {
+              id: stage.id,
+              isActive: stage.isActive,
+              ...sector,
+            }
+          : null;
       }),
     );
+
+    // Remove qualquer entrada nula
+    const validExistingProductionStages =
+      existingProductionStagesWithDetails.filter(Boolean);
 
     const newProductionStages = newSectors.map((sector) => ({
       id: sector.id,
       isActive: false,
-
       name: sector.name,
       icon: sector.icon,
     }));
 
     const productionStagesWithDetails = [
-      ...existingProductionStagesWithDetails,
+      ...validExistingProductionStages,
       ...newProductionStages,
     ];
 
@@ -259,6 +269,7 @@ export class ProductService {
       productionStages: productionStagesWithDetails,
     };
   }
+
   async update(id: string, updateProductDto: UpdateProductDto) {
     try {
       const product = await this.prisma.product.findUnique({

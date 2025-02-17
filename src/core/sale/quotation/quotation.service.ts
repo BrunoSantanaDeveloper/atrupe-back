@@ -141,46 +141,46 @@ export class QuotationService {
       }
 
       // Verifica se o front enviou propriedades editáveis e realiza validações
-      const hasEditableFields =
-        data.technicalDescription !== undefined ||
-        data.items.some(
-          (item) => item.unitCost !== undefined || item.salePrice !== undefined,
-        );
+      // const hasEditableFields =
+      //   data.technicalDescription !== undefined ||
+      //   data.items.some(
+      //     (item) => item.unitCost !== undefined || item.salePrice !== undefined,
+      //   );
 
-      if (
-        data.technicalDescription !== undefined &&
-        !product.allowEditDescription &&
-        data.technicalDescription !== product.technicalDescription
-      ) {
-        throw new BadRequestException(
-          `Descrição técnica não pode ser editada para o produto ${product.name}`,
-        );
-      }
+      // if (
+      //   data.technicalDescription !== undefined &&
+      //   !product.allowEditDescription &&
+      //   data.technicalDescription !== product.technicalDescription
+      // ) {
+      //   throw new BadRequestException(
+      //     `Descrição técnica não pode ser editada para o produto ${product.name}`,
+      //   );
+      // }
 
-      if (
-        hasEditableFields &&
-        !product.allowEditValues &&
-        data.items.some((item) => {
-          const originalItem = product.items.find(
-            (pItem) => pItem.id === item.id,
-          );
-          if (!originalItem) {
-            throw new BadRequestException(
-              `Item ${item.id} não encontrado no produto`,
-            );
-          }
-          return (
-            (item.unitCost !== undefined &&
-              item.unitCost !== originalItem.unitCost) ||
-            (item.salePrice !== undefined &&
-              item.salePrice !== originalItem.salePrice)
-          );
-        })
-      ) {
-        throw new BadRequestException(
-          `Valores não podem ser editados para o produto ${product.name}`,
-        );
-      }
+      // if (
+      //   hasEditableFields &&
+      //   !product.allowEditValues &&
+      //   data.items.some((item) => {
+      //     const originalItem = product.items.find(
+      //       (pItem) => pItem.id === item.id,
+      //     );
+      //     if (!originalItem) {
+      //       throw new BadRequestException(
+      //         `Item ${item.id} não encontrado no produto`,
+      //       );
+      //     }
+      //     return (
+      //       (item.unitCost !== undefined &&
+      //         item.unitCost !== originalItem.unitCost) ||
+      //       (item.salePrice !== undefined &&
+      //         item.salePrice !== originalItem.salePrice)
+      //     );
+      //   })
+      // ) {
+      //   throw new BadRequestException(
+      //     `Valores não podem ser editados para o produto ${product.name}`,
+      //   );
+      // }
 
       // Calcula o valor total do produto
       const totalValue = data.items.reduce((total, item) => {
