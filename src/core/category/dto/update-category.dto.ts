@@ -28,4 +28,12 @@ export class UpdateCategoryDto {
     required: false,
   })
   isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'ID do setor',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  sectorId?: string;
 }

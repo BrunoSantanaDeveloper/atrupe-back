@@ -61,6 +61,18 @@ export class CategoryController {
     return this.categoryService.findAllQuantity(companyId);
   }
 
+  @Get('by-sector')
+  @ApiOperation({ summary: 'Obtém a lista de todas as categorias' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de categorias retornada com sucesso.',
+    isArray: true,
+  })
+  async findAllBySector(@Req() req, @Query() filter: CategoryFilterDTO) {
+    filter.companyId = req.user.companyId;
+    return await this.categoryService.findAllBySector(filter);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todas as categorias' })
   @ApiResponse({

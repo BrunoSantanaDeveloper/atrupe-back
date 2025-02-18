@@ -165,6 +165,7 @@ model CompanySector {
   role            Role[]
   product         Product[]
   productionStage ProductionStage[]
+  Category        Category[]
 
   @@map("sectors")
 }
@@ -225,11 +226,14 @@ model Category {
   kind       CategoryKind @default(PRODUCT)
   isActive   Boolean      @default(true)
   isStandard Boolean      @default(false)
-  companyId  String?
 
+  sectorId String?
+  sector    CompanySector? @relation(fields: [sectorId], references: [id])
+
+  companyId String?
   company Company? @relation(fields: [companyId], references: [id])
 
-  products Product[]
+  products        Product[]
 
   @@map("categories")
 }

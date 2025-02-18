@@ -48,6 +48,76 @@ export class CategoryService {
       TOTAL: total,
     };
   }
+
+  async findAllBySector(filter: CategoryFilterDTO): Promise<any> {
+    const { page = 1, limit = 10 } = filter;
+    let where = {};
+
+    if (filter.companyId) {
+      where = {
+        ...where,
+        company: { id: filter.companyId },
+      };
+    } else {
+      where = {
+        ...where,
+        isStandard: true,
+      };
+    }
+
+    if (filter.sectorId) {
+      where = { ...where, sectorId: filter.sectorId };
+    }
+    if (filter.kind) {
+      where = { ...where, kind: filter.kind };
+    }
+    if (filter.status) {
+      where = { ...where, isActive: filter.status === 'ACTIVE' };
+    }
+
+    const [total, categories] = await Promise.all([
+      this.prisma.category.count({ where }),
+      this.prisma.category.findMany({
+        where,
+        orderBy: [{ sector: { name: 'asc' } }, { name: 'asc' }],
+        take: +limit,
+        skip: (+page - 1) * +limit,
+        include: {
+          sector: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const groupedData = categories.reduce((acc, category) => {
+      const sectorName = category.sector?.name || 'Sem Setor Definido';
+      const sectorId = category.sector?.id || null;
+      let sectorGroup = acc.find((group) => group.sector === sectorName);
+      if (!sectorGroup) {
+        sectorGroup = {
+          sector: sectorName,
+          sectorId: sectorId,
+          groups: [],
+        };
+        acc.push(sectorGroup);
+      }
+      sectorGroup.groups.push(category);
+      return acc;
+    }, []);
+
+    const lastPage = Math.ceil(total / +limit);
+
+    return {
+      total,
+      lastPage,
+      data: groupedData,
+    };
+  }
+
   async findAll(filter: CategoryFilterDTO): Promise<any> {
     const { page = 1, limit = 10 } = filter;
     let where = {};
@@ -62,6 +132,10 @@ export class CategoryService {
         ...where,
         isStandard: true,
       };
+    }
+
+    if (filter.sectorId) {
+      where = { ...where, sectorId: filter.sectorId };
     }
 
     if (filter.kind) {

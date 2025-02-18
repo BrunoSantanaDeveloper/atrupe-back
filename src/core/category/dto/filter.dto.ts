@@ -29,4 +29,12 @@ export class CategoryFilterDTO extends BaseFilterDTO {
     required: false,
   })
   status?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Id do setor para filtrar os resultados',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  sectorId?: string;
 }
