@@ -80,6 +80,17 @@ export class CategoryController {
     description: 'Lista de categorias retornada com sucesso.',
     isArray: true,
   })
+  @Get('with-products')
+  @ApiOperation({ summary: 'Obtém a lista de todos os grupos com produtos' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de grupos retornada com sucesso.',
+    isArray: true,
+  })
+  async findAllWithProducts(@Req() req) {
+    const companyId = req.user.companyId;
+    return this.categoryService.findAllWithProducts(companyId);
+  }
   async findAll(@Req() req, @Query() filter: CategoryFilterDTO) {
     filter.companyId = req.user.companyId;
     return await this.categoryService.findAll(filter);

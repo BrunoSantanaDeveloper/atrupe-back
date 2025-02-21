@@ -61,6 +61,18 @@ export class SectorController {
     return this.sectorService.findAll(filter);
   }
 
+  @Get('with-products')
+  @ApiOperation({ summary: 'Obtém a lista de todos os setores com produtos' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de setores retornada com sucesso.',
+    isArray: true,
+  })
+  async findAllWithProducts(@Req() req) {
+    const companyId = req.user.companyId;
+    return this.sectorService.findAllWithProducts(companyId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Obtém um setor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do setor' })

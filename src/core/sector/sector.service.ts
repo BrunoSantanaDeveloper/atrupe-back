@@ -24,6 +24,23 @@ export class SectorService {
     });
   }
 
+  async findAllWithProducts(companyId: string) {
+    return this.prisma.companySector.findMany({
+      where: {
+        isActive: true,
+        companyId: companyId,
+        product: {
+          some: {}, // Garante que só retorna setores que possuem pelo menos um produto cadastrado
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        icon: true,
+      },
+    });
+  }
+
   async findAll(filter: SectorFilterDto) {
     try {
       let where = {};

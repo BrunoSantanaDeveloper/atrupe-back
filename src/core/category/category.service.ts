@@ -49,6 +49,12 @@ export class CategoryService {
     };
   }
 
+  async findAllWithProducts(companyId: string) {
+    return this.prisma.category.findMany({
+      where: { companyId, products: { some: {} }, isActive: true },
+    });
+  }
+
   async findAllBySector(filter: CategoryFilterDTO): Promise<any> {
     const { page = 1, limit = 10 } = filter;
     let where = {};
