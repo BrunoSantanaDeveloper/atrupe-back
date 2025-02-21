@@ -111,7 +111,7 @@ export class NatureController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.natureService.remove(id);
+  async remove(@Param('id') id: string) {
+    return await this.natureService.remove(id);
   }
 }

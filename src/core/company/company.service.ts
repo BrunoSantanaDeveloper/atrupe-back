@@ -158,6 +158,21 @@ export class CompanyService {
         maxValue: 0,
       },
     });
+    const paymentMethods = [
+      { name: 'Depósito Bancário', description: 'DEP', companyId: companyId },
+      { name: 'Dinheiro', description: 'DIN', companyId: companyId },
+      { name: 'Link de Pagamento', description: 'LKP', companyId: companyId },
+      { name: 'Pix', description: 'PIX', companyId: companyId },
+      { name: 'Cartão de Crédito', description: 'CRD', companyId: companyId },
+      { name: 'Boleto Bancário', description: 'BOL', companyId: companyId },
+      { name: 'Cartão de Débito', description: 'DEB', companyId: companyId },
+      { name: 'Cheque', description: 'CHQ', companyId: companyId },
+      { name: 'Permuta', description: 'PER', companyId: companyId },
+      { name: 'Pagamento Mensal', description: 'PGM', companyId: companyId },
+    ];
+    await this.prisma.paymentMethod.createMany({
+      data: paymentMethods,
+    });
   }
   async create(
     createCompanyDto: CreateCompanyDto,

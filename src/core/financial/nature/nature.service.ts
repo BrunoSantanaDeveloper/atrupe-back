@@ -347,10 +347,33 @@ export class NatureService {
   }
 
   async remove(id: string) {
-    return this.prisma.nature.update({
-      where: { id },
-      data: { isActive: false },
-    });
+    try {
+      const nature = await this.prisma.nature.findUnique({
+        where: { id },
+      });
+
+      if (!nature) {
+        throw new NotFoundException('Natureza não encontrada!');
+      }
+
+      await this.prisma.$transaction(async (prisma) => {
+        await prisma.subCategory.updateMany({
+          where: {
+            natureId: nature.id,
+          },
+          data: { isActive: false },
+        });
+
+        await prisma.nature.update({
+          where: { id },
+          data: { isActive: false },
+        });
+      });
+    } catch (error) {
+      throw new BadRequestException(
+        error.message || 'Erro ao remover a natureza!',
+      );
+    }
   }
 
   async createSubCategory(createSubCategoryDto: CreateSubCategoryDto) {

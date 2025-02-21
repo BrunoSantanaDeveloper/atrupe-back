@@ -6,7 +6,6 @@ import {
   QuotationProductItemDto,
 } from './create-quotation.dto';
 import {
-  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
@@ -16,7 +15,6 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { QuotationContactType } from '../entities/quotation.entity';
 
 export class UpdateQuotationProductItemDto extends PartialType(
   OmitType(QuotationProductItemDto, ['productItemId'] as const),
@@ -84,14 +82,13 @@ export class UpdateQuotationDto extends PartialType(CreateQuotationDto) {
   clientId?: string;
 
   @IsOptional()
-  @IsEnum(QuotationContactType)
+  @IsString()
   @ApiProperty({
     description: 'Tipo de contato do orçamento (opcional para atualização)',
-    example: QuotationContactType.DIRECT,
-    enum: QuotationContactType,
+    example: 'direct',
     required: false,
   })
-  contactType?: QuotationContactType;
+  contactType?: string;
 
   @IsOptional()
   @IsString()

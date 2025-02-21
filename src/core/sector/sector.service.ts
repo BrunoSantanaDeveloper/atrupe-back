@@ -65,9 +65,14 @@ export class SectorService {
           where: where,
           take: +filter.limit,
           skip: (+filter.page - 1) * +filter.limit,
-          orderBy: {
-            name: 'asc',
-          },
+          orderBy: [
+            {
+              isActive: 'desc', // true (1) vem antes de false (0)
+            },
+            {
+              name: 'asc',
+            },
+          ],
         }),
       ]);
 

@@ -17,7 +17,6 @@ import {
   DuplicateQuotationProductDto,
   DuplicateQuotationProductItemDto,
 } from './dto/duplicate-quotation.dto';
-import { QuotationContactType } from './entities/quotation.entity';
 import { add, endOfDay } from 'date-fns';
 import { CancelOrderDto } from '../order/dto/create-order.dto';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
@@ -1181,7 +1180,7 @@ export class QuotationService {
       description:
         duplicateDto.description || `${quotation.description} (Cópia)`, // Modifica a descrição, se fornecida
       clientId: duplicateDto.clientId || quotation.clientId, // Mantém o clientId original, a menos que fornecido
-      contactType: quotation.contactType as QuotationContactType, // Mantém o contactType original
+      contactType: quotation.contactType, // Mantém o contactType original
       totalValue: quotation.totalValue, // Mantém o totalValue original
       sellerId: quotation.sellerId, // Mantém o sellerId original
       seriesId: quotation.seriesId, // Mantém o seriesId original

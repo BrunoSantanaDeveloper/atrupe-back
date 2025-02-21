@@ -1,7 +1,6 @@
 import {
   IsArray,
   IsBoolean,
-  IsEnum,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -10,7 +9,6 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { QuotationContactType } from '../entities/quotation.entity';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -244,14 +242,13 @@ export class CreateQuotationDto {
   seriesId?: string;
 
   @IsOptional()
-  @IsEnum(QuotationContactType)
+  @IsString()
   @ApiProperty({
     description: 'Tipo de contato do orçamento',
-    example: QuotationContactType.DIRECT,
-    enum: QuotationContactType,
+    example: 'facebook',
     required: false,
   })
-  contactType: QuotationContactType = QuotationContactType.DIRECT;
+  contactType?: string;
 
   @IsNotEmpty()
   @IsUUID()
