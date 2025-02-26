@@ -68,6 +68,7 @@ export class QuotationService {
         data: {
           description,
           contactType,
+          dueDate: add(new Date(), { days: series.proposalValidity }),
           companyId: mainCompany.principalCompanyId
             ? mainCompany.principalCompanyId
             : mainCompany.id,
@@ -90,6 +91,8 @@ export class QuotationService {
 
       await this.prisma.deliveryInfo.create({
         data: {
+          daysAfterApproval: series.deliveryDeadline,
+          estimatedDate: add(new Date(), { days: series.deliveryDeadline }),
           quotation: {
             connect: {
               id: newQuotation.id,
