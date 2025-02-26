@@ -91,8 +91,49 @@ export class SectorService {
     return this.prisma.companySector.findFirst({ where: { id: id } });
   }
 
-  update(id: string, updateSectorDto: UpdateSectorDto) {
-    return this.prisma.companySector.update({
+  async update(id: string, updateSectorDto: UpdateSectorDto) {
+    // Só processa se o updateSectorDto.isActive for explicitamente false
+    if (updateSectorDto !== undefined && updateSectorDto.isActive === false) {
+      const json = [{ id: id, isActive: true }];
+      const products = await this.prisma.product.findMany({
+        where: {
+          productionStages: {
+            array_contains: json,
+          },
+        },
+      });
+
+      // Sai do if se não encontrar produtos
+      if (products.length === 0) {
+        return await this.prisma.companySector.update({
+          where: { id: id },
+          data: updateSectorDto,
+        });
+      }
+
+      for (const product of products) {
+        let stages = product.productionStages as any;
+
+        if (typeof stages === 'string') {
+          stages = JSON.parse(stages);
+        }
+
+        if (Array.isArray(stages)) {
+          // Removendo o objeto do array
+          const updatedStages = stages.filter((stage) => stage.id !== id);
+
+          // Atualizando no banco com a nova lista sem o id removido
+          await this.prisma.product.update({
+            where: { id: product.id },
+            data: {
+              productionStages: updatedStages as any,
+            },
+          });
+        }
+      }
+    }
+
+    return await this.prisma.companySector.update({
       where: { id: id },
       data: updateSectorDto,
     });

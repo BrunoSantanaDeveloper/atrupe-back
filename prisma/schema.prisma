@@ -228,12 +228,12 @@ model Category {
   isStandard Boolean      @default(false)
 
   sectorId String?
-  sector    CompanySector? @relation(fields: [sectorId], references: [id])
+  sector   CompanySector? @relation(fields: [sectorId], references: [id])
 
   companyId String?
-  company Company? @relation(fields: [companyId], references: [id])
+  company   Company? @relation(fields: [companyId], references: [id])
 
-  products        Product[]
+  products Product[]
 
   @@map("categories")
 }
@@ -1323,7 +1323,7 @@ model DeliveryInfo {
   quotationId String    @unique
   quotation   Quotation @relation(fields: [quotationId], references: [id])
 
-  deliveryType DeliveryType @default(CARRIER)
+  deliveryType DeliveryType @default(PICKUP)
 
   daysAfterApproval Int?
   estimatedDate     DateTime?
