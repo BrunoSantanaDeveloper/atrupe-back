@@ -33,7 +33,7 @@ export class PaymentService {
 
     try {
       const {
-        installments,
+        installments = [],
         commission,
         downPayment,
         paymentConditionId,
@@ -42,29 +42,25 @@ export class PaymentService {
         type,
         billing,
         hasDownPayment,
-        totalValue,
+        totalValue = 0,
         description,
         finalValue,
         installmentQty,
         mainAdditionalFee,
         additionalFeeType,
-        minInstallmentQty,
-        maxInstallmentQty,
         ...rest
       } = updateData;
 
       // Prepare base payment data
       const paymentData: any = {
-        type,
-        billing,
-        description: description || '',
-        totalValue,
-        finalValue: finalValue || 0,
-        installmentQty: installmentQty || 1,
-        minInstallmentQty: minInstallmentQty || 1,
-        maxInstallmentQty: maxInstallmentQty || 1,
-        mainAdditionalFee: mainAdditionalFee || 0,
-        additionalFeeType: additionalFeeType || 'VALUE',
+        ...(type && { type }),
+        ...(billing && { billing }),
+        ...(description && { description }),
+        ...(totalValue && { totalValue }),
+        ...(finalValue !== undefined && { finalValue }),
+        ...(installmentQty && { installmentQty }),
+        ...(mainAdditionalFee !== undefined && { mainAdditionalFee }),
+        ...(additionalFeeType && { additionalFeeType }),
       };
 
       // Handle payment method and condition
@@ -81,24 +77,40 @@ export class PaymentService {
 
       // Handle down payment if exists
       if (hasDownPayment && downPayment) {
-        paymentData.downPayment = downPayment.amount || 0;
-        paymentData.downPaymentCondition = downPayment.paymentConditionId
-          ? { connect: { id: downPayment.paymentConditionId } }
-          : { disconnect: true };
-        paymentData.downPaymentAdditionalFee = downPayment.additionalFee || 0;
-        paymentData.downPaymentDueDate =
-          new Date(downPayment.dueDate) || new Date();
+        if (downPayment.amount !== undefined) {
+          paymentData.downPayment = downPayment.amount;
+        }
+        if (downPayment.paymentConditionId) {
+          paymentData.downPaymentCondition = {
+            connect: { id: downPayment.paymentConditionId },
+          };
+        } else {
+          paymentData.downPaymentCondition = { disconnect: true };
+        }
+        if (downPayment.additionalFee !== undefined) {
+          paymentData.downPaymentAdditionalFee = downPayment.additionalFee;
+        }
+        if (downPayment.dueDate) {
+          paymentData.downPaymentDueDate = new Date(downPayment.dueDate);
+        }
       } else {
         paymentData.downPayment = 0;
         paymentData.downPaymentCondition = { disconnect: true };
         paymentData.downPaymentAdditionalFee = 0;
+        paymentData.downPaymentDueDate = null;
       }
 
       // Handle discount
       if (discount) {
-        paymentData.discountType = discount.discountType;
-        paymentData.discountValue = discount.discountValue;
-        paymentData.discountTotal = discount.discountTotal || 0;
+        if (discount.discountType) {
+          paymentData.discountType = discount.discountType;
+        }
+        if (discount.discountValue !== undefined) {
+          paymentData.discountValue = discount.discountValue;
+        }
+        if (discount.discountTotal !== undefined) {
+          paymentData.discountTotal = discount.discountTotal;
+        }
       }
 
       // Inicia uma transação para manter atomicidade
@@ -110,39 +122,48 @@ export class PaymentService {
             data: paymentData,
           });
 
-          // Get payment condition configuration
-          const conditionConfig = await prisma.paymentCondition.findUnique({
-            where: {
-              id: paymentConditionId,
-            },
-          });
-
-          // Delete all existing installments
-          await prisma.quotationInstallment.deleteMany({
-            where: { quotationPaymentId: updatedPayment.id },
-          });
-
-          // Create new installments
-          for (const installmentData of installments) {
-            const additionalFee =
-              conditionConfig.costType === 'VALUE'
-                ? installmentData.additionalFee || 0
-                : ((installmentData.additionalFee || 0) / 100) *
-                  (installmentData.amount || 0);
-
-            await prisma.quotationInstallment.create({
-              data: {
-                quotationPaymentId: updatedPayment.id,
-                dueDate: new Date(installmentData.dueDate),
-                additionalFee,
-                value: installmentData.amount,
-                paymentMethodId,
+          // Get payment condition configuration if needed for installments
+          let conditionConfig;
+          if (paymentConditionId && installments.length > 0) {
+            conditionConfig = await prisma.paymentCondition.findUnique({
+              where: {
+                id: paymentConditionId,
               },
             });
           }
 
-          // Handle commission if provided
-          if (commission) {
+          // Delete all existing installments if we have new ones
+          if (installments.length > 0) {
+            await prisma.quotationInstallment.deleteMany({
+              where: { quotationPaymentId: updatedPayment.id },
+            });
+
+            // Create new installments
+            for (const installmentData of installments) {
+              if (!installmentData.dueDate || !installmentData.amount) {
+                continue; // Skip invalid installments
+              }
+
+              const additionalFee =
+                conditionConfig?.costType === 'VALUE'
+                  ? installmentData.additionalFee || 0
+                  : ((installmentData.additionalFee || 0) / 100) *
+                    installmentData.amount;
+
+              await prisma.quotationInstallment.create({
+                data: {
+                  quotationPaymentId: updatedPayment.id,
+                  dueDate: new Date(installmentData.dueDate),
+                  additionalFee,
+                  value: installmentData.amount,
+                  ...(paymentMethodId && { paymentMethodId }),
+                },
+              });
+            }
+          }
+
+          // Handle commission if provided or explicitly set to null
+          if (commission !== undefined) {
             await this.updateCommission(
               quotationId,
               commission,
