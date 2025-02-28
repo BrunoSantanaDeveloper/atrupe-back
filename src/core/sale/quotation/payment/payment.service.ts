@@ -38,27 +38,67 @@ export class PaymentService {
         downPayment,
         paymentConditionId,
         paymentMethodId,
+        discount,
+        type,
+        billing,
+        hasDownPayment,
+        totalValue,
+        description,
+        finalValue,
+        installmentQty,
+        mainAdditionalFee,
+        additionalFeeType,
+        minInstallmentQty,
+        maxInstallmentQty,
         ...rest
       } = updateData;
 
-      Object.assign(rest, {
-        downPayment: downPayment.amount || 0,
-        downPaymentCondition: downPayment.paymentConditionId
-          ? { connect: { id: downPayment.paymentConditionId } }
-          : { disconnect: true },
-        downPaymentDueDate: new Date(downPayment.dueDate),
-        downPaymentAdditionalFee: downPayment.additionalFee || 0,
-      });
+      // Prepare base payment data
+      const paymentData: any = {
+        type,
+        billing,
+        description: description || '',
+        totalValue,
+        finalValue: finalValue || 0,
+        installmentQty: installmentQty || 1,
+        minInstallmentQty: minInstallmentQty || 1,
+        maxInstallmentQty: maxInstallmentQty || 1,
+        mainAdditionalFee: mainAdditionalFee || 0,
+        additionalFeeType: additionalFeeType || 'VALUE',
+      };
 
+      // Handle payment method and condition
       if (paymentMethodId) {
-        rest['paymentMethod'] = {
+        paymentData.paymentMethod = {
           connect: { id: paymentMethodId },
         };
       }
-      if (rest) {
-        rest['paymentCondition'] = {
+      if (paymentConditionId) {
+        paymentData.paymentCondition = {
           connect: { id: paymentConditionId },
         };
+      }
+
+      // Handle down payment if exists
+      if (hasDownPayment && downPayment) {
+        paymentData.downPayment = downPayment.amount || 0;
+        paymentData.downPaymentCondition = downPayment.paymentConditionId
+          ? { connect: { id: downPayment.paymentConditionId } }
+          : { disconnect: true };
+        paymentData.downPaymentAdditionalFee = downPayment.additionalFee || 0;
+        paymentData.downPaymentDueDate =
+          new Date(downPayment.dueDate) || new Date();
+      } else {
+        paymentData.downPayment = 0;
+        paymentData.downPaymentCondition = { disconnect: true };
+        paymentData.downPaymentAdditionalFee = 0;
+      }
+
+      // Handle discount
+      if (discount) {
+        paymentData.discountType = discount.discountType;
+        paymentData.discountValue = discount.discountValue;
+        paymentData.discountTotal = discount.discountTotal || 0;
       }
 
       // Inicia uma transação para manter atomicidade
@@ -67,82 +107,41 @@ export class PaymentService {
           // Atualiza o pagamento principal
           const updatedPayment = await prisma.quotationPayment.update({
             where: { quotationId },
-            data: rest,
+            data: paymentData,
           });
 
+          // Get payment condition configuration
           const conditionConfig = await prisma.paymentCondition.findUnique({
             where: {
               id: paymentConditionId,
             },
           });
 
-          // Busca as parcelas existentes para o pagamento
-          const existingInstallments =
-            await prisma.quotationInstallment.findMany({
-              where: { quotationPaymentId: updatedPayment.id },
-            });
-
-          // IDs das parcelas enviadas na atualização
-          const updateInstallmentIds = installments
-            .map((i) => i.id)
-            .filter(Boolean);
-
-          // Identifica parcelas que precisam ser removidas
-          const installmentsToDelete = existingInstallments.filter(
-            (installment) => !updateInstallmentIds.includes(installment.id),
-          );
-
-          // Remove as parcelas desnecessárias
-          for (const installment of installmentsToDelete) {
-            await prisma.quotationInstallment.delete({
-              where: { id: installment.id },
-            });
-          }
-
-          // Configuração das parcelas vinculadas à condição de pagamento
-          const installmentsConfig = await prisma.installment.findMany({
-            where: {
-              paymentConditionId: paymentConditionId,
-            },
+          // Delete all existing installments
+          await prisma.quotationInstallment.deleteMany({
+            where: { quotationPaymentId: updatedPayment.id },
           });
 
-          for (const [index, installmentDto] of installments.entries()) {
-            const { id, ...rest } = installmentDto;
-
+          // Create new installments
+          for (const installmentData of installments) {
             const additionalFee =
-              conditionConfig.costType === 'FIXED'
-                ? installmentsConfig[index]?.operatorFeeTransfer || 0
-                : ((installmentsConfig[index]?.operatorFeeTransfer || 0) /
-                    100) *
-                  (installmentDto.amount || 0);
-            const amount = installmentDto.amount || 0;
+              conditionConfig.costType === 'VALUE'
+                ? installmentData.additionalFee || 0
+                : ((installmentData.additionalFee || 0) / 100) *
+                  (installmentData.amount || 0);
 
-            if (id) {
-              // Parcela existente, atualiza
-              await prisma.quotationInstallment.update({
-                where: { id },
-                data: {
-                  quotationPaymentId: updatedPayment.id,
-                  dueDate: new Date(installmentDto.dueDate),
-                  additionalFee: additionalFee,
-                  value: amount,
-                  paymentMethodId: rest.paymentMethodId,
-                },
-              });
-            } else {
-              // Nova parcela, cria
-              await prisma.quotationInstallment.create({
-                data: {
-                  quotationPaymentId: updatedPayment.id,
-                  dueDate: new Date(installmentDto.dueDate),
-                  additionalFee: additionalFee,
-                  value: amount,
-                  paymentMethodId: rest.paymentMethodId,
-                },
-              });
-            }
+            await prisma.quotationInstallment.create({
+              data: {
+                quotationPaymentId: updatedPayment.id,
+                dueDate: new Date(installmentData.dueDate),
+                additionalFee,
+                value: installmentData.amount,
+                paymentMethodId,
+              },
+            });
           }
 
+          // Handle commission if provided
           if (commission) {
             await this.updateCommission(
               quotationId,
@@ -150,16 +149,155 @@ export class PaymentService {
               updatedPayment.totalValue,
             );
           }
+
           return updatedPayment;
         },
         { timeout: 30000 },
       );
+
       return updatedPaymentData;
     } catch (error) {
       console.error(error);
       throw new Error('Error updating payment: ' + error.message);
     }
   }
+
+  // async oldUpdatePayment(quotationId: string, updateData: UpdatePaymentDto) {
+  //   const existingPayment = await this.findOne(quotationId);
+  //   if (!existingPayment) {
+  //     throw new NotFoundException('Pagamento não encontrado');
+  //   }
+
+  //   try {
+  //     const {
+  //       installments,
+  //       commission,
+  //       downPayment,
+  //       paymentConditionId,
+  //       paymentMethodId,
+  //       discount,
+  //       ...rest
+  //     } = updateData;
+
+  //     Object.assign(rest, {
+  //       downPayment: downPayment.amount || 0,
+  //       downPaymentCondition: downPayment.paymentConditionId
+  //         ? { connect: { id: downPayment.paymentConditionId } }
+  //         : { disconnect: true },
+  //       downPaymentDueDate: new Date(downPayment.dueDate),
+  //       downPaymentAdditionalFee: downPayment.additionalFee || 0,
+  //     });
+
+  //     if (paymentMethodId) {
+  //       rest['paymentMethod'] = {
+  //         connect: { id: paymentMethodId },
+  //       };
+  //     }
+  //     if (rest) {
+  //       rest['paymentCondition'] = {
+  //         connect: { id: paymentConditionId },
+  //       };
+  //     }
+
+  //     // Inicia uma transação para manter atomicidade
+  //     const updatedPaymentData = await this.prisma.$transaction(
+  //       async (prisma) => {
+  //         // Atualiza o pagamento principal
+  //         const updatedPayment = await prisma.quotationPayment.update({
+  //           where: { quotationId },
+  //           data: rest,
+  //         });
+
+  //         const conditionConfig = await prisma.paymentCondition.findUnique({
+  //           where: {
+  //             id: paymentConditionId,
+  //           },
+  //         });
+
+  //         // Busca as parcelas existentes para o pagamento
+  //         const existingInstallments =
+  //           await prisma.quotationInstallment.findMany({
+  //             where: { quotationPaymentId: updatedPayment.id },
+  //           });
+
+  //         // IDs das parcelas enviadas na atualização
+  //         const updateInstallmentIds = installments
+  //           .map((i) => i.id)
+  //           .filter(Boolean);
+
+  //         // Identifica parcelas que precisam ser removidas
+  //         const installmentsToDelete = existingInstallments.filter(
+  //           (installment) => !updateInstallmentIds.includes(installment.id),
+  //         );
+
+  //         // Remove as parcelas desnecessárias
+  //         for (const installment of installmentsToDelete) {
+  //           await prisma.quotationInstallment.delete({
+  //             where: { id: installment.id },
+  //           });
+  //         }
+
+  //         // Configuração das parcelas vinculadas à condição de pagamento
+  //         const installmentsConfig = await prisma.installment.findMany({
+  //           where: {
+  //             paymentConditionId: paymentConditionId,
+  //           },
+  //         });
+
+  //         for (const [index, installmentDto] of installments.entries()) {
+  //           const { id, ...rest } = installmentDto;
+
+  //           const additionalFee =
+  //             conditionConfig.costType === 'VALUE'
+  //               ? installmentsConfig[index]?.operatorFeeTransfer || 0
+  //               : ((installmentsConfig[index]?.operatorFeeTransfer || 0) /
+  //                   100) *
+  //                 (installmentDto.amount || 0);
+  //           const amount = installmentDto.amount || 0;
+
+  //           if (id) {
+  //             // Parcela existente, atualiza
+  //             await prisma.quotationInstallment.update({
+  //               where: { id },
+  //               data: {
+  //                 quotationPaymentId: updatedPayment.id,
+  //                 dueDate: new Date(installmentDto.dueDate),
+  //                 additionalFee: additionalFee,
+  //                 value: amount,
+  //                 paymentMethodId: rest.paymentMethodId,
+  //               },
+  //             });
+  //           } else {
+  //             // Nova parcela, cria
+  //             await prisma.quotationInstallment.create({
+  //               data: {
+  //                 quotationPaymentId: updatedPayment.id,
+  //                 dueDate: new Date(installmentDto.dueDate),
+  //                 additionalFee: additionalFee,
+  //                 value: amount,
+  //                 paymentMethodId: rest.paymentMethodId,
+  //               },
+  //             });
+  //           }
+  //         }
+
+  //         if (commission) {
+  //           await this.updateCommission(
+  //             quotationId,
+  //             commission,
+  //             updatedPayment.totalValue,
+  //           );
+  //         }
+  //         return updatedPayment;
+  //       },
+  //       { timeout: 30000 },
+  //     );
+  //     return updatedPaymentData;
+  //   } catch (error) {
+  //     console.error(error);
+  //     throw new Error('Error updating payment: ' + error.message);
+  //   }
+  // }
   async updateCommission(
     quotationId: string,
     commissionData: UpdateCommissionDto,

@@ -147,4 +147,11 @@ export class UpdateEmployeeDto {
   })
   @Type(() => AddressDto)
   address?: AddressDto; // singular
+
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: 'URL da assinatura do funcionário',
+    example: 'https://exemplo.com/assinatura.jpg',
+  })
+  signatureUrl?: string;
 }

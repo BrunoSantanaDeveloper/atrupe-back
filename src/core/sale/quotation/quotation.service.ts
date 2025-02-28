@@ -837,12 +837,18 @@ export class QuotationService {
               id: true,
               type: true,
               billing: true,
-              discount: true,
+              discountValue: true,
               discountType: true,
+              discountTotal: true,
               downPayment: true,
               downPaymentConditionId: true,
               downPaymentDueDate: true,
               downPaymentAdditionalFee: true,
+              installmentQty: true,
+              minInstallmentQty: true,
+              maxInstallmentQty: true,
+              mainAdditionalFee: true,
+              additionalFeeType: true,
 
               paymentMethod: {
                 select: {
@@ -892,6 +898,7 @@ export class QuotationService {
               finalValue: true,
               allowEditDescription: true,
               allowEditValues: true,
+
               product: {
                 select: {
                   id: true,
@@ -1001,8 +1008,15 @@ export class QuotationService {
               id: quotation.quotationPayment.id,
               type: quotation.quotationPayment.type,
               billing: quotation.quotationPayment.billing,
-              discount: quotation.quotationPayment.discount,
+              discountValue: quotation.quotationPayment.discountValue,
               discountType: quotation.quotationPayment.discountType,
+              discountTotal: quotation.quotationPayment.discountTotal,
+              installmentQty: quotation.quotationPayment.installmentQty,
+              minInstallmentQty: quotation.quotationPayment.minInstallmentQty,
+              maxInstallmentQty: quotation.quotationPayment.maxInstallmentQty,
+              mainAdditionalFee: quotation.quotationPayment.mainAdditionalFee,
+              additionalFeeType: quotation.quotationPayment.additionalFeeType,
+              hasDownPayment: quotation.quotationPayment.downPayment > 0,
               downPayment:
                 quotation.quotationPayment.downPayment > 0
                   ? {
@@ -1049,9 +1063,10 @@ export class QuotationService {
                         ? quotation.quotationPayment.commission.totalCommission
                         : (quotation.quotationPayment.discountType === 'VALUE'
                             ? quotation.totalValue -
-                              quotation.quotationPayment.discount
+                              quotation.quotationPayment.discountValue
                             : quotation.totalValue *
-                              (quotation.quotationPayment.discount / 100)) *
+                              (quotation.quotationPayment.discountValue /
+                                100)) *
                           (quotation.quotationPayment.commission
                             .commissionValue /
                             100),

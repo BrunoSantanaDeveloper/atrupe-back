@@ -15,6 +15,7 @@ export class EmployeeService {
         data: {
           name: createEmployeeDto.name,
           avatarUrl: createEmployeeDto.avatarUrl ?? null,
+          signatureUrl: createEmployeeDto.signatureUrl ?? null,
           role: {
             connect: {
               id: createEmployeeDto.roleId,

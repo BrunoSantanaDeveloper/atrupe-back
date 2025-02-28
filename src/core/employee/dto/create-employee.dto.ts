@@ -51,4 +51,6 @@ export class CreateEmployeeDto {
   //   example: '5000',
   // })
   sallary: string;
+
+  signatureUrl?: string;
 }

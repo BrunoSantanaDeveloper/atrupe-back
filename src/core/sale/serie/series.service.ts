@@ -74,6 +74,7 @@ export class SaleSeriesService {
       ON_ORDER: 'Faturar no pedido',
       ON_DELIVERY: 'Faturar na entrega',
       ON_CASHIER: 'Faturar na frente de caixa',
+      NO_INVOICE: 'Sem lançamento',
     };
 
     const sendToProductionMap = {

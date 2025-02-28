@@ -413,14 +413,15 @@ model Employee {
   updatedAt DateTime? @updatedAt
   isActive  Boolean   @default(true)
 
-  name      String?
-  avatarUrl String?
-  cpf       String?
-  rg        String?
-  phone     String?
-  mobile    String?
-  address   Address[]
-  sallary   Float?
+  name         String?
+  avatarUrl    String?
+  cpf          String?
+  rg           String?
+  phone        String?
+  mobile       String?
+  address      Address[]
+  sallary      Float?
+  signatureUrl String?
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
@@ -974,7 +975,7 @@ model PaymentMethod {
 
 enum PaymentConditionCostType {
   PERCENT
-  FIXED
+  VALUE
 }
 
 model PaymentCondition {
@@ -1222,13 +1223,14 @@ enum InvoiceType {
 }
 
 model QuotationPayment {
-  id           String      @id @default(uuid())
-  quotationId  String      @unique
-  quotation    Quotation   @relation(fields: [quotationId], references: [id])
-  type         InvoiceType @default(OTHER)
-  billing      BiilingKind @default(ON_ORDER)
-  discount     Float       @default(0) // Desconto
-  discountType String      @default("VALUE")
+  id            String      @id @default(uuid())
+  quotationId   String      @unique
+  quotation     Quotation   @relation(fields: [quotationId], references: [id])
+  type          InvoiceType @default(OTHER)
+  billing       BiilingKind @default(ON_ORDER)
+  discountType  String      @default("VALUE")
+  discountValue Float       @default(0) // Desconto
+  discountTotal Float       @default(0) // Desconto
 
   downPayment              Float             @default(0) // Entrada
   downPaymentConditionId   String?
@@ -1248,6 +1250,12 @@ model QuotationPayment {
   totalValue  Float // Valor total do orçamento
   description String? // Observações
   finalValue  Float?
+
+  installmentQty    Int?
+  minInstallmentQty Int?
+  maxInstallmentQty Int?
+  mainAdditionalFee Float?
+  additionalFeeType String?
 
   createdAt            DateTime               @default(now())
   updatedAt            DateTime?              @updatedAt

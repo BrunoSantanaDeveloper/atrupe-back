@@ -8,6 +8,7 @@ import {
   IsNumber,
   IsUUID,
   IsEnum,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
@@ -59,21 +60,25 @@ export class UpdateCommissionDto {
   @IsNumber({}, { message: 'O valor da comissão deve ser um número' })
   @IsNotEmpty({ message: 'O valor da comissão é obrigatório' })
   commissionValue: number;
+
+  @ApiProperty({
+    description: 'Valor total da comissão',
+    example: 10,
+  })
+  @IsNumber({}, { message: 'O valor total da comissão deve ser um número' })
+  @IsNotEmpty({ message: 'O valor total da comissão é obrigatório' })
+  totalCommission: number;
 }
-class InstallmentDto {
+
+export class InstallmentDto {
   @ApiProperty()
   @IsOptional()
   id?: string;
 
   @ApiProperty({ description: 'Data de vencimento da parcela' })
   @IsString()
-  @IsOptional()
+  @IsNotEmpty()
   dueDate: string;
-
-  @ApiProperty({ description: 'Método de pagamento para a parcela' })
-  @IsOptional()
-  @IsString()
-  paymentMethodId?: string;
 
   @ApiProperty({ description: 'Taxa de acréscimo na parcela' })
   @IsNumber()
@@ -82,30 +87,47 @@ class InstallmentDto {
 
   @ApiProperty({ description: 'Valor da parcela' })
   @IsNumber()
-  @IsOptional()
-  amount?: number;
+  @IsNotEmpty()
+  amount: number;
 }
 
 export class DownPaymentDto {
-  @ApiProperty({ description: 'Data de vencimento da parcela' })
-  @IsString()
+  @ApiProperty({ description: 'ID da condição de pagamento' })
+  @IsUUID()
   @IsOptional()
-  dueDate?: string;
-
-  @ApiProperty({ description: 'Método de pagamento para a parcela' })
-  @IsOptional()
-  @IsString()
   paymentConditionId?: string;
 
-  @ApiProperty({ description: 'Taxa de acréscimo na parcela' })
+  @ApiProperty({ description: 'Taxa de acréscimo' })
   @IsNumber()
   @IsOptional()
   additionalFee?: number;
 
-  @ApiProperty({ description: 'Valor da parcela' })
+  @ApiProperty({ description: 'Valor da entrada' })
   @IsNumber()
   @IsOptional()
   amount?: number;
+
+  @ApiProperty({ description: 'Data de vencimento da entrada' })
+  @IsString()
+  @IsOptional()
+  dueDate?: string;
+}
+
+export class DiscountDto {
+  @ApiProperty({ description: 'Tipo de desconto', enum: ['VALUE', 'PERCENT'] })
+  @IsString()
+  @IsNotEmpty()
+  discountType: string;
+
+  @ApiProperty({ description: 'Valor do desconto' })
+  @IsNumber()
+  @IsNotEmpty()
+  discountValue: number;
+
+  @ApiProperty({ description: 'Valor total do desconto' })
+  @IsNumber()
+  @IsOptional()
+  discountTotal?: number;
 }
 
 export class UpdatePaymentDto {
@@ -122,63 +144,85 @@ export class UpdatePaymentDto {
   @IsNotEmpty()
   billing: BiilingKind;
 
-  @ApiProperty({ description: 'Desconto aplicado', default: 0 })
-  @IsNumber()
-  @IsOptional()
-  discount?: number;
-
-  @ApiProperty({ description: 'Tipo de desconto', enum: ['VALUE', 'PERCENT'] })
-  @IsString()
-  @IsOptional()
-  discountType?: string;
-
-  @ApiProperty({ description: 'Descrição', example: 'teste' })
-  @IsString()
-  @IsOptional()
-  description?: string;
-
-  @ApiProperty({ description: 'ID do metodo de pagamento', required: false })
+  @ApiProperty({ description: 'ID do método de pagamento' })
   @IsUUID()
   @IsOptional()
   paymentMethodId?: string;
 
-  @ApiProperty({ description: 'ID da condição de pagamento', required: false })
+  @ApiProperty({ description: 'ID da condição de pagamento' })
   @IsUUID()
   @IsOptional()
   paymentConditionId?: string;
 
-  @ApiProperty({ description: 'Valor total do orçamento', default: 0 })
+  @ApiProperty({ description: 'Quantidade de parcelas' })
+  @IsNumber()
+  @IsOptional()
+  installmentQty?: number;
+
+  @ApiProperty({ description: 'Indica se tem entrada' })
+  @IsBoolean()
+  @IsOptional()
+  hasDownPayment?: boolean;
+
+  @ApiProperty({ description: 'Informações da comissão' })
+  @ValidateNested()
+  @Type(() => UpdateCommissionDto)
+  @IsOptional()
+  commission?: UpdateCommissionDto;
+
+  @ApiProperty({ description: 'Informações do desconto' })
+  @ValidateNested()
+  @Type(() => DiscountDto)
+  @IsOptional()
+  discount?: DiscountDto;
+
+  @ApiProperty({ description: 'Valor total' })
   @IsNumber()
   @IsNotEmpty()
   totalValue: number;
 
-  @ApiProperty({ description: 'Valor final calculado', default: 0 })
-  @IsNumber()
-  @IsOptional()
-  finalValue?: number;
-
-  @ApiProperty({
-    description: 'Comissão do orçamento',
-    type: UpdateCommissionDto,
-  })
-  @Type(() => UpdateCommissionDto)
-  @IsOptional()
-  commission: UpdateCommissionDto;
-
-  @ApiProperty({
-    description: 'Entrada do orçamento',
-    type: DownPaymentDto,
-  })
+  @ApiProperty({ description: 'Informações da entrada' })
+  @ValidateNested()
   @Type(() => DownPaymentDto)
   @IsOptional()
-  downPayment: DownPaymentDto;
+  downPayment?: DownPaymentDto;
 
-  @ApiProperty({
-    description: 'Parcelas pagas do orçamento',
-    type: [InstallmentDto],
-  })
+  @ApiProperty({ description: 'Lista de parcelas' })
   @ValidateNested({ each: true })
   @Type(() => InstallmentDto)
   @IsArray()
   installments: InstallmentDto[];
+
+  @ApiProperty({ description: 'Descrição' })
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @ApiProperty({ description: 'Valor final' })
+  @IsNumber()
+  @IsOptional()
+  finalValue?: number;
+
+  @ApiProperty({ description: 'Quantidade mínima de parcelas' })
+  @IsNumber()
+  @IsOptional()
+  minInstallmentQty?: number;
+
+  @ApiProperty({ description: 'Quantidade máxima de parcelas' })
+  @IsNumber()
+  @IsOptional()
+  maxInstallmentQty?: number;
+
+  @ApiProperty({ description: 'Taxa de acréscimo principal' })
+  @IsNumber()
+  @IsOptional()
+  mainAdditionalFee?: number;
+
+  @ApiProperty({
+    description: 'Tipo de taxa de acréscimo',
+    enum: ['VALUE', 'PERCENT'],
+  })
+  @IsString()
+  @IsOptional()
+  additionalFeeType?: string;
 }
