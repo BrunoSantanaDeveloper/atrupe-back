@@ -1,7 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsString,
-  IsNotEmpty,
   IsOptional,
   ValidateNested,
   IsArray,
@@ -25,15 +24,16 @@ export class UpdateCommissionDto {
     example: 'ADD',
   })
   @IsEnum(CommissionType)
-  type: CommissionType;
+  @IsOptional()
+  type?: CommissionType;
 
   @ApiProperty({
     description: 'ID do fornecedor associado à comissão',
     example: 'uuid',
   })
-  @IsString({ message: 'O supplierId deve ser uma string' })
-  @IsNotEmpty({ message: 'O supplierId é obrigatório' })
-  supplierId: string;
+  @IsString()
+  @IsOptional()
+  supplierId?: string;
 
   @ApiProperty({
     description: 'Método de transferência para a comissão',
@@ -41,33 +41,33 @@ export class UpdateCommissionDto {
     example: 'SINGLE',
   })
   @IsEnum(transferMethodCommission)
-  transferMethod: transferMethodCommission;
+  @IsOptional()
+  transferMethod?: transferMethodCommission;
 
   @ApiProperty({
     description: 'Tipo de comissão',
     enum: ['PERCENT', 'VALUE'],
     example: 'PERCENT',
   })
-  @IsEnum(['PERCENT', 'VALUE'], {
-    message: 'O tipo de comissão deve ser PERCENT ou VALUE',
-  })
-  commissionType: string;
+  @IsEnum(['PERCENT', 'VALUE'])
+  @IsOptional()
+  commissionType?: string;
 
   @ApiProperty({
     description: 'Valor da comissão',
     example: 10,
   })
-  @IsNumber({}, { message: 'O valor da comissão deve ser um número' })
-  @IsNotEmpty({ message: 'O valor da comissão é obrigatório' })
-  commissionValue: number;
+  @IsNumber()
+  @IsOptional()
+  commissionValue?: number;
 
   @ApiProperty({
     description: 'Valor total da comissão',
     example: 10,
   })
-  @IsNumber({}, { message: 'O valor total da comissão deve ser um número' })
-  @IsNotEmpty({ message: 'O valor total da comissão é obrigatório' })
-  totalCommission: number;
+  @IsNumber()
+  @IsOptional()
+  totalCommission?: number;
 }
 
 export class InstallmentDto {
@@ -77,8 +77,8 @@ export class InstallmentDto {
 
   @ApiProperty({ description: 'Data de vencimento da parcela' })
   @IsString()
-  @IsNotEmpty()
-  dueDate: string;
+  @IsOptional()
+  dueDate?: string;
 
   @ApiProperty({ description: 'Taxa de acréscimo na parcela' })
   @IsNumber()
@@ -87,8 +87,8 @@ export class InstallmentDto {
 
   @ApiProperty({ description: 'Valor da parcela' })
   @IsNumber()
-  @IsNotEmpty()
-  amount: number;
+  @IsOptional()
+  amount?: number;
 }
 
 export class DownPaymentDto {
@@ -116,13 +116,13 @@ export class DownPaymentDto {
 export class DiscountDto {
   @ApiProperty({ description: 'Tipo de desconto', enum: ['VALUE', 'PERCENT'] })
   @IsString()
-  @IsNotEmpty()
-  discountType: string;
+  @IsOptional()
+  discountType?: string;
 
   @ApiProperty({ description: 'Valor do desconto' })
   @IsNumber()
-  @IsNotEmpty()
-  discountValue: number;
+  @IsOptional()
+  discountValue?: number;
 
   @ApiProperty({ description: 'Valor total do desconto' })
   @IsNumber()
@@ -133,16 +133,16 @@ export class DiscountDto {
 export class UpdatePaymentDto {
   @ApiProperty({ description: 'Tipo de fatura', enum: ['NFE', 'OTHER'] })
   @IsEnum(InvoiceType)
-  @IsNotEmpty()
-  type: InvoiceType;
+  @IsOptional()
+  type?: InvoiceType;
 
   @ApiProperty({
     description: 'Forma de faturamento',
     enum: ['ON_ORDER', 'AFTER_ORDER'],
   })
   @IsEnum(BiilingKind)
-  @IsNotEmpty()
-  billing: BiilingKind;
+  @IsOptional()
+  billing?: BiilingKind;
 
   @ApiProperty({ description: 'ID do método de pagamento' })
   @IsUUID()
@@ -178,8 +178,8 @@ export class UpdatePaymentDto {
 
   @ApiProperty({ description: 'Valor total' })
   @IsNumber()
-  @IsNotEmpty()
-  totalValue: number;
+  @IsOptional()
+  totalValue?: number;
 
   @ApiProperty({ description: 'Informações da entrada' })
   @ValidateNested()
@@ -191,7 +191,8 @@ export class UpdatePaymentDto {
   @ValidateNested({ each: true })
   @Type(() => InstallmentDto)
   @IsArray()
-  installments: InstallmentDto[];
+  @IsOptional()
+  installments?: InstallmentDto[];
 
   @ApiProperty({ description: 'Descrição' })
   @IsString()
