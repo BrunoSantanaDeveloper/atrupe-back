@@ -413,10 +413,10 @@ export class DeliveryScheduleService {
 
     const receivable = await this.generateReceivableFromQuotation(quotation);
 
-    const payable = await this.generatePayableFromQuotation(quotation);
+    //const payable = await this.generatePayableFromQuotation(quotation);
     //TODO: CRIAR CONTA A PAGAR (COMISSÃO, ENTREGA)
 
-    return { quotation, payable, receivable };
+    return { quotation, receivable };
   }
 
   private async generatePayableFromQuotation(quotation: any) {
