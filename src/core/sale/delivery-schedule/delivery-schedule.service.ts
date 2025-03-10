@@ -537,8 +537,6 @@ export class DeliveryScheduleService {
     const downPaymentDueDate = quotation.quotationPayment.downPaymentDueDate;
     const downPaymentadditionalFee =
       quotation.quotationPayment.downPaymentAdditionalFee;
-    const downPaymentPaymentMethodId =
-      quotation.quotationPayment.downPaymentCondition.paymentMethodId;
     if (!quotationInstallments || quotationInstallments.length === 0) {
       throw new BadRequestException(
         'Não há parcelas para gerar contas a receber.',
