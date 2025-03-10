@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, IsBoolean } from 'class-validator';
+import { IsOptional, IsString, IsBoolean, IsNumber } from 'class-validator';
 
 export class UpdateNatureDto {
   @ApiProperty({ required: false })
@@ -19,8 +19,8 @@ export class UpdateNatureDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
-  @IsString()
-  code?: string;
+  @IsNumber()
+  code?: number;
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -36,8 +36,8 @@ export class UpdateSubCategoryDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
-  @IsString()
-  code?: string;
+  @IsNumber()
+  code?: number;
 
   @ApiProperty({ required: false })
   @IsOptional()

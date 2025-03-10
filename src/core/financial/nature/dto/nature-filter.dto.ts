@@ -29,4 +29,13 @@ export class NatureFilterDto extends BaseFilterDTO {
     required: false,
   })
   search?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Status da natureza',
+    example: 'ACTIVE',
+    required: false,
+  })
+  status?: string;
 }

@@ -352,6 +352,7 @@ export class OrderService {
       const financialTableData = buildFinancialTableData(
         quotation.client,
         quotation.quotationPayment,
+        quotation.deliveryInfo,
       );
       const formattedQuotation = {
         id: quotation.id,
@@ -527,7 +528,7 @@ export class OrderService {
   }
 }
 
-function buildFinancialTableData(client, quotationPayment) {
+function buildFinancialTableData(client, quotationPayment, deliveryInfo) {
   const { quotationInstallment, commission, totalValue } = quotationPayment;
   const paymentInstallments = [];
   const commissionInstallments = [];
@@ -565,8 +566,8 @@ function buildFinancialTableData(client, quotationPayment) {
         : commission.commissionValue;
 
     if (commission.transferMethod === 'SINGLE') {
-      const commissionStatus = commission.receivableInstallmentId
-        ? commission.receivableInstallment?.status || 'PAID'
+      const commissionStatus = commission.payableInstallmentId
+        ? commission.payableInstallment?.status || 'PAID'
         : 'PENDING';
 
       commissionInstallments.push({
@@ -614,12 +615,12 @@ function buildFinancialTableData(client, quotationPayment) {
 
   deliveryInstallments.push({
     id: paymentInstallments.length + commissionInstallments.length + 1,
-    company: 'Transportadora',
+    company: deliveryInfo.supplier?.name || 'Transportadora',
     method: 'Frete',
     status: 'PENDING',
-    dueAmount: 100,
-    dueDate: '05/01/2025',
-    paidAmount: null,
+    dueAmount: deliveryInfo.cost,
+    dueDate: deliveryInfo.estimatedDate,
+    paidAmount: deliveryInfo.value,
     paidDate: null,
   });
 

@@ -14,6 +14,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { DeliveryScheduleFitlerDto } from './dto/filter.dto';
+import { add } from 'date-fns';
 export interface DeliveryScheduleGroup {
   date: string;
   deliveries: DeliverySchedule[];
@@ -388,6 +389,11 @@ export class DeliveryScheduleService {
                 },
               },
             },
+            downPaymentCondition: {
+              include: {
+                paymentMethod: true,
+              },
+            },
             paymentMethod: true,
             paymentCondition: true,
             quotationInstallment: {
@@ -406,15 +412,133 @@ export class DeliveryScheduleService {
     }
 
     const receivable = await this.generateReceivableFromQuotation(quotation);
+
+    const payable = await this.generatePayableFromQuotation(quotation);
     //TODO: CRIAR CONTA A PAGAR (COMISSÃO, ENTREGA)
 
-    return { quotation, receivable };
+    return { quotation, payable, receivable };
+  }
+
+  private async generatePayableFromQuotation(quotation: any) {
+    const commission = quotation.quotationPayment.commission;
+    const delivery = quotation.deliveryInfo;
+    console.log('commission: ', commission);
+    console.log('delivery: ', delivery);
+    if (!commission || !delivery) {
+      throw new BadRequestException(
+        'Não há comissão ou entrega para gerar conta a pagar.',
+      );
+    }
+
+    // Criar conta a pagar da comissão
+    const payableCommision = await this.prisma.payable.create({
+      data: {
+        referenceDate: new Date(),
+        description: `Comissão da venda ${quotation.quotationNumber}-${quotation.series.code} - ${quotation.description || ''}`,
+        notes: quotation.quotationPayment.description || '',
+        totalAmount: commission.totalCommission || 0,
+        installmentQty:
+          commission.transferMethod === 'PAYMENT_BASED'
+            ? quotation.quotationPayment.quotationInstallment.length
+            : 1,
+        status: 'PENDING',
+        supplierId: commission.supplierId,
+        companyId: quotation.companyId,
+        natureId: null, // Substitua se houver uma natureza predefinida
+        subCategoryId: null, // Substitua se houver uma subcategoria predefinida
+        quotationId: quotation.id,
+        commission: {
+          connect: {
+            id: commission.id,
+          },
+        },
+      },
+    });
+
+    // Criar parcelas de comissão
+    if (payableCommision) {
+      if (commission.transferMethod === 'SINGLE') {
+        await this.prisma.payableInstallment.create({
+          data: {
+            payableId: payableCommision.id,
+            installmentNumber: 1,
+            dueDate: add(new Date(), { days: 30 }),
+            amount: commission.totalCommission,
+            additionalFee: 0,
+            paymentMethodId: null,
+            status: 'PENDING',
+            paidDate: null,
+          },
+        });
+      } else if (commission.transferMethod === 'PAYMENT_BASED') {
+        const installments =
+          quotation.quotationPayment.quotationInstallment.map(
+            (installment: any, index: number) => ({
+              payableId: payableCommision.id,
+              installmentNumber: index + 1,
+              dueDate: installment.dueDate,
+              amount:
+                commission.totalCommission /
+                quotation.quotationPayment.quotationInstallment.length,
+              additionalFee: 0,
+              paymentMethodId: null,
+              status: 'PENDING',
+              paidDate: null,
+            }),
+          );
+
+        await this.prisma.payableInstallment.createMany({
+          data: installments,
+        });
+      }
+    }
+
+    // Criar conta a pagar da entrega
+    const payableDelivery = await this.prisma.payable.create({
+      data: {
+        referenceDate: new Date(),
+        description: `Entrega da venda ${quotation.quotationNumber}-${quotation.series.code} - ${quotation.description || ''}`,
+        notes: quotation.quotationPayment.description || '',
+        totalAmount: delivery.cost || 0,
+        installmentQty: 1,
+        status: 'PENDING',
+        supplierId: delivery.supplierId,
+        companyId: quotation.companyId,
+        natureId: null,
+        subCategoryId: null,
+        quotationId: quotation.id,
+      },
+    });
+
+    // Criar parcela única para a entrega
+    if (payableDelivery) {
+      await this.prisma.payableInstallment.create({
+        data: {
+          payableId: payableDelivery.id,
+          installmentNumber: 1,
+          dueDate: add(new Date(), { days: 30 }),
+          amount: delivery.cost,
+          additionalFee: 0,
+          paymentMethodId: null,
+          status: 'PENDING',
+          paidDate: null,
+        },
+      });
+    }
+
+    return { payableCommision, payableDelivery };
   }
 
   private async generateReceivableFromQuotation(quotation: any) {
     const quotationInstallments =
       quotation.quotationPayment.quotationInstallment;
 
+    const downPayment = quotation.quotationPayment.downPayment;
+    const downPaymentDueDate = quotation.quotationPayment.downPaymentDueDate;
+    const downPaymentadditionalFee =
+      quotation.quotationPayment.downPaymentAdditionalFee;
+    const downPaymentPaymentMethodId =
+      quotation.quotationPayment.downPaymentCondition.paymentMethodId;
     if (!quotationInstallments || quotationInstallments.length === 0) {
       throw new BadRequestException(
         'Não há parcelas para gerar contas a receber.',
@@ -427,10 +551,39 @@ export class DeliveryScheduleService {
         sum + installment.value + (installment.additionalFee || 0),
       0,
     );
-
     try {
       // Iniciar uma transação Prisma
       return await this.prisma.$transaction(async (prisma) => {
+        if (downPayment && downPayment > 0) {
+          const receivableDownPayment = await prisma.receivable.create({
+            data: {
+              referenceDate: new Date(),
+              description: `Entrada da venda ${quotation.quotationNumber}-${quotation.series.code} - ${quotation.description || ''}`,
+              notes: quotation.quotationPayment.description || '',
+              totalAmount: downPayment,
+              installmentQty: 1,
+              status: 'PENDING',
+              clientId: quotation.clientId,
+              companyId: quotation.companyId, // Certifique-se de passar o `companyId`
+              natureId: null, // Substitua se houver uma natureza predefinida
+              subCategoryId: null, // Substitua se houver uma subcategoria predefinida
+              quotationId: quotation.id, // Associar ao orçamento, se necessário
+            },
+          });
+          await prisma.receivableInstallment.create({
+            data: {
+              receivableId: receivableDownPayment.id,
+              installmentNumber: 1, // Adicionar o número da parcela
+              dueDate: downPaymentDueDate,
+              amount: downPayment,
+              additionalFee: downPaymentadditionalFee || 0,
+              paymentMethodId: downPaymentPaymentMethodId,
+              status: 'PENDING',
+              paidDate: null,
+            },
+          });
+        }
+
         // Criar o Receivable
         const receivable = await prisma.receivable.create({
           data: {

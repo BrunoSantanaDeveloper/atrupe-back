@@ -25,6 +25,38 @@ export class PaymentService {
       },
     });
   }
+
+  private async executeWithRetry<T>(
+    operation: () => Promise<T>,
+    maxRetries = 3,
+    initialTimeout = 10000,
+  ): Promise<T> {
+    let lastError;
+    let timeout = initialTimeout;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        if (
+          error?.code === 'P2028' || // Transaction timeout
+          error?.message?.includes(
+            'Transaction API error: Transaction already closed',
+          )
+        ) {
+          timeout = Math.min(timeout * 1.5, 30000);
+          console.log(
+            `Attempt ${attempt} failed, retrying with timeout ${timeout}ms`,
+          );
+          continue;
+        }
+        throw error; // If it's not a timeout error, throw immediately
+      }
+    }
+    throw lastError;
+  }
+
   async updatePayment(quotationId: string, updateData: UpdatePaymentDto) {
     const existingPayment = await this.findOne(quotationId);
     if (!existingPayment) {
@@ -46,6 +78,8 @@ export class PaymentService {
         description,
         finalValue,
         installmentQty,
+        maxInstallmentQty,
+        minInstallmentQty,
         mainAdditionalFee,
         additionalFeeType,
         ...rest
@@ -59,6 +93,8 @@ export class PaymentService {
         ...(totalValue && { totalValue }),
         ...(finalValue !== undefined && { finalValue }),
         ...(installmentQty && { installmentQty }),
+        ...(maxInstallmentQty && { maxInstallmentQty }),
+        ...(minInstallmentQty && { minInstallmentQty }),
         ...(mainAdditionalFee !== undefined && { mainAdditionalFee }),
         ...(additionalFeeType && { additionalFeeType }),
       };
@@ -113,70 +149,74 @@ export class PaymentService {
         }
       }
 
-      // Inicia uma transação para manter atomicidade
-      const updatedPaymentData = await this.prisma.$transaction(
-        async (prisma) => {
-          // Atualiza o pagamento principal
-          const updatedPayment = await prisma.quotationPayment.update({
-            where: { quotationId },
-            data: paymentData,
-          });
-
-          // Get payment condition configuration if needed for installments
-          let conditionConfig;
-          if (paymentConditionId && installments.length > 0) {
-            conditionConfig = await prisma.paymentCondition.findUnique({
-              where: {
-                id: paymentConditionId,
-              },
-            });
-          }
-
-          // Delete all existing installments if we have new ones
-          if (installments.length > 0) {
-            await prisma.quotationInstallment.deleteMany({
-              where: { quotationPaymentId: updatedPayment.id },
+      return await this.executeWithRetry(async () => {
+        const updatedPaymentData = await this.prisma.$transaction(
+          async (prisma) => {
+            // Atualiza o pagamento principal
+            const updatedPayment = await prisma.quotationPayment.update({
+              where: { quotationId },
+              data: paymentData,
             });
 
-            // Create new installments
-            for (const installmentData of installments) {
-              if (!installmentData.dueDate || !installmentData.amount) {
-                continue; // Skip invalid installments
-              }
-
-              const additionalFee =
-                conditionConfig?.costType === 'VALUE'
-                  ? installmentData.additionalFee || 0
-                  : ((installmentData.additionalFee || 0) / 100) *
-                    installmentData.amount;
-
-              await prisma.quotationInstallment.create({
-                data: {
-                  quotationPaymentId: updatedPayment.id,
-                  dueDate: new Date(installmentData.dueDate),
-                  additionalFee,
-                  value: installmentData.amount,
-                  ...(paymentMethodId && { paymentMethodId }),
+            // Get payment condition configuration if needed for installments
+            let conditionConfig;
+            if (paymentConditionId && installments.length > 0) {
+              conditionConfig = await prisma.paymentCondition.findUnique({
+                where: {
+                  id: paymentConditionId,
                 },
               });
             }
-          }
 
-          // Handle commission if provided or explicitly set to null
-          if (commission !== undefined) {
-            await this.updateCommission(
-              quotationId,
-              commission,
-              updatedPayment.totalValue,
-            );
-          }
+            // Delete all existing installments if we have new ones
+            if (installments.length > 0) {
+              await prisma.quotationInstallment.deleteMany({
+                where: { quotationPaymentId: updatedPayment.id },
+              });
 
-          return updatedPayment;
-        },
-        { timeout: 30000 },
-      );
+              // Create new installments
+              for (const installmentData of installments) {
+                if (!installmentData.dueDate || !installmentData.amount) {
+                  continue; // Skip invalid installments
+                }
 
-      return updatedPaymentData;
+                const additionalFee =
+                  conditionConfig?.costType === 'VALUE'
+                    ? installmentData.additionalFee || 0
+                    : ((installmentData.additionalFee || 0) / 100) *
+                      installmentData.amount;
+
+                await prisma.quotationInstallment.create({
+                  data: {
+                    quotationPaymentId: updatedPayment.id,
+                    dueDate: new Date(installmentData.dueDate),
+                    additionalFee,
+                    value: installmentData.amount,
+                    ...(paymentMethodId && { paymentMethodId }),
+                  },
+                });
+              }
+            }
+
+            // Handle commission if provided or explicitly set to null
+            if (commission !== undefined) {
+              await this.updateCommission(
+                quotationId,
+                commission,
+                updatedPayment.totalValue,
+              );
+            }
+
+            return updatedPayment;
+          },
+          {
+            timeout: 10000,
+            maxWait: 12000,
+          },
+        );
+
+        return updatedPaymentData;
+      });
     } catch (error) {
       console.error(error);
       throw new Error('Error updating payment: ' + error.message);

@@ -550,8 +550,6 @@ model Receivable {
   quotationId String?
   quotation   Quotation? @relation(fields: [quotationId], references: [id])
 
-  commission Commission[]
-
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
 
@@ -636,8 +634,9 @@ model Payable {
   quotationId String?
   quotation   Quotation? @relation(fields: [quotationId], references: [id])
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime?    @updatedAt
+  commission Commission[]
 
   @@map("payables")
 }
@@ -1281,7 +1280,8 @@ model Commission {
 
   quotationPayment QuotationPayment?
   receivableId     String?
-  recievable       Receivable?       @relation(fields: [receivableId], references: [id])
+  payableId        String?
+  payable          Payable?          @relation(fields: [payableId], references: [id])
 
   @@map("commissions")
 }

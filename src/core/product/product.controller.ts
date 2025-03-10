@@ -39,9 +39,9 @@ export class ProductController {
     status: 201,
     description: 'Produto criado com sucesso.',
   })
-  create(@Req() req, @Body() createProductDto: CreateProductDto) {
+  async create(@Req() req, @Body() createProductDto: CreateProductDto) {
     createProductDto.companyId = req.user.companyId;
-    return this.productService.create(createProductDto);
+    return await this.productService.create(createProductDto);
   }
 
   @Get()

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateNatureDto {
   companyId: string;
@@ -20,8 +20,8 @@ export class CreateNatureDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
-  @IsString()
-  code?: string;
+  @IsNumber()
+  code?: number;
 }
 
 export class CreateSubCategoryDto {
@@ -36,6 +36,6 @@ export class CreateSubCategoryDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
-  @IsString()
-  code?: string;
+  @IsNumber()
+  code?: number;
 }

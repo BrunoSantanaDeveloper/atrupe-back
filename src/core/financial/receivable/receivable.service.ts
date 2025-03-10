@@ -17,7 +17,7 @@ import {
 import { ReceivableFilterDto } from './dto/receivable-filter.dto';
 import { PaymentStatus, TransactionType } from '@prisma/client';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { startOfDay, endOfDay } from 'date-fns';
+import { startOfDay, endOfDay, add } from 'date-fns';
 
 @Injectable()
 export class ReceivableService {
@@ -224,7 +224,7 @@ export class ReceivableService {
                   id: installment.paymentMethod?.id || null,
                   name: installment.paymentMethod?.name || null,
                 },
-                value: installment.amount || 0,
+                value: installment.amount + installment.additionalFee || 0,
                 additionalFee: installment.additionalFee || 0,
                 dueDate: installment.dueDate || null,
                 paidValue: installment.paidAmount || 0, // Ajuste baseado nos requisitos.
@@ -335,11 +335,20 @@ export class ReceivableService {
         id: installmentId,
       },
     });
+    if (installmentData.status !== 'PENDING') {
+      throw new BadRequestException('Parcela não está pendente.');
+    }
 
     // const handleNegativeBalance = async (tx, finalValue) => {};
 
     // const handlePositiveBalance = async (tx, finalValue) => {};
-
+    if (bankAccountData.incomeType !== 'PROVISION') {
+      await this.compensateInstallment(installmentId, {
+        amount,
+        bankAccountId,
+        paidDate,
+      });
+    }
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         // Atualiza o status da parcela para "PAGO" e adiciona a data do pagamento
@@ -366,14 +375,6 @@ export class ReceivableService {
           // await handleNegativeBalance(tx, finalValue);
         } else if (finalValue > 0) {
           // await handlePositiveBalance(tx, finalValue);
-        }
-
-        if (bankAccountData.incomeType !== 'PROVISION') {
-          await this.compensateInstallment(installmentId, {
-            amount,
-            bankAccountId,
-            paidDate,
-          });
         }
 
         // FIM DA COMPENSSAÇÃO
@@ -403,6 +404,7 @@ export class ReceivableService {
     compensateDto: CompensateDto,
   ): Promise<void> {
     const { amount, bankAccountId, paidDate } = compensateDto;
+    const paidDateFormatted = add(new Date(paidDate), { days: 1 });
 
     await this.prisma.$transaction(async (tx) => {
       const installment = await tx.receivableInstallment.findFirst({
@@ -419,8 +421,8 @@ export class ReceivableService {
           bankAccountId,
           status: 'OPEN',
           openingDate: {
-            gte: startOfDay(new Date(paidDate)),
-            lt: endOfDay(new Date(paidDate)),
+            gte: startOfDay(new Date(paidDateFormatted)),
+            lt: endOfDay(new Date(paidDateFormatted)),
           },
         },
       });

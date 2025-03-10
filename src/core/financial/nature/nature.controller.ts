@@ -49,9 +49,9 @@ export class NatureController {
   }
 
   @Get('natures')
-  findAllSubNatures(@Req() req) {
+  async findAllSubNatures(@Req() req) {
     const companyId = req.user.companyId;
-    return this.natureService.findAllNatures(companyId);
+    return await this.natureService.findAllNatures(companyId);
   }
   @Get('sub-category/:natureId')
   findAllSubCategory(@Param('natureId') natureId: string) {

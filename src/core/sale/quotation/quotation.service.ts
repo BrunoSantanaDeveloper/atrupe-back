@@ -1008,9 +1008,12 @@ export class QuotationService {
               id: quotation.quotationPayment.id,
               type: quotation.quotationPayment.type,
               billing: quotation.quotationPayment.billing,
-              discountValue: quotation.quotationPayment.discountValue,
-              discountType: quotation.quotationPayment.discountType,
-              discountTotal: quotation.quotationPayment.discountTotal,
+              discount: {
+                discountValue: quotation.quotationPayment.discountValue || 0,
+                discountType:
+                  quotation.quotationPayment.discountType || 'VALUE',
+                discountTotal: quotation.quotationPayment.discountTotal || 0,
+              },
               installmentQty: quotation.quotationPayment.installmentQty,
               minInstallmentQty: quotation.quotationPayment.minInstallmentQty,
               maxInstallmentQty: quotation.quotationPayment.maxInstallmentQty,

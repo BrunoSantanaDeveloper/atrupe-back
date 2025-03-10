@@ -16,6 +16,18 @@ export class ProductService {
 
   async create(createProductDto: CreateProductDto) {
     try {
+      // Check if product code already exists
+      const existingProduct = await this.prisma.product.findFirst({
+        where: {
+          code: createProductDto.code,
+          companyId: createProductDto.companyId,
+        },
+      });
+
+      if (existingProduct) {
+        throw new BadRequestException('Código de produto já existe');
+      }
+
       const items = createProductDto.items?.map((item) => ({
         name: item.name,
         unitOfMeasureId: item.unitOfMeasureId,
@@ -52,7 +64,7 @@ export class ProductService {
         },
       });
 
-      return this.findOne(created.id);
+      return created;
     } catch (error) {
       throw new BadRequestException('Failed to create product', error.message);
     }
@@ -133,6 +145,12 @@ export class ProductService {
             id: true,
             name: true,
             code: true,
+            category: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
             sector: {
               select: {
                 id: true,
@@ -159,7 +177,7 @@ export class ProductService {
 
       // Mapear os produtos para calcular os totais de unitCost e salePrice
       const data = products.map((product) => {
-        const { id, name, code, sector, items } = product;
+        const { id, name, code, sector, category, items } = product;
 
         // Calculando os totais
         const unitCost = items.reduce(
@@ -175,6 +193,7 @@ export class ProductService {
           id,
           name,
           code,
+          categoryId: category?.id || null,
           sectorId: sector?.id || null,
           sectorName: sector?.name || null,
           unitOfMeasureCode: 'UN',
@@ -274,11 +293,26 @@ export class ProductService {
     try {
       const product = await this.prisma.product.findUnique({
         where: { id },
-        include: { items: true }, // Inclui os itens existentes no produto
+        include: { items: true },
       });
 
       if (!product) {
         throw new BadRequestException('Product not found');
+      }
+
+      // Check if the new code already exists for another product
+      if (updateProductDto.code && updateProductDto.code !== product.code) {
+        const existingProduct = await this.prisma.product.findFirst({
+          where: {
+            code: updateProductDto.code,
+            companyId: updateProductDto.companyId || product.companyId,
+            id: { not: id }, // Exclude current product
+          },
+        });
+
+        if (existingProduct) {
+          throw new BadRequestException('Produto com este código já existe');
+        }
       }
 
       const items = updateProductDto.items?.map((item) => ({

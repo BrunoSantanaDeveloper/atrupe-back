@@ -54,7 +54,6 @@ export class CashControlService {
       const date = openingDate
         ? startOfDay(new Date(openingDate))
         : startOfDay(new Date());
-
       // Verifica se existe qualquer caixa nesta data para esta conta
       const existingRegister = await this.prisma.cashRegister.findFirst({
         where: {
