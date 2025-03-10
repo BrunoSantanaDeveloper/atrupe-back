@@ -577,7 +577,7 @@ export class DeliveryScheduleService {
               dueDate: downPaymentDueDate,
               amount: downPayment,
               additionalFee: downPaymentadditionalFee || 0,
-              paymentMethodId: downPaymentPaymentMethodId,
+              paymentMethodId: null,
               status: 'PENDING',
               paidDate: null,
             },
