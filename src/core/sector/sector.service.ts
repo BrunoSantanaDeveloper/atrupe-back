@@ -3,6 +3,7 @@ import { CreateSectorDto } from './dto/create-sector.dto';
 import { UpdateSectorDto } from './dto/update-sector.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { SectorFilterDto } from './dto/filter.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class SectorService {
@@ -28,6 +29,7 @@ export class SectorService {
     return this.prisma.companySector.findMany({
       where: {
         isActive: true,
+        isSystem: false,
         companyId: companyId,
         product: {
           some: {}, // Garante que só retorna setores que possuem pelo menos um produto cadastrado
@@ -43,18 +45,11 @@ export class SectorService {
 
   async findAll(filter: SectorFilterDto) {
     try {
-      let where = {};
-      // if (filter.toService) {
-      //   where = { ...where, toService: filter.toService };
-      // }
+      let where: Prisma.CompanySectorWhereInput = { isSystem: false };
 
       if (filter.companyId) {
         where = { ...where, companyId: filter.companyId };
       }
-
-      // if (filter.kind) {
-      //   where = { ...where, kind: filter.kind };
-      // }
 
       if (filter.isProductionStage !== undefined) {
         where = { ...where, isProductionStage: filter.isProductionStage };

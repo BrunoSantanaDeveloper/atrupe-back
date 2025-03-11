@@ -1387,7 +1387,11 @@ export class QuotationService {
     try {
       const quotation = await this.prisma.quotation.findUnique({
         where: { id: quotationId },
-        include: { quotationProduct: true, DeliverySchedule: true },
+        include: {
+          quotationProduct: true,
+          DeliverySchedule: true,
+          deliveryInfo: true,
+        },
       });
       if (!quotation) {
         console.error('Orçamento não encontrado.');
@@ -1431,6 +1435,48 @@ export class QuotationService {
         prevStatus: null,
         scheduleId: quotation.DeliverySchedule.id, // Vincular à agenda de entrega
       }));
+
+      if (quotation.deliveryInfo.deliveryType === 'CARRIER') {
+        const systemStage = await this.prisma.companySector.findFirst({
+          where: {
+            isSystem: true,
+            companyId: quotation.companyId,
+            name: 'Entrega',
+          },
+          select: {
+            id: true,
+            name: true,
+            icon: true,
+          },
+        });
+        //adicionar as etapas fixas no fim do array
+        productionStages.push({
+          stageId: systemStage.id,
+          order: productionStages.length + 1,
+          prevStatus: null,
+          scheduleId: quotation.DeliverySchedule.id,
+        });
+      }
+      if (quotation.deliveryInfo.deliveryType === 'PICKUP') {
+        const systemStage = await this.prisma.companySector.findFirst({
+          where: {
+            isSystem: true,
+            companyId: quotation.companyId,
+            name: 'Cliente Retira',
+          },
+          select: {
+            id: true,
+            name: true,
+            icon: true,
+          },
+        });
+        productionStages.push({
+          stageId: systemStage.id,
+          order: productionStages.length + 1,
+          prevStatus: null,
+          scheduleId: quotation.DeliverySchedule.id,
+        });
+      }
 
       await this.prisma.productionStage.createMany({
         data: productionStages,
@@ -1487,9 +1533,29 @@ export class QuotationService {
             },
           },
         },
+        quotationPayment: {
+          include: {
+            quotationInstallment: true,
+          },
+        },
       },
     });
+    const totalInstallmentsValue =
+      quotation.quotationPayment.quotationInstallment.reduce(
+        (sum, installment) => sum + installment.value,
+        0,
+      );
 
+    // Verifica se a soma dos valores das parcelas corresponde ao total do orçamento
+    if (totalInstallmentsValue !== quotation.totalValue) {
+      throw new BadRequestException(
+        'Houve modificações nos itens do orçamento, verifique as condições de pagamento.',
+      );
+    }
+
+    if (quotation.quotationPayment.quotationInstallment.length === 0) {
+      throw new BadRequestException('O orçamento não possui parcelas.');
+    }
     if (!quotation || !quotation.seller || !quotation.seller.sellerProfile) {
       throw new BadRequestException('Informações do vendedor não encontradas.');
     }

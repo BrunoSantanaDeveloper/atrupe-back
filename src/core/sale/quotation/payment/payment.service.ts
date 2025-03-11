@@ -396,10 +396,7 @@ export class PaymentService {
         commissionType: commissionData.commissionType,
         commissionValue: commissionData.commissionValue,
         quotationPayment: { connect: { id: quotationPayment.id } },
-        totalCommission:
-          commissionData.commissionType === 'PERCENT'
-            ? (baseValue * commissionData.commissionValue) / 100
-            : commissionData.commissionValue,
+        totalCommission: commissionData.totalCommission,
       };
       let updatedCommission;
 

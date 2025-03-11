@@ -1,6 +1,5 @@
 import {
   IsEnum,
-  IsNotEmpty,
   IsOptional,
   IsString,
   ValidateIf,
@@ -17,7 +16,7 @@ import { IsCnpj } from '../../../helpers/validators/cnpj';
 import { Type } from 'class-transformer';
 
 class GeneralInfoDto {
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
   name: string;
 
@@ -94,7 +93,6 @@ class ContactDto {
   name: string;
 
   @IsOptional()
-  @IsEmail()
   email?: string;
 
   @IsOptional()
@@ -135,7 +133,7 @@ class CreditLimitDto {
 }
 
 export class CreateSupplierDto {
-  @IsNotEmpty()
+  @IsOptional()
   @IsEnum(ClientKind)
   type: ClientKind;
 

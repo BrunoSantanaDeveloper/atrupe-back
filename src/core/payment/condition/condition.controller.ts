@@ -60,6 +60,17 @@ export class ConditionController {
     filter.companyId = req.user.companyId;
     return this.conditionService.findAll(filter);
   }
+  @Get('down-condition')
+  @ApiOperation({ summary: 'Obtém a lista de todas as condições de pagamento' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de condições de pagamento retornada com sucesso.',
+    isArray: true,
+  })
+  findDownPayment(@Req() req) {
+    const companyId = req.user.companyId;
+    return this.conditionService.findDownPayment(companyId);
+  }
 
   @Get(':id')
   @ApiOperation({ summary: 'Obtém uma condição de pagamento pelo ID' })

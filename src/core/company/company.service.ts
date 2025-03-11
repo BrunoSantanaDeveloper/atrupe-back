@@ -32,8 +32,9 @@ export class CompanyService {
             // Personalization fields
             logoUrl: personalization?.logoUrl,
             favIconUrl: personalization?.favIconUrl,
-            textBeforeItems: personalization?.textsBeforeItems,
-            textAfterItems: personalization?.textsAfterItems,
+            textBeforeItems: 'Segue abaixo conforme sua solicitação:',
+            textAfterItems:
+              '1) Crédito e condição de pagamento sujeito à aprovação;\n2) Impressos c/ alta exigência colorimétrica exige-se prova de cor;\n3) Não nos responsabilizamos por características e especificações dos projetos gráficos fornecidos pelo cliente;\n4) Prazo de entrega são previsões que poderão se alterar e modificar de acordo com o andamento do processo produtivo;\n5) Não aceitamos cancelamentos de pedidos após iniciado o processo de produção;',
 
             // Create related address
             address: address
@@ -74,6 +75,7 @@ export class CompanyService {
       icon: sector.icon,
       kind: sector.kind,
       isProductionStage: sector.kind === 'PRODUCTION',
+      isSystem: sector.kind === 'SYSTEM',
       companyId: companyId,
       defaultSectorId: sector.id,
     }));
@@ -203,8 +205,12 @@ export class CompanyService {
           // Personalization fields
           logoUrl: personalization?.logoUrl,
           favIconUrl: personalization?.favIconUrl,
-          textBeforeItems: personalization?.textsBeforeItems,
-          textAfterItems: personalization?.textsAfterItems,
+          textBeforeItems:
+            personalization?.textsBeforeItems ||
+            'Segue abaixo conforme sua solicitação:',
+          textAfterItems:
+            personalization?.textsAfterItems ||
+            '1) Crédito e condição de pagamento sujeito à aprovação;\n2) Impressos c/ alta exigência colorimétrica exige-se prova de cor;\n3) Não nos responsabilizamos por características e especificações dos projetos gráficos fornecidos pelo cliente;\n4) Prazo de entrega são previsões que poderão se alterar e modificar de acordo com o andamento do processo produtivo;\n5) Não aceitamos cancelamentos de pedidos após iniciado o processo de produção;',
 
           // Create related address
           address: address

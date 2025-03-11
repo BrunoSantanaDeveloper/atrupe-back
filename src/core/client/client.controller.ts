@@ -49,7 +49,7 @@ export class ClientController {
     if (createClientDto.companyId !== req.user.companyId) {
       throw new UnauthorizedException('Unauthorized');
     }
-    return this.clientService.create(createClientDto);
+    return this.clientService.create(createClientDto, req.user.userId);
   }
 
   @Post('import-csv')
@@ -138,8 +138,12 @@ export class ClientController {
     status: 404,
     description: 'Cliente não encontrado.',
   })
-  update(@Param('id') id: string, @Body() updateClientDto: UpdateClientDto) {
-    return this.clientService.update(id, updateClientDto);
+  update(
+    @Param('id') id: string,
+    @Body() updateClientDto: UpdateClientDto,
+    @Req() req,
+  ) {
+    return this.clientService.update(id, updateClientDto, req.user.userId);
   }
 
   @Delete(':id')

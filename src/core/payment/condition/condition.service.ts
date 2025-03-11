@@ -7,7 +7,70 @@ import { ConditionFilterDto } from './dto/filter.dto';
 @Injectable()
 export class ConditionService {
   constructor(private readonly prisma: PrismaService) {}
+  async findDownPayment(companyId: string) {
+    try {
+      const conditions = await this.prisma.paymentCondition.findMany({
+        where: {
+          companyId,
+          OR: [
+            {
+              acceptInstallments: false,
+              paymentMethod: {
+                name: { not: 'Boleto' },
+              },
+            },
+            {
+              acceptInstallments: true,
+              minInstallments: 1,
+              maxInstallments: 1,
+              paymentMethod: {
+                name: { not: 'Boleto' },
+              },
+            },
+          ],
+        },
+        include: {
+          installments: true, // Inclui as parcelas
+          company: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          paymentMethod: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+      const groupedByPaymentMethod = conditions.reduce((acc, condition) => {
+        const { paymentMethod } = condition;
+        if (!acc[paymentMethod.id]) {
+          acc[paymentMethod.id] = {
+            paymentMethod,
+            conditions: [],
+          };
+        }
+        acc[paymentMethod.id].conditions.push(condition);
+        return acc;
+      }, {});
 
+      const data = Object.values(groupedByPaymentMethod).map((group: any) => ({
+        paymentMethod: group.paymentMethod,
+        conditions: group.conditions.map(({ company, ...rest }) => ({
+          ...rest,
+          company,
+        })),
+      }));
+
+      return { data };
+    } catch (error) {
+      console.error(error);
+      throw new Error('Error fetching down payment conditions');
+    }
+  }
   async create(dto: CreateConditionDto) {
     try {
       const { installments, ...conditionData } = dto;

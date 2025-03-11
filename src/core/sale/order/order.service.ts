@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -487,7 +488,36 @@ export class OrderService {
     }
   }
 
-  async cancelOrder(orderId: string, dto: CancelOrderDto) {
+  private async verifySellerPermission(sellerId) {
+    const seller = await this.prisma.sellerProfile.findFirst({
+      where: {
+        employees: {
+          some: {
+            user: {
+              id: sellerId,
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+        canCancelSale: true,
+      },
+    });
+
+    if (!seller) {
+      throw new NotFoundException('Seller not found');
+    }
+
+    if (!seller.canCancelSale) {
+      throw new ForbiddenException(
+        'Você não tem permissão para cancelar uma ordem de serviço.',
+      );
+    }
+  }
+
+  async cancelOrder(orderId: string, dto: CancelOrderDto, sellerId: string) {
+    await this.verifySellerPermission(sellerId);
     try {
       // Verifica se o motivo do cancelamento existe
       const reason = await this.prisma.reasons.findFirst({

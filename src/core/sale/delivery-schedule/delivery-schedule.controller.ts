@@ -24,8 +24,8 @@ import { DeliveryScheduleFitlerDto } from './dto/filter.dto';
 const RESOURCE = 'delivery-schedule';
 
 @ApiTags('Agenda de entrega')
-@UseGuards(JwtAuthGuard)
-@ApiBearerAuth()
+// @UseGuards(JwtAuthGuard)
+// @ApiBearerAuth()
 @Controller(`sale/${RESOURCE}`)
 export class DeliveryScheduleController {
   constructor(
@@ -47,6 +47,8 @@ export class DeliveryScheduleController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Obtém a lista de todos os agendamentos de entrega',
   })
@@ -61,6 +63,8 @@ export class DeliveryScheduleController {
   }
 
   @Get('quantity')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Obtém a quantidade de todos os status de orçamentos',
   })

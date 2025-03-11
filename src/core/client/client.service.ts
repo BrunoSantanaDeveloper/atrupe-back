@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -14,8 +15,9 @@ import * as fastCsv from 'fast-csv';
 @Injectable()
 export class ClientService {
   constructor(private readonly prisma: PrismaService) {}
-  async create(createClientDto: CreateClientDto) {
+  async create(createClientDto: CreateClientDto, sellerId: string) {
     try {
+      await this.verifySellerPermission(sellerId);
       const client = await this.prisma.$transaction(async (prisma) => {
         // Criar o cliente
         const client = await prisma.client.create({
@@ -358,7 +360,37 @@ export class ClientService {
       },
     };
   }
-  async update(id: string, updateClientDto: UpdateClientDto) {
+
+  private async verifySellerPermission(sellerId) {
+    const seller = await this.prisma.sellerProfile.findFirst({
+      where: {
+        employees: {
+          some: {
+            user: {
+              id: sellerId,
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+        canApprovePreRegistration: true,
+      },
+    });
+
+    if (!seller) {
+      throw new NotFoundException('Seller not found');
+    }
+
+    if (!seller.canApprovePreRegistration) {
+      throw new ForbiddenException(
+        'Você não tem permissão para aprovar um pré-cadastro de um cliente.',
+      );
+    }
+  }
+
+  async update(id: string, updateClientDto: UpdateClientDto, sellerId: string) {
+    await this.verifySellerPermission(sellerId);
     try {
       const client = await this.prisma.client.findUnique({ where: { id } });
       if (!client) {
@@ -578,6 +610,7 @@ export class ClientService {
         .pipe(fastCsv.parse({ headers: true, skipRows: 1 })) // skip header and expect dynamic columns
         .on('data', (row) => {
           const clientDto: CreateClientDto = {
+            status: row.status || null,
             type: row.type || null,
             general: {
               name: row.name || null,

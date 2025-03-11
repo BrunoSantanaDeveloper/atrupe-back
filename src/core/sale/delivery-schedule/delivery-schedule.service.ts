@@ -251,6 +251,7 @@ export class DeliveryScheduleService {
     const allStatuses: DeliveryScheduleStatus[] = [
       'IN_PRODUCTION',
       'DELIVERING',
+      'FINISHED',
       'DONE',
     ];
 
@@ -410,24 +411,24 @@ export class DeliveryScheduleService {
     if (!quotation) {
       throw new Error('Orçamento não encontrado.');
     }
-
+    if (quotation.DeliverySchedule.status === 'FINISHED') {
+      await this.prisma.deliverySchedule.update({
+        where: { id: quotation.DeliverySchedule.id },
+        data: { status: 'DONE' },
+      });
+    }
     const receivable = await this.generateReceivableFromQuotation(quotation);
 
-    //const payable = await this.generatePayableFromQuotation(quotation);
-    //TODO: CRIAR CONTA A PAGAR (COMISSÃO, ENTREGA)
+    const payable = await this.generatePayableFromQuotation(quotation);
 
-    return { quotation, receivable };
+    return { quotation, receivable, payable };
   }
 
   private async generatePayableFromQuotation(quotation: any) {
     const commission = quotation.quotationPayment.commission;
     const delivery = quotation.deliveryInfo;
-    console.log('commission: ', commission);
-    console.log('delivery: ', delivery);
     if (!commission || !delivery) {
-      throw new BadRequestException(
-        'Não há comissão ou entrega para gerar conta a pagar.',
-      );
+      return null;
     }
 
     // Criar conta a pagar da comissão
@@ -532,11 +533,13 @@ export class DeliveryScheduleService {
   private async generateReceivableFromQuotation(quotation: any) {
     const quotationInstallments =
       quotation.quotationPayment.quotationInstallment;
-
     const downPayment = quotation.quotationPayment.downPayment;
     const downPaymentDueDate = quotation.quotationPayment.downPaymentDueDate;
     const downPaymentadditionalFee =
       quotation.quotationPayment.downPaymentAdditionalFee;
+    const paymentMethod =
+      quotation?.quotationPayment?.downPaymentCondition?.paymentMethodId ??
+      null;
     if (!quotationInstallments || quotationInstallments.length === 0) {
       throw new BadRequestException(
         'Não há parcelas para gerar contas a receber.',
@@ -571,11 +574,11 @@ export class DeliveryScheduleService {
           await prisma.receivableInstallment.create({
             data: {
               receivableId: receivableDownPayment.id,
-              installmentNumber: 1, // Adicionar o número da parcela
+              installmentNumber: 1,
               dueDate: downPaymentDueDate,
               amount: downPayment,
               additionalFee: downPaymentadditionalFee || 0,
-              paymentMethodId: null,
+              paymentMethodId: paymentMethod,
               status: 'PENDING',
               paidDate: null,
             },
@@ -740,6 +743,12 @@ export class DeliveryScheduleService {
               id: true,
             },
           },
+          quotation: {
+            select: {
+              id: true,
+              receivable: true,
+            },
+          },
         },
       });
 
@@ -748,10 +757,14 @@ export class DeliveryScheduleService {
       }
 
       return await this.prisma.$transaction(async (prisma) => {
+        const status =
+          deliverySchedule.quotation.receivable.length > 0
+            ? 'DONE'
+            : 'FINISHED';
         try {
           await prisma.deliverySchedule.update({
             where: { id },
-            data: { status: 'DONE' },
+            data: { status: status },
           });
 
           await prisma.order.update({

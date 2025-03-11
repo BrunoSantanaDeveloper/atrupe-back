@@ -236,7 +236,7 @@ export class ProductService {
     }
 
     const allSectors = await this.prisma.companySector.findMany({
-      where: { isProductionStage: true },
+      where: { isProductionStage: true, isSystem: false },
       select: { id: true, name: true, icon: true, isActive: true },
     });
 

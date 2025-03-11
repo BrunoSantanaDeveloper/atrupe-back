@@ -132,6 +132,7 @@ enum SectorKind {
   SECURITY
   MAINTENANCE
   CLEANING
+  SYSTEM
   OTHER
 }
 
@@ -153,6 +154,7 @@ model CompanySector {
   kind              SectorKind @default(PRODUCTION)
   isProductionStage Boolean    @default(true)
   isActive          Boolean    @default(true)
+  isSystem          Boolean    @default(false)
 
   companyId String
   company   Company @relation("CompanyToCompanySector", fields: [companyId], references: [id])
@@ -565,14 +567,14 @@ model ReceivableInstallment {
   dueDate           DateTime
   amount            Float
   paidAmount        Float?
-  paymentMethodId   String
-  paymentMethod     PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  paymentMethodId   String?
+  paymentMethod     PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
   additionalFee     Float?
-  status            PaymentStatus @default(PENDING)
+  status            PaymentStatus  @default(PENDING)
   paidDate          DateTime?
   provisionDate     DateTime?
   bankAccountId     String?
-  bankAccount       BankAccount?  @relation(fields: [bankAccountId], references: [id])
+  bankAccount       BankAccount?   @relation(fields: [bankAccountId], references: [id])
 
   transactionId        String?
   transactions         Transaction?           @relation(fields: [transactionId], references: [id])
@@ -650,10 +652,10 @@ model PayableInstallment {
   dueDate           DateTime
   amount            Float
   paidAmount        Float?
-  paymentMethodId   String
-  paymentMethod     PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  paymentMethodId   String?
+  paymentMethod     PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
   additionalFee     Float?
-  status            PaymentStatus @default(PENDING)
+  status            PaymentStatus  @default(PENDING)
   provisionDate     DateTime?
   paidDate          DateTime?
 
@@ -1515,6 +1517,7 @@ enum ReasonType {
 enum DeliveryScheduleStatus {
   IN_PRODUCTION
   DELIVERING
+  FINISHED
   DONE
 }
 

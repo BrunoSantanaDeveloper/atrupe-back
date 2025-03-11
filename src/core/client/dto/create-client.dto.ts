@@ -1,6 +1,5 @@
 import {
   IsEnum,
-  IsNotEmpty,
   IsOptional,
   IsString,
   ValidateIf,
@@ -11,14 +10,14 @@ import {
   ValidateNested,
   IsUUID,
 } from 'class-validator';
-import { ClientKind } from '@prisma/client';
+import { ClientKind, ClientStatus } from '@prisma/client';
 import { IsCpf } from '../../../helpers/validators/cpf';
 import { IsCnpj } from '../../../helpers/validators/cnpj';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
 class GeneralInfoDto {
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
   name: string;
 
@@ -95,19 +94,15 @@ class ContactDto {
   name: string;
 
   @IsOptional()
-  @IsEmail()
   email?: string;
 
   @IsOptional()
-  @IsString()
   phone?: string;
 
   @IsOptional()
-  @IsString()
   mobile?: string;
 
   @IsOptional()
-  @IsString()
   notes?: string;
 }
 
@@ -137,7 +132,7 @@ class CreditLimitDto {
 }
 
 export class CreateClientDto {
-  @IsNotEmpty()
+  @IsOptional()
   @IsEnum(ClientKind)
   type: ClientKind;
 
@@ -161,6 +156,14 @@ export class CreateClientDto {
   creditLimit: CreditLimitDto;
 
   companyId: string;
+
+  @IsOptional()
+  @IsEnum(ClientStatus)
+  @ApiProperty({
+    description: 'Status do cliente',
+    example: 'ACTIVE',
+  })
+  status: ClientStatus;
 }
 
 export class PreRegisterClientDto {

@@ -404,7 +404,7 @@ export class ReceivableService {
     compensateDto: CompensateDto,
   ): Promise<void> {
     const { amount, bankAccountId, paidDate } = compensateDto;
-    const paidDateFormatted = add(new Date(paidDate), { days: 1 });
+    const paidDateFormatted = add(new Date(paidDate), { days: 0 });
 
     await this.prisma.$transaction(async (tx) => {
       const installment = await tx.receivableInstallment.findFirst({
@@ -414,7 +414,6 @@ export class ReceivableService {
       if (!installment) {
         throw new BadRequestException('Parcela não encontrada.');
       }
-
       // Busca o caixa aberto
       const openCashRegister = await tx.cashRegister.findFirst({
         where: {
@@ -448,6 +447,15 @@ export class ReceivableService {
       await tx.cashRegister.update({
         where: { id: openCashRegister.id },
         data: { totalIncomes: { increment: amount } },
+      });
+
+      await tx.receivableInstallment.update({
+        where: { id: installmentId },
+        data: {
+          status: 'PAID',
+          paidAmount: amount,
+          paidDate: new Date(paidDate),
+        },
       });
     });
   }

@@ -141,6 +141,60 @@ export class SaleSeriesService {
 
       //deletar orçamento/agenda de entrega/pedido/financeiro
       return await this.prisma.$transaction(async (tx) => {
+        // First find all transactions that will be deleted
+        const transactions = await tx.transaction.findMany({
+          where: {
+            OR: [
+              {
+                receivableInstallment: {
+                  every: {
+                    receivable: { quotation: { series: { id: serieId } } },
+                  },
+                },
+              },
+              {
+                payableInstallment: {
+                  every: {
+                    payable: { quotation: { series: { id: serieId } } },
+                  },
+                },
+              },
+            ],
+          },
+          include: {
+            cashRegister: true,
+          },
+        });
+
+        // Update cash registers based on transactions
+        for (const transaction of transactions) {
+          if (transaction.cashRegister) {
+            const updateData: any = {};
+
+            if (transaction.type === 'INCOME') {
+              updateData.totalIncomes = { decrement: transaction.amount };
+              if (transaction.cashRegister.status !== 'OPEN') {
+                updateData.closingBalance = {
+                  decrement: transaction.amount,
+                };
+              }
+            } else if (transaction.type === 'OUTCOME') {
+              updateData.totalOutcomes = { decrement: transaction.amount };
+              if (transaction.cashRegister.status !== 'OPEN') {
+                updateData.closingBalance = {
+                  increment: transaction.amount,
+                };
+              }
+            }
+
+            await tx.cashRegister.update({
+              where: { id: transaction.cashRegister.id },
+              data: updateData,
+            });
+          }
+        }
+
+        // Continue with existing deletion logic
         await tx.productionStage.deleteMany({
           where: {
             schedule: {
@@ -222,6 +276,27 @@ export class SaleSeriesService {
                 id: serieId,
               },
             },
+          },
+        });
+
+        await tx.transaction.deleteMany({
+          where: {
+            OR: [
+              {
+                receivableInstallment: {
+                  every: {
+                    receivable: { quotation: { series: { id: serieId } } },
+                  },
+                },
+              },
+              {
+                payableInstallment: {
+                  every: {
+                    payable: { quotation: { series: { id: serieId } } },
+                  },
+                },
+              },
+            ],
           },
         });
 

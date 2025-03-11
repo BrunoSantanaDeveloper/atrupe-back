@@ -1,18 +1,10 @@
-import {
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  ValidateNested,
-  IsEmail,
-  IsBoolean,
-} from 'class-validator';
+import { IsOptional, ValidateNested, IsBoolean } from 'class-validator';
 import { IsCnpj } from '../../../helpers/validators/cnpj';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateAddressDto {
-  @IsNotEmpty()
-  @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'CEP',
     required: true,
@@ -20,8 +12,7 @@ export class CreateAddressDto {
   })
   zipcode: string;
 
-  @IsNotEmpty()
-  @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'Estado',
     required: true,
@@ -29,8 +20,7 @@ export class CreateAddressDto {
   })
   state: string;
 
-  @IsNotEmpty()
-  @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'Cidade',
     required: true,
@@ -38,8 +28,7 @@ export class CreateAddressDto {
   })
   city: string;
 
-  @IsNotEmpty()
-  @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'Bairro',
     required: true,
@@ -47,8 +36,7 @@ export class CreateAddressDto {
   })
   neighborhood: string;
 
-  @IsNotEmpty()
-  @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'Rua',
     required: true,
@@ -56,8 +44,7 @@ export class CreateAddressDto {
   })
   street: string;
 
-  @IsNotEmpty()
-  @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'Número',
     required: true,
@@ -66,7 +53,6 @@ export class CreateAddressDto {
   number: string;
 
   @IsOptional()
-  @IsString()
   @ApiProperty({
     description: 'Complemento',
     required: false,
@@ -76,8 +62,7 @@ export class CreateAddressDto {
 }
 
 export class CreateGeneralInfoDto {
-  @IsNotEmpty()
-  @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'Nome da empresa',
     required: true,
@@ -85,8 +70,7 @@ export class CreateGeneralInfoDto {
   })
   name: string;
 
-  @IsNotEmpty()
-  @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'Razão social',
     required: true,
@@ -94,8 +78,7 @@ export class CreateGeneralInfoDto {
   })
   legalName: string;
 
-  @IsNotEmpty()
-  @IsString()
+  @IsOptional()
   @IsCnpj()
   @ApiProperty({
     description: 'CNPJ da empresa',
@@ -104,8 +87,7 @@ export class CreateGeneralInfoDto {
   })
   cnpj: string;
 
-  @IsNotEmpty()
-  @IsEmail()
+  @IsOptional()
   @ApiProperty({
     description: 'Email',
     required: true,
@@ -122,7 +104,6 @@ export class CreateGeneralInfoDto {
   siteUrl?: string;
 
   @IsOptional()
-  @IsString()
   @ApiProperty({
     description: 'Telefone fixo',
     required: false,
@@ -131,7 +112,6 @@ export class CreateGeneralInfoDto {
   phone?: string;
 
   @IsOptional()
-  @IsString()
   @ApiProperty({
     description: 'Telefone celular',
     required: false,
@@ -140,7 +120,6 @@ export class CreateGeneralInfoDto {
   mobile?: string;
 
   @IsOptional()
-  @IsString()
   @ApiProperty({
     description: 'Inscrição Municipal',
     required: false,
@@ -151,7 +130,6 @@ export class CreateGeneralInfoDto {
 
 export class CreatePersonalizationDto {
   @IsOptional()
-  @IsString()
   @ApiProperty({
     description: 'URL do logo',
     required: false,
@@ -160,7 +138,6 @@ export class CreatePersonalizationDto {
   logoUrl?: string;
 
   @IsOptional()
-  @IsString()
   @ApiProperty({
     description: 'URL do favicon',
     required: false,
@@ -169,7 +146,6 @@ export class CreatePersonalizationDto {
   favIconUrl?: string;
 
   @IsOptional()
-  @IsString()
   @ApiProperty({
     description: 'Textos antes dos itens',
     required: false,
@@ -178,7 +154,6 @@ export class CreatePersonalizationDto {
   textsBeforeItems?: string;
 
   @IsOptional()
-  @IsString()
   @ApiProperty({
     description: 'Textos depois dos itens',
     required: false,
@@ -196,7 +171,7 @@ export class CreateCompanyDto {
     example: true,
   })
   isActive?: boolean;
-  @IsNotEmpty()
+  @IsOptional()
   @ValidateNested()
   @Type(() => CreateGeneralInfoDto)
   @ApiProperty({
@@ -206,7 +181,7 @@ export class CreateCompanyDto {
   })
   general: CreateGeneralInfoDto;
 
-  @IsNotEmpty()
+  @IsOptional()
   @ValidateNested()
   @Type(() => CreateAddressDto)
   @ApiProperty({

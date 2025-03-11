@@ -121,8 +121,12 @@ export class OrderController {
     description: 'Erro na validação ou no banco de dados.',
   })
   @ApiResponse({ status: 500, description: 'Erro interno no servidor.' })
-  async cancelOrder(@Param('id') id: string, @Body() dto: CancelOrderDto) {
-    return this.orderService.cancelOrder(id, dto);
+  async cancelOrder(
+    @Param('id') id: string,
+    @Body() dto: CancelOrderDto,
+    @Req() req,
+  ) {
+    return this.orderService.cancelOrder(id, dto, req.user.userId);
   }
 
   @Delete(':id')
