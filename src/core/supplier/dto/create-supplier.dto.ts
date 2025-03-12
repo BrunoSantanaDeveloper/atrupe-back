@@ -3,7 +3,6 @@ import {
   IsOptional,
   IsString,
   ValidateIf,
-  IsEmail,
   IsArray,
   IsBoolean,
   IsNumber,
@@ -25,7 +24,6 @@ class GeneralInfoDto {
   corporateName?: string;
 
   @IsOptional()
-  @IsEmail()
   email?: string;
 
   @IsOptional()
