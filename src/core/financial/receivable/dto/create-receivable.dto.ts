@@ -219,14 +219,6 @@ export class UpdateReceivableInstallmentsDto {
 
 export class CompensateDto {
   @ApiProperty()
-  @IsUUID()
-  bankAccountId: string;
-
-  @ApiProperty()
-  @IsNumber()
-  amount: number;
-
-  @ApiProperty()
   @IsDateString()
   paidDate: string;
 }

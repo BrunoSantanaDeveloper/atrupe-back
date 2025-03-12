@@ -256,7 +256,10 @@ export class FlowService {
                 nature: true,
                 subCategory: true,
                 installments: {
-                  include: { paymentMethod: true, bankAccount: true },
+                  include: {
+                    paymentMethod: true,
+                    bankAccount: { include: { bank: true } },
+                  },
                   orderBy: { [dateType]: 'desc' },
                 },
               },
@@ -277,7 +280,10 @@ export class FlowService {
               nature: true,
               subCategory: true,
               installments: {
-                include: { paymentMethod: true, bankAccount: true },
+                include: {
+                  paymentMethod: true,
+                  bankAccount: { include: { bank: true } },
+                },
                 orderBy: { [dateType]: 'desc' },
               },
             },
@@ -328,6 +334,7 @@ export class FlowService {
               notes: inst.receivable.notes || '',
               status: inst.receivable.status,
               isSale: inst.receivable.quotationId ? true : false,
+
               installments: (inst.receivable?.installments || [])
                 .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
                 .map((i) => ({
@@ -345,11 +352,22 @@ export class FlowService {
                         name: i.bankAccount.name,
                       }
                     : null,
+                  bank: i.bankAccount
+                    ? {
+                        id: i.bankAccount?.bank?.id,
+                        name: i.bankAccount?.bank?.name,
+                      }
+                    : null,
                   value: i.amount || 0,
                   additionalFee: i.additionalFee || 0,
                   dueDate: i.dueDate,
                   paidValue: i.paidAmount || 0,
-                  paymentDate: i.paidDate ? new Date(i.paidDate) : null,
+                  paymentDate: i.provisionDate
+                    ? new Date(i.provisionDate)
+                    : i.paidDate
+                      ? new Date(i.paidDate)
+                      : null,
+                  compensateDate: i.paidDate ? new Date(i.paidDate) : null,
                   current: inst.id === i.id,
                 })),
               ...(showValues === 'on' && {
@@ -407,6 +425,7 @@ export class FlowService {
               notes: inst.payable.notes || '',
               status: inst.payable.status,
               isSale: inst.payable.quotationId ? true : false,
+
               installments: (inst.payable?.installments || [])
                 .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
                 .map((i) => ({
@@ -424,11 +443,22 @@ export class FlowService {
                         name: i.bankAccount.name,
                       }
                     : null,
+                  bank: i.bankAccount
+                    ? {
+                        id: i.bankAccount?.bank?.id,
+                        name: i.bankAccount?.bank?.name,
+                      }
+                    : null,
                   value: i.amount || 0,
                   additionalFee: i.additionalFee || 0,
                   dueDate: i.dueDate,
                   paidValue: i.paidAmount || 0,
-                  paymentDate: i.paidDate ? new Date(i.paidDate) : null,
+                  paymentDate: i.provisionDate
+                    ? new Date(i.provisionDate)
+                    : i.paidDate
+                      ? new Date(i.paidDate)
+                      : null,
+                  compensateDate: i.paidDate ? new Date(i.paidDate) : null,
                   current: inst.id === i.id,
                 })),
               ...(showValues === 'on' && {

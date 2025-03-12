@@ -51,6 +51,12 @@ export class ProductionStageController {
     return this.productionStageService.update(id, updateProductionStageDto);
   }
 
+  @Get('schedule/:id')
+  @ApiOperation({ summary: 'Atualizar um estágio de produção' })
+  async updateSchedule(@Param('id') id: string) {
+    return await this.productionStageService.updateStatusIfAllStagesAreDone(id);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Excluir um estágio de produção' })
   remove(@Param('id') id: string) {

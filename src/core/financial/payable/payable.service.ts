@@ -16,7 +16,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { PaymentStatus, TransactionType } from '@prisma/client';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ReceivableFilterDto } from '../receivable/dto/receivable-filter.dto';
-import { endOfDay, startOfDay } from 'date-fns';
+import { add, endOfDay, startOfDay } from 'date-fns';
 import { CompensateDto } from '../receivable/dto/create-receivable.dto';
 
 @Injectable()
@@ -355,8 +355,6 @@ export class PayableService {
         });
         if (bankAccountData.paymentType !== 'PROVISION') {
           await this.compensateInstallment(installmentId, {
-            amount,
-            bankAccountId,
             paidDate,
           });
         }
@@ -386,16 +384,17 @@ export class PayableService {
     installmentId: string,
     compensateDto: CompensateDto,
   ): Promise<void> {
-    const { amount, bankAccountId, paidDate } = compensateDto;
-
+    const { paidDate } = compensateDto;
+    const paidDateFormatted = add(new Date(paidDate), { days: 0 });
     await this.prisma.$transaction(async (tx) => {
       const installment = await tx.payableInstallment.findFirst({
         where: { id: installmentId },
       });
-
       if (!installment) {
         throw new BadRequestException('Parcela não encontrada.');
       }
+      const amount = installment.paidAmount;
+      const bankAccountId = installment.bankAccountId;
 
       // Busca o caixa aberto
       const openCashRegister = await tx.cashRegister.findFirst({
@@ -403,8 +402,8 @@ export class PayableService {
           bankAccountId,
           status: 'OPEN',
           openingDate: {
-            gte: startOfDay(new Date(paidDate)),
-            lt: endOfDay(new Date(paidDate)),
+            gte: startOfDay(new Date(paidDateFormatted)),
+            lt: endOfDay(new Date(paidDateFormatted)),
           },
         },
       });
@@ -420,7 +419,7 @@ export class PayableService {
           type: TransactionType.OUTCOME,
           amount: amount,
           description: `Pagamento da parcela ${installment.id}`,
-          transactionDate: new Date(paidDate),
+          transactionDate: new Date(paidDateFormatted),
           payableInstallment: { connect: { id: installment.id } },
           cashRegister: { connect: { id: openCashRegister.id } },
         },
@@ -430,6 +429,11 @@ export class PayableService {
       await tx.cashRegister.update({
         where: { id: openCashRegister.id },
         data: { totalOutcomes: { increment: amount } },
+      });
+
+      await tx.payableInstallment.update({
+        where: { id: installmentId },
+        data: { status: 'PAID', paidDate: new Date(paidDate) },
       });
     });
   }
@@ -469,39 +473,46 @@ export class PayableService {
           },
         });
 
-        // Busca o caixa aberto relacionado ao pagamento original
-        const relatedTransaction = await tx.transaction.findFirst({
-          where: {
-            payableInstallment: {
-              every: {
-                id: installmentId,
+        if (installmentData.status === 'PAID') {
+          // Busca o caixa aberto relacionado ao pagamento original
+          const relatedTransaction = await tx.transaction.findFirst({
+            where: {
+              payableInstallment: {
+                every: {
+                  id: installmentId,
+                },
               },
             },
-          },
-        });
-
-        if (!relatedTransaction) {
-          throw new BadRequestException(
-            'Nenhuma transação relacionada encontrada para desfazer o pagamento.',
-          );
-        }
-
-        // Remove a transação de pagamento
-        await tx.transaction.delete({ where: { id: relatedTransaction.id } });
-
-        // Atualiza o valor total do caixa se houver um caixa aberto
-        if (relatedTransaction.cashRegisterId) {
-          const cashRegister = await tx.cashRegister.findUnique({
-            where: { id: relatedTransaction.cashRegisterId },
           });
 
-          if (cashRegister) {
-            await tx.cashRegister.update({
-              where: { id: cashRegister.id },
-              data: {
-                totalOutcomes: { decrement: paymentAmount },
-              },
+          if (!relatedTransaction) {
+            throw new BadRequestException(
+              'Nenhuma transação relacionada encontrada para desfazer o pagamento.',
+            );
+          }
+
+          // Remove a transação de pagamento
+          await tx.transaction.delete({ where: { id: relatedTransaction.id } });
+
+          // Atualiza o valor total do caixa se houver um caixa aberto
+          if (relatedTransaction.cashRegisterId) {
+            const cashRegister = await tx.cashRegister.findUnique({
+              where: { id: relatedTransaction.cashRegisterId },
             });
+            if (cashRegister.status !== 'OPEN') {
+              throw new BadRequestException(
+                'Caixa não está aberto para desfazer o pagamento.',
+              );
+            }
+
+            if (cashRegister) {
+              await tx.cashRegister.update({
+                where: { id: cashRegister.id },
+                data: {
+                  totalOutcomes: { decrement: paymentAmount },
+                },
+              });
+            }
           }
         }
       });

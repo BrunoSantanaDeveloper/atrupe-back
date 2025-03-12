@@ -25,6 +25,27 @@ export class BankService {
       },
     });
   }
+  findAllByMethod(paymentMethod: string) {
+    return this.prisma.bank.findMany({
+      where: {
+        isActive: true,
+        accounts: {
+          some: {
+            bankAccountCashControl: {
+              some: {
+                paymentMethod: {
+                  id: paymentMethod,
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+  }
 
   findOne(id: string) {
     return this.prisma.bank.findUnique({ where: { id } });

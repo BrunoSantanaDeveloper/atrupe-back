@@ -129,8 +129,11 @@ export class CompanyController {
     status: 404,
     description: 'Empresa não encontrada.',
   })
-  update(@Param('id') id: string, @Body() updateCompanyDto: UpdateCompanyDto) {
-    return this.companyService.update(id, updateCompanyDto);
+  async update(
+    @Param('id') id: string,
+    @Body() updateCompanyDto: UpdateCompanyDto,
+  ) {
+    return await this.companyService.update(id, updateCompanyDto);
   }
 
   @Delete(':id')

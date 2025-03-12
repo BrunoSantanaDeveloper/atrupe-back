@@ -344,8 +344,6 @@ export class ReceivableService {
     // const handlePositiveBalance = async (tx, finalValue) => {};
     if (bankAccountData.incomeType !== 'PROVISION') {
       await this.compensateInstallment(installmentId, {
-        amount,
-        bankAccountId,
         paidDate,
       });
     }
@@ -403,17 +401,20 @@ export class ReceivableService {
     installmentId: string,
     compensateDto: CompensateDto,
   ): Promise<void> {
-    const { amount, bankAccountId, paidDate } = compensateDto;
+    const { paidDate } = compensateDto;
     const paidDateFormatted = add(new Date(paidDate), { days: 0 });
 
     await this.prisma.$transaction(async (tx) => {
       const installment = await tx.receivableInstallment.findFirst({
         where: { id: installmentId },
       });
-
       if (!installment) {
         throw new BadRequestException('Parcela não encontrada.');
       }
+
+      const amount = installment.paidAmount;
+      const bankAccountId = installment.bankAccountId;
+
       // Busca o caixa aberto
       const openCashRegister = await tx.cashRegister.findFirst({
         where: {
@@ -437,7 +438,7 @@ export class ReceivableService {
           type: TransactionType.INCOME,
           amount: amount,
           description: `Pagamento da parcela ${installment.id}`,
-          transactionDate: new Date(paidDate),
+          transactionDate: new Date(paidDateFormatted),
           receivableInstallment: { connect: { id: installment.id } },
           cashRegister: { connect: { id: openCashRegister.id } },
         },
@@ -453,7 +454,6 @@ export class ReceivableService {
         where: { id: installmentId },
         data: {
           status: 'PAID',
-          paidAmount: amount,
           paidDate: new Date(paidDate),
         },
       });
@@ -497,39 +497,46 @@ export class ReceivableService {
           },
         });
 
-        // Busca o caixa aberto relacionado ao pagamento original
-        const relatedTransaction = await tx.transaction.findFirst({
-          where: {
-            receivableInstallment: {
-              every: {
-                id: installmentId,
+        if (installmentData.status === 'PAID') {
+          // Busca o caixa aberto relacionado ao pagamento original
+          const relatedTransaction = await tx.transaction.findFirst({
+            where: {
+              receivableInstallment: {
+                every: {
+                  id: installmentId,
+                },
               },
             },
-          },
-        });
-
-        if (!relatedTransaction) {
-          throw new BadRequestException(
-            'Nenhuma transação relacionada encontrada para desfazer o pagamento.',
-          );
-        }
-
-        // Remove a transação de pagamento
-        await tx.transaction.delete({ where: { id: relatedTransaction.id } });
-
-        // Atualiza o valor total do caixa se houver um caixa aberto
-        if (relatedTransaction.cashRegisterId) {
-          const cashRegister = await tx.cashRegister.findUnique({
-            where: { id: relatedTransaction.cashRegisterId },
           });
 
-          if (cashRegister) {
-            await tx.cashRegister.update({
-              where: { id: cashRegister.id },
-              data: {
-                totalIncomes: { decrement: paymentAmount },
-              },
+          if (!relatedTransaction) {
+            throw new BadRequestException(
+              'Nenhuma transação relacionada encontrada para desfazer o pagamento.',
+            );
+          }
+
+          // Remove a transação de pagamento
+          await tx.transaction.delete({ where: { id: relatedTransaction.id } });
+
+          // Atualiza o valor total do caixa se houver um caixa aberto
+          if (relatedTransaction.cashRegisterId) {
+            const cashRegister = await tx.cashRegister.findUnique({
+              where: { id: relatedTransaction.cashRegisterId },
             });
+            if (cashRegister.status !== 'OPEN') {
+              throw new BadRequestException(
+                'Caixa não está aberto para desfazer o pagamento.',
+              );
+            }
+
+            if (cashRegister) {
+              await tx.cashRegister.update({
+                where: { id: cashRegister.id },
+                data: {
+                  totalIncomes: { decrement: paymentAmount },
+                },
+              });
+            }
           }
         }
       });
