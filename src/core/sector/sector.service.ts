@@ -62,6 +62,9 @@ export class SectorService {
           skip: (+filter.page - 1) * +filter.limit,
           orderBy: [
             {
+              kind: 'asc',
+            },
+            {
               isActive: 'desc', // true (1) vem antes de false (0)
             },
             {

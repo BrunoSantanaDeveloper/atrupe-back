@@ -411,7 +411,10 @@ export class DeliveryScheduleService {
     if (!quotation) {
       throw new Error('Orçamento não encontrado.');
     }
-    if (quotation.DeliverySchedule.status === 'FINISHED') {
+    if (
+      quotation.DeliverySchedule &&
+      quotation.DeliverySchedule.status === 'FINISHED'
+    ) {
       await this.prisma.deliverySchedule.update({
         where: { id: quotation.DeliverySchedule.id },
         data: { status: 'DONE' },
