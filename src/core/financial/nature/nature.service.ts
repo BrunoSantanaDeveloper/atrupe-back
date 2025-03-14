@@ -35,6 +35,7 @@ export class NatureService {
   }
 
   async findAll(filterDto: NatureFilterDto) {
+    console.log(filterDto.companyId);
     try {
       const { page, limit, level1, level2, search, status, companyId } =
         filterDto;
@@ -122,16 +123,24 @@ export class NatureService {
       // Filtrar naturezas conforme a nova regra
       const filteredNatures = Object.values(groupedByNature).filter(
         (nature) => {
-          if (status === 'ACTIVES') {
-            return nature.isActive;
+          // Se não houver subcategorias, não incluir a natureza
+          if (nature.subCategories.length === 0) {
+            return false;
           }
-          if (status === 'INACTIVES') {
-            return (
-              !nature.isActive ||
-              nature.subCategories.some((sub) => !sub.isActive)
-            );
-          }
-          return true;
+
+          // Filtrar subcategorias baseado no status
+          const filteredSubCategories = nature.subCategories.filter((sub) => {
+            if (status === 'ACTIVES') {
+              return sub.isActive;
+            }
+            if (status === 'INACTIVES') {
+              return !sub.isActive;
+            }
+            return true;
+          });
+
+          // Só incluir a natureza se tiver subcategorias após o filtro
+          return filteredSubCategories.length > 0;
         },
       );
 
@@ -159,13 +168,14 @@ export class NatureService {
       }, {});
 
       // Converter para array e garantir que todos os level2 existam
-      const groupedArray = Object.entries(level2TitleMap).map(
-        ([level2, name]) => ({
+      const groupedArray = Object.entries(level2TitleMap)
+        .map(([level2, name]) => ({
           name,
           code: level2,
           natures: groupedByLevel2[level2] || [],
-        }),
-      );
+        }))
+        // Se houver filtro de level2, remove os arrays vazios
+        .filter((group) => !level2 || group.natures.length > 0);
 
       return {
         data: groupedArray,
@@ -180,11 +190,21 @@ export class NatureService {
   }
 
   async findAllQuantity(companyId: string) {
+    console.log('companyId: ', companyId);
+    const test = await this.prisma.subCategory.findMany({
+      where: { companyId },
+      select: {
+        id: true,
+        isActive: true,
+      },
+    });
+    console.log('test: ', test);
     const result = await this.prisma.subCategory.groupBy({
       by: ['isActive'],
       where: { companyId },
       _count: true,
     });
+    console.log('result: ', result);
 
     // Inicializa os contadores com zero
     const statusCount = {
