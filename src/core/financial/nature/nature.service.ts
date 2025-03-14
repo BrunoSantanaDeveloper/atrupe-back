@@ -18,7 +18,7 @@ export class NatureService {
       where: {
         level1: createNatureDto.level1,
         level2: createNatureDto.level2,
-        code: createNatureDto.code.toString(),
+        code: createNatureDto.code,
         companyId: createNatureDto.companyId,
       },
     });
@@ -30,7 +30,6 @@ export class NatureService {
     return await this.prisma.nature.create({
       data: {
         ...createNatureDto,
-        code: createNatureDto.code.toString(),
       },
     });
   }
@@ -98,14 +97,13 @@ export class NatureService {
         if (!acc[natureId]) {
           acc[natureId] = {
             ...subCategory.nature,
-            code: parseInt(subCategory.nature.code),
             subCategories: [],
           };
         }
         acc[natureId].subCategories.push({
           id: subCategory.id,
           description: subCategory.description,
-          code: parseInt(subCategory.code),
+          code: subCategory.code,
           isActive: subCategory.isActive,
         });
         return acc;
@@ -226,15 +224,12 @@ export class NatureService {
     if (!nature) {
       throw new NotFoundException('Natureza não encontrada!');
     }
-    if (
-      updateNatureDto.code &&
-      updateNatureDto.code !== parseInt(nature.code)
-    ) {
+    if (updateNatureDto.code && updateNatureDto.code !== nature.code) {
       const sub = await this.prisma.nature.findFirst({
         where: {
           level1: nature.level1,
           level2: nature.level2,
-          code: updateNatureDto.code.toString(),
+          code: updateNatureDto.code,
           companyId: nature.companyId,
         },
         include: {
@@ -247,22 +242,22 @@ export class NatureService {
       }
     }
     console.log('updateNatureDto: ', updateNatureDto);
-    const [code] = [updateNatureDto.code];
     const data: any = {
       ...updateNatureDto,
     };
-    if (code) {
-      data.code = code.toString();
-    }
     try {
-      if (updateNatureDto.isActive === false) {
+      if (
+        updateNatureDto.hasOwnProperty('isActive') &&
+        typeof updateNatureDto.isActive === 'boolean'
+      ) {
         await this.prisma.subCategory.updateMany({
-          where: {
-            natureId: nature.id,
-          },
-          data: { isActive: false },
+          where: { natureId: nature.id },
+          data: { isActive: updateNatureDto.isActive },
         });
+
+        delete updateNatureDto.isActive;
       }
+
       return await this.prisma.nature.update({
         where: { id },
         data: data,
@@ -308,7 +303,7 @@ export class NatureService {
         nature: {
           id: createSubCategoryDto.natureId,
         },
-        code: createSubCategoryDto.code.toString(),
+        code: createSubCategoryDto.code,
       },
     });
 
@@ -317,7 +312,6 @@ export class NatureService {
     }
     const data = {
       ...createSubCategoryDto,
-      code: createSubCategoryDto.code.toString(),
     };
     try {
       return await this.prisma.subCategory.create({
@@ -391,7 +385,7 @@ export class NatureService {
             nature: {
               id: nature.id,
             },
-            code: updateSubCategoryDto.code.toString(),
+            code: updateSubCategoryDto.code,
           },
         });
 
@@ -403,13 +397,9 @@ export class NatureService {
         delete updateSubCategoryDto.level3;
       }
 
-      const [code] = [updateSubCategoryDto.code];
       const data: any = {
         ...updateSubCategoryDto,
       };
-      if (code) {
-        data.code = code.toString();
-      }
       return await this.prisma.subCategory.update({
         where: { id: subCategory.id },
         data,
