@@ -35,11 +35,16 @@ export class NatureService {
   }
 
   async findAll(filterDto: NatureFilterDto) {
-    console.log(filterDto.companyId);
     try {
       const { page, limit, level1, level2, search, status, companyId } =
         filterDto;
       const take = parseInt(limit, 10) || 10;
+
+      // Mapeamento para o nome do level1
+      const level1TitleMap: Record<string, string> = {
+        '01': 'Receitas',
+        '02': 'Despesas',
+      };
 
       // Mapeamento para o nome do level2
       const level2TitleMap: Record<string, string> = {
@@ -78,7 +83,7 @@ export class NatureService {
       const natures = await this.prisma.nature.findMany({
         where: {
           companyId,
-          ...(status === 'ACTIVES' ? { isActive: true } : {}),
+          ...(status === 'ACTIVES' || !status ? { isActive: true } : {}),
           ...(level1 && { level1 }),
           ...(level2 && { level2 }),
           ...(search && {
@@ -123,6 +128,11 @@ export class NatureService {
       // Filtrar naturezas conforme a nova regra
       const filteredNatures = Object.values(groupedByNature).filter(
         (nature) => {
+          // Se for filtro de ativos ou não houver filtro, inclui todas as naturezas
+          if (status === 'ACTIVES' || !status) {
+            return true;
+          }
+
           // Se não houver subcategorias, não incluir a natureza
           if (nature.subCategories.length === 0) {
             return false;
@@ -130,7 +140,7 @@ export class NatureService {
 
           // Filtrar subcategorias baseado no status
           const filteredSubCategories = nature.subCategories.filter((sub) => {
-            if (status === 'ACTIVES') {
+            if (status === 'ACTIVES' || !status) {
               return sub.isActive;
             }
             if (status === 'INACTIVES') {
@@ -146,7 +156,7 @@ export class NatureService {
 
       // Filtrar subcategorias conforme status
       filteredNatures.forEach((nature) => {
-        if (status === 'ACTIVES') {
+        if (status === 'ACTIVES' || !status) {
           nature.subCategories = nature.subCategories.filter(
             (sub) => sub.isActive,
           );
@@ -167,18 +177,59 @@ export class NatureService {
         return acc;
       }, {});
 
-      // Converter para array e garantir que todos os level2 existam
-      const groupedArray = Object.entries(level2TitleMap)
+      // Converter level2 para array e garantir que todos os level2 existam
+      const level2Array = Object.entries(level2TitleMap)
         .map(([level2, name]) => ({
           name,
           code: level2,
           natures: groupedByLevel2[level2] || [],
         }))
-        // Se houver filtro de level2, remove os arrays vazios
-        .filter((group) => !level2 || group.natures.length > 0);
+        // Se houver filtro de level2, remove os arrays vazios apenas se não for ACTIVES
+        .filter(
+          (group) =>
+            !level2 ||
+            group.natures.length > 0 ||
+            status === 'ACTIVES' ||
+            !status,
+        );
+
+      // Agrupar level2 por level1
+      const groupedByLevel1 = Object.keys(level1TitleMap).reduce<
+        Record<string, typeof level2Array>
+      >((acc, level1Key) => {
+        acc[level1Key] = level2Array
+          .map((level2Group) => ({
+            ...level2Group,
+            natures: level2Group.natures.filter(
+              (nature) => nature.level1 === level1Key,
+            ),
+          }))
+          // Se houver filtro de level1, remove os arrays vazios apenas se não for ACTIVES
+          .filter(
+            (group) =>
+              group.natures.length > 0 || status === 'ACTIVES' || !status,
+          );
+        return acc;
+      }, {});
+
+      // Converter para array final com level1
+      const finalArray = Object.entries(level1TitleMap)
+        .map(([level1, name]) => ({
+          name,
+          code: level1,
+          level2: groupedByLevel1[level1] || [],
+        }))
+        // Se houver filtro de level1, remove os arrays vazios apenas se não for ACTIVES
+        .filter(
+          (group) =>
+            !level1 ||
+            group.level2.length > 0 ||
+            status === 'ACTIVES' ||
+            !status,
+        );
 
       return {
-        data: groupedArray,
+        data: finalArray,
         total: filteredNatures.length,
         page: parseInt(page, 10) || 1,
         lastPage: Math.ceil(filteredNatures.length / take),
@@ -190,21 +241,11 @@ export class NatureService {
   }
 
   async findAllQuantity(companyId: string) {
-    console.log('companyId: ', companyId);
-    const test = await this.prisma.subCategory.findMany({
-      where: { companyId },
-      select: {
-        id: true,
-        isActive: true,
-      },
-    });
-    console.log('test: ', test);
     const result = await this.prisma.subCategory.groupBy({
       by: ['isActive'],
       where: { companyId },
       _count: true,
     });
-    console.log('result: ', result);
 
     // Inicializa os contadores com zero
     const statusCount = {
@@ -261,7 +302,6 @@ export class NatureService {
         throw new BadRequestException('Código já existe!');
       }
     }
-    console.log('updateNatureDto: ', updateNatureDto);
     const data: any = {
       ...updateNatureDto,
     };
@@ -342,9 +382,10 @@ export class NatureService {
     }
   }
 
-  async findAllNatures(companyId: string) {
+  async findAllNatures(companyId: string, level1: string) {
+    const lvl1 = level1 === 'receivable' ? '01' : '02';
     return this.prisma.nature.findMany({
-      where: { isActive: true, companyId },
+      where: { isActive: true, companyId, level1: lvl1 },
       select: {
         id: true,
         code: true,
