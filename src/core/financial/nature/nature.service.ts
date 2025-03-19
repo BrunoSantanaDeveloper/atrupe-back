@@ -78,7 +78,6 @@ export class NatureService {
           nature: true,
         },
       });
-
       // Buscar naturezas
       const natures = await this.prisma.nature.findMany({
         where: {
@@ -166,7 +165,6 @@ export class NatureService {
           );
         }
       });
-
       // Agrupar por level2
       const groupedByLevel2 = Object.keys(level2TitleMap).reduce<
         Record<string, (Nature & { subCategories: SubCategory[] })[]>
@@ -386,6 +384,19 @@ export class NatureService {
     const lvl1 = level1 === 'receivable' ? '01' : '02';
     return this.prisma.nature.findMany({
       where: { isActive: true, companyId, level1: lvl1 },
+      select: {
+        id: true,
+        code: true,
+        description: true,
+      },
+      orderBy: {
+        code: 'asc',
+      },
+    });
+  }
+  async findAllNaturesByLevel2(companyId: string, level2: string) {
+    return this.prisma.nature.findMany({
+      where: { isActive: true, companyId, level2: level2 },
       select: {
         id: true,
         code: true,
