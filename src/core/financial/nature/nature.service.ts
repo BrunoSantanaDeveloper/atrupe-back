@@ -41,10 +41,12 @@ export class NatureService {
       const take = parseInt(limit, 10) || 10;
 
       // Mapeamento para o nome do level1
-      const level1TitleMap: Record<string, string> = {
-        '01': 'Receitas',
-        '02': 'Despesas',
-      };
+      const level1TitleMap: Record<string, string> = level1
+        ? { [level1]: level1 === '01' ? 'Receitas' : 'Despesas' }
+        : {
+            '01': 'Receitas',
+            '02': 'Despesas',
+          };
 
       // Mapeamento para o nome do level2
       const level2TitleMap: Record<string, string> = {
@@ -156,33 +158,33 @@ export class NatureService {
       // Filtrar subcategorias conforme status
       filteredNatures.forEach((nature) => {
         if (status === 'ACTIVES' || !status) {
-          nature.subCategories = nature.subCategories.filter(
-            (sub) => sub.isActive,
-          );
+          nature.subCategories = nature.subCategories
+            .filter((sub) => sub.isActive)
+            .sort((a, b) => a.code.localeCompare(b.code));
         } else if (status === 'INACTIVES') {
-          nature.subCategories = nature.subCategories.filter(
-            (sub) => !sub.isActive,
-          );
+          nature.subCategories = nature.subCategories
+            .filter((sub) => !sub.isActive)
+            .sort((a, b) => a.code.localeCompare(b.code));
         }
       });
       // Agrupar por level2
       const groupedByLevel2 = Object.keys(level2TitleMap).reduce<
         Record<string, (Nature & { subCategories: SubCategory[] })[]>
       >((acc, level2Key) => {
-        acc[level2Key] = filteredNatures.filter(
-          (nature) => nature.level2 === level2Key,
-        );
+        acc[level2Key] = filteredNatures
+          .filter((nature) => nature.level2 === level2Key)
+          .sort((a, b) => a.code.localeCompare(b.code));
         return acc;
       }, {});
 
       // Converter level2 para array e garantir que todos os level2 existam
       const level2Array = Object.entries(level2TitleMap)
+        .sort(([a], [b]) => a.localeCompare(b))
         .map(([level2, name]) => ({
           name,
           code: level2,
           natures: groupedByLevel2[level2] || [],
         }))
-        // Se houver filtro de level2, remove os arrays vazios apenas se não for ACTIVES
         .filter(
           (group) =>
             !level2 ||
@@ -192,32 +194,31 @@ export class NatureService {
         );
 
       // Agrupar level2 por level1
-      const groupedByLevel1 = Object.keys(level1TitleMap).reduce<
-        Record<string, typeof level2Array>
-      >((acc, level1Key) => {
-        acc[level1Key] = level2Array
-          .map((level2Group) => ({
-            ...level2Group,
-            natures: level2Group.natures.filter(
-              (nature) => nature.level1 === level1Key,
-            ),
-          }))
-          // Se houver filtro de level1, remove os arrays vazios apenas se não for ACTIVES
-          .filter(
-            (group) =>
-              group.natures.length > 0 || status === 'ACTIVES' || !status,
-          );
-        return acc;
-      }, {});
+      const groupedByLevel1 = Object.keys(level1TitleMap)
+        .sort((a, b) => a.localeCompare(b))
+        .reduce<Record<string, typeof level2Array>>((acc, level1Key) => {
+          acc[level1Key] = level2Array
+            .map((level2Group) => ({
+              ...level2Group,
+              natures: level2Group.natures
+                .filter((nature) => nature.level1 === level1Key)
+                .sort((a, b) => a.code.localeCompare(b.code)),
+            }))
+            .filter(
+              (group) =>
+                group.natures.length > 0 || status === 'ACTIVES' || !status,
+            );
+          return acc;
+        }, {});
 
       // Converter para array final com level1
       const finalArray = Object.entries(level1TitleMap)
+        .sort(([a], [b]) => a.localeCompare(b))
         .map(([level1, name]) => ({
           name,
           code: level1,
           level2: groupedByLevel1[level1] || [],
         }))
-        // Se houver filtro de level1, remove os arrays vazios apenas se não for ACTIVES
         .filter(
           (group) =>
             !level1 ||
@@ -283,23 +284,30 @@ export class NatureService {
     if (!nature) {
       throw new NotFoundException('Natureza não encontrada!');
     }
-    if (updateNatureDto.code && updateNatureDto.code !== nature.code) {
+
+    // Se houver alteração em qualquer um dos campos (level1, level2 ou code)
+    if (
+      updateNatureDto.code ||
+      updateNatureDto.level1 ||
+      updateNatureDto.level2
+    ) {
       const sub = await this.prisma.nature.findFirst({
         where: {
-          level1: nature.level1,
-          level2: nature.level2,
-          code: updateNatureDto.code,
+          level1: updateNatureDto.level1 || nature.level1,
+          level2: updateNatureDto.level2 || nature.level2,
+          code: updateNatureDto.code || nature.code,
           companyId: nature.companyId,
-        },
-        include: {
-          subCategory: true,
+          id: { not: id }, // Excluir a própria nature da busca
         },
       });
 
       if (sub) {
-        throw new BadRequestException('Código já existe!');
+        throw new BadRequestException(
+          'Já existe uma natureza com essa combinação de códigos!',
+        );
       }
     }
+
     const data: any = {
       ...updateNatureDto,
     };
@@ -315,7 +323,9 @@ export class NatureService {
 
         delete updateNatureDto.isActive;
       }
-
+      if (data.hasOwnProperty('isActive')) {
+        delete data.isActive;
+      }
       return await this.prisma.nature.update({
         where: { id },
         data: data,
@@ -382,7 +392,8 @@ export class NatureService {
 
   async findAllNatures(companyId: string, level1: string) {
     const lvl1 = level1 === 'receivable' ? '01' : '02';
-    return this.prisma.nature.findMany({
+    console.log('lvl1: ', lvl1);
+    const natures = await this.prisma.nature.findMany({
       where: { isActive: true, companyId, level1: lvl1 },
       select: {
         id: true,
@@ -393,10 +404,16 @@ export class NatureService {
         code: 'asc',
       },
     });
+    console.log('natures: ', natures);
+    return natures;
   }
-  async findAllNaturesByLevel2(companyId: string, level2: string) {
+  async findAllNaturesByLevel2(
+    companyId: string,
+    level1: string,
+    level2: string,
+  ) {
     return this.prisma.nature.findMany({
-      where: { isActive: true, companyId, level2: level2 },
+      where: { isActive: true, companyId, level1: level1, level2: level2 },
       select: {
         id: true,
         code: true,
