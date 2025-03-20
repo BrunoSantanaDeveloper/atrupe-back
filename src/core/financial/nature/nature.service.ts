@@ -49,11 +49,20 @@ export class NatureService {
           };
 
       // Mapeamento para o nome do level2
-      const level2TitleMap: Record<string, string> = {
-        '01': 'Administrativo',
-        '02': 'Operacional',
-        '03': 'Não operacional',
-      };
+      const level2TitleMap: Record<string, string> = level2
+        ? {
+            [level2]:
+              level2 === '01'
+                ? 'Administrativo'
+                : level2 === '02'
+                  ? 'Operacional'
+                  : 'Não operacional',
+          }
+        : {
+            '01': 'Administrativo',
+            '02': 'Operacional',
+            '03': 'Não operacional',
+          };
 
       // Buscar subcategorias com informações das naturezas
       const subCategories = await this.prisma.subCategory.findMany({
