@@ -140,6 +140,8 @@ export class ReceivableService {
           select: {
             id: true,
             totalAmount: true,
+            totalValue: true,
+            mainAdditionalFee: true,
             description: true,
             notes: true,
             status: true,
@@ -185,7 +187,9 @@ export class ReceivableService {
         .map((inst) => {
           return {
             id: inst.receivable?.id || null,
-            totalValue: inst.receivable?.totalAmount || 0,
+            totalValue: inst.receivable?.totalValue || 0,
+            totalAdditionalFee: inst.receivable?.mainAdditionalFee || 0,
+            totalAmount: inst.receivable?.totalAmount || 0,
             totalPaid: (inst.receivable?.installments || []).reduce(
               (sum, item) => {
                 return sum + (item.paidAmount ?? 0);
@@ -224,7 +228,7 @@ export class ReceivableService {
                   id: installment.paymentMethod?.id || null,
                   name: installment.paymentMethod?.name || null,
                 },
-                value: installment.amount + installment.additionalFee || 0,
+                value: installment.amount || 0,
                 additionalFee: installment.additionalFee || 0,
                 dueDate: installment.dueDate || null,
                 paidValue: installment.paidAmount || 0, // Ajuste baseado nos requisitos.

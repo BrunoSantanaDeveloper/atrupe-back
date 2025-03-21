@@ -555,6 +555,14 @@ export class DeliveryScheduleService {
         sum + installment.value + (installment.additionalFee || 0),
       0,
     );
+    const totalValue = quotationInstallments.reduce(
+      (sum: number, installment: any) => sum + installment.value,
+      0,
+    );
+    const mainAdditionalFee = quotationInstallments.reduce(
+      (sum: number, installment: any) => sum + (installment.additionalFee || 0),
+      0,
+    );
     try {
       // Iniciar uma transação Prisma
       return await this.prisma.$transaction(async (prisma) => {
@@ -565,6 +573,8 @@ export class DeliveryScheduleService {
               description: `Entrada da venda ${quotation.quotationNumber}-${quotation.series.code} - ${quotation.description || ''}`,
               notes: quotation.quotationPayment.description || '',
               totalAmount: downPayment,
+              totalValue: downPayment,
+              mainAdditionalFee: downPaymentadditionalFee || 0,
               installmentQty: 1,
               status: 'PENDING',
               clientId: quotation.clientId,
@@ -595,6 +605,8 @@ export class DeliveryScheduleService {
             description: `Venda ${quotation.quotationNumber}-${quotation.series.code} - ${quotation.description || ''}`,
             notes: quotation.quotationPayment.description || '',
             totalAmount,
+            totalValue,
+            mainAdditionalFee,
             installmentQty: quotationInstallments.length,
             status: 'PENDING',
             clientId: quotation.clientId,
