@@ -2,11 +2,46 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { CreateMethodDto } from './dto/create-method.dto';
 import { UpdateMethodDto } from './dto/update-method.dto';
 import { PrismaService } from 'nestjs-prisma';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class MethodService {
   constructor(private readonly prisma: PrismaService) {}
+  async findAvailable(companyId: string, type: string) {
+    if (!type) {
+      throw new BadRequestException('Type is required');
+    }
+    if (type !== 'receivable' && type !== 'payable') {
+      throw new BadRequestException('Invalid type');
+    }
+    const typePayment = type === 'receivable' ? 'RECEIVABLE' : 'PAYABLE';
+    if (typePayment !== 'RECEIVABLE' && typePayment !== 'PAYABLE') {
+      throw new BadRequestException('Invalid type');
+    }
+    const where: Prisma.PaymentMethodWhereInput = {
+      companyId,
+      isActive: true,
+      bankAccountCashControl: {
+        some: {
+          ...(typePayment === 'RECEIVABLE' && { acceptIncomes: true }),
+          ...(typePayment === 'PAYABLE' && { acceptPayments: true }),
+          bankAccount: {
+            isActive: true,
+          },
+        },
+      },
+    };
 
+    try {
+      const methods = await this.prisma.paymentMethod.findMany({
+        where: where,
+      });
+      return methods;
+    } catch (error) {
+      console.error(error);
+      throw new Error('Error on find payment method');
+    }
+  }
   create(dto: CreateMethodDto) {
     return this.prisma.paymentMethod.create({
       data: {

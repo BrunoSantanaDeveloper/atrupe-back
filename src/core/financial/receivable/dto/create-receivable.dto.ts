@@ -162,6 +162,14 @@ export class ReceivableInstallmentDto {
   amount?: number;
 
   @ApiProperty({
+    description: 'Acréscimos na parcela (opcional)',
+    example: 10.5,
+    required: false,
+  })
+  @IsOptional()
+  additionalFee?: number;
+
+  @ApiProperty({
     description: 'Data de vencimento',
     example: '2024-12-25',
     required: false,

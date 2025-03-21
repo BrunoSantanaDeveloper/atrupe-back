@@ -49,6 +49,20 @@ export class MethodController {
     return this.methodService.create(createMethodDto);
   }
 
+  @Get('available/:type')
+  @ApiOperation({
+    summary: 'Obtém a lista de todos os métodos de pagamento disponíveis',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de métodos de pagamento retornada com sucesso.',
+    isArray: true,
+  })
+  async findAvailable(@Req() req, @Param('type') type: string) {
+    const companyId = req.user.companyId;
+    return await this.methodService.findAvailable(companyId, type);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todos os métodos de pagamento' })
   @ApiResponse({

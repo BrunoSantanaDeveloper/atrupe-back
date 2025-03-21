@@ -104,6 +104,11 @@ export class AccountService {
                   },
                 },
               },
+              orderBy: {
+                paymentMethod: {
+                  name: 'asc',
+                },
+              },
             },
             cashRegister: {
               where: {
@@ -203,7 +208,7 @@ export class AccountService {
         //   );
         // }
 
-        if (bankAccountCashControl !== undefined && finalCashControl) {
+        if (bankAccountCashControl !== undefined) {
           // Atualizar itens existentes ou criar novos no controle de caixa
           for (const item of bankAccountCashControl) {
             if (item.id) {
