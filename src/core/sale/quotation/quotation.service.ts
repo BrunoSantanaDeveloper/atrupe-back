@@ -1656,6 +1656,7 @@ export class QuotationService {
               },
             },
           },
+          order: true,
           client: {
             select: {
               name: true,
@@ -1822,8 +1823,19 @@ export class QuotationService {
             signature: quotation.seller.signatureUrl,
           },
           createdAt: quotation.createdAt,
-          dueDate: quotation.dueDate,
+          dueDate: quotation.dueDate ? quotation.dueDate : null,
+          approvedAt: quotation.approvedAt ? quotation.approvedAt : null,
+          finishedAt: quotation.finishedAt ? quotation.finishedAt : null,
+          status: quotation.status,
         },
+        order: quotation.order
+          ? {
+              id: quotation.order?.id,
+              createdAt: quotation.order?.createdAt,
+              status: quotation.order?.status,
+              approvedAt: quotation.approvedAt ? quotation.approvedAt : null,
+            }
+          : null,
         items: quotation.quotationProduct.map((product) => ({
           id: product.id,
           image: product.product.imageUrl,

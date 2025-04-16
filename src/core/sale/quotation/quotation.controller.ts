@@ -354,6 +354,140 @@ export class QuotationController {
   @ApiResponse({
     status: 200,
     description: 'Dados do orçamento para PDF retornados com sucesso.',
+    content: {
+      'application/json': {
+        example: {
+          company: {
+            name: 'Empresa Exemplo Ltda',
+            cnpj: '12.345.678/0001-90',
+            address: {
+              street: 'Rua Exemplo',
+              number: '123',
+              complement: 'Sala 45',
+              neighborhood: 'Centro',
+              city: 'São Paulo',
+              state: 'SP',
+              zipCode: '01234-567',
+            },
+            logo: 'https://example.com/logo.png',
+            textBeforeItems: 'Texto antes dos itens',
+            textAfterItems: 'Texto depois dos itens',
+          },
+          client: {
+            name: 'Cliente Exemplo',
+            document: {
+              type: 'CNPJ',
+              value: '98.765.432/0001-10',
+            },
+            phone: '(11) 98765-4321',
+            email: 'cliente@exemplo.com',
+            address: {
+              type: 'PRINCIPAL',
+              street: 'Rua do Cliente',
+              number: '456',
+              complement: 'Apto 78',
+              neighborhood: 'Jardim',
+              city: 'São Paulo',
+              state: 'SP',
+              zipCode: '04567-890',
+            },
+          },
+          contact: {
+            name: 'João Silva',
+            phone: '(11) 91234-5678',
+            email: 'joao.silva@exemplo.com',
+          },
+          quotation: {
+            number: 12345,
+            seriesCode: 'SERIE-001',
+            description: 'Orçamento para projeto exemplo',
+            seller: {
+              name: 'Vendedor Exemplo',
+              signature: 'https://example.com/signature.png',
+            },
+            createdAt: '2023-01-15T10:30:00Z',
+            dueDate: '2023-02-15T10:30:00Z',
+            approvedAt: '2023-01-20T14:45:00Z',
+            finishedAt: '2023-02-10T09:15:00Z',
+            status: 'DONE',
+          },
+          order: {
+            id: '550e8400-e29b-41d4-a716-446655440000',
+            createdAt: '2023-01-20T14:45:00Z',
+            status: 'IN_PRODUCTION',
+            approvedAt: '2023-01-20T14:45:00Z',
+          },
+          items: [
+            {
+              id: '550e8400-e29b-41d4-a716-446655440001',
+              image: 'https://example.com/product1.jpg',
+              description: 'Produto Exemplo 1',
+              composition: [
+                {
+                  id: '550e8400-e29b-41d4-a716-446655440002',
+                  name: 'Componente 1',
+                  quantity: 2,
+                  unitOfMeasure: 'UN',
+                  unitPrice: 15000,
+                  totalPrice: 30000,
+                },
+                {
+                  id: '550e8400-e29b-41d4-a716-446655440003',
+                  name: 'Componente 2',
+                  quantity: 1,
+                  unitOfMeasure: 'M',
+                  unitPrice: 5000,
+                  totalPrice: 5000,
+                },
+              ],
+              totalQuantity: 1,
+              totalUnitPrice: 35000,
+              discount: {
+                type: 'PERCENT',
+                value: 10,
+                discountedValue: 3500,
+              },
+              finalPrice: 31500,
+            },
+          ],
+          delivery: {
+            supplier: {
+              name: 'Transportadora Exemplo',
+              cnpj: '11.222.333/0001-44',
+            },
+            daysAfterApproval: 15,
+            clientAddress: {
+              type: 'PRINCIPAL',
+              street: 'Rua do Cliente',
+              number: '456',
+              complement: 'Apto 78',
+              neighborhood: 'Jardim',
+              city: 'São Paulo',
+              state: 'SP',
+              zipCode: '04567-890',
+            },
+          },
+          payment: {
+            condition: 'A Vista',
+            method: 'PIX',
+            totalInstallments: 1,
+            installments: [
+              {
+                number: '550e8400-e29b-41d4-a716-446655440004',
+                dueDate: '2023-01-20T14:45:00Z',
+                value: 31500,
+                paymentMethod: 'PIX',
+              },
+            ],
+          },
+          total: {
+            subtotal: 35000,
+            totalDiscount: 3500,
+            finalTotal: 31500,
+          },
+        },
+      },
+    },
   })
   @ApiResponse({
     status: 400,
