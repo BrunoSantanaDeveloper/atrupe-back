@@ -14,6 +14,169 @@ export class CompanyService {
     private readonly addressService: AddressService,
     private readonly plugService: PlugService,
   ) {}
+  async createFirstAccess(email: string, createCompanyDto: CreateCompanyDto) {
+    try {
+      console.log('Starting createFirstAccess process for email:', email);
+
+      return await this.prisma.$transaction(
+        async (tx) => {
+          try {
+            console.log('Finding user with email:', email);
+            const user = await tx.user.findFirst({
+              where: {
+                email: email,
+              },
+            });
+
+            if (!user) {
+              console.error('User not found for email:', email);
+              throw new Error('User not found');
+            }
+            console.log('User found:', user.id);
+
+            console.log('Creating main company');
+            const company = await this.createMainCompany(createCompanyDto);
+            console.log('Main company created:', company.id);
+
+            console.log('Finding administration sector');
+            const sector = await tx.companySector.findFirst({
+              where: {
+                name: 'Administração',
+                companyId: company.id,
+              },
+            });
+
+            if (!sector) {
+              console.error(
+                'Administration sector not found for company:',
+                company.id,
+              );
+              throw new Error('Sector not found');
+            }
+            console.log('Administration sector found:', sector.id);
+
+            console.log('Creating administrator role');
+            const role = await tx.role.create({
+              data: {
+                name: 'Admin',
+                companyId: company.id,
+                isAdmin: true,
+                sectorId: sector.id,
+              },
+            });
+            console.log('Administrator role created:', role.id);
+
+            console.log('Creating employee record');
+            await tx.employee.create({
+              data: {
+                name: user.name,
+                companyId: company.id,
+                roleId: role.id,
+                userId: user.id,
+                sectorId: sector.id,
+              },
+            });
+            console.log('Employee record created successfully');
+
+            console.log('createFirstAccess process completed successfully');
+            return 'success';
+          } catch (error) {
+            console.error('Error in transaction:', error);
+            throw error;
+          }
+        },
+        {
+          timeout: 30000,
+        },
+      );
+    } catch (error) {
+      console.error('Error in createFirstAccess:', error);
+      throw error;
+    }
+  }
+
+  async createSeedAccountPlans(companyId: string) {
+    try {
+      console.log('Starting createSeedAccountPlans for company:', companyId);
+
+      const company = await this.prisma.company.findUnique({
+        where: {
+          id: companyId,
+        },
+      });
+
+      if (!company) {
+        console.error('Company not found:', companyId);
+        throw new Error('Company not found');
+      }
+      console.log('Target company found:', company.name);
+
+      const MODEL_COMPANY_ID = '2a190fe8-e7af-4d75-8673-494dbae0372b';
+      console.log('Fetching model company data from:', MODEL_COMPANY_ID);
+
+      const modelNatures = await this.prisma.nature.findMany({
+        where: {
+          companyId: MODEL_COMPANY_ID,
+        },
+        include: {
+          subCategory: true,
+        },
+      });
+
+      console.log(`Found ${modelNatures.length} natures to clone`);
+
+      // Create a map to store old -> new IDs for relationships
+      const natureIdMap = new Map<string, string>();
+      const subCategoryIdMap = new Map<string, string>();
+
+      // First, create all natures
+      for (const modelNature of modelNatures) {
+        console.log('Creating nature:', modelNature.description);
+        const newNature = await this.prisma.nature.create({
+          data: {
+            description: modelNature.description,
+            level1: modelNature.level1,
+            level2: modelNature.level2,
+            code: modelNature.code,
+            companyId: companyId,
+            isActive: modelNature.isActive,
+          },
+        });
+        natureIdMap.set(modelNature.id, newNature.id);
+
+        // Then create all subcategories for this nature
+        if (modelNature.subCategory && modelNature.subCategory.length > 0) {
+          console.log(
+            `Creating ${modelNature.subCategory.length} subcategories for nature:`,
+            modelNature.description,
+          );
+
+          for (const modelSubCategory of modelNature.subCategory) {
+            const newSubCategory = await this.prisma.subCategory.create({
+              data: {
+                description: modelSubCategory.description,
+                code: modelSubCategory.code,
+                natureId: newNature.id,
+                companyId: companyId,
+                isActive: modelSubCategory.isActive,
+              },
+            });
+            subCategoryIdMap.set(modelSubCategory.id, newSubCategory.id);
+          }
+        }
+      }
+
+      console.log('Successfully cloned all natures and subcategories');
+      return {
+        message: 'Successfully cloned account plans',
+        naturesCreated: modelNatures.length,
+      };
+    } catch (error) {
+      console.error('Error in createSeedAccountPlans:', error);
+      throw error;
+    }
+  }
+
   async createMainCompany(createCompanyDto: CreateCompanyDto) {
     try {
       const { general, address, personalization } = createCompanyDto;

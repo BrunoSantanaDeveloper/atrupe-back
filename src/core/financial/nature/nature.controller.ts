@@ -92,6 +92,7 @@ export class NatureController {
   @Get()
   async findAll(@Query() filterDto: NatureFilterDto, @Req() req) {
     filterDto.companyId = req.user.companyId;
+    console.log(req.user.companyId);
     return await this.natureService.findAll(filterDto);
   }
   @Get(':id')

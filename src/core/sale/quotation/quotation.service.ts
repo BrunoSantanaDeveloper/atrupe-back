@@ -4,6 +4,7 @@ import {
   HttpStatus,
   Injectable,
   NotFoundException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { AddItemDto, CreateQuotationDto } from './dto/create-quotation.dto';
 import { PrismaService } from 'nestjs-prisma';
@@ -21,6 +22,8 @@ import { add, endOfDay } from 'date-fns';
 import { CancelOrderDto } from '../order/dto/create-order.dto';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.service';
+import * as fs from 'fs';
+import * as fastCsv from 'fast-csv';
 
 export interface QuotationGroup {
   date: string;
@@ -947,6 +950,7 @@ export class QuotationService {
         createdAt: quotation.createdAt,
         updatedAt: quotation.updatedAt,
         dueDate: quotation.dueDate,
+        finishedAt: quotation.finishedAt,
         description: quotation.description,
         status: quotation.status,
         totalValue: quotation.totalValue,
@@ -1101,7 +1105,7 @@ export class QuotationService {
           discount: qp.discount,
           unitValue: (() => {
             const unitValue = qp.items.reduce(
-              (total, item) => total + item.unitCost * item.originalQuantity,
+              (total, item) => total + item.salePrice * item.originalQuantity,
               0,
             );
             return unitValue;
@@ -1131,7 +1135,7 @@ export class QuotationService {
 
             quantity: qp.quantity,
             unitValue: qp.items.reduce(
-              (total, item) => total + item.unitCost * item.originalQuantity,
+              (total, item) => total + item.salePrice * item.originalQuantity,
               0,
             ),
 
@@ -1406,12 +1410,16 @@ export class QuotationService {
           id: {
             in: quotationProductsIds,
           },
+          productionStages: {
+            not: null,
+          },
         },
         select: {
           id: true,
           productionStages: true,
         },
       });
+
       // Construir as etapas de produção
       const allStages = products.flatMap((product) => {
         // Verificar e converter productionStages em JSON manipulável
@@ -1620,5 +1628,670 @@ export class QuotationService {
       where: { id },
       data: { isActive: false },
     });
+  }
+
+  async getQuotationPdfData(id: string) {
+    try {
+      const quotation = await this.prisma.quotation.findUnique({
+        where: { id },
+        include: {
+          company: {
+            select: {
+              name: true,
+              cnpj: true,
+              logoUrl: true,
+              textBeforeItems: true,
+              textAfterItems: true,
+              address: {
+                where: { type: 'Principal' },
+                select: {
+                  street: true,
+                  number: true,
+                  complement: true,
+                  neighborhood: true,
+                  city: true,
+                  state: true,
+                  zipcode: true,
+                },
+              },
+            },
+          },
+          client: {
+            select: {
+              name: true,
+              type: true,
+              cpf: true,
+              cnpj: true,
+              phone: true,
+              email: true,
+              address: {
+                where: { type: 'Principal' },
+                select: {
+                  street: true,
+                  number: true,
+                  complement: true,
+                  neighborhood: true,
+                  city: true,
+                  state: true,
+                  zipcode: true,
+                },
+              },
+              contacts: {
+                select: {
+                  name: true,
+                  phone: true,
+                  email: true,
+                },
+              },
+            },
+          },
+          seller: {
+            select: {
+              name: true,
+              signatureUrl: true,
+            },
+          },
+          series: {
+            select: {
+              code: true,
+              title: true,
+            },
+          },
+          quotationProduct: {
+            include: {
+              product: {
+                select: {
+                  name: true,
+                  imageUrl: true,
+                  technicalDescription: true,
+                },
+              },
+              items: {
+                include: {
+                  productItem: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                  unitOfMeasure: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          deliveryInfo: {
+            include: {
+              supplier: {
+                select: {
+                  name: true,
+                  cnpj: true,
+                },
+              },
+            },
+          },
+          quotationPayment: {
+            include: {
+              paymentCondition: {
+                select: {
+                  name: true,
+                },
+              },
+              paymentMethod: {
+                select: {
+                  name: true,
+                },
+              },
+              quotationInstallment: {
+                include: {
+                  paymentMethod: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!quotation) {
+        throw new NotFoundException('Quotation not found');
+      }
+
+      // Format the data according to the PDF structure
+      const pdfData = {
+        company: {
+          name: quotation.company.name,
+          cnpj: quotation.company.cnpj,
+          address: quotation.company.address[0]
+            ? {
+                street: quotation.company.address[0].street,
+                number: quotation.company.address[0].number,
+                complement: quotation.company.address[0].complement,
+                neighborhood: quotation.company.address[0].neighborhood,
+                city: quotation.company.address[0].city,
+                state: quotation.company.address[0].state,
+                zipCode: quotation.company.address[0].zipcode,
+              }
+            : null,
+          logo: quotation.company.logoUrl,
+          textBeforeItems: quotation.company.textBeforeItems,
+          textAfterItems: quotation.company.textAfterItems,
+        },
+        client: {
+          name: quotation.client?.name,
+          document: {
+            type: quotation.client?.type === 'PERSON' ? 'CPF' : 'CNPJ',
+            value:
+              quotation.client?.type === 'PERSON'
+                ? quotation.client?.cpf
+                : quotation.client?.cnpj,
+          },
+          phone: quotation.client?.phone,
+          email: quotation.client?.email,
+          address: quotation.client?.address[0]
+            ? {
+                type: 'PRINCIPAL',
+                street: quotation.client.address[0].street,
+                number: quotation.client.address[0].number,
+                complement: quotation.client.address[0].complement,
+                neighborhood: quotation.client.address[0].neighborhood,
+                city: quotation.client.address[0].city,
+                state: quotation.client.address[0].state,
+                zipCode: quotation.client.address[0].zipcode,
+              }
+            : null,
+        },
+        contact: quotation.client?.contacts[0]
+          ? {
+              name: quotation.client.contacts[0].name,
+              phone: quotation.client.contacts[0].phone,
+              email: quotation.client.contacts[0].email,
+            }
+          : null,
+        quotation: {
+          number: quotation.quotationNumber,
+          seriesCode: quotation.series?.code,
+          description: quotation.description,
+          seller: {
+            name: quotation.seller.name,
+            signature: quotation.seller.signatureUrl,
+          },
+          createdAt: quotation.createdAt,
+          dueDate: quotation.dueDate,
+        },
+        items: quotation.quotationProduct.map((product) => ({
+          id: product.id,
+          image: product.product.imageUrl,
+          description: product.description || product.product.name,
+          composition: product.items.map((item) => ({
+            id: item.id,
+            name: item.productItem.name,
+            quantity: item.quantity,
+            unitOfMeasure: item.unitOfMeasure.name,
+            unitPrice: item.salePrice,
+            totalPrice: item.totalValue,
+          })),
+          totalQuantity: product.quantity,
+          totalUnitPrice: product.totalValue,
+          discount: {
+            type: product.discountType || 'NONE',
+            value: product.discount || 0,
+            discountedValue: product.discount || 0,
+          },
+          finalPrice: product.finalValue || product.totalValue,
+        })),
+        delivery: quotation.deliveryInfo
+          ? {
+              supplier: quotation.deliveryInfo.supplier
+                ? {
+                    name: quotation.deliveryInfo.supplier.name,
+                    cnpj: quotation.deliveryInfo.supplier.cnpj,
+                  }
+                : null,
+              daysAfterApproval: quotation.deliveryInfo.daysAfterApproval,
+              clientAddress: quotation.client?.address[0]
+                ? {
+                    type: 'PRINCIPAL',
+                    street: quotation.client.address[0].street,
+                    number: quotation.client.address[0].number,
+                    complement: quotation.client.address[0].complement,
+                    neighborhood: quotation.client.address[0].neighborhood,
+                    city: quotation.client.address[0].city,
+                    state: quotation.client.address[0].state,
+                    zipCode: quotation.client.address[0].zipcode,
+                  }
+                : null,
+            }
+          : null,
+        payment: quotation.quotationPayment
+          ? {
+              condition: quotation.quotationPayment.paymentCondition?.name,
+              method: quotation.quotationPayment.paymentMethod?.name,
+              totalInstallments: quotation.quotationPayment.installmentQty,
+              installments: quotation.quotationPayment.quotationInstallment.map(
+                (installment) => ({
+                  number: installment.id,
+                  dueDate: installment.dueDate,
+                  value: installment.value,
+                  paymentMethod: installment.paymentMethod?.name,
+                }),
+              ),
+            }
+          : null,
+        total: {
+          subtotal: quotation.totalValue,
+          totalDiscount: quotation.quotationPayment?.discountTotal || 0,
+          finalTotal:
+            quotation.quotationPayment?.finalValue || quotation.totalValue,
+        },
+      };
+
+      return pdfData;
+    } catch (error) {
+      console.error('Error generating quotation PDF data:', error);
+      throw new InternalServerErrorException(
+        'Failed to generate quotation PDF data',
+      );
+    }
+  }
+
+  async deleteImportedQuotations(
+    companyId: string,
+  ): Promise<{ success: boolean; message: string; deleted: number }> {
+    try {
+      // Find all quotations for the company
+      const quotations = await this.prisma.quotation.findMany({
+        where: { companyId },
+        select: { id: true },
+      });
+
+      const quotationIds = quotations.map((q) => q.id);
+      let deletedCount = 0;
+
+      // Delete in a transaction to ensure data consistency
+      await this.prisma.$transaction(async (prisma) => {
+        // Delete quotation product items
+        await prisma.quotationProductItem.deleteMany({
+          where: {
+            quotationId: {
+              in: quotationIds,
+            },
+          },
+        });
+
+        // Delete quotation products
+        await prisma.quotationProduct.deleteMany({
+          where: {
+            quotationId: {
+              in: quotationIds,
+            },
+          },
+        });
+
+        // Delete quotation installments
+        await prisma.quotationInstallment.deleteMany({
+          where: {
+            quotationPayment: {
+              quotationId: {
+                in: quotationIds,
+              },
+            },
+          },
+        });
+
+        // Delete quotation payments
+        await prisma.quotationPayment.deleteMany({
+          where: {
+            quotationId: {
+              in: quotationIds,
+            },
+          },
+        });
+
+        // Delete delivery info
+        await prisma.deliveryInfo.deleteMany({
+          where: {
+            quotationId: {
+              in: quotationIds,
+            },
+          },
+        });
+
+        // Delete delivery schedules
+        await prisma.deliverySchedule.deleteMany({
+          where: {
+            quotationId: {
+              in: quotationIds,
+            },
+          },
+        });
+
+        // Delete production stages
+        await prisma.productionStage.deleteMany({
+          where: {
+            schedule: {
+              quotationId: {
+                in: quotationIds,
+              },
+            },
+          },
+        });
+
+        // Delete orders
+        await prisma.order.deleteMany({
+          where: {
+            quotationId: {
+              in: quotationIds,
+            },
+          },
+        });
+
+        // Finally, delete the quotations
+        const result = await prisma.quotation.deleteMany({
+          where: {
+            id: {
+              in: quotationIds,
+            },
+          },
+        });
+
+        deletedCount = result.count;
+      });
+
+      return {
+        success: true,
+        message: `Successfully deleted ${deletedCount} quotations and all related entities`,
+        deleted: deletedCount,
+      };
+    } catch (error) {
+      console.error('Error deleting imported quotations:', error);
+      throw new BadRequestException(
+        `Failed to delete imported quotations: ${error.message}`,
+      );
+    }
+  }
+  async importQuotationsFromCsv(
+    filePath: string,
+    companyId: string,
+  ): Promise<{ success: boolean; message: string; imported: number }> {
+    try {
+      // Find the admin seller
+      const adminSeller = await this.prisma.employee.findFirst({
+        where: {
+          companyId,
+          role: {
+            name: 'Admin',
+          },
+        },
+      });
+
+      if (!adminSeller) {
+        throw new BadRequestException('Admin seller not found for the company');
+      }
+
+      // Get all payment methods for the company
+      const paymentMethods = await this.prisma.paymentMethod.findMany({
+        where: { companyId },
+        take: 1,
+      });
+
+      if (paymentMethods.length === 0) {
+        throw new BadRequestException(
+          'No payment methods found for the company',
+        );
+      }
+
+      const defaultPaymentMethod = paymentMethods[0];
+
+      // Get all unit measures for the company
+      const unitMeasures = await this.prisma.companyUnitOfMeasure.findMany({
+        where: { companyId },
+      });
+
+      // Map for unit measures
+      const unitMeasureMap = {
+        M2: 'M²',
+        M: 'MT',
+        LT: 'LT',
+        UN: 'UN',
+        KG: 'KG',
+        KM: 'KM',
+        HH: 'HH',
+      };
+
+      // Map for delivery types
+      const deliveryTypeMap = {
+        '1': 'PICKUP',
+        '2': 'INSTALLATION',
+        '3': 'CARRIER',
+        '4': 'CARRIER',
+      };
+
+      // Map for quotation status
+      const statusMap = {
+        Digitação: 'OPEN',
+        Fechado: 'DONE',
+        Finalizado: 'DONE',
+        Entrega: 'APPROVED',
+      };
+
+      let importedCount = 0;
+      const quotationsToApprove: string[] = [];
+
+      // Read and process the CSV file
+      const rows: any[] = [];
+      await new Promise((resolve, reject) => {
+        fs.createReadStream(filePath)
+          .pipe(fastCsv.parse({ headers: true }))
+          .on('data', (row) => rows.push(row))
+          .on('end', resolve)
+          .on('error', reject);
+      });
+
+      // Process each row
+      for (const row of rows) {
+        try {
+          const series = await this.prisma.saleSeries.findFirst({
+            where: {
+              code: row.venda_serie,
+              companyId,
+            },
+          });
+
+          if (!series) {
+            console.warn(`Series not found for code: ${row.venda_serie}`);
+            continue;
+          }
+
+          let clientId = null;
+          if (row.cliente_nome) {
+            const client = await this.prisma.client.findFirst({
+              where: {
+                name: row.cliente_nome,
+                companyId,
+              },
+            });
+            if (client) {
+              clientId = client.id;
+            }
+          }
+
+          const createdAt = new Date(row.cadastro_dt);
+          const dueDate = series.proposalValidity
+            ? add(createdAt, { days: series.proposalValidity })
+            : add(createdAt, { days: 7 });
+
+          let status = 'OPEN';
+          if (row.confsubstatus_descr) {
+            status = statusMap[row.confsubstatus_descr] || 'CANCELED';
+          }
+
+          const quotation = await this.prisma.quotation.create({
+            data: {
+              companyId,
+              sellerId: adminSeller.id,
+              clientId,
+              seriesId: series.id,
+              quotationNumber: parseInt(row.venda_numero),
+              description: row.referencia || '',
+              status: status as QuotationStatus,
+              dueDate,
+              totalValue: parseFloat(row.venda_valor_total) * 100 || 0,
+              finishedAt:
+                row.venda_data_fechamento &&
+                row.venda_data_fechamento !== '0000-00-00 00:00:00'
+                  ? new Date(row.venda_data_fechamento)
+                  : null,
+              approvedAt:
+                row.venda_data_aprovacao &&
+                row.venda_data_aprovacao !== '0000-00-00 00:00:00'
+                  ? new Date(row.venda_data_aprovacao)
+                  : null,
+              createdAt: createdAt,
+            },
+          });
+
+          const deliveryType = deliveryTypeMap[row.fkidtipoentrega] || 'PICKUP';
+          const daysAfterApproval = parseInt(row.dias_apos_aprovacao) || 0;
+
+          let estimatedDate = null;
+          if (row.entrega_prazo && row.entrega_prazo !== '0000-00-00') {
+            estimatedDate = new Date(row.entrega_prazo);
+          } else if (daysAfterApproval > 0) {
+            estimatedDate = add(createdAt, { days: daysAfterApproval });
+          }
+
+          await this.prisma.deliveryInfo.create({
+            data: {
+              quotationId: quotation.id,
+              deliveryType: deliveryType as any,
+              daysAfterApproval,
+              estimatedDate,
+              cost: parseFloat(row.entrega_custo) * 100 || 0,
+              value: parseFloat(row.entrega_valor) * 100 || 0,
+            },
+          });
+
+          const quotationPayment = await this.prisma.quotationPayment.create({
+            data: {
+              quotationId: quotation.id,
+              billing: series.billing,
+              totalValue: parseFloat(row.venda_valor_final) * 100 || 0,
+              finalValue:
+                (parseFloat(row.venda_valor_final) -
+                  parseFloat(row.venda_valor_desconto)) *
+                  100 || 0,
+              discountType: 'VALUE',
+              discountValue: parseFloat(row.venda_valor_desconto) * 100 || 0,
+              discountTotal: parseFloat(row.venda_valor_desconto) * 100 || 0,
+              installmentQty: 1,
+              minInstallmentQty: 1,
+              maxInstallmentQty: 1,
+            },
+          });
+
+          await this.prisma.quotationInstallment.create({
+            data: {
+              quotationPaymentId: quotationPayment.id,
+              paymentMethodId: defaultPaymentMethod.id,
+              dueDate: quotation.dueDate,
+              value:
+                (parseFloat(row.venda_valor_final) -
+                  parseFloat(row.venda_valor_desconto)) *
+                  100 || 0,
+            },
+          });
+
+          if (row.vendaitem_referencia) {
+            const product = await this.prisma.product.findFirst({
+              where: {
+                name: row.vendaitem_referencia,
+                companyId,
+              },
+              include: {
+                items: true,
+              },
+            });
+
+            if (product) {
+              const quotationProduct =
+                await this.prisma.quotationProduct.create({
+                  data: {
+                    quotationId: quotation.id,
+                    productId: product.id,
+                    description: row.vendaitem_referencia,
+                    totalValue: parseFloat(row.vendaitem_valor_item) * 100 || 0,
+                    discount:
+                      parseFloat(row.vendaitem_valor_desconto) * 100 || 0,
+                    discountType: 'VALUE',
+                    finalValue:
+                      parseFloat(row.vendaitem_valor_final) * 100 || 0,
+                    quantity: parseInt(row.vendaitem_quantidade) || 1,
+                  },
+                });
+
+              const unitMeasureCode =
+                unitMeasureMap[row.vendaitem_un_com] || row.vendaitem_un_com;
+              const unitMeasure = unitMeasures.find(
+                (um) => um.code === unitMeasureCode,
+              );
+
+              if (unitMeasure) {
+                await this.prisma.quotationProductItem.create({
+                  data: {
+                    quotationId: quotation.id,
+                    productId: product.id,
+                    quotationProductId: quotationProduct.id,
+                    productItemId: product.items[0]?.id || null,
+                    name: row.vendaitem_referencia,
+                    quantity: parseInt(row.vendaitem_quantidade) || 1,
+                    originalQuantity: parseInt(row.vendaitem_quantidade) || 1,
+                    unitOfMeasureId: unitMeasure.id,
+                    width: parseFloat(row.vendaitem_dim_largura) || null,
+                    length: parseFloat(row.vendaitem_dim_comprimento) || null,
+                    unitCost: parseFloat(row.vendaitem_custo_total) * 100 || 0,
+                    salePrice: parseFloat(row.vendaitem_valor_item) * 100 || 0,
+                    totalValue:
+                      parseFloat(row.vendaitem_valor_total) * 100 || 0,
+                  },
+                });
+              }
+            }
+          }
+
+          if (row.confstatus_descr === 'Ordem de Serviço') {
+            quotationsToApprove.push(quotation.id);
+          }
+
+          importedCount++;
+        } catch (error) {
+          console.error(`Error processing row: ${JSON.stringify(row)}`, error);
+        }
+      }
+
+      for (const quotationId of quotationsToApprove) {
+        try {
+          await this.approve(quotationId);
+        } catch (error) {
+          console.error(`Error approving quotation ${quotationId}:`, error);
+        }
+      }
+
+      return {
+        success: true,
+        message: `Successfully imported ${importedCount} quotations`,
+        imported: importedCount,
+      };
+    } catch (error) {
+      console.error('Error importing quotations from CSV:', error);
+      throw new BadRequestException(
+        `Failed to import quotations: ${error.message}`,
+      );
+    }
   }
 }

@@ -306,8 +306,30 @@ export class QuotationController {
   ) {
     return await this.quotationService.update(id, updateQuotationDto);
   }
+  @Delete('delete-imported')
+  @ApiOperation({
+    summary: 'Deleta todos os orçamentos importados para uma empresa',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Orçamentos deletados com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Erro ao deletar os orçamentos.',
+  })
+  async deleteImportedQuotations(@Req() req) {
+    const companyId = req.user.companyId;
+    try {
+      console.log(companyId);
+      return await this.quotationService.deleteImportedQuotations(companyId);
+    } catch (error) {
+      console.error('Erro ao deletar orçamentos importados:', error);
+      throw error;
+    }
+  }
 
-  @Delete(':id')
+  @Delete('asasss/:id')
   @ApiOperation({ summary: 'Remove um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
   @ApiResponse({
@@ -324,5 +346,52 @@ export class QuotationController {
   })
   remove(@Param('id') id: string) {
     return this.quotationService.remove(id);
+  }
+
+  @Get(':id/pdf-data')
+  @ApiOperation({ summary: 'Obtém os dados do orçamento para geração de PDF' })
+  @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
+  @ApiResponse({
+    status: 200,
+    description: 'Dados do orçamento para PDF retornados com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'ID inválido.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Orçamento não encontrado.',
+  })
+  async getQuotationPdfData(@Param('id') id: string) {
+    if (!isUUID(id, '4')) {
+      throw new BadRequestException('Invalid id');
+    }
+    return await this.quotationService.getQuotationPdfData(id);
+  }
+
+  @Post('import-csv')
+  @ApiOperation({ summary: 'Importa orçamentos do CSV' })
+  @ApiResponse({
+    status: 201,
+    description: 'Orçamentos importados com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Erro ao processar o arquivo CSV.',
+  })
+  async importCsv(@Req() req) {
+    const companyId = req.user.companyId;
+    const filePath =
+      '/home/tribodev/atrupe-back/src/helpers/payload/join vendas com itens.csv';
+    try {
+      return await this.quotationService.importQuotationsFromCsv(
+        filePath,
+        companyId,
+      );
+    } catch (error) {
+      console.error('Erro ao importar orçamentos do CSV:', error);
+      throw error;
+    }
   }
 }

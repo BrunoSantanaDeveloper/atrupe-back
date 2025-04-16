@@ -64,6 +64,31 @@ export class ClientController {
     }
   }
 
+  @Post('import-csv-v2')
+  @ApiOperation({ summary: 'Importa clientes do CSV versão 2' })
+  @ApiResponse({
+    status: 201,
+    description: 'Clientes importados com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Erro ao processar o arquivo CSV.',
+  })
+  async importCsvV2(@Req() req) {
+    const companyId = req.user.companyId;
+    const filePath =
+      '/home/tribodev/atrupe-back/src/helpers/payload/clients-v2.csv';
+    try {
+      return await this.clientService.createClientsFromCsvV2(
+        filePath,
+        companyId,
+      );
+    } catch (error) {
+      console.error('Erro ao importar clientes do CSV v2:', error);
+      throw error;
+    }
+  }
+
   @Post('pre-register')
   @ApiOperation({ summary: 'Pré-registro do cliente' })
   @ApiBody({

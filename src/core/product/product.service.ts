@@ -9,6 +9,8 @@ import { ProductFilterDTO } from './dto/filter.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductStatus } from '@prisma/client';
 import { JsonArray } from '@prisma/client/runtime/library';
+import * as fs from 'fs';
+import * as fastCsv from 'fast-csv';
 
 @Injectable()
 export class ProductService {
@@ -415,5 +417,274 @@ export class ProductService {
         error.message,
       );
     }
+  }
+
+  async createProductsFromCsv(filePath: string, companyId: string) {
+    const products: any[] = [];
+    const processedCategories = new Set<string>();
+    const productCodes = new Map<string, number>();
+
+    // Buscar unidades de medida da empresa
+    const companyUnits = await this.prisma.companyUnitOfMeasure.findMany({
+      where: { companyId },
+      select: { id: true, code: true },
+    });
+
+    // Mapeamento de unidades de medida
+    const unitMapping: { [key: string]: string } = {
+      M2: 'M²',
+      M: 'MT',
+      LT: 'LT',
+      UN: 'UN',
+      KG: 'KG',
+      KM: 'KM',
+      HH: 'HH',
+    };
+
+    return new Promise<void>((resolve, reject) => {
+      fs.createReadStream(filePath)
+        .pipe(
+          fastCsv.parse({
+            headers: [
+              'idproduto',
+              'fkidsetor',
+              'fkidcategoria',
+              'fkiditemconfnfe',
+              'fkidsubcategoria',
+              'fkidtipocalculo',
+              'fkidservico_1',
+              'fkidalbum',
+              'tipo_producao',
+              'tipo_produto',
+              'tipo_locacao',
+              'controlar_estoque',
+              'nome',
+              'cod',
+              'descricao',
+              'volume_de_venda_media_mes',
+              'fkidstatus',
+              'disponivel_venda_unitaria',
+              'idcategoria',
+              'categoria',
+              'fkidcategoria_parent',
+              'fkidstatus_categoria',
+              'idsetor',
+              'setor',
+              'icone_setor',
+              'carga_producao',
+              'perc_rateio_indireto',
+              'custo_rateio',
+              'custo_direto_total',
+              'custo_total',
+              'permite_rateio',
+              'rateio_perc_serv',
+              'rateio_valor_serv',
+              'rateio_perc_mat',
+              'rateio_valor_mat',
+              'fkidtiposervico',
+              'fkidservico_2',
+              'fixed',
+              'opcional',
+              'actived',
+              'setor_fkidcentrodecusto',
+              'ordem_ico_venda',
+              'idservico',
+              'fkidsetor_2',
+              'fkidcategoria_2',
+              'fkidtipocalculo_2',
+              'tipo',
+              'servico',
+              'descricao_2',
+              'media_venda_mes',
+              'def_custo_by_sys',
+              'custo',
+              'perc_tributacao',
+              'perc_despesas_gerais',
+              'perc_comissao',
+              'perc_lucro',
+              'mrkp',
+              'valor',
+              'valor_sugerido',
+              'servfkidstatus',
+              'is_valor_fixo',
+              'human_edit',
+              'ser_un_comercial',
+              'iduncom',
+              'uncom',
+              'unidadecomercial',
+              'input_icon',
+              'input_mask',
+            ],
+            delimiter: ',',
+            trim: true,
+            skipRows: 1,
+          }),
+        )
+        .on('data', async (row) => {
+          try {
+            let categoryId = null;
+            console.log('Processando linha com categoria:', row.categoria);
+
+            // Verificar se a categoria já foi processada
+            if (row.categoria) {
+              console.log(
+                'Categoria existe, verificando se já foi processada:',
+                processedCategories.has(row.categoria),
+              );
+
+              if (!processedCategories.has(row.categoria)) {
+                processedCategories.add(row.categoria);
+                console.log('Categoria adicionada ao Set:', row.categoria);
+
+                // Buscar ou criar categoria
+                const category = await this.prisma.$transaction(
+                  async (prisma) => {
+                    let existingCategory = await prisma.category.findFirst({
+                      where: {
+                        name: row.categoria,
+                        companyId,
+                        kind: 'PRODUCT',
+                      },
+                    });
+
+                    if (!existingCategory) {
+                      console.log('Criando nova categoria:', row.categoria);
+                      existingCategory = await prisma.category.create({
+                        data: {
+                          name: row.categoria,
+                          companyId,
+                          kind: 'PRODUCT',
+                          isActive: true,
+                        },
+                      });
+                    } else {
+                      console.log('Categoria já existe:', row.categoria);
+                    }
+                    return existingCategory;
+                  },
+                );
+                categoryId = category.id;
+              } else {
+                console.log(
+                  'Categoria já processada anteriormente:',
+                  row.categoria,
+                );
+                // Buscar a categoria existente
+                const existingCategory = await this.prisma.category.findFirst({
+                  where: {
+                    name: row.categoria,
+                    companyId,
+                    kind: 'PRODUCT',
+                  },
+                });
+                if (existingCategory) {
+                  categoryId = existingCategory.id;
+                }
+              }
+            } else {
+              console.log('Linha sem categoria definida');
+            }
+
+            console.log('categoryId final:', categoryId);
+
+            // Verificar código duplicado
+            let productCode = row.cod;
+            if (productCodes.has(productCode)) {
+              const count = productCodes.get(productCode) + 1;
+              productCodes.set(productCode, count);
+              productCode = `${productCode}${count}`;
+            } else {
+              productCodes.set(productCode, 0);
+            }
+
+            // Buscar setor
+            let sectorId = null;
+            if (row.setor) {
+              const sector = await this.prisma.companySector.findFirst({
+                where: {
+                  name: row.setor,
+                  companyId,
+                },
+              });
+              if (sector) {
+                sectorId = sector.id;
+              }
+            }
+
+            // Criar produto
+            const product = await this.prisma.product.create({
+              data: {
+                name: row.nome,
+                code: productCode,
+                status: 'ACTIVE',
+                isActive: true,
+                companyId,
+                categoryId,
+                sectorId,
+              },
+            });
+
+            // Criar item do produto
+            if (row.servico) {
+              // Encontrar unidade de medida correspondente
+              const unitCode = unitMapping[row.uncom] || row.uncom;
+              const unitOfMeasure = companyUnits.find(
+                (unit) => unit.code === unitCode,
+              );
+
+              if (unitOfMeasure) {
+                // Definir medidas baseado na unidade
+                const measures: any = {};
+                switch (unitCode) {
+                  case 'M²':
+                    measures.width = 1;
+                    measures.length = 1;
+                    break;
+                  case 'MT':
+                    measures.height = 1;
+                    break;
+                  case 'UN':
+                    break;
+                  case 'KG':
+                    measures.weight = 1;
+                    break;
+                  case 'KM':
+                    measures.distance = 1;
+                    break;
+                  case 'HH':
+                    measures.duration = 1;
+                    break;
+                }
+
+                await this.prisma.productItem.create({
+                  data: {
+                    name: row.servico,
+                    productId: product.id,
+                    unitOfMeasureId: unitOfMeasure.id,
+                    unitCost: parseFloat(row.custo) || 0,
+                    salePrice: parseFloat(row.valor) || 0,
+                    ...measures,
+                  },
+                });
+              }
+            }
+
+            products.push(product);
+          } catch (error) {
+            console.error('Erro ao processar linha do CSV:', error);
+            reject(error);
+          }
+        })
+        .on('end', () => {
+          console.log(
+            `Importação concluída. ${products.length} produtos importados.`,
+          );
+          resolve();
+        })
+        .on('error', (error) => {
+          console.error('Erro ao processar CSV:', error);
+          reject(error);
+        });
+    });
   }
 }

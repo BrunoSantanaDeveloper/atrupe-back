@@ -9,6 +9,7 @@ import {
   UseGuards,
   Patch,
   Req,
+  BadRequestException,
 } from '@nestjs/common';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -138,5 +139,25 @@ export class ProductController {
   })
   async removeItem(@Param('id') id: string) {
     return this.productService.removeItem(id);
+  }
+
+  @Post('import-csv')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Import products from CSV file' })
+  @ApiResponse({ status: 200, description: 'Products imported successfully' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async importProductsFromCsv(@Req() req) {
+    try {
+      const filePath = 'src/helpers/payload/produtos.csv';
+      await this.productService.createProductsFromCsv(
+        filePath,
+        req.user.companyId,
+      );
+      return { message: 'Products imported successfully' };
+    } catch (error) {
+      console.log(error);
+      throw new BadRequestException('Failed to import products', error.message);
+    }
   }
 }

@@ -22,6 +22,7 @@ import { LanguageModule } from './language/language.module';
 import { ProfileModule } from './profile/profile.module';
 import { SellersModule } from './sellers/sellers.module';
 import { FilesModule } from './files/files.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { FilesModule } from './files/files.module';
     ProfileModule,
     SellersModule,
     FilesModule,
+    MailModule,
   ],
 })
 export class CoreModule {}
