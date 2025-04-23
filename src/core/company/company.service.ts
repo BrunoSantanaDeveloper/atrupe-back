@@ -14,7 +14,7 @@ export class CompanyService {
     private readonly addressService: AddressService,
     private readonly plugService: PlugService,
   ) {}
-  async createFirstAccess(email: string, createCompanyDto: CreateCompanyDto) {
+  async createFirstAccess(email: string, companyId: string) {
     try {
       console.log('Starting createFirstAccess process for email:', email);
 
@@ -34,22 +34,18 @@ export class CompanyService {
             }
             console.log('User found:', user.id);
 
-            console.log('Creating main company');
-            const company = await this.createMainCompany(createCompanyDto);
-            console.log('Main company created:', company.id);
-
             console.log('Finding administration sector');
             const sector = await tx.companySector.findFirst({
               where: {
                 name: 'Administração',
-                companyId: company.id,
+                companyId: companyId,
               },
             });
 
             if (!sector) {
               console.error(
                 'Administration sector not found for company:',
-                company.id,
+                companyId,
               );
               throw new Error('Sector not found');
             }
@@ -59,7 +55,7 @@ export class CompanyService {
             const role = await tx.role.create({
               data: {
                 name: 'Admin',
-                companyId: company.id,
+                companyId: companyId,
                 isAdmin: true,
                 sectorId: sector.id,
               },
@@ -70,7 +66,7 @@ export class CompanyService {
             await tx.employee.create({
               data: {
                 name: user.name,
-                companyId: company.id,
+                companyId: companyId,
                 roleId: role.id,
                 userId: user.id,
                 sectorId: sector.id,

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Verificação de Email</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .container {
+      background-color: #f9f9f9;
+      border-radius: 5px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+    .code {
+      font-size: 24px;
+      font-weight: bold;
+      text-align: center;
+      padding: 10px;
+      background-color: #e9e9e9;
+      border-radius: 5px;
+      margin: 20px 0;
+    }
+    .footer {
+      margin-top: 30px;
+      font-size: 12px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Verificação de Email</h2>
+    <p>Obrigado por se cadastrar! Para verificar seu email, use o código abaixo:</p>
+    <div class="code">{{token}}</div>
+    <p>Este código expirará em 10 minutos.</p>
+    <p>Se você não solicitou esta verificação, pode ignorar este email.</p>
+    <div class="footer">
+      <p>Este é um email automático, por favor não responda.</p>
+    </div>
+  </div>
+</body>
+</html> 

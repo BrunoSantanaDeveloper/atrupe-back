@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { UserService } from './user.service';
-import { CreateUserDto } from './dto/create.dto';
+import { CreateMailVerificationDto, CreateUserDto } from './dto/create.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { UserResponseDto } from './dto/response.dto';
 import {
@@ -24,6 +24,9 @@ import {
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 
 @ApiTags('Usuário')
 @Controller('user')
@@ -47,10 +50,7 @@ export class UserController {
       example: {
         summary: 'Exemplo de payload para criação de usuário',
         value: {
-          name: 'johndoe',
           email: 'johndoe@example.com',
-          password: 'securepassword123',
-          employeeId: '1234567890',
         },
       },
     },
@@ -63,8 +63,8 @@ export class UserController {
     status: 400,
     description: 'Dados inválidos.',
   })
-  create(@Req() req, @Body() body: CreateUserDto) {
-    return this.userService.create(body);
+  async create(@Req() req, @Body() body: CreateMailVerificationDto) {
+    return await this.userService.create(body);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -170,5 +170,105 @@ export class UserController {
     }
 
     return user;
+  }
+
+  @Post('forgot-password')
+  @ApiOperation({ summary: 'Solicita redefinição de senha' })
+  @ApiBody({
+    description: 'Email do usuário',
+    type: ForgotPasswordDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Email de redefinição de senha enviado com sucesso.',
+  })
+  async forgotPassword(
+    @Body() forgotPasswordDto: ForgotPasswordDto,
+  ): Promise<void> {
+    await this.userService.forgotPassword(forgotPasswordDto);
+  }
+
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Redefine a senha do usuário' })
+  @ApiBody({
+    description: 'Token e nova senha',
+    type: ResetPasswordDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Senha redefinida com sucesso.',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Token inválido ou expirado.',
+  })
+  async resetPassword(
+    @Body() resetPasswordDto: ResetPasswordDto,
+  ): Promise<void> {
+    await this.userService.resetPassword(resetPasswordDto);
+  }
+
+  @Post('verify-email')
+  @ApiOperation({ summary: 'Verifica o email do usuário' })
+  @ApiBody({
+    description: 'Email e token de verificação',
+    type: VerifyEmailDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Email verificado com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Token inválido ou expirado.',
+  })
+  async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
+    return await this.userService.verifyEmail(verifyEmailDto);
+  }
+
+  @Post('resend-verification')
+  @ApiOperation({ summary: 'Reenvia o email de verificação' })
+  @ApiBody({
+    description: 'Email do usuário',
+    schema: {
+      type: 'object',
+      properties: {
+        email: {
+          type: 'string',
+          description: 'Email do usuário',
+          example: 'usuario@exemplo.com',
+        },
+      },
+      required: ['email'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Email de verificação reenviado com sucesso.',
+  })
+  async resendVerification(@Body('email') email: string) {
+    await this.userService.sendEmailValidation(email);
+    return { message: 'Email de verificação reenviado com sucesso.' };
+  }
+
+  @Post('create-password')
+  @ApiOperation({
+    summary: 'Cria uma senha para o usuário após verificação de email',
+  })
+  @ApiBody({
+    description: 'Nova senha do usuário',
+    type: CreateUserDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Senha criada com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Usuário não encontrado ou email não verificado.',
+  })
+  async createPassword(@Body() createUserDto: CreateUserDto) {
+    await this.userService.createPassword(createUserDto);
+    return { message: 'Senha criada com sucesso.' };
   }
 }

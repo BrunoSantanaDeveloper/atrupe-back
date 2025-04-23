@@ -447,15 +447,20 @@ model Employee {
 }
 
 model User {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-  isActive  Boolean   @default(true)
+  id         String    @id @default(uuid())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime? @updatedAt
+  isActive   Boolean   @default(true)
+  isVerified Boolean   @default(false)
 
   name     String
   password String
   email    String  @unique
   avatar   String?
+  phone    String?
+
+  resetPasswordToken   String?
+  resetPasswordExpires DateTime?
 
   attributes Attribute[]
   userRole   UserRole[]
@@ -463,6 +468,20 @@ model User {
 
   @@index([email])
   @@map("users")
+}
+
+model MailVerification {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  email     String    @unique
+  token     String?
+  expiresAt DateTime?
+
+  verified Boolean @default(false)
+
+  @@map("mail_verifications")
 }
 
 model Asset {

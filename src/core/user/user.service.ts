@@ -1,17 +1,24 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
-  NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
-import { Prisma, User } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
-import { CreateUserDto } from './dto/create.dto';
+import { CreateMailVerificationDto, CreateUserDto } from './dto/create.dto';
 import * as argon2 from 'argon2';
 import { UserResponseDto } from './dto/response.dto';
 import { CacheService } from 'src/svc/cache/cache.service';
 import { PlugService } from 'src/svc/plug/plug.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { randomBytes } from 'crypto';
+import { MailerService } from '@nestjs-modules/mailer';
+import { CompanyService } from '../company/company.service';
+import { CreateCompanyDto } from '../company/dto/create-company.dto';
 
 @Injectable()
 export class UserService {
@@ -19,34 +26,151 @@ export class UserService {
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly plug: PlugService,
+    private readonly companyService: CompanyService,
+    private readonly mailerService: MailerService,
   ) {}
 
-  async create(createUserDto: CreateUserDto): Promise<User> {
-    try {
-      const hashedPassword = await argon2.hash(createUserDto.password);
-      const data: Prisma.UserCreateInput = {
-        name: createUserDto.name,
-        email: createUserDto.email,
-        password: hashedPassword,
-      };
-
-      if (createUserDto.employeeId) {
-        const employee = await this.prisma.employee.findFirst({
-          where: { id: createUserDto.employeeId },
-        });
-
-        if (!employee) {
-          throw new NotFoundException('Employee not found');
-        }
-
-        data.employee = {
-          connect: { id: employee.id },
-        };
-      }
-
-      return await this.prisma.user.create({
-        data: data,
+  async sendEmailValidation(email: string) {
+    const existToken = await this.prisma.mailVerification.findFirst({
+      where: {
+        email,
+        expiresAt: {
+          gte: new Date(),
+        },
+      },
+    });
+    if (existToken) {
+      return { message: 'Email já possui um token de validação.' };
+    }
+    let token;
+    let isUnique;
+    // Gera um código numérico de 4 dígitos
+    do {
+      token = Math.floor(1000 + Math.random() * 9000).toString();
+      isUnique = await this.prisma.mailVerification.findFirst({
+        where: { token },
       });
+    } while (isUnique);
+
+    // Define a expiração para 10 minutos a partir de agora
+    const resetPasswordExpires = new Date();
+    resetPasswordExpires.setMinutes(resetPasswordExpires.getMinutes() + 1);
+
+    // Atualiza o usuário com o token e data de expiração
+    await this.prisma.mailVerification.upsert({
+      where: { email },
+      create: {
+        email,
+        token,
+        expiresAt: resetPasswordExpires,
+        verified: false,
+      },
+      update: {
+        token,
+        expiresAt: resetPasswordExpires,
+        verified: false,
+      },
+    });
+
+    // Envia o e-mail com o código
+    await this.mailerService
+      .sendMail({
+        to: email,
+        subject: 'Validação de E-mail',
+        template: 'email-validation',
+        context: { token },
+      })
+      .catch((err) => {
+        console.error(err);
+      });
+  }
+
+  async verifyEmail(body: { email: string; token: string }) {
+    const user = await this.prisma.mailVerification.findFirst({
+      where: {
+        email: body.email,
+        token: body.token,
+        expiresAt: {
+          gte: new Date(),
+        },
+      },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Token inválido ou expirado.');
+    }
+
+    await this.prisma.mailVerification.update({
+      where: { email: user.email },
+      data: {
+        verified: true,
+        token: null,
+        expiresAt: null,
+      },
+    });
+
+    return { message: 'Email verificado com sucesso.' };
+  }
+
+  async createPassword(createUserDto: CreateUserDto) {
+    const isVerified = await this.prisma.mailVerification.findFirst({
+      where: { email: createUserDto.email, verified: true },
+    });
+    if (!isVerified) {
+      throw new BadRequestException('Email não verificado.');
+    }
+    const hashedPassword = await argon2.hash(createUserDto.password);
+    const data: Prisma.UserCreateInput = {
+      name: createUserDto.fullName,
+      email: createUserDto.email,
+      password: hashedPassword,
+      phone: createUserDto.mobile,
+    };
+    await this.prisma.user.create({
+      data: data,
+    });
+    const createCompany: CreateCompanyDto = {
+      general: {
+        phone: createUserDto.mobile,
+        name: createUserDto.company,
+        legalName: createUserDto.company,
+        cnpj: '',
+        email: createUserDto.email,
+        siteUrl: '',
+        municipalRegistration: '',
+        mobile: createUserDto.mobile,
+      },
+      address: {
+        street: '',
+        number: '',
+        neighborhood: '',
+        city: '',
+        state: '',
+        zipcode: '',
+      },
+    };
+
+    const createMainCompany =
+      await this.companyService.createMainCompany(createCompany);
+
+    await this.companyService.createFirstAccess(
+      createUserDto.email,
+      createMainCompany.id,
+    );
+    await this.prisma.mailVerification.delete({
+      where: { email: createUserDto.email },
+    });
+    return { message: 'Usuário criado com sucesso.' };
+  }
+  async create(createUserDto: CreateMailVerificationDto): Promise<any> {
+    try {
+      const user = await this.prisma.user.findFirst({
+        where: { email: createUserDto.email },
+      });
+      if (user) {
+        throw new ConflictException('Email already exists');
+      }
+      await this.sendEmailValidation(createUserDto.email);
     } catch (error) {
       console.error(error);
       if (error instanceof PrismaClientKnownRequestError) {
@@ -202,5 +326,75 @@ export class UserService {
       delete updatedUser.password;
     }
     return updatedUser;
+  }
+
+  async forgotPassword(forgotPasswordDto: ForgotPasswordDto): Promise<string> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: forgotPasswordDto.email },
+    });
+    if (!user) {
+      // Não revelamos se o email existe ou não por questões de segurança
+      return;
+    }
+
+    // Gera um token aleatório
+    const resetToken = randomBytes(32).toString('hex');
+
+    // Define a data de expiração para 1 hora a partir de agora
+    const resetPasswordExpires = new Date();
+    resetPasswordExpires.setHours(resetPasswordExpires.getHours() + 1);
+
+    // Salva o token e a data de expiração no banco de dados
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetPasswordToken: resetToken,
+        resetPasswordExpires,
+      },
+    });
+
+    // Envia o email com o token
+    await this.mailerService
+      .sendMail({
+        to: user.email,
+        subject: 'Redefinição de Senha',
+        template: 'reset-password',
+        context: {
+          name: user.name,
+          resetLink: `${process.env.FRONTEND_URL}/redefinir-senha?token=${resetToken}`,
+        },
+      })
+      .catch((err) => {
+        console.error(err);
+      });
+  }
+
+  async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<void> {
+    // Encontra o usuário pelo token
+    const user = await this.prisma.user.findFirst({
+      where: {
+        resetPasswordToken: resetPasswordDto.token,
+        resetPasswordExpires: {
+          gt: new Date(), // Verifica se o token não expirou
+        },
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Token inválido ou expirado');
+    }
+
+    // Criptografa a nova senha
+    const hashedPassword = await argon2.hash(resetPasswordDto.password);
+
+    // Atualiza a senha e limpa o token
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        resetPasswordToken: null,
+        resetPasswordExpires: null,
+      },
+    });
   }
 }

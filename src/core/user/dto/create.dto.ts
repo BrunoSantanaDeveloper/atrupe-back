@@ -1,11 +1,11 @@
-import {
-  IsEmail,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsUUID,
-} from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+
+export class CreateMailVerificationDto {
+  @IsNotEmpty()
+  @IsEmail()
+  email: string;
+}
 
 export class CreateUserDto {
   @IsNotEmpty()
@@ -24,23 +24,32 @@ export class CreateUserDto {
     example: 'John Doe',
     required: true,
   })
-  name: string;
+  fullName: string;
 
   @IsNotEmpty()
-  // @IsStrongPassword()
+  @IsString()
+  @ApiProperty({
+    description: 'Nome fantasia do usuário',
+    example: 'John Doe',
+    required: true,
+  })
+  company: string;
+
+  @IsNotEmpty()
+  @IsString()
+  @ApiProperty({
+    description: 'Telefone do usuário',
+    example: '1234567890',
+    required: true,
+  })
+  mobile: string;
+
+  @IsNotEmpty()
+  @IsString()
   @ApiProperty({
     description: 'Senha do usuário',
-    example: 'StrongPassword123!',
+    example: '123456',
     required: true,
   })
   password: string;
-
-  @ApiProperty({
-    description: 'ID do funcionário',
-    example: '1234567890',
-    required: false,
-  })
-  @IsOptional()
-  @IsUUID()
-  employeeId?: string;
 }
