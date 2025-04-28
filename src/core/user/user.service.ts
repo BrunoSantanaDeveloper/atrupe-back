@@ -121,7 +121,7 @@ export class UserService {
     }
     const hashedPassword = await argon2.hash(createUserDto.password);
     const data: Prisma.UserCreateInput = {
-      name: createUserDto.fullName,
+      name: createUserDto.name,
       email: createUserDto.email,
       password: hashedPassword,
       phone: createUserDto.mobile,

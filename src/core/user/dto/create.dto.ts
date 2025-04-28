@@ -24,7 +24,7 @@ export class CreateUserDto {
     example: 'John Doe',
     required: true,
   })
-  fullName: string;
+  name: string;
 
   @IsNotEmpty()
   @IsString()
