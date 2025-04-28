@@ -3,7 +3,6 @@ import {
   IsOptional,
   IsString,
   ValidateIf,
-  IsEmail,
   IsArray,
   IsBoolean,
   IsNumber,
@@ -26,7 +25,6 @@ class GeneralInfoDto {
   corporateName?: string;
 
   @IsOptional()
-  @IsEmail()
   email?: string;
 
   @IsOptional()
@@ -186,7 +184,6 @@ export class PreRegisterClientDto {
     description: 'Email do cliente',
     example: 'joao.silva@email.com',
   })
-  @IsEmail()
   email: string;
 
   @ApiProperty({

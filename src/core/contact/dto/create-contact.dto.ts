@@ -1,10 +1,4 @@
-import {
-  IsEmail,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsUUID,
-} from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateContactDto {
@@ -17,7 +11,6 @@ export class CreateContactDto {
   name: string;
 
   @IsNotEmpty()
-  @IsEmail()
   @ApiProperty({
     description: 'Email do contato',
     example: 'john.doe@example.com',

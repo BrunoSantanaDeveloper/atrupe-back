@@ -37,7 +37,6 @@ export class CreateEmployeeDto {
   avatarUrl?: string;
 
   // @IsNotEmpty()
-  // @IsEmail()
   // @ApiProperty({
   //   description: 'Email do colaborador',
   //   example: 'john.doe@example.com',
