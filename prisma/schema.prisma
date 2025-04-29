@@ -356,7 +356,6 @@ model Client {
   // legacyDbCode String?
   payable Payable[]
 
-  @@unique([email, companyId])
   @@map("clients")
 }
 
@@ -405,7 +404,6 @@ model Supplier {
   client      Client[]
   receivable  Receivable[]
 
-  @@unique([email, companyId])
   @@map("suppliers")
 }
 

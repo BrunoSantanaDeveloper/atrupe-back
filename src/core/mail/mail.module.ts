@@ -24,7 +24,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
           ignoreTLS: config.get('MAIL_IGNORE_TLS') === 'true',
         },
         defaults: {
-          from: `"No Reply" <${config.get('MAIL_FROM')}>`,
+          from: `"Atrupe - No Reply" <${config.get('MAIL_FROM')}>`,
         },
         template: {
           dir: config.get('MAIL_PATH_TEMPLATES_PROD'),

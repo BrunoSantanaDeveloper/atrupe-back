@@ -104,7 +104,7 @@ export class ClientService {
       });
       return this.findOne(client.id);
     } catch (error) {
-      console.error('Error creating client:', error);
+      console.error('Erro ao criar cliente:', error);
       throw error;
     }
   }
@@ -115,7 +115,7 @@ export class ClientService {
         data: {
           type: preRegisterClientDto.type,
           name: preRegisterClientDto.name,
-          email: preRegisterClientDto.email,
+          email: preRegisterClientDto.email || null,
           phone: preRegisterClientDto.phone,
           mobile: preRegisterClientDto.mobile,
           category: preRegisterClientDto.category,
@@ -362,6 +362,25 @@ export class ClientService {
   }
 
   private async verifySellerPermission(sellerId) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: sellerId,
+      },
+      select: {
+        employee: {
+          select: {
+            role: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (user.employee[0].role.name === 'Admin') {
+      return;
+    }
     const seller = await this.prisma.sellerProfile.findFirst({
       where: {
         employees: {

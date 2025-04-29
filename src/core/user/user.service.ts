@@ -168,14 +168,14 @@ export class UserService {
         where: { email: createUserDto.email },
       });
       if (user) {
-        throw new ConflictException('Email already exists');
+        throw new ConflictException('E-mail já cadastrado.');
       }
       await this.sendEmailValidation(createUserDto.email);
     } catch (error) {
       console.error(error);
       if (error instanceof PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
-          throw new ConflictException('Email already exists');
+          throw new ConflictException('E-mail já cadastrado.');
         }
       }
       throw error;

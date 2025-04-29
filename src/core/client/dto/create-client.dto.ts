@@ -184,7 +184,8 @@ export class PreRegisterClientDto {
     description: 'Email do cliente',
     example: 'joao.silva@email.com',
   })
-  email: string;
+  @IsOptional()
+  email?: string;
 
   @ApiProperty({
     description: 'Categoria do cliente',
