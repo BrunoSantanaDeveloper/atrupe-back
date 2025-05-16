@@ -156,8 +156,6 @@ export class PlanService {
       const responseSub = await fetch(urlSub, optionsSub);
       const subscriptionResponse = await responseSub.json();
 
-      console.log(subscriptionResponse, 'subscriptionResponse');
-
       return subscriptionResponse;
     } catch (error) {
       throw new InternalServerErrorException(
@@ -234,9 +232,7 @@ export class PlanService {
         nextDueDate: subscription.createdAt.toISOString(),
       });
 
-      console.log(subscriptionResponse, 'subscriptionResponse');
-
-      return { totalPrice: totalPayment };
+      return { totalPrice: totalPayment, subscriptionResponse };
     } catch (error) {
       throw new InternalServerErrorException(
         'Error creating plan subscription: ' + error.message,
