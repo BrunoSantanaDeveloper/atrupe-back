@@ -72,6 +72,8 @@ model Company {
   creditLimitDefault    CreditLimitDefault[]
   nature                Nature[]
   subCategory           SubCategory[]
+  Plan                  Plan[]
+  Subscription          Subscription[]
 
   @@map("companies")
 }
@@ -355,6 +357,8 @@ model Client {
   // legacyId     Int?
   // legacyDbCode String?
   payable Payable[]
+  Plan    Plan?     @relation(fields: [planId], references: [id])
+  planId  String?
 
   @@map("clients")
 }
@@ -1665,4 +1669,68 @@ model SupplierPaymentCondition {
 
   @@unique([supplierId, paymentConditionId])
   @@map("supplier_payment_conditions")
+}
+
+enum PlanType {
+  START
+  LITE
+  PRO
+  ELITE
+  FULL
+}
+
+model Plan {
+  id          String    @id @default(uuid())
+  type        PlanType
+  name        String
+  description String?
+  price       Float
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime? @updatedAt
+  isActive    Boolean   @default(true)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  clients      Client[]
+  Subscription Subscription[]
+
+  @@map("plans")
+}
+
+enum BillingType {
+  CREDIT_CARD
+  BOLETO
+  PIX
+}
+
+enum Cycle {
+  MONTHLY
+  YEARLY
+}
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime?          @updatedAt
+  isActive           Boolean            @default(true)
+  isContractAccepted Boolean            @default(false)
+  status             SubscriptionStatus @default(PENDING)
+  billingType        BillingType        @default(CREDIT_CARD)
+  planPrice          Float
+  cycle              Cycle              @default(MONTHLY)
+
+  planId String
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  SUCCESS
+  PENDING
+  FAILED
 }

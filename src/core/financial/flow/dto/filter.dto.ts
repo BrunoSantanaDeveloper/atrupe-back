@@ -1,26 +1,26 @@
-import { IsDateString, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDate, IsOptional, IsString, IsUUID } from 'class-validator';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class FinancialFlowFilterDTO extends BaseFilterDTO {
   @IsOptional()
-  @IsDateString()
+  @IsDate()
   @ApiProperty({
     description: 'Data de início para filtrar os fluxos financeiros',
     example: '2023-01-01',
     required: false,
-    type: 'string', // Swagger espera uma string para datas
+    type: 'string',
     format: 'date',
   })
   startDate?: Date;
 
   @IsOptional()
-  @IsDateString()
+  @IsDate()
   @ApiProperty({
     description: 'Data de término para filtrar os fluxos financeiros',
     example: '2023-12-31',
     required: false,
-    type: 'string', // Swagger espera uma string para datas
+    type: 'string',
     format: 'date',
   })
   endDate?: Date;
