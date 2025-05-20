@@ -96,4 +96,28 @@ export class SubscriptionDTO {
   @IsString()
   @IsOptional()
   cpfCnpj: string;
+
+  @IsString()
+  email: string;
+
+  @IsString()
+  phone: string;
+
+  @IsString()
+  mobilePhone: string;
+
+  @IsString()
+  address: string;
+
+  @IsString()
+  addressNumber: string;
+
+  @IsString()
+  complement: string;
+
+  @IsString()
+  province: string;
+
+  @IsString()
+  postalCode: string;
 }

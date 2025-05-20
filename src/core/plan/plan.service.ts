@@ -103,7 +103,7 @@ export class PlanService {
     return Promise.all(defaultPlans.map((plan) => this.create(plan)));
   }
 
-  async getCustomerId(name: string, cpfCnpj: string) {
+  async getCustomerId(customerData: SubscriptionDTO) {
     try {
       const urlID = 'https://api-sandbox.asaas.com/v3/customers';
       const optionsID = {
@@ -114,8 +114,16 @@ export class PlanService {
           access_token: this.asaasToken,
         },
         body: JSON.stringify({
-          name,
-          cpfCnpj,
+          name: customerData.name,
+          cpfCnpj: customerData.cpfCnpj,
+          email: customerData.email,
+          phone: customerData.phone,
+          mobilePhone: customerData.mobilePhone,
+          address: customerData.address,
+          addressNumber: customerData.addressNumber,
+          complement: customerData.complement,
+          province: customerData.province,
+          postalCode: customerData.postalCode,
         }),
       };
       const response = await fetch(urlID, optionsID);
@@ -190,18 +198,18 @@ export class PlanService {
         throw new BadRequestException('Plan is not active');
       }
 
-      const multiplier = data.extraUsers * 15;
-      const totalPayment = data.planPrice + multiplier;
-
       if (!data.isContractAccepted) {
         throw new BadRequestException('Contract not accepted');
       }
 
-      const customerId = await this.getCustomerId('John Doe', '419.372.550-26');
+      const customerId = await this.getCustomerId(data);
 
       if (!customerId) {
         throw new BadRequestException('Customer not found');
       }
+
+      const multiplier = data.extraUsers * 15;
+      const totalPayment = data.planPrice + multiplier;
 
       await this.prisma.subscription.create({
         data: {
@@ -211,6 +219,13 @@ export class PlanService {
           planPrice: totalPayment,
           cycle: data.cycle,
           isContractAccepted: data.isContractAccepted,
+          name: data.name,
+          cpfCnpj: data.cpfCnpj,
+          email: data.email,
+          phone: data.phone,
+          mobilePhone: data.mobilePhone,
+          address: data.address,
+          addressNumber: data.addressNumber,
         },
       });
 

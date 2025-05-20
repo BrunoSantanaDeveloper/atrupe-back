@@ -1719,6 +1719,16 @@ model Subscription {
   billingType        BillingType        @default(CREDIT_CARD)
   planPrice          Float
   cycle              Cycle              @default(MONTHLY)
+  name               String?
+  cpfCnpj            String?
+  email              String?
+  phone              String?
+  mobilePhone        String?
+  address            String?
+  addressNumber      String?
+  complement         String?
+  province           String?
+  postalCode         String?
 
   planId String
   plan   Plan   @relation(fields: [planId], references: [id])
