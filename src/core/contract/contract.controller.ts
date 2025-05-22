@@ -12,6 +12,7 @@ import { ContractService } from './contract.service';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { Response, Request } from 'express';
 import { CreateContractDto } from './dtos';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 interface RequestWithUser extends Request {
   user: {
@@ -23,6 +24,9 @@ interface RequestWithUser extends Request {
   };
 }
 
+@ApiTags('Contratos')
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller('contract')
 export class ContractController {
   constructor(private readonly contractService: ContractService) {}
@@ -36,7 +40,6 @@ export class ContractController {
   @UseGuards(JwtAuthGuard)
   @Post(':id/accept')
   async acceptContract(@Param('id') id: string, @Req() req: RequestWithUser) {
-    // 6e08aa1f-a0dc-4bbc-b478-1bc6306bd834
     return this.contractService.acceptContract({
       contractId: id,
       userId: req.user.userId,
