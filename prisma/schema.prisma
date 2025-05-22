@@ -464,9 +464,10 @@ model User {
   resetPasswordToken   String?
   resetPasswordExpires DateTime?
 
-  attributes Attribute[]
-  userRole   UserRole[]
-  employee   Employee[]
+  attributes   Attribute[]
+  userRole     UserRole[]
+  employee     Employee[]
+  UserContract UserContract[]
 
   @@index([email])
   @@map("users")
@@ -1743,4 +1744,30 @@ enum SubscriptionStatus {
   SUCCESS
   PENDING
   FAILED
+}
+
+model Contract {
+  id         String   @id @default(uuid())
+  name       String
+  contentUrl String
+  version    Int
+  createdAt  DateTime @default(now())
+
+  acceptedUsers UserContract[]
+
+  @@map("contracts")
+}
+
+model UserContract {
+  id         String   @id @default(uuid())
+  userId     String
+  contractId String
+  acceptedAt DateTime @default(now())
+  ipAddress  String?
+  userAgent  String?
+  user       User     @relation(fields: [userId], references: [id])
+  contract   Contract @relation(fields: [contractId], references: [id])
+
+  @@unique([userId, contractId])
+  @@map("user_contracts")
 }
