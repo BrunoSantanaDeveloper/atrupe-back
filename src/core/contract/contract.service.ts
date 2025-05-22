@@ -24,9 +24,16 @@ export class ContractService {
       const result = await mammoth.convertToHtml({ buffer: fileBuffer });
       const html = result.value;
 
+      const contract = await this.prisma.contract.findFirst({
+        where: {
+          version: 1,
+        },
+      });
+
       res.setHeader('Content-Type', 'application/json');
       res.send({
         html,
+        contractId: contract.id,
       });
     } catch (readError) {
       console.error('Error reading or converting file:', readError);
@@ -37,6 +44,16 @@ export class ContractService {
   async acceptContract(acceptContractData: AcceptContractDto) {
     try {
       const { userId, contractId, ipAddress, userAgent } = acceptContractData;
+
+      console.log('userId', userId);
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
 
       const contract = await this.prisma.contract.findUnique({
         where: {
