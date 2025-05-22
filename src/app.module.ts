@@ -12,6 +12,7 @@ import { UtilsModule } from './svc/utils/utils.module';
 import { PdfService } from './svc/pdf/pdf.service';
 import { PrismaModule } from './config/prisma/prisma.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ContractModule } from './core/contract/contract.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     PlugModule,
     CacheModule,
     UtilsModule,
+    ContractModule,
   ],
   controllers: [AppController],
   providers: [

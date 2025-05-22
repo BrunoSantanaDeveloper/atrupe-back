@@ -129,6 +129,8 @@ export class PlanService {
       const response = await fetch(urlID, optionsID);
       const clientData = await response.json();
 
+      console.log('clientData', clientData);
+
       return clientData.id;
     } catch (error) {
       throw new InternalServerErrorException(
@@ -244,7 +246,9 @@ export class PlanService {
         cycle: subscription.cycle,
         customer: customerId,
         value: subscription.planPrice,
-        nextDueDate: subscription.createdAt.toISOString(),
+        nextDueDate: new Date(
+          subscription.createdAt.getTime() + 40 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
       });
 
       return { totalPrice: totalPayment, subscriptionResponse };

@@ -24,6 +24,7 @@ import { SellersModule } from './sellers/sellers.module';
 import { FilesModule } from './files/files.module';
 import { MailModule } from './mail/mail.module';
 import { PlanModule } from './plan/plan.module';
+import { ContractModule } from './contract/contract.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { PlanModule } from './plan/plan.module';
     FilesModule,
     MailModule,
     PlanModule,
+    ContractModule,
   ],
 })
 export class CoreModule {}
