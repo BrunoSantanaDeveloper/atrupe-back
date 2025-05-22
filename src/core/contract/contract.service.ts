@@ -45,8 +45,6 @@ export class ContractService {
     try {
       const { userId, contractId, ipAddress, userAgent } = acceptContractData;
 
-      console.log('userId', userId);
-
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
       });
