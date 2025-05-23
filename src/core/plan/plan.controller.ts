@@ -1,10 +1,28 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { PlanService } from './plan.service';
 import { SubscriptionDTO } from './dtos/plan';
+import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 
 const RESOURCE = 'plan';
 
+@ApiTags('Planos')
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(RESOURCE)
 export class PlanController {
   constructor(private readonly planService: PlanService) {}
@@ -14,7 +32,6 @@ export class PlanController {
   @ApiResponse({
     status: 200,
     description: 'Lista de planos retornada com sucesso',
-    isArray: true,
   })
   async findAll(@Query() companyId: string) {
     return await this.planService.findAll(companyId);
@@ -32,9 +49,9 @@ export class PlanController {
 
   @Post('subscription/:planId/:companyId')
   @ApiOperation({ summary: 'Cria uma assinatura de plano' })
-  @ApiResponse({
-    status: 201,
-    description: 'Assinatura de plano criada com sucesso',
+  @ApiBody({
+    description: 'Dados para criação da assinatura de plano',
+    type: SubscriptionDTO,
   })
   createSubscription(@Body() subscription: SubscriptionDTO) {
     return this.planService.planSubscription(subscription);

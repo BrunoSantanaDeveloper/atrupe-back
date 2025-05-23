@@ -127,9 +127,8 @@ export class PlanService {
         }),
       };
       const response = await fetch(urlID, optionsID);
-      const clientData = await response.json();
 
-      console.log('clientData', clientData);
+      const clientData = await response.json();
 
       return clientData.id;
     } catch (error) {
