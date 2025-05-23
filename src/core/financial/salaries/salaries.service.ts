@@ -1,310 +1,307 @@
 import {
-  BadRequestException,
   Injectable,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
+import { CreateSalaryControlDto } from './dto/create-salary-control.dto';
+import { FilterSalaryControlDto } from './dto/filter-salary-control.dto';
+import { UpdateSalaryControlDto } from './dto/update-salary-control.dto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
-import { GetSalarySheetsDto } from './dto/salaries-filters.dto';
-import {
-  AddPaymentMovementDto,
-  AddSalaryItemDto,
-  PaySalaryMovementDto,
-} from './dto/create-salary.dto';
-import {
-  ToggleSalarySheetStatusDto,
-  UpdateSalaryItemDto,
-} from './dto/update-salary.dto';
 
 @Injectable()
-export class SalarySheetService {
-  constructor(private readonly prisma: PrismaService) {}
+export class SalariesService {
+  constructor(private prisma: PrismaService) {}
 
-  async generateSalarySheetForMonth(
-    month: number,
-    year: number,
-    companyId: string,
-  ): Promise<void> {
-    const employees = await this.prisma.employee.findMany({
-      where: { isActive: true },
-    });
+  async findAll(filters: FilterSalaryControlDto) {
+    try {
+      const page = parseInt(filters.page) || 1;
+      const limit = parseInt(filters.limit) || 10;
+      const skip = (page - 1) * limit;
 
-    for (const employee of employees) {
-      try {
-        const existingSheet = await this.prisma.salarySheet.findUnique({
-          where: {
-            employeeId_month_year: { employeeId: employee.id, month, year },
+      const whereConditions: Prisma.EmployeeWhereInput[] = [
+        { companyId: filters.companyId },
+        { isActive: true },
+      ];
+
+      // Add name filter if search or employeeName is provided
+      if (filters.search || filters.employeeName) {
+        whereConditions.push({
+          name: {
+            contains: filters.search || filters.employeeName,
+            mode: 'insensitive',
           },
         });
-        if (!existingSheet) {
-          try {
-            await this.prisma.salarySheet.create({
-              data: {
-                employeeId: employee.id,
-                month,
-                year,
-                status: 'EMPTY',
-                companyId,
-              },
-            });
-          } catch (error) {
-            console.error('Error creating salary sheet:', error.message);
-          }
-        }
-      } catch (error) {
-        console.error('Error finding salary sheet:', error.message);
       }
-    }
-  }
 
-  async openSalarySheet(salarySheetId: string) {
-    const salarySheet = await this.prisma.salarySheet.findUnique({
-      where: { id: salarySheetId },
-      include: {
-        employee: true,
-      },
-    });
+      // Add sector filter if sectorId is provided
+      if (filters.sectorId) {
+        whereConditions.push({
+          sector: {
+            id: filters.sectorId,
+          },
+        });
+      }
 
-    if (!salarySheet || salarySheet.status !== 'EMPTY') {
-      throw new NotFoundException(
-        'Folha de pagamento não encontrada ou já está aberta.',
-      );
-    }
+      if (filters.costType) {
+        whereConditions.push({
+          SalaryControl: {
+            some: {
+              type: filters.costType,
+            },
+          },
+        });
+      }
+      const whereSalaryControl: Prisma.SalaryControlWhereInput = {};
+      if (filters.costType) {
+        whereSalaryControl.type = filters.costType;
+      }
 
-    await this.prisma.salarySheet.update({
-      where: { id: salarySheetId },
-      data: { status: 'OPEN' },
-    });
+      const where: Prisma.EmployeeWhereInput = {
+        AND: whereConditions,
+      };
 
-    const salaryBase = salarySheet.employee.sallary || 0;
-    const salaryItem = await this.prisma.salaryItem.create({
-      data: {
-        salarySheetId: salarySheetId,
-        type: 'INCREASE',
-        description: 'Salário Base',
-        amount: salaryBase,
-        reference: `${salarySheet.month + 1}/${salarySheet.year}`,
-      },
-    });
-
-    return {
-      message: 'Folha de pagamento aberta e salário base criado.',
-      salaryItem,
-    };
-  }
-
-  async getSalarySheets(
-    dto: GetSalarySheetsDto,
-  ): Promise<{ data: any[]; count: number }> {
-    const { companyId, month, year, status, page = 1, limit = 10 } = dto;
-
-    const filters: any = {};
-    if (month) filters.month = +month;
-    if (year) filters.year = +year;
-    if (status) filters.status = status;
-    if (companyId) filters.companyId = companyId;
-
-    const skip = (+page - 1) * +limit;
-    try {
-      const [salarySheets, total] = await this.prisma.$transaction([
-        this.prisma.salarySheet.findMany({
-          where: filters,
-          skip,
-          take: +limit,
+      const [employees, total] = await Promise.all([
+        this.prisma.employee.findMany({
+          where,
           select: {
             id: true,
-            month: true,
-            year: true,
-            employee: {
+            name: true,
+            avatarUrl: true,
+            sector: {
               select: {
-                user: {
-                  select: {
-                    name: true,
-                  },
-                },
-                role: {
-                  select: {
-                    name: true,
-                  },
-                },
-              },
-            },
-            items: true,
-            movements: true,
-          },
-        }),
-        this.prisma.salarySheet.count({ where: filters }),
-      ]);
-      return { data: salarySheets, count: total };
-    } catch (error) {
-      console.error(error.message);
-    }
-  }
-
-  async getSalarySheetById(id: string): Promise<any> {
-    return this.prisma.salarySheet.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        month: true,
-        year: true,
-        employee: {
-          select: {
-            user: {
-              select: {
+                id: true,
                 name: true,
               },
             },
             role: {
               select: {
+                id: true,
                 name: true,
               },
             },
+            SalaryControl: {
+              select: {
+                id: true,
+                reference: true,
+                amount: true,
+                date: true,
+                type: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+              where: whereSalaryControl,
+              orderBy: {
+                date: 'desc',
+              },
+            },
+          },
+          skip,
+          take: limit,
+          orderBy: {
+            name: 'asc',
+          },
+        }),
+        this.prisma.employee.count({ where }),
+      ]);
+      const data = employees.map((employee) => {
+        // Sort salary control items
+        const sortedItems = [...employee.SalaryControl].sort((a, b) => {
+          const baseSalaryReferences = [
+            'Salário base',
+            'Salario base',
+            'Salário',
+            'Salario',
+          ];
+          const aIsBase = baseSalaryReferences.includes(a.reference);
+          const bIsBase = baseSalaryReferences.includes(b.reference);
+
+          if (aIsBase && !bIsBase) return -1;
+          if (!aIsBase && bIsBase) return 1;
+          return 0;
+        });
+
+        return {
+          id: employee.id,
+          name: employee.name,
+          avatarUrl: employee.avatarUrl,
+          sectorId: employee.sector.id,
+          roleId: employee.role.id,
+          sectorName: employee.sector.name,
+          roleName: employee.role.name,
+          items: sortedItems,
+        };
+      });
+      return {
+        total,
+        totalPages: Math.ceil(total / limit),
+        data,
+      };
+    } catch (error) {
+      console.error('Error in findAll:', error);
+      throw new BadRequestException(
+        'Error fetching employees with salary controls: ' + error.message,
+      );
+    }
+  }
+
+  async create(createSalaryControlDto: CreateSalaryControlDto) {
+    try {
+      return await this.prisma.salaryControl.create({
+        data: {
+          reference: createSalaryControlDto.reference,
+          amount: createSalaryControlDto.amount,
+          date: new Date(),
+          companyId: createSalaryControlDto.companyId,
+          type: createSalaryControlDto.type,
+          employeeId: createSalaryControlDto.employeeId,
+        },
+        include: {
+          employee: {
+            include: {
+              sector: true,
+            },
           },
         },
-        items: true,
-        movements: true,
-      },
-    });
+      });
+    } catch (error) {
+      console.error(error);
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new BadRequestException(
+            'A salary control with this reference already exists',
+          );
+        }
+        if (error.code === 'P2003') {
+          throw new BadRequestException('Invalid employee reference');
+        }
+      }
+      throw new BadRequestException(
+        'Error creating salary control: ' + error.message,
+      );
+    }
   }
 
-  async addSalaryItem(addSalaryItemDto: AddSalaryItemDto) {
+  async update(id: string, updateSalaryControlDto: UpdateSalaryControlDto) {
     try {
-      const { salarySheetId, type, amount, description } = addSalaryItemDto;
-
-      const salarySheet = await this.prisma.salarySheet.findUnique({
-        where: { id: salarySheetId },
+      const salaryControl = await this.prisma.salaryControl.findUnique({
+        where: { id },
       });
-      const reference = `${salarySheet.month + 1}/${salarySheet.year}`;
 
-      if (!salarySheet || salarySheet.status !== 'OPEN') {
-        throw new NotFoundException(
-          'Folha de pagamento não encontrada ou não está aberta.',
-        );
+      if (!salaryControl) {
+        throw new NotFoundException(`Salary control with ID ${id} not found`);
       }
-      const salaryItem = await this.prisma.salaryItem.create({
-        data: {
-          salarySheetId,
-          reference,
-          type,
-          amount,
-          description,
+
+      const updateData: Prisma.SalaryControlUpdateInput = {};
+
+      // Only update fields that are provided
+      if (updateSalaryControlDto.reference !== undefined) {
+        updateData.reference = updateSalaryControlDto.reference;
+      }
+      if (updateSalaryControlDto.amount !== undefined) {
+        updateData.amount = updateSalaryControlDto.amount;
+      }
+      if (updateSalaryControlDto.date !== undefined) {
+        updateData.date = new Date(updateSalaryControlDto.date);
+      }
+      if (updateSalaryControlDto.type !== undefined) {
+        updateData.type = updateSalaryControlDto.type;
+      }
+      if (updateSalaryControlDto.employeeId !== undefined) {
+        updateData.employee = {
+          connect: {
+            id: updateSalaryControlDto.employeeId,
+          },
+        };
+      }
+
+      // Always update the updatedAt timestamp
+      updateData.updatedAt = new Date();
+
+      return await this.prisma.salaryControl.update({
+        where: { id },
+        data: updateData,
+        include: {
+          employee: {
+            include: {
+              sector: true,
+            },
+          },
         },
       });
-      if (type === 'ADVANCE') {
-        const movementDto: AddPaymentMovementDto = {
-          salarySheetId,
-          amount,
-          paidDate: null, // Data atual
-          paymentMethodId: null, // Deixar nulo até ser definido pelo gestor
-          paymentStatus: 'PENDING', // Status inicial
-        };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new BadRequestException(
+            'A salary control with this reference already exists',
+          );
+        }
+        if (error.code === 'P2003') {
+          throw new BadRequestException('Invalid employee reference');
+        }
+      }
+      throw new BadRequestException(
+        'Error updating salary control: ' + error.message,
+      );
+    }
+  }
 
-        await this.addPaymentMovement(movementDto);
+  async getSalaryDetails(id: string) {
+    try {
+      const salaryControl = await this.prisma.salaryControl.findUnique({
+        where: { id },
+        include: {
+          employee: {
+            include: {
+              sector: true,
+            },
+          },
+        },
+      });
+
+      if (!salaryControl) {
+        throw new NotFoundException(`Salary control with ID ${id} not found`);
       }
 
-      return salaryItem;
+      return salaryControl;
     } catch (error) {
-      console.error('Error creating payment movement:', error.message);
-      throw new BadRequestException('Erro ao criar item de pagamento.');
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        'Error fetching salary details: ' + error.message,
+      );
     }
   }
 
-  async updateSalaryItem(updateSalaryItemDto: UpdateSalaryItemDto) {
-    const { id, ...itemData } = updateSalaryItemDto;
+  async delete(id: string) {
+    try {
+      const salaryControl = await this.prisma.salaryControl.findUnique({
+        where: { id },
+      });
 
-    const salaryItem = await this.prisma.salaryItem.findUnique({
-      where: { id },
-    });
+      if (!salaryControl) {
+        throw new NotFoundException(`Salary control with ID ${id} not found`);
+      }
 
-    if (!salaryItem) {
-      throw new NotFoundException('Item de folha de pagamento não encontrado.');
+      await this.prisma.salaryControl.delete({
+        where: { id },
+      });
+
+      return {
+        message: 'Salary control deleted successfully',
+        id,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        'Error deleting salary control: ' + error.message,
+      );
     }
-
-    const updatedSalaryItem = await this.prisma.salaryItem.update({
-      where: { id },
-      data: itemData,
-    });
-
-    return updatedSalaryItem;
-  }
-
-  async toggleSalarySheetStatus(dto: ToggleSalarySheetStatusDto) {
-    const { salarySheetId, status } = dto;
-
-    const salarySheet = await this.prisma.salarySheet.findUnique({
-      where: { id: salarySheetId },
-      select: {
-        id: true,
-        status: true,
-      },
-    });
-
-    if (!salarySheet) {
-      throw new NotFoundException('Folha de pagamento não encontrada.');
-    }
-
-    if (salarySheet.status === status) {
-      throw new BadRequestException(`A folha já está no estado ${status}.`);
-    }
-
-    const updatedSalarySheet = await this.prisma.salarySheet.update({
-      where: { id: salarySheetId },
-      data: { status },
-    });
-
-    return updatedSalarySheet;
-  }
-
-  async addPaymentMovement(dto: AddPaymentMovementDto) {
-    const { salarySheetId, ...movementData } = dto;
-
-    // Validar existência da folha de pagamento
-    const salarySheet = await this.prisma.salarySheet.findUnique({
-      where: { id: salarySheetId },
-    });
-
-    if (!salarySheet) {
-      throw new NotFoundException('Folha de pagamento não encontrada.');
-    }
-
-    // Criar movimentação
-    const paymentMovement = await this.prisma.paymentMovement.create({
-      data: {
-        salarySheetId,
-        ...movementData,
-      },
-    });
-
-    return paymentMovement;
-  }
-
-  async payMovement(dto: PaySalaryMovementDto) {
-    const { movementId, paidDate, paidAmount, paymentMethodId } = dto;
-
-    // Verificar existência da movimentação
-    const movement = await this.prisma.paymentMovement.findUnique({
-      where: { id: movementId },
-    });
-
-    if (!movement) {
-      throw new NotFoundException('Movimentação não encontrada.');
-    }
-
-    if (movement.paymentStatus === 'PAID') {
-      throw new BadRequestException('Movimentação já foi paga.');
-    }
-
-    // Atualizar movimentação para pago
-    const updatedMovement = await this.prisma.paymentMovement.update({
-      where: { id: movementId },
-      data: {
-        paidDate: new Date(paidDate),
-        amount: paidAmount,
-        paymentMethodId,
-        paymentStatus: 'PAID',
-      },
-    });
-
-    return updatedMovement;
   }
 }

@@ -5,9 +5,10 @@ import { FlowModule } from './flow/flow.module';
 import { CashControlModule } from './cash-control/cash-control.module';
 import { ScheduledExpenseModule } from './scheduled-expense/scheduled-expense.module';
 import { InvoiceModule } from './invoice/invoice.module';
-import { SalariesModule } from './salaries/salaries.module';
+import { SalarySheetsModule } from './salary-sheets/salary-sheets.module';
 import { NatureModule } from './nature/nature.module';
 import { CreditLimitModule } from './credit-limit/credit-limit.module';
+import { SalariesModule } from './salaries/salaries.module';
 
 @Module({
   imports: [
@@ -17,9 +18,10 @@ import { CreditLimitModule } from './credit-limit/credit-limit.module';
     CashControlModule,
     ScheduledExpenseModule,
     InvoiceModule,
-    SalariesModule,
+    SalarySheetsModule,
     NatureModule,
     CreditLimitModule,
+    SalariesModule,
   ],
   exports: [
     ReceivableModule,

@@ -74,6 +74,7 @@ model Company {
   subCategory           SubCategory[]
   Plan                  Plan[]
   Subscription          Subscription[]
+  SalaryControl         SalaryControl[]
 
   @@map("companies")
 }
@@ -442,8 +443,9 @@ model Employee {
   client          Client[]
   quotation       Quotation[]
   sellerProfileId String?
-  sellerProfile   SellerProfile? @relation(fields: [sellerProfileId], references: [id])
+  sellerProfile   SellerProfile?  @relation(fields: [sellerProfileId], references: [id])
   salarySheet     SalarySheet[]
+  SalaryControl   SalaryControl[]
 
   @@map("employees")
 }
@@ -765,6 +767,23 @@ enum ItemType {
   INCREASE // Acréscimo
   DISCOUNT // Desconto
   ADVANCE // Adiantamento
+}
+
+model SalaryControl {
+  id        String   @id @default(uuid())
+  reference String?
+  amount    Float    @default(0)
+  type      ItemType @default(INCREASE)
+  date      DateTime @default(now())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  employeeId String // Relacionamento com o funcionário
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
 }
 
 model PaymentMovement {

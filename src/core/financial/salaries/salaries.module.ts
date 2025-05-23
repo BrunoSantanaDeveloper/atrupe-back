@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { SalarySheetController } from './salaries.controller';
-import { SalarySheetService } from './salaries.service';
+import { SalariesService } from './salaries.service';
+import { SalariesController } from './salaries.controller';
 
 @Module({
-  controllers: [SalarySheetController],
-  providers: [SalarySheetService],
+  controllers: [SalariesController],
+  providers: [SalariesService],
 })
 export class SalariesModule {}
