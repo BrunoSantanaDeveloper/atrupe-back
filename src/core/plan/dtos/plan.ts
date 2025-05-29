@@ -125,10 +125,9 @@ enum Cycle {
 
 export class SubscriptionDTO {
   @IsString()
-  @IsUUID()
   @ApiProperty({
-    description: 'ID do plano',
-    example: '123e4567-e89b-12d3-a456-426614174000',
+    description: 'ID ou tipo do plano (ex: UUID ou "start", "lite", etc.)',
+    example: 'start',
     required: true,
   })
   planId: string;
@@ -143,6 +142,7 @@ export class SubscriptionDTO {
   companyId: string;
 
   @IsNumber()
+  @IsOptional()
   @ApiProperty({
     description: 'Número de usuários extras',
     example: 2,
@@ -157,6 +157,15 @@ export class SubscriptionDTO {
     required: true,
   })
   planPrice: number;
+
+  @IsNumber()
+  @IsOptional()
+  @ApiProperty({
+    description: 'Valor total',
+    example: 299.9,
+    required: false,
+  })
+  totalAmount?: number;
 
   @IsEnum(Cycle)
   @ApiProperty({
@@ -187,98 +196,151 @@ export class SubscriptionDTO {
   @ApiProperty({
     description: 'ID do cliente',
     example: '123e4567-e89b-12d3-a456-426614174000',
-    required: true,
+    required: false,
   })
-  customer: string;
+  customer?: string;
 
   @IsString()
   @IsOptional()
   @ApiProperty({
     description: 'Data do próximo vencimento',
     example: '2024-04-15',
-    required: true,
+    required: false,
   })
-  nextDueDate: string;
+  nextDueDate?: string;
 
   @IsString()
   @IsOptional()
   @ApiProperty({
     description: 'Nome do cliente',
     example: 'John Doe',
-    required: true,
+    required: false,
   })
-  name: string;
+  name?: string;
 
   @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'CPF/CNPJ do cliente',
     example: '1234567890',
-    required: true,
+    required: false,
   })
-  cpfCnpj: string;
+  cpfCnpj?: string;
 
   @IsString()
+  @IsOptional()
+  @ApiProperty({
+    description: 'CPF do cliente',
+    example: '012.345.678-90',
+    required: false,
+  })
+  cpf?: string;
+
+  @IsString()
+  @IsOptional()
+  @ApiProperty({
+    description: 'CNPJ do cliente',
+    example: '36.455.529/0001-47',
+    required: false,
+  })
+  cnpj?: string;
+
+  @IsString()
+  @IsOptional()
+  @ApiProperty({
+    description: 'Nome da empresa',
+    example: 'Empresa Teste',
+    required: false,
+  })
+  companyName?: string;
+
+  @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'Email do cliente',
     example: 'john.doe@example.com',
-    required: true,
+    required: false,
   })
-  email: string;
+  email?: string;
 
   @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'Telefone do cliente',
     example: '1234567890',
-    required: true,
+    required: false,
   })
-  phone: string;
+  phone?: string;
 
   @IsString()
+  @IsOptional()
   @ApiProperty({
-    description: 'Telefone do cliente',
+    description: 'Telefone móvel do cliente',
     example: '1234567890',
     required: false,
   })
   mobilePhone?: string;
 
   @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'Endereço do cliente',
     example: 'Rua das Flores, 123',
-    required: true,
+    required: false,
   })
-  address: string;
+  address?: string;
 
   @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'Número do endereço do cliente',
     example: '123/SN',
     required: false,
   })
-  @IsString()
-  addressNumber: string;
+  addressNumber?: string;
 
   @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'Complemento do endereço do cliente',
     example: 'Apto 123',
     required: false,
   })
-  complement: string;
+  complement?: string;
 
   @IsString()
+  @IsOptional()
   @ApiProperty({
-    description: 'Província do endereço do cliente',
+    description: 'Estado/Província do endereço do cliente',
     example: 'São Paulo',
-    required: true,
+    required: false,
   })
-  province: string;
+  province?: string;
 
   @IsString()
+  @IsOptional()
   @ApiProperty({
     description: 'CEP do endereço do cliente',
     example: '1234567890',
-    required: true,
+    required: false,
   })
-  postalCode: string;
+  postalCode?: string;
+
+  @IsString()
+  @IsOptional()
+  @ApiProperty({
+    description: 'Cidade do cliente',
+    example: 'São Paulo',
+    required: false,
+  })
+  city?: string;
+
+  @IsString()
+  @IsOptional()
+  @ApiProperty({
+    description: 'Bairro do cliente',
+    example: 'Centro',
+    required: false,
+  })
+  neighborhood?: string;
 }

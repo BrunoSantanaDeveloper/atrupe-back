@@ -1741,6 +1741,8 @@ model Subscription {
   cycle              Cycle              @default(MONTHLY)
   name               String?
   cpfCnpj            String?
+  cpf                String?
+  cnpj               String?
   email              String?
   phone              String?
   mobilePhone        String?
@@ -1749,6 +1751,8 @@ model Subscription {
   complement         String?
   province           String?
   postalCode         String?
+  city               String?
+  neighborhood       String?
 
   planId String
   plan   Plan   @relation(fields: [planId], references: [id])

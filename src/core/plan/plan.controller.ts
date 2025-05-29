@@ -53,7 +53,17 @@ export class PlanController {
     description: 'Dados para criação da assinatura de plano',
     type: SubscriptionDTO,
   })
-  createSubscription(@Body() subscription: SubscriptionDTO) {
-    return this.planService.planSubscription(subscription);
+  createSubscription(
+    @Param('planId') planId: string,
+    @Param('companyId') companyId: string,
+    @Body() subscription: SubscriptionDTO
+  ) {
+    // Mesclar os parâmetros da URL com o body da requisição
+    const subscriptionData = {
+      ...subscription,
+      planId,
+      companyId,
+    };
+    return this.planService.planSubscription(subscriptionData);
   }
 }

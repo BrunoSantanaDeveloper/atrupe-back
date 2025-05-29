@@ -114,8 +114,8 @@ export class PlanService {
           access_token: this.asaasToken,
         },
         body: JSON.stringify({
-          name: customerData.name,
-          cpfCnpj: customerData.cpfCnpj,
+          name: customerData.name || customerData.companyName,
+          cpfCnpj: customerData.cpfCnpj || customerData.cpf || customerData.cnpj,
           email: customerData.email,
           phone: customerData.phone,
           mobilePhone: customerData.mobilePhone,
@@ -175,11 +175,26 @@ export class PlanService {
 
   async planSubscription(data: SubscriptionDTO) {
     try {
-      const planExists = await this.prisma.plan.findUnique({
-        where: {
-          id: data.planId,
-        },
-      });
+      let planExists;
+      
+      // Verificar se planId é um UUID ou um tipo de plano (string)
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.planId);
+      
+      if (isUUID) {
+        planExists = await this.prisma.plan.findUnique({
+          where: {
+            id: data.planId,
+          },
+        });
+      } else {
+        // Buscar por tipo de plano (START, LITE, etc.)
+        planExists = await this.prisma.plan.findFirst({
+          where: {
+            type: data.planId.toUpperCase() as any,
+            companyId: data.companyId,
+          },
+        });
+      }
 
       if (!planExists) {
         throw new NotFoundException('Plan not found');
@@ -209,24 +224,31 @@ export class PlanService {
         throw new BadRequestException('Customer not found');
       }
 
-      const multiplier = data.extraUsers * 15;
+      const multiplier = (data.extraUsers || 0) * 15;
       const totalPayment = data.planPrice + multiplier;
 
       await this.prisma.subscription.create({
         data: {
-          plan: { connect: { id: data.planId } },
+          plan: { connect: { id: planExists.id } },
           company: { connect: { id: data.companyId } },
           billingType: data.billingType as any,
           planPrice: totalPayment,
           cycle: data.cycle,
           isContractAccepted: data.isContractAccepted,
-          name: data.name,
-          cpfCnpj: data.cpfCnpj,
+          name: data.name || data.companyName,
+          cpfCnpj: data.cpfCnpj || data.cpf || data.cnpj,
+          cpf: data.cpf,
+          cnpj: data.cnpj,
           email: data.email,
           phone: data.phone,
           mobilePhone: data.mobilePhone,
           address: data.address,
           addressNumber: data.addressNumber,
+          complement: data.complement,
+          province: data.province,
+          postalCode: data.postalCode,
+          city: data.city,
+          neighborhood: data.neighborhood,
         },
       });
 
