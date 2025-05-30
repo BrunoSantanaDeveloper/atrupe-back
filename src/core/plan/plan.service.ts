@@ -104,6 +104,7 @@ export class PlanService {
   }
 
   async getCustomerId(customerData: SubscriptionDTO) {
+    return 'customer_1234567890';
     try {
       const urlID = 'https://api-sandbox.asaas.com/v3/customers';
       const optionsID = {
@@ -115,7 +116,8 @@ export class PlanService {
         },
         body: JSON.stringify({
           name: customerData.name || customerData.companyName,
-          cpfCnpj: customerData.cpfCnpj || customerData.cpf || customerData.cnpj,
+          cpfCnpj:
+            customerData.cpfCnpj || customerData.cpf || customerData.cnpj,
           email: customerData.email,
           phone: customerData.phone,
           mobilePhone: customerData.mobilePhone,
@@ -145,6 +147,9 @@ export class PlanService {
     value: number;
     nextDueDate: string;
   }) {
+    return {
+      url: 'www.cnn.com',
+    };
     try {
       const urlSub = 'https://api-sandbox.asaas.com/v3/subscriptions';
       const optionsSub = {
@@ -176,10 +181,12 @@ export class PlanService {
   async planSubscription(data: SubscriptionDTO) {
     try {
       let planExists;
-      
-      // Verificar se planId é um UUID ou um tipo de plano (string)
-      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.planId);
-      
+
+      const isUUID =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          data.planId,
+        );
+
       if (isUUID) {
         planExists = await this.prisma.plan.findUnique({
           where: {
@@ -219,7 +226,6 @@ export class PlanService {
       }
 
       const customerId = await this.getCustomerId(data);
-
       if (!customerId) {
         throw new BadRequestException('Customer not found');
       }
@@ -227,52 +233,47 @@ export class PlanService {
       const multiplier = (data.extraUsers || 0) * 15;
       const totalPayment = data.planPrice + multiplier;
 
-      await this.prisma.subscription.create({
-        data: {
-          plan: { connect: { id: planExists.id } },
-          company: { connect: { id: data.companyId } },
-          billingType: data.billingType as any,
-          planPrice: totalPayment,
-          cycle: data.cycle,
-          isContractAccepted: data.isContractAccepted,
-          name: data.name || data.companyName,
-          cpfCnpj: data.cpfCnpj || data.cpf || data.cnpj,
-          cpf: data.cpf,
-          cnpj: data.cnpj,
-          email: data.email,
-          phone: data.phone,
-          mobilePhone: data.mobilePhone,
-          address: data.address,
-          addressNumber: data.addressNumber,
-          complement: data.complement,
-          province: data.province,
-          postalCode: data.postalCode,
-          city: data.city,
-          neighborhood: data.neighborhood,
-        },
-      });
+      try {
+        const subscription = await this.prisma.subscription.create({
+          data: {
+            plan: { connect: { id: planExists.id } },
+            company: { connect: { id: data.companyId } },
+            billingType: data.billingType as any,
+            planPrice: totalPayment,
+            cycle: data.cycle,
+            isContractAccepted: data.isContractAccepted,
+            name: data.name || data.companyName,
+            cpfCnpj: data.cpfCnpj || data.cpf || data.cnpj,
+            email: data.email,
+            phone: data.phone,
+            mobilePhone: data.mobilePhone,
+            address: data.address,
+            addressNumber: data.addressNumber,
+            complement: data.complement,
+            province: data.province,
+            postalCode: data.postalCode,
+            city: data.city,
+            neighborhood: data.neighborhood,
+          },
+        });
 
-      const subscription = await this.prisma.subscription.findFirst({
-        where: {
-          companyId: data.companyId,
-        },
-      });
+        const subscriptionResponse = await this.createSubscription({
+          billingType: subscription.billingType,
+          cycle: subscription.cycle,
+          customer: customerId,
+          value: subscription.planPrice,
+          nextDueDate: new Date(
+            subscription.createdAt.getTime() + 40 * 24 * 60 * 60 * 1000,
+          ).toISOString(),
+        });
 
-      if (!subscription) {
-        throw new BadRequestException('Subscription not found');
+        return { totalPrice: totalPayment, subscriptionResponse };
+      } catch (error) {
+        console.error(error);
+        throw new InternalServerErrorException(
+          'Error creating plan subscription: ' + error.message,
+        );
       }
-
-      const subscriptionResponse = await this.createSubscription({
-        billingType: subscription.billingType,
-        cycle: subscription.cycle,
-        customer: customerId,
-        value: subscription.planPrice,
-        nextDueDate: new Date(
-          subscription.createdAt.getTime() + 40 * 24 * 60 * 60 * 1000,
-        ).toISOString(),
-      });
-
-      return { totalPrice: totalPayment, subscriptionResponse };
     } catch (error) {
       throw new InternalServerErrorException(
         'Error creating plan subscription: ' + error.message,

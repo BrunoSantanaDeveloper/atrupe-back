@@ -56,9 +56,8 @@ export class PlanController {
   createSubscription(
     @Param('planId') planId: string,
     @Param('companyId') companyId: string,
-    @Body() subscription: SubscriptionDTO
+    @Body() subscription: SubscriptionDTO,
   ) {
-    // Mesclar os parâmetros da URL com o body da requisição
     const subscriptionData = {
       ...subscription,
       planId,

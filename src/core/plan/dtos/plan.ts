@@ -124,21 +124,8 @@ enum Cycle {
 }
 
 export class SubscriptionDTO {
-  @IsString()
-  @ApiProperty({
-    description: 'ID ou tipo do plano (ex: UUID ou "start", "lite", etc.)',
-    example: 'start',
-    required: true,
-  })
   planId: string;
 
-  @IsString()
-  @IsUUID()
-  @ApiProperty({
-    description: 'ID da empresa',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-    required: true,
-  })
   companyId: string;
 
   @IsNumber()

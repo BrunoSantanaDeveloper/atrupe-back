@@ -1741,8 +1741,6 @@ model Subscription {
   cycle              Cycle              @default(MONTHLY)
   name               String?
   cpfCnpj            String?
-  cpf                String?
-  cnpj               String?
   email              String?
   phone              String?
   mobilePhone        String?
