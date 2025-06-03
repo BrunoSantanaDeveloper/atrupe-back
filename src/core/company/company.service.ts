@@ -65,6 +65,23 @@ export class CompanyService {
             });
             console.log('Administrator role created:', role.id);
 
+            console.log('Creating seller profile for administrator');
+            const sellerProfile = await tx.sellerProfile.create({
+              data: {
+                name: 'Admin',
+                companyId: companyId,
+                commission: 0,
+                maxDiscount: 100,
+                minValue: 0,
+                canApprovePreRegistration: true,
+                canCancelSale: true,
+              },
+            });
+            console.log(
+              'Administrator seller profile created:',
+              sellerProfile.id,
+            );
+
             console.log('Creating employee record');
             await tx.employee.create({
               data: {
@@ -73,6 +90,7 @@ export class CompanyService {
                 roleId: role.id,
                 userId: user.id,
                 sectorId: sector.id,
+                sellerProfileId: sellerProfile.id,
               },
             });
             console.log('Employee record created successfully');
@@ -359,6 +377,19 @@ export class CompanyService {
       },
     });
 
+    // Criar perfil de vendedor padrão
+    await this.prisma.sellerProfile.create({
+      data: {
+        name: 'Vendedor Padrão',
+        companyId: companyId,
+        commission: 5, // 5% de comissão padrão
+        maxDiscount: 10, // 10% de desconto máximo padrão
+        minValue: 0,
+        canApprovePreRegistration: false,
+        canCancelSale: false,
+      },
+    });
+
     await this.prisma.category.create({
       data: {
         name: 'Produtos Padrão',
@@ -367,10 +398,359 @@ export class CompanyService {
       },
     });
 
+    // Criar categorias adicionais úteis para comunicação visual e gráfica
+    console.log('Creating additional product categories...');
+    const additionalCategories = [
+      'Impressão Digital',
+      'Sinalização',
+      'Material Promocional',
+      'Adesivos e Etiquetas',
+      'Placas e Totens',
+      'Banners e Faixas',
+      'Cartões e Folders',
+      'Materiais Gráficos',
+    ];
+
+    for (const categoryName of additionalCategories) {
+      await this.prisma.category.create({
+        data: {
+          name: categoryName,
+          kind: 'PRODUCT',
+          isActive: true,
+          companyId: companyId,
+          sectorId: sector.id,
+        },
+      });
+    }
+
     console.log('Vendedor role created:', role.id);
+    console.log('Default seller profile created successfully');
+    console.log(
+      `Created ${additionalCategories.length + 1} product categories successfully`,
+    );
+
+    // Criar produtos padrão
+    console.log('Creating default products...');
+
+    // Buscar categoria "Produtos Padrão" e unidades de medida necessárias
+    const defaultCategory = await this.prisma.category.findFirst({
+      where: {
+        name: 'Produtos Padrão',
+        companyId: companyId,
+      },
+    });
+
+    const m2Unit = await this.prisma.companyUnitOfMeasure.findFirst({
+      where: {
+        code: 'M²',
+        companyId: companyId,
+      },
+    });
+
+    const unUnit = await this.prisma.companyUnitOfMeasure.findFirst({
+      where: {
+        code: 'UN',
+        companyId: companyId,
+      },
+    });
+
+    if (defaultCategory && m2Unit && unUnit) {
+      // Produto 1: Banner Lona
+      const bannerProduct = await this.prisma.product.create({
+        data: {
+          name: 'Banner em Lona',
+          code: 'BAN001',
+          isActive: true,
+          isStandard: false,
+          technicalDescription:
+            'Banner em lona 440g/m² com impressão digital colorida, acabamento com ilhoses.',
+          allowEditValues: true,
+          allowEditDescription: true,
+          companyId: companyId,
+          categoryId: defaultCategory.id,
+          sectorId: sector.id,
+          items: {
+            create: [
+              {
+                name: 'Impressão Digital',
+                unitOfMeasureId: m2Unit.id,
+                width: 1,
+                height: 1,
+                unitCost: 15,
+                salePrice: 35,
+              },
+            ],
+          },
+        },
+      });
+
+      // Produto 2: Adesivo Vinil
+      const adesivoProduct = await this.prisma.product.create({
+        data: {
+          name: 'Adesivo Vinil Branco',
+          code: 'ADE001',
+          isActive: true,
+          isStandard: false,
+          technicalDescription:
+            'Adesivo em vinil branco com impressão digital, aplicação interna ou externa.',
+          allowEditValues: true,
+          allowEditDescription: true,
+          companyId: companyId,
+          categoryId: defaultCategory.id,
+          sectorId: sector.id,
+          items: {
+            create: [
+              {
+                name: 'Impressão + Material',
+                unitOfMeasureId: m2Unit.id,
+                width: 1,
+                height: 1,
+                unitCost: 12,
+                salePrice: 28,
+              },
+            ],
+          },
+        },
+      });
+
+      // Produto 3: Cartão de Visita
+      const cartaoProduct = await this.prisma.product.create({
+        data: {
+          name: 'Cartão de Visita',
+          code: 'CAR001',
+          isActive: true,
+          isStandard: false,
+          technicalDescription:
+            'Cartão de visita em papel couché 300g, impressão 4x4 cores, formato 9x5cm.',
+          allowEditValues: true,
+          allowEditDescription: true,
+          companyId: companyId,
+          categoryId: defaultCategory.id,
+          sectorId: sector.id,
+          items: {
+            create: [
+              {
+                name: 'Impressão Offset',
+                unitOfMeasureId: unUnit.id,
+                unitCost: 0.08,
+                salePrice: 0.25,
+              },
+            ],
+          },
+        },
+      });
+
+      console.log(`✅ Produtos padrão criados:`);
+      console.log(`   - Banner em Lona: ${bannerProduct.id}`);
+      console.log(`   - Adesivo Vinil: ${adesivoProduct.id}`);
+      console.log(`   - Cartão de Visita: ${cartaoProduct.id}`);
+
+      // Produto 4: Placa Composta (produto composto com múltiplos itens)
+      console.log('Creating composite product...');
+
+      await this.prisma.product.create({
+        data: {
+          name: 'Placa Acrílico com Suporte',
+          code: 'PLA001',
+          isActive: true,
+          isStandard: false,
+          technicalDescription:
+            'Placa em acrílico 3mm com impressão digital + suporte em alumínio anodizado.',
+          allowEditValues: true,
+          allowEditDescription: true,
+          companyId: companyId,
+          categoryId: defaultCategory.id,
+          sectorId: sector.id,
+          items: {
+            create: [
+              {
+                name: 'Placa Acrílico 3mm',
+                unitOfMeasureId: m2Unit.id,
+                width: 1,
+                height: 1,
+                unitCost: 45,
+                salePrice: 85,
+              },
+              {
+                name: 'Impressão Digital UV',
+                unitOfMeasureId: m2Unit.id,
+                width: 1,
+                height: 1,
+                unitCost: 25,
+                salePrice: 50,
+              },
+              {
+                name: 'Suporte Alumínio',
+                unitOfMeasureId: unUnit.id,
+                unitCost: 15,
+                salePrice: 35,
+              },
+              {
+                name: 'Montagem e Acabamento',
+                unitOfMeasureId: unUnit.id,
+                unitCost: 10,
+                salePrice: 25,
+              },
+            ],
+          },
+        },
+      });
+
+      console.log(
+        '✅ Default products and composite product created successfully',
+      );
+    } else {
+      console.log(
+        '⚠️  Não foi possível criar produtos padrão (categoria ou unidades não encontradas)',
+      );
+    }
+
+    // Criar cliente padrão
+    console.log('Creating default client...');
+    await this.prisma.client.create({
+      data: {
+        type: 'PERSON',
+        status: 'PROSPECT',
+        name: 'Cliente Exemplo',
+        email: 'cliente.exemplo@email.com',
+        phone: '(11) 3333-4444',
+        mobile: '(11) 98888-7777',
+        cpf: '123.456.789-00',
+        rg: '12.345.678-9',
+        category: 'Cliente Padrão',
+        notes:
+          'Este é um cliente de exemplo criado automaticamente para demonstração. Você pode editá-lo ou excluí-lo conforme necessário.',
+        companyId: companyId,
+        minValue: 0,
+        maxValue: 1000,
+        blockClient: false,
+      },
+    });
+
+    // Criar fornecedor padrão
+    console.log('Creating default supplier...');
+    await this.prisma.supplier.create({
+      data: {
+        type: 'COMPANY',
+        status: 'ACTIVE',
+        name: 'Fornecedor Exemplo LTDA',
+        corporateName: 'Fornecedor Exemplo Comércio e Serviços LTDA',
+        tradeName: 'Fornecedor Exemplo',
+        email: 'fornecedor.exemplo@email.com',
+        phone: '(11) 2222-3333',
+        mobile: '(11) 97777-6666',
+        cnpj: '12.345.678/0001-90',
+        activity: 'Comércio e Serviços',
+        category: 'Fornecedor Padrão',
+        notes:
+          'Este é um fornecedor de exemplo criado automaticamente para demonstração. Você pode editá-lo ou excluí-lo conforme necessário.',
+        companyId: companyId,
+        minValue: 0,
+        maxValue: 5000,
+        blockClient: false,
+      },
+    });
+
+    console.log('Default client and supplier created successfully');
     // const client: CreateClientDto = {};
     // await this.clientService.create(client, null);
+
+    // Criar orçamento exemplo após todos os dados básicos estarem criados
+    await this.createExampleQuotation(companyId);
   }
+
+  private async createExampleQuotation(companyId: string) {
+    try {
+      console.log('Creating example quotation...');
+
+      // Buscar dados necessários
+      const [
+        exampleClient,
+        adminEmployee,
+        quotationSeries,
+        bannerProduct,
+        placaProduct,
+      ] = await Promise.all([
+        this.prisma.client.findFirst({
+          where: { name: 'Cliente Exemplo', companyId },
+        }),
+        this.prisma.employee.findFirst({
+          where: { companyId, role: { isAdmin: true } },
+        }),
+        this.prisma.saleSeries.findFirst({
+          where: { code: 'V1', companyId },
+        }),
+        this.prisma.product.findFirst({
+          where: { code: 'BAN001', companyId },
+        }),
+        this.prisma.product.findFirst({
+          where: { code: 'PLA001', companyId },
+        }),
+      ]);
+
+      if (
+        !exampleClient ||
+        !adminEmployee ||
+        !quotationSeries ||
+        !bannerProduct ||
+        !placaProduct
+      ) {
+        console.log(
+          '⚠️  Alguns dados necessários não foram encontrados para criar orçamento exemplo',
+        );
+        return;
+      }
+
+      // Criar orçamento exemplo
+      const exampleQuotation = await this.prisma.quotation.create({
+        data: {
+          status: 'OPEN',
+          quotationNumber: 1,
+          companyId: companyId,
+          subCompanyId: companyId,
+          sellerId: adminEmployee.id,
+          clientId: exampleClient.id,
+          seriesId: quotationSeries.id,
+          description:
+            'Este é um orçamento de exemplo criado automaticamente para demonstrar o funcionamento do sistema. Inclui um produto simples e um produto composto.',
+          totalValue: 265,
+        },
+      });
+
+      // Adicionar produtos ao orçamento
+      await Promise.all([
+        this.prisma.quotationProduct.create({
+          data: {
+            quotationId: exampleQuotation.id,
+            productId: bannerProduct.id,
+            quantity: 2,
+            description: 'Banner promocional 2x1m',
+            totalValue: 70,
+            allowEditDescription: true,
+            allowEditValues: true,
+          },
+        }),
+        this.prisma.quotationProduct.create({
+          data: {
+            quotationId: exampleQuotation.id,
+            productId: placaProduct.id,
+            quantity: 1,
+            description: 'Placa de identificação personalizada 30x20cm',
+            totalValue: 195,
+            allowEditDescription: true,
+            allowEditValues: true,
+          },
+        }),
+      ]);
+
+      console.log(`✅ Orçamento exemplo criado: ${exampleQuotation.id}`);
+      console.log('   - Total: R$ 265,00');
+      console.log('   - Produtos: 1 simples + 1 composto');
+    } catch (error) {
+      console.error('❌ Erro ao criar orçamento exemplo:', error.message);
+    }
+  }
+
   async create(
     createCompanyDto: CreateCompanyDto,
     parentCompanyId: string,
