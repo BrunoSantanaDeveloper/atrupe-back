@@ -16,6 +16,7 @@ export class ProfileService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createProfileDto: CreateProfileDto) {
+    console.log(createProfileDto);
     try {
       return await this.prisma.sellerProfile.create({
         data: {

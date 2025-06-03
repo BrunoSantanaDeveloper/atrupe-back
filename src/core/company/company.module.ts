@@ -6,6 +6,8 @@ import { AuthModule } from '../auth/auth.module';
 import { AddressModule } from '../address/address.module';
 import { PlugModule } from '../../svc/plug/plug.module';
 import { CancelReasonModule } from './cancel-reason/cancel-reason.module';
+import { SupplierModule } from '../supplier/supplier.module';
+import { ClientModule } from '../client/client.module';
 
 @Module({
   imports: [
@@ -14,6 +16,8 @@ import { CancelReasonModule } from './cancel-reason/cancel-reason.module';
     AddressModule,
     PlugModule,
     CancelReasonModule,
+    ClientModule,
+    SupplierModule,
   ],
   controllers: [CompanyController],
   providers: [CompanyService],

@@ -6,13 +6,16 @@ import { PlugService } from '../../svc/plug/plug.service';
 import { Company, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
-
+import { ClientService } from '../client/client.service';
+import { SupplierService } from '../supplier/supplier.service';
 @Injectable()
 export class CompanyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly addressService: AddressService,
     private readonly plugService: PlugService,
+    private readonly clientService: ClientService,
+    private readonly supplierService: SupplierService,
   ) {}
   async createFirstAccess(email: string, companyId: string) {
     try {
@@ -334,6 +337,39 @@ export class CompanyService {
     await this.prisma.paymentMethod.createMany({
       data: paymentMethods,
     });
+
+    const sector = await this.prisma.companySector.findFirst({
+      where: {
+        name: 'Comercial',
+        companyId: companyId,
+      },
+    });
+
+    if (!sector) {
+      console.error('Administration sector not found for company:', companyId);
+      throw new Error('Sector not found');
+    }
+
+    const role = await this.prisma.role.create({
+      data: {
+        name: 'Vendedor',
+        companyId: companyId,
+        isAdmin: false,
+        sectorId: sector.id,
+      },
+    });
+
+    await this.prisma.category.create({
+      data: {
+        name: 'Produtos Padrão',
+        companyId: companyId,
+        sectorId: sector.id,
+      },
+    });
+
+    console.log('Vendedor role created:', role.id);
+    // const client: CreateClientDto = {};
+    // await this.clientService.create(client, null);
   }
   async create(
     createCompanyDto: CreateCompanyDto,
