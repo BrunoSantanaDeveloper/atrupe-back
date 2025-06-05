@@ -1866,6 +1866,8 @@ export class QuotationService {
                   }
                 : null,
               daysAfterApproval: quotation.deliveryInfo.daysAfterApproval,
+              freightCost: quotation.deliveryInfo.cost,
+              freightPrice: quotation.deliveryInfo.value,
               clientAddress: quotation.client?.address[0]
                 ? {
                     type: 'PRINCIPAL',

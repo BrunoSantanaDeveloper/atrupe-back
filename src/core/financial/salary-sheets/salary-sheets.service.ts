@@ -25,8 +25,42 @@ export class SalarySheetsService {
     year: number,
     companyId: string,
   ): Promise<void> {
+        /**
+     * LÓGICA TEMPORAL PARA FOLHAS DE PAGAMENTO:
+     * - Colaboradores ativos: aparecem nos meses posteriores ao cadastro
+     * - Colaboradores desativados: mantêm histórico dos meses anteriores
+     * - Novos colaboradores: só aparecem a partir do mês de cadastro
+     */
+    const lastDayOfMonth = new Date(year, month + 1, 0, 23, 59, 59); // Último dia do mês
+
+    // Buscar colaboradores que existiam no mês selecionado
     const employees = await this.prisma.employee.findMany({
-      where: { isActive: true },
+      where: {
+        companyId,
+        // Colaborador foi criado até o final do mês selecionado
+        createdAt: {
+          lte: lastDayOfMonth,
+        },
+        OR: [
+          // Colaborador ainda está ativo (aparece em todos os meses posteriores ao cadastro)
+          { isActive: true },
+          // OU colaborador inativo MAS que já teve folha criada para este mês
+          // (mantém histórico de meses anteriores à desativação)
+          {
+            AND: [
+              { isActive: false },
+              {
+                salarySheet: {
+                  some: {
+                    month: month,
+                    year: year,
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
     });
 
     for (const employee of employees) {
@@ -94,7 +128,14 @@ export class SalarySheetsService {
   }
 
   async getSalarySheets(dto: GetSalarySheetsDto): Promise<{
-    data: any[];
+    data: {
+      id: string;
+      name: string;
+      role: string;
+      salary: number;
+      balance: number;
+      status: string;
+    }[];
     count: number;
     summary: {
       totalSalary: number;
@@ -223,8 +264,58 @@ export class SalarySheetsService {
       summary.totalSalary =
         summary.totalIncreases - summary.totalDiscounts - summary.totalAdvances;
 
+      // Mapear dados para o formato desejado
+      const mappedData = salarySheets.map((sheet: any) => {
+        // Calcular salário base (item do tipo INCREASE com descrição "Salário Base")
+        const baseSalaryItem = sheet.items.find(
+          (item) =>
+            item.type === 'INCREASE' && item.description === 'Salário Base',
+        );
+        const baseSalary = baseSalaryItem ? baseSalaryItem.amount : 0;
+
+        // Calcular saldo (aumentos - descontos - adiantamentos)
+        let totalIncreases = 0;
+        let totalDiscounts = 0;
+        let totalAdvances = 0;
+
+        sheet.items.forEach((item) => {
+          switch (item.type) {
+            case 'INCREASE':
+              totalIncreases += item.amount;
+              break;
+            case 'DISCOUNT':
+              totalDiscounts += item.amount;
+              break;
+            case 'ADVANCE':
+              totalAdvances += item.amount;
+              break;
+          }
+        });
+
+        const balance = totalIncreases - totalDiscounts - totalAdvances;
+
+        // Mapear status
+        const statusMap = {
+          EMPTY: '',
+          OPEN: 'Aberta',
+          CLOSED: 'Fechada',
+        };
+
+        return {
+          id: sheet.id,
+          name: sheet.employee?.user?.name || 'Nome não disponível',
+          role:
+            sheet.employee?.role?.name ||
+            sheet.employee?.sector?.name ||
+            'Cargo não definido',
+          salary: baseSalary,
+          balance: balance,
+          status: statusMap[sheet.status] || sheet.status,
+        };
+      });
+
       return {
-        data: salarySheets,
+        data: mappedData,
         count: total,
         summary,
       };

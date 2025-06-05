@@ -109,6 +109,8 @@
             "cnpj": "98.765.432/0001-10"
         },
         "daysAfterApproval": 15,
+        "freightCost": 2500,
+        "freightPrice": 3000,
         "clientAddress": {
             "type": "PRINCIPAL",
             "street": "Rua do Cliente",

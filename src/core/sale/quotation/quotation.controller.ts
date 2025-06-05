@@ -456,6 +456,8 @@ export class QuotationController {
               cnpj: '11.222.333/0001-44',
             },
             daysAfterApproval: 15,
+            freightCost: 2500,
+            freightPrice: 3000,
             clientAddress: {
               type: 'PRINCIPAL',
               street: 'Rua do Cliente',

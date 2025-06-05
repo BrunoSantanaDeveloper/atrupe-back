@@ -112,38 +112,12 @@ export class SalarySheetsController {
           items: {
             type: 'object',
             properties: {
-              id: { type: 'string' },
-              month: { type: 'number' },
-              year: { type: 'number' },
-              status: { type: 'string' },
-              employee: {
-                type: 'object',
-                properties: {
-                  user: {
-                    type: 'object',
-                    properties: {
-                      name: { type: 'string' },
-                    },
-                  },
-                  sector: {
-                    type: 'object',
-                    properties: {
-                      name: { type: 'string' },
-                    },
-                  },
-                },
-              },
-              items: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    type: { type: 'string' },
-                    description: { type: 'string' },
-                    amount: { type: 'number' },
-                  },
-                },
-              },
+              id: { type: 'string', example: '1' },
+              name: { type: 'string', example: 'Ana Silva' },
+              role: { type: 'string', example: 'Desenvolvedora Frontend' },
+              salary: { type: 'number', example: 8500 },
+              balance: { type: 'number', example: 8500 },
+              status: { type: 'string', example: 'Aberta' },
             },
           },
         },
