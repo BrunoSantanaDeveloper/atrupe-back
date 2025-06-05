@@ -752,9 +752,10 @@ model SalaryItem {
   id            String      @id @default(uuid()) // ID do item
   salarySheetId String // Relacionamento com a folha de pagamento
   salarySheet   SalarySheet @relation(fields: [salarySheetId], references: [id])
+  paidAt        DateTime?
 
   type        ItemType // Tipo do item (Acréscimo, Desconto, Adiantamento)
-  description String // Descrição do item (ex: Salário Base, Bonus, etc.)
+  description String? // Descrição do item (ex: Salário Base, Bonus, etc.)
   amount      Float // Valor do item
   reference   String // Referência do item (ex: mês de referência)
 
@@ -772,7 +773,7 @@ enum ItemType {
 
 model SalaryControl {
   id        String   @id @default(uuid())
-  reference String?
+  reference String
   amount    Float    @default(0)
   type      ItemType @default(INCREASE)
   date      DateTime @default(now())

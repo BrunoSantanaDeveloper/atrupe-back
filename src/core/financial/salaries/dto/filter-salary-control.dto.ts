@@ -26,7 +26,7 @@ export class FilterSalaryControlDto extends BaseFilterDTO {
   })
   @IsString()
   @IsOptional()
-  employeeName?: string;
+  employeeId?: string;
 
   @ApiPropertyOptional({
     description: 'Type of salary control to filter by',

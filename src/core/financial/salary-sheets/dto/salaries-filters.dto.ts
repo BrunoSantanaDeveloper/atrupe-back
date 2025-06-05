@@ -3,32 +3,47 @@ import {
   IsOptional,
   IsEnum,
   IsIn,
-  IsNumberString,
   IsString,
+  IsNumber,
+  Min,
+  Max,
 } from 'class-validator';
 import { SheetStatus, ItemType } from '@prisma/client';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
+import { Transform } from 'class-transformer';
 
 export class GetSalarySheetsDto extends BaseFilterDTO {
   @ApiProperty({
-    description: 'Mês da folha (1-12)',
-    example: 11,
+    description: 'Mês de referência (1-12)',
     required: false,
-    type: Number,
+    example: 1,
   })
   @IsOptional()
-  @IsNumberString()
-  @IsIn(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'])
-  month?: number;
+  @IsNumber()
+  @Min(1)
+  @Max(12)
+  @Transform(({ value }) => {
+    if (!value) {
+      return new Date().getMonth() + 1;
+    }
+    return parseInt(value);
+  })
+  month: number;
 
   @ApiProperty({
-    description: 'Ano da folha',
-    example: 2024,
+    description: 'Ano de referência',
     required: false,
+    example: 2024,
   })
   @IsOptional()
-  @IsNumberString()
-  year?: number;
+  @IsNumber()
+  @Transform(({ value }) => {
+    if (!value) {
+      return new Date().getFullYear();
+    }
+    return parseInt(value);
+  })
+  year: number;
 
   @ApiProperty({
     description: 'Status da folha (EMPTY, OPEN, CLOSED)',
@@ -77,10 +92,9 @@ export class GetSalarySheetsDto extends BaseFilterDTO {
   itemType?: ItemType;
 
   @ApiProperty({
-    description:
-      'Termo de busca geral (busca em nome do colaborador e descrição dos itens)',
-    example: 'bônus',
+    description: 'Termo de busca por nome do colaborador',
     required: false,
+    example: 'João',
   })
   @IsOptional()
   @IsString()

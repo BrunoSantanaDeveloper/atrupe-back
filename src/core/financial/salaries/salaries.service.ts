@@ -25,12 +25,18 @@ export class SalariesService {
       ];
 
       // Add name filter if search or employeeName is provided
-      if (filters.search || filters.employeeName) {
+      if (filters.search) {
         whereConditions.push({
           name: {
-            contains: filters.search || filters.employeeName,
+            contains: filters.search,
             mode: 'insensitive',
           },
+        });
+      }
+
+      if (filters.employeeId) {
+        whereConditions.push({
+          id: filters.employeeId,
         });
       }
 
@@ -249,7 +255,7 @@ export class SalariesService {
         // Se amount não foi fornecido mas isSet foi, usar o valor fornecido
         updateData.isSet = updateSalaryControlDto.isSet;
       }
-      
+
       if (updateSalaryControlDto.date !== undefined) {
         updateData.date = new Date(updateSalaryControlDto.date);
       }

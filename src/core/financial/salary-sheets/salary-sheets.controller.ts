@@ -15,7 +15,6 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiQuery,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { GetSalarySheetsDto } from './dto/salaries-filters.dto';
@@ -51,30 +50,8 @@ export class SalarySheetsController {
     status: 201,
     description: 'Folha de pagamento gerada com sucesso',
   })
-  @ApiQuery({
-    name: 'month',
-    description: 'Mês para gerar a folha (1-12)',
-    type: Number,
-    required: true,
-  })
-  @ApiQuery({
-    name: 'year',
-    description: 'Ano para gerar a folha',
-    type: Number,
-    required: true,
-  })
-  async generateSalarySheet(
-    @Query('month') month: number,
-    @Query('year') year: number,
-    @Req() req,
-  ) {
-    if (month < 1 || month > 12) throw new Error('Invalid month');
-    const companyId = req.user.companyId;
-    await this.salaryService.generateSalarySheetForMonth(
-      +month - 1,
-      +year,
-      companyId,
-    );
+  async generateSalarySheet() {
+    await this.salaryService.generateSalarySheetForMonth();
     return { message: 'Folha de pagamento gerada com sucesso' };
   }
 
@@ -100,11 +77,11 @@ export class SalarySheetsController {
   @ApiOperation({
     summary: 'Listar folhas de pagamento',
     description:
-      'Retorna a lista de folhas de pagamento com filtros, ordenação e paginação',
+      'Retorna a lista de folhas de pagamento do mês/ano especificado',
   })
   @ApiResponse({
     status: 200,
-    description: 'Lista de folhas de pagamento com resumo de valores',
+    description: 'Lista de folhas de pagamento',
     schema: {
       properties: {
         data: {
@@ -112,32 +89,28 @@ export class SalarySheetsController {
           items: {
             type: 'object',
             properties: {
-              id: { type: 'string', example: '1' },
-              name: { type: 'string', example: 'Ana Silva' },
-              role: { type: 'string', example: 'Desenvolvedora Frontend' },
-              salary: { type: 'number', example: 8500 },
-              balance: { type: 'number', example: 8500 },
-              status: { type: 'string', example: 'Aberta' },
+              id: { type: 'string' },
+              employee: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  role: { type: 'string' },
+                },
+              },
+              totalSalary: { type: 'number' },
+              balance: { type: 'number' },
+              status: { type: 'string' },
             },
           },
         },
-        count: { type: 'number' },
-        summary: {
-          type: 'object',
-          properties: {
-            totalSalary: { type: 'number' },
-            totalIncreases: { type: 'number' },
-            totalDiscounts: { type: 'number' },
-            totalAdvances: { type: 'number' },
-          },
-        },
+        count: { type: 'number', description: 'Total de registros' },
+        page: { type: 'number', description: 'Página atual' },
+        limit: { type: 'number', description: 'Itens por página' },
+        totalPages: { type: 'number', description: 'Total de páginas' },
       },
     },
   })
   async getSalarySheets(@Req() req, @Query() query: GetSalarySheetsDto) {
-    if (query.month) {
-      query.month = +query.month - 1;
-    }
     query.companyId = req.user.companyId;
     return this.salaryService.getSalarySheets(query);
   }
