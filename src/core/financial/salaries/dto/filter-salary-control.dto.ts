@@ -1,5 +1,5 @@
 import { IsString, IsOptional, IsEnum, IsUUID } from 'class-validator';
-import { CostItemType } from './create-cost-item.dto';
+import { ItemType } from '@prisma/client';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -29,11 +29,11 @@ export class FilterSalaryControlDto extends BaseFilterDTO {
   employeeName?: string;
 
   @ApiPropertyOptional({
-    description: 'Type of cost item to filter by',
-    enum: CostItemType,
-    example: CostItemType.INCREASE,
+    description: 'Type of salary control to filter by',
+    enum: ItemType,
+    example: ItemType.INCREASE,
   })
-  @IsEnum(CostItemType)
+  @IsEnum(ItemType)
   @IsOptional()
-  costType?: CostItemType;
+  costType?: ItemType;
 }

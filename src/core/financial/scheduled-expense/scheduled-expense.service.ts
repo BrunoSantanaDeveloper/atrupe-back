@@ -15,12 +15,18 @@ export class ScheduledExpenseService {
     try {
       return await this.prisma.scheduledExpense.create({
         data: {
-          ...dto,
+          amount: dto.amount,
+          description: dto.description,
+          dueDay: dto.dueDay,
+          recurringType: dto.recurringType,
+          supplierId: dto.supplierId,
+          categoryId: dto.categoryId,
+          subCategoryId: dto.subCategoryId,
           companyId,
         },
         include: {
           supplier: true,
-          nature: true,
+          company: true,
           subCategory: true,
         },
       });
@@ -39,7 +45,7 @@ export class ScheduledExpenseService {
         },
         include: {
           supplier: true,
-          nature: true,
+          company: true,
           subCategory: true,
         },
       });
@@ -59,7 +65,7 @@ export class ScheduledExpenseService {
         },
         include: {
           supplier: true,
-          nature: true,
+          company: true,
           subCategory: true,
         },
       });
@@ -89,10 +95,18 @@ export class ScheduledExpenseService {
         where: {
           id: expense.id,
         },
-        data: dto,
+        data: {
+          amount: dto.amount,
+          description: dto.description,
+          dueDay: dto.dueDay,
+          recurringType: dto.recurringType,
+          supplierId: dto.supplierId,
+          categoryId: dto.categoryId,
+          subCategoryId: dto.subCategoryId,
+        },
         include: {
           supplier: true,
-          nature: true,
+          company: true,
           subCategory: true,
         },
       });

@@ -776,6 +776,7 @@ model SalaryControl {
   amount    Float    @default(0)
   type      ItemType @default(INCREASE)
   date      DateTime @default(now())
+  isSet     Boolean  @default(false)
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id])

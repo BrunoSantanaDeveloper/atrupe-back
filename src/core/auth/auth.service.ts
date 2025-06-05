@@ -29,6 +29,7 @@ export class AuthService {
         companyId: user.employee[0]?.company.id,
         role: user.employee[0]?.role?.id,
         isAdmin: user.employee[0]?.role?.isAdmin,
+        employeeId: user.employee[0]?.id,
       };
 
       return {

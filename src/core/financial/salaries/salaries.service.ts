@@ -87,6 +87,7 @@ export class SalariesService {
                 amount: true,
                 date: true,
                 type: true,
+                isSet: true,
                 createdAt: true,
                 updatedAt: true,
               },
@@ -147,33 +148,74 @@ export class SalariesService {
 
   async create(createSalaryControlDto: CreateSalaryControlDto) {
     try {
-      return await this.prisma.salaryControl.create({
-        data: {
-          reference: createSalaryControlDto.reference,
-          amount: createSalaryControlDto.amount,
-          date: new Date(),
+      // Buscar todos os funcionários ativos da empresa
+      const employees = await this.prisma.employee.findMany({
+        where: {
           companyId: createSalaryControlDto.companyId,
-          type: createSalaryControlDto.type,
-          employeeId: createSalaryControlDto.employeeId,
+          isActive: true,
         },
-        include: {
-          employee: {
-            include: {
-              sector: true,
-            },
-          },
+        select: {
+          id: true,
+          name: true,
         },
       });
+
+      if (employees.length === 0) {
+        throw new BadRequestException(
+          'No active employees found in the company',
+        );
+      }
+
+      // Determinar se isSet deve ser true ou false baseado no valor
+      const isSet = createSalaryControlDto.amount > 0;
+
+      // Criar salary controls para todos os funcionários
+      const createdSalaryControls = await Promise.all(
+        employees.map(async (employee) => {
+          return await this.prisma.salaryControl.create({
+            data: {
+              reference: createSalaryControlDto.reference,
+              amount: createSalaryControlDto.amount,
+              date: new Date(),
+              companyId: createSalaryControlDto.companyId,
+              type: createSalaryControlDto.type,
+              employeeId: employee.id,
+              isSet: isSet,
+            },
+            include: {
+              employee: {
+                select: {
+                  id: true,
+                  name: true,
+                  sector: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+        }),
+      );
+
+      return {
+        message: `Successfully created salary control for ${employees.length} employees`,
+        createdCount: employees.length,
+        employees: employees.map((emp) => ({ id: emp.id, name: emp.name })),
+        salaryControls: createdSalaryControls,
+      };
     } catch (error) {
       console.error(error);
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
           throw new BadRequestException(
-            'A salary control with this reference already exists',
+            'A salary control with this reference already exists for some employees',
           );
         }
         if (error.code === 'P2003') {
-          throw new BadRequestException('Invalid employee reference');
+          throw new BadRequestException('Invalid company reference');
         }
       }
       throw new BadRequestException(
@@ -198,9 +240,16 @@ export class SalariesService {
       if (updateSalaryControlDto.reference !== undefined) {
         updateData.reference = updateSalaryControlDto.reference;
       }
+
       if (updateSalaryControlDto.amount !== undefined) {
         updateData.amount = updateSalaryControlDto.amount;
+        // Se amount foi fornecido, calcular isSet automaticamente
+        updateData.isSet = updateSalaryControlDto.amount > 0;
+      } else if (updateSalaryControlDto.isSet !== undefined) {
+        // Se amount não foi fornecido mas isSet foi, usar o valor fornecido
+        updateData.isSet = updateSalaryControlDto.isSet;
       }
+      
       if (updateSalaryControlDto.date !== undefined) {
         updateData.date = new Date(updateSalaryControlDto.date);
       }

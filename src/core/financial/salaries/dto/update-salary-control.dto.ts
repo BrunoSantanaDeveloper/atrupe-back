@@ -1,6 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber, IsString, IsOptional, IsEnum } from 'class-validator';
-import { CostItemType } from './create-cost-item.dto';
+import {
+  IsNumber,
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsBoolean,
+} from 'class-validator';
+import { ItemType } from '@prisma/client';
 
 export class UpdateSalaryControlDto {
   @ApiProperty({
@@ -31,14 +37,23 @@ export class UpdateSalaryControlDto {
   date?: string;
 
   @ApiProperty({
-    description: 'The type of cost item',
-    enum: CostItemType,
-    example: CostItemType.INCREASE,
+    description: 'The type of salary control',
+    enum: ItemType,
+    example: ItemType.INCREASE,
     required: false,
   })
-  @IsEnum(CostItemType)
+  @IsEnum(ItemType)
   @IsOptional()
-  type?: CostItemType;
+  type?: ItemType;
+
+  @ApiProperty({
+    description: 'Whether this salary control is active/enabled for the employee',
+    example: true,
+    required: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  isSet?: boolean;
 
   @ApiProperty({
     description: 'The employee ID associated with this salary control',

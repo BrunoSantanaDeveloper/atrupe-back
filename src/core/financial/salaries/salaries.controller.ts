@@ -61,10 +61,11 @@ export class SalariesController {
     return this.salariesService.getSalaryDetails(id);
   }
 
-  @ApiOperation({ summary: 'Create a new salary control' })
+  @ApiOperation({ summary: 'Create a new salary control for all employees' })
   @ApiResponse({
     status: 201,
-    description: 'The salary control has been successfully created',
+    description:
+      'The salary control has been successfully created for all employees',
   })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @Post()
