@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "plans" ADD COLUMN     "extraUsers" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "hasNfe" BOOLEAN NOT NULL DEFAULT false;

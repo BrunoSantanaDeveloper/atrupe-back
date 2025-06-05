@@ -405,9 +405,10 @@ model Supplier {
   minValue Float?
   maxValue Float?
 
-  blockClient Boolean      @default(false)
-  client      Client[]
-  receivable  Receivable[]
+  blockClient      Boolean            @default(false)
+  client           Client[]
+  receivable       Receivable[]
+  scheduledExpense ScheduledExpense[]
 
   @@map("suppliers")
 }
@@ -885,15 +886,37 @@ enum CashRegisterStatus {
 }
 
 model ScheduledExpense {
-  id          String   @id @default(uuid())
-  description String
-  amount      Float
-  dueDate     DateTime
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id])
-  createdAt   DateTime @default(now())
+  id            String        @id @default(uuid())
+  description   String?
+  amount        Float         @default(0)
+  dueDay        Int           @default(1)
+  recurringType RecurringType @default(MONTHLY)
+
+  supplierId String?
+  companyId  String
+
+  categoryId    String?
+  nature        Nature?      @relation(fields: [categoryId], references: [id])
+  subCategoryId String?
+  subCategory   SubCategory? @relation(fields: [subCategoryId], references: [id])
+
+  supplier Supplier? @relation(fields: [supplierId], references: [id])
+  company  Company   @relation(fields: [companyId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   @@map("scheduled_expenses")
+}
+
+enum RecurringType {
+  WEEKLY
+  MONTHLY
+  BIMONTHLY
+  QUARTERLY
+  SEMIANNUALLY
+  YEARLY
+  ONCE
 }
 
 model Invoice {
@@ -1636,12 +1659,13 @@ model Nature {
   companyId   String
   company     Company @relation(fields: [companyId], references: [id])
 
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime?     @updatedAt
-  isActive    Boolean       @default(true)
-  receivable  Receivable[]
-  payable     Payable[]
-  subCategory SubCategory[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime?          @updatedAt
+  isActive         Boolean            @default(true)
+  receivable       Receivable[]
+  payable          Payable[]
+  subCategory      SubCategory[]
+  scheduledExpense ScheduledExpense[]
 
   @@map("natures")
 }
@@ -1656,11 +1680,12 @@ model SubCategory {
   natureId String
   nature   Nature @relation(fields: [natureId], references: [id])
 
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime?    @updatedAt
-  isActive   Boolean      @default(true)
-  receivable Receivable[]
-  payable    Payable[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime?          @updatedAt
+  isActive         Boolean            @default(true)
+  receivable       Receivable[]
+  payable          Payable[]
+  scheduledExpense ScheduledExpense[]
 
   @@map("sub_categories")
 }

@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { ScheduledExpenseService } from './scheduled-expense.service';
 import { CreateScheduledExpenseDto } from './dto/create-scheduled-expense.dto';
@@ -43,8 +44,18 @@ export class ScheduledExpenseController {
     status: 201,
     description: 'Despesa fixa criada com sucesso.',
   })
-  create(@Body() createScheduledExpenseDto: CreateScheduledExpenseDto) {
-    return this.scheduledExpenseService.create(createScheduledExpenseDto);
+  @ApiResponse({
+    status: 400,
+    description: 'Dados inválidos fornecidos.',
+  })
+  create(
+    @Body() createScheduledExpenseDto: CreateScheduledExpenseDto,
+    @Req() req,
+  ) {
+    return this.scheduledExpenseService.create(
+      createScheduledExpenseDto,
+      req.user.companyId,
+    );
   }
 
   @Get()
@@ -54,9 +65,8 @@ export class ScheduledExpenseController {
     description: 'Lista de despesas fixas retornada com sucesso.',
     isArray: true,
   })
-  findAll() {
-    // filter.companyId = req.user.companyId;
-    return this.scheduledExpenseService.findAll();
+  findAll(@Req() req) {
+    return this.scheduledExpenseService.findAll(req.user.companyId);
   }
 
   @Get(':id')
@@ -74,8 +84,8 @@ export class ScheduledExpenseController {
     status: 404,
     description: 'Despesa fixa não encontrada.',
   })
-  findOne(@Param('id') id: string) {
-    return this.scheduledExpenseService.findOne(id);
+  findOne(@Param('id') id: string, @Req() req) {
+    return this.scheduledExpenseService.findOne(id, req.user.companyId);
   }
 
   @Patch(':id')
@@ -87,7 +97,7 @@ export class ScheduledExpenseController {
   })
   @ApiBody({
     description: 'Dados para atualização da despesa fixa',
-    type: CreateScheduledExpenseDto,
+    type: UpdateScheduledExpenseDto,
   })
   @ApiResponse({
     status: 200,
@@ -100,8 +110,13 @@ export class ScheduledExpenseController {
   update(
     @Param('id') id: string,
     @Body() updateScheduledExpenseDto: UpdateScheduledExpenseDto,
+    @Req() req,
   ) {
-    return this.scheduledExpenseService.update(id, updateScheduledExpenseDto);
+    return this.scheduledExpenseService.update(
+      id,
+      updateScheduledExpenseDto,
+      req.user.companyId,
+    );
   }
 
   @Delete(':id')
@@ -119,7 +134,7 @@ export class ScheduledExpenseController {
     status: 404,
     description: 'Despesa fixa não encontrada.',
   })
-  remove(@Param('id') id: string) {
-    return this.scheduledExpenseService.remove(id);
+  remove(@Param('id') id: string, @Req() req) {
+    return this.scheduledExpenseService.remove(id, req.user.companyId);
   }
 }

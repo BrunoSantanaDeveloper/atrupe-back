@@ -1,44 +1,80 @@
 import {
-  IsDate,
-  IsDecimal,
   IsNotEmpty,
+  IsNumber,
+  IsOptional,
   IsString,
   IsUUID,
+  IsEnum,
+  Min,
+  Max,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { RecurringType } from '@prisma/client';
 
 export class CreateScheduledExpenseDto {
   @IsNotEmpty()
-  @IsDecimal()
+  @IsNumber()
+  @Min(0)
   @ApiProperty({
     description: 'Valor da despesa agendada',
-    example: 500.0,
+    example: 50000,
   })
   amount: number;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
   @ApiProperty({
     description: 'Descrição da despesa agendada',
-    example: 'Pagamento de fornecedor',
+    example: 'desc',
+    required: false,
   })
-  description: string;
+  description?: string;
 
   @IsNotEmpty()
-  @IsDate()
+  @IsNumber()
+  @Min(1)
+  @Max(31)
   @ApiProperty({
-    description: 'Data de vencimento da despesa agendada',
-    example: '2023-07-01T00:00:00.000Z',
-    type: 'string', // Swagger espera uma string para datas
-    format: 'date-time',
+    description: 'Dia do vencimento da despesa agendada',
+    example: 15,
   })
-  dueDate: Date;
+  dueDay: number;
 
   @IsNotEmpty()
+  @IsEnum(RecurringType)
+  @ApiProperty({
+    description: 'Tipo de recorrência da despesa',
+    enum: RecurringType,
+    example: 'MONTHLY',
+  })
+  recurringType: RecurringType;
+
+  @IsOptional()
   @IsUUID()
   @ApiProperty({
-    description: 'ID da empresa associada à despesa agendada',
-    example: '123e4567-e89b-12d3-a456-426614174000',
+    description: 'ID do fornecedor associado à despesa',
+    example: '0e3b706d-b81a-481a-808f-2a1d0f19ea5b',
+    required: false,
   })
-  companyId: string;
+  supplierId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description: 'ID da natureza/categoria da despesa',
+    example: '461c3a53-b469-4591-8f10-e2cd10dda73f',
+    required: false,
+  })
+  categoryId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description: 'ID da subcategoria da despesa',
+    example: 'b28516b5-022e-4aa7-b188-047c7fdb0578',
+    required: false,
+  })
+  subCategoryId?: string;
 }
+
+export class UpdateScheduledExpenseDto extends CreateScheduledExpenseDto {}

@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "clients" ADD COLUMN     "blockClient" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "maxValue" DOUBLE PRECISION,
+ADD COLUMN     "minValue" DOUBLE PRECISION;
