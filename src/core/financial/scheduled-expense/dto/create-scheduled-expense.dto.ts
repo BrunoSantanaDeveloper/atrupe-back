@@ -7,6 +7,9 @@ import {
   IsEnum,
   Min,
   Max,
+  IsDateString,
+  IsArray,
+  ArrayMinSize,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { RecurringType } from '@prisma/client';
@@ -87,7 +90,52 @@ export class CreateScheduledExpenseDto {
   isActive?: boolean;
 }
 
-export class UpdateScheduledExpenseDto extends CreateScheduledExpenseDto {}
+export class LaunchScheduledExpenseDto {
+  @IsNotEmpty()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMinSize(1)
+  @ApiProperty({
+    description: 'Lista de IDs das despesas programadas a serem lançadas',
+    example: ['uuid-1', 'uuid-2'],
+    type: [String],
+  })
+  scheduledExpenseIds: string[];
+
+  @IsNotEmpty()
+  @IsDateString()
+  @ApiProperty({
+    description: 'Data de competência da movimentação',
+    example: '2025-02-02',
+  })
+  competenceDate: string;
+
+  @IsNotEmpty()
+  @IsDateString()
+  @ApiProperty({
+    description: 'Data de vencimento da movimentação',
+    example: '2025-02-02',
+  })
+  dueDate: string;
+
+  @IsNotEmpty()
+  @IsNumber()
+  @Min(0)
+  @ApiProperty({
+    description: 'Valor da movimentação',
+    example: 40000,
+  })
+  amount: number;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Observação da movimentação',
+    example: 'Lançamento manual das despesas programadas',
+    required: false,
+  })
+  notes?: string;
+}
 
 export class ScheduledExpenseFilterDto extends BaseFilterDTO {
   @IsOptional()
@@ -126,4 +174,42 @@ export class ScheduledExpenseFilterDto extends BaseFilterDTO {
     required: false,
   })
   recurringType?: RecurringType;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Status para filtrar (ACTIVE ou INACTIVE)',
+    example: 'ACTIVE',
+    enum: ['ACTIVE', 'INACTIVE'],
+    required: false,
+  })
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Level1 da natureza (01=Receitas, 02=Despesas)',
+    example: '02',
+    required: false,
+  })
+  level1?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description:
+      'Level2 da natureza (01=Administrativo, 02=Operacional, 03=Não operacional)',
+    example: '01',
+    required: false,
+  })
+  level2?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Código da natureza para filtrar',
+    example: '02',
+    required: false,
+  })
+  natureCode?: string;
 }

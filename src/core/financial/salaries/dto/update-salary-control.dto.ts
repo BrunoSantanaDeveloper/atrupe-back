@@ -47,7 +47,8 @@ export class UpdateSalaryControlDto {
   type?: ItemType;
 
   @ApiProperty({
-    description: 'Whether this salary control is active/enabled for the employee',
+    description:
+      'Whether this salary control is active/enabled for the employee',
     example: true,
     required: false,
   })

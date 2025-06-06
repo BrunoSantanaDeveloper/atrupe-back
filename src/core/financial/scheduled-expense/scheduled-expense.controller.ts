@@ -13,6 +13,7 @@ import {
 import { ScheduledExpenseService } from './scheduled-expense.service';
 import {
   CreateScheduledExpenseDto,
+  LaunchScheduledExpenseDto,
   ScheduledExpenseFilterDto,
 } from './dto/create-scheduled-expense.dto';
 import { UpdateScheduledExpenseDto } from './dto/update-scheduled-expense.dto';
@@ -80,6 +81,133 @@ export class ScheduledExpenseController {
   })
   getQuantity(@Req() req) {
     return this.scheduledExpenseService.count(req.user.companyId);
+  }
+
+  @Get('by-level1/:level1')
+  @ApiOperation({ summary: 'Obtém despesas fixas por nível 1 da natureza' })
+  @ApiParam({
+    name: 'level1',
+    required: true,
+    description: 'Nível 1 da natureza (receivable ou payable)',
+    enum: ['receivable', 'payable'],
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de despesas fixas por nível 1.',
+    isArray: true,
+  })
+  findByLevel1(
+    @Param('level1') level1: string,
+    @Query('status') status: string,
+    @Req() req,
+  ) {
+    return this.scheduledExpenseService.findAllByLevel1(
+      req.user.companyId,
+      level1,
+      status,
+    );
+  }
+
+  @Get('by-level2/:level1/:level2')
+  @ApiOperation({ summary: 'Obtém despesas fixas por nível 1 e 2 da natureza' })
+  @ApiParam({
+    name: 'level1',
+    required: true,
+    description: 'Nível 1 da natureza',
+  })
+  @ApiParam({
+    name: 'level2',
+    required: true,
+    description: 'Nível 2 da natureza',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de despesas fixas por nível 1 e 2.',
+    isArray: true,
+  })
+  findByLevel2(
+    @Param('level1') level1: string,
+    @Param('level2') level2: string,
+    @Query('status') status: string,
+    @Req() req,
+  ) {
+    return this.scheduledExpenseService.findAllByLevel2(
+      req.user.companyId,
+      level1,
+      level2,
+      status,
+    );
+  }
+
+  @Get('by-nature/:natureCode')
+  @ApiOperation({ summary: 'Obtém despesas fixas por código da natureza' })
+  @ApiParam({
+    name: 'natureCode',
+    required: true,
+    description: 'Código da natureza',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de despesas fixas por código da natureza.',
+    isArray: true,
+  })
+  findByNatureCode(
+    @Param('natureCode') natureCode: string,
+    @Query('status') status: string,
+    @Req() req,
+  ) {
+    return this.scheduledExpenseService.findAllByNatureCode(
+      req.user.companyId,
+      natureCode,
+      status,
+    );
+  }
+
+  @Get('grouped-by-supplier')
+  @ApiOperation({
+    summary: 'Obtém despesas fixas agrupadas por fornecedor',
+    description:
+      'Lista as despesas agendadas agrupadas por fornecedor, similar às folhas de pagamento',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de fornecedores com suas despesas agendadas.',
+    schema: {
+      type: 'object',
+      properties: {
+        total: { type: 'number', example: 5 },
+        totalPages: { type: 'number', example: 1 },
+        data: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', example: 'uuid' },
+              name: { type: 'string', example: 'Fornecedor XYZ' },
+              email: { type: 'string', example: 'fornecedor@email.com' },
+              phone: { type: 'string', example: '(11) 99999-9999' },
+              totalExpenses: { type: 'number', example: 3 },
+              activeExpenses: { type: 'number', example: 2 },
+              inactiveExpenses: { type: 'number', example: 1 },
+              totalAmount: { type: 'number', example: 1500.0 },
+              items: {
+                type: 'array',
+                description: 'Lista de despesas agendadas do fornecedor',
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+  findAllGroupedBySupplier(
+    @Query() filter: ScheduledExpenseFilterDto,
+    @Req() req,
+  ) {
+    return this.scheduledExpenseService.findAllGroupedBySupplier(
+      filter,
+      req.user.companyId,
+    );
   }
 
   @Get()
@@ -167,5 +295,53 @@ export class ScheduledExpenseController {
   })
   remove(@Param('id') id: string, @Req() req) {
     return this.scheduledExpenseService.remove(id, req.user.companyId);
+  }
+
+  @Post('launch')
+  @ApiOperation({
+    summary: 'Lança despesas agendadas como contas a pagar',
+    description:
+      'Converte múltiplas despesas agendadas em contas a pagar com base nos dados do modal de lançamento',
+  })
+  @ApiBody({
+    description: 'Dados do lançamento das despesas',
+    type: LaunchScheduledExpenseDto,
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Despesas agendadas lançadas com sucesso.',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Despesas lançadas com sucesso' },
+        results: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              scheduledExpenseId: { type: 'string' },
+              success: { type: 'boolean' },
+              payable: { type: 'object', description: 'Conta a pagar criada' },
+              installment: { type: 'object', description: 'Parcela criada' },
+              error: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Dados inválidos fornecidos.',
+  })
+  launchScheduledExpenses(
+    @Body() launchData: LaunchScheduledExpenseDto,
+    @Req() req,
+  ) {
+    return this.scheduledExpenseService.launchScheduledExpenses(
+      launchData,
+      req.user.companyId,
+    );
   }
 }

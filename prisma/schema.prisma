@@ -1,9 +1,6 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = ["fullTextSearch", "fullTextIndex"]
+  previewFeatures = ["fullTextIndex", "fullTextSearch"]
 }
 
 datasource db {
@@ -12,71 +9,1366 @@ datasource db {
 }
 
 model Company {
+  id                    String                 @id @default(uuid())
+  name                  String
+  createdAt             DateTime               @default(now())
+  isActive              Boolean                @default(true)
+  updatedAt             DateTime?              @updatedAt
+  cnpj                  String?
+  legalName             String?
+  municipalRegistration String?
+  stateRegistration     String?
+  email                 String?
+  favIconUrl            String?
+  logoUrl               String?
+  mobile                String?
+  phone                 String?
+  siteUrl               String?
+  textAfterItems        String?
+  textBeforeItems       String?
+  principalCompanyId    String?
+  deliveryType          DeliveryType[]
+  address               Address[]
+  assetTypes            AssetType[]
+  assets                Asset[]
+  bankAccounts          BankAccount[]
+  cashControls          CashRegister[]
+  categories            Category[]
+  clients               Client[]
+  parentCompany         Company?               @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
+  subsidiaries          Company[]              @relation("CompanyHierarchy")
+  creditLimitDefault    CreditLimitDefault[]
+  deliverySchedule      DeliverySchedule[]
+  employees             Employee[]
+  financialFlows        FinancialFlow[]
+  invoices              Invoice[]
+  language              Language[]
+  nature                Nature[]
+  payables              Payable[]
+  paymentConditions     PaymentCondition[]
+  paymentConfigurations PaymentConfiguration[]
+  paymentMethods        PaymentMethod[]
+  Plan                  Plan[]
+  products              Product[]
+  mainQuotations        Quotation[]            @relation("MainCompany")
+  fiscalQuotations      Quotation[]            @relation("FiscalSubCompany")
+  reasons               Reasons[]
+  receivables           Receivable[]
+  roles                 Role[]
+  SalaryControl         SalaryControl[]
+  salarySheet           SalarySheet[]
+  saleSeries            SaleSeries[]
+  scheduledExpenses     ScheduledExpense[]
+  sectors               CompanySector[]        @relation("CompanyToCompanySector")
+  sellerProfile         SellerProfile[]
+  statusQuotation       StatusQuotation[]
+  subCategory           SubCategory[]
+  Subscription          Subscription[]
+  suppliers             Supplier[]
+  companyUnitOfMeasure  CompanyUnitOfMeasure[]
+
+  @@map("companies")
+}
+
+model Address {
+  id           String    @id @default(uuid())
+  street       String?
+  number       String?
+  country      String?
+  ownerId      String?
+  ownerType    OwnerType @default(COMPANY)
+  complement   String?
+  neighborhood String?
+  zipcode      String?
+  city         String?
+  state        String?
+  type         String    @default("Principal")
+  supplierId   String?
+  companyId    String?
+  employeeId   String?
+  company      Company?  @relation(fields: [companyId], references: [id])
+  employee     Employee? @relation(fields: [employeeId], references: [id])
+  client       Client?   @relation(fields: [ownerId], references: [id])
+  supplier     Supplier? @relation(fields: [supplierId], references: [id])
+
+  @@index([ownerId, ownerType])
+  @@index([supplierId, ownerType])
+  @@map("addresses")
+}
+
+model DefaultSector {
+  id             String          @id @default(uuid())
+  name           String
+  icon           String?
+  kind           SectorKind      @default(PRODUCTION)
+  companySectors CompanySector[] @relation("DefaultToCompanySector")
+
+  @@map("default_sectors")
+}
+
+model CompanySector {
+  id                String            @id @default(uuid())
+  name              String
+  icon              String?
+  companyId         String
+  isActive          Boolean           @default(true)
+  kind              SectorKind        @default(PRODUCTION)
+  isProductionStage Boolean           @default(true)
+  defaultSectorId   String?
+  isSystem          Boolean           @default(false)
+  asset             Asset[]
+  Category          Category[]
+  employees         Employee[]
+  productionStage   ProductionStage[]
+  product           Product[]
+  role              Role[]
+  company           Company           @relation("CompanyToCompanySector", fields: [companyId], references: [id])
+  defaultSector     DefaultSector?    @relation("DefaultToCompanySector", fields: [defaultSectorId], references: [id])
+
+  @@map("sectors")
+}
+
+model Role {
+  id          String         @id @default(uuid())
+  name        String
+  companyId   String
+  isActive    Boolean        @default(true)
+  sectorId    String?
+  isAdmin     Boolean        @default(false)
+  permissions String[]
+  employees   Employee[]
+  company     Company        @relation(fields: [companyId], references: [id])
+  sector      CompanySector? @relation(fields: [sectorId], references: [id])
+  userRole    UserRole[]
+
+  @@map("roles")
+}
+
+model SellerProfile {
+  id                        String     @id @default(uuid())
+  name                      String
+  isActive                  Boolean    @default(true)
+  companyId                 String
+  commission                Float?
+  maxDiscount               Float?
+  minValue                  Float?
+  canApprovePreRegistration Boolean    @default(false)
+  canCancelSale             Boolean    @default(false)
+  employees                 Employee[]
+  company                   Company    @relation(fields: [companyId], references: [id])
+
+  @@map("seller_profile")
+}
+
+model Category {
+  id         String         @id @default(uuid())
+  name       String
+  kind       CategoryKind   @default(PRODUCT)
+  companyId  String?
+  isActive   Boolean        @default(true)
+  isStandard Boolean        @default(false)
+  sectorId   String?
+  company    Company?       @relation(fields: [companyId], references: [id])
+  sector     CompanySector? @relation(fields: [sectorId], references: [id])
+  products   Product[]
+
+  @@map("categories")
+}
+
+model Contact {
+  id         String    @id @default(uuid())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime? @updatedAt
+  name       String
+  email      String?
+  sector     String?
+  clientId   String?
+  supplierId String?
+  mobile     String?
+  phone      String?
+  notes      String?
+  client     Client?   @relation(fields: [clientId], references: [id])
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+
+  @@map("contacts")
+}
+
+model CreditLimitDefault {
+  id                String                        @id @default(uuid())
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime?                     @updatedAt
+  type              ClientKind                    @default(PERSON)
+  companyId         String
+  minValue          Float?
+  maxValue          Float?
+  company           Company                       @relation(fields: [companyId], references: [id])
+  paymentConditions CreditLimitPaymentCondition[]
+
+  @@map("credit_limit_default")
+}
+
+model CreditLimitPaymentCondition {
+  id                   String             @id @default(uuid())
+  createdAt            DateTime           @default(now())
+  isActive             Boolean            @default(true)
+  creditLimitDefaultId String
+  paymentConditionId   String
+  creditLimitDefault   CreditLimitDefault @relation(fields: [creditLimitDefaultId], references: [id])
+  paymentCondition     PaymentCondition   @relation(fields: [paymentConditionId], references: [id])
+
+  @@unique([creditLimitDefaultId, paymentConditionId])
+  @@map("credit_limit_payment_conditions")
+}
+
+model Client {
+  id                String                   @id @default(uuid())
+  name              String
+  companyId         String
+  status            ClientStatus             @default(PROSPECT)
+  email             String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime?                @updatedAt
+  responsibleId     String?
+  birthdate         DateTime?
+  financialNotes    String?
+  nickname          String?
+  notes             String?
+  site              String?
+  activity          String?
+  cnpj              String?
+  corporateName     String?
+  cpf               String?
+  mobile            String?
+  phone             String?
+  rg                String?
+  tradeName         String?
+  type              ClientKind               @default(PERSON)
+  category          String?
+  blockClient       Boolean                  @default(false)
+  maxValue          Float?
+  minValue          Float?
+  supplierId        String?
+  planId            String?
+  address           Address[]
+  paymentConditions ClientPaymentCondition[]
+  company           Company                  @relation(fields: [companyId], references: [id])
+  Plan              Plan?                    @relation(fields: [planId], references: [id])
+  responsible       Employee?                @relation(fields: [responsibleId], references: [id])
+  supplier          Supplier?                @relation(fields: [supplierId], references: [id])
+  contacts          Contact[]
+  payable           Payable[]
+  quotation         Quotation[]
+  receivable        Receivable[]
+
+  @@map("clients")
+}
+
+model Supplier {
+  id                String                     @id @default(uuid())
+  name              String
+  email             String?
+  companyId         String
+  createdAt         DateTime                   @default(now())
+  status            ClientStatus               @default(ACTIVE)
+  updatedAt         DateTime?                  @updatedAt
+  birthdate         DateTime?
+  financialNotes    String?
+  nickname          String?
+  notes             String?
+  site              String?
+  activity          String?
+  cnpj              String?
+  corporateName     String?
+  cpf               String?
+  mobile            String?
+  phone             String?
+  rg                String?
+  tradeName         String?
+  type              ClientKind                 @default(PERSON)
+  blockClient       Boolean                    @default(false)
+  category          String?
+  maxValue          Float?
+  minValue          Float?
+  address           Address[]
+  client            Client[]
+  commission        Commission[]
+  contacts          Contact[]
+  deliveryInfo      DeliveryInfo[]
+  payable           Payable[]
+  receivable        Receivable[]
+  scheduledExpense  ScheduledExpense[]
+  paymentConditions SupplierPaymentCondition[]
+  company           Company                    @relation(fields: [companyId], references: [id])
+
+  @@map("suppliers")
+}
+
+model Employee {
+  id              String          @id @default(uuid())
+  companyId       String
+  roleId          String?
+  sectorId        String?
+  userId          String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime?       @updatedAt
+  isActive        Boolean         @default(true)
+  sallary         Float?
+  sellerProfileId String?
+  name            String?
+  avatarUrl       String?
+  cpf             String?
+  mobile          String?
+  phone           String?
+  rg              String?
+  signatureUrl    String?
+  address         Address[]
+  client          Client[]
+  company         Company         @relation(fields: [companyId], references: [id])
+  role            Role?           @relation(fields: [roleId], references: [id])
+  sector          CompanySector?  @relation(fields: [sectorId], references: [id])
+  sellerProfile   SellerProfile?  @relation(fields: [sellerProfileId], references: [id])
+  user            User?           @relation(fields: [userId], references: [id])
+  quotation       Quotation[]
+  SalaryControl   SalaryControl[]
+  salarySheet     SalarySheet[]
+
+  @@map("employees")
+}
+
+model User {
+  id                   String         @id @default(uuid())
+  password             String
+  email                String         @unique
+  name                 String
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime?      @updatedAt
+  avatar               String?
+  isActive             Boolean        @default(true)
+  resetPasswordExpires DateTime?
+  resetPasswordToken   String?
+  phone                String?
+  isVerified           Boolean        @default(false)
+  attributes           Attribute[]
+  employee             Employee[]
+  UserContract         UserContract[]
+  userRole             UserRole[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model MailVerification {
   id        String    @id @default(uuid())
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
+  email     String    @unique
+  token     String?
+  expiresAt DateTime?
+  verified  Boolean   @default(false)
 
-  name                  String
-  legalName             String?
-  cnpj                  String?
-  stateRegistration     String?
-  municipalRegistration String?
-  phone                 String?
-  mobile                String?
-  email                 String?
-  siteUrl               String?
-  isActive              Boolean @default(true)
+  @@map("mail_verifications")
+}
 
-  principalCompanyId String? // ID da empresa-mãe
-  parentCompany      Company?  @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
-  subsidiaries       Company[] @relation("CompanyHierarchy")
+model Asset {
+  id                         String         @id @default(uuid())
+  name                       String
+  companyId                  String?
+  costGroupId                Int?
+  createdAt                  DateTime       @default(now())
+  fixedMonthlyCost           Float?
+  purchaseValue              Float
+  residualValue              Float
+  sectorId                   String?
+  typeId                     String?
+  updatedAt                  DateTime?      @updatedAt
+  usefulLife                 Int
+  variableQualityMonthlyCost Float?
+  variableTotalMonthlyCost   Float?
+  company                    Company?       @relation(fields: [companyId], references: [id])
+  sector                     CompanySector? @relation(fields: [sectorId], references: [id])
+  type                       AssetType?     @relation(fields: [typeId], references: [id])
 
-  logoUrl         String?
-  favIconUrl      String?
-  textBeforeItems String?
-  textAfterItems  String?
+  @@map("assets")
+}
 
-  sectors      CompanySector[] @relation("CompanyToCompanySector")
+model AssetType {
+  id         String    @id @default(uuid())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime? @updatedAt
+  name       String
+  details    String?
+  isActive   Boolean   @default(true)
+  companyId  String?
+  isStandard Boolean   @default(false)
+  company    Company?  @relation(fields: [companyId], references: [id])
+  assets     Asset[]
+
+  @@map("asset_types")
+}
+
+model Receivable {
+  id                String                  @id @default(uuid())
+  status            PaymentStatus           @default(PENDING)
+  companyId         String
+  createdAt         DateTime                @default(now())
+  clientId          String?
+  description       String?
+  reference         String?
+  referenceDate     DateTime
+  subCategoryId     String?
+  installmentQty    Int?
+  totalAmount       Float?
+  cancelReason      String?
+  natureId          String?
+  notes             String?
+  totalValue        Float?
+  cancelNotes       String?
+  changeNotes       String?
+  changeReason      String?
+  updatedAt         DateTime?               @updatedAt
+  quotationId       String?
+  supplierId        String?
+  mainAdditionalFee Float?
+  history           ReceivableHistory[]
+  installments      ReceivableInstallment[]
+  client            Client?                 @relation(fields: [clientId], references: [id])
+  company           Company                 @relation(fields: [companyId], references: [id])
+  nature            Nature?                 @relation(fields: [natureId], references: [id])
+  quotation         Quotation?              @relation(fields: [quotationId], references: [id])
+  subCategory       SubCategory?            @relation(fields: [subCategoryId], references: [id])
+  supplier          Supplier?               @relation(fields: [supplierId], references: [id])
+
+  @@map("receivables")
+}
+
+model ReceivableInstallment {
+  id                   String                 @id @default(uuid())
+  receivableId         String
+  installmentNumber    Int
+  dueDate              DateTime
+  amount               Float
+  paymentMethodId      String?
+  additionalFee        Float?
+  status               PaymentStatus          @default(PENDING)
+  paidDate             DateTime?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime?              @updatedAt
+  bankAccountId        String?
+  paidAmount           Float?
+  transactionId        String?
+  provisionDate        DateTime?
+  quotationInstallment QuotationInstallment[]
+  bankAccount          BankAccount?           @relation(fields: [bankAccountId], references: [id])
+  paymentMethod        PaymentMethod?         @relation(fields: [paymentMethodId], references: [id])
+  receivable           Receivable             @relation(fields: [receivableId], references: [id])
+  transactions         Transaction?           @relation(fields: [transactionId], references: [id])
+
+  @@map("receivable_installments")
+}
+
+model ReceivableHistory {
+  id           String     @id @default(uuid())
+  receivableId String
+  action       String
+  description  String
+  timestamp    DateTime   @default(now())
+  createdBy    String
+  createdAt    DateTime   @default(now())
+  receivable   Receivable @relation(fields: [receivableId], references: [id])
+
+  @@map("receivable_history")
+}
+
+model Payable {
+  id                 String               @id @default(uuid())
+  status             PaymentStatus        @default(PENDING)
+  companyId          String
+  createdAt          DateTime             @default(now())
+  description        String?
+  reference          String?
+  referenceDate      DateTime
+  subCategoryId      String?
+  installmentQty     Int?
+  totalAmount        Float
+  cancelReason       String?
+  natureId           String?
+  supplierId         String?
+  notes              String?
+  cancelNotes        String?
+  changeNotes        String?
+  changeReason       String?
+  updatedAt          DateTime?            @updatedAt
+  quotationId        String?
+  clientId           String?
+  mainAdditionalFee  Float?
+  totalValue         Float?
+  scheduledExpenseId String?
+  commission         Commission[]
+  history            PayableHistory[]
+  installments       PayableInstallment[]
+  client             Client?              @relation(fields: [clientId], references: [id])
+  company            Company              @relation(fields: [companyId], references: [id])
+  nature             Nature?              @relation(fields: [natureId], references: [id])
+  quotation          Quotation?           @relation(fields: [quotationId], references: [id])
+  scheduledExpense   ScheduledExpense?    @relation(fields: [scheduledExpenseId], references: [id])
+  subCategory        SubCategory?         @relation(fields: [subCategoryId], references: [id])
+  supplier           Supplier?            @relation(fields: [supplierId], references: [id])
+
+  @@map("payables")
+}
+
+model PayableInstallment {
+  id                   String                 @id @default(uuid())
+  payableId            String
+  installmentNumber    Int
+  dueDate              DateTime
+  amount               Float
+  paymentMethodId      String?
+  additionalFee        Float?
+  status               PaymentStatus          @default(PENDING)
+  paidDate             DateTime?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime?              @updatedAt
+  bankAccountId        String?
+  paidAmount           Float?
+  transactionId        String?
+  provisionDate        DateTime?
+  bankAccount          BankAccount?           @relation(fields: [bankAccountId], references: [id])
+  payable              Payable                @relation(fields: [payableId], references: [id])
+  paymentMethod        PaymentMethod?         @relation(fields: [paymentMethodId], references: [id])
+  transactions         Transaction?           @relation(fields: [transactionId], references: [id])
+  quotationInstallment QuotationInstallment[]
+
+  @@map("payable_installments")
+}
+
+model PayableHistory {
+  id          String   @id @default(uuid())
+  payableId   String
+  action      String
+  description String
+  timestamp   DateTime @default(now())
+  createdBy   String
+  createdAt   DateTime @default(now())
+  payable     Payable  @relation(fields: [payableId], references: [id])
+
+  @@map("payable_history")
+}
+
+model SalarySheet {
+  id         String            @id @default(uuid())
+  month      Int
+  year       Int
+  status     SheetStatus       @default(EMPTY)
+  companyId  String
+  employeeId String
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime?         @updatedAt
+  movements  PaymentMovement[]
+  items      SalaryItem[]
+  company    Company           @relation(fields: [companyId], references: [id])
+  employee   Employee          @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, month, year])
+  @@map("salary_sheets")
+}
+
+model SalaryItem {
+  id            String      @id @default(uuid())
+  salarySheetId String
+  type          ItemType
+  description   String?
+  amount        Float
+  reference     String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  paidAt        DateTime?
+  salarySheet   SalarySheet @relation(fields: [salarySheetId], references: [id])
+
+  @@map("salary_items")
+}
+
+model SalaryControl {
+  id         String    @id @default(uuid())
+  reference  String
+  amount     Float     @default(0)
+  type       ItemType  @default(INCREASE)
+  date       DateTime  @default(now())
+  companyId  String
+  employeeId String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime? @updatedAt
+  isSet      Boolean   @default(false)
+  company    Company   @relation(fields: [companyId], references: [id])
+  employee   Employee  @relation(fields: [employeeId], references: [id])
+
+  @@map("salary_controls")
+}
+
+model PaymentMovement {
+  id              String              @id @default(uuid())
+  salarySheetId   String
+  amount          Float
+  paidDate        DateTime
+  paymentStatus   PaymentSalaryStatus @default(PENDING)
+  paymentMethodId String
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  paymentMethod   PaymentMethod       @relation(fields: [paymentMethodId], references: [id])
+  salarySheet     SalarySheet         @relation(fields: [salarySheetId], references: [id])
+
+  @@map("payment_movements")
+}
+
+model FinancialFlow {
+  id          String            @id @default(uuid())
+  amount      Float
+  type        FinancialFlowType
+  description String
+  date        DateTime
+  companyId   String
+  createdAt   DateTime          @default(now())
+  company     Company           @relation(fields: [companyId], references: [id])
+
+  @@map("financial_flows")
+}
+
+model CashRegister {
+  id             String                   @id @default(uuid())
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime?                @updatedAt
+  status         CashRegisterStatus       @default(OPEN)
+  openingDate    DateTime
+  closingDate    DateTime?
+  openingBalance Float
+  totalIncomes   Float                    @default(0)
+  totalOutcomes  Float                    @default(0)
+  retroactive    Float                    @default(0)
+  closingBalance Float?
+  companyId      String
+  bankAccountId  String
+  description    String?
+  notes          String?
+  cashControls   BankAccountCashControl[]
+  bankAccount    BankAccount              @relation(fields: [bankAccountId], references: [id])
+  company        Company                  @relation(fields: [companyId], references: [id])
+  transactions   Transaction[]
+
+  @@map("cash_registers")
+}
+
+model Transaction {
+  id                    String                  @id @default(uuid())
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime?               @updatedAt
+  type                  TransactionType
+  amount                Float                   @default(0)
+  description           String?
+  transactionDate       DateTime                @default(now())
+  cashRegisterId        String
+  reason                String?
+  payableInstallment    PayableInstallment[]
+  receivableInstallment ReceivableInstallment[]
+  cashRegister          CashRegister            @relation(fields: [cashRegisterId], references: [id])
+
+  @@map("transactions")
+}
+
+model ScheduledExpense {
+  id            String        @id @default(uuid())
+  description   String?
+  amount        Float         @default(0)
+  companyId     String
+  createdAt     DateTime      @default(now())
+  categoryId    String?
+  dueDay        Int           @default(1)
+  recurringType RecurringType @default(MONTHLY)
+  subCategoryId String?
+  supplierId    String?
+  updatedAt     DateTime      @default(now()) @updatedAt
+  isActive      Boolean       @default(true)
+  payables      Payable[]
+  nature        Nature?       @relation(fields: [categoryId], references: [id])
+  company       Company       @relation(fields: [companyId], references: [id])
+  subCategory   SubCategory?  @relation(fields: [subCategoryId], references: [id])
+  supplier      Supplier?     @relation(fields: [supplierId], references: [id])
+
+  @@map("scheduled_expenses")
+}
+
+model Invoice {
+  id        String   @id @default(uuid())
+  number    String
+  date      DateTime
+  amount    Float
+  companyId String
+  createdAt DateTime @default(now())
+  company   Company  @relation(fields: [companyId], references: [id])
+
+  @@unique([number, companyId])
+  @@map("invoices")
+}
+
+model UserRole {
+  userId String
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Attribute {
+  id     String @id @default(uuid())
+  key    String
+  value  String
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@map("attributes")
+}
+
+model Bank {
+  id        String        @id @default(uuid())
+  createdAt DateTime      @default(now())
+  updatedAt DateTime?     @updatedAt
+  name      String
+  code      String
+  details   Json?
+  isActive  Boolean       @default(true)
+  icon      String?
+  accounts  BankAccount[]
+
+  @@map("banks")
+}
+
+model BankAccount {
+  id                     String                   @id @default(uuid())
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime?                @updatedAt
+  name                   String
+  description            String?
+  isActive               Boolean                  @default(true)
+  companyId              String
+  bankId                 String
+  cashControl            Boolean                  @default(false)
+  bankAccountCashControl BankAccountCashControl[]
+  bank                   Bank                     @relation(fields: [bankId], references: [id])
+  company                Company                  @relation(fields: [companyId], references: [id])
+  cashRegister           CashRegister[]
+  PayableInstallment     PayableInstallment[]
+  ReceivableInstallment  ReceivableInstallment[]
+
+  @@map("bank_accounts")
+}
+
+model BankAccountCashControl {
+  id                          String                     @id @default(uuid())
+  createdAt                   DateTime                   @default(now())
+  updatedAt                   DateTime?                  @updatedAt
+  acceptPayments              Boolean                    @default(true)
+  paymentType                 BankAccountCashControlType @default(PAYSOFF)
+  acceptIncomes               Boolean                    @default(true)
+  incomeType                  BankAccountCashControlType @default(PAYSOFF)
+  paymentMethodId             String
+  bankAccountId               String
+  cashRegisterId              String?
+  acceptMultipleCashRegisters Boolean                    @default(false)
+  bankAccount                 BankAccount                @relation(fields: [bankAccountId], references: [id])
+  cashRegister                CashRegister?              @relation(fields: [cashRegisterId], references: [id])
+  paymentMethod               PaymentMethod              @relation(fields: [paymentMethodId], references: [id])
+
+  @@map("bank_account_cash_controls")
+}
+
+model PaymentMethod {
+  id                     String                   @id @default(uuid())
+  name                   String
+  description            String?
+  companyId              String
+  createdAt              DateTime                 @default(now())
+  isActive               Boolean                  @default(true)
+  bankAccountCashControl BankAccountCashControl[]
+  payableInstallment     PayableInstallment[]
+  paymentCondition       PaymentCondition[]
+  paymentConfigurations  PaymentConfiguration[]
+  company                Company                  @relation(fields: [companyId], references: [id])
+  paymentMovement        PaymentMovement[]
+  quotationInstallment   QuotationInstallment[]
+  quotationPayment       QuotationPayment[]
+  receivableInstallment  ReceivableInstallment[]
+
+  @@map("payment_methods")
+}
+
+model PaymentCondition {
+  id                          String                        @id @default(uuid())
+  name                        String
+  acceptInstallments          Boolean                       @default(false)
+  costType                    PaymentConditionCostType
+  companyId                   String
+  createdAt                   DateTime                      @default(now())
+  isActive                    Boolean                       @default(true)
+  maxInstallments             Int?
+  minInstallments             Int?
+  paymentMethodId             String
+  dayInterval                 Int?
+  receivingType               String?
+  clients                     ClientPaymentCondition[]
+  CreditLimitPaymentCondition CreditLimitPaymentCondition[]
+  installments                Installment[]
+  company                     Company                       @relation(fields: [companyId], references: [id])
+  paymentMethod               PaymentMethod                 @relation(fields: [paymentMethodId], references: [id])
+  paymentConfigurations       PaymentConfiguration[]
+  downPaymentConditions       QuotationPayment[]            @relation("downPaymentRelation")
+  quotationPayments           QuotationPayment[]            @relation("defaultRelation")
+  suppliers                   SupplierPaymentCondition[]
+
+  @@map("payment_conditions")
+}
+
+model Installment {
+  id                  String           @id @default(uuid())
+  installment         Int
+  operatorFeeRate     Float            @default(0)
+  operatorFeeTransfer Float            @default(0)
+  paymentConditionId  String
+  dueDate             DateTime?
+  paymentCondition    PaymentCondition @relation(fields: [paymentConditionId], references: [id])
+
+  @@map("installments")
+}
+
+model PaymentConfiguration {
+  id                 String           @id @default(uuid())
+  paymentMethodId    String
+  paymentConditionId String
+  companyId          String
+  createdAt          DateTime         @default(now())
+  company            Company          @relation(fields: [companyId], references: [id])
+  paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
+  paymentMethod      PaymentMethod    @relation(fields: [paymentMethodId], references: [id])
+
+  @@map("payment_configurations")
+}
+
+model SaleSeries {
+  id                  String               @id @default(uuid())
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime?            @updatedAt
+  code                String
+  isActive            Boolean              @default(true)
+  companyId           String
+  currentBudgetNumber Int                  @default(0)
+  deliveryDeadline    Int?
+  description         String?
+  proposalValidity    Int?
+  textAfterItems      String?
+  textBeforeItems     String?
+  title               String
+  billing             BiilingKind          @default(ON_ORDER)
+  productionStatus    ProductionStatusKind @default(MANAGE_PRODUCTION)
+  sendToProduction    SendToProductionKind @default(DIRECT)
+  isTraining          Boolean              @default(false)
+  quotation           Quotation[]
+  company             Company              @relation(fields: [companyId], references: [id])
+
+  @@unique([code, companyId])
+  @@map("sale_series")
+}
+
+model StatusQuotation {
+  id        String      @id @default(uuid())
+  createdAt DateTime    @default(now())
+  updatedAt DateTime?   @updatedAt
+  isActive  Boolean     @default(true)
+  title     String
+  color     String
+  companyId String
+  quotation Quotation[]
+  company   Company     @relation(fields: [companyId], references: [id])
+
+  @@map("status_quotation")
+}
+
+model Quotation {
+  id               String             @id @default(uuid())
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime?          @updatedAt
+  description      String?
+  isActive         Boolean            @default(true)
+  sellerId         String
+  seriesId         String?
+  clientId         String?
+  companyId        String
+  status           QuotationStatus    @default(OPEN)
+  totalValue       Float              @default(0)
+  dueDate          DateTime           @default(now())
+  approvedAt       DateTime?
+  contactType      String?
+  tagId            String?
+  quickSale        Boolean            @default(false)
+  quotationNumber  Int?
+  finishedAt       DateTime?
+  reasonId         String?
+  subCompanyId     String?
+  deliveryInfo     DeliveryInfo?
+  DeliverySchedule DeliverySchedule?
+  order            Order?
+  payable          Payable[]
+  quotationPayment QuotationPayment?
+  quotationProduct QuotationProduct[]
+  client           Client?            @relation(fields: [clientId], references: [id])
+  company          Company            @relation("MainCompany", fields: [companyId], references: [id])
+  reasons          Reasons?           @relation(fields: [reasonId], references: [id])
+  seller           Employee           @relation(fields: [sellerId], references: [id])
+  series           SaleSeries?        @relation(fields: [seriesId], references: [id])
+  subCompany       Company?           @relation("FiscalSubCompany", fields: [subCompanyId], references: [id])
+  tag              StatusQuotation?   @relation(fields: [tagId], references: [id])
+  receivable       Receivable[]
+  products         Product[]          @relation("QuotationToProduct")
+
+  @@index([id, companyId])
+  @@map("quotations")
+}
+
+model QuotationProduct {
+  quotationId          String
+  productId            String
+  quantity             Int                    @default(1)
+  totalValue           Float?
+  description          String?
+  allowEditDescription Boolean                @default(true)
+  allowEditValues      Boolean                @default(true)
+  imageUrl             String?
+  technicalDescription String?
+  notes                String?
+  id                   String                 @id @default(uuid())
+  discount             Float?
+  discountType         String?
+  finalValue           Float?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime?              @updatedAt
+  items                QuotationProductItem[]
+  product              Product                @relation(fields: [productId], references: [id])
+  quotation            Quotation              @relation(fields: [quotationId], references: [id])
+
+  @@map("quotation_products")
+}
+
+model QuotationProductItem {
+  productItemId      String
+  quantity           Int                  @default(1)
+  productId          String
+  quotationId        String
+  totalValue         Float?
+  distance           Float?
+  duration           Float?
+  height             Float?
+  length             Float?
+  name               String
+  salePrice          Float?
+  unitCost           Float?
+  unitOfMeasureId    String
+  volume             Float?
+  weight             Float?
+  width              Float?
+  id                 String               @id @default(uuid())
+  quotationProductId String
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime?            @updatedAt
+  originalQuantity   Int                  @default(1)
+  productItem        ProductItem          @relation(fields: [productItemId], references: [id])
+  quotationProduct   QuotationProduct     @relation(fields: [quotationProductId], references: [id])
+  unitOfMeasure      CompanyUnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
+
+  @@map("quotation_product_items")
+}
+
+model QuotationPayment {
+  id                       String                 @id @default(uuid())
+  quotationId              String                 @unique
+  downPayment              Float                  @default(0)
+  paymentMethodId          String?
+  paymentConditionId       String?
+  commissionId             String?                @unique
+  totalValue               Float
+  description              String?
+  finalValue               Float?
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime?              @updatedAt
+  discountType             String                 @default("VALUE")
+  type                     InvoiceType            @default(OTHER)
+  billing                  BiilingKind            @default(ON_ORDER)
+  downPaymentConditionId   String?
+  downPaymentDueDate       DateTime?
+  downPaymentAdditionalFee Float                  @default(0)
+  additionalFeeType        String?
+  installmentQty           Int?
+  mainAdditionalFee        Float?
+  maxInstallmentQty        Int?
+  minInstallmentQty        Int?
+  discountTotal            Float                  @default(0)
+  discountValue            Float                  @default(0)
+  quotationInstallment     QuotationInstallment[]
+  commission               Commission?            @relation(fields: [commissionId], references: [id])
+  downPaymentCondition     PaymentCondition?      @relation("downPaymentRelation", fields: [downPaymentConditionId], references: [id])
+  paymentCondition         PaymentCondition?      @relation("defaultRelation", fields: [paymentConditionId], references: [id])
+  paymentMethod            PaymentMethod?         @relation(fields: [paymentMethodId], references: [id])
+  quotation                Quotation              @relation(fields: [quotationId], references: [id])
+
+  @@map("quotation_payments")
+}
+
+model Commission {
+  id               String                   @id @default(uuid())
+  type             CommissionType           @default(ADD)
+  transferMethod   transferMethodCommission @default(SINGLE)
+  commissionValue  Float                    @default(0)
+  totalCommission  Float                    @default(0)
+  supplierId       String
+  commissionType   String                   @default("VALUE")
+  receivableId     String?
+  payableId        String?
+  payable          Payable?                 @relation(fields: [payableId], references: [id])
+  supplier         Supplier                 @relation(fields: [supplierId], references: [id])
+  quotationPayment QuotationPayment?
+
+  @@map("commissions")
+}
+
+model QuotationInstallment {
+  id                      String                 @id @default(uuid())
+  quotationPaymentId      String
+  dueDate                 DateTime
+  paymentMethodId         String
+  value                   Float
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  payableInstallmentId    String?
+  receivableInstallmentId String?
+  additionalFee           Float                  @default(0)
+  payableInstallment      PayableInstallment?    @relation(fields: [payableInstallmentId], references: [id])
+  paymentMethod           PaymentMethod          @relation(fields: [paymentMethodId], references: [id])
+  quotationPayment        QuotationPayment       @relation(fields: [quotationPaymentId], references: [id])
+  receivableInstallment   ReceivableInstallment? @relation(fields: [receivableInstallmentId], references: [id])
+
+  @@map("quotation_installments")
+}
+
+model DeliveryInfo {
+  id                String            @id @default(uuid())
+  quotationId       String            @unique
+  daysAfterApproval Int?
+  estimatedDate     DateTime?
+  modality          String            @default("Indefinida")
+  cost              Float?
+  value             Float?
+  notes             String?
+  supplierId        String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime?         @updatedAt
+  deliveryType      DeliveryType      @default(PICKUP)
+  quotation         Quotation         @relation(fields: [quotationId], references: [id])
+  supplier          Supplier?         @relation(fields: [supplierId], references: [id])
+  deliverySchedule  DeliverySchedule?
+
+  @@index([quotationId])
+  @@map("delivery_info")
+}
+
+model Order {
+  id               String            @id @default(uuid())
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime?         @updatedAt
+  quotationId      String            @unique
+  status           OrderStatus       @default(IN_PRODUCTION)
+  isActive         Boolean           @default(true)
+  canceledAt       DateTime?
+  deliveredAt      DateTime?
+  reasonId         String?
+  deliverySchedule DeliverySchedule?
+  quotation        Quotation         @relation(fields: [quotationId], references: [id])
+  cancelReason     Reasons?          @relation(fields: [reasonId], references: [id])
+
+  @@index([id])
+  @@map("orders")
+}
+
+model Product {
+  id                   String             @id @default(uuid())
+  name                 String
+  companyId            String?
+  categoryId           String
+  isActive             Boolean            @default(true)
+  isStandard           Boolean            @default(false)
+  code                 String
+  sectorId             String
+  allowEditDescription Boolean            @default(true)
+  allowEditValues      Boolean            @default(true)
+  imageUrl             String?
+  technicalDescription String?
+  productionStages     Json?
+  status               ProductStatus      @default(ACTIVE)
+  items                ProductItem[]
+  category             Category           @relation(fields: [categoryId], references: [id])
+  company              Company?           @relation(fields: [companyId], references: [id])
+  sector               CompanySector      @relation(fields: [sectorId], references: [id])
+  quotationProduct     QuotationProduct[]
+  quotations           Quotation[]        @relation("QuotationToProduct")
+
+  @@unique([code, companyId])
+  @@map("products")
+}
+
+model ProductItem {
+  id                   String                 @id @default(uuid())
+  name                 String
+  productId            String
+  unitOfMeasureId      String
+  unitCost             Float?
+  salePrice            Float?
+  distance             Float?
+  duration             Float?
+  height               Float?
+  length               Float?
+  volume               Float?
+  weight               Float?
+  width                Float?
+  product              Product                @relation(fields: [productId], references: [id])
+  unitOfMeasure        CompanyUnitOfMeasure   @relation(fields: [unitOfMeasureId], references: [id])
+  quotationProductItem QuotationProductItem[]
+
+  @@map("product_items")
+}
+
+model CompanyUnitOfMeasure {
+  id                     String                 @id @default(uuid())
+  name                   String
+  code                   String
+  description            String?
+  isActive               Boolean                @default(true)
+  companyId              String
+  defaultUnitOfMeasureId String?
+  kind                   UnitOfMeasureKind?
+  productItems           ProductItem[]
+  quotationProductItem   QuotationProductItem[]
+  company                Company                @relation(fields: [companyId], references: [id])
+  defaultUnitOfMeasure   DefaultUnitOfMeasure?  @relation(fields: [defaultUnitOfMeasureId], references: [id])
+
+  @@map("unit_measures")
+}
+
+model DefaultUnitOfMeasure {
+  id                   String                 @id @default(uuid())
+  name                 String
+  code                 String                 @unique
+  description          String?
+  isActive             Boolean                @default(true)
+  kind                 UnitOfMeasureKind?
+  CompanyUnitOfMeasure CompanyUnitOfMeasure[]
+
+  @@map("defalt_unit_measures")
+}
+
+model Language {
+  id          String  @id @default(uuid())
+  name        String
+  code        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+  companyId   String
+  company     Company @relation(fields: [companyId], references: [id])
+
+  @@map("languages")
+}
+
+model Reasons {
+  id        String      @id @default(uuid())
+  reason    String
+  type      ReasonType
+  companyId String
+  order     Order[]
+  quotation Quotation[]
+  company   Company     @relation(fields: [companyId], references: [id])
+
+  @@map("reasons")
+}
+
+model DeliverySchedule {
+  id                 String                 @id @default(uuid())
+  companyId          String?
+  quotationId        String?                @unique
+  deliveryInfoId     String?                @unique
+  orderId            String?                @unique
+  status             DeliveryScheduleStatus
+  completed          Boolean                @default(false)
+  notes              String?
+  scheduledDate      DateTime
+  addScheduleTime    Boolean                @default(false)
+  pendingDescription String?
+  isActive           Boolean                @default(true)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime?              @updatedAt
+  company            Company?               @relation(fields: [companyId], references: [id])
+  deliveryInfo       DeliveryInfo?          @relation(fields: [deliveryInfoId], references: [id])
+  order              Order?                 @relation(fields: [orderId], references: [id])
+  quotation          Quotation?             @relation(fields: [quotationId], references: [id])
+  productionStages   ProductionStage[]
+
+  @@map("delivery_schedules")
+}
+
+model ProductionStage {
+  id         String                @id @default(uuid())
+  stageId    String?
+  status     ProductionStageStatus @default(NOT_STARTED)
+  notes      String?
+  order      Int?
+  prevStatus String?
+  scheduleId String
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime?             @updatedAt
+  schedule   DeliverySchedule      @relation(fields: [scheduleId], references: [id])
+  stage      CompanySector?        @relation(fields: [stageId], references: [id])
+
+  @@map("production_stages")
+}
+
+model Nature {
+  id               String             @id @default(uuid())
+  description      String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime?          @updatedAt
+  isActive         Boolean            @default(true)
+  code             String?
+  level1           String?
+  level2           String?
+  companyId        String
+  company          Company            @relation(fields: [companyId], references: [id])
+  payable          Payable[]
+  receivable       Receivable[]
+  scheduledExpense ScheduledExpense[]
+  subCategory      SubCategory[]
+
+  @@map("natures")
+}
+
+model SubCategory {
+  id               String             @id @default(uuid())
+  description      String?
+  natureId         String
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime?          @updatedAt
+  isActive         Boolean            @default(true)
+  code             String?
+  companyId        String
+  payable          Payable[]
+  receivable       Receivable[]
+  scheduledExpense ScheduledExpense[]
+  company          Company            @relation(fields: [companyId], references: [id])
+  nature           Nature             @relation(fields: [natureId], references: [id])
+
+  @@map("sub_categories")
+}
+
+model ClientPaymentCondition {
+  id                 String           @id @default(uuid())
+  createdAt          DateTime         @default(now())
+  isActive           Boolean          @default(true)
+  clientId           String
+  paymentConditionId String
+  client             Client           @relation(fields: [clientId], references: [id])
+  paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
+
+  @@unique([clientId, paymentConditionId])
+  @@map("client_payment_conditions")
+}
+
+model SupplierPaymentCondition {
+  id                 String           @id @default(uuid())
+  createdAt          DateTime         @default(now())
+  isActive           Boolean          @default(true)
+  supplierId         String
+  paymentConditionId String
+  paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
+  supplier           Supplier         @relation(fields: [supplierId], references: [id])
+
+  @@unique([supplierId, paymentConditionId])
+  @@map("supplier_payment_conditions")
+}
+
+model Plan {
+  id           String         @id @default(uuid())
+  type         PlanType
+  description  String?
+  price        Float
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime?      @updatedAt
+  isActive     Boolean        @default(true)
+  companyId    String
+  name         String
   clients      Client[]
-  employees    Employee[]
-  products     Product[]
-  assets       Asset[]
-  roles        Role[]
-  suppliers    Supplier[]
-  bankAccounts BankAccount[]
-  assetTypes   AssetType[]
-  categories   Category[]
-  saleSeries   SaleSeries[]
+  company      Company        @relation(fields: [companyId], references: [id])
+  Subscription Subscription[]
 
-  payables          Payable[]
-  receivables       Receivable[]
-  financialFlows    FinancialFlow[]
-  cashControls      CashRegister[]
-  scheduledExpenses ScheduledExpense[]
-  invoices          Invoice[]
+  @@map("plans")
+}
 
-  paymentMethods        PaymentMethod[]
-  paymentConditions     PaymentCondition[]
-  paymentConfigurations PaymentConfiguration[]
-  language              Language[]
-  reasons               Reasons[]
-  statusQuotation       StatusQuotation[]
-  sellerProfile         SellerProfile[]
-  salarySheet           SalarySheet[]
-  deliveryType          DeliveryType[]
-  deliverySchedule      DeliverySchedule[]
-  address               Address[]
-  companyUnitOfMeasure  CompanyUnitOfMeasure[]
-  mainQuotations        Quotation[]            @relation("MainCompany")
-  fiscalQuotations      Quotation[]            @relation("FiscalSubCompany")
-  creditLimitDefault    CreditLimitDefault[]
-  nature                Nature[]
-  subCategory           SubCategory[]
-  Plan                  Plan[]
-  Subscription          Subscription[]
-  SalaryControl         SalaryControl[]
+model Subscription {
+  id                 String             @id @default(uuid())
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime?          @updatedAt
+  isActive           Boolean            @default(true)
+  planId             String
+  companyId          String
+  status             SubscriptionStatus @default(PENDING)
+  isContractAccepted Boolean            @default(false)
+  billingType        BillingType        @default(CREDIT_CARD)
+  planPrice          Float
+  cycle              Cycle              @default(MONTHLY)
+  address            String?
+  addressNumber      String?
+  complement         String?
+  cpfCnpj            String?
+  email              String?
+  mobilePhone        String?
+  name               String?
+  phone              String?
+  postalCode         String?
+  province           String?
+  city               String?
+  neighborhood       String?
+  company            Company            @relation(fields: [companyId], references: [id])
+  plan               Plan               @relation(fields: [planId], references: [id])
 
-  @@map("companies")
+  @@map("subscriptions")
+}
+
+model Contract {
+  id            String         @id @default(uuid())
+  name          String
+  contentUrl    String
+  version       Int
+  createdAt     DateTime       @default(now())
+  acceptedUsers UserContract[]
+
+  @@map("contracts")
+}
+
+model UserContract {
+  id         String   @id @default(uuid())
+  userId     String
+  contractId String
+  acceptedAt DateTime @default(now())
+  ipAddress  String?
+  userAgent  String?
+  contract   Contract @relation(fields: [contractId], references: [id])
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, contractId])
+  @@map("user_contracts")
 }
 
 enum OwnerType {
@@ -85,39 +1377,6 @@ enum OwnerType {
   CLIENT
   SUPPLIER
   CONTACT
-}
-
-model Address {
-  id           String  @id @default(uuid())
-  type         String  @default("Principal")
-  street       String?
-  number       String?
-  neighborhood String?
-  country      String?
-  zipcode      String?
-  complement   String?
-
-  city  String?
-  state String?
-  // ibgeCode String?
-
-  ownerType OwnerType @default(COMPANY)
-
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id])
-
-  ownerId String?
-  client  Client? @relation(fields: [ownerId], references: [id])
-
-  supplierId String?
-  supplier   Supplier? @relation(fields: [supplierId], references: [id])
-
-  employeeId String?
-  employee   Employee? @relation(fields: [employeeId], references: [id])
-
-  @@index([ownerId, ownerType])
-  @@index([supplierId, ownerType])
-  @@map("addresses")
 }
 
 enum SectorKind {
@@ -135,83 +1394,8 @@ enum SectorKind {
   SECURITY
   MAINTENANCE
   CLEANING
-  SYSTEM
   OTHER
-}
-
-model DefaultSector {
-  id   String     @id @default(uuid())
-  name String
-  icon String?
-  kind SectorKind @default(PRODUCTION)
-
-  companySectors CompanySector[] @relation("DefaultToCompanySector")
-
-  @@map("default_sectors")
-}
-
-model CompanySector {
-  id                String     @id @default(uuid())
-  name              String
-  icon              String?
-  kind              SectorKind @default(PRODUCTION)
-  isProductionStage Boolean    @default(true)
-  isActive          Boolean    @default(true)
-  isSystem          Boolean    @default(false)
-
-  companyId String
-  company   Company @relation("CompanyToCompanySector", fields: [companyId], references: [id])
-
-  defaultSectorId String?
-  defaultSector   DefaultSector? @relation("DefaultToCompanySector", fields: [defaultSectorId], references: [id])
-
-  employees       Employee[]
-  asset           Asset[]
-  role            Role[]
-  product         Product[]
-  productionStage ProductionStage[]
-  Category        Category[]
-
-  @@map("sectors")
-}
-
-model Role {
-  id       String  @id @default(uuid())
-  name     String
-  isActive Boolean @default(true)
-  isAdmin  Boolean @default(false)
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  sectorId String?
-  sector   CompanySector? @relation(fields: [sectorId], references: [id])
-
-  employees Employee[]
-
-  userRole    UserRole[]
-  permissions String[]
-
-  @@map("roles")
-}
-
-model SellerProfile {
-  id       String  @id @default(uuid())
-  name     String
-  isActive Boolean @default(true)
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  employees Employee[]
-
-  commission                Float?
-  maxDiscount               Float?
-  minValue                  Float?
-  canApprovePreRegistration Boolean @default(false)
-  canCancelSale             Boolean @default(false)
-
-  @@map("seller_profile")
+  SYSTEM
 }
 
 enum CategoryKind {
@@ -220,27 +1404,9 @@ enum CategoryKind {
   CLIENT
   SUPPLIER
   PAYABLE
-  PAYABLE_ORIGIN
   RECEIVABLE
+  PAYABLE_ORIGIN
   RECEIVABLE_ORIGIN
-}
-
-model Category {
-  id         String       @id @default(uuid())
-  name       String
-  kind       CategoryKind @default(PRODUCT)
-  isActive   Boolean      @default(true)
-  isStandard Boolean      @default(false)
-
-  sectorId String?
-  sector   CompanySector? @relation(fields: [sectorId], references: [id])
-
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id])
-
-  products Product[]
-
-  @@map("categories")
 }
 
 enum ClientStatus {
@@ -254,465 +1420,12 @@ enum ClientKind {
   COMPANY
 }
 
-model Contact {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  name   String
-  email  String?
-  phone  String?
-  mobile String?
-  sector String?
-
-  notes String?
-
-  client     Client?   @relation(fields: [clientId], references: [id])
-  clientId   String?
-  supplier   Supplier? @relation(fields: [supplierId], references: [id])
-  supplierId String?
-
-  @@map("contacts")
-}
-
-model CreditLimitDefault {
-  id        String     @id @default(uuid())
-  createdAt DateTime   @default(now())
-  updatedAt DateTime?  @updatedAt
-  type      ClientKind @default(PERSON)
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  minValue Float?
-  maxValue Float?
-
-  paymentConditions CreditLimitPaymentCondition[]
-
-  @@map("credit_limit_default")
-}
-
-model CreditLimitPaymentCondition {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
-  isActive  Boolean  @default(true)
-
-  creditLimitDefaultId String
-  creditLimitDefault   CreditLimitDefault @relation(fields: [creditLimitDefaultId], references: [id])
-
-  paymentConditionId String
-  paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
-
-  @@unique([creditLimitDefaultId, paymentConditionId])
-  @@map("credit_limit_payment_conditions")
-}
-
-model Client {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  type   ClientKind   @default(PERSON)
-  status ClientStatus @default(PROSPECT)
-
-  name   String
-  email  String?
-  phone  String?
-  mobile String?
-
-  rg            String?
-  cpf           String?
-  cnpj          String?
-  activity      String?
-  tradeName     String?
-  corporateName String?
-
-  notes          String?
-  financialNotes String?
-  nickname       String?
-  site           String?
-  birthdate      DateTime?
-
-  address Address[]
-
-  contacts      Contact[]
-  responsibleId String?
-  responsible   Employee? @relation(fields: [responsibleId], references: [id])
-  companyId     String
-  company       Company   @relation(fields: [companyId], references: [id])
-  category      String?
-
-  minValue Float?
-  maxValue Float?
-
-  blockClient Boolean @default(false)
-
-  quotation  Quotation[]
-  receivable Receivable[]
-
-  paymentConditions ClientPaymentCondition[]
-  supplierId        String?
-  supplier          Supplier?                @relation(fields: [supplierId], references: [id])
-
-  // entityId     Int?
-  // legacyId     Int?
-  // legacyDbCode String?
-  payable Payable[]
-  Plan    Plan?     @relation(fields: [planId], references: [id])
-  planId  String?
-
-  @@map("clients")
-}
-
-model Supplier {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  type   ClientKind   @default(PERSON)
-  status ClientStatus @default(ACTIVE)
-
-  name   String
-  email  String?
-  phone  String?
-  mobile String?
-
-  rg            String?
-  cpf           String?
-  cnpj          String?
-  activity      String?
-  tradeName     String?
-  corporateName String?
-
-  notes          String?
-  financialNotes String?
-  nickname       String?
-  site           String?
-  birthdate      DateTime?
-
-  address Address[]
-
-  contacts     Contact[]
-  companyId    String
-  company      Company        @relation(fields: [companyId], references: [id])
-  category     String?
-  deliveryInfo DeliveryInfo[]
-  commission   Commission[]
-  payable      Payable[]
-
-  paymentConditions SupplierPaymentCondition[]
-
-  minValue Float?
-  maxValue Float?
-
-  blockClient      Boolean            @default(false)
-  client           Client[]
-  receivable       Receivable[]
-  scheduledExpense ScheduledExpense[]
-
-  @@map("suppliers")
-}
-
-model Employee {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-  isActive  Boolean   @default(true)
-
-  name         String?
-  avatarUrl    String?
-  cpf          String?
-  rg           String?
-  phone        String?
-  mobile       String?
-  address      Address[]
-  sallary      Float?
-  signatureUrl String?
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  userId String?
-  user   User?   @relation(fields: [userId], references: [id])
-
-  roleId String?
-  role   Role?   @relation(fields: [roleId], references: [id])
-
-  sectorId String?
-  sector   CompanySector? @relation(fields: [sectorId], references: [id])
-
-  client          Client[]
-  quotation       Quotation[]
-  sellerProfileId String?
-  sellerProfile   SellerProfile?  @relation(fields: [sellerProfileId], references: [id])
-  salarySheet     SalarySheet[]
-  SalaryControl   SalaryControl[]
-
-  @@map("employees")
-}
-
-model User {
-  id         String    @id @default(uuid())
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime? @updatedAt
-  isActive   Boolean   @default(true)
-  isVerified Boolean   @default(false)
-
-  name     String
-  password String
-  email    String  @unique
-  avatar   String?
-  phone    String?
-
-  resetPasswordToken   String?
-  resetPasswordExpires DateTime?
-
-  attributes   Attribute[]
-  userRole     UserRole[]
-  employee     Employee[]
-  UserContract UserContract[]
-
-  @@index([email])
-  @@map("users")
-}
-
-model MailVerification {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  email     String    @unique
-  token     String?
-  expiresAt DateTime?
-
-  verified Boolean @default(false)
-
-  @@map("mail_verifications")
-}
-
-model Asset {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  name                       String
-  purchaseValue              Float
-  residualValue              Float
-  usefulLife                 Int
-  costGroupId                Int?
-  fixedMonthlyCost           Float?
-  variableTotalMonthlyCost   Float?
-  variableQualityMonthlyCost Float?
-  companyId                  String?
-  typeId                     String?
-  sectorId                   String?
-
-  // costGroup        CostGroup?       @relation(fields: [costGroupId], references: [id])
-  // costs            Cost[]
-  company Company?       @relation(fields: [companyId], references: [id])
-  type    AssetType?     @relation(fields: [typeId], references: [id])
-  sector  CompanySector? @relation(fields: [sectorId], references: [id])
-
-  @@map("assets")
-}
-
-model AssetType {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  name       String
-  details    String?
-  isActive   Boolean @default(true)
-  isStandard Boolean @default(false)
-  companyId  String?
-
-  company Company? @relation(fields: [companyId], references: [id])
-  assets  Asset[]
-
-  @@map("asset_types")
-}
-
 enum PaymentStatus {
   PENDING
-  PROVISIONED
   PAID
   OVERDUE
   CANCELED
-}
-
-model Receivable {
-  id String @id @default(uuid())
-
-  reference     String?
-  referenceDate DateTime
-
-  description       String?
-  notes             String?
-  totalValue        Float?
-  mainAdditionalFee Float?
-  natureId          String?
-  nature            Nature? @relation(fields: [natureId], references: [id])
-
-  status         PaymentStatus           @default(PENDING)
-  totalAmount    Float? // Valor total da movimentação
-  installmentQty Int? // Número de parcelas
-  installments   ReceivableInstallment[] // Relacionamento com parcelas
-  history        ReceivableHistory[] // Relacionamento com histórico
-  cancelReason   String?
-  cancelNotes    String?
-  changeReason   String?
-  changeNotes    String?
-
-  clientId   String?
-  client     Client?   @relation(fields: [clientId], references: [id])
-  supplierId String?
-  supplier   Supplier? @relation(fields: [supplierId], references: [id])
-
-  subCategoryId String?
-  subCategory   SubCategory? @relation(fields: [subCategoryId], references: [id])
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  quotationId String?
-  quotation   Quotation? @relation(fields: [quotationId], references: [id])
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  @@map("receivables")
-}
-
-model ReceivableInstallment {
-  id           String     @id @default(uuid())
-  receivableId String
-  receivable   Receivable @relation(fields: [receivableId], references: [id])
-
-  installmentNumber Int
-  dueDate           DateTime
-  amount            Float
-  paidAmount        Float?
-  paymentMethodId   String?
-  paymentMethod     PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
-  additionalFee     Float?
-  status            PaymentStatus  @default(PENDING)
-  paidDate          DateTime?
-  provisionDate     DateTime?
-  bankAccountId     String?
-  bankAccount       BankAccount?   @relation(fields: [bankAccountId], references: [id])
-
-  transactionId        String?
-  transactions         Transaction?           @relation(fields: [transactionId], references: [id])
-  quotationInstallment QuotationInstallment[]
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  @@map("receivable_installments")
-}
-
-model ReceivableHistory {
-  id           String     @id @default(uuid())
-  receivableId String
-  receivable   Receivable @relation(fields: [receivableId], references: [id])
-
-  action      String // Ação realizada (e.g., "PARCELA ALTERADA", "PAGAMENTO REALIZADO")
-  description String // Descrição detalhada da alteração
-  timestamp   DateTime @default(now()) // Data/hora do evento
-
-  createdBy String // Quem realizou a ação (pode ser um ID de usuário)
-  createdAt DateTime @default(now())
-
-  @@map("receivable_history")
-}
-
-model Payable {
-  id String @id @default(uuid())
-
-  reference     String?
-  referenceDate DateTime
-
-  description       String?
-  notes             String?
-  totalValue        Float?
-  mainAdditionalFee Float?
-  natureId          String?
-  nature            Nature? @relation(fields: [natureId], references: [id])
-
-  subCategoryId String?
-  subCategory   SubCategory? @relation(fields: [subCategoryId], references: [id])
-
-  status         PaymentStatus        @default(PENDING)
-  totalAmount    Float // Valor total da movimentação
-  installmentQty Int? // Número de parcelas
-  installments   PayableInstallment[] // Relacionamento com parcelas
-  history        PayableHistory[] // Relacionamento com histórico
-  cancelReason   String?
-  cancelNotes    String?
-  changeReason   String?
-  changeNotes    String?
-
-  supplierId String?
-  supplier   Supplier? @relation(fields: [supplierId], references: [id])
-  clientId   String?
-  client     Client?   @relation(fields: [clientId], references: [id])
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  quotationId String?
-  quotation   Quotation? @relation(fields: [quotationId], references: [id])
-
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime?    @updatedAt
-  commission Commission[]
-
-  @@map("payables")
-}
-
-model PayableInstallment {
-  id        String  @id @default(uuid())
-  payableId String
-  payable   Payable @relation(fields: [payableId], references: [id])
-
-  installmentNumber Int
-  dueDate           DateTime
-  amount            Float
-  paidAmount        Float?
-  paymentMethodId   String?
-  paymentMethod     PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
-  additionalFee     Float?
-  status            PaymentStatus  @default(PENDING)
-  provisionDate     DateTime?
-  paidDate          DateTime?
-
-  bankAccountId String?
-  bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id])
-
-  transactionId        String?
-  transactions         Transaction?           @relation(fields: [transactionId], references: [id])
-  quotationInstallment QuotationInstallment[]
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  @@map("payable_installments")
-}
-
-model PayableHistory {
-  id        String  @id @default(uuid())
-  payableId String
-  payable   Payable @relation(fields: [payableId], references: [id])
-
-  action      String // Ação realizada (e.g., "PARCELA ALTERADA", "PAGAMENTO REALIZADO")
-  description String // Descrição detalhada da alteração
-  timestamp   DateTime @default(now()) // Data/hora do evento
-
-  createdBy String // Quem realizou a ação (pode ser um ID de usuário)
-  createdAt DateTime @default(now())
-
-  @@map("payable_history")
+  PROVISIONED
 }
 
 enum FinancialFlowType {
@@ -720,159 +1433,21 @@ enum FinancialFlowType {
   EXPENSE
 }
 
-model SalarySheet {
-  id     String      @id @default(uuid()) // ID da folha de pagamento
-  month  Int // Mês de referência (0 a 11)
-  year   Int // Ano de referência
-  status SheetStatus @default(EMPTY) // Status da folha (aberta ou fechada)
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  employeeId String // Relacionamento com o funcionário
-  employee   Employee @relation(fields: [employeeId], references: [id])
-
-  items     SalaryItem[] // Relacionamento com os itens da folha (acréscimos, descontos)
-  movements PaymentMovement[] // Relacionamento com as movimentações de pagamento (contas a pagar)
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  @@unique([employeeId, month, year])
-  @@map("salary_sheets")
-}
-
 enum SheetStatus {
-  EMPTY //Sem Lançamento
-  OPEN // Folha aberta
-  CLOSED // Folha fechada
-}
-
-model SalaryItem {
-  id            String      @id @default(uuid()) // ID do item
-  salarySheetId String // Relacionamento com a folha de pagamento
-  salarySheet   SalarySheet @relation(fields: [salarySheetId], references: [id])
-  paidAt        DateTime?
-
-  type        ItemType // Tipo do item (Acréscimo, Desconto, Adiantamento)
-  description String? // Descrição do item (ex: Salário Base, Bonus, etc.)
-  amount      Float // Valor do item
-  reference   String // Referência do item (ex: mês de referência)
-
-  createdAt DateTime @default(now()) // Data de criação
-  updatedAt DateTime @updatedAt // Data de atualização
-
-  @@map("salary_items")
+  OPEN
+  CLOSED
+  EMPTY
 }
 
 enum ItemType {
-  INCREASE // Acréscimo
-  DISCOUNT // Desconto
-  ADVANCE // Adiantamento
-}
-
-model SalaryControl {
-  id        String   @id @default(uuid())
-  reference String
-  amount    Float    @default(0)
-  type      ItemType @default(INCREASE)
-  date      DateTime @default(now())
-  isSet     Boolean  @default(false)
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  employeeId String // Relacionamento com o funcionário
-  employee   Employee @relation(fields: [employeeId], references: [id])
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  @@map("salary_controls")
-}
-
-model PaymentMovement {
-  id            String      @id @default(uuid()) // ID da movimentação de pagamento
-  salarySheetId String // Relacionamento com a folha de pagamento
-  salarySheet   SalarySheet @relation(fields: [salarySheetId], references: [id])
-
-  amount          Float // Valor pago
-  paidDate        DateTime // Data do pagamento
-  paymentStatus   PaymentSalaryStatus @default(PENDING) // Status do pagamento (PENDENTE, PAGO)
-  paymentMethodId String // Forma de pagamento (referência à tabela de PaymentMethod)
-  paymentMethod   PaymentMethod       @relation(fields: [paymentMethodId], references: [id])
-
-  createdAt DateTime @default(now()) // Data de criação
-  updatedAt DateTime @updatedAt // Data de atualização
-
-  @@map("payment_movements")
+  INCREASE
+  DISCOUNT
+  ADVANCE
 }
 
 enum PaymentSalaryStatus {
-  PENDING // Pago ou pendente
-  PAID // Pago
-}
-
-model FinancialFlow {
-  id          String            @id @default(uuid())
-  amount      Float
-  type        FinancialFlowType
-  description String
-  date        DateTime
-  companyId   String
-  company     Company           @relation(fields: [companyId], references: [id])
-  createdAt   DateTime          @default(now())
-
-  @@map("financial_flows")
-}
-
-model CashRegister {
-  id          String             @id @default(uuid())
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime?          @updatedAt
-  description String?
-  status      CashRegisterStatus @default(OPEN)
-  notes       String?
-
-  openingDate    DateTime
-  closingDate    DateTime?
-  openingBalance Float
-  totalIncomes   Float     @default(0)
-  totalOutcomes  Float     @default(0)
-  retroactive    Float     @default(0) // Diferença acumulada de reaberturas
-  closingBalance Float? // Calculado apenas ao fechar
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  bankAccountId String
-  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
-
-  cashControls BankAccountCashControl[]
-
-  transactions Transaction[]
-
-  @@map("cash_registers")
-}
-
-model Transaction {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  type            TransactionType
-  amount          Float           @default(0)
-  description     String?
-  transactionDate DateTime        @default(now())
-  reason          String? // Motivo para edição ou transferência
-
-  cashRegisterId String
-  cashRegister   CashRegister @relation(fields: [cashRegisterId], references: [id])
-
-  receivableInstallment ReceivableInstallment[]
-  payableInstallment    PayableInstallment[]
-
-  @@map("transactions")
+  PENDING
+  PAID
 }
 
 enum TransactionType {
@@ -887,31 +1462,6 @@ enum CashRegisterStatus {
   CLOSED
 }
 
-model ScheduledExpense {
-  id            String        @id @default(uuid())
-  description   String?
-  amount        Float         @default(0)
-  dueDay        Int           @default(1)
-  recurringType RecurringType @default(MONTHLY)
-  isActive      Boolean       @default(true)
-
-  supplierId String?
-  companyId  String
-
-  categoryId    String?
-  nature        Nature?      @relation(fields: [categoryId], references: [id])
-  subCategoryId String?
-  subCategory   SubCategory? @relation(fields: [subCategoryId], references: [id])
-
-  supplier Supplier? @relation(fields: [supplierId], references: [id])
-  company  Company   @relation(fields: [companyId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
-
-  @@map("scheduled_expenses")
-}
-
 enum RecurringType {
   WEEKLY
   MONTHLY
@@ -922,191 +1472,14 @@ enum RecurringType {
   ONCE
 }
 
-model Invoice {
-  id        String   @id @default(uuid())
-  number    String
-  date      DateTime
-  amount    Float
-  companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
-  createdAt DateTime @default(now())
-
-  @@unique([number, companyId])
-  @@map("invoices")
-}
-
-model UserRole {
-  userId String
-  roleId String
-  user   User   @relation(fields: [userId], references: [id])
-  role   Role   @relation(fields: [roleId], references: [id])
-
-  @@id([userId, roleId])
-  @@map("user_roles")
-}
-
-model Attribute {
-  id     String @id @default(uuid())
-  key    String
-  value  String
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  @@map("attributes")
-}
-
-model Bank {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  name     String
-  icon     String?
-  code     String
-  details  Json?
-  isActive Boolean @default(true)
-
-  accounts BankAccount[]
-
-  @@map("banks")
-}
-
-model BankAccount {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  name        String
-  description String?
-  isActive    Boolean @default(true)
-
-  cashControl Boolean @default(false)
-
-  bankAccountCashControl BankAccountCashControl[]
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-  bankId    String
-  bank      Bank    @relation(fields: [bankId], references: [id])
-
-  cashRegister          CashRegister[]
-  ReceivableInstallment ReceivableInstallment[]
-  PayableInstallment    PayableInstallment[]
-
-  @@map("bank_accounts")
-}
-
 enum BankAccountCashControlType {
   PAYSOFF
   PROVISION
 }
 
-model BankAccountCashControl {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  acceptPayments Boolean                    @default(true)
-  paymentType    BankAccountCashControlType @default(PAYSOFF)
-  acceptIncomes  Boolean                    @default(true)
-  incomeType     BankAccountCashControlType @default(PAYSOFF)
-
-  acceptMultipleCashRegisters Boolean @default(false)
-
-  paymentMethodId String
-  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
-
-  bankAccountId String
-  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
-
-  cashRegisterId String?
-  cashRegister   CashRegister? @relation(fields: [cashRegisterId], references: [id])
-
-  @@map("bank_account_cash_controls")
-}
-
-model PaymentMethod {
-  id          String   @id @default(uuid())
-  name        String
-  description String?
-  createdAt   DateTime @default(now())
-  isActive    Boolean  @default(true)
-
-  companyId              String
-  company                Company                  @relation(fields: [companyId], references: [id])
-  paymentConfigurations  PaymentConfiguration[]
-  bankAccountCashControl BankAccountCashControl[]
-  paymentCondition       PaymentCondition[]
-  receivableInstallment  ReceivableInstallment[]
-  payableInstallment     PayableInstallment[]
-  paymentMovement        PaymentMovement[]
-  quotationPayment       QuotationPayment[]
-  quotationInstallment   QuotationInstallment[]
-
-  @@map("payment_methods")
-}
-
 enum PaymentConditionCostType {
   PERCENT
   VALUE
-}
-
-model PaymentCondition {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
-  isActive  Boolean  @default(true)
-
-  name               String
-  acceptInstallments Boolean                  @default(false)
-  costType           PaymentConditionCostType
-
-  minInstallments Int?
-  maxInstallments Int?
-  installments    Installment[]
-
-  receivingType String?
-  dayInterval   Int?
-
-  paymentMethodId       String
-  paymentMethod         PaymentMethod          @relation(fields: [paymentMethodId], references: [id])
-  companyId             String
-  company               Company                @relation(fields: [companyId], references: [id])
-  paymentConfigurations PaymentConfiguration[]
-
-  clients                     ClientPaymentCondition[]
-  suppliers                   SupplierPaymentCondition[]
-  CreditLimitPaymentCondition CreditLimitPaymentCondition[]
-  downPaymentConditions       QuotationPayment[]            @relation(name: "downPaymentRelation")
-  quotationPayments           QuotationPayment[]            @relation(name: "defaultRelation")
-
-  @@map("payment_conditions")
-}
-
-model Installment {
-  id String @id @default(uuid())
-
-  installment         Int // Número da parcela
-  dueDate             DateTime?
-  operatorFeeRate     Float     @default(0)
-  operatorFeeTransfer Float     @default(0)
-
-  paymentConditionId String
-  paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
-
-  @@map("installments")
-}
-
-model PaymentConfiguration {
-  id                 String           @id @default(uuid())
-  paymentMethodId    String
-  paymentMethod      PaymentMethod    @relation(fields: [paymentMethodId], references: [id])
-  paymentConditionId String
-  paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
-  companyId          String
-  company            Company          @relation(fields: [companyId], references: [id])
-  createdAt          DateTime         @default(now())
-
-  @@map("payment_configurations")
 }
 
 enum BiilingKind {
@@ -1125,239 +1498,20 @@ enum ProductionStatusKind {
   PRODUCTION_COMPLETED
 }
 
-model SaleSeries {
-  id         String    @id @default(uuid())
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime? @updatedAt
-  isActive   Boolean   @default(true)
-  isTraining Boolean   @default(false)
-
-  code                String
-  description         String?
-  title               String
-  currentBudgetNumber Int     @default(0)
-  proposalValidity    Int?
-  deliveryDeadline    Int?
-
-  billing          BiilingKind          @default(ON_ORDER)
-  sendToProduction SendToProductionKind @default(DIRECT)
-  productionStatus ProductionStatusKind @default(MANAGE_PRODUCTION)
-
-  textBeforeItems String?
-  textAfterItems  String?
-
-  companyId String
-  company   Company     @relation(fields: [companyId], references: [id])
-  quotation Quotation[]
-
-  @@unique([code, companyId])
-  @@map("sale_series")
-}
-
 enum QuotationStatus {
-  APPROVED //Aprovado
-  OPEN //Digitação
-  DONE //Aguardando
+  APPROVED
+  OPEN
   CLOSED
   CANCELED
-  REJECTED //Rejeitado
-  OVERDUE //Vencido
-}
-
-model StatusQuotation {
-  id        String      @id @default(uuid())
-  createdAt DateTime    @default(now())
-  updatedAt DateTime?   @updatedAt
-  isActive  Boolean     @default(true)
-  title     String
-  color     String // Cor no formato hexadecimal, ex: "#FF5733"
-  companyId String
-  company   Company     @relation(fields: [companyId], references: [id])
-  quotation Quotation[]
-
-  @@map("status_quotation")
-}
-
-model Quotation {
-  id              String    @id @default(uuid())
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime? @updatedAt
-  approvedAt      DateTime?
-  finishedAt      DateTime?
-  isActive        Boolean   @default(true)
-  quotationNumber Int?
-
-  description String?
-  status      QuotationStatus @default(OPEN)
-  dueDate     DateTime        @default(now())
-  contactType String?
-
-  totalValue Float @default(0)
-
-  sellerId     String
-  seriesId     String?
-  clientId     String?
-  companyId    String
-  subCompanyId String?
-
-  tagId     String?
-  quickSale Boolean @default(false)
-
-  seller     Employee    @relation(fields: [sellerId], references: [id])
-  subCompany Company?    @relation("FiscalSubCompany", fields: [subCompanyId], references: [id])
-  company    Company     @relation("MainCompany", fields: [companyId], references: [id])
-  series     SaleSeries? @relation(fields: [seriesId], references: [id])
-  client     Client?     @relation(fields: [clientId], references: [id])
-
-  tag StatusQuotation? @relation(fields: [tagId], references: [id])
-
-  reasonId String?
-  reasons  Reasons? @relation(fields: [reasonId], references: [id])
-
-  products         Product[]          @relation("QuotationToProduct")
-  quotationProduct QuotationProduct[]
-  order            Order?
-  deliveryInfo     DeliveryInfo?
-  quotationPayment QuotationPayment?
-  DeliverySchedule DeliverySchedule?
-  payable          Payable[]
-  receivable       Receivable[]
-
-  @@index([id, companyId])
-  @@map("quotations")
-}
-
-model QuotationProduct {
-  id          String    @id @default(uuid())
-  quotation   Quotation @relation(fields: [quotationId], references: [id])
-  quotationId String
-
-  product   Product @relation(fields: [productId], references: [id])
-  productId String
-
-  quantity             Int     @default(1)
-  description          String?
-  technicalDescription String?
-  imageUrl             String?
-  totalValue           Float?
-  notes                String?
-  discount             Float?
-  discountType         String?
-  finalValue           Float?
-
-  items                QuotationProductItem[]
-  allowEditDescription Boolean                @default(true)
-  allowEditValues      Boolean                @default(true)
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  @@map("quotation_products")
-}
-
-model QuotationProductItem {
-  id                 String           @id @default(uuid())
-  quotationId        String
-  productId          String
-  quotationProductId String
-  quotationProduct   QuotationProduct @relation(fields: [quotationProductId], references: [id])
-
-  productItemId String
-  productItem   ProductItem @relation(fields: [productItemId], references: [id])
-
-  name             String
-  quantity         Int                  @default(1)
-  originalQuantity Int                  @default(1)
-  unitOfMeasureId  String
-  unitOfMeasure    CompanyUnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
-  width            Float? //largura
-  height           Float? //altura
-  length           Float? //comprimento
-  weight           Float? //peso
-  volume           Float? //volume
-  distance         Float? //distancia
-  duration         Float? //duração (em dias)
-
-  unitCost  Float?
-  salePrice Float?
-
-  totalValue Float?
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  @@map("quotation_product_items")
+  REJECTED
+  DONE
+  OVERDUE
 }
 
 enum InvoiceType {
   NFE
   NFSE
   OTHER
-}
-
-model QuotationPayment {
-  id            String      @id @default(uuid())
-  quotationId   String      @unique
-  quotation     Quotation   @relation(fields: [quotationId], references: [id])
-  type          InvoiceType @default(OTHER)
-  billing       BiilingKind @default(ON_ORDER)
-  discountType  String      @default("VALUE")
-  discountValue Float       @default(0) // Desconto
-  discountTotal Float       @default(0) // Desconto
-
-  downPayment              Float             @default(0) // Entrada
-  downPaymentConditionId   String?
-  downPaymentCondition     PaymentCondition? @relation(name: "downPaymentRelation", fields: [downPaymentConditionId], references: [id])
-  downPaymentAdditionalFee Float             @default(0) //Acrescimo da entrada
-  downPaymentDueDate       DateTime?
-
-  paymentMethodId String? // Relação com a tabela de métodos de pagamento
-  paymentMethod   PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
-
-  paymentConditionId String? // Relação com a tabela de condições de pagamento
-  paymentCondition   PaymentCondition? @relation(name: "defaultRelation", fields: [paymentConditionId], references: [id])
-
-  commissionId String?     @unique
-  commission   Commission? @relation(fields: [commissionId], references: [id])
-
-  totalValue  Float // Valor total do orçamento
-  description String? // Observações
-  finalValue  Float?
-
-  installmentQty    Int?
-  minInstallmentQty Int?
-  maxInstallmentQty Int?
-  mainAdditionalFee Float?
-  additionalFeeType String?
-
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime?              @updatedAt
-  quotationInstallment QuotationInstallment[]
-
-  @@map("quotation_payments")
-}
-
-model Commission {
-  id String @id @default(uuid())
-
-  type CommissionType @default(ADD)
-
-  supplierId String
-  supplier   Supplier @relation(fields: [supplierId], references: [id])
-
-  transferMethod transferMethodCommission @default(SINGLE)
-
-  commissionValue Float  @default(0)
-  commissionType  String @default("VALUE")
-
-  totalCommission Float @default(0)
-
-  quotationPayment QuotationPayment?
-  receivableId     String?
-  payableId        String?
-  payable          Payable?          @relation(fields: [payableId], references: [id])
-
-  @@map("commissions")
 }
 
 enum transferMethodCommission {
@@ -1370,59 +1524,13 @@ enum CommissionType {
   SUB
 }
 
-model QuotationInstallment {
-  id                 String           @id @default(uuid())
-  quotationPaymentId String // Relação com o pagamento do orçamento
-  quotationPayment   QuotationPayment @relation(fields: [quotationPaymentId], references: [id])
-  dueDate            DateTime // Data de vencimento da parcela
-  paymentMethodId    String // Forma de pagamento para a parcela
-  paymentMethod      PaymentMethod    @relation(fields: [paymentMethodId], references: [id])
-  additionalFee      Float            @default(0) // Acréscimo
-  value              Float // Valor da parcela
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-
-  payableInstallment   PayableInstallment? @relation(fields: [payableInstallmentId], references: [id])
-  payableInstallmentId String?
-
-  receivableInstallment   ReceivableInstallment? @relation(fields: [receivableInstallmentId], references: [id])
-  receivableInstallmentId String?
-
-  @@map("quotation_installments")
-}
-
 enum OrderStatus {
-  PENDING
   IN_PRODUCTION
   DELIVERY
   COMPLETED
-  FINISHED
   CANCELED
-}
-
-model DeliveryInfo {
-  id          String    @id @default(uuid())
-  quotationId String    @unique
-  quotation   Quotation @relation(fields: [quotationId], references: [id])
-
-  deliveryType DeliveryType @default(PICKUP)
-
-  daysAfterApproval Int?
-  estimatedDate     DateTime?
-  modality          String    @default("Indefinida")
-  cost              Float?
-  value             Float?
-  notes             String?
-
-  supplierId String?
-  supplier   Supplier? @relation(fields: [supplierId], references: [id])
-
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime?         @updatedAt
-  deliverySchedule DeliverySchedule?
-
-  @@index([quotationId])
-  @@map("delivery_info")
+  FINISHED
+  PENDING
 }
 
 enum DeliveryType {
@@ -1431,154 +1539,15 @@ enum DeliveryType {
   PICKUP
 }
 
-model Order {
-  id          String    @id @default(uuid())
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime? @updatedAt
-  canceledAt  DateTime?
-  deliveredAt DateTime?
-
-  quotationId String    @unique
-  quotation   Quotation @relation(fields: [quotationId], references: [id])
-
-  status   OrderStatus @default(IN_PRODUCTION)
-  isActive Boolean     @default(true)
-
-  reasonId     String?
-  cancelReason Reasons? @relation(fields: [reasonId], references: [id])
-
-  deliverySchedule DeliverySchedule[]
-
-  @@index([id])
-  @@map("orders")
-}
-
 enum ProductStatus {
   ACTIVE
   INACTIVE
-}
-
-model Product {
-  id   String @id @default(uuid())
-  name String
-  code String
-
-  isActive   Boolean       @default(true)
-  status     ProductStatus @default(ACTIVE)
-  isStandard Boolean       @default(false)
-
-  technicalDescription String?
-  allowEditValues      Boolean @default(true)
-  allowEditDescription Boolean @default(true)
-  imageUrl             String?
-
-  items            ProductItem[]
-  productionStages Json?
-
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id])
-
-  categoryId String
-  category   Category @relation(fields: [categoryId], references: [id])
-
-  sectorId String
-  sector   CompanySector @relation(fields: [sectorId], references: [id])
-
-  quotations       Quotation[]        @relation("QuotationToProduct")
-  quotationProduct QuotationProduct[]
-
-  @@unique([code, companyId])
-  @@map("products")
-}
-
-model ProductItem {
-  id   String @id @default(uuid())
-  name String
-
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-
-  unitOfMeasureId String
-  unitOfMeasure   CompanyUnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
-  width           Float? //largura
-  height          Float? //altura
-  length          Float? //comprimento
-  weight          Float? //peso
-  volume          Float? //volume
-  distance        Float? //distancia
-  duration        Float? //duração (em dias)
-
-  unitCost             Float?
-  salePrice            Float?
-  quotationProductItem QuotationProductItem[]
-
-  @@map("product_items")
 }
 
 enum UnitOfMeasureKind {
   LENGTH
   WEIGHT
   CAPACITY
-}
-
-model CompanyUnitOfMeasure {
-  id          String             @id @default(uuid())
-  name        String
-  code        String
-  kind        UnitOfMeasureKind?
-  description String?
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  defaultUnitOfMeasureId String?
-  defaultUnitOfMeasure   DefaultUnitOfMeasure? @relation(fields: [defaultUnitOfMeasureId], references: [id])
-
-  isActive     Boolean       @default(true)
-  productItems ProductItem[]
-
-  quotationProductItem QuotationProductItem[]
-
-  @@map("unit_measures")
-}
-
-model DefaultUnitOfMeasure {
-  id          String             @id @default(uuid())
-  name        String
-  code        String             @unique
-  kind        UnitOfMeasureKind?
-  description String?
-
-  isActive             Boolean                @default(true)
-  CompanyUnitOfMeasure CompanyUnitOfMeasure[]
-
-  @@map("defalt_unit_measures")
-}
-
-model Language {
-  id          String  @id @default(uuid())
-  name        String
-  code        String  @unique
-  description String?
-
-  isActive Boolean @default(true)
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  @@map("languages")
-}
-
-model Reasons {
-  id        String      @id @default(uuid())
-  reason    String
-  type      ReasonType
-  companyId String
-  company   Company     @relation(fields: [companyId], references: [id])
-  order     Order[]
-  quotation Quotation[]
-
-  @@map("reasons")
 }
 
 enum ReasonType {
@@ -1589,39 +1558,8 @@ enum ReasonType {
 enum DeliveryScheduleStatus {
   IN_PRODUCTION
   DELIVERING
-  FINISHED
   DONE
-}
-
-model DeliverySchedule {
-  id String @id @default(uuid())
-
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id])
-
-  quotationId String?    @unique
-  quotation   Quotation? @relation(fields: [quotationId], references: [id])
-
-  deliveryInfoId String?       @unique
-  deliveryInfo   DeliveryInfo? @relation(fields: [deliveryInfoId], references: [id])
-
-  orderId String? @unique
-  order   Order?  @relation(fields: [orderId], references: [id])
-
-  status             DeliveryScheduleStatus
-  completed          Boolean                @default(false)
-  notes              String?
-  scheduledDate      DateTime
-  addScheduleTime    Boolean                @default(false)
-  pendingDescription String?
-
-  productionStages ProductionStage[]
-
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  @@map("delivery_schedules")
+  FINISHED
 }
 
 enum ProductionStageStatus {
@@ -1635,117 +1573,12 @@ enum ProductionStageStatus {
   OVERDUE
 }
 
-model ProductionStage {
-  id         String                @id @default(uuid())
-  stageId    String?
-  stage      CompanySector?        @relation(fields: [stageId], references: [id])
-  status     ProductionStageStatus @default(NOT_STARTED)
-  notes      String?
-  order      Int?
-  prevStatus String?
-  scheduleId String
-
-  schedule DeliverySchedule @relation(fields: [scheduleId], references: [id])
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-
-  @@map("production_stages")
-}
-
-model Nature {
-  id          String  @id @default(uuid())
-  description String?
-  level1      String?
-  level2      String?
-  code        String?
-  companyId   String
-  company     Company @relation(fields: [companyId], references: [id])
-
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime?          @updatedAt
-  isActive         Boolean            @default(true)
-  receivable       Receivable[]
-  payable          Payable[]
-  subCategory      SubCategory[]
-  scheduledExpense ScheduledExpense[]
-
-  @@map("natures")
-}
-
-model SubCategory {
-  id          String  @id @default(uuid())
-  description String?
-  code        String?
-  companyId   String
-  company     Company @relation(fields: [companyId], references: [id])
-
-  natureId String
-  nature   Nature @relation(fields: [natureId], references: [id])
-
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime?          @updatedAt
-  isActive         Boolean            @default(true)
-  receivable       Receivable[]
-  payable          Payable[]
-  scheduledExpense ScheduledExpense[]
-
-  @@map("sub_categories")
-}
-
-model ClientPaymentCondition {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
-  isActive  Boolean  @default(true)
-
-  clientId           String
-  client             Client           @relation(fields: [clientId], references: [id])
-  paymentConditionId String
-  paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
-
-  @@unique([clientId, paymentConditionId])
-  @@map("client_payment_conditions")
-}
-
-model SupplierPaymentCondition {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
-  isActive  Boolean  @default(true)
-
-  supplierId         String
-  supplier           Supplier         @relation(fields: [supplierId], references: [id])
-  paymentConditionId String
-  paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
-
-  @@unique([supplierId, paymentConditionId])
-  @@map("supplier_payment_conditions")
-}
-
 enum PlanType {
   START
   LITE
   PRO
   ELITE
   FULL
-}
-
-model Plan {
-  id          String    @id @default(uuid())
-  type        PlanType
-  name        String
-  description String?
-  price       Float
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime? @updatedAt
-  isActive    Boolean   @default(true)
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  clients      Client[]
-  Subscription Subscription[]
-
-  @@map("plans")
 }
 
 enum BillingType {
@@ -1759,66 +1592,8 @@ enum Cycle {
   YEARLY
 }
 
-model Subscription {
-  id                 String             @id @default(uuid())
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime?          @updatedAt
-  isActive           Boolean            @default(true)
-  isContractAccepted Boolean            @default(false)
-  status             SubscriptionStatus @default(PENDING)
-  billingType        BillingType        @default(CREDIT_CARD)
-  planPrice          Float
-  cycle              Cycle              @default(MONTHLY)
-  name               String?
-  cpfCnpj            String?
-  email              String?
-  phone              String?
-  mobilePhone        String?
-  address            String?
-  addressNumber      String?
-  complement         String?
-  province           String?
-  postalCode         String?
-  city               String?
-  neighborhood       String?
-
-  planId String
-  plan   Plan   @relation(fields: [planId], references: [id])
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  @@map("subscriptions")
-}
-
 enum SubscriptionStatus {
   SUCCESS
   PENDING
   FAILED
-}
-
-model Contract {
-  id         String   @id @default(uuid())
-  name       String
-  contentUrl String
-  version    Int
-  createdAt  DateTime @default(now())
-
-  acceptedUsers UserContract[]
-
-  @@map("contracts")
-}
-
-model UserContract {
-  id         String   @id @default(uuid())
-  userId     String
-  contractId String
-  acceptedAt DateTime @default(now())
-  ipAddress  String?
-  userAgent  String?
-  user       User     @relation(fields: [userId], references: [id])
-  contract   Contract @relation(fields: [contractId], references: [id])
-
-  @@unique([userId, contractId])
-  @@map("user_contracts")
 }
