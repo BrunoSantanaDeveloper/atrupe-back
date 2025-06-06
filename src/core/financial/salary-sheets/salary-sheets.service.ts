@@ -122,6 +122,148 @@ export class SalarySheetsService {
     }
   }
 
+  async generateSalarySheetForEmployees(data: {
+    month: number;
+    year: number;
+    list: string[];
+  }): Promise<{
+    success: number;
+    skipped: number;
+    errors: Array<{ employeeId: string; reason: string }>;
+  }> {
+    const { month, year, list: employeeIds } = data;
+
+    // Validação dos parâmetros
+    if (!month || month < 1 || month > 12) {
+      throw new BadRequestException(
+        'Mês inválido. Deve ser um número entre 1 e 12',
+      );
+    }
+
+    if (!year || year < 2000 || year > 9999) {
+      throw new BadRequestException('Ano inválido');
+    }
+
+    if (!employeeIds?.length) {
+      throw new BadRequestException(
+        'Lista de colaboradores não pode estar vazia',
+      );
+    }
+
+    const result = {
+      success: 0,
+      skipped: 0,
+      errors: [] as Array<{ employeeId: string; reason: string }>,
+    };
+
+    // Busca todos os colaboradores de uma vez
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        id: { in: employeeIds },
+      },
+      include: {
+        SalaryControl: {
+          where: {
+            isSet: true,
+          },
+        },
+        company: true,
+      },
+    });
+
+    // Cria um mapa para acesso rápido
+    const employeeMap = new Map(employees.map((emp) => [emp.id, emp]));
+
+    // Busca todas as folhas existentes de uma vez
+    const existingSheets = await this.prisma.salarySheet.findMany({
+      where: {
+        employeeId: { in: employeeIds },
+        month,
+        year,
+      },
+      select: {
+        employeeId: true,
+      },
+    });
+
+    const existingEmployeeIds = new Set(
+      existingSheets.map((sheet) => sheet.employeeId),
+    );
+
+    for (const employeeId of employeeIds) {
+      try {
+        const employee = employeeMap.get(employeeId);
+
+        if (!employee) {
+          result.errors.push({
+            employeeId,
+            reason: 'Colaborador não encontrado',
+          });
+          continue;
+        }
+
+        if (!employee.company?.isActive || !employee.isActive) {
+          result.errors.push({
+            employeeId,
+            reason: 'Colaborador ou empresa não estão ativos',
+          });
+          continue;
+        }
+
+        if (existingEmployeeIds.has(employeeId)) {
+          result.skipped++;
+          this.logger.warn(
+            `Folha de pagamento já existe para o colaborador ${employeeId} no mês ${month}/${year}`,
+          );
+          continue;
+        }
+
+        await this.prisma.$transaction(async (prisma) => {
+          const salarySheet = await prisma.salarySheet.create({
+            data: {
+              employeeId: employee.id,
+              month,
+              year,
+              status: 'OPEN',
+              companyId: employee.companyId,
+            },
+          });
+
+          if (employee.SalaryControl.length > 0) {
+            await prisma.salaryItem.createMany({
+              data: employee.SalaryControl.map((item) => ({
+                salarySheetId: salarySheet.id,
+                type: item.type,
+                amount: item.amount,
+                description: item.reference,
+                reference: `${month}/${year}`,
+              })),
+            });
+          } else {
+            this.logger.warn(
+              `Colaborador ${employeeId} não possui configurações de salário definidas`,
+            );
+          }
+        });
+
+        result.success++;
+        this.logger.log(
+          `Folha de pagamento criada com sucesso para o colaborador ${employeeId}`,
+        );
+      } catch (error) {
+        result.errors.push({
+          employeeId,
+          reason: error.message,
+        });
+        this.logger.error(
+          `Erro ao gerar folha de pagamento para o colaborador ${employeeId}: ${error.message}`,
+        );
+      }
+    }
+
+    return result;
+  }
+
   async openSalarySheet(salarySheetId: string) {
     const salarySheet = await this.prisma.salarySheet.findUnique({
       where: { id: salarySheetId },
@@ -169,67 +311,85 @@ export class SalarySheetsService {
       // Ajusta o mês para o formato do banco (0-11)
       const adjustedMonth = month - 1;
 
-      const where: Prisma.SalarySheetWhereInput = {
+      // Busca todos os employees ativos da empresa
+      const where: Prisma.EmployeeWhereInput = {
         companyId,
-        month: adjustedMonth,
-        year,
+        isActive: true,
         ...(search && {
-          employee: {
-            user: {
-              name: {
-                contains: search,
-                mode: 'insensitive',
-              },
+          user: {
+            name: {
+              contains: search,
+              mode: 'insensitive',
             },
           },
         }),
       };
 
-      const [salarySheets, total] = await this.prisma.$transaction([
-        this.prisma.salarySheet.findMany({
+      const [employees, total] = await this.prisma.$transaction([
+        this.prisma.employee.findMany({
           where,
           include: {
-            employee: {
-              include: {
-                user: true,
-                role: true,
+            user: true,
+            role: true,
+            SalaryControl: {
+              where: {
+                isSet: true,
               },
             },
-            items: true,
+            salarySheet: {
+              where: {
+                month: adjustedMonth,
+                year,
+              },
+              include: {
+                items: true,
+                movements: true,
+              },
+            },
+          },
+          orderBy: {
+            name: 'asc',
           },
           skip: (page - 1) * limit,
           take: limit,
         }),
-        this.prisma.salarySheet.count({ where }),
+        this.prisma.employee.count({ where }),
       ]);
 
-      const data = salarySheets.map((sheet) => {
-        const totalIncreases = sheet.items
+      const data = employees.map((employee) => {
+        const salarySheet = employee.salarySheet[0]; // Pega a folha do mês/ano se existir
+
+        // Calcula o salário baseado nas configurações do colaborador
+        const totalIncreases = salarySheet?.items
           .filter((item) => item.type === ItemType.INCREASE)
           .reduce((sum, item) => sum + item.amount, 0);
 
-        const totalDiscounts = sheet.items
+        const totalDiscounts = salarySheet?.items
           .filter((item) => item.type === ItemType.DISCOUNT)
           .reduce((sum, item) => sum + item.amount, 0);
 
         const totalSalary = totalIncreases - totalDiscounts;
 
-        const totalAdvances = sheet.items
+        const totalAdvances = salarySheet?.items
           .filter((item) => item.type === ItemType.ADVANCE)
           .reduce((sum, item) => sum + item.amount, 0);
 
-        const advances = totalSalary - totalAdvances;
+        const balance = totalSalary - totalAdvances;
 
         return {
-          id: sheet.id,
+          id: salarySheet?.id || null,
+          month,
+          year,
           employee: {
-            id: sheet.employee?.id,
-            name: sheet.employee?.name || 'Nome não disponível',
-            role: sheet.employee?.role?.name || 'Cargo não definido',
+            id: employee.id,
+            name: employee.name,
+            role: employee.role.name,
           },
           totalSalary,
-          balance: advances,
-          status: sheet.status,
+          balance,
+          status: salarySheet?.status || 'EMPTY',
+          items: salarySheet?.items || [],
+          movements: salarySheet?.movements || [],
         };
       });
 
@@ -292,39 +452,37 @@ export class SalarySheetsService {
       const balance = totalSalary - advances;
 
       return {
-        data: {
-          id: salarySheet.id,
-          month: salarySheet.month + 1, // Ajusta para formato 1-12
-          year: salarySheet.year,
-          status: salarySheet.status,
-          employee: {
-            id: salarySheet.employee.id,
-            name: salarySheet.employee.user.name,
-            role: salarySheet.employee.role.name,
-          },
-          items: salarySheet.items.map((item) => ({
-            id: item.id,
-            type: item.type,
-            amount: item.amount,
-            description: item.description,
-
-            createdAt: item.createdAt,
-          })),
-          balance,
-          movements: salarySheet.movements.map((movement) => ({
-            id: movement.id,
-            amount: movement.amount,
-            status: movement.paymentStatus,
-            paidDate: movement.paidDate,
-            paymentMethod: movement.paymentMethod
-              ? {
-                  id: movement.paymentMethod.id,
-                  name: movement.paymentMethod.name,
-                }
-              : null,
-            createdAt: movement.createdAt,
-          })),
+        id: salarySheet.id,
+        month: salarySheet.month + 1, // Ajusta para formato 1-12
+        year: salarySheet.year,
+        status: salarySheet.status,
+        employee: {
+          id: salarySheet.employee.id,
+          name: salarySheet.employee.user.name,
+          role: salarySheet.employee.role.name,
         },
+        balance,
+        items: salarySheet.items.map((item) => ({
+          id: item.id,
+          type: item.type,
+          amount: item.amount,
+          description: item.description,
+          paidAt: item.paidAt,
+          createdAt: item.createdAt,
+        })),
+        movements: salarySheet.movements.map((movement) => ({
+          id: movement.id,
+          amount: movement.amount,
+          status: movement.paymentStatus,
+          paidDate: movement.paidDate,
+          paymentMethod: movement.paymentMethod
+            ? {
+                id: movement.paymentMethod.id,
+                name: movement.paymentMethod.name,
+              }
+            : null,
+          createdAt: movement.createdAt,
+        })),
       };
     } catch (error) {
       this.logger.error(`Erro ao buscar folha de pagamento: ${error.message}`);
@@ -380,6 +538,19 @@ export class SalarySheetsService {
     const salaryItem = await this.prisma.salaryItem.findUnique({
       where: { id },
     });
+    if (!salaryItem) {
+      throw new NotFoundException('Item de folha de pagamento não encontrado.');
+    }
+
+    const salarySheet = await this.prisma.salarySheet.findUnique({
+      where: { id: salaryItem.salarySheetId },
+    });
+
+    if (!salarySheet || salarySheet.status !== 'OPEN') {
+      throw new NotFoundException(
+        'Folha de pagamento não encontrada ou não está aberta.',
+      );
+    }
 
     if (!salaryItem) {
       throw new NotFoundException('Item de folha de pagamento não encontrado.');

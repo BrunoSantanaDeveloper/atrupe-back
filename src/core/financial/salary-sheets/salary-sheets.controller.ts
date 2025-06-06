@@ -29,6 +29,7 @@ import {
   UpdateSalaryItemDto,
   UpdateEmployeeSalaryDto,
 } from './dto/update-salary.dto';
+import { GenerateSalarySheetsDto } from './dto/generate-salary-sheets.dto';
 
 const RESOURCE = 'salary-sheets';
 const GROUP = 'financial';
@@ -40,19 +41,51 @@ const GROUP = 'financial';
 export class SalarySheetsController {
   constructor(private readonly salaryService: SalarySheetsService) {}
 
-  @Post('generate')
+  @Post('')
   @ApiOperation({
-    summary: 'Gerar folha de pagamento para o mês',
+    summary: 'Gera folhas de pagamento para uma lista de colaboradores',
     description:
-      'Gera folhas de pagamento vazias para todos os colaboradores ativos do mês especificado',
+      'Cria folhas de pagamento para os colaboradores especificados no mês/ano informado',
   })
   @ApiResponse({
     status: 201,
-    description: 'Folha de pagamento gerada com sucesso',
+    description: 'Folhas de pagamento geradas com sucesso',
+    schema: {
+      type: 'object',
+      properties: {
+        success: {
+          type: 'number',
+          description: 'Quantidade de folhas criadas com sucesso',
+        },
+        skipped: {
+          type: 'number',
+          description: 'Quantidade de folhas puladas (já existiam)',
+        },
+        errors: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              employeeId: {
+                type: 'string',
+                description: 'ID do colaborador com erro',
+              },
+              reason: {
+                type: 'string',
+                description: 'Razão do erro',
+              },
+            },
+          },
+        },
+      },
+    },
   })
-  async generateSalarySheet() {
-    await this.salaryService.generateSalarySheetForMonth();
-    return { message: 'Folha de pagamento gerada com sucesso' };
+  @ApiResponse({
+    status: 400,
+    description: 'Dados inválidos',
+  })
+  async generateSalarySheets(@Body() dto: GenerateSalarySheetsDto) {
+    return this.salaryService.generateSalarySheetForEmployees(dto);
   }
 
   @Post(':salarySheetId/open')
@@ -168,7 +201,7 @@ export class SalarySheetsController {
     return await this.salaryService.updateSalaryItem(updateSalaryItemDto);
   }
 
-  @Patch('toggle-status')
+  @Patch('toggle')
   @ApiOperation({
     summary: 'Alternar status da folha de pagamento',
     description: 'Altera o status da folha de pagamento entre aberta e fechada',
