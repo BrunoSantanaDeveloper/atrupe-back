@@ -3,7 +3,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CreateScheduledExpenseDto } from './dto/create-scheduled-expense.dto';
+import {
+  CreateScheduledExpenseDto,
+  ScheduledExpenseFilterDto,
+} from './dto/create-scheduled-expense.dto';
 import { UpdateScheduledExpenseDto } from './dto/update-scheduled-expense.dto';
 import { PrismaService } from 'nestjs-prisma';
 
@@ -22,6 +25,7 @@ export class ScheduledExpenseService {
           supplierId: dto.supplierId,
           categoryId: dto.categoryId,
           subCategoryId: dto.subCategoryId,
+          isActive: dto.isActive ?? true,
           companyId,
         },
         include: {
@@ -37,18 +41,64 @@ export class ScheduledExpenseService {
     }
   }
 
-  async findAll(companyId: string) {
+  async findAll(filter: ScheduledExpenseFilterDto, companyId: string) {
     try {
-      return await this.prisma.scheduledExpense.findMany({
-        where: {
-          companyId,
-        },
-        include: {
-          supplier: true,
-          company: true,
-          subCategory: true,
-        },
-      });
+      const {
+        page = 1,
+        limit = 10,
+        search,
+        supplierId,
+        categoryId,
+        recurringType,
+      } = filter;
+
+      const where: any = {
+        companyId,
+      };
+
+      // Filtro de busca por descrição
+      if (search) {
+        where.description = {
+          contains: search,
+          mode: 'insensitive',
+        };
+      }
+
+      // Filtro por fornecedor
+      if (supplierId) {
+        where.supplierId = supplierId;
+      }
+
+      // Filtro por categoria
+      if (categoryId) {
+        where.categoryId = categoryId;
+      }
+
+      // Filtro por tipo de recorrência
+      if (recurringType) {
+        where.recurringType = recurringType;
+      }
+
+      const [total, data] = await Promise.all([
+        this.prisma.scheduledExpense.count({ where }),
+        this.prisma.scheduledExpense.findMany({
+          where,
+          include: {
+            supplier: true,
+            company: true,
+            subCategory: true,
+          },
+          take: +limit,
+          skip: (+page - 1) * +limit,
+          orderBy: { description: 'asc' },
+        }),
+      ]);
+
+      return {
+        total,
+        totalPages: Math.ceil(total / +limit),
+        data,
+      };
     } catch (error) {
       throw new BadRequestException(
         `Error finding scheduled expenses: ${error.message}`,
@@ -103,6 +153,7 @@ export class ScheduledExpenseService {
           supplierId: dto.supplierId,
           categoryId: dto.categoryId,
           subCategoryId: dto.subCategoryId,
+          isActive: dto.isActive,
         },
         include: {
           supplier: true,
@@ -135,6 +186,45 @@ export class ScheduledExpenseService {
       }
       throw new BadRequestException(
         `Error removing scheduled expense: ${error.message}`,
+      );
+    }
+  }
+
+  async count(companyId: string) {
+    try {
+      const allStatuses = ['ACTIVE', 'INACTIVE'];
+
+      const result = await this.prisma.scheduledExpense.groupBy({
+        by: ['isActive'],
+        where: { companyId },
+        _count: true,
+      });
+
+      const statusCount = allStatuses.reduce(
+        (acc, status) => {
+          acc[status] = 0;
+          return acc;
+        },
+        {} as { [key: string]: number },
+      );
+
+      result.forEach((cur) => {
+        const status = cur.isActive ? 'ACTIVE' : 'INACTIVE';
+        statusCount[status] = cur._count;
+      });
+
+      const total = Object.values(statusCount).reduce(
+        (acc, cur) => acc + cur,
+        0,
+      );
+
+      return {
+        ...statusCount,
+        TOTAL: total,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        `Error counting scheduled expenses: ${error.message}`,
       );
     }
   }
