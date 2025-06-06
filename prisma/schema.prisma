@@ -893,6 +893,7 @@ model ScheduledExpense {
   amount        Float         @default(0)
   dueDay        Int           @default(1)
   recurringType RecurringType @default(MONTHLY)
+  isActive      Boolean       @default(true)
 
   supplierId String?
   companyId  String

@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { RecurringType } from '@prisma/client';
+import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 export class CreateScheduledExpenseDto {
   @IsNotEmpty()
@@ -75,6 +76,54 @@ export class CreateScheduledExpenseDto {
     required: false,
   })
   subCategoryId?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Status da despesa (ativa ou inativa)',
+    example: true,
+    required: false,
+    default: true,
+  })
+  isActive?: boolean;
 }
 
 export class UpdateScheduledExpenseDto extends CreateScheduledExpenseDto {}
+
+export class ScheduledExpenseFilterDto extends BaseFilterDTO {
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Busca por descrição da despesa',
+    example: 'aluguel',
+    required: false,
+  })
+  search?: string;
+
+  @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description: 'ID do fornecedor para filtrar',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  supplierId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description: 'ID da categoria para filtrar',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  categoryId?: string;
+
+  @IsOptional()
+  @IsEnum(RecurringType)
+  @ApiProperty({
+    description: 'Tipo de recorrência para filtrar',
+    enum: RecurringType,
+    example: RecurringType.MONTHLY,
+    required: false,
+  })
+  recurringType?: RecurringType;
+}

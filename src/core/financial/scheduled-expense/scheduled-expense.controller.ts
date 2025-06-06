@@ -8,9 +8,13 @@ import {
   Delete,
   UseGuards,
   Req,
+  Query,
 } from '@nestjs/common';
 import { ScheduledExpenseService } from './scheduled-expense.service';
-import { CreateScheduledExpenseDto } from './dto/create-scheduled-expense.dto';
+import {
+  CreateScheduledExpenseDto,
+  ScheduledExpenseFilterDto,
+} from './dto/create-scheduled-expense.dto';
 import { UpdateScheduledExpenseDto } from './dto/update-scheduled-expense.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import {
@@ -58,15 +62,42 @@ export class ScheduledExpenseController {
     );
   }
 
+  @Get('quantity')
+  @ApiOperation({
+    summary: 'Obtém a quantidade de despesas fixas agrupadas por status',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Quantidade de despesas fixas agrupadas por status.',
+    schema: {
+      type: 'object',
+      properties: {
+        ACTIVE: { type: 'number', example: 32 },
+        INACTIVE: { type: 'number', example: 0 },
+        TOTAL: { type: 'number', example: 32 },
+      },
+    },
+  })
+  getQuantity(@Req() req) {
+    return this.scheduledExpenseService.count(req.user.companyId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todas as despesas fixas' })
   @ApiResponse({
     status: 200,
     description: 'Lista de despesas fixas retornada com sucesso.',
-    isArray: true,
+    schema: {
+      type: 'object',
+      properties: {
+        total: { type: 'number', example: 1 },
+        totalPages: { type: 'number', example: 1 },
+        data: { type: 'array', items: { type: 'object' } },
+      },
+    },
   })
-  findAll(@Req() req) {
-    return this.scheduledExpenseService.findAll(req.user.companyId);
+  findAll(@Query() filter: ScheduledExpenseFilterDto, @Req() req) {
+    return this.scheduledExpenseService.findAll(filter, req.user.companyId);
   }
 
   @Get(':id')
