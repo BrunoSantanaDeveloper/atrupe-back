@@ -241,6 +241,9 @@ export class CompanyService {
 
       await this.createDefaultItems(company.id);
 
+      // Criar plano de contas padrão (naturezas e subcategorias)
+      await this.createSeedAccountPlans(company.id);
+
       return company;
     } catch (e) {
       console.error(e);

@@ -85,6 +85,24 @@ export class ReceivableController {
     return this.receivableService.findOne(id);
   }
 
+  @Get(':id/details')
+  @ApiOperation({
+    summary: 'Obtém detalhes completos de uma conta a receber com todas as parcelas',
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    description: 'ID da conta a receber',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Detalhes da conta a receber retornados com sucesso.',
+  })
+  @ApiResponse({ status: 404, description: 'Conta a receber não encontrada.' })
+  async getDetails(@Param('id') id: string) {
+    return this.receivableService.findOne(id);
+  }
+
   @Patch(':id')
   @ApiOperation({ summary: 'Atualizar dados do título' })
   @ApiParam({

@@ -58,7 +58,7 @@ export class ScheduledExpenseService {
       } = filter;
 
       const where: any = {
-        companyId,
+          companyId,
       };
 
       // Filtro de busca por descrição
@@ -102,10 +102,10 @@ export class ScheduledExpenseService {
         this.prisma.scheduledExpense.count({ where }),
         this.prisma.scheduledExpense.findMany({
           where,
-          include: {
-            supplier: true,
+        include: {
+          supplier: true,
             company: true,
-            subCategory: true,
+          subCategory: true,
             payables: {
               include: {
                 installments: {
@@ -113,7 +113,7 @@ export class ScheduledExpenseService {
                     status: true,
                     dueDate: true,
                     paidDate: true,
-                  },
+        },
                 },
               },
             },
@@ -467,6 +467,11 @@ export class ScheduledExpenseService {
       const page = parseInt(filters.page) || 1;
       const limit = parseInt(filters.limit) || 10;
       const skip = (page - 1) * limit;
+      const month = filters.month || new Date().getMonth() + 1;
+      const year = filters.year || new Date().getFullYear();
+
+      // Ajusta o mês para o formato do banco (0-11)
+      const adjustedMonth = month - 1;
 
       // Buscar fornecedores que têm despesas agendadas
       const whereSupplier: any = {
@@ -518,6 +523,15 @@ export class ScheduledExpenseService {
         };
       }
 
+      // Filtro por payables do mês/ano especificado
+      const wherePayables: any = {
+        scheduledExpenseId: { not: null },
+        referenceDate: {
+          gte: new Date(year, adjustedMonth, 1),
+          lt: new Date(year, adjustedMonth + 1, 1),
+        },
+      };
+
       const [suppliers, total] = await Promise.all([
         this.prisma.supplier.findMany({
           where: whereSupplier,
@@ -542,6 +556,7 @@ export class ScheduledExpenseService {
                   },
                 },
                 payables: {
+                  where: wherePayables,
                   include: {
                     installments: {
                       select: {
@@ -584,15 +599,15 @@ export class ScheduledExpenseService {
         const processedItems = supplier.scheduledExpense.map((expense) => {
           const hasLaunches = expense.payables.length > 0;
           const launchStatus = hasLaunches ? 'LAUNCHED' : 'NOT_LAUNCHED';
-          
+
           // Contar lançamentos por status
           const launchSummary = {
             total: expense.payables.length,
-            pending: expense.payables.filter(p => 
-              p.installments.some(i => i.status === 'PENDING')
+            pending: expense.payables.filter((p) =>
+              p.installments.some((i) => i.status === 'PENDING'),
             ).length,
-            paid: expense.payables.filter(p => 
-              p.installments.every(i => i.status === 'PAID')
+            paid: expense.payables.filter((p) =>
+              p.installments.every((i) => i.status === 'PAID'),
             ).length,
           };
 
@@ -604,14 +619,20 @@ export class ScheduledExpenseService {
         });
 
         // Calcular totais de lançamentos para o fornecedor
-        const totalLaunched = processedItems.filter(item => item.launchStatus === 'LAUNCHED').length;
-        const totalNotLaunched = processedItems.filter(item => item.launchStatus === 'NOT_LAUNCHED').length;
+        const totalLaunched = processedItems.filter(
+          (item) => item.launchStatus === 'LAUNCHED',
+        ).length;
+        const totalNotLaunched = processedItems.filter(
+          (item) => item.launchStatus === 'NOT_LAUNCHED',
+        ).length;
 
         return {
           id: supplier.id,
           name: supplier.name,
           email: supplier.email,
           phone: supplier.phone,
+          month,
+          year,
           totalExpenses: supplier.scheduledExpense.length,
           activeExpenses: activeExpenses.length,
           inactiveExpenses: inactiveExpenses.length,

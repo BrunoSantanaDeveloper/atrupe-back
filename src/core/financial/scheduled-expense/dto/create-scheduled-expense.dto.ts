@@ -14,6 +14,7 @@ import {
 import { ApiProperty } from '@nestjs/swagger';
 import { RecurringType } from '@prisma/client';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
+import { Transform } from 'class-transformer';
 
 export class CreateScheduledExpenseDto {
   @IsNotEmpty()
@@ -138,6 +139,38 @@ export class LaunchScheduledExpenseDto {
 }
 
 export class ScheduledExpenseFilterDto extends BaseFilterDTO {
+  @ApiProperty({
+    description: 'Mês de referência (1-12)',
+    required: false,
+    example: 1,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(12)
+  @Transform(({ value }) => {
+    if (!value) {
+      return new Date().getMonth() + 1;
+    }
+    return parseInt(value);
+  })
+  month: number;
+
+  @ApiProperty({
+    description: 'Ano de referência',
+    required: false,
+    example: 2024,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Transform(({ value }) => {
+    if (!value) {
+      return new Date().getFullYear();
+    }
+    return parseInt(value);
+  })
+  year: number;
+
   @IsOptional()
   @IsString()
   @ApiProperty({

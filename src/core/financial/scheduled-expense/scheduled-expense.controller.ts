@@ -167,7 +167,7 @@ export class ScheduledExpenseController {
   @ApiOperation({
     summary: 'Obtém despesas fixas agrupadas por fornecedor',
     description:
-      'Lista as despesas agendadas agrupadas por fornecedor, similar às folhas de pagamento',
+      'Lista as despesas agendadas agrupadas por fornecedor para um mês/ano específico, similar às folhas de pagamento. Se não informado, usa mês/ano atual.',
   })
   @ApiResponse({
     status: 200,
@@ -186,10 +186,30 @@ export class ScheduledExpenseController {
               name: { type: 'string', example: 'Fornecedor XYZ' },
               email: { type: 'string', example: 'fornecedor@email.com' },
               phone: { type: 'string', example: '(11) 99999-9999' },
+              month: {
+                type: 'number',
+                example: 1,
+                description: 'Mês de referência (1-12)',
+              },
+              year: {
+                type: 'number',
+                example: 2024,
+                description: 'Ano de referência',
+              },
               totalExpenses: { type: 'number', example: 3 },
               activeExpenses: { type: 'number', example: 2 },
               inactiveExpenses: { type: 'number', example: 1 },
               totalAmount: { type: 'number', example: 1500.0 },
+              totalLaunched: {
+                type: 'number',
+                example: 2,
+                description: 'Total de despesas lançadas no período',
+              },
+              totalNotLaunched: {
+                type: 'number',
+                example: 1,
+                description: 'Total de despesas não lançadas no período',
+              },
               items: {
                 type: 'array',
                 description: 'Lista de despesas agendadas do fornecedor',

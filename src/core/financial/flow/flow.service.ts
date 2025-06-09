@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { FinancialFlowFilterDTO } from './dto/filter.dto';
@@ -335,41 +336,50 @@ export class FlowService {
               status: inst.receivable.status,
               isSale: inst.receivable.quotationId ? true : false,
 
-              installments: (inst.receivable?.installments || [])
-                .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
-                .map((i) => ({
-                  id: i.id,
-                  status: i.status,
-                  paymentMethod: i.paymentMethod
-                    ? {
-                        id: i.paymentMethod.id,
-                        name: i.paymentMethod.name,
-                      }
-                    : null,
-                  bankAccount: i.bankAccount
-                    ? {
-                        id: i.bankAccount.id,
-                        name: i.bankAccount.name,
-                      }
-                    : null,
-                  bank: i.bankAccount
-                    ? {
-                        id: i.bankAccount?.bank?.id,
-                        name: i.bankAccount?.bank?.name,
-                      }
-                    : null,
-                  value: i.amount || 0,
-                  additionalFee: i.additionalFee || 0,
-                  dueDate: i.dueDate,
-                  paidValue: i.paidAmount || 0,
-                  paymentDate: i.provisionDate
-                    ? new Date(i.provisionDate)
-                    : i.paidDate
-                      ? new Date(i.paidDate)
-                      : null,
-                  compensateDate: i.paidDate ? new Date(i.paidDate) : null,
-                  current: inst.id === i.id,
-                })),
+              // Na listagem, retornamos apenas a parcela atual (correspondente à data da linha)
+              currentInstallment: (() => {
+                const currentInst = inst.receivable?.installments?.find(
+                  (i) => i.id === inst.id,
+                );
+                return currentInst
+                  ? {
+                      id: currentInst.id,
+                      installmentNumber: currentInst.installmentNumber || 1,
+                      status: currentInst.status,
+                      paymentMethod: currentInst.paymentMethod
+                        ? {
+                            id: currentInst.paymentMethod.id,
+                            name: currentInst.paymentMethod.name,
+                          }
+                        : null,
+                      bankAccount: currentInst.bankAccount
+                        ? {
+                            id: currentInst.bankAccount.id,
+                            name: currentInst.bankAccount.name,
+                          }
+                        : null,
+                      bank: currentInst.bankAccount
+                        ? {
+                            id: currentInst.bankAccount?.bank?.id,
+                            name: currentInst.bankAccount?.bank?.name,
+                          }
+                        : null,
+                      value: currentInst.amount || 0,
+                      additionalFee: currentInst.additionalFee || 0,
+                      dueDate: currentInst.dueDate,
+                      paidValue: currentInst.paidAmount || 0,
+                      paymentDate: currentInst.provisionDate
+                        ? new Date(currentInst.provisionDate)
+                        : currentInst.paidDate
+                          ? new Date(currentInst.paidDate)
+                          : null,
+                      compensateDate: currentInst.paidDate
+                        ? new Date(currentInst.paidDate)
+                        : null,
+                      current: true,
+                    }
+                  : null;
+              })(),
               ...(showValues === 'on' && {
                 expectedRevenue: relevantInstallments.reduce(
                   (sum, i) => sum + (i.amount || 0) + (i.additionalFee || 0),
@@ -426,41 +436,50 @@ export class FlowService {
               status: inst.payable.status,
               isSale: inst.payable.quotationId ? true : false,
 
-              installments: (inst.payable?.installments || [])
-                .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
-                .map((i) => ({
-                  id: i.id,
-                  status: i.status,
-                  paymentMethod: i.paymentMethod
-                    ? {
-                        id: i.paymentMethod.id,
-                        name: i.paymentMethod.name,
-                      }
-                    : null,
-                  bankAccount: i.bankAccount
-                    ? {
-                        id: i.bankAccount.id,
-                        name: i.bankAccount.name,
-                      }
-                    : null,
-                  bank: i.bankAccount
-                    ? {
-                        id: i.bankAccount?.bank?.id,
-                        name: i.bankAccount?.bank?.name,
-                      }
-                    : null,
-                  value: i.amount || 0,
-                  additionalFee: i.additionalFee || 0,
-                  dueDate: i.dueDate,
-                  paidValue: i.paidAmount || 0,
-                  paymentDate: i.provisionDate
-                    ? new Date(i.provisionDate)
-                    : i.paidDate
-                      ? new Date(i.paidDate)
-                      : null,
-                  compensateDate: i.paidDate ? new Date(i.paidDate) : null,
-                  current: inst.id === i.id,
-                })),
+              // Na listagem, retornamos apenas a parcela atual (correspondente à data da linha)
+              currentInstallment: (() => {
+                const currentInst = inst.payable?.installments?.find(
+                  (i) => i.id === inst.id,
+                );
+                return currentInst
+                  ? {
+                      id: currentInst.id,
+                      installmentNumber: currentInst.installmentNumber || 1,
+                      status: currentInst.status,
+                      paymentMethod: currentInst.paymentMethod
+                        ? {
+                            id: currentInst.paymentMethod.id,
+                            name: currentInst.paymentMethod.name,
+                          }
+                        : null,
+                      bankAccount: currentInst.bankAccount
+                        ? {
+                            id: currentInst.bankAccount.id,
+                            name: currentInst.bankAccount.name,
+                          }
+                        : null,
+                      bank: currentInst.bankAccount
+                        ? {
+                            id: currentInst.bankAccount?.bank?.id,
+                            name: currentInst.bankAccount?.bank?.name,
+                          }
+                        : null,
+                      value: currentInst.amount || 0,
+                      additionalFee: currentInst.additionalFee || 0,
+                      dueDate: currentInst.dueDate,
+                      paidValue: currentInst.paidAmount || 0,
+                      paymentDate: currentInst.provisionDate
+                        ? new Date(currentInst.provisionDate)
+                        : currentInst.paidDate
+                          ? new Date(currentInst.paidDate)
+                          : null,
+                      compensateDate: currentInst.paidDate
+                        ? new Date(currentInst.paidDate)
+                        : null,
+                      current: true,
+                    }
+                  : null;
+              })(),
               ...(showValues === 'on' && {
                 expectedExpense: relevantInstallments.reduce(
                   (sum, i) => sum + (i.amount || 0) + (i.additionalFee || 0),
@@ -581,5 +600,53 @@ export class FlowService {
     });
 
     return [receivablesGrouped, payablesGrouped];
+  }
+
+  async getReceivableDetails(id: string) {
+    const receivable = await this.prisma.receivable.findUnique({
+      where: { id },
+      include: {
+        client: true,
+        nature: true,
+        subCategory: true,
+        installments: {
+          include: {
+            paymentMethod: true,
+            bankAccount: { include: { bank: true } },
+          },
+          orderBy: { dueDate: 'asc' },
+        },
+      },
+    });
+
+    if (!receivable) {
+      throw new NotFoundException('Conta a receber não encontrada.');
+    }
+
+    return receivable;
+  }
+
+  async getPayableDetails(id: string) {
+    const payable = await this.prisma.payable.findUnique({
+      where: { id },
+      include: {
+        supplier: true,
+        nature: true,
+        subCategory: true,
+        installments: {
+          include: {
+            paymentMethod: true,
+            bankAccount: { include: { bank: true } },
+          },
+          orderBy: { dueDate: 'asc' },
+        },
+      },
+    });
+
+    if (!payable) {
+      throw new NotFoundException('Conta a pagar não encontrada.');
+    }
+
+    return payable;
   }
 }

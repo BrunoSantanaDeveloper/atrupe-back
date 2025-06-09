@@ -86,6 +86,24 @@ export class PayableController {
     return this.payableService.findOne(id);
   }
 
+  @Get(':id/details')
+  @ApiOperation({
+    summary: 'Obtém detalhes completos de uma conta a pagar com todas as parcelas',
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    description: 'ID da conta a pagar',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Detalhes da conta a pagar retornados com sucesso.',
+  })
+  @ApiResponse({ status: 404, description: 'Conta a pagar não encontrada.' })
+  async getDetails(@Param('id') id: string) {
+    return this.payableService.findOne(id);
+  }
+
   @Patch(':id')
   @ApiOperation({ summary: 'Atualizar dados do título' })
   @ApiParam({

@@ -153,6 +153,7 @@ export class ReceivableService {
             installments: {
               select: {
                 id: true,
+                installmentNumber: true,
                 status: true,
                 paymentMethod: { select: { id: true, name: true } },
                 amount: true,
@@ -186,6 +187,7 @@ export class ReceivableService {
         )
         .map((inst) => {
           return {
+            type: 'receivable',
             id: inst.receivable?.id || null,
             totalValue: inst.receivable?.totalValue || 0,
             totalAdditionalFee: inst.receivable?.mainAdditionalFee || 0,
@@ -219,22 +221,28 @@ export class ReceivableService {
             period: inst.receivable?.referenceDate || null,
             notes: inst.receivable?.notes || '',
             status: inst.receivable?.status || 'UNKNOWN',
-            installments: (inst.receivable?.installments || [])
-              .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime()) // Ordenando as parcelas pela data de vencimento
-              .map((installment) => ({
-                id: installment.id || null,
-                status: installment.status || 'UNKNOWN',
-                paymentMethod: {
-                  id: installment.paymentMethod?.id || null,
-                  name: installment.paymentMethod?.name || null,
-                },
-                value: installment.amount || 0,
-                additionalFee: installment.additionalFee || 0,
-                dueDate: installment.dueDate || null,
-                paidValue: installment.paidAmount || 0, // Ajuste baseado nos requisitos.
-                paymentDate: installment.paidDate || null,
-                current: installment.id === inst.id, // Definindo se a parcela é a atual
-              })),
+            // Na listagem, retornamos apenas a parcela atual (correspondente à data da linha)
+            currentInstallment: (() => {
+              const currentInst = inst.receivable?.installments?.find(
+                (i) => i.id === inst.id,
+              );
+              return currentInst
+                ? {
+                    id: currentInst.id,
+                    installmentNumber: currentInst.installmentNumber || 1,
+                    status: currentInst.status || 'UNKNOWN',
+                    paymentMethod: {
+                      id: currentInst.paymentMethod?.id || null,
+                      name: currentInst.paymentMethod?.name || null,
+                    },
+                    value: currentInst.amount || 0,
+                    additionalFee: currentInst.additionalFee || 0,
+                    dueDate: currentInst.dueDate || null,
+                    paidValue: currentInst.paidAmount || 0,
+                    paymentDate: currentInst.paidDate || null,
+                  }
+                : null;
+            })(),
           };
         });
 
@@ -254,7 +262,18 @@ export class ReceivableService {
   async findOne(id: string) {
     const receivable = await this.prisma.receivable.findUnique({
       where: { id },
-      include: { installments: true },
+      include: {
+        client: true,
+        nature: true,
+        subCategory: true,
+        installments: {
+          include: {
+            paymentMethod: true,
+            bankAccount: { include: { bank: true } },
+          },
+          orderBy: { installmentNumber: 'asc' },
+        },
+      },
     });
     if (!receivable)
       throw new NotFoundException('Conta a receber não encontrada.');
@@ -394,7 +413,29 @@ export class ReceivableService {
 
       await this.updateReceivableStatus(result.receivableId);
 
-      return { message: 'Parcela paga com sucesso.' };
+      // Buscar dados completos da parcela atualizada para retornar
+      const updatedInstallment = await this.prisma.receivableInstallment.findUnique({
+        where: { id: installmentId },
+        include: {
+          paymentMethod: true,
+          bankAccount: { include: { bank: true } },
+        },
+      });
+
+      return {
+        message: 'Parcela paga com sucesso.',
+        installment: {
+          id: updatedInstallment.id,
+          installmentNumber: updatedInstallment.installmentNumber,
+          status: updatedInstallment.status,
+          amount: updatedInstallment.amount,
+          paidAmount: updatedInstallment.paidAmount,
+          dueDate: updatedInstallment.dueDate,
+          paidDate: updatedInstallment.paidDate,
+          paymentMethod: updatedInstallment.paymentMethod,
+          bankAccount: updatedInstallment.bankAccount,
+        },
+      };
     } catch (error) {
       console.error(error);
       throw new BadRequestException(error.message);
@@ -547,7 +588,29 @@ export class ReceivableService {
 
       await this.updateReceivableStatus(installmentData.receivableId);
 
-      return { message: 'Pagamento da parcela desfeito com sucesso.' };
+      // Buscar dados completos da parcela atualizada para retornar
+      const updatedInstallment = await this.prisma.receivableInstallment.findUnique({
+        where: { id: installmentId },
+        include: {
+          paymentMethod: true,
+          bankAccount: { include: { bank: true } },
+        },
+      });
+
+      return {
+        message: 'Pagamento da parcela desfeito com sucesso.',
+        installment: {
+          id: updatedInstallment.id,
+          installmentNumber: updatedInstallment.installmentNumber,
+          status: updatedInstallment.status,
+          amount: updatedInstallment.amount,
+          paidAmount: updatedInstallment.paidAmount,
+          dueDate: updatedInstallment.dueDate,
+          paidDate: updatedInstallment.paidDate,
+          paymentMethod: updatedInstallment.paymentMethod,
+          bankAccount: updatedInstallment.bankAccount,
+        },
+      };
     } catch (error) {
       console.error(error);
       throw new BadRequestException(error.message);

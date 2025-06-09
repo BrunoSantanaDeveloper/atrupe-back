@@ -155,6 +155,7 @@ export class PayableService {
               installments: {
                 select: {
                   id: true,
+                  installmentNumber: true,
                   status: true,
                   paymentMethod: { select: { id: true, name: true } },
                   amount: true,
@@ -188,6 +189,7 @@ export class PayableService {
           )
           .map((inst) => {
             return {
+              type: 'payable',
               id: inst.payable?.id || null,
               totalValue: inst.payable?.totalAmount || 0,
               totalPaid: (inst.payable?.installments || []).reduce(
@@ -219,22 +221,28 @@ export class PayableService {
               period: inst.payable?.referenceDate || null,
               notes: inst.payable?.notes || '',
               status: inst.payable?.status || 'UNKNOWN',
-              installments: (inst.payable?.installments || [])
-                .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime()) // Ordenando as parcelas pela data de vencimento
-                .map((installment) => ({
-                  id: installment.id || null,
-                  status: installment.status || 'UNKNOWN',
-                  paymentMethod: {
-                    id: installment.paymentMethod?.id || null,
-                    name: installment.paymentMethod?.name || null,
-                  },
-                  value: installment.amount || 0,
-                  additionalFee: installment.additionalFee || 0,
-                  dueDate: installment.dueDate || null,
-                  paidValue: installment.paidAmount || 0, // Ajuste baseado nos requisitos.
-                  paymentDate: installment.paidDate || null,
-                  current: installment.id === inst.id, // Definindo se a parcela é a atual
-                })),
+              // Na listagem, retornamos apenas a parcela atual (correspondente à data da linha)
+              currentInstallment: (() => {
+                const currentInst = inst.payable?.installments?.find(
+                  (i) => i.id === inst.id,
+                );
+                return currentInst
+                  ? {
+                      id: currentInst.id,
+                      installmentNumber: currentInst.installmentNumber || 1,
+                      status: currentInst.status || 'UNKNOWN',
+                      paymentMethod: {
+                        id: currentInst.paymentMethod?.id || null,
+                        name: currentInst.paymentMethod?.name || null,
+                      },
+                      value: currentInst.amount || 0,
+                      additionalFee: currentInst.additionalFee || 0,
+                      dueDate: currentInst.dueDate || null,
+                      paidValue: currentInst.paidAmount || 0,
+                      paymentDate: currentInst.paidDate || null,
+                    }
+                  : null;
+              })(),
             };
           });
 
@@ -257,7 +265,18 @@ export class PayableService {
   async findOne(id: string) {
     const payable = await this.prisma.payable.findUnique({
       where: { id },
-      include: { installments: true },
+      include: {
+        supplier: true,
+        nature: true,
+        subCategory: true,
+        installments: {
+          include: {
+            paymentMethod: true,
+            bankAccount: { include: { bank: true } },
+          },
+          orderBy: { installmentNumber: 'asc' },
+        },
+      },
     });
     if (!payable) throw new NotFoundException('Conta a pagar não encontrada.');
     return payable;
@@ -374,7 +393,29 @@ export class PayableService {
       });
       await this.updatePayableStatus(result.payableId);
 
-      return { message: 'Parcela paga com sucesso.' };
+      // Buscar dados completos da parcela atualizada para retornar
+      const updatedInstallment = await this.prisma.payableInstallment.findUnique({
+        where: { id: installmentId },
+        include: {
+          paymentMethod: true,
+          bankAccount: { include: { bank: true } },
+        },
+      });
+
+      return {
+        message: 'Parcela paga com sucesso.',
+        installment: {
+          id: updatedInstallment.id,
+          installmentNumber: updatedInstallment.installmentNumber,
+          status: updatedInstallment.status,
+          amount: updatedInstallment.amount,
+          paidAmount: updatedInstallment.paidAmount,
+          dueDate: updatedInstallment.dueDate,
+          paidDate: updatedInstallment.paidDate,
+          paymentMethod: updatedInstallment.paymentMethod,
+          bankAccount: updatedInstallment.bankAccount,
+        },
+      };
     } catch (error) {
       console.error(error);
     }
@@ -519,7 +560,29 @@ export class PayableService {
 
       await this.updatePayableStatus(installmentData.payableId);
 
-      return { message: 'Pagamento da parcela desfeito com sucesso.' };
+      // Buscar dados completos da parcela atualizada para retornar
+      const updatedInstallment = await this.prisma.payableInstallment.findUnique({
+        where: { id: installmentId },
+        include: {
+          paymentMethod: true,
+          bankAccount: { include: { bank: true } },
+        },
+      });
+
+      return {
+        message: 'Pagamento da parcela desfeito com sucesso.',
+        installment: {
+          id: updatedInstallment.id,
+          installmentNumber: updatedInstallment.installmentNumber,
+          status: updatedInstallment.status,
+          amount: updatedInstallment.amount,
+          paidAmount: updatedInstallment.paidAmount,
+          dueDate: updatedInstallment.dueDate,
+          paidDate: updatedInstallment.paidDate,
+          paymentMethod: updatedInstallment.paymentMethod,
+          bankAccount: updatedInstallment.bankAccount,
+        },
+      };
     } catch (error) {
       console.error(error);
       throw new BadRequestException(error.message);

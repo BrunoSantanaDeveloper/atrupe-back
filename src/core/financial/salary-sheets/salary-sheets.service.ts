@@ -383,7 +383,7 @@ export class SalarySheetsService {
           employee: {
             id: employee.id,
             name: employee.name,
-            role: employee.role.name,
+            role: employee.role?.name || 'Cargo não informado',
           },
           totalSalary,
           balance,
@@ -440,6 +440,84 @@ export class SalarySheetsService {
         throw new NotFoundException('Folha de pagamento não encontrada');
       }
 
+      // Buscar funcionário para obter o nome
+      const employee = await this.prisma.employee.findUnique({
+        where: { id: salarySheet.employeeId },
+        include: {
+          user: true,
+        },
+      });
+
+      const employeeName = employee?.user?.name || employee?.name || 'Funcionário';
+
+      // Primeiro, buscar payables específicos desta folha
+      let relatedPayables = await this.prisma.payable.findMany({
+        where: {
+          companyId: salarySheet.companyId,
+          AND: [
+            {
+              description: {
+                contains: `Adiantamento salarial - ${employeeName}`,
+              },
+            },
+            {
+              notes: {
+                contains: `folha de pagamento ${salarySheet.month + 1}/${salarySheet.year}`,
+              },
+            },
+          ],
+        },
+        include: {
+          installments: {
+            orderBy: {
+              installmentNumber: 'asc',
+            },
+          },
+        },
+      });
+
+      // Se não encontrou payables específicos, buscar todos os adiantamentos do funcionário
+      if (relatedPayables.length === 0) {
+        relatedPayables = await this.prisma.payable.findMany({
+          where: {
+            companyId: salarySheet.companyId,
+            description: {
+              contains: `Adiantamento salarial - ${employeeName}`,
+            },
+          },
+          include: {
+            installments: {
+              orderBy: {
+                installmentNumber: 'asc',
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+        });
+      }
+
+      // Log para debug - informações importantes
+      console.log('=== DEBUG SALARY SHEET PAYABLES ===');
+      console.log(`Funcionário: ${employeeName}`);
+      console.log(`Folha: ${salarySheet.month + 1}/${salarySheet.year}`);
+      console.log(`Company ID: ${salarySheet.companyId}`);
+      console.log(`Payables encontrados: ${relatedPayables.length}`);
+
+      if (relatedPayables.length > 0) {
+        relatedPayables.forEach((payable, index) => {
+          console.log(
+            `Payable ${index + 1}: ID=${payable.id}, Valor=${payable.totalAmount}, Descrição=${payable.description}`,
+          );
+        });
+      } else {
+        console.log(
+          'Nenhum payable encontrado - verificar se foram criados anteriormente',
+        );
+      }
+      console.log('=== END DEBUG ===');
+
       // Calcula o saldo a pagar
       const totalSalary = salarySheet.items
         .filter((item) => item.type === ItemType.INCREASE)
@@ -451,6 +529,61 @@ export class SalarySheetsService {
 
       const balance = totalSalary - advances;
 
+      // Mapear itens da folha e incluir payables para ADVANCE
+      const itemsWithPayables = salarySheet.items.map((item) => {
+        const baseItem = {
+          id: item.id,
+          type: item.type,
+          amount: item.amount,
+          description: item.description,
+          paidAt: item.paidAt,
+          createdAt: item.createdAt,
+        };
+
+        // Se for ADVANCE, buscar o payable relacionado
+        if (item.type === ItemType.ADVANCE) {
+          // Log para debug
+          this.logger.log(
+            `Processando item ADVANCE: ${item.description}, valor: ${item.amount}`,
+          );
+
+          // Buscar payable que contenha a descrição do item ou que tenha o mesmo valor
+          const relatedPayable = relatedPayables.find(
+            (payable) =>
+              payable.description.includes(item.description) ||
+              payable.totalAmount === item.amount,
+          );
+
+          if (relatedPayable) {
+            this.logger.log(
+              `Payable encontrado para item ${item.id}: ${relatedPayable.id}`,
+            );
+            return {
+              ...baseItem,
+              payable: {
+                id: relatedPayable.id,
+                description: relatedPayable.description,
+                totalAmount: relatedPayable.totalAmount,
+                status: relatedPayable.status,
+                referenceDate: relatedPayable.referenceDate,
+                installments: relatedPayable.installments.map((installment) => ({
+                  id: installment.id,
+                  installmentNumber: installment.installmentNumber,
+                  dueDate: installment.dueDate,
+                  amount: installment.amount,
+                  status: installment.status,
+                  paidDate: installment.paidDate,
+                })),
+              },
+            };
+          } else {
+            this.logger.warn(`Nenhum payable encontrado para item ADVANCE ${item.id}`);
+          }
+        }
+
+        return baseItem;
+      });
+
       return {
         id: salarySheet.id,
         month: salarySheet.month + 1, // Ajusta para formato 1-12
@@ -458,18 +591,14 @@ export class SalarySheetsService {
         status: salarySheet.status,
         employee: {
           id: salarySheet.employee.id,
-          name: salarySheet.employee.user.name,
-          role: salarySheet.employee.role.name,
+          name:
+            salarySheet.employee.user?.name ||
+            salarySheet.employee.name ||
+            'Nome não informado',
+          role: salarySheet.employee.role?.name || 'Cargo não informado',
         },
         balance,
-        items: salarySheet.items.map((item) => ({
-          id: item.id,
-          type: item.type,
-          amount: item.amount,
-          description: item.description,
-          paidAt: item.paidAt,
-          createdAt: item.createdAt,
-        })),
+        items: itemsWithPayables,
         movements: salarySheet.movements.map((movement) => ({
           id: movement.id,
           amount: movement.amount,
@@ -497,13 +626,14 @@ export class SalarySheetsService {
       const salarySheet = await this.prisma.salarySheet.findUnique({
         where: { id: salarySheetId },
       });
-      const reference = `${salarySheet.month + 1}/${salarySheet.year}`;
 
       if (!salarySheet || salarySheet.status !== 'OPEN') {
         throw new NotFoundException(
           'Folha de pagamento não encontrada ou não está aberta.',
         );
       }
+
+      const reference = `${salarySheet.month + 1}/${salarySheet.year}`;
       const salaryItem = await this.prisma.salaryItem.create({
         data: {
           salarySheetId,
@@ -514,15 +644,11 @@ export class SalarySheetsService {
         },
       });
       if (type === 'ADVANCE') {
-        const movementDto: AddPaymentMovementDto = {
-          salarySheetId,
-          amount,
-          paidDate: null, // Data atual
-          paymentMethodId: null, // Deixar nulo até ser definido pelo gestor
-          paymentStatus: 'PENDING', // Status inicial
-        };
-
-        await this.addPaymentMovement(movementDto);
+        // Para adiantamentos, criamos automaticamente uma conta a pagar (despesa)
+        await this.createAdvanceExpense(salarySheet, amount, description);
+        this.logger.log(
+          `Adiantamento criado para folha ${salarySheetId}, valor: ${amount} - Despesa gerada automaticamente`,
+        );
       }
 
       return salaryItem;
@@ -703,5 +829,63 @@ export class SalarySheetsService {
     }
 
     return updatedEmployee;
+  }
+
+  private async createAdvanceExpense(
+    salarySheet: any,
+    amount: number,
+    description: string,
+  ) {
+    try {
+      // Buscar dados do funcionário
+      const employee = await this.prisma.employee.findUnique({
+        where: { id: salarySheet.employeeId },
+        include: {
+          user: true,
+        },
+      });
+
+      const employeeName = employee?.user?.name || employee?.name || 'Funcionário';
+      const currentDate = new Date();
+
+      // Criar conta a pagar (despesa) para o adiantamento
+      const payable = await this.prisma.payable.create({
+        data: {
+          referenceDate: currentDate,
+          description: `Adiantamento salarial - ${employeeName}: ${description}`,
+          notes: `Adiantamento gerado automaticamente para folha de pagamento ${salarySheet.month + 1}/${salarySheet.year}`,
+          totalAmount: amount,
+          totalValue: amount,
+          mainAdditionalFee: 0,
+          installmentQty: 1,
+                    status: 'PENDING',
+          companyId: salarySheet.companyId,
+        },
+      });
+
+      // Criar a parcela única com vencimento imediato
+      await this.prisma.payableInstallment.create({
+        data: {
+          payableId: payable.id,
+          installmentNumber: 1,
+          dueDate: currentDate, // Vencimento imediato
+          amount: amount,
+          additionalFee: 0,
+          status: 'PENDING',
+        },
+      });
+
+      this.logger.log(
+        `Despesa criada automaticamente para adiantamento: ${payable.id}`,
+      );
+
+      return payable;
+    } catch (error) {
+      this.logger.error(
+        `Erro ao criar despesa para adiantamento: ${error.message}`,
+      );
+      // Não propaga o erro para não bloquear a criação do adiantamento
+      // A despesa pode ser criada manualmente se necessário
+    }
   }
 }

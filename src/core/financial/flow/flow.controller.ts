@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards, Query, Req } from '@nestjs/common';
+import { Controller, Get, UseGuards, Query, Req, Param } from '@nestjs/common';
 import { FlowService } from './flow.service';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { FinancialFlowFilterDTO } from './dto/filter.dto';
@@ -7,6 +7,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiParam,
 } from '@nestjs/swagger';
 
 const RESOURCE = 'flow';
@@ -41,5 +42,45 @@ export class FlowController {
   findAllTotals(@Req() req, @Query() filter: FinancialFlowFilterDTO) {
     filter.companyId = req.user.companyId;
     return this.flowService.findAllTotals(filter);
+  }
+
+  @Get('receivable/:id/details')
+  @ApiOperation({
+    summary:
+      'Obtém detalhes completos de uma conta a receber com todas as parcelas',
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    description: 'ID da conta a receber',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Detalhes da conta a receber retornados com sucesso.',
+  })
+  @ApiResponse({ status: 404, description: 'Conta a receber não encontrada.' })
+  async getReceivableDetails(@Param('id') id: string) {
+    // Usar o ReceivableService para buscar detalhes completos
+    return this.flowService.getReceivableDetails(id);
+  }
+
+  @Get('payable/:id/details')
+  @ApiOperation({
+    summary:
+      'Obtém detalhes completos de uma conta a pagar com todas as parcelas',
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    description: 'ID da conta a pagar',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Detalhes da conta a pagar retornados com sucesso.',
+  })
+  @ApiResponse({ status: 404, description: 'Conta a pagar não encontrada.' })
+  async getPayableDetails(@Param('id') id: string) {
+    // Usar o PayableService para buscar detalhes completos
+    return this.flowService.getPayableDetails(id);
   }
 }

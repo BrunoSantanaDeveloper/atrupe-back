@@ -1464,6 +1464,7 @@ enum CashRegisterStatus {
 
 enum RecurringType {
   WEEKLY
+  BIWEEKLY
   MONTHLY
   BIMONTHLY
   QUARTERLY
