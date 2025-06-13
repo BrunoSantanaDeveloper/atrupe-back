@@ -1,5 +1,5 @@
+import { PartialType } from '@nestjs/swagger';
 import { ApiProperty } from '@nestjsx/crud/lib/crud';
-import { PlanType } from '@prisma/client';
 import {
   IsEnum,
   IsString,
@@ -10,14 +10,6 @@ import {
 } from 'class-validator';
 
 export class CreatePlanDTO {
-  @IsEnum(PlanType)
-  @ApiProperty({
-    description: 'Tipo de plano',
-    example: PlanType.START,
-    required: true,
-  })
-  type: PlanType;
-
   @IsString()
   @ApiProperty({
     description: 'Nome do plano',
@@ -29,39 +21,39 @@ export class CreatePlanDTO {
   @IsString()
   @ApiProperty({
     description: 'Descrição do plano',
-    example: 'Plano Start',
-    required: false,
+    example: 'Plano inicial com recursos básicos',
+    required: true,
   })
-  description?: string;
+  description: string;
 
   @IsNumber()
   @ApiProperty({
-    description: 'Preço do plano',
-    example: 135,
+    description: 'Preço base do plano',
+    example: 115.0,
     required: true,
   })
-  price: number;
+  basePrice: number;
 
-  @IsBoolean()
+  @IsNumber()
   @ApiProperty({
-    description: 'Indica se o plano está ativo',
-    example: true,
+    description: 'Preço adicional por acesso',
+    example: 15.0,
     required: true,
   })
-  isActive: boolean;
+  additionalAccessPrice: number;
 
-  @IsString()
-  @IsUUID()
+  @IsString({ each: true })
   @ApiProperty({
-    description: 'ID da empresa',
-    example: '123e4567-e89b-12d3-a456-426614174000',
+    description: 'Lista de módulos incluídos no plano',
+    example: ['reports', 'analytics'],
     required: true,
   })
-  companyId: string;
+  modules: string[];
 }
 
-export class ListPlanDTO {
-  @IsString()
+export class UpdatePlanDTO extends PartialType(CreatePlanDTO) {}
+
+export class ListPlanDTO extends CreatePlanDTO {
   @IsUUID()
   @ApiProperty({
     description: 'ID do plano',
@@ -69,46 +61,6 @@ export class ListPlanDTO {
     required: true,
   })
   id: string;
-
-  @IsString()
-  @ApiProperty({
-    description: 'Nome do plano',
-    example: 'Plano Start',
-    required: true,
-  })
-  name: string;
-
-  @IsString()
-  @ApiProperty({
-    description: 'Descrição do plano',
-    example: 'Plano Start',
-    required: false,
-  })
-  description?: string;
-
-  @IsNumber()
-  @ApiProperty({
-    description: 'Preço do plano',
-    example: 135,
-    required: true,
-  })
-  price: number;
-
-  @IsBoolean()
-  @ApiProperty({
-    description: 'Indica se o plano está ativo',
-    example: true,
-    required: true,
-  })
-  isActive: boolean;
-
-  @IsEnum(PlanType)
-  @ApiProperty({
-    description: 'Tipo de plano',
-    example: PlanType.START,
-    required: true,
-  })
-  type: PlanType;
 }
 
 enum BillingType {
@@ -125,7 +77,6 @@ enum Cycle {
 
 export class SubscriptionDTO {
   planId: string;
-
   companyId: string;
 
   @IsNumber()

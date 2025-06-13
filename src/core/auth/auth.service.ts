@@ -30,6 +30,8 @@ export class AuthService {
         role: user.employee[0]?.role?.id,
         isAdmin: user.employee[0]?.role?.isAdmin,
         employeeId: user.employee[0]?.id,
+        subscription:
+          user.customer?.[0]?.subscriptions?.[0]?.plan?.planType ?? 'TRIAL',
       };
 
       return {
@@ -48,6 +50,10 @@ export class AuthService {
               legalName: user.employee[0].company.legalName,
               logo: user.employee[0].company.logoUrl,
               favicon: user.employee[0].company.favIconUrl,
+              subscription:
+                user.customer?.[0]?.subscriptions?.[0]?.plan?.planType ??
+                'TRIAL',
+              trialEndsAt: user.employee[0].company.trialEndsAt ?? null,
             }
           : null,
         access_token: this.jwtService.sign(payload),

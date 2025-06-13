@@ -215,7 +215,7 @@ export class CompanyService {
             textBeforeItems: 'Segue abaixo conforme sua solicitação:',
             textAfterItems:
               '1) Crédito e condição de pagamento sujeito à aprovação;\n2) Impressos c/ alta exigência colorimétrica exige-se prova de cor;\n3) Não nos responsabilizamos por características e especificações dos projetos gráficos fornecidos pelo cliente;\n4) Prazo de entrega são previsões que poderão se alterar e modificar de acordo com o andamento do processo produtivo;\n5) Não aceitamos cancelamentos de pedidos após iniciado o processo de produção;',
-
+            trialEndsAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
             // Create related address
             address: address
               ? {

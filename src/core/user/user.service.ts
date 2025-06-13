@@ -2,12 +2,17 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
-import { CreateMailVerificationDto, CreateUserDto } from './dto/create.dto';
+import {
+  CreateMailVerificationDto,
+  CreateUserByEmployeeDto,
+  CreateUserDto,
+} from './dto/create.dto';
 import * as argon2 from 'argon2';
 import { UserResponseDto } from './dto/response.dto';
 import { CacheService } from 'src/svc/cache/cache.service';
@@ -182,6 +187,104 @@ export class UserService {
     }
   }
 
+  async createUserForEmployee(
+    createUserDto: CreateUserByEmployeeDto,
+  ): Promise<any> {
+    // const company = await this.prisma.company.findFirst({
+    //   where: {
+    //     id: createUserDto.company,
+    //   },
+    //   select: {
+    //     id: true,
+    //     customer: {
+    //       select: {
+    //         subscriptions: {
+    //           orderBy: { createdAt: 'desc' },
+    //           take: 1,
+    //           select: {
+    //             plan: {
+    //               select: {
+    //                 planType: true,
+    //               },
+    //             },
+    //           },
+    //         },
+    //       },
+    //     },
+    //   },
+    // });
+
+    // if (!company) {
+    //   throw new NotFoundException('Company not found');
+    // }
+
+    // const planType =
+    //   company.customer[0]?.subscriptions[0]?.plan?.planType ?? 'TRIAL';
+
+    // // Contar quantos employees já têm um usuário cadastrado
+    // const employeesWithUser = await this.prisma.employee.findMany({
+    //   where: {
+    //     companyId: createUserDto.company,
+    //     user: {
+    //       // só conta os que têm relação com user
+    //       isNot: null,
+    //     },
+    //   },
+    //   select: { id: true },
+    // });
+
+    // const currentUserCount = employeesWithUser.length;
+
+    // const planLimits: Record<string, number> = {
+    //   TRIAL: 3,
+    //   START: 3,
+    //   LITE: 5,
+    // };
+
+    // const allowedUsers = planLimits[planType] ?? Infinity;
+
+    // if (currentUserCount >= allowedUsers) {
+    //   throw new ConflictException(
+    //     `O plano ${planType} permite no máximo ${allowedUsers} usuários com acesso.`,
+    //   );
+    // }
+
+    try {
+      const hashedPassword = await argon2.hash(createUserDto.password);
+      const data: Prisma.UserCreateInput = {
+        name: createUserDto.name,
+        email: createUserDto.email,
+        password: hashedPassword,
+      };
+
+      if (createUserDto.employeeId) {
+        const employee = await this.prisma.employee.findFirst({
+          where: { id: createUserDto.employeeId },
+        });
+
+        if (!employee) {
+          throw new NotFoundException('Employee not found');
+        }
+
+        data.employee = {
+          connect: { id: employee.id },
+        };
+      }
+
+      return await this.prisma.user.create({
+        data: data,
+      });
+    } catch (error) {
+      console.error(error);
+      if (error instanceof PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException('Email already exists');
+        }
+      }
+      throw error;
+    }
+  }
+
   findAll() {
     return this.prisma.user.findMany({
       select: {
@@ -265,6 +368,18 @@ export class UserService {
     return this.prisma.user.findFirst({
       where: { email: email, isActive: true },
       include: {
+        customer: {
+          include: {
+            subscriptions: {
+              where: {
+                status: 'ACTIVE',
+              },
+              include: {
+                plan: { select: { planType: true } },
+              },
+            },
+          },
+        },
         employee: {
           select: {
             id: true,

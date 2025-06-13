@@ -12,3 +12,8 @@ export default () => ({
     },
   },
 });
+
+export const asaasConfig = {
+  token: `$${process.env.ASAAS_API_KEY_SANDBOX}`,
+  apiUrl: process.env.ASAAS_API_URL_SANDBOX,
+};

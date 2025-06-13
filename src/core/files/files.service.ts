@@ -4,9 +4,9 @@ import { MinioService } from 'src/svc/file-upload/minio.service';
 @Injectable()
 export class FilesService {
   constructor(private readonly minioService: MinioService) {}
-  async uploadFiles(image: Express.Multer.File) {
+  async uploadFiles(file: Express.Multer.File) {
     try {
-      const fileUrl = await this.minioService.uploadFile(image);
+      const fileUrl = await this.minioService.uploadFile(file);
       return fileUrl;
     } catch (error) {
       return {
@@ -19,9 +19,9 @@ export class FilesService {
     }
   }
 
-  async uploadFilesS3(image: Express.MulterS3.File) {
+  async uploadFilesS3(file: Express.MulterS3.File) {
     try {
-      return image.location;
+      return file.location;
     } catch (error) {
       console.error(error);
       return {

@@ -10,7 +10,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { UserService } from './user.service';
-import { CreateMailVerificationDto, CreateUserDto } from './dto/create.dto';
+import {
+  CreateMailVerificationDto,
+  CreateUserByEmployeeDto,
+  CreateUserDto,
+} from './dto/create.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { UserResponseDto } from './dto/response.dto';
 import {
@@ -65,6 +69,20 @@ export class UserController {
   })
   async create(@Req() req, @Body() body: CreateMailVerificationDto) {
     return await this.userService.create(body);
+  }
+
+  @Post('employee')
+  @ApiOperation({ summary: 'Cria um novo usário a partir de um funcionário' })
+  @ApiResponse({
+    status: 201,
+    description: 'Funcionário criado com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Dados inválidos.',
+  })
+  async createEmployee(@Req() req, @Body() body: CreateUserByEmployeeDto) {
+    return await this.userService.createUserForEmployee(body);
   }
 
   @UseGuards(JwtAuthGuard)

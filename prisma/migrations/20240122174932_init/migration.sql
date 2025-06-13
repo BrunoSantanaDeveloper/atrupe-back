@@ -1,8 +1,0 @@
--- AlterTable
-ALTER TABLE "addresses" ADD COLUMN     "complement" TEXT,
-ADD COLUMN     "zipCode" TEXT,
-ALTER COLUMN "street" DROP NOT NULL,
-ALTER COLUMN "number" DROP NOT NULL,
-ALTER COLUMN "city" DROP NOT NULL,
-ALTER COLUMN "state" DROP NOT NULL,
-ALTER COLUMN "country" DROP NOT NULL;

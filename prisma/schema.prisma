@@ -27,6 +27,7 @@ model Company {
   textAfterItems        String?
   textBeforeItems       String?
   principalCompanyId    String?
+  trialEndsAt           DateTime?
   deliveryType          DeliveryType[]
   address               Address[]
   assetTypes            AssetType[]
@@ -38,6 +39,7 @@ model Company {
   parentCompany         Company?               @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
   subsidiaries          Company[]              @relation("CompanyHierarchy")
   creditLimitDefault    CreditLimitDefault[]
+  customer              Customer[]
   deliverySchedule      DeliverySchedule[]
   employees             Employee[]
   financialFlows        FinancialFlow[]
@@ -66,6 +68,7 @@ model Company {
   Subscription          Subscription[]
   suppliers             Supplier[]
   companyUnitOfMeasure  CompanyUnitOfMeasure[]
+  AcademyProgress       AcademyProgress[]
 
   @@map("companies")
 }
@@ -252,7 +255,6 @@ model Client {
   address           Address[]
   paymentConditions ClientPaymentCondition[]
   company           Company                  @relation(fields: [companyId], references: [id])
-  Plan              Plan?                    @relation(fields: [planId], references: [id])
   responsible       Employee?                @relation(fields: [responsibleId], references: [id])
   supplier          Supplier?                @relation(fields: [supplierId], references: [id])
   contacts          Contact[]
@@ -350,8 +352,10 @@ model User {
   isVerified           Boolean        @default(false)
   attributes           Attribute[]
   employee             Employee[]
-  UserContract         UserContract[]
+  userContract         UserContract[]
   userRole             UserRole[]
+  customerId           String?
+  customer             Customer?      @relation(fields: [customerId], references: [id])
 
   @@index([email])
   @@map("users")
@@ -1300,48 +1304,86 @@ model SupplierPaymentCondition {
 }
 
 model Plan {
-  id           String         @id @default(uuid())
-  type         PlanType
-  description  String?
-  price        Float
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime?      @updatedAt
-  isActive     Boolean        @default(true)
-  companyId    String
-  name         String
-  clients      Client[]
-  company      Company        @relation(fields: [companyId], references: [id])
-  Subscription Subscription[]
+  id                    String         @id @default(uuid())
+  description           String
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime?      @default(now()) @updatedAt
+  name                  String         @unique
+  additionalAccessPrice Float
+  planType              PlanType       @default(START)
+  basePrice             Float
+  modules               String[]
+  companyId             String?
+  Company               Company?       @relation(fields: [companyId], references: [id])
+  subscriptions         Subscription[]
 
   @@map("plans")
 }
 
+model Module {
+  id          String    @id @default(uuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime? @default(now()) @updatedAt
+  name        String    @unique
+  description String?
+  price       Float
+
+  @@map("modules")
+}
+
+model WebhookEvent {
+  id           String   @id @default(uuid())
+  createdAt    DateTime @default(now())
+  asaasEventId String   @unique
+  eventType    String
+  payload      Json
+  processed    Boolean  @default(false)
+
+  @@map("webhook_events")
+}
+
+model Customer {
+  id              String         @id @default(uuid())
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime?      @updatedAt
+  name            String
+  email           String         @unique
+  document        String         @unique
+  phone           String?
+  asaasCustomerId String         @unique
+  address         String?
+  addressNumber   String?
+  complement      String?
+  province        String?
+  postalCode      String?
+  city            String?
+  state           String?
+  companyId       String?        @map("company_id")
+  company         Company?       @relation(fields: [companyId], references: [id])
+  subscriptions   Subscription[]
+  user            User[]
+
+  @@map("customers")
+}
+
 model Subscription {
-  id                 String             @id @default(uuid())
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime?          @updatedAt
-  isActive           Boolean            @default(true)
-  planId             String
-  companyId          String
-  status             SubscriptionStatus @default(PENDING)
-  isContractAccepted Boolean            @default(false)
-  billingType        BillingType        @default(CREDIT_CARD)
-  planPrice          Float
-  cycle              Cycle              @default(MONTHLY)
-  address            String?
-  addressNumber      String?
-  complement         String?
-  cpfCnpj            String?
-  email              String?
-  mobilePhone        String?
-  name               String?
-  phone              String?
-  postalCode         String?
-  province           String?
-  city               String?
-  neighborhood       String?
-  company            Company            @relation(fields: [companyId], references: [id])
-  plan               Plan               @relation(fields: [planId], references: [id])
+  id                  String      @id @default(uuid())
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime?   @updatedAt
+  companyId           String?
+  additionalAccesses  Int         @default(0)
+  asaasSubscriptionId String      @unique
+  customerId          String      @map("customer_id")
+  modules             String[]
+  nextDueDate         DateTime
+  planId              String      @map("plan_id")
+  billingType         BillingType @default(CREDIT_CARD)
+  cycle               Cycle       @default(MONTHLY)
+  value               Float
+  status              String
+  Company             Company?    @relation(fields: [companyId], references: [id])
+  customer            Customer    @relation(fields: [customerId], references: [id])
+  plan                Plan        @relation(fields: [planId], references: [id])
 
   @@map("subscriptions")
 }
@@ -1369,6 +1411,34 @@ model UserContract {
 
   @@unique([userId, contractId])
   @@map("user_contracts")
+}
+
+model AcademySystem {
+  id              String            @id @default(uuid())
+  type            String[]          @default(["START", "LITE", "PRO", "ELITE", "FULL"])
+  section         String            @default("Apresentação")
+  description     String?
+  order           Int               @default(0)
+  files           String[]
+  videoUrl        String            @default("https://vimeo.com/43652787")
+  page            String?           @default("/")
+  modal           String?           @default("CompanyInfo")
+  buttonTitle     String?           @default("Cadastrar dados")
+  AcademyProgress AcademyProgress[]
+
+  @@map("academy")
+}
+
+model AcademyProgress {
+  id              String        @id @default(uuid())
+  companyId       String
+  company         Company       @relation(fields: [companyId], references: [id])
+  academySystemId String
+  academySystem   AcademySystem @relation(fields: [academySystemId], references: [id])
+  checked         Boolean       @default(false)
+  completedAt     DateTime?
+
+  @@map("academy_progress")
 }
 
 enum OwnerType {
@@ -1464,13 +1534,13 @@ enum CashRegisterStatus {
 
 enum RecurringType {
   WEEKLY
-  BIWEEKLY
   MONTHLY
   BIMONTHLY
   QUARTERLY
   SEMIANNUALLY
   YEARLY
   ONCE
+  BIWEEKLY
 }
 
 enum BankAccountCashControlType {
@@ -1586,15 +1656,23 @@ enum BillingType {
   CREDIT_CARD
   BOLETO
   PIX
+  DEBIT_CARD
+  TRANSFER
+  DEPOSIT
 }
 
 enum Cycle {
   MONTHLY
   YEARLY
+  WEEKLY
+  BIWEEKLY
+  BIMONTHLY
+  QUARTERLY
+  SEMIANNUALLY
 }
 
 enum SubscriptionStatus {
-  SUCCESS
-  PENDING
-  FAILED
+  ACTIVE
+  EXPIRED
+  INACTIVE
 }
