@@ -1631,6 +1631,7 @@ enum DeliveryScheduleStatus {
   DELIVERING
   DONE
   FINISHED
+  CANCELED
 }
 
 enum ProductionStageStatus {

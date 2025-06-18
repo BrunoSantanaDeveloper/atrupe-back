@@ -13,8 +13,6 @@ export class CreateOrderDto {
 }
 
 export class CancelOrderDto {
-  @IsNotEmpty()
-  @IsUUID()
   @ApiProperty({
     description: 'ID do motivo de cancelamento',
     example: '123e4567-e89b-12d3-a456-426614174000',

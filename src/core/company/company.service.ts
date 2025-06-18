@@ -8,6 +8,7 @@ import { PrismaService } from 'src/config/prisma/prisma.service';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ClientService } from '../client/client.service';
 import { SupplierService } from '../supplier/supplier.service';
+import { BASE_ROLES } from 'src/seeds/roles-base';
 @Injectable()
 export class CompanyService {
   constructor(
@@ -660,6 +661,8 @@ export class CompanyService {
 
     // Criar orçamento exemplo após todos os dados básicos estarem criados
     await this.createExampleQuotation(companyId);
+    await this.applyBaseRolesToCompany(companyId);
+    await this.applyBaseCashboxToCompany(companyId);
   }
 
   private async createExampleQuotation(companyId: string) {
@@ -995,5 +998,80 @@ export class CompanyService {
         isActive: false,
       },
     });
+  }
+
+  private async applyBaseRolesToCompany(companyId: string) {
+    for (const roleData of BASE_ROLES) {
+      const sector = await this.prisma.companySector.findFirst({
+        where: {
+          companyId,
+          name: roleData.sectorName,
+        },
+        select: { id: true },
+      });
+
+      if (!sector) {
+        console.warn(
+          `Setor '${roleData.sectorName}' não encontrado na empresa ${companyId}. Ignorando role ${roleData.name}`,
+        );
+        continue;
+      }
+
+      await this.prisma.role.create({
+        data: {
+          name: roleData.name,
+          isAdmin: roleData.isAdmin,
+          permissions: roleData.permissions,
+          companyId,
+          sectorId: sector.id,
+        },
+      });
+    }
+  }
+
+  async applyBaseCashboxToCompany(companyId: string) {
+    const bank = await this.prisma.bank.findFirst({
+      where: { code: '000' },
+    });
+    if (!bank) throw new Error("Banco com código '000' não encontrado");
+
+    const bankAccount = await this.prisma.bankAccount.create({
+      data: {
+        name: 'Caixa Empresa',
+        description: 'Caixa Empresa',
+        cashControl: true,
+        bankId: bank.id,
+        companyId,
+      },
+    });
+
+    await this.prisma.cashRegister.create({
+      data: {
+        openingDate: new Date(),
+        openingBalance: 0,
+        companyId,
+        bankAccountId: bankAccount.id,
+        status: 'OPEN',
+      },
+    });
+
+    const paymentMethods = await this.prisma.paymentMethod.findMany({
+      where: { companyId },
+    });
+
+    for (const method of paymentMethods) {
+      await this.prisma.bankAccountCashControl.create({
+        data: {
+          bankAccountId: bankAccount.id,
+          cashRegisterId: null,
+          paymentMethodId: method.id,
+          acceptPayments: true,
+          acceptIncomes: true,
+          acceptMultipleCashRegisters: false,
+          paymentType: 'PAYSOFF',
+          incomeType: 'PAYSOFF',
+        },
+      });
+    }
   }
 }

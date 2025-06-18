@@ -35,9 +35,9 @@ export class ClientService {
             activity: createClientDto.general.activity,
             corporateName: createClientDto.general.corporateName,
             notes: createClientDto.general.notes,
-            minValue: createClientDto.creditLimit.minValue,
-            maxValue: createClientDto.creditLimit.maxValue,
-            blockClient: createClientDto.creditLimit.blockClient,
+            minValue: createClientDto.creditLimit?.minValue || 0,
+            maxValue: createClientDto.creditLimit?.maxValue || 0,
+            blockClient: createClientDto.creditLimit?.blockClient || false,
           },
         });
 
@@ -87,7 +87,7 @@ export class ClientService {
         }
 
         // Criar condições de pagamento do cliente
-        if (createClientDto.creditLimit.conditions?.length > 0) {
+        if (createClientDto.creditLimit?.conditions?.length > 0) {
           for (const condition of createClientDto.creditLimit.conditions) {
             await prisma.clientPaymentCondition.create({
               data: {

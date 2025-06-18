@@ -1318,6 +1318,36 @@ export class QuotationService {
   }
 
   async approve(quotationId: string): Promise<Order> {
+    const companyData = await this.prisma.company.findUnique({
+      where: { id: quotationId },
+      select: {
+        trialEndsAt: true,
+        Subscription: {
+          where: {
+            status: 'ACTIVE',
+          },
+          take: 1, // garante que só pega uma assinatura
+          select: {
+            plan: {
+              select: {
+                planType: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    let isTrial = false;
+    if (companyData.trialEndsAt > new Date()) {
+      isTrial = true;
+    }
+
+    const subscription = companyData.Subscription?.[0];
+    if (subscription?.plan?.planType === 'START') {
+      isTrial = true;
+    }
+
     return await this.prisma
       .$transaction(async (prisma) => {
         // Atualizar a cotação como aprovada
@@ -1348,7 +1378,7 @@ export class QuotationService {
             quotationId: quotation.id,
           },
         });
-
+        const deliveryStatus = isTrial ? 'DELIVERING' : 'IN_PRODUCTION';
         // Criar o agendamento de entrega diretamente no Prisma
         await prisma.deliverySchedule.create({
           data: {
@@ -1367,7 +1397,7 @@ export class QuotationService {
             scheduledDate: quotation.deliveryInfo.estimatedDate
               ? quotation.deliveryInfo.estimatedDate
               : new Date(),
-            status: 'IN_PRODUCTION',
+            status: deliveryStatus,
           },
         });
 
@@ -1378,7 +1408,7 @@ export class QuotationService {
         return order;
       })
       .then(async (order) => {
-        await this.createProductionStages(order.quotationId);
+        await this.createProductionStages(order.quotationId, isTrial);
         return order;
       })
       .catch((error) => {
@@ -1387,7 +1417,8 @@ export class QuotationService {
       });
   }
 
-  async createProductionStages(quotationId: string) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async createProductionStages(quotationId: string, isTrial: boolean) {
     try {
       const quotation = await this.prisma.quotation.findUnique({
         where: { id: quotationId },
@@ -1496,6 +1527,15 @@ export class QuotationService {
   }
 
   async reject(quotationId: string, dto: CancelOrderDto): Promise<Quotation> {
+    if (!dto.reasonId) {
+      return await this.prisma.quotation.update({
+        where: { id: quotationId },
+        data: {
+          status: QuotationStatus.REJECTED,
+        },
+      });
+    }
+
     try {
       // Verifica se o motivo do cancelamento existe
       const reason = await this.prisma.reasons.findFirst({

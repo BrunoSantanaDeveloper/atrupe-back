@@ -518,6 +518,28 @@ export class OrderService {
 
   async cancelOrder(orderId: string, dto: CancelOrderDto, sellerId: string) {
     await this.verifySellerPermission(sellerId);
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        quotation: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+    if (!order) {
+      throw new NotFoundException('Ordem de serviço não encontrada.');
+    }
+    if (!dto.reasonId) {
+      return await this.prisma.order.update({
+        where: { id: orderId },
+        data: {
+          canceledAt: new Date(),
+          status: OrderStatus.CANCELED,
+        },
+      });
+    }
     try {
       // Verifica se o motivo do cancelamento existe
       const reason = await this.prisma.reasons.findFirst({
@@ -527,7 +549,14 @@ export class OrderService {
       if (!reason) {
         throw new NotFoundException('Motivo de cancelamento não encontrado.');
       }
-
+      await this.prisma.deliverySchedule.update({
+        where: {
+          id: order.quotation.id,
+        },
+        data: {
+          status: 'CANCELED',
+        },
+      });
       // Atualiza o pedido para status cancelado
       return await this.prisma.order.update({
         where: { id: orderId },
