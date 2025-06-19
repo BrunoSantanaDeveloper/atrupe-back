@@ -1588,18 +1588,21 @@ export class QuotationService {
         },
       },
     });
-    const totalInstallmentsValue =
-      quotation.quotationPayment.quotationInstallment.reduce(
-        (sum, installment) => sum + installment.value,
-        0,
-      );
+    // console.log('quotation: ', quotation);
+    // const totalInstallmentsValue =
+    //   quotation.quotationPayment.quotationInstallment.reduce(
+    //     (sum, installment) => sum + installment.value,
+    //     0,
+    //   );
 
-    // Verifica se a soma dos valores das parcelas corresponde ao total do orçamento
-    if (totalInstallmentsValue !== quotation.totalValue) {
-      throw new BadRequestException(
-        'Houve modificações nos itens do orçamento, verifique as condições de pagamento.',
-      );
-    }
+    // console.log('total do orçamento: ', quotation.totalValue);
+    // console.log('soma das parcelas: ', totalInstallmentsValue);
+    // // Verifica se a soma dos valores das parcelas corresponde ao total do orçamento
+    // if (totalInstallmentsValue !== quotation.totalValue) {
+    //   throw new BadRequestException(
+    //     'Houve modificações nos itens do orçamento, verifique as condições de pagamento.',
+    //   );
+    // }
 
     if (quotation.quotationPayment.quotationInstallment.length === 0) {
       throw new BadRequestException('O orçamento não possui parcelas.');
