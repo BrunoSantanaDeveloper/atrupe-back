@@ -113,16 +113,4 @@ export class AcademyService {
       throw error;
     }
   }
-
-  async extractDataSeedFromCompany(): Promise<any> {
-    const MODEL_COMPANY_ID = '2a190fe8-e7af-4d75-8673-494dbae0372b';
-
-    const categories = await this.prisma.category.findMany({
-      where: { companyId: MODEL_COMPANY_ID, kind: 'PRODUCT' },
-      include: {
-        sector: true,
-      },
-    });
-    return categories;
-  }
 }

@@ -19,10 +19,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 @Controller('academy')
 export class AcademyController {
   constructor(private readonly academyService: AcademyService) {}
-  @Get('extract-data')
-  async extractRoles() {
-    return this.academyService.extractDataSeedFromCompany();
-  }
+
   @Post('')
   createAcademySystem(@Body() data: CreateAcademySystemDto) {
     return this.academyService.createAcademySystem(data);
