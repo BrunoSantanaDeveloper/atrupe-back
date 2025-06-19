@@ -11,6 +11,7 @@ import {
   Prisma,
   ReasonType,
   RecurringType,
+  CategoryKind,
 } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
@@ -24,6 +25,7 @@ import {
   BASE_REASONS,
   BASE_STATUS_QUOTATIONS,
 } from 'src/seeds/reasons-status-base';
+import { BASE_PRODUCTS_CATEGORIES } from 'src/seeds/products-categories';
 
 @Injectable()
 export class CompanyService {
@@ -271,15 +273,17 @@ export class CompanyService {
     await this.createDefaultSaleSeries(companyId);
     await this.createDefaultPaymentMethods(companyId);
     await this.createDefaultProductCategories(companyId);
-    await this.createDefaultProducts(companyId);
+    //await this.createDefaultProducts(companyId);
     await this.createDefaultClientAndSupplier(companyId);
-    await this.createExampleQuotation(companyId);
+    // await this.createExampleQuotation(companyId);
     await this.applyBaseRolesToCompany(companyId);
+    await this.createDefaultSeller(companyId);
     await this.applyBaseCashboxToCompany(companyId);
     await this.applyBasePaymentConditionsToCompany(companyId);
     await this.applyBaseNaturesToCompany(companyId);
     await this.applyBaseScheduledExpensesToCompany(companyId);
     await this.applyReasonsAndStatusQuotationToCompany(companyId);
+    await this.createDefaultClientCategories(companyId);
   }
 
   private async createExampleQuotation(companyId: string) {
@@ -1007,25 +1011,10 @@ export class CompanyService {
   }
 
   private async createDefaultSeller(companyId: string) {
-    const sector = await this.prisma.companySector.findFirst({
+    await this.prisma.role.findFirst({
       where: {
-        name: 'Comercial',
         companyId: companyId,
-      },
-    });
-
-    if (!sector) {
-      console.error('Sector not found for company:', companyId);
-      throw new Error('Sector not found');
-    }
-    const sectorId = sector.id;
-
-    await this.prisma.role.create({
-      data: {
         name: 'Vendedor',
-        companyId: companyId,
-        isAdmin: false,
-        sectorId: sectorId,
       },
     });
 
@@ -1044,50 +1033,24 @@ export class CompanyService {
   }
 
   private async createDefaultProductCategories(companyId: string) {
-    const sector = await this.prisma.companySector.findFirst({
+    const sectors = await this.prisma.companySector.findMany({
       where: {
-        name: 'Comercial',
         companyId: companyId,
       },
     });
 
-    if (!sector) {
-      console.error('Sector not found for company:', companyId);
-      throw new Error('Sector not found');
-    }
-    const sectorId = sector.id;
-    await this.prisma.category.create({
-      data: {
-        name: 'Produtos Padrão',
-        companyId: companyId,
-        sectorId: sectorId,
-      },
+    const categories = BASE_PRODUCTS_CATEGORIES.map((category) => ({
+      name: category.name,
+      kind: CategoryKind.PRODUCT,
+      isActive: true,
+      companyId: companyId,
+      sectorId: sectors.find((sector) => sector.name === category.sector.name)
+        ?.id,
+    }));
+
+    await this.prisma.category.createMany({
+      data: categories,
     });
-
-    // Criar categorias adicionais úteis para comunicação visual e gráfica
-    console.log('Creating additional product categories...');
-    const additionalCategories = [
-      'Impressão Digital',
-      'Sinalização',
-      'Material Promocional',
-      'Adesivos e Etiquetas',
-      'Placas e Totens',
-      'Banners e Faixas',
-      'Cartões e Folders',
-      'Materiais Gráficos',
-    ];
-
-    for (const categoryName of additionalCategories) {
-      await this.prisma.category.create({
-        data: {
-          name: categoryName,
-          kind: 'PRODUCT',
-          isActive: true,
-          companyId: companyId,
-          sectorId: sector.id,
-        },
-      });
-    }
   }
 
   private async createDefaultProducts(companyId: string) {
@@ -1323,6 +1286,85 @@ export class CompanyService {
         maxValue: 5000,
         blockClient: false,
       },
+    });
+  }
+
+  private async createDefaultClientCategories(companyId: string) {
+    const clientCategories: Prisma.CategoryCreateManyInput[] = [
+      {
+        name: 'Comércio',
+        kind: 'CLIENT',
+        companyId: companyId,
+      },
+      {
+        name: 'Indústria',
+        kind: 'CLIENT',
+        companyId: companyId,
+      },
+      {
+        name: 'Serviços',
+        kind: 'CLIENT',
+        companyId: companyId,
+      },
+      {
+        name: 'Agências de Publicidade e Marketing',
+        kind: 'CLIENT',
+        companyId: companyId,
+      },
+      {
+        name: 'Estúdios de Fotografia',
+        kind: 'CLIENT',
+        companyId: companyId,
+      },
+      {
+        name: 'Arquiteto/Decorador',
+        kind: 'CLIENT',
+        companyId: companyId,
+      },
+      {
+        name: 'Saúde',
+        kind: 'CLIENT',
+        companyId: companyId,
+      },
+      {
+        name: 'Terceirizados',
+        kind: 'CLIENT',
+        companyId: companyId,
+      },
+    ];
+    await this.prisma.category.createMany({
+      data: clientCategories,
+    });
+
+    const supplierCategories: Prisma.CategoryCreateManyInput[] = [
+      {
+        name: 'Serviços Administrativos/Gerais',
+        kind: 'SUPPLIER',
+        companyId: companyId,
+      },
+      {
+        name: 'Suprimentos Gerais',
+        kind: 'SUPPLIER',
+        companyId: companyId,
+      },
+      {
+        name: 'Equipamentos e Manutenção',
+        kind: 'SUPPLIER',
+        companyId: companyId,
+      },
+      {
+        name: 'Serviços Terceirizados',
+        kind: 'SUPPLIER',
+        companyId: companyId,
+      },
+      {
+        name: 'Logística e Transporte',
+        kind: 'SUPPLIER',
+        companyId: companyId,
+      },
+    ];
+    await this.prisma.category.createMany({
+      data: supplierCategories,
     });
   }
 }

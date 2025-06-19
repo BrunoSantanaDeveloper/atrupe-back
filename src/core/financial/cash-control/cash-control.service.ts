@@ -298,7 +298,7 @@ export class CashControlService {
     const offset = (+page - 1) * +limit;
 
     // Construir os filtros dinamicamente
-    const whereFilters: any = {};
+    const whereFilters: any = { companyId };
     if (!companyId) throw new BadRequestException('Empresa não encontrada.');
     whereFilters.status = status;
     if (status) {

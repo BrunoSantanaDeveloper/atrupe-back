@@ -301,18 +301,7 @@ export const BASE_ROLES = [
     ],
     sectorName: 'Impressão',
   },
-  {
-    name: 'Admin',
-    isAdmin: true,
-    permissions: [],
-    sectorName: 'Administração',
-  },
-  {
-    name: 'Vendedor',
-    isAdmin: false,
-    permissions: [],
-    sectorName: 'Comercial',
-  },
+
   {
     name: 'Serigrafo',
     isAdmin: false,

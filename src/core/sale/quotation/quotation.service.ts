@@ -1318,34 +1318,51 @@ export class QuotationService {
   }
 
   async approve(quotationId: string): Promise<Order> {
-    const companyData = await this.prisma.company.findUnique({
+    const quotation = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
       select: {
-        trialEndsAt: true,
-        Subscription: {
-          where: {
-            status: 'ACTIVE',
-          },
-          take: 1, // garante que só pega uma assinatura
-          select: {
-            plan: {
-              select: {
-                planType: true,
+        companyId: true,
+      },
+    });
+    if (!quotation) {
+      throw new NotFoundException(
+        `Quotation with ID '${quotationId}' not found.`,
+      );
+    }
+
+    const companyId = quotation.companyId;
+    let isTrial = false;
+    try {
+      const companyData = await this.prisma.company.findUnique({
+        where: { id: companyId },
+        select: {
+          trialEndsAt: true,
+          Subscription: {
+            where: {
+              status: 'ACTIVE',
+            },
+            take: 1, // garante que só pega uma assinatura
+            select: {
+              plan: {
+                select: {
+                  planType: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
+      const subscription = companyData.Subscription?.[0];
 
-    let isTrial = false;
-    if (companyData.trialEndsAt > new Date()) {
-      isTrial = true;
-    }
+      if (companyData.trialEndsAt && companyData.trialEndsAt > new Date()) {
+        isTrial = true;
+      }
 
-    const subscription = companyData.Subscription?.[0];
-    if (subscription?.plan?.planType === 'START') {
-      isTrial = true;
+      if (subscription?.plan?.planType === 'START') {
+        isTrial = true;
+      }
+    } catch (error) {
+      console.error('Error finding company:', error);
     }
 
     return await this.prisma

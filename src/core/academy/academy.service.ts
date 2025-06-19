@@ -117,17 +117,12 @@ export class AcademyService {
   async extractDataSeedFromCompany(): Promise<any> {
     const MODEL_COMPANY_ID = '2a190fe8-e7af-4d75-8673-494dbae0372b';
 
-    const reasons = await this.prisma.reasons.findMany({
-      where: { companyId: MODEL_COMPANY_ID },
+    const categories = await this.prisma.category.findMany({
+      where: { companyId: MODEL_COMPANY_ID, kind: 'PRODUCT' },
+      include: {
+        sector: true,
+      },
     });
-
-    const statusQuotations = await this.prisma.statusQuotation.findMany({
-      where: { companyId: MODEL_COMPANY_ID },
-    });
-
-    return {
-      reasons,
-      statusQuotations,
-    };
+    return categories;
   }
 }
