@@ -49,21 +49,6 @@ export class CompanyController {
   //   return await this.companyService.createFirstAccess(email, createCompanyDto);
   // }
 
-  @Post('seed-account-plans/:companyId')
-  @ApiOperation({ summary: 'Cria planos de contas padrão para uma empresa' })
-  @ApiParam({ name: 'companyId', required: true, description: 'ID da empresa' })
-  @ApiResponse({
-    status: 201,
-    description: 'Os planos de contas foram criados com sucesso.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Empresa não encontrada.',
-  })
-  async createSeedAccountPlans(@Param('companyId') companyId: string) {
-    return await this.companyService.createSeedAccountPlans(companyId);
-  }
-
   @Post()
   @ApiOperation({ summary: 'Cria uma empresa' })
   @ApiResponse({

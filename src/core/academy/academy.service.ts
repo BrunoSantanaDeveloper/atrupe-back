@@ -115,47 +115,19 @@ export class AcademyService {
   }
 
   async extractDataSeedFromCompany(): Promise<any> {
-    try {
-      const companyId = '2a190fe8-e7af-4d75-8673-494dbae0372b';
+    const MODEL_COMPANY_ID = '2a190fe8-e7af-4d75-8673-494dbae0372b';
 
-      // Banco com código 000
-      const bank = await this.prisma.bank.findFirst({
-        where: { code: '000' },
-      });
-      if (!bank) throw new Error('Banco com código 000 não encontrado');
+    const reasons = await this.prisma.reasons.findMany({
+      where: { companyId: MODEL_COMPANY_ID },
+    });
 
-      // Conta bancária da empresa vinculada a esse banco
-      const bankAccount = await this.prisma.bankAccount.findFirst({
-        where: {
-          companyId,
-        },
-        include: {
-          cashRegister: true,
-          bankAccountCashControl: {
-            include: {
-              paymentMethod: true,
-            },
-          },
-        },
-      });
+    const statusQuotations = await this.prisma.statusQuotation.findMany({
+      where: { companyId: MODEL_COMPANY_ID },
+    });
 
-      if (!bankAccount)
-        throw new Error('Conta com controle de caixa não encontrada');
-
-      return {
-        bankAccount: {
-          name: bankAccount.name,
-          description: bankAccount.description,
-          cashControl: true,
-        },
-        cashRegister: {
-          openingDate: new Date().toISOString(),
-          openingBalance: 0,
-        },
-      };
-    } catch (error) {
-      console.error('Error in extractDataSeedFromCompany:', error);
-      throw error;
-    }
+    return {
+      reasons,
+      statusQuotations,
+    };
   }
 }
