@@ -11,7 +11,7 @@ export class EmployeeService {
 
   async create(createEmployeeDto: CreateEmployeeDto) {
     try {
-      return await this.prisma.employee.create({
+      const employee = await this.prisma.employee.create({
         data: {
           name: createEmployeeDto.name,
           avatarUrl: createEmployeeDto.avatarUrl ?? null,
@@ -31,6 +31,29 @@ export class EmployeeService {
               id: createEmployeeDto.companyId,
             },
           },
+        },
+      });
+
+      await this.prisma.salaryControl.create({
+        data: {
+          reference: 'Salário',
+          amount: 0,
+          date: new Date(),
+          companyId: createEmployeeDto.companyId,
+          type: 'INCREASE',
+          employeeId: employee.id,
+          isSet: false,
+        },
+      });
+      await this.prisma.salaryControl.create({
+        data: {
+          reference: 'Comissão',
+          amount: 0,
+          date: new Date(),
+          companyId: createEmployeeDto.companyId,
+          type: 'INCREASE',
+          employeeId: employee.id,
+          isSet: false,
         },
       });
     } catch (error) {

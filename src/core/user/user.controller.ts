@@ -71,6 +71,8 @@ export class UserController {
     return await this.userService.create(body);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Post('employee')
   @ApiOperation({ summary: 'Cria um novo usário a partir de um funcionário' })
   @ApiResponse({
@@ -82,6 +84,7 @@ export class UserController {
     description: 'Dados inválidos.',
   })
   async createEmployee(@Req() req, @Body() body: CreateUserByEmployeeDto) {
+    body.company = req.user.companyId;
     return await this.userService.createUserForEmployee(body);
   }
 

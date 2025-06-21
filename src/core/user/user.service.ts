@@ -155,13 +155,11 @@ export class UserService {
       },
     };
 
-    const createMainCompany =
-      await this.companyService.createMainCompany(createCompany);
-
-    await this.companyService.createFirstAccess(
+    await this.companyService.createMainCompany(
       createUserDto.email,
-      createMainCompany.id,
+      createCompany,
     );
+
     await this.prisma.mailVerification.delete({
       where: { email: createUserDto.email },
     });
@@ -190,6 +188,7 @@ export class UserService {
   async createUserForEmployee(
     createUserDto: CreateUserByEmployeeDto,
   ): Promise<any> {
+    console.log(createUserDto);
     // const company = await this.prisma.company.findFirst({
     //   where: {
     //     id: createUserDto.company,
@@ -318,6 +317,7 @@ export class UserService {
         avatar: true,
         employee: {
           select: {
+            name: true,
             company: true,
             role: true,
           },
@@ -342,7 +342,7 @@ export class UserService {
 
     const response: UserResponseDto = {
       id: user.id,
-      name: user.name,
+      name: user.employee[0]?.name ?? user.name,
       email: user.email,
       avatar: user.avatar,
       employee: user.employee?.[0]
@@ -383,6 +383,7 @@ export class UserService {
         employee: {
           select: {
             id: true,
+            name: true,
             role: true,
             avatarUrl: true,
             company: true,

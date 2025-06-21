@@ -98,7 +98,7 @@ export class AuthService {
 
       return {
         id: user.id,
-        name: user.name,
+        name: user.employee[0]?.name ?? user.name,
         email: user.email,
         avatar: user.employee[0]?.avatarUrl,
         role: user.employee[0] ? user.employee[0].role?.name : null,

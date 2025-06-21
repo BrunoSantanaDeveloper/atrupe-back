@@ -15,16 +15,24 @@ export class AcademyService {
   }
 
   async updateAcademySystem(id: string, data: UpdateAcademySystemDto) {
-    return this.prisma.academySystem.update({
+    return await this.prisma.academySystem.update({
       where: { id },
       data,
     });
   }
 
   async deleteAcademySystem(id: string) {
-    return this.prisma.academySystem.delete({
-      where: { id },
-    });
+    try {
+      await this.prisma.academyProgress.deleteMany({
+        where: { academySystemId: id },
+      });
+      return await this.prisma.academySystem.delete({
+        where: { id },
+      });
+    } catch (error) {
+      console.error('Error deleting academy system:', error);
+      throw error;
+    }
   }
 
   async getAcademySystemsByType(type: string, companyId: string) {
@@ -112,5 +120,24 @@ export class AcademyService {
       console.error('Error creating academy progress:', error);
       throw error;
     }
+  }
+
+  async extractData() {
+    const companyBase = '2a190fe8-e7af-4d75-8673-494dbae0372b';
+    const products = await this.prisma.product.findMany({
+      where: {
+        companyId: companyBase,
+      },
+      include: {
+        category: true,
+        items: {
+          include: {
+            unitOfMeasure: true,
+          },
+        },
+        sector: true,
+      },
+    });
+    return products;
   }
 }

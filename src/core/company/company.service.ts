@@ -26,6 +26,7 @@ import {
   BASE_STATUS_QUOTATIONS,
 } from 'src/seeds/reasons-status-base';
 import { BASE_PRODUCTS_CATEGORIES } from 'src/seeds/products-categories';
+import { CreateSalaryControlDto } from '../financial/salaries/dto/create-salary-control.dto';
 
 @Injectable()
 export class CompanyService {
@@ -213,7 +214,7 @@ export class CompanyService {
   //   }
   // }
 
-  async createMainCompany(createCompanyDto: CreateCompanyDto) {
+  async createMainCompany(email: string, createCompanyDto: CreateCompanyDto) {
     try {
       const { general, address, personalization } = createCompanyDto;
 
@@ -258,7 +259,7 @@ export class CompanyService {
         return company;
       });
 
-      await this.createDefaultItems(company.id);
+      await this.createDefaultItems(email, company.id);
 
       return company;
     } catch (e) {
@@ -267,13 +268,23 @@ export class CompanyService {
     }
   }
 
-  async createDefaultItems(companyId: string) {
+  async test() {
+    const salaries: CreateSalaryControlDto = {
+      companyId: '41c48d4a-9e79-461a-8c1e-123080d8cd5f',
+      reference: 'Salário',
+      type: 'INCREASE',
+      amount: 0,
+    };
+    await this.createSalariesSheets(salaries);
+  }
+
+  async createDefaultItems(email: string, companyId: string) {
     await this.createDefaultSectors(companyId);
     await this.createDefaultUnits(companyId);
     await this.createDefaultSaleSeries(companyId);
     await this.createDefaultPaymentMethods(companyId);
     await this.createDefaultProductCategories(companyId);
-    //await this.createDefaultProducts(companyId);
+    await this.createDefaultProducts(companyId);
     await this.createDefaultClientAndSupplier(companyId);
     // await this.createExampleQuotation(companyId);
     await this.applyBaseRolesToCompany(companyId);
@@ -283,9 +294,83 @@ export class CompanyService {
     await this.applyBaseNaturesToCompany(companyId);
     await this.applyBaseScheduledExpensesToCompany(companyId);
     await this.applyReasonsAndStatusQuotationToCompany(companyId);
+    const salaries: CreateSalaryControlDto = {
+      companyId,
+      reference: 'Salário',
+      type: 'INCREASE',
+      amount: 0,
+    };
+    const commission: CreateSalaryControlDto = {
+      companyId,
+      reference: 'Comissão',
+      type: 'INCREASE',
+      amount: 0,
+    };
     await this.createDefaultClientCategories(companyId);
+    await this.createFirstAccess(email, companyId);
+    await this.createSalariesSheets(salaries);
+    await this.createSalariesSheets(commission);
   }
 
+  private async createSalariesSheets(
+    createSalaryControlDto: CreateSalaryControlDto,
+  ) {
+    try {
+      // Buscar todos os funcionários ativos da empresa
+      const employees = await this.prisma.employee.findMany({
+        where: {
+          companyId: createSalaryControlDto.companyId,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+      console.log(employees);
+      if (employees.length === 0) {
+        return 'no employees';
+      }
+
+      // Determinar se isSet deve ser true ou false baseado no valor
+      const isSet = createSalaryControlDto.amount > 0;
+
+      // Criar salary controls para todos os funcionários
+      await Promise.all(
+        employees.map(async (employee) => {
+          return await this.prisma.salaryControl.create({
+            data: {
+              reference: createSalaryControlDto.reference,
+              amount: createSalaryControlDto.amount,
+              date: new Date(),
+              companyId: createSalaryControlDto.companyId,
+              type: createSalaryControlDto.type,
+              employeeId: employee.id,
+              isSet: isSet,
+            },
+            include: {
+              employee: {
+                select: {
+                  id: true,
+                  name: true,
+                  sector: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+        }),
+      );
+
+      return;
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+  }
   private async createExampleQuotation(companyId: string) {
     try {
       console.log('Creating example quotation...');
@@ -849,6 +934,7 @@ export class CompanyService {
         ? await this.prisma.nature.findFirst({
             where: {
               companyId,
+              level1: seed.nature.level1,
               code: seed.nature.code,
             },
           })

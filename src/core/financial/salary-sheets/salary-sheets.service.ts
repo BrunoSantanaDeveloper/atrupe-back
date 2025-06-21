@@ -448,7 +448,8 @@ export class SalarySheetsService {
         },
       });
 
-      const employeeName = employee?.user?.name || employee?.name || 'Funcionário';
+      const employeeName =
+        employee?.user?.name || employee?.name || 'Funcionário';
 
       // Primeiro, buscar payables específicos desta folha
       let relatedPayables = await this.prisma.payable.findMany({
@@ -566,18 +567,22 @@ export class SalarySheetsService {
                 totalAmount: relatedPayable.totalAmount,
                 status: relatedPayable.status,
                 referenceDate: relatedPayable.referenceDate,
-                installments: relatedPayable.installments.map((installment) => ({
-                  id: installment.id,
-                  installmentNumber: installment.installmentNumber,
-                  dueDate: installment.dueDate,
-                  amount: installment.amount,
-                  status: installment.status,
-                  paidDate: installment.paidDate,
-                })),
+                installments: relatedPayable.installments.map(
+                  (installment) => ({
+                    id: installment.id,
+                    installmentNumber: installment.installmentNumber,
+                    dueDate: installment.dueDate,
+                    amount: installment.amount,
+                    status: installment.status,
+                    paidDate: installment.paidDate,
+                  }),
+                ),
               },
             };
           } else {
-            this.logger.warn(`Nenhum payable encontrado para item ADVANCE ${item.id}`);
+            this.logger.warn(
+              `Nenhum payable encontrado para item ADVANCE ${item.id}`,
+            );
           }
         }
 
@@ -845,7 +850,8 @@ export class SalarySheetsService {
         },
       });
 
-      const employeeName = employee?.user?.name || employee?.name || 'Funcionário';
+      const employeeName =
+        employee?.user?.name || employee?.name || 'Funcionário';
       const currentDate = new Date();
 
       // Criar conta a pagar (despesa) para o adiantamento
@@ -858,7 +864,7 @@ export class SalarySheetsService {
           totalValue: amount,
           mainAdditionalFee: 0,
           installmentQty: 1,
-                    status: 'PENDING',
+          status: 'PENDING',
           companyId: salarySheet.companyId,
         },
       });

@@ -58,7 +58,7 @@ export class ScheduledExpenseService {
       } = filter;
 
       const where: any = {
-          companyId,
+        companyId,
       };
 
       // Filtro de busca por descrição
@@ -102,10 +102,10 @@ export class ScheduledExpenseService {
         this.prisma.scheduledExpense.count({ where }),
         this.prisma.scheduledExpense.findMany({
           where,
-        include: {
-          supplier: true,
+          include: {
+            supplier: true,
             company: true,
-          subCategory: true,
+            subCategory: true,
             payables: {
               include: {
                 installments: {
@@ -113,7 +113,7 @@ export class ScheduledExpenseService {
                     status: true,
                     dueDate: true,
                     paidDate: true,
-        },
+                  },
                 },
               },
             },
@@ -128,15 +128,15 @@ export class ScheduledExpenseService {
       const processedData = data.map((expense) => {
         const hasLaunches = expense.payables.length > 0;
         const launchStatus = hasLaunches ? 'LAUNCHED' : 'NOT_LAUNCHED';
-        
+
         // Contar lançamentos por status
         const launchSummary = {
           total: expense.payables.length,
-          pending: expense.payables.filter(p => 
-            p.installments.some(i => i.status === 'PENDING')
+          pending: expense.payables.filter((p) =>
+            p.installments.some((i) => i.status === 'PENDING'),
           ).length,
-          paid: expense.payables.filter(p => 
-            p.installments.every(i => i.status === 'PAID')
+          paid: expense.payables.filter((p) =>
+            p.installments.every((i) => i.status === 'PAID'),
           ).length,
         };
 

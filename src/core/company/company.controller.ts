@@ -48,7 +48,10 @@ export class CompanyController {
   // ) {
   //   return await this.companyService.createFirstAccess(email, createCompanyDto);
   // }
-
+  @Get('test')
+  async test() {
+    return await this.companyService.test();
+  }
   @Post()
   @ApiOperation({ summary: 'Cria uma empresa' })
   @ApiResponse({
@@ -77,14 +80,18 @@ export class CompanyController {
     @Req() req,
     @Body() createCompanyDto: CreateCompanyDto,
   ): Promise<Company> {
-    return await this.companyService.createMainCompany(createCompanyDto);
+    return await this.companyService.createMainCompany(
+      req.user.email,
+      createCompanyDto,
+    );
   }
 
   @Post('default-items/:companyId')
   @ApiOperation({ summary: 'Cria uma empresa' })
   @ApiParam({ name: 'companyId', required: true, description: 'ID da empresa' })
   async createDefaultItems(@Param('companyId') companyId: string) {
-    return await this.companyService.createDefaultItems(companyId);
+    return 'off';
+    return await this.companyService.createDefaultItems('teste', companyId);
   }
 
   @Get('check/:cnpj')

@@ -53,6 +53,14 @@ export class CreateUserDto {
 }
 
 export class CreateUserByEmployeeDto {
+  @IsString()
+  @ApiProperty({
+    description: 'ID do funcionário',
+    example: '1234567890',
+    required: true,
+  })
+  employeeId: string;
+
   @IsNotEmpty()
   @ApiProperty({
     description: 'Email do usuário',
@@ -61,7 +69,6 @@ export class CreateUserByEmployeeDto {
   })
   email: string;
 
-  @IsNotEmpty()
   @IsString()
   @ApiProperty({
     description: 'Nome do usuário',
@@ -70,25 +77,8 @@ export class CreateUserByEmployeeDto {
   })
   name: string;
 
-  @IsNotEmpty()
-  @IsString()
-  @ApiProperty({
-    description: 'Nome fantasia do usuário',
-    example: 'John Doe',
-    required: true,
-  })
   company: string;
 
-  @IsNotEmpty()
-  @IsString()
-  @ApiProperty({
-    description: 'Telefone do usuário',
-    example: '1234567890',
-    required: true,
-  })
-  mobile: string;
-
-  @IsNotEmpty()
   @IsString()
   @ApiProperty({
     description: 'Senha do usuário',
@@ -96,11 +86,4 @@ export class CreateUserByEmployeeDto {
     required: true,
   })
   password: string;
-
-  @ApiProperty({
-    description: 'ID do funcionário',
-    example: '1234567890',
-    required: true,
-  })
-  employeeId: string;
 }
