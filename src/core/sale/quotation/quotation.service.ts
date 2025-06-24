@@ -187,19 +187,9 @@ export class QuotationService {
       //   );
       // }
 
-      // Calcula o valor total do produto
+      // Calcula o valor total do produto baseado nos valores já calculados pelo frontend
       const totalValue = data.items.reduce((total, item) => {
-        const originalItem = product.items.find(
-          (pItem) => pItem.id === item.id,
-        );
-        if (!originalItem) {
-          throw new BadRequestException(
-            `Item ${item.id} não encontrado no produto`,
-          );
-        }
-        return (
-          total + item.quantity * (item.unitCost || originalItem.salePrice || 0)
-        );
+        return total + (item.salePrice || 0);
       }, 0);
 
       // Cria o QuotationProduct com ID único
@@ -243,12 +233,11 @@ export class QuotationService {
           volume: item.volume || originalItem.volume,
           distance: item.distance || originalItem.distance,
           duration: item.duration || originalItem.duration,
-          unitCost: item.unitCost || originalItem.salePrice,
+          unitCost: item.unitCost || originalItem.unitCost,
           salePrice: item.salePrice || originalItem.salePrice,
           quantity: data.quantity * item.quantity,
           originalQuantity: item.quantity,
-          totalValue:
-            item.quantity * (item.unitCost || originalItem.salePrice || 0),
+          totalValue: item.salePrice || 0,
         };
       });
 
@@ -348,36 +337,50 @@ export class QuotationService {
             ...(data.quantity && {
               quantity: data.quantity,
             }),
-            ...(data.items && {
-              items: {
-                update: data.items.map((item) => ({
-                  where: {
-                    id: item.id,
-                  },
-                  data: {
-                    ...(item.unitOfMeasureId && {
-                      unitOfMeasureId: item.unitOfMeasureId,
-                    }),
-                    ...(item.quantity && {
-                      quantity: item.quantity,
-                      originalQuantity: item.quantity,
-                    }),
-                    ...(item.width && { width: item.width }),
-                    ...(item.height && { height: item.height }),
-                    ...(item.length && { length: item.length }),
-                    ...(item.weight && { weight: item.weight }),
-                    ...(item.volume && { volume: item.volume }),
-                    ...(item.distance && { distance: item.distance }),
-                    ...(item.duration && { duration: item.duration }),
-                    ...(item.unitCost && { unitCost: item.unitCost }),
-                    ...(item.salePrice && { salePrice: item.salePrice }),
-                  },
-                })),
-              },
-            }),
+            // Atualização de itens será feita separadamente para suportar criação e atualização
           },
         },
       );
+
+      // Processar itens: atualizar existentes ou criar novos
+      if (data.items) {
+        for (const item of data.items) {
+          if (item.id) {
+            // Atualizar item existente
+            await this.prisma.quotationProductItem.update({
+              where: { id: item.id },
+              data: {
+                ...(item.unitOfMeasureId && {
+                  unitOfMeasureId: item.unitOfMeasureId,
+                }),
+                ...(item.quantity && {
+                  quantity: data.quantity
+                    ? data.quantity * item.quantity
+                    : item.quantity,
+                  originalQuantity: item.quantity,
+                }),
+                ...(item.width !== undefined && { width: item.width }),
+                ...(item.height !== undefined && { height: item.height }),
+                ...(item.length !== undefined && { length: item.length }),
+                ...(item.weight !== undefined && { weight: item.weight }),
+                ...(item.volume !== undefined && { volume: item.volume }),
+                ...(item.distance !== undefined && { distance: item.distance }),
+                ...(item.duration !== undefined && { duration: item.duration }),
+                ...(item.unitCost !== undefined && { unitCost: item.unitCost }),
+                ...(item.salePrice !== undefined && {
+                  salePrice: item.salePrice,
+                  totalValue: item.salePrice,
+                }),
+              },
+            });
+          } else {
+            // Criar novo item (quando id é null) - Por enquanto não suportado
+            throw new BadRequestException(
+              `Criação de novos itens ainda não implementada`,
+            );
+          }
+        }
+      }
 
       if (data.quantity) {
         const items = await this.prisma.quotationProductItem.findMany({
@@ -540,7 +543,7 @@ export class QuotationService {
     // Calcular e atualizar `totalValue` para cada item (em memória)
     const updatedItems = quotationProducts.items.map((item) => ({
       id: item.id,
-      totalValue: item.unitCost * item.quantity,
+      totalValue: item.salePrice || item.unitCost || 0,
     }));
 
     await Promise.all(
@@ -1104,23 +1107,33 @@ export class QuotationService {
           discountType: qp.discountType,
           discount: qp.discount,
           unitValue: (() => {
-            const unitValue = qp.items.reduce(
-              (total, item) => total + item.salePrice * item.originalQuantity,
-              0,
-            );
+            // Calcular unitValue corretamente: unitCost * measurement para cada item
+            const unitValue = qp.items.reduce((total, item) => {
+              // Calcular measurement baseado na unidade de medida
+              let measurement = 1;
+              if (item.unitOfMeasure?.code === 'M²') {
+                measurement = (item.height || 0) * (item.width || 0);
+              } else if (item.unitOfMeasure?.code === 'M') {
+                measurement = item.width || 0;
+              } else if (item.unitOfMeasure?.code === 'LT') {
+                measurement = item.volume || 0;
+              } else if (item.unitOfMeasure?.code === 'KG') {
+                measurement = item.weight || 0;
+              } else if (item.unitOfMeasure?.code === 'KM') {
+                measurement = item.distance || 0;
+              } else if (item.unitOfMeasure?.code === 'HH') {
+                const duration = Number(item.duration || 0);
+                measurement = duration > 60 ? duration / 60 : duration;
+              }
+
+              return total + (item.unitCost || 0) * measurement;
+            }, 0);
             return unitValue;
           })(),
           totalValue: qp.items.reduce(
             (total, item) => total + item.totalValue,
             0,
           ),
-          // totalValue: (() => {
-          //   const unitValue = qp.items.reduce(
-          //     (total, item) => total + item.totalValue,
-          //     0,
-          //   );
-          //   return qp.quantity * unitValue;
-          // })(),
           finalValue: qp.finalValue,
           image: (() => {
             if (qp.imageUrl) {
@@ -1132,13 +1145,31 @@ export class QuotationService {
           product: {
             originalProductId: qp.productId,
             name: qp.product.name,
-
             quantity: qp.quantity,
-            unitValue: qp.items.reduce(
-              (total, item) => total + item.salePrice * item.originalQuantity,
-              0,
-            ),
+            unitValue: (() => {
+              // Calcular unitValue corretamente: unitCost * measurement para cada item
+              const unitValue = qp.items.reduce((total, item) => {
+                // Calcular measurement baseado na unidade de medida
+                let measurement = 1;
+                if (item.unitOfMeasure?.code === 'M²') {
+                  measurement = (item.height || 0) * (item.width || 0);
+                } else if (item.unitOfMeasure?.code === 'M') {
+                  measurement = item.width || 0;
+                } else if (item.unitOfMeasure?.code === 'LT') {
+                  measurement = item.volume || 0;
+                } else if (item.unitOfMeasure?.code === 'KG') {
+                  measurement = item.weight || 0;
+                } else if (item.unitOfMeasure?.code === 'KM') {
+                  measurement = item.distance || 0;
+                } else if (item.unitOfMeasure?.code === 'HH') {
+                  const duration = Number(item.duration || 0);
+                  measurement = duration > 60 ? duration / 60 : duration;
+                }
 
+                return total + (item.unitCost || 0) * measurement;
+              }, 0);
+              return unitValue;
+            })(),
             finalValue: qp.items.reduce(
               (total, item) => total + item.totalValue,
               0,
@@ -1150,7 +1181,7 @@ export class QuotationService {
               unitOfMeasure: item.unitOfMeasure,
               quantity: item.quantity,
               originalQuantity: item.originalQuantity,
-              unitValue: item.salePrice,
+              unitValue: item.unitCost || 0, // CORRIGIDO: usar unitCost ao invés de salePrice
               totalValue: item.totalValue,
               weight: item.weight,
               width: item.width,

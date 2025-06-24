@@ -324,42 +324,62 @@ export class AddProductItemDto {
   unitOfMeasureId: string;
 
   @IsOptional()
+  @IsNumber()
+  @Min(1)
   @ApiProperty({ description: 'Quantidade do item', example: 10 })
   quantity: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
   @ApiProperty({ description: 'Largura', example: 10.0 })
   width: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
   @ApiProperty({ description: 'Altura', example: 5.0 })
   height: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
   @ApiProperty({ description: 'Comprimento', example: 20.0 })
   length: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
   @ApiProperty({ description: 'Peso', example: 2.5 })
   weight: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
   @ApiProperty({ description: 'Volume', example: 100.0 })
   volume: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
   @ApiProperty({ description: 'Distância', example: 50.0 })
   distance: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
   @ApiProperty({ description: 'Duração (em dias)', example: 3 })
   duration: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
   @ApiProperty({ description: 'Custo unitário', example: 15.0 })
   unitCost: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
   @ApiProperty({ description: 'Preço de venda', example: 30.0 })
   salePrice: number;
 }
