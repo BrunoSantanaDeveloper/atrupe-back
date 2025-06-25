@@ -24,7 +24,7 @@ async function bootstrap() {
   const doc = new DocumentBuilder()
     .setTitle('Atrupe - API Documentação')
     .setDescription('Documentação da API para o projeto Atrupe')
-    .setVersion('1.0')
+    .setVersion('0.1.3')
     .addBearerAuth()
     .build();
 
