@@ -1,7 +1,7 @@
 export const BASE_SCHEDULED_EXPENSES = [
   {
     description: 'Sistema de gestão ',
-    amount: 11500,
+    amount: 0,
     createdAt: '2025-06-16T16:51:04.448Z',
     dueDay: 10,
     recurringType: 'MONTHLY',
@@ -52,7 +52,7 @@ export const BASE_SCHEDULED_EXPENSES = [
   },
   {
     description: 'Aluguel',
-    amount: 200000,
+    amount: 0,
     createdAt: '2025-06-16T16:51:44.265Z',
 
     dueDay: 8,
@@ -106,7 +106,7 @@ export const BASE_SCHEDULED_EXPENSES = [
   },
   {
     description: 'Energia Elétrica',
-    amount: 30000,
+    amount: 0,
     createdAt: '2025-06-16T16:53:16.954Z',
 
     dueDay: 12,
@@ -160,7 +160,7 @@ export const BASE_SCHEDULED_EXPENSES = [
   },
   {
     description: 'Água ',
-    amount: 25000,
+    amount: 0,
     createdAt: '2025-06-16T16:54:13.732Z',
 
     dueDay: 12,
@@ -214,7 +214,7 @@ export const BASE_SCHEDULED_EXPENSES = [
   },
   {
     description: 'Telefone Fixo',
-    amount: 9000,
+    amount: 0,
     createdAt: '2025-06-16T16:55:17.944Z',
 
     dueDay: 5,
@@ -268,7 +268,7 @@ export const BASE_SCHEDULED_EXPENSES = [
   },
   {
     description: 'Contabilidade',
-    amount: 36000,
+    amount: 0,
     createdAt: '2025-06-16T16:56:15.621Z',
 
     dueDay: 10,
@@ -322,7 +322,7 @@ export const BASE_SCHEDULED_EXPENSES = [
   },
   {
     description: 'Internet',
-    amount: 26000,
+    amount: 0,
     createdAt: '2025-06-16T16:56:35.796Z',
 
     dueDay: 10,
@@ -376,7 +376,7 @@ export const BASE_SCHEDULED_EXPENSES = [
   },
   {
     description: 'Mensalidade Banco',
-    amount: 10000,
+    amount: 0,
     createdAt: '2025-06-16T17:01:33.607Z',
     dueDay: 1,
     recurringType: 'MONTHLY',

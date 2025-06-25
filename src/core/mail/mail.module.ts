@@ -28,6 +28,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
         },
         template: {
           dir: config.get('MAIL_PATH_TEMPLATES_PROD'),
+          // dir: join(__dirname, '../../../../dist/core/mail/templates'),
           adapter: new HandlebarsAdapter(),
           options: {
             strict: true,

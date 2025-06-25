@@ -1140,191 +1140,105 @@ export class CompanyService {
   }
 
   private async createDefaultProducts(companyId: string) {
-    const sector = await this.prisma.companySector.findFirst({
-      where: {
-        name: 'Comercial',
-        companyId: companyId,
-      },
+    const { BASE_PRODUCTS } = await import('../../seeds/products-base');
+
+    // Buscar setores, categorias e unidades de medida necessárias
+    const sectors = await this.prisma.companySector.findMany({
+      where: { companyId },
     });
 
-    if (!sector) {
-      console.error('Sector not found for company:', companyId);
-      throw new Error('Sector not found');
-    }
-    const sectorId = sector.id;
-
-    // Buscar categoria "Produtos Padrão" e unidades de medida necessárias
-    const defaultCategory = await this.prisma.category.findFirst({
-      where: {
-        name: 'Produtos Padrão',
-        companyId: companyId,
-      },
+    const categories = await this.prisma.category.findMany({
+      where: { companyId },
     });
 
-    const m2Unit = await this.prisma.companyUnitOfMeasure.findFirst({
-      where: {
-        code: 'M²',
-        companyId: companyId,
-      },
+    const units = await this.prisma.companyUnitOfMeasure.findMany({
+      where: { companyId },
     });
 
-    const unUnit = await this.prisma.companyUnitOfMeasure.findFirst({
-      where: {
-        code: 'UN',
-        companyId: companyId,
-      },
-    });
+    for (const productData of BASE_PRODUCTS) {
+      // Encontrar setor pelo nome
+      const sector = sectors.find((s) => s.name === productData.setorNome);
+      if (!sector) {
+        console.warn(`Setor não encontrado: ${productData.setorNome}`);
+        continue;
+      }
 
-    if (defaultCategory && m2Unit && unUnit) {
-      // Produto 1: Banner Lona
-      const bannerProduct = await this.prisma.product.create({
-        data: {
-          name: 'Banner em Lona',
-          code: 'BAN001',
-          isActive: true,
-          isStandard: false,
-          technicalDescription:
-            'Banner em lona 440g/m² com impressão digital colorida, acabamento com ilhoses.',
-          allowEditValues: true,
-          allowEditDescription: true,
-          companyId: companyId,
-          categoryId: defaultCategory.id,
-          sectorId: sectorId,
-          items: {
-            create: [
-              {
-                name: 'Impressão Digital',
-                unitOfMeasureId: m2Unit.id,
-                width: 1,
-                height: 1,
-                unitCost: 15,
-                salePrice: 35,
-              },
-            ],
-          },
-        },
-      });
-
-      // Produto 2: Adesivo Vinil
-      const adesivoProduct = await this.prisma.product.create({
-        data: {
-          name: 'Adesivo Vinil Branco',
-          code: 'ADE001',
-          isActive: true,
-          isStandard: false,
-          technicalDescription:
-            'Adesivo em vinil branco com impressão digital, aplicação interna ou externa.',
-          allowEditValues: true,
-          allowEditDescription: true,
-          companyId: companyId,
-          categoryId: defaultCategory.id,
-          sectorId: sectorId,
-          items: {
-            create: [
-              {
-                name: 'Impressão + Material',
-                unitOfMeasureId: m2Unit.id,
-                width: 1,
-                height: 1,
-                unitCost: 12,
-                salePrice: 28,
-              },
-            ],
-          },
-        },
-      });
-
-      // Produto 3: Cartão de Visita
-      const cartaoProduct = await this.prisma.product.create({
-        data: {
-          name: 'Cartão de Visita',
-          code: 'CAR001',
-          isActive: true,
-          isStandard: false,
-          technicalDescription:
-            'Cartão de visita em papel couché 300g, impressão 4x4 cores, formato 9x5cm.',
-          allowEditValues: true,
-          allowEditDescription: true,
-          companyId: companyId,
-          categoryId: defaultCategory.id,
-          sectorId: sectorId,
-          items: {
-            create: [
-              {
-                name: 'Impressão Offset',
-                unitOfMeasureId: unUnit.id,
-                unitCost: 0.08,
-                salePrice: 0.25,
-              },
-            ],
-          },
-        },
-      });
-
-      console.log(`✅ Produtos padrão criados:`);
-      console.log(`   - Banner em Lona: ${bannerProduct.id}`);
-      console.log(`   - Adesivo Vinil: ${adesivoProduct.id}`);
-      console.log(`   - Cartão de Visita: ${cartaoProduct.id}`);
-
-      // Produto 4: Placa Composta (produto composto com múltiplos itens)
-      console.log('Creating composite product...');
-
-      await this.prisma.product.create({
-        data: {
-          name: 'Placa Acrílico com Suporte',
-          code: 'PLA001',
-          isActive: true,
-          isStandard: false,
-          technicalDescription:
-            'Placa em acrílico 3mm com impressão digital + suporte em alumínio anodizado.',
-          allowEditValues: true,
-          allowEditDescription: true,
-          companyId: companyId,
-          categoryId: defaultCategory.id,
-          sectorId: sectorId,
-          items: {
-            create: [
-              {
-                name: 'Placa Acrílico 3mm',
-                unitOfMeasureId: m2Unit.id,
-                width: 1,
-                height: 1,
-                unitCost: 45,
-                salePrice: 85,
-              },
-              {
-                name: 'Impressão Digital UV',
-                unitOfMeasureId: m2Unit.id,
-                width: 1,
-                height: 1,
-                unitCost: 25,
-                salePrice: 50,
-              },
-              {
-                name: 'Suporte Alumínio',
-                unitOfMeasureId: unUnit.id,
-                unitCost: 15,
-                salePrice: 35,
-              },
-              {
-                name: 'Montagem e Acabamento',
-                unitOfMeasureId: unUnit.id,
-                unitCost: 10,
-                salePrice: 25,
-              },
-            ],
-          },
-        },
-      });
-
-      console.log(
-        '✅ Default products and composite product created successfully',
+      // Encontrar categoria pelo nome
+      const category = categories.find(
+        (c) => c.name === productData.categoriaNome,
       );
-    } else {
-      console.log(
-        '⚠️  Não foi possível criar produtos padrão (categoria ou unidades não encontradas)',
-      );
+      if (!category) {
+        console.warn(`Categoria não encontrada: ${productData.categoriaNome}`);
+        continue;
+      }
+
+      // Configurar etapas de produção
+      const productionStages = productData.etapasProducao
+        .map((etapaName) => {
+          const etapaSector = sectors.find((s) => s.name === etapaName);
+          return {
+            id: etapaSector?.id || '',
+            isActive: !!etapaSector,
+          };
+        })
+        .filter((stage) => stage.id); // Remove etapas sem setor correspondente
+
+      // Criar produto
+      const product = await this.prisma.product.create({
+        data: {
+          name: productData.nome,
+          code: productData.codigo,
+          allowEditDescription: productData.permitirEditarDescricao,
+          allowEditValues: productData.permitirEditarValor,
+          categoryId: category.id,
+          sectorId: sector.id,
+          companyId: companyId,
+          productionStages:
+            productionStages.length > 0 ? productionStages : null,
+          isStandard: true,
+        },
+      });
+
+      // Criar itens do produto
+      for (const item of productData.produto) {
+        const unitOfMeasure = units.find((u) => u.code === item.unidadeMedida);
+        if (!unitOfMeasure) {
+          console.warn(
+            `Unidade de medida não encontrada: ${item.unidadeMedida}`,
+          );
+          continue;
+        }
+
+        // Configurar dimensões baseado na unidade de medida
+        const dimensions: any = {};
+        if (item.dimensoes) {
+          if ('largura' in item.dimensoes && item.dimensoes.largura) {
+            dimensions.width = item.dimensoes.largura;
+          }
+          if ('altura' in item.dimensoes && item.dimensoes.altura) {
+            dimensions.height = item.dimensoes.altura;
+          }
+          if ('duracao' in item.dimensoes && item.dimensoes.duracao) {
+            dimensions.duration = item.dimensoes.duracao;
+          }
+        }
+
+        await this.prisma.productItem.create({
+          data: {
+            name: item.nome,
+            productId: product.id,
+            unitOfMeasureId: unitOfMeasure.id,
+            salePrice: item.precoVenda,
+            unitCost: 0,
+            ...dimensions,
+          },
+        });
+      }
     }
+
+    console.log(
+      `✅ ${BASE_PRODUCTS.length} produtos padrão criados com sucesso!`,
+    );
   }
 
   private async createDefaultClientAndSupplier(companyId: string) {
