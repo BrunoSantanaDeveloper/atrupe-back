@@ -499,25 +499,17 @@ export class SalarySheetsService {
         });
       }
 
-      // Log para debug - informações importantes
-      console.log('=== DEBUG SALARY SHEET PAYABLES ===');
-      console.log(`Funcionário: ${employeeName}`);
-      console.log(`Folha: ${salarySheet.month + 1}/${salarySheet.year}`);
-      console.log(`Company ID: ${salarySheet.companyId}`);
-      console.log(`Payables encontrados: ${relatedPayables.length}`);
-
       if (relatedPayables.length > 0) {
         relatedPayables.forEach((payable, index) => {
-          console.log(
+          this.logger.log(
             `Payable ${index + 1}: ID=${payable.id}, Valor=${payable.totalAmount}, Descrição=${payable.description}`,
           );
         });
       } else {
-        console.log(
+        this.logger.log(
           'Nenhum payable encontrado - verificar se foram criados anteriormente',
         );
       }
-      console.log('=== END DEBUG ===');
 
       // Calcula o saldo a pagar
       const totalSalary = salarySheet.items
@@ -892,6 +884,109 @@ export class SalarySheetsService {
       );
       // Não propaga o erro para não bloquear a criação do adiantamento
       // A despesa pode ser criada manualmente se necessário
+    }
+  }
+
+  async getSalarySheetPdfData(id: string) {
+    try {
+      const salarySheet = await this.prisma.salarySheet.findUnique({
+        where: { id },
+        include: {
+          employee: {
+            include: {
+              user: true,
+              role: true,
+            },
+          },
+          company: {
+            include: {
+              address: {
+                where: { type: 'Principal' },
+              },
+            },
+          },
+          items: {
+            orderBy: {
+              createdAt: 'asc',
+            },
+          },
+          movements: {
+            include: {
+              paymentMethod: true,
+            },
+            orderBy: {
+              createdAt: 'desc',
+            },
+          },
+        },
+      });
+
+      if (!salarySheet) {
+        throw new NotFoundException('Folha de pagamento não encontrada');
+      }
+
+      // Buscar dados da empresa
+      const companyAddress = salarySheet.company.address[0];
+
+      // Calcular salário líquido
+      const totalIncreases = salarySheet.items
+        .filter((item) => item.type === 'INCREASE')
+        .reduce((sum, item) => sum + item.amount, 0);
+
+      const totalDiscounts = salarySheet.items
+        .filter((item) => item.type === 'DISCOUNT')
+        .reduce((sum, item) => sum + item.amount, 0);
+
+      const netSalary = totalIncreases - totalDiscounts;
+
+      // Buscar movimento de pagamento mais recente
+      const latestMovement = salarySheet.movements[0];
+
+      // Estruturar dados para o PDF
+      const pdfData = {
+        company: {
+          name: salarySheet.company.name,
+          cnpj: salarySheet.company.cnpj,
+          email: salarySheet.company.email,
+          logo: salarySheet.company.logoUrl,
+          address: companyAddress
+            ? {
+                street: companyAddress.street,
+                number: companyAddress.number,
+                neighborhood: companyAddress.neighborhood,
+                city: companyAddress.city,
+                state: companyAddress.state,
+              }
+            : null,
+        },
+        employeeName:
+          salarySheet.employee.user?.name || salarySheet.employee.name,
+        reference: `${salarySheet.month + 1}/${salarySheet.year}`,
+        items: salarySheet.items.map((item) => ({
+          id: item.id,
+          description: item.description,
+          type: item.type,
+          amount: item.amount,
+        })),
+        netSalary,
+        payment: latestMovement
+          ? {
+              dueDate: latestMovement.paidDate.toISOString().split('T')[0],
+              paidAt: latestMovement.paidDate.toISOString().split('T')[0],
+              amountPaid: latestMovement.amount,
+              paymentMethod: latestMovement.paymentMethod?.name,
+            }
+          : null,
+      };
+
+      return pdfData;
+    } catch (error) {
+      this.logger.error(
+        `Erro ao gerar dados do PDF da folha de pagamento: ${error.message}`,
+      );
+      throw new BadRequestException(
+        'Erro ao gerar dados do PDF da folha de pagamento',
+      );
     }
   }
 }

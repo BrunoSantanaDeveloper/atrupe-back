@@ -15,6 +15,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiParam,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { GetSalarySheetsDto } from './dto/salaries-filters.dto';
@@ -164,6 +165,81 @@ export class SalarySheetsController {
   })
   async getSalarySheet(@Param('id') id: string) {
     return this.salaryService.getSalarySheetById(id);
+  }
+
+  @Get(':id/pdf-data')
+  @ApiOperation({
+    summary: 'Obtém os dados da folha de pagamento para geração de PDF',
+    description:
+      'Retorna os dados estruturados necessários para construção do PDF da folha de pagamento',
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    description: 'ID da folha de pagamento',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Dados da folha de pagamento para PDF retornados com sucesso.',
+    content: {
+      'application/json': {
+        example: {
+          company: {
+            name: 'Nome da Empresa',
+            cnpj: '12.345.678/0001-90',
+            email: 'empresa@exemplo.com',
+            logo: 'https://exemplo.com/logo.png',
+            address: {
+              street: 'Rua Exemplo',
+              number: '123',
+              neighborhood: 'Centro',
+              city: 'São Paulo',
+              state: 'SP',
+            },
+          },
+          employeeName: 'Nome do Funcionário',
+          reference: '3/25',
+          items: [
+            {
+              id: 'uuid-do-item-1',
+              description: 'Salário Base',
+              type: 'INCREASE',
+              amount: 250000,
+            },
+            {
+              id: 'uuid-do-item-2',
+              description: 'INSS',
+              type: 'DISCOUNT',
+              amount: 30000,
+            },
+            {
+              id: 'uuid-do-item-3',
+              description: 'Adiantamento',
+              type: 'ADVANCE',
+              amount: 55000,
+            },
+          ],
+          netSalary: 220000,
+          payment: {
+            dueDate: '2025-03-01',
+            paidAt: '2025-03-01',
+            amountPaid: 165000,
+            paymentMethod: 'PIX',
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'ID inválido.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Folha de pagamento não encontrada.',
+  })
+  async getSalarySheetPdfData(@Param('id') id: string) {
+    return await this.salaryService.getSalarySheetPdfData(id);
   }
 
   @Post('item')
