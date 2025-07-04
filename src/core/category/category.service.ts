@@ -3,6 +3,7 @@ import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { CategoryFilterDTO } from './dto/filter.dto';
 import { PrismaService } from 'nestjs-prisma';
+import { BadRequestException } from '@nestjs/common';
 
 @Injectable()
 export class CategoryService {
@@ -178,7 +179,36 @@ export class CategoryService {
     return this.prisma.category.findUnique({ where: { id } });
   }
 
-  update(id: string, updateCategoryDto: UpdateCategoryDto) {
+  async update(id: string, updateCategoryDto: UpdateCategoryDto) {
+    // Verificar se está tentando ativar uma categoria
+    if (updateCategoryDto.isActive === true) {
+      // Buscar a categoria atual para verificar se ela tem um setor associado
+      const currentCategory = await this.prisma.category.findUnique({
+        where: { id },
+        include: {
+          sector: {
+            select: {
+              id: true,
+              isActive: true,
+            },
+          },
+        },
+      });
+
+      if (!currentCategory) {
+        throw new BadRequestException('Categoria não encontrada');
+      }
+
+      // Se a categoria tem um setor associado, verificar se o setor está ativo
+      if (currentCategory.sectorId && currentCategory.sector) {
+        if (!currentCategory.sector.isActive) {
+          throw new BadRequestException(
+            'Não é possível ativar uma categoria quando o setor está inativo',
+          );
+        }
+      }
+    }
+
     return this.prisma.category.update({
       data: updateCategoryDto,
       where: { id },

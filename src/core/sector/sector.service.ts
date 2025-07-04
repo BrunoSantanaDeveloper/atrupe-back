@@ -103,6 +103,17 @@ export class SectorService {
 
       // Sai do if se não encontrar produtos
       if (products.length === 0) {
+        // Inativar categorias relacionadas ao setor quando o setor for inativado
+        await this.prisma.category.updateMany({
+          where: {
+            sectorId: id,
+            isActive: true, // Só inativa categorias que estão ativas
+          },
+          data: {
+            isActive: false,
+          },
+        });
+
         return await this.prisma.companySector.update({
           where: { id: id },
           data: updateSectorDto,
@@ -129,6 +140,17 @@ export class SectorService {
           });
         }
       }
+
+      // Inativar categorias relacionadas ao setor quando o setor for inativado
+      await this.prisma.category.updateMany({
+        where: {
+          sectorId: id,
+          isActive: true, // Só inativa categorias que estão ativas
+        },
+        data: {
+          isActive: false,
+        },
+      });
     }
 
     return await this.prisma.companySector.update({
@@ -137,7 +159,18 @@ export class SectorService {
     });
   }
 
-  remove(id: string) {
+  async remove(id: string) {
+    // Inativar categorias relacionadas ao setor quando o setor for removido
+    await this.prisma.category.updateMany({
+      where: {
+        sectorId: id,
+        isActive: true, // Só inativa categorias que estão ativas
+      },
+      data: {
+        isActive: false,
+      },
+    });
+
     return this.prisma.companySector.update({
       where: { id: id },
       data: { isActive: false },
