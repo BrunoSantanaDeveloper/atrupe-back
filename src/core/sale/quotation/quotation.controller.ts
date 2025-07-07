@@ -369,6 +369,11 @@ export class QuotationController {
               state: 'SP',
               zipCode: '01234-567',
             },
+            socialNetworks: {
+              instagram: 'minhaempresa',
+              facebook: 'minhaempresa',
+              linkedin: 'minhaempresa',
+            },
             logo: 'https://example.com/logo.png',
             textBeforeItems: 'Texto antes dos itens',
             textAfterItems: 'Texto depois dos itens',

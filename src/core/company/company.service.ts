@@ -216,7 +216,8 @@ export class CompanyService {
 
   async createMainCompany(email: string, createCompanyDto: CreateCompanyDto) {
     try {
-      const { general, address, personalization } = createCompanyDto;
+      const { general, address, personalization, socialNetworks } =
+        createCompanyDto;
 
       const company = await this.prisma.$transaction(async (tx) => {
         const company = await tx.company.create({
@@ -235,6 +236,10 @@ export class CompanyService {
             textBeforeItems: 'Segue abaixo conforme sua solicitação:',
             textAfterItems:
               '1) Crédito e condição de pagamento sujeito à aprovação;\n2) Impressos c/ alta exigência colorimétrica exige-se prova de cor;\n3) Não nos responsabilizamos por características e especificações dos projetos gráficos fornecidos pelo cliente;\n4) Prazo de entrega são previsões que poderão se alterar e modificar de acordo com o andamento do processo produtivo;\n5) Não aceitamos cancelamentos de pedidos após iniciado o processo de produção;',
+            // Social networks fields
+            instagram: socialNetworks?.instagram,
+            facebook: socialNetworks?.facebook,
+            linkedin: socialNetworks?.linkedin,
             trialEndsAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
             // Create related address
             address: address
@@ -476,7 +481,8 @@ export class CompanyService {
         throw new Error('Company not found');
       }
 
-      const { general, address, personalization } = createCompanyDto;
+      const { general, address, personalization, socialNetworks } =
+        createCompanyDto;
 
       return await this.prisma.company.create({
         data: {
@@ -498,6 +504,10 @@ export class CompanyService {
           textAfterItems:
             personalization?.textsAfterItems ||
             '1) Crédito e condição de pagamento sujeito à aprovação;\n2) Impressos c/ alta exigência colorimétrica exige-se prova de cor;\n3) Não nos responsabilizamos por características e especificações dos projetos gráficos fornecidos pelo cliente;\n4) Prazo de entrega são previsões que poderão se alterar e modificar de acordo com o andamento do processo produtivo;\n5) Não aceitamos cancelamentos de pedidos após iniciado o processo de produção;',
+          // Social networks fields
+          instagram: socialNetworks?.instagram,
+          facebook: socialNetworks?.facebook,
+          linkedin: socialNetworks?.linkedin,
 
           // Create related address
           address: address
@@ -594,6 +604,11 @@ export class CompanyService {
         textsBeforeItems: company.textBeforeItems,
         textsAfterItems: company.textAfterItems,
       },
+      socialNetworks: {
+        instagram: company.instagram,
+        facebook: company.facebook,
+        linkedin: company.linkedin,
+      },
     }));
 
     return {
@@ -608,7 +623,8 @@ export class CompanyService {
   }
 
   async update(id: string, updateCompanyDto: UpdateCompanyDto) {
-    const { general, address, personalization } = updateCompanyDto;
+    const { general, address, personalization, socialNetworks } =
+      updateCompanyDto;
     const data = {
       name: general?.name,
       legalName: general?.legalName,
@@ -623,6 +639,10 @@ export class CompanyService {
       favIconUrl: personalization?.favIconUrl,
       textBeforeItems: personalization?.textsBeforeItems,
       textAfterItems: personalization?.textsAfterItems,
+      // Social networks fields
+      instagram: socialNetworks?.instagram,
+      facebook: socialNetworks?.facebook,
+      linkedin: socialNetworks?.linkedin,
     };
 
     if (updateCompanyDto.isActive !== undefined) {

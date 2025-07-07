@@ -26,6 +26,9 @@ model Company {
   siteUrl               String?
   textAfterItems        String?
   textBeforeItems       String?
+  instagram             String?
+  facebook              String?
+  linkedin              String?
   principalCompanyId    String?
   trialEndsAt           DateTime?
   deliveryType          DeliveryType[]

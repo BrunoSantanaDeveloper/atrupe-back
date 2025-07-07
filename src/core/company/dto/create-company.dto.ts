@@ -162,6 +162,32 @@ export class CreatePersonalizationDto {
   textsAfterItems?: string;
 }
 
+export class CreateSocialNetworksDto {
+  @IsOptional()
+  @ApiProperty({
+    description: 'Instagram da empresa',
+    required: false,
+    example: 'minhaempresa',
+  })
+  instagram?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Facebook da empresa',
+    required: false,
+    example: 'minhaempresa',
+  })
+  facebook?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'LinkedIn da empresa',
+    required: false,
+    example: 'minhaempresa',
+  })
+  linkedin?: string;
+}
+
 export class CreateCompanyDto {
   @IsOptional()
   @IsBoolean()
@@ -200,4 +226,14 @@ export class CreateCompanyDto {
     type: () => CreatePersonalizationDto,
   })
   personalization?: CreatePersonalizationDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreateSocialNetworksDto)
+  @ApiProperty({
+    description: 'Redes sociais',
+    required: false,
+    type: () => CreateSocialNetworksDto,
+  })
+  socialNetworks?: CreateSocialNetworksDto;
 }

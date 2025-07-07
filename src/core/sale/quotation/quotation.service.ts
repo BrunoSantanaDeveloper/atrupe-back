@@ -1733,6 +1733,9 @@ export class QuotationService {
               logoUrl: true,
               textBeforeItems: true,
               textAfterItems: true,
+              instagram: true,
+              facebook: true,
+              linkedin: true,
               address: {
                 where: { type: 'Principal' },
                 select: {
@@ -1873,6 +1876,11 @@ export class QuotationService {
           logo: quotation.company.logoUrl,
           textBeforeItems: quotation.company.textBeforeItems,
           textAfterItems: quotation.company.textAfterItems,
+          socialNetworks: {
+            instagram: quotation.company.instagram,
+            facebook: quotation.company.facebook,
+            linkedin: quotation.company.linkedin,
+          },
         },
         client: {
           name: quotation.client?.name,
