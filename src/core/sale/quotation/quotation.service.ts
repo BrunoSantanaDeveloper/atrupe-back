@@ -1730,6 +1730,8 @@ export class QuotationService {
             select: {
               name: true,
               cnpj: true,
+              email: true,
+              siteUrl: true,
               logoUrl: true,
               textBeforeItems: true,
               textAfterItems: true,
@@ -1862,6 +1864,8 @@ export class QuotationService {
         company: {
           name: quotation.company.name,
           cnpj: quotation.company.cnpj,
+          email: quotation.company.email,
+          siteUrl: quotation.company.siteUrl,
           address: quotation.company.address[0]
             ? {
                 street: quotation.company.address[0].street,

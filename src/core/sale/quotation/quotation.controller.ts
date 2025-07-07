@@ -360,6 +360,8 @@ export class QuotationController {
           company: {
             name: 'Empresa Exemplo Ltda',
             cnpj: '12.345.678/0001-90',
+            email: 'contato@empresa.com',
+            siteUrl: 'https://www.empresa.com',
             address: {
               street: 'Rua Exemplo',
               number: '123',
