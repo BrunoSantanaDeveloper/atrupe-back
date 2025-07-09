@@ -7,18 +7,11 @@ import {
   Post,
   Patch,
   Query,
-  UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PlanService } from './plan.service';
 import { CreatePlanDTO, UpdatePlanDTO } from './dtos/plan';
 import { CreateModuleDTO, UpdateModuleDTO } from './dtos/module';
-import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 
 const RESOURCE = 'plan';
 
@@ -132,6 +125,16 @@ export class PlanController {
   })
   deletePlan(@Param('id') id: string) {
     return this.planService.deletePlan(id);
+  }
+
+  @Post('seed')
+  @ApiOperation({ summary: 'Cria os planos padrão do sistema' })
+  @ApiResponse({
+    status: 201,
+    description: 'Planos padrão criados com sucesso',
+  })
+  async seedDefaultPlans(@Query('companyId') companyId?: string) {
+    return this.planService.createDefaultPlans(companyId);
   }
 
   // Keep existing subscription endpoints...
