@@ -124,46 +124,104 @@ export class UserService {
     if (!isVerified) {
       throw new BadRequestException('Email não verificado.');
     }
-    const hashedPassword = await argon2.hash(createUserDto.password);
-    const data: Prisma.UserCreateInput = {
-      name: createUserDto.name,
-      email: createUserDto.email,
-      password: hashedPassword,
-      phone: createUserDto.mobile,
-    };
-    await this.prisma.user.create({
-      data: data,
-    });
-    const createCompany: CreateCompanyDto = {
-      general: {
-        phone: createUserDto.mobile,
-        name: createUserDto.company,
-        legalName: createUserDto.company,
-        cnpj: '',
+
+    return await this.prisma.$transaction(async (tx) => {
+      // Criar usuário
+      const hashedPassword = await argon2.hash(createUserDto.password);
+      const userData: Prisma.UserCreateInput = {
+        name: createUserDto.name,
         email: createUserDto.email,
-        siteUrl: '',
-        municipalRegistration: '',
-        mobile: createUserDto.mobile,
-      },
-      address: {
-        street: '',
-        number: '',
-        neighborhood: '',
-        city: '',
-        state: '',
-        zipcode: '',
-      },
-    };
+        password: hashedPassword,
+        phone: createUserDto.mobile,
+      };
+      const user = await tx.user.create({
+        data: userData,
+      });
 
-    await this.companyService.createMainCompany(
-      createUserDto.email,
-      createCompany,
-    );
+      // Criar empresa
+      const createCompany: CreateCompanyDto = {
+        general: {
+          phone: createUserDto.mobile,
+          name: createUserDto.company,
+          legalName: createUserDto.company,
+          cnpj: '',
+          email: createUserDto.email,
+          siteUrl: '',
+          municipalRegistration: '',
+          mobile: createUserDto.mobile,
+        },
+        address: {
+          street: '',
+          number: '',
+          neighborhood: '',
+          city: '',
+          state: '',
+          zipcode: '',
+        },
+      };
 
-    await this.prisma.mailVerification.delete({
-      where: { email: createUserDto.email },
+      const company = await this.companyService.createMainCompany(
+        createUserDto.email,
+        createCompany,
+      );
+
+      // Buscar plano TRIAL
+      const trialPlan = await tx.plan.findFirst({
+        where: { planType: 'TRIAL' },
+      });
+
+      if (trialPlan) {
+        // Criar customer
+        const customer = await tx.customer.create({
+          data: {
+            name: createUserDto.name,
+            email: createUserDto.email,
+            document: '',
+            asaasCustomerId: `trial_${user.id}`,
+            companyId: company.id,
+          },
+        });
+
+        // Conectar user ao customer
+        await tx.user.update({
+          where: { id: user.id },
+          data: { customerId: customer.id },
+        });
+
+        // Criar subscription com plano TRIAL
+        const trialEndDate = new Date();
+        trialEndDate.setDate(trialEndDate.getDate() + 7); // 7 dias de trial
+
+        await tx.subscription.create({
+          data: {
+            customerId: customer.id,
+            planId: trialPlan.id,
+            companyId: company.id,
+            additionalAccesses: 0,
+            asaasSubscriptionId: `trial_sub_${user.id}`,
+            modules: trialPlan.modules,
+            nextDueDate: trialEndDate,
+            cycle: 'MONTHLY',
+            billingType: 'CREDIT_CARD',
+            value: trialPlan.basePrice,
+            status: 'ACTIVE',
+          },
+        });
+
+        console.log(
+          `Plano TRIAL criado para usuário ${user.email} - válido até ${trialEndDate.toISOString()}`,
+        );
+      } else {
+        console.warn('Plano TRIAL não encontrado - subscription não criada');
+      }
+
+      // Deletar verificação de email
+      await tx.mailVerification.delete({
+        where: { email: createUserDto.email },
+      });
+
+      return { message: 'Usuário criado com sucesso com plano TRIAL.' };
     });
-    return { message: 'Usuário criado com sucesso.' };
   }
   async create(createUserDto: CreateMailVerificationDto): Promise<any> {
     try {

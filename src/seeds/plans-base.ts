@@ -1,5 +1,14 @@
 export const BASE_PLANS = [
   {
+    planType: 'TRIAL' as const,
+    name: 'Trial',
+    description:
+      'Plano de avaliação gratuito com funcionalidades limitadas para testar o sistema por um período determinado.\n\nIncluído no Trial:\n- Até 3 usuários\n- Funcionalidades básicas\n- Acesso limitado por 7 dias\n- Suporte básico\n\nPerfeito para conhecer o sistema antes de escolher um plano pago.',
+    basePrice: 0.0,
+    additionalAccessPrice: 0.0,
+    modules: ['basic'],
+  },
+  {
     planType: 'START' as const,
     name: 'Start',
     description:
