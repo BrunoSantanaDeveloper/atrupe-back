@@ -7,11 +7,12 @@ import { CreatePlanDTO, UpdatePlanDTO, SubscriptionDTO } from './dtos/plan';
 import { CreateModuleDTO, UpdateModuleDTO } from './dtos/module';
 import { PrismaService } from 'nestjs-prisma';
 import { BASE_PLANS } from '../../seeds/plans-base';
+import { asaasConfig } from 'src/config/configuration';
 
 @Injectable()
 export class PlanService {
   constructor(private prisma: PrismaService) {}
-  private asaasToken = process.env.ASAAS_TOKEN;
+  private asaasToken = asaasConfig.token;
 
   // Plan CRUD Operations
   async createPlan(createPlanDTO: CreatePlanDTO) {

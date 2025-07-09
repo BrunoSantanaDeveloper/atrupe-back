@@ -14,6 +14,7 @@ export default () => ({
 });
 
 export const asaasConfig = {
-  token: `$${process.env.ASAAS_API_KEY_SANDBOX}`,
-  apiUrl: process.env.ASAAS_API_URL_SANDBOX,
+  mockMode: process.env.ASAAS_MOCK_MODE === 'true',
+  token: `$${process.env.ASAAS_TOKEN}`,
+  apiUrl: process.env.ASAAS_API_URL || 'https://sandbox.asaas.com/api/v3',
 };

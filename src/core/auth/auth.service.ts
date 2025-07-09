@@ -84,7 +84,7 @@ export class AuthService {
   async login(user: any) {
     try {
       const subscription =
-        user.customer?.[0]?.subscriptions?.[0]?.plan?.planType ?? 'TRIAL';
+        user.customer?.subscriptions?.[0]?.plan?.planType ?? 'TRIAL';
 
       const payload = {
         username: user.email,

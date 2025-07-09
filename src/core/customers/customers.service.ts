@@ -3,12 +3,14 @@ import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import axios from 'axios';
+import { asaasConfig } from 'src/config/configuration';
 
 @Injectable()
 export class CustomersService {
   constructor(private prisma: PrismaService) {}
-  private asaasToken = `$${process.env.ASAAS_API_KEY_SANDBOX}`;
-  private asaasApiUrl = process.env.ASAAS_API_URL_SANDBOX;
+  private asaasToken = asaasConfig.token;
+  private asaasApiUrl = asaasConfig.apiUrl;
+  private isMockMode = asaasConfig.mockMode;
 
   async create(createCustomerDto: CreateCustomerDto) {
     const asaasCustomer = await this.createCustomerAsaas(createCustomerDto);
@@ -49,7 +51,11 @@ export class CustomersService {
   }
 
   private async createCustomerAsaas(createCustomerDto: CreateCustomerDto) {
-    const route = `${this.asaasApiUrl}/v3/customers`;
+    if (this.isMockMode) {
+      return this.mockCreateCustomer(createCustomerDto);
+    }
+
+    const route = `${this.asaasApiUrl}/customers`;
     console.log('Route:', route);
     const data = {
       name: createCustomerDto.name,
@@ -83,6 +89,24 @@ export class CustomersService {
         `Error creating customer in Asaas: ${error.message}`,
       );
     }
+  }
+
+  private mockCreateCustomer(createCustomerDto: CreateCustomerDto): any {
+    console.log('🎭 MOCK MODE: Simulando criação de customer no Asaas');
+    console.log('Dados do customer:', createCustomerDto);
+
+    return {
+      id: `cus_mock_${Date.now()}`,
+      name: createCustomerDto.name,
+      email: createCustomerDto.email,
+      cpfCnpj: createCustomerDto.document,
+      phone: createCustomerDto.phone,
+      mobilePhone: createCustomerDto.phone,
+      postalCode: createCustomerDto.postalCode,
+      addressNumber: createCustomerDto.addressNumber,
+      dateCreated: new Date().toISOString(),
+      object: 'customer',
+    };
   }
 
   async findAll() {
