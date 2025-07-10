@@ -387,15 +387,37 @@ export class QuotationService {
           if (item.id) {
             // Buscar a unidade de medida para calcular o totalValue se necessário
             let calculatedTotalValue;
+            let unitOfMeasure;
+            let finalSalePrice = item.salePrice;
+
             if (item.salePrice !== undefined) {
-              const unitOfMeasure =
-                await this.prisma.companyUnitOfMeasure.findUnique({
+              unitOfMeasure = await this.prisma.companyUnitOfMeasure.findUnique(
+                {
                   where: { id: item.unitOfMeasureId },
-                });
-              const measurement = unitOfMeasure
-                ? this.calculateMeasurement(item, unitOfMeasure.code)
-                : 1;
-              calculatedTotalValue = item.salePrice * measurement;
+                },
+              );
+
+              if (unitOfMeasure) {
+                const measurement = this.calculateMeasurement(
+                  item,
+                  unitOfMeasure.code,
+                );
+
+                // Para unidades de hora (HH), sempre usar unitCost como valor base
+                // pois o salePrice pode vir já calculado do frontend na edição
+                let basePrice = item.salePrice;
+                if (
+                  unitOfMeasure.code === 'HH' &&
+                  item.unitCost !== undefined
+                ) {
+                  basePrice = item.unitCost;
+                  finalSalePrice = item.unitCost; // Salvar o unitCost como salePrice para manter consistência
+                }
+
+                calculatedTotalValue = basePrice * measurement;
+              } else {
+                calculatedTotalValue = item.salePrice;
+              }
             }
 
             // Atualizar item existente
@@ -420,7 +442,7 @@ export class QuotationService {
                 ...(item.duration !== undefined && { duration: item.duration }),
                 ...(item.unitCost !== undefined && { unitCost: item.unitCost }),
                 ...(item.salePrice !== undefined && {
-                  salePrice: item.salePrice,
+                  salePrice: finalSalePrice,
                   totalValue: calculatedTotalValue,
                 }),
               },
@@ -600,12 +622,17 @@ export class QuotationService {
 
     // Calcular e atualizar `totalValue` para cada item baseado na unidade de medida
     const updatedItems = quotationProducts.items.map((item) => {
-      const salePrice = item.salePrice || item.unitCost || 0;
+      // Para unidades de hora (HH), sempre usar unitCost como valor base
+      let basePrice = item.salePrice || item.unitCost || 0;
+      if (item.unitOfMeasure.code === 'HH' && item.unitCost) {
+        basePrice = item.unitCost;
+      }
+
       const measurement = this.calculateMeasurement(
         item,
         item.unitOfMeasure.code,
       );
-      const totalValue = salePrice * measurement;
+      const totalValue = basePrice * measurement;
 
       return {
         id: item.id,
