@@ -267,7 +267,7 @@ export const BASE_PRODUCTS: ProductType[] = [
         unidadeMedida: 'HH',
         nomeUnidadeMedida: 'Hora',
         dimensoes: {
-          duracao: 0.3,
+          duracao: 18,
         },
         precoVenda: 0,
       },
