@@ -8,7 +8,6 @@ import {
   Delete,
   UseGuards,
   Req,
-  Put,
 } from '@nestjs/common';
 import { UnitOfMeasureService } from './unit-of-measure.service';
 import { CreateUnitOfMeasureDto } from './dto/create-unit-of-measure.dto';
@@ -93,7 +92,7 @@ export class UnitOfMeasureController {
     return this.unitOfMeasureService.findByKind(req.user.companyId, kind);
   }
 
-  @Put('default-variant/:kind')
+  @Patch('default-variant/:kind')
   @ApiOperation({
     summary: 'Atualiza a variante padrão para um tipo de unidade',
   })
