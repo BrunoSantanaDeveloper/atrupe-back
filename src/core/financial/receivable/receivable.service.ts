@@ -414,13 +414,14 @@ export class ReceivableService {
       await this.updateReceivableStatus(result.receivableId);
 
       // Buscar dados completos da parcela atualizada para retornar
-      const updatedInstallment = await this.prisma.receivableInstallment.findUnique({
-        where: { id: installmentId },
-        include: {
-          paymentMethod: true,
-          bankAccount: { include: { bank: true } },
-        },
-      });
+      const updatedInstallment =
+        await this.prisma.receivableInstallment.findUnique({
+          where: { id: installmentId },
+          include: {
+            paymentMethod: true,
+            bankAccount: { include: { bank: true } },
+          },
+        });
 
       return {
         message: 'Parcela paga com sucesso.',
@@ -589,13 +590,14 @@ export class ReceivableService {
       await this.updateReceivableStatus(installmentData.receivableId);
 
       // Buscar dados completos da parcela atualizada para retornar
-      const updatedInstallment = await this.prisma.receivableInstallment.findUnique({
-        where: { id: installmentId },
-        include: {
-          paymentMethod: true,
-          bankAccount: { include: { bank: true } },
-        },
-      });
+      const updatedInstallment =
+        await this.prisma.receivableInstallment.findUnique({
+          where: { id: installmentId },
+          include: {
+            paymentMethod: true,
+            bankAccount: { include: { bank: true } },
+          },
+        });
 
       return {
         message: 'Pagamento da parcela desfeito com sucesso.',

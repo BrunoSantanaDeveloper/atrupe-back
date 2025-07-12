@@ -92,7 +92,7 @@ export class FlowService {
     // Calcular totais para recebíveis
     const totalReceivables = receivableDetails.reduce(
       (acc, inst) => {
-        const expected = inst.status !== 'CANCELED' ? inst.amount ?? 0 : 0;
+        const expected = inst.status !== 'CANCELED' ? (inst.amount ?? 0) : 0;
         const totalPaid = inst.paidAmount ?? 0;
 
         return {
@@ -106,7 +106,7 @@ export class FlowService {
     // Calcular totais para pagáveis
     const totalPayables = payableDetails.reduce(
       (acc, inst) => {
-        const expected = inst.status !== 'CANCELED' ? inst.amount ?? 0 : 0;
+        const expected = inst.status !== 'CANCELED' ? (inst.amount ?? 0) : 0;
         const totalPaid = inst.paidAmount ?? 0;
 
         return {

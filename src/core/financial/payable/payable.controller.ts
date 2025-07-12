@@ -88,7 +88,8 @@ export class PayableController {
 
   @Get(':id/details')
   @ApiOperation({
-    summary: 'Obtém detalhes completos de uma conta a pagar com todas as parcelas',
+    summary:
+      'Obtém detalhes completos de uma conta a pagar com todas as parcelas',
   })
   @ApiParam({
     name: 'id',

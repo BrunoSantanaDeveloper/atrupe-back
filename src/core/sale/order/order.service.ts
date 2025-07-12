@@ -281,9 +281,9 @@ export class OrderService {
               deliveryInfo: {
                 include: {
                   supplier: true,
+                  deliverySchedule: true,
                 },
               },
-              DeliverySchedule: true,
               quotationProduct: {
                 include: {
                   product: true,
@@ -389,7 +389,7 @@ export class OrderService {
         deliveryInfo: quotation.deliveryInfo
           ? {
               id: quotation.deliveryInfo.id,
-              status: quotation.DeliverySchedule.status,
+              status: quotation.deliveryInfo.deliverySchedule?.status,
               type: quotation.deliveryInfo.deliveryType,
               timeFrame: quotation.deliveryInfo.daysAfterApproval,
               estimateDate: quotation.deliveryInfo.estimatedDate,

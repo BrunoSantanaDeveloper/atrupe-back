@@ -1465,65 +1465,87 @@ export class QuotationService {
     }
 
     return await this.prisma
-      .$transaction(async (prisma) => {
-        // Atualizar a cotação como aprovada
-        const quotation = await prisma.quotation.update({
-          where: { id: quotationId },
-          data: {
-            status: QuotationStatus.APPROVED,
-            approvedAt: new Date(),
-          },
-          include: {
-            deliveryInfo: {
-              select: {
-                id: true,
-                estimatedDate: true,
+      .$transaction(
+        async (prisma) => {
+          // Atualizar a cotação como aprovada
+          const quotation = await prisma.quotation.update({
+            where: { id: quotationId },
+            data: {
+              status: QuotationStatus.APPROVED,
+              approvedAt: new Date(),
+            },
+            include: {
+              deliveryInfo: {
+                select: {
+                  id: true,
+                  estimatedDate: true,
+                },
+              },
+              quotationPayment: {
+                select: {
+                  billing: true,
+                },
               },
             },
-            quotationPayment: true,
-          },
-        });
+          });
 
-        if (!quotation.deliveryInfo) {
-          throw new Error('Informações de entrega ausentes na cotação.');
-        }
+          if (!quotation.deliveryInfo) {
+            throw new Error('Informações de entrega ausentes na cotação.');
+          }
 
-        // Criar o pedido diretamente no Prisma
-        const order = await prisma.order.create({
-          data: {
-            quotationId: quotation.id,
-          },
-        });
-        const deliveryStatus = isTrial ? 'DELIVERING' : 'IN_PRODUCTION';
-        // Criar o agendamento de entrega diretamente no Prisma
-        await prisma.deliverySchedule.create({
-          data: {
-            company: {
-              connect: { id: quotation.companyId },
+          // Criar o pedido diretamente no Prisma
+          const order = await prisma.order.create({
+            data: {
+              quotationId: quotation.id,
             },
-            quotation: {
-              connect: { id: quotation.id },
+          });
+          const deliveryStatus = isTrial ? 'DELIVERING' : 'IN_PRODUCTION';
+          // Criar o agendamento de entrega diretamente no Prisma
+          await prisma.deliverySchedule.create({
+            data: {
+              company: {
+                connect: { id: quotation.companyId },
+              },
+              quotation: {
+                connect: { id: quotation.id },
+              },
+              order: {
+                connect: { id: order.id },
+              },
+              deliveryInfo: {
+                connect: { id: quotation.deliveryInfo.id },
+              },
+              scheduledDate: quotation.deliveryInfo.estimatedDate
+                ? quotation.deliveryInfo.estimatedDate
+                : new Date(),
+              status: deliveryStatus,
             },
-            order: {
-              connect: { id: order.id },
-            },
-            deliveryInfo: {
-              connect: { id: quotation.deliveryInfo.id },
-            },
-            scheduledDate: quotation.deliveryInfo.estimatedDate
-              ? quotation.deliveryInfo.estimatedDate
-              : new Date(),
-            status: deliveryStatus,
-          },
-        });
+          });
 
-        if (quotation.quotationPayment.billing === 'ON_ORDER') {
-          await this.deliveryScheduleService.bill(quotation.id);
-        }
-
-        return order;
-      })
+          return order;
+        },
+        {
+          timeout: 15000, // Aumentar timeout para 15 segundos
+        },
+      )
       .then(async (order) => {
+        // Executar faturamento FORA da transação principal se necessário
+        const quotationWithPayment = await this.prisma.quotation.findUnique({
+          where: { id: quotationId },
+          select: {
+            quotationPayment: {
+              select: {
+                billing: true,
+              },
+            },
+          },
+        });
+
+        if (quotationWithPayment?.quotationPayment.billing === 'ON_ORDER') {
+          await this.deliveryScheduleService.bill(quotationId);
+        }
+
+        // Criar etapas de produção FORA da transação principal
         await this.createProductionStages(order.quotationId, isTrial);
         return order;
       })
@@ -1540,12 +1562,16 @@ export class QuotationService {
         where: { id: quotationId },
         include: {
           quotationProduct: true,
-          DeliverySchedule: true,
-          deliveryInfo: true,
+          deliveryInfo: {
+            include: {
+              deliverySchedule: true,
+            },
+          },
         },
       });
       if (!quotation) {
         console.error('Orçamento não encontrado.');
+        return;
       }
 
       const quotationProductsIds = quotation.quotationProduct.map(
@@ -1588,10 +1614,10 @@ export class QuotationService {
         stageId: stage.id,
         order: index + 1, // Definir a ordem
         prevStatus: null,
-        scheduleId: quotation.DeliverySchedule.id, // Vincular à agenda de entrega
+        scheduleId: quotation.deliveryInfo?.deliverySchedule?.id, // Vincular à agenda de entrega
       }));
 
-      if (quotation.deliveryInfo.deliveryType === 'CARRIER') {
+      if (quotation.deliveryInfo?.deliveryType === 'CARRIER') {
         const systemStage = await this.prisma.companySector.findFirst({
           where: {
             isSystem: true,
@@ -1604,15 +1630,17 @@ export class QuotationService {
             icon: true,
           },
         });
-        //adicionar as etapas fixas no fim do array
-        productionStages.push({
-          stageId: systemStage.id,
-          order: productionStages.length + 1,
-          prevStatus: null,
-          scheduleId: quotation.DeliverySchedule.id,
-        });
+        if (systemStage) {
+          //adicionar as etapas fixas no fim do array
+          productionStages.push({
+            stageId: systemStage.id,
+            order: productionStages.length + 1,
+            prevStatus: null,
+            scheduleId: quotation.deliveryInfo?.deliverySchedule?.id,
+          });
+        }
       }
-      if (quotation.deliveryInfo.deliveryType === 'PICKUP') {
+      if (quotation.deliveryInfo?.deliveryType === 'PICKUP') {
         const systemStage = await this.prisma.companySector.findFirst({
           where: {
             isSystem: true,
@@ -1625,20 +1653,24 @@ export class QuotationService {
             icon: true,
           },
         });
-        productionStages.push({
-          stageId: systemStage.id,
-          order: productionStages.length + 1,
-          prevStatus: null,
-          scheduleId: quotation.DeliverySchedule.id,
-        });
+        if (systemStage) {
+          productionStages.push({
+            stageId: systemStage.id,
+            order: productionStages.length + 1,
+            prevStatus: null,
+            scheduleId: quotation.deliveryInfo?.deliverySchedule?.id,
+          });
+        }
       }
 
-      await this.prisma.productionStage.createMany({
-        data: productionStages,
-      });
-      console.log('Etapas de produção criadas com sucesso!');
+      if (productionStages.length > 0) {
+        await this.prisma.productionStage.createMany({
+          data: productionStages,
+        });
+        console.log('Etapas de produção criadas com sucesso!');
+      }
     } catch (error) {
-      console.error(error);
+      console.error('Erro ao criar etapas de produção:', error);
     }
   }
 

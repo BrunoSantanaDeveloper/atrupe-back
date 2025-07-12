@@ -301,133 +301,103 @@ export class DeliveryScheduleService {
   }
 
   async bill(quotationId: string) {
+    // Verificar se já existem receivables ou payables para este orçamento
+    const existingFinancials = await this.prisma.$transaction(
+      async (prisma) => {
+        const [existingReceivables, existingPayables] = await Promise.all([
+          prisma.receivable.findMany({
+            where: { quotationId },
+            select: { id: true },
+          }),
+          prisma.payable.findMany({
+            where: { quotationId },
+            select: { id: true },
+          }),
+        ]);
+        return { receivables: existingReceivables, payables: existingPayables };
+      },
+    );
+
+    if (
+      existingFinancials.receivables.length > 0 ||
+      existingFinancials.payables.length > 0
+    ) {
+      console.log(
+        `Financials already exist for quotation ${quotationId}. Skipping bill creation.`,
+      );
+      return {
+        quotation: { id: quotationId },
+        receivable: null,
+        payable: null,
+        message: 'Financial records already exist for this quotation',
+      };
+    }
+
+    // Buscar o quotation ANTES de qualquer transação para evitar timeout
     const quotation = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
       include: {
-        series: {
-          select: {
-            id: true,
-            title: true,
-            code: true,
-          },
-        },
-        seller: {
+        quotationProduct: {
           include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        },
-        company: {
-          select: {
-            id: true,
-            name: true,
-            cnpj: true,
-          },
-        },
-        client: {
-          select: {
-            id: true,
-            type: true,
-            name: true,
-            status: true,
-            cnpj: true,
-            cpf: true,
-            email: true,
-            phone: true,
+            product: true,
+            items: true,
           },
         },
         deliveryInfo: {
           include: {
-            supplier: true,
+            deliverySchedule: true,
           },
         },
-        DeliverySchedule: true,
-        quotationProduct: {
-          include: {
-            product: true,
-            items: {
-              select: {
-                id: true,
-                productItemId: true,
-                name: true,
-                unitOfMeasure: true,
-                salePrice: true,
-                quantity: true,
-                unitCost: true,
-                totalValue: true,
-              },
-              orderBy: {
-                createdAt: 'asc',
-              },
-            },
-          },
-          orderBy: {
-            createdAt: 'asc',
-          },
-        },
-        tag: {
-          select: {
-            id: true,
-            title: true,
-            color: true,
-          },
-        },
-        payable: true,
-        receivable: true,
         quotationPayment: {
           include: {
-            commission: {
-              include: {
-                supplier: {
-                  select: {
-                    id: true,
-                    name: true,
-                  },
-                },
-              },
-            },
-            downPaymentCondition: {
-              include: {
-                paymentMethod: true,
-              },
-            },
-            paymentMethod: true,
-            paymentCondition: true,
-            quotationInstallment: {
-              include: {
-                paymentMethod: true,
-                payableInstallment: true,
-                receivableInstallment: true,
-              },
-            },
+            quotationInstallment: true,
+            commission: true,
           },
         },
+        client: true,
+        series: true,
+        company: true,
       },
     });
+
     if (!quotation) {
-      throw new Error('Orçamento não encontrado.');
+      throw new NotFoundException(
+        `Quotation with ID '${quotationId}' not found.`,
+      );
     }
-    if (
-      quotation.DeliverySchedule &&
-      quotation.DeliverySchedule.status === 'FINISHED'
-    ) {
-      await this.prisma.deliverySchedule.update({
-        where: { id: quotation.DeliverySchedule.id },
-        data: { status: 'DONE' },
-      });
-    }
-    const receivable = await this.generateReceivableFromQuotation(quotation);
 
-    const payable = await this.generatePayableFromQuotation(quotation);
+    // Executar em uma transação otimizada
+    return await this.prisma.$transaction(
+      async (prisma) => {
+        // Marcar as entregas como finalizadas
+        if (quotation.deliveryInfo?.deliverySchedule) {
+          await prisma.deliverySchedule.update({
+            where: { id: quotation.deliveryInfo.deliverySchedule.id },
+            data: { status: 'DONE' },
+          });
+        }
 
-    return { quotation, receivable, payable };
+        // Gerar receivables
+        const receivable = await this.generateReceivableFromQuotation(
+          quotation,
+          prisma,
+        );
+
+        // Gerar payables
+        const payable = await this.generatePayableFromQuotation(
+          quotation,
+          prisma,
+        );
+
+        return { quotation, receivable, payable };
+      },
+      {
+        timeout: 15000, // 15 segundos de timeout
+      },
+    );
   }
 
-  private async generatePayableFromQuotation(quotation: any) {
+  private async generatePayableFromQuotation(quotation: any, prisma: any) {
     const commission = quotation.quotationPayment.commission;
     const delivery = quotation.deliveryInfo;
     if (!commission || !delivery) {
@@ -435,12 +405,14 @@ export class DeliveryScheduleService {
     }
 
     // Criar conta a pagar da comissão
-    const payableCommision = await this.prisma.payable.create({
+    const payableCommision = await prisma.payable.create({
       data: {
         referenceDate: new Date(),
         description: `Comissão da venda ${quotation.quotationNumber}-${quotation.series.code} - ${quotation.description || ''}`,
         notes: quotation.quotationPayment.description || '',
         totalAmount: commission.totalCommission || 0,
+        totalValue: commission.totalCommission || 0,
+        mainAdditionalFee: 0,
         installmentQty:
           commission.transferMethod === 'PAYMENT_BASED'
             ? quotation.quotationPayment.quotationInstallment.length
@@ -448,8 +420,8 @@ export class DeliveryScheduleService {
         status: 'PENDING',
         supplierId: commission.supplierId,
         companyId: quotation.companyId,
-        natureId: null, // Substitua se houver uma natureza predefinida
-        subCategoryId: null, // Substitua se houver uma subcategoria predefinida
+        natureId: null,
+        subCategoryId: null,
         quotationId: quotation.id,
         commission: {
           connect: {
@@ -462,12 +434,12 @@ export class DeliveryScheduleService {
     // Criar parcelas de comissão
     if (payableCommision) {
       if (commission.transferMethod === 'SINGLE') {
-        await this.prisma.payableInstallment.create({
+        await prisma.payableInstallment.create({
           data: {
             payableId: payableCommision.id,
             installmentNumber: 1,
             dueDate: add(new Date(), { days: 30 }),
-            amount: commission.totalCommission,
+            amount: commission.totalCommission || 0,
             additionalFee: 0,
             paymentMethodId: null,
             status: 'PENDING',
@@ -491,19 +463,30 @@ export class DeliveryScheduleService {
             }),
           );
 
-        await this.prisma.payableInstallment.createMany({
+        await prisma.payableInstallment.createMany({
           data: installments,
         });
       }
     }
 
+    // Verificar se o custo de entrega é válido
+    const deliveryCost = delivery.cost || 0;
+    if (deliveryCost <= 0) {
+      console.log(
+        'Custo de entrega é zero ou inválido, pulando criação da conta a pagar de entrega',
+      );
+      return { payableCommision, payableDelivery: null };
+    }
+
     // Criar conta a pagar da entrega
-    const payableDelivery = await this.prisma.payable.create({
+    const payableDelivery = await prisma.payable.create({
       data: {
         referenceDate: new Date(),
         description: `Entrega da venda ${quotation.quotationNumber}-${quotation.series.code} - ${quotation.description || ''}`,
         notes: quotation.quotationPayment.description || '',
-        totalAmount: delivery.cost || 0,
+        totalAmount: deliveryCost,
+        totalValue: deliveryCost,
+        mainAdditionalFee: 0,
         installmentQty: 1,
         status: 'PENDING',
         supplierId: delivery.supplierId,
@@ -516,12 +499,12 @@ export class DeliveryScheduleService {
 
     // Criar parcela única para a entrega
     if (payableDelivery) {
-      await this.prisma.payableInstallment.create({
+      await prisma.payableInstallment.create({
         data: {
           payableId: payableDelivery.id,
           installmentNumber: 1,
           dueDate: add(new Date(), { days: 30 }),
-          amount: delivery.cost,
+          amount: deliveryCost,
           additionalFee: 0,
           paymentMethodId: null,
           status: 'PENDING',
@@ -533,7 +516,7 @@ export class DeliveryScheduleService {
     return { payableCommision, payableDelivery };
   }
 
-  private async generateReceivableFromQuotation(quotation: any) {
+  private async generateReceivableFromQuotation(quotation: any, prisma: any) {
     const quotationInstallments =
       quotation.quotationPayment.quotationInstallment;
     const downPayment = quotation.quotationPayment.downPayment;
@@ -563,85 +546,81 @@ export class DeliveryScheduleService {
       (sum: number, installment: any) => sum + (installment.additionalFee || 0),
       0,
     );
-    try {
-      // Iniciar uma transação Prisma
-      return await this.prisma.$transaction(async (prisma) => {
-        if (downPayment && downPayment > 0) {
-          const receivableDownPayment = await prisma.receivable.create({
-            data: {
-              referenceDate: new Date(),
-              description: `Entrada da venda ${quotation.quotationNumber}-${quotation.series.code} - ${quotation.description || ''}`,
-              notes: quotation.quotationPayment.description || '',
-              totalAmount: downPayment,
-              totalValue: downPayment,
-              mainAdditionalFee: downPaymentadditionalFee || 0,
-              installmentQty: 1,
-              status: 'PENDING',
-              clientId: quotation.clientId,
-              companyId: quotation.companyId, // Certifique-se de passar o `companyId`
-              natureId: null, // Substitua se houver uma natureza predefinida
-              subCategoryId: null, // Substitua se houver uma subcategoria predefinida
-              quotationId: quotation.id, // Associar ao orçamento, se necessário
-            },
-          });
-          await prisma.receivableInstallment.create({
-            data: {
-              receivableId: receivableDownPayment.id,
-              installmentNumber: 1,
-              dueDate: downPaymentDueDate,
-              amount: downPayment,
-              additionalFee: downPaymentadditionalFee || 0,
-              paymentMethodId: paymentMethod,
-              status: 'PENDING',
-              paidDate: null,
-            },
-          });
-        }
 
-        // Criar o Receivable
-        const receivable = await prisma.receivable.create({
+    try {
+      // Criar entrada se houver
+      if (downPayment && downPayment > 0) {
+        const receivableDownPayment = await prisma.receivable.create({
           data: {
             referenceDate: new Date(),
-            description: `Venda ${quotation.quotationNumber}-${quotation.series.code} - ${quotation.description || ''}`,
+            description: `Entrada da venda ${quotation.quotationNumber}-${quotation.series.code} - ${quotation.description || ''}`,
             notes: quotation.quotationPayment.description || '',
-            totalAmount,
-            totalValue,
-            mainAdditionalFee,
-            installmentQty: quotationInstallments.length,
+            totalAmount: downPayment,
+            totalValue: downPayment,
+            mainAdditionalFee: downPaymentadditionalFee || 0,
+            installmentQty: 1,
             status: 'PENDING',
             clientId: quotation.clientId,
-            companyId: quotation.companyId, // Certifique-se de passar o `companyId`
-            natureId: null, // Substitua se houver uma natureza predefinida
-            subCategoryId: null, // Substitua se houver uma subcategoria predefinida
-            quotationId: quotation.id, // Associar ao orçamento, se necessário
+            companyId: quotation.companyId,
+            natureId: null,
+            subCategoryId: null,
+            quotationId: quotation.id,
           },
         });
-
-        // Preparar as parcelas
-        const installments = quotationInstallments.map(
-          (installment: any, index: number) => ({
-            receivableId: receivable.id,
-            installmentNumber: index + 1, // Adicionar o número da parcela
-            dueDate: installment.dueDate,
-            amount: installment.value,
-            additionalFee: installment.additionalFee || 0,
-            paymentMethodId: installment.paymentMethodId,
+        await prisma.receivableInstallment.create({
+          data: {
+            receivableId: receivableDownPayment.id,
+            installmentNumber: 1,
+            dueDate: downPaymentDueDate,
+            amount: downPayment,
+            additionalFee: downPaymentadditionalFee || 0,
+            paymentMethodId: paymentMethod,
             status: 'PENDING',
             paidDate: null,
-          }),
-        );
-        // Criar as parcelas
-        await prisma.receivableInstallment.createMany({
-          data: installments,
+          },
         });
+      }
 
-        return receivable;
+      // Criar o Receivable principal
+      const receivable = await prisma.receivable.create({
+        data: {
+          referenceDate: new Date(),
+          description: `Venda ${quotation.quotationNumber}-${quotation.series.code} - ${quotation.description || ''}`,
+          notes: quotation.quotationPayment.description || '',
+          totalAmount,
+          totalValue,
+          mainAdditionalFee,
+          installmentQty: quotationInstallments.length,
+          status: 'PENDING',
+          clientId: quotation.clientId,
+          companyId: quotation.companyId,
+          natureId: null,
+          subCategoryId: null,
+          quotationId: quotation.id,
+        },
       });
-    } catch (error) {
-      // Log do erro para análise
-      console.error('Erro ao gerar contas a receber:', error);
 
-      // Lançar o erro novamente para que o chamador possa tratá-lo
+      // Preparar e criar as parcelas
+      const installments = quotationInstallments.map(
+        (installment: any, index: number) => ({
+          receivableId: receivable.id,
+          installmentNumber: index + 1,
+          dueDate: installment.dueDate,
+          amount: installment.value,
+          additionalFee: installment.additionalFee || 0,
+          paymentMethodId: installment.paymentMethodId,
+          status: 'PENDING',
+          paidDate: null,
+        }),
+      );
+
+      await prisma.receivableInstallment.createMany({
+        data: installments,
+      });
+
+      return receivable;
+    } catch (error) {
+      console.error('Erro ao gerar contas a receber:', error);
       throw new Error(
         'Erro ao gerar contas a receber. Detalhes: ' + error.message,
       );
@@ -649,102 +628,92 @@ export class DeliveryScheduleService {
   }
 
   async getFinancialDataById(quotationId: string) {
-    const installments = await this.prisma.receivableInstallment.findMany({
+    const receivables = await this.prisma.receivable.findMany({
       where: {
-        receivable: {
-          id: quotationId,
-        },
+        quotationId: quotationId,
       },
       select: {
         id: true,
+        totalAmount: true,
+        description: true,
+        notes: true,
         status: true,
-        amount: true,
-        additionalFee: true,
-        paidDate: true,
-        dueDate: true,
-        receivable: {
+        referenceDate: true,
+        client: { select: { id: true, name: true } },
+        nature: { select: { id: true, description: true } },
+        subCategory: { select: { id: true, description: true } },
+        installments: {
           select: {
             id: true,
-            totalAmount: true,
-            description: true,
-            notes: true,
             status: true,
-            referenceDate: true,
-            client: { select: { id: true, name: true } },
-            // supplier: { select: { id: true, name: true } },
-            nature: { select: { id: true, description: true } },
-            subCategory: { select: { id: true, description: true } },
-            installments: {
-              select: {
-                id: true,
-                status: true,
-                paymentMethod: { select: { id: true, name: true } },
-                amount: true,
-                paidAmount: true,
-                additionalFee: true,
-                dueDate: true,
-                paidDate: true,
-              },
-              orderBy: { dueDate: 'desc' },
-            },
+            paymentMethod: { select: { id: true, name: true } },
+            amount: true,
+            paidAmount: true,
+            additionalFee: true,
+            dueDate: true,
+            paidDate: true,
+            installmentNumber: true,
           },
+          orderBy: { installmentNumber: 'asc' },
         },
       },
     });
 
-    if (!installments || installments.length === 0) {
+    if (!receivables || receivables.length === 0) {
       return null;
     }
 
-    const receivables = installments.map((inst) => {
-      return {
-        id: inst.receivable?.id || null,
-        totalValue: inst.receivable?.totalAmount || 0,
-        totalPaid: (inst.receivable?.installments || []).reduce((sum, item) => {
-          return sum + (item.paidAmount ?? 0);
-        }, 0),
-        description: inst.receivable?.description || '',
-        client: inst.receivable?.client
-          ? {
-              id: inst.receivable.client.id,
-              name: inst.receivable.client.name,
-            }
-          : null,
-        subCategory: inst.receivable?.subCategory
-          ? {
-              id: inst.receivable.subCategory.id,
-              name: inst.receivable.subCategory.description,
-            }
-          : null,
-        nature: inst.receivable?.nature
-          ? {
-              id: inst.receivable.nature.id,
-              name: inst.receivable.nature.description,
-            }
-          : null,
-        installmentsQuantity: inst.receivable?.installments?.length || 0,
-        period: inst.receivable?.referenceDate || null,
-        notes: inst.receivable?.notes || '',
-        status: inst.receivable?.status || 'UNKNOWN',
-        installments: (inst.receivable?.installments || [])
-          .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime()) // Ordenando as parcelas pela data de vencimento
-          .map((installment) => ({
-            id: installment.id || null,
-            status: installment.status || 'UNKNOWN',
-            paymentMethod: {
-              id: installment.paymentMethod?.id || null,
-              name: installment.paymentMethod?.name || null,
-            },
-            value: installment.amount || 0,
-            additionalFee: installment.additionalFee || 0,
-            dueDate: installment.dueDate || null,
-            paidValue: installment.paidAmount || 0, // Ajuste baseado nos requisitos.
-            paymentDate: installment.paidDate || null,
-            current: installment.id === inst.id, // Definindo se a parcela é a atual
-          })),
-      };
-    });
-    return receivables[0];
+    // Retornar dados combinados de todos os receivables do orçamento
+    const totalAmount = receivables.reduce(
+      (sum, receivable) => sum + (receivable.totalAmount || 0),
+      0,
+    );
+    const totalPaid = receivables.reduce((sum, receivable) => {
+      return (
+        sum +
+        receivable.installments.reduce((installmentSum, installment) => {
+          return installmentSum + (installment.paidAmount || 0);
+        }, 0)
+      );
+    }, 0);
+
+    // Combinar todas as parcelas de todos os receivables
+    const allInstallments = receivables
+      .flatMap((receivable) =>
+        receivable.installments.map((installment) => ({
+          id: installment.id,
+          status: installment.status,
+          paymentMethod: {
+            id: installment.paymentMethod?.id || null,
+            name: installment.paymentMethod?.name || null,
+          },
+          value: installment.amount || 0,
+          additionalFee: installment.additionalFee || 0,
+          dueDate: installment.dueDate,
+          paidValue: installment.paidAmount || 0,
+          paymentDate: installment.paidDate,
+          installmentNumber: installment.installmentNumber,
+          receivableDescription: receivable.description,
+        })),
+      )
+      .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+
+    return {
+      id: receivables[0].id, // ID do primeiro receivable (principal)
+      totalValue: totalAmount,
+      totalPaid: totalPaid,
+      description:
+        receivables.find((r) => !r.description?.includes('Entrada'))
+          ?.description || receivables[0].description,
+      client: receivables[0].client,
+      subCategory: receivables[0].subCategory,
+      nature: receivables[0].nature,
+      installmentsQuantity: allInstallments.length,
+      period: receivables[0].referenceDate,
+      notes: receivables[0].notes,
+      status: receivables[0].status,
+      installments: allInstallments,
+    };
   }
 
   async finishDeliverySchedule(id: string) {

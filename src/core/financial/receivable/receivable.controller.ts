@@ -87,7 +87,8 @@ export class ReceivableController {
 
   @Get(':id/details')
   @ApiOperation({
-    summary: 'Obtém detalhes completos de uma conta a receber com todas as parcelas',
+    summary:
+      'Obtém detalhes completos de uma conta a receber com todas as parcelas',
   })
   @ApiParam({
     name: 'id',
