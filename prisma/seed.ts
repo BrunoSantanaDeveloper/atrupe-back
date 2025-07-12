@@ -1,6 +1,7 @@
 // prisma/seed.ts
 import { PrismaClient } from '@prisma/client';
 import { BASE_PLANS, BASE_MODULES } from '../src/seeds/plans-base';
+import { BASE_UNIT_OF_MEASURES } from '../src/seeds/units-base';
 
 const prisma = new PrismaClient();
 
@@ -50,11 +51,47 @@ async function createPlansAndModules() {
   }
 }
 
+async function createDefaultUnitsOfMeasure() {
+  console.log('Criando unidades de medida padrão...');
+
+  for (const unitData of BASE_UNIT_OF_MEASURES) {
+    try {
+      const existingUnit = await prisma.defaultUnitOfMeasure.findUnique({
+        where: { code: unitData.code },
+      });
+
+      if (!existingUnit) {
+        // Agora com os novos campos após a migração
+        await prisma.defaultUnitOfMeasure.create({
+          data: {
+            id: unitData.id,
+            name: unitData.name,
+            code: unitData.code,
+            description: unitData.description,
+            isActive: unitData.isActive,
+            kind: unitData.kind as any,
+            variant: unitData.variant as any,
+            defaultVariant: unitData.defaultVariant as any,
+          },
+        });
+        console.log(`Unidade de medida criada: ${unitData.name}`);
+      } else {
+        console.log(`Unidade de medida já existe: ${unitData.name}`);
+      }
+    } catch (error) {
+      console.error(`Erro ao criar unidade de medida ${unitData.name}:`, error);
+    }
+  }
+}
+
 async function main() {
   console.log('Iniciando o processo de seeding...');
 
   // Criar planos e módulos padrão
   await createPlansAndModules();
+
+  // Criar unidades de medida padrão
+  await createDefaultUnitsOfMeasure();
 
   // Opcional: Limpar dados existentes para garantir um seed limpo
   try {

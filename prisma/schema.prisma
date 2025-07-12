@@ -1159,6 +1159,8 @@ model CompanyUnitOfMeasure {
   companyId              String
   defaultUnitOfMeasureId String?
   kind                   UnitOfMeasureKind?
+  variant                UnitOfMeasureVariant?
+  defaultVariant         UnitOfMeasureVariant?
   productItems           ProductItem[]
   quotationProductItem   QuotationProductItem[]
   company                Company                @relation(fields: [companyId], references: [id])
@@ -1174,6 +1176,8 @@ model DefaultUnitOfMeasure {
   description          String?
   isActive             Boolean                @default(true)
   kind                 UnitOfMeasureKind?
+  variant              UnitOfMeasureVariant?
+  defaultVariant       UnitOfMeasureVariant?
   CompanyUnitOfMeasure CompanyUnitOfMeasure[]
 
   @@map("defalt_unit_measures")
@@ -1622,6 +1626,17 @@ enum UnitOfMeasureKind {
   LENGTH
   WEIGHT
   CAPACITY
+}
+
+enum UnitOfMeasureVariant {
+  MT
+  CM
+  MM
+  KG
+  GR
+  MG
+  LT
+  ML
 }
 
 enum ReasonType {

@@ -1036,18 +1036,42 @@ export class CompanyService {
     const defaultUnitOfMeasures =
       await this.prisma.defaultUnitOfMeasure.findMany();
 
-    const companyUnitOfMeasures = defaultUnitOfMeasures.map(
-      (unitOfMeasure) => ({
-        name: unitOfMeasure.name,
-        code: unitOfMeasure.code,
-        companyId: companyId,
-        defaultUnitOfMeasureId: unitOfMeasure.id,
-      }),
-    );
+    if (defaultUnitOfMeasures.length === 0) {
+      // Se não há unidades padrão, criar as básicas
+      const basicUnits = [
+        { name: 'Unidade', code: 'UN' },
+        { name: 'Quilograma', code: 'KG' },
+        { name: 'Metro', code: 'MT' },
+        { name: 'Litro', code: 'LT' },
+      ];
 
-    await this.prisma.companyUnitOfMeasure.createMany({
-      data: companyUnitOfMeasures,
-    });
+      const companyUnitOfMeasures = basicUnits.map((unit) => ({
+        name: unit.name,
+        code: unit.code,
+        companyId,
+      }));
+
+      await this.prisma.companyUnitOfMeasure.createMany({
+        data: companyUnitOfMeasures,
+      });
+    } else {
+      // Usar as unidades padrão do seed
+      const companyUnitOfMeasures = defaultUnitOfMeasures.map(
+        (unitOfMeasure) => ({
+          name: unitOfMeasure.name,
+          code: unitOfMeasure.code,
+          companyId,
+          defaultUnitOfMeasureId: unitOfMeasure.id,
+          kind: unitOfMeasure.kind,
+          variant: unitOfMeasure.variant,
+          defaultVariant: unitOfMeasure.defaultVariant,
+        }),
+      );
+
+      await this.prisma.companyUnitOfMeasure.createMany({
+        data: companyUnitOfMeasures,
+      });
+    }
   }
 
   private async createDefaultSaleSeries(companyId: string) {

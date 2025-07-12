@@ -8,10 +8,12 @@ import {
   Delete,
   UseGuards,
   Req,
+  Put,
 } from '@nestjs/common';
 import { UnitOfMeasureService } from './unit-of-measure.service';
 import { CreateUnitOfMeasureDto } from './dto/create-unit-of-measure.dto';
 import { UpdateUnitOfMeasureDto } from './dto/update-unit-of-measure.dto';
+import { UpdateDefaultVariantDto } from './dto/update-default-variant.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import {
   ApiTags,
@@ -55,6 +57,70 @@ export class UnitOfMeasureController {
   })
   findAll(@Req() req) {
     return this.unitOfMeasureService.findAll(req.user.companyId);
+  }
+
+  @Get('variants/:kind')
+  @ApiOperation({
+    summary: 'Obtém as variantes disponíveis para um tipo de unidade',
+  })
+  @ApiParam({
+    name: 'kind',
+    required: true,
+    description: 'Tipo de unidade de medida',
+    enum: ['LENGTH', 'WEIGHT', 'CAPACITY'],
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de variantes retornada com sucesso.',
+  })
+  getVariantsByKind(@Param('kind') kind: string) {
+    return this.unitOfMeasureService.getVariantsByKind(kind);
+  }
+
+  @Get('by-kind/:kind')
+  @ApiOperation({ summary: 'Obtém unidades de medida por tipo' })
+  @ApiParam({
+    name: 'kind',
+    required: true,
+    description: 'Tipo de unidade de medida',
+    enum: ['LENGTH', 'WEIGHT', 'CAPACITY'],
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de unidades de medida do tipo especificado.',
+  })
+  findByKind(@Req() req, @Param('kind') kind: string) {
+    return this.unitOfMeasureService.findByKind(req.user.companyId, kind);
+  }
+
+  @Put('default-variant/:kind')
+  @ApiOperation({
+    summary: 'Atualiza a variante padrão para um tipo de unidade',
+  })
+  @ApiParam({
+    name: 'kind',
+    required: true,
+    description: 'Tipo de unidade de medida',
+    enum: ['LENGTH', 'WEIGHT', 'CAPACITY'],
+  })
+  @ApiBody({
+    description: 'Nova variante padrão',
+    type: UpdateDefaultVariantDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Variante padrão atualizada com sucesso.',
+  })
+  updateDefaultVariant(
+    @Req() req,
+    @Param('kind') kind: string,
+    @Body() updateDefaultVariantDto: UpdateDefaultVariantDto,
+  ) {
+    return this.unitOfMeasureService.updateDefaultVariant(
+      req.user.companyId,
+      kind,
+      updateDefaultVariantDto,
+    );
   }
 
   @Get(':id')
