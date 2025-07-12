@@ -31,6 +31,7 @@ model Company {
   linkedin              String?
   principalCompanyId    String?
   trialEndsAt           DateTime?
+  unitDefaults          Json?
   deliveryType          DeliveryType[]
   address               Address[]
   assetTypes            AssetType[]
@@ -1160,7 +1161,6 @@ model CompanyUnitOfMeasure {
   defaultUnitOfMeasureId String?
   kind                   UnitOfMeasureKind?
   variant                UnitOfMeasureVariant?
-  defaultVariant         UnitOfMeasureVariant?
   productItems           ProductItem[]
   quotationProductItem   QuotationProductItem[]
   company                Company                @relation(fields: [companyId], references: [id])
@@ -1177,7 +1177,6 @@ model DefaultUnitOfMeasure {
   isActive             Boolean                @default(true)
   kind                 UnitOfMeasureKind?
   variant              UnitOfMeasureVariant?
-  defaultVariant       UnitOfMeasureVariant?
   CompanyUnitOfMeasure CompanyUnitOfMeasure[]
 
   @@map("defalt_unit_measures")
@@ -1626,6 +1625,10 @@ enum UnitOfMeasureKind {
   LENGTH
   WEIGHT
   CAPACITY
+  DISTANCE
+  DURATION
+  UNITY
+  AREA
 }
 
 enum UnitOfMeasureVariant {
@@ -1637,6 +1640,10 @@ enum UnitOfMeasureVariant {
   MG
   LT
   ML
+  KM
+  HH
+  UN
+  M2
 }
 
 enum ReasonType {

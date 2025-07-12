@@ -17,7 +17,6 @@ export class UnitOfMeasureService {
         description: createUnitOfMeasureDto.description,
         kind: createUnitOfMeasureDto.kind as any,
         variant: createUnitOfMeasureDto.variant as any,
-        defaultVariant: createUnitOfMeasureDto.defaultVariant as any,
       },
     });
   }
@@ -46,7 +45,6 @@ export class UnitOfMeasureService {
         description: updateUnitOfMeasureDto.description,
         kind: updateUnitOfMeasureDto.kind as any,
         variant: updateUnitOfMeasureDto.variant as any,
-        defaultVariant: updateUnitOfMeasureDto.defaultVariant as any,
       },
     });
   }
@@ -56,20 +54,50 @@ export class UnitOfMeasureService {
     kind: string,
     updateDefaultVariantDto: UpdateDefaultVariantDto,
   ) {
-    // Funcionalidade implementada após a migração
-    return this.prisma.companyUnitOfMeasure.updateMany({
-      where: {
-        companyId,
-        kind: kind as any,
-      },
+    // Buscar a empresa atual
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { unitDefaults: true },
+    });
+
+    // Preparar os padrões atuais
+    const currentDefaults = (company?.unitDefaults as any) || {};
+
+    // Atualizar apenas o tipo específico
+    const updatedDefaults = {
+      ...currentDefaults,
+      [kind]: updateDefaultVariantDto.defaultVariant,
+    };
+
+    // Salvar na empresa
+    return this.prisma.company.update({
+      where: { id: companyId },
       data: {
-        defaultVariant: updateDefaultVariantDto.defaultVariant as any,
+        unitDefaults: updatedDefaults,
       },
     });
   }
 
+  async getCompanyUnitDefaults(companyId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { unitDefaults: true },
+    });
+
+    return (
+      (company?.unitDefaults as any) || {
+        LENGTH: 'MT', // Metros (padrão de exibição)
+        WEIGHT: 'KG', // Quilogramas (padrão de exibição)
+        CAPACITY: 'LT', // Litros (padrão de exibição)
+        DISTANCE: 'KM', // Quilômetros (padrão de exibição)
+        DURATION: 'HH', // Horas (padrão de exibição)
+        UNITY: 'UN', // Unidades (padrão de exibição)
+        AREA: 'M2', // Metros quadrados (padrão de exibição)
+      }
+    );
+  }
+
   findByKind(companyId: string, kind: string) {
-    // Funcionalidade implementada após a migração
     return this.prisma.companyUnitOfMeasure.findMany({
       where: {
         companyId,
@@ -85,19 +113,23 @@ export class UnitOfMeasureService {
   getVariantsByKind(kind: string) {
     const variants = {
       LENGTH: [
-        { code: 'MM', name: 'Milímetros', isDefault: true },
+        { code: 'MM', name: 'Milímetros', isDefault: false },
         { code: 'CM', name: 'Centímetros', isDefault: false },
-        { code: 'MT', name: 'Metros', isDefault: false },
+        { code: 'MT', name: 'Metros', isDefault: true },
       ],
       WEIGHT: [
-        { code: 'MG', name: 'Miligramas', isDefault: true },
+        { code: 'MG', name: 'Miligramas', isDefault: false },
         { code: 'GR', name: 'Gramas', isDefault: false },
-        { code: 'KG', name: 'Quilogramas', isDefault: false },
+        { code: 'KG', name: 'Quilogramas', isDefault: true },
       ],
       CAPACITY: [
-        { code: 'ML', name: 'Mililitros', isDefault: true },
-        { code: 'LT', name: 'Litros', isDefault: false },
+        { code: 'ML', name: 'Mililitros', isDefault: false },
+        { code: 'LT', name: 'Litros', isDefault: true },
       ],
+      DISTANCE: [{ code: 'KM', name: 'Quilômetros', isDefault: true }],
+      DURATION: [{ code: 'HH', name: 'Horas', isDefault: true }],
+      UNITY: [{ code: 'UN', name: 'Unidades', isDefault: true }],
+      AREA: [{ code: 'M2', name: 'Metros Quadrados', isDefault: true }],
     };
 
     return variants[kind] || [];

@@ -7,7 +7,6 @@ export const BASE_UNIT_OF_MEASURES = [
     description: 'Unidade de comprimento em metros',
     kind: 'LENGTH',
     variant: 'MT',
-    defaultVariant: 'MM',
     isActive: true,
   },
   {
@@ -17,7 +16,6 @@ export const BASE_UNIT_OF_MEASURES = [
     description: 'Unidade de comprimento em centímetros',
     kind: 'LENGTH',
     variant: 'CM',
-    defaultVariant: 'MM',
     isActive: true,
   },
   {
@@ -27,7 +25,6 @@ export const BASE_UNIT_OF_MEASURES = [
     description: 'Unidade de comprimento em milímetros',
     kind: 'LENGTH',
     variant: 'MM',
-    defaultVariant: 'MM',
     isActive: true,
   },
   // Peso - padrão Miligramas (MG)
@@ -38,7 +35,6 @@ export const BASE_UNIT_OF_MEASURES = [
     description: 'Unidade de peso em quilogramas',
     kind: 'WEIGHT',
     variant: 'KG',
-    defaultVariant: 'MG',
     isActive: true,
   },
   {
@@ -48,7 +44,6 @@ export const BASE_UNIT_OF_MEASURES = [
     description: 'Unidade de peso em gramas',
     kind: 'WEIGHT',
     variant: 'GR',
-    defaultVariant: 'MG',
     isActive: true,
   },
   {
@@ -58,7 +53,6 @@ export const BASE_UNIT_OF_MEASURES = [
     description: 'Unidade de peso em miligramas',
     kind: 'WEIGHT',
     variant: 'MG',
-    defaultVariant: 'MG',
     isActive: true,
   },
   // Capacidade - padrão Mililitros (ML)
@@ -69,7 +63,6 @@ export const BASE_UNIT_OF_MEASURES = [
     description: 'Unidade de capacidade em litros',
     kind: 'CAPACITY',
     variant: 'LT',
-    defaultVariant: 'ML',
     isActive: true,
   },
   {
@@ -79,7 +72,46 @@ export const BASE_UNIT_OF_MEASURES = [
     description: 'Unidade de capacidade em mililitros',
     kind: 'CAPACITY',
     variant: 'ML',
-    defaultVariant: 'ML',
+    isActive: true,
+  },
+  // Distância - padrão Metros (convertido internamente)
+  {
+    id: 'unit-km',
+    name: 'Quilômetros',
+    code: 'KM',
+    description: 'Unidade de distância em quilômetros',
+    kind: 'DISTANCE',
+    variant: 'KM',
+    isActive: true,
+  },
+  // Duração - padrão Segundos (convertido internamente)
+  {
+    id: 'unit-hh',
+    name: 'Horas',
+    code: 'HH',
+    description: 'Unidade de duração em horas',
+    kind: 'DURATION',
+    variant: 'HH',
+    isActive: true,
+  },
+  // Unidade - padrão Unidade
+  {
+    id: 'unit-un',
+    name: 'Unidades',
+    code: 'UN',
+    description: 'Unidade de quantidade',
+    kind: 'UNITY',
+    variant: 'UN',
+    isActive: true,
+  },
+  // Área - padrão Milímetros quadrados (convertido internamente)
+  {
+    id: 'unit-m2',
+    name: 'Metros Quadrados',
+    code: 'M2',
+    description: 'Unidade de área em metros quadrados',
+    kind: 'AREA',
+    variant: 'M2',
     isActive: true,
   },
 ];
@@ -98,5 +130,17 @@ export const CONVERSION_FACTORS = {
   CAPACITY: {
     ML: 1, // Padrão (base)
     LT: 1000, // 1 l = 1000 ml
+  },
+  DISTANCE: {
+    KM: 1000, // 1 km = 1000 m (salvo em metros)
+  },
+  DURATION: {
+    HH: 3600, // 1 hora = 3600 segundos
+  },
+  UNITY: {
+    UN: 1, // Unidade padrão
+  },
+  AREA: {
+    M2: 1000000, // 1 m² = 1000000 mm²
   },
 };

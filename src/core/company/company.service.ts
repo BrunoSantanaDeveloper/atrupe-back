@@ -1039,20 +1039,22 @@ export class CompanyService {
     if (defaultUnitOfMeasures.length === 0) {
       // Se não há unidades padrão, criar as básicas
       const basicUnits = [
-        { name: 'Unidade', code: 'UN' },
-        { name: 'Quilograma', code: 'KG' },
-        { name: 'Metro', code: 'MT' },
-        { name: 'Litro', code: 'LT' },
+        { name: 'Unidade', code: 'UN', kind: 'UNITY', variant: 'UN' },
+        { name: 'Quilograma', code: 'KG', kind: 'WEIGHT', variant: 'KG' },
+        { name: 'Metro', code: 'MT', kind: 'LENGTH', variant: 'MT' },
+        { name: 'Litro', code: 'LT', kind: 'CAPACITY', variant: 'LT' },
       ];
 
       const companyUnitOfMeasures = basicUnits.map((unit) => ({
         name: unit.name,
         code: unit.code,
+        kind: unit.kind,
+        variant: unit.variant,
         companyId,
       }));
 
       await this.prisma.companyUnitOfMeasure.createMany({
-        data: companyUnitOfMeasures,
+        data: companyUnitOfMeasures as any,
       });
     } else {
       // Usar as unidades padrão do seed
@@ -1064,7 +1066,6 @@ export class CompanyService {
           defaultUnitOfMeasureId: unitOfMeasure.id,
           kind: unitOfMeasure.kind,
           variant: unitOfMeasure.variant,
-          defaultVariant: unitOfMeasure.defaultVariant,
         }),
       );
 
@@ -1072,6 +1073,24 @@ export class CompanyService {
         data: companyUnitOfMeasures,
       });
     }
+
+    // Definir padrões da empresa
+    const unitDefaults = {
+      LENGTH: 'MT', // Metros (padrão de exibição)
+      WEIGHT: 'KG', // Quilogramas (padrão de exibição)
+      CAPACITY: 'LT', // Litros (padrão de exibição)
+      DISTANCE: 'KM', // Quilômetros (padrão de exibição)
+      DURATION: 'HH', // Horas (padrão de exibição)
+      UNITY: 'UN', // Unidades (padrão de exibição)
+      AREA: 'M2', // Metros quadrados (padrão de exibição)
+    };
+
+    await this.prisma.company.update({
+      where: { id: companyId },
+      data: {
+        unitDefaults: unitDefaults,
+      },
+    });
   }
 
   private async createDefaultSaleSeries(companyId: string) {

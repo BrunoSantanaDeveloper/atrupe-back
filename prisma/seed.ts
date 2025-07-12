@@ -61,7 +61,6 @@ async function createDefaultUnitsOfMeasure() {
       });
 
       if (!existingUnit) {
-        // Agora com os novos campos após a migração
         await prisma.defaultUnitOfMeasure.create({
           data: {
             id: unitData.id,
@@ -71,7 +70,6 @@ async function createDefaultUnitsOfMeasure() {
             isActive: unitData.isActive,
             kind: unitData.kind as any,
             variant: unitData.variant as any,
-            defaultVariant: unitData.defaultVariant as any,
           },
         });
         console.log(`Unidade de medida criada: ${unitData.name}`);

@@ -58,6 +58,16 @@ export class UnitOfMeasureController {
     return this.unitOfMeasureService.findAll(req.user.companyId);
   }
 
+  @Get('company-defaults')
+  @ApiOperation({ summary: 'Obtém os padrões de unidades da empresa' })
+  @ApiResponse({
+    status: 200,
+    description: 'Padrões de unidades da empresa retornados com sucesso.',
+  })
+  getCompanyUnitDefaults(@Req() req) {
+    return this.unitOfMeasureService.getCompanyUnitDefaults(req.user.companyId);
+  }
+
   @Get('variants/:kind')
   @ApiOperation({
     summary: 'Obtém as variantes disponíveis para um tipo de unidade',
@@ -66,7 +76,15 @@ export class UnitOfMeasureController {
     name: 'kind',
     required: true,
     description: 'Tipo de unidade de medida',
-    enum: ['LENGTH', 'WEIGHT', 'CAPACITY'],
+    enum: [
+      'LENGTH',
+      'WEIGHT',
+      'CAPACITY',
+      'DISTANCE',
+      'DURATION',
+      'UNITY',
+      'AREA',
+    ],
   })
   @ApiResponse({
     status: 200,
@@ -82,7 +100,15 @@ export class UnitOfMeasureController {
     name: 'kind',
     required: true,
     description: 'Tipo de unidade de medida',
-    enum: ['LENGTH', 'WEIGHT', 'CAPACITY'],
+    enum: [
+      'LENGTH',
+      'WEIGHT',
+      'CAPACITY',
+      'DISTANCE',
+      'DURATION',
+      'UNITY',
+      'AREA',
+    ],
   })
   @ApiResponse({
     status: 200,
@@ -100,7 +126,15 @@ export class UnitOfMeasureController {
     name: 'kind',
     required: true,
     description: 'Tipo de unidade de medida',
-    enum: ['LENGTH', 'WEIGHT', 'CAPACITY'],
+    enum: [
+      'LENGTH',
+      'WEIGHT',
+      'CAPACITY',
+      'DISTANCE',
+      'DURATION',
+      'UNITY',
+      'AREA',
+    ],
   })
   @ApiBody({
     description: 'Nova variante padrão',

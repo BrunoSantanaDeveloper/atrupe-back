@@ -28,34 +28,66 @@ export class CreateUnitOfMeasureDto {
   description?: string;
 
   @IsOptional()
-  @IsEnum(['LENGTH', 'WEIGHT', 'CAPACITY'])
+  @IsEnum([
+    'LENGTH',
+    'WEIGHT',
+    'CAPACITY',
+    'DISTANCE',
+    'DURATION',
+    'UNITY',
+    'AREA',
+  ])
   @ApiProperty({
     description: 'Tipo da unidade de medida',
-    enum: ['LENGTH', 'WEIGHT', 'CAPACITY'],
+    enum: [
+      'LENGTH',
+      'WEIGHT',
+      'CAPACITY',
+      'DISTANCE',
+      'DURATION',
+      'UNITY',
+      'AREA',
+    ],
     example: 'WEIGHT',
     required: false,
   })
   kind?: string;
 
   @IsOptional()
-  @IsEnum(['MT', 'CM', 'MM', 'KG', 'GR', 'MG', 'LT', 'ML'])
+  @IsEnum([
+    'MT',
+    'CM',
+    'MM',
+    'KG',
+    'GR',
+    'MG',
+    'LT',
+    'ML',
+    'KM',
+    'HH',
+    'UN',
+    'M2',
+  ])
   @ApiProperty({
     description: 'Variante da unidade de medida',
-    enum: ['MT', 'CM', 'MM', 'KG', 'GR', 'MG', 'LT', 'ML'],
+    enum: [
+      'MT',
+      'CM',
+      'MM',
+      'KG',
+      'GR',
+      'MG',
+      'LT',
+      'ML',
+      'KM',
+      'HH',
+      'UN',
+      'M2',
+    ],
     example: 'KG',
     required: false,
   })
   variant?: string;
-
-  @IsOptional()
-  @IsEnum(['MT', 'CM', 'MM', 'KG', 'GR', 'MG', 'LT', 'ML'])
-  @ApiProperty({
-    description: 'Variante padrão para conversão',
-    enum: ['MT', 'CM', 'MM', 'KG', 'GR', 'MG', 'LT', 'ML'],
-    example: 'MG',
-    required: false,
-  })
-  defaultVariant?: string;
 
   companyId: string;
 }
