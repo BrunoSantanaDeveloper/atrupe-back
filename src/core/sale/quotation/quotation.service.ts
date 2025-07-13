@@ -39,23 +39,50 @@ export class QuotationService {
   ) {}
 
   // Função helper para calcular measurement baseado na unidade de medida
-  private calculateMeasurement(item: any, unitOfMeasureCode: string): number {
+  private calculateMeasurement(item: any, unitKind: string): number {
     let measurement = 1;
 
-    if (unitOfMeasureCode === 'M²') {
-      measurement = (item.height || 0) * (item.width || 0);
-    } else if (unitOfMeasureCode === 'M') {
-      measurement = item.width || 0;
-    } else if (unitOfMeasureCode === 'LT') {
-      measurement = item.volume || 0;
-    } else if (unitOfMeasureCode === 'KG') {
-      measurement = item.weight || 0;
-    } else if (unitOfMeasureCode === 'KM') {
-      measurement = item.distance || 0;
-    } else if (unitOfMeasureCode === 'HH') {
-      // Para unidades de hora, converter de minutos para horas
-      const duration = Number(item.duration || 0);
-      measurement = duration / 60;
+    switch (unitKind) {
+      case 'AREA':
+        // Área = altura × largura (independente de M2, CM², MM²)
+        measurement = (item.height || 0) * (item.width || 0);
+        break;
+
+      case 'LENGTH':
+        // Comprimento = largura (independente de MT, CM, MM)
+        measurement = item.width || 0;
+        break;
+
+      case 'WEIGHT':
+        // Peso = peso (independente de KG, GR, MG)
+        measurement = item.weight || 0;
+        break;
+
+      case 'CAPACITY':
+        // Capacidade = volume (independente de LT, ML)
+        measurement = item.volume || 0;
+        break;
+
+      case 'DISTANCE':
+        // Distância = distância (independente de KM, MT)
+        measurement = item.distance || 0;
+        break;
+
+      case 'DURATION':
+        // Duração = duração em horas (independente de HH, segundos)
+        const duration = Number(item.duration || 0);
+        measurement = duration / 3600; // Converter de segundos para horas
+        break;
+
+      case 'UNITY':
+        // Unidade = sempre 1 (independente de UN)
+        measurement = 1;
+        break;
+
+      default:
+        // Fallback para casos não mapeados
+        measurement = 1;
+        break;
     }
 
     return measurement;
@@ -231,12 +258,6 @@ export class QuotationService {
         },
       });
 
-      // Buscar todas as unidades de medida necessárias
-      const unitOfMeasureIds = data.items.map((item) => item.unitOfMeasureId);
-      const unitOfMeasures = await this.prisma.defaultUnitOfMeasure.findMany({
-        where: { id: { in: unitOfMeasureIds } },
-      });
-
       // Cria os QuotationProductItems associados ao QuotationProduct
       const quotationProductItems = data.items.map((item) => {
         const originalItem = product.items.find(
@@ -248,12 +269,10 @@ export class QuotationService {
           );
         }
 
-        // Buscar a unidade de medida para calcular o totalValue
-        const unitOfMeasure = unitOfMeasures.find(
-          (um) => um.id === item.unitOfMeasureId,
-        );
-        const measurement = unitOfMeasure
-          ? this.calculateMeasurement(item, unitOfMeasure.code)
+        // Calcular measurement baseado no unitKind
+        const unitKind = item.unitKind || originalItem.unitKind;
+        const measurement = unitKind
+          ? this.calculateMeasurement(item, unitKind)
           : 1;
         const salePrice = item.salePrice || originalItem.salePrice || 0;
         const calculatedTotalValue = salePrice * measurement;
@@ -265,6 +284,7 @@ export class QuotationService {
           productId: product.id,
           name: originalItem.name,
           unitOfMeasureId: item.unitOfMeasureId,
+          unitKind: (item.unitKind || originalItem.unitKind) as any,
           width: item.width || originalItem.width,
           height: item.height || originalItem.height,
           length: item.length || originalItem.length,
@@ -385,39 +405,27 @@ export class QuotationService {
       if (data.items) {
         for (const item of data.items) {
           if (item.id) {
-            // Buscar a unidade de medida para calcular o totalValue se necessário
+            // Calcular totalValue se necessário baseado no unitKind
             let calculatedTotalValue;
-            let unitOfMeasure;
             let finalSalePrice = item.salePrice;
 
-            if (item.salePrice !== undefined) {
-              unitOfMeasure = await this.prisma.defaultUnitOfMeasure.findUnique(
-                {
-                  where: { id: item.unitOfMeasureId },
-                },
+            if (item.salePrice !== undefined && item.unitKind) {
+              const measurement = this.calculateMeasurement(
+                item,
+                item.unitKind,
               );
 
-              if (unitOfMeasure) {
-                const measurement = this.calculateMeasurement(
-                  item,
-                  unitOfMeasure.code,
-                );
-
-                // Para unidades de hora (HH), sempre usar unitCost como valor base
-                // pois o salePrice pode vir já calculado do frontend na edição
-                let basePrice = item.salePrice;
-                if (
-                  unitOfMeasure.code === 'HH' &&
-                  item.unitCost !== undefined
-                ) {
-                  basePrice = item.unitCost;
-                  finalSalePrice = item.unitCost; // Salvar o unitCost como salePrice para manter consistência
-                }
-
-                calculatedTotalValue = basePrice * measurement;
-              } else {
-                calculatedTotalValue = item.salePrice;
+              // Para unidades de duração (DURATION), sempre usar unitCost como valor base
+              // pois o salePrice pode vir já calculado do frontend na edição
+              let basePrice = item.salePrice;
+              if (item.unitKind === 'DURATION' && item.unitCost !== undefined) {
+                basePrice = item.unitCost;
+                finalSalePrice = item.unitCost; // Salvar o unitCost como salePrice para manter consistência
               }
+
+              calculatedTotalValue = basePrice * measurement;
+            } else if (item.salePrice !== undefined) {
+              calculatedTotalValue = item.salePrice;
             }
 
             // Atualizar item existente
@@ -521,6 +529,7 @@ export class QuotationService {
       productItemId: item.productItemId,
       name: item.name,
       unitOfMeasureId: item.unitOfMeasureId,
+      unitKind: item.unitKind as any,
       width: item.width,
       height: item.height,
       length: item.length,
@@ -620,18 +629,17 @@ export class QuotationService {
       },
     });
 
-    // Calcular e atualizar `totalValue` para cada item baseado na unidade de medida
+    // Calcular e atualizar `totalValue` para cada item baseado no unitKind
     const updatedItems = quotationProducts.items.map((item) => {
-      // Para unidades de hora (HH), sempre usar unitCost como valor base
+      // Para unidades de duração (DURATION), sempre usar unitCost como valor base
       let basePrice = item.salePrice || item.unitCost || 0;
-      if (item.unitOfMeasure.code === 'HH' && item.unitCost) {
+      if (item.unitKind === 'DURATION' && item.unitCost) {
         basePrice = item.unitCost;
       }
 
-      const measurement = this.calculateMeasurement(
-        item,
-        item.unitOfMeasure.code,
-      );
+      const measurement = item.unitKind
+        ? this.calculateMeasurement(item, item.unitKind)
+        : 1;
       const totalValue = basePrice * measurement;
 
       return {
@@ -1016,6 +1024,7 @@ export class QuotationService {
                   productItemId: true,
                   name: true,
                   unitOfMeasure: true,
+                  unitKind: true,
                   salePrice: true,
                   quantity: true,
                   originalQuantity: true,
@@ -1203,10 +1212,9 @@ export class QuotationService {
           unitValue: (() => {
             // Calcular unitValue corretamente: unitCost * measurement para cada item
             const unitValue = qp.items.reduce((total, item) => {
-              const measurement = this.calculateMeasurement(
-                item,
-                item.unitOfMeasure?.code || 'UN',
-              );
+              const measurement = item.unitKind
+                ? this.calculateMeasurement(item, item.unitKind)
+                : 1;
               return total + (item.unitCost || 0) * measurement;
             }, 0);
             return unitValue;
@@ -1230,10 +1238,9 @@ export class QuotationService {
             unitValue: (() => {
               // Calcular unitValue corretamente: unitCost * measurement para cada item
               const unitValue = qp.items.reduce((total, item) => {
-                const measurement = this.calculateMeasurement(
-                  item,
-                  item.unitOfMeasure?.code || 'UN',
-                );
+                const measurement = item.unitKind
+                  ? this.calculateMeasurement(item, item.unitKind)
+                  : 1;
                 return total + (item.unitCost || 0) * measurement;
               }, 0);
               return unitValue;
@@ -1383,6 +1390,7 @@ export class QuotationService {
           name: item.name,
           quantity: item.quantity,
           unitOfMeasureId: item.unitOfMeasureId,
+          unitKind: item.unitKind as any,
           width: item.width,
           height: item.height,
           length: item.length,
@@ -1397,7 +1405,7 @@ export class QuotationService {
 
         try {
           await this.prisma.quotationProductItem.create({
-            data: itemDto,
+            data: itemDto as any,
           });
           await this.recalculateQuotationProductsTotalValue(newProduct.id);
         } catch (error) {
@@ -2469,6 +2477,7 @@ export class QuotationService {
                     quantity: parseInt(row.vendaitem_quantidade) || 1,
                     originalQuantity: parseInt(row.vendaitem_quantidade) || 1,
                     unitOfMeasureId: unitMeasure.id,
+                    unitKind: unitMeasure.kind as any,
                     width: parseFloat(row.vendaitem_dim_largura) || null,
                     length: parseFloat(row.vendaitem_dim_comprimento) || null,
                     unitCost: parseFloat(row.vendaitem_custo_total) * 100 || 0,

@@ -34,6 +34,22 @@ export class QuotationProductItemDto {
   })
   unitOfMeasureId: string;
 
+  @IsString()
+  @ApiProperty({
+    description: 'Tipo da unidade de medida do item',
+    enum: [
+      'LENGTH',
+      'WEIGHT',
+      'CAPACITY',
+      'DISTANCE',
+      'DURATION',
+      'UNITY',
+      'AREA',
+    ],
+    example: 'AREA',
+  })
+  unitKind: string;
+
   @IsNumber()
   @Min(0)
   @IsOptional()
@@ -98,8 +114,8 @@ export class QuotationProductItemDto {
   @Min(0)
   @IsOptional()
   @ApiProperty({
-    description: 'Duração relacionada ao item (em dias)',
-    example: 7.0,
+    description: 'Duração relacionada ao item (em segundos)',
+    example: 3600,
     required: false,
   })
   duration?: number;
@@ -323,6 +339,23 @@ export class AddProductItemDto {
   })
   unitOfMeasureId: string;
 
+  @IsString()
+  @IsOptional()
+  @ApiProperty({
+    description: 'Tipo da unidade de medida do item',
+    enum: [
+      'LENGTH',
+      'WEIGHT',
+      'CAPACITY',
+      'DISTANCE',
+      'DURATION',
+      'UNITY',
+      'AREA',
+    ],
+    example: 'AREA',
+  })
+  unitKind: string;
+
   @IsOptional()
   @IsNumber()
   @Min(1)
@@ -368,7 +401,7 @@ export class AddProductItemDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  @ApiProperty({ description: 'Duração (em dias)', example: 3 })
+  @ApiProperty({ description: 'Duração (em segundos)', example: 3600 })
   duration: number;
 
   @IsOptional()

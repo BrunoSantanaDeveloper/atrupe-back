@@ -30,20 +30,24 @@ export class ProductService {
         throw new BadRequestException('Código de produto já existe');
       }
 
-      const items = createProductDto.items?.map((item) => ({
-        name: item.name,
-        unitOfMeasureId: item.unitOfMeasureId,
-        unitCost: item.unitCost,
-        salePrice: item.salePrice,
-        width: item.width || undefined,
-        height: item.height || undefined,
-        length: item.length || undefined,
-        weight: item.weight || undefined,
-        volume: item.volume || undefined,
-        distance: item.distance || undefined,
-        duration: item.duration || undefined,
-      }));
+      // Processar itens do produto
+      const items =
+        createProductDto.items?.map((item) => ({
+          name: item.name,
+          unitKind: item.unitKind as any,
+          unitCost: item.unitCost,
+          salePrice: item.salePrice,
+          width: item.width || undefined,
+          height: item.height || undefined,
+          length: item.length || undefined,
+          weight: item.weight || undefined,
+          volume: item.volume || undefined,
+          distance: item.distance || undefined,
+          duration: item.duration || undefined,
+        })) || [];
+
       const productionStages = createProductDto.productionStages || [];
+
       // Criação do produto com tratamento para inserção condicional de itens
       const created = await this.prisma.product.create({
         data: {
@@ -163,6 +167,7 @@ export class ProductService {
               select: {
                 unitCost: true,
                 salePrice: true,
+                unitKind: true,
                 unitOfMeasure: {
                   select: {
                     name: true,
@@ -201,6 +206,12 @@ export class ProductService {
           unitOfMeasureCode: 'UN',
           unitCost,
           salePrice,
+          items: items.map((item) => ({
+            unitCost: item.unitCost,
+            salePrice: item.salePrice,
+            unitKind: item.unitKind,
+            unitOfMeasure: item.unitOfMeasure,
+          })),
         };
       });
 
@@ -320,7 +331,7 @@ export class ProductService {
       const items = updateProductDto.items?.map((item) => ({
         id: item.id,
         name: item.name,
-        unitOfMeasureId: item.unitOfMeasureId,
+        unitKind: item.unitKind as any,
         unitCost: item.unitCost,
         salePrice: item.salePrice,
         width: item.width || undefined,

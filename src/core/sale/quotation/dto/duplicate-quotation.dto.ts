@@ -44,6 +44,7 @@ export class DuplicateQuotationProductItemDto {
   name: string;
   quantity: number;
   unitOfMeasureId: string;
+  unitKind?: string;
   width?: number;
   height?: number;
   length?: number;

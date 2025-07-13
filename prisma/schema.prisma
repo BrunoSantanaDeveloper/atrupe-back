@@ -26,13 +26,14 @@ model Company {
   siteUrl               String?
   textAfterItems        String?
   textBeforeItems       String?
-  instagram             String?
-  facebook              String?
-  linkedin              String?
   principalCompanyId    String?
-  trialEndsAt           DateTime?
-  unitDefaults          Json?
   deliveryType          DeliveryType[]
+  trialEndsAt           DateTime?
+  facebook              String?
+  instagram             String?
+  linkedin              String?
+  unitDefaults          Json?
+  AcademyProgress       AcademyProgress[]
   address               Address[]
   assetTypes            AssetType[]
   assets                Asset[]
@@ -71,7 +72,6 @@ model Company {
   subCategory           SubCategory[]
   Subscription          Subscription[]
   suppliers             Supplier[]
-  AcademyProgress       AcademyProgress[]
 
   @@map("companies")
 }
@@ -353,11 +353,11 @@ model User {
   resetPasswordToken   String?
   phone                String?
   isVerified           Boolean        @default(false)
+  customerId           String?
   attributes           Attribute[]
   employee             Employee[]
   userContract         UserContract[]
   userRole             UserRole[]
-  customerId           String?
   customer             Customer?      @relation(fields: [customerId], references: [id])
 
   @@index([email])
@@ -966,7 +966,7 @@ model QuotationProduct {
 
 model QuotationProductItem {
   productItemId      String
-  quantity           Int                  @default(1)
+  quantity           Int                   @default(1)
   productId          String
   quotationId        String
   totalValue         Float?
@@ -977,18 +977,19 @@ model QuotationProductItem {
   name               String
   salePrice          Float?
   unitCost           Float?
-  unitOfMeasureId    String
   volume             Float?
   weight             Float?
   width              Float?
-  id                 String               @id @default(uuid())
+  id                 String                @id @default(uuid())
   quotationProductId String
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime?            @updatedAt
-  originalQuantity   Int                  @default(1)
-  productItem        ProductItem          @relation(fields: [productItemId], references: [id])
-  quotationProduct   QuotationProduct     @relation(fields: [quotationProductId], references: [id])
-  unitOfMeasure      DefaultUnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime?             @updatedAt
+  originalQuantity   Int                   @default(1)
+  unitOfMeasureId    String?
+  unitKind           UnitKind?
+  productItem        ProductItem           @relation(fields: [productItemId], references: [id])
+  quotationProduct   QuotationProduct      @relation(fields: [quotationProductId], references: [id])
+  unitOfMeasure      DefaultUnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict)
 
   @@map("quotation_product_items")
 }
@@ -1133,7 +1134,6 @@ model ProductItem {
   id                   String                 @id @default(uuid())
   name                 String
   productId            String
-  unitOfMeasureId      String
   unitCost             Float?
   salePrice            Float?
   distance             Float?
@@ -1143,8 +1143,10 @@ model ProductItem {
   volume               Float?
   weight               Float?
   width                Float?
+  unitOfMeasureId      String?
+  unitKind             UnitKind?
   product              Product                @relation(fields: [productId], references: [id])
-  unitOfMeasure        DefaultUnitOfMeasure   @relation(fields: [unitOfMeasureId], references: [id])
+  unitOfMeasure        DefaultUnitOfMeasure?  @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict)
   quotationProductItem QuotationProductItem[]
 
   @@map("product_items")
@@ -1296,12 +1298,12 @@ model Plan {
   description           String
   createdAt             DateTime       @default(now())
   updatedAt             DateTime?      @default(now()) @updatedAt
+  companyId             String?
   name                  String         @unique
   additionalAccessPrice Float
-  planType              PlanType       @default(START)
   basePrice             Float
   modules               String[]
-  companyId             String?
+  planType              PlanType       @default(START)
   Company               Company?       @relation(fields: [companyId], references: [id])
   subscriptions         Subscription[]
 
@@ -1365,10 +1367,10 @@ model Subscription {
   modules             String[]
   nextDueDate         DateTime
   planId              String      @map("plan_id")
-  billingType         BillingType @default(CREDIT_CARD)
-  cycle               Cycle       @default(MONTHLY)
   value               Float
   status              String
+  billingType         BillingType @default(CREDIT_CARD)
+  cycle               Cycle       @default(MONTHLY)
   Company             Company?    @relation(fields: [companyId], references: [id])
   customer            Customer    @relation(fields: [customerId], references: [id])
   plan                Plan        @relation(fields: [planId], references: [id])
@@ -1407,11 +1409,11 @@ model AcademySystem {
   section         String            @default("Apresentação")
   description     String?
   order           Int               @default(0)
-  files           String[]
   videoUrl        String            @default("https://vimeo.com/43652787")
   page            String?           @default("/")
   modal           String?           @default("CompanyInfo")
   buttonTitle     String?           @default("Cadastrar dados")
+  files           String[]
   AcademyProgress AcademyProgress[]
 
   @@map("academy")
@@ -1420,13 +1422,28 @@ model AcademySystem {
 model AcademyProgress {
   id              String        @id @default(uuid())
   companyId       String
-  company         Company       @relation(fields: [companyId], references: [id])
   academySystemId String
-  academySystem   AcademySystem @relation(fields: [academySystemId], references: [id])
   checked         Boolean       @default(false)
   completedAt     DateTime?
+  academySystem   AcademySystem @relation(fields: [academySystemId], references: [id])
+  company         Company       @relation(fields: [companyId], references: [id])
 
   @@map("academy_progress")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model unit_measures_backup {
+  id                     String?
+  name                   String?
+  code                   String?
+  description            String?
+  isActive               Boolean?
+  companyId              String?
+  defaultUnitOfMeasureId String?
+  kind                   UnitOfMeasureKind?
+  variant                UnitOfMeasureVariant?
+
+  @@ignore
 }
 
 enum OwnerType {
@@ -1653,12 +1670,12 @@ enum ProductionStageStatus {
 }
 
 enum PlanType {
-  TRIAL
   START
   LITE
   PRO
   ELITE
   FULL
+  TRIAL
 }
 
 enum BillingType {
@@ -1684,4 +1701,14 @@ enum SubscriptionStatus {
   ACTIVE
   EXPIRED
   INACTIVE
+}
+
+enum UnitKind {
+  LENGTH
+  WEIGHT
+  CAPACITY
+  DISTANCE
+  DURATION
+  UNITY
+  AREA
 }

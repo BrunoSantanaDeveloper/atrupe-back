@@ -96,6 +96,50 @@ export class UnitOfMeasureService {
     );
   }
 
+  async getCompanyDefaultUnits(companyId: string) {
+    const unitDefaults = await this.getCompanyUnitDefaults(companyId);
+
+    // Buscar as unidades padrão da empresa
+    const defaultUnits = await this.prisma.defaultUnitOfMeasure.findMany({
+      where: {
+        OR: [
+          {
+            variant: {
+              in: Object.values(unitDefaults),
+            },
+          },
+          {
+            code: {
+              in: Object.values(unitDefaults),
+            },
+          },
+        ],
+        isActive: true,
+      },
+      orderBy: {
+        kind: 'asc',
+      },
+    });
+
+    // Filtrar apenas uma unidade por kind, priorizando por variant se existir
+    const uniqueUnits = new Map();
+
+    for (const unit of defaultUnits) {
+      const kindValue = unitDefaults[unit.kind as string];
+
+      if (
+        kindValue &&
+        (unit.variant === kindValue || unit.code === kindValue)
+      ) {
+        if (!uniqueUnits.has(unit.kind) || unit.variant === kindValue) {
+          uniqueUnits.set(unit.kind, unit);
+        }
+      }
+    }
+
+    return Array.from(uniqueUnits.values());
+  }
+
   findByKind(kind: string) {
     return this.prisma.defaultUnitOfMeasure.findMany({
       where: {

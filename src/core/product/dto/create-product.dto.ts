@@ -8,6 +8,7 @@ import {
   IsNumber,
   Min,
   IsNotEmpty,
+  IsEnum,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -57,13 +58,30 @@ export class CreateProductItemDto {
   })
   name: string;
 
-  @IsUUID()
+  @IsEnum([
+    'LENGTH',
+    'WEIGHT',
+    'CAPACITY',
+    'DISTANCE',
+    'DURATION',
+    'UNITY',
+    'AREA',
+  ])
   @ApiProperty({
-    description: 'ID da unidade de medida do item',
-    example: '123e4567-e89b-12d3-a456-426614174000',
+    description: 'Tipo da unidade de medida do item',
+    enum: [
+      'LENGTH',
+      'WEIGHT',
+      'CAPACITY',
+      'DISTANCE',
+      'DURATION',
+      'UNITY',
+      'AREA',
+    ],
+    example: 'LENGTH',
     required: true,
   })
-  unitOfMeasureId: string;
+  unitKind: string;
 
   @IsOptional()
   @ApiProperty({
@@ -146,8 +164,8 @@ export class CreateProductItemDto {
   @Min(0)
   @IsOptional()
   @ApiProperty({
-    description: 'Duração relacionada ao item (em dias)',
-    example: 7.0,
+    description: 'Duração relacionada ao item (em segundos)',
+    example: 3600,
     required: false,
   })
   duration?: number;

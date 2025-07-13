@@ -67,6 +67,17 @@ export class UnitOfMeasureController {
     return this.unitOfMeasureService.getCompanyUnitDefaults(req.user.companyId);
   }
 
+  @Get('defaults')
+  @ApiOperation({ summary: 'Obtém as unidades padrão da empresa para seleção' })
+  @ApiResponse({
+    status: 200,
+    description: 'Unidades padrão da empresa retornadas com sucesso.',
+    isArray: true,
+  })
+  getCompanyDefaultUnits(@Req() req) {
+    return this.unitOfMeasureService.getCompanyDefaultUnits(req.user.companyId);
+  }
+
   @Get('variants/:kind')
   @ApiOperation({
     summary: 'Obtém as variantes disponíveis para um tipo de unidade',

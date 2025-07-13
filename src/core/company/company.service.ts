@@ -1212,6 +1212,25 @@ export class CompanyService {
           continue;
         }
 
+        // Mapear código da unidade para UnitKind
+        const unitKindMapping = {
+          'M²': 'AREA',
+          M2: 'AREA',
+          UN: 'UNITY',
+          HH: 'DURATION',
+          MT: 'LENGTH',
+          CM: 'LENGTH',
+          MM: 'LENGTH',
+          KG: 'WEIGHT',
+          GR: 'WEIGHT',
+          MG: 'WEIGHT',
+          LT: 'CAPACITY',
+          ML: 'CAPACITY',
+          KM: 'DISTANCE',
+        };
+
+        const unitKind = unitKindMapping[item.unidadeMedida] || 'UNITY';
+
         // Configurar dimensões baseado na unidade de medida
         const dimensions: any = {};
         if (item.dimensoes) {
@@ -1231,6 +1250,7 @@ export class CompanyService {
             name: item.nome,
             productId: product.id,
             unitOfMeasureId: unitOfMeasure.id,
+            unitKind: unitKind as any,
             salePrice: item.precoVenda,
             unitCost: 0,
             ...dimensions,
