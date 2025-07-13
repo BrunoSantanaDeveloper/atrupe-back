@@ -233,7 +233,7 @@ export class QuotationService {
 
       // Buscar todas as unidades de medida necessárias
       const unitOfMeasureIds = data.items.map((item) => item.unitOfMeasureId);
-      const unitOfMeasures = await this.prisma.companyUnitOfMeasure.findMany({
+      const unitOfMeasures = await this.prisma.defaultUnitOfMeasure.findMany({
         where: { id: { in: unitOfMeasureIds } },
       });
 
@@ -391,7 +391,7 @@ export class QuotationService {
             let finalSalePrice = item.salePrice;
 
             if (item.salePrice !== undefined) {
-              unitOfMeasure = await this.prisma.companyUnitOfMeasure.findUnique(
+              unitOfMeasure = await this.prisma.defaultUnitOfMeasure.findUnique(
                 {
                   where: { id: item.unitOfMeasureId },
                 },
@@ -2266,8 +2266,8 @@ export class QuotationService {
       const defaultPaymentMethod = paymentMethods[0];
 
       // Get all unit measures for the company
-      const unitMeasures = await this.prisma.companyUnitOfMeasure.findMany({
-        where: { companyId },
+      const unitMeasures = await this.prisma.defaultUnitOfMeasure.findMany({
+        where: { isActive: true },
       });
 
       // Map for unit measures

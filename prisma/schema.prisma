@@ -71,7 +71,6 @@ model Company {
   subCategory           SubCategory[]
   Subscription          Subscription[]
   suppliers             Supplier[]
-  companyUnitOfMeasure  CompanyUnitOfMeasure[]
   AcademyProgress       AcademyProgress[]
 
   @@map("companies")
@@ -989,7 +988,7 @@ model QuotationProductItem {
   originalQuantity   Int                  @default(1)
   productItem        ProductItem          @relation(fields: [productItemId], references: [id])
   quotationProduct   QuotationProduct     @relation(fields: [quotationProductId], references: [id])
-  unitOfMeasure      CompanyUnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
+  unitOfMeasure      DefaultUnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id])
 
   @@map("quotation_product_items")
 }
@@ -1145,28 +1144,10 @@ model ProductItem {
   weight               Float?
   width                Float?
   product              Product                @relation(fields: [productId], references: [id])
-  unitOfMeasure        CompanyUnitOfMeasure   @relation(fields: [unitOfMeasureId], references: [id])
+  unitOfMeasure        DefaultUnitOfMeasure   @relation(fields: [unitOfMeasureId], references: [id])
   quotationProductItem QuotationProductItem[]
 
   @@map("product_items")
-}
-
-model CompanyUnitOfMeasure {
-  id                     String                 @id @default(uuid())
-  name                   String
-  code                   String
-  description            String?
-  isActive               Boolean                @default(true)
-  companyId              String
-  defaultUnitOfMeasureId String?
-  kind                   UnitOfMeasureKind?
-  variant                UnitOfMeasureVariant?
-  productItems           ProductItem[]
-  quotationProductItem   QuotationProductItem[]
-  company                Company                @relation(fields: [companyId], references: [id])
-  defaultUnitOfMeasure   DefaultUnitOfMeasure?  @relation(fields: [defaultUnitOfMeasureId], references: [id])
-
-  @@map("unit_measures")
 }
 
 model DefaultUnitOfMeasure {
@@ -1177,7 +1158,8 @@ model DefaultUnitOfMeasure {
   isActive             Boolean                @default(true)
   kind                 UnitOfMeasureKind?
   variant              UnitOfMeasureVariant?
-  CompanyUnitOfMeasure CompanyUnitOfMeasure[]
+  productItems         ProductItem[]
+  quotationProductItem QuotationProductItem[]
 
   @@map("defalt_unit_measures")
 }

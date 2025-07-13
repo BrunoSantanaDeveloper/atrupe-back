@@ -88,6 +88,4 @@ export class CreateUnitOfMeasureDto {
     required: false,
   })
   variant?: string;
-
-  companyId: string;
 }

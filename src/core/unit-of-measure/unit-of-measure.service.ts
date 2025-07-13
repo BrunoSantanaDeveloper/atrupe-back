@@ -9,11 +9,10 @@ export class UnitOfMeasureService {
   constructor(private readonly prisma: PrismaService) {}
 
   create(createUnitOfMeasureDto: CreateUnitOfMeasureDto) {
-    return this.prisma.companyUnitOfMeasure.create({
+    return this.prisma.defaultUnitOfMeasure.create({
       data: {
         name: createUnitOfMeasureDto.name,
         code: createUnitOfMeasureDto.code,
-        companyId: createUnitOfMeasureDto.companyId,
         description: createUnitOfMeasureDto.description,
         kind: createUnitOfMeasureDto.kind as any,
         variant: createUnitOfMeasureDto.variant as any,
@@ -21,9 +20,9 @@ export class UnitOfMeasureService {
     });
   }
 
-  findAll(companyId: string) {
-    return this.prisma.companyUnitOfMeasure.findMany({
-      where: { companyId },
+  findAll() {
+    return this.prisma.defaultUnitOfMeasure.findMany({
+      where: { isActive: true },
       orderBy: {
         name: 'asc',
       },
@@ -31,13 +30,13 @@ export class UnitOfMeasureService {
   }
 
   findOne(id: string) {
-    return this.prisma.companyUnitOfMeasure.findUnique({
+    return this.prisma.defaultUnitOfMeasure.findUnique({
       where: { id },
     });
   }
 
   update(id: string, updateUnitOfMeasureDto: UpdateUnitOfMeasureDto) {
-    return this.prisma.companyUnitOfMeasure.update({
+    return this.prisma.defaultUnitOfMeasure.update({
       where: { id },
       data: {
         name: updateUnitOfMeasureDto.name,
@@ -97,10 +96,9 @@ export class UnitOfMeasureService {
     );
   }
 
-  findByKind(companyId: string, kind: string) {
-    return this.prisma.companyUnitOfMeasure.findMany({
+  findByKind(kind: string) {
+    return this.prisma.defaultUnitOfMeasure.findMany({
       where: {
-        companyId,
         kind: kind as any,
         isActive: true,
       },
@@ -136,7 +134,7 @@ export class UnitOfMeasureService {
   }
 
   remove(id: string) {
-    return this.prisma.companyUnitOfMeasure.update({
+    return this.prisma.defaultUnitOfMeasure.update({
       where: { id },
       data: { isActive: false },
     });

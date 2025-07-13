@@ -424,9 +424,9 @@ export class ProductService {
     const processedCategories = new Set<string>();
     const productCodes = new Map<string, number>();
 
-    // Buscar unidades de medida da empresa
-    const companyUnits = await this.prisma.companyUnitOfMeasure.findMany({
-      where: { companyId },
+    // Buscar unidades de medida padrão
+    const defaultUnits = await this.prisma.defaultUnitOfMeasure.findMany({
+      where: { isActive: true },
       select: { id: true, code: true },
     });
 
@@ -439,6 +439,11 @@ export class ProductService {
       KG: 'KG',
       KM: 'KM',
       HH: 'HH',
+      ML: 'ML',
+      GR: 'GR',
+      CM: 'CM',
+      MM: 'MM',
+      MG: 'MG',
     };
 
     return new Promise<void>((resolve, reject) => {
@@ -628,7 +633,7 @@ export class ProductService {
             if (row.servico) {
               // Encontrar unidade de medida correspondente
               const unitCode = unitMapping[row.uncom] || row.uncom;
-              const unitOfMeasure = companyUnits.find(
+              const unitOfMeasure = defaultUnits.find(
                 (unit) => unit.code === unitCode,
               );
 

@@ -284,37 +284,18 @@ export class CompanyService {
   }
 
   async createDefaultItems(email: string, companyId: string) {
-    await this.createDefaultSectors(companyId);
+    console.log('creating default items for company', companyId);
     await this.createDefaultUnits(companyId);
     await this.createDefaultSaleSeries(companyId);
     await this.createDefaultPaymentMethods(companyId);
+    await this.createDefaultSeller(companyId);
     await this.createDefaultProductCategories(companyId);
     await this.createDefaultProducts(companyId);
     await this.createDefaultClientAndSupplier(companyId);
-    // await this.createExampleQuotation(companyId);
-    await this.applyBaseRolesToCompany(companyId);
-    await this.createDefaultSeller(companyId);
-    await this.applyBaseCashboxToCompany(companyId);
-    await this.applyBasePaymentConditionsToCompany(companyId);
-    await this.applyBaseNaturesToCompany(companyId);
-    await this.applyBaseScheduledExpensesToCompany(companyId);
-    await this.applyReasonsAndStatusQuotationToCompany(companyId);
-    const salaries: CreateSalaryControlDto = {
-      companyId,
-      reference: 'Salário',
-      type: 'INCREASE',
-      amount: 0,
-    };
-    const commission: CreateSalaryControlDto = {
-      companyId,
-      reference: 'Comissão',
-      type: 'INCREASE',
-      amount: 0,
-    };
     await this.createDefaultClientCategories(companyId);
-    await this.createFirstAccess(email, companyId);
-    await this.createSalariesSheets(salaries);
-    await this.createSalariesSheets(commission);
+
+    // Criar cotação de exemplo
+    await this.createExampleQuotation(companyId);
   }
 
   private async createSalariesSheets(
@@ -1033,48 +1014,7 @@ export class CompanyService {
   }
 
   private async createDefaultUnits(companyId: string) {
-    const defaultUnitOfMeasures =
-      await this.prisma.defaultUnitOfMeasure.findMany();
-
-    if (defaultUnitOfMeasures.length === 0) {
-      // Se não há unidades padrão, criar as básicas
-      const basicUnits = [
-        { name: 'Unidade', code: 'UN', kind: 'UNITY', variant: 'UN' },
-        { name: 'Quilograma', code: 'KG', kind: 'WEIGHT', variant: 'KG' },
-        { name: 'Metro', code: 'MT', kind: 'LENGTH', variant: 'MT' },
-        { name: 'Litro', code: 'LT', kind: 'CAPACITY', variant: 'LT' },
-      ];
-
-      const companyUnitOfMeasures = basicUnits.map((unit) => ({
-        name: unit.name,
-        code: unit.code,
-        kind: unit.kind,
-        variant: unit.variant,
-        companyId,
-      }));
-
-      await this.prisma.companyUnitOfMeasure.createMany({
-        data: companyUnitOfMeasures as any,
-      });
-    } else {
-      // Usar as unidades padrão do seed
-      const companyUnitOfMeasures = defaultUnitOfMeasures.map(
-        (unitOfMeasure) => ({
-          name: unitOfMeasure.name,
-          code: unitOfMeasure.code,
-          companyId,
-          defaultUnitOfMeasureId: unitOfMeasure.id,
-          kind: unitOfMeasure.kind,
-          variant: unitOfMeasure.variant,
-        }),
-      );
-
-      await this.prisma.companyUnitOfMeasure.createMany({
-        data: companyUnitOfMeasures,
-      });
-    }
-
-    // Definir padrões da empresa
+    // Apenas definir padrões da empresa
     const unitDefaults = {
       LENGTH: 'MT', // Metros (padrão de exibição)
       WEIGHT: 'KG', // Quilogramas (padrão de exibição)
@@ -1214,8 +1154,8 @@ export class CompanyService {
       where: { companyId },
     });
 
-    const units = await this.prisma.companyUnitOfMeasure.findMany({
-      where: { companyId },
+    const units = await this.prisma.defaultUnitOfMeasure.findMany({
+      where: { isActive: true },
     });
 
     for (const productData of BASE_PRODUCTS) {

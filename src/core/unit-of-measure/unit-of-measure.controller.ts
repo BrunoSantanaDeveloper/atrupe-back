@@ -42,8 +42,7 @@ export class UnitOfMeasureController {
     status: 201,
     description: 'Unidade de medida criada com sucesso.',
   })
-  create(@Req() req, @Body() createUnitOfMeasureDto: CreateUnitOfMeasureDto) {
-    createUnitOfMeasureDto.companyId = req.user.companyId;
+  create(@Body() createUnitOfMeasureDto: CreateUnitOfMeasureDto) {
     return this.unitOfMeasureService.create(createUnitOfMeasureDto);
   }
 
@@ -54,8 +53,8 @@ export class UnitOfMeasureController {
     description: 'Lista de unidades de medida retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Req() req) {
-    return this.unitOfMeasureService.findAll(req.user.companyId);
+  findAll() {
+    return this.unitOfMeasureService.findAll();
   }
 
   @Get('company-defaults')
@@ -114,8 +113,8 @@ export class UnitOfMeasureController {
     status: 200,
     description: 'Lista de unidades de medida do tipo especificado.',
   })
-  findByKind(@Req() req, @Param('kind') kind: string) {
-    return this.unitOfMeasureService.findByKind(req.user.companyId, kind);
+  findByKind(@Param('kind') kind: string) {
+    return this.unitOfMeasureService.findByKind(kind);
   }
 
   @Patch('default-variant/:kind')
