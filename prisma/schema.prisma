@@ -970,16 +970,16 @@ model QuotationProductItem {
   productId          String
   quotationId        String
   totalValue         Float?
-  distance           Float?
-  duration           Float?
-  height             Float?
-  length             Float?
+  distance           Float? // KM - distância para quilometro (salvo em metros)
+  duration           Float? // HH - duração para horas (salvo em segundos)
+  width              Float? // MM - largura para área (salvo em milímetros)
+  height             Float? // MM - altura para área (salvo em milímetros)
+  length             Float? // MM - comprimento para metro linear (salvo em milímetros)
+  weight             Float? // MG - peso para quilo (salvo em miligramas)
+  volume             Float? // ML - volume para litro (salvo em mililitros)
   name               String
   salePrice          Float?
   unitCost           Float?
-  volume             Float?
-  weight             Float?
-  width              Float?
   id                 String                @id @default(uuid())
   quotationProductId String
   createdAt          DateTime              @default(now())
@@ -1136,13 +1136,13 @@ model ProductItem {
   productId            String
   unitCost             Float?
   salePrice            Float?
-  distance             Float?
-  duration             Float?
-  height               Float?
-  length               Float?
-  volume               Float?
-  weight               Float?
-  width                Float?
+  distance             Float? // KM - distância para quilometro (salvo em metros)
+  duration             Float? // HH - duração para horas (salvo em segundos)
+  width                Float? // MM - largura para área (salvo em milímetros)
+  height               Float? // MM - altura para área (salvo em milímetros)
+  length               Float? // MM - comprimento para metro linear (salvo em milímetros)
+  weight               Float? // MG - peso para quilo (salvo em miligramas)
+  volume               Float? // ML - volume para litro (salvo em mililitros)
   unitOfMeasureId      String?
   unitKind             UnitKind?
   product              Product                @relation(fields: [productId], references: [id])
