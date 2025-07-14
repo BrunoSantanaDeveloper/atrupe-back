@@ -7,7 +7,7 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { ProductFilterDTO } from './dto/filter.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { ProductStatus } from '@prisma/client';
+
 import { JsonArray } from '@prisma/client/runtime/library';
 import * as fs from 'fs';
 import * as fastCsv from 'fast-csv';
@@ -77,30 +77,20 @@ export class ProductService {
   }
 
   async findAllQuantity(companyId: string) {
-    const allStatuses: ProductStatus[] = ['ACTIVE', 'INACTIVE'];
+    const [activeCount, inactiveCount] = await Promise.all([
+      this.prisma.product.count({
+        where: { companyId, isActive: true },
+      }),
+      this.prisma.product.count({
+        where: { companyId, isActive: false },
+      }),
+    ]);
 
-    const result = await this.prisma.product.groupBy({
-      by: ['status'],
-      where: { companyId, status: { in: allStatuses } },
-      _count: true,
-    });
-
-    const statusCount = allStatuses.reduce(
-      (acc, status) => {
-        acc[status] = 0;
-        return acc;
-      },
-      {} as { [K in ProductStatus]: number },
-    );
-
-    result.forEach((cur) => {
-      statusCount[cur.status] = cur._count;
-    });
-
-    const total = Object.values(statusCount).reduce((acc, cur) => acc + cur, 0);
+    const total = activeCount + inactiveCount;
 
     return {
-      ...statusCount,
+      ACTIVE: activeCount,
+      INACTIVE: inactiveCount,
       TOTAL: total,
     };
   }
@@ -123,8 +113,12 @@ export class ProductService {
         where = { ...where, sectorId: filter.sectorId };
       }
 
+      // Se não informar status, mostra apenas ativos (isActive: true)
+      // Se informar status, filtra pelo isActive correspondente
       if (filter.status) {
-        where = { ...where, status: filter.status };
+        where = { ...where, isActive: filter.status === 'ACTIVE' };
+      } else {
+        where = { ...where, isActive: true };
       }
 
       if (filter.search) {
