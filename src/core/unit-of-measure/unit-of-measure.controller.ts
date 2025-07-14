@@ -104,6 +104,38 @@ export class UnitOfMeasureController {
     return this.unitOfMeasureService.getVariantsByKind(kind);
   }
 
+  @Get('variants/:kind/with-defaults')
+  @ApiOperation({
+    summary:
+      'Obtém as variantes disponíveis para um tipo de unidade com padrão da empresa marcado',
+  })
+  @ApiParam({
+    name: 'kind',
+    required: true,
+    description: 'Tipo de unidade de medida',
+    enum: [
+      'LENGTH',
+      'WEIGHT',
+      'CAPACITY',
+      'DISTANCE',
+      'DURATION',
+      'UNITY',
+      'AREA',
+    ],
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Lista de variantes com padrão da empresa retornada com sucesso.',
+  })
+  getVariantsByKindWithDefaults(@Param('kind') kind: string, @Req() req) {
+    const companyId = req.user.companyId;
+    return this.unitOfMeasureService.getVariantsByKindWithDefaults(
+      kind,
+      companyId,
+    );
+  }
+
   @Get('by-kind/:kind')
   @ApiOperation({ summary: 'Obtém unidades de medida por tipo' })
   @ApiParam({

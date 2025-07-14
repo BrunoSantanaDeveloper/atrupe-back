@@ -155,26 +155,37 @@ export class UnitOfMeasureService {
   getVariantsByKind(kind: string) {
     const variants = {
       LENGTH: [
-        { code: 'MM', name: 'Milímetros', isDefault: false },
-        { code: 'CM', name: 'Centímetros', isDefault: false },
-        { code: 'MT', name: 'Metros', isDefault: true },
+        { code: 'MM', name: 'Milímetros' },
+        { code: 'CM', name: 'Centímetros' },
+        { code: 'MT', name: 'Metros' },
       ],
       WEIGHT: [
-        { code: 'MG', name: 'Miligramas', isDefault: false },
-        { code: 'GR', name: 'Gramas', isDefault: false },
-        { code: 'KG', name: 'Quilogramas', isDefault: true },
+        { code: 'MG', name: 'Miligramas' },
+        { code: 'GR', name: 'Gramas' },
+        { code: 'KG', name: 'Quilogramas' },
       ],
       CAPACITY: [
-        { code: 'ML', name: 'Mililitros', isDefault: false },
-        { code: 'LT', name: 'Litros', isDefault: true },
+        { code: 'ML', name: 'Mililitros' },
+        { code: 'LT', name: 'Litros' },
       ],
-      DISTANCE: [{ code: 'KM', name: 'Quilômetros', isDefault: true }],
-      DURATION: [{ code: 'HH', name: 'Horas', isDefault: true }],
-      UNITY: [{ code: 'UN', name: 'Unidades', isDefault: true }],
-      AREA: [{ code: 'M2', name: 'Metros Quadrados', isDefault: true }],
+      DISTANCE: [{ code: 'KM', name: 'Quilômetros' }],
+      DURATION: [{ code: 'HH', name: 'Horas' }],
+      UNITY: [{ code: 'UN', name: 'Unidades' }],
+      AREA: [{ code: 'M2', name: 'Metros Quadrados' }],
     };
 
     return variants[kind] || [];
+  }
+
+  async getVariantsByKindWithDefaults(kind: string, companyId: string) {
+    const variants = this.getVariantsByKind(kind);
+    const companyDefaults = await this.getCompanyUnitDefaults(companyId);
+    const defaultVariant = companyDefaults[kind];
+
+    return variants.map((variant) => ({
+      ...variant,
+      isDefault: variant.code === defaultVariant,
+    }));
   }
 
   remove(id: string) {
