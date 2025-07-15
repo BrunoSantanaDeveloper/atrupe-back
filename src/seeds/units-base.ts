@@ -2,7 +2,7 @@ export const BASE_UNIT_OF_MEASURES = [
   // Comprimento - padrão Milímetros (MM)
   {
     id: 'unit-mt',
-    name: 'Metros',
+    name: 'Metro',
     code: 'MT',
     description: 'Unidade de comprimento em metros',
     kind: 'LENGTH',
@@ -11,7 +11,7 @@ export const BASE_UNIT_OF_MEASURES = [
   },
   {
     id: 'unit-cm',
-    name: 'Centímetros',
+    name: 'Centímetro',
     code: 'CM',
     description: 'Unidade de comprimento em centímetros',
     kind: 'LENGTH',
@@ -20,7 +20,7 @@ export const BASE_UNIT_OF_MEASURES = [
   },
   {
     id: 'unit-mm',
-    name: 'Milímetros',
+    name: 'Milímetro',
     code: 'MM',
     description: 'Unidade de comprimento em milímetros',
     kind: 'LENGTH',
@@ -30,7 +30,7 @@ export const BASE_UNIT_OF_MEASURES = [
   // Peso - padrão Miligramas (MG)
   {
     id: 'unit-kg',
-    name: 'Quilogramas',
+    name: 'Quilograma',
     code: 'KG',
     description: 'Unidade de peso em quilogramas',
     kind: 'WEIGHT',
@@ -39,7 +39,7 @@ export const BASE_UNIT_OF_MEASURES = [
   },
   {
     id: 'unit-gr',
-    name: 'Gramas',
+    name: 'Grama',
     code: 'GR',
     description: 'Unidade de peso em gramas',
     kind: 'WEIGHT',
@@ -48,7 +48,7 @@ export const BASE_UNIT_OF_MEASURES = [
   },
   {
     id: 'unit-mg',
-    name: 'Miligramas',
+    name: 'Miligrama',
     code: 'MG',
     description: 'Unidade de peso em miligramas',
     kind: 'WEIGHT',
@@ -58,7 +58,7 @@ export const BASE_UNIT_OF_MEASURES = [
   // Capacidade - padrão Mililitros (ML)
   {
     id: 'unit-lt',
-    name: 'Litros',
+    name: 'Litro',
     code: 'LT',
     description: 'Unidade de capacidade em litros',
     kind: 'CAPACITY',
@@ -67,7 +67,7 @@ export const BASE_UNIT_OF_MEASURES = [
   },
   {
     id: 'unit-ml',
-    name: 'Mililitros',
+    name: 'Mililitro',
     code: 'ML',
     description: 'Unidade de capacidade em mililitros',
     kind: 'CAPACITY',
@@ -77,7 +77,7 @@ export const BASE_UNIT_OF_MEASURES = [
   // Distância - padrão Metros (convertido internamente)
   {
     id: 'unit-km',
-    name: 'Quilômetros',
+    name: 'Quilômetro',
     code: 'KM',
     description: 'Unidade de distância em quilômetros',
     kind: 'DISTANCE',
@@ -87,7 +87,7 @@ export const BASE_UNIT_OF_MEASURES = [
   // Duração - padrão Segundos (convertido internamente)
   {
     id: 'unit-hh',
-    name: 'Horas',
+    name: 'Hora',
     code: 'HH',
     description: 'Unidade de duração em horas',
     kind: 'DURATION',
@@ -97,19 +97,19 @@ export const BASE_UNIT_OF_MEASURES = [
   // Unidade - padrão Unidade
   {
     id: 'unit-un',
-    name: 'Unidades',
+    name: 'Unidade',
     code: 'UN',
     description: 'Unidade de quantidade',
     kind: 'UNITY',
     variant: 'UN',
     isActive: true,
   },
-  // Área - padrão Milímetros quadrados (convertido internamente)
+  // Área - padrão Milímetro quadrado (convertido internamente)
   {
     id: 'unit-m2',
-    name: 'Metros Quadrados',
+    name: 'Metro Quadrado',
     code: 'M2',
-    description: 'Unidade de área em metros quadrados',
+    description: 'Unidade de área em metro quadrado',
     kind: 'AREA',
     variant: 'M2',
     isActive: true,
