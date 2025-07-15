@@ -34,7 +34,7 @@ export class ProductService {
       const items =
         createProductDto.items?.map((item) => ({
           name: item.name,
-          unitKind: item.unitKind as any,
+          unitKind: item.unitKind,
           unitCost: item.unitCost,
           salePrice: item.salePrice,
           width: item.width || undefined,
@@ -61,7 +61,7 @@ export class ProductService {
           technicalDescription:
             createProductDto.technicalDescription || undefined,
           allowEditDescription: createProductDto.allowEditDescription,
-          allowEditValues: createProductDto.allowEditDescription,
+          allowEditValues: createProductDto.allowEditValues,
           imageUrl: createProductDto.imageUrl || undefined,
           items: {
             create: items,
@@ -72,7 +72,8 @@ export class ProductService {
 
       return created;
     } catch (error) {
-      throw new BadRequestException('Failed to create product', error.message);
+      console.error(error);
+      throw new BadRequestException(error);
     }
   }
 
@@ -325,7 +326,7 @@ export class ProductService {
       const items = updateProductDto.items?.map((item) => ({
         id: item.id,
         name: item.name,
-        unitKind: item.unitKind as any,
+        unitKind: item.unitKind,
         unitCost: item.unitCost,
         salePrice: item.salePrice,
         width: item.width || undefined,
@@ -387,7 +388,7 @@ export class ProductService {
       });
     } catch (error) {
       console.log(error);
-      throw new BadRequestException('Failed to update product', error.message);
+      throw new BadRequestException(error);
     }
   }
 
@@ -407,7 +408,7 @@ export class ProductService {
         },
       });
     } catch (error) {
-      throw new BadRequestException('Failed to delete product', error.message);
+      throw new BadRequestException(error);
     }
   }
 
@@ -417,10 +418,7 @@ export class ProductService {
         where: { id },
       });
     } catch (error) {
-      throw new BadRequestException(
-        'Failed to delete product item',
-        error.message,
-      );
+      throw new BadRequestException(error);
     }
   }
 

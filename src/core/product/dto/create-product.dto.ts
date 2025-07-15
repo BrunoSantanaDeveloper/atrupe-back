@@ -12,6 +12,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { UnitKind } from '@prisma/client';
 
 export class SectorDto {
   @ApiProperty({
@@ -58,44 +59,30 @@ export class CreateProductItemDto {
   })
   name: string;
 
-  @IsEnum([
-    'LENGTH',
-    'WEIGHT',
-    'CAPACITY',
-    'DISTANCE',
-    'DURATION',
-    'UNITY',
-    'AREA',
-  ])
+  @IsEnum(UnitKind)
   @ApiProperty({
     description: 'Tipo da unidade de medida do item',
-    enum: [
-      'LENGTH',
-      'WEIGHT',
-      'CAPACITY',
-      'DISTANCE',
-      'DURATION',
-      'UNITY',
-      'AREA',
-    ],
-    example: 'LENGTH',
+    enum: UnitKind,
+    example: 'AREA',
     required: true,
   })
-  unitKind: string;
+  unitKind: UnitKind;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
   @ApiProperty({
-    description: 'Custo unitário do item',
-    example: 10.0,
-    required: true,
+    description: 'Custo unitário do item (em centavos)',
+    example: 15000,
+    required: false,
   })
   unitCost?: number;
 
   @IsNumber()
   @Min(0)
   @ApiProperty({
-    description: 'Preço de venda do item',
-    example: 20.0,
+    description: 'Preço de venda do item (em centavos)',
+    example: 25000,
     required: true,
   })
   salePrice: number;
@@ -104,8 +91,8 @@ export class CreateProductItemDto {
   @Min(0)
   @IsOptional()
   @ApiProperty({
-    description: 'Largura do item',
-    example: 15.5,
+    description: 'Largura do item (em milímetros)',
+    example: 800,
     required: false,
   })
   width?: number;
@@ -114,8 +101,8 @@ export class CreateProductItemDto {
   @Min(0)
   @IsOptional()
   @ApiProperty({
-    description: 'Altura do item',
-    example: 20.0,
+    description: 'Altura do item (em milímetros)',
+    example: 2100,
     required: false,
   })
   height?: number;
@@ -124,8 +111,8 @@ export class CreateProductItemDto {
   @Min(0)
   @IsOptional()
   @ApiProperty({
-    description: 'Comprimento do item',
-    example: 30.0,
+    description: 'Comprimento do item (em milímetros)',
+    example: 1000,
     required: false,
   })
   length?: number;
@@ -134,8 +121,8 @@ export class CreateProductItemDto {
   @Min(0)
   @IsOptional()
   @ApiProperty({
-    description: 'Peso do item',
-    example: 5.0,
+    description: 'Peso do item (em miligramas)',
+    example: 5000,
     required: false,
   })
   weight?: number;
@@ -144,8 +131,8 @@ export class CreateProductItemDto {
   @Min(0)
   @IsOptional()
   @ApiProperty({
-    description: 'Volume do item',
-    example: 50.0,
+    description: 'Volume do item (em mililitros)',
+    example: 50000,
     required: false,
   })
   volume?: number;
@@ -154,8 +141,8 @@ export class CreateProductItemDto {
   @Min(0)
   @IsOptional()
   @ApiProperty({
-    description: 'Distância relacionada ao item',
-    example: 100.0,
+    description: 'Distância relacionada ao item (em metros)',
+    example: 100,
     required: false,
   })
   distance?: number;

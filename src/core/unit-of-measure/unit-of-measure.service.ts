@@ -155,23 +155,23 @@ export class UnitOfMeasureService {
   getVariantsByKind(kind: string) {
     const variants = {
       LENGTH: [
-        { code: 'MM', name: 'Milímetros' },
-        { code: 'CM', name: 'Centímetros' },
-        { code: 'MT', name: 'Metros' },
+        { code: 'MM', name: 'Milímetro' },
+        { code: 'CM', name: 'Centímetro' },
+        { code: 'MT', name: 'Metro' },
       ],
       WEIGHT: [
-        { code: 'MG', name: 'Miligramas' },
-        { code: 'GR', name: 'Gramas' },
-        { code: 'KG', name: 'Quilogramas' },
+        { code: 'MG', name: 'Miligrama' },
+        { code: 'GR', name: 'Grama' },
+        { code: 'KG', name: 'Quilograma' },
       ],
       CAPACITY: [
-        { code: 'ML', name: 'Mililitros' },
-        { code: 'LT', name: 'Litros' },
+        { code: 'ML', name: 'Mililitro' },
+        { code: 'LT', name: 'Litro' },
       ],
-      DISTANCE: [{ code: 'KM', name: 'Quilômetros' }],
-      DURATION: [{ code: 'HH', name: 'Horas' }],
-      UNITY: [{ code: 'UN', name: 'Unidades' }],
-      AREA: [{ code: 'M2', name: 'Metros Quadrados' }],
+      DISTANCE: [{ code: 'KM', name: 'Quilômetro' }],
+      DURATION: [{ code: 'HH', name: 'Hora' }],
+      UNITY: [{ code: 'UN', name: 'Unidade' }],
+      AREA: [{ code: 'M2', name: 'Metro Quadrado' }],
     };
 
     return variants[kind] || [];
