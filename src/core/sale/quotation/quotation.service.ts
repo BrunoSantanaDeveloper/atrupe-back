@@ -38,59 +38,10 @@ export class QuotationService {
     private deliveryScheduleService: DeliveryScheduleService,
   ) {}
 
-  // Função helper para calcular measurement baseado na unidade de medida
-  private calculateMeasurement(item: any, unitKind: string): number {
-    let measurement = 1;
-
-    switch (unitKind) {
-      case 'AREA':
-        // Área = altura × largura (independente de M2, CM², MM²)
-        measurement = (item.height || 0) * (item.width || 0);
-        break;
-
-      case 'LENGTH':
-        // Comprimento = largura (independente de MT, CM, MM)
-        measurement = item.width || 0;
-        break;
-
-      case 'WEIGHT':
-        // Peso = peso (independente de KG, GR, MG)
-        measurement = item.weight || 0;
-        break;
-
-      case 'CAPACITY':
-        // Capacidade = volume (independente de LT, ML)
-        measurement = item.volume || 0;
-        break;
-
-      case 'DISTANCE':
-        // Distância = distância (independente de KM, MT)
-        measurement = item.distance || 0;
-        break;
-
-      case 'DURATION':
-        // Duração = duração em horas (independente de HH, segundos)
-        const duration = Number(item.duration || 0);
-        measurement = duration / 3600; // Converter de segundos para horas
-        break;
-
-      case 'UNITY':
-        // Unidade = sempre 1 (independente de UN)
-        measurement = 1;
-        break;
-
-      default:
-        // Fallback para casos não mapeados
-        measurement = 1;
-        break;
-    }
-
-    return measurement;
-  }
   async create(createQuotationDto: CreateQuotationDto): Promise<Quotation> {
     const {
       description,
-      contactType = 'DIRECT', // Valor padrão
+      contactType,
       companyId,
       sellerId,
       clientId,
@@ -195,54 +146,14 @@ export class QuotationService {
         throw new NotFoundException('Produto não encontrado');
       }
 
-      // Verifica se o front enviou propriedades editáveis e realiza validações
-      // const hasEditableFields =
-      //   data.technicalDescription !== undefined ||
-      //   data.items.some(
-      //     (item) => item.unitCost !== undefined || item.salePrice !== undefined,
-      //   );
+      // Usar o valor total calculado do frontend, ou calcular se não fornecido
+      const totalValue =
+        data.totalValue ||
+        data.items.reduce((total, item) => {
+          return total + (item.salePrice || 0);
+        }, 0);
 
-      // if (
-      //   data.technicalDescription !== undefined &&
-      //   !product.allowEditDescription &&
-      //   data.technicalDescription !== product.technicalDescription
-      // ) {
-      //   throw new BadRequestException(
-      //     `Descrição técnica não pode ser editada para o produto ${product.name}`,
-      //   );
-      // }
-
-      // if (
-      //   hasEditableFields &&
-      //   !product.allowEditValues &&
-      //   data.items.some((item) => {
-      //     const originalItem = product.items.find(
-      //       (pItem) => pItem.id === item.id,
-      //     );
-      //     if (!originalItem) {
-      //       throw new BadRequestException(
-      //         `Item ${item.id} não encontrado no produto`,
-      //       );
-      //     }
-      //     return (
-      //       (item.unitCost !== undefined &&
-      //         item.unitCost !== originalItem.unitCost) ||
-      //       (item.salePrice !== undefined &&
-      //         item.salePrice !== originalItem.salePrice)
-      //     );
-      //   })
-      // ) {
-      //   throw new BadRequestException(
-      //     `Valores não podem ser editados para o produto ${product.name}`,
-      //   );
-      // }
-
-      // Calcula o valor total do produto baseado nos valores já calculados pelo frontend
-      const totalValue = data.items.reduce((total, item) => {
-        return total + (item.salePrice || 0);
-      }, 0);
-
-      // Cria o QuotationProduct com ID único
+      // Cria o QuotationProduct com valores do frontend
       const quotationProduct = await this.prisma.quotationProduct.create({
         data: {
           quotationId,
@@ -252,51 +163,49 @@ export class QuotationService {
           technicalDescription:
             data.technicalDescription || product.technicalDescription,
           imageUrl: data.imageUrl || product.imageUrl,
-          totalValue, // Valor total inicial
+          totalValue: data.totalValue || totalValue,
+          finalValue: data.finalValue || data.totalValue || totalValue,
+          discount: data.discount || 0,
+          discountType: data.discountType || 'VALUE',
+          notes: data.notes || undefined,
           allowEditDescription: product.allowEditDescription,
           allowEditValues: product.allowEditValues,
         },
       });
 
-      // Cria os QuotationProductItems associados ao QuotationProduct
+      // Cria os QuotationProductItems com valores calculados do frontend
       const quotationProductItems = data.items.map((item) => {
         const originalItem = product.items.find(
           (pItem) => pItem.id === item.id,
         );
+
         if (!originalItem) {
           throw new BadRequestException(
             `Item ${item.id} não encontrado no produto`,
           );
         }
 
-        // Calcular measurement baseado no unitKind
-        const unitKind = item.unitKind || originalItem.unitKind;
-        const measurement = unitKind
-          ? this.calculateMeasurement(item, unitKind)
-          : 1;
-        const salePrice = item.salePrice || originalItem.salePrice || 0;
-        const calculatedTotalValue = salePrice * measurement;
-
         return {
-          quotationProductId: quotationProduct.id, // ID único do QuotationProduct
+          quotationProductId: quotationProduct.id,
           productItemId: originalItem.id,
           quotationId,
           productId: product.id,
           name: originalItem.name,
           unitOfMeasureId: item.unitOfMeasureId,
-          unitKind: (item.unitKind || originalItem.unitKind) as any,
-          width: item.width || originalItem.width,
-          height: item.height || originalItem.height,
-          length: item.length || originalItem.length,
-          weight: item.weight || originalItem.weight,
-          volume: item.volume || originalItem.volume,
-          distance: item.distance || originalItem.distance,
-          duration: item.duration || originalItem.duration,
-          unitCost: item.unitCost || originalItem.unitCost,
-          salePrice: salePrice,
-          quantity: data.quantity * item.quantity,
-          originalQuantity: item.quantity,
-          totalValue: calculatedTotalValue,
+          unitKind: item.unitKind as any,
+          width: item.width || 0,
+          height: item.height || 0,
+          length: item.length || 0,
+          weight: item.weight || 0,
+          volume: item.volume || 0,
+          distance: item.distance || 0,
+          duration: item.duration || 0,
+          unitCost: item.unitCost || 0,
+          salePrice: item.salePrice || 0,
+          quantity:
+            item.quantity || data.quantity * (item.originalQuantity || 1),
+          originalQuantity: item.originalQuantity || item.quantity || 1,
+          totalValue: item.totalValue || item.salePrice || 0, // Usar valor calculado do frontend
         };
       });
 
@@ -304,8 +213,8 @@ export class QuotationService {
         data: quotationProductItems,
       });
 
-      // Recalcula o valor total do orçamento
-      await this.recalculateQuotationProductsTotalValue(quotationProduct.id);
+      // Atualizar o valor total do orçamento sem recalcular os itens
+      await this.recalculateQuotationTotalValue(quotationId);
 
       // Retorna o orçamento atualizado
       return this.prisma.quotation.findUnique({
@@ -316,6 +225,7 @@ export class QuotationService {
       });
     } catch (error) {
       console.error(error);
+      throw error;
     }
   }
 
@@ -334,51 +244,7 @@ export class QuotationService {
         throw new NotFoundException(`Produto não encontrado`);
       }
 
-      // // Validação: technicalDescription e campos editáveis
-      // const hasEditableFields =
-      //   data.technicalDescription !== undefined ||
-      //   (data.items?.some(
-      //     (item) => item.unitCost !== undefined || item.salePrice !== undefined,
-      //   ) ??
-      //     false);
-
-      // if (
-      //   data.technicalDescription !== undefined &&
-      //   !product.allowEditDescription &&
-      //   data.technicalDescription !== product.technicalDescription
-      // ) {
-      //   throw new BadRequestException(
-      //     `Descrição técnica não pode ser editada para o produto ${product.product.name}`,
-      //   );
-      // }
-
-      // if (
-      //   hasEditableFields &&
-      //   !product.allowEditValues &&
-      //   (data.items?.some((item) => {
-      //     const originalItem = product.items.find(
-      //       (pItem) => pItem.id === item.id,
-      //     );
-      //     if (!originalItem) {
-      //       throw new BadRequestException(
-      //         `Item ${item.id} não encontrado no produto`,
-      //       );
-      //     }
-      //     return (
-      //       (item.unitCost !== undefined &&
-      //         item.unitCost !== originalItem.unitCost) ||
-      //       (item.salePrice !== undefined &&
-      //         item.salePrice !== originalItem.salePrice)
-      //     );
-      //   }) ??
-      //     false)
-      // ) {
-      //   throw new BadRequestException(
-      //     `Valores não podem ser editados para o produto ${product.product.name}`,
-      //   );
-      // }
-
-      // Atualiza o produto dentro do orçamento
+      // Atualiza o produto dentro do orçamento com valores do frontend
       const updatedQuotationProduct = await this.prisma.quotationProduct.update(
         {
           where: { id: productId },
@@ -396,50 +262,29 @@ export class QuotationService {
             ...(data.quantity && {
               quantity: data.quantity,
             }),
-            // Atualização de itens será feita separadamente para suportar criação e atualização
+            ...(data.totalValue !== undefined && {
+              totalValue: data.totalValue,
+            }),
+            ...(data.finalValue !== undefined && {
+              finalValue: data.finalValue,
+            }),
           },
         },
       );
 
-      // Processar itens: atualizar existentes ou criar novos
+      // Processar itens: atualizar com valores calculados do frontend
       if (data.items) {
         for (const item of data.items) {
           if (item.id) {
-            // Calcular totalValue se necessário baseado no unitKind
-            let calculatedTotalValue;
-            let finalSalePrice = item.salePrice;
-
-            if (item.salePrice !== undefined && item.unitKind) {
-              const measurement = this.calculateMeasurement(
-                item,
-                item.unitKind,
-              );
-
-              // Para unidades de duração (DURATION), sempre usar unitCost como valor base
-              // pois o salePrice pode vir já calculado do frontend na edição
-              let basePrice = item.salePrice;
-              if (item.unitKind === 'DURATION' && item.unitCost !== undefined) {
-                basePrice = item.unitCost;
-                finalSalePrice = item.unitCost; // Salvar o unitCost como salePrice para manter consistência
-              }
-
-              calculatedTotalValue = basePrice * measurement;
-            } else if (item.salePrice !== undefined) {
-              calculatedTotalValue = item.salePrice;
-            }
-
-            // Atualizar item existente
+            // Atualizar item existente com valores do frontend
             await this.prisma.quotationProductItem.update({
               where: { id: item.id },
               data: {
-                ...(item.unitOfMeasureId && {
-                  unitOfMeasureId: item.unitOfMeasureId,
+                ...(item.quantity !== undefined && {
+                  quantity: item.quantity,
                 }),
-                ...(item.quantity && {
-                  quantity: data.quantity
-                    ? data.quantity * item.quantity
-                    : item.quantity,
-                  originalQuantity: item.quantity,
+                ...(item.originalQuantity !== undefined && {
+                  originalQuantity: item.originalQuantity,
                 }),
                 ...(item.width !== undefined && { width: item.width }),
                 ...(item.height !== undefined && { height: item.height }),
@@ -450,8 +295,10 @@ export class QuotationService {
                 ...(item.duration !== undefined && { duration: item.duration }),
                 ...(item.unitCost !== undefined && { unitCost: item.unitCost }),
                 ...(item.salePrice !== undefined && {
-                  salePrice: finalSalePrice,
-                  totalValue: calculatedTotalValue,
+                  salePrice: item.salePrice,
+                }),
+                ...(item.totalValue !== undefined && {
+                  totalValue: item.totalValue,
                 }),
               },
             });
@@ -464,7 +311,8 @@ export class QuotationService {
         }
       }
 
-      if (data.quantity) {
+      // Se mudou a quantidade do produto, atualizar quantidade dos itens proporcionalmente
+      if (data.quantity && !data.items) {
         const items = await this.prisma.quotationProductItem.findMany({
           where: {
             quotationProductId: productId,
@@ -480,7 +328,9 @@ export class QuotationService {
         }
       }
 
-      await this.recalculateQuotationProductsTotalValue(product.id);
+      // Atualizar o valor total do orçamento sem recalcular os itens
+      await this.recalculateQuotationTotalValue(product.quotationId);
+
       return updatedQuotationProduct;
     } catch (error) {
       console.error(error);
@@ -501,11 +351,11 @@ export class QuotationService {
 
     if (!originalQuotationProduct) {
       throw new NotFoundException(
-        `Produto com ID ${productId} não encontrado no orçamento ${originalQuotationProduct.quotationId}`,
+        `Produto com ID ${productId} não encontrado no orçamento`,
       );
     }
 
-    // Cria um novo registro para o QuotationProduct duplicado
+    // Cria um novo registro para o QuotationProduct duplicado com todos os campos
     const duplicatedQuotationProduct =
       await this.prisma.quotationProduct.create({
         data: {
@@ -515,13 +365,17 @@ export class QuotationService {
           description: originalQuotationProduct.description,
           technicalDescription: originalQuotationProduct.technicalDescription,
           imageUrl: originalQuotationProduct.imageUrl,
+          notes: originalQuotationProduct.notes,
           totalValue: originalQuotationProduct.totalValue,
+          finalValue: originalQuotationProduct.finalValue,
+          discount: originalQuotationProduct.discount,
+          discountType: originalQuotationProduct.discountType,
           allowEditDescription: originalQuotationProduct.allowEditDescription,
           allowEditValues: originalQuotationProduct.allowEditValues,
         },
       });
 
-    // Duplicar os itens do QuotationProduct
+    // Duplicar os itens do QuotationProduct com todos os valores já calculados
     const duplicatedItems = originalQuotationProduct.items.map((item) => ({
       quotationId: item.quotationId,
       productId: item.productId,
@@ -541,16 +395,16 @@ export class QuotationService {
       salePrice: item.salePrice,
       quantity: item.quantity,
       originalQuantity: item.originalQuantity,
-      totalValue: item.totalValue,
+      totalValue: item.totalValue, // Usa valor já calculado
     }));
 
     await this.prisma.quotationProductItem.createMany({
       data: duplicatedItems,
     });
 
-    // Atualizar o valor total do orçamento
-    await this.recalculateQuotationProductsTotalValue(
-      duplicatedQuotationProduct.id,
+    // Atualizar apenas o valor total do orçamento (sem recalcular os itens)
+    await this.recalculateQuotationTotalValue(
+      originalQuotationProduct.quotationId,
     );
 
     return this.prisma.quotation.findUnique({
@@ -617,72 +471,40 @@ export class QuotationService {
     );
   }
   private async recalculateQuotationProductsTotalValue(quotationId: string) {
-    // Obter os produtos e itens relacionados com unidades de medida
-    const quotationProducts = await this.prisma.quotationProduct.findFirst({
+    // Obter o produto para recalcular apenas o valor final com desconto
+    const quotationProduct = await this.prisma.quotationProduct.findFirst({
       where: { id: quotationId },
       include: {
-        items: {
-          include: {
-            unitOfMeasure: true,
-          },
-        },
+        items: true,
       },
     });
 
-    // Calcular e atualizar `totalValue` para cada item baseado no unitKind
-    const updatedItems = quotationProducts.items.map((item) => {
-      // Para unidades de duração (DURATION), sempre usar unitCost como valor base
-      let basePrice = item.salePrice || item.unitCost || 0;
-      if (item.unitKind === 'DURATION' && item.unitCost) {
-        basePrice = item.unitCost;
-      }
+    if (!quotationProduct) return;
 
-      const measurement = item.unitKind
-        ? this.calculateMeasurement(item, item.unitKind)
-        : 1;
-      const totalValue = basePrice * measurement;
-
-      return {
-        id: item.id,
-        totalValue: totalValue,
-      };
-    });
-
-    await Promise.all(
-      updatedItems.map((item) =>
-        this.prisma.quotationProductItem.update({
-          where: { id: item.id },
-          data: { totalValue: item.totalValue },
-        }),
-      ),
-    );
-
-    // Calcular `totalValue` acumulado e aplicar quantidade do produto
-    const totalValue = updatedItems.reduce(
-      (acc, item) => acc + item.totalValue,
+    // Calcular totalValue somando os valores dos itens (já calculados no frontend)
+    const totalValue = quotationProduct.items.reduce(
+      (acc, item) => acc + (item.totalValue || 0),
       0,
     );
-    // Aplicar quantidade total
-    const overallTotalValue = totalValue;
-    // Calcular o `finalValue` com desconto
+
+    // Calcular o finalValue aplicando desconto
     const finalValue =
-      quotationProducts.discountType === 'VALUE'
-        ? overallTotalValue - quotationProducts.discount
-        : quotationProducts.discountType === 'PERCENT'
-          ? overallTotalValue -
-            overallTotalValue * (quotationProducts.discount / 100)
-          : overallTotalValue;
+      quotationProduct.discountType === 'VALUE'
+        ? totalValue - (quotationProduct.discount || 0)
+        : quotationProduct.discountType === 'PERCENT'
+          ? totalValue - totalValue * ((quotationProduct.discount || 0) / 100)
+          : totalValue;
 
     // Atualizar o produto com os valores finais
     await this.prisma.quotationProduct.update({
       where: { id: quotationId },
       data: {
-        totalValue: overallTotalValue,
+        totalValue,
         finalValue,
       },
     });
 
-    await this.recalculateQuotationTotalValue(quotationProducts.quotationId);
+    await this.recalculateQuotationTotalValue(quotationProduct.quotationId);
   }
 
   private async recalculateQuotationTotalValue(quotationId: string) {
@@ -713,6 +535,7 @@ export class QuotationService {
       data: { totalValue },
     });
   }
+
   async findAllQuantity(companyId: string) {
     const allStatuses: QuotationStatus[] = [
       'OPEN',
@@ -1210,12 +1033,9 @@ export class QuotationService {
           discountType: qp.discountType,
           discount: qp.discount,
           unitValue: (() => {
-            // Calcular unitValue corretamente: unitCost * measurement para cada item
+            // Usar valores já calculados do banco ao invés de recalcular
             const unitValue = qp.items.reduce((total, item) => {
-              const measurement = item.unitKind
-                ? this.calculateMeasurement(item, item.unitKind)
-                : 1;
-              return total + (item.unitCost || 0) * measurement;
+              return total + (item.unitCost || 0);
             }, 0);
             return unitValue;
           })(),
@@ -1236,12 +1056,9 @@ export class QuotationService {
             name: qp.product.name,
             quantity: qp.quantity,
             unitValue: (() => {
-              // Calcular unitValue corretamente: unitCost * measurement para cada item
+              // Usar valores já calculados do banco ao invés de recalcular
               const unitValue = qp.items.reduce((total, item) => {
-                const measurement = item.unitKind
-                  ? this.calculateMeasurement(item, item.unitKind)
-                  : 1;
-                return total + (item.unitCost || 0) * measurement;
+                return total + (item.unitCost || 0);
               }, 0);
               return unitValue;
             })(),
@@ -1361,34 +1178,37 @@ export class QuotationService {
     }
     // Criar os produtos e itens duplicados
     for (const product of quotation.quotationProduct) {
-      // Criar o produto duplicado
+      // Criar o produto duplicado com todos os campos
       const productDto: DuplicateQuotationProductDto = {
         description: product.description,
         quantity: product.quantity,
         technicalDescription: product.technicalDescription,
         imageUrl: product.imageUrl,
+        notes: product.notes,
         totalValue: product.totalValue,
+        finalValue: product.finalValue,
+        discount: product.discount,
+        discountType: product.discountType,
         allowEditDescription: product.allowEditDescription,
         allowEditValues: product.allowEditValues,
         quotationId: newQuotation.id,
         productId: product.productId,
-        discount: product.discount,
-        discountType: product.discountType,
       };
 
       const newProduct = await this.prisma.quotationProduct.create({
         data: productDto,
       });
 
-      // Criar os itens do produto duplicado
+      // Criar os itens do produto duplicado com valores já calculados
       for (const item of product.items) {
         const itemDto: DuplicateQuotationProductItemDto = {
-          quotationId: newQuotation.id, // Certifique-se de que `quotationId` está disponível no contexto
-          productId: newProduct.productId, // Certifique-se de que `productId` está disponível no contexto
-          productItemId: item.productItemId, // Use o id do item específico
+          quotationId: newQuotation.id,
+          productId: newProduct.productId,
+          productItemId: item.productItemId,
           quotationProductId: newProduct.id,
           name: item.name,
           quantity: item.quantity,
+          originalQuantity: item.originalQuantity, // Incluir originalQuantity
           unitOfMeasureId: item.unitOfMeasureId,
           unitKind: item.unitKind as any,
           width: item.width,
@@ -1400,14 +1220,13 @@ export class QuotationService {
           duration: item.duration,
           unitCost: item.unitCost,
           salePrice: item.salePrice,
-          totalValue: item.totalValue,
+          totalValue: item.totalValue, // Usar valor já calculado
         };
 
         try {
           await this.prisma.quotationProductItem.create({
             data: itemDto as any,
           });
-          await this.recalculateQuotationProductsTotalValue(newProduct.id);
         } catch (error) {
           console.error(
             'Error creating quotation product item:',
@@ -1420,6 +1239,9 @@ export class QuotationService {
         }
       }
     }
+
+    // Recalcular apenas o total do orçamento uma vez no final
+    await this.recalculateQuotationTotalValue(newQuotation.id);
 
     return newQuotation; // Retorna o novo orçamento criado
   }

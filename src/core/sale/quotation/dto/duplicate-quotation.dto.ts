@@ -29,11 +29,13 @@ export class DuplicateQuotationProductDto {
   description?: string;
   technicalDescription?: string;
   imageUrl?: string;
+  notes?: string;
   totalValue?: number;
-  allowEditDescription?: boolean;
-  allowEditValues?: boolean;
+  finalValue?: number;
   discount?: number;
   discountType?: string;
+  allowEditDescription?: boolean;
+  allowEditValues?: boolean;
 }
 
 export class DuplicateQuotationProductItemDto {
@@ -43,6 +45,7 @@ export class DuplicateQuotationProductItemDto {
   productItemId: string;
   name: string;
   quantity: number;
+  originalQuantity?: number;
   unitOfMeasureId: string;
   unitKind?: string;
   width?: number;

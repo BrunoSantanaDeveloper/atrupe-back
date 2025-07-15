@@ -364,6 +364,12 @@ export class AddProductItemDto {
 
   @IsOptional()
   @IsNumber()
+  @Min(1)
+  @ApiProperty({ description: 'Quantidade original do item', example: 1 })
+  originalQuantity?: number;
+
+  @IsOptional()
+  @IsNumber()
   @Min(0)
   @ApiProperty({ description: 'Largura', example: 10.0 })
   width: number;
@@ -415,6 +421,24 @@ export class AddProductItemDto {
   @Min(0)
   @ApiProperty({ description: 'Preço de venda', example: 30.0 })
   salePrice: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @ApiProperty({
+    description: 'Valor total do item (calculado no frontend)',
+    example: 600.0,
+  })
+  totalValue?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @ApiProperty({
+    description: 'Medida calculada (ex: width * height para AREA)',
+    example: 50.0,
+  })
+  measurement?: number;
 }
 
 export class AddItemDto {
@@ -452,6 +476,46 @@ export class AddItemDto {
     example: 'Descrição técnica',
   })
   technicalDescription?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @ApiProperty({
+    description: 'Valor total do produto (calculado no frontend)',
+    example: 500.0,
+  })
+  totalValue?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @ApiProperty({
+    description: 'Valor final após desconto (calculado no frontend)',
+    example: 450.0,
+  })
+  finalValue?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @ApiProperty({ description: 'Valor do desconto', example: 50.0 })
+  discount?: number;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Tipo do desconto (VALUE ou PERCENT)',
+    example: 'VALUE',
+  })
+  discountType?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Observações do produto',
+    example: 'Observações importantes',
+  })
+  notes?: string;
 
   @IsArray()
   @ValidateNested({ each: true })
