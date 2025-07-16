@@ -42,12 +42,12 @@ export class CompanyService {
   ) {}
   async createFirstAccess(email: string, companyId: string) {
     try {
-      console.log('Starting createFirstAccess process for email:', email);
+      this.logger.log('Starting createFirstAccess process for email:', email);
 
       return await this.prisma.$transaction(
         async (tx) => {
           try {
-            console.log('Finding user with email:', email);
+            this.logger.log('Finding user with email:', email);
             const user = await tx.user.findFirst({
               where: {
                 email: email,
@@ -58,9 +58,9 @@ export class CompanyService {
               console.error('User not found for email:', email);
               throw new Error('User not found');
             }
-            console.log('User found:', user.id);
+            this.logger.log('User found:', user.id);
 
-            console.log('Finding administration sector');
+            this.logger.log('Finding administration sector');
             const sector = await tx.companySector.findFirst({
               where: {
                 name: 'Administração',
@@ -75,9 +75,9 @@ export class CompanyService {
               );
               throw new Error('Sector not found');
             }
-            console.log('Administration sector found:', sector.id);
+            this.logger.log('Administration sector found:', sector.id);
 
-            console.log('Creating administrator role');
+            this.logger.log('Creating administrator role');
             const role = await tx.role.create({
               data: {
                 name: 'Admin',
@@ -86,9 +86,9 @@ export class CompanyService {
                 sectorId: sector.id,
               },
             });
-            console.log('Administrator role created:', role.id);
+            this.logger.log('Administrator role created:', role.id);
 
-            console.log('Creating seller profile for administrator');
+            this.logger.log('Creating seller profile for administrator');
             const sellerProfile = await tx.sellerProfile.create({
               data: {
                 name: 'Admin',
@@ -100,12 +100,12 @@ export class CompanyService {
                 canCancelSale: true,
               },
             });
-            console.log(
+            this.logger.log(
               'Administrator seller profile created:',
               sellerProfile.id,
             );
 
-            console.log('Creating employee record');
+            this.logger.log('Creating employee record');
             await tx.employee.create({
               data: {
                 name: user.name,
@@ -116,9 +116,9 @@ export class CompanyService {
                 sellerProfileId: sellerProfile.id,
               },
             });
-            console.log('Employee record created successfully');
+            this.logger.log('Employee record created successfully');
 
-            console.log('createFirstAccess process completed successfully');
+            this.logger.log('createFirstAccess process completed successfully');
             return 'success';
           } catch (error) {
             console.error('Error in transaction:', error);
@@ -289,6 +289,8 @@ export class CompanyService {
 
   async createDefaultItems(email: string, companyId: string) {
     this.logger.log('creating default items for company', companyId);
+    this.logger.log('Creating Default sectors...');
+    await this.createDefaultSectors(companyId);
     this.logger.log('Creating Units of measure...');
     await this.createDefaultUnits(companyId);
     this.logger.log('Creating Sale series...');
@@ -1009,17 +1011,36 @@ export class CompanyService {
 
   private async createDefaultSectors(companyId: string) {
     const defaultSectors = await this.prisma.defaultSector.findMany();
-    const companySectors = defaultSectors.map((sector) => ({
-      name: sector.name,
-      icon: sector.icon,
-      kind: sector.kind,
-      isProductionStage: sector.kind === 'PRODUCTION',
-      isSystem: sector.kind === 'SYSTEM',
-      companyId: companyId,
-      defaultSectorId: sector.id,
-    }));
 
-    await this.prisma.companySector.createMany({ data: companySectors });
+    if (defaultSectors.length > 0) {
+      // Se existem setores padrão, usa eles
+      const companySectors = defaultSectors.map((sector) => ({
+        name: sector.name,
+        icon: sector.icon,
+        kind: sector.kind,
+        isProductionStage: sector.kind === 'PRODUCTION',
+        isSystem: sector.kind === 'SYSTEM',
+        companyId: companyId,
+        defaultSectorId: sector.id,
+      }));
+
+      await this.prisma.companySector.createMany({ data: companySectors });
+    } else {
+      // Se não existem setores padrão, cria os setores básicos necessários
+      const basicSectors = [
+        {
+          name: 'Administração',
+          icon: 'admin',
+          kind: 'SYSTEM' as const,
+          isProductionStage: false,
+          isSystem: true,
+          companyId: companyId,
+        },
+      ];
+
+      await this.prisma.companySector.createMany({ data: basicSectors });
+      this.logger.log('Setores básicos criados para a empresa');
+    }
   }
 
   private async createDefaultUnits(companyId: string) {
