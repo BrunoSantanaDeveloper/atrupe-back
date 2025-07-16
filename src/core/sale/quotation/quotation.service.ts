@@ -191,7 +191,7 @@ export class QuotationService {
           quotationId,
           productId: product.id,
           name: originalItem.name,
-          unitOfMeasureId: item.unitOfMeasureId,
+          unitOfMeasureId: originalItem.unitOfMeasureId,
           unitKind: item.unitKind as any,
           width: item.width || 0,
           height: item.height || 0,

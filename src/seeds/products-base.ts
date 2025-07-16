@@ -10,6 +10,7 @@ interface ProductItemType {
   nomeUnidadeMedida: string;
   dimensoes: DimensionsType | null;
   precoVenda: number;
+  precoUnitario: number;
 }
 
 interface ProductType {
@@ -35,13 +36,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Adesivo Blackout Impresso',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -56,13 +58,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Adesivo Brilho Impresso',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -77,13 +80,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Adesivo Fosco Impresso',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -98,13 +102,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Adesivo Jateado',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -119,13 +124,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Adesivo Perfurado',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -140,13 +146,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Adesivo Recorte',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -161,13 +168,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Adesivo Refletivo',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -186,6 +194,7 @@ export const BASE_PRODUCTS: ProductType[] = [
         nomeUnidadeMedida: 'Unidade',
         dimensoes: null,
         precoVenda: 0,
+        precoUnitario: 0,
       },
       {
         nome: 'Impressão A4 color',
@@ -193,6 +202,7 @@ export const BASE_PRODUCTS: ProductType[] = [
         nomeUnidadeMedida: 'Unidade',
         dimensoes: null,
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -207,10 +217,11 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Banner',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: null,
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -229,6 +240,7 @@ export const BASE_PRODUCTS: ProductType[] = [
         nomeUnidadeMedida: 'Unidade',
         dimensoes: null,
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -243,13 +255,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Cavalete Ilhos',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -267,9 +280,10 @@ export const BASE_PRODUCTS: ProductType[] = [
         unidadeMedida: 'HH',
         nomeUnidadeMedida: 'Hora',
         dimensoes: {
-          duracao: 18,
+          duracao: 64800,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -288,6 +302,7 @@ export const BASE_PRODUCTS: ProductType[] = [
         nomeUnidadeMedida: 'Hora',
         dimensoes: null,
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -302,13 +317,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Letra Caixa Galvanizada',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -323,13 +339,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Letra Caixa Inox',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -344,13 +361,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Letra Caixa PVC 10 mm',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -365,13 +383,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Letra Caixa PVC 20 mm',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -386,13 +405,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Letra Caixa PVC 5 mm',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -407,13 +427,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Lona Impressa',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -428,13 +449,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Lona Impressa com Bainha e Ilhós',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -453,6 +475,7 @@ export const BASE_PRODUCTS: ProductType[] = [
         nomeUnidadeMedida: 'Unidade',
         dimensoes: null,
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -467,13 +490,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Painel ACM',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -488,13 +512,14 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Painel Back Light',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
   },
@@ -509,94 +534,15 @@ export const BASE_PRODUCTS: ProductType[] = [
     produto: [
       {
         nome: 'Painel Front Light',
-        unidadeMedida: 'M²',
+        unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: {
-          largura: 1,
-          altura: 1,
+          largura: 1000,
+          altura: 1000,
         },
         precoVenda: 0,
+        precoUnitario: 0,
       },
     ],
-  },
-];
-
-// Unidades de medida necessárias que podem não existir no sistema
-export const BASE_UNITS_OF_MEASURE = [
-  {
-    name: 'Metro Quadrado',
-    code: 'M²',
-    description: 'Unidade de medida para área',
-    kind: 'LENGTH',
-  },
-  {
-    name: 'Unidade',
-    code: 'UN',
-    description: 'Unidade de medida para itens unitários',
-    kind: null,
-  },
-  {
-    name: 'Hora',
-    code: 'HH',
-    description: 'Unidade de medida para tempo em horas',
-    kind: null,
-  },
-];
-
-// Categorias necessárias que podem não existir no sistema
-export const ADDITIONAL_CATEGORIES = [
-  {
-    name: 'Papéis',
-    kind: 'PRODUCT',
-    isActive: true,
-    isStandard: false,
-    sector: {
-      name: 'Gráfica Rápida',
-      icon: 'printer',
-      isActive: true,
-      kind: 'PRODUCTION',
-      isProductionStage: true,
-      isSystem: false,
-    },
-  },
-  {
-    name: 'Revenda Gráfica Rápida',
-    kind: 'PRODUCT',
-    isActive: true,
-    isStandard: false,
-    sector: {
-      name: 'Gráfica Rápida',
-      icon: 'printer',
-      isActive: true,
-      kind: 'PRODUCTION',
-      isProductionStage: true,
-      isSystem: false,
-    },
-  },
-  {
-    name: 'Letra Caixa',
-    kind: 'PRODUCT',
-    isActive: true,
-    isStandard: false,
-    sector: {
-      name: 'Serralheria',
-      icon: 'metalwork',
-      isActive: true,
-      kind: 'PRODUCTION',
-      isProductionStage: true,
-      isSystem: false,
-    },
-  },
-];
-
-// Setores necessários que podem não existir no sistema
-export const ADDITIONAL_SECTORS = [
-  {
-    name: 'Gráfica Rápida',
-    icon: 'printer',
-    isActive: true,
-    kind: 'PRODUCTION',
-    isProductionStage: true,
-    isSystem: false,
   },
 ];

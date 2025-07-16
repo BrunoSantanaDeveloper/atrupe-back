@@ -1252,7 +1252,7 @@ export class CompanyService {
             unitOfMeasureId: unitOfMeasure.id,
             unitKind: unitKind as any,
             salePrice: item.precoVenda,
-            unitCost: 0,
+            unitCost: item.precoUnitario,
             ...dimensions,
           },
         });
