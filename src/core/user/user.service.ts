@@ -175,6 +175,13 @@ export class UserService {
       createdCompanyId = company.id;
       this.logger.log('Company created successfully');
 
+      // Configurar primeiro acesso: conectar user à company com role admin
+      await this.companyService.createFirstAccess(
+        createUserDto.email,
+        company.id,
+      );
+      this.logger.log('First access configured successfully');
+
       // Terceira etapa: Configurar plano TRIAL em transação separada
       await this.prisma.$transaction(async (tx) => {
         this.logger.log('Attempting to create trial plan...');
