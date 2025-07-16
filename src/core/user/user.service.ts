@@ -24,9 +24,12 @@ import { randomBytes } from 'crypto';
 import { MailerService } from '@nestjs-modules/mailer';
 import { CompanyService } from '../company/company.service';
 import { CreateCompanyDto } from '../company/dto/create-company.dto';
+import { Logger } from '@nestjs/common';
 
 @Injectable()
 export class UserService {
+  private readonly logger = new Logger(UserService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
@@ -125,8 +128,12 @@ export class UserService {
       throw new BadRequestException('Email não verificado.');
     }
 
-    return await this.prisma.$transaction(async (tx) => {
-      // Criar usuário
+    let createdUserId: string | null = null;
+    let createdCompanyId: string | null = null;
+    let createdCustomerId: string | null = null;
+
+    try {
+      // Primeira etapa: Criar usuário
       const hashedPassword = await argon2.hash(createUserDto.password);
       const userData: Prisma.UserCreateInput = {
         name: createUserDto.name,
@@ -134,11 +141,12 @@ export class UserService {
         password: hashedPassword,
         phone: createUserDto.mobile,
       };
-      const user = await tx.user.create({
+      const user = await this.prisma.user.create({
         data: userData,
       });
+      createdUserId = user.id;
 
-      // Criar empresa
+      // Segunda etapa: Criar empresa (fora da transação)
       const createCompany: CreateCompanyDto = {
         general: {
           phone: createUserDto.mobile,
@@ -164,64 +172,113 @@ export class UserService {
         createUserDto.email,
         createCompany,
       );
+      createdCompanyId = company.id;
+      this.logger.log('Company created successfully');
 
-      // Buscar plano TRIAL
-      const trialPlan = await tx.plan.findFirst({
-        where: { planType: 'TRIAL' },
+      // Terceira etapa: Configurar plano TRIAL em transação separada
+      await this.prisma.$transaction(async (tx) => {
+        this.logger.log('Attempting to create trial plan...');
+
+        // Buscar plano TRIAL
+        const trialPlan = await tx.plan.findFirst({
+          where: { planType: 'TRIAL' },
+        });
+
+        if (trialPlan) {
+          // Criar customer
+          const customer = await tx.customer.create({
+            data: {
+              name: createUserDto.name,
+              email: createUserDto.email,
+              document: `temp_${user.id}`, // Document único temporário
+              asaasCustomerId: `trial_${user.id}`,
+              companyId: company.id,
+            },
+          });
+          createdCustomerId = customer.id;
+
+          // Conectar user ao customer
+          await tx.user.update({
+            where: { id: user.id },
+            data: { customerId: customer.id },
+          });
+
+          // Criar subscription com plano TRIAL
+          const trialEndDate = new Date();
+          trialEndDate.setDate(trialEndDate.getDate() + 7); // 7 dias de trial
+
+          await tx.subscription.create({
+            data: {
+              customerId: customer.id,
+              planId: trialPlan.id,
+              companyId: company.id,
+              additionalAccesses: 0,
+              asaasSubscriptionId: `trial_sub_${user.id}`,
+              modules: trialPlan.modules,
+              nextDueDate: trialEndDate,
+              cycle: 'MONTHLY',
+              billingType: 'CREDIT_CARD',
+              value: trialPlan.basePrice,
+              status: 'ACTIVE',
+            },
+          });
+
+          this.logger.log(
+            `Plano TRIAL criado para usuário ${user.email} - válido até ${trialEndDate.toISOString()}`,
+          );
+        } else {
+          this.logger.warn(
+            'Plano TRIAL não encontrado - subscription não criada',
+          );
+        }
       });
 
-      if (trialPlan) {
-        // Criar customer
-        const customer = await tx.customer.create({
-          data: {
-            name: createUserDto.name,
-            email: createUserDto.email,
-            document: '',
-            asaasCustomerId: `trial_${user.id}`,
-            companyId: company.id,
-          },
-        });
-
-        // Conectar user ao customer
-        await tx.user.update({
-          where: { id: user.id },
-          data: { customerId: customer.id },
-        });
-
-        // Criar subscription com plano TRIAL
-        const trialEndDate = new Date();
-        trialEndDate.setDate(trialEndDate.getDate() + 7); // 7 dias de trial
-
-        await tx.subscription.create({
-          data: {
-            customerId: customer.id,
-            planId: trialPlan.id,
-            companyId: company.id,
-            additionalAccesses: 0,
-            asaasSubscriptionId: `trial_sub_${user.id}`,
-            modules: trialPlan.modules,
-            nextDueDate: trialEndDate,
-            cycle: 'MONTHLY',
-            billingType: 'CREDIT_CARD',
-            value: trialPlan.basePrice,
-            status: 'ACTIVE',
-          },
-        });
-
-        console.log(
-          `Plano TRIAL criado para usuário ${user.email} - válido até ${trialEndDate.toISOString()}`,
-        );
-      } else {
-        console.warn('Plano TRIAL não encontrado - subscription não criada');
-      }
-
-      // Deletar verificação de email
-      await tx.mailVerification.delete({
+      // Quarta etapa: Limpar verificação de email
+      await this.prisma.mailVerification.deleteMany({
         where: { email: createUserDto.email },
       });
 
       return { message: 'Usuário criado com sucesso com plano TRIAL.' };
-    });
+    } catch (error) {
+      this.logger.error('Erro ao criar usuário:', error);
+
+      // Rollback manual: remover dados criados em caso de erro
+      try {
+        if (createdCustomerId) {
+          await this.prisma.customer
+            .delete({
+              where: { id: createdCustomerId },
+            })
+            .catch(() => {}); // Ignora erros de limpeza
+        }
+
+        if (createdCompanyId) {
+          // Remove empresa e dados relacionados
+          await this.prisma.company
+            .delete({
+              where: { id: createdCompanyId },
+            })
+            .catch(() => {}); // Ignora erros de limpeza
+        }
+
+        if (createdUserId) {
+          await this.prisma.user
+            .delete({
+              where: { id: createdUserId },
+            })
+            .catch(() => {}); // Ignora erros de limpeza
+        }
+      } catch (rollbackError) {
+        this.logger.error('Erro durante rollback:', rollbackError);
+      }
+
+      if (error instanceof PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException('E-mail já cadastrado.');
+        }
+      }
+      throw error;
+    }
   }
   async create(createUserDto: CreateMailVerificationDto): Promise<any> {
     try {

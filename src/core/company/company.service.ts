@@ -27,9 +27,12 @@ import {
 } from 'src/seeds/reasons-status-base';
 import { BASE_PRODUCTS_CATEGORIES } from 'src/seeds/products-categories';
 import { CreateSalaryControlDto } from '../financial/salaries/dto/create-salary-control.dto';
+import { Logger } from '@nestjs/common';
 
 @Injectable()
 export class CompanyService {
+  private readonly logger = new Logger(CompanyService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly addressService: AddressService,
@@ -208,7 +211,7 @@ export class CompanyService {
   //       message: 'Successfully cloned account plans',
   //       naturesCreated: modelNatures.length,
   //     };
-  //   } catch (error) {
+  //   } catch (error) {\g
   //     console.error('Error in createSeedAccountPlans:', error);
   //     throw error;
   //   }
@@ -265,6 +268,7 @@ export class CompanyService {
       });
 
       await this.createDefaultItems(email, company.id);
+      this.logger.log('Default items created successfully');
 
       return company;
     } catch (e) {
@@ -284,18 +288,23 @@ export class CompanyService {
   }
 
   async createDefaultItems(email: string, companyId: string) {
-    console.log('creating default items for company', companyId);
+    this.logger.log('creating default items for company', companyId);
+    this.logger.log('Creating Units of measure...');
     await this.createDefaultUnits(companyId);
+    this.logger.log('Creating Sale series...');
     await this.createDefaultSaleSeries(companyId);
+    this.logger.log('Creating Payment methods...');
     await this.createDefaultPaymentMethods(companyId);
+    this.logger.log('Creating Seller...');
     await this.createDefaultSeller(companyId);
+    this.logger.log('Creating Product categories...');
     await this.createDefaultProductCategories(companyId);
+    this.logger.log('Creating Products...');
     await this.createDefaultProducts(companyId);
+    this.logger.log('Creating Client and supplier...');
     await this.createDefaultClientAndSupplier(companyId);
+    this.logger.log('Creating Client categories...');
     await this.createDefaultClientCategories(companyId);
-
-    // Criar cotação de exemplo
-    await this.createExampleQuotation(companyId);
   }
 
   private async createSalariesSheets(
@@ -441,7 +450,7 @@ export class CompanyService {
         }),
       ]);
 
-      console.log(`✅ Orçamento exemplo criado: ${exampleQuotation.id}`);
+      console.log(`Orçamento exemplo criado: ${exampleQuotation.id}`);
       console.log('   - Total: R$ 265,00');
       console.log('   - Produtos: 1 simples + 1 composto');
     } catch (error) {
@@ -853,7 +862,7 @@ export class CompanyService {
       }
     }
 
-    console.log(
+    this.logger.log(
       'Condições de pagamento e limites de crédito aplicados com sucesso para empresa:',
       companyId,
     );
@@ -993,7 +1002,7 @@ export class CompanyService {
       });
     }
 
-    console.log(
+    this.logger.log(
       `Motivos de rejeição e status de orçamento criados para empresa ${companyId}`,
     );
   }
@@ -1162,7 +1171,7 @@ export class CompanyService {
       // Encontrar setor pelo nome
       const sector = sectors.find((s) => s.name === productData.setorNome);
       if (!sector) {
-        console.warn(`Setor não encontrado: ${productData.setorNome}`);
+        this.logger.warn(`Setor não encontrado: ${productData.setorNome}`);
         continue;
       }
 
@@ -1171,7 +1180,9 @@ export class CompanyService {
         (c) => c.name === productData.categoriaNome,
       );
       if (!category) {
-        console.warn(`Categoria não encontrada: ${productData.categoriaNome}`);
+        this.logger.warn(
+          `Categoria não encontrada: ${productData.categoriaNome}`,
+        );
         continue;
       }
 
@@ -1206,7 +1217,7 @@ export class CompanyService {
       for (const item of productData.produto) {
         const unitOfMeasure = units.find((u) => u.code === item.unidadeMedida);
         if (!unitOfMeasure) {
-          console.warn(
+          this.logger.warn(
             `Unidade de medida não encontrada: ${item.unidadeMedida}`,
           );
           continue;
@@ -1259,14 +1270,14 @@ export class CompanyService {
       }
     }
 
-    console.log(
-      `✅ ${BASE_PRODUCTS.length} produtos padrão criados com sucesso!`,
+    this.logger.log(
+      `${BASE_PRODUCTS.length} produtos padrão criados com sucesso!`,
     );
   }
 
   private async createDefaultClientAndSupplier(companyId: string) {
     // Criar cliente padrão
-    console.log('Creating default client...');
+    this.logger.log('Creating default client...');
     await this.prisma.client.create({
       data: {
         type: 'PERSON',
@@ -1288,7 +1299,7 @@ export class CompanyService {
     });
 
     // Criar fornecedor padrão
-    console.log('Creating default supplier...');
+    this.logger.log('Creating default supplier...');
     await this.prisma.supplier.create({
       data: {
         type: 'COMPANY',
