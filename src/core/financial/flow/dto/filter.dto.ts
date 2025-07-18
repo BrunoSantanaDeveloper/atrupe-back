@@ -1,9 +1,11 @@
 import { IsDate, IsOptional, IsString, IsUUID } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class FinancialFlowFilterDTO extends BaseFilterDTO {
   @IsOptional()
+  @Transform(({ value }) => (value ? new Date(value) : undefined))
   @IsDate()
   @ApiProperty({
     description: 'Data de início para filtrar os fluxos financeiros',
@@ -15,6 +17,7 @@ export class FinancialFlowFilterDTO extends BaseFilterDTO {
   startDate?: Date;
 
   @IsOptional()
+  @Transform(({ value }) => (value ? new Date(value) : undefined))
   @IsDate()
   @ApiProperty({
     description: 'Data de término para filtrar os fluxos financeiros',
