@@ -86,12 +86,21 @@ export class CompanyController {
     );
   }
 
-  @Post('default-items/:companyId')
-  @ApiOperation({ summary: 'Cria uma empresa' })
+  @Post('missing-default-items/:companyId')
+  @ApiOperation({
+    summary: 'Cria itens padrão ausentes para uma empresa existente',
+  })
   @ApiParam({ name: 'companyId', required: true, description: 'ID da empresa' })
-  async createDefaultItems(@Param('companyId') companyId: string) {
-    return 'off';
-    return await this.companyService.createDefaultItems('teste', companyId);
+  @ApiResponse({
+    status: 200,
+    description: 'Itens padrão ausentes foram criados com sucesso.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Empresa não encontrada.',
+  })
+  async createMissingDefaultItems(@Param('companyId') companyId: string) {
+    return await this.companyService.createMissingDefaultItems(companyId);
   }
 
   @Get('check/:cnpj')

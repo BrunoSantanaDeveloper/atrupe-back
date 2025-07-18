@@ -287,30 +287,184 @@ export class CompanyService {
     await this.createSalariesSheets(salaries);
   }
 
+  private defaultItemsConfig = [
+    {
+      name: 'sectors',
+      logMessage: 'Creating Default sectors...',
+      createMethod: (companyId: string) => this.createDefaultSectors(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.companySector.findMany({
+          where: { companyId },
+        });
+        return existing.length > 0;
+      },
+    },
+    {
+      name: 'units',
+      logMessage: 'Creating Units of measure...',
+      createMethod: (companyId: string) => this.createDefaultUnits(companyId),
+      checkMethod: async (companyId: string) => {
+        const company = await this.prisma.company.findUnique({
+          where: { id: companyId },
+        });
+        return company?.unitDefaults !== null;
+      },
+    },
+    {
+      name: 'sale-series',
+      logMessage: 'Creating Sale series...',
+      createMethod: (companyId: string) =>
+        this.createDefaultSaleSeries(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.saleSeries.findMany({
+          where: { companyId },
+        });
+        return existing.length > 0;
+      },
+    },
+    {
+      name: 'payment-methods',
+      logMessage: 'Creating Payment methods...',
+      createMethod: (companyId: string) =>
+        this.createDefaultPaymentMethods(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.paymentMethod.findMany({
+          where: { companyId },
+        });
+        return existing.length > 0;
+      },
+    },
+    {
+      name: 'cashbox',
+      logMessage: 'Creating Cashbox...',
+      createMethod: (companyId: string) =>
+        this.applyBaseCashboxToCompany(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.bankAccount.findFirst({
+          where: { companyId, name: 'Caixa Empresa' },
+        });
+        return existing !== null;
+      },
+    },
+    {
+      name: 'natures',
+      logMessage: 'Creating Base natures...',
+      createMethod: (companyId: string) =>
+        this.applyBaseNaturesToCompany(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.nature.findMany({
+          where: { companyId },
+        });
+        return existing.length > 0;
+      },
+    },
+    {
+      name: 'seller',
+      logMessage: 'Creating Seller...',
+      createMethod: (companyId: string) => this.createDefaultSeller(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.sellerProfile.findMany({
+          where: { companyId },
+        });
+        return existing.length > 0;
+      },
+    },
+    {
+      name: 'product-categories',
+      logMessage: 'Creating Product categories...',
+      createMethod: (companyId: string) =>
+        this.createDefaultProductCategories(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.category.findMany({
+          where: { companyId, kind: 'PRODUCT' },
+        });
+        return existing.length > 0;
+      },
+    },
+    {
+      name: 'products',
+      logMessage: 'Creating Products...',
+      createMethod: (companyId: string) =>
+        this.createDefaultProducts(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.product.findMany({
+          where: { companyId },
+        });
+        return existing.length > 0;
+      },
+    },
+    {
+      name: 'client-supplier',
+      logMessage: 'Creating Client and supplier...',
+      createMethod: (companyId: string) =>
+        this.createDefaultClientAndSupplier(companyId),
+      checkMethod: async (companyId: string) => {
+        const clients = await this.prisma.client.findMany({
+          where: { companyId },
+        });
+        const suppliers = await this.prisma.supplier.findMany({
+          where: { companyId },
+        });
+        return clients.length > 0 && suppliers.length > 0;
+      },
+    },
+    {
+      name: 'client-categories',
+      logMessage: 'Creating Client categories...',
+      createMethod: (companyId: string) =>
+        this.createDefaultClientCategories(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.category.findMany({
+          where: { companyId, kind: { in: ['CLIENT', 'SUPPLIER'] } },
+        });
+        return existing.length > 0;
+      },
+    },
+    {
+      name: 'payment-conditions',
+      logMessage: 'Creating Payment conditions...',
+      createMethod: (companyId: string) =>
+        this.applyBasePaymentConditionsToCompany(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.paymentCondition.findMany({
+          where: { companyId },
+        });
+        return existing.length > 0;
+      },
+    },
+    {
+      name: 'scheduled-expenses',
+      logMessage: 'Creating Scheduled expenses...',
+      createMethod: (companyId: string) =>
+        this.applyBaseScheduledExpensesToCompany(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.scheduledExpense.findMany({
+          where: { companyId },
+        });
+        return existing.length > 0;
+      },
+    },
+    {
+      name: 'reasons-status',
+      logMessage: 'Creating Reasons and status...',
+      createMethod: (companyId: string) =>
+        this.applyReasonsAndStatusQuotationToCompany(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.reasons.findMany({
+          where: { companyId },
+        });
+        return existing.length > 0;
+      },
+    },
+  ];
+
   async createDefaultItems(email: string, companyId: string) {
     this.logger.log('creating default items for company', companyId);
-    this.logger.log('Creating Default sectors...');
-    await this.createDefaultSectors(companyId);
-    this.logger.log('Creating Units of measure...');
-    await this.createDefaultUnits(companyId);
-    this.logger.log('Creating Sale series...');
-    await this.createDefaultSaleSeries(companyId);
-    this.logger.log('Creating Payment methods...');
-    await this.createDefaultPaymentMethods(companyId);
-    this.logger.log('Creating Cashbox...');
-    await this.applyBaseCashboxToCompany(companyId);
-    this.logger.log('Creating Base natures...');
-    await this.applyBaseNaturesToCompany(companyId);
-    this.logger.log('Creating Seller...');
-    await this.createDefaultSeller(companyId);
-    this.logger.log('Creating Product categories...');
-    await this.createDefaultProductCategories(companyId);
-    this.logger.log('Creating Products...');
-    await this.createDefaultProducts(companyId);
-    this.logger.log('Creating Client and supplier...');
-    await this.createDefaultClientAndSupplier(companyId);
-    this.logger.log('Creating Client categories...');
-    await this.createDefaultClientCategories(companyId);
+
+    for (const item of this.defaultItemsConfig) {
+      this.logger.log(item.logMessage);
+      await item.createMethod(companyId);
+    }
   }
 
   private async createSalariesSheets(
@@ -720,6 +874,48 @@ export class CompanyService {
         isActive: false,
       },
     });
+  }
+
+  async createMissingDefaultItems(companyId: string) {
+    this.logger.log('Creating missing default items for company', companyId);
+
+    try {
+      // Verificar se a empresa existe
+      const company = await this.prisma.company.findUnique({
+        where: { id: companyId },
+      });
+
+      if (!company) {
+        throw new Error('Company not found');
+      }
+
+      const createdItems = [];
+
+      // Usar a mesma configuração de createDefaultItems, mas com verificações
+      for (const item of this.defaultItemsConfig) {
+        const exists = await item.checkMethod(companyId);
+        if (!exists) {
+          this.logger.log(
+            `Creating missing ${item.name} for company ${companyId}`,
+          );
+          await item.createMethod(companyId);
+          createdItems.push(item.name);
+        }
+      }
+
+      this.logger.log(
+        'Missing default items creation completed for company',
+        companyId,
+      );
+      return {
+        message: 'Missing default items created successfully',
+        companyId: companyId,
+        createdItems: createdItems,
+      };
+    } catch (error) {
+      this.logger.error('Error creating missing default items:', error);
+      throw error;
+    }
   }
 
   private async applyBaseRolesToCompany(companyId: string) {
