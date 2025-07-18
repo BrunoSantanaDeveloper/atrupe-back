@@ -878,6 +878,7 @@ model SaleSeries {
   productionStatus    ProductionStatusKind @default(MANAGE_PRODUCTION)
   sendToProduction    SendToProductionKind @default(DIRECT)
   isTraining          Boolean              @default(false)
+  isDefault           Boolean              @default(false)
   quotation           Quotation[]
   company             Company              @relation(fields: [companyId], references: [id])
 

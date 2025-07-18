@@ -84,4 +84,12 @@ export class UpdateSaleSeriesDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @ApiProperty({
+    description: 'Indica se a série é padrão.',
+    example: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  isDefault?: boolean;
 }

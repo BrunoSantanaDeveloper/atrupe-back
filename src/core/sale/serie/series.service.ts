@@ -40,7 +40,7 @@ export class SaleSeriesService {
         }),
         this.prisma.saleSeries.findMany({
           where,
-          orderBy: { description: 'asc' },
+          orderBy: [{ isTraining: 'desc' }, { description: 'asc' }],
           skip,
           take: +limit,
         }),
@@ -109,9 +109,29 @@ export class SaleSeriesService {
 
   async update(id: string, updateSaleSeriesDto: UpdateSaleSeriesDto) {
     try {
-      return await this.prisma.saleSeries.update({
-        where: { id },
-        data: updateSaleSeriesDto,
+      return await this.prisma.$transaction(async (tx) => {
+        // Se estiver definindo como padrão, primeiro remover o padrão de outras séries
+        if (updateSaleSeriesDto.isDefault === true) {
+          const currentSeries = await tx.saleSeries.findUnique({
+            where: { id },
+            select: { companyId: true },
+          });
+
+          if (currentSeries) {
+            await tx.saleSeries.updateMany({
+              where: {
+                companyId: currentSeries.companyId,
+                id: { not: id },
+              },
+              data: { isDefault: false },
+            });
+          }
+        }
+
+        return await tx.saleSeries.update({
+          where: { id },
+          data: updateSaleSeriesDto,
+        });
       });
     } catch (error) {
       console.error(error);
