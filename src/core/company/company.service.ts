@@ -297,6 +297,10 @@ export class CompanyService {
     await this.createDefaultSaleSeries(companyId);
     this.logger.log('Creating Payment methods...');
     await this.createDefaultPaymentMethods(companyId);
+    this.logger.log('Creating Cashbox...');
+    await this.applyBaseCashboxToCompany(companyId);
+    this.logger.log('Creating Base natures...');
+    await this.applyBaseNaturesToCompany(companyId);
     this.logger.log('Creating Seller...');
     await this.createDefaultSeller(companyId);
     this.logger.log('Creating Product categories...');
