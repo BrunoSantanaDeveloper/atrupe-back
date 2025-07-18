@@ -16,7 +16,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { PaymentStatus, TransactionType } from '@prisma/client';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ReceivableFilterDto } from '../receivable/dto/receivable-filter.dto';
-import { add, endOfDay, startOfDay } from 'date-fns';
+import { add, endOfDay } from 'date-fns';
 import { CompensateDto } from '../receivable/dto/create-receivable.dto';
 
 @Injectable()
@@ -351,6 +351,32 @@ export class PayableService {
       },
     });
 
+    if (!bankAccountData) {
+      throw new BadRequestException(
+        'Configuração de conta bancária não encontrada para os dados fornecidos.',
+      );
+    }
+
+    const installmentData = await this.prisma.payableInstallment.findFirst({
+      where: {
+        id: installmentId,
+      },
+    });
+
+    if (!installmentData) {
+      throw new NotFoundException('Parcela não encontrada.');
+    }
+
+    if (
+      installmentData.status !== 'PENDING' &&
+      installmentData.status !== 'PROVISIONED' &&
+      installmentData.status !== 'OVERDUE'
+    ) {
+      throw new BadRequestException(
+        'Parcela deve estar pendente, vencida ou provisionada para ser paga.',
+      );
+    }
+
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         const data: any = {
@@ -372,10 +398,12 @@ export class PayableService {
           where: { id: installmentId },
           data: data,
         });
-        if (bankAccountData.paymentType !== 'PROVISION') {
-          await this.compensateInstallment(installmentId, {
-            paidDate,
-          });
+        const finalValue = installment.paidAmount - installmentData.amount;
+
+        if (finalValue < 0) {
+          // await handleNegativeBalance(tx, finalValue);
+        } else if (finalValue > 0) {
+          // await handlePositiveBalance(tx, finalValue);
         }
 
         // // Atualiza o valor total do título
@@ -391,7 +419,15 @@ export class PayableService {
 
         return installment;
       });
+
       await this.updatePayableStatus(result.payableId);
+
+      // Chama compensateInstallment após atualizar a parcela
+      if (bankAccountData.paymentType !== 'PROVISION') {
+        await this.compensateInstallment(installmentId, {
+          paidDate,
+        });
+      }
 
       // Buscar dados completos da parcela atualizada para retornar
       const updatedInstallment =
@@ -435,8 +471,14 @@ export class PayableService {
       if (!installment) {
         throw new BadRequestException('Parcela não encontrada.');
       }
-      const amount = installment.paidAmount;
+      const amount = installment.paidAmount || 0;
       const bankAccountId = installment.bankAccountId;
+
+      if (!bankAccountId) {
+        throw new BadRequestException(
+          'Conta bancária não definida na parcela.',
+        );
+      }
 
       // Busca o caixa aberto
       const openCashRegister = await tx.cashRegister.findFirst({
@@ -444,9 +486,11 @@ export class PayableService {
           bankAccountId,
           status: 'OPEN',
           openingDate: {
-            gte: startOfDay(new Date(paidDateFormatted)),
-            lt: endOfDay(new Date(paidDateFormatted)),
+            lte: endOfDay(new Date(paidDateFormatted)),
           },
+        },
+        orderBy: {
+          openingDate: 'desc',
         },
       });
 

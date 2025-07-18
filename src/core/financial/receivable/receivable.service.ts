@@ -17,7 +17,7 @@ import {
 import { ReceivableFilterDto } from './dto/receivable-filter.dto';
 import { PaymentStatus, TransactionType } from '@prisma/client';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { startOfDay, endOfDay, add } from 'date-fns';
+import { endOfDay, add } from 'date-fns';
 
 @Injectable()
 export class ReceivableService {
@@ -353,23 +353,35 @@ export class ReceivableService {
       },
     });
 
+    if (!bankAccountData) {
+      throw new BadRequestException(
+        'Configuração de conta bancária não encontrada para os dados fornecidos.',
+      );
+    }
+
     const installmentData = await this.prisma.receivableInstallment.findFirst({
       where: {
         id: installmentId,
       },
     });
-    if (installmentData.status !== 'PENDING') {
-      throw new BadRequestException('Parcela não está pendente.');
+
+    if (!installmentData) {
+      throw new NotFoundException('Parcela não encontrada.');
+    }
+
+    if (
+      installmentData.status !== 'PENDING' &&
+      installmentData.status !== 'PROVISIONED' &&
+      installmentData.status !== 'OVERDUE'
+    ) {
+      throw new BadRequestException(
+        'Parcela deve estar pendente, vencida ou provisionada para ser paga.',
+      );
     }
 
     // const handleNegativeBalance = async (tx, finalValue) => {};
 
     // const handlePositiveBalance = async (tx, finalValue) => {};
-    if (bankAccountData.incomeType !== 'PROVISION') {
-      await this.compensateInstallment(installmentId, {
-        paidDate,
-      });
-    }
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         // Atualiza o status da parcela para "PAGO" e adiciona a data do pagamento
@@ -412,6 +424,13 @@ export class ReceivableService {
       });
 
       await this.updateReceivableStatus(result.receivableId);
+
+      // Chama compensateInstallment após atualizar a parcela
+      if (bankAccountData.incomeType !== 'PROVISION') {
+        await this.compensateInstallment(installmentId, {
+          paidDate,
+        });
+      }
 
       // Buscar dados completos da parcela atualizada para retornar
       const updatedInstallment =
@@ -458,8 +477,14 @@ export class ReceivableService {
         throw new BadRequestException('Parcela não encontrada.');
       }
 
-      const amount = installment.paidAmount;
+      const amount = installment.paidAmount || 0;
       const bankAccountId = installment.bankAccountId;
+
+      if (!bankAccountId) {
+        throw new BadRequestException(
+          'Conta bancária não definida na parcela.',
+        );
+      }
 
       // Busca o caixa aberto
       const openCashRegister = await tx.cashRegister.findFirst({
@@ -467,9 +492,11 @@ export class ReceivableService {
           bankAccountId,
           status: 'OPEN',
           openingDate: {
-            gte: startOfDay(new Date(paidDateFormatted)),
-            lt: endOfDay(new Date(paidDateFormatted)),
+            lte: endOfDay(new Date(paidDateFormatted)),
           },
+        },
+        orderBy: {
+          openingDate: 'desc',
         },
       });
 
