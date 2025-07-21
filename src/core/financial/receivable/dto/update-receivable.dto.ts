@@ -127,4 +127,32 @@ export class PayInstallmentDto {
   @IsOptional()
   @IsUUID()
   subCategoryId?: string;
+
+  @ApiProperty({
+    description:
+      'Valor da diferença (positivo se pagou mais, negativo se pagou menos)',
+    example: -20.0,
+    required: false,
+  })
+  @IsNumber()
+  @IsOptional()
+  difference?: number;
+
+  @ApiProperty({
+    description: 'ID da natureza para o lançamento da diferença',
+    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
+    required: false,
+  })
+  @IsUUID()
+  @IsOptional()
+  differenceNatureId?: string;
+
+  @ApiProperty({
+    description: 'ID da categoria para o lançamento da diferença',
+    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
+    required: false,
+  })
+  @IsUUID()
+  @IsOptional()
+  differenceCategoryId?: string;
 }

@@ -342,9 +342,75 @@ export class ReceivableService {
     return this.prisma.receivable.count();
   }
 
-  async payInstallment(installmentId, payInstallmentDto: PayInstallmentDto) {
-    const { paymentMethodId, bankAccountId, amount, paidDate } =
-      payInstallmentDto;
+  async payInstallment(
+    installmentId: string,
+    payInstallmentDto: PayInstallmentDto,
+  ) {
+    const {
+      paymentMethodId,
+      bankAccountId,
+      amount,
+      paidDate,
+      difference,
+      differenceNatureId,
+      differenceCategoryId,
+    } = payInstallmentDto;
+
+    // Validação dos campos de diferença
+    if (difference && difference !== 0) {
+      if (!differenceNatureId || !differenceCategoryId) {
+        throw new BadRequestException(
+          'Natureza e categoria são obrigatórias quando há diferença no pagamento.',
+        );
+      }
+
+      // Validar se a natureza existe e está ativa
+      const nature = await this.prisma.nature.findFirst({
+        where: {
+          id: differenceNatureId,
+          isActive: true,
+        },
+      });
+
+      if (!nature) {
+        throw new BadRequestException('Natureza não encontrada ou inativa.');
+      }
+
+      // CORREÇÃO: Validar tipo da natureza de forma mais rigorosa
+      const expectedType = difference < 0 ? 'payable' : 'receivable';
+      const expectedLevel1 = difference < 0 ? '02' : '01'; // negativo = payable, positivo = receivable
+
+      if (nature.level1 !== expectedLevel1) {
+        throw new BadRequestException(
+          `Para diferença ${difference < 0 ? 'negativa' : 'positiva'}, selecione uma natureza do tipo '${expectedType}'.`,
+        );
+      }
+
+      // NOVO: Validar se subcategoria existe, está ativa e pertence à natureza
+      const subCategory = await this.prisma.subCategory.findFirst({
+        where: {
+          id: differenceCategoryId,
+          isActive: true,
+        },
+      });
+
+      if (!subCategory) {
+        throw new BadRequestException('Categoria não encontrada ou inativa.');
+      }
+
+      if (subCategory.natureId !== differenceNatureId) {
+        throw new BadRequestException(
+          'A categoria selecionada não pertence à natureza escolhida.',
+        );
+      }
+
+      // Validar se natureza e subcategoria pertencem à mesma empresa
+      if (nature.companyId !== subCategory.companyId) {
+        throw new BadRequestException(
+          'Natureza e categoria devem pertencer à mesma empresa.',
+        );
+      }
+    }
 
     const bankAccountData = await this.prisma.bankAccountCashControl.findFirst({
       where: {
@@ -402,12 +468,84 @@ export class ReceivableService {
           where: { id: installmentId },
           data,
         });
-        const finalValue = installment.paidAmount - installmentData.amount;
 
-        if (finalValue < 0) {
-          // await handleNegativeBalance(tx, finalValue);
-        } else if (finalValue > 0) {
-          // await handlePositiveBalance(tx, finalValue);
+        // Criar lançamento para diferença se necessário
+        if (difference && difference !== 0) {
+          const originalReceivable = await tx.receivable.findUnique({
+            where: { id: installmentData.receivableId },
+            select: {
+              companyId: true,
+              clientId: true,
+              supplierId: true,
+              referenceDate: true,
+              description: true,
+            },
+          });
+
+          const transactionType = difference < 0 ? 'payable' : 'receivable';
+          const differenceDescription = `Diferença no pagamento da parcela ${installmentData.installmentNumber} - ${originalReceivable.description || 'Sem descrição'}`;
+
+          if (transactionType === 'payable') {
+            // Criar conta a pagar para diferença negativa
+            const newPayable = await tx.payable.create({
+              data: {
+                referenceDate: originalReceivable.referenceDate, // Herdar data de referência da transação original
+                description: differenceDescription,
+                companyId: originalReceivable.companyId,
+                clientId: originalReceivable.clientId, // Herdar clientId da transação original
+                supplierId: originalReceivable.supplierId, // Herdar supplierId da transação original
+                natureId: differenceNatureId,
+                subCategoryId: differenceCategoryId,
+                totalAmount: Math.abs(difference),
+                installmentQty: 1,
+              },
+            });
+
+            // Criar parcela já paga
+            await tx.payableInstallment.create({
+              data: {
+                installmentNumber: 1,
+                dueDate: new Date(paidDate),
+                amount: Math.abs(difference),
+                paidAmount: Math.abs(difference),
+                status: 'PAID',
+                paidDate: new Date(paidDate),
+                paymentMethodId,
+                bankAccountId,
+                payableId: newPayable.id,
+              },
+            });
+          } else {
+            // Criar conta a receber para diferença positiva
+            const newReceivable = await tx.receivable.create({
+              data: {
+                referenceDate: originalReceivable.referenceDate, // Herdar data de referência da transação original
+                description: differenceDescription,
+                companyId: originalReceivable.companyId,
+                clientId: originalReceivable.clientId, // Herdar clientId da transação original
+                supplierId: originalReceivable.supplierId, // Herdar supplierId da transação original
+                natureId: differenceNatureId,
+                subCategoryId: differenceCategoryId,
+                totalAmount: Math.abs(difference),
+                installmentQty: 1,
+              },
+            });
+
+            // Criar parcela já paga
+            await tx.receivableInstallment.create({
+              data: {
+                installmentNumber: 1,
+                dueDate: new Date(paidDate),
+                amount: Math.abs(difference),
+                paidAmount: Math.abs(difference),
+                status: 'PAID',
+                paidDate: new Date(paidDate),
+                paymentMethodId,
+                bankAccountId,
+                receivableId: newReceivable.id,
+              },
+            });
+          }
         }
 
         // FIM DA COMPENSSAÇÃO
