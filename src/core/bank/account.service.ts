@@ -184,82 +184,98 @@ export class AccountService {
     updateBankAccountDto: UpdateBankAccountDto,
   ): Promise<BankAccount> {
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existingAccount = await tx.bankAccount.findUnique({
-          where: { id: accountId },
-          include: { bankAccountCashControl: true },
-        });
+      return await this.prisma.$transaction(
+        async (tx) => {
+          const existingAccount = await tx.bankAccount.findUnique({
+            where: { id: accountId },
+            include: { bankAccountCashControl: true },
+          });
 
-        if (!existingAccount) {
-          throw new NotFoundException(
-            `Conta bancária com ID '${accountId}' não encontrada.`,
-          );
-        }
+          if (!existingAccount) {
+            throw new NotFoundException(
+              `Conta bancária com ID '${accountId}' não encontrada.`,
+            );
+          }
 
-        const currentCashControl = existingAccount.cashControl;
-        const { cashControl, bankAccountCashControl, ...updateFields } =
-          updateBankAccountDto;
-        const finalCashControl =
-          cashControl !== undefined ? cashControl : currentCashControl;
+          const currentCashControl = existingAccount.cashControl;
+          const { cashControl, bankAccountCashControl, ...updateFields } =
+            updateBankAccountDto;
+          const finalCashControl =
+            cashControl !== undefined ? cashControl : currentCashControl;
 
-        // if (bankAccountCashControl !== undefined && !finalCashControl) {
-        //   throw new BadRequestException(
-        //     'O controle de caixa (cashControl) deve estar ativo para atualizar bankAccountCashControl.',
-        //   );
-        // }
+          if (bankAccountCashControl !== undefined) {
+            const itemsToUpdate = bankAccountCashControl.filter(
+              (item) => item.id,
+            );
+            const itemsToCreate = bankAccountCashControl.filter(
+              (item) => !item.id,
+            );
 
-        if (bankAccountCashControl !== undefined) {
-          // Atualizar itens existentes ou criar novos no controle de caixa
-          for (const item of bankAccountCashControl) {
-            if (item.id) {
-              // Atualizar item existente
-              const existingItem = await tx.bankAccountCashControl.findUnique({
-                where: { id: item.id },
+            // Validate existing items in batch
+            if (itemsToUpdate.length > 0) {
+              const existingItems = await tx.bankAccountCashControl.findMany({
+                where: { id: { in: itemsToUpdate.map((item) => item.id) } },
               });
 
-              if (!existingItem) {
+              if (existingItems.length !== itemsToUpdate.length) {
+                const foundIds = existingItems.map((item) => item.id);
+                const missingIds = itemsToUpdate
+                  .map((item) => item.id)
+                  .filter((id) => !foundIds.includes(id));
                 throw new NotFoundException(
-                  `Controle de caixa com ID '${item.id}' não encontrado.`,
+                  `Controles de caixa com IDs '${missingIds.join(', ')}' não encontrados.`,
                 );
               }
 
-              await tx.bankAccountCashControl.update({
-                where: { id: item.id },
-                data: {
-                  acceptPayments: item.acceptPayments,
-                  paymentType: item.paymentType,
-                  acceptIncomes: item.acceptIncomes,
-                  incomeType: item.incomeType,
-                  paymentMethodId: item.paymentMethodId,
-                },
-              });
-            } else {
-              // Criar novo item
-              await tx.bankAccountCashControl.create({
-                data: {
+              // Batch update existing items
+              await Promise.all(
+                itemsToUpdate.map((item) =>
+                  tx.bankAccountCashControl.update({
+                    where: { id: item.id },
+                    data: {
+                      acceptPayments: item.acceptPayments,
+                      paymentType: item.paymentType,
+                      acceptIncomes: item.acceptIncomes,
+                      incomeType: item.incomeType,
+                      paymentMethodId: item.paymentMethodId,
+                    },
+                  }),
+                ),
+              );
+            }
+
+            // Batch create new items
+            if (itemsToCreate.length > 0) {
+              await tx.bankAccountCashControl.createMany({
+                data: itemsToCreate.map((item) => ({
                   acceptPayments: item.acceptPayments,
                   paymentType: item.paymentType,
                   acceptIncomes: item.acceptIncomes,
                   incomeType: item.incomeType,
                   paymentMethodId: item.paymentMethodId,
                   bankAccountId: accountId,
-                },
+                })),
               });
             }
           }
-        }
 
-        const updatedAccount = await tx.bankAccount.update({
-          where: { id: accountId },
-          data: {
-            ...updateFields,
-            ...(cashControl !== undefined && { cashControl: finalCashControl }),
-          },
-          include: { bankAccountCashControl: true },
-        });
+          const updatedAccount = await tx.bankAccount.update({
+            where: { id: accountId },
+            data: {
+              ...updateFields,
+              ...(cashControl !== undefined && {
+                cashControl: finalCashControl,
+              }),
+            },
+            include: { bankAccountCashControl: true },
+          });
 
-        return updatedAccount;
-      });
+          return updatedAccount;
+        },
+        {
+          timeout: 10000, // Increase timeout to 10 seconds
+        },
+      );
     } catch (error) {
       console.error(error);
       throw new BadRequestException('Error updating bank account');
