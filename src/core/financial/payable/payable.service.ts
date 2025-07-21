@@ -684,6 +684,32 @@ export class PayableService {
       const paymentAmount = installmentData.paidAmount;
 
       await this.prisma.$transaction(async (tx) => {
+        // NOVO: Cancelar lançamentos de diferença criados para essa parcela
+        const originalPayable = await tx.payable.findUnique({
+          where: { id: installmentData.payableId },
+          select: { description: true },
+        });
+
+        const differenceDescriptionPattern = `Diferença no pagamento da parcela ${installmentData.installmentNumber} - ${originalPayable?.description || 'Sem descrição'}`;
+
+        // Encontrar e cancelar payables de diferença
+        await tx.payable.updateMany({
+          where: {
+            description: differenceDescriptionPattern,
+            status: { not: 'CANCELED' },
+          },
+          data: { status: 'CANCELED' },
+        });
+
+        // Encontrar e cancelar receivables de diferença
+        await tx.receivable.updateMany({
+          where: {
+            description: differenceDescriptionPattern,
+            status: { not: 'CANCELED' },
+          },
+          data: { status: 'CANCELED' },
+        });
+
         // Reverte o status da parcela e remove os dados de pagamento/provisionamento
         await tx.payableInstallment.update({
           where: { id: installmentId },
