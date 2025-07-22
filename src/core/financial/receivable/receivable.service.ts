@@ -501,20 +501,42 @@ export class ReceivableService {
               },
             });
 
-            // Criar parcela já paga
-            await tx.payableInstallment.create({
+            // CORREÇÃO: Diferença segue o mesmo padrão da transação original
+            const differenceStatus =
+              bankAccountData.incomeType === 'PROVISION'
+                ? 'PROVISIONED'
+                : 'PAID';
+            const dateField =
+              bankAccountData.incomeType === 'PROVISION'
+                ? 'provisionDate'
+                : 'paidDate';
+
+            const newPayableInstallment = await tx.payableInstallment.create({
               data: {
                 installmentNumber: 1,
                 dueDate: new Date(paidDate),
                 amount: Math.abs(difference),
                 paidAmount: Math.abs(difference),
-                status: 'PAID',
-                paidDate: new Date(paidDate),
+                status: differenceStatus,
+                [dateField]: new Date(paidDate),
                 paymentMethodId,
                 bankAccountId,
                 payableId: newPayable.id,
               },
             });
+
+            // NOVO: Só impacta o caixa se não for PROVISION
+            if (bankAccountData.incomeType !== 'PROVISION') {
+              // Buscar payableService para chamar compensateInstallment
+              const { PayableService } = await import(
+                '../payable/payable.service'
+              );
+              const payableService = new PayableService(this.prisma);
+              await payableService.compensateInstallment(
+                newPayableInstallment.id,
+                { paidDate },
+              );
+            }
           } else {
             // Criar conta a receber para diferença positiva
             const newReceivable = await tx.receivable.create({
@@ -531,20 +553,37 @@ export class ReceivableService {
               },
             });
 
-            // Criar parcela já paga
-            await tx.receivableInstallment.create({
-              data: {
-                installmentNumber: 1,
-                dueDate: new Date(paidDate),
-                amount: Math.abs(difference),
-                paidAmount: Math.abs(difference),
-                status: 'PAID',
-                paidDate: new Date(paidDate),
-                paymentMethodId,
-                bankAccountId,
-                receivableId: newReceivable.id,
-              },
-            });
+            // CORREÇÃO: Diferença segue o mesmo padrão da transação original
+            const differenceStatus =
+              bankAccountData.incomeType === 'PROVISION'
+                ? 'PROVISIONED'
+                : 'PAID';
+            const dateField =
+              bankAccountData.incomeType === 'PROVISION'
+                ? 'provisionDate'
+                : 'paidDate';
+
+            const newReceivableInstallment =
+              await tx.receivableInstallment.create({
+                data: {
+                  installmentNumber: 1,
+                  dueDate: new Date(paidDate),
+                  amount: Math.abs(difference),
+                  paidAmount: Math.abs(difference),
+                  status: differenceStatus,
+                  [dateField]: new Date(paidDate),
+                  paymentMethodId,
+                  bankAccountId,
+                  receivableId: newReceivable.id,
+                },
+              });
+
+            // NOVO: Só impacta o caixa se não for PROVISION
+            if (bankAccountData.incomeType !== 'PROVISION') {
+              await this.compensateInstallment(newReceivableInstallment.id, {
+                paidDate,
+              });
+            }
           }
         }
 
