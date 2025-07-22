@@ -478,11 +478,12 @@ export class PayableService {
             },
           });
 
-          const transactionType = difference < 0 ? 'payable' : 'receivable';
+          // Para payables: difference > 0 = despesa adicional, difference < 0 = receita adicional (economia)
+          const transactionType = difference < 0 ? 'receivable' : 'payable';
           const differenceDescription = `Diferença no pagamento da parcela ${installmentData.installmentNumber} - ${originalPayable.description || 'Sem descrição'}`;
 
           if (transactionType === 'payable') {
-            // Criar conta a pagar para diferença negativa
+            // Criar conta a pagar para diferença positiva (paguei mais = despesa adicional)
             const newPayable = await tx.payable.create({
               data: {
                 referenceDate: originalPayable.referenceDate, // Herdar data de referência da transação original
@@ -562,7 +563,7 @@ export class PayableService {
               }
             }
           } else {
-            // Criar conta a receber para diferença positiva
+            // Criar conta a receber para diferença negativa (paguei menos = receita adicional)
             const newReceivable = await tx.receivable.create({
               data: {
                 referenceDate: originalPayable.referenceDate, // Herdar data de referência da transação original
