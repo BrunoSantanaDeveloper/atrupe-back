@@ -527,15 +527,43 @@ export class ReceivableService {
 
             // NOVO: Só impacta o caixa se não for PROVISION
             if (bankAccountData.incomeType !== 'PROVISION') {
-              // Buscar payableService para chamar compensateInstallment
-              const { PayableService } = await import(
-                '../payable/payable.service'
-              );
-              const payableService = new PayableService(this.prisma);
-              await payableService.compensateInstallment(
-                newPayableInstallment.id,
-                { paidDate },
-              );
+              // Fazer compensação dentro da mesma transação
+              const amount = newPayableInstallment.paidAmount || 0;
+
+              // Busca o caixa aberto
+              const openCashRegister = await tx.cashRegister.findFirst({
+                where: {
+                  bankAccountId,
+                  status: 'OPEN',
+                  openingDate: {
+                    lte: new Date(paidDate),
+                  },
+                },
+                orderBy: {
+                  openingDate: 'desc',
+                },
+              });
+
+              if (openCashRegister) {
+                await tx.transaction.create({
+                  data: {
+                    type: 'OUTCOME',
+                    amount: amount,
+                    description: differenceDescription,
+                    transactionDate: new Date(paidDate),
+                    payableInstallment: {
+                      connect: { id: newPayableInstallment.id },
+                    },
+                    cashRegister: { connect: { id: openCashRegister.id } },
+                  },
+                });
+
+                // Atualiza o valor total do caixa
+                await tx.cashRegister.update({
+                  where: { id: openCashRegister.id },
+                  data: { totalOutcomes: { increment: amount } },
+                });
+              }
             }
           } else {
             // Criar conta a receber para diferença positiva
@@ -580,9 +608,43 @@ export class ReceivableService {
 
             // NOVO: Só impacta o caixa se não for PROVISION
             if (bankAccountData.incomeType !== 'PROVISION') {
-              await this.compensateInstallment(newReceivableInstallment.id, {
-                paidDate,
+              // Fazer compensação dentro da mesma transação
+              const amount = newReceivableInstallment.paidAmount || 0;
+
+              // Busca o caixa aberto
+              const openCashRegister = await tx.cashRegister.findFirst({
+                where: {
+                  bankAccountId,
+                  status: 'OPEN',
+                  openingDate: {
+                    lte: new Date(paidDate),
+                  },
+                },
+                orderBy: {
+                  openingDate: 'desc',
+                },
               });
+
+              if (openCashRegister) {
+                await tx.transaction.create({
+                  data: {
+                    type: 'INCOME',
+                    amount: amount,
+                    description: differenceDescription,
+                    transactionDate: new Date(paidDate),
+                    receivableInstallment: {
+                      connect: { id: newReceivableInstallment.id },
+                    },
+                    cashRegister: { connect: { id: openCashRegister.id } },
+                  },
+                });
+
+                // Atualiza o valor total do caixa
+                await tx.cashRegister.update({
+                  where: { id: openCashRegister.id },
+                  data: { totalIncomes: { increment: amount } },
+                });
+              }
             }
           }
         }
@@ -761,6 +823,7 @@ export class ReceivableService {
         });
 
         // Reverte o status da parcela e remove os dados de pagamento/provisionamento
+        // MANTÉM paymentMethodId e bankAccountId para facilitar novo pagamento
         await tx.receivableInstallment.update({
           where: { id: installmentId },
           data: {
@@ -768,8 +831,7 @@ export class ReceivableService {
             paidAmount: null,
             paidDate: null,
             provisionDate: null,
-            paymentMethodId: null,
-            bankAccountId: null,
+            // paymentMethodId e bankAccountId são mantidos
           },
         });
 
