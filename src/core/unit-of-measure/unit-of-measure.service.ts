@@ -160,7 +160,7 @@ export class UnitOfMeasureService {
         { code: 'MT', name: 'Metro (m)' },
       ],
       WEIGHT: [
-        { code: 'MG', name: 'Miligrama (ml)' },
+        { code: 'MG', name: 'Miligrama (mg)' },
         { code: 'GR', name: 'Grama (g)' },
         { code: 'KG', name: 'Quilograma (kg)' },
       ],
