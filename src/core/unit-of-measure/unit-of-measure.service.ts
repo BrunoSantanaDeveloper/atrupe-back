@@ -155,23 +155,23 @@ export class UnitOfMeasureService {
   getVariantsByKind(kind: string) {
     const variants = {
       LENGTH: [
-        { code: 'MM', name: 'Milímetro' },
-        { code: 'CM', name: 'Centímetro' },
-        { code: 'MT', name: 'Metro' },
+        { code: 'MM', name: 'Milímetro (mm)' },
+        { code: 'CM', name: 'Centímetro (cm)' },
+        { code: 'MT', name: 'Metro (m)' },
       ],
       WEIGHT: [
-        { code: 'MG', name: 'Miligrama' },
-        { code: 'GR', name: 'Grama' },
-        { code: 'KG', name: 'Quilograma' },
+        { code: 'MG', name: 'Miligrama (ml)' },
+        { code: 'GR', name: 'Grama (g)' },
+        { code: 'KG', name: 'Quilograma (kg)' },
       ],
       CAPACITY: [
-        { code: 'ML', name: 'Mililitro' },
-        { code: 'LT', name: 'Litro' },
+        { code: 'ML', name: 'Mililitro (ml)' },
+        { code: 'LT', name: 'Litro (l)' },
       ],
-      DISTANCE: [{ code: 'KM', name: 'Quilômetro' }],
-      DURATION: [{ code: 'HH', name: 'Hora' }],
-      UNITY: [{ code: 'UN', name: 'Unidade' }],
-      AREA: [{ code: 'M2', name: 'Metro Quadrado' }],
+      DISTANCE: [{ code: 'KM', name: 'Quilômetro (km)' }],
+      DURATION: [{ code: 'HH', name: 'Hora (h)' }],
+      UNITY: [{ code: 'UN', name: 'Unidade (un)' }],
+      AREA: [{ code: 'M2', name: 'Metro Quadrado (m²)' }],
     };
 
     return variants[kind] || [];

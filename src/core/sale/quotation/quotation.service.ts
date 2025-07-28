@@ -191,7 +191,6 @@ export class QuotationService {
           quotationId,
           productId: product.id,
           name: originalItem.name,
-          unitOfMeasureId: originalItem.unitOfMeasureId,
           unitKind: item.unitKind as any,
           width: item.width || 0,
           height: item.height || 0,
@@ -415,7 +414,6 @@ export class QuotationService {
       quotationProductId: duplicatedQuotationProduct.id,
       productItemId: item.productItemId,
       name: item.name,
-      unitOfMeasureId: item.unitOfMeasureId,
       unitKind: item.unitKind as any,
       width: item.width,
       height: item.height,
@@ -1242,7 +1240,6 @@ export class QuotationService {
           name: item.name,
           quantity: item.quantity,
           originalQuantity: item.originalQuantity, // Incluir originalQuantity
-          unitOfMeasureId: item.unitOfMeasureId,
           unitKind: item.unitKind as any,
           width: item.width,
           height: item.height,
@@ -1910,7 +1907,7 @@ export class QuotationService {
             id: item.id,
             name: item.productItem.name,
             quantity: item.quantity,
-            unitOfMeasure: item.unitOfMeasure.name,
+            unitKind: item.unitKind,
             unitPrice: item.salePrice,
             totalPrice: item.totalValue,
           })),
@@ -2129,9 +2126,9 @@ export class QuotationService {
       const defaultPaymentMethod = paymentMethods[0];
 
       // Get all unit measures for the company
-      const unitMeasures = await this.prisma.defaultUnitOfMeasure.findMany({
-        where: { isActive: true },
-      });
+      // const unitMeasures = await this.prisma.defaultUnitOfMeasure.findMany({
+      //   where: { isActive: true },
+      // });
 
       // Map for unit measures
       const unitMeasureMap = {
@@ -2315,13 +2312,42 @@ export class QuotationService {
                   },
                 });
 
+              // TODO: Verificar possibilidade de csv ter o tipo direto em vez do código
+              // Mapear código da unidade para UnitKind
               const unitMeasureCode =
                 unitMeasureMap[row.vendaitem_un_com] || row.vendaitem_un_com;
-              const unitMeasure = unitMeasures.find(
-                (um) => um.code === unitMeasureCode,
-              );
 
-              if (unitMeasure) {
+              let unitKind = null;
+              switch (unitMeasureCode) {
+                case 'M²':
+                  unitKind = 'AREA';
+                  break;
+                case 'MT':
+                case 'CM':
+                case 'MM':
+                  unitKind = 'LENGTH';
+                  break;
+                case 'UN':
+                  unitKind = 'UNITY';
+                  break;
+                case 'KG':
+                case 'GR':
+                case 'MG':
+                  unitKind = 'WEIGHT';
+                  break;
+                case 'KM':
+                  unitKind = 'DISTANCE';
+                  break;
+                case 'HH':
+                  unitKind = 'DURATION';
+                  break;
+                case 'LT':
+                case 'ML':
+                  unitKind = 'CAPACITY';
+                  break;
+              }
+
+              if (unitKind) {
                 await this.prisma.quotationProductItem.create({
                   data: {
                     quotationId: quotation.id,
@@ -2331,8 +2357,7 @@ export class QuotationService {
                     name: row.vendaitem_referencia,
                     quantity: parseInt(row.vendaitem_quantidade) || 1,
                     originalQuantity: parseInt(row.vendaitem_quantidade) || 1,
-                    unitOfMeasureId: unitMeasure.id,
-                    unitKind: unitMeasure.kind as any,
+                    unitKind: unitKind as any,
                     width: parseFloat(row.vendaitem_dim_largura) || null,
                     length: parseFloat(row.vendaitem_dim_comprimento) || null,
                     unitCost: parseFloat(row.vendaitem_custo_total) * 100 || 0,

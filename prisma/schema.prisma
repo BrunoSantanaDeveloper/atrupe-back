@@ -986,11 +986,11 @@ model QuotationProductItem {
   createdAt          DateTime              @default(now())
   updatedAt          DateTime?             @updatedAt
   originalQuantity   Int                   @default(1)
-  unitOfMeasureId    String?
+  unitOfMeasureId    String? // TODO: Remover
   unitKind           UnitKind?
   productItem        ProductItem           @relation(fields: [productItemId], references: [id])
   quotationProduct   QuotationProduct      @relation(fields: [quotationProductId], references: [id])
-  unitOfMeasure      DefaultUnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict)
+  unitOfMeasure      DefaultUnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict) // TODO: Remover
 
   @@map("quotation_product_items")
 }
@@ -1144,15 +1144,16 @@ model ProductItem {
   length               Float? // MM - comprimento para metro linear (salvo em milímetros)
   weight               Float? // MG - peso para quilo (salvo em miligramas)
   volume               Float? // ML - volume para litro (salvo em mililitros)
-  unitOfMeasureId      String?
+  unitOfMeasureId      String? // TODO: Remover
   unitKind             UnitKind?
   product              Product                @relation(fields: [productId], references: [id])
-  unitOfMeasure        DefaultUnitOfMeasure?  @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict)
+  unitOfMeasure        DefaultUnitOfMeasure?  @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict) // TODO: Remover
   quotationProductItem QuotationProductItem[]
 
   @@map("product_items")
 }
 
+// TODO: Remover
 model DefaultUnitOfMeasure {
   id                   String                 @id @default(uuid())
   name                 String
@@ -1705,11 +1706,11 @@ enum SubscriptionStatus {
 }
 
 enum UnitKind {
-  LENGTH
-  WEIGHT
-  CAPACITY
-  DISTANCE
-  DURATION
-  UNITY
-  AREA
+  LENGTH // Comprimento (Metro linear)
+  WEIGHT // Peso (Quilogramas)
+  CAPACITY // Volume (Litros)
+  DISTANCE // Quilômetro
+  DURATION // Horas
+  UNITY // Unidade
+  AREA // Metros quadrados
 }

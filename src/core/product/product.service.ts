@@ -106,8 +106,15 @@ export class ProductService {
         where = { ...where, categoryId: filter.categoryId };
       }
 
-      if (filter.unitOfMeasureId) {
-        where = { ...where, unitOfMeasureId: filter.unitOfMeasureId };
+      if (filter.unitKind) {
+        where = {
+          ...where,
+          items: {
+            some: {
+              unitKind: filter.unitKind,
+            },
+          },
+        };
       }
 
       if (filter.sectorId) {
@@ -427,11 +434,7 @@ export class ProductService {
     const processedCategories = new Set<string>();
     const productCodes = new Map<string, number>();
 
-    // Buscar unidades de medida padrão
-    const defaultUnits = await this.prisma.defaultUnitOfMeasure.findMany({
-      where: { isActive: true },
-      select: { id: true, code: true },
-    });
+    // Removido: não precisamos mais buscar unidades de medida padrão
 
     // Mapeamento de unidades de medida
     const unitMapping: { [key: string]: string } = {
@@ -634,41 +637,56 @@ export class ProductService {
 
             // Criar item do produto
             if (row.servico) {
-              // Encontrar unidade de medida correspondente
+              // Mapear código da unidade de medida
               const unitCode = unitMapping[row.uncom] || row.uncom;
-              const unitOfMeasure = defaultUnits.find(
-                (unit) => unit.code === unitCode,
-              );
 
-              if (unitOfMeasure) {
-                // Definir medidas baseado na unidade
-                const measures: any = {};
-                switch (unitCode) {
-                  case 'M²':
-                    measures.width = 1;
-                    measures.length = 1;
-                    break;
-                  case 'MT':
-                    measures.height = 1;
-                    break;
-                  case 'UN':
-                    break;
-                  case 'KG':
-                    measures.weight = 1;
-                    break;
-                  case 'KM':
-                    measures.distance = 1;
-                    break;
-                  case 'HH':
-                    measures.duration = 1;
-                    break;
-                }
+              // TODO: Verificar possibilidade de csv ter o tipo direto em vez do código
+              // Mapear código da unidade para UnitKind
+              let unitKind = null;
+              const measures: any = {};
 
+              switch (unitCode) {
+                case 'M²':
+                  unitKind = 'AREA';
+                  measures.width = 1;
+                  measures.length = 1;
+                  break;
+                case 'MT':
+                case 'CM':
+                case 'MM':
+                  unitKind = 'LENGTH';
+                  measures.height = 1;
+                  break;
+                case 'UN':
+                  unitKind = 'UNITY';
+                  break;
+                case 'KG':
+                case 'GR':
+                case 'MG':
+                  unitKind = 'WEIGHT';
+                  measures.weight = 1;
+                  break;
+                case 'KM':
+                  unitKind = 'DISTANCE';
+                  measures.distance = 1;
+                  break;
+                case 'HH':
+                  unitKind = 'DURATION';
+                  measures.duration = 1;
+                  break;
+                case 'LT':
+                case 'ML':
+                  unitKind = 'CAPACITY';
+                  measures.volume = 1;
+                  break;
+              }
+
+              if (unitKind) {
                 await this.prisma.productItem.create({
                   data: {
                     name: row.servico,
                     productId: product.id,
-                    unitOfMeasureId: unitOfMeasure.id,
+                    unitKind: unitKind,
                     unitCost: parseFloat(row.custo) || 0,
                     salePrice: parseFloat(row.valor) || 0,
                     ...measures,

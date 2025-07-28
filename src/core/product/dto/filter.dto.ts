@@ -1,7 +1,7 @@
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ApiProperty } from '@nestjs/swagger';
-import { ProductStatus } from '@prisma/client';
+import { ProductStatus, UnitKind } from '@prisma/client';
 
 export class ProductFilterDTO extends BaseFilterDTO {
   @IsOptional()
@@ -14,13 +14,14 @@ export class ProductFilterDTO extends BaseFilterDTO {
   categoryId: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsEnum(UnitKind)
   @ApiProperty({
-    description: 'ID da unidade de medida para filtrar os produtos',
-    example: '123e4567-e89b-12d3-a456-426614174000',
+    description: 'Tipo da unidade de medida para filtrar os produtos',
+    enum: UnitKind,
+    example: UnitKind.AREA,
     required: false,
   })
-  unitOfMeasureId: string;
+  unitKind: UnitKind;
 
   @IsOptional()
   @IsUUID()
