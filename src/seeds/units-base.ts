@@ -55,12 +55,12 @@ export const BASE_UNIT_OF_MEASURES = [
     variant: 'MG',
     isActive: true,
   },
-  // Capacidade - padrão Mililitros (ML)
+  // Volume - padrão Mililitros (ML)
   {
     id: 'unit-lt',
     name: 'Litro',
     code: 'LT',
-    description: 'Unidade de capacidade em litros',
+    description: 'Unidade de volume em litros',
     kind: 'CAPACITY',
     variant: 'LT',
     isActive: true,
@@ -69,7 +69,7 @@ export const BASE_UNIT_OF_MEASURES = [
     id: 'unit-ml',
     name: 'Mililitro',
     code: 'ML',
-    description: 'Unidade de capacidade em mililitros',
+    description: 'Unidade de volume em mililitros',
     kind: 'CAPACITY',
     variant: 'ML',
     isActive: true,

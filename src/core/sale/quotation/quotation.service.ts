@@ -311,7 +311,7 @@ export class QuotationService {
         }
       }
 
-      // Se mudou a quantidade do produto, atualizar quantidade dos itens proporcionalmente
+      // Se mudou a quantidade do produto, atualizar quantidade e totalValue dos itens proporcionalmente
       if (data.quantity && !data.items) {
         const items = await this.prisma.quotationProductItem.findMany({
           where: {
@@ -319,13 +319,46 @@ export class QuotationService {
           },
         });
         for (const item of items) {
+          const newQuantity = data.quantity * item.originalQuantity;
+          // Recalcular totalValue baseado na nova quantidade - totalValue é baseado no salePrice
+          const newTotalValue = item.salePrice * newQuantity;
+
           await this.prisma.quotationProductItem.update({
             where: { id: item.id },
             data: {
-              quantity: data.quantity * item.originalQuantity,
+              quantity: newQuantity,
+              totalValue: newTotalValue,
             },
           });
         }
+
+        // Recalcular totalValue e finalValue do produto após atualizar os items
+        const updatedItems = await this.prisma.quotationProductItem.findMany({
+          where: { quotationProductId: productId },
+        });
+
+        const productTotalValue = updatedItems.reduce(
+          (acc, item) => acc + (item.totalValue || 0),
+          0,
+        );
+
+        // Calcular o finalValue aplicando desconto
+        const productFinalValue =
+          product.discountType === 'VALUE'
+            ? productTotalValue - (product.discount || 0)
+            : product.discountType === 'PERCENT'
+              ? productTotalValue -
+                productTotalValue * ((product.discount || 0) / 100)
+              : productTotalValue;
+
+        // Atualizar o produto com os valores recalculados
+        await this.prisma.quotationProduct.update({
+          where: { id: productId },
+          data: {
+            totalValue: productTotalValue,
+            finalValue: productFinalValue,
+          },
+        });
       }
 
       // Atualizar o valor total do orçamento sem recalcular os itens
