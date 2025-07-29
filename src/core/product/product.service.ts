@@ -359,6 +359,14 @@ export class ProductService {
 
       // Remover itens que não foram enviados no body
       if (itemsToRemove.length > 0) {
+        // Primeiro, remover referências em quotation_product_items
+        await this.prisma.quotationProductItem.deleteMany({
+          where: {
+            productItemId: { in: itemsToRemove },
+          },
+        });
+
+        // Depois, remover os product items
         await this.prisma.productItem.deleteMany({
           where: {
             id: { in: itemsToRemove },
