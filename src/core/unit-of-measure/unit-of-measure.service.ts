@@ -62,11 +62,26 @@ export class UnitOfMeasureService {
     // Preparar os padrões atuais
     const currentDefaults = (company?.unitDefaults as any) || {};
 
-    // Atualizar apenas o tipo específico
+    // Atualizar o tipo específico
     const updatedDefaults = {
       ...currentDefaults,
       [kind]: updateDefaultVariantDto.defaultVariant,
     };
+
+    // Se o tipo for LENGTH, atualizar automaticamente AREA com o equivalente quadrado
+    if (kind === 'LENGTH') {
+      const lengthToAreaMapping = {
+        MM: 'MM2',
+        CM: 'CM2',
+        MT: 'M2',
+      };
+
+      const areaVariant =
+        lengthToAreaMapping[updateDefaultVariantDto.defaultVariant];
+      if (areaVariant) {
+        updatedDefaults['AREA'] = areaVariant;
+      }
+    }
 
     // Salvar na empresa
     return this.prisma.company.update({
@@ -171,7 +186,11 @@ export class UnitOfMeasureService {
       DISTANCE: [{ code: 'KM', name: 'Quilômetro (km)' }],
       DURATION: [{ code: 'HH', name: 'Hora (h)' }],
       UNITY: [{ code: 'UN', name: 'Unidade (un)' }],
-      AREA: [{ code: 'M2', name: 'Metro Quadrado (m²)' }],
+      AREA: [
+        { code: 'MM2', name: 'Milímetro Quadrado (mm²)' },
+        { code: 'CM2', name: 'Centímetro Quadrado (cm²)' },
+        { code: 'M2', name: 'Metro Quadrado (m²)' },
+      ],
     };
 
     return variants[kind] || [];
