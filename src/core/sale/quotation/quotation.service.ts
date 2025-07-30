@@ -1899,26 +1899,65 @@ export class QuotationService {
               approvedAt: quotation.approvedAt ? quotation.approvedAt : null,
             }
           : null,
-        items: quotation.quotationProduct.map((product) => ({
-          id: product.id,
-          image: product.product.imageUrl,
-          description: product.description || product.product.name,
-          composition: product.items.map((item) => ({
-            id: item.id,
-            name: item.productItem.name,
-            quantity: item.quantity,
-            unitKind: item.unitKind,
-            unitPrice: item.salePrice,
-            totalPrice: item.totalValue,
-          })),
-          totalQuantity: product.quantity,
-          totalUnitPrice: product.totalValue,
-          discount: {
-            type: product.discountType || 'NONE',
-            value: product.discount || 0,
-            discountedValue: product.discount || 0,
+        quotationItems: quotation.quotationProduct.map((qp) => ({
+          id: qp.id,
+          description: qp.description,
+          allowEditDescription: qp.allowEditDescription,
+          allowEditValues: qp.allowEditValues,
+          technicalDescription: qp.technicalDescription,
+          notes: qp.notes,
+          discountType: qp.discountType,
+          discount: qp.discount,
+          unitValue: (() => {
+            const unitValue = qp.items.reduce((total, item) => {
+              return total + (item.unitCost || 0);
+            }, 0);
+            return unitValue;
+          })(),
+          totalValue: qp.items.reduce(
+            (total, item) => total + item.totalValue,
+            0,
+          ),
+          finalValue: qp.finalValue,
+          image: (() => {
+            if (qp.imageUrl) {
+              return { url: qp.imageUrl, original: false };
+            } else {
+              return { url: qp.product.imageUrl, original: true };
+            }
+          })(),
+          product: {
+            originalProductId: qp.productId,
+            name: qp.product.name,
+            quantity: qp.quantity,
+            unitValue: (() => {
+              const unitValue = qp.items.reduce((total, item) => {
+                return total + (item.unitCost || 0);
+              }, 0);
+              return unitValue;
+            })(),
+            finalValue: qp.items.reduce(
+              (total, item) => total + item.totalValue,
+              0,
+            ),
+            compositions: qp.items.map((item) => ({
+              id: item.id,
+              originalCompositionId: item.productItemId,
+              name: item.name,
+              unitOfMeasure: item.unitOfMeasure,
+              quantity: item.quantity,
+              originalQuantity: item.originalQuantity,
+              unitValue: item.unitCost || 0,
+              totalValue: item.totalValue,
+              weight: item.weight,
+              width: item.width,
+              height: item.height,
+              duration: item.duration,
+              length: item.length,
+              distance: item.distance,
+              volume: item.volume,
+            })),
           },
-          finalPrice: product.finalValue || product.totalValue,
         })),
         delivery: quotation.deliveryInfo
           ? {

@@ -142,6 +142,10 @@ export class CategoryController {
     description: 'Categoria removida com sucesso.',
   })
   @ApiResponse({
+    status: 400,
+    description: 'Categoria está sendo utilizada e não pode ser removida.',
+  })
+  @ApiResponse({
     status: 404,
     description: 'Categoria não encontrada.',
   })

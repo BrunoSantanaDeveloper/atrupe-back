@@ -215,7 +215,33 @@ export class CategoryService {
     });
   }
 
-  remove(id: string) {
+  async remove(id: string) {
+    const productsUsingCategory = await this.prisma.product.count({
+      where: { categoryId: id },
+    });
+
+    const scheduledExpensesUsingCategory =
+      await this.prisma.scheduledExpense.count({
+        where: { categoryId: id },
+      });
+
+    const clientsUsingCategory = await this.prisma.client.count({
+      where: { category: id },
+    });
+
+    const suppliersUsingCategory = await this.prisma.supplier.count({
+      where: { category: id },
+    });
+
+    if (
+      productsUsingCategory > 0 ||
+      scheduledExpensesUsingCategory > 0 ||
+      clientsUsingCategory > 0 ||
+      suppliersUsingCategory > 0
+    ) {
+      throw new BadRequestException('Não é possível excluir um grupo em uso');
+    }
+
     return this.prisma.category.delete({ where: { id } });
   }
 }
