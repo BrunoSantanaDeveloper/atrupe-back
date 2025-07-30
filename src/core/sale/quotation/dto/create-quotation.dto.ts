@@ -252,6 +252,15 @@ export class CreateQuotationDto {
   @IsOptional()
   @IsUUID()
   @ApiProperty({
+    description: 'ID do contato/responsável do cliente associado ao orçamento',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  contactId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  @ApiProperty({
     description: 'ID da série do orçamento',
     example: '123e4567-e89b-12d3-a456-426614174000',
     required: false,

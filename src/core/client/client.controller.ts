@@ -148,6 +148,22 @@ export class ClientController {
     return this.clientService.findOne(id);
   }
 
+  @Get(':id/contacts')
+  @ApiOperation({ summary: 'Obtém os contatos/responsáveis de um cliente' })
+  @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de contatos do cliente retornada com sucesso.',
+    isArray: true,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Cliente não encontrado.',
+  })
+  findClientContacts(@Param('id') id: string) {
+    return this.clientService.findClientContacts(id);
+  }
+
   @Patch(':id')
   @ApiOperation({ summary: 'Atualiza um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })

@@ -45,6 +45,7 @@ export class QuotationService {
       companyId,
       sellerId,
       clientId,
+      contactId,
       seriesId,
     } = createQuotationDto;
 
@@ -67,6 +68,22 @@ export class QuotationService {
           principalCompanyId: true,
         },
       });
+
+      // Validação do contactId se informado
+      if (contactId && clientId) {
+        const contact = await this.prisma.contact.findFirst({
+          where: {
+            id: contactId,
+            clientId: clientId,
+          },
+        });
+        if (!contact) {
+          throw new BadRequestException(
+            `Contato não encontrado ou não pertence ao cliente informado`,
+          );
+        }
+      }
+
       // Criação do orçamento no banco
       const newQuotation = await this.prisma.quotation.create({
         data: {
@@ -79,6 +96,7 @@ export class QuotationService {
           subCompanyId: mainCompany.id,
           sellerId,
           clientId,
+          contactId,
           seriesId: seriesId || undefined,
           quotationNumber: series.currentBudgetNumber + 1,
         },
@@ -1159,6 +1177,7 @@ export class QuotationService {
       description:
         duplicateDto.description || `${quotation.description} (Cópia)`, // Modifica a descrição, se fornecida
       clientId: duplicateDto.clientId || quotation.clientId, // Mantém o clientId original, a menos que fornecido
+      contactId: duplicateDto.contactId || quotation.contactId, // Mantém o contactId original, a menos que fornecido
       contactType: quotation.contactType, // Mantém o contactType original
       totalValue: quotation.totalValue, // Mantém o totalValue original
       sellerId: quotation.sellerId, // Mantém o sellerId original

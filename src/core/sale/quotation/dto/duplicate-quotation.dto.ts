@@ -12,6 +12,16 @@ export class DuplicateQuotationDto {
   clientId?: string;
 
   @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description:
+      'ID do contato/responsável do cliente associado ao orçamento duplicado',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  contactId?: string;
+
+  @IsOptional()
   @IsString()
   @ApiProperty({
     description: 'Nova descrição do orçamento a ser duplicado',

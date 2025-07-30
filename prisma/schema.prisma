@@ -195,6 +195,7 @@ model Contact {
   notes      String?
   client     Client?   @relation(fields: [clientId], references: [id])
   supplier   Supplier? @relation(fields: [supplierId], references: [id])
+  quotations Quotation[]
 
   @@map("contacts")
 }
@@ -921,6 +922,7 @@ model Quotation {
   finishedAt       DateTime?
   reasonId         String?
   subCompanyId     String?
+  contactId        String?
   deliveryInfo     DeliveryInfo?
   DeliverySchedule DeliverySchedule?
   order            Order?
@@ -929,6 +931,7 @@ model Quotation {
   quotationProduct QuotationProduct[]
   client           Client?            @relation(fields: [clientId], references: [id])
   company          Company            @relation("MainCompany", fields: [companyId], references: [id])
+  contact          Contact?           @relation(fields: [contactId], references: [id])
   reasons          Reasons?           @relation(fields: [reasonId], references: [id])
   seller           Employee           @relation(fields: [sellerId], references: [id])
   series           SaleSeries?        @relation(fields: [seriesId], references: [id])

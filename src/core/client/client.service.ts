@@ -408,6 +408,31 @@ export class ClientService {
     }
   }
 
+  async findClientContacts(clientId: string) {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      include: {
+        contacts: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            mobile: true,
+            sector: true,
+            notes: true,
+          },
+        },
+      },
+    });
+
+    if (!client) {
+      throw new NotFoundException('Cliente não encontrado');
+    }
+
+    return client.contacts;
+  }
+
   async update(id: string, updateClientDto: UpdateClientDto, sellerId: string) {
     await this.verifySellerPermission(sellerId);
     try {
