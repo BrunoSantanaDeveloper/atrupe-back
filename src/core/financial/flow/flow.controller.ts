@@ -109,4 +109,17 @@ export class FlowController {
   async getBankAccountsInUse(@Req() req) {
     return this.flowService.getBankAccountsInUse(req.user.companyId);
   }
+
+  @Get('overdue/last-7-days')
+  @ApiOperation({
+    summary:
+      'Verifica se existem contas atrasadas nos últimos 7 dias e retorna a data da mais antiga',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Informações sobre contas atrasadas retornadas com sucesso.',
+  })
+  async getOverdueAccountsLast7Days(@Req() req) {
+    return this.flowService.getOverdueAccountsLast7Days(req.user.companyId);
+  }
 }

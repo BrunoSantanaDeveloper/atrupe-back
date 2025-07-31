@@ -765,4 +765,81 @@ export class FlowService {
 
     return uniqueBankAccounts;
   }
+
+  async getOverdueAccountsLast7Days(companyId: string) {
+    const today = new Date();
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(today.getDate() - 7);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    const todayEnd = new Date(today);
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const overdueReceivables = await this.prisma.receivableInstallment.findMany(
+      {
+        where: {
+          receivable: {
+            companyId: companyId,
+          },
+          dueDate: {
+            gte: sevenDaysAgo,
+            lt: todayEnd,
+          },
+          status: {
+            not: 'PAID',
+          },
+        },
+        select: {
+          dueDate: true,
+        },
+        orderBy: {
+          dueDate: 'asc',
+        },
+      },
+    );
+
+    const overduePayables = await this.prisma.payableInstallment.findMany({
+      where: {
+        payable: {
+          companyId: companyId,
+        },
+        dueDate: {
+          gte: sevenDaysAgo,
+          lt: todayEnd,
+        },
+        status: {
+          not: 'PAID',
+        },
+      },
+      select: {
+        dueDate: true,
+      },
+      orderBy: {
+        dueDate: 'asc',
+      },
+    });
+
+    const allOverdueDates = [
+      ...overdueReceivables.map((item) => item.dueDate),
+      ...overduePayables.map((item) => item.dueDate),
+    ].filter((date) => date && date < today);
+
+    if (allOverdueDates.length === 0) {
+      return {
+        hasOverdue: false,
+        oldestOverdueDate: null,
+        count: 0,
+      };
+    }
+
+    const oldestDate = allOverdueDates.reduce((oldest, current) =>
+      current < oldest ? current : oldest,
+    );
+
+    return {
+      hasOverdue: true,
+      oldestOverdueDate: oldestDate,
+      count: allOverdueDates.length,
+    };
+  }
 }
