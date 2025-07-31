@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
@@ -102,10 +103,12 @@ export class CreateConditionDto {
   @ValidateIf((o) => o.acceptInstallments === true)
   @IsNumber()
   @IsNotEmpty()
+  @Max(120, { message: 'O número máximo de parcelas não pode exceder 120' })
   @ApiProperty({
-    description: 'Número máximo de parcelas',
+    description: 'Número máximo de parcelas (máximo: 120)',
     example: 12,
     required: false,
+    maximum: 120,
   })
   maxInstallments?: number;
 

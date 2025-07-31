@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsArray,
   IsUUID,
+  Max,
   ValidateNested,
 } from 'class-validator';
 export class CreateReceivableInstallmentDto {
@@ -119,10 +120,12 @@ export class CreateReceivableDto {
   totalAmount: number;
 
   @ApiProperty({
-    description: 'Quantidade de parcelas',
+    description: 'Quantidade de parcelas (máximo: 120)',
     example: 3,
+    maximum: 120,
   })
   @IsNumber()
+  @Max(120, { message: 'O número de parcelas não pode exceder 120' })
   installmentQty: number;
 
   @ApiProperty({
