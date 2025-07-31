@@ -665,4 +665,104 @@ export class FlowService {
 
     return payable;
   }
+
+  async getPaymentMethodsInUse(companyId: string) {
+    const receivablePaymentMethods =
+      await this.prisma.receivableInstallment.findMany({
+        where: {
+          receivable: {
+            companyId: companyId,
+          },
+          paymentMethodId: {
+            not: null,
+          },
+        },
+        select: {
+          paymentMethod: true,
+        },
+        distinct: ['paymentMethodId'],
+      });
+
+    const payablePaymentMethods = await this.prisma.payableInstallment.findMany(
+      {
+        where: {
+          payable: {
+            companyId: companyId,
+          },
+          paymentMethodId: {
+            not: null,
+          },
+        },
+        select: {
+          paymentMethod: true,
+        },
+        distinct: ['paymentMethodId'],
+      },
+    );
+
+    const allPaymentMethods = [
+      ...receivablePaymentMethods.map((item) => item.paymentMethod),
+      ...payablePaymentMethods.map((item) => item.paymentMethod),
+    ];
+
+    const uniquePaymentMethods = allPaymentMethods.filter(
+      (method, index, self) =>
+        method && self.findIndex((m) => m?.id === method.id) === index,
+    );
+
+    return uniquePaymentMethods;
+  }
+
+  async getBankAccountsInUse(companyId: string) {
+    const receivableBankAccounts =
+      await this.prisma.receivableInstallment.findMany({
+        where: {
+          receivable: {
+            companyId: companyId,
+          },
+          bankAccountId: {
+            not: null,
+          },
+        },
+        select: {
+          bankAccount: {
+            include: {
+              bank: true,
+            },
+          },
+        },
+        distinct: ['bankAccountId'],
+      });
+
+    const payableBankAccounts = await this.prisma.payableInstallment.findMany({
+      where: {
+        payable: {
+          companyId: companyId,
+        },
+        bankAccountId: {
+          not: null,
+        },
+      },
+      select: {
+        bankAccount: {
+          include: {
+            bank: true,
+          },
+        },
+      },
+      distinct: ['bankAccountId'],
+    });
+
+    const allBankAccounts = [
+      ...receivableBankAccounts.map((item) => item.bankAccount),
+      ...payableBankAccounts.map((item) => item.bankAccount),
+    ];
+
+    const uniqueBankAccounts = allBankAccounts.filter(
+      (account, index, self) =>
+        account && self.findIndex((a) => a?.id === account.id) === index,
+    );
+
+    return uniqueBankAccounts;
+  }
 }
