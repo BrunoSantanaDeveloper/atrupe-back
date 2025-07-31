@@ -792,6 +792,12 @@ export class QuotationService {
               },
             },
           },
+          contact: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
           subCompany: {
             select: {
               id: true,
@@ -946,6 +952,12 @@ export class QuotationService {
           ? {
               id: quotation.seller.id,
               name: quotation.seller.name ?? quotation.seller.user.name,
+            }
+          : null,
+        contact: quotation.contact
+          ? {
+              id: quotation.contact.id,
+              name: quotation.contact.name,
             }
           : null,
         company: quotation.subCompany

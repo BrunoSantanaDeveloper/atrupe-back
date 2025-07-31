@@ -18,34 +18,34 @@ export class ClientService {
   async create(createClientDto: CreateClientDto, sellerId: string) {
     try {
       await this.verifySellerPermission(sellerId);
-      const client = await this.prisma.$transaction(async (prisma) => {
-        // Criar o cliente
-        const client = await prisma.client.create({
-          data: {
-            type: createClientDto.type,
-            name: createClientDto.general.name,
-            email: createClientDto.general.email,
-            phone: createClientDto.general.phone,
-            mobile: createClientDto.general.mobile,
-            companyId: createClientDto.companyId,
-            category: createClientDto.general.category,
-            cpf: createClientDto.general.cpf,
-            rg: createClientDto.general.rg,
-            cnpj: createClientDto.general.cnpj,
-            activity: createClientDto.general.activity,
-            corporateName: createClientDto.general.corporateName,
-            notes: createClientDto.general.notes,
-            minValue: createClientDto.creditLimit?.minValue || 0,
-            maxValue: createClientDto.creditLimit?.maxValue || 0,
-            blockClient: createClientDto.creditLimit?.blockClient || false,
-          },
-        });
+      const client = await this.prisma.$transaction(
+        async (prisma) => {
+          // Criar o cliente
+          const client = await prisma.client.create({
+            data: {
+              type: createClientDto.type,
+              name: createClientDto.general.name,
+              email: createClientDto.general.email,
+              phone: createClientDto.general.phone,
+              mobile: createClientDto.general.mobile,
+              companyId: createClientDto.companyId,
+              category: createClientDto.general.category,
+              cpf: createClientDto.general.cpf,
+              rg: createClientDto.general.rg,
+              cnpj: createClientDto.general.cnpj,
+              activity: createClientDto.general.activity,
+              corporateName: createClientDto.general.corporateName,
+              notes: createClientDto.general.notes,
+              minValue: createClientDto.creditLimit?.minValue || 0,
+              maxValue: createClientDto.creditLimit?.maxValue || 0,
+              blockClient: createClientDto.creditLimit?.blockClient || false,
+            },
+          });
 
-        // Criar endereços e associar ao cliente
-        if (createClientDto.addresses?.length > 0) {
-          for (const address of createClientDto.addresses) {
-            await prisma.address.create({
-              data: {
+          // Criar endereços usando createMany para melhor performance
+          if (createClientDto.addresses?.length > 0) {
+            await prisma.address.createMany({
+              data: createClientDto.addresses.map((address) => ({
                 type: address.type,
                 zipcode: address.zipcode,
                 state: address.state,
@@ -54,54 +54,44 @@ export class ClientService {
                 street: address.street,
                 number: address.number,
                 ownerId: client.id,
-                ownerType: 'CLIENT',
+                ownerType: 'CLIENT' as const,
                 complement: address.complement,
-              },
+              })),
             });
-
-            // await prisma.client.update({
-            //   where: { id: client.id },
-            //   data: {
-            //     address: {
-            //       connect: { id: createdAddress.id },
-            //     },
-            //   },
-            // });
           }
-        }
 
-        // Criar contatos
-        if (createClientDto.contacts?.length > 0) {
-          for (const contact of createClientDto.contacts) {
-            await prisma.contact.create({
-              data: {
+          // Criar contatos usando createMany para melhor performance
+          if (createClientDto.contacts?.length > 0) {
+            await prisma.contact.createMany({
+              data: createClientDto.contacts.map((contact) => ({
                 name: contact.name,
                 email: contact.email,
                 phone: contact.phone,
                 mobile: contact.mobile,
                 notes: contact.notes,
                 clientId: client.id,
-              },
+              })),
             });
           }
-        }
 
-        // Criar condições de pagamento do cliente
-        if (createClientDto.creditLimit?.conditions?.length > 0) {
-          for (const condition of createClientDto.creditLimit.conditions) {
-            await prisma.clientPaymentCondition.create({
-              data: {
+          // Criar condições de pagamento usando createMany para melhor performance
+          if (createClientDto.creditLimit?.conditions?.length > 0) {
+            await prisma.clientPaymentCondition.createMany({
+              data: createClientDto.creditLimit.conditions.map((condition) => ({
                 clientId: client.id,
                 paymentConditionId: condition.id,
                 isActive: condition.isActive,
-              },
+              })),
             });
           }
-        }
 
-        // Retorna o cliente completo após criação
-        return client;
-      });
+          // Retorna o cliente completo após criação
+          return client;
+        },
+        {
+          timeout: 10000, // Aumenta timeout para 10 segundos
+        },
+      );
       return this.findOne(client.id);
     } catch (error) {
       console.error('Erro ao criar cliente:', error);
@@ -441,100 +431,100 @@ export class ClientService {
         throw new NotFoundException('Client not found');
       }
 
-      return await this.prisma.$transaction(async (prisma) => {
-        // Atualizar dados do cliente
-        await prisma.client.update({
-          where: { id },
-          data: {
-            name: updateClientDto.general?.name,
-            email: updateClientDto.general?.email,
-            phone: updateClientDto.general?.phone,
-            mobile: updateClientDto.general?.mobile,
-            category: updateClientDto.general?.category,
-            cpf: updateClientDto.general?.cpf,
-            rg: updateClientDto.general?.rg,
-            cnpj: updateClientDto.general?.cnpj,
-            activity: updateClientDto.general?.activity,
-            notes: updateClientDto.general?.notes,
-            minValue: updateClientDto.creditLimit?.minValue,
-            maxValue: updateClientDto.creditLimit?.maxValue,
-            blockClient: updateClientDto.creditLimit?.blockClient,
-            status: updateClientDto.status,
+      return await this.prisma
+        .$transaction(
+          async (prisma) => {
+            // Atualizar dados do cliente
+            await prisma.client.update({
+              where: { id },
+              data: {
+                name: updateClientDto.general?.name,
+                email: updateClientDto.general?.email,
+                phone: updateClientDto.general?.phone,
+                mobile: updateClientDto.general?.mobile,
+                category: updateClientDto.general?.category,
+                cpf: updateClientDto.general?.cpf,
+                rg: updateClientDto.general?.rg,
+                cnpj: updateClientDto.general?.cnpj,
+                activity: updateClientDto.general?.activity,
+                notes: updateClientDto.general?.notes,
+                minValue: updateClientDto.creditLimit?.minValue,
+                maxValue: updateClientDto.creditLimit?.maxValue,
+                blockClient: updateClientDto.creditLimit?.blockClient,
+                status: updateClientDto.status,
+              },
+            });
+
+            // Atualizar endereços usando createMany para melhor performance
+            if (updateClientDto.addresses) {
+              await prisma.address.deleteMany({
+                where: { ownerId: id, ownerType: 'CLIENT' },
+              });
+
+              if (updateClientDto.addresses.length > 0) {
+                await prisma.address.createMany({
+                  data: updateClientDto.addresses.map((address) => ({
+                    type: address.type,
+                    zipcode: address.zipcode,
+                    state: address.state,
+                    city: address.city,
+                    neighborhood: address.neighborhood,
+                    street: address.street,
+                    number: address.number,
+                    complement: address.complement,
+                    ownerId: id,
+                    ownerType: 'CLIENT' as const,
+                  })),
+                });
+              }
+            }
+
+            // Atualizar contatos usando createMany para melhor performance
+            if (updateClientDto.contacts) {
+              await prisma.contact.deleteMany({
+                where: { clientId: id },
+              });
+
+              if (updateClientDto.contacts.length > 0) {
+                await prisma.contact.createMany({
+                  data: updateClientDto.contacts.map((contact) => ({
+                    name: contact.name,
+                    email: contact.email,
+                    phone: contact.phone,
+                    mobile: contact.mobile,
+                    notes: contact.notes,
+                    clientId: id,
+                  })),
+                });
+              }
+            }
+
+            // Atualizar condições de pagamento usando createMany para melhor performance
+            if (updateClientDto.creditLimit?.conditions) {
+              await prisma.clientPaymentCondition.deleteMany({
+                where: { clientId: id },
+              });
+
+              if (updateClientDto.creditLimit.conditions.length > 0) {
+                await prisma.clientPaymentCondition.createMany({
+                  data: updateClientDto.creditLimit.conditions.map(
+                    (condition) => ({
+                      clientId: id,
+                      paymentConditionId: condition.id,
+                      isActive: condition.isActive,
+                    }),
+                  ),
+                });
+              }
+            }
+
+            return { id };
           },
-        });
-
-        // Atualizar endereços
-        if (updateClientDto.addresses) {
-          await prisma.address.deleteMany({
-            where: { ownerId: id, ownerType: 'CLIENT' },
-          });
-
-          for (const address of updateClientDto.addresses) {
-            await prisma.address.create({
-              data: {
-                type: address.type,
-                zipcode: address.zipcode,
-                state: address.state,
-                city: address.city,
-                neighborhood: address.neighborhood,
-                street: address.street,
-                number: address.number,
-                complement: address.complement,
-                ownerId: id,
-                ownerType: 'CLIENT',
-              },
-            });
-
-            // await prisma.client.update({
-            //   where: { id },
-            //   data: {
-            //     address: {
-            //       connect: { id: createdAddress.id },
-            //     },
-            //   },
-            // });
-          }
-        }
-
-        // Atualizar contatos
-        if (updateClientDto.contacts) {
-          await prisma.contact.deleteMany({
-            where: { clientId: id },
-          });
-
-          for (const contact of updateClientDto.contacts) {
-            await prisma.contact.create({
-              data: {
-                name: contact.name,
-                email: contact.email,
-                phone: contact.phone,
-                mobile: contact.mobile,
-                notes: contact.notes,
-                clientId: id,
-              },
-            });
-          }
-        }
-
-        // Atualizar condições de pagamento
-        if (updateClientDto.creditLimit?.conditions) {
-          await prisma.clientPaymentCondition.deleteMany({
-            where: { clientId: id },
-          });
-
-          for (const condition of updateClientDto.creditLimit.conditions) {
-            await prisma.clientPaymentCondition.create({
-              data: {
-                clientId: id,
-                paymentConditionId: condition.id,
-                isActive: condition.isActive,
-              },
-            });
-          }
-        }
-
-        return this.findOne(id);
-      });
+          {
+            timeout: 10000, // Aumenta timeout para 10 segundos
+          },
+        )
+        .then(() => this.findOne(id)); // Move findOne para fora da transação
     } catch (error) {
       console.error('Error updating client:', error);
       throw error;

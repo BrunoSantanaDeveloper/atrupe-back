@@ -182,9 +182,9 @@ model Category {
 }
 
 model Contact {
-  id         String    @id @default(uuid())
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime? @updatedAt
+  id         String      @id @default(uuid())
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime?   @updatedAt
   name       String
   email      String?
   sector     String?
@@ -193,8 +193,8 @@ model Contact {
   mobile     String?
   phone      String?
   notes      String?
-  client     Client?   @relation(fields: [clientId], references: [id])
-  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+  client     Client?     @relation(fields: [clientId], references: [id])
+  supplier   Supplier?   @relation(fields: [supplierId], references: [id])
   quotations Quotation[]
 
   @@map("contacts")
@@ -974,26 +974,26 @@ model QuotationProductItem {
   productId          String
   quotationId        String
   totalValue         Float?
-  distance           Float? // KM - distância para quilometro (salvo em metros)
-  duration           Float? // HH - duração para horas (salvo em segundos)
-  width              Float? // MM - largura para área (salvo em milímetros)
-  height             Float? // MM - altura para área (salvo em milímetros)
-  length             Float? // MM - comprimento para metro linear (salvo em milímetros)
-  weight             Float? // MG - peso para quilo (salvo em miligramas)
-  volume             Float? // ML - volume para litro (salvo em mililitros)
+  distance           Float?
+  duration           Float?
+  height             Float?
+  length             Float?
   name               String
   salePrice          Float?
   unitCost           Float?
+  volume             Float?
+  weight             Float?
+  width              Float?
   id                 String                @id @default(uuid())
   quotationProductId String
   createdAt          DateTime              @default(now())
   updatedAt          DateTime?             @updatedAt
   originalQuantity   Int                   @default(1)
-  unitOfMeasureId    String? // TODO: Remover
+  unitOfMeasureId    String?
   unitKind           UnitKind?
   productItem        ProductItem           @relation(fields: [productItemId], references: [id])
   quotationProduct   QuotationProduct      @relation(fields: [quotationProductId], references: [id])
-  unitOfMeasure      DefaultUnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict) // TODO: Remover
+  unitOfMeasure      DefaultUnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict)
 
   @@map("quotation_product_items")
 }
@@ -1140,23 +1140,22 @@ model ProductItem {
   productId            String
   unitCost             Float?
   salePrice            Float?
-  distance             Float? // KM - distância para quilometro (salvo em metros)
-  duration             Float? // HH - duração para horas (salvo em segundos)
-  width                Float? // MM - largura para área (salvo em milímetros)
-  height               Float? // MM - altura para área (salvo em milímetros)
-  length               Float? // MM - comprimento para metro linear (salvo em milímetros)
-  weight               Float? // MG - peso para quilo (salvo em miligramas)
-  volume               Float? // ML - volume para litro (salvo em mililitros)
-  unitOfMeasureId      String? // TODO: Remover
+  distance             Float?
+  duration             Float?
+  height               Float?
+  length               Float?
+  volume               Float?
+  weight               Float?
+  width                Float?
+  unitOfMeasureId      String?
   unitKind             UnitKind?
   product              Product                @relation(fields: [productId], references: [id])
-  unitOfMeasure        DefaultUnitOfMeasure?  @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict) // TODO: Remover
+  unitOfMeasure        DefaultUnitOfMeasure?  @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict)
   quotationProductItem QuotationProductItem[]
 
   @@map("product_items")
 }
 
-// TODO: Remover
 model DefaultUnitOfMeasure {
   id                   String                 @id @default(uuid())
   name                 String
@@ -1709,11 +1708,11 @@ enum SubscriptionStatus {
 }
 
 enum UnitKind {
-  LENGTH // Comprimento (Metro linear)
-  WEIGHT // Peso (Quilogramas)
-  CAPACITY // Volume (Litros)
-  DISTANCE // Quilômetro
-  DURATION // Horas
-  UNITY // Unidade
-  AREA // Metros quadrados
+  LENGTH
+  WEIGHT
+  CAPACITY
+  DISTANCE
+  DURATION
+  UNITY
+  AREA
 }
