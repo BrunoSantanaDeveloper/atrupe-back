@@ -34,8 +34,16 @@ export class FlowService {
 
     if (startDate || endDate) {
       const dateFilter: any = {};
-      if (startDate) dateFilter.gte = new Date(startDate);
-      if (endDate) dateFilter.lte = new Date(endDate);
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setUTCHours(0, 0, 0, 0);
+        dateFilter.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setUTCHours(23, 59, 59, 999);
+        dateFilter.lte = end;
+      }
 
       filtersReceivables[dateType] = dateFilter;
       filtersPayables[dateType] = dateFilter;
@@ -177,8 +185,16 @@ export class FlowService {
 
     if (startDate || endDate) {
       const dateFilter: any = {};
-      if (startDate) dateFilter.gte = new Date(startDate);
-      if (endDate) dateFilter.lte = new Date(endDate);
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setUTCHours(0, 0, 0, 0);
+        dateFilter.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setUTCHours(23, 59, 59, 999);
+        dateFilter.lte = end;
+      }
 
       filtersReceivables[dateType] = dateFilter;
       filtersPayables[dateType] = dateFilter;
