@@ -73,4 +73,12 @@ export class UpdateDeliveryInfoDto {
   })
   @IsOptional()
   supplierId?: string;
+
+  @ApiProperty({
+    description: 'ID do endereço do cliente para entrega',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  clientAddressId?: string;
 }
