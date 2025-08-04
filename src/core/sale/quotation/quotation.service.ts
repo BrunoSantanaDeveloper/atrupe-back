@@ -703,6 +703,7 @@ export class QuotationService {
             description: quotation.description,
             status: quotation.status,
             dueDate: quotation.dueDate,
+            finishedAt: quotation.finishedAt,
             totalValue: quotation.totalValue,
             tag: quotation.tag
               ? {
@@ -1682,6 +1683,7 @@ export class QuotationService {
       data: {
         status: QuotationStatus.OPEN,
         reasonId: null,
+        finishedAt: null,
       },
     });
   }
