@@ -1622,7 +1622,8 @@ export class QuotationService {
           },
         },
         quotationPayment: {
-          include: {
+          select: {
+            billing: true,
             quotationInstallment: true,
           },
         },
@@ -1644,7 +1645,10 @@ export class QuotationService {
     //   );
     // }
 
-    if (quotation.quotationPayment.quotationInstallment.length === 0) {
+    if (
+      quotation.quotationPayment.quotationInstallment.length === 0 &&
+      quotation.quotationPayment.billing !== 'NO_INVOICE'
+    ) {
       throw new BadRequestException('O orçamento não possui parcelas.');
     }
     if (!quotation || !quotation.seller || !quotation.seller.sellerProfile) {

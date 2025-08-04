@@ -30,6 +30,7 @@ export class ClientService {
               mobile: createClientDto.general.mobile,
               companyId: createClientDto.companyId,
               category: createClientDto.general.category,
+              categoryId: createClientDto.general.categoryId,
               cpf: createClientDto.general.cpf,
               rg: createClientDto.general.rg,
               cnpj: createClientDto.general.cnpj,
@@ -109,6 +110,7 @@ export class ClientService {
           phone: preRegisterClientDto.phone,
           mobile: preRegisterClientDto.mobile,
           category: preRegisterClientDto.category,
+          categoryId: preRegisterClientDto.categoryId,
           status: 'PROSPECT',
           companyId: preRegisterClientDto.companyId,
           rg:
@@ -217,6 +219,14 @@ export class ClientService {
           where: where,
           take: +filter.limit,
           skip: (+filter.page - 1) * +filter.limit,
+          include: {
+            categoryRelation: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
         }),
       ]);
 
@@ -239,6 +249,12 @@ export class ClientService {
       include: {
         contacts: true,
         address: true,
+        categoryRelation: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         paymentConditions: {
           include: {
             paymentCondition: {
@@ -443,6 +459,7 @@ export class ClientService {
                 phone: updateClientDto.general?.phone,
                 mobile: updateClientDto.general?.mobile,
                 category: updateClientDto.general?.category,
+                categoryId: updateClientDto.general?.categoryId,
                 cpf: updateClientDto.general?.cpf,
                 rg: updateClientDto.general?.rg,
                 cnpj: updateClientDto.general?.cnpj,
@@ -651,7 +668,7 @@ export class ClientService {
               email: row.email || null,
               phone: row.phone || null,
               mobile: row.mobile || null,
-              category: row.category || null,
+              category: row.category || undefined,
               cpf: row.cpf || null,
               rg: row.rg || null,
               cnpj: row.cnpj || null,
@@ -723,6 +740,7 @@ export class ClientService {
                   mobile: clientDto.general.mobile,
                   companyId: companyId,
                   category: clientDto.general.category,
+                  categoryId: clientDto.general.categoryId,
                   cpf: clientDto.general.cpf,
                   rg: clientDto.general.rg,
                   cnpj: clientDto.general.cnpj,
@@ -835,7 +853,7 @@ export class ClientService {
               email: row.Email || null,
               phone: row.Telefone || null,
               mobile: row.Celular || null,
-              category: null, // Não existe no CSV v2
+              category: undefined, // Não existe no CSV v2
               cpf: row.CPF || null,
               rg: row.RG || null,
               cnpj: row.CNPJ || null,
@@ -897,6 +915,7 @@ export class ClientService {
                   mobile: clientDto.general.mobile,
                   companyId: companyId,
                   category: clientDto.general.category,
+                  categoryId: clientDto.general.categoryId,
                   cpf: clientDto.general.cpf,
                   rg: clientDto.general.rg,
                   cnpj: clientDto.general.cnpj,

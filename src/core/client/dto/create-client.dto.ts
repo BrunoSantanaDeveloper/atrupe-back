@@ -39,6 +39,10 @@ class GeneralInfoDto {
   @IsString()
   category?: string;
 
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
+
   @ValidateIf((o) => o.type === ClientKind.PERSON)
   @IsCpf()
   cpf?: string;
@@ -195,6 +199,15 @@ export class PreRegisterClientDto {
   @IsOptional()
   @IsString()
   category?: string;
+
+  @ApiProperty({
+    description: 'ID da categoria do cliente',
+    required: false,
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
 
   @ApiProperty({
     description: 'RG (apenas para pessoa física)',

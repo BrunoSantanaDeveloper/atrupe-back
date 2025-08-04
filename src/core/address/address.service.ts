@@ -30,6 +30,18 @@ export class AddressService {
     });
   }
 
+  async findByOwner(ownerId: string, ownerType: OwnerType) {
+    return this.prisma.address.findMany({
+      where: {
+        ownerId,
+        ownerType,
+      },
+      orderBy: {
+        type: 'asc',
+      },
+    });
+  }
+
   async zipCode(zipCode: string) {
     try {
       const data = await this.plugService.zipcode(zipCode);

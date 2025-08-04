@@ -349,9 +349,19 @@ export class DeliveryScheduleService {
           },
         },
         quotationPayment: {
-          include: {
+          // include: {
+          //   quotationInstallment: true,
+          //   commission: true,
+          // },
+          select: {
+            billing: true,
             quotationInstallment: true,
             commission: true,
+            downPayment: true,
+            downPaymentDueDate: true,
+            downPaymentAdditionalFee: true,
+            description: true,
+            downPaymentCondition: true,
           },
         },
         client: true,
@@ -377,11 +387,14 @@ export class DeliveryScheduleService {
           });
         }
 
-        // Gerar receivables
-        const receivable = await this.generateReceivableFromQuotation(
-          quotation,
-          prisma,
-        );
+        // Gerar receivables (só se billing não for NO_INVOICE)
+        let receivable = null;
+        if (quotation.quotationPayment.billing !== 'NO_INVOICE') {
+          receivable = await this.generateReceivableFromQuotation(
+            quotation,
+            prisma,
+          );
+        }
 
         // Gerar payables
         const payable = await this.generatePayableFromQuotation(

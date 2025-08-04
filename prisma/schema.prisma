@@ -177,6 +177,7 @@ model Category {
   company    Company?       @relation(fields: [companyId], references: [id])
   sector     CompanySector? @relation(fields: [sectorId], references: [id])
   products   Product[]
+  clients    Client[]       @relation("ClientToCategory")
 
   @@map("categories")
 }
@@ -251,6 +252,7 @@ model Client {
   tradeName         String?
   type              ClientKind               @default(PERSON)
   category          String?
+  categoryId        String?
   blockClient       Boolean                  @default(false)
   maxValue          Float?
   minValue          Float?
@@ -261,6 +263,7 @@ model Client {
   company           Company                  @relation(fields: [companyId], references: [id])
   responsible       Employee?                @relation(fields: [responsibleId], references: [id])
   supplier          Supplier?                @relation(fields: [supplierId], references: [id])
+  categoryRelation  Category?                @relation("ClientToCategory", fields: [categoryId], references: [id])
   contacts          Contact[]
   payable           Payable[]
   quotation         Quotation[]
