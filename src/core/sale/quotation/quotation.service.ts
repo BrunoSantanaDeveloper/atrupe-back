@@ -2034,6 +2034,10 @@ export class QuotationService {
                   paymentMethod: installment.paymentMethod?.name,
                 }),
               ),
+              availablePaymentMethods: await this.getAvailablePaymentMethods(
+                quotation.companyId,
+                quotation.clientId,
+              ),
             }
           : null,
         total: {
@@ -2050,6 +2054,119 @@ export class QuotationService {
       throw new InternalServerErrorException(
         'Failed to generate quotation PDF data',
       );
+    }
+  }
+
+  private async getAvailablePaymentMethods(
+    companyId: string,
+    clientId?: string,
+  ): Promise<string[]> {
+    try {
+      // Buscar métodos de pagamento ativos da empresa para recebíveis
+      const paymentMethods = await this.prisma.paymentMethod.findMany({
+        where: {
+          companyId,
+          isActive: true,
+          bankAccountCashControl: {
+            some: {
+              acceptIncomes: true,
+              bankAccount: {
+                isActive: true,
+              },
+            },
+          },
+        },
+        include: {
+          paymentCondition: {
+            where: {
+              companyId,
+              isActive: true,
+            },
+          },
+        },
+        orderBy: {
+          name: 'asc',
+        },
+      });
+
+      if (!paymentMethods.length) {
+        return [];
+      }
+
+      // Se temos cliente específico, filtrar por suas condições de pagamento
+      if (clientId) {
+        const client = await this.prisma.client.findUnique({
+          where: { id: clientId },
+          select: {
+            type: true,
+            status: true,
+            maxValue: true,
+            minValue: true,
+            paymentConditions: {
+              where: { isActive: true },
+              include: {
+                paymentCondition: {
+                  include: {
+                    paymentMethod: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        if (!client) {
+          return [];
+        }
+
+        // 1. Verificar se cliente tem condições específicas configuradas
+        if (client.paymentConditions.length > 0) {
+          // Cliente tem condições específicas no seu cadastro
+          const clientPaymentMethods = new Map<
+            string,
+            { name: string; conditions: string[] }
+          >();
+
+          client.paymentConditions.forEach((cpc) => {
+            // Verificar se a condição está ativa
+            if (cpc.isActive) {
+              const method = cpc.paymentCondition.paymentMethod;
+              if (!clientPaymentMethods.has(method.id)) {
+                clientPaymentMethods.set(method.id, {
+                  name: method.name,
+                  conditions: [],
+                });
+              }
+              clientPaymentMethods
+                .get(method.id)
+                .conditions.push(cpc.paymentCondition.name);
+            }
+          });
+
+          return Array.from(clientPaymentMethods.values()).map((method) => {
+            const maxInstallments = method.conditions
+              .map((condName) => {
+                const match = condName.match(/(\d+)x/i);
+                return match ? parseInt(match[1]) : 1;
+              })
+              .reduce((max, current) => Math.max(max, current), 1);
+
+            if (maxInstallments > 1) {
+              return `${method.name} até ${maxInstallments}x`;
+            }
+            return method.name;
+          });
+        }
+
+        // Se cliente não tem condições específicas, retorna array vazio
+        return [];
+      }
+
+      // Se não tem cliente específico, retorna array vazio
+      return [];
+    } catch (error) {
+      console.error('Error getting available payment methods:', error);
+      return [];
     }
   }
 
