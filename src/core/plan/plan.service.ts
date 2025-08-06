@@ -4,7 +4,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CreatePlanDTO, UpdatePlanDTO, SubscriptionDTO } from './dtos/plan';
-import { CreateModuleDTO, UpdateModuleDTO } from './dtos/module';
 import { PrismaService } from 'nestjs-prisma';
 import { BASE_PLANS } from '../../seeds/plans-base';
 import { asaasConfig } from 'src/config/configuration';
@@ -27,15 +26,22 @@ export class PlanService {
 
   async findAllPlans() {
     try {
-      const plans = await this.prisma.plan.findMany({});
-      const modules = await this.prisma.module.findMany({});
+      const plans = await this.prisma.plan.findMany({
+        include: {
+          planFeatures: {
+            include: {
+              feature: true,
+            },
+          },
+          planLimits: {
+            include: {
+              limit: true,
+            },
+          },
+        },
+      });
 
-      const data = plans.map((plan) => ({
-        ...plan,
-        modules: modules.filter((module) => plan.modules.includes(module.id)),
-      }));
-
-      return data;
+      return plans;
     } catch (error) {
       throw new BadRequestException('Error fetching plans: ' + error.message);
     }
@@ -45,19 +51,25 @@ export class PlanService {
     try {
       const plan = await this.prisma.plan.findUnique({
         where: { id },
+        include: {
+          planFeatures: {
+            include: {
+              feature: true,
+            },
+          },
+          planLimits: {
+            include: {
+              limit: true,
+            },
+          },
+        },
       });
 
       if (!plan) {
         throw new NotFoundException('Plan not found');
       }
 
-      const modules = await this.prisma.module.findMany({
-        where: {
-          id: { in: plan.modules },
-        },
-      });
-
-      return { ...plan, modules };
+      return plan;
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -92,76 +104,6 @@ export class PlanService {
         throw error;
       }
       throw new BadRequestException('Error deleting plan: ' + error.message);
-    }
-  }
-
-  // Module CRUD Operations
-  async createModule(createModuleDTO: CreateModuleDTO) {
-    try {
-      return await this.prisma.module.create({
-        data: createModuleDTO,
-      });
-    } catch (error) {
-      throw new BadRequestException('Error creating module: ' + error.message);
-    }
-  }
-
-  async findAllModules() {
-    try {
-      return await this.prisma.module.findMany();
-    } catch (error) {
-      console.error(error);
-      throw new BadRequestException('Error fetching modules: ' + error.message);
-    }
-  }
-
-  async findModuleById(id: string) {
-    try {
-      const module = await this.prisma.module.findUnique({
-        where: { id },
-      });
-
-      if (!module) {
-        throw new NotFoundException('Module not found');
-      }
-
-      return module;
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new BadRequestException('Error fetching module: ' + error.message);
-    }
-  }
-
-  async updateModule(id: string, updateModuleDTO: UpdateModuleDTO) {
-    try {
-      await this.findModuleById(id);
-
-      return await this.prisma.module.update({
-        where: { id },
-        data: updateModuleDTO,
-      });
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new BadRequestException('Error updating module: ' + error.message);
-    }
-  }
-
-  async deleteModule(id: string) {
-    try {
-      await this.findModuleById(id);
-
-      return await this.prisma.module.delete({
-        where: { id },
-      });
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new BadRequestException('Error deleting module: ' + error.message);
     }
   }
 

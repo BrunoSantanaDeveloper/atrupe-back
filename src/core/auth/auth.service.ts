@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
+import { PlanControlService } from '../plan/plan-control.service';
 import * as argon2 from 'argon2';
 
 @Injectable()
@@ -10,66 +11,23 @@ export class AuthService {
   constructor(
     private usersService: UserService,
     private jwtService: JwtService,
+    private planControlService: PlanControlService,
   ) {}
 
   /**
-   * Mock temporário das features baseado no plano
-   * TODO: Substituir pela implementação completa com banco de dados
+   * Obter features do plano da empresa
    */
-  private getMockedFeatures(subscriptionType: string): string[] {
-    const FEATURES_MAP = {
-      LITE: [
-        'user_limit_5',
-        'additional_cnpj',
-        'sectors_management',
-        'sales_orders_full',
-        'quick_sale',
-        'rejection_reasons_full',
-        'budget_status_full',
-        'delivery_schedule_full',
-        'accounts_receivable',
-        'accounts_payable',
-        'cash_control',
-        'pdv',
-        'bank_accounts_full',
-        'bank_tax_transfer_full',
-        'credit_limit',
-        'products_full',
-        'production_stages_full',
-        'clients_full',
-        'suppliers_full',
-      ],
-
-      START: [
-        'user_limit_3',
-        'sales_orders_limited',
-        'rejection_reasons_limited',
-        'budget_status_limited',
-        'delivery_schedule_limited',
-        'bank_accounts_limited',
-        'bank_tax_transfer_limited',
-        'products_limited',
-        'production_stages_limited',
-        'clients_limited',
-        'suppliers_limited',
-      ],
-
-      TRIAL: [
-        'user_limit_3',
-        'sales_orders_limited',
-        'rejection_reasons_limited',
-        'budget_status_limited',
-        'delivery_schedule_limited',
-        'bank_accounts_limited',
-        'bank_tax_transfer_limited',
-        'products_limited',
-        'production_stages_limited',
-        'clients_limited',
-        'suppliers_limited',
-      ],
-    };
-
-    return FEATURES_MAP[subscriptionType] || FEATURES_MAP['START'];
+  private async getPlanFeatures(companyId: string): Promise<string[]> {
+    try {
+      const planInfo =
+        await this.planControlService.getCompanyPlanInfo(companyId);
+      return Object.keys(planInfo.features).filter(
+        (key) => planInfo.features[key],
+      );
+    } catch (error) {
+      console.error('Erro ao obter features do plano:', error);
+      return []; // Retorna array vazio em caso de erro
+    }
   }
 
   async validateUser(email: string, pass: string): Promise<any> {
@@ -91,13 +49,18 @@ export class AuthService {
 
   async login(user: any) {
     try {
-      const subscription =
-        user.customer?.subscriptions?.[0]?.plan?.planType ?? 'TRIAL';
+      // Obter informações do plano usando o novo sistema
+      const companyId = user.employee[0]?.company.id;
+      const planInfo = companyId
+        ? await this.planControlService.getCompanyPlanInfo(companyId)
+        : null;
+
+      const subscription = planInfo?.planType ?? 'TRIAL';
 
       const payload = {
         username: user.email,
         sub: user.id,
-        companyId: user.employee[0]?.company.id,
+        companyId: companyId,
         role: user.employee[0]?.role?.id,
         isAdmin: user.employee[0]?.role?.isAdmin,
         employeeId: user.employee[0]?.id,
@@ -121,8 +84,10 @@ export class AuthService {
               logo: user.employee[0].company.logoUrl,
               favicon: user.employee[0].company.favIconUrl,
               subscription: subscription,
-              trialEndsAt: user.employee[0].company.trialEndsAt ?? null,
-              features: this.getMockedFeatures(subscription),
+              trialEndsAt:
+                planInfo?.trialEndsAt ?? user.employee[0].company.trialEndsAt,
+              features: await this.getPlanFeatures(user.employee[0].company.id),
+              limits: planInfo?.limits || null, // Sistema dinâmico - todos os limites automaticamente
             }
           : null,
         access_token: this.jwtService.sign(payload),

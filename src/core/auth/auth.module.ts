@@ -9,6 +9,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { AbacService } from './abac/abac.service';
 import { PrismaModule } from 'nestjs-prisma';
+import { PlanControlModule } from '../plan/plan-control.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { PrismaModule } from 'nestjs-prisma';
       signOptions: { expiresIn: '60d' },
     }),
     forwardRef(() => UserModule),
+    PlanControlModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, AbacService, JwtStrategy, LocalStrategy],

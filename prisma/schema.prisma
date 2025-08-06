@@ -1307,25 +1307,93 @@ model Plan {
   updatedAt             DateTime?      @default(now()) @updatedAt
   companyId             String?
   name                  String         @unique
+  // Campos antigos (manter por compatibilidade)
   additionalAccessPrice Float
+  modules               String[]       @default([]) // DEPRECATED: usar planFeatures
+  // Novos campos
+  additionalUserPrice   Float?         @default(0) // Nova nomenclatura
   basePrice             Float
-  modules               String[]
   planType              PlanType       @default(START)
+  isActive              Boolean        @default(true)
   Company               Company?       @relation(fields: [companyId], references: [id])
   subscriptions         Subscription[]
+  planFeatures          PlanFeature[]
+  planLimits            PlanLimit[]
 
   @@map("plans")
 }
 
+model Feature {
+  id                   String                @id @default(uuid())
+  key                  String                @unique // e.g., 'crm', 'advanced_reports', 'production_manager'
+  name                 String // e.g., 'CRM', 'Relatórios Avançados', 'Gerenciador de Produção'
+  description          String?
+  category             String? // e.g., 'management', 'reports', 'production'
+  price                Float                 @default(0) // preço adicional para esta feature
+  isActive             Boolean               @default(true)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime?             @updatedAt
+  planFeatures         PlanFeature[]
+  subscriptionFeatures SubscriptionFeature[]
+
+  @@map("features")
+}
+
+model Limit {
+  id          String      @id @default(uuid())
+  key         String      @unique // e.g., 'max_users', 'max_quotations', 'max_products'
+  name        String // e.g., 'Máximo de Usuários', 'Máximo de Orçamentos'
+  description String?
+  unit        String? // e.g., 'users', 'quotations', 'products'
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime?   @updatedAt
+  planLimits  PlanLimit[]
+
+  @@map("limits")
+}
+
+// DEPRECATED: Tabela antiga - manter apenas para preservar dados existentes
 model Module {
   id          String    @id @default(uuid())
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime? @default(now()) @updatedAt
   name        String    @unique
   description String?
-  price       Float
+  isActive    Boolean   @default(true)
+  category    String?
+  price       Float     @default(0)
+  // key campo não existe na tabela atual
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime? @updatedAt
 
+  @@ignore // Ignorar no Prisma Client
   @@map("modules")
+}
+
+model PlanFeature {
+  id        String   @id @default(uuid())
+  planId    String
+  featureId String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  plan      Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  feature   Feature  @relation(fields: [featureId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, featureId])
+  @@map("plan_features")
+}
+
+model PlanLimit {
+  id        String   @id @default(uuid())
+  planId    String
+  limitId   String
+  value     Int // valor do limite para este plano
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  plan      Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  limit     Limit    @relation(fields: [limitId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, limitId])
+  @@map("plan_limits")
 }
 
 model WebhookEvent {
@@ -1364,25 +1432,43 @@ model Customer {
 }
 
 model Subscription {
-  id                  String      @id @default(uuid())
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime?   @updatedAt
-  companyId           String?
-  additionalAccesses  Int         @default(0)
-  asaasSubscriptionId String      @unique
-  customerId          String      @map("customer_id")
-  modules             String[]
-  nextDueDate         DateTime
-  planId              String      @map("plan_id")
-  value               Float
-  status              String
-  billingType         BillingType @default(CREDIT_CARD)
-  cycle               Cycle       @default(MONTHLY)
-  Company             Company?    @relation(fields: [companyId], references: [id])
-  customer            Customer    @relation(fields: [customerId], references: [id])
-  plan                Plan        @relation(fields: [planId], references: [id])
+  id                   String                @id @default(uuid())
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime?             @updatedAt
+  companyId            String?
+  // Campos antigos (manter por compatibilidade)
+  additionalAccesses   Int?                  @default(0) // DEPRECATED: usar additionalUsers
+  modules              String[]       @default([]) // DEPRECATED: usar subscriptionFeatures
+  // Novos campos
+  additionalUsers      Int                   @default(0) // usuários adicionais contratados
+  asaasSubscriptionId  String                @unique
+  customerId           String                @map("customer_id")
+  nextDueDate          DateTime
+  planId               String                @map("plan_id")
+  value                Float
+  status               String
+  billingType          BillingType           @default(CREDIT_CARD)
+  cycle                Cycle                 @default(MONTHLY)
+  Company              Company?              @relation(fields: [companyId], references: [id])
+  customer             Customer              @relation(fields: [customerId], references: [id])
+  plan                 Plan                  @relation(fields: [planId], references: [id])
+  subscriptionFeatures SubscriptionFeature[] // features adicionais contratadas
 
   @@map("subscriptions")
+}
+
+model SubscriptionFeature {
+  id             String       @id @default(uuid())
+  subscriptionId String
+  featureId      String
+  isActive       Boolean      @default(true)
+  price          Float        @default(0) // preço adicional desta feature
+  createdAt      DateTime     @default(now())
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  feature        Feature      @relation(fields: [featureId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, featureId])
+  @@map("subscription_features")
 }
 
 model Contract {

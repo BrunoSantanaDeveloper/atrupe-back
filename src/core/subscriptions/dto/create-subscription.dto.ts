@@ -22,9 +22,10 @@ export class CreateSubscriptionDto {
   @IsString()
   planId: string;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Número de usuários adicionais' })
   @IsNumber()
-  additionalAccesses: number;
+  @IsOptional()
+  additionalUsers?: number = 0;
 
   @ApiProperty({ enum: BillingType })
   @IsEnum(BillingType)
@@ -34,9 +35,13 @@ export class CreateSubscriptionDto {
   @IsEnum(Cycle)
   cycle: Cycle;
 
-  @ApiProperty({ required: false, type: [String] })
+  @ApiProperty({
+    required: false,
+    type: [String],
+    description: 'Features adicionais além das inclusas no plano',
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  modules?: string[];
+  additionalFeatures?: string[];
 }

@@ -1,55 +1,9 @@
 // prisma/seed.ts
 import { PrismaClient } from '@prisma/client';
-import { BASE_PLANS, BASE_MODULES } from '../src/seeds/plans-base';
+import { SeedPlansService } from '../src/seeds/seed-plans.service';
 import { BASE_UNIT_OF_MEASURES } from '../src/seeds/units-base';
 
 const prisma = new PrismaClient();
-
-async function createPlansAndModules() {
-  console.log('Criando módulos padrão...');
-
-  // Primeiro criar os módulos
-  for (const moduleData of BASE_MODULES) {
-    try {
-      const existingModule = await prisma.module.findUnique({
-        where: { name: moduleData.name },
-      });
-
-      if (!existingModule) {
-        await prisma.module.create({
-          data: moduleData,
-        });
-        console.log(`Módulo criado: ${moduleData.name}`);
-      } else {
-        console.log(`Módulo já existe: ${moduleData.name}`);
-      }
-    } catch (error) {
-      console.error(`Erro ao criar módulo ${moduleData.name}:`, error);
-    }
-  }
-
-  console.log('Criando planos padrão...');
-
-  // Depois criar os planos
-  for (const planData of BASE_PLANS) {
-    try {
-      const existingPlan = await prisma.plan.findUnique({
-        where: { name: planData.name },
-      });
-
-      if (!existingPlan) {
-        await prisma.plan.create({
-          data: planData,
-        });
-        console.log(`Plano criado: ${planData.name}`);
-      } else {
-        console.log(`Plano já existe: ${planData.name}`);
-      }
-    } catch (error) {
-      console.error(`Erro ao criar plano ${planData.name}:`, error);
-    }
-  }
-}
 
 async function createDefaultUnitsOfMeasure() {
   console.log('Criando unidades de medida padrão...');
@@ -85,8 +39,11 @@ async function createDefaultUnitsOfMeasure() {
 async function main() {
   console.log('Iniciando o processo de seeding...');
 
-  // Criar planos e módulos padrão
-  await createPlansAndModules();
+  // TEMPORÁRIO: Pular o seeding das novas tabelas por enquanto
+  console.log(
+    'Pulando seeding do novo sistema por enquanto - usar migração manual',
+  );
+  // TODO: Implementar seeding manual ou ajustar SeedPlansService para PrismaClient
 
   // Criar unidades de medida padrão
   await createDefaultUnitsOfMeasure();
