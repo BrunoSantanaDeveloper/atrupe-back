@@ -22,12 +22,6 @@ export function usePlanFeatures() {
     return features.every((feature) => hasFeature(feature));
   };
 
-  const getUserLimit = () => {
-    if (hasFeature('user_limit_5')) return 5;
-    if (hasFeature('user_limit_3')) return 3;
-    return 0;
-  };
-
   const canManageSectors = () => hasFeature('sectors_management');
 
   const canManageMultipleCompanies = () =>
@@ -112,7 +106,6 @@ export function usePlanFeatures() {
     hasFeature,
     hasAnyFeature,
     hasAllFeatures,
-    getUserLimit,
     canManageSectors,
     getSalesOrdersType,
     getRejectionReasonsType,
