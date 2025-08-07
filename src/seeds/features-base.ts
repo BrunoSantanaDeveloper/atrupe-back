@@ -1,31 +1,14 @@
 export const BASE_FEATURES = [
-  // Features básicas (inclusas em todos os planos - TRIAL, START, LITE+)
-  {
-    key: 'basic_management',
-    name: 'Gestão Básica',
-    description: 'Cadastro básico de clientes, fornecedores, colaboradores e produtos',
-    category: 'basic',
-    price: 0,
-    isActive: true,
-  },
-  {
-    key: 'basic_quotations',
-    name: 'Orçamentos Básicos',
-    description: 'Criação e gestão básica de orçamentos',
-    category: 'basic',
-    price: 0,
-    isActive: true,
-  },
-  {
-    key: 'basic_service_orders',
-    name: 'Ordens de Serviço Básicas',
-    description: 'Gestão básica de ordens de serviço',
-    category: 'basic',
-    price: 0,
-    isActive: true,
-  },
-
   // Features específicas do plano LITE (START/TRIAL não têm acesso)
+  {
+    key: 'pdf_show_item_details',
+    name: 'Mostrar Detalhes de Itens no PDF',
+    description:
+      'Exibe detalhes completos dos itens nos PDFs de orçamentos e pedidos',
+    category: 'pdf',
+    price: 0,
+    isActive: true,
+  },
   {
     key: 'sectors_configuration',
     name: 'Configurar Setores',
@@ -93,7 +76,8 @@ export const BASE_FEATURES = [
   {
     key: 'delivery_production_tabs',
     name: 'Abas de Produção na Agenda',
-    description: 'Exibir abas "Produção" e "Todos os ativos" na agenda de entrega',
+    description:
+      'Exibir abas "Produção" e "Todos os ativos" na agenda de entrega',
     category: 'delivery',
     price: 0,
     isActive: true,
@@ -141,7 +125,8 @@ export const BASE_FEATURES = [
   {
     key: 'bank_account_cash_control_switch',
     name: 'Switch Controle de Caixa',
-    description: 'Exibir switch "Controle de caixa" na configuração de conta bancária',
+    description:
+      'Exibir switch "Controle de caixa" na configuração de conta bancária',
     category: 'financial',
     price: 0,
     isActive: true,
@@ -197,7 +182,8 @@ export const BASE_FEATURES = [
   {
     key: 'client_additional_tabs',
     name: 'Abas Adicionais em Clientes',
-    description: 'Exibir abas "orçamento", "ordens de serviço" e "financeiro" em clientes',
+    description:
+      'Exibir abas "orçamento", "ordens de serviço" e "financeiro" em clientes',
     category: 'clients',
     price: 0,
     isActive: true,
@@ -205,7 +191,8 @@ export const BASE_FEATURES = [
   {
     key: 'supplier_additional_tabs',
     name: 'Abas Adicionais em Fornecedores',
-    description: 'Exibir abas "orçamento", "ordens de serviço" e "financeiro" em fornecedores',
+    description:
+      'Exibir abas "orçamento", "ordens de serviço" e "financeiro" em fornecedores',
     category: 'suppliers',
     price: 0,
     isActive: true,

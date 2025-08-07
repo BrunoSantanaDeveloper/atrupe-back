@@ -92,13 +92,7 @@ model Subscription {
 
 O sistema possui 24 features específicas do Atrupe, divididas em:
 
-1. **Features Básicas** (incluídas em todos os planos):
-
-   - `basic_management`: Gestão Básica
-   - `basic_quotations`: Orçamentos Básicos
-   - `basic_service_orders`: Ordens de Serviço Básicas
-
-2. **Features Específicas do Plano LITE** (e superiores):
+1. **Features Específicas do Plano LITE** (e superiores):
    - `sectors_configuration`: Configurar Setores
    - `service_order_current_phase`: Fase Atual em Ordens de Serviço
    - `quotation_quick_sale`: Venda Rápida
@@ -165,7 +159,7 @@ export const PLAN_CONFIGURATIONS = {
       additionalAccessPrice: 0,
       isActive: true,
     },
-    features: ['basic_management', 'basic_quotations', 'basic_service_orders'],
+    features: [],
     limits: {
       max_users: 3,
       max_companies: 1,
@@ -183,7 +177,7 @@ export const PLAN_CONFIGURATIONS = {
       additionalAccessPrice: 1500, // R$ 15,00 em centavos
       isActive: true,
     },
-    features: ['basic_management', 'basic_quotations', 'basic_service_orders'],
+    features: [],
     limits: {
       max_users: 3,
       max_companies: 1,
@@ -202,11 +196,6 @@ export const PLAN_CONFIGURATIONS = {
       isActive: true,
     },
     features: [
-      // Features básicas
-      'basic_management',
-      'basic_quotations',
-      'basic_service_orders',
-
       // Features específicas do LITE
       'sectors_configuration',
       'service_order_current_phase',
