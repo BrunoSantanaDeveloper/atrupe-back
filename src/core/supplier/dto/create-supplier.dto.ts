@@ -38,6 +38,10 @@ class GeneralInfoDto {
   @IsString()
   category?: string;
 
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
+
   @ValidateIf((o) => o.type === ClientKind.PERSON)
   @IsCpf()
   cpf?: string;

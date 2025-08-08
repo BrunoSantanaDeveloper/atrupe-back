@@ -27,6 +27,7 @@ export class SupplierService {
             mobile: createDto.general.mobile,
             companyId: createDto.companyId,
             category: createDto.general.category,
+            categoryId: createDto.general.categoryId,
             cpf: createDto.general.cpf,
             rg: createDto.general.rg,
             cnpj: createDto.general.cnpj,
@@ -140,6 +141,14 @@ export class SupplierService {
           where: where,
           take: +filter.limit,
           skip: (+filter.page - 1) * +filter.limit,
+          include: {
+            categoryRelation: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
         }),
       ]);
 
@@ -191,6 +200,12 @@ export class SupplierService {
       include: {
         contacts: true,
         address: true,
+        categoryRelation: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         paymentConditions: {
           include: {
             paymentCondition: {
@@ -269,6 +284,7 @@ export class SupplierService {
         cnpj: supplier.cnpj,
         activity: supplier.activity,
         category: supplier.category,
+        categoryId: supplier.categoryId,
         phone: supplier.phone,
         mobile: supplier.mobile,
         notes: supplier.notes,
@@ -316,6 +332,7 @@ export class SupplierService {
             phone: updateSupplierDto.general?.phone,
             mobile: updateSupplierDto.general?.mobile,
             category: updateSupplierDto.general?.category,
+            categoryId: updateSupplierDto.general?.categoryId,
             cpf: updateSupplierDto.general?.cpf,
             rg: updateSupplierDto.general?.rg,
             cnpj: updateSupplierDto.general?.cnpj,
