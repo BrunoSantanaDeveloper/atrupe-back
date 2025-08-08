@@ -66,7 +66,9 @@ export class EmployeeService {
     const result = await this.prisma.employee.groupBy({
       by: ['isActive'],
       where: { companyId },
-      _count: true,
+      _count: {
+        _all: true,
+      },
     });
 
     // Inicializa os contadores com zero
@@ -78,9 +80,9 @@ export class EmployeeService {
     // Mapeia os resultados para os contadores
     result.forEach((cur) => {
       if (cur.isActive) {
-        statusCount.actives = cur._count;
+        statusCount.actives = cur._count._all;
       } else {
-        statusCount.inactives = cur._count;
+        statusCount.inactives = cur._count._all;
       }
     });
 
@@ -113,6 +115,10 @@ export class EmployeeService {
 
       if (filter.isActive !== undefined) {
         where.isActive = filter.isActive;
+      }
+
+      if (filter.status) {
+        where.isActive = filter.status === 'ACTIVE';
       }
 
       const [total, employees] = await Promise.all([

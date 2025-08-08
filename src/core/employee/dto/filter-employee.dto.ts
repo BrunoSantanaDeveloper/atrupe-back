@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsIn } from 'class-validator';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 export class FilterEmployeeDto extends BaseFilterDTO {
@@ -12,6 +12,16 @@ export class FilterEmployeeDto extends BaseFilterDTO {
   @IsBoolean()
   @Transform(({ value }) => value === 'true')
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Status do funcionário',
+    example: 'ACTIVE',
+    enum: ['ACTIVE', 'INACTIVE'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['ACTIVE', 'INACTIVE'])
+  status?: string;
 
   @ApiPropertyOptional({
     description: 'Busca por nome do funcionário',
