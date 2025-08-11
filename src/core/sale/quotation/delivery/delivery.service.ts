@@ -20,13 +20,10 @@ export class DeliveryService {
     //   );
     // }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { clientAddressId, ...deliveryDataToCreate } = createDeliveryInfoDto;
-
     // Criar o DeliveryInfo
     const deliveryInfo = await this.prisma.deliveryInfo.create({
       data: {
-        ...deliveryDataToCreate,
+        ...createDeliveryInfoDto,
         quotationId,
         deliveryType, // Vincular o deliveryTypeId
       },
@@ -74,13 +71,9 @@ export class DeliveryService {
         );
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { clientAddressId, ...deliveryDataToUpdate } =
-        updateDeliveryInfoDto;
-
       const updatedDeliveryInfo = await this.prisma.deliveryInfo.update({
         where: { id },
-        data: deliveryDataToUpdate,
+        data: updateDeliveryInfoDto,
       });
 
       return updatedDeliveryInfo;

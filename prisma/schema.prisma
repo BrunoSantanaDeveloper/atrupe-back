@@ -92,10 +92,11 @@ model Address {
   supplierId   String?
   companyId    String?
   employeeId   String?
-  company      Company?  @relation(fields: [companyId], references: [id])
-  employee     Employee? @relation(fields: [employeeId], references: [id])
-  client       Client?   @relation(fields: [ownerId], references: [id])
-  supplier     Supplier? @relation(fields: [supplierId], references: [id])
+  company      Company?      @relation(fields: [companyId], references: [id])
+  employee     Employee?     @relation(fields: [employeeId], references: [id])
+  client       Client?       @relation(fields: [ownerId], references: [id])
+  supplier     Supplier?     @relation(fields: [supplierId], references: [id])
+  deliveryInfo DeliveryInfo[]
 
   @@index([ownerId, ownerType])
   @@index([supplierId, ownerType])
@@ -1085,11 +1086,13 @@ model DeliveryInfo {
   value             Float?
   notes             String?
   supplierId        String?
+  clientAddressId   String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime?         @updatedAt
   deliveryType      DeliveryType      @default(PICKUP)
   quotation         Quotation         @relation(fields: [quotationId], references: [id])
   supplier          Supplier?         @relation(fields: [supplierId], references: [id])
+  clientAddress     Address?          @relation(fields: [clientAddressId], references: [id])
   deliverySchedule  DeliverySchedule?
 
   @@index([quotationId])

@@ -817,6 +817,20 @@ export class QuotationService {
               notes: true,
               supplier: true,
               modality: true,
+              clientAddressId: true,
+              clientAddress: {
+                select: {
+                  id: true,
+                  street: true,
+                  number: true,
+                  complement: true,
+                  neighborhood: true,
+                  city: true,
+                  state: true,
+                  zipcode: true,
+                  type: true,
+                },
+              },
             },
           },
           quotationPayment: {
@@ -990,6 +1004,21 @@ export class QuotationService {
               value: quotation.deliveryInfo.value,
               notes: quotation.deliveryInfo.notes,
               modality: quotation.deliveryInfo.modality,
+              clientAddressId: quotation.deliveryInfo.clientAddressId,
+              clientAddress: quotation.deliveryInfo.clientAddress
+                ? {
+                    id: quotation.deliveryInfo.clientAddress.id,
+                    street: quotation.deliveryInfo.clientAddress.street,
+                    number: quotation.deliveryInfo.clientAddress.number,
+                    complement: quotation.deliveryInfo.clientAddress.complement,
+                    neighborhood:
+                      quotation.deliveryInfo.clientAddress.neighborhood,
+                    city: quotation.deliveryInfo.clientAddress.city,
+                    state: quotation.deliveryInfo.clientAddress.state,
+                    zipcode: quotation.deliveryInfo.clientAddress.zipcode,
+                    type: quotation.deliveryInfo.clientAddress.type,
+                  }
+                : null,
               supplier: quotation.deliveryInfo.supplier
                 ? {
                     id: quotation.deliveryInfo.supplier.id,
