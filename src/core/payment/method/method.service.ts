@@ -98,6 +98,40 @@ export class MethodService {
     });
   }
 
+  async findWithConditions(companyId: string) {
+    try {
+      const methods = await this.prisma.paymentMethod.findMany({
+        where: {
+          companyId,
+          isActive: true,
+          paymentCondition: {
+            some: {
+              isActive: true,
+            },
+          },
+        },
+        include: {
+          _count: {
+            select: {
+              paymentCondition: {
+                where: {
+                  isActive: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: {
+          name: 'asc',
+        },
+      });
+      return methods;
+    } catch (error) {
+      console.error(error);
+      throw new Error('Error on find payment methods with conditions');
+    }
+  }
+
   async remove(id: string) {
     try {
       return await this.prisma.$transaction(async (tx) => {

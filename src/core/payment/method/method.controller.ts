@@ -63,6 +63,22 @@ export class MethodController {
     return await this.methodService.findAvailable(companyId, type);
   }
 
+  @Get('with-conditions')
+  @ApiOperation({
+    summary:
+      'Obtém a lista de métodos de pagamento que possuem condições ativas',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Lista de métodos de pagamento com condições retornada com sucesso.',
+    isArray: true,
+  })
+  async findWithConditions(@Req() req) {
+    const companyId = req.user.companyId;
+    return await this.methodService.findWithConditions(companyId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Obtém a lista de todos os métodos de pagamento' })
   @ApiResponse({
