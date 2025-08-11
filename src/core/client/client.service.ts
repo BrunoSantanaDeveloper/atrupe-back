@@ -336,7 +336,7 @@ export class ClientService {
         rg: client.rg,
         cnpj: client.cnpj,
         activity: client.activity,
-        category: client.category,
+        category: client.categoryRelation,
         phone: client.phone,
         mobile: client.mobile,
         notes: client.notes,

@@ -1276,7 +1276,7 @@ export class CompanyService {
         billing: 'ON_ORDER',
         sendToProduction: 'DIRECT',
         productionStatus: 'MANAGE_PRODUCTION',
-        isDefault: false,
+        isDefault: true,
       },
       {
         code: 'V1',
@@ -1288,7 +1288,7 @@ export class CompanyService {
         billing: 'ON_ORDER',
         sendToProduction: 'DIRECT',
         productionStatus: 'MANAGE_PRODUCTION',
-        isDefault: true,
+        isDefault: false,
       },
       {
         code: 'SL',

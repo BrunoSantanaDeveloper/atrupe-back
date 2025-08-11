@@ -283,7 +283,7 @@ export class SupplierService {
         rg: supplier.rg,
         cnpj: supplier.cnpj,
         activity: supplier.activity,
-        category: supplier.category,
+        category: supplier.categoryRelation,
         categoryId: supplier.categoryId,
         phone: supplier.phone,
         mobile: supplier.mobile,
