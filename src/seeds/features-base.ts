@@ -197,4 +197,20 @@ export const BASE_FEATURES = [
     price: 0,
     isActive: true,
   },
+  {
+    key: 'bank_account_delete',
+    name: 'Excluir Conta Bancária',
+    description: 'Excluir contas bancárias do sistema',
+    category: 'financial',
+    price: 0,
+    isActive: true,
+  },
+  {
+    key: 'bank_account_provision',
+    name: 'Provisão de Conta Bancária',
+    description: 'Provisionar e configurar contas bancárias',
+    category: 'financial',
+    price: 0,
+    isActive: true,
+  },
 ];

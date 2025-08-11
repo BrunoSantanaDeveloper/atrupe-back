@@ -71,6 +71,8 @@ export const PLAN_CONFIGURATIONS = {
       'product_production_stages',
       'client_additional_tabs',
       'supplier_additional_tabs',
+      'bank_account_delete',
+      'bank_account_provision',
     ],
     limits: {
       max_users: 5,
@@ -115,6 +117,8 @@ export const PLAN_CONFIGURATIONS = {
       'product_production_stages',
       'client_additional_tabs',
       'supplier_additional_tabs',
+      'bank_account_delete',
+      'bank_account_provision',
     ],
     limits: {
       max_users: 10,
@@ -159,6 +163,8 @@ export const PLAN_CONFIGURATIONS = {
       'product_production_stages',
       'client_additional_tabs',
       'supplier_additional_tabs',
+      'bank_account_delete',
+      'bank_account_provision',
     ],
     limits: {
       max_users: 20,
@@ -203,6 +209,8 @@ export const PLAN_CONFIGURATIONS = {
       'product_production_stages',
       'client_additional_tabs',
       'supplier_additional_tabs',
+      'bank_account_delete',
+      'bank_account_provision',
     ],
     limits: {
       max_users: -1, // ilimitado
