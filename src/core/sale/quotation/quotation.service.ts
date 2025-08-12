@@ -1787,6 +1787,8 @@ export class QuotationService {
               cnpj: true,
               phone: true,
               email: true,
+              notes: true,
+              financialNotes: true,
               address: {
                 where: { type: 'Principal' },
                 select: {
@@ -1804,6 +1806,7 @@ export class QuotationService {
                   name: true,
                   phone: true,
                   email: true,
+                  notes: true,
                 },
               },
             },
@@ -1851,12 +1854,20 @@ export class QuotationService {
                 select: {
                   name: true,
                   cnpj: true,
+                  notes: true,
+                  financialNotes: true,
                 },
               },
             },
           },
           quotationPayment: {
-            include: {
+            select: {
+              id: true,
+              type: true,
+              billing: true,
+              totalValue: true,
+              finalValue: true,
+              description: true,
               paymentCondition: {
                 select: {
                   name: true,
@@ -1923,6 +1934,8 @@ export class QuotationService {
           },
           phone: quotation.client?.phone,
           email: quotation.client?.email,
+          notes: quotation.client?.notes,
+          financialNotes: quotation.client?.financialNotes,
           address: quotation.client?.address[0]
             ? {
                 type: 'PRINCIPAL',
@@ -1941,6 +1954,7 @@ export class QuotationService {
               name: quotation.client.contacts[0].name,
               phone: quotation.client.contacts[0].phone,
               email: quotation.client.contacts[0].email,
+              notes: quotation.client.contacts[0].notes,
             }
           : null,
         quotation: {
@@ -2031,11 +2045,15 @@ export class QuotationService {
                 ? {
                     name: quotation.deliveryInfo.supplier.name,
                     cnpj: quotation.deliveryInfo.supplier.cnpj,
+                    notes: quotation.deliveryInfo.supplier.notes,
+                    financialNotes:
+                      quotation.deliveryInfo.supplier.financialNotes,
                   }
                 : null,
               daysAfterApproval: quotation.deliveryInfo.daysAfterApproval,
               freightCost: quotation.deliveryInfo.cost,
               freightPrice: quotation.deliveryInfo.value,
+              notes: quotation.deliveryInfo.notes,
               clientAddress: quotation.client?.address[0]
                 ? {
                     type: 'PRINCIPAL',
@@ -2054,7 +2072,9 @@ export class QuotationService {
           ? {
               condition: quotation.quotationPayment.paymentCondition?.name,
               method: quotation.quotationPayment.paymentMethod?.name,
-              totalInstallments: quotation.quotationPayment.installmentQty,
+              description: quotation.quotationPayment.description,
+              totalInstallments:
+                quotation.quotationPayment.quotationInstallment?.length || 0,
               installments: quotation.quotationPayment.quotationInstallment.map(
                 (installment) => ({
                   number: installment.id,
@@ -2071,7 +2091,9 @@ export class QuotationService {
           : null,
         total: {
           subtotal: quotation.totalValue,
-          totalDiscount: quotation.quotationPayment?.discountTotal || 0,
+          totalDiscount:
+            quotation.totalValue -
+            (quotation.quotationPayment?.finalValue || quotation.totalValue),
           finalTotal:
             quotation.quotationPayment?.finalValue || quotation.totalValue,
         },

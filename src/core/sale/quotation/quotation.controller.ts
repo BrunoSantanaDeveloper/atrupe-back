@@ -388,6 +388,8 @@ export class QuotationController {
             },
             phone: '(11) 98765-4321',
             email: 'cliente@exemplo.com',
+            notes: 'Observações gerais do cliente',
+            financialNotes: 'Observações financeiras do cliente',
             address: {
               type: 'PRINCIPAL',
               street: 'Rua do Cliente',
@@ -403,6 +405,7 @@ export class QuotationController {
             name: 'João Silva',
             phone: '(11) 91234-5678',
             email: 'joao.silva@exemplo.com',
+            notes: 'Observações do contato',
           },
           quotation: {
             number: 12345,
@@ -461,10 +464,13 @@ export class QuotationController {
             supplier: {
               name: 'Transportadora Exemplo',
               cnpj: '11.222.333/0001-44',
+              notes: 'Observações da transportadora',
+              financialNotes: 'Observações financeiras da transportadora',
             },
             daysAfterApproval: 15,
             freightCost: 2500,
             freightPrice: 3000,
+            notes: 'Observações sobre a entrega',
             clientAddress: {
               type: 'PRINCIPAL',
               street: 'Rua do Cliente',
@@ -479,6 +485,7 @@ export class QuotationController {
           payment: {
             condition: 'A Vista',
             method: 'PIX',
+            description: 'Descrição das condições de pagamento',
             totalInstallments: 1,
             installments: [
               {
