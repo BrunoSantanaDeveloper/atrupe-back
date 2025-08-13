@@ -411,14 +411,102 @@ export class DeliveryScheduleService {
   }
 
   private async generatePayableFromQuotation(quotation: any, prisma: any) {
+    const results = {
+      payableCommission: null,
+      payableDelivery: null,
+    };
+
+    // Avaliar comissão independentemente
     const commission = quotation.quotationPayment.commission;
-    const delivery = quotation.deliveryInfo;
-    if (!commission || !delivery) {
-      return null;
+    if (await this.shouldCreateCommissionPayable(commission, prisma)) {
+      results.payableCommission = await this.createCommissionPayable(
+        quotation,
+        commission,
+        prisma,
+      );
     }
 
+    // Avaliar entrega independentemente
+    const delivery = quotation.deliveryInfo;
+    if (this.shouldCreateDeliveryPayable(delivery)) {
+      results.payableDelivery = await this.createDeliveryPayable(
+        quotation,
+        delivery,
+        prisma,
+      );
+    }
+
+    return results;
+  }
+
+  private async shouldCreateCommissionPayable(
+    commission: any,
+    prisma: any,
+  ): Promise<boolean> {
+    if (!commission) return false;
+
+    // Validar valor da comissão
+    if (!commission.commissionValue || commission.commissionValue <= 0) {
+      console.log('Commission validation failed: commissionValue <= 0');
+      return false;
+    }
+
+    if (!commission.totalCommission || commission.totalCommission <= 0) {
+      console.log('Commission validation failed: totalCommission <= 0');
+      return false;
+    }
+
+    // Validar fornecedor ativo
+    if (!commission.supplierId) {
+      console.log('Commission validation failed: no supplierId');
+      return false;
+    }
+
+    const supplier = await prisma.supplier.findFirst({
+      where: { id: commission.supplierId, isActive: true },
+    });
+
+    if (!supplier) {
+      console.log(
+        'Commission validation failed: supplier not found or inactive',
+      );
+      return false;
+    }
+
+    // Validar tipo de comissão
+    if (!['ADDITION', 'SUBTRACTION'].includes(commission.type)) {
+      console.log('Commission validation failed: invalid commission type');
+      return false;
+    }
+
+    // Validar método de transferência
+    if (!['SINGLE', 'PAYMENT_BASED'].includes(commission.transferMethod)) {
+      console.log('Commission validation failed: invalid transferMethod');
+      return false;
+    }
+
+    return true;
+  }
+
+  private shouldCreateDeliveryPayable(delivery: any): boolean {
+    if (!delivery) return false;
+
+    // Regra simplificada: se tem custo, sempre gera despesa
+    if (!delivery.cost || delivery.cost <= 0) {
+      console.log('Delivery validation failed: cost <= 0');
+      return false;
+    }
+
+    return true;
+  }
+
+  private async createCommissionPayable(
+    quotation: any,
+    commission: any,
+    prisma: any,
+  ) {
     // Criar conta a pagar da comissão
-    const payableCommision = await prisma.payable.create({
+    const payableCommission = await prisma.payable.create({
       data: {
         referenceDate: new Date(),
         description: `Comissão da venda ${quotation.quotationNumber}-${quotation.series.code} - ${quotation.description || ''}`,
@@ -445,11 +533,11 @@ export class DeliveryScheduleService {
     });
 
     // Criar parcelas de comissão
-    if (payableCommision) {
+    if (payableCommission) {
       if (commission.transferMethod === 'SINGLE') {
         await prisma.payableInstallment.create({
           data: {
-            payableId: payableCommision.id,
+            payableId: payableCommission.id,
             installmentNumber: 1,
             dueDate: add(new Date(), { days: 30 }),
             amount: commission.totalCommission || 0,
@@ -463,7 +551,7 @@ export class DeliveryScheduleService {
         const installments =
           quotation.quotationPayment.quotationInstallment.map(
             (installment: any, index: number) => ({
-              payableId: payableCommision.id,
+              payableId: payableCommission.id,
               installmentNumber: index + 1,
               dueDate: installment.dueDate,
               amount:
@@ -482,14 +570,15 @@ export class DeliveryScheduleService {
       }
     }
 
-    // Verificar se o custo de entrega é válido
+    return payableCommission;
+  }
+
+  private async createDeliveryPayable(
+    quotation: any,
+    delivery: any,
+    prisma: any,
+  ) {
     const deliveryCost = delivery.cost || 0;
-    if (deliveryCost <= 0) {
-      console.log(
-        'Custo de entrega é zero ou inválido, pulando criação da conta a pagar de entrega',
-      );
-      return { payableCommision, payableDelivery: null };
-    }
 
     // Criar conta a pagar da entrega
     const payableDelivery = await prisma.payable.create({
@@ -526,7 +615,7 @@ export class DeliveryScheduleService {
       });
     }
 
-    return { payableCommision, payableDelivery };
+    return payableDelivery;
   }
 
   private async generateReceivableFromQuotation(quotation: any, prisma: any) {
