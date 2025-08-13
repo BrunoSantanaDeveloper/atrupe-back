@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: atrupe-postgres-local
+    environment:
+      POSTGRES_DB: atrupeDb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  maildev:
+    image: maildev/maildev
+    container_name: atrupe-maildev-local
+    ports:
+      - "1025:1025"  # SMTP
+      - "1080:1080"  # Web interface
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

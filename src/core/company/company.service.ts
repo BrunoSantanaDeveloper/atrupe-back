@@ -1236,6 +1236,30 @@ export class CompanyService {
           isSystem: true,
           companyId: companyId,
         },
+        {
+          name: 'Impressão',
+          icon: 'print',
+          kind: 'PRODUCTION' as const,
+          isProductionStage: true,
+          isSystem: false,
+          companyId: companyId,
+        },
+        {
+          name: 'Criação',
+          icon: 'bulb',
+          kind: 'PRODUCTION' as const,
+          isProductionStage: true,
+          isSystem: false,
+          companyId: companyId,
+        },
+        {
+          name: 'Gráfica Rápida',
+          icon: 'printer',
+          kind: 'PRODUCTION' as const,
+          isProductionStage: true,
+          isSystem: false,
+          companyId: companyId,
+        },
       ];
 
       await this.prisma.companySector.createMany({ data: basicSectors });

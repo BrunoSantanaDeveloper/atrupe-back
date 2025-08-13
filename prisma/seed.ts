@@ -1,7 +1,10 @@
 // prisma/seed.ts
 import { PrismaClient } from '@prisma/client';
-import { SeedPlansService } from '../src/seeds/seed-plans.service';
 import { BASE_UNIT_OF_MEASURES } from '../src/seeds/units-base';
+import { BASE_BANKS } from '../src/seeds/banks-base';
+import { BASE_FEATURES } from '../src/seeds/features-base';
+import { BASE_LIMITS } from '../src/seeds/limits-base';
+import { PLAN_CONFIGURATIONS } from '../src/seeds/plans-complete';
 
 const prisma = new PrismaClient();
 
@@ -36,17 +39,162 @@ async function createDefaultUnitsOfMeasure() {
   }
 }
 
+async function createDefaultBanks() {
+  console.log('Criando bancos padrão...');
+
+  for (const bankData of BASE_BANKS) {
+    try {
+      const existingBank = await prisma.bank.findFirst({
+        where: { code: bankData.code },
+      });
+
+      if (!existingBank) {
+        await prisma.bank.create({
+          data: {
+            id: bankData.id,
+            name: bankData.name,
+            code: bankData.code,
+            details: bankData.details,
+            isActive: bankData.isActive,
+            icon: bankData.icon,
+          },
+        });
+        console.log(`Banco criado: ${bankData.name} (${bankData.code})`);
+      } else {
+        console.log(`Banco já existe: ${bankData.name} (${bankData.code})`);
+      }
+    } catch (error) {
+      console.error(`Erro ao criar banco ${bankData.name}:`, error);
+    }
+  }
+}
+
+async function createDefaultFeatures() {
+  console.log('Criando features padrão...');
+
+  for (const feature of BASE_FEATURES) {
+    try {
+      await prisma.feature.upsert({
+        where: { key: feature.key },
+        update: {
+          name: feature.name,
+          description: feature.description,
+          category: feature.category,
+          price: feature.price,
+          isActive: feature.isActive,
+        },
+        create: feature,
+      });
+      console.log(`Feature criada/atualizada: ${feature.name}`);
+    } catch (error) {
+      console.error(`Erro ao criar feature ${feature.name}:`, error);
+    }
+  }
+}
+
+async function createDefaultLimits() {
+  console.log('Criando limits padrão...');
+
+  for (const limit of BASE_LIMITS) {
+    try {
+      await prisma.limit.upsert({
+        where: { key: limit.key },
+        update: {
+          name: limit.name,
+          description: limit.description,
+          unit: limit.unit,
+          isActive: limit.isActive,
+        },
+        create: limit,
+      });
+      console.log(`Limit criado/atualizado: ${limit.name}`);
+    } catch (error) {
+      console.error(`Erro ao criar limit ${limit.name}:`, error);
+    }
+  }
+}
+
+async function createDefaultPlans() {
+  console.log('Criando planos padrão...');
+
+  for (const [planKey, config] of Object.entries(PLAN_CONFIGURATIONS)) {
+    try {
+      // Criar ou atualizar o plano
+      const plan = await prisma.plan.upsert({
+        where: { name: config.plan.name },
+        update: {
+          description: config.plan.description,
+          basePrice: config.plan.basePrice,
+          additionalAccessPrice: config.plan.additionalAccessPrice,
+          planType: config.plan.planType,
+          isActive: config.plan.isActive,
+        },
+        create: config.plan,
+      });
+
+      // Limpar features e limits antigos
+      await prisma.planFeature.deleteMany({
+        where: { planId: plan.id },
+      });
+      await prisma.planLimit.deleteMany({
+        where: { planId: plan.id },
+      });
+
+      // Associar features ao plano
+      for (const featureKey of config.features) {
+        const feature = await prisma.feature.findUnique({
+          where: { key: featureKey },
+        });
+
+        if (feature) {
+          await prisma.planFeature.create({
+            data: {
+              planId: plan.id,
+              featureId: feature.id,
+              isActive: true,
+            },
+          });
+        }
+      }
+
+      // Associar limits ao plano
+      for (const [limitKey, value] of Object.entries(config.limits)) {
+        const limit = await prisma.limit.findUnique({
+          where: { key: limitKey },
+        });
+
+        if (limit) {
+          await prisma.planLimit.create({
+            data: {
+              planId: plan.id,
+              limitId: limit.id,
+              value: value as number,
+              isActive: true,
+            },
+          });
+        }
+      }
+
+      console.log(`Plano criado/atualizado: ${config.plan.name}`);
+    } catch (error) {
+      console.error(`Erro ao criar plano ${planKey}:`, error);
+    }
+  }
+}
+
 async function main() {
   console.log('Iniciando o processo de seeding...');
 
-  // TEMPORÁRIO: Pular o seeding das novas tabelas por enquanto
-  console.log(
-    'Pulando seeding do novo sistema por enquanto - usar migração manual',
-  );
-  // TODO: Implementar seeding manual ou ajustar SeedPlansService para PrismaClient
+  // Criar bancos padrão
+  await createDefaultBanks();
 
   // Criar unidades de medida padrão
   await createDefaultUnitsOfMeasure();
+
+  // Criar features, limits e planos
+  await createDefaultFeatures();
+  await createDefaultLimits();
+  await createDefaultPlans();
 
   // Opcional: Limpar dados existentes para garantir um seed limpo
   try {
