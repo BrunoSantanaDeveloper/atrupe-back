@@ -463,7 +463,7 @@ export class DeliveryScheduleService {
     }
 
     const supplier = await prisma.supplier.findFirst({
-      where: { id: commission.supplierId, isActive: true },
+      where: { id: commission.supplierId, status: 'ACTIVE' },
     });
 
     if (!supplier) {

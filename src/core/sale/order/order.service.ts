@@ -259,6 +259,12 @@ export class OrderService {
                   },
                 },
               },
+              contact: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
               company: {
                 select: {
                   id: true,
@@ -282,6 +288,19 @@ export class OrderService {
                 include: {
                   supplier: true,
                   deliverySchedule: true,
+                  clientAddress: {
+                    select: {
+                      id: true,
+                      street: true,
+                      number: true,
+                      complement: true,
+                      neighborhood: true,
+                      city: true,
+                      state: true,
+                      zipcode: true,
+                      type: true,
+                    },
+                  },
                 },
               },
               quotationProduct: {
@@ -293,11 +312,19 @@ export class OrderService {
                       productItemId: true,
                       name: true,
                       unitOfMeasure: true,
+                      unitKind: true,
                       salePrice: true,
                       quantity: true,
                       unitCost: true,
                       totalValue: true,
                       originalQuantity: true,
+                      weight: true,
+                      width: true,
+                      height: true,
+                      length: true,
+                      duration: true,
+                      distance: true,
+                      volume: true,
                     },
                     orderBy: {
                       createdAt: 'asc',
@@ -318,7 +345,25 @@ export class OrderService {
               payable: true,
               receivable: true,
               quotationPayment: {
-                include: {
+                select: {
+                  id: true,
+                  type: true,
+                  billing: true,
+                  discountValue: true,
+                  discountType: true,
+                  discountTotal: true,
+                  downPayment: true,
+                  downPaymentConditionId: true,
+                  downPaymentDueDate: true,
+                  downPaymentAdditionalFee: true,
+                  installmentQty: true,
+                  minInstallmentQty: true,
+                  maxInstallmentQty: true,
+                  mainAdditionalFee: true,
+                  additionalFeeType: true,
+                  totalValue: true,
+                  finalValue: true,
+                  description: true,
                   commission: {
                     include: {
                       supplier: {
@@ -329,8 +374,18 @@ export class OrderService {
                       },
                     },
                   },
-                  paymentMethod: true,
-                  paymentCondition: true,
+                  paymentMethod: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
+                  paymentCondition: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
                   quotationInstallment: {
                     include: {
                       paymentMethod: true,
@@ -364,6 +419,7 @@ export class OrderService {
         status: quotation.status,
         dueDate: quotation.dueDate,
         totalValue: quotation.totalValue,
+        contactType: quotation.contactType,
         quickSale: quotation.quickSale || false,
         serie: quotation.series
           ? {
@@ -377,6 +433,12 @@ export class OrderService {
           ? {
               id: quotation.seller.id,
               name: quotation.seller.name ?? quotation.seller.user.name,
+            }
+          : null,
+        contact: quotation.contact
+          ? {
+              id: quotation.contact.id,
+              name: quotation.contact.name,
             }
           : null,
         company: quotation.company
@@ -396,6 +458,22 @@ export class OrderService {
               cost: quotation.deliveryInfo.cost,
               value: quotation.deliveryInfo.value,
               notes: quotation.deliveryInfo.notes,
+              modality: quotation.deliveryInfo.modality,
+              clientAddressId: quotation.deliveryInfo.clientAddressId,
+              clientAddress: quotation.deliveryInfo.clientAddress
+                ? {
+                    id: quotation.deliveryInfo.clientAddress.id,
+                    street: quotation.deliveryInfo.clientAddress.street,
+                    number: quotation.deliveryInfo.clientAddress.number,
+                    complement: quotation.deliveryInfo.clientAddress.complement,
+                    neighborhood:
+                      quotation.deliveryInfo.clientAddress.neighborhood,
+                    city: quotation.deliveryInfo.clientAddress.city,
+                    state: quotation.deliveryInfo.clientAddress.state,
+                    zipcode: quotation.deliveryInfo.clientAddress.zipcode,
+                    type: quotation.deliveryInfo.clientAddress.type,
+                  }
+                : null,
               supplier: quotation.deliveryInfo.supplier
                 ? {
                     id: quotation.deliveryInfo.supplier.id,
@@ -426,11 +504,14 @@ export class OrderService {
         quotationItems: quotation.quotationProduct.map((qp) => ({
           id: qp.id,
           description: qp.description,
+          allowEditDescription: qp.allowEditDescription,
+          allowEditValues: qp.allowEditValues,
+          technicalDescription: qp.technicalDescription,
           notes: qp.notes,
           discountType: qp.discountType,
           discount: qp.discount,
           unitValue: qp.items.reduce(
-            (total, item) => total + item.totalValue * item.originalQuantity,
+            (total, item) => total + (item.unitCost || 0),
             0,
           ),
           totalValue: qp.items.reduce(
@@ -438,10 +519,13 @@ export class OrderService {
             0,
           ),
           finalValue: qp.finalValue,
-          image: {
-            url: qp.imageUrl,
-            original: true, // Marcar como original ou não
-          },
+          image: (() => {
+            if (qp.imageUrl) {
+              return { url: qp.imageUrl, original: false };
+            } else {
+              return { url: qp.product.imageUrl, original: true };
+            }
+          })(),
           product: {
             originalProductId: qp.productId,
             name: qp.product.name,
@@ -461,11 +545,94 @@ export class OrderService {
               name: item.name,
               unitOfMeasure: item.unitOfMeasure,
               quantity: item.quantity,
-              unitValue: item.salePrice,
+              originalQuantity: item.originalQuantity,
+              unitValue: item.unitCost || 0,
               totalValue: item.totalValue,
+              weight: item.weight,
+              width: item.width,
+              height: item.height,
+              duration: item.duration,
+              length: item.length,
+              distance: item.distance,
+              volume: item.volume,
             })),
           },
         })),
+        paymentConditions: quotation.quotationPayment
+          ? {
+              id: quotation.quotationPayment.id,
+              type: quotation.quotationPayment.type,
+              billing: quotation.quotationPayment.billing,
+              discount: {
+                discountValue: quotation.quotationPayment.discountValue || 0,
+                discountType:
+                  quotation.quotationPayment.discountType || 'VALUE',
+                discountTotal: quotation.quotationPayment.discountTotal || 0,
+              },
+              installmentQty: quotation.quotationPayment.installmentQty,
+              minInstallmentQty: quotation.quotationPayment.minInstallmentQty,
+              maxInstallmentQty: quotation.quotationPayment.maxInstallmentQty,
+              mainAdditionalFee: quotation.quotationPayment.mainAdditionalFee,
+              additionalFeeType: quotation.quotationPayment.additionalFeeType,
+              hasDownPayment: quotation.quotationPayment.downPayment > 0,
+              downPayment:
+                quotation.quotationPayment.downPayment > 0
+                  ? {
+                      amount: quotation.quotationPayment.downPayment,
+                      dueDate: quotation.quotationPayment.downPaymentDueDate,
+                      additionalFee:
+                        quotation.quotationPayment.downPaymentAdditionalFee,
+                      paymentConditionId:
+                        quotation.quotationPayment.downPaymentConditionId,
+                    }
+                  : null,
+              paymentMethod: quotation.quotationPayment.paymentMethod
+                ? {
+                    id: quotation.quotationPayment.paymentMethod.id,
+                    name: quotation.quotationPayment.paymentMethod.name,
+                  }
+                : null,
+              paymentCondition: quotation.quotationPayment.paymentCondition
+                ? {
+                    id: quotation.quotationPayment.paymentCondition.id,
+                    name: quotation.quotationPayment.paymentCondition.name,
+                  }
+                : null,
+              totalValue: quotation.quotationPayment.totalValue,
+              finalValue: quotation.quotationPayment.finalValue,
+              description: quotation.quotationPayment.description,
+              commission: quotation.quotationPayment.commission
+                ? {
+                    type: quotation.quotationPayment.commission.type,
+                    supplier: {
+                      id: quotation.quotationPayment.commission.supplier.id,
+                      name: quotation.quotationPayment.commission.supplier.name,
+                    },
+                    transferMethod:
+                      quotation.quotationPayment.commission.transferMethod,
+                    commissionValue:
+                      quotation.quotationPayment.commission.commissionValue,
+                    commissionType:
+                      quotation.quotationPayment.commission.commissionType,
+                    totalCommission:
+                      quotation.quotationPayment.commission.totalCommission,
+                  }
+                : null,
+              installments:
+                quotation.quotationPayment.quotationInstallment.length > 0
+                  ? quotation.quotationPayment.quotationInstallment.map(
+                      (installment, index) => ({
+                        id: installment.id,
+                        installmentNumber: index + 1,
+                        dueDate: installment.dueDate,
+                        paymentMethodId: installment.paymentMethodId,
+                        additionalFee: installment.additionalFee,
+                        amount: installment.value,
+                      }),
+                    )
+                  : null,
+            }
+          : null,
         financial: {
           status:
             quotation.receivable.length > 0 ? 'BILLED' : 'BILLING_PENDING',

@@ -1414,12 +1414,19 @@ export class QuotationService {
             throw new Error('Informações de entrega ausentes na cotação.');
           }
 
-          // Criar o pedido diretamente no Prisma
-          const order = await prisma.order.create({
-            data: {
-              quotationId: quotation.id,
-            },
+          // Verificar se já existe um pedido para esta cotação
+          let order = await prisma.order.findUnique({
+            where: { quotationId: quotation.id },
           });
+
+          // Se não existir, criar o pedido
+          if (!order) {
+            order = await prisma.order.create({
+              data: {
+                quotationId: quotation.id,
+              },
+            });
+          }
           const deliveryStatus = isTrial ? 'DELIVERING' : 'IN_PRODUCTION';
           // Criar o agendamento de entrega diretamente no Prisma
           await prisma.deliverySchedule.create({

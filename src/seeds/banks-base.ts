@@ -1,6 +1,8 @@
+import { v4 as uuidv4 } from 'uuid';
+
 export const BASE_BANKS = [
   {
-    id: '00000000-0000-0000-0000-000000000001',
+    id: uuidv4(),
     name: 'Caixa Empresa',
     code: '000',
     details: {},
@@ -8,7 +10,7 @@ export const BASE_BANKS = [
     icon: null,
   },
   {
-    id: '00000000-0000-0000-0000-000000000002',
+    id: uuidv4(),
     name: 'Banco do Brasil',
     code: '001',
     details: {},
@@ -16,7 +18,7 @@ export const BASE_BANKS = [
     icon: null,
   },
   {
-    id: '00000000-0000-0000-0000-000000000003',
+    id: uuidv4(),
     name: 'Caixa Econômica Federal',
     code: '104',
     details: {},
@@ -24,7 +26,7 @@ export const BASE_BANKS = [
     icon: null,
   },
   {
-    id: '00000000-0000-0000-0000-000000000004',
+    id: uuidv4(),
     name: 'Bradesco',
     code: '237',
     details: {},
@@ -32,7 +34,7 @@ export const BASE_BANKS = [
     icon: null,
   },
   {
-    id: '00000000-0000-0000-0000-000000000005',
+    id: uuidv4(),
     name: 'Itaú',
     code: '341',
     details: {},
@@ -40,7 +42,7 @@ export const BASE_BANKS = [
     icon: null,
   },
   {
-    id: '00000000-0000-0000-0000-000000000006',
+    id: uuidv4(),
     name: 'Santander',
     code: '033',
     details: {},
