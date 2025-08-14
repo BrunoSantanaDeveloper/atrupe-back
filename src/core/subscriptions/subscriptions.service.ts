@@ -211,7 +211,8 @@ export class SubscriptionsService {
     const newValue =
       newPlan.basePrice +
       featuresValue +
-      newPlan.additionalAccessPrice * (currentSubscription.additionalAccesses || 0);
+      newPlan.additionalAccessPrice *
+        (currentSubscription.additionalAccesses || 0);
 
     // Cancelar subscription atual no Asaas (se necessário)
     try {
@@ -369,7 +370,8 @@ export class SubscriptionsService {
     const newValue =
       subscription.plan.basePrice +
       modulesValue +
-      subscription.plan.additionalAccessPrice * (subscription.additionalAccesses || 0);
+      subscription.plan.additionalAccessPrice *
+        (subscription.additionalAccesses || 0);
 
     // Atualizar subscription no Asaas
     try {

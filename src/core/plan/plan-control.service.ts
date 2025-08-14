@@ -34,7 +34,7 @@ export class PlanControlService {
   private async getLimitInfo(limitKey: string) {
     return this.prisma.limit.findUnique({
       where: { key: limitKey },
-      select: { name: true, description: true, unit: true }
+      select: { name: true, description: true, unit: true },
     });
   }
 
@@ -156,7 +156,7 @@ export class PlanControlService {
 
     // Sistema dinâmico - buscar limite pelo key
     const limit = planInfo.limits[limitKey];
-    
+
     // Se limite não existe, permitir
     if (limit === undefined) {
       return true;

@@ -21,7 +21,6 @@ const RESOURCE = 'plan';
 export class PlanController {
   constructor(private readonly planService: PlanService) {}
 
-
   // Plan endpoints
   @Post()
   @ApiOperation({ summary: 'Cria um novo plano' })

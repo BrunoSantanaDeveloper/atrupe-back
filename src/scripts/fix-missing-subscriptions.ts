@@ -10,7 +10,7 @@ async function fixMissingSubscriptions() {
     // 1. Verificar quantas subscriptions existem
     const totalSubs = await prisma.subscription.count();
     const activeSubs = await prisma.subscription.count({
-      where: { status: 'ACTIVE' }
+      where: { status: 'ACTIVE' },
     });
 
     console.log(`📊 Total subscriptions: ${totalSubs}`);
@@ -18,11 +18,14 @@ async function fixMissingSubscriptions() {
 
     // 2. Verificar se existem planos
     const plans = await prisma.plan.findMany({
-      select: { id: true, name: true, planType: true }
+      select: { id: true, name: true, planType: true },
     });
     console.log(`📋 Planos disponíveis: ${plans.length}`);
     if (plans.length > 0) {
-      console.log('Planos:', plans.map(p => `${p.name} (${p.planType})`).join(', '));
+      console.log(
+        'Planos:',
+        plans.map((p) => `${p.name} (${p.planType})`).join(', '),
+      );
     }
 
     // 3. Verificar a empresa específica
@@ -32,8 +35,8 @@ async function fixMissingSubscriptions() {
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       include: {
-        Subscription: true
-      }
+        Subscription: true,
+      },
     });
 
     if (!company) {
@@ -41,7 +44,9 @@ async function fixMissingSubscriptions() {
       return;
     }
 
-    console.log(`✅ Empresa encontrada: ${(company as any).companyName || 'Sem nome'}`);
+    console.log(
+      `✅ Empresa encontrada: ${(company as any).companyName || 'Sem nome'}`,
+    );
     console.log(`📅 Trial termina em: ${company.trialEndsAt || 'Sem trial'}`);
     console.log(`🔒 Subscriptions da empresa: ${company.Subscription.length}`);
 
@@ -49,7 +54,7 @@ async function fixMissingSubscriptions() {
       console.log('🚨 Empresa sem subscription! Criando subscription TRIAL...');
 
       // Buscar plano TRIAL
-      const trialPlan = plans.find(p => p.planType === 'TRIAL');
+      const trialPlan = plans.find((p) => p.planType === 'TRIAL');
       if (!trialPlan) {
         console.log('❌ Plano TRIAL não encontrado!');
         return;
@@ -67,8 +72,8 @@ async function fixMissingSubscriptions() {
           city: 'São Paulo',
           state: 'SP',
           postalCode: '01000-000',
-          addressNumber: '123'
-        }
+          addressNumber: '123',
+        },
       });
 
       // Criar subscription TRIAL
@@ -88,24 +93,25 @@ async function fixMissingSubscriptions() {
           value: 0, // Trial gratuito
           status: 'ACTIVE',
           billingType: 'CREDIT_CARD',
-          cycle: 'MONTHLY'
-        }
+          cycle: 'MONTHLY',
+        },
       });
 
       console.log(`✅ Subscription TRIAL criada: ${subscription.id}`);
     } else {
       console.log('📋 Subscriptions existentes:');
       company.Subscription.forEach((sub, i) => {
-        console.log(`  ${i + 1}. Status: ${sub.status}, Plan: ${sub.planId}, Valor: R$ ${sub.value/100}`);
+        console.log(
+          `  ${i + 1}. Status: ${sub.status}, Plan: ${sub.planId}, Valor: R$ ${sub.value / 100}`,
+        );
       });
     }
 
     console.log('\n🎯 Testando PlanControlService...');
-    
+
     // Importar e testar o serviço (simulação)
     console.log('📝 Para testar, use:');
     console.log(`await planControlService.getCompanyPlanInfo('${companyId}');`);
-
   } catch (error) {
     console.error('❌ Erro:', error);
   } finally {

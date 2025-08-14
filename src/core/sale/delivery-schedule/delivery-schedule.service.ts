@@ -456,32 +456,19 @@ export class DeliveryScheduleService {
       return false;
     }
 
-    // Validar fornecedor ativo
+    // Validar fornecedor
     if (!commission.supplierId) {
       console.log('Commission validation failed: no supplierId');
       return false;
     }
 
+    // Verificar se fornecedor existe
     const supplier = await prisma.supplier.findFirst({
-      where: { id: commission.supplierId, status: 'ACTIVE' },
+      where: { id: commission.supplierId },
     });
 
     if (!supplier) {
-      console.log(
-        'Commission validation failed: supplier not found or inactive',
-      );
-      return false;
-    }
-
-    // Validar tipo de comissão
-    if (!['ADDITION', 'SUBTRACTION'].includes(commission.type)) {
-      console.log('Commission validation failed: invalid commission type');
-      return false;
-    }
-
-    // Validar método de transferência
-    if (!['SINGLE', 'PAYMENT_BASED'].includes(commission.transferMethod)) {
-      console.log('Commission validation failed: invalid transferMethod');
+      console.log('Commission validation failed: supplier not found');
       return false;
     }
 
