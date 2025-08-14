@@ -221,7 +221,7 @@ export class PreRegisterClientDto {
   @ApiProperty({
     description: 'CPF (apenas para pessoa física)',
     required: false,
-    example: '123.456.789-00',
+    example: '012.345.678-90',
   })
   @IsOptional()
   @IsString()

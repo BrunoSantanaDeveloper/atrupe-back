@@ -18,7 +18,7 @@ export class CreateCustomerDto {
 
   @ApiProperty({
     description: 'Documento do cliente (CPF/CNPJ)',
-    example: '123.456.789-00',
+    example: '012.345.678-90',
   })
   @IsString()
   document: string;

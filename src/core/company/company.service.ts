@@ -394,6 +394,18 @@ export class CompanyService {
       },
     },
     {
+      name: 'client-categories',
+      logMessage: 'Creating Client categories...',
+      createMethod: (companyId: string) =>
+        this.createDefaultClientCategories(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.category.findMany({
+          where: { companyId, kind: { in: ['CLIENT', 'SUPPLIER'] } },
+        });
+        return existing.length > 0;
+      },
+    },
+    {
       name: 'client-supplier',
       logMessage: 'Creating Client and supplier...',
       createMethod: (companyId: string) =>
@@ -406,18 +418,6 @@ export class CompanyService {
           where: { companyId },
         });
         return clients.length > 0 && suppliers.length > 0;
-      },
-    },
-    {
-      name: 'client-categories',
-      logMessage: 'Creating Client categories...',
-      createMethod: (companyId: string) =>
-        this.createDefaultClientCategories(companyId),
-      checkMethod: async (companyId: string) => {
-        const existing = await this.prisma.category.findMany({
-          where: { companyId, kind: { in: ['CLIENT', 'SUPPLIER'] } },
-        });
-        return existing.length > 0;
       },
     },
     {
@@ -1524,6 +1524,22 @@ export class CompanyService {
   }
 
   private async createDefaultClientAndSupplier(companyId: string) {
+    // Buscar a primeira categoria de cliente
+    const clientCategory = await this.prisma.category.findFirst({
+      where: {
+        companyId: companyId,
+        kind: 'CLIENT',
+      },
+    });
+
+    // Buscar a primeira categoria de fornecedor
+    const supplierCategory = await this.prisma.category.findFirst({
+      where: {
+        companyId: companyId,
+        kind: 'SUPPLIER',
+      },
+    });
+
     // Criar cliente padrão
     this.logger.log('Creating default client...');
     await this.prisma.client.create({
@@ -1534,9 +1550,9 @@ export class CompanyService {
         email: 'cliente.exemplo@email.com',
         phone: '(11) 3333-4444',
         mobile: '(11) 98888-7777',
-        cpf: '123.456.789-00',
+        cpf: '012.345.678-90',
         rg: '12.345.678-9',
-        category: 'Cliente Padrão',
+        categoryId: clientCategory?.id || '',
         notes:
           'Este é um cliente de exemplo criado automaticamente para demonstração. Você pode editá-lo ou excluí-lo conforme necessário.',
         companyId: companyId,
@@ -1560,7 +1576,7 @@ export class CompanyService {
         mobile: '(11) 97777-6666',
         cnpj: '12.345.678/0001-90',
         activity: 'Comércio e Serviços',
-        category: 'Fornecedor Padrão',
+        categoryId: supplierCategory?.id || '',
         notes:
           'Este é um fornecedor de exemplo criado automaticamente para demonstração. Você pode editá-lo ou excluí-lo conforme necessário.',
         companyId: companyId,

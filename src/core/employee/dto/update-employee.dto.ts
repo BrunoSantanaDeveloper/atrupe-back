@@ -94,7 +94,7 @@ export class UpdateEmployeeDto {
 
   @ApiPropertyOptional({
     description: 'CPF do funcionário',
-    example: '123.456.789-00',
+    example: '012.345.678-90',
   })
   @IsString()
   @IsOptional()
