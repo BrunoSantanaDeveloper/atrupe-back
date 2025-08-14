@@ -1085,18 +1085,7 @@ export class QuotationService {
                     commissionType:
                       quotation.quotationPayment.commission.commissionType,
                     totalCommission:
-                      quotation.quotationPayment.commission.commissionType ===
-                      'VALUE'
-                        ? quotation.quotationPayment.commission.totalCommission
-                        : (quotation.quotationPayment.discountType === 'VALUE'
-                            ? quotation.totalValue -
-                              quotation.quotationPayment.discountValue
-                            : quotation.totalValue *
-                              (quotation.quotationPayment.discountValue /
-                                100)) *
-                          (quotation.quotationPayment.commission
-                            .commissionValue /
-                            100),
+                      quotation.quotationPayment.commission.totalCommission,
                   }
                 : null,
               installments:
