@@ -376,9 +376,9 @@ export class ReceivableService {
         throw new BadRequestException('Natureza não encontrada ou inativa.');
       }
 
-      // CORREÇÃO: Validar tipo da natureza de forma mais rigorosa
-      const expectedType = difference < 0 ? 'payable' : 'receivable';
-      const expectedLevel1 = difference < 0 ? '02' : '01'; // negativo = payable, positivo = receivable
+      // CORREÇÃO: Para RECEIVABLES - diferença positiva = receita adicional, diferença negativa = despesa (desconto)
+      const expectedType = difference > 0 ? 'receivable' : 'payable';
+      const expectedLevel1 = difference > 0 ? '01' : '02'; // positivo = receivable (receita), negativo = payable (despesa)
 
       if (nature.level1 !== expectedLevel1) {
         throw new BadRequestException(
