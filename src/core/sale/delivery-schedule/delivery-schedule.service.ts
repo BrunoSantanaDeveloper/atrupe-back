@@ -136,7 +136,7 @@ export class DeliveryScheduleService {
       const deliveriesWithFinancial = await Promise.all(
         deliveries.map(async (delivery) => {
           let getData = null;
-          if (delivery.order.quotation.receivable[0]) {
+          if (delivery.order?.quotation?.receivable?.[0]) {
             getData = await this.getFinancialDataById(
               delivery.order.quotation.receivable[0].id,
             );
@@ -171,7 +171,7 @@ export class DeliveryScheduleService {
             pendingDescription: delivery.pendingDescription,
 
             financial: {
-              billed: delivery.order.quotation
+              billed: delivery.order?.quotation
                 ? delivery.order.quotation.receivable.length > 0
                 : false,
               data: getData,
