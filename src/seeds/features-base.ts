@@ -213,4 +213,12 @@ export const BASE_FEATURES = [
     price: 0,
     isActive: true,
   },
+  {
+    key: 'payment_difference',
+    name: 'Diferença de Pagamento',
+    description: 'Controle e gestão de diferenças em pagamentos',
+    category: 'financial',
+    price: 0,
+    isActive: true,
+  },
 ];

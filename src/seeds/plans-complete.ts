@@ -73,6 +73,7 @@ export const PLAN_CONFIGURATIONS = {
       'supplier_additional_tabs',
       'bank_account_delete',
       'bank_account_provision',
+      'payment_difference',
     ],
     limits: {
       max_users: 5,
@@ -119,6 +120,7 @@ export const PLAN_CONFIGURATIONS = {
       'supplier_additional_tabs',
       'bank_account_delete',
       'bank_account_provision',
+      'payment_difference',
     ],
     limits: {
       max_users: 10,
@@ -165,6 +167,7 @@ export const PLAN_CONFIGURATIONS = {
       'supplier_additional_tabs',
       'bank_account_delete',
       'bank_account_provision',
+      'payment_difference',
     ],
     limits: {
       max_users: 20,
@@ -211,6 +214,7 @@ export const PLAN_CONFIGURATIONS = {
       'supplier_additional_tabs',
       'bank_account_delete',
       'bank_account_provision',
+      'payment_difference',
     ],
     limits: {
       max_users: -1, // ilimitado
