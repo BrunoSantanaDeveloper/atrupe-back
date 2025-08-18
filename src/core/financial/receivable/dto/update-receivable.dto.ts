@@ -156,3 +156,21 @@ export class PayInstallmentDto {
   @IsOptional()
   differenceCategoryId?: string;
 }
+
+export class UndoCancelReceivableDto {
+  @IsOptional()
+  @ApiProperty({
+    description: 'Notas sobre o desfazer cancelamento',
+    example: 'Cancelamento foi feito por engano.',
+  })
+  @IsString()
+  undoCancelNotes?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Razão para desfazer o cancelamento',
+    example: 'Erro operacional.',
+  })
+  @IsString()
+  undoCancelReason?: string;
+}

@@ -408,10 +408,10 @@ export class NatureService {
         id: true,
         code: true,
         description: true,
+        level1: true,
+        level2: true,
       },
-      orderBy: {
-        code: 'asc',
-      },
+      orderBy: [{ level1: 'asc' }, { level2: 'asc' }, { code: 'asc' }],
     });
     console.log('natures: ', natures);
     return natures;
@@ -427,10 +427,10 @@ export class NatureService {
         id: true,
         code: true,
         description: true,
+        level1: true,
+        level2: true,
       },
-      orderBy: {
-        code: 'asc',
-      },
+      orderBy: [{ level1: 'asc' }, { level2: 'asc' }, { code: 'asc' }],
     });
   }
 

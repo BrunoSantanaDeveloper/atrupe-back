@@ -13,6 +13,7 @@ import {
   CancelReceivableDto,
   PayInstallmentDto,
   UpdateReceivableDto,
+  UndoCancelReceivableDto,
 } from './dto/update-receivable.dto';
 import { ReceivableFilterDto } from './dto/receivable-filter.dto';
 import { PaymentStatus, TransactionType } from '@prisma/client';
@@ -325,6 +326,56 @@ export class ReceivableService {
       return { message: 'Conta a receber cancelada com sucesso.' };
     } catch (error) {
       console.error('Error canceling receivable:', error);
+    }
+  }
+
+  async undoCancel(id: string, dto: UndoCancelReceivableDto) {
+    try {
+      const receivable = await this.findOne(id);
+
+      // Verifica se o título está cancelado
+      if (receivable.status !== 'CANCELED') {
+        throw new BadRequestException('A conta a receber não está cancelada.');
+      }
+
+      // Verifica se o título está vinculado a uma venda/cotação
+      if (receivable.quotationId) {
+        throw new BadRequestException(
+          'Não é possível desfazer o cancelamento de títulos vinculados a vendas/cotações.',
+        );
+      }
+
+      // Atualiza o status de todas as parcelas com status "CANCELED" para "PENDING"
+      const updates = receivable.installments
+        .filter((installment) => installment.status === 'CANCELED')
+        .map((installment) =>
+          this.prisma.receivableInstallment.update({
+            where: { id: installment.id },
+            data: { status: 'PENDING' },
+          }),
+        );
+
+      // Realiza a transação
+      await this.prisma.$transaction([
+        ...updates,
+        this.prisma.receivable.update({
+          where: { id },
+          data: {
+            status: 'PENDING',
+            changeNotes: dto.undoCancelNotes,
+            changeReason: dto.undoCancelReason,
+            cancelReason: null,
+            cancelNotes: null,
+          },
+        }),
+      ]);
+
+      return {
+        message: 'Cancelamento da conta a receber desfeito com sucesso.',
+      };
+    } catch (error) {
+      console.error('Error undoing cancel receivable:', error);
+      throw error;
     }
   }
 

@@ -11,6 +11,7 @@ import {
   CancelPayableDto,
   PayInstallmentDto,
   UpdatePayableDto,
+  UndoCancelPayableDto,
 } from './dto/update-payable.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { PaymentStatus, TransactionType } from '@prisma/client';
@@ -324,6 +325,49 @@ export class PayableService {
       },
     });
     return { message: 'Conta a pagar cancelada com sucesso.' };
+  }
+
+  async undoCancel(id: string, dto: UndoCancelPayableDto) {
+    const payable = await this.findOne(id);
+
+    // Verifica se o título está cancelado
+    if (payable.status !== 'CANCELED') {
+      throw new BadRequestException('A conta a pagar não está cancelada.');
+    }
+
+    // Verifica se o título está vinculado a uma venda/cotação
+    if (payable.quotationId) {
+      throw new BadRequestException(
+        'Não é possível desfazer o cancelamento de títulos vinculados a vendas/cotações.',
+      );
+    }
+
+    // Atualiza o status de todas as parcelas com status "CANCELED" para "PENDING"
+    const updates = payable.installments
+      .filter((installment) => installment.status === 'CANCELED')
+      .map((installment) =>
+        this.prisma.payableInstallment.update({
+          where: { id: installment.id },
+          data: { status: 'PENDING' },
+        }),
+      );
+
+    // Realiza a transação
+    await this.prisma.$transaction([
+      ...updates,
+      this.prisma.payable.update({
+        where: { id },
+        data: {
+          status: 'PENDING',
+          changeNotes: dto.undoCancelNotes,
+          changeReason: dto.undoCancelReason,
+          cancelReason: null,
+          cancelNotes: null,
+        },
+      }),
+    ]);
+
+    return { message: 'Cancelamento da conta a pagar desfeito com sucesso.' };
   }
 
   async remove(id: string) {

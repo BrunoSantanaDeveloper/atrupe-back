@@ -20,6 +20,7 @@ import {
   CancelReceivableDto,
   PayInstallmentDto,
   UpdateReceivableDto,
+  UndoCancelReceivableDto,
 } from './dto/update-receivable.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import {
@@ -159,6 +160,30 @@ export class ReceivableController {
     @Body() cancelReceivableDto: CancelReceivableDto,
   ) {
     return await this.receivableService.cancel(id, cancelReceivableDto);
+  }
+
+  @Post(':id/undo-cancel')
+  @ApiOperation({
+    summary: 'Desfaz o cancelamento de uma conta a receber',
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    description: 'ID da conta a receber',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Cancelamento da conta a receber desfeito com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Erro: conta não está cancelada ou possui parcelas pagas.',
+  })
+  async undoCancel(
+    @Param('id') id: string,
+    @Body() undoCancelReceivableDto: UndoCancelReceivableDto,
+  ) {
+    return await this.receivableService.undoCancel(id, undoCancelReceivableDto);
   }
 
   @Patch('pay-installment/:installmentId')

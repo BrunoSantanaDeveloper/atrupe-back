@@ -29,6 +29,7 @@ import {
   UpdatePayableDto,
   CancelPayableDto,
   PayInstallmentDto,
+  UndoCancelPayableDto,
 } from './dto/update-payable.dto';
 import { ReceivableFilterDto } from '../receivable/dto/receivable-filter.dto';
 import { CompensateDto } from '../receivable/dto/create-receivable.dto';
@@ -160,6 +161,30 @@ export class PayableController {
     @Body() cancelPayableDto: CancelPayableDto,
   ) {
     return await this.payableService.cancel(id, cancelPayableDto);
+  }
+
+  @Post(':id/undo-cancel')
+  @ApiOperation({
+    summary: 'Desfaz o cancelamento de uma conta a pagar',
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    description: 'ID da conta a pagar',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Cancelamento da conta a pagar desfeito com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Erro: conta não está cancelada ou possui parcelas pagas.',
+  })
+  async undoCancel(
+    @Param('id') id: string,
+    @Body() undoCancelPayableDto: UndoCancelPayableDto,
+  ) {
+    return await this.payableService.undoCancel(id, undoCancelPayableDto);
   }
 
   @Patch('pay-installment/:installmentId')
