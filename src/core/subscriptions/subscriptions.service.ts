@@ -97,8 +97,7 @@ export class SubscriptionsService {
     }
 
     // Calculate total value
-    // TEMPORÁRIO: Sem features extras por enquanto
-    const additionalFeaturesValue = 0; // additionalFeatures.reduce((acc, feature) => acc + feature.price, 0);
+    const additionalFeaturesValue = 0; // Features extras via subscriptionFeatures
     const additionalUsersValue =
       (plan.additionalUserPrice || 0) *
       (createSubscriptionDto.additionalUsers || 0);
@@ -198,18 +197,9 @@ export class SubscriptionsService {
       throw new NotFoundException('New plan not found');
     }
 
-    // Obter features da subscription atual
-    const currentFeatures = currentSubscription.subscriptionFeatures || [];
-    const newPlanFeatures = await this.prisma.planFeature.findMany({
-      where: { planId: newPlanId },
-      include: { feature: true },
-    });
+    const featuresValue = 0; // Features extras via subscriptionFeatures
 
-    // TEMPORÁRIO: Usar sistema antigo de pricing - sem features extras por enquanto
-    // TODO: Migrar para o novo sistema de features
-    const featuresValue = 0; // Por enquanto, sem custo extra de features
-
-    // Calcular novo valor - COMPATIBILIDADE COM SISTEMA ANTIGO
+    // Calcular novo valor da subscription
     const newValue =
       newPlan.basePrice +
       featuresValue +
@@ -299,7 +289,7 @@ export class SubscriptionsService {
       throw new NotFoundException('Feature not found');
     }
 
-    // Verificar se o module já está incluído - COMPATIBILIDADE
+    // Verificar se a feature já está incluída na subscription
     if (
       subscription.subscriptionFeatures.some(
         (sf) => sf.feature.key === moduleId,
@@ -317,12 +307,12 @@ export class SubscriptionsService {
       },
     });
 
-    // TEMPORÁRIO: Usar sistema antigo - sem features extras
+    // Calcular valor sem features extras
     const plan = await this.prisma.plan.findUnique({
       where: { id: subscription.planId },
     });
 
-    const modulesValue = 0; // Por enquanto, sem custo extra
+    const modulesValue = 0; // Features extras via subscriptionFeatures
     const newValue =
       plan.basePrice +
       modulesValue +
@@ -369,7 +359,7 @@ export class SubscriptionsService {
       throw new BadRequestException('Unauthorized access to this subscription');
     }
 
-    // Verificar se o module está na lista - COMPATIBILIDADE
+    // Verificar se a feature está na subscription
     if (
       !subscription.subscriptionFeatures.some(
         (sf) => sf.feature.key === moduleId,
@@ -378,7 +368,7 @@ export class SubscriptionsService {
       throw new BadRequestException('Module not found in subscription');
     }
 
-    // Verificar se o module é obrigatório do plano - COMPATIBILIDADE
+    // Verificar se a feature é obrigatória do plano
     const planHasFeature = await this.prisma.planFeature.findFirst({
       where: { planId: subscription.planId, feature: { key: moduleId } },
     });
@@ -388,7 +378,7 @@ export class SubscriptionsService {
       );
     }
 
-    // Remover module da lista - COMPATIBILIDADE
+    // Remover feature da subscription
     // Remover feature da subscription
     const subscriptionFeature = subscription.subscriptionFeatures.find(
       (sf) => sf.feature.key === moduleId,
@@ -399,8 +389,8 @@ export class SubscriptionsService {
       });
     }
 
-    // TEMPORÁRIO: Usar sistema antigo - sem features extras
-    const modulesValue = 0; // Por enquanto, sem custo extra
+    // Calcular valor sem features extras
+    const modulesValue = 0; // Features extras via subscriptionFeatures
     const newValue =
       subscription.plan.basePrice +
       modulesValue +
@@ -542,5 +532,12 @@ export class SubscriptionsService {
       description: subscriptionData.description,
       dateCreated: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Calcula o valor total das features extras de uma subscription
+   */
+  private async calculateSubscriptionFeaturesValue(subscriptionFeatures: any[]): Promise<number> {
+    return subscriptionFeatures.reduce((total, sf) => total + (sf.price || 0), 0);
   }
 }

@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { CreatePlanDTO, UpdatePlanDTO, SubscriptionDTO } from './dtos/plan';
 import { PrismaService } from 'nestjs-prisma';
-import { BASE_PLANS } from '../../seeds/plans-base';
+import { PLAN_CONFIGURATIONS } from '../../seeds/plans-complete';
 import { asaasConfig } from 'src/config/configuration';
 
 @Injectable()
@@ -108,8 +108,8 @@ export class PlanService {
   }
 
   async createDefaultPlans(companyId?: string) {
-    const defaultPlans = BASE_PLANS.map((plan) => ({
-      ...plan,
+    const defaultPlans = Object.values(PLAN_CONFIGURATIONS).map((config) => ({
+      ...config.plan,
       companyId,
     }));
 

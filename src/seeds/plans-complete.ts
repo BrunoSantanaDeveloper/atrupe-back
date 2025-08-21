@@ -228,6 +228,3 @@ export const PLAN_CONFIGURATIONS = {
 export const BASE_PLANS = Object.values(PLAN_CONFIGURATIONS).map(
   (config) => config.plan,
 );
-
-// Para não precisar mais do BASE_MODULES
-export const BASE_MODULES = []; // deprecated
