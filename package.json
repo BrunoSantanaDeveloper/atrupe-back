@@ -22,7 +22,7 @@
     "studio": "prisma studio",
     "seed": "prisma db seed",
     "migrate": "prisma migrate dev",
-    "deploy:aws": "./deploy-aws.sh"
+    "deploy:aws": "./scripts/deploy-aws.sh"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",

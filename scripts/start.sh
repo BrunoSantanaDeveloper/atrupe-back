@@ -33,5 +33,11 @@ if ! npx prisma generate; then
 fi
 success "Prisma Client gerado com sucesso"
 
+log "Executando seed do banco..."
+if ! npm run seed; then
+    error "Falha ao executar seed. Verifique os dados padrão."
+fi
+success "Seed executado com sucesso"
+
 log "Iniciando servidor..."
 exec npm run start:prod
