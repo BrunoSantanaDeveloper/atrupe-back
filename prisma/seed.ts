@@ -125,7 +125,7 @@ async function createDefaultPlans() {
         update: {
           description: config.plan.description,
           basePrice: config.plan.basePrice,
-          additionalAccessPrice: config.plan.additionalAccessPrice,
+          additionalUserPrice: config.plan.additionalUserPrice,
           planType: config.plan.planType,
           isActive: config.plan.isActive,
         },

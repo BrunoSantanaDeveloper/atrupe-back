@@ -221,7 +221,7 @@ export class UserService {
               companyId: company.id,
               additionalUsers: 0,
               asaasSubscriptionId: `trial_sub_${user.id}`,
-              modules: trialPlan.modules, // COMPATIBILIDADE: usar campo antigo
+              // modules campo removido - usar subscriptionFeatures
               nextDueDate: trialEndDate,
               cycle: 'MONTHLY',
               billingType: 'CREDIT_CARD',

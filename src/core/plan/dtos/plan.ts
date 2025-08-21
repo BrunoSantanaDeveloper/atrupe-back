@@ -36,19 +36,13 @@ export class CreatePlanDTO {
 
   @IsNumber()
   @ApiProperty({
-    description: 'Preço adicional por acesso',
+    description: 'Preço adicional por usuário',
     example: 15.0,
     required: true,
   })
-  additionalAccessPrice: number;
+  additionalUserPrice: number;
 
-  @IsString({ each: true })
-  @ApiProperty({
-    description: 'Lista de módulos incluídos no plano',
-    example: ['reports', 'analytics'],
-    required: true,
-  })
-  modules: string[];
+  // modules array removido - usar planFeatures relation
 }
 
 export class UpdatePlanDTO extends PartialType(CreatePlanDTO) {}

@@ -63,7 +63,7 @@ async function updateCompanyToLitePlan() {
           planId: litePlan.id,
           value:
             litePlan.basePrice +
-            litePlan.additionalAccessPrice *
+            (litePlan.additionalUserPrice || 0) *
               (activeSubscription.additionalUsers || 0),
           updatedAt: new Date(),
         },

@@ -100,7 +100,8 @@ export class SubscriptionsService {
     // TEMPORÁRIO: Sem features extras por enquanto
     const additionalFeaturesValue = 0; // additionalFeatures.reduce((acc, feature) => acc + feature.price, 0);
     const additionalUsersValue =
-      plan.additionalAccessPrice * (createSubscriptionDto.additionalUsers || 0);
+      (plan.additionalUserPrice || 0) *
+      (createSubscriptionDto.additionalUsers || 0);
 
     const value =
       plan.basePrice + additionalFeaturesValue + additionalUsersValue;
@@ -175,6 +176,7 @@ export class SubscriptionsService {
       include: {
         plan: true,
         customer: true,
+        subscriptionFeatures: { include: { feature: true } },
       },
     });
 
@@ -196,12 +198,12 @@ export class SubscriptionsService {
       throw new NotFoundException('New plan not found');
     }
 
-    // Combinar modules existentes com os do novo plano (evitar duplicatas) - COMPATIBILIDADE
-    const currentModules = currentSubscription.modules || [];
-    const newPlanModules = newPlan.modules || [];
-    const combinedModules = Array.from(
-      new Set([...currentModules, ...newPlanModules]),
-    );
+    // Obter features da subscription atual
+    const currentFeatures = currentSubscription.subscriptionFeatures || [];
+    const newPlanFeatures = await this.prisma.planFeature.findMany({
+      where: { planId: newPlanId },
+      include: { feature: true },
+    });
 
     // TEMPORÁRIO: Usar sistema antigo de pricing - sem features extras por enquanto
     // TODO: Migrar para o novo sistema de features
@@ -211,8 +213,8 @@ export class SubscriptionsService {
     const newValue =
       newPlan.basePrice +
       featuresValue +
-      newPlan.additionalAccessPrice *
-        (currentSubscription.additionalAccesses || 0);
+      (newPlan.additionalUserPrice || 0) *
+        (currentSubscription.additionalUsers || 0);
 
     // Cancelar subscription atual no Asaas (se necessário)
     try {
@@ -255,7 +257,7 @@ export class SubscriptionsService {
         planId: newPlan.id,
         additionalUsers: currentSubscription.additionalUsers,
         asaasSubscriptionId: asaasSubscription.id,
-        modules: combinedModules, // COMPATIBILIDADE: usar campo antigo
+        // modules array foi removido - usar subscriptionFeatures
         nextDueDate: new Date(asaasSubscription.nextDueDate),
         cycle: currentSubscription.cycle,
         billingType: currentSubscription.billingType,
@@ -274,7 +276,10 @@ export class SubscriptionsService {
   async addModule(subscriptionId: string, moduleId: string, request) {
     const subscription = await this.prisma.subscription.findUnique({
       where: { id: subscriptionId },
-      include: { customer: true },
+      include: {
+        customer: true,
+        subscriptionFeatures: { include: { feature: true } },
+      },
     });
 
     if (!subscription) {
@@ -287,7 +292,7 @@ export class SubscriptionsService {
 
     // Verificar se a feature existe
     const feature = await this.prisma.feature.findUnique({
-      where: { id: moduleId },
+      where: { key: moduleId },
     });
 
     if (!feature) {
@@ -295,12 +300,22 @@ export class SubscriptionsService {
     }
 
     // Verificar se o module já está incluído - COMPATIBILIDADE
-    if (subscription.modules.includes(moduleId)) {
+    if (
+      subscription.subscriptionFeatures.some(
+        (sf) => sf.feature.key === moduleId,
+      )
+    ) {
       throw new BadRequestException('Module already included in subscription');
     }
 
-    // Adicionar module à lista - COMPATIBILIDADE
-    const updatedModules = [...subscription.modules, moduleId];
+    // Criar a nova subscription feature
+    await this.prisma.subscriptionFeature.create({
+      data: {
+        subscriptionId,
+        featureId: feature.id,
+        price: feature.price,
+      },
+    });
 
     // TEMPORÁRIO: Usar sistema antigo - sem features extras
     const plan = await this.prisma.plan.findUnique({
@@ -311,7 +326,7 @@ export class SubscriptionsService {
     const newValue =
       plan.basePrice +
       modulesValue +
-      plan.additionalAccessPrice * (subscription.additionalAccesses || 0);
+      (plan.additionalUserPrice || 0) * (subscription.additionalUsers || 0);
 
     // Atualizar subscription no Asaas
     try {
@@ -326,7 +341,7 @@ export class SubscriptionsService {
     return this.prisma.subscription.update({
       where: { id: subscriptionId },
       data: {
-        modules: updatedModules, // COMPATIBILIDADE
+        // modules array foi removido - agora usar subscriptionFeatures
         value: newValue,
       },
       include: {
@@ -339,7 +354,11 @@ export class SubscriptionsService {
   async removeModule(subscriptionId: string, moduleId: string, request) {
     const subscription = await this.prisma.subscription.findUnique({
       where: { id: subscriptionId },
-      include: { customer: true, plan: true },
+      include: {
+        customer: true,
+        plan: true,
+        subscriptionFeatures: { include: { feature: true } },
+      },
     });
 
     if (!subscription) {
@@ -351,27 +370,42 @@ export class SubscriptionsService {
     }
 
     // Verificar se o module está na lista - COMPATIBILIDADE
-    if (!subscription.modules.includes(moduleId)) {
+    if (
+      !subscription.subscriptionFeatures.some(
+        (sf) => sf.feature.key === moduleId,
+      )
+    ) {
       throw new BadRequestException('Module not found in subscription');
     }
 
     // Verificar se o module é obrigatório do plano - COMPATIBILIDADE
-    if (subscription.plan.modules.includes(moduleId)) {
+    const planHasFeature = await this.prisma.planFeature.findFirst({
+      where: { planId: subscription.planId, feature: { key: moduleId } },
+    });
+    if (planHasFeature) {
       throw new BadRequestException(
         'Cannot remove module that is required by the plan',
       );
     }
 
     // Remover module da lista - COMPATIBILIDADE
-    const updatedModules = subscription.modules.filter((id) => id !== moduleId);
+    // Remover feature da subscription
+    const subscriptionFeature = subscription.subscriptionFeatures.find(
+      (sf) => sf.feature.key === moduleId,
+    );
+    if (subscriptionFeature) {
+      await this.prisma.subscriptionFeature.delete({
+        where: { id: subscriptionFeature.id },
+      });
+    }
 
     // TEMPORÁRIO: Usar sistema antigo - sem features extras
     const modulesValue = 0; // Por enquanto, sem custo extra
     const newValue =
       subscription.plan.basePrice +
       modulesValue +
-      subscription.plan.additionalAccessPrice *
-        (subscription.additionalAccesses || 0);
+      (subscription.plan.additionalUserPrice || 0) *
+        (subscription.additionalUsers || 0);
 
     // Atualizar subscription no Asaas
     try {
@@ -386,7 +420,7 @@ export class SubscriptionsService {
     return this.prisma.subscription.update({
       where: { id: subscriptionId },
       data: {
-        modules: updatedModules, // COMPATIBILIDADE
+        // modules array foi removido - agora usar subscriptionFeatures
         value: newValue,
       },
       include: {

@@ -1,6 +1,6 @@
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = ["fullTextIndex", "fullTextSearch"]
+  previewFeatures = ["fullTextSearchPostgres"]
 }
 
 datasource db {
@@ -77,25 +77,25 @@ model Company {
 }
 
 model Address {
-  id           String    @id @default(uuid())
+  id           String         @id @default(uuid())
   street       String?
   number       String?
   country      String?
   ownerId      String?
-  ownerType    OwnerType @default(COMPANY)
+  ownerType    OwnerType      @default(COMPANY)
   complement   String?
   neighborhood String?
   zipcode      String?
   city         String?
   state        String?
-  type         String    @default("Principal")
+  type         String         @default("Principal")
   supplierId   String?
   companyId    String?
   employeeId   String?
-  company      Company?      @relation(fields: [companyId], references: [id])
-  employee     Employee?     @relation(fields: [employeeId], references: [id])
-  client       Client?       @relation(fields: [ownerId], references: [id])
-  supplier     Supplier?     @relation(fields: [supplierId], references: [id])
+  company      Company?       @relation(fields: [companyId], references: [id])
+  employee     Employee?      @relation(fields: [employeeId], references: [id])
+  client       Client?        @relation(fields: [ownerId], references: [id])
+  supplier     Supplier?      @relation(fields: [supplierId], references: [id])
   deliveryInfo DeliveryInfo[]
 
   @@index([ownerId, ownerType])
@@ -1307,24 +1307,20 @@ model SupplierPaymentCondition {
 }
 
 model Plan {
-  id                    String         @id @default(uuid())
-  description           String
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime?      @default(now()) @updatedAt
-  companyId             String?
-  name                  String         @unique
-  // Campos antigos (manter por compatibilidade)
-  additionalAccessPrice Float
-  modules               String[]       @default([]) // DEPRECATED: usar planFeatures
-  // Novos campos
-  additionalUserPrice   Float?         @default(0) // Nova nomenclatura
-  basePrice             Float
-  planType              PlanType       @default(START)
-  isActive              Boolean        @default(true)
-  Company               Company?       @relation(fields: [companyId], references: [id])
-  subscriptions         Subscription[]
-  planFeatures          PlanFeature[]
-  planLimits            PlanLimit[]
+  id                  String         @id @default(uuid())
+  description         String
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime?      @default(now()) @updatedAt
+  companyId           String?
+  name                String         @unique
+  additionalUserPrice Float?         @default(0)
+  basePrice           Float
+  planType            PlanType       @default(START)
+  isActive            Boolean        @default(true)
+  Company             Company?       @relation(fields: [companyId], references: [id])
+  subscriptions       Subscription[]
+  planFeatures        PlanFeature[]
+  planLimits          PlanLimit[]
 
   @@map("plans")
 }
@@ -1357,22 +1353,6 @@ model Limit {
   planLimits  PlanLimit[]
 
   @@map("limits")
-}
-
-// DEPRECATED: Tabela antiga - manter apenas para preservar dados existentes
-model Module {
-  id          String    @id @default(uuid())
-  name        String    @unique
-  description String?
-  isActive    Boolean   @default(true)
-  category    String?
-  price       Float     @default(0)
-  // key campo não existe na tabela atual
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime? @updatedAt
-
-  @@ignore // Ignorar no Prisma Client
-  @@map("modules")
 }
 
 model PlanFeature {
@@ -1442,11 +1422,7 @@ model Subscription {
   createdAt            DateTime              @default(now())
   updatedAt            DateTime?             @updatedAt
   companyId            String?
-  // Campos antigos (manter por compatibilidade)
-  additionalAccesses   Int?                  @default(0) // DEPRECATED: usar additionalUsers
-  modules              String[]       @default([]) // DEPRECATED: usar subscriptionFeatures
-  // Novos campos
-  additionalUsers      Int                   @default(0) // usuários adicionais contratados
+  additionalUsers      Int                   @default(0)
   asaasSubscriptionId  String                @unique
   customerId           String                @map("customer_id")
   nextDueDate          DateTime
@@ -1458,7 +1434,7 @@ model Subscription {
   Company              Company?              @relation(fields: [companyId], references: [id])
   customer             Customer              @relation(fields: [customerId], references: [id])
   plan                 Plan                  @relation(fields: [planId], references: [id])
-  subscriptionFeatures SubscriptionFeature[] // features adicionais contratadas
+  subscriptionFeatures SubscriptionFeature[]
 
   @@map("subscriptions")
 }
@@ -1528,21 +1504,6 @@ model AcademyProgress {
   company         Company       @relation(fields: [companyId], references: [id])
 
   @@map("academy_progress")
-}
-
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
-model unit_measures_backup {
-  id                     String?
-  name                   String?
-  code                   String?
-  description            String?
-  isActive               Boolean?
-  companyId              String?
-  defaultUnitOfMeasureId String?
-  kind                   UnitOfMeasureKind?
-  variant                UnitOfMeasureVariant?
-
-  @@ignore
 }
 
 enum OwnerType {
