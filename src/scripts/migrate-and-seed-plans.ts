@@ -39,7 +39,7 @@ async function main() {
       console.log(`Plano: ${litePlan.name}`);
       console.log(`Preço base: R$ ${(litePlan.basePrice / 100).toFixed(2)}`);
       console.log(
-        `Preço usuário adicional: R$ ${(litePlan.additionalAccessPrice / 100).toFixed(2)}`,
+        `Preço usuário adicional: R$ ${((litePlan.additionalUserPrice || 0) / 100).toFixed(2)}`,
       );
 
       console.log('\nFeatures:');

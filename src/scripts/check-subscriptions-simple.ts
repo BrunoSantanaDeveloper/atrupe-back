@@ -37,7 +37,7 @@ async function checkSubscriptions() {
             '\n💡 Sugestão: Execute o comando para criar uma subscription TRIAL:',
           );
           console.log(
-            `npx prisma db execute --stdin <<< "INSERT INTO subscriptions (id, \\"companyId\\", \\"planId\\", \\"customerId\\", \\"additionalUsers\\", \\"additionalAccesses\\", modules, \\"asaasSubscriptionId\\", \\"nextDueDate\\", value, status, \\"billingType\\", cycle, \\"createdAt\\", \\"updatedAt\\") VALUES (gen_random_uuid(), '${companyId}', '${trialPlan.id}', (SELECT id FROM customers LIMIT 1), 0, 0, '{}', 'trial_${Date.now()}', NOW() + INTERVAL '7 days', 0, 'ACTIVE', 'CREDIT_CARD', 'MONTHLY', NOW(), NOW());"`,
+            `npx prisma db execute --stdin <<< "INSERT INTO subscriptions (id, \\"companyId\\", \\"planId\\", \\"customerId\\", \\"additionalUsers\\", \\"asaasSubscriptionId\\", \\"nextDueDate\\", value, status, \\"billingType\\", cycle, \\"createdAt\\", \\"updatedAt\\") VALUES (gen_random_uuid(), '${companyId}', '${trialPlan.id}', (SELECT id FROM customers LIMIT 1), 0, 'trial_${Date.now()}', NOW() + INTERVAL '7 days', 0, 'ACTIVE', 'CREDIT_CARD', 'MONTHLY', NOW(), NOW());"`,
           );
         }
       }

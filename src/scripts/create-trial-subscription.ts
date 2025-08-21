@@ -81,8 +81,8 @@ async function createTrialSubscription() {
         planId: trialPlan.id,
         customerId: customer.id,
         additionalUsers: 0,
-        additionalAccesses: 0, // Compatibilidade
-        modules: [], // Compatibilidade
+        // additionalAccesses campo removido
+        // modules array removido - usar subscriptionFeatures
         asaasSubscriptionId: `trial_manual_${Date.now()}`,
         nextDueDate: trialEndDate,
         value: 0, // Gratuito
