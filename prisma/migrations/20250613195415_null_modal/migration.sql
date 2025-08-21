@@ -1,3 +1,0 @@
--- AlterTable
-ALTER TABLE "academy" ALTER COLUMN "page" DROP NOT NULL,
-ALTER COLUMN "modal" DROP NOT NULL;
