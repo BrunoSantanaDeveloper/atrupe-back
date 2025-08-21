@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "0.1.14",
+  "version": "0.1.17",
   "description": "",
   "author": "",
   "private": true,
@@ -125,6 +125,7 @@
     "testEnvironment": "node"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seedLocal": "ts-node prisma/seed.ts",
+    "seed": "node dist/prisma/seed.js"
   }
 }
