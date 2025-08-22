@@ -444,6 +444,7 @@ model Receivable {
   quotationId       String?
   supplierId        String?
   mainAdditionalFee Float?
+  financialType     FinancialType           @default(MAIN)
   history           ReceivableHistory[]
   installments      ReceivableInstallment[]
   client            Client?                 @relation(fields: [clientId], references: [id])
@@ -518,6 +519,7 @@ model Payable {
   mainAdditionalFee  Float?
   totalValue         Float?
   scheduledExpenseId String?
+  financialType      FinancialType        @default(MAIN)
   commission         Commission[]
   history            PayableHistory[]
   installments       PayableInstallment[]
@@ -1771,4 +1773,11 @@ enum UnitKind {
   DURATION
   UNITY
   AREA
+}
+
+enum FinancialType {
+  MAIN // Título principal da venda
+  DOWN_PAYMENT // Entrada da venda (receivable)
+  COMMISSION // Comissão da venda (payable)
+  DELIVERY // Entrega da venda (payable)
 }

@@ -316,14 +316,22 @@ export class PayableService {
       );
 
     // Realiza a transação
-    await this.prisma.$transaction(updates);
-    await this.prisma.payable.update({
-      where: { id },
-      data: {
-        status: 'CANCELED',
-        ...dto,
-      },
-    });
+    await this.prisma.$transaction([
+      ...updates,
+      this.prisma.payable.update({
+        where: { id },
+        data: {
+          status: 'CANCELED',
+          ...dto,
+        },
+      }),
+    ]);
+
+    // Cancela títulos relacionados se for um título principal da venda
+    if (payable.quotationId && payable.financialType === 'MAIN') {
+      await this.cancelRelatedFinancials(payable.quotationId);
+    }
+
     return { message: 'Conta a pagar cancelada com sucesso.' };
   }
 
@@ -333,13 +341,6 @@ export class PayableService {
     // Verifica se o título está cancelado
     if (payable.status !== 'CANCELED') {
       throw new BadRequestException('A conta a pagar não está cancelada.');
-    }
-
-    // Verifica se o título está vinculado a uma venda/cotação
-    if (payable.quotationId) {
-      throw new BadRequestException(
-        'Não é possível desfazer o cancelamento de títulos vinculados a vendas/cotações.',
-      );
     }
 
     // Atualiza o status de todas as parcelas com status "CANCELED" para "PENDING"
@@ -366,6 +367,11 @@ export class PayableService {
         },
       }),
     ]);
+
+    // Reativa títulos relacionados se for um título principal da venda
+    if (payable.quotationId && payable.financialType === 'MAIN') {
+      await this.reactivateRelatedFinancials(payable.quotationId);
+    }
 
     return { message: 'Cancelamento da conta a pagar desfeito com sucesso.' };
   }
@@ -1168,5 +1174,278 @@ export class PayableService {
     );
 
     await Promise.all(payableUpdatePromises);
+  }
+
+  private async cancelRelatedFinancials(quotationId: string): Promise<void> {
+    try {
+      let canceledCount = 0;
+
+      // 1. Cancela comissões através do relacionamento Commission -> Payable
+      const commissions = await this.prisma.commission.findMany({
+        where: {
+          quotationPayment: {
+            quotationId,
+          },
+          payable: {
+            status: { not: 'CANCELED' },
+          },
+        },
+        include: {
+          payable: {
+            include: {
+              installments: true,
+            },
+          },
+        },
+      });
+
+      for (const commission of commissions) {
+        if (!commission.payable) continue;
+        await this.cancelPayableWithInstallments(
+          commission.payable,
+          'Cancelamento automático - título da venda cancelado',
+        );
+        canceledCount++;
+      }
+
+      // 2. Cancela entradas (receivables de entrada)
+      const downPaymentReceivables = await this.prisma.receivable.findMany({
+        where: {
+          quotationId,
+          status: { not: 'CANCELED' },
+          financialType: 'DOWN_PAYMENT',
+        },
+        include: {
+          installments: true,
+        },
+      });
+
+      for (const receivable of downPaymentReceivables) {
+        await this.cancelReceivableWithInstallments(
+          receivable,
+          'Cancelamento automático - título da venda cancelado',
+        );
+        canceledCount++;
+      }
+
+      // 3. Cancela entregas (payables de entrega)
+      const deliveryPayables = await this.prisma.payable.findMany({
+        where: {
+          quotationId,
+          status: { not: 'CANCELED' },
+          financialType: 'DELIVERY',
+        },
+        include: {
+          installments: true,
+        },
+      });
+
+      for (const payable of deliveryPayables) {
+        await this.cancelPayableWithInstallments(
+          payable,
+          'Cancelamento automático - título da venda cancelado',
+        );
+        canceledCount++;
+      }
+
+      console.log(
+        `${canceledCount} títulos relacionados cancelados para a venda ${quotationId}`,
+      );
+    } catch (error) {
+      console.error('Erro ao cancelar títulos relacionados:', error);
+    }
+  }
+
+  private async reactivateRelatedFinancials(
+    quotationId: string,
+  ): Promise<void> {
+    try {
+      let reactivatedCount = 0;
+
+      // 1. Reativa comissões canceladas automaticamente
+      const commissions = await this.prisma.commission.findMany({
+        where: {
+          quotationPayment: {
+            quotationId,
+          },
+          payable: {
+            status: 'CANCELED',
+            cancelReason: 'Cancelamento automático - título da venda cancelado',
+          },
+        },
+        include: {
+          payable: {
+            include: {
+              installments: true,
+            },
+          },
+        },
+      });
+
+      for (const commission of commissions) {
+        if (!commission.payable) continue;
+        await this.reactivatePayableWithInstallments(
+          commission.payable,
+          'Reativação automática - título da venda reativado',
+        );
+        reactivatedCount++;
+      }
+
+      // 2. Reativa entradas (receivables de entrada)
+      const downPaymentReceivables = await this.prisma.receivable.findMany({
+        where: {
+          quotationId,
+          status: 'CANCELED',
+          cancelReason: 'Cancelamento automático - título da venda cancelado',
+          financialType: 'DOWN_PAYMENT',
+        },
+        include: {
+          installments: true,
+        },
+      });
+
+      for (const receivable of downPaymentReceivables) {
+        await this.reactivateReceivableWithInstallments(
+          receivable,
+          'Reativação automática - título da venda reativado',
+        );
+        reactivatedCount++;
+      }
+
+      // 3. Reativa entregas (payables de entrega)
+      const deliveryPayables = await this.prisma.payable.findMany({
+        where: {
+          quotationId,
+          status: 'CANCELED',
+          cancelReason: 'Cancelamento automático - título da venda cancelado',
+          financialType: 'DELIVERY',
+        },
+        include: {
+          installments: true,
+        },
+      });
+
+      for (const payable of deliveryPayables) {
+        await this.reactivatePayableWithInstallments(
+          payable,
+          'Reativação automática - título da venda reativado',
+        );
+        reactivatedCount++;
+      }
+
+      console.log(
+        `${reactivatedCount} títulos relacionados reativados para a venda ${quotationId}`,
+      );
+    } catch (error) {
+      console.error('Erro ao reativar títulos relacionados:', error);
+    }
+  }
+
+  private async cancelReceivableWithInstallments(
+    receivable: any,
+    reason: string,
+  ): Promise<void> {
+    const installmentUpdates = receivable.installments
+      .filter((installment: any) => installment.status === 'PENDING')
+      .map((installment: any) =>
+        this.prisma.receivableInstallment.update({
+          where: { id: installment.id },
+          data: { status: 'CANCELED' },
+        }),
+      );
+
+    await this.prisma.$transaction([
+      ...installmentUpdates,
+      this.prisma.receivable.update({
+        where: { id: receivable.id },
+        data: {
+          status: 'CANCELED',
+          cancelReason: reason,
+          cancelNotes: `Título cancelado em ${new Date().toLocaleDateString()}`,
+        },
+      }),
+    ]);
+  }
+
+  private async cancelPayableWithInstallments(
+    payable: any,
+    reason: string,
+  ): Promise<void> {
+    const installmentUpdates = payable.installments
+      .filter((installment: any) => installment.status === 'PENDING')
+      .map((installment: any) =>
+        this.prisma.payableInstallment.update({
+          where: { id: installment.id },
+          data: { status: 'CANCELED' },
+        }),
+      );
+
+    await this.prisma.$transaction([
+      ...installmentUpdates,
+      this.prisma.payable.update({
+        where: { id: payable.id },
+        data: {
+          status: 'CANCELED',
+          cancelReason: reason,
+          cancelNotes: `Título cancelado em ${new Date().toLocaleDateString()}`,
+        },
+      }),
+    ]);
+  }
+
+  private async reactivateReceivableWithInstallments(
+    receivable: any,
+    reason: string,
+  ): Promise<void> {
+    const installmentUpdates = receivable.installments
+      .filter((installment: any) => installment.status === 'CANCELED')
+      .map((installment: any) =>
+        this.prisma.receivableInstallment.update({
+          where: { id: installment.id },
+          data: { status: 'PENDING' },
+        }),
+      );
+
+    await this.prisma.$transaction([
+      ...installmentUpdates,
+      this.prisma.receivable.update({
+        where: { id: receivable.id },
+        data: {
+          status: 'PENDING',
+          changeReason: reason,
+          changeNotes: `Título reativado em ${new Date().toLocaleDateString()}`,
+          cancelReason: null,
+          cancelNotes: null,
+        },
+      }),
+    ]);
+  }
+
+  private async reactivatePayableWithInstallments(
+    payable: any,
+    reason: string,
+  ): Promise<void> {
+    const installmentUpdates = payable.installments
+      .filter((installment: any) => installment.status === 'CANCELED')
+      .map((installment: any) =>
+        this.prisma.payableInstallment.update({
+          where: { id: installment.id },
+          data: { status: 'PENDING' },
+        }),
+      );
+
+    await this.prisma.$transaction([
+      ...installmentUpdates,
+      this.prisma.payable.update({
+        where: { id: payable.id },
+        data: {
+          status: 'PENDING',
+          changeReason: reason,
+          changeNotes: `Título reativado em ${new Date().toLocaleDateString()}`,
+          cancelReason: null,
+          cancelNotes: null,
+        },
+      }),
+    ]);
   }
 }

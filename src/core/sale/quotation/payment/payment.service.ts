@@ -365,7 +365,7 @@ export class PaymentService {
     baseValue?: number,
   ) {
     try {
-      // Busca o pagamento relacionado à cotação
+      // Busca o pagamento relacionado à venda
       const quotationPayment = await this.prisma.quotationPayment.findUnique({
         where: { quotationId },
         include: { commission: true }, // Inclui a comissão associada, se houver

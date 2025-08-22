@@ -1377,7 +1377,7 @@ export class QuotationService {
     return await this.prisma
       .$transaction(
         async (prisma) => {
-          // Atualizar a cotação como aprovada
+          // Atualizar a venda como aprovada
           const quotation = await prisma.quotation.update({
             where: { id: quotationId },
             data: {
@@ -1400,10 +1400,10 @@ export class QuotationService {
           });
 
           if (!quotation.deliveryInfo) {
-            throw new Error('Informações de entrega ausentes na cotação.');
+            throw new Error('Informações de entrega ausentes na venda.');
           }
 
-          // Verificar se já existe um pedido para esta cotação
+          // Verificar se já existe um pedido para esta venda
           let order = await prisma.order.findUnique({
             where: { quotationId: quotation.id },
           });

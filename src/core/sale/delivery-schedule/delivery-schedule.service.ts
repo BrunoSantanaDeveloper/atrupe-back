@@ -511,6 +511,7 @@ export class DeliveryScheduleService {
         natureId: null,
         subCategoryId: null,
         quotationId: quotation.id,
+        financialType: 'COMMISSION',
         commission: {
           connect: {
             id: commission.id,
@@ -583,6 +584,7 @@ export class DeliveryScheduleService {
         natureId: null,
         subCategoryId: null,
         quotationId: quotation.id,
+        financialType: 'DELIVERY',
       },
     });
 
@@ -654,6 +656,7 @@ export class DeliveryScheduleService {
             natureId: null,
             subCategoryId: null,
             quotationId: quotation.id,
+            financialType: 'DOWN_PAYMENT',
           },
         });
         await prisma.receivableInstallment.create({
@@ -686,6 +689,7 @@ export class DeliveryScheduleService {
           natureId: null,
           subCategoryId: null,
           quotationId: quotation.id,
+          financialType: 'MAIN',
         },
       });
 
