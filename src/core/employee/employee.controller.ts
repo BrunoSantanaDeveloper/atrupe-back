@@ -60,6 +60,19 @@ export class EmployeeController {
     return this.employeeService.findAllQuantity(companyId);
   }
 
+  @Get('list')
+  @ApiQuery({ type: FilterEmployeeDto })
+  @ApiOperation({ summary: 'Obtém a lista simples de todos os empregados sem agrupamento' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista simples de empregados retornada com sucesso.',
+    isArray: true,
+  })
+  findAllFlat(@Query() filter: FilterEmployeeDto, @Req() req) {
+    filter.companyId = req.user.companyId;
+    return this.employeeService.findAllFlat(filter);
+  }
+
   @Get()
   @ApiQuery({ type: FilterEmployeeDto })
   @ApiOperation({ summary: 'Obtém a lista de todos os empregados' })

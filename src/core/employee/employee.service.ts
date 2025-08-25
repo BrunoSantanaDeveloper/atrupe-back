@@ -96,6 +96,69 @@ export class EmployeeService {
     };
   }
 
+  async findAllFlat(filter: FilterEmployeeDto) {
+    try {
+      const where: Prisma.EmployeeWhereInput = {
+        companyId: filter.companyId,
+      };
+
+      if (filter.search) {
+        where.name = {
+          contains: filter.search,
+          mode: 'insensitive',
+        };
+      }
+
+      if (filter.sectorId) {
+        where.sectorId = filter.sectorId;
+      }
+
+      if (filter.isActive !== undefined) {
+        where.isActive = filter.isActive;
+      }
+
+      if (filter.status) {
+        where.isActive = filter.status === 'ACTIVE';
+      }
+
+      const [total, employees] = await Promise.all([
+        this.prisma.employee.count({ where }),
+        this.prisma.employee.findMany({
+          where,
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                isActive: true,
+              },
+            },
+            address: true,
+            role: true,
+            sector: true,
+          },
+          take: +filter.limit,
+          skip: (+filter.page - 1) * +filter.limit,
+          orderBy: {
+            name: 'asc',
+          },
+        }),
+      ]);
+
+      const lastPage = Math.ceil(total / +filter.limit);
+
+      return {
+        total,
+        lastPage,
+        data: employees,
+      };
+    } catch (error) {
+      console.log(error);
+      throw new BadRequestException(error.message);
+    }
+  }
+
   async findAll(filter: FilterEmployeeDto) {
     try {
       const where: Prisma.EmployeeWhereInput = {
