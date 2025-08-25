@@ -537,7 +537,12 @@ export class SubscriptionsService {
   /**
    * Calcula o valor total das features extras de uma subscription
    */
-  private async calculateSubscriptionFeaturesValue(subscriptionFeatures: any[]): Promise<number> {
-    return subscriptionFeatures.reduce((total, sf) => total + (sf.price || 0), 0);
+  private async calculateSubscriptionFeaturesValue(
+    subscriptionFeatures: any[],
+  ): Promise<number> {
+    return subscriptionFeatures.reduce(
+      (total, sf) => total + (sf.price || 0),
+      0,
+    );
   }
 }

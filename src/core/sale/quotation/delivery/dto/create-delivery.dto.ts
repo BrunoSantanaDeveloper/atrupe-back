@@ -7,7 +7,11 @@ import {
   IsDate,
   IsNumber,
   IsEnum,
+  ValidateNested,
+  IsObject,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { CustomAddressDto } from './custom-address.dto';
 
 export class CreateDeliveryInfoDto {
   @ApiProperty({
@@ -78,4 +82,16 @@ export class CreateDeliveryInfoDto {
   @IsOptional()
   @IsString()
   clientAddressId?: string;
+
+  @ApiProperty({
+    description:
+      'Endereço customizado para entrega (usado quando clientAddressId é "custom")',
+    required: false,
+    type: 'object',
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => CustomAddressDto)
+  customAddress?: CustomAddressDto;
 }

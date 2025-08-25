@@ -1,6 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { DeliveryType } from '@prisma/client';
-import { IsInt, IsOptional, IsString, IsNumber, IsEnum } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  IsNumber,
+  IsEnum,
+  ValidateNested,
+  IsObject,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { CustomAddressDto } from './custom-address.dto';
 
 export class UpdateDeliveryInfoDto {
   @ApiProperty({
@@ -81,4 +91,25 @@ export class UpdateDeliveryInfoDto {
   @IsOptional()
   @IsString()
   clientAddressId?: string;
+
+  @ApiProperty({
+    description:
+      'Endereço customizado para entrega (usado quando clientAddressId é "custom")',
+    required: false,
+    type: 'object',
+    properties: {
+      zipcode: { type: 'string', description: 'CEP' },
+      state: { type: 'string', description: 'Estado' },
+      city: { type: 'string', description: 'Cidade' },
+      neighborhood: { type: 'string', description: 'Bairro' },
+      street: { type: 'string', description: 'Rua' },
+      number: { type: 'string', description: 'Número' },
+      complement: { type: 'string', description: 'Complemento' },
+    },
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => CustomAddressDto)
+  customAddress?: CustomAddressDto;
 }

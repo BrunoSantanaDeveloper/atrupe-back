@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { CreateDeliveryInfoDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryInfoDto } from './dto/update-delivery.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
@@ -14,18 +18,49 @@ export class DeliveryService {
     const { deliveryType } = createDeliveryInfoDto;
 
     // Verificação do tipo de entrega para transportadora
-    // if (deliveryType === 'CARRIER' && !supplierId) {
-    //   throw new BadRequestException(
-    //     'Fornecedor é necessário quando o tipo de entrega for Transportadora',
-    //   );
-    // }
+    if (deliveryType === 'CARRIER' && !createDeliveryInfoDto.supplierId) {
+      throw new BadRequestException(
+        'Fornecedor é necessário quando o tipo de entrega for Transportadora',
+      );
+    }
+
+    if (
+      createDeliveryInfoDto.clientAddressId === 'custom' &&
+      !createDeliveryInfoDto.customAddress
+    ) {
+      throw new BadRequestException(
+        'Endereço customizado é necessário quando clientAddressId for "custom"',
+      );
+    }
+
+    // Se clientAddressId for "custom", criar um endereço temporário
+    let addressId = createDeliveryInfoDto.clientAddressId;
+
+    if (
+      createDeliveryInfoDto.clientAddressId === 'custom' &&
+      createDeliveryInfoDto.customAddress
+    ) {
+      // Criar endereço temporário na tabela Address
+      const customAddress = await this.prisma.address.create({
+        data: {
+          ...createDeliveryInfoDto.customAddress,
+          type: 'CustomForDelivery',
+        },
+      });
+      addressId = customAddress.id;
+    }
+
+    // Preparar dados para criar o DeliveryInfo (removendo customAddress)
+    const deliveryData: any = { ...createDeliveryInfoDto };
+    delete deliveryData.customAddress;
 
     // Criar o DeliveryInfo
     const deliveryInfo = await this.prisma.deliveryInfo.create({
       data: {
-        ...createDeliveryInfoDto,
+        ...deliveryData,
         quotationId,
-        deliveryType, // Vincular o deliveryTypeId
+        deliveryType,
+        clientAddressId: addressId === 'custom' ? null : addressId,
       },
     });
 
@@ -45,25 +80,24 @@ export class DeliveryService {
         throw new NotFoundException('Informações de entrega não encontradas');
       }
 
-      // Verificar se o tipo de entrega existe
-      // if (updateDeliveryInfoDto.deliveryTypeId) {
-      //   const deliveryType = await this.prisma.deliveryType.findUnique({
-      //     where: { id: updateDeliveryInfoDto.deliveryTypeId },
-      //   });
+      // Validações específicas
+      if (
+        updateDeliveryInfoDto.deliveryType === 'CARRIER' &&
+        !updateDeliveryInfoDto.supplierId
+      ) {
+        throw new BadRequestException(
+          'Fornecedor é necessário quando o tipo de entrega for Transportadora',
+        );
+      }
 
-      //   if (!deliveryType) {
-      //     throw new BadRequestException('Tipo de entrega não encontrado');
-      //   }
-
-      //   // Verificação do tipo de entrega para transportadora
-      //   if (deliveryType.isCarrier && !updateDeliveryInfoDto.supplierId) {
-      //     throw new BadRequestException(
-      //       'Fornecedor é necessário quando o tipo de entrega for Transportadora',
-      //     );
-      //   }
-      // }
-
-      // Atualizar o DeliveryInfo
+      if (
+        updateDeliveryInfoDto.clientAddressId === 'custom' &&
+        !updateDeliveryInfoDto.customAddress
+      ) {
+        throw new BadRequestException(
+          'Endereço customizado é necessário quando clientAddressId for "custom"',
+        );
+      }
 
       if (updateDeliveryInfoDto.estimatedDate) {
         updateDeliveryInfoDto.estimatedDate = new Date(
@@ -71,14 +105,80 @@ export class DeliveryService {
         );
       }
 
+      // Tratar endereço customizado
+      let addressId = updateDeliveryInfoDto.clientAddressId;
+
+      // Verificar se existe um endereço customizado anterior
+      const existingCustomAddress = existingDeliveryInfo.clientAddressId
+        ? await this.prisma.address.findFirst({
+            where: {
+              id: existingDeliveryInfo.clientAddressId,
+              type: 'CustomForDelivery',
+            },
+          })
+        : null;
+
+      if (
+        updateDeliveryInfoDto.clientAddressId === 'custom' &&
+        updateDeliveryInfoDto.customAddress
+      ) {
+        if (existingCustomAddress) {
+          // Atualizar endereço customizado existente
+          await this.prisma.address.update({
+            where: { id: existingCustomAddress.id },
+            data: {
+              ...updateDeliveryInfoDto.customAddress,
+            },
+          });
+          addressId = existingCustomAddress.id;
+        } else {
+          // Criar novo endereço customizado
+          const customAddress = await this.prisma.address.create({
+            data: {
+              ...updateDeliveryInfoDto.customAddress,
+              type: 'CustomForDelivery',
+            },
+          });
+          addressId = customAddress.id;
+        }
+      } else if (
+        updateDeliveryInfoDto.clientAddressId &&
+        updateDeliveryInfoDto.clientAddressId !== 'custom' &&
+        existingCustomAddress
+      ) {
+        // Se mudou de endereço customizado para endereço de cliente,
+        // limpar o endereço customizado anterior
+        try {
+          await this.prisma.address.delete({
+            where: { id: existingCustomAddress.id },
+          });
+        } catch (error) {
+          // Se não conseguir deletar (ex: usado por outros registros),
+          // apenas logga o erro e continua
+          console.warn(
+            'Não foi possível deletar endereço customizado:',
+            error.message,
+          );
+        }
+        addressId = updateDeliveryInfoDto.clientAddressId;
+      }
+
+      // Preparar dados para atualizar o DeliveryInfo (removendo customAddress)
+      const deliveryData: any = { ...updateDeliveryInfoDto };
+      delete deliveryData.customAddress;
+
       const updatedDeliveryInfo = await this.prisma.deliveryInfo.update({
         where: { id },
-        data: updateDeliveryInfoDto,
+        data: {
+          ...deliveryData,
+          clientAddressId: addressId === 'custom' ? null : addressId,
+        },
       });
 
       return updatedDeliveryInfo;
     } catch (error) {
       console.error(error);
+      throw error;
     }
   }
 }
