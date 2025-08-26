@@ -1854,6 +1854,19 @@ export class QuotationService {
                   financialNotes: true,
                 },
               },
+              clientAddress: {
+                select: {
+                  id: true,
+                  street: true,
+                  number: true,
+                  complement: true,
+                  neighborhood: true,
+                  city: true,
+                  state: true,
+                  zipcode: true,
+                  type: true,
+                },
+              },
             },
           },
           quotationPayment: {
@@ -2050,17 +2063,21 @@ export class QuotationService {
               freightCost: quotation.deliveryInfo.cost,
               freightPrice: quotation.deliveryInfo.value,
               notes: quotation.deliveryInfo.notes,
-              clientAddress: quotation.client?.address[0]
-                ? {
-                    type: 'PRINCIPAL',
-                    street: quotation.client.address[0].street,
-                    number: quotation.client.address[0].number,
-                    complement: quotation.client.address[0].complement,
-                    neighborhood: quotation.client.address[0].neighborhood,
-                    city: quotation.client.address[0].city,
-                    state: quotation.client.address[0].state,
-                    zipCode: quotation.client.address[0].zipcode,
-                  }
+              clientAddress: quotation.deliveryInfo.clientAddressId
+                ? quotation.deliveryInfo.clientAddress
+                  ? {
+                      type: quotation.deliveryInfo.clientAddress.type,
+                      street: quotation.deliveryInfo.clientAddress.street,
+                      number: quotation.deliveryInfo.clientAddress.number,
+                      complement:
+                        quotation.deliveryInfo.clientAddress.complement,
+                      neighborhood:
+                        quotation.deliveryInfo.clientAddress.neighborhood,
+                      city: quotation.deliveryInfo.clientAddress.city,
+                      state: quotation.deliveryInfo.clientAddress.state,
+                      zipCode: quotation.deliveryInfo.clientAddress.zipcode,
+                    }
+                  : null
                 : null,
             }
           : null,
