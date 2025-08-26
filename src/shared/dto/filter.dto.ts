@@ -1,4 +1,10 @@
-import { IsNumberString, IsOptional, IsUUID } from 'class-validator';
+import {
+  IsNumberString,
+  IsOptional,
+  IsUUID,
+  IsString,
+  IsIn,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class BaseFilterDTO {
@@ -30,4 +36,23 @@ export class BaseFilterDTO {
     required: false,
   })
   companyId: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Campo para ordenação',
+    example: 'updatedAt',
+    required: false,
+  })
+  orderBy?: string;
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  @ApiProperty({
+    description: 'Direção da ordenação',
+    example: 'desc',
+    required: false,
+    enum: ['asc', 'desc'],
+  })
+  orderDirection?: 'asc' | 'desc';
 }

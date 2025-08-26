@@ -38,4 +38,21 @@ export class FilterEmployeeDto extends BaseFilterDTO {
   @IsOptional()
   @IsString()
   sectorId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Campo para ordenação',
+    example: 'name',
+  })
+  @IsOptional()
+  @IsString()
+  orderBy?: string;
+
+  @ApiPropertyOptional({
+    description: 'Direção da ordenação',
+    example: 'asc',
+    enum: ['asc', 'desc'],
+  })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  orderDirection?: 'asc' | 'desc';
 }

@@ -1,5 +1,5 @@
 import { ClientStatus } from '@prisma/client';
-import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID, IsIn } from 'class-validator';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -31,4 +31,23 @@ export class ClientFilterDTO extends BaseFilterDTO {
     enum: ClientStatus,
   })
   status: ClientStatus;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Campo para ordenação',
+    example: 'updatedAt',
+    required: false,
+  })
+  orderBy?: string;
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  @ApiProperty({
+    description: 'Direção da ordenação',
+    example: 'desc',
+    required: false,
+    enum: ['asc', 'desc'],
+  })
+  orderDirection?: 'asc' | 'desc';
 }

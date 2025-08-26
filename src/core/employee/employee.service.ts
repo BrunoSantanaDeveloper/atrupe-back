@@ -121,6 +121,19 @@ export class EmployeeService {
         where.isActive = filter.status === 'ACTIVE';
       }
 
+      // Configurar ordenação
+      let orderBy = {};
+      if (filter.orderBy) {
+        orderBy = {
+          [filter.orderBy]: filter.orderDirection || 'asc',
+        };
+      } else {
+        // Ordenação padrão por nome (crescente)
+        orderBy = {
+          name: 'asc',
+        };
+      }
+
       const [total, employees] = await Promise.all([
         this.prisma.employee.count({ where }),
         this.prisma.employee.findMany({
@@ -140,9 +153,7 @@ export class EmployeeService {
           },
           take: +filter.limit,
           skip: (+filter.page - 1) * +filter.limit,
-          orderBy: {
-            name: 'asc',
-          },
+          orderBy: orderBy,
         }),
       ]);
 
@@ -184,6 +195,19 @@ export class EmployeeService {
         where.isActive = filter.status === 'ACTIVE';
       }
 
+      // Configurar ordenação
+      let orderBy = {};
+      if (filter.orderBy) {
+        orderBy = {
+          [filter.orderBy]: filter.orderDirection || 'asc',
+        };
+      } else {
+        // Ordenação padrão por nome (crescente)
+        orderBy = {
+          name: 'asc',
+        };
+      }
+
       const [total, employees] = await Promise.all([
         this.prisma.employee.count({ where }),
         this.prisma.employee.findMany({
@@ -203,9 +227,7 @@ export class EmployeeService {
           },
           take: +filter.limit,
           skip: (+filter.page - 1) * +filter.limit,
-          orderBy: {
-            name: 'asc',
-          },
+          orderBy: orderBy,
         }),
       ]);
 

@@ -135,12 +135,27 @@ export class SupplierService {
       if (filter.status) {
         where = { ...where, status: filter.status };
       }
+
+      // Configurar ordenação
+      let orderBy = {};
+      if (filter.orderBy) {
+        orderBy = {
+          [filter.orderBy]: filter.orderDirection || 'asc',
+        };
+      } else {
+        // Ordenação padrão por nome (crescente)
+        orderBy = {
+          name: 'asc',
+        };
+      }
+
       const [total, suppliers] = await Promise.all([
         this.prisma.supplier.count({ where }),
         this.prisma.supplier.findMany({
           where: where,
           take: +filter.limit,
           skip: (+filter.page - 1) * +filter.limit,
+          orderBy: orderBy,
           include: {
             categoryRelation: {
               select: {
