@@ -9,7 +9,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class QuotationProductItemDto {
@@ -249,8 +249,9 @@ export class CreateQuotationDto {
   })
   clientId?: string;
 
-  @IsOptional()
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsUUID()
+  @IsOptional()
   @ApiProperty({
     description: 'ID do contato/responsável do cliente associado ao orçamento',
     example: '123e4567-e89b-12d3-a456-426614174000',
