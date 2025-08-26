@@ -153,11 +153,124 @@ export class SalarySheetsController {
   @ApiOperation({
     summary: 'Retornar folha de pagamento por ID',
     description:
-      'Retorna os detalhes completos de uma folha de pagamento específica',
+      'Retorna os detalhes completos de uma folha de pagamento específica, incluindo movimentações financeiras relacionadas',
   })
   @ApiResponse({
     status: 200,
-    description: 'Detalhes da folha de pagamento',
+    description: 'Detalhes da folha de pagamento com movimentações financeiras',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        month: { type: 'number' },
+        year: { type: 'number' },
+        status: { type: 'string' },
+        employee: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string' },
+            role: { type: 'string' },
+          },
+        },
+        balance: { type: 'number' },
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              type: { type: 'string' },
+              amount: { type: 'number' },
+              description: { type: 'string' },
+              payable: {
+                type: 'object',
+                description:
+                  'Conta a pagar relacionada (apenas para adiantamentos)',
+                properties: {
+                  id: { type: 'string' },
+                  description: { type: 'string' },
+                  totalAmount: { type: 'number' },
+                  installments: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        id: { type: 'string' },
+                        installmentNumber: { type: 'number' },
+                        amount: { type: 'number' },
+                        status: { type: 'string' },
+                        transaction: {
+                          type: 'object',
+                          description: 'Transação financeira da parcela',
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        movements: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              amount: { type: 'number' },
+              status: { type: 'string' },
+              paidDate: { type: 'string', format: 'date-time' },
+              paymentMethod: { type: 'object' },
+            },
+          },
+        },
+        financialTransactions: {
+          type: 'array',
+          description:
+            'Todas as transações financeiras relacionadas à folha de pagamento',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              type: {
+                type: 'string',
+                enum: [
+                  'INCOME',
+                  'OUTCOME',
+                  'TRANSFER_INCOME',
+                  'TRANSFER_OUTCOME',
+                ],
+              },
+              amount: { type: 'number' },
+              description: { type: 'string' },
+              transactionDate: { type: 'string', format: 'date-time' },
+              status: {
+                type: 'string',
+                enum: ['COMPLETED', 'PENDING'],
+                description:
+                  'Status da transação: COMPLETED para transações efetivadas, PENDING para adiantamentos não pagos',
+              },
+              relatedPayable: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  description: { type: 'string' },
+                },
+              },
+              cashRegister: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  description: { type: 'string' },
+                  bankAccount: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   })
   @ApiResponse({
     status: 404,

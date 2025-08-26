@@ -470,6 +470,27 @@ export class SalarySheetsService {
         },
         include: {
           installments: {
+            include: {
+              transactions: {
+                include: {
+                  cashRegister: {
+                    include: {
+                      bankAccount: {
+                        include: {
+                          bank: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              paymentMethod: true,
+              bankAccount: {
+                include: {
+                  bank: true,
+                },
+              },
+            },
             orderBy: {
               installmentNumber: 'asc',
             },
@@ -488,6 +509,27 @@ export class SalarySheetsService {
           },
           include: {
             installments: {
+              include: {
+                transactions: {
+                  include: {
+                    cashRegister: {
+                      include: {
+                        bankAccount: {
+                          include: {
+                            bank: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+                paymentMethod: true,
+                bankAccount: {
+                  include: {
+                    bank: true,
+                  },
+                },
+              },
               orderBy: {
                 installmentNumber: 'asc',
               },
@@ -567,6 +609,44 @@ export class SalarySheetsService {
                     amount: installment.amount,
                     status: installment.status,
                     paidDate: installment.paidDate,
+                    paidAmount: installment.paidAmount,
+                    paymentMethod: installment.paymentMethod
+                      ? {
+                          id: installment.paymentMethod.id,
+                          name: installment.paymentMethod.name,
+                        }
+                      : null,
+                    bankAccount: installment.bankAccount
+                      ? {
+                          id: installment.bankAccount.id,
+                          name: installment.bankAccount.name,
+                          bank: installment.bankAccount.bank,
+                        }
+                      : null,
+                    transaction: installment.transactions
+                      ? {
+                          id: installment.transactions.id,
+                          type: installment.transactions.type,
+                          amount: installment.transactions.amount,
+                          description: installment.transactions.description,
+                          transactionDate:
+                            installment.transactions.transactionDate,
+                          reason: installment.transactions.reason,
+                          cashRegister: {
+                            id: installment.transactions.cashRegister.id,
+                            description:
+                              installment.transactions.cashRegister.description,
+                            bankAccount: {
+                              id: installment.transactions.cashRegister
+                                .bankAccount.id,
+                              name: installment.transactions.cashRegister
+                                .bankAccount.name,
+                              bank: installment.transactions.cashRegister
+                                .bankAccount.bank,
+                            },
+                          },
+                        }
+                      : null,
                   }),
                 ),
               },
@@ -580,6 +660,92 @@ export class SalarySheetsService {
 
         return baseItem;
       });
+
+      // Consolidar todas as transações financeiras relacionadas
+      const financialTransactions = [];
+
+      this.logger.log(
+        `Processando ${relatedPayables.length} payables para transações financeiras`,
+      );
+
+      relatedPayables.forEach((payable) => {
+        this.logger.log(
+          `Processando payable ${payable.id} com ${payable.installments.length} parcelas`,
+        );
+
+        payable.installments.forEach((installment) => {
+          // Para parcelas PAGAS, incluir a transação real
+          if (installment.transactions && installment.status === 'PAID') {
+            this.logger.log(
+              `Adicionando transação paga: ${installment.transactions.id}`,
+            );
+
+            financialTransactions.push({
+              id: installment.transactions.id,
+              type: installment.transactions.type,
+              amount: installment.transactions.amount,
+              description: installment.transactions.description,
+              transactionDate: installment.transactions.transactionDate,
+              reason: installment.transactions.reason,
+              status: 'COMPLETED',
+              relatedPayable: {
+                id: payable.id,
+                description: payable.description,
+                totalAmount: payable.totalAmount,
+              },
+              relatedInstallment: {
+                id: installment.id,
+                installmentNumber: installment.installmentNumber,
+                amount: installment.amount,
+                status: installment.status,
+              },
+              cashRegister: {
+                id: installment.transactions.cashRegister.id,
+                description: installment.transactions.cashRegister.description,
+                bankAccount: {
+                  id: installment.transactions.cashRegister.bankAccount.id,
+                  name: installment.transactions.cashRegister.bankAccount.name,
+                  bank: installment.transactions.cashRegister.bankAccount.bank,
+                },
+              },
+              createdAt: installment.transactions.createdAt,
+            });
+          }
+          // Para parcelas PENDENTES, incluir como transação pendente
+          else if (installment.status === 'PENDING') {
+            this.logger.log(
+              `Adicionando transação pendente para parcela: ${installment.id}`,
+            );
+
+            financialTransactions.push({
+              id: `pending-${installment.id}`,
+              type: 'OUTCOME',
+              amount: installment.amount,
+              description: `Adiantamento pendente - ${payable.description}`,
+              transactionDate: installment.dueDate,
+              reason: 'Adiantamento aguardando pagamento',
+              status: 'PENDING',
+              relatedPayable: {
+                id: payable.id,
+                description: payable.description,
+                totalAmount: payable.totalAmount,
+              },
+              relatedInstallment: {
+                id: installment.id,
+                installmentNumber: installment.installmentNumber,
+                amount: installment.amount,
+                status: installment.status,
+              },
+              cashRegister: null,
+              createdAt: installment.createdAt,
+            });
+          }
+        });
+      });
+
+      this.logger.log(
+        `Total de transações financeiras encontradas: ${financialTransactions.length}`,
+      );
 
       return {
         id: salarySheet.id,
@@ -609,6 +775,18 @@ export class SalarySheetsService {
             : null,
           createdAt: movement.createdAt,
         })),
+        financialTransactions: financialTransactions.sort((a, b) => {
+          // Primeiro ordenar por status (COMPLETED primeiro, depois PENDING)
+          if (a.status !== b.status) {
+            if (a.status === 'COMPLETED' && b.status === 'PENDING') return -1;
+            if (a.status === 'PENDING' && b.status === 'COMPLETED') return 1;
+          }
+          // Depois ordenar por data (mais recente primeiro)
+          return (
+            new Date(b.transactionDate).getTime() -
+            new Date(a.transactionDate).getTime()
+          );
+        }),
       };
     } catch (error) {
       this.logger.error(`Erro ao buscar folha de pagamento: ${error.message}`);
