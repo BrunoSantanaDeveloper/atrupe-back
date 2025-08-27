@@ -1299,7 +1299,7 @@ export class CompanyService {
         deliveryDeadline: 30,
         billing: 'ON_ORDER',
         sendToProduction: 'DIRECT',
-        productionStatus: 'MANAGE_PRODUCTION',
+        productionStatus: 'PRODUCTION_COMPLETED',
         isDefault: true,
       },
       {
@@ -1311,7 +1311,7 @@ export class CompanyService {
         deliveryDeadline: 30,
         billing: 'ON_ORDER',
         sendToProduction: 'DIRECT',
-        productionStatus: 'MANAGE_PRODUCTION',
+        productionStatus: 'PRODUCTION_COMPLETED',
         isDefault: false,
       },
       {
@@ -1323,7 +1323,7 @@ export class CompanyService {
         deliveryDeadline: 30,
         billing: 'NO_INVOICE',
         sendToProduction: 'DIRECT',
-        productionStatus: 'MANAGE_PRODUCTION',
+        productionStatus: 'PRODUCTION_COMPLETED',
         isDefault: false,
       },
     ];
