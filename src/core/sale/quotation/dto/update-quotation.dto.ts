@@ -29,6 +29,15 @@ export class UpdateQuotationProductItemDto extends PartialType(
   productItemId?: string;
 
   @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description: 'ID do item do produto (para identificação durante update)',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  id?: string;
+
+  @IsOptional()
   @Min(1)
   @ApiProperty({
     description: 'Quantidade do item do produto',

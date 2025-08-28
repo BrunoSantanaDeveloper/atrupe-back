@@ -294,6 +294,13 @@ export class QuotationService {
       if (data.items) {
         for (const item of data.items) {
           if (item.id) {
+            // Se salePrice for fornecido, usar diretamente como totalValue
+            // (frontend já calcula o valor total considerando quantidade e dimensões)
+            let calculatedTotalValue = item.totalValue;
+            if (item.salePrice !== undefined) {
+              calculatedTotalValue = item.salePrice;
+            }
+
             // Atualizar item existente com valores do frontend
             await this.prisma.quotationProductItem.update({
               where: { id: item.id },
@@ -315,9 +322,11 @@ export class QuotationService {
                 ...(item.salePrice !== undefined && {
                   salePrice: item.salePrice,
                 }),
-                ...(item.totalValue !== undefined && {
-                  totalValue: item.totalValue,
-                }),
+                // Usar totalValue calculado baseado no salePrice se fornecido, senão usar o valor do frontend
+                totalValue:
+                  calculatedTotalValue !== undefined
+                    ? calculatedTotalValue
+                    : item.totalValue,
               },
             });
           } else {
@@ -327,6 +336,34 @@ export class QuotationService {
             );
           }
         }
+
+        // Após atualizar os itens, recalcular totalValue e finalValue do produto
+        const updatedItems = await this.prisma.quotationProductItem.findMany({
+          where: { quotationProductId: productId },
+        });
+
+        const productTotalValue = updatedItems.reduce(
+          (acc, item) => acc + (item.totalValue || 0),
+          0,
+        );
+
+        // Calcular o finalValue aplicando desconto
+        const productFinalValue =
+          product.discountType === 'VALUE'
+            ? productTotalValue - (product.discount || 0)
+            : product.discountType === 'PERCENT'
+              ? productTotalValue -
+                productTotalValue * ((product.discount || 0) / 100)
+              : productTotalValue;
+
+        // Atualizar o produto com os valores recalculados
+        await this.prisma.quotationProduct.update({
+          where: { id: productId },
+          data: {
+            totalValue: productTotalValue,
+            finalValue: productFinalValue,
+          },
+        });
       }
 
       // Se mudou a quantidade do produto, atualizar quantidade e totalValue dos itens proporcionalmente
