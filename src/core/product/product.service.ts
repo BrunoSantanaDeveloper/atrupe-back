@@ -37,13 +37,13 @@ export class ProductService {
           unitKind: item.unitKind,
           unitCost: item.unitCost,
           salePrice: item.salePrice,
-          width: item.width || undefined,
-          height: item.height || undefined,
-          length: item.length || undefined,
-          weight: item.weight || undefined,
-          volume: item.volume || undefined,
-          distance: item.distance || undefined,
-          duration: item.duration || undefined,
+          width: item.width,
+          height: item.height,
+          length: item.length,
+          weight: item.weight,
+          volume: item.volume,
+          distance: item.distance,
+          duration: item.duration,
         })) || [];
 
       const productionStages = createProductDto.productionStages || [];
@@ -336,13 +336,13 @@ export class ProductService {
         unitKind: item.unitKind,
         unitCost: item.unitCost,
         salePrice: item.salePrice,
-        width: item.width || undefined,
-        height: item.height || undefined,
-        length: item.length || undefined,
-        weight: item.weight || undefined,
-        volume: item.volume || undefined,
-        distance: item.distance || undefined,
-        duration: item.duration || undefined,
+        width: item.width,
+        height: item.height,
+        length: item.length,
+        weight: item.weight,
+        volume: item.volume,
+        distance: item.distance,
+        duration: item.duration,
       }));
 
       const itemsWithId = items?.filter((item) => item.id);

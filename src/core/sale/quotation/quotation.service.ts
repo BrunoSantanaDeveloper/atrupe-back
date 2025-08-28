@@ -209,7 +209,8 @@ export class QuotationService {
           quotationId,
           productId: product.id,
           name: originalItem.name,
-          unitKind: item.unitKind as any,
+          unitKind: (item.unitKind || originalItem.unitKind || null) as any,
+          unitOfMeasureId: originalItem.unitOfMeasureId || null,
           width: item.width || 0,
           height: item.height || 0,
           length: item.length || 0,
@@ -1151,6 +1152,7 @@ export class QuotationService {
               originalCompositionId: item.productItemId,
               name: item.name,
               unitOfMeasure: item.unitOfMeasure,
+              unitKind: item.unitKind,
               quantity: item.quantity,
               originalQuantity: item.originalQuantity,
               unitValue: item.unitCost || 0, // CORRIGIDO: usar unitCost ao invés de salePrice
