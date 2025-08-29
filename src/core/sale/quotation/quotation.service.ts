@@ -1197,7 +1197,9 @@ export class QuotationService {
           finalValue: qp.finalValue,
           image: (() => {
             if (qp.imageUrl) {
-              return { url: qp.imageUrl, original: false };
+              // Se a imagem do produto no orçamento for diferente da imagem original do produto
+              const isOriginal = qp.imageUrl === qp.product.imageUrl;
+              return { url: qp.imageUrl, original: isOriginal };
             } else {
               return { url: qp.product.imageUrl, original: true };
             }
@@ -2082,7 +2084,9 @@ export class QuotationService {
           finalValue: qp.finalValue,
           image: (() => {
             if (qp.imageUrl) {
-              return { url: qp.imageUrl, original: false };
+              // Se a imagem do produto no orçamento for diferente da imagem original do produto
+              const isOriginal = qp.imageUrl === qp.product.imageUrl;
+              return { url: qp.imageUrl, original: isOriginal };
             } else {
               return { url: qp.product.imageUrl, original: true };
             }
