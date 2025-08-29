@@ -65,6 +65,7 @@ export class SeedPlansService {
   private async seedPlans() {
     console.log('📋 Seeding Plans...');
 
+    // eslint-disable-next-line
     for (const [planKey, config] of Object.entries(PLAN_CONFIGURATIONS)) {
       // Criar ou atualizar o plano
       const plan = await this.prisma.plan.upsert({

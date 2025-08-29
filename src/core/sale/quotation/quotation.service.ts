@@ -1723,7 +1723,20 @@ export class QuotationService {
         quotationPayment: {
           select: {
             billing: true,
+            finalValue: true,
+            totalValue: true,
+            discountValue: true,
+            discountTotal: true,
+            discountType: true,
             quotationInstallment: true,
+          },
+        },
+        quotationProduct: {
+          select: {
+            discount: true,
+            discountType: true,
+            totalValue: true,
+            finalValue: true,
           },
         },
       },
@@ -1754,18 +1767,62 @@ export class QuotationService {
       throw new BadRequestException('Informações do vendedor não encontradas.');
     }
     const minValue = quotation.seller.sellerProfile.minValue;
-    // const maxDiscount = quotation.seller.sellerProfile.maxDiscount;
+    const maxDiscount = quotation.seller.sellerProfile.maxDiscount;
+
     if (quotation.totalValue < minValue) {
+      const formattedMinValue = new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+      }).format(minValue / 100);
       throw new BadRequestException(
-        'O valor total do orçamento deve ser maior que o valor mínimo de venda do vendedor.',
+        `O valor total do orçamento deve ser maior que o valor mínimo de venda do vendedor (${formattedMinValue}).`,
       );
     }
 
-    // if (quotation.totalValue > maxDiscount) {
-    //   throw new BadRequestException(
-    //     'O valor total do orçamento deve ser menor que o valor máximo de desconto.',
-    //   );
-    // }
+    // Validação de desconto máximo
+    if (maxDiscount !== null && maxDiscount !== undefined) {
+      // Calcular o valor original sem nenhum desconto (soma dos totalValue dos produtos)
+      const originalValue =
+        quotation.quotationProduct?.reduce(
+          (sum, product) => sum + (product.totalValue || 0),
+          0,
+        ) || quotation.totalValue;
+
+      // Calcular o valor final real após todos os descontos
+      let finalValue = quotation.quotationPayment?.finalValue;
+
+      if (!finalValue && quotation.quotationPayment?.discountTotal) {
+        finalValue =
+          quotation.totalValue - quotation.quotationPayment.discountTotal;
+      }
+
+      if (!finalValue && quotation.quotationPayment?.discountValue) {
+        if (quotation.quotationPayment.discountType === 'PERCENT') {
+          finalValue =
+            quotation.totalValue -
+            quotation.totalValue *
+              (quotation.quotationPayment.discountValue / 100);
+        } else {
+          finalValue =
+            quotation.totalValue - quotation.quotationPayment.discountValue;
+        }
+      }
+
+      // Fallback para totalValue se não conseguir calcular
+      if (!finalValue) {
+        finalValue = quotation.totalValue;
+      }
+
+      // Calcular o percentual baseado no valor original sem descontos
+      const totalDiscount = originalValue - finalValue;
+      const discountPercentage = (totalDiscount / originalValue) * 100;
+
+      if (discountPercentage > maxDiscount) {
+        throw new BadRequestException(
+          `O desconto aplicado (${discountPercentage.toFixed(2)}%) excede o limite máximo permitido para este vendedor (${maxDiscount}%).`,
+        );
+      }
+    }
     try {
       return this.prisma.quotation.update({
         where: { id: quotationId },
