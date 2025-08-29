@@ -290,6 +290,39 @@ export class QuotationService {
         },
       );
 
+      // Se apenas discount ou discountType foram atualizados (sem itens), recalcular finalValue
+      if (
+        (data.discount !== undefined || data.discountType !== undefined) &&
+        !data.items &&
+        !data.quantity
+      ) {
+        // Usar os valores atualizados do produto para recalcular finalValue
+        const currentProduct = await this.prisma.quotationProduct.findUnique({
+          where: { id: productId },
+        });
+
+        if (currentProduct) {
+          const currentTotalValue = currentProduct.totalValue || 0;
+          let newFinalValue = currentTotalValue;
+
+          if (currentProduct.discountType === 'VALUE') {
+            newFinalValue = currentTotalValue - (currentProduct.discount || 0);
+          } else if (currentProduct.discountType === 'PERCENT') {
+            newFinalValue =
+              currentTotalValue -
+              currentTotalValue * ((currentProduct.discount || 0) / 100);
+          }
+
+          // Atualizar apenas o finalValue
+          await this.prisma.quotationProduct.update({
+            where: { id: productId },
+            data: {
+              finalValue: newFinalValue,
+            },
+          });
+        }
+      }
+
       // Processar itens: atualizar com valores calculados do frontend
       if (data.items) {
         for (const item of data.items) {

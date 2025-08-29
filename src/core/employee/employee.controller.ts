@@ -62,7 +62,9 @@ export class EmployeeController {
 
   @Get('list')
   @ApiQuery({ type: FilterEmployeeDto })
-  @ApiOperation({ summary: 'Obtém a lista simples de todos os empregados sem agrupamento' })
+  @ApiOperation({
+    summary: 'Obtém a lista simples de todos os empregados sem agrupamento',
+  })
   @ApiResponse({
     status: 200,
     description: 'Lista simples de empregados retornada com sucesso.',
