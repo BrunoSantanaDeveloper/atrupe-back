@@ -4,6 +4,7 @@ import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { ConfigService } from '@nestjs/config';
 import * as compression from 'compression';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import * as packageJson from '../package.json';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -24,7 +25,7 @@ async function bootstrap() {
   const doc = new DocumentBuilder()
     .setTitle('Atrupe - API Documentação')
     .setDescription('Documentação da API para o projeto Atrupe')
-    .setVersion('0.1.19')
+    .setVersion(packageJson.version)
     .addBearerAuth()
     .build();
 
