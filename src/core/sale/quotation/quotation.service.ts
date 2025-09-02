@@ -888,6 +888,8 @@ export class QuotationService {
               supplier: true,
               modality: true,
               clientAddressId: true,
+              createdAt: true,
+              updatedAt: true,
               clientAddress: {
                 select: {
                   id: true,
@@ -1075,6 +1077,8 @@ export class QuotationService {
               notes: quotation.deliveryInfo.notes,
               modality: quotation.deliveryInfo.modality,
               clientAddressId: quotation.deliveryInfo.clientAddressId,
+              createdAt: quotation.deliveryInfo.createdAt,
+              updatedAt: quotation.deliveryInfo.updatedAt,
               clientAddress: quotation.deliveryInfo.clientAddress
                 ? {
                     id: quotation.deliveryInfo.clientAddress.id,
