@@ -1677,6 +1677,23 @@ export class QuotationService {
   }
 
   async reject(quotationId: string, dto: CancelOrderDto): Promise<Quotation> {
+    const quotation = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      select: { status: true },
+    });
+
+    if (!quotation) {
+      throw new NotFoundException(
+        `Orçamento com ID '${quotationId}' não encontrado.`,
+      );
+    }
+
+    if (quotation.status === QuotationStatus.APPROVED) {
+      throw new BadRequestException(
+        'Não é possível rejeitar um orçamento com status aprovado.',
+      );
+    }
+
     if (!dto.reasonId) {
       return await this.prisma.quotation.update({
         where: { id: quotationId },
@@ -1752,6 +1769,18 @@ export class QuotationService {
         },
       },
     });
+
+    if (!quotation) {
+      throw new NotFoundException(
+        `Orçamento com ID '${quotationId}' não encontrado.`,
+      );
+    }
+
+    if (quotation.status === QuotationStatus.APPROVED) {
+      throw new BadRequestException(
+        'Não é possível concluir um orçamento com status aprovado.',
+      );
+    }
     // console.log('quotation: ', quotation);
     // const totalInstallmentsValue =
     //   quotation.quotationPayment.quotationInstallment.reduce(
