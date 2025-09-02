@@ -463,30 +463,20 @@ export class SalarySheetsService {
         throw new NotFoundException('Folha de pagamento não encontrada');
       }
 
-      // Buscar funcionário para obter o nome
-      const employee = await this.prisma.employee.findUnique({
-        where: { id: salarySheet.employeeId },
-        include: {
-          user: true,
-        },
-      });
-
-      const employeeName =
-        employee?.user?.name || employee?.name || 'Funcionário';
-
-      // Primeiro, buscar payables específicos desta folha
-      let relatedPayables = await this.prisma.payable.findMany({
+      // Buscar TODAS as despesas do colaborador sem filtros
+      const relatedPayables = await this.prisma.payable.findMany({
         where: {
           companyId: salarySheet.companyId,
-          AND: [
+          // Busca por qualquer referência que contenha o ID da folha ou do colaborador
+          OR: [
             {
-              description: {
-                contains: `Adiantamento salarial - ${employeeName}`,
+              reference: {
+                contains: salarySheet.id, // Qualquer referência contendo ID da folha
               },
             },
             {
-              notes: {
-                contains: `folha de pagamento ${salarySheet.month + 1}/${salarySheet.year}`,
+              reference: {
+                contains: salarySheet.employeeId, // Qualquer referência contendo ID do colaborador
               },
             },
           ],
@@ -520,49 +510,6 @@ export class SalarySheetsService {
           },
         },
       });
-
-      // Se não encontrou payables específicos, buscar todos os adiantamentos do funcionário
-      if (relatedPayables.length === 0) {
-        relatedPayables = await this.prisma.payable.findMany({
-          where: {
-            companyId: salarySheet.companyId,
-            description: {
-              contains: `Adiantamento salarial - ${employeeName}`,
-            },
-          },
-          include: {
-            installments: {
-              include: {
-                transactions: {
-                  include: {
-                    cashRegister: {
-                      include: {
-                        bankAccount: {
-                          include: {
-                            bank: true,
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-                paymentMethod: true,
-                bankAccount: {
-                  include: {
-                    bank: true,
-                  },
-                },
-              },
-              orderBy: {
-                installmentNumber: 'asc',
-              },
-            },
-          },
-          orderBy: {
-            createdAt: 'desc',
-          },
-        });
-      }
 
       if (relatedPayables.length > 0) {
         relatedPayables.forEach((payable, index) => {
@@ -684,90 +631,42 @@ export class SalarySheetsService {
         return baseItem;
       });
 
-      // Consolidar todas as transações financeiras relacionadas
+      // Listar todas as transações financeiras sem filtros ou separações
       const financialTransactions = [];
 
       this.logger.log(
-        `Processando ${relatedPayables.length} payables para transações financeiras`,
+        `Listando todas as ${relatedPayables.length} despesas encontradas`,
       );
 
       relatedPayables.forEach((payable) => {
-        this.logger.log(
-          `Processando payable ${payable.id} com ${payable.installments.length} parcelas`,
-        );
-
         payable.installments.forEach((installment) => {
-          // Para parcelas PAGAS, incluir a transação real
-          if (installment.transactions && installment.status === 'PAID') {
-            this.logger.log(
-              `Adicionando transação paga: ${installment.transactions.id}`,
-            );
-
-            financialTransactions.push({
-              id: installment.transactions.id,
-              type: installment.transactions.type,
-              amount: installment.transactions.amount,
-              description: installment.transactions.description,
-              transactionDate: installment.transactions.transactionDate,
-              reason: installment.transactions.reason,
-              status: 'COMPLETED',
-              relatedPayable: {
-                id: payable.id,
-                description: payable.description,
-                totalAmount: payable.totalAmount,
-              },
-              relatedInstallment: {
-                id: installment.id,
-                installmentNumber: installment.installmentNumber,
-                amount: installment.amount,
-                status: installment.status,
-              },
-              cashRegister: {
-                id: installment.transactions.cashRegister.id,
-                description: installment.transactions.cashRegister.description,
-                bankAccount: {
-                  id: installment.transactions.cashRegister.bankAccount.id,
-                  name: installment.transactions.cashRegister.bankAccount.name,
-                  bank: installment.transactions.cashRegister.bankAccount.bank,
-                },
-              },
-              createdAt: installment.transactions.createdAt,
-            });
-          }
-          // Para parcelas PENDENTES, incluir como transação pendente
-          else if (installment.status === 'PENDING') {
-            this.logger.log(
-              `Adicionando transação pendente para parcela: ${installment.id}`,
-            );
-
-            financialTransactions.push({
-              id: `pending-${installment.id}`,
-              type: 'OUTCOME',
+          // Adicionar TODAS as parcelas, independente do status
+          const transactionData = {
+            id: installment.id,
+            amount: installment.amount,
+            description: payable.description,
+            transactionDate: installment.dueDate,
+            status: installment.status,
+            relatedPayable: {
+              id: payable.id,
+              description: payable.description,
+              totalAmount: payable.totalAmount,
+            },
+            relatedInstallment: {
+              id: installment.id,
+              installmentNumber: installment.installmentNumber,
               amount: installment.amount,
-              description: `Adiantamento pendente - ${payable.description}`,
-              transactionDate: installment.dueDate,
-              reason: 'Adiantamento aguardando pagamento',
-              status: 'PENDING',
-              relatedPayable: {
-                id: payable.id,
-                description: payable.description,
-                totalAmount: payable.totalAmount,
-              },
-              relatedInstallment: {
-                id: installment.id,
-                installmentNumber: installment.installmentNumber,
-                amount: installment.amount,
-                status: installment.status,
-              },
-              cashRegister: null,
-              createdAt: installment.createdAt,
-            });
-          }
+              status: installment.status,
+            },
+            createdAt: installment.createdAt,
+          };
+
+          financialTransactions.push(transactionData);
         });
       });
 
       this.logger.log(
-        `Total de transações financeiras encontradas: ${financialTransactions.length}`,
+        `Total de transações listadas: ${financialTransactions.length}`,
       );
 
       return {
@@ -1046,6 +945,7 @@ export class SalarySheetsService {
         data: {
           referenceDate: referenceDate,
           description: `Salário ${employeeName} - ${salarySheet.month + 1}/${salarySheet.year}`,
+          reference: `SALARY_${salarySheet.id}`, // Referência única à folha
           notes: `Folha de pagamento gerada automaticamente para ${salarySheet.month + 1}/${salarySheet.year}`,
           totalAmount: netAmount,
           totalValue: netAmount,
@@ -1104,6 +1004,7 @@ export class SalarySheetsService {
         data: {
           referenceDate: currentDate,
           description: `Adiantamento salarial - ${employeeName}: ${description}`,
+          reference: `ADVANCE_${salarySheet.id}_${Date.now()}`, // Referência única à folha + timestamp
           notes: `Adiantamento gerado automaticamente para folha de pagamento ${salarySheet.month + 1}/${salarySheet.year}`,
           totalAmount: amount,
           totalValue: amount,
