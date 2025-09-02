@@ -15,7 +15,6 @@ import {
   UpdateSalaryItemDto,
   UpdateEmployeeSalaryDto,
 } from './dto/update-salary.dto';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { Logger } from '@nestjs/common';
 import { ItemType, Prisma } from '@prisma/client';
 
@@ -25,7 +24,7 @@ export class SalarySheetsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  @Cron(CronExpression.EVERY_1ST_DAY_OF_MONTH_AT_NOON)
+  // @Cron(CronExpression.EVERY_1ST_DAY_OF_MONTH_AT_NOON)
   async generateSalarySheetForMonth(): Promise<void> {
     /**
      * Mensalmente, a folha de pagamento é gerada para todos os colaboradores ativos.
@@ -168,6 +167,7 @@ export class SalarySheetsService {
           },
         },
         company: true,
+        user: true,
       },
     });
 
@@ -239,6 +239,29 @@ export class SalarySheetsService {
                 reference: `${month}/${year}`,
               })),
             });
+
+            // Calcular salário líquido e criar despesa
+            const salaryItems = employee.SalaryControl;
+            const totalIncreases = salaryItems
+              .filter((item) => item.type === 'INCREASE')
+              .reduce((sum, item) => sum + item.amount, 0);
+
+            const totalDiscounts = salaryItems
+              .filter((item) => item.type === 'DISCOUNT')
+              .reduce((sum, item) => sum + item.amount, 0);
+
+            const netSalary = totalIncreases - totalDiscounts;
+
+            // Criar despesa apenas se há valor líquido a pagar
+            if (netSalary > 0) {
+              const employeeName =
+                employee.user?.name || employee.name || 'Funcionário';
+              await this.createSalaryExpense(
+                salarySheet,
+                netSalary,
+                employeeName,
+              );
+            }
           } else {
             this.logger.warn(
               `Colaborador ${employeeId} não possui configurações de salário definidas`,
@@ -1004,6 +1027,58 @@ export class SalarySheetsService {
     }
 
     return updatedEmployee;
+  }
+
+  private async createSalaryExpense(
+    salarySheet: any,
+    netAmount: number,
+    employeeName: string,
+  ) {
+    try {
+      // Competência: primeiro dia do mês da folha
+      const referenceDate = new Date(salarySheet.year, salarySheet.month, 1);
+
+      // Vencimento: dia 5 do mês da folha
+      const dueDate = new Date(salarySheet.year, salarySheet.month, 5);
+
+      // Criar conta a pagar (despesa) para o salário líquido
+      const payable = await this.prisma.payable.create({
+        data: {
+          referenceDate: referenceDate,
+          description: `Salário ${employeeName} - ${salarySheet.month + 1}/${salarySheet.year}`,
+          notes: `Folha de pagamento gerada automaticamente para ${salarySheet.month + 1}/${salarySheet.year}`,
+          totalAmount: netAmount,
+          totalValue: netAmount,
+          mainAdditionalFee: 0,
+          installmentQty: 1,
+          status: 'PENDING',
+          companyId: salarySheet.companyId,
+        },
+      });
+
+      // Criar a parcela única com vencimento no dia 5 do mês
+      await this.prisma.payableInstallment.create({
+        data: {
+          payableId: payable.id,
+          installmentNumber: 1,
+          dueDate: dueDate,
+          amount: netAmount,
+          additionalFee: 0,
+          status: 'PENDING',
+        },
+      });
+
+      this.logger.log(
+        `Despesa de salário criada automaticamente: ${payable.id} - ${employeeName} - R$ ${(netAmount / 100).toFixed(2)}`,
+      );
+
+      return payable;
+    } catch (error) {
+      this.logger.error(
+        `Erro ao criar despesa de salário para ${employeeName}: ${error.message}`,
+      );
+      // Não propaga o erro para não bloquear a criação da folha
+    }
   }
 
   private async createAdvanceExpense(
