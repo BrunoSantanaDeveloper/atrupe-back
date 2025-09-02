@@ -1849,6 +1849,23 @@ export class QuotationService {
   }
 
   async open(quotationId: string): Promise<Quotation> {
+    const quotation = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      select: { status: true },
+    });
+
+    if (!quotation) {
+      throw new NotFoundException(
+        `Orçamento com ID '${quotationId}' não encontrado.`,
+      );
+    }
+
+    if (quotation.status === QuotationStatus.APPROVED) {
+      throw new BadRequestException(
+        'Não é possível abrir um orçamento com status aprovado.',
+      );
+    }
+
     return this.prisma.quotation.update({
       where: { id: quotationId },
       data: {
@@ -2204,6 +2221,7 @@ export class QuotationService {
                   }
                 : null,
               daysAfterApproval: quotation.deliveryInfo.daysAfterApproval,
+              estimatedDate: quotation.deliveryInfo.estimatedDate,
               freightCost: quotation.deliveryInfo.cost,
               freightPrice: quotation.deliveryInfo.value,
               notes: quotation.deliveryInfo.notes,
