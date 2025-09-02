@@ -33,14 +33,6 @@ export class UpdateDeliveryInfoDto {
   daysAfterApproval?: number;
 
   @ApiProperty({
-    description: 'Data estimada para a entrega',
-    type: Date,
-    required: false,
-  })
-  @IsOptional()
-  estimatedDate?: Date;
-
-  @ApiProperty({
     description: 'Modalidade de entrega',
     type: String,
     default: 'Indefinida',

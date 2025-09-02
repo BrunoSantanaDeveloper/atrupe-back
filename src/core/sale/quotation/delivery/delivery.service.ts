@@ -36,6 +36,11 @@ export class DeliveryService {
     // Se clientAddressId for "custom", criar um endereço temporário
     let addressId = createDeliveryInfoDto.clientAddressId;
 
+    // Se clientAddressId for string vazia, tratar como null
+    if (addressId === '') {
+      addressId = null;
+    }
+
     if (
       createDeliveryInfoDto.clientAddressId === 'custom' &&
       createDeliveryInfoDto.customAddress
@@ -60,7 +65,7 @@ export class DeliveryService {
         ...deliveryData,
         quotationId,
         deliveryType,
-        clientAddressId: addressId === 'custom' ? null : addressId,
+        clientAddressId: addressId === 'custom' ? null : addressId || null,
       },
     });
 
@@ -99,14 +104,13 @@ export class DeliveryService {
         );
       }
 
-      if (updateDeliveryInfoDto.estimatedDate) {
-        updateDeliveryInfoDto.estimatedDate = new Date(
-          updateDeliveryInfoDto.estimatedDate,
-        );
-      }
-
       // Tratar endereço customizado
       let addressId = updateDeliveryInfoDto.clientAddressId;
+
+      // Se clientAddressId for string vazia, tratar como null
+      if (addressId === '') {
+        addressId = null;
+      }
 
       // Verificar se existe um endereço customizado anterior
       const existingCustomAddress = existingDeliveryInfo.clientAddressId
@@ -167,11 +171,22 @@ export class DeliveryService {
       const deliveryData: any = { ...updateDeliveryInfoDto };
       delete deliveryData.customAddress;
 
+      // Converter valores null para undefined para evitar problemas no Prisma
+      if (deliveryData.supplierId === null) {
+        deliveryData.supplierId = undefined;
+      }
+      if (
+        deliveryData.clientAddressId === null ||
+        deliveryData.clientAddressId === ''
+      ) {
+        deliveryData.clientAddressId = undefined;
+      }
+
       const updatedDeliveryInfo = await this.prisma.deliveryInfo.update({
         where: { id },
         data: {
           ...deliveryData,
-          clientAddressId: addressId === 'custom' ? null : addressId,
+          clientAddressId: addressId === 'custom' ? null : addressId || null,
         },
       });
 

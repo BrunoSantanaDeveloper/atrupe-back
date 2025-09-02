@@ -114,7 +114,6 @@ export class QuotationService {
       await this.prisma.deliveryInfo.create({
         data: {
           daysAfterApproval: series.deliveryDeadline,
-          estimatedDate: add(new Date(), { days: series.deliveryDeadline }),
           quotation: {
             connect: {
               id: newQuotation.id,
@@ -1312,7 +1311,6 @@ export class QuotationService {
           quotationId: newQuotation.id,
           deliveryType: quotation.deliveryInfo.deliveryType,
           daysAfterApproval: quotation.deliveryInfo.daysAfterApproval,
-          estimatedDate: quotation.deliveryInfo.estimatedDate,
           modality: quotation.deliveryInfo.modality,
           supplierId: quotation.deliveryInfo.supplierId,
         },
@@ -1463,6 +1461,7 @@ export class QuotationService {
                 select: {
                   id: true,
                   estimatedDate: true,
+                  daysAfterApproval: true,
                 },
               },
               quotationPayment: {
@@ -1491,6 +1490,20 @@ export class QuotationService {
             });
           }
           const deliveryStatus = isTrial ? 'DELIVERING' : 'IN_PRODUCTION';
+
+          // Calcular a data estimada baseada na aprovação
+          const estimatedDate = quotation.deliveryInfo.daysAfterApproval
+            ? add(quotation.approvedAt, {
+                days: quotation.deliveryInfo.daysAfterApproval,
+              })
+            : quotation.approvedAt;
+
+          // Atualizar a data estimada no deliveryInfo
+          await prisma.deliveryInfo.update({
+            where: { id: quotation.deliveryInfo.id },
+            data: { estimatedDate },
+          });
+
           // Criar o agendamento de entrega diretamente no Prisma
           await prisma.deliverySchedule.create({
             data: {
@@ -1506,9 +1519,7 @@ export class QuotationService {
               deliveryInfo: {
                 connect: { id: quotation.deliveryInfo.id },
               },
-              scheduledDate: quotation.deliveryInfo.estimatedDate
-                ? quotation.deliveryInfo.estimatedDate
-                : new Date(),
+              scheduledDate: estimatedDate,
               status: deliveryStatus,
             },
           });
