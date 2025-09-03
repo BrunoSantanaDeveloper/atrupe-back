@@ -13,7 +13,6 @@ import {
 import {
   ToggleSalarySheetStatusDto,
   UpdateSalaryItemDto,
-  UpdateEmployeeSalaryDto,
 } from './dto/update-salary.dto';
 import { Logger } from '@nestjs/common';
 import { ItemType, Prisma } from '@prisma/client';
@@ -718,67 +717,6 @@ export class SalarySheetsService {
     return updatedMovement;
   }
 
-  async updateEmployeeSalary(dto: UpdateEmployeeSalaryDto) {
-    const { employeeId, salary } = dto;
-
-    const employee = await this.prisma.employee.findUnique({
-      where: { id: employeeId },
-    });
-
-    if (!employee) {
-      throw new NotFoundException('Colaborador não encontrado');
-    }
-
-    const updatedEmployee = await this.prisma.employee.update({
-      where: { id: employeeId },
-      data: { sallary: salary },
-    });
-
-    // Atualizar folha de pagamento atual se existir
-    const currentDate = new Date();
-    const currentMonth = currentDate.getMonth();
-    const currentYear = currentDate.getFullYear();
-
-    const currentSalarySheet = await this.prisma.salarySheet.findFirst({
-      where: {
-        employeeId,
-        month: currentMonth,
-        year: currentYear,
-        status: 'OPEN',
-      },
-    });
-
-    if (currentSalarySheet) {
-      // Atualizar ou criar item de salário base
-      const baseSalaryItem = await this.prisma.salaryItem.findFirst({
-        where: {
-          salarySheetId: currentSalarySheet.id,
-          type: 'INCREASE',
-          description: 'Salário Base',
-        },
-      });
-
-      if (baseSalaryItem) {
-        await this.prisma.salaryItem.update({
-          where: { id: baseSalaryItem.id },
-          data: { amount: salary },
-        });
-      } else {
-        await this.prisma.salaryItem.create({
-          data: {
-            salarySheetId: currentSalarySheet.id,
-            type: 'INCREASE',
-            description: 'Salário Base',
-            amount: salary,
-            reference: `${currentMonth + 1}/${currentYear}`,
-          },
-        });
-      }
-    }
-
-    return updatedEmployee;
-  }
-
   private async createSalaryExpense(salarySheet: any, netAmount: number) {
     try {
       // Competência: primeiro dia do mês da folha
@@ -792,7 +730,6 @@ export class SalarySheetsService {
         data: {
           referenceDate: referenceDate,
           description: `Folha ${salarySheet.month + 1}/${salarySheet.year} - Salário`,
-          // Referência removida - usando employeeId e expenseSource para identificação
           totalAmount: netAmount,
           totalValue: netAmount,
           mainAdditionalFee: 0,
@@ -833,24 +770,13 @@ export class SalarySheetsService {
     description: string,
   ) {
     try {
-      // Buscar dados do funcionário
-      const employee = await this.prisma.employee.findUnique({
-        where: { id: salarySheet.employeeId },
-        include: {
-          user: true,
-        },
-      });
-
-      const employeeName =
-        employee?.user?.name || employee?.name || 'Funcionário';
       const currentDate = new Date();
 
       // Criar conta a pagar (despesa) para o adiantamento
       const payable = await this.prisma.payable.create({
         data: {
           referenceDate: currentDate,
-          description: `Adiantamento salarial - ${employeeName}: ${description}`,
-          notes: `Adiantamento gerado automaticamente para folha de pagamento ${salarySheet.month + 1}/${salarySheet.year}`,
+          description: `Folha ${salarySheet.month + 1}/${salarySheet.year} - ${description}`,
           totalAmount: amount,
           totalValue: amount,
           mainAdditionalFee: 0,

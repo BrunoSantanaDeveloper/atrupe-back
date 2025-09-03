@@ -28,7 +28,6 @@ import {
 import {
   ToggleSalarySheetStatusDto,
   UpdateSalaryItemDto,
-  UpdateEmployeeSalaryDto,
 } from './dto/update-salary.dto';
 import { GenerateSalarySheetsDto } from './dto/generate-salary-sheets.dto';
 
@@ -422,23 +421,5 @@ export class SalarySheetsController {
   })
   async payMovement(@Body() dto: PaySalaryMovementDto) {
     return this.salaryService.payMovement(dto);
-  }
-
-  @Patch('employee/salary')
-  @ApiOperation({
-    summary: 'Atualizar salário base do colaborador',
-    description:
-      'Atualiza o salário base de um colaborador e reflete a mudança na folha de pagamento atual',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Salário base atualizado com sucesso',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Colaborador não encontrado',
-  })
-  async updateEmployeeSalary(@Body() dto: UpdateEmployeeSalaryDto) {
-    return this.salaryService.updateEmployeeSalary(dto);
   }
 }

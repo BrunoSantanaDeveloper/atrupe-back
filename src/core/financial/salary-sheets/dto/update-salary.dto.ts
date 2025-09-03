@@ -63,11 +63,3 @@ export class ToggleSalarySheetStatusDto {
   @IsEnum(SheetStatus)
   status: SheetStatus;
 }
-
-export class UpdateEmployeeSalaryDto {
-  @IsString()
-  employeeId: string;
-
-  @IsNumber()
-  salary: number;
-}
