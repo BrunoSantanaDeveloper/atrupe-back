@@ -273,7 +273,6 @@ export class SalarySheetsService {
           balance,
           status: salarySheet?.status || 'EMPTY',
           items: salarySheet?.items || [],
-          movements: salarySheet?.movements || [],
         };
       });
 
@@ -374,15 +373,19 @@ export class SalarySheetsService {
       }
 
       // Calcula o saldo a pagar
-      const totalSalary = salarySheet.items
+      const totalIncreases = salarySheet.items
         .filter((item) => item.type === ItemType.INCREASE)
+        .reduce((sum, item) => sum + item.amount, 0);
+
+      const totalDiscounts = salarySheet.items
+        .filter((item) => item.type === ItemType.DISCOUNT)
         .reduce((sum, item) => sum + item.amount, 0);
 
       const advances = salarySheet.items
         .filter((item) => item.type === ItemType.ADVANCE)
         .reduce((sum, item) => sum + item.amount, 0);
 
-      const balance = totalSalary - advances;
+      const balance = totalIncreases - totalDiscounts - advances;
 
       // Mapear itens da folha e incluir payables para ADVANCE
       const itemsWithPayables = salarySheet.items.map((item) => {
