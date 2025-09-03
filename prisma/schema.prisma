@@ -344,6 +344,7 @@ model Employee {
   quotation       Quotation[]
   SalaryControl   SalaryControl[]
   salarySheet     SalarySheet[]
+  payables        Payable[]
 
   @@map("employees")
 }
@@ -516,15 +517,18 @@ model Payable {
   updatedAt          DateTime?            @updatedAt
   quotationId        String?
   clientId           String?
+  employeeId         String?
   mainAdditionalFee  Float?
   totalValue         Float?
   scheduledExpenseId String?
   financialType      FinancialType        @default(MAIN)
+  expenseSource      ExpenseSource        @default(SUPPLIER)
   commission         Commission[]
   history            PayableHistory[]
   installments       PayableInstallment[]
   client             Client?              @relation(fields: [clientId], references: [id])
   company            Company              @relation(fields: [companyId], references: [id])
+  employee           Employee?            @relation(fields: [employeeId], references: [id])
   nature             Nature?              @relation(fields: [natureId], references: [id])
   quotation          Quotation?           @relation(fields: [quotationId], references: [id])
   scheduledExpense   ScheduledExpense?    @relation(fields: [scheduledExpenseId], references: [id])
@@ -1780,4 +1784,11 @@ enum FinancialType {
   DOWN_PAYMENT // Entrada da venda (receivable)
   COMMISSION // Comissão da venda (payable)
   DELIVERY // Entrega da venda (payable)
+}
+
+enum ExpenseSource {
+  SUPPLIER    // Fornecedor
+  EMPLOYEE    // Funcionário (salário)
+  CLIENT      // Cliente (reembolso, etc.)
+  OTHER       // Outros
 }
