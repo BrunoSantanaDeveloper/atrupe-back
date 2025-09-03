@@ -89,24 +89,6 @@ export class SalarySheetsController {
     return this.salaryService.generateSalarySheetForEmployees(dto);
   }
 
-  @Post(':salarySheetId/open')
-  @ApiOperation({
-    summary: 'Abrir folha de pagamento',
-    description:
-      'Abre uma folha de pagamento vazia e cria o item de salário base',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Folha de pagamento aberta com sucesso',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Folha de pagamento não encontrada ou já está aberta',
-  })
-  async openSalarySheet(@Param('salarySheetId') salarySheetId: string) {
-    return await this.salaryService.openSalarySheet(salarySheetId);
-  }
-
   @Get()
   @ApiOperation({
     summary: 'Listar folhas de pagamento',

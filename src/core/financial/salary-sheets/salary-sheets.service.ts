@@ -24,103 +24,7 @@ export class SalarySheetsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  // @Cron(CronExpression.EVERY_1ST_DAY_OF_MONTH_AT_NOON)
-  async generateSalarySheetForMonth(): Promise<void> {
-    /**
-     * Mensalmente, a folha de pagamento é gerada para todos os colaboradores ativos.
-     * Se o colaborador não tiver uma folha de pagamento, uma nova folha é criada.
-     * Se o colaborador tiver uma folha de pagamento, a folha é atualizada.
-     *
-     * A folha de pagamento é gerada no primeiro dia do mês para o mês atual.
-     * No mês, verifica se o colaborador está ativo, se estiver cria.
-     */
-    const companies = await this.prisma.company.findMany({
-      where: {
-        isActive: true,
-      },
-    });
-
-    const currentDate = new Date();
-    const targetMonth = currentDate.getMonth();
-    const targetYear = currentDate.getFullYear();
-
-    for (const company of companies) {
-      const employees = await this.prisma.employee.findMany({
-        where: {
-          companyId: company.id,
-          isActive: true,
-        },
-        include: {
-          SalaryControl: {
-            where: {
-              isSet: true,
-            },
-          },
-        },
-      });
-
-      for (const employee of employees) {
-        try {
-          // Verifica se já existe uma folha para o mês/ano
-          const existingSheet = await this.prisma.salarySheet.findFirst({
-            where: {
-              employeeId: employee.id,
-              month: targetMonth,
-              year: targetYear,
-            },
-          });
-
-          if (existingSheet) {
-            this.logger.warn(
-              `Folha de pagamento já existe para o colaborador ${employee.id} no mês ${targetMonth + 1}/${targetYear}`,
-            );
-            continue;
-          }
-
-          // Cria a folha de pagamento dentro de uma transação
-          await this.prisma.$transaction(async (prisma) => {
-            const salarySheet = await prisma.salarySheet.create({
-              data: {
-                employeeId: employee.id,
-                month: targetMonth,
-                year: targetYear,
-                status: 'EMPTY',
-                companyId: company.id,
-              },
-            });
-
-            // Cria os itens da folha baseados no SalaryControl
-            if (employee.SalaryControl.length > 0) {
-              await prisma.salaryItem.createMany({
-                data: employee.SalaryControl.map((item) => ({
-                  salarySheetId: salarySheet.id,
-                  type: item.type,
-                  amount: item.amount,
-                  description: item.reference,
-                  reference: `${targetMonth + 1}/${targetYear}`,
-                })),
-              });
-            } else {
-              this.logger.warn(
-                `Colaborador ${employee.id} não possui configurações de salário definidas`,
-              );
-            }
-          });
-
-          this.logger.log(
-            `Folha de pagamento criada com sucesso para o colaborador ${employee.id}`,
-          );
-        } catch (error) {
-          this.logger.error(
-            `Erro ao gerar folha de pagamento para o colaborador ${employee.id}: ${error.message}`,
-          );
-          // Continua para o próximo colaborador mesmo se houver erro
-          continue;
-        }
-      }
-    }
-  }
-
+  // Recebe o mes, ano, e uma lista de colaboradores para gerar folha de pagamento.
   async generateSalarySheetForEmployees(data: {
     month: number;
     year: number;
@@ -254,13 +158,7 @@ export class SalarySheetsService {
 
             // Criar despesa apenas se há valor líquido a pagar
             if (netSalary > 0) {
-              const employeeName =
-                employee.user?.name || employee.name || 'Funcionário';
-              await this.createSalaryExpense(
-                salarySheet,
-                netSalary,
-                employeeName,
-              );
+              await this.createSalaryExpense(salarySheet, netSalary);
             }
           } else {
             this.logger.warn(
@@ -285,42 +183,6 @@ export class SalarySheetsService {
     }
 
     return result;
-  }
-
-  async openSalarySheet(salarySheetId: string) {
-    const salarySheet = await this.prisma.salarySheet.findUnique({
-      where: { id: salarySheetId },
-      include: {
-        employee: true,
-      },
-    });
-
-    if (!salarySheet || salarySheet.status !== 'EMPTY') {
-      throw new NotFoundException(
-        'Folha de pagamento não encontrada ou já está aberta.',
-      );
-    }
-
-    await this.prisma.salarySheet.update({
-      where: { id: salarySheetId },
-      data: { status: 'OPEN' },
-    });
-
-    const salaryBase = salarySheet.employee.sallary || 0;
-    const salaryItem = await this.prisma.salaryItem.create({
-      data: {
-        salarySheetId: salarySheetId,
-        type: 'INCREASE',
-        description: 'Salário Base',
-        amount: salaryBase,
-        reference: `${salarySheet.month + 1}/${salarySheet.year}`,
-      },
-    });
-
-    return {
-      message: 'Folha de pagamento aberta e salário base criado.',
-      salaryItem,
-    };
   }
 
   async getSalarySheets(dto: GetSalarySheetsDto) {
@@ -463,23 +325,12 @@ export class SalarySheetsService {
         throw new NotFoundException('Folha de pagamento não encontrada');
       }
 
-      // Buscar TODAS as despesas do colaborador sem filtros
+      // Buscar TODAS as despesas do colaborador usando employeeId e expenseSource
       const relatedPayables = await this.prisma.payable.findMany({
         where: {
           companyId: salarySheet.companyId,
-          // Busca por qualquer referência que contenha o ID da folha ou do colaborador
-          OR: [
-            {
-              reference: {
-                contains: salarySheet.id, // Qualquer referência contendo ID da folha
-              },
-            },
-            {
-              reference: {
-                contains: salarySheet.employeeId, // Qualquer referência contendo ID do colaborador
-              },
-            },
-          ],
+          employeeId: salarySheet.employeeId,
+          expenseSource: 'EMPLOYEE',
         },
         include: {
           installments: {
@@ -928,11 +779,7 @@ export class SalarySheetsService {
     return updatedEmployee;
   }
 
-  private async createSalaryExpense(
-    salarySheet: any,
-    netAmount: number,
-    employeeName: string,
-  ) {
+  private async createSalaryExpense(salarySheet: any, netAmount: number) {
     try {
       // Competência: primeiro dia do mês da folha
       const referenceDate = new Date(salarySheet.year, salarySheet.month, 1);
@@ -944,15 +791,16 @@ export class SalarySheetsService {
       const payable = await this.prisma.payable.create({
         data: {
           referenceDate: referenceDate,
-          description: `Salário ${employeeName} - ${salarySheet.month + 1}/${salarySheet.year}`,
-          reference: `SALARY_${salarySheet.id}`, // Referência única à folha
-          notes: `Folha de pagamento gerada automaticamente para ${salarySheet.month + 1}/${salarySheet.year}`,
+          description: `Folha ${salarySheet.month + 1}/${salarySheet.year} - Salário`,
+          // Referência removida - usando employeeId e expenseSource para identificação
           totalAmount: netAmount,
           totalValue: netAmount,
           mainAdditionalFee: 0,
           installmentQty: 1,
           status: 'PENDING',
           companyId: salarySheet.companyId,
+          expenseSource: 'EMPLOYEE',
+          employeeId: salarySheet.employeeId,
         },
       });
 
@@ -969,14 +817,12 @@ export class SalarySheetsService {
       });
 
       this.logger.log(
-        `Despesa de salário criada automaticamente: ${payable.id} - ${employeeName} - R$ ${(netAmount / 100).toFixed(2)}`,
+        `Despesa de salário criada automaticamente: ${payable.id} - R$ ${(netAmount / 100).toFixed(2)}`,
       );
 
       return payable;
     } catch (error) {
-      this.logger.error(
-        `Erro ao criar despesa de salário para ${employeeName}: ${error.message}`,
-      );
+      this.logger.error(`Erro ao criar despesa de salário: ${error.message}`);
       // Não propaga o erro para não bloquear a criação da folha
     }
   }
@@ -1004,7 +850,6 @@ export class SalarySheetsService {
         data: {
           referenceDate: currentDate,
           description: `Adiantamento salarial - ${employeeName}: ${description}`,
-          reference: `ADVANCE_${salarySheet.id}_${Date.now()}`, // Referência única à folha + timestamp
           notes: `Adiantamento gerado automaticamente para folha de pagamento ${salarySheet.month + 1}/${salarySheet.year}`,
           totalAmount: amount,
           totalValue: amount,
@@ -1012,6 +857,8 @@ export class SalarySheetsService {
           installmentQty: 1,
           status: 'PENDING',
           companyId: salarySheet.companyId,
+          expenseSource: 'EMPLOYEE',
+          employeeId: salarySheet.employeeId,
         },
       });
 
