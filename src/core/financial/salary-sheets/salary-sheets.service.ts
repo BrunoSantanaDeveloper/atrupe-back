@@ -139,7 +139,6 @@ export class SalarySheetsService {
                 type: item.type,
                 amount: item.amount,
                 description: item.reference,
-                reference: `${month}/${year}`,
               })),
             });
 
@@ -323,14 +322,23 @@ export class SalarySheetsService {
         throw new NotFoundException('Folha de pagamento não encontrada');
       }
 
-      // Buscar TODAS as despesas do colaborador usando employeeId e expenseSource
+      // Buscar despesas do colaborador específicas do mês/ano da folha
+      const startDate = new Date(salarySheet.year, salarySheet.month, 1);
+      const endDate = new Date(salarySheet.year, salarySheet.month + 1, 0);
+
       const relatedPayables = await this.prisma.payable.findMany({
         where: {
           companyId: salarySheet.companyId,
           employeeId: salarySheet.employeeId,
           expenseSource: 'EMPLOYEE',
+          referenceDate: {
+            gte: startDate,
+            lte: endDate,
+          },
         },
         include: {
+          subCategory: true,
+          nature: true,
           installments: {
             include: {
               transactions: {
@@ -493,25 +501,58 @@ export class SalarySheetsService {
 
       relatedPayables.forEach((payable) => {
         payable.installments.forEach((installment) => {
-          // Adicionar TODAS as parcelas, independente do status
+          // Adicionar TODAS as parcelas, seguindo o formato do payable findAll
           const transactionData = {
-            id: installment.id,
-            amount: installment.amount,
-            description: payable.description,
-            transactionDate: installment.dueDate,
-            status: installment.status,
-            relatedPayable: {
-              id: payable.id,
-              description: payable.description,
-              totalAmount: payable.totalAmount,
-            },
-            relatedInstallment: {
+            type: 'payable',
+            id: payable.id,
+            totalValue: payable.totalAmount || 0,
+            totalPaid: payable.installments.reduce(
+              (sum, item) => sum + (item.paidAmount ?? 0),
+              0,
+            ),
+            description: payable.description || '',
+            employee: salarySheet.employee
+              ? {
+                  id: salarySheet.employee.id,
+                  name:
+                    salarySheet.employee.user?.name ||
+                    salarySheet.employee.name ||
+                    'Nome não informado',
+                }
+              : null,
+            subCategory: payable.subCategory
+              ? {
+                  id: payable.subCategory.id,
+                  name: payable.subCategory.description,
+                }
+              : null,
+            nature: payable.nature
+              ? {
+                  id: payable.nature.id,
+                  name: payable.nature.description,
+                }
+              : null,
+            installmentsQuantity: payable.installments?.length || 0,
+            period: payable.referenceDate || null,
+            notes: payable.notes || '',
+            status: payable.status || 'UNKNOWN',
+            // Parcela atual correspondente à linha
+            currentInstallment: {
               id: installment.id,
-              installmentNumber: installment.installmentNumber,
-              amount: installment.amount,
-              status: installment.status,
+              installmentNumber: installment.installmentNumber || 1,
+              status: installment.status || 'UNKNOWN',
+              paymentMethod: installment.paymentMethod
+                ? {
+                    id: installment.paymentMethod.id,
+                    name: installment.paymentMethod.name,
+                  }
+                : null,
+              value: installment.amount || 0,
+              additionalFee: installment.additionalFee || 0,
+              dueDate: installment.dueDate || null,
+              paidValue: installment.paidAmount || 0,
+              paymentDate: installment.paidDate || null,
             },
-            createdAt: installment.createdAt,
           };
 
           financialTransactions.push(transactionData);
@@ -550,18 +591,7 @@ export class SalarySheetsService {
             : null,
           createdAt: movement.createdAt,
         })),
-        financialTransactions: financialTransactions.sort((a, b) => {
-          // Primeiro ordenar por status (COMPLETED primeiro, depois PENDING)
-          if (a.status !== b.status) {
-            if (a.status === 'COMPLETED' && b.status === 'PENDING') return -1;
-            if (a.status === 'PENDING' && b.status === 'COMPLETED') return 1;
-          }
-          // Depois ordenar por data (mais recente primeiro)
-          return (
-            new Date(b.transactionDate).getTime() -
-            new Date(a.transactionDate).getTime()
-          );
-        }),
+        financialTransactions,
       };
     } catch (error) {
       this.logger.error(`Erro ao buscar folha de pagamento: ${error.message}`);
@@ -774,11 +804,13 @@ export class SalarySheetsService {
   ) {
     try {
       const currentDate = new Date();
+      // Usar a data de referência da folha (mês/ano da folha)
+      const referenceDate = new Date(salarySheet.year, salarySheet.month, 1);
 
       // Criar conta a pagar (despesa) para o adiantamento
       const payable = await this.prisma.payable.create({
         data: {
-          referenceDate: currentDate,
+          referenceDate,
           description: `Folha ${salarySheet.month + 1}/${salarySheet.year} - ${description}`,
           totalAmount: amount,
           totalValue: amount,
@@ -891,7 +923,6 @@ export class SalarySheetsService {
         },
         employeeName:
           salarySheet.employee.user?.name || salarySheet.employee.name,
-        reference: `${salarySheet.month + 1}/${salarySheet.year}`,
         items: salarySheet.items.map((item) => ({
           id: item.id,
           description: item.description,

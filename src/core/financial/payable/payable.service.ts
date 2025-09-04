@@ -151,7 +151,6 @@ export class PayableService {
               referenceDate: true,
               supplier: { select: { id: true, name: true } },
               subCategory: { select: { id: true, description: true } },
-              // supplier: { select: { id: true, name: true } },
               nature: { select: { id: true, description: true } },
               installments: {
                 select: {

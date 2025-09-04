@@ -600,7 +600,7 @@ model SalaryItem {
   type          ItemType
   description   String?
   amount        Float
-  reference     String
+  reference     String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
   paidAt        DateTime?
