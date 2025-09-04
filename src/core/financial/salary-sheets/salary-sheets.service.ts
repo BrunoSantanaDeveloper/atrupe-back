@@ -833,20 +833,8 @@ export class SalarySheetsService {
 
   private async findSalaryCategories(companyId: string) {
     try {
-      // Buscar natureza "Salários"
+      // Buscar natureza "Colaboradores / RH"
       const nature = await this.prisma.nature.findFirst({
-        where: {
-          companyId,
-          isActive: true,
-          description: {
-            contains: 'Salários',
-            mode: 'insensitive',
-          },
-        },
-      });
-
-      // Buscar subcategoria "Colaboradores / RH"
-      const subCategory = await this.prisma.subCategory.findFirst({
         where: {
           companyId,
           isActive: true,
@@ -857,8 +845,37 @@ export class SalarySheetsService {
         },
       });
 
+      if (!nature) {
+        this.logger.warn(
+          `Natureza "Colaboradores / RH" não encontrada para empresa ${companyId}`,
+        );
+        return {
+          natureId: null,
+          subCategoryId: null,
+        };
+      }
+
+      // Buscar subcategoria "Salários" que pertence à natureza encontrada
+      const subCategory = await this.prisma.subCategory.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          natureId: nature.id, // Garantir que pertence à natureza correta
+          description: {
+            contains: 'Salários',
+            mode: 'insensitive',
+          },
+        },
+      });
+
+      if (!subCategory) {
+        this.logger.warn(
+          `Subcategoria "Salários" não encontrada para natureza "${nature.description}" na empresa ${companyId}`,
+        );
+      }
+
       return {
-        natureId: nature?.id || null,
+        natureId: nature.id,
         subCategoryId: subCategory?.id || null,
       };
     } catch (error) {
