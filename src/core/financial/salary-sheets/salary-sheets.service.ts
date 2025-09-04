@@ -36,9 +36,9 @@ export class SalarySheetsService {
     const { month, year, list: employeeIds } = data;
 
     // Validação dos parâmetros
-    if (!month || month < 1 || month > 12) {
+    if (month === undefined || month === null || month < 0 || month > 11) {
       throw new BadRequestException(
-        'Mês inválido. Deve ser um número entre 1 e 12',
+        'Mês inválido. Deve ser um número entre 0 e 11',
       );
     }
 
@@ -188,11 +188,8 @@ export class SalarySheetsService {
       const { companyId, search } = dto;
       const page = parseInt(dto.page);
       const limit = parseInt(dto.limit);
-      const month = dto.month || new Date().getMonth() + 1;
+      const month = dto.month !== undefined ? dto.month : new Date().getMonth();
       const year = dto.year || new Date().getFullYear();
-
-      // Ajusta o mês para o formato do banco (0-11)
-      const adjustedMonth = month - 1;
 
       // Busca todos os employees ativos da empresa
       const where: Prisma.EmployeeWhereInput = {
@@ -221,7 +218,7 @@ export class SalarySheetsService {
             },
             salarySheet: {
               where: {
-                month: adjustedMonth,
+                month,
                 year,
               },
               include: {
@@ -565,7 +562,7 @@ export class SalarySheetsService {
 
       return {
         id: salarySheet.id,
-        month: salarySheet.month + 1, // Ajusta para formato 1-12
+        month: salarySheet.month,
         year: salarySheet.year,
         status: salarySheet.status,
         employee: {
@@ -613,11 +610,9 @@ export class SalarySheetsService {
         );
       }
 
-      const reference = `${salarySheet.month + 1}/${salarySheet.year}`;
       const salaryItem = await this.prisma.salaryItem.create({
         data: {
           salarySheetId,
-          reference,
           type,
           amount,
           description,
@@ -753,6 +748,8 @@ export class SalarySheetsService {
   private async createSalaryExpense(salarySheet: any, netAmount: number) {
     try {
       // Competência: primeiro dia do mês da folha
+      // Esta data é importante para exibir o Salário e Adiantamento na movimentação da folha do mês correto, já que não existe relacionamento direto do financeiro com folha específica.
+      // Se posteriormente essa data de competência for alterada, pode perder a relação com o mês da folha, causando confusão.
       const referenceDate = new Date(salarySheet.year, salarySheet.month, 1);
 
       // Vencimento: dia 5 do mês da folha
@@ -762,7 +759,7 @@ export class SalarySheetsService {
       const payable = await this.prisma.payable.create({
         data: {
           referenceDate: referenceDate,
-          description: `Folha ${salarySheet.month + 1}/${salarySheet.year} - Salário`,
+          description: `Folha ${String(salarySheet.month + 1).padStart(2, '0')}/${salarySheet.year} - Salário`,
           totalAmount: netAmount,
           totalValue: netAmount,
           mainAdditionalFee: 0,
@@ -804,6 +801,7 @@ export class SalarySheetsService {
   ) {
     try {
       const currentDate = new Date();
+
       // Usar a data de referência da folha (mês/ano da folha)
       const referenceDate = new Date(salarySheet.year, salarySheet.month, 1);
 
@@ -811,7 +809,7 @@ export class SalarySheetsService {
       const payable = await this.prisma.payable.create({
         data: {
           referenceDate,
-          description: `Folha ${salarySheet.month + 1}/${salarySheet.year} - ${description}`,
+          description: `Folha ${String(salarySheet.month + 1).padStart(2, '0')}/${salarySheet.year} - ${description}`,
           totalAmount: amount,
           totalValue: amount,
           mainAdditionalFee: 0,

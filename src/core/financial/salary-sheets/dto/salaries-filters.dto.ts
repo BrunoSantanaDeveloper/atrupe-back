@@ -14,17 +14,17 @@ import { Transform } from 'class-transformer';
 
 export class GetSalarySheetsDto extends BaseFilterDTO {
   @ApiProperty({
-    description: 'Mês de referência (1-12)',
+    description: 'Mês de referência (0-11)',
     required: false,
-    example: 1,
+    example: 0,
   })
   @IsOptional()
   @IsNumber()
-  @Min(1)
-  @Max(12)
+  @Min(0)
+  @Max(11)
   @Transform(({ value }) => {
-    if (!value) {
-      return new Date().getMonth() + 1;
+    if (!value && value !== 0) {
+      return new Date().getMonth();
     }
     return parseInt(value);
   })

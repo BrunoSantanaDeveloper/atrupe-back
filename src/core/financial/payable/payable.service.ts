@@ -150,6 +150,12 @@ export class PayableService {
               status: true,
               referenceDate: true,
               supplier: { select: { id: true, name: true } },
+              employee: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
               subCategory: { select: { id: true, description: true } },
               nature: { select: { id: true, description: true } },
               installments: {
@@ -203,6 +209,12 @@ export class PayableService {
                 ? {
                     id: inst.payable.supplier.id,
                     name: inst.payable.supplier.name,
+                  }
+                : null,
+              employee: inst.payable?.employee
+                ? {
+                    id: inst.payable.employee.id,
+                    name: inst.payable.employee.name,
                   }
                 : null,
               subCategory: inst.payable?.subCategory
@@ -267,6 +279,7 @@ export class PayableService {
       where: { id },
       include: {
         supplier: true,
+        employee: true,
         nature: true,
         subCategory: true,
         installments: {

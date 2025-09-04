@@ -294,6 +294,7 @@ export class FlowService {
           payable: {
             include: {
               supplier: true,
+              employee: true,
               nature: true,
               subCategory: true,
               installments: {
@@ -432,6 +433,12 @@ export class FlowService {
                 ? {
                     id: inst.payable.supplier.id,
                     name: inst.payable.supplier.name,
+                  }
+                : null,
+              employee: inst.payable.employee
+                ? {
+                    id: inst.payable.employee.id,
+                    name: inst.payable.employee.name,
                   }
                 : null,
               subCategory: inst.payable.subCategory
@@ -647,6 +654,7 @@ export class FlowService {
       where: { id },
       include: {
         supplier: true,
+        employee: true,
         nature: true,
         subCategory: true,
         installments: {

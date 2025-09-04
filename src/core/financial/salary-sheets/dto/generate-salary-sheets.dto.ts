@@ -11,12 +11,12 @@ import { Transform } from 'class-transformer';
 
 export class GenerateSalarySheetsDto {
   @ApiProperty({
-    description: 'Mês de referência (1-12)',
-    example: 3,
+    description: 'Mês de referência (0-11)',
+    example: 2,
   })
   @IsNumber()
-  @Min(1)
-  @Max(12)
+  @Min(0)
+  @Max(11)
   @Transform(({ value }) => parseInt(value))
   month: number;
 
