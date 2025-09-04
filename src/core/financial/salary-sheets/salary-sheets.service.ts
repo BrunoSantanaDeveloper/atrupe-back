@@ -725,6 +725,11 @@ export class SalarySheetsService {
       // Vencimento: dia 5 do mês da folha
       const dueDate = new Date(salarySheet.year, salarySheet.month, 5);
 
+      // Buscar categorias de salário
+      const { natureId, subCategoryId } = await this.findSalaryCategories(
+        salarySheet.companyId,
+      );
+
       // Criar conta a pagar (despesa) para o salário líquido
       const payable = await this.prisma.payable.create({
         data: {
@@ -738,6 +743,8 @@ export class SalarySheetsService {
           companyId: salarySheet.companyId,
           expenseSource: 'EMPLOYEE',
           employeeId: salarySheet.employeeId,
+          natureId,
+          subCategoryId,
         },
       });
 
@@ -775,6 +782,11 @@ export class SalarySheetsService {
       // Usar a data de referência da folha (mês/ano da folha)
       const referenceDate = new Date(salarySheet.year, salarySheet.month, 1);
 
+      // Buscar categorias de salário
+      const { natureId, subCategoryId } = await this.findSalaryCategories(
+        salarySheet.companyId,
+      );
+
       // Criar conta a pagar (despesa) para o adiantamento
       const payable = await this.prisma.payable.create({
         data: {
@@ -788,6 +800,8 @@ export class SalarySheetsService {
           companyId: salarySheet.companyId,
           expenseSource: 'EMPLOYEE',
           employeeId: salarySheet.employeeId,
+          natureId,
+          subCategoryId,
         },
       });
 
@@ -814,6 +828,47 @@ export class SalarySheetsService {
       );
       // Não propaga o erro para não bloquear a criação do adiantamento
       // A despesa pode ser criada manualmente se necessário
+    }
+  }
+
+  private async findSalaryCategories(companyId: string) {
+    try {
+      // Buscar natureza "Salários"
+      const nature = await this.prisma.nature.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          description: {
+            contains: 'Salários',
+            mode: 'insensitive',
+          },
+        },
+      });
+
+      // Buscar subcategoria "Colaboradores / RH"
+      const subCategory = await this.prisma.subCategory.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          description: {
+            contains: 'Colaboradores',
+            mode: 'insensitive',
+          },
+        },
+      });
+
+      return {
+        natureId: nature?.id || null,
+        subCategoryId: subCategory?.id || null,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Erro ao buscar categorias de salário: ${error.message}`,
+      );
+      return {
+        natureId: null,
+        subCategoryId: null,
+      };
     }
   }
 
