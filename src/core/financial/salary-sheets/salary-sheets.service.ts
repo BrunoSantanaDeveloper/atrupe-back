@@ -117,6 +117,42 @@ export class SalarySheetsService {
           continue;
         }
 
+        // Verificar se colaborador tem configurações e calcular salário líquido primeiro
+        if (employee.SalaryControl.length === 0) {
+          result.errors.push({
+            employeeId,
+            reason: 'Colaborador não possui configurações de salário definidas',
+          });
+          this.logger.warn(
+            `Colaborador ${employeeId} não possui configurações de salário definidas`,
+          );
+          continue;
+        }
+
+        // Calcular salário líquido antes de criar a folha
+        const salaryItems = employee.SalaryControl;
+        const totalIncreases = salaryItems
+          .filter((item) => item.type === 'INCREASE')
+          .reduce((sum, item) => sum + item.amount, 0);
+
+        const totalDiscounts = salaryItems
+          .filter((item) => item.type === 'DISCOUNT')
+          .reduce((sum, item) => sum + item.amount, 0);
+
+        const netSalary = totalIncreases - totalDiscounts;
+
+        // Só criar folha se salário líquido for positivo
+        if (netSalary <= 0) {
+          result.errors.push({
+            employeeId,
+            reason: `Salário líquido não positivo: R$ ${(netSalary / 100).toFixed(2)}`,
+          });
+          this.logger.warn(
+            `Folha não criada para ${employeeId}: salário líquido não positivo (${netSalary})`,
+          );
+          continue;
+        }
+
         await this.prisma.$transaction(async (prisma) => {
           const salarySheet = await prisma.salarySheet.create({
             data: {
@@ -128,37 +164,18 @@ export class SalarySheetsService {
             },
           });
 
-          if (employee.SalaryControl.length > 0) {
-            await prisma.salaryItem.createMany({
-              data: employee.SalaryControl.map((item) => ({
-                salarySheetId: salarySheet.id,
-                type: item.type,
-                amount: item.amount,
-                description: item.reference,
-              })),
-            });
+          // Criar itens da folha
+          await prisma.salaryItem.createMany({
+            data: employee.SalaryControl.map((item) => ({
+              salarySheetId: salarySheet.id,
+              type: item.type,
+              amount: item.amount,
+              description: item.reference,
+            })),
+          });
 
-            // Calcular salário líquido e criar despesa
-            const salaryItems = employee.SalaryControl;
-            const totalIncreases = salaryItems
-              .filter((item) => item.type === 'INCREASE')
-              .reduce((sum, item) => sum + item.amount, 0);
-
-            const totalDiscounts = salaryItems
-              .filter((item) => item.type === 'DISCOUNT')
-              .reduce((sum, item) => sum + item.amount, 0);
-
-            const netSalary = totalIncreases - totalDiscounts;
-
-            // Criar despesa apenas se há valor líquido a pagar
-            if (netSalary > 0) {
-              await this.createSalaryExpense(salarySheet, netSalary);
-            }
-          } else {
-            this.logger.warn(
-              `Colaborador ${employeeId} não possui configurações de salário definidas`,
-            );
-          }
+          // Criar despesa (já sabemos que netSalary > 0)
+          await this.createSalaryExpense(salarySheet, netSalary);
         });
 
         result.success++;
