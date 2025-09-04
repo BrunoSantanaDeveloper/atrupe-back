@@ -5,11 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { GetSalarySheetsDto } from './dto/salaries-filters.dto';
-import {
-  AddPaymentMovementDto,
-  AddSalaryItemDto,
-  PaySalaryMovementDto,
-} from './dto/create-salary.dto';
+import { AddSalaryItemDto } from './dto/create-salary.dto';
 import {
   ToggleSalarySheetStatusDto,
   UpdateSalaryItemDto,
@@ -690,59 +686,6 @@ export class SalarySheetsService {
     });
 
     return updatedSalarySheet;
-  }
-
-  async addPaymentMovement(dto: AddPaymentMovementDto) {
-    const { salarySheetId, ...movementData } = dto;
-
-    // Validar existência da folha de pagamento
-    const salarySheet = await this.prisma.salarySheet.findUnique({
-      where: { id: salarySheetId },
-    });
-
-    if (!salarySheet) {
-      throw new NotFoundException('Folha de pagamento não encontrada.');
-    }
-
-    // Criar movimentação
-    const paymentMovement = await this.prisma.paymentMovement.create({
-      data: {
-        salarySheetId,
-        ...movementData,
-      },
-    });
-
-    return paymentMovement;
-  }
-
-  async payMovement(dto: PaySalaryMovementDto) {
-    const { movementId, paidDate, paidAmount, paymentMethodId } = dto;
-
-    // Verificar existência da movimentação
-    const movement = await this.prisma.paymentMovement.findUnique({
-      where: { id: movementId },
-    });
-
-    if (!movement) {
-      throw new NotFoundException('Movimentação não encontrada.');
-    }
-
-    if (movement.paymentStatus === 'PAID') {
-      throw new BadRequestException('Movimentação já foi paga.');
-    }
-
-    // Atualizar movimentação para pago
-    const updatedMovement = await this.prisma.paymentMovement.update({
-      where: { id: movementId },
-      data: {
-        paidDate: new Date(paidDate),
-        amount: paidAmount,
-        paymentMethodId,
-        paymentStatus: 'PAID',
-      },
-    });
-
-    return updatedMovement;
   }
 
   private async createSalaryExpense(salarySheet: any, netAmount: number) {

@@ -20,11 +20,7 @@ import {
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { GetSalarySheetsDto } from './dto/salaries-filters.dto';
 import { SalarySheetsService } from './salary-sheets.service';
-import {
-  AddPaymentMovementDto,
-  AddSalaryItemDto,
-  PaySalaryMovementDto,
-} from './dto/create-salary.dto';
+import { AddSalaryItemDto } from './dto/create-salary.dto';
 import {
   ToggleSalarySheetStatusDto,
   UpdateSalaryItemDto,
@@ -386,40 +382,5 @@ export class SalarySheetsController {
   })
   async toggleStatus(@Body() dto: ToggleSalarySheetStatusDto) {
     return this.salaryService.toggleSalarySheetStatus(dto);
-  }
-
-  @Post('movement')
-  @ApiOperation({
-    summary: 'Adicionar movimentação de pagamento',
-    description:
-      'Adiciona uma nova movimentação de pagamento à folha de pagamento',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Movimentação adicionada com sucesso',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Dados inválidos ou folha não encontrada',
-  })
-  async addMovement(@Body() dto: AddPaymentMovementDto) {
-    return this.salaryService.addPaymentMovement(dto);
-  }
-
-  @Patch('movement/pay')
-  @ApiOperation({
-    summary: 'Realizar pagamento de movimentação',
-    description: 'Registra o pagamento de uma movimentação de salário',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Pagamento registrado com sucesso',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Movimentação já paga ou dados inválidos',
-  })
-  async payMovement(@Body() dto: PaySalaryMovementDto) {
-    return this.salaryService.payMovement(dto);
   }
 }
