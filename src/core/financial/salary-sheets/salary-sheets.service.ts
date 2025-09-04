@@ -296,9 +296,14 @@ export class SalarySheetsService {
             include: {
               salarySheet: true,
             },
-            orderBy: {
-              createdAt: 'asc',
-            },
+            orderBy: [
+              {
+                createdAt: 'asc',
+              },
+              {
+                id: 'asc',
+              },
+            ],
           },
           movements: {
             include: {
@@ -615,10 +620,17 @@ export class SalarySheetsService {
         },
       });
       if (type === 'ADVANCE') {
-        // Para adiantamentos, criamos automaticamente uma conta a pagar (despesa)
+        // Para adiantamentos, criar despesa específica E atualizar despesa principal de salário
         await this.createAdvanceExpense(salarySheet, amount, description);
+        await this.updateSalaryExpense(salarySheet); // Reduz o salário principal
         this.logger.log(
-          `Adiantamento criado para folha ${salarySheetId}, valor: ${amount} - Despesa gerada automaticamente`,
+          `Adiantamento criado para folha ${salarySheetId}, valor: ${amount} - Despesas sincronizadas`,
+        );
+      } else if (type === 'INCREASE' || type === 'DISCOUNT') {
+        // Para acréscimos e descontos, atualizar a despesa de salário
+        await this.updateSalaryExpense(salarySheet);
+        this.logger.log(
+          `Item ${type} adicionado à folha ${salarySheetId} - Despesa de salário sincronizada`,
         );
       }
 
@@ -649,14 +661,29 @@ export class SalarySheetsService {
       );
     }
 
-    if (!salaryItem) {
-      throw new NotFoundException('Item de folha de pagamento não encontrado.');
-    }
+    // Armazenar valor antigo para possível sincronização de adiantamentos
+    const oldAmount = salaryItem.amount;
+    const oldType = salaryItem.type;
 
     const updatedSalaryItem = await this.prisma.salaryItem.update({
       where: { id },
       data: itemData,
     });
+
+    // Sincronizar despesas após atualização
+    const newType = updatedSalaryItem.type;
+
+    if (oldType === 'ADVANCE' || newType === 'ADVANCE') {
+      // Se era ou virou adiantamento, atualizar despesa de adiantamento
+      await this.updateAdvanceExpense(updatedSalaryItem, oldAmount);
+    }
+
+    // SEMPRE atualizar a despesa principal quando houver alterações
+    // pois todos os tipos afetam o cálculo final do salário líquido
+    await this.updateSalaryExpense(salarySheet);
+    this.logger.log(
+      `Item ${updatedSalaryItem.id} atualizado na folha ${salarySheet.id} - Despesas sincronizadas`,
+    );
 
     return updatedSalaryItem;
   }
@@ -790,6 +817,178 @@ export class SalarySheetsService {
     }
   }
 
+  private async updateSalaryExpense(salarySheet: any) {
+    try {
+      const salaryDescription = `Folha ${String(salarySheet.month + 1).padStart(2, '0')}/${salarySheet.year} - Salário`;
+
+      // Buscar a despesa de salário existente
+      const existingSalaryPayable = await this.prisma.payable.findFirst({
+        where: {
+          companyId: salarySheet.companyId,
+          employeeId: salarySheet.employeeId,
+          expenseSource: 'EMPLOYEE',
+          description: salaryDescription,
+        },
+        include: {
+          installments: true,
+        },
+      });
+
+      if (existingSalaryPayable) {
+        // Calcular novo valor líquido da folha atual
+        const currentItems = await this.prisma.salaryItem.findMany({
+          where: { salarySheetId: salarySheet.id },
+        });
+
+        const totalIncreases = currentItems
+          .filter((item) => item.type === 'INCREASE')
+          .reduce((sum, item) => sum + item.amount, 0);
+
+        const totalDiscounts = currentItems
+          .filter((item) => item.type === 'DISCOUNT')
+          .reduce((sum, item) => sum + item.amount, 0);
+
+        const totalAdvances = currentItems
+          .filter((item) => item.type === 'ADVANCE')
+          .reduce((sum, item) => sum + item.amount, 0);
+
+        // Salário líquido final a pagar = Acréscimos - Descontos - Adiantamentos
+        const newNetSalary = totalIncreases - totalDiscounts - totalAdvances;
+
+        // Atualizar a despesa e sua parcela se o valor mudou
+        if (
+          newNetSalary !== existingSalaryPayable.totalAmount &&
+          newNetSalary > 0
+        ) {
+          await this.prisma.$transaction(async (prisma) => {
+            // Atualizar a despesa principal
+            await prisma.payable.update({
+              where: { id: existingSalaryPayable.id },
+              data: {
+                totalAmount: newNetSalary,
+                totalValue: newNetSalary,
+              },
+            });
+
+            // Atualizar a parcela única
+            if (existingSalaryPayable.installments.length > 0) {
+              await prisma.payableInstallment.update({
+                where: { id: existingSalaryPayable.installments[0].id },
+                data: {
+                  amount: newNetSalary,
+                },
+              });
+            }
+          });
+
+          this.logger.log(
+            `Despesa de salário atualizada: ${existingSalaryPayable.id} - Novo valor: R$ ${(newNetSalary / 100).toFixed(2)}`,
+          );
+        } else if (newNetSalary <= 0) {
+          // Se o valor líquido ficou zero ou negativo, remover a despesa
+          await this.prisma.payable.delete({
+            where: { id: existingSalaryPayable.id },
+          });
+
+          this.logger.log(
+            `Despesa de salário removida (valor líquido <= 0): ${existingSalaryPayable.id}`,
+          );
+        }
+      } else {
+        // Se não existe despesa, calcular o valor líquido atual
+        const currentItems = await this.prisma.salaryItem.findMany({
+          where: { salarySheetId: salarySheet.id },
+        });
+
+        const totalIncreases = currentItems
+          .filter((item) => item.type === 'INCREASE')
+          .reduce((sum, item) => sum + item.amount, 0);
+
+        const totalDiscounts = currentItems
+          .filter((item) => item.type === 'DISCOUNT')
+          .reduce((sum, item) => sum + item.amount, 0);
+
+        const totalAdvances = currentItems
+          .filter((item) => item.type === 'ADVANCE')
+          .reduce((sum, item) => sum + item.amount, 0);
+
+        // Salário líquido final a pagar = Acréscimos - Descontos - Adiantamentos
+        const newNetSalary = totalIncreases - totalDiscounts - totalAdvances;
+
+        if (newNetSalary > 0) {
+          // Se não existe despesa mas deveria ter (salário líquido positivo), criar
+          await this.createSalaryExpense(salarySheet, newNetSalary);
+        }
+      }
+    } catch (error) {
+      this.logger.error(
+        `Erro ao atualizar despesa de salário: ${error.message}`,
+      );
+      // Não propaga o erro para não bloquear a operação principal
+    }
+  }
+
+  private async updateAdvanceExpense(salaryItem: any, oldAmount?: number) {
+    try {
+      if (salaryItem.type !== 'ADVANCE') {
+        return;
+      }
+
+      const salarySheet = await this.prisma.salarySheet.findUnique({
+        where: { id: salaryItem.salarySheetId },
+      });
+
+      if (!salarySheet) {
+        return;
+      }
+
+      const advanceDescription = `Folha ${String(salarySheet.month + 1).padStart(2, '0')}/${salarySheet.year} - ${salaryItem.description}`;
+
+      // Buscar a despesa de adiantamento existente
+      const existingAdvancePayable = await this.prisma.payable.findFirst({
+        where: {
+          companyId: salarySheet.companyId,
+          employeeId: salarySheet.employeeId,
+          expenseSource: 'EMPLOYEE',
+          description: advanceDescription,
+        },
+        include: {
+          installments: true,
+        },
+      });
+
+      if (existingAdvancePayable && oldAmount !== undefined) {
+        // Atualizar despesa existente
+        await this.prisma.$transaction(async (prisma) => {
+          await prisma.payable.update({
+            where: { id: existingAdvancePayable.id },
+            data: {
+              totalAmount: salaryItem.amount,
+              totalValue: salaryItem.amount,
+            },
+          });
+
+          if (existingAdvancePayable.installments.length > 0) {
+            await prisma.payableInstallment.update({
+              where: { id: existingAdvancePayable.installments[0].id },
+              data: {
+                amount: salaryItem.amount,
+              },
+            });
+          }
+        });
+
+        this.logger.log(
+          `Despesa de adiantamento atualizada: ${existingAdvancePayable.id} - Novo valor: R$ ${(salaryItem.amount / 100).toFixed(2)}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Erro ao atualizar despesa de adiantamento: ${error.message}`,
+      );
+    }
+  }
+
   async getSalarySheetPdfData(id: string) {
     try {
       const salarySheet = await this.prisma.salarySheet.findUnique({
@@ -809,9 +1008,14 @@ export class SalarySheetsService {
             },
           },
           items: {
-            orderBy: {
-              createdAt: 'asc',
-            },
+            orderBy: [
+              {
+                createdAt: 'asc',
+              },
+              {
+                id: 'asc', // Desempate por ID para manter ordem consistente
+              },
+            ],
           },
           movements: {
             include: {
