@@ -360,20 +360,16 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 13. Cliente e fornecedor (depende de categorias de cliente)
+    // 13. Cliente (depende de categorias de cliente)
     {
-      name: 'client-supplier',
-      logMessage: 'Creating Client and supplier...',
-      createMethod: (companyId: string) =>
-        this.createDefaultClientAndSupplier(companyId),
+      name: 'client',
+      logMessage: 'Creating Client...',
+      createMethod: (companyId: string) => this.createDefaultClient(companyId),
       checkMethod: async (companyId: string) => {
         const clients = await this.prisma.client.findMany({
           where: { companyId },
         });
-        const suppliers = await this.prisma.supplier.findMany({
-          where: { companyId },
-        });
-        return clients.length > 0 && suppliers.length > 0;
+        return clients.length > 0;
       },
     },
     // 14. Despesas programadas (independente, mas pode depender de naturezas)
@@ -1051,6 +1047,19 @@ export class CompanyService {
           },
         });
 
+        // Buscar categoria do fornecedor baseada no supplierCategory do seed
+        let categoryId: string | undefined;
+        if (seed.supplierCategory) {
+          const category = await this.prisma.category.findFirst({
+            where: {
+              companyId,
+              name: seed.supplierCategory,
+              kind: 'SUPPLIER',
+            },
+          });
+          categoryId = category?.id;
+        }
+
         const supplier =
           existingSupplier ??
           (await this.prisma.supplier.create({
@@ -1065,6 +1074,7 @@ export class CompanyService {
               blockClient: false,
               notes: '',
               activity: '',
+              categoryId: categoryId || '',
               companyId,
             },
           }));
@@ -1405,20 +1415,12 @@ export class CompanyService {
     );
   }
 
-  private async createDefaultClientAndSupplier(companyId: string) {
+  private async createDefaultClient(companyId: string) {
     // Buscar a primeira categoria de cliente
     const clientCategory = await this.prisma.category.findFirst({
       where: {
         companyId: companyId,
         kind: 'CLIENT',
-      },
-    });
-
-    // Buscar a primeira categoria de fornecedor
-    const supplierCategory = await this.prisma.category.findFirst({
-      where: {
-        companyId: companyId,
-        kind: 'SUPPLIER',
       },
     });
 
@@ -1440,30 +1442,6 @@ export class CompanyService {
         companyId: companyId,
         minValue: 0,
         maxValue: 1000,
-        blockClient: false,
-      },
-    });
-
-    // Criar fornecedor padrão
-    this.logger.log('Creating default supplier...');
-    await this.prisma.supplier.create({
-      data: {
-        type: 'COMPANY',
-        status: 'ACTIVE',
-        name: 'Fornecedor Exemplo LTDA',
-        corporateName: 'Fornecedor Exemplo Comércio e Serviços LTDA',
-        tradeName: 'Fornecedor Exemplo',
-        email: 'fornecedor.exemplo@email.com',
-        phone: '(11) 2222-3333',
-        mobile: '(11) 97777-6666',
-        cnpj: '12.345.678/0001-90',
-        activity: 'Comércio e Serviços',
-        categoryId: supplierCategory?.id || '',
-        notes:
-          'Este é um fornecedor de exemplo criado automaticamente para demonstração. Você pode editá-lo ou excluí-lo conforme necessário.',
-        companyId: companyId,
-        minValue: 0,
-        maxValue: 5000,
         blockClient: false,
       },
     });

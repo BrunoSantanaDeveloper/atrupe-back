@@ -8,6 +8,7 @@ interface ScheduledExpensesType {
   supplierCorporateName?: string;
   supplierPhone?: string;
   supplierType?: string;
+  supplierCategory?: string;
   natureLevel1: string;
   natureLevel2: string;
   natureCode: string;
@@ -26,6 +27,7 @@ export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
     supplierCorporateName: 'ATRUPE SISTEMAS ADMINISTRATIVOS LTDA',
     supplierPhone: '(47) 2122-9194',
     supplierType: 'COMPANY',
+    supplierCategory: 'Serviços Administrativos/Gerais',
     natureLevel1: '02',
     natureLevel2: '01',
     natureCode: '01',
@@ -38,6 +40,7 @@ export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
     supplierName: 'Aluguel',
     supplierCorporateName: 'Aluguel',
     supplierType: 'COMPANY',
+    supplierCategory: 'Serviços Administrativos/Gerais',
     natureLevel1: '02',
     natureLevel2: '01',
     natureCode: '01',
@@ -50,6 +53,7 @@ export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
     supplierName: 'Energia Elétrica',
     supplierCorporateName: 'Energia Elétrica',
     supplierType: 'COMPANY',
+    supplierCategory: 'Suprimentos Gerais',
     natureLevel1: '02',
     natureLevel2: '01',
     natureCode: '01',
@@ -62,6 +66,7 @@ export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
     supplierName: 'Água',
     supplierCorporateName: 'Água',
     supplierType: 'COMPANY',
+    supplierCategory: 'Suprimentos Gerais',
     natureLevel1: '02',
     natureLevel2: '01',
     natureCode: '01',
@@ -74,6 +79,7 @@ export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
     supplierName: 'Telefone',
     supplierCorporateName: 'Telefone',
     supplierType: 'COMPANY',
+    supplierCategory: 'Suprimentos Gerais',
     natureLevel1: '02',
     natureLevel2: '01',
     natureCode: '01',
@@ -86,6 +92,7 @@ export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
     supplierName: 'Internet',
     supplierCorporateName: 'Internet',
     supplierType: 'COMPANY',
+    supplierCategory: 'Suprimentos Gerais',
     natureLevel1: '02',
     natureLevel2: '01',
     natureCode: '01',
@@ -97,6 +104,7 @@ export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
     recurringType: 'MONTHLY',
     supplierName: 'Contador',
     supplierType: 'PERSON',
+    supplierCategory: 'Serviços Terceirizados',
     natureLevel1: '02',
     natureLevel2: '01',
     natureCode: '01',
