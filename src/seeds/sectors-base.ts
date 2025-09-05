@@ -2,7 +2,6 @@ export const BASE_SECTORS = [
   {
     name: 'Administração',
     icon: 'device-desktop-analytics',
-    isActive: true,
     kind: 'ADMINISTRATIVE',
     isProductionStage: false,
     isSystem: false,
@@ -10,7 +9,6 @@ export const BASE_SECTORS = [
   {
     name: 'Comercial',
     icon: 'heart-handshake',
-    isActive: true,
     kind: 'ADMINISTRATIVE',
     isProductionStage: false,
     isSystem: false,
@@ -18,7 +16,6 @@ export const BASE_SECTORS = [
   {
     name: 'Almoxarifado',
     icon: 'wallpaper',
-    isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
     isSystem: false,
@@ -26,7 +23,6 @@ export const BASE_SECTORS = [
   {
     name: 'CNC',
     icon: 'cnc',
-    isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
     isSystem: false,
@@ -34,7 +30,6 @@ export const BASE_SECTORS = [
   {
     name: 'Confecção',
     icon: 'shirt',
-    isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
     isSystem: false,
@@ -42,7 +37,6 @@ export const BASE_SECTORS = [
   {
     name: 'Criação',
     icon: 'bulb',
-    isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
     isSystem: false,
@@ -50,7 +44,6 @@ export const BASE_SECTORS = [
   {
     name: 'Frota',
     icon: 'truck',
-    isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
     isSystem: false,
@@ -58,7 +51,6 @@ export const BASE_SECTORS = [
   {
     name: 'Gráfica Rápida',
     icon: 'printer',
-    isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
     isSystem: false,
@@ -66,7 +58,6 @@ export const BASE_SECTORS = [
   {
     name: 'Impressão',
     icon: 'print',
-    isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
     isSystem: false,
@@ -74,7 +65,6 @@ export const BASE_SECTORS = [
   {
     name: 'Instalação',
     icon: 'track',
-    isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
     isSystem: false,
@@ -82,7 +72,6 @@ export const BASE_SECTORS = [
   {
     name: 'Locação de Painéis',
     icon: 'presentation-analytics',
-    isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
     isSystem: false,
@@ -90,7 +79,6 @@ export const BASE_SECTORS = [
   {
     name: 'Marcenaria',
     icon: 'hacksaw',
-    isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
     isSystem: false,
@@ -98,7 +86,6 @@ export const BASE_SECTORS = [
   {
     name: 'Pintura',
     icon: 'painting',
-    isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
     isSystem: false,
@@ -106,7 +93,6 @@ export const BASE_SECTORS = [
   {
     name: 'Produção',
     icon: 'settings-cog',
-    isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
     isSystem: false,
@@ -114,7 +100,6 @@ export const BASE_SECTORS = [
   {
     name: 'Serigrafia',
     icon: 'screen-printing',
-    isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
     isSystem: false,
@@ -122,7 +107,6 @@ export const BASE_SECTORS = [
   {
     name: 'Serralheria',
     icon: 'metalwork',
-    isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
     isSystem: false,

@@ -207,6 +207,7 @@ export class CompanyService {
   }
 
   private defaultItemsConfig = [
+    // 1. Setores (base para categorias e produtos)
     {
       name: 'sectors',
       logMessage: 'Creating Default sectors...',
@@ -218,6 +219,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
+    // 2. Unidades de medida (independente)
     {
       name: 'units',
       logMessage: 'Creating Units of measure...',
@@ -229,6 +231,7 @@ export class CompanyService {
         return company?.unitDefaults !== null;
       },
     },
+    // 3. Séries de venda (independente)
     {
       name: 'sale-series',
       logMessage: 'Creating Sale series...',
@@ -241,6 +244,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
+    // 4. Métodos de pagamento (base para caixa e condições)
     {
       name: 'payment-methods',
       logMessage: 'Creating Payment methods...',
@@ -253,6 +257,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
+    // 5. Caixa (depende de métodos de pagamento)
     {
       name: 'cashbox',
       logMessage: 'Creating Cashbox...',
@@ -265,6 +270,20 @@ export class CompanyService {
         return existing !== null;
       },
     },
+    // 6. Condições de pagamento (depende de métodos de pagamento)
+    {
+      name: 'payment-conditions',
+      logMessage: 'Creating Payment conditions...',
+      createMethod: (companyId: string) =>
+        this.applyBasePaymentConditionsToCompany(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.paymentCondition.findMany({
+          where: { companyId },
+        });
+        return existing.length > 0;
+      },
+    },
+    // 7. Naturezas (independente)
     {
       name: 'natures',
       logMessage: 'Creating Base natures...',
@@ -277,6 +296,20 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
+    // 8. Roles/Cargos (depende de setores)
+    {
+      name: 'roles',
+      logMessage: 'Creating Base roles...',
+      createMethod: (companyId: string) =>
+        this.applyBaseRolesToCompany(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.role.findMany({
+          where: { companyId, name: { not: 'Admin' } },
+        });
+        return existing.length > 0;
+      },
+    },
+    // 9. Vendedor (independente)
     {
       name: 'seller',
       logMessage: 'Creating Seller...',
@@ -288,6 +321,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
+    // 10. Categorias de produto (depende de setores)
     {
       name: 'product-categories',
       logMessage: 'Creating Product categories...',
@@ -300,6 +334,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
+    // 11. Produtos (depende de setores e categorias de produto)
     {
       name: 'products',
       logMessage: 'Creating Products...',
@@ -312,6 +347,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
+    // 12. Categorias de cliente/fornecedor (independente)
     {
       name: 'client-categories',
       logMessage: 'Creating Client categories...',
@@ -324,6 +360,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
+    // 13. Cliente e fornecedor (depende de categorias de cliente)
     {
       name: 'client-supplier',
       logMessage: 'Creating Client and supplier...',
@@ -339,18 +376,7 @@ export class CompanyService {
         return clients.length > 0 && suppliers.length > 0;
       },
     },
-    {
-      name: 'payment-conditions',
-      logMessage: 'Creating Payment conditions...',
-      createMethod: (companyId: string) =>
-        this.applyBasePaymentConditionsToCompany(companyId),
-      checkMethod: async (companyId: string) => {
-        const existing = await this.prisma.paymentCondition.findMany({
-          where: { companyId },
-        });
-        return existing.length > 0;
-      },
-    },
+    // 14. Despesas programadas (independente, mas pode depender de naturezas)
     {
       name: 'scheduled-expenses',
       logMessage: 'Creating Scheduled expenses...',
@@ -363,6 +389,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
+    // 15. Motivos e status (independente)
     {
       name: 'reasons-status',
       logMessage: 'Creating Reasons and status...',
@@ -857,7 +884,6 @@ export class CompanyService {
       await this.prisma.role.create({
         data: {
           name: roleData.name,
-          isAdmin: roleData.isAdmin,
           permissions: roleData.permissions,
           companyId,
           sectorId: sector.id,
@@ -936,7 +962,6 @@ export class CompanyService {
           name: conditionSeed.name,
           acceptInstallments: conditionSeed.acceptInstallments,
           costType: conditionSeed.costType as PaymentConditionCostType,
-          isActive: conditionSeed.isActive,
           maxInstallments: conditionSeed.maxInstallments,
           minInstallments: conditionSeed.minInstallments,
           dayInterval: conditionSeed.dayInterval,
@@ -997,7 +1022,6 @@ export class CompanyService {
           level1: natureSeed.level1,
           level2: natureSeed.level2,
           code: natureSeed.code,
-          isActive: natureSeed.isActive,
           companyId,
         },
       });
@@ -1007,7 +1031,6 @@ export class CompanyService {
           data: {
             description: subCategorySeed.description,
             code: subCategorySeed.code,
-            isActive: subCategorySeed.isActive,
             companyId,
             natureId: newNature.id,
           },
@@ -1020,11 +1043,11 @@ export class CompanyService {
     for (const seed of BASE_SCHEDULED_EXPENSES) {
       // Buscar ou criar o fornecedor
       let supplierId: string | null = null;
-      if (seed.supplier?.name) {
+      if (seed.supplierName) {
         const existingSupplier = await this.prisma.supplier.findFirst({
           where: {
             companyId,
-            name: seed.supplier.name,
+            name: seed.supplierName,
           },
         });
 
@@ -1032,27 +1055,16 @@ export class CompanyService {
           existingSupplier ??
           (await this.prisma.supplier.create({
             data: {
-              name: seed.supplier.name,
-              email: seed.supplier.email,
-              status: seed.supplier.status as ClientStatus,
-              birthdate: seed.supplier.birthdate,
-              financialNotes: seed.supplier.financialNotes,
-              nickname: seed.supplier.nickname,
-              notes: seed.supplier.notes,
-              site: seed.supplier.site,
-              activity: seed.supplier.activity,
-              cnpj: seed.supplier.cnpj,
-              corporateName: seed.supplier.corporateName,
-              cpf: seed.supplier.cpf,
-              mobile: seed.supplier.mobile,
-              phone: seed.supplier.phone,
-              rg: seed.supplier.rg,
-              tradeName: seed.supplier.tradeName,
-              type: seed.supplier.type as ClientKind,
-              blockClient: seed.supplier.blockClient,
-              category: seed.supplier.category,
-              maxValue: seed.supplier.maxValue,
-              minValue: seed.supplier.minValue,
+              name: seed.supplierName,
+              email: seed.supplierEmail || '',
+              status: 'ACTIVE' as ClientStatus,
+              cnpj: seed.supplierCnpj || '',
+              corporateName: seed.supplierCorporateName || seed.supplierName,
+              phone: seed.supplierPhone || '',
+              type: (seed.supplierType as ClientKind) || 'COMPANY',
+              blockClient: false,
+              notes: '',
+              activity: '',
               companyId,
             },
           }));
@@ -1061,36 +1073,33 @@ export class CompanyService {
       }
 
       // Buscar natureza por código
-      const nature = seed.nature?.code
-        ? await this.prisma.nature.findFirst({
+      const nature = await this.prisma.nature.findFirst({
+        where: {
+          companyId,
+          level1: seed.natureLevel1,
+          level2: seed.natureLevel2,
+          code: seed.natureCode,
+        },
+      });
+
+      // Buscar subcategoria por código e natureza
+      const subCategory = nature?.id
+        ? await this.prisma.subCategory.findFirst({
             where: {
               companyId,
-              level1: seed.nature.level1,
-              code: seed.nature.code,
+              code: seed.subCategoryCode,
+              natureId: nature.id,
             },
           })
         : null;
-
-      // Buscar subcategoria por código e natureza
-      const subCategory =
-        seed.subCategory?.code && nature?.id
-          ? await this.prisma.subCategory.findFirst({
-              where: {
-                companyId,
-                code: seed.subCategory.code,
-                natureId: nature.id,
-              },
-            })
-          : null;
 
       // Criar despesa fixa
       await this.prisma.scheduledExpense.create({
         data: {
           description: seed.description,
-          amount: seed.amount,
+          amount: seed.amount || 0,
           dueDay: seed.dueDay,
           recurringType: seed.recurringType as RecurringType,
-          isActive: seed.isActive,
           companyId,
           supplierId,
           categoryId: nature?.id,
@@ -1117,7 +1126,6 @@ export class CompanyService {
         data: {
           title: status.title,
           color: status.color,
-          isActive: true,
           companyId,
         },
       });
@@ -1265,9 +1273,8 @@ export class CompanyService {
     const categories = BASE_PRODUCTS_CATEGORIES.map((category) => ({
       name: category.name,
       kind: CategoryKind.PRODUCT,
-      isActive: true,
       companyId: companyId,
-      sectorId: sectors.find((sector) => sector.name === category.sector.name)
+      sectorId: sectors.find((sector) => sector.name === category.sectorName)
         ?.id,
     }));
 
@@ -1327,8 +1334,6 @@ export class CompanyService {
         data: {
           name: productData.nome,
           code: productData.codigo,
-          allowEditDescription: productData.permitirEditarDescricao,
-          allowEditValues: productData.permitirEditarValor,
           categoryId: category.id,
           sectorId: sector.id,
           companyId: companyId,
@@ -1387,8 +1392,8 @@ export class CompanyService {
             productId: product.id,
             unitOfMeasureId: unitOfMeasure.id,
             unitKind: unitKind as any,
-            salePrice: item.precoVenda,
-            unitCost: item.precoUnitario,
+            salePrice: item.precoVenda || 0,
+            unitCost: item.precoUnitario || 0,
             ...dimensions,
           },
         });

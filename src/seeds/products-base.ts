@@ -9,8 +9,8 @@ interface ProductItemType {
   unidadeMedida: string;
   nomeUnidadeMedida: string;
   dimensoes: DimensionsType | null;
-  precoVenda: number;
-  precoUnitario: number;
+  precoVenda?: number;
+  precoUnitario?: number;
 }
 
 interface ProductType {
@@ -18,8 +18,8 @@ interface ProductType {
   codigo: string;
   setorNome: string;
   categoriaNome: string;
-  permitirEditarValor: boolean;
-  permitirEditarDescricao: boolean;
+  permitirEditarValor?: boolean;
+  permitirEditarDescricao?: boolean;
   etapasProducao: string[];
   produto: ProductItemType[];
 }
@@ -30,8 +30,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'ADBLK',
     setorNome: 'Impressão',
     categoriaNome: 'Adesivos',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: ['Impressão'],
     produto: [
       {
@@ -42,8 +40,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -52,8 +48,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'ADBRL',
     setorNome: 'Impressão',
     categoriaNome: 'Adesivos',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: ['Impressão'],
     produto: [
       {
@@ -64,8 +58,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -74,8 +66,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'ADFOS',
     setorNome: 'Impressão',
     categoriaNome: 'Adesivos',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: ['Impressão'],
     produto: [
       {
@@ -86,8 +76,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -96,8 +84,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'ADJAT',
     setorNome: 'Impressão',
     categoriaNome: 'Adesivos',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: ['Impressão'],
     produto: [
       {
@@ -108,8 +94,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -118,8 +102,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'ADPER',
     setorNome: 'Impressão',
     categoriaNome: 'Adesivos',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: ['Impressão'],
     produto: [
       {
@@ -130,8 +112,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -140,8 +120,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'ADREC',
     setorNome: 'Impressão',
     categoriaNome: 'Adesivos',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: ['Impressão'],
     produto: [
       {
@@ -152,8 +130,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -162,8 +138,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'ADREF',
     setorNome: 'Impressão',
     categoriaNome: 'Adesivos',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: ['Impressão'],
     produto: [
       {
@@ -174,8 +148,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -184,8 +156,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'APOS',
     setorNome: 'Gráfica Rápida',
     categoriaNome: 'Papéis',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: ['Produção'],
     produto: [
       {
@@ -193,16 +163,12 @@ export const BASE_PRODUCTS: ProductType[] = [
         unidadeMedida: 'UN',
         nomeUnidadeMedida: 'Unidade',
         dimensoes: null,
-        precoVenda: 0,
-        precoUnitario: 0,
       },
       {
         nome: 'Impressão A4 color',
         unidadeMedida: 'UN',
         nomeUnidadeMedida: 'Unidade',
         dimensoes: null,
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -211,8 +177,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'BN001',
     setorNome: 'Impressão',
     categoriaNome: 'Lonas',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: [],
     produto: [
       {
@@ -220,8 +184,6 @@ export const BASE_PRODUCTS: ProductType[] = [
         unidadeMedida: 'M2',
         nomeUnidadeMedida: 'Metro Quadrado',
         dimensoes: null,
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -230,8 +192,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'BACA4',
     setorNome: 'CNC',
     categoriaNome: 'Acrlicos',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: [],
     produto: [
       {
@@ -239,8 +199,6 @@ export const BASE_PRODUCTS: ProductType[] = [
         unidadeMedida: 'UN',
         nomeUnidadeMedida: 'Unidade',
         dimensoes: null,
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -249,8 +207,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'CAVIL',
     setorNome: 'Serralheria',
     categoriaNome: 'Estruturas',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: ['Criação', 'Instalação', 'Serralheria', 'Impressão'],
     produto: [
       {
@@ -261,8 +217,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -271,8 +225,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'CRIAC',
     setorNome: 'Criação',
     categoriaNome: 'Serviço Criação',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: ['Criação'],
     produto: [
       {
@@ -282,8 +234,6 @@ export const BASE_PRODUCTS: ProductType[] = [
         dimensoes: {
           duracao: 64800,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -292,8 +242,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'INSTL',
     setorNome: 'Instalação',
     categoriaNome: 'Serviço Instalação',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: ['Instalação'],
     produto: [
       {
@@ -301,8 +249,6 @@ export const BASE_PRODUCTS: ProductType[] = [
         unidadeMedida: 'HH',
         nomeUnidadeMedida: 'Hora',
         dimensoes: null,
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -311,8 +257,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'LTCXG',
     setorNome: 'Serralheria',
     categoriaNome: 'Estruturas',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: [],
     produto: [
       {
@@ -323,8 +267,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -333,8 +275,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'LTCXI',
     setorNome: 'Serralheria',
     categoriaNome: 'Letra Caixa',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: [],
     produto: [
       {
@@ -345,8 +285,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -355,8 +293,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'LTP10',
     setorNome: 'CNC',
     categoriaNome: 'PVC ',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: [],
     produto: [
       {
@@ -367,8 +303,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -377,8 +311,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'LTP20',
     setorNome: 'CNC',
     categoriaNome: 'PVC ',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: [],
     produto: [
       {
@@ -389,8 +321,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -399,8 +329,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'LTP05',
     setorNome: 'CNC',
     categoriaNome: 'PVC ',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: [],
     produto: [
       {
@@ -411,8 +339,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -421,8 +347,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'LONIM',
     setorNome: 'Impressão',
     categoriaNome: 'Lonas',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: [],
     produto: [
       {
@@ -433,8 +357,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -443,8 +365,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'LOBIL',
     setorNome: 'Impressão',
     categoriaNome: 'Lonas',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: ['Impressão', 'Produção'],
     produto: [
       {
@@ -455,8 +375,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -465,8 +383,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'CARTV',
     setorNome: 'Gráfica Rápida',
     categoriaNome: 'Revenda Gráfica Rápida',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: [],
     produto: [
       {
@@ -474,8 +390,6 @@ export const BASE_PRODUCTS: ProductType[] = [
         unidadeMedida: 'UN',
         nomeUnidadeMedida: 'Unidade',
         dimensoes: null,
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -484,8 +398,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'PNACM',
     setorNome: 'Serralheria',
     categoriaNome: 'Estruturas',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: [],
     produto: [
       {
@@ -496,8 +408,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -506,8 +416,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'PNBLH',
     setorNome: 'Serralheria',
     categoriaNome: 'Estruturas',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: [],
     produto: [
       {
@@ -518,8 +426,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },
@@ -528,8 +434,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     codigo: 'PNFLH',
     setorNome: 'Serralheria',
     categoriaNome: 'Estruturas',
-    permitirEditarValor: true,
-    permitirEditarDescricao: true,
     etapasProducao: [],
     produto: [
       {
@@ -540,8 +444,6 @@ export const BASE_PRODUCTS: ProductType[] = [
           largura: 1000,
           altura: 1000,
         },
-        precoVenda: 0,
-        precoUnitario: 0,
       },
     ],
   },

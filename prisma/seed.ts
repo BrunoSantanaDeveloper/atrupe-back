@@ -51,11 +51,8 @@ async function createDefaultBanks() {
       if (!existingBank) {
         await prisma.bank.create({
           data: {
-            id: bankData.id,
             name: bankData.name,
             code: bankData.code,
-            details: bankData.details,
-            isActive: bankData.isActive,
             icon: bankData.icon,
           },
         });

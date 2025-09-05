@@ -1,7 +1,6 @@
 export const BASE_ROLES = [
   {
     name: 'Auxiliar Financeiro',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -20,7 +19,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Gerente Comercial',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -60,7 +58,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Aplicador',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -69,7 +66,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Gerente de Produção',
-    isAdmin: false,
     permissions: [
       'register:client:view',
       'register:client:create',
@@ -83,7 +79,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Acabamento',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -92,7 +87,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Gerente Geral',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -236,7 +230,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Serviços Gerais',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -245,7 +238,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Pintor',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -254,16 +246,14 @@ export const BASE_ROLES = [
   },
   {
     name: 'Montador',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
     ],
-    sectorName: 'Locação ',
+    sectorName: 'Locação de Painéis',
   },
   {
     name: 'Marceneiro',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -272,7 +262,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Designer',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -285,7 +274,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Instalador',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -294,17 +282,14 @@ export const BASE_ROLES = [
   },
   {
     name: 'Impressor',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
     ],
     sectorName: 'Impressão',
   },
-
   {
     name: 'Serigrafo',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -313,7 +298,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Costureira',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -322,7 +306,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Motorista',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -331,7 +314,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Serralheiro',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -340,7 +322,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Atendente',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -353,7 +334,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Vendedor',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
@@ -377,7 +357,6 @@ export const BASE_ROLES = [
   },
   {
     name: 'Operador CNC',
-    isAdmin: false,
     permissions: [
       'production:delivery_schedule:view',
       'production:delivery_schedule:edit',
