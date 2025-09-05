@@ -5,7 +5,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'ADMINISTRATIVE',
     isProductionStage: false,
-    defaultSectorId: '9efc4a23-0551-4711-9ec7-33fc59f377a1',
     isSystem: false,
   },
   {
@@ -14,7 +13,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'ADMINISTRATIVE',
     isProductionStage: false,
-    defaultSectorId: 'c0aa871a-c9a0-41dd-b786-5b9a50b965c0',
     isSystem: false,
   },
   {
@@ -23,7 +21,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
-    defaultSectorId: 'de5c18a8-59dd-4930-bc31-53b7f71cfcc9',
     isSystem: false,
   },
   {
@@ -32,7 +29,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
-    defaultSectorId: 'eec31394-31da-4c61-9a89-986452bd6f1a',
     isSystem: false,
   },
   {
@@ -41,7 +37,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
-    defaultSectorId: 'f65be5e7-438c-4d9e-ba54-35c9e8605ea5',
     isSystem: false,
   },
   {
@@ -50,7 +45,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
-    defaultSectorId: '13c3ad7c-1de0-4b84-bf5b-095778b67414',
     isSystem: false,
   },
   {
@@ -59,7 +53,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
-    defaultSectorId: 'a07898fe-fe6d-4762-ae92-a58032324506',
     isSystem: false,
   },
   {
@@ -68,7 +61,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
-    defaultSectorId: '625f4998-56fe-48a6-998c-f3b43c12ca2c',
     isSystem: false,
   },
   {
@@ -77,7 +69,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
-    defaultSectorId: '3d0fbf9d-8fbd-483b-8a78-d84599d34c20',
     isSystem: false,
   },
   {
@@ -86,7 +77,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
-    defaultSectorId: 'c93b2cac-cfa1-44e2-8229-55790c05293d',
     isSystem: false,
   },
   {
@@ -95,7 +85,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
-    defaultSectorId: '343dd80a-39a3-49f2-8dab-235b30de49d9',
     isSystem: false,
   },
   {
@@ -104,7 +93,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
-    defaultSectorId: 'b21655e3-1d36-416e-ae6a-c04b84e7298a',
     isSystem: false,
   },
   {
@@ -113,7 +101,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
-    defaultSectorId: '7b4aa2ba-4c21-4c49-bc20-2705ccf93d78',
     isSystem: false,
   },
   {
@@ -122,7 +109,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
-    defaultSectorId: 'ce70accb-21dd-4c16-9237-9f23fad51cb0',
     isSystem: false,
   },
   {
@@ -131,7 +117,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
-    defaultSectorId: '86b0781a-ce79-4634-8372-a49ff46e235c',
     isSystem: false,
   },
   {
@@ -140,7 +125,6 @@ export const BASE_SECTORS = [
     isActive: true,
     kind: 'PRODUCTION',
     isProductionStage: true,
-    defaultSectorId: '8a27f890-9314-489c-80ce-ab6a6ce62dca',
     isSystem: false,
   },
 ];

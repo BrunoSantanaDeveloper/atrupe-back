@@ -1136,7 +1136,6 @@ export class CompanyService {
       isProductionStage: sector.isProductionStage,
       isSystem: sector.isSystem,
       companyId: companyId,
-      defaultSectorId: sector.defaultSectorId,
     }));
 
     await this.prisma.companySector.createMany({ data: companySectors });
