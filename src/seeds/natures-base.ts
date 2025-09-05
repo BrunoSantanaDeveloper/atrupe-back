@@ -1,14 +1,30 @@
 export const BASE_NATURES = [
+  // RECEITAS
   {
-    description: 'Empréstimos e Financiamentos',
-    level1: '02',
-    level2: '03',
-    code: '03',
+    description: 'Vendas',
+    level1: '01',
+    level2: '02',
+    code: '01',
     isActive: true,
     subCategories: [
       {
-        description: 'Amortização de Empréstimo e Financiamento',
+        description: 'Prestação de Serviços',
         code: '01',
+        isActive: true,
+      },
+      {
+        description: 'Venda de Mercadorias',
+        code: '02',
+        isActive: true,
+      },
+      {
+        description: 'Receita de Aluguéis',
+        code: '03',
+        isActive: true,
+      },
+      {
+        description: 'Receita Diversas',
+        code: '04',
         isActive: true,
       },
     ],
@@ -39,13 +55,29 @@ export const BASE_NATURES = [
         code: '01',
         isActive: true,
       },
+    ],
+  },
+  {
+    description: 'Investimentos',
+    level1: '01',
+    level2: '03',
+    code: '03',
+    isActive: true,
+    subCategories: [
       {
-        description: 'xx',
-        code: '04',
-        isActive: false,
+        description: 'Juros recebidos de aplicaçoões / investimentos',
+        code: '01',
+        isActive: true,
+      },
+      {
+        description: 'Venda de Ativo Imobilizado (Bens)',
+        code: '02',
+        isActive: true,
       },
     ],
   },
+
+  // DESPESAS
   {
     description: 'Administrativo',
     level1: '02',
@@ -126,6 +158,65 @@ export const BASE_NATURES = [
     ],
   },
   {
+    description: 'Operacional',
+    level1: '02',
+    level2: '02',
+    code: '01',
+    isActive: true,
+    subCategories: [
+      {
+        description: 'Matéria Prima',
+        code: '01',
+        isActive: true,
+      },
+      {
+        description: 'Produtos para Revenda',
+        code: '02',
+        isActive: true,
+      },
+      {
+        description: 'Terceirizados de O.S.',
+        code: '03',
+        isActive: true,
+      },
+      {
+        description: 'Aluguel de Máquinas e Equipamentos',
+        code: '04',
+        isActive: true,
+      },
+      {
+        description: 'Despesas de Viagem',
+        code: '05',
+        isActive: true,
+      },
+      {
+        description: 'Comissão de Venda',
+        code: '06',
+        isActive: true,
+      },
+      {
+        description: 'Frete de Compra',
+        code: '07',
+        isActive: true,
+      },
+      {
+        description: 'Frete de Venda',
+        code: '08',
+        isActive: true,
+      },
+      {
+        description: 'DAS - Simples Nacional',
+        code: '09',
+        isActive: true,
+      },
+      {
+        description: 'Dare - Documento de Arrecadação Receitas Estaduais',
+        code: '10',
+        isActive: true,
+      },
+    ],
+  },
+  {
     description: 'Frota',
     level1: '02',
     level2: '02',
@@ -190,113 +281,6 @@ export const BASE_NATURES = [
     ],
   },
   {
-    description: 'Vendas',
-    level1: '01',
-    level2: '02',
-    code: '01',
-    isActive: true,
-    subCategories: [
-      {
-        description: 'Venda de Mercadorias',
-        code: '02',
-        isActive: true,
-      },
-      {
-        description: 'Receita de Aluguéis',
-        code: '03',
-        isActive: true,
-      },
-      {
-        description: 'Receita Diversas',
-        code: '04',
-        isActive: true,
-      },
-      {
-        description: 'Prestação de Serviços',
-        code: '01',
-        isActive: true,
-      },
-    ],
-  },
-  {
-    description: 'Operacional',
-    level1: '02',
-    level2: '02',
-    code: '01',
-    isActive: true,
-    subCategories: [
-      {
-        description: 'Matéria Prima',
-        code: '01',
-        isActive: true,
-      },
-      {
-        description: 'Produtos para Revenda',
-        code: '02',
-        isActive: true,
-      },
-      {
-        description: 'Terceirizados de O.S.',
-        code: '03',
-        isActive: true,
-      },
-      {
-        description: 'Aluguel de Máquinas e Equipamentos',
-        code: '04',
-        isActive: true,
-      },
-      {
-        description: 'Despesas de Viagem',
-        code: '05',
-        isActive: true,
-      },
-      {
-        description: 'Comissão de Venda',
-        code: '06',
-        isActive: true,
-      },
-      {
-        description: 'Frete de Compra',
-        code: '07',
-        isActive: true,
-      },
-      {
-        description: 'Frete de Venda',
-        code: '08',
-        isActive: true,
-      },
-      {
-        description: 'DAS - Simples Nacional',
-        code: '09',
-        isActive: true,
-      },
-      {
-        description: 'Dare - Documento de Arrecadação Receitas Estaduais',
-        code: '10',
-        isActive: true,
-      },
-    ],
-  },
-  {
-    description: 'Investimentos',
-    level1: '01',
-    level2: '03',
-    code: '03',
-    isActive: true,
-    subCategories: [
-      {
-        description: 'Juros recebidos de aplicaçoões / investimentos',
-        code: '01',
-        isActive: true,
-      },
-      {
-        description: 'Venda de Ativo Imobilizado (Bens)',
-        code: '02',
-        isActive: true,
-      },
-    ],
-  },
-  {
     description: 'Colaboradores / RH',
     level1: '02',
     level2: '02',
@@ -340,37 +324,37 @@ export const BASE_NATURES = [
       },
       {
         description: 'GPS - Guia Previdência Social',
-        code: '09',
+        code: '08',
         isActive: true,
       },
       {
         description: 'Férias',
-        code: '10',
+        code: '09',
         isActive: true,
       },
       {
         description: '13°  Salário',
-        code: '11',
+        code: '10',
         isActive: true,
       },
       {
         description: 'Atestados e Taxas',
-        code: '12',
+        code: '11',
         isActive: true,
       },
       {
         description: 'Cursos e Treinamentos',
-        code: '13',
+        code: '12',
         isActive: true,
       },
       {
         description: 'Rescisão',
-        code: '14',
+        code: '13',
         isActive: true,
       },
       {
         description: 'Pró-Labore',
-        code: '15',
+        code: '14',
         isActive: true,
       },
     ],
@@ -438,6 +422,20 @@ export const BASE_NATURES = [
       {
         description: 'Outros',
         code: '03',
+        isActive: true,
+      },
+    ],
+  },
+  {
+    description: 'Empréstimos e Financiamentos',
+    level1: '02',
+    level2: '03',
+    code: '03',
+    isActive: true,
+    subCategories: [
+      {
+        description: 'Amortização de Empréstimo e Financiamento',
+        code: '01',
         isActive: true,
       },
     ],

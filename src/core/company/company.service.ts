@@ -26,6 +26,7 @@ import {
   BASE_STATUS_QUOTATIONS,
 } from 'src/seeds/reasons-status-base';
 import { BASE_PRODUCTS_CATEGORIES } from 'src/seeds/products-categories';
+import { BASE_SECTORS } from 'src/seeds/sectors-base';
 import { CreateSalaryControlDto } from '../financial/salaries/dto/create-salary-control.dto';
 import { Logger } from '@nestjs/common';
 
@@ -134,88 +135,6 @@ export class CompanyService {
       throw error;
     }
   }
-
-  // async createSeedAccountPlans(companyId: string) {
-  //   try {
-  //     console.log('Starting createSeedAccountPlans for company:', companyId);
-
-  //     const company = await this.prisma.company.findUnique({
-  //       where: {
-  //         id: companyId,
-  //       },
-  //     });
-
-  //     if (!company) {
-  //       console.error('Company not found:', companyId);
-  //       throw new Error('Company not found');
-  //     }
-  //     console.log('Target company found:', company.name);
-
-  //     const MODEL_COMPANY_ID = '2a190fe8-e7af-4d75-8673-494dbae0372b';
-  //     console.log('Fetching model company data from:', MODEL_COMPANY_ID);
-
-  //     const modelNatures = await this.prisma.nature.findMany({
-  //       where: {
-  //         companyId: MODEL_COMPANY_ID,
-  //       },
-  //       include: {
-  //         subCategory: true,
-  //       },
-  //     });
-
-  //     console.log(`Found ${modelNatures.length} natures to clone`);
-
-  //     // Create a map to store old -> new IDs for relationships
-  //     const natureIdMap = new Map<string, string>();
-  //     const subCategoryIdMap = new Map<string, string>();
-
-  //     // First, create all natures
-  //     for (const modelNature of modelNatures) {
-  //       console.log('Creating nature:', modelNature.description);
-  //       const newNature = await this.prisma.nature.create({
-  //         data: {
-  //           description: modelNature.description,
-  //           level1: modelNature.level1,
-  //           level2: modelNature.level2,
-  //           code: modelNature.code,
-  //           companyId: companyId,
-  //           isActive: modelNature.isActive,
-  //         },
-  //       });
-  //       natureIdMap.set(modelNature.id, newNature.id);
-
-  //       // Then create all subcategories for this nature
-  //       if (modelNature.subCategory && modelNature.subCategory.length > 0) {
-  //         console.log(
-  //           `Creating ${modelNature.subCategory.length} subcategories for nature:`,
-  //           modelNature.description,
-  //         );
-
-  //         for (const modelSubCategory of modelNature.subCategory) {
-  //           const newSubCategory = await this.prisma.subCategory.create({
-  //             data: {
-  //               description: modelSubCategory.description,
-  //               code: modelSubCategory.code,
-  //               natureId: newNature.id,
-  //               companyId: companyId,
-  //               isActive: modelSubCategory.isActive,
-  //             },
-  //           });
-  //           subCategoryIdMap.set(modelSubCategory.id, newSubCategory.id);
-  //         }
-  //       }
-  //     }
-
-  //     console.log('Successfully cloned all natures and subcategories');
-  //     return {
-  //       message: 'Successfully cloned account plans',
-  //       naturesCreated: modelNatures.length,
-  //     };
-  //   } catch (error) {\g
-  //     console.error('Error in createSeedAccountPlans:', error);
-  //     throw error;
-  //   }
-  // }
 
   async createMainCompany(email: string, createCompanyDto: CreateCompanyDto) {
     try {
@@ -1210,61 +1129,20 @@ export class CompanyService {
   }
 
   private async createDefaultSectors(companyId: string) {
-    const defaultSectors = await this.prisma.defaultSector.findMany();
+    const companySectors = BASE_SECTORS.map((sector) => ({
+      name: sector.name,
+      icon: sector.icon,
+      kind: sector.kind as any,
+      isProductionStage: sector.isProductionStage,
+      isSystem: sector.isSystem,
+      companyId: companyId,
+      defaultSectorId: sector.defaultSectorId,
+    }));
 
-    if (defaultSectors.length > 0) {
-      // Se existem setores padrão, usa eles
-      const companySectors = defaultSectors.map((sector) => ({
-        name: sector.name,
-        icon: sector.icon,
-        kind: sector.kind,
-        isProductionStage: sector.kind === 'PRODUCTION',
-        isSystem: sector.kind === 'SYSTEM',
-        companyId: companyId,
-        defaultSectorId: sector.id,
-      }));
-
-      await this.prisma.companySector.createMany({ data: companySectors });
-    } else {
-      // Se não existem setores padrão, cria os setores básicos necessários
-      const basicSectors = [
-        {
-          name: 'Administração',
-          icon: 'admin',
-          kind: 'SYSTEM' as const,
-          isProductionStage: false,
-          isSystem: true,
-          companyId: companyId,
-        },
-        {
-          name: 'Impressão',
-          icon: 'print',
-          kind: 'PRODUCTION' as const,
-          isProductionStage: true,
-          isSystem: false,
-          companyId: companyId,
-        },
-        {
-          name: 'Criação',
-          icon: 'bulb',
-          kind: 'PRODUCTION' as const,
-          isProductionStage: true,
-          isSystem: false,
-          companyId: companyId,
-        },
-        {
-          name: 'Gráfica Rápida',
-          icon: 'printer',
-          kind: 'PRODUCTION' as const,
-          isProductionStage: true,
-          isSystem: false,
-          companyId: companyId,
-        },
-      ];
-
-      await this.prisma.companySector.createMany({ data: basicSectors });
-      this.logger.log('Setores básicos criados para a empresa');
-    }
+    await this.prisma.companySector.createMany({ data: companySectors });
+    this.logger.log(
+      `${BASE_SECTORS.length} setores padrão criados para a empresa`,
+    );
   }
 
   private async createDefaultUnits(companyId: string) {
