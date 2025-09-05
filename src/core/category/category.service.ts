@@ -18,10 +18,16 @@ export class CategoryService {
     }
   }
 
-  async findAllQuantity(companyId: string) {
+  async findAllQuantity(filter: CategoryFilterDTO) {
+    let where: any = { companyId: filter.companyId };
+
+    if (filter.kind) {
+      where = { ...where, kind: filter.kind };
+    }
+
     const result = await this.prisma.category.groupBy({
       by: ['isActive'],
-      where: { companyId },
+      where,
       _count: true,
     });
 

@@ -56,9 +56,9 @@ export class CategoryController {
     status: 200,
     description: 'Lista de quantidade de colaboradores retornada com sucesso.',
   })
-  async findAllQuantity(@Req() req) {
-    const companyId = req.user.companyId;
-    return this.categoryService.findAllQuantity(companyId);
+  async findAllQuantity(@Req() req, @Query() filter: CategoryFilterDTO) {
+    filter.companyId = req.user.companyId;
+    return this.categoryService.findAllQuantity(filter);
   }
 
   @Get('by-sector')
