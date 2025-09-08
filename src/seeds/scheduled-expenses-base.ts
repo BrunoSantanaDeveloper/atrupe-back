@@ -44,7 +44,7 @@ export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
     natureLevel1: '02',
     natureLevel2: '01',
     natureCode: '01',
-    subCategoryCode: '01',
+    subCategoryCode: '02',
   },
   {
     description: 'Energia Elétrica',
@@ -57,7 +57,7 @@ export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
     natureLevel1: '02',
     natureLevel2: '01',
     natureCode: '01',
-    subCategoryCode: '02',
+    subCategoryCode: '05',
   },
   {
     description: 'Água',
@@ -83,7 +83,7 @@ export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
     natureLevel1: '02',
     natureLevel2: '01',
     natureCode: '01',
-    subCategoryCode: '05',
+    subCategoryCode: '12',
   },
   {
     description: 'Internet',
@@ -96,7 +96,7 @@ export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
     natureLevel1: '02',
     natureLevel2: '01',
     natureCode: '01',
-    subCategoryCode: '05',
+    subCategoryCode: '07',
   },
   {
     description: 'Contador',
@@ -116,7 +116,7 @@ export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
     recurringType: 'MONTHLY',
     natureLevel1: '02',
     natureLevel2: '02',
-    natureCode: '01',
+    natureCode: '03',
     subCategoryCode: '01',
   },
 ];

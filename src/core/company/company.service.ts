@@ -309,19 +309,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 9. Vendedor (independente)
-    {
-      name: 'seller',
-      logMessage: 'Creating Seller...',
-      createMethod: (companyId: string) => this.createDefaultSeller(companyId),
-      checkMethod: async (companyId: string) => {
-        const existing = await this.prisma.sellerProfile.findMany({
-          where: { companyId },
-        });
-        return existing.length > 0;
-      },
-    },
-    // 10. Categorias de produto (depende de setores)
+    // 9. Categorias de produto (depende de setores)
     {
       name: 'product-categories',
       logMessage: 'Creating Product categories...',
@@ -334,7 +322,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 11. Produtos (depende de setores e categorias de produto)
+    // 10. Produtos (depende de setores e categorias de produto)
     {
       name: 'products',
       logMessage: 'Creating Products...',
@@ -347,7 +335,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 12. Categorias de cliente/fornecedor (independente)
+    // 11. Categorias de cliente/fornecedor (independente)
     {
       name: 'client-categories',
       logMessage: 'Creating Client categories...',
@@ -360,7 +348,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 13. Cliente (depende de categorias de cliente)
+    // 12. Cliente (depende de categorias de cliente)
     {
       name: 'client',
       logMessage: 'Creating Client...',
@@ -372,7 +360,7 @@ export class CompanyService {
         return clients.length > 0;
       },
     },
-    // 14. Despesas programadas (independente, mas pode depender de naturezas)
+    // 13. Despesas programadas (independente, mas pode depender de naturezas)
     {
       name: 'scheduled-expenses',
       logMessage: 'Creating Scheduled expenses...',
@@ -385,7 +373,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 15. Motivos e status (independente)
+    // 14. Motivos e status (independente)
     {
       name: 'reasons-status',
       logMessage: 'Creating Reasons and status...',
@@ -1248,28 +1236,6 @@ export class CompanyService {
     ];
     await this.prisma.paymentMethod.createMany({
       data: paymentMethods,
-    });
-  }
-
-  private async createDefaultSeller(companyId: string) {
-    await this.prisma.role.findFirst({
-      where: {
-        companyId: companyId,
-        name: 'Vendedor',
-      },
-    });
-
-    // Criar perfil de vendedor padrão
-    await this.prisma.sellerProfile.create({
-      data: {
-        name: 'Vendedor Padrão',
-        companyId: companyId,
-        commission: 5, // 5% de comissão padrão
-        maxDiscount: 10, // 10% de desconto máximo padrão
-        minValue: 0,
-        canApprovePreRegistration: false,
-        canCancelSale: false,
-      },
     });
   }
 
