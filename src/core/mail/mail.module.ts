@@ -25,6 +25,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
         },
         defaults: {
           from: `"Atrupe - No Reply" <${config.get('MAIL_FROM')}>`,
+          bcc: config.get('MAIL_BCC'),
         },
         template: {
           dir: config.get('MAIL_PATH_TEMPLATES_PROD'),
