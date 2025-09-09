@@ -34,28 +34,7 @@ export class EmployeeService {
         },
       });
 
-      await this.prisma.salaryControl.create({
-        data: {
-          reference: 'Salário',
-          amount: 0,
-          date: new Date(),
-          companyId: createEmployeeDto.companyId,
-          type: 'INCREASE',
-          employeeId: employee.id,
-          isSet: false,
-        },
-      });
-      await this.prisma.salaryControl.create({
-        data: {
-          reference: 'Comissão',
-          amount: 0,
-          date: new Date(),
-          companyId: createEmployeeDto.companyId,
-          type: 'INCREASE',
-          employeeId: employee.id,
-          isSet: false,
-        },
-      });
+      return employee;
     } catch (error) {
       console.log(error);
       throw new BadRequestException(error.message);
