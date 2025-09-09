@@ -298,12 +298,22 @@ export class UserService {
   }
   async create(createUserDto: CreateMailVerificationDto): Promise<any> {
     try {
+      // Verificar se já existe um User com este email
       const user = await this.prisma.user.findFirst({
         where: { email: createUserDto.email },
       });
       if (user) {
         throw new ConflictException('E-mail já cadastrado.');
       }
+
+      // Verificar se já existe um Customer com este email
+      const customer = await this.prisma.customer.findFirst({
+        where: { email: createUserDto.email },
+      });
+      if (customer) {
+        throw new ConflictException('E-mail já cadastrado.');
+      }
+
       return await this.sendEmailValidation(createUserDto.email);
     } catch (error) {
       console.error(error);
