@@ -39,6 +39,7 @@ class GeneralInfoDto {
   category?: string;
 
   @IsOptional()
+  @ValidateIf((o) => o.categoryId !== '' && o.categoryId !== null)
   @IsUUID()
   categoryId?: string;
 

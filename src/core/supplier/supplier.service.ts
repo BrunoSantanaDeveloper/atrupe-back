@@ -27,7 +27,10 @@ export class SupplierService {
             mobile: createDto.general.mobile,
             companyId: createDto.companyId,
             category: createDto.general.category,
-            categoryId: createDto.general.categoryId,
+            categoryId:
+              createDto.general.categoryId === ''
+                ? null
+                : createDto.general.categoryId,
             cpf: createDto.general.cpf,
             rg: createDto.general.rg,
             cnpj: createDto.general.cnpj,
@@ -347,7 +350,10 @@ export class SupplierService {
             phone: updateSupplierDto.general?.phone,
             mobile: updateSupplierDto.general?.mobile,
             category: updateSupplierDto.general?.category,
-            categoryId: updateSupplierDto.general?.categoryId,
+            categoryId:
+              updateSupplierDto.general?.categoryId === ''
+                ? null
+                : updateSupplierDto.general?.categoryId,
             cpf: updateSupplierDto.general?.cpf,
             rg: updateSupplierDto.general?.rg,
             cnpj: updateSupplierDto.general?.cnpj,
