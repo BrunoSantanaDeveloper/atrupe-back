@@ -48,7 +48,14 @@ export class UserService {
       },
     });
     if (existToken) {
-      return { message: 'Email já possui um token de validação.' };
+      const now = new Date();
+      const timeUntilExpiry = Math.ceil(
+        (existToken.expiresAt.getTime() - now.getTime()) / 1000,
+      );
+      return {
+        message: 'Email já possui um token de validação.',
+        canResendIn: timeUntilExpiry,
+      };
     }
     let token;
     let isUnique;
@@ -60,9 +67,9 @@ export class UserService {
       });
     } while (isUnique);
 
-    // Define a expiração para 10 minutos a partir de agora
+    // Define a expiração para 2 minutos a partir de agora
     const resetPasswordExpires = new Date();
-    resetPasswordExpires.setMinutes(resetPasswordExpires.getMinutes() + 1);
+    resetPasswordExpires.setMinutes(resetPasswordExpires.getMinutes() + 2);
 
     // Atualiza o usuário com o token e data de expiração
     await this.prisma.mailVerification.upsert({
@@ -91,6 +98,8 @@ export class UserService {
       .catch((err) => {
         console.error(err);
       });
+
+    return { message: 'Email de validação enviado com sucesso.' };
   }
 
   async verifyEmail(body: { email: string; token: string }) {
@@ -295,7 +304,7 @@ export class UserService {
       if (user) {
         throw new ConflictException('E-mail já cadastrado.');
       }
-      await this.sendEmailValidation(createUserDto.email);
+      return await this.sendEmailValidation(createUserDto.email);
     } catch (error) {
       console.error(error);
       if (error instanceof PrismaClientKnownRequestError) {
