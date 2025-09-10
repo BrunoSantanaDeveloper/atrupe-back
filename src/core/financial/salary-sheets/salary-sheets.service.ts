@@ -1205,4 +1205,151 @@ export class SalarySheetsService {
       );
     }
   }
+
+  async getAdvanceItemPdfData(itemId: string) {
+    try {
+      const salaryItem = await this.prisma.salaryItem.findUnique({
+        where: { id: itemId },
+        include: {
+          salarySheet: {
+            include: {
+              employee: {
+                include: {
+                  user: true,
+                  role: true,
+                },
+              },
+              company: {
+                include: {
+                  address: {
+                    where: { type: 'Principal' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!salaryItem) {
+        throw new NotFoundException(
+          'Item da folha de pagamento não encontrado',
+        );
+      }
+
+      if (salaryItem.type !== 'ADVANCE') {
+        throw new BadRequestException(
+          'O item especificado não é um adiantamento',
+        );
+      }
+
+      const salarySheet = salaryItem.salarySheet;
+      const companyAddress = salarySheet.company.address[0];
+
+      // Buscar despesa relacionada ao adiantamento específico
+      const startDate = new Date(salarySheet.year, salarySheet.month, 1);
+      const endDate = new Date(salarySheet.year, salarySheet.month + 1, 0);
+
+      const advanceDescription = `Folha ${String(salarySheet.month + 1).padStart(2, '0')}/${salarySheet.year} - ${salaryItem.description}`;
+
+      const relatedPayable = await this.prisma.payable.findFirst({
+        where: {
+          companyId: salarySheet.companyId,
+          employeeId: salarySheet.employeeId,
+          expenseSource: 'EMPLOYEE',
+          financialType: 'ADVANCE',
+          description: advanceDescription,
+          referenceDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        include: {
+          installments: {
+            include: {
+              paymentMethod: true,
+            },
+            orderBy: {
+              installmentNumber: 'asc',
+            },
+          },
+        },
+      });
+
+      // Estruturar dados para o PDF
+      const pdfData = {
+        company: {
+          name: salarySheet.company.name,
+          cnpj: salarySheet.company.cnpj,
+          email: salarySheet.company.email,
+          phone: salarySheet.company.phone,
+          siteUrl: salarySheet.company.siteUrl,
+          logo: salarySheet.company.logoUrl,
+          socialNetworks: {
+            instagram: salarySheet.company.instagram,
+            facebook: salarySheet.company.facebook,
+            linkedin: salarySheet.company.linkedin,
+          },
+          address: companyAddress
+            ? {
+                street: companyAddress.street,
+                number: companyAddress.number,
+                complement: companyAddress.complement,
+                neighborhood: companyAddress.neighborhood,
+                city: companyAddress.city,
+                state: companyAddress.state,
+                zipCode: companyAddress.zipcode,
+              }
+            : null,
+        },
+        employeeName:
+          salarySheet.employee.user?.name || salarySheet.employee.name,
+        reference: `${String(salarySheet.month + 1).padStart(2, '0')}/${salarySheet.year}`,
+        items: [
+          {
+            id: salaryItem.id,
+            description: salaryItem.description,
+            type: salaryItem.type,
+            amount: salaryItem.amount,
+          },
+        ],
+        netSalary: salaryItem.amount, // Total do adiantamento
+        payables: relatedPayable
+          ? [
+              {
+                id: relatedPayable.id,
+                description: relatedPayable.description,
+                totalAmount: relatedPayable.totalAmount,
+                installments: relatedPayable.installments.map(
+                  (installment) => ({
+                    id: installment.id,
+                    installmentNumber: installment.installmentNumber,
+                    dueDate: installment.dueDate,
+                    amount: installment.amount,
+                    status: installment.status,
+                    paidDate: installment.paidDate,
+                    paidAmount: installment.paidAmount,
+                    paymentMethod: installment.paymentMethod
+                      ? {
+                          id: installment.paymentMethod.id,
+                          name: installment.paymentMethod.name,
+                        }
+                      : null,
+                  }),
+                ),
+              },
+            ]
+          : [],
+      };
+
+      return pdfData;
+    } catch (error) {
+      this.logger.error(
+        `Erro ao gerar dados do PDF de adiantamento: ${error.message}`,
+      );
+      throw new BadRequestException(
+        'Erro ao gerar dados do PDF de adiantamento',
+      );
+    }
+  }
 }
