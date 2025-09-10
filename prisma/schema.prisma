@@ -1784,6 +1784,7 @@ enum FinancialType {
   DOWN_PAYMENT // Entrada da venda (receivable)
   COMMISSION // Comissão da venda (payable)
   DELIVERY // Entrega da venda (payable)
+  ADVANCE // Adiantamento de salário (payable)
 }
 
 enum ExpenseSource {

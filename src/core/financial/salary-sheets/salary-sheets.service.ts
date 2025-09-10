@@ -236,7 +236,6 @@ export class SalarySheetsService {
               },
               include: {
                 items: true,
-                movements: true,
               },
             },
           },
@@ -321,14 +320,6 @@ export class SalarySheetsService {
                 id: 'asc',
               },
             ],
-          },
-          movements: {
-            include: {
-              paymentMethod: true,
-            },
-            orderBy: {
-              createdAt: 'desc',
-            },
           },
         },
       });
@@ -593,19 +584,6 @@ export class SalarySheetsService {
         },
         balance,
         items: itemsWithPayables,
-        movements: salarySheet.movements.map((movement) => ({
-          id: movement.id,
-          amount: movement.amount,
-          status: movement.paymentStatus,
-          paidDate: movement.paidDate,
-          paymentMethod: movement.paymentMethod
-            ? {
-                id: movement.paymentMethod.id,
-                name: movement.paymentMethod.name,
-              }
-            : null,
-          createdAt: movement.createdAt,
-        })),
         financialTransactions,
       };
     } catch (error) {
@@ -816,6 +794,7 @@ export class SalarySheetsService {
           status: 'PENDING',
           companyId: salarySheet.companyId,
           expenseSource: 'EMPLOYEE',
+          financialType: 'ADVANCE',
           employeeId: salarySheet.employeeId,
           natureId,
           subCategoryId,
@@ -1106,14 +1085,6 @@ export class SalarySheetsService {
               },
             ],
           },
-          movements: {
-            include: {
-              paymentMethod: true,
-            },
-            orderBy: {
-              createdAt: 'desc',
-            },
-          },
         },
       });
 
@@ -1133,10 +1104,38 @@ export class SalarySheetsService {
         .filter((item) => item.type === 'DISCOUNT')
         .reduce((sum, item) => sum + item.amount, 0);
 
-      const netSalary = totalIncreases - totalDiscounts;
+      const totalAdvances = salarySheet.items
+        .filter((item) => item.type === 'ADVANCE')
+        .reduce((sum, item) => sum + item.amount, 0);
 
-      // Buscar movimento de pagamento mais recente
-      const latestMovement = salarySheet.movements[0];
+      const netSalary = totalIncreases - totalDiscounts - totalAdvances;
+
+      // Buscar despesas do colaborador específicas do mês/ano da folha
+      const startDate = new Date(salarySheet.year, salarySheet.month, 1);
+      const endDate = new Date(salarySheet.year, salarySheet.month + 1, 0);
+
+      const relatedPayables = await this.prisma.payable.findMany({
+        where: {
+          companyId: salarySheet.companyId,
+          employeeId: salarySheet.employeeId,
+          expenseSource: 'EMPLOYEE',
+          financialType: 'MAIN',
+          referenceDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        include: {
+          installments: {
+            include: {
+              paymentMethod: true,
+            },
+            orderBy: {
+              installmentNumber: 'asc',
+            },
+          },
+        },
+      });
 
       // Estruturar dados para o PDF
       const pdfData = {
@@ -1144,19 +1143,29 @@ export class SalarySheetsService {
           name: salarySheet.company.name,
           cnpj: salarySheet.company.cnpj,
           email: salarySheet.company.email,
+          phone: salarySheet.company.phone,
+          siteUrl: salarySheet.company.siteUrl,
           logo: salarySheet.company.logoUrl,
+          socialNetworks: {
+            instagram: salarySheet.company.instagram,
+            facebook: salarySheet.company.facebook,
+            linkedin: salarySheet.company.linkedin,
+          },
           address: companyAddress
             ? {
                 street: companyAddress.street,
                 number: companyAddress.number,
+                complement: companyAddress.complement,
                 neighborhood: companyAddress.neighborhood,
                 city: companyAddress.city,
                 state: companyAddress.state,
+                zipCode: companyAddress.zipcode,
               }
             : null,
         },
         employeeName:
           salarySheet.employee.user?.name || salarySheet.employee.name,
+        reference: `${String(salarySheet.month + 1).padStart(2, '0')}/${salarySheet.year}`,
         items: salarySheet.items.map((item) => ({
           id: item.id,
           description: item.description,
@@ -1164,14 +1173,26 @@ export class SalarySheetsService {
           amount: item.amount,
         })),
         netSalary,
-        payment: latestMovement
-          ? {
-              dueDate: latestMovement.paidDate.toISOString().split('T')[0],
-              paidAt: latestMovement.paidDate.toISOString().split('T')[0],
-              amountPaid: latestMovement.amount,
-              paymentMethod: latestMovement.paymentMethod?.name,
-            }
-          : null,
+        payables: relatedPayables.map((payable) => ({
+          id: payable.id,
+          description: payable.description,
+          totalAmount: payable.totalAmount,
+          installments: payable.installments.map((installment) => ({
+            id: installment.id,
+            installmentNumber: installment.installmentNumber,
+            dueDate: installment.dueDate,
+            amount: installment.amount,
+            status: installment.status,
+            paidDate: installment.paidDate,
+            paidAmount: installment.paidAmount,
+            paymentMethod: installment.paymentMethod
+              ? {
+                  id: installment.paymentMethod.id,
+                  name: installment.paymentMethod.name,
+                }
+              : null,
+          })),
+        })),
       };
 
       return pdfData;
