@@ -453,6 +453,7 @@ export class FlowService {
                     name: inst.payable.nature.description,
                   }
                 : null,
+              expenseSource: inst.payable.expenseSource || null,
               installmentsQuantity: inst.payable.installmentQty || 0,
               period: inst.payable?.referenceDate || null,
               notes: inst.payable.notes || '',

@@ -158,6 +158,7 @@ export class PayableService {
               },
               subCategory: { select: { id: true, description: true } },
               nature: { select: { id: true, description: true } },
+              expenseSource: true,
               installments: {
                 select: {
                   id: true,
@@ -229,6 +230,7 @@ export class PayableService {
                     name: inst.payable.nature.description,
                   }
                 : null,
+              expenseSource: inst.payable?.expenseSource || null,
               installmentsQuantity: inst.payable?.installments?.length || 0,
               period: inst.payable?.referenceDate || null,
               notes: inst.payable?.notes || '',
