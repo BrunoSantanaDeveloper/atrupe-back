@@ -6,33 +6,38 @@ import { ItemType } from '@prisma/client';
 export class SalaryTemplatesService {
   constructor(private prisma: PrismaService) {}
 
-  async createTemplate(companyId: string, name: string, type: ItemType, defaultAmount: number = 0) {
+  async createTemplate(
+    companyId: string,
+    name: string,
+    type: ItemType,
+    defaultAmount: number = 0,
+  ) {
     return this.prisma.salaryTemplate.create({
-      data: { name, type, defaultAmount, companyId }
+      data: { name, type, defaultAmount, companyId },
     });
   }
 
   async getCompanyTemplates(companyId: string) {
     return this.prisma.salaryTemplate.findMany({
       where: { companyId },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { createdAt: 'asc' },
     });
   }
 
   async applyTemplateToAllEmployees(templateId: string) {
     const template = await this.prisma.salaryTemplate.findUnique({
-      where: { id: templateId }
+      where: { id: templateId },
     });
 
     if (!template) throw new NotFoundException('Template not found');
 
     const employees = await this.prisma.employee.findMany({
-      where: { companyId: template.companyId }
+      where: { companyId: template.companyId },
       // Removido isActive: true - aplica a TODOS os employees
     });
 
     return Promise.all(
-      employees.map(employee => 
+      employees.map((employee) =>
         this.prisma.salaryControl.create({
           data: {
             reference: template.name, // Usando reference por enquanto
@@ -42,16 +47,16 @@ export class SalaryTemplatesService {
             employeeId: employee.id,
             companyId: template.companyId,
             templateId: template.id, // Relacionamento com template
-            date: new Date()
-          }
-        })
-      )
+            date: new Date(),
+          },
+        }),
+      ),
     );
   }
 
   async applyTemplateToEmployee(employeeId: string, companyId: string) {
     const templates = await this.getCompanyTemplates(companyId);
-    
+
     return Promise.all(
       templates.map(async (template) => {
         // Verificar se já existe para evitar duplicatas

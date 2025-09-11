@@ -386,6 +386,23 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
+    // 15. Template base de salário
+    {
+      name: 'base-salary-template',
+      logMessage: 'Creating base salary template...',
+      createMethod: (companyId: string) =>
+        this.createBaseSalaryTemplate(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.salaryTemplate.findFirst({
+          where: {
+            companyId,
+            name: 'Salário',
+            type: 'INCREASE',
+          },
+        });
+        return existing !== null;
+      },
+    },
   ];
 
   async createDefaultItems(email: string, companyId: string) {
@@ -1411,6 +1428,21 @@ export class CompanyService {
         blockClient: false,
       },
     });
+  }
+
+  private async createBaseSalaryTemplate(companyId: string) {
+    await this.prisma.salaryTemplate.create({
+      data: {
+        name: 'Salário',
+        type: 'INCREASE',
+        defaultAmount: 0,
+        companyId,
+      },
+    });
+    this.logger.log(
+      'Base salary template "Salário" created for company',
+      companyId,
+    );
   }
 
   private async createDefaultClientCategories(companyId: string) {
