@@ -14,7 +14,6 @@ import { SalariesService } from './salaries.service';
 import { CreateSalaryControlDto } from './dto/create-salary-control.dto';
 import { FilterSalaryControlDto } from './dto/filter-salary-control.dto';
 import { UpdateSalaryControlDto } from './dto/update-salary-control.dto';
-import { DeleteFromAllResponseDto } from './dto/delete-from-all-response.dto';
 import {
   ApiTags,
   ApiOperation,
@@ -108,27 +107,5 @@ export class SalariesController {
   @Delete(':id')
   delete(@Param('id') id: string) {
     return this.salariesService.delete(id);
-  }
-
-  @ApiOperation({ summary: 'Delete a salary control from all employees' })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID of the salary control to delete from all employees',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  @ApiResponse({
-    status: 200,
-    description:
-      'The salary control has been successfully deleted from all employees',
-    type: DeleteFromAllResponseDto,
-  })
-  @ApiResponse({ status: 404, description: 'Salary control not found' })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid request or item does not belong to your company',
-  })
-  @Delete(':id/all')
-  deleteFromAllEmployees(@Param('id') id: string, @Req() req) {
-    return this.salariesService.deleteFromAllEmployees(id, req.user.companyId);
   }
 }
