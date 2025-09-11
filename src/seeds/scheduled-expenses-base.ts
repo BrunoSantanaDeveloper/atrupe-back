@@ -2,13 +2,13 @@ interface ScheduledExpensesType {
   description: string;
   dueDay: number;
   recurringType: string;
-  supplierName?: string;
+  supplierName: string;
   supplierEmail?: string;
   supplierCnpj?: string;
-  supplierCorporateName?: string;
+  supplierCorporateName: string;
   supplierPhone?: string;
-  supplierType?: string;
-  supplierCategory?: string;
+  supplierType: string;
+  supplierCategory: string;
   natureLevel1: string;
   natureLevel2: string;
   natureCode: string;
@@ -17,6 +17,71 @@ interface ScheduledExpensesType {
 }
 
 export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
+  {
+    description: 'Água',
+    dueDay: 15,
+    recurringType: 'MONTHLY',
+    supplierName: 'Água',
+    supplierCorporateName: 'Água',
+    supplierType: 'COMPANY',
+    supplierCategory: 'Suprimentos Gerais',
+    natureLevel1: '02',
+    natureLevel2: '01',
+    natureCode: '01',
+    subCategoryCode: '01',
+  },
+  {
+    description: 'Aluguel',
+    dueDay: 8,
+    recurringType: 'MONTHLY',
+    supplierName: 'Aluguel',
+    supplierCorporateName: 'Aluguel',
+    supplierType: 'COMPANY',
+    supplierCategory: 'Serviços Administrativos/Gerais',
+    natureLevel1: '02',
+    natureLevel2: '01',
+    natureCode: '01',
+    subCategoryCode: '02',
+  },
+  {
+    description: 'Contador',
+    dueDay: 10,
+    recurringType: 'MONTHLY',
+    supplierName: 'Contador',
+    supplierCorporateName: 'Contador',
+    supplierType: 'PERSON',
+    supplierCategory: 'Serviços Terceirizados',
+    natureLevel1: '02',
+    natureLevel2: '01',
+    natureCode: '01',
+    subCategoryCode: '06',
+  },
+  {
+    description: 'Energia Elétrica',
+    dueDay: 15,
+    recurringType: 'MONTHLY',
+    supplierName: 'Energia Elétrica',
+    supplierCorporateName: 'Energia Elétrica',
+    supplierType: 'COMPANY',
+    supplierCategory: 'Suprimentos Gerais',
+    natureLevel1: '02',
+    natureLevel2: '01',
+    natureCode: '01',
+    subCategoryCode: '05',
+  },
+  {
+    description: 'Internet',
+    dueDay: 15,
+    recurringType: 'MONTHLY',
+    supplierName: 'Internet',
+    supplierCorporateName: 'Internet',
+    supplierType: 'COMPANY',
+    supplierCategory: 'Suprimentos Gerais',
+    natureLevel1: '02',
+    natureLevel2: '01',
+    natureCode: '01',
+    subCategoryCode: '07',
+  },
   {
     description: 'Sistema de gestão',
     dueDay: 10,
@@ -34,45 +99,6 @@ export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
     subCategoryCode: '11',
   },
   {
-    description: 'Aluguel',
-    dueDay: 8,
-    recurringType: 'MONTHLY',
-    supplierName: 'Aluguel',
-    supplierCorporateName: 'Aluguel',
-    supplierType: 'COMPANY',
-    supplierCategory: 'Serviços Administrativos/Gerais',
-    natureLevel1: '02',
-    natureLevel2: '01',
-    natureCode: '01',
-    subCategoryCode: '02',
-  },
-  {
-    description: 'Energia Elétrica',
-    dueDay: 15,
-    recurringType: 'MONTHLY',
-    supplierName: 'Energia Elétrica',
-    supplierCorporateName: 'Energia Elétrica',
-    supplierType: 'COMPANY',
-    supplierCategory: 'Suprimentos Gerais',
-    natureLevel1: '02',
-    natureLevel2: '01',
-    natureCode: '01',
-    subCategoryCode: '05',
-  },
-  {
-    description: 'Água',
-    dueDay: 15,
-    recurringType: 'MONTHLY',
-    supplierName: 'Água',
-    supplierCorporateName: 'Água',
-    supplierType: 'COMPANY',
-    supplierCategory: 'Suprimentos Gerais',
-    natureLevel1: '02',
-    natureLevel2: '01',
-    natureCode: '01',
-    subCategoryCode: '01',
-  },
-  {
     description: 'Telefone',
     dueDay: 10,
     recurringType: 'MONTHLY',
@@ -84,39 +110,5 @@ export const BASE_SCHEDULED_EXPENSES: ScheduledExpensesType[] = [
     natureLevel2: '01',
     natureCode: '01',
     subCategoryCode: '12',
-  },
-  {
-    description: 'Internet',
-    dueDay: 15,
-    recurringType: 'MONTHLY',
-    supplierName: 'Internet',
-    supplierCorporateName: 'Internet',
-    supplierType: 'COMPANY',
-    supplierCategory: 'Suprimentos Gerais',
-    natureLevel1: '02',
-    natureLevel2: '01',
-    natureCode: '01',
-    subCategoryCode: '07',
-  },
-  {
-    description: 'Contador',
-    dueDay: 10,
-    recurringType: 'MONTHLY',
-    supplierName: 'Contador',
-    supplierType: 'PERSON',
-    supplierCategory: 'Serviços Terceirizados',
-    natureLevel1: '02',
-    natureLevel2: '01',
-    natureCode: '01',
-    subCategoryCode: '06',
-  },
-  {
-    description: 'Salários',
-    dueDay: 5,
-    recurringType: 'MONTHLY',
-    natureLevel1: '02',
-    natureLevel2: '02',
-    natureCode: '03',
-    subCategoryCode: '01',
   },
 ];
