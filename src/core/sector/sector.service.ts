@@ -92,60 +92,35 @@ export class SectorService {
   async update(id: string, updateSectorDto: UpdateSectorDto) {
     // Só processa se o updateSectorDto.isActive for explicitamente false
     if (updateSectorDto !== undefined && updateSectorDto.isActive === false) {
-      const json = [{ id: id, isActive: true }];
-      const products = await this.prisma.product.findMany({
-        where: {
-          productionStages: {
-            array_contains: json,
-          },
-        },
-      });
-
-      // Sai do if se não encontrar produtos
-      if (products.length === 0) {
-        // Inativar categorias relacionadas ao setor quando o setor for inativado
-        await this.prisma.category.updateMany({
-          where: {
-            sectorId: id,
-            isActive: true, // Só inativa categorias que estão ativas
-          },
-          data: {
-            isActive: false,
-          },
-        });
-
-        return await this.prisma.companySector.update({
-          where: { id: id },
-          data: updateSectorDto,
-        });
-      }
-
-      for (const product of products) {
-        let stages = product.productionStages as any;
-
-        if (typeof stages === 'string') {
-          stages = JSON.parse(stages);
-        }
-
-        if (Array.isArray(stages)) {
-          // Removendo o objeto do array
-          const updatedStages = stages.filter((stage) => stage.id !== id);
-
-          // Atualizando no banco com a nova lista sem o id removido
-          await this.prisma.product.update({
-            where: { id: product.id },
-            data: {
-              productionStages: updatedStages as any,
-            },
-          });
-        }
-      }
-
       // Inativar categorias relacionadas ao setor quando o setor for inativado
       await this.prisma.category.updateMany({
         where: {
           sectorId: id,
           isActive: true, // Só inativa categorias que estão ativas
+        },
+        data: {
+          isActive: false,
+        },
+      });
+
+      // Inativar produtos diretamente associados ao setor
+      await this.prisma.product.updateMany({
+        where: {
+          sectorId: id,
+          isActive: true, // Só inativa produtos que estão ativos
+        },
+        data: {
+          isActive: false,
+        },
+      });
+
+      // Inativar produtos das categorias associadas ao setor
+      await this.prisma.product.updateMany({
+        where: {
+          category: {
+            sectorId: id,
+          },
+          isActive: true, // Só inativa produtos que estão ativos
         },
         data: {
           isActive: false,
@@ -165,6 +140,30 @@ export class SectorService {
       where: {
         sectorId: id,
         isActive: true, // Só inativa categorias que estão ativas
+      },
+      data: {
+        isActive: false,
+      },
+    });
+
+    // Inativar produtos diretamente associados ao setor
+    await this.prisma.product.updateMany({
+      where: {
+        sectorId: id,
+        isActive: true, // Só inativa produtos que estão ativos
+      },
+      data: {
+        isActive: false,
+      },
+    });
+
+    // Inativar produtos das categorias associadas ao setor
+    await this.prisma.product.updateMany({
+      where: {
+        category: {
+          sectorId: id,
+        },
+        isActive: true, // Só inativa produtos que estão ativos
       },
       data: {
         isActive: false,
