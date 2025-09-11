@@ -4,37 +4,69 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { FilterEmployeeDto } from './dto/filter-employee.dto';
 import { Prisma } from '@prisma/client';
+import { SalaryTemplatesService } from '../financial/salaries/salary-templates.service';
 
 @Injectable()
 export class EmployeeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly salaryTemplatesService: SalaryTemplatesService,
+  ) {}
 
   async create(createEmployeeDto: CreateEmployeeDto) {
     try {
-      const employee = await this.prisma.employee.create({
-        data: {
-          name: createEmployeeDto.name,
-          avatarUrl: createEmployeeDto.avatarUrl ?? null,
-          signatureUrl: createEmployeeDto.signatureUrl ?? null,
-          role: {
-            connect: {
-              id: createEmployeeDto.roleId,
+      return this.prisma.$transaction(async (tx) => {
+        // 1. Criar o employee
+        const employee = await tx.employee.create({
+          data: {
+            name: createEmployeeDto.name,
+            avatarUrl: createEmployeeDto.avatarUrl ?? null,
+            signatureUrl: createEmployeeDto.signatureUrl ?? null,
+            role: {
+              connect: {
+                id: createEmployeeDto.roleId,
+              },
+            },
+            sector: {
+              connect: {
+                id: createEmployeeDto.sectorId,
+              },
+            },
+            company: {
+              connect: {
+                id: createEmployeeDto.companyId,
+              },
             },
           },
-          sector: {
-            connect: {
-              id: createEmployeeDto.sectorId,
-            },
-          },
-          company: {
-            connect: {
-              id: createEmployeeDto.companyId,
-            },
-          },
-        },
-      });
+        });
 
-      return employee;
+        // 2. Buscar todos os templates da empresa
+        const templates = await tx.salaryTemplate.findMany({
+          where: { companyId: createEmployeeDto.companyId },
+        });
+
+        // 3. Criar salary controls baseados nos templates
+        if (templates.length > 0) {
+          await Promise.all(
+            templates.map(async (template) => {
+              await tx.salaryControl.create({
+                data: {
+                  reference: template.name, // Usando reference por enquanto
+                  type: template.type,
+                  amount: template.defaultAmount, // Valor padrão do template
+                  isSet: template.defaultAmount > 0, // Ativo se tem valor padrão
+                  date: new Date(),
+                  companyId: createEmployeeDto.companyId,
+                  employeeId: employee.id,
+                  templateId: template.id, // Relacionamento com template
+                },
+              });
+            }),
+          );
+        }
+
+        return employee;
+      });
     } catch (error) {
       console.log(error);
       throw new BadRequestException(error.message);

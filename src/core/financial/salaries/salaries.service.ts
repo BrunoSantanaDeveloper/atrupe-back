@@ -154,66 +154,96 @@ export class SalariesService {
 
   async create(createSalaryControlDto: CreateSalaryControlDto) {
     try {
-      // Buscar todos os funcionários ativos da empresa
-      const employees = await this.prisma.employee.findMany({
-        where: {
-          companyId: createSalaryControlDto.companyId,
-          isActive: true,
-        },
-        select: {
-          id: true,
-          name: true,
-        },
-      });
-
-      if (employees.length === 0) {
-        throw new BadRequestException(
-          'No active employees found in the company',
-        );
-      }
-
-      // Determinar se isSet deve ser true ou false baseado no valor
-      const isSet = createSalaryControlDto.amount > 0;
-
-      // Criar salary controls para todos os funcionários
-      const createdSalaryControls = await Promise.all(
-        employees.map(async (employee) => {
-          return await this.prisma.salaryControl.create({
-            data: {
-              reference: createSalaryControlDto.reference,
-              amount: createSalaryControlDto.amount,
-              date: new Date(),
-              companyId: createSalaryControlDto.companyId,
+      return this.prisma.$transaction(async (tx) => {
+        // 1. Criar ou buscar template existente
+        const existingTemplate = await tx.salaryTemplate.findUnique({
+          where: {
+            name_type_companyId: {
+              name: createSalaryControlDto.reference, // Usando reference por enquanto
               type: createSalaryControlDto.type,
-              employeeId: employee.id,
-              isSet: isSet,
+              companyId: createSalaryControlDto.companyId,
             },
-            include: {
-              employee: {
-                select: {
-                  id: true,
-                  name: true,
-                  sector: {
-                    select: {
-                      id: true,
-                      name: true,
+          },
+        });
+
+        let template = existingTemplate;
+        if (!template) {
+          template = await tx.salaryTemplate.create({
+            data: {
+              name: createSalaryControlDto.reference, // Usando reference por enquanto
+              type: createSalaryControlDto.type,
+              defaultAmount: createSalaryControlDto.amount, // Valor padrão do template
+              companyId: createSalaryControlDto.companyId,
+            },
+          });
+        }
+
+        // 2. Buscar TODOS os funcionários da empresa (ativos e inativos)
+        const employees = await tx.employee.findMany({
+          where: {
+            companyId: createSalaryControlDto.companyId,
+            // Removido isActive: true - aplica a TODOS
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+        });
+
+        if (employees.length === 0) {
+          throw new BadRequestException(
+            'No active employees found in the company',
+          );
+        }
+
+        // 3. Determinar se isSet deve ser true ou false baseado no valor
+        const isSet = createSalaryControlDto.amount > 0;
+
+        // 4. Criar salary controls para todos os funcionários
+        const createdSalaryControls = await Promise.all(
+          employees.map(async (employee) => {
+            return await tx.salaryControl.create({
+              data: {
+                reference: template.name,
+                amount: createSalaryControlDto.amount,
+                date: new Date(),
+                companyId: createSalaryControlDto.companyId,
+                type: template.type,
+                employeeId: employee.id,
+                templateId: template.id, // Relacionamento com template
+                isSet: isSet,
+              },
+              include: {
+                employee: {
+                  select: {
+                    id: true,
+                    name: true,
+                    sector: {
+                      select: {
+                        id: true,
+                        name: true,
+                      },
                     },
                   },
                 },
               },
-            },
-          });
-        }),
-      );
+            });
+          }),
+        );
 
-      return {
-        message: `Successfully created salary control for ${employees.length} employees`,
-        createdCount: employees.length,
-        employees: employees.map((emp) => ({ id: emp.id, name: emp.name })),
-        salaryControls: createdSalaryControls,
-      };
+        return {
+          message: `Successfully created salary control for ${employees.length} employees`,
+          template,
+          createdCount: employees.length,
+          employees: employees.map((emp) => ({ id: emp.id, name: emp.name })),
+          salaryControls: createdSalaryControls,
+        };
+      });
     } catch (error) {
       console.error(error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
           throw new BadRequestException(

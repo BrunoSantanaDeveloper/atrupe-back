@@ -63,6 +63,7 @@ model Company {
   receivables           Receivable[]
   roles                 Role[]
   SalaryControl         SalaryControl[]
+  salaryTemplates       SalaryTemplate[]
   salarySheet           SalarySheet[]
   saleSeries            SaleSeries[]
   scheduledExpenses     ScheduledExpense[]
@@ -610,20 +611,38 @@ model SalaryItem {
 }
 
 model SalaryControl {
-  id         String    @id @default(uuid())
-  reference  String
-  amount     Float     @default(0)
-  type       ItemType  @default(INCREASE)
-  date       DateTime  @default(now())
-  companyId  String
-  employeeId String
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime? @updatedAt
-  isSet      Boolean   @default(false)
-  company    Company   @relation(fields: [companyId], references: [id])
-  employee   Employee  @relation(fields: [employeeId], references: [id])
+  id             String          @id @default(uuid())
+  reference      String
+  amount         Float           @default(0)
+  type           ItemType        @default(INCREASE)
+  date           DateTime        @default(now())
+  companyId      String
+  employeeId     String
+  templateId     String? // Relacionamento com template
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime?       @updatedAt
+  isSet          Boolean         @default(false)
+  company        Company         @relation(fields: [companyId], references: [id])
+  employee       Employee        @relation(fields: [employeeId], references: [id])
+  salaryTemplate SalaryTemplate? @relation(fields: [templateId], references: [id])
 
   @@map("salary_controls")
+}
+
+model SalaryTemplate {
+  id        String    @id @default(uuid())
+  name          String
+  type          ItemType  @default(INCREASE)
+  defaultAmount Float     @default(0) // Valor padrão do template
+  companyId     String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  company       Company         @relation(fields: [companyId], references: [id])
+  SalaryControl SalaryControl[]
+
+  @@unique([name, type, companyId])
+  @@map("salary_templates")
 }
 
 model PaymentMovement {
@@ -1788,8 +1807,8 @@ enum FinancialType {
 }
 
 enum ExpenseSource {
-  SUPPLIER    // Fornecedor
-  EMPLOYEE    // Funcionário (salário)
-  CLIENT      // Cliente (reembolso, etc.)
-  OTHER       // Outros
+  SUPPLIER // Fornecedor
+  EMPLOYEE // Funcionário (salário)
+  CLIENT // Cliente (reembolso, etc.)
+  OTHER // Outros
 }
