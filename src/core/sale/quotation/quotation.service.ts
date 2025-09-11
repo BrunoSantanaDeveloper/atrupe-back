@@ -1741,6 +1741,11 @@ export class QuotationService {
     const quotation = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
       include: {
+        series: {
+          select: {
+            proposalValidity: true,
+          },
+        },
         seller: {
           select: {
             sellerProfile: {
@@ -1867,12 +1872,22 @@ export class QuotationService {
         );
       }
     }
+
+    // Recalcular a data de validade da proposta com base na data de conclusão
+    const finishedAt = new Date();
+    const proposalValidity = quotation.series?.proposalValidity || 0;
+    const newDueDate =
+      proposalValidity > 0
+        ? add(finishedAt, { days: proposalValidity })
+        : quotation.dueDate; // Mantém a data atual se não houver validade configurada
+
     try {
       return this.prisma.quotation.update({
         where: { id: quotationId },
         data: {
           status: QuotationStatus.DONE,
-          finishedAt: new Date(),
+          finishedAt,
+          dueDate: newDueDate,
         },
       });
     } catch (error) {
