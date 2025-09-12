@@ -99,6 +99,14 @@ export class BigdatacorpService {
       cpf: response.Result[0].BasicData.TaxIdNumber,
       birthdate: response.Result[0].BasicData.BirthDate,
       motherName: response.Result[0].BasicData.MotherName,
+      address: {
+        street: '',
+        city: '',
+        state: '',
+        zipcode: '',
+        country: '',
+        neighborhood: '',
+      },
     };
   }
 
