@@ -23,6 +23,16 @@ export class UtilsController {
     return this.utilsService.zipcode(zipcode);
   }
 
+  @Get('/people/:cpf')
+  people(@Param('cpf') cpf: string) {
+    return this.utilsService.people(cpf);
+  }
+
+  @Get('/company/:cnpj')
+  company(@Param('cnpj') cnpj: string) {
+    return this.utilsService.company(cnpj);
+  }
+
   // @Get('/cities')
   // cities(@Query('state') state: string) {
   //   return this.utilsService.cities(state);

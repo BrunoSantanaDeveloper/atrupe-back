@@ -79,4 +79,12 @@ export class UtilsService {
   zipcode(zipcode: string) {
     return this.plugService.zipcode(zipcode);
   }
+
+  people(cpf: string) {
+    return this.plugService.people(cpf);
+  }
+
+  company(cnpj: string) {
+    return this.plugService.company(cnpj);
+  }
 }
