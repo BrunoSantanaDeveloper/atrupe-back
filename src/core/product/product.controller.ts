@@ -16,6 +16,7 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { ProductFilterDTO } from './dto/filter.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { ToggleStatusDto } from './dto/toggle-status.dto';
 import {
   ApiTags,
   ApiOperation,
@@ -120,6 +121,28 @@ export class ProductController {
   })
   remove(@Param('id') id: string) {
     return this.productService.remove(id);
+  }
+
+  @Post(':id/toggle-status')
+  @ApiOperation({ summary: 'Altera o status ativo/inativo de um produto' })
+  @ApiParam({ name: 'id', required: true, description: 'ID do produto' })
+  @ApiBody({
+    description: 'Novo status do produto',
+    type: ToggleStatusDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Status do produto alterado com sucesso.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Produto não encontrado.',
+  })
+  async toggleStatus(
+    @Param('id') id: string,
+    @Body() toggleStatusDto: ToggleStatusDto,
+  ) {
+    return this.productService.toggleStatus(id, toggleStatusDto.isActive);
   }
 
   @Delete('item/:id')

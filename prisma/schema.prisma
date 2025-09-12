@@ -630,13 +630,13 @@ model SalaryControl {
 }
 
 model SalaryTemplate {
-  id        String    @id @default(uuid())
+  id            String    @id @default(uuid())
   name          String
   type          ItemType  @default(INCREASE)
   defaultAmount Float     @default(0) // Valor padrão do template
   companyId     String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime? @updatedAt
 
   company       Company         @relation(fields: [companyId], references: [id])
   SalaryControl SalaryControl[]
@@ -1700,6 +1700,7 @@ enum DeliveryType {
   PICKUP
 }
 
+// Remover. O campo status não está sendo usado no sistema
 enum ProductStatus {
   ACTIVE
   INACTIVE

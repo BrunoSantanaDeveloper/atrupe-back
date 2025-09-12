@@ -407,6 +407,27 @@ export class ProductService {
     }
   }
 
+  async toggleStatus(id: string, isActive: boolean) {
+    try {
+      const product = await this.prisma.product.findUnique({
+        where: { id },
+      });
+
+      if (!product) {
+        throw new NotFoundException('Product not found');
+      }
+
+      return this.prisma.product.update({
+        where: { id },
+        data: {
+          isActive: isActive,
+        },
+      });
+    } catch (error) {
+      throw new BadRequestException(error);
+    }
+  }
+
   async remove(id: string) {
     try {
       const product = await this.prisma.product.findUnique({
