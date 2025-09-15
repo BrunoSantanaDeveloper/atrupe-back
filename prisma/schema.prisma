@@ -1181,7 +1181,7 @@ model ProductItem {
   volume               Float?
   weight               Float?
   width                Float?
-  unitOfMeasureId      String?
+  unitOfMeasureId      String? // Remover, usar apenas unitKind
   unitKind             UnitKind?
   product              Product                @relation(fields: [productId], references: [id])
   unitOfMeasure        DefaultUnitOfMeasure?  @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict)

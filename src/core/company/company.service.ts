@@ -1279,17 +1279,13 @@ export class CompanyService {
   private async createDefaultProducts(companyId: string) {
     const { BASE_PRODUCTS } = await import('../../seeds/products-base');
 
-    // Buscar setores, categorias e unidades de medida necessárias
+    // Buscar setores e categorias necessárias
     const sectors = await this.prisma.companySector.findMany({
       where: { companyId },
     });
 
     const categories = await this.prisma.category.findMany({
       where: { companyId },
-    });
-
-    const units = await this.prisma.defaultUnitOfMeasure.findMany({
-      where: { isActive: true },
     });
 
     for (const productData of BASE_PRODUCTS) {
@@ -1338,32 +1334,7 @@ export class CompanyService {
 
       // Criar itens do produto
       for (const item of productData.produto) {
-        const unitOfMeasure = units.find((u) => u.code === item.unidadeMedida);
-        if (!unitOfMeasure) {
-          this.logger.warn(
-            `Unidade de medida não encontrada: ${item.unidadeMedida}`,
-          );
-          continue;
-        }
-
-        // Mapear código da unidade para UnitKind
-        const unitKindMapping = {
-          'M²': 'AREA',
-          M2: 'AREA',
-          UN: 'UNITY',
-          HH: 'DURATION',
-          MT: 'LENGTH',
-          CM: 'LENGTH',
-          MM: 'LENGTH',
-          KG: 'WEIGHT',
-          GR: 'WEIGHT',
-          MG: 'WEIGHT',
-          LT: 'CAPACITY',
-          ML: 'CAPACITY',
-          KM: 'DISTANCE',
-        };
-
-        const unitKind = unitKindMapping[item.unidadeMedida] || 'UNITY';
+        const unitKind = item.tipo;
 
         // Configurar dimensões baseado na unidade de medida
         const dimensions: any = {};
@@ -1383,7 +1354,6 @@ export class CompanyService {
           data: {
             name: item.nome,
             productId: product.id,
-            unitOfMeasureId: unitOfMeasure.id,
             unitKind: unitKind as any,
             salePrice: item.precoVenda || 0,
             unitCost: item.precoUnitario || 0,

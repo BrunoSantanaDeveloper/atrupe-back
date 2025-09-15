@@ -80,12 +80,24 @@ export const BASE_NATURES = [
     code: '01',
     subCategories: [
       {
-        description: 'Material de Limpeza',
-        code: '09',
-      },
-      {
         description: 'Água',
         code: '01',
+      },
+      {
+        description: 'Aluguel',
+        code: '02',
+      },
+      {
+        description: 'Alvará / IPTU',
+        code: '03',
+      },
+      {
+        description: 'Copa Cozinha',
+        code: '04',
+      },
+      {
+        description: 'Energia Elétrica',
+        code: '05',
       },
       {
         description: 'Contabilidade',
@@ -100,20 +112,8 @@ export const BASE_NATURES = [
         code: '08',
       },
       {
-        description: 'Aluguel',
-        code: '02',
-      },
-      {
-        description: 'Alvará / IPTU',
-        code: '03',
-      },
-      {
-        description: 'Energia Elétrica',
-        code: '05',
-      },
-      {
-        description: 'Copa Cozinha',
-        code: '04',
+        description: 'Material de Limpeza',
+        code: '09',
       },
       {
         description: 'Marketing',
@@ -124,16 +124,16 @@ export const BASE_NATURES = [
         code: '11',
       },
       {
+        description: 'Telefone',
+        code: '12',
+      },
+      {
         description: 'Manutenção e Conservação Predial',
-        code: '14',
+        code: '13',
       },
       {
         description: 'Manutenção de Máquinas',
-        code: '15',
-      },
-      {
-        description: 'Telefone',
-        code: '12',
+        code: '14',
       },
     ],
   },
@@ -200,10 +200,6 @@ export const BASE_NATURES = [
         code: '01',
       },
       {
-        description: 'Estacionamento',
-        code: '10',
-      },
-      {
         description: 'Lavação',
         code: '02',
       },
@@ -234,6 +230,10 @@ export const BASE_NATURES = [
       {
         description: 'Pedágio',
         code: '09',
+      },
+      {
+        description: 'Estacionamento',
+        code: '10',
       },
       {
         description: 'Veículos de Colaboradores',
