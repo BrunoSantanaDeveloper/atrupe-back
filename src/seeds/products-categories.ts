@@ -12,11 +12,11 @@ export const BASE_PRODUCTS_CATEGORIES = [
     sectorName: 'CNC',
   },
   {
-    name: 'Acrlicos',
+    name: 'Acrílicos',
     sectorName: 'CNC',
   },
   {
-    name: 'PVC ',
+    name: 'PVC',
     sectorName: 'CNC',
   },
   {
@@ -76,7 +76,7 @@ export const BASE_PRODUCTS_CATEGORIES = [
     sectorName: 'Locação de Painéis',
   },
   {
-    name: 'Chapas ',
+    name: 'Chapas',
     sectorName: 'Marcenaria',
   },
   {

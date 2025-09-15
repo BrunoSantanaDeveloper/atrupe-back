@@ -473,97 +473,6 @@ export class CompanyService {
       return;
     }
   }
-  private async createExampleQuotation(companyId: string) {
-    try {
-      console.log('Creating example quotation...');
-
-      // Buscar dados necessários
-      const [
-        exampleClient,
-        adminEmployee,
-        quotationSeries,
-        bannerProduct,
-        placaProduct,
-      ] = await Promise.all([
-        this.prisma.client.findFirst({
-          where: { name: 'Cliente Exemplo', companyId },
-        }),
-        this.prisma.employee.findFirst({
-          where: { companyId, role: { isAdmin: true } },
-        }),
-        this.prisma.saleSeries.findFirst({
-          where: { code: 'V1', companyId },
-        }),
-        this.prisma.product.findFirst({
-          where: { code: 'BAN001', companyId },
-        }),
-        this.prisma.product.findFirst({
-          where: { code: 'PLA001', companyId },
-        }),
-      ]);
-
-      if (
-        !exampleClient ||
-        !adminEmployee ||
-        !quotationSeries ||
-        !bannerProduct ||
-        !placaProduct
-      ) {
-        console.log(
-          '⚠️  Alguns dados necessários não foram encontrados para criar orçamento exemplo',
-        );
-        return;
-      }
-
-      // Criar orçamento exemplo
-      const exampleQuotation = await this.prisma.quotation.create({
-        data: {
-          status: 'OPEN',
-          quotationNumber: 1,
-          companyId: companyId,
-          subCompanyId: companyId,
-          sellerId: adminEmployee.id,
-          clientId: exampleClient.id,
-          seriesId: quotationSeries.id,
-          description:
-            'Este é um orçamento de exemplo criado automaticamente para demonstrar o funcionamento do sistema. Inclui um produto simples e um produto composto.',
-          totalValue: 265,
-        },
-      });
-
-      // Adicionar produtos ao orçamento
-      await Promise.all([
-        this.prisma.quotationProduct.create({
-          data: {
-            quotationId: exampleQuotation.id,
-            productId: bannerProduct.id,
-            quantity: 2,
-            description: 'Banner promocional 2x1m',
-            totalValue: 70,
-            allowEditDescription: true,
-            allowEditValues: true,
-          },
-        }),
-        this.prisma.quotationProduct.create({
-          data: {
-            quotationId: exampleQuotation.id,
-            productId: placaProduct.id,
-            quantity: 1,
-            description: 'Placa de identificação personalizada 30x20cm',
-            totalValue: 195,
-            allowEditDescription: true,
-            allowEditValues: true,
-          },
-        }),
-      ]);
-
-      console.log(`Orçamento exemplo criado: ${exampleQuotation.id}`);
-      console.log('   - Total: R$ 265,00');
-      console.log('   - Produtos: 1 simples + 1 composto');
-    } catch (error) {
-      console.error('❌ Erro ao criar orçamento exemplo:', error.message);
-    }
-  }
 
   async create(
     createCompanyDto: CreateCompanyDto,
@@ -1329,6 +1238,9 @@ export class CompanyService {
           productionStages:
             productionStages.length > 0 ? productionStages : null,
           isStandard: true,
+          imageUrl: productData.imageUrl,
+          allowEditValues: true,
+          allowEditDescription: true,
         },
       });
 

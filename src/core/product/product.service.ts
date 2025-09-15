@@ -246,9 +246,14 @@ export class ProductService {
 
     const productionStages = product.productionStages as JsonArray | null;
 
-    if (!Array.isArray(productionStages)) {
+    if (productionStages !== null && !Array.isArray(productionStages)) {
       throw new Error('Invalid data for productionStages');
     }
+
+    // Se productionStages for null ou não for um array válido, inicializar como array vazio
+    const validProductionStages = Array.isArray(productionStages)
+      ? productionStages
+      : [];
 
     const allSectors = await this.prisma.companySector.findMany({
       where: { isProductionStage: true, isSystem: false },
@@ -258,7 +263,7 @@ export class ProductService {
     // Filtra apenas setores ativos
     const activeSectors = allSectors.filter((sector) => sector.isActive);
 
-    const existingSectorIds = productionStages
+    const existingSectorIds = validProductionStages
       .filter((stage) => (stage as { id: string; isActive: boolean }).isActive)
       .map((stage: { id: string; isActive: boolean }) => ({
         id: stage.id,
