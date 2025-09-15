@@ -22,6 +22,14 @@ export const BASE_NATURES = [
         description: 'Receita Diversas',
         code: '04',
       },
+      {
+        description: 'Descontos Recebidos',
+        code: '05',
+      },
+      {
+        description: 'Juros Recebidos',
+        code: '06',
+      },
     ],
   },
   {
@@ -175,6 +183,10 @@ export const BASE_NATURES = [
         description: 'Dare - Documento de Arrecadação Receitas Estaduais',
         code: '10',
       },
+      {
+        description: 'Descontos Concedidos',
+        code: '11',
+      },
     ],
   },
   {
@@ -308,7 +320,7 @@ export const BASE_NATURES = [
         code: '02',
       },
       {
-        description: 'Juros',
+        description: 'Juros Pagos',
         code: '03',
       },
       {
