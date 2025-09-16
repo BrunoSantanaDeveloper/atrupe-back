@@ -16,6 +16,7 @@ export interface BasicData {
   TaxIdNumber: string;
   TaxIdCountry: string;
   AlternativeIdNumbers: AlternativeIdNumbers;
+  ExtendedDocumentInformation?: ExtendedDocumentInformation;
   Name: string;
   Aliases: Aliases;
   Gender: string;
@@ -25,6 +26,8 @@ export interface BasicData {
   FirstNameUniquenessScore: number;
   FirstAndLastNameUniquenessScore: number;
   BirthDate: string;
+  CapturedBirthDateFromRFSource?: string;
+  IsValidBirthDateInRFSource?: boolean;
   Age: number;
   ZodiacSign: string;
   ChineseSign: string;
@@ -44,6 +47,7 @@ export interface BasicData {
 
 export interface AlternativeIdNumbers {
   SocialSecurityNumber: string;
+  [key: string]: string;
 }
 
 export interface Aliases {
@@ -62,6 +66,20 @@ export interface Status {
 export interface BasicDaum {
   Code: number;
   Message: string;
+}
+
+export interface ExtendedDocumentInformation {
+  [key: string]: DocumentInfo;
+}
+
+export interface DocumentInfo {
+  DocumentNumber: string;
+  DocumentLast4Digits: string;
+  DocumentIssuingAgency: string;
+  DocumentIssuingStateCode: string;
+  CreationDate: string;
+  LastUpdateDate: string;
+  Sources: string[];
 }
 
 export interface Evidences {}
