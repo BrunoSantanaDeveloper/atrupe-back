@@ -54,7 +54,9 @@ export interface Aliases {
 export interface MaritalStatusData {}
 
 export interface Status {
-  basic_data: BasicDaum[];
+  basic_data?: BasicDaum[];
+  login?: BasicDaum[];
+  api?: BasicDaum[];
 }
 
 export interface BasicDaum {

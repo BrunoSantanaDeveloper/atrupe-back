@@ -54,7 +54,9 @@ export interface CompanyPhone {
 }
 
 export interface CompanyStatus {
-  basic_data: CompanyBasicDaum[];
+  basic_data?: CompanyBasicDaum[];
+  login?: CompanyBasicDaum[];
+  api?: CompanyBasicDaum[];
 }
 
 export interface CompanyBasicDaum {

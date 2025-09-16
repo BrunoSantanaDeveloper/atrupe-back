@@ -1,5 +1,10 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  UnauthorizedException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { PeopleResponse } from '../dto/people.dto';
 import { CompanyResponse } from '../dto/company.dto';
 import { PeopleResponseApi } from './dto/people.dto';
@@ -31,17 +36,12 @@ export class BigdatacorpService {
         timeout: this.timeout,
         headers: {
           AccessToken: this.config.get('plug.bigDataCorp.token'),
-          TokenId: this.config.get('plug.bigDataCorp.clientId'),
         },
       })
       .pipe(map((response) => this.mapPeopleResponse(response.data)));
 
     return await firstValueFrom(response$);
   }
-
-  /***************************************************************************/
-  // Not implemented methods
-  /***************************************************************************/
 
   async company(cnpj: string): Promise<CompanyResponse> {
     const sanitizedCnpj = cnpj.replace(/[./-]/g, '');
@@ -63,6 +63,10 @@ export class BigdatacorpService {
 
     return await firstValueFrom(response$);
   }
+
+  /***************************************************************************/
+  // Not implemented methods
+  /***************************************************************************/
 
   async zipcode(zipCode: string): Promise<any> {
     throw new Error('Method not implemented. Data: ' + zipCode);
@@ -88,9 +92,46 @@ export class BigdatacorpService {
   // Private methods
   /***************************************************************************/
 
+  private validateApiResponse(
+    response: PeopleResponseApi | CompanyResponseApi,
+  ): void {
+    // Verificar se há status de erro da API
+    if (response.Status) {
+      const status = response.Status as any;
+
+      // Verificar erros de login/autenticação
+      if (status.login) {
+        const loginError = status.login[0];
+        if (loginError.Code === -111) {
+          throw new UnauthorizedException('Token de acesso inválido');
+        }
+      }
+
+      // Verificar erros da API
+      if (status.api) {
+        const apiError = status.api[0];
+        if (apiError.Code === -114) {
+          throw new BadRequestException('Parâmetro de documento inválido');
+        }
+      }
+
+      // Verificar se o dataset retornou erro
+      if (status.basic_data) {
+        const dataError = status.basic_data[0];
+        if (dataError.Code !== 0) {
+          throw new InternalServerErrorException(
+            `Erro na consulta: ${dataError.Message}`,
+          );
+        }
+      }
+    }
+  }
+
   private mapPeopleResponse(
     response: PeopleResponseApi,
   ): PeopleResponse | null {
+    this.validateApiResponse(response);
+
     if (!response.Result || response.Result.length === 0) {
       return null;
     }
@@ -113,6 +154,8 @@ export class BigdatacorpService {
   private mapCompanyResponse(
     response: CompanyResponseApi,
   ): CompanyResponse | null {
+    this.validateApiResponse(response);
+
     if (!response.Result || response.Result.length === 0) {
       return null;
     }
