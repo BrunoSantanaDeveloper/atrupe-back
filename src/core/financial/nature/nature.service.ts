@@ -340,7 +340,7 @@ export class NatureService {
         data: data,
       });
     } catch (error) {
-      console.log('error: ', error);
+      console.error('error: ', error);
     }
   }
 
@@ -412,7 +412,6 @@ export class NatureService {
       },
       orderBy: [{ level1: 'asc' }, { level2: 'asc' }, { code: 'asc' }],
     });
-    console.log('natures: ', natures);
     return natures;
   }
   async findAllNaturesByLevel2(
