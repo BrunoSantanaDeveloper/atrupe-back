@@ -172,30 +172,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     ],
   },
   {
-    nome: 'Apostila',
-    codigo: 'APOS',
-    setorNome: 'Gráfica Rápida',
-    categoriaNome: 'Papéis',
-    etapasProducao: ['Produção'],
-    imageUrl: '',
-    produto: [
-      {
-        nome: 'Encadernação',
-        tipo: 'UNITY',
-        dimensoes: null,
-        precoVenda: 300,
-        precoUnitario: 300,
-      },
-      {
-        nome: 'Impressão A4 color',
-        tipo: 'UNITY',
-        dimensoes: null,
-        precoVenda: 300,
-        precoUnitario: 300,
-      },
-    ],
-  },
-  {
     nome: 'Impressão A4',
     codigo: 'APOS',
     setorNome: 'Gráfica Rápida',
@@ -343,6 +319,26 @@ export const BASE_PRODUCTS: ProductType[] = [
     ],
   },
   {
+    nome: 'Letra Caixa PVC 5 mm',
+    codigo: 'LTP05',
+    setorNome: 'CNC',
+    categoriaNome: 'PVC',
+    etapasProducao: [],
+    imageUrl: '',
+    produto: [
+      {
+        nome: 'Letra Caixa PVC 5 mm',
+        tipo: 'AREA',
+        dimensoes: {
+          largura: 1000,
+          altura: 1000,
+        },
+        precoVenda: 20000,
+        precoUnitario: 20,
+      },
+    ],
+  },
+  {
     nome: 'Letra Caixa PVC 10 mm',
     codigo: 'LTP10',
     setorNome: 'CNC',
@@ -379,26 +375,6 @@ export const BASE_PRODUCTS: ProductType[] = [
         },
         precoVenda: 30000,
         precoUnitario: 30,
-      },
-    ],
-  },
-  {
-    nome: 'Letra Caixa PVC 5 mm',
-    codigo: 'LTP05',
-    setorNome: 'CNC',
-    categoriaNome: 'PVC',
-    etapasProducao: [],
-    imageUrl: '',
-    produto: [
-      {
-        nome: 'Letra Caixa PVC 5 mm',
-        tipo: 'AREA',
-        dimensoes: {
-          largura: 1000,
-          altura: 1000,
-        },
-        precoVenda: 20000,
-        precoUnitario: 20,
       },
     ],
   },

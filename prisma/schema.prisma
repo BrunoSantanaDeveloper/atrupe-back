@@ -27,12 +27,12 @@ model Company {
   textAfterItems        String?
   textBeforeItems       String?
   principalCompanyId    String?
-  deliveryType          DeliveryType[]
   trialEndsAt           DateTime?
   facebook              String?
   instagram             String?
   linkedin              String?
   unitDefaults          Json?
+  deliveryType          DeliveryType[]
   AcademyProgress       AcademyProgress[]
   address               Address[]
   assetTypes            AssetType[]
@@ -586,7 +586,7 @@ model SalarySheet {
   employeeId String
   createdAt  DateTime          @default(now())
   updatedAt  DateTime?         @updatedAt
-  movements  PaymentMovement[]
+  movements  PaymentMovement[] // Remover
   items      SalaryItem[]
   company    Company           @relation(fields: [companyId], references: [id])
   employee   Employee          @relation(fields: [employeeId], references: [id])
@@ -645,6 +645,7 @@ model SalaryTemplate {
   @@map("salary_templates")
 }
 
+// Remover
 model PaymentMovement {
   id              String              @id @default(uuid())
   salarySheetId   String

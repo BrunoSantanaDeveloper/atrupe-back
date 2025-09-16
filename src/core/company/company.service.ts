@@ -409,8 +409,15 @@ export class CompanyService {
     this.logger.log('creating default items for company', companyId);
 
     for (const item of this.defaultItemsConfig) {
-      this.logger.log(item.logMessage);
-      await item.createMethod(companyId);
+      const exists = await item.checkMethod(companyId);
+      if (!exists) {
+        this.logger.log(item.logMessage);
+        await item.createMethod(companyId);
+      } else {
+        this.logger.log(
+          `${item.name} already exists for company ${companyId}, skipping...`,
+        );
+      }
     }
   }
 
