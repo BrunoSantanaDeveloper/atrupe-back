@@ -601,7 +601,7 @@ model SalaryItem {
   type          ItemType
   description   String?
   amount        Float
-  reference     String?
+  reference     String? // Verificar se também alterar para "name"
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
   paidAt        DateTime?
@@ -612,10 +612,10 @@ model SalaryItem {
 
 model SalaryControl {
   id             String          @id @default(uuid())
-  reference      String
+  reference      String // Alterar para "name"
   amount         Float           @default(0)
   type           ItemType        @default(INCREASE)
-  date           DateTime        @default(now())
+  date           DateTime        @default(now()) // Remover
   companyId      String
   employeeId     String
   templateId     String? // Relacionamento com template

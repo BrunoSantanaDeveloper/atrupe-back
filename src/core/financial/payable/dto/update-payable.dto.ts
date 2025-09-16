@@ -5,6 +5,8 @@ import {
   IsUUID,
   IsNumber,
   IsDateString,
+  IsEnum,
+  ValidateIf,
 } from 'class-validator';
 
 export class UpdatePayableDto {
@@ -13,8 +15,18 @@ export class UpdatePayableDto {
     example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
   })
   @IsOptional()
+  @ValidateIf((o) => o.supplierId !== '' && o.supplierId !== null)
   @IsUUID()
   supplierId?: string;
+
+  @ApiPropertyOptional({
+    description: 'ID do Funcionário associado (para salários)',
+    example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
+  })
+  @IsOptional()
+  @ValidateIf((o) => o.employeeId !== '' && o.employeeId !== null)
+  @IsUUID()
+  employeeId?: string;
 
   @ApiPropertyOptional({
     description: 'Natureza do título',
@@ -55,6 +67,15 @@ export class UpdatePayableDto {
   @IsOptional()
   @IsNumber()
   totalAmount?: number;
+
+  @ApiPropertyOptional({
+    description: 'Tipo de fonte da despesa',
+    example: 'SUPPLIER',
+    enum: ['SUPPLIER', 'EMPLOYEE', 'CLIENT', 'OTHER'],
+  })
+  @IsOptional()
+  @IsEnum(['SUPPLIER', 'EMPLOYEE', 'CLIENT', 'OTHER'])
+  expenseSource?: 'SUPPLIER' | 'EMPLOYEE' | 'CLIENT' | 'OTHER';
 }
 
 export class CancelPayableDto {

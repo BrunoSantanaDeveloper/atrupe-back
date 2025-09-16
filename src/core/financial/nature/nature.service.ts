@@ -401,7 +401,6 @@ export class NatureService {
 
   async findAllNatures(companyId: string, level1: string) {
     const lvl1 = level1 === 'receivable' ? '01' : '02';
-    console.log('lvl1: ', lvl1);
     const natures = await this.prisma.nature.findMany({
       where: { isActive: true, companyId, level1: lvl1 },
       select: {

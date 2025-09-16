@@ -9,6 +9,8 @@ import {
   IsUUID,
   Max,
   ValidateNested,
+  IsEnum,
+  ValidateIf,
 } from 'class-validator';
 export class CreatePayableInstallmentDto {
   @ApiProperty({
@@ -96,8 +98,19 @@ export class CreatePayableDto {
     example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
   })
   @IsString()
+  @ValidateIf((o) => o.supplierId !== '' && o.supplierId !== null)
   @IsUUID()
   supplierId?: string;
+
+  @ApiPropertyOptional({
+    description: 'ID do funcionário associado à conta (para salários)',
+    example: 'b1d5f894-4c4d-4b7c-828c-2fbd9f5f7bcb',
+  })
+  @IsOptional()
+  @IsString()
+  @ValidateIf((o) => o.employeeId !== '' && o.employeeId !== null)
+  @IsUUID()
+  employeeId?: string;
 
   @ApiPropertyOptional({
     description: 'ID da subcategoria associada (opcional)',
@@ -134,6 +147,15 @@ export class CreatePayableDto {
   @IsArray()
   @Type(() => CreatePayableInstallmentDto)
   installments: CreatePayableInstallmentDto[];
+
+  @ApiPropertyOptional({
+    description: 'Tipo de fonte da despesa',
+    example: 'SUPPLIER',
+    enum: ['SUPPLIER', 'EMPLOYEE', 'CLIENT', 'OTHER'],
+  })
+  @IsOptional()
+  @IsEnum(['SUPPLIER', 'EMPLOYEE', 'CLIENT', 'OTHER'])
+  expenseSource?: 'SUPPLIER' | 'EMPLOYEE' | 'CLIENT' | 'OTHER';
 }
 
 export class PayableInstallmentDto {

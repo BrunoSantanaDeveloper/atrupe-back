@@ -39,9 +39,18 @@ export class PayableService {
           }, 0)
           .toFixed(2);
 
+        // Converter strings vazias em null para campos de relacionamento
+        const sanitizedPayableData = {
+          ...payableData,
+          supplierId:
+            payableData.supplierId === '' ? null : payableData.supplierId,
+          employeeId:
+            payableData.employeeId === '' ? null : payableData.employeeId,
+        };
+
         const payable = await tx.payable.create({
           data: {
-            ...payableData,
+            ...sanitizedPayableData,
             referenceDate: new Date(payableData.referenceDate),
             totalAmount: parseFloat(totalAmount),
             installmentQty: installments.length,
@@ -299,9 +308,16 @@ export class PayableService {
 
   async updateTitle(id: string, dto: UpdatePayableDto) {
     try {
+      // Converter strings vazias em null para campos de relacionamento
+      const sanitizedDto = {
+        ...dto,
+        supplierId: dto.supplierId === '' ? null : dto.supplierId,
+        employeeId: dto.employeeId === '' ? null : dto.employeeId,
+      };
+
       const updatedPayable = await this.prisma.payable.update({
         where: { id },
-        data: dto,
+        data: sanitizedDto,
       });
 
       return updatedPayable;
