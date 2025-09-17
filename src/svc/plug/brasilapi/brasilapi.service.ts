@@ -1,8 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ZipCodeResponse } from '../dto/zipcode.dto';
 import { HttpService } from '@nestjs/axios';
 import { CepResponse } from './dto/cep.dto';
-import { firstValueFrom, map } from 'rxjs';
+import { firstValueFrom, map, catchError } from 'rxjs';
 import { CNPJResponse } from './dto/cnpj.dto';
 import { CompanyResponse } from '../dto/company.dto';
 import { BankResponse } from '../dto/bank';
@@ -30,11 +34,36 @@ export class BrasilApiService {
   }
 
   async company(cnpj: string): Promise<CompanyResponse> {
+    const sanitizedCnpj = cnpj.replace(/[.\-\/]/g, '');
+
+    if (sanitizedCnpj.length !== 14) {
+      throw new BadRequestException('CNPJ deve conter 14 dígitos');
+    }
+
     const response$ = this.httpService
-      .get<CNPJResponse>(`${this.baseUrl}/cnpj/v1/${cnpj}`, {
+      .get<CNPJResponse>(`${this.baseUrl}/cnpj/v1/${sanitizedCnpj}`, {
         timeout: this.timeout,
       })
-      .pipe(map((response) => this.mapCnpjResponse(response.data)));
+      .pipe(
+        map((response) => this.mapCnpjResponse(response.data)),
+        catchError((error) => {
+          if (error.response?.status === 404) {
+            throw new NotFoundException('CNPJ não encontrado na base de dados');
+          }
+          if (error.response?.status === 400) {
+            throw new BadRequestException('CNPJ inválido');
+          }
+          if (
+            error.code === 'ECONNABORTED' ||
+            error.message?.includes('timeout')
+          ) {
+            throw new Error('Timeout na consulta da API externa');
+          }
+          throw new Error(
+            `Erro na consulta: ${error.message || 'Erro desconhecido'}`,
+          );
+        }),
+      );
 
     return await firstValueFrom(response$);
   }

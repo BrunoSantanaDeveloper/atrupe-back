@@ -3,6 +3,9 @@ export interface PeopleResponse {
   cpf: string;
   birthdate: string;
   motherName: string;
+  rg?: string;
+  rgIssuingAgency?: string;
+  rgIssuingState?: string;
   address: {
     street: string;
     city: string;

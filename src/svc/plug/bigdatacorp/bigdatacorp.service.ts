@@ -6,9 +6,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { PeopleResponse } from '../dto/people.dto';
-import { CompanyResponse } from '../dto/company.dto';
 import { PeopleResponseApi } from './dto/people.dto';
-import { CompanyResponseApi } from './dto/company.dto';
 import { firstValueFrom, map } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
 
@@ -48,31 +46,13 @@ export class BigdatacorpService {
     return await firstValueFrom(response$);
   }
 
-  async company(cnpj: string): Promise<CompanyResponse> {
-    return;
-    const sanitizedCnpj = cnpj.replace(/[./-]/g, '');
-    const body = {
-      Datasets: 'basic_data',
-      q: `doc{${sanitizedCnpj}}`,
-      Limit: 1,
-    };
-
-    const response$ = this.httpService
-      .post<CompanyResponseApi>(`${this.baseUrl}/empresas`, body, {
-        timeout: this.timeout,
-        headers: {
-          AccessToken: this.config.get('plug.bigDataCorp.token'),
-          TokenId: this.config.get('plug.bigDataCorp.clientId'),
-        },
-      })
-      .pipe(map((response) => this.mapCompanyResponse(response.data)));
-
-    return await firstValueFrom(response$);
-  }
-
   /***************************************************************************/
   // Not implemented methods
   /***************************************************************************/
+
+  async company(cnpj: string): Promise<any> {
+    throw new Error('Method not implemented. Data: ' + cnpj);
+  }
 
   async zipcode(zipCode: string): Promise<any> {
     throw new Error('Method not implemented. Data: ' + zipCode);
@@ -170,9 +150,7 @@ export class BigdatacorpService {
     return this.mapPeopleResponse(mockResponse);
   }
 
-  private validateApiResponse(
-    response: PeopleResponseApi | CompanyResponseApi,
-  ): void {
+  private validateApiResponse(response: PeopleResponseApi): void {
     // Verificar se há status de erro da API
     if (response.Status) {
       const status = response.Status as any;
@@ -213,11 +191,43 @@ export class BigdatacorpService {
     if (!response.Result || response.Result.length === 0) {
       return null;
     }
+
+    const basicData = response.Result[0].BasicData;
+
+    // Extract RG data from AlternativeIdNumbers and ExtendedDocumentInformation
+    let rg: string | undefined;
+    let rgIssuingAgency: string | undefined;
+    let rgIssuingState: string | undefined;
+
+    if (basicData.AlternativeIdNumbers) {
+      // Find RG in AlternativeIdNumbers (format: "RG - XX" where XX is state)
+      const rgKey = Object.keys(basicData.AlternativeIdNumbers).find((key) =>
+        key.startsWith('RG - '),
+      );
+
+      if (rgKey) {
+        rg = basicData.AlternativeIdNumbers[rgKey];
+
+        // Try to get issuing agency and state from ExtendedDocumentInformation
+        if (
+          basicData.ExtendedDocumentInformation &&
+          basicData.ExtendedDocumentInformation[rgKey]
+        ) {
+          const docInfo = basicData.ExtendedDocumentInformation[rgKey];
+          rgIssuingAgency = docInfo.DocumentIssuingAgency;
+          rgIssuingState = docInfo.DocumentIssuingStateCode;
+        }
+      }
+    }
+
     return {
-      name: response.Result[0].BasicData.Name,
-      cpf: response.Result[0].BasicData.TaxIdNumber,
-      birthdate: response.Result[0].BasicData.BirthDate,
-      motherName: response.Result[0].BasicData.MotherName,
+      name: basicData.Name,
+      cpf: basicData.TaxIdNumber,
+      birthdate: basicData.BirthDate,
+      motherName: basicData.MotherName,
+      rg,
+      rgIssuingAgency,
+      rgIssuingState,
       address: {
         street: '',
         city: '',
@@ -225,33 +235,6 @@ export class BigdatacorpService {
         zipcode: '',
         country: '',
         neighborhood: '',
-      },
-    };
-  }
-
-  private mapCompanyResponse(
-    response: CompanyResponseApi,
-  ): CompanyResponse | null {
-    this.validateApiResponse(response);
-
-    if (!response.Result || response.Result.length === 0) {
-      return null;
-    }
-    const result = response.Result[0];
-    return {
-      name: result.BasicData.Name,
-      legalName: result.BasicData.LegalName,
-      cnpj: result.BasicData.TaxIdNumber,
-      phone: result.BasicData.Phone?.Number || '',
-      address: {
-        street: `${result.BasicData.Address?.Street || ''} ${
-          result.BasicData.Address?.Number || ''
-        }`.trim(),
-        city: result.BasicData.Address?.City || '',
-        state: result.BasicData.Address?.State || '',
-        zipcode: result.BasicData.Address?.ZipCode || '',
-        country: result.BasicData.Address?.Country || '',
-        neighborhood: result.BasicData.Address?.Neighborhood || '',
       },
     };
   }

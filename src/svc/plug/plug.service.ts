@@ -48,7 +48,7 @@ export class PlugService {
     try {
       return await api.company(cnpj);
     } catch (e) {
-      console.error(e);
+      console.error('Erro na consulta de empresa:', e.message || e);
       throw e;
     }
   }
