@@ -33,25 +33,6 @@ const RESOURCE = 'company';
 export class CompanyController {
   constructor(private readonly companyService: CompanyService) {}
 
-  // @Post('first-access')
-  // @ApiOperation({ summary: 'Cria uma empresa pela primeira vez' })
-  // @ApiResponse({
-  //   status: 201,
-  //   description: 'A empresa foi criada com sucesso.',
-  //   type: Promise<Company>,
-  // })
-  // @ApiBody({ type: CreateCompanyDto })
-  // @ApiQuery({ name: 'email', required: true, description: 'Email do usuário' })
-  // async createFirstAccess(
-  //   @Query('email') email: string,
-  //   @Body() createCompanyDto: CreateCompanyDto,
-  // ) {
-  //   return await this.companyService.createFirstAccess(email, createCompanyDto);
-  // }
-  @Get('test')
-  async test() {
-    return await this.companyService.test();
-  }
   @Post()
   @ApiOperation({ summary: 'Cria uma empresa' })
   @ApiResponse({
