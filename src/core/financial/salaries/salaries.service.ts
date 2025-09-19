@@ -196,9 +196,6 @@ export class SalariesService {
           );
         }
 
-        // 3. Determinar se isSet deve ser true ou false baseado no valor
-        const isSet = createSalaryControlDto.amount > 0;
-
         // 4. Criar salary controls para todos os funcionários
         const createdSalaryControls = await Promise.all(
           employees.map(async (employee) => {
@@ -211,7 +208,7 @@ export class SalariesService {
                 type: template.type,
                 employeeId: employee.id,
                 templateId: template.id, // Relacionamento com template
-                isSet: isSet,
+                isSet: createSalaryControlDto.isSet ?? true,
               },
               include: {
                 employee: {
@@ -279,10 +276,9 @@ export class SalariesService {
 
       if (updateSalaryControlDto.amount !== undefined) {
         updateData.amount = updateSalaryControlDto.amount;
-        // Se amount foi fornecido, calcular isSet automaticamente
-        updateData.isSet = updateSalaryControlDto.amount > 0;
-      } else if (updateSalaryControlDto.isSet !== undefined) {
-        // Se amount não foi fornecido mas isSet foi, usar o valor fornecido
+      }
+
+      if (updateSalaryControlDto.isSet !== undefined) {
         updateData.isSet = updateSalaryControlDto.isSet;
       }
 

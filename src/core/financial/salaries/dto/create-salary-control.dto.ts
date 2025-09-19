@@ -1,4 +1,10 @@
-import { IsString, IsNumber, IsOptional, IsEnum } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  IsOptional,
+  IsEnum,
+  IsBoolean,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ItemType } from '@prisma/client';
 
@@ -25,6 +31,16 @@ export class CreateSalaryControlDto {
   })
   @IsEnum(ItemType)
   type: ItemType;
+
+  @ApiPropertyOptional({
+    description:
+      'Whether this salary control is active/enabled for the employee',
+    example: true,
+    default: true,
+  })
+  @IsBoolean()
+  @IsOptional()
+  isSet?: boolean;
 
   companyId?: string;
 }

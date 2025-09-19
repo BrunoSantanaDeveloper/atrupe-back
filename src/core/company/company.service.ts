@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
-import { AddressService } from '../address/address.service';
 import { PlugService } from '../../svc/plug/plug.service';
 import {
   ClientKind,
@@ -15,8 +14,6 @@ import {
 } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
-import { ClientService } from '../client/client.service';
-import { SupplierService } from '../supplier/supplier.service';
 import { BASE_ROLES } from 'src/seeds/roles-base';
 import { BASE_PAYMENT_CONDITIONS } from 'src/seeds/payment-conditions-base';
 import { BASE_NATURES } from 'src/seeds/natures-base';
@@ -36,10 +33,7 @@ export class CompanyService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly addressService: AddressService,
     private readonly plugService: PlugService,
-    private readonly clientService: ClientService,
-    private readonly supplierService: SupplierService,
   ) {}
   async createFirstAccess(email: string, companyId: string) {
     try {
@@ -133,7 +127,7 @@ export class CompanyService {
                       reference: template.name,
                       type: template.type,
                       amount: template.defaultAmount,
-                      isSet: template.defaultAmount > 0,
+                      isSet: true,
                       date: new Date(),
                       companyId: companyId,
                       employeeId: employee.id,
@@ -458,9 +452,6 @@ export class CompanyService {
         return 'no employees';
       }
 
-      // Determinar se isSet deve ser true ou false baseado no valor
-      const isSet = createSalaryControlDto.amount > 0;
-
       // Criar salary controls para todos os funcionários
       await Promise.all(
         employees.map(async (employee) => {
@@ -472,7 +463,7 @@ export class CompanyService {
               companyId: createSalaryControlDto.companyId,
               type: createSalaryControlDto.type,
               employeeId: employee.id,
-              isSet: isSet,
+              isSet: createSalaryControlDto.isSet ?? true,
             },
             include: {
               employee: {
