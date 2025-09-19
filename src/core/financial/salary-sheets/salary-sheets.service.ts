@@ -117,38 +117,42 @@ export class SalarySheetsService {
           continue;
         }
 
-        // Verificar se colaborador tem configurações e calcular salário líquido primeiro
-        if (employee.SalaryControl.length === 0) {
+        // Verificar se colaborador tem pelo menos um item com isSet true
+        const activeItems = employee.SalaryControl.filter(
+          (item) => item.isSet === true,
+        );
+        if (activeItems.length === 0) {
           result.errors.push({
             employeeId,
-            reason: 'Colaborador não possui configurações de salário definidas',
+            reason:
+              'Colaborador não possui itens ativos (isSet = true) nas configurações de salário',
           });
           this.logger.warn(
-            `Colaborador ${employeeId} não possui configurações de salário definidas`,
+            `Colaborador ${employeeId} não possui itens ativos nas configurações de salário`,
           );
           continue;
         }
 
         // Calcular salário líquido antes de criar a folha
-        const salaryItems = employee.SalaryControl;
-        const totalIncreases = salaryItems
+
+        const totalIncreases = activeItems
           .filter((item) => item.type === 'INCREASE')
           .reduce((sum, item) => sum + item.amount, 0);
 
-        const totalDiscounts = salaryItems
+        const totalDiscounts = activeItems
           .filter((item) => item.type === 'DISCOUNT')
           .reduce((sum, item) => sum + item.amount, 0);
 
         const netSalary = totalIncreases - totalDiscounts;
 
-        // Só criar folha se salário líquido for positivo
-        if (netSalary <= 0) {
+        // Só criar folha se salário líquido não for negativo (permite 0)
+        if (netSalary < 0) {
           result.errors.push({
             employeeId,
-            reason: `Salário líquido não positivo: R$ ${(netSalary / 100).toFixed(2)}`,
+            reason: `Salário líquido negativo: R$ ${(netSalary / 100).toFixed(2)}`,
           });
           this.logger.warn(
-            `Folha não criada para ${employeeId}: salário líquido não positivo (${netSalary})`,
+            `Folha não criada para ${employeeId}: salário líquido negativo (${netSalary})`,
           );
           continue;
         }
@@ -164,9 +168,9 @@ export class SalarySheetsService {
             },
           });
 
-          // Criar itens da folha
+          // Criar itens da folha usando apenas itens ativos
           await prisma.salaryItem.createMany({
-            data: employee.SalaryControl.map((item) => ({
+            data: activeItems.map((item) => ({
               salarySheetId: salarySheet.id,
               type: item.type,
               amount: item.amount,
@@ -174,7 +178,7 @@ export class SalarySheetsService {
             })),
           });
 
-          // Criar despesa (já sabemos que netSalary > 0)
+          // Criar despesa sempre que a folha for lançada
           await this.createSalaryExpense(salarySheet, netSalary);
         });
 
