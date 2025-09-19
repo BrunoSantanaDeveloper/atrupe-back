@@ -107,7 +107,7 @@ export class CompanyService {
             );
 
             this.logger.log('Creating employee record');
-            await tx.employee.create({
+            const employee = await tx.employee.create({
               data: {
                 name: user.name,
                 companyId: companyId,
@@ -118,6 +118,34 @@ export class CompanyService {
               },
             });
             this.logger.log('Employee record created successfully');
+
+            // Aplicar templates de salário ao colaborador admin
+            this.logger.log('Applying salary templates to admin employee');
+            const templates = await tx.salaryTemplate.findMany({
+              where: { companyId: companyId },
+            });
+
+            if (templates.length > 0) {
+              await Promise.all(
+                templates.map(async (template) => {
+                  await tx.salaryControl.create({
+                    data: {
+                      reference: template.name,
+                      type: template.type,
+                      amount: template.defaultAmount,
+                      isSet: template.defaultAmount > 0,
+                      date: new Date(),
+                      companyId: companyId,
+                      employeeId: employee.id,
+                      templateId: template.id,
+                    },
+                  });
+                }),
+              );
+              this.logger.log(
+                `Applied ${templates.length} salary templates to admin employee`,
+              );
+            }
 
             this.logger.log('createFirstAccess process completed successfully');
             return 'success';
@@ -194,16 +222,6 @@ export class CompanyService {
       console.error(e);
       throw e;
     }
-  }
-
-  async test() {
-    const salaries: CreateSalaryControlDto = {
-      companyId: '41c48d4a-9e79-461a-8c1e-123080d8cd5f',
-      reference: 'Salário',
-      type: 'INCREASE',
-      amount: 0,
-    };
-    await this.createSalariesSheets(salaries);
   }
 
   private defaultItemsConfig = [
