@@ -145,18 +145,6 @@ export class SalarySheetsService {
 
         const netSalary = totalIncreases - totalDiscounts;
 
-        // Só criar folha se salário líquido não for negativo (permite 0)
-        if (netSalary < 0) {
-          result.errors.push({
-            employeeId,
-            reason: `Salário líquido negativo: R$ ${(netSalary / 100).toFixed(2)}`,
-          });
-          this.logger.warn(
-            `Folha não criada para ${employeeId}: salário líquido negativo (${netSalary})`,
-          );
-          continue;
-        }
-
         await this.prisma.$transaction(async (prisma) => {
           const salarySheet = await prisma.salarySheet.create({
             data: {
@@ -179,7 +167,9 @@ export class SalarySheetsService {
           });
 
           // Criar despesa sempre que a folha for lançada
-          await this.createSalaryExpense(salarySheet, netSalary);
+          // Para salários negativos, a despesa deve ser 0
+          const expenseAmount = netSalary < 0 ? 0 : netSalary;
+          await this.createSalaryExpense(salarySheet, expenseAmount);
         });
 
         result.success++;
@@ -716,6 +706,14 @@ export class SalarySheetsService {
 
   private async createSalaryExpense(salarySheet: any, netAmount: number) {
     try {
+      // Se o valor for negativo, não criar despesa
+      if (netAmount < 0) {
+        this.logger.log(
+          `Despesa de salário não criada (valor negativo): R$ ${(netAmount / 100).toFixed(2)}`,
+        );
+        return null;
+      }
+
       // Competência: primeiro dia do mês da folha
       // Esta data é importante para exibir o Salário e Adiantamento na movimentação da folha do mês correto, já que não existe relacionamento direto do financeiro com folha específica.
       // Se posteriormente essa data de competência for alterada, pode perder a relação com o mês da folha, causando confusão.
@@ -927,18 +925,21 @@ export class SalarySheetsService {
         // Salário líquido final a pagar = Acréscimos - Descontos - Adiantamentos
         const newNetSalary = totalIncreases - totalDiscounts - totalAdvances;
 
+        // Para salários negativos, a despesa deve ser 0
+        const expenseAmount = newNetSalary < 0 ? 0 : newNetSalary;
+
         // Atualizar a despesa e sua parcela se o valor mudou
         if (
-          newNetSalary !== existingSalaryPayable.totalAmount &&
-          newNetSalary > 0
+          expenseAmount !== existingSalaryPayable.totalAmount &&
+          expenseAmount >= 0
         ) {
           await this.prisma.$transaction(async (prisma) => {
             // Atualizar a despesa principal
             await prisma.payable.update({
               where: { id: existingSalaryPayable.id },
               data: {
-                totalAmount: newNetSalary,
-                totalValue: newNetSalary,
+                totalAmount: expenseAmount,
+                totalValue: expenseAmount,
               },
             });
 
@@ -947,23 +948,23 @@ export class SalarySheetsService {
               await prisma.payableInstallment.update({
                 where: { id: existingSalaryPayable.installments[0].id },
                 data: {
-                  amount: newNetSalary,
+                  amount: expenseAmount,
                 },
               });
             }
           });
 
           this.logger.log(
-            `Despesa de salário atualizada: ${existingSalaryPayable.id} - Novo valor: R$ ${(newNetSalary / 100).toFixed(2)}`,
+            `Despesa de salário atualizada: ${existingSalaryPayable.id} - Novo valor: R$ ${(expenseAmount / 100).toFixed(2)}`,
           );
-        } else if (newNetSalary <= 0) {
-          // Se o valor líquido ficou zero ou negativo, remover a despesa
+        } else if (expenseAmount < 0) {
+          // Se o valor da despesa ficou negativo, remover a despesa
           await this.prisma.payable.delete({
             where: { id: existingSalaryPayable.id },
           });
 
           this.logger.log(
-            `Despesa de salário removida (valor líquido <= 0): ${existingSalaryPayable.id}`,
+            `Despesa de salário removida (valor da despesa negativo): ${existingSalaryPayable.id}`,
           );
         }
       } else {
@@ -987,9 +988,12 @@ export class SalarySheetsService {
         // Salário líquido final a pagar = Acréscimos - Descontos - Adiantamentos
         const newNetSalary = totalIncreases - totalDiscounts - totalAdvances;
 
-        if (newNetSalary > 0) {
-          // Se não existe despesa mas deveria ter (salário líquido positivo), criar
-          await this.createSalaryExpense(salarySheet, newNetSalary);
+        // Para salários negativos, a despesa deve ser 0
+        const expenseAmount = newNetSalary < 0 ? 0 : newNetSalary;
+
+        if (expenseAmount >= 0) {
+          // Se não existe despesa mas deveria ter (valor da despesa >= 0), criar
+          await this.createSalaryExpense(salarySheet, expenseAmount);
         }
       }
     } catch (error) {
