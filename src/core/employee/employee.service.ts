@@ -51,10 +51,10 @@ export class EmployeeService {
             templates.map(async (template) => {
               await tx.salaryControl.create({
                 data: {
-                  reference: template.name, // Usando reference por enquanto
+                  reference: template.name, // Usando reference por enquanto. TODO: alterar o schema
                   type: template.type,
-                  amount: template.defaultAmount, // Valor padrão do template
-                  isSet: template.defaultAmount > 0, // Ativo se tem valor padrão
+                  amount: template.defaultAmount || 0, // Valor padrão do template
+                  isSet: true,
                   date: new Date(),
                   companyId: createEmployeeDto.companyId,
                   employeeId: employee.id,
