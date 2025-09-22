@@ -37,7 +37,7 @@ export const BASE_PRODUCTS: ProductType[] = [
     categoriaNome: 'Adesivos',
     etapasProducao: ['Impressão'],
     imageUrl:
-      'https://files-atrupe.s3.us-east-1.amazonaws.com/adesivo-vinil-blockout-tamanhos-variados-vinil-0-10-impressao-solvente-sem-acabamento-4x0-1708888504106108472565db91b8e7291-0def6aab-eac2-4908-afdc-ec487a8cefcf.jpg',
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/adesivo-branco-backlight-vinil-branco-backlight-sem-acabamento-4x0-16492417851524456276624d6eb91daf5-5776bb6d-2a74-4cd1-a236-3efcfbbb533a.png',
     produto: [
       {
         nome: 'Adesivo Blackout Impresso',
@@ -57,7 +57,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Impressão',
     categoriaNome: 'Adesivos',
     etapasProducao: ['Impressão'],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/brilho-ba36a417-59ae-4ee9-9a1d-9bdd76d3b599.jpg',
     produto: [
       {
         nome: 'Adesivo Brilho Impresso',
@@ -77,7 +78,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Impressão',
     categoriaNome: 'Adesivos',
     etapasProducao: ['Impressão'],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/Fosco-27c8344e-207b-4d57-8a70-a7a2ebc7c3b6.jpg',
     produto: [
       {
         nome: 'Adesivo Fosco Impresso',
@@ -97,7 +99,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Impressão',
     categoriaNome: 'Adesivos',
     etapasProducao: ['Impressão'],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/jateado-c2ff2c7c-6365-4127-add9-c44f327eb0a7.jpg',
     produto: [
       {
         nome: 'Adesivo Jateado',
@@ -117,7 +120,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Impressão',
     categoriaNome: 'Adesivos',
     etapasProducao: ['Impressão'],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/perfurado-a7c91637-d22d-4c12-9a70-aeda3f6f5711.jpeg',
     produto: [
       {
         nome: 'Adesivo Perfurado',
@@ -137,7 +141,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Impressão',
     categoriaNome: 'Adesivos',
     etapasProducao: ['Impressão'],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/8c2592fba1-a3e95633-7ac0-4770-926a-eaf08f833e87.webp',
     produto: [
       {
         nome: 'Adesivo Recorte',
@@ -157,7 +162,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Impressão',
     categoriaNome: 'Adesivos',
     etapasProducao: ['Impressão'],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/refletivo-8494e9ca-4b4f-46a3-9659-e3b928856804.jpg',
     produto: [
       {
         nome: 'Adesivo Refletivo',
@@ -172,12 +178,34 @@ export const BASE_PRODUCTS: ProductType[] = [
     ],
   },
   {
+    nome: 'Adesivo Transparente Impresso',
+    codigo: 'ADTIM',
+    setorNome: 'Impressão',
+    categoriaNome: 'Adesivos',
+    etapasProducao: ['Impressão'],
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/whatsapp-image-2023-02-06-at-13-56-221-79d718dd384d0dd1ef16757028500224-640-0-a3f4addd-1c2f-4d7c-80a9-810f483f4582.jpeg',
+    produto: [
+      {
+        nome: 'Adesivo Transparente Impresso',
+        tipo: 'AREA',
+        dimensoes: {
+          largura: 1000,
+          altura: 1000,
+        },
+        precoVenda: 10000,
+        precoUnitario: 0.01,
+      },
+    ],
+  },
+  {
     nome: 'Impressão A4',
     codigo: 'APOS',
     setorNome: 'Gráfica Rápida',
     categoriaNome: 'Papéis',
     etapasProducao: ['Produção'],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/ima4-017c40f2-1352-47fa-8149-e63f466c8f1f.jpg',
     produto: [
       {
         nome: 'Impressão A4',
@@ -194,7 +222,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Impressão',
     categoriaNome: 'Lonas',
     etapasProducao: [],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/banner-e06b1689-72fa-4cfb-834c-e60f0ab6af23.jpg',
     produto: [
       {
         nome: 'Banner',
@@ -214,7 +243,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'CNC',
     categoriaNome: 'Acrílicos',
     etapasProducao: [],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/bolsaacrilico-ca511ccc-be5d-4699-bebc-518f103cf711.png',
     produto: [
       {
         nome: 'Bolsa Acrilico A4',
@@ -226,12 +256,13 @@ export const BASE_PRODUCTS: ProductType[] = [
     ],
   },
   {
-    nome: 'Cavalete Ilhós',
+    nome: 'Cavalete',
     codigo: 'CAVIL',
     setorNome: 'Serralheria',
     categoriaNome: 'Estruturas',
     etapasProducao: ['Criação', 'Instalação', 'Serralheria', 'Impressão'],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/cavalete-b47e9b03-f1f8-4332-aecd-f336507f6036.png',
     produto: [
       {
         nome: 'Cavalete Ilhós',
@@ -251,7 +282,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Criação',
     categoriaNome: 'Serviço Criação',
     etapasProducao: ['Criação'],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/criacao-510dbfbb-973f-4f70-9fba-1c429acfd65f.jpg',
     produto: [
       {
         nome: 'Criação',
@@ -265,12 +297,31 @@ export const BASE_PRODUCTS: ProductType[] = [
     ],
   },
   {
+    nome: 'Display A6',
+    codigo: 'DISA6',
+    setorNome: 'CNC',
+    categoriaNome: 'Acrílicos',
+    etapasProducao: [],
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/displayacrilicoa6-02a76e42-6d4b-4c23-8cc8-ebb9d4ae6b73.jpg',
+    produto: [
+      {
+        nome: 'Display A6',
+        tipo: 'UNITY',
+        dimensoes: null,
+        precoVenda: 5000,
+        precoUnitario: 5000,
+      },
+    ],
+  },
+  {
     nome: 'Instalação',
     codigo: 'INSTL',
     setorNome: 'Instalação',
     categoriaNome: 'Serviço Instalação',
     etapasProducao: ['Instalação'],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/instalac%C3%83%C2%8C%C3%82%C2%A7ao-e808ca5a-0f05-4db9-a843-c7b9ec900657.jpg',
     produto: [
       {
         nome: 'Instalação',
@@ -284,15 +335,16 @@ export const BASE_PRODUCTS: ProductType[] = [
     ],
   },
   {
-    nome: 'Letra Caixa Galvanizada',
+    nome: 'Letra Caixa Galvanizada com Pintura',
     codigo: 'LTCXG',
     setorNome: 'Serralheria',
     categoriaNome: 'Estruturas',
     etapasProducao: [],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/letragalva-d9865673-0095-4778-ae87-3e579896c269.jpg',
     produto: [
       {
-        nome: 'Letra Caixa Galvanizada',
+        nome: 'Letra Caixa Galvanizada com Pintura',
         tipo: 'AREA',
         dimensoes: {
           largura: 1000,
@@ -309,7 +361,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Serralheria',
     categoriaNome: 'Letra Caixa',
     etapasProducao: [],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/inox-6d077247-5a8c-4351-a2d3-fb06742ead03.webp',
     produto: [
       {
         nome: 'Letra Caixa Inox',
@@ -324,7 +377,7 @@ export const BASE_PRODUCTS: ProductType[] = [
     ],
   },
   {
-    nome: 'Letra Caixa PVC 5 mm',
+    nome: 'Letra Caixa PVC 5mm',
     codigo: 'LTP05',
     setorNome: 'CNC',
     categoriaNome: 'PVC',
@@ -332,7 +385,7 @@ export const BASE_PRODUCTS: ProductType[] = [
     imageUrl: '',
     produto: [
       {
-        nome: 'Letra Caixa PVC 5 mm',
+        nome: 'Letra Caixa PVC 5mm',
         tipo: 'AREA',
         dimensoes: {
           largura: 1000,
@@ -344,15 +397,16 @@ export const BASE_PRODUCTS: ProductType[] = [
     ],
   },
   {
-    nome: 'Letra Caixa PVC 10 mm',
+    nome: 'Letra Caixa PVC 10mm',
     codigo: 'LTP10',
     setorNome: 'CNC',
     categoriaNome: 'PVC',
     etapasProducao: [],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/pvc-82118e5e-6fc9-491c-a81d-b4e01f2bee94.jpg',
     produto: [
       {
-        nome: 'Letra Caixa PVC 10 mm',
+        nome: 'Letra Caixa PVC 10mm',
         tipo: 'AREA',
         dimensoes: {
           largura: 1000,
@@ -364,15 +418,16 @@ export const BASE_PRODUCTS: ProductType[] = [
     ],
   },
   {
-    nome: 'Letra Caixa PVC 20 mm',
+    nome: 'Letra Caixa PVC 20mm',
     codigo: 'LTP20',
     setorNome: 'CNC',
     categoriaNome: 'PVC',
     etapasProducao: [],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/D_NQ_NP_2X_738108-MLB88638185903_072025-F-980137e6-80bd-42ab-86a8-3f0f5236d5cd.webp',
     produto: [
       {
-        nome: 'Letra Caixa PVC 20 mm',
+        nome: 'Letra Caixa PVC 20mm',
         tipo: 'AREA',
         dimensoes: {
           largura: 1000,
@@ -389,7 +444,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Impressão',
     categoriaNome: 'Lonas',
     etapasProducao: [],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/lona-impressa-com-verniz-m-lona-brilho-sem-acabamento-4x0-16053619178456226045fafe0fd2cb3a-1e1a3b4c-7e69-40ec-adab-3e0e9a4098ae.jpg',
     produto: [
       {
         nome: 'Lona Impressa',
@@ -409,7 +465,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Impressão',
     categoriaNome: 'Lonas',
     etapasProducao: ['Impressão', 'Produção'],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/D_NQ_NP_2X_865246-MLB77648176491_072024-F-5c45fc85-043d-49b1-b2ec-493220619cce.webp',
     produto: [
       {
         nome: 'Lona Impressa com Bainha e Ilhós',
@@ -429,7 +486,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Gráfica Rápida',
     categoriaNome: 'Revenda Gráfica Rápida',
     etapasProducao: [],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/card1-099ea8cf-9651-46b8-b9f6-98aaf5dbad57.jpg',
     produto: [
       {
         nome: 'Milheiro Cartão Visita',
@@ -446,7 +504,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Serralheria',
     categoriaNome: 'Estruturas',
     etapasProducao: [],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/acm-aa066330-260f-4c7a-bedb-1a151cfb1f4a.jpg',
     produto: [
       {
         nome: 'Painel ACM',
@@ -466,7 +525,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Serralheria',
     categoriaNome: 'Estruturas',
     etapasProducao: [],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/back-f5d79c2e-f1c5-458c-9541-6b312310bcb6.jpg',
     produto: [
       {
         nome: 'Painel Back Light',
@@ -486,7 +546,8 @@ export const BASE_PRODUCTS: ProductType[] = [
     setorNome: 'Serralheria',
     categoriaNome: 'Estruturas',
     etapasProducao: [],
-    imageUrl: '',
+    imageUrl:
+      'https://files-atrupe.s3.us-east-1.amazonaws.com/FRONT-f1cb6574-89d3-4aeb-9d3e-e71162cf401b.jpg',
     produto: [
       {
         nome: 'Painel Front Light',
