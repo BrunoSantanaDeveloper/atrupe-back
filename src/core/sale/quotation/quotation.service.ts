@@ -89,7 +89,6 @@ export class QuotationService {
         data: {
           description,
           contactType,
-          dueDate: add(new Date(), { days: series.proposalValidity }),
           companyId: mainCompany.principalCompanyId
             ? mainCompany.principalCompanyId
             : mainCompany.id,
@@ -663,10 +662,13 @@ export class QuotationService {
       'OVERDUE',
     ];
 
-    const result = await this.prisma.quotation.groupBy({
-      by: ['status'],
+    // Get all quotations to check for overdue status
+    const quotations = await this.prisma.quotation.findMany({
       where: { companyId, status: { in: allStatuses } },
-      _count: true,
+      select: {
+        status: true,
+        dueDate: true,
+      },
     });
 
     const statusCount = allStatuses.reduce(
@@ -677,8 +679,15 @@ export class QuotationService {
       {} as { [K in QuotationStatus]: number },
     );
 
-    result.forEach((cur) => {
-      statusCount[cur.status] = cur._count;
+    // Count quotations with dynamic overdue status check
+    quotations.forEach((quotation) => {
+      const isOverdue =
+        quotation.dueDate &&
+        quotation.dueDate < new Date() &&
+        quotation.status === 'DONE';
+
+      const status = isOverdue ? 'OVERDUE' : quotation.status;
+      statusCount[status]++;
     });
 
     const total = Object.values(statusCount).reduce((acc, cur) => acc + cur, 0);
@@ -718,7 +727,19 @@ export class QuotationService {
       }
 
       if (dto.status) {
-        where = { ...where, status: dto.status };
+        // Special handling for OVERDUE status
+        if (dto.status === 'OVERDUE') {
+          // For OVERDUE filter, we need to find DONE quotations that are past due date
+          where = {
+            ...where,
+            status: 'DONE',
+            dueDate: {
+              lt: new Date(),
+            },
+          };
+        } else {
+          where = { ...where, status: dto.status };
+        }
       }
 
       if (dto.sellerId) {
@@ -768,10 +789,16 @@ export class QuotationService {
               quotations: [],
             };
           }
+          // Check if quotation is overdue
+          const isOverdue =
+            quotation.dueDate &&
+            quotation.dueDate < new Date() &&
+            quotation.status === 'DONE';
+
           acc[date].quotations.push({
             id: quotation.id,
             description: quotation.description,
-            status: quotation.status,
+            status: isOverdue ? 'OVERDUE' : quotation.status,
             dueDate: quotation.dueDate,
             finishedAt: quotation.finishedAt,
             totalValue: quotation.totalValue,
@@ -1015,6 +1042,12 @@ export class QuotationService {
         },
       });
 
+      // Check if quotation is overdue
+      const isOverdue =
+        quotation.dueDate &&
+        quotation.dueDate < new Date() &&
+        quotation.status === 'DONE';
+
       return {
         id: quotation.id,
         orderId: quotation.order?.id ?? null,
@@ -1023,7 +1056,7 @@ export class QuotationService {
         dueDate: quotation.dueDate,
         finishedAt: quotation.finishedAt,
         description: quotation.description,
-        status: quotation.status,
+        status: isOverdue ? 'OVERDUE' : quotation.status,
         totalValue: quotation.totalValue,
         contactType: quotation.contactType,
         quickSale: quotation.quickSale || false, // Se não for informado, assume-se como 'false'
@@ -1920,6 +1953,7 @@ export class QuotationService {
         status: QuotationStatus.OPEN,
         reasonId: null,
         finishedAt: null,
+        dueDate: null,
       },
     });
   }
