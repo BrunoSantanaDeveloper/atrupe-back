@@ -1947,15 +1947,22 @@ export class QuotationService {
       );
     }
 
-    return this.prisma.quotation.update({
-      where: { id: quotationId },
-      data: {
-        status: QuotationStatus.OPEN,
-        reasonId: null,
-        finishedAt: null,
-        dueDate: null,
-      },
-    });
+    try {
+      return await this.prisma.quotation.update({
+        where: { id: quotationId },
+        data: {
+          status: QuotationStatus.OPEN,
+          finishedAt: null,
+          dueDate: null,
+          reasons: {
+            disconnect: true,
+          },
+        },
+      });
+    } catch (error) {
+      console.error('Error updating quotation status to OPEN:', error);
+      throw new BadRequestException('Erro ao reabrir o orçamento.');
+    }
   }
 
   async update(id: string, updateQuotationDto: UpdateQuotationDto) {
