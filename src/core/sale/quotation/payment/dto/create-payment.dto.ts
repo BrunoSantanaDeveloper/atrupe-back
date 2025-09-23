@@ -17,6 +17,11 @@ import {
   transferMethodCommission,
 } from '@prisma/client';
 
+export interface SupplierSelect {
+  label: string;
+  value: string;
+}
+
 export class UpdateCommissionDto {
   @ApiProperty({
     description: 'Tipo de operação da comissão',
@@ -28,12 +33,11 @@ export class UpdateCommissionDto {
   type?: CommissionType;
 
   @ApiProperty({
-    description: 'ID do fornecedor associado à comissão',
-    example: 'uuid',
+    description: 'Fornecedor associado à comissão',
+    example: { label: 'Nome do Fornecedor', value: 'uuid' },
   })
-  @IsString()
   @IsOptional()
-  supplierId?: string;
+  supplier?: SupplierSelect;
 
   @ApiProperty({
     description: 'Método de transferência para a comissão',

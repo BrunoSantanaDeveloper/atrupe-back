@@ -391,7 +391,7 @@ export class PaymentService {
 
       const commissionPayload: Prisma.CommissionCreateInput = {
         type: commissionData.type,
-        supplier: { connect: { id: commissionData.supplierId } },
+        supplier: { connect: { id: commissionData.supplier.value } },
         transferMethod: commissionData.transferMethod,
         commissionType: commissionData.commissionType,
         commissionValue: commissionData.commissionValue,

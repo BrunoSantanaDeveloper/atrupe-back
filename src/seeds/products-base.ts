@@ -377,26 +377,6 @@ export const BASE_PRODUCTS: ProductType[] = [
     ],
   },
   {
-    nome: 'Letra Caixa PVC 5mm',
-    codigo: 'LTP05',
-    setorNome: 'CNC',
-    categoriaNome: 'PVC',
-    etapasProducao: [],
-    imageUrl: '',
-    produto: [
-      {
-        nome: 'Letra Caixa PVC 5mm',
-        tipo: 'AREA',
-        dimensoes: {
-          largura: 1000,
-          altura: 1000,
-        },
-        precoVenda: 20000,
-        precoUnitario: 0.02,
-      },
-    ],
-  },
-  {
     nome: 'Letra Caixa PVC 10mm',
     codigo: 'LTP10',
     setorNome: 'CNC',
