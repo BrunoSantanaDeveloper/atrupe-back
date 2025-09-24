@@ -53,7 +53,7 @@ export class ToggleSalarySheetStatusDto {
     example: 'uuid-da-folha',
   })
   @IsUUID()
-  salarySheetId: string;
+  payrollId: string;
 
   @ApiProperty({
     description: 'Novo status da folha (OPEN ou CLOSED)',

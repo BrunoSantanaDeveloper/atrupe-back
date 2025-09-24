@@ -8,18 +8,18 @@ import {
 } from 'class-validator';
 import { ItemType } from '@prisma/client';
 
-export class UpdateSalaryControlDto {
+export class UpdatePayrollSetupDto {
   @ApiProperty({
-    description: 'The reference for the salary control',
-    example: 'SAL-2024-01',
+    description: 'The name for the payroll setup',
+    example: 'Base Salary',
     required: false,
   })
   @IsString()
   @IsOptional()
-  reference?: string;
+  name?: string;
 
   @ApiProperty({
-    description: 'The amount for the salary control',
+    description: 'The amount for the payroll setup',
     example: 5000.0,
     required: false,
   })
@@ -28,16 +28,7 @@ export class UpdateSalaryControlDto {
   amount?: number;
 
   @ApiProperty({
-    description: 'The date of the salary control',
-    example: '2024-01-01',
-    required: false,
-  })
-  @IsString()
-  @IsOptional()
-  date?: string;
-
-  @ApiProperty({
-    description: 'The type of salary control',
+    description: 'The type of payroll setup',
     enum: ItemType,
     example: ItemType.INCREASE,
     required: false,
@@ -48,7 +39,7 @@ export class UpdateSalaryControlDto {
 
   @ApiProperty({
     description:
-      'Whether this salary control is active/enabled for the employee',
+      'Whether this payroll setup is active/enabled for the employee',
     example: true,
     required: false,
   })
@@ -57,7 +48,7 @@ export class UpdateSalaryControlDto {
   isSet?: boolean;
 
   @ApiProperty({
-    description: 'The employee ID associated with this salary control',
+    description: 'The employee ID associated with this payroll setup',
     example: '123e4567-e89b-12d3-a456-426614174000',
     required: false,
   })

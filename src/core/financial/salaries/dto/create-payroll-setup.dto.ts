@@ -8,14 +8,14 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ItemType } from '@prisma/client';
 
-export class CreateSalaryControlDto {
+export class CreatePayrollSetupDto {
   @ApiPropertyOptional({
-    description: 'Reference identifier for the salary control',
-    example: 'SAL-2024-01',
+    description: 'Name identifier for the payroll setup',
+    example: 'Base Salary',
   })
   @IsString()
   @IsOptional()
-  reference?: string;
+  name?: string;
 
   @ApiProperty({
     description: 'Base salary amount',
@@ -26,7 +26,7 @@ export class CreateSalaryControlDto {
   amount: number;
 
   @ApiProperty({
-    description: 'Type of the salary control',
+    description: 'Type of the payroll setup',
     example: 'INCREASE',
   })
   @IsEnum(ItemType)
@@ -34,7 +34,7 @@ export class CreateSalaryControlDto {
 
   @ApiPropertyOptional({
     description:
-      'Whether this salary control is active/enabled for the employee',
+      'Whether this payroll setup is active/enabled for the employee',
     example: true,
     default: true,
   })

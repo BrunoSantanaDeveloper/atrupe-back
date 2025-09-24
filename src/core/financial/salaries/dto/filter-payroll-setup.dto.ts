@@ -3,9 +3,9 @@ import { ItemType } from '@prisma/client';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
-export class FilterSalaryControlDto extends BaseFilterDTO {
+export class FilterPayrollSetupDto extends BaseFilterDTO {
   @ApiPropertyOptional({
-    description: 'Search term to filter by employee name or reference',
+    description: 'Search term to filter by employee name',
     example: 'John',
   })
   @IsString()
@@ -29,7 +29,7 @@ export class FilterSalaryControlDto extends BaseFilterDTO {
   employeeId?: string;
 
   @ApiPropertyOptional({
-    description: 'Type of salary control to filter by',
+    description: 'Type of payroll setup to filter by',
     enum: ItemType,
     example: ItemType.INCREASE,
   })

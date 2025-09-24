@@ -130,11 +130,7 @@ export class AcademyService {
       },
       include: {
         category: true,
-        items: {
-          include: {
-            unitOfMeasure: true,
-          },
-        },
+        items: true,
         sector: true,
       },
     });

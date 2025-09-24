@@ -24,7 +24,7 @@ import {
 } from 'src/seeds/reasons-status-base';
 import { BASE_PRODUCTS_CATEGORIES } from 'src/seeds/products-categories';
 import { BASE_SECTORS } from 'src/seeds/sectors-base';
-import { CreateSalaryControlDto } from '../financial/salaries/dto/create-salary-control.dto';
+import { CreatePayrollSetupDto } from '../financial/salaries/dto/create-payroll-setup.dto';
 import { Logger } from '@nestjs/common';
 
 @Injectable()
@@ -115,20 +115,19 @@ export class CompanyService {
 
             // Aplicar templates de salário ao colaborador admin
             this.logger.log('Applying salary templates to admin employee');
-            const templates = await tx.salaryTemplate.findMany({
+            const templates = await tx.payrollTemplate.findMany({
               where: { companyId: companyId },
             });
 
             if (templates.length > 0) {
               await Promise.all(
                 templates.map(async (template) => {
-                  await tx.salaryControl.create({
+                  await tx.payrollSetup.create({
                     data: {
-                      reference: template.name,
+                      name: template.name,
                       type: template.type,
                       amount: template.defaultAmount,
                       isSet: true,
-                      date: new Date(),
                       companyId: companyId,
                       employeeId: employee.id,
                       templateId: template.id,
@@ -405,7 +404,7 @@ export class CompanyService {
       createMethod: (companyId: string) =>
         this.createBaseSalaryTemplate(companyId),
       checkMethod: async (companyId: string) => {
-        const existing = await this.prisma.salaryTemplate.findFirst({
+        const existing = await this.prisma.payrollTemplate.findFirst({
           where: {
             companyId,
             name: 'Salário',
@@ -434,13 +433,13 @@ export class CompanyService {
   }
 
   private async createSalariesSheets(
-    createSalaryControlDto: CreateSalaryControlDto,
+    createPayrollSetupDto: CreatePayrollSetupDto,
   ) {
     try {
       // Buscar todos os funcionários ativos da empresa
       const employees = await this.prisma.employee.findMany({
         where: {
-          companyId: createSalaryControlDto.companyId,
+          companyId: createPayrollSetupDto.companyId,
         },
         select: {
           id: true,
@@ -452,18 +451,17 @@ export class CompanyService {
         return 'no employees';
       }
 
-      // Criar salary controls para todos os funcionários
+      // Criar payroll setups para todos os funcionários
       await Promise.all(
         employees.map(async (employee) => {
-          return await this.prisma.salaryControl.create({
+          return await this.prisma.payrollSetup.create({
             data: {
-              reference: createSalaryControlDto.reference,
-              amount: createSalaryControlDto.amount,
-              date: new Date(),
-              companyId: createSalaryControlDto.companyId,
-              type: createSalaryControlDto.type,
+              name: createPayrollSetupDto.name,
+              amount: createPayrollSetupDto.amount,
+              companyId: createPayrollSetupDto.companyId,
+              type: createPayrollSetupDto.type,
               employeeId: employee.id,
-              isSet: createSalaryControlDto.isSet ?? true,
+              isSet: createPayrollSetupDto.isSet ?? true,
             },
             include: {
               employee: {
@@ -1329,7 +1327,7 @@ export class CompanyService {
   }
 
   private async createBaseSalaryTemplate(companyId: string) {
-    await this.prisma.salaryTemplate.create({
+    await this.prisma.payrollTemplate.create({
       data: {
         name: 'Salário',
         type: 'INCREASE',

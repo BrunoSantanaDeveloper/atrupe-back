@@ -41,8 +41,6 @@ model Company {
   cashControls          CashRegister[]
   categories            Category[]
   clients               Client[]
-  parentCompany         Company?               @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
-  subsidiaries          Company[]              @relation("CompanyHierarchy")
   creditLimitDefault    CreditLimitDefault[]
   customer              Customer[]
   deliverySchedule      DeliverySchedule[]
@@ -57,22 +55,24 @@ model Company {
   paymentMethods        PaymentMethod[]
   Plan                  Plan[]
   products              Product[]
-  mainQuotations        Quotation[]            @relation("MainCompany")
-  fiscalQuotations      Quotation[]            @relation("FiscalSubCompany")
   reasons               Reasons[]
   receivables           Receivable[]
   roles                 Role[]
-  SalaryControl         SalaryControl[]
-  salaryTemplates       SalaryTemplate[]
-  salarySheet           SalarySheet[]
+  PayrollSetup          PayrollSetup[]
+  payrollTemplates      PayrollTemplate[]
+  payroll               Payroll[]
   saleSeries            SaleSeries[]
   scheduledExpenses     ScheduledExpense[]
-  sectors               CompanySector[]        @relation("CompanyToCompanySector")
   sellerProfile         SellerProfile[]
   statusQuotation       StatusQuotation[]
   subCategory           SubCategory[]
   Subscription          Subscription[]
   suppliers             Supplier[]
+  parentCompany         Company?               @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
+  subsidiaries          Company[]              @relation("CompanyHierarchy")
+  mainQuotations        Quotation[]            @relation("MainCompany")
+  fiscalQuotations      Quotation[]            @relation("FiscalSubCompany")
+  sectors               CompanySector[]        @relation("CompanyToCompanySector")
 
   @@map("companies")
 }
@@ -104,16 +104,6 @@ model Address {
   @@map("addresses")
 }
 
-model DefaultSector {
-  id             String          @id @default(uuid())
-  name           String
-  icon           String?
-  kind           SectorKind      @default(PRODUCTION)
-  companySectors CompanySector[] @relation("DefaultToCompanySector")
-
-  @@map("default_sectors")
-}
-
 model CompanySector {
   id                String            @id @default(uuid())
   name              String
@@ -122,7 +112,6 @@ model CompanySector {
   isActive          Boolean           @default(true)
   kind              SectorKind        @default(PRODUCTION)
   isProductionStage Boolean           @default(true)
-  defaultSectorId   String?
   isSystem          Boolean           @default(false)
   asset             Asset[]
   Category          Category[]
@@ -131,7 +120,6 @@ model CompanySector {
   product           Product[]
   role              Role[]
   company           Company           @relation("CompanyToCompanySector", fields: [companyId], references: [id])
-  defaultSector     DefaultSector?    @relation("DefaultToCompanySector", fields: [defaultSectorId], references: [id])
 
   @@map("sectors")
 }
@@ -318,14 +306,14 @@ model Supplier {
 }
 
 model Employee {
-  id              String          @id @default(uuid())
+  id              String         @id @default(uuid())
   companyId       String
   roleId          String?
   sectorId        String?
   userId          String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime?       @updatedAt
-  isActive        Boolean         @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime?      @updatedAt
+  isActive        Boolean        @default(true)
   sallary         Float?
   sellerProfileId String?
   name            String?
@@ -337,14 +325,14 @@ model Employee {
   signatureUrl    String?
   address         Address[]
   client          Client[]
-  company         Company         @relation(fields: [companyId], references: [id])
-  role            Role?           @relation(fields: [roleId], references: [id])
-  sector          CompanySector?  @relation(fields: [sectorId], references: [id])
-  sellerProfile   SellerProfile?  @relation(fields: [sellerProfileId], references: [id])
-  user            User?           @relation(fields: [userId], references: [id])
+  company         Company        @relation(fields: [companyId], references: [id])
+  role            Role?          @relation(fields: [roleId], references: [id])
+  sector          CompanySector? @relation(fields: [sectorId], references: [id])
+  sellerProfile   SellerProfile? @relation(fields: [sellerProfileId], references: [id])
+  user            User?          @relation(fields: [userId], references: [id])
   quotation       Quotation[]
-  SalaryControl   SalaryControl[]
-  salarySheet     SalarySheet[]
+  PayrollSetup    PayrollSetup[]
+  payroll         Payroll[]
   payables        Payable[]
 
   @@map("employees")
@@ -364,7 +352,6 @@ model User {
   phone                String?
   isVerified           Boolean        @default(false)
   customerId           String?
-  attributes           Attribute[]
   employee             Employee[]
   userContract         UserContract[]
   userRole             UserRole[]
@@ -390,7 +377,6 @@ model Asset {
   id                         String         @id @default(uuid())
   name                       String
   companyId                  String?
-  costGroupId                Int?
   createdAt                  DateTime       @default(now())
   fixedMonthlyCost           Float?
   purchaseValue              Float
@@ -577,88 +563,70 @@ model PayableHistory {
   @@map("payable_history")
 }
 
-model SalarySheet {
-  id         String            @id @default(uuid())
+model Payroll {
+  id         String        @id @default(uuid())
   month      Int
   year       Int
-  status     SheetStatus       @default(EMPTY)
+  status     SheetStatus   @default(EMPTY)
   companyId  String
   employeeId String
-  createdAt  DateTime          @default(now())
-  updatedAt  DateTime?         @updatedAt
-  movements  PaymentMovement[] // Remover
-  items      SalaryItem[]
-  company    Company           @relation(fields: [companyId], references: [id])
-  employee   Employee          @relation(fields: [employeeId], references: [id])
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime?     @updatedAt
+  items      PayrollItem[]
+  company    Company       @relation(fields: [companyId], references: [id])
+  employee   Employee      @relation(fields: [employeeId], references: [id])
 
   @@unique([employeeId, month, year])
-  @@map("salary_sheets")
+  @@map("payroll")
 }
 
-model SalaryItem {
-  id            String      @id @default(uuid())
-  salarySheetId String
-  type          ItemType
-  description   String?
-  amount        Float
-  reference     String? // Verificar se também alterar para "name"
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  paidAt        DateTime?
-  salarySheet   SalarySheet @relation(fields: [salarySheetId], references: [id])
+model PayrollItem {
+  id          String    @id @default(uuid())
+  payrollId   String
+  type        ItemType
+  description String?
+  amount      Float
+  reference   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  paidAt      DateTime?
+  payroll     Payroll   @relation(fields: [payrollId], references: [id])
 
-  @@map("salary_items")
+  @@map("payroll_items")
 }
 
-model SalaryControl {
-  id             String          @id @default(uuid())
-  reference      String // Alterar para "name"
-  amount         Float           @default(0)
-  type           ItemType        @default(INCREASE)
-  date           DateTime        @default(now()) // Remover
-  companyId      String
-  employeeId     String
-  templateId     String? // Relacionamento com template
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime?       @updatedAt
-  isSet          Boolean         @default(false)
-  company        Company         @relation(fields: [companyId], references: [id])
-  employee       Employee        @relation(fields: [employeeId], references: [id])
-  salaryTemplate SalaryTemplate? @relation(fields: [templateId], references: [id])
+model PayrollSetup {
+  id              String           @id @default(uuid())
+  name            String
+  amount          Float            @default(0)
+  type            ItemType         @default(INCREASE)
+  companyId       String
+  employeeId      String
+  templateId      String? // Relacionamento com template
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime?        @updatedAt
+  isSet           Boolean          @default(false)
+  company         Company          @relation(fields: [companyId], references: [id])
+  employee        Employee         @relation(fields: [employeeId], references: [id])
+  payrollTemplate PayrollTemplate? @relation(fields: [templateId], references: [id])
 
-  @@map("salary_controls")
+  @@map("payroll_setup")
 }
 
-model SalaryTemplate {
+model PayrollTemplate {
   id            String    @id @default(uuid())
   name          String
   type          ItemType  @default(INCREASE)
-  defaultAmount Float     @default(0) // Valor padrão do template
+  defaultAmount Float     @default(0)
   companyId     String
   createdAt     DateTime  @default(now())
   updatedAt     DateTime? @updatedAt
 
-  company       Company         @relation(fields: [companyId], references: [id])
-  SalaryControl SalaryControl[]
+  company      Company        @relation(fields: [companyId], references: [id])
+  PayrollSetup PayrollSetup[]
 
   @@unique([name, type, companyId])
-  @@map("salary_templates")
-}
-
-// Remover
-model PaymentMovement {
-  id              String              @id @default(uuid())
-  salarySheetId   String
-  amount          Float
-  paidDate        DateTime
-  paymentStatus   PaymentSalaryStatus @default(PENDING)
-  paymentMethodId String
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  paymentMethod   PaymentMethod       @relation(fields: [paymentMethodId], references: [id])
-  salarySheet     SalarySheet         @relation(fields: [salarySheetId], references: [id])
-
-  @@map("payment_movements")
+  @@map("payroll_template")
 }
 
 model FinancialFlow {
@@ -671,7 +639,7 @@ model FinancialFlow {
   createdAt   DateTime          @default(now())
   company     Company           @relation(fields: [companyId], references: [id])
 
-  @@map("financial_flows")
+  @@map("financial_flow")
 }
 
 model CashRegister {
@@ -760,16 +728,6 @@ model UserRole {
   @@map("user_roles")
 }
 
-model Attribute {
-  id     String @id @default(uuid())
-  key    String
-  value  String
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  @@map("attributes")
-}
-
 model Bank {
   id        String        @id @default(uuid())
   createdAt DateTime      @default(now())
@@ -835,7 +793,6 @@ model PaymentMethod {
   paymentCondition       PaymentCondition[]
   paymentConfigurations  PaymentConfiguration[]
   company                Company                  @relation(fields: [companyId], references: [id])
-  paymentMovement        PaymentMovement[]
   quotationInstallment   QuotationInstallment[]
   quotationPayment       QuotationPayment[]
   receivableInstallment  ReceivableInstallment[]
@@ -1003,7 +960,7 @@ model QuotationProduct {
 
 model QuotationProductItem {
   productItemId      String
-  quantity           Int                   @default(1)
+  quantity           Int              @default(1)
   productId          String
   quotationId        String
   totalValue         Float?
@@ -1017,16 +974,14 @@ model QuotationProductItem {
   volume             Float?
   weight             Float?
   width              Float?
-  id                 String                @id @default(uuid())
+  id                 String           @id @default(uuid())
   quotationProductId String
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime?             @updatedAt
-  originalQuantity   Int                   @default(1)
-  unitOfMeasureId    String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime?        @updatedAt
+  originalQuantity   Int              @default(1)
   unitKind           UnitKind?
-  productItem        ProductItem           @relation(fields: [productItemId], references: [id])
-  quotationProduct   QuotationProduct      @relation(fields: [quotationProductId], references: [id])
-  unitOfMeasure      DefaultUnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict)
+  productItem        ProductItem      @relation(fields: [productItemId], references: [id])
+  quotationProduct   QuotationProduct @relation(fields: [quotationProductId], references: [id])
 
   @@map("quotation_product_items")
 }
@@ -1157,7 +1112,6 @@ model Product {
   imageUrl             String?
   technicalDescription String?
   productionStages     Json?
-  status               ProductStatus      @default(ACTIVE)
   items                ProductItem[]
   category             Category           @relation(fields: [categoryId], references: [id])
   company              Company?           @relation(fields: [companyId], references: [id])
@@ -1182,27 +1136,11 @@ model ProductItem {
   volume               Float?
   weight               Float?
   width                Float?
-  unitOfMeasureId      String? // Remover, usar apenas unitKind
   unitKind             UnitKind?
   product              Product                @relation(fields: [productId], references: [id])
-  unitOfMeasure        DefaultUnitOfMeasure?  @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict)
   quotationProductItem QuotationProductItem[]
 
   @@map("product_items")
-}
-
-model DefaultUnitOfMeasure {
-  id                   String                 @id @default(uuid())
-  name                 String
-  code                 String                 @unique
-  description          String?
-  isActive             Boolean                @default(true)
-  kind                 UnitOfMeasureKind?
-  variant              UnitOfMeasureVariant?
-  productItems         ProductItem[]
-  quotationProductItem QuotationProductItem[]
-
-  @@map("defalt_unit_measures")
 }
 
 model Language {
@@ -1454,7 +1392,7 @@ model Subscription {
   nextDueDate          DateTime
   planId               String                @map("plan_id")
   value                Float
-  status               String
+  status               SubscriptionStatus    @default(ACTIVE)
   billingType          BillingType           @default(CREDIT_CARD)
   cycle                Cycle                 @default(MONTHLY)
   Company              Company?              @relation(fields: [companyId], references: [id])
@@ -1605,11 +1543,6 @@ enum ItemType {
   ADVANCE
 }
 
-enum PaymentSalaryStatus {
-  PENDING
-  PAID
-}
-
 enum TransactionType {
   INCOME
   OUTCOME
@@ -1697,37 +1630,6 @@ enum DeliveryType {
   INSTALLATION
   CARRIER
   PICKUP
-}
-
-// Remover. O campo status não está sendo usado no sistema
-enum ProductStatus {
-  ACTIVE
-  INACTIVE
-}
-
-enum UnitOfMeasureKind {
-  LENGTH
-  WEIGHT
-  CAPACITY
-  DISTANCE
-  DURATION
-  UNITY
-  AREA
-}
-
-enum UnitOfMeasureVariant {
-  MT
-  CM
-  MM
-  KG
-  GR
-  MG
-  LT
-  ML
-  KM
-  HH
-  UN
-  M2
 }
 
 enum ReasonType {

@@ -4,14 +4,10 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { FilterEmployeeDto } from './dto/filter-employee.dto';
 import { Prisma } from '@prisma/client';
-import { SalaryTemplatesService } from '../financial/salaries/salary-templates.service';
 
 @Injectable()
 export class EmployeeService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly salaryTemplatesService: SalaryTemplatesService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async create(createEmployeeDto: CreateEmployeeDto) {
     try {
@@ -41,24 +37,23 @@ export class EmployeeService {
         });
 
         // 2. Buscar todos os templates da empresa
-        const templates = await tx.salaryTemplate.findMany({
+        const templates = await tx.payrollTemplate.findMany({
           where: { companyId: createEmployeeDto.companyId },
         });
 
-        // 3. Criar salary controls baseados nos templates
+        // 3. Criar payroll setups baseados nos templates
         if (templates.length > 0) {
           await Promise.all(
             templates.map(async (template) => {
-              await tx.salaryControl.create({
+              await tx.payrollSetup.create({
                 data: {
-                  reference: template.name, // Usando reference por enquanto. TODO: alterar o schema
+                  name: template.name,
                   type: template.type,
-                  amount: template.defaultAmount || 0, // Valor padrão do template
+                  amount: template.defaultAmount || 0,
                   isSet: true,
-                  date: new Date(),
                   companyId: createEmployeeDto.companyId,
                   employeeId: employee.id,
-                  templateId: template.id, // Relacionamento com template
+                  templateId: template.id,
                 },
               });
             }),

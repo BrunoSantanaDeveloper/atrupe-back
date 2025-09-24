@@ -3,9 +3,9 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { CreateSalaryControlDto } from './dto/create-salary-control.dto';
-import { FilterSalaryControlDto } from './dto/filter-salary-control.dto';
-import { UpdateSalaryControlDto } from './dto/update-salary-control.dto';
+import { CreatePayrollSetupDto } from './dto/create-payroll-setup.dto';
+import { FilterPayrollSetupDto } from './dto/filter-payroll-setup.dto';
+import { UpdatePayrollSetupDto } from './dto/update-payroll-setup.dto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 
@@ -13,7 +13,7 @@ import { PrismaService } from 'src/config/prisma/prisma.service';
 export class SalariesService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(filters: FilterSalaryControlDto) {
+  async findAll(filters: FilterPayrollSetupDto) {
     try {
       const page = parseInt(filters.page) || 1;
       const limit = parseInt(filters.limit) || 10;
@@ -51,16 +51,16 @@ export class SalariesService {
 
       if (filters.costType) {
         whereConditions.push({
-          SalaryControl: {
+          PayrollSetup: {
             some: {
               type: filters.costType,
             },
           },
         });
       }
-      const whereSalaryControl: Prisma.SalaryControlWhereInput = {};
+      const wherePayrollSetup: Prisma.PayrollSetupWhereInput = {};
       if (filters.costType) {
-        whereSalaryControl.type = filters.costType;
+        wherePayrollSetup.type = filters.costType;
       }
 
       const where: Prisma.EmployeeWhereInput = {
@@ -86,20 +86,19 @@ export class SalariesService {
                 name: true,
               },
             },
-            SalaryControl: {
+            PayrollSetup: {
               select: {
                 id: true,
-                reference: true,
+                name: true,
                 amount: true,
-                date: true,
                 type: true,
                 isSet: true,
                 createdAt: true,
                 updatedAt: true,
               },
-              where: whereSalaryControl,
+              where: wherePayrollSetup,
               orderBy: {
-                date: 'desc',
+                createdAt: 'desc',
               },
             },
           },
@@ -112,16 +111,16 @@ export class SalariesService {
         this.prisma.employee.count({ where }),
       ]);
       const data = employees.map((employee) => {
-        // Sort salary control items
-        const sortedItems = [...employee.SalaryControl].sort((a, b) => {
+        // Sort payroll setup items
+        const sortedItems = [...employee.PayrollSetup].sort((a, b) => {
           const baseSalaryReferences = [
             'Salário base',
             'Salario base',
             'Salário',
             'Salario',
           ];
-          const aIsBase = baseSalaryReferences.includes(a.reference);
-          const bIsBase = baseSalaryReferences.includes(b.reference);
+          const aIsBase = baseSalaryReferences.includes(a.name);
+          const bIsBase = baseSalaryReferences.includes(b.name);
 
           if (aIsBase && !bIsBase) return -1;
           if (!aIsBase && bIsBase) return 1;
@@ -147,33 +146,33 @@ export class SalariesService {
     } catch (error) {
       console.error('Error in findAll:', error);
       throw new BadRequestException(
-        'Error fetching employees with salary controls: ' + error.message,
+        'Error fetching employees with payroll setups: ' + error.message,
       );
     }
   }
 
-  async create(createSalaryControlDto: CreateSalaryControlDto) {
+  async create(createPayrollSetupDto: CreatePayrollSetupDto) {
     try {
       return this.prisma.$transaction(async (tx) => {
         // 1. Criar ou buscar template existente
-        const existingTemplate = await tx.salaryTemplate.findUnique({
+        const existingTemplate = await tx.payrollTemplate.findUnique({
           where: {
             name_type_companyId: {
-              name: createSalaryControlDto.reference, // Usando reference por enquanto
-              type: createSalaryControlDto.type,
-              companyId: createSalaryControlDto.companyId,
+              name: createPayrollSetupDto.name,
+              type: createPayrollSetupDto.type,
+              companyId: createPayrollSetupDto.companyId,
             },
           },
         });
 
         let template = existingTemplate;
         if (!template) {
-          template = await tx.salaryTemplate.create({
+          template = await tx.payrollTemplate.create({
             data: {
-              name: createSalaryControlDto.reference, // Usando reference por enquanto
-              type: createSalaryControlDto.type,
-              defaultAmount: createSalaryControlDto.amount, // Valor padrão do template
-              companyId: createSalaryControlDto.companyId,
+              name: createPayrollSetupDto.name,
+              type: createPayrollSetupDto.type,
+              defaultAmount: createPayrollSetupDto.amount,
+              companyId: createPayrollSetupDto.companyId,
             },
           });
         }
@@ -181,7 +180,7 @@ export class SalariesService {
         // 2. Buscar TODOS os funcionários da empresa (ativos e inativos)
         const employees = await tx.employee.findMany({
           where: {
-            companyId: createSalaryControlDto.companyId,
+            companyId: createPayrollSetupDto.companyId,
             // Removido isActive: true - aplica a TODOS
           },
           select: {
@@ -196,19 +195,18 @@ export class SalariesService {
           );
         }
 
-        // 4. Criar salary controls para todos os funcionários
-        const createdSalaryControls = await Promise.all(
+        // 4. Criar payroll setups para todos os funcionários
+        const createdPayrollSetups = await Promise.all(
           employees.map(async (employee) => {
-            return await tx.salaryControl.create({
+            return await tx.payrollSetup.create({
               data: {
-                reference: template.name,
-                amount: createSalaryControlDto.amount,
-                date: new Date(),
-                companyId: createSalaryControlDto.companyId,
+                name: template.name,
+                amount: createPayrollSetupDto.amount,
+                companyId: createPayrollSetupDto.companyId,
                 type: template.type,
                 employeeId: employee.id,
                 templateId: template.id, // Relacionamento com template
-                isSet: createSalaryControlDto.isSet ?? true,
+                isSet: createPayrollSetupDto.isSet ?? true,
               },
               include: {
                 employee: {
@@ -229,11 +227,11 @@ export class SalariesService {
         );
 
         return {
-          message: `Successfully created salary control for ${employees.length} employees`,
+          message: `Successfully created payroll setup for ${employees.length} employees`,
           template,
           createdCount: employees.length,
           employees: employees.map((emp) => ({ id: emp.id, name: emp.name })),
-          salaryControls: createdSalaryControls,
+          payrollSetups: createdPayrollSetups,
         };
       });
     } catch (error) {
@@ -244,7 +242,7 @@ export class SalariesService {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
           throw new BadRequestException(
-            'A salary control with this reference already exists for some employees',
+            'A payroll setup with this name already exists for some employees',
           );
         }
         if (error.code === 'P2003') {
@@ -252,46 +250,43 @@ export class SalariesService {
         }
       }
       throw new BadRequestException(
-        'Error creating salary control: ' + error.message,
+        'Error creating payroll setup: ' + error.message,
       );
     }
   }
 
-  async update(id: string, updateSalaryControlDto: UpdateSalaryControlDto) {
+  async update(id: string, updatePayrollSetupDto: UpdatePayrollSetupDto) {
     try {
-      const salaryControl = await this.prisma.salaryControl.findUnique({
+      const payrollSetup = await this.prisma.payrollSetup.findUnique({
         where: { id },
       });
 
-      if (!salaryControl) {
-        throw new NotFoundException(`Salary control with ID ${id} not found`);
+      if (!payrollSetup) {
+        throw new NotFoundException(`Payroll setup with ID ${id} not found`);
       }
 
-      const updateData: Prisma.SalaryControlUpdateInput = {};
+      const updateData: Prisma.PayrollSetupUpdateInput = {};
 
       // Only update fields that are provided
-      if (updateSalaryControlDto.reference !== undefined) {
-        updateData.reference = updateSalaryControlDto.reference;
+      if (updatePayrollSetupDto.name !== undefined) {
+        updateData.name = updatePayrollSetupDto.name;
       }
 
-      if (updateSalaryControlDto.amount !== undefined) {
-        updateData.amount = updateSalaryControlDto.amount;
+      if (updatePayrollSetupDto.amount !== undefined) {
+        updateData.amount = updatePayrollSetupDto.amount;
       }
 
-      if (updateSalaryControlDto.isSet !== undefined) {
-        updateData.isSet = updateSalaryControlDto.isSet;
+      if (updatePayrollSetupDto.isSet !== undefined) {
+        updateData.isSet = updatePayrollSetupDto.isSet;
       }
 
-      if (updateSalaryControlDto.date !== undefined) {
-        updateData.date = new Date(updateSalaryControlDto.date);
+      if (updatePayrollSetupDto.type !== undefined) {
+        updateData.type = updatePayrollSetupDto.type;
       }
-      if (updateSalaryControlDto.type !== undefined) {
-        updateData.type = updateSalaryControlDto.type;
-      }
-      if (updateSalaryControlDto.employeeId !== undefined) {
+      if (updatePayrollSetupDto.employeeId !== undefined) {
         updateData.employee = {
           connect: {
-            id: updateSalaryControlDto.employeeId,
+            id: updatePayrollSetupDto.employeeId,
           },
         };
       }
@@ -299,7 +294,7 @@ export class SalariesService {
       // Always update the updatedAt timestamp
       updateData.updatedAt = new Date();
 
-      return await this.prisma.salaryControl.update({
+      return await this.prisma.payrollSetup.update({
         where: { id },
         data: updateData,
         include: {
@@ -317,7 +312,7 @@ export class SalariesService {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
           throw new BadRequestException(
-            'A salary control with this reference already exists',
+            'A payroll setup with this reference already exists',
           );
         }
         if (error.code === 'P2003') {
@@ -325,14 +320,14 @@ export class SalariesService {
         }
       }
       throw new BadRequestException(
-        'Error updating salary control: ' + error.message,
+        'Error updating payroll setup: ' + error.message,
       );
     }
   }
 
   async getSalaryDetails(id: string) {
     try {
-      const salaryControl = await this.prisma.salaryControl.findUnique({
+      const payrollSetup = await this.prisma.payrollSetup.findUnique({
         where: { id },
         include: {
           employee: {
@@ -343,11 +338,11 @@ export class SalariesService {
         },
       });
 
-      if (!salaryControl) {
-        throw new NotFoundException(`Salary control with ID ${id} not found`);
+      if (!payrollSetup) {
+        throw new NotFoundException(`Payroll setup with ID ${id} not found`);
       }
 
-      return salaryControl;
+      return payrollSetup;
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -360,20 +355,20 @@ export class SalariesService {
 
   async delete(id: string) {
     try {
-      const salaryControl = await this.prisma.salaryControl.findUnique({
+      const payrollSetup = await this.prisma.payrollSetup.findUnique({
         where: { id },
       });
 
-      if (!salaryControl) {
-        throw new NotFoundException(`Salary control with ID ${id} not found`);
+      if (!payrollSetup) {
+        throw new NotFoundException(`Payroll setup with ID ${id} not found`);
       }
 
-      await this.prisma.salaryControl.delete({
+      await this.prisma.payrollSetup.delete({
         where: { id },
       });
 
       return {
-        message: 'Salary control deleted successfully',
+        message: 'Payroll setup deleted successfully',
         id,
       };
     } catch (error) {
@@ -381,7 +376,7 @@ export class SalariesService {
         throw error;
       }
       throw new BadRequestException(
-        'Error deleting salary control: ' + error.message,
+        'Error deleting payroll setup: ' + error.message,
       );
     }
   }

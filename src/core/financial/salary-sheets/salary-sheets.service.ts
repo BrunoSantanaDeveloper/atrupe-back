@@ -60,7 +60,7 @@ export class SalarySheetsService {
         id: { in: employeeIds },
       },
       include: {
-        SalaryControl: {
+        PayrollSetup: {
           where: {
             isSet: true,
           },
@@ -74,7 +74,7 @@ export class SalarySheetsService {
     const employeeMap = new Map(employees.map((emp) => [emp.id, emp]));
 
     // Busca todas as folhas existentes de uma vez
-    const existingSheets = await this.prisma.salarySheet.findMany({
+    const existingSheets = await this.prisma.payroll.findMany({
       where: {
         employeeId: { in: employeeIds },
         month,
@@ -118,7 +118,7 @@ export class SalarySheetsService {
         }
 
         // Verificar se colaborador tem pelo menos um item com isSet true
-        const activeItems = employee.SalaryControl.filter(
+        const activeItems = employee.PayrollSetup.filter(
           (item) => item.isSet === true,
         );
         if (activeItems.length === 0) {
@@ -146,7 +146,7 @@ export class SalarySheetsService {
         const netSalary = totalIncreases - totalDiscounts;
 
         await this.prisma.$transaction(async (prisma) => {
-          const salarySheet = await prisma.salarySheet.create({
+          const payroll = await prisma.payroll.create({
             data: {
               employeeId: employee.id,
               month,
@@ -157,19 +157,19 @@ export class SalarySheetsService {
           });
 
           // Criar itens da folha usando apenas itens ativos
-          await prisma.salaryItem.createMany({
+          await prisma.payrollItem.createMany({
             data: activeItems.map((item) => ({
-              salarySheetId: salarySheet.id,
+              payrollId: payroll.id,
               type: item.type,
               amount: item.amount,
-              description: item.reference,
+              description: item.name,
             })),
           });
 
           // Criar despesa sempre que a folha for lançada
           // Para salários negativos, a despesa deve ser 0
           const expenseAmount = netSalary < 0 ? 0 : netSalary;
-          await this.createSalaryExpense(salarySheet, expenseAmount);
+          await this.createSalaryExpense(payroll, expenseAmount);
         });
 
         result.success++;
@@ -218,12 +218,12 @@ export class SalarySheetsService {
           include: {
             user: true,
             role: true,
-            SalaryControl: {
+            PayrollSetup: {
               where: {
                 isSet: true,
               },
             },
-            salarySheet: {
+            payroll: {
               where: {
                 month,
                 year,
@@ -243,27 +243,27 @@ export class SalarySheetsService {
       ]);
 
       const data = employees.map((employee) => {
-        const salarySheet = employee.salarySheet[0]; // Pega a folha do mês/ano se existir
+        const payroll = employee.payroll[0]; // Pega a folha do mês/ano se existir
 
         // Calcula o salário baseado nas configurações do colaborador
-        const totalIncreases = salarySheet?.items
+        const totalIncreases = payroll?.items
           .filter((item) => item.type === ItemType.INCREASE)
           .reduce((sum, item) => sum + item.amount, 0);
 
-        const totalDiscounts = salarySheet?.items
+        const totalDiscounts = payroll?.items
           .filter((item) => item.type === ItemType.DISCOUNT)
           .reduce((sum, item) => sum + item.amount, 0);
 
         const totalSalary = totalIncreases - totalDiscounts;
 
-        const totalAdvances = salarySheet?.items
+        const totalAdvances = payroll?.items
           .filter((item) => item.type === ItemType.ADVANCE)
           .reduce((sum, item) => sum + item.amount, 0);
 
         const balance = totalSalary - totalAdvances;
 
         return {
-          id: salarySheet?.id || null,
+          id: payroll?.id || null,
           month,
           year,
           employee: {
@@ -273,8 +273,8 @@ export class SalarySheetsService {
           },
           totalSalary,
           balance,
-          status: salarySheet?.status || 'EMPTY',
-          items: salarySheet?.items || [],
+          status: payroll?.status || 'EMPTY',
+          items: payroll?.items || [],
         };
       });
 
@@ -293,7 +293,7 @@ export class SalarySheetsService {
 
   async getSalarySheetById(id: string) {
     try {
-      const salarySheet = await this.prisma.salarySheet.findUnique({
+      const payroll = await this.prisma.payroll.findUnique({
         where: { id },
         include: {
           employee: {
@@ -304,7 +304,7 @@ export class SalarySheetsService {
           },
           items: {
             include: {
-              salarySheet: true,
+              payroll: true,
             },
             orderBy: [
               {
@@ -318,18 +318,18 @@ export class SalarySheetsService {
         },
       });
 
-      if (!salarySheet) {
+      if (!payroll) {
         throw new NotFoundException('Folha de pagamento não encontrada');
       }
 
       // Buscar despesas do colaborador específicas do mês/ano da folha
-      const startDate = new Date(salarySheet.year, salarySheet.month, 1);
-      const endDate = new Date(salarySheet.year, salarySheet.month + 1, 0);
+      const startDate = new Date(payroll.year, payroll.month, 1);
+      const endDate = new Date(payroll.year, payroll.month + 1, 0);
 
       const relatedPayables = await this.prisma.payable.findMany({
         where: {
-          companyId: salarySheet.companyId,
-          employeeId: salarySheet.employeeId,
+          companyId: payroll.companyId,
+          employeeId: payroll.employeeId,
           expenseSource: 'EMPLOYEE',
           referenceDate: {
             gte: startDate,
@@ -381,22 +381,22 @@ export class SalarySheetsService {
       }
 
       // Calcula o saldo a pagar
-      const totalIncreases = salarySheet.items
+      const totalIncreases = payroll.items
         .filter((item) => item.type === ItemType.INCREASE)
         .reduce((sum, item) => sum + item.amount, 0);
 
-      const totalDiscounts = salarySheet.items
+      const totalDiscounts = payroll.items
         .filter((item) => item.type === ItemType.DISCOUNT)
         .reduce((sum, item) => sum + item.amount, 0);
 
-      const advances = salarySheet.items
+      const advances = payroll.items
         .filter((item) => item.type === ItemType.ADVANCE)
         .reduce((sum, item) => sum + item.amount, 0);
 
       const balance = totalIncreases - totalDiscounts - advances;
 
       // Mapear itens da folha e incluir payables para ADVANCE
-      const itemsWithPayables = salarySheet.items.map((item) => {
+      const itemsWithPayables = payroll.items.map((item) => {
         const baseItem = {
           id: item.id,
           type: item.type,
@@ -511,12 +511,12 @@ export class SalarySheetsService {
               0,
             ),
             description: payable.description || '',
-            employee: salarySheet.employee
+            employee: payroll.employee
               ? {
-                  id: salarySheet.employee.id,
+                  id: payroll.employee.id,
                   name:
-                    salarySheet.employee.user?.name ||
-                    salarySheet.employee.name ||
+                    payroll.employee.user?.name ||
+                    payroll.employee.name ||
                     'Nome não informado',
                 }
               : null,
@@ -564,17 +564,17 @@ export class SalarySheetsService {
       );
 
       return {
-        id: salarySheet.id,
-        month: salarySheet.month,
-        year: salarySheet.year,
-        status: salarySheet.status,
+        id: payroll.id,
+        month: payroll.month,
+        year: payroll.year,
+        status: payroll.status,
         employee: {
-          id: salarySheet.employee.id,
+          id: payroll.employee.id,
           name:
-            salarySheet.employee.user?.name ||
-            salarySheet.employee.name ||
+            payroll.employee.user?.name ||
+            payroll.employee.name ||
             'Nome não informado',
-          role: salarySheet.employee.role?.name || 'Cargo não informado',
+          role: payroll.employee.role?.name || 'Cargo não informado',
         },
         balance,
         items: itemsWithPayables,
@@ -588,21 +588,21 @@ export class SalarySheetsService {
 
   async addSalaryItem(addSalaryItemDto: AddSalaryItemDto) {
     try {
-      const { salarySheetId, type, amount, description } = addSalaryItemDto;
+      const { payrollId, type, amount, description } = addSalaryItemDto;
 
-      const salarySheet = await this.prisma.salarySheet.findUnique({
-        where: { id: salarySheetId },
+      const payroll = await this.prisma.payroll.findUnique({
+        where: { id: payrollId },
       });
 
-      if (!salarySheet || salarySheet.status !== 'OPEN') {
+      if (!payroll || payroll.status !== 'OPEN') {
         throw new NotFoundException(
           'Folha de pagamento não encontrada ou não está aberta.',
         );
       }
 
-      const salaryItem = await this.prisma.salaryItem.create({
+      const payrollItem = await this.prisma.payrollItem.create({
         data: {
-          salarySheetId,
+          payrollId,
           type,
           amount,
           description,
@@ -610,20 +610,20 @@ export class SalarySheetsService {
       });
       if (type === 'ADVANCE') {
         // Para adiantamentos, criar despesa específica E atualizar despesa principal de salário
-        await this.createAdvanceExpense(salarySheet, amount, description);
-        await this.updateSalaryExpense(salarySheet); // Reduz o salário principal
+        await this.createAdvanceExpense(payroll, amount, description);
+        await this.updateSalaryExpense(payroll); // Reduz o salário principal
         this.logger.log(
-          `Adiantamento criado para folha ${salarySheetId}, valor: ${amount} - Despesas sincronizadas`,
+          `Adiantamento criado para folha ${payrollId}, valor: ${amount} - Despesas sincronizadas`,
         );
       } else if (type === 'INCREASE' || type === 'DISCOUNT') {
         // Para acréscimos e descontos, atualizar a despesa de salário
-        await this.updateSalaryExpense(salarySheet);
+        await this.updateSalaryExpense(payroll);
         this.logger.log(
-          `Item ${type} adicionado à folha ${salarySheetId} - Despesa de salário sincronizada`,
+          `Item ${type} adicionado à folha ${payrollId} - Despesa de salário sincronizada`,
         );
       }
 
-      return salaryItem;
+      return payrollItem;
     } catch (error) {
       console.error('Error creating payment movement:', error.message);
       throw new BadRequestException('Erro ao criar item de pagamento.');
@@ -633,28 +633,28 @@ export class SalarySheetsService {
   async updateSalaryItem(updateSalaryItemDto: UpdateSalaryItemDto) {
     const { id, ...itemData } = updateSalaryItemDto;
 
-    const salaryItem = await this.prisma.salaryItem.findUnique({
+    const payrollItem = await this.prisma.payrollItem.findUnique({
       where: { id },
     });
-    if (!salaryItem) {
+    if (!payrollItem) {
       throw new NotFoundException('Item de folha de pagamento não encontrado.');
     }
 
-    const salarySheet = await this.prisma.salarySheet.findUnique({
-      where: { id: salaryItem.salarySheetId },
+    const payroll = await this.prisma.payroll.findUnique({
+      where: { id: payrollItem.payrollId },
     });
 
-    if (!salarySheet || salarySheet.status !== 'OPEN') {
+    if (!payroll || payroll.status !== 'OPEN') {
       throw new NotFoundException(
         'Folha de pagamento não encontrada ou não está aberta.',
       );
     }
 
     // Armazenar valor antigo para possível sincronização de adiantamentos
-    const oldAmount = salaryItem.amount;
-    const oldType = salaryItem.type;
+    const oldAmount = payrollItem.amount;
+    const oldType = payrollItem.type;
 
-    const updatedSalaryItem = await this.prisma.salaryItem.update({
+    const updatedSalaryItem = await this.prisma.payrollItem.update({
       where: { id },
       data: itemData,
     });
@@ -669,42 +669,42 @@ export class SalarySheetsService {
 
     // SEMPRE atualizar a despesa principal quando houver alterações
     // pois todos os tipos afetam o cálculo final do salário líquido
-    await this.updateSalaryExpense(salarySheet);
+    await this.updateSalaryExpense(payroll);
     this.logger.log(
-      `Item ${updatedSalaryItem.id} atualizado na folha ${salarySheet.id} - Despesas sincronizadas`,
+      `Item ${updatedSalaryItem.id} atualizado na folha ${payroll.id} - Despesas sincronizadas`,
     );
 
     return updatedSalaryItem;
   }
 
   async toggleSalarySheetStatus(dto: ToggleSalarySheetStatusDto) {
-    const { salarySheetId, status } = dto;
+    const { payrollId, status } = dto;
 
-    const salarySheet = await this.prisma.salarySheet.findUnique({
-      where: { id: salarySheetId },
+    const payroll = await this.prisma.payroll.findUnique({
+      where: { id: payrollId },
       select: {
         id: true,
         status: true,
       },
     });
 
-    if (!salarySheet) {
+    if (!payroll) {
       throw new NotFoundException('Folha de pagamento não encontrada.');
     }
 
-    if (salarySheet.status === status) {
+    if (payroll.status === status) {
       throw new BadRequestException(`A folha já está no estado ${status}.`);
     }
 
-    const updatedSalarySheet = await this.prisma.salarySheet.update({
-      where: { id: salarySheetId },
+    const updatedSalarySheet = await this.prisma.payroll.update({
+      where: { id: payrollId },
       data: { status },
     });
 
     return updatedSalarySheet;
   }
 
-  private async createSalaryExpense(salarySheet: any, netAmount: number) {
+  private async createSalaryExpense(payroll: any, netAmount: number) {
     try {
       // Se o valor for negativo, não criar despesa
       if (netAmount < 0) {
@@ -717,29 +717,29 @@ export class SalarySheetsService {
       // Competência: primeiro dia do mês da folha
       // Esta data é importante para exibir o Salário e Adiantamento na movimentação da folha do mês correto, já que não existe relacionamento direto do financeiro com folha específica.
       // Se posteriormente essa data de competência for alterada, pode perder a relação com o mês da folha, causando confusão.
-      const referenceDate = new Date(salarySheet.year, salarySheet.month, 1);
+      const referenceDate = new Date(payroll.year, payroll.month, 1);
 
       // Vencimento: dia 5 do mês da folha
-      const dueDate = new Date(salarySheet.year, salarySheet.month, 5);
+      const dueDate = new Date(payroll.year, payroll.month, 5);
 
       // Buscar categorias de salário
       const { natureId, subCategoryId } = await this.findSalaryCategories(
-        salarySheet.companyId,
+        payroll.companyId,
       );
 
       // Criar conta a pagar (despesa) para o salário líquido
       const payable = await this.prisma.payable.create({
         data: {
           referenceDate: referenceDate,
-          description: `Folha ${String(salarySheet.month + 1).padStart(2, '0')}/${salarySheet.year} - Salário`,
+          description: `Folha ${String(payroll.month + 1).padStart(2, '0')}/${payroll.year} - Salário`,
           totalAmount: netAmount,
           totalValue: netAmount,
           mainAdditionalFee: 0,
           installmentQty: 1,
           status: 'PENDING',
-          companyId: salarySheet.companyId,
+          companyId: payroll.companyId,
           expenseSource: 'EMPLOYEE',
-          employeeId: salarySheet.employeeId,
+          employeeId: payroll.employeeId,
           natureId,
           subCategoryId,
         },
@@ -769,7 +769,7 @@ export class SalarySheetsService {
   }
 
   private async createAdvanceExpense(
-    salarySheet: any,
+    payroll: any,
     amount: number,
     description: string,
   ) {
@@ -777,27 +777,27 @@ export class SalarySheetsService {
       const currentDate = new Date();
 
       // Usar a data de referência da folha (mês/ano da folha)
-      const referenceDate = new Date(salarySheet.year, salarySheet.month, 1);
+      const referenceDate = new Date(payroll.year, payroll.month, 1);
 
       // Buscar categorias de salário
       const { natureId, subCategoryId } = await this.findSalaryCategories(
-        salarySheet.companyId,
+        payroll.companyId,
       );
 
       // Criar conta a pagar (despesa) para o adiantamento
       const payable = await this.prisma.payable.create({
         data: {
           referenceDate,
-          description: `Folha ${String(salarySheet.month + 1).padStart(2, '0')}/${salarySheet.year} - ${description}`,
+          description: `Folha ${String(payroll.month + 1).padStart(2, '0')}/${payroll.year} - ${description}`,
           totalAmount: amount,
           totalValue: amount,
           mainAdditionalFee: 0,
           installmentQty: 1,
           status: 'PENDING',
-          companyId: salarySheet.companyId,
+          companyId: payroll.companyId,
           expenseSource: 'EMPLOYEE',
           financialType: 'ADVANCE',
-          employeeId: salarySheet.employeeId,
+          employeeId: payroll.employeeId,
           natureId,
           subCategoryId,
         },
@@ -887,15 +887,15 @@ export class SalarySheetsService {
     }
   }
 
-  private async updateSalaryExpense(salarySheet: any) {
+  private async updateSalaryExpense(payroll: any) {
     try {
-      const salaryDescription = `Folha ${String(salarySheet.month + 1).padStart(2, '0')}/${salarySheet.year} - Salário`;
+      const salaryDescription = `Folha ${String(payroll.month + 1).padStart(2, '0')}/${payroll.year} - Salário`;
 
       // Buscar a despesa de salário existente
       const existingSalaryPayable = await this.prisma.payable.findFirst({
         where: {
-          companyId: salarySheet.companyId,
-          employeeId: salarySheet.employeeId,
+          companyId: payroll.companyId,
+          employeeId: payroll.employeeId,
           expenseSource: 'EMPLOYEE',
           description: salaryDescription,
         },
@@ -906,8 +906,8 @@ export class SalarySheetsService {
 
       if (existingSalaryPayable) {
         // Calcular novo valor líquido da folha atual
-        const currentItems = await this.prisma.salaryItem.findMany({
-          where: { salarySheetId: salarySheet.id },
+        const currentItems = await this.prisma.payrollItem.findMany({
+          where: { payrollId: payroll.id },
         });
 
         const totalIncreases = currentItems
@@ -969,8 +969,8 @@ export class SalarySheetsService {
         }
       } else {
         // Se não existe despesa, calcular o valor líquido atual
-        const currentItems = await this.prisma.salaryItem.findMany({
-          where: { salarySheetId: salarySheet.id },
+        const currentItems = await this.prisma.payrollItem.findMany({
+          where: { payrollId: payroll.id },
         });
 
         const totalIncreases = currentItems
@@ -993,7 +993,7 @@ export class SalarySheetsService {
 
         if (expenseAmount >= 0) {
           // Se não existe despesa mas deveria ter (valor da despesa >= 0), criar
-          await this.createSalaryExpense(salarySheet, expenseAmount);
+          await this.createSalaryExpense(payroll, expenseAmount);
         }
       }
     } catch (error) {
@@ -1004,27 +1004,27 @@ export class SalarySheetsService {
     }
   }
 
-  private async updateAdvanceExpense(salaryItem: any, oldAmount?: number) {
+  private async updateAdvanceExpense(payrollItem: any, oldAmount?: number) {
     try {
-      if (salaryItem.type !== 'ADVANCE') {
+      if (payrollItem.type !== 'ADVANCE') {
         return;
       }
 
-      const salarySheet = await this.prisma.salarySheet.findUnique({
-        where: { id: salaryItem.salarySheetId },
+      const payroll = await this.prisma.payroll.findUnique({
+        where: { id: payrollItem.payrollId },
       });
 
-      if (!salarySheet) {
+      if (!payroll) {
         return;
       }
 
-      const advanceDescription = `Folha ${String(salarySheet.month + 1).padStart(2, '0')}/${salarySheet.year} - ${salaryItem.description}`;
+      const advanceDescription = `Folha ${String(payroll.month + 1).padStart(2, '0')}/${payroll.year} - ${payrollItem.description}`;
 
       // Buscar a despesa de adiantamento existente
       const existingAdvancePayable = await this.prisma.payable.findFirst({
         where: {
-          companyId: salarySheet.companyId,
-          employeeId: salarySheet.employeeId,
+          companyId: payroll.companyId,
+          employeeId: payroll.employeeId,
           expenseSource: 'EMPLOYEE',
           description: advanceDescription,
         },
@@ -1039,8 +1039,8 @@ export class SalarySheetsService {
           await prisma.payable.update({
             where: { id: existingAdvancePayable.id },
             data: {
-              totalAmount: salaryItem.amount,
-              totalValue: salaryItem.amount,
+              totalAmount: payrollItem.amount,
+              totalValue: payrollItem.amount,
             },
           });
 
@@ -1048,14 +1048,14 @@ export class SalarySheetsService {
             await prisma.payableInstallment.update({
               where: { id: existingAdvancePayable.installments[0].id },
               data: {
-                amount: salaryItem.amount,
+                amount: payrollItem.amount,
               },
             });
           }
         });
 
         this.logger.log(
-          `Despesa de adiantamento atualizada: ${existingAdvancePayable.id} - Novo valor: R$ ${(salaryItem.amount / 100).toFixed(2)}`,
+          `Despesa de adiantamento atualizada: ${existingAdvancePayable.id} - Novo valor: R$ ${(payrollItem.amount / 100).toFixed(2)}`,
         );
       }
     } catch (error) {
@@ -1067,7 +1067,7 @@ export class SalarySheetsService {
 
   async getSalarySheetPdfData(id: string) {
     try {
-      const salarySheet = await this.prisma.salarySheet.findUnique({
+      const payroll = await this.prisma.payroll.findUnique({
         where: { id },
         include: {
           employee: {
@@ -1096,36 +1096,36 @@ export class SalarySheetsService {
         },
       });
 
-      if (!salarySheet) {
+      if (!payroll) {
         throw new NotFoundException('Folha de pagamento não encontrada');
       }
 
       // Buscar dados da empresa
-      const companyAddress = salarySheet.company.address[0];
+      const companyAddress = payroll.company.address[0];
 
       // Calcular salário líquido
-      const totalIncreases = salarySheet.items
+      const totalIncreases = payroll.items
         .filter((item) => item.type === 'INCREASE')
         .reduce((sum, item) => sum + item.amount, 0);
 
-      const totalDiscounts = salarySheet.items
+      const totalDiscounts = payroll.items
         .filter((item) => item.type === 'DISCOUNT')
         .reduce((sum, item) => sum + item.amount, 0);
 
-      const totalAdvances = salarySheet.items
+      const totalAdvances = payroll.items
         .filter((item) => item.type === 'ADVANCE')
         .reduce((sum, item) => sum + item.amount, 0);
 
       const netSalary = totalIncreases - totalDiscounts - totalAdvances;
 
       // Buscar despesas do colaborador específicas do mês/ano da folha
-      const startDate = new Date(salarySheet.year, salarySheet.month, 1);
-      const endDate = new Date(salarySheet.year, salarySheet.month + 1, 0);
+      const startDate = new Date(payroll.year, payroll.month, 1);
+      const endDate = new Date(payroll.year, payroll.month + 1, 0);
 
       const relatedPayables = await this.prisma.payable.findMany({
         where: {
-          companyId: salarySheet.companyId,
-          employeeId: salarySheet.employeeId,
+          companyId: payroll.companyId,
+          employeeId: payroll.employeeId,
           expenseSource: 'EMPLOYEE',
           financialType: 'MAIN',
           referenceDate: {
@@ -1148,16 +1148,16 @@ export class SalarySheetsService {
       // Estruturar dados para o PDF
       const pdfData = {
         company: {
-          name: salarySheet.company.name,
-          cnpj: salarySheet.company.cnpj,
-          email: salarySheet.company.email,
-          phone: salarySheet.company.phone,
-          siteUrl: salarySheet.company.siteUrl,
-          logo: salarySheet.company.logoUrl,
+          name: payroll.company.name,
+          cnpj: payroll.company.cnpj,
+          email: payroll.company.email,
+          phone: payroll.company.phone,
+          siteUrl: payroll.company.siteUrl,
+          logo: payroll.company.logoUrl,
           socialNetworks: {
-            instagram: salarySheet.company.instagram,
-            facebook: salarySheet.company.facebook,
-            linkedin: salarySheet.company.linkedin,
+            instagram: payroll.company.instagram,
+            facebook: payroll.company.facebook,
+            linkedin: payroll.company.linkedin,
           },
           address: companyAddress
             ? {
@@ -1171,10 +1171,9 @@ export class SalarySheetsService {
               }
             : null,
         },
-        employeeName:
-          salarySheet.employee.user?.name || salarySheet.employee.name,
-        reference: `${String(salarySheet.month + 1).padStart(2, '0')}/${salarySheet.year}`,
-        items: salarySheet.items.map((item) => ({
+        employeeName: payroll.employee.user?.name || payroll.employee.name,
+        reference: `${String(payroll.month + 1).padStart(2, '0')}/${payroll.year}`,
+        items: payroll.items.map((item) => ({
           id: item.id,
           description: item.description,
           type: item.type,
@@ -1216,10 +1215,10 @@ export class SalarySheetsService {
 
   async getAdvanceItemPdfData(itemId: string) {
     try {
-      const salaryItem = await this.prisma.salaryItem.findUnique({
+      const payrollItem = await this.prisma.payrollItem.findUnique({
         where: { id: itemId },
         include: {
-          salarySheet: {
+          payroll: {
             include: {
               employee: {
                 include: {
@@ -1239,31 +1238,31 @@ export class SalarySheetsService {
         },
       });
 
-      if (!salaryItem) {
+      if (!payrollItem) {
         throw new NotFoundException(
           'Item da folha de pagamento não encontrado',
         );
       }
 
-      if (salaryItem.type !== 'ADVANCE') {
+      if (payrollItem.type !== 'ADVANCE') {
         throw new BadRequestException(
           'O item especificado não é um adiantamento',
         );
       }
 
-      const salarySheet = salaryItem.salarySheet;
-      const companyAddress = salarySheet.company.address[0];
+      const payroll = payrollItem.payroll;
+      const companyAddress = payroll.company.address[0];
 
       // Buscar despesa relacionada ao adiantamento específico
-      const startDate = new Date(salarySheet.year, salarySheet.month, 1);
-      const endDate = new Date(salarySheet.year, salarySheet.month + 1, 0);
+      const startDate = new Date(payroll.year, payroll.month, 1);
+      const endDate = new Date(payroll.year, payroll.month + 1, 0);
 
-      const advanceDescription = `Folha ${String(salarySheet.month + 1).padStart(2, '0')}/${salarySheet.year} - ${salaryItem.description}`;
+      const advanceDescription = `Folha ${String(payroll.month + 1).padStart(2, '0')}/${payroll.year} - ${payrollItem.description}`;
 
       const relatedPayable = await this.prisma.payable.findFirst({
         where: {
-          companyId: salarySheet.companyId,
-          employeeId: salarySheet.employeeId,
+          companyId: payroll.companyId,
+          employeeId: payroll.employeeId,
           expenseSource: 'EMPLOYEE',
           financialType: 'ADVANCE',
           description: advanceDescription,
@@ -1287,16 +1286,16 @@ export class SalarySheetsService {
       // Estruturar dados para o PDF
       const pdfData = {
         company: {
-          name: salarySheet.company.name,
-          cnpj: salarySheet.company.cnpj,
-          email: salarySheet.company.email,
-          phone: salarySheet.company.phone,
-          siteUrl: salarySheet.company.siteUrl,
-          logo: salarySheet.company.logoUrl,
+          name: payroll.company.name,
+          cnpj: payroll.company.cnpj,
+          email: payroll.company.email,
+          phone: payroll.company.phone,
+          siteUrl: payroll.company.siteUrl,
+          logo: payroll.company.logoUrl,
           socialNetworks: {
-            instagram: salarySheet.company.instagram,
-            facebook: salarySheet.company.facebook,
-            linkedin: salarySheet.company.linkedin,
+            instagram: payroll.company.instagram,
+            facebook: payroll.company.facebook,
+            linkedin: payroll.company.linkedin,
           },
           address: companyAddress
             ? {
@@ -1310,18 +1309,17 @@ export class SalarySheetsService {
               }
             : null,
         },
-        employeeName:
-          salarySheet.employee.user?.name || salarySheet.employee.name,
-        reference: `${String(salarySheet.month + 1).padStart(2, '0')}/${salarySheet.year}`,
+        employeeName: payroll.employee.user?.name || payroll.employee.name,
+        reference: `${String(payroll.month + 1).padStart(2, '0')}/${payroll.year}`,
         items: [
           {
-            id: salaryItem.id,
-            description: salaryItem.description,
-            type: salaryItem.type,
-            amount: salaryItem.amount,
+            id: payrollItem.id,
+            description: payrollItem.description,
+            type: payrollItem.type,
+            amount: payrollItem.amount,
           },
         ],
-        netSalary: salaryItem.amount, // Total do adiantamento
+        netSalary: payrollItem.amount, // Total do adiantamento
         payables: relatedPayable
           ? [
               {

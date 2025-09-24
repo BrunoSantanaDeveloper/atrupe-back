@@ -12,20 +12,20 @@ export class SalaryTemplatesService {
     type: ItemType,
     defaultAmount: number = 0,
   ) {
-    return this.prisma.salaryTemplate.create({
+    return this.prisma.payrollTemplate.create({
       data: { name, type, defaultAmount, companyId },
     });
   }
 
   async getCompanyTemplates(companyId: string) {
-    return this.prisma.salaryTemplate.findMany({
+    return this.prisma.payrollTemplate.findMany({
       where: { companyId },
       orderBy: { createdAt: 'asc' },
     });
   }
 
   async applyTemplateToAllEmployees(templateId: string) {
-    const template = await this.prisma.salaryTemplate.findUnique({
+    const template = await this.prisma.payrollTemplate.findUnique({
       where: { id: templateId },
     });
 
@@ -38,16 +38,15 @@ export class SalaryTemplatesService {
 
     return Promise.all(
       employees.map((employee) =>
-        this.prisma.salaryControl.create({
+        this.prisma.payrollSetup.create({
           data: {
-            reference: template.name, // Usando reference por enquanto
+            name: template.name,
             type: template.type,
-            amount: template.defaultAmount, // Valor padrão do template
-            isSet: template.defaultAmount > 0, // Ativo se tem valor padrão
+            amount: template.defaultAmount || 0,
+            isSet: true,
             employeeId: employee.id,
             companyId: template.companyId,
-            templateId: template.id, // Relacionamento com template
-            date: new Date(),
+            templateId: template.id,
           },
         }),
       ),
@@ -60,25 +59,24 @@ export class SalaryTemplatesService {
     return Promise.all(
       templates.map(async (template) => {
         // Verificar se já existe para evitar duplicatas
-        const exists = await this.prisma.salaryControl.findFirst({
+        const exists = await this.prisma.payrollSetup.findFirst({
           where: {
             employeeId,
-            reference: template.name,
+            name: template.name,
             type: template.type,
           },
         });
 
         if (!exists) {
-          return this.prisma.salaryControl.create({
+          return this.prisma.payrollSetup.create({
             data: {
-              reference: template.name, // Usando reference por enquanto
+              name: template.name,
               type: template.type,
-              amount: template.defaultAmount, // Valor padrão do template
-              isSet: template.defaultAmount > 0, // Ativo se tem valor padrão
-              date: new Date(),
+              amount: template.defaultAmount || 0,
+              isSet: true,
               companyId,
               employeeId,
-              templateId: template.id, // Relacionamento com template
+              templateId: template.id,
             },
           });
         }

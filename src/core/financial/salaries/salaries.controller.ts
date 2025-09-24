@@ -11,9 +11,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { SalariesService } from './salaries.service';
-import { CreateSalaryControlDto } from './dto/create-salary-control.dto';
-import { FilterSalaryControlDto } from './dto/filter-salary-control.dto';
-import { UpdateSalaryControlDto } from './dto/update-salary-control.dto';
+import { CreatePayrollSetupDto } from './dto/create-payroll-setup.dto';
+import { FilterPayrollSetupDto } from './dto/filter-payroll-setup.dto';
+import { UpdatePayrollSetupDto } from './dto/update-payroll-setup.dto';
 import {
   ApiTags,
   ApiOperation,
@@ -33,14 +33,14 @@ const GROUP = 'financial';
 export class SalariesController {
   constructor(private readonly salariesService: SalariesService) {}
 
-  @ApiOperation({ summary: 'Get all salary controls with filters' })
+  @ApiOperation({ summary: 'Get all payroll setups with filters' })
   @ApiResponse({
     status: 200,
     description:
-      'Returns a list of salary controls matching the filter criteria',
+      'Returns a list of payroll setups matching the filter criteria',
   })
   @Get()
-  async findAll(@Req() req, @Query() filters: FilterSalaryControlDto) {
+  async findAll(@Req() req, @Query() filters: FilterPayrollSetupDto) {
     filters.companyId = req.user.companyId;
     return await this.salariesService.findAll(filters);
   }
@@ -48,62 +48,62 @@ export class SalariesController {
   @ApiOperation({ summary: 'Get salary details by ID' })
   @ApiParam({
     name: 'id',
-    description: 'UUID of the salary control',
+    description: 'UUID of the payroll setup',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @ApiResponse({
     status: 200,
-    description: 'Returns the salary control details',
+    description: 'Returns the payroll setup details',
   })
-  @ApiResponse({ status: 404, description: 'Salary control not found' })
+  @ApiResponse({ status: 404, description: 'Payroll setup not found' })
   @Get(':id')
   getSalaryDetails(@Param('id') id: string) {
     return this.salariesService.getSalaryDetails(id);
   }
 
-  @ApiOperation({ summary: 'Create a new salary control for all employees' })
+  @ApiOperation({ summary: 'Create a new payroll setup for all employees' })
   @ApiResponse({
     status: 201,
     description:
-      'The salary control has been successfully created for all employees',
+      'The payroll setup has been successfully created for all employees',
   })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @Post()
-  create(@Req() req, @Body() createSalaryControlDto: CreateSalaryControlDto) {
-    createSalaryControlDto.companyId = req.user.companyId;
-    return this.salariesService.create(createSalaryControlDto);
+  create(@Req() req, @Body() createPayrollSetupDto: CreatePayrollSetupDto) {
+    createPayrollSetupDto.companyId = req.user.companyId;
+    return this.salariesService.create(createPayrollSetupDto);
   }
 
   @ApiOperation({ summary: 'Update salary amount' })
   @ApiParam({
     name: 'id',
-    description: 'UUID of the salary control to update',
+    description: 'UUID of the payroll setup to update',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @ApiResponse({
     status: 200,
     description: 'The salary amount has been successfully updated',
   })
-  @ApiResponse({ status: 404, description: 'Salary control not found' })
+  @ApiResponse({ status: 404, description: 'Payroll setup not found' })
   @Patch(':id')
   update(
     @Param('id') id: string,
-    @Body() updateSalaryControlDto: UpdateSalaryControlDto,
+    @Body() updatePayrollSetupDto: UpdatePayrollSetupDto,
   ) {
-    return this.salariesService.update(id, updateSalaryControlDto);
+    return this.salariesService.update(id, updatePayrollSetupDto);
   }
 
-  @ApiOperation({ summary: 'Delete a salary control' })
+  @ApiOperation({ summary: 'Delete a payroll setup' })
   @ApiParam({
     name: 'id',
-    description: 'UUID of the salary control to delete',
+    description: 'UUID of the payroll setup to delete',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @ApiResponse({
     status: 200,
-    description: 'The salary control has been successfully deleted',
+    description: 'The payroll setup has been successfully deleted',
   })
-  @ApiResponse({ status: 404, description: 'Salary control not found' })
+  @ApiResponse({ status: 404, description: 'Payroll setup not found' })
   @Delete(':id')
   delete(@Param('id') id: string) {
     return this.salariesService.delete(id);

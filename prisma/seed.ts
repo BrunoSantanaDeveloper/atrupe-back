@@ -1,43 +1,11 @@
 // prisma/seed.ts
 import { PrismaClient } from '@prisma/client';
-import { BASE_UNIT_OF_MEASURES } from '../src/seeds/units-base';
 import { BASE_BANKS } from '../src/seeds/banks-base';
 import { BASE_FEATURES } from '../src/seeds/features-base';
 import { BASE_LIMITS } from '../src/seeds/limits-base';
 import { PLAN_CONFIGURATIONS } from '../src/seeds/plans-complete';
 
 const prisma = new PrismaClient();
-
-async function createDefaultUnitsOfMeasure() {
-  console.log('Criando unidades de medida padrão...');
-
-  for (const unitData of BASE_UNIT_OF_MEASURES) {
-    try {
-      const existingUnit = await prisma.defaultUnitOfMeasure.findUnique({
-        where: { code: unitData.code },
-      });
-
-      if (!existingUnit) {
-        await prisma.defaultUnitOfMeasure.create({
-          data: {
-            id: unitData.id,
-            name: unitData.name,
-            code: unitData.code,
-            description: unitData.description,
-            isActive: unitData.isActive,
-            kind: unitData.kind as any,
-            variant: unitData.variant as any,
-          },
-        });
-        console.log(`Unidade de medida criada: ${unitData.name}`);
-      } else {
-        console.log(`Unidade de medida já existe: ${unitData.name}`);
-      }
-    } catch (error) {
-      console.error(`Erro ao criar unidade de medida ${unitData.name}:`, error);
-    }
-  }
-}
 
 async function createDefaultBanks() {
   console.log('Criando bancos padrão...');
@@ -184,9 +152,6 @@ async function main() {
 
   // Criar bancos padrão
   await createDefaultBanks();
-
-  // Criar unidades de medida padrão
-  await createDefaultUnitsOfMeasure();
 
   // Criar features, limits e planos
   await createDefaultFeatures();
