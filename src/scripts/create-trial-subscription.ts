@@ -61,7 +61,6 @@ async function createTrialSubscription() {
     const existingSubscription = await prisma.subscription.findFirst({
       where: {
         companyId,
-        status: 'ACTIVE',
       },
     });
 
@@ -86,7 +85,6 @@ async function createTrialSubscription() {
         asaasSubscriptionId: `trial_manual_${Date.now()}`,
         nextDueDate: trialEndDate,
         value: 0, // Gratuito
-        status: 'ACTIVE',
         billingType: 'CREDIT_CARD',
         cycle: 'MONTHLY',
       },

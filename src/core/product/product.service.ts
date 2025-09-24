@@ -170,11 +170,6 @@ export class ProductService {
                 unitCost: true,
                 salePrice: true,
                 unitKind: true,
-                unitOfMeasure: {
-                  select: {
-                    name: true,
-                  },
-                },
               },
             },
           },
@@ -212,7 +207,6 @@ export class ProductService {
             unitCost: item.unitCost,
             salePrice: item.salePrice,
             unitKind: item.unitKind,
-            unitOfMeasure: item.unitOfMeasure,
           })),
         };
       });

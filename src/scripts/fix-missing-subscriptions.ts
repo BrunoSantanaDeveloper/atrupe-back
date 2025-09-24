@@ -9,9 +9,7 @@ async function fixMissingSubscriptions() {
   try {
     // 1. Verificar quantas subscriptions existem
     const totalSubs = await prisma.subscription.count();
-    const activeSubs = await prisma.subscription.count({
-      where: { status: 'ACTIVE' },
-    });
+    const activeSubs = await prisma.subscription.count({});
 
     console.log(`📊 Total subscriptions: ${totalSubs}`);
     console.log(`✅ Active subscriptions: ${activeSubs}`);
@@ -91,7 +89,6 @@ async function fixMissingSubscriptions() {
           asaasSubscriptionId: `trial_${Date.now()}`,
           nextDueDate: trialEndDate,
           value: 0, // Trial gratuito
-          status: 'ACTIVE',
           billingType: 'CREDIT_CARD',
           cycle: 'MONTHLY',
         },

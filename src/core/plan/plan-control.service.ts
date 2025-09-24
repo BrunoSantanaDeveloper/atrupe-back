@@ -47,7 +47,6 @@ export class PlanControlService {
       select: {
         trialEndsAt: true,
         Subscription: {
-          where: { status: 'ACTIVE' },
           select: {
             id: true,
             additionalUsers: true,

@@ -476,7 +476,6 @@ export class ScheduledExpenseService {
       // Buscar fornecedores que têm despesas agendadas
       const whereSupplier: any = {
         companyId,
-        status: 'ACTIVE',
         scheduledExpense: {
           some: {
             companyId,

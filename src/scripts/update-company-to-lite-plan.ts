@@ -11,7 +11,6 @@ async function updateCompanyToLitePlan() {
       where: { id: companyId },
       include: {
         Subscription: {
-          where: { status: 'ACTIVE' },
           include: { plan: true },
         },
       },

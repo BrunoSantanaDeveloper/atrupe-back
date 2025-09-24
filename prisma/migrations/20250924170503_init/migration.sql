@@ -14,7 +14,7 @@ CREATE TYPE "ClientStatus" AS ENUM ('PROSPECT', 'ACTIVE', 'INACTIVE');
 CREATE TYPE "ClientKind" AS ENUM ('PERSON', 'COMPANY');
 
 -- CreateEnum
-CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'PAID', 'OVERDUE', 'CANCELED', 'PROVISIONED');
+CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'PAID', 'CANCELED', 'PROVISIONED');
 
 -- CreateEnum
 CREATE TYPE "FinancialFlowType" AS ENUM ('INCOME', 'EXPENSE');
@@ -24,9 +24,6 @@ CREATE TYPE "SheetStatus" AS ENUM ('OPEN', 'CLOSED', 'EMPTY');
 
 -- CreateEnum
 CREATE TYPE "ItemType" AS ENUM ('INCREASE', 'DISCOUNT', 'ADVANCE');
-
--- CreateEnum
-CREATE TYPE "PaymentSalaryStatus" AS ENUM ('PENDING', 'PAID');
 
 -- CreateEnum
 CREATE TYPE "TransactionType" AS ENUM ('INCOME', 'OUTCOME', 'TRANSFER_INCOME', 'TRANSFER_OUTCOME');
@@ -53,7 +50,7 @@ CREATE TYPE "SendToProductionKind" AS ENUM ('DIRECT');
 CREATE TYPE "ProductionStatusKind" AS ENUM ('MANAGE_PRODUCTION', 'PRODUCTION_COMPLETED');
 
 -- CreateEnum
-CREATE TYPE "QuotationStatus" AS ENUM ('APPROVED', 'OPEN', 'CLOSED', 'CANCELED', 'REJECTED', 'DONE', 'OVERDUE');
+CREATE TYPE "QuotationStatus" AS ENUM ('APPROVED', 'OPEN', 'CLOSED', 'CANCELED', 'REJECTED', 'DONE');
 
 -- CreateEnum
 CREATE TYPE "InvoiceType" AS ENUM ('NFE', 'NFSE', 'OTHER');
@@ -74,19 +71,13 @@ CREATE TYPE "DeliveryType" AS ENUM ('INSTALLATION', 'CARRIER', 'PICKUP');
 CREATE TYPE "ProductStatus" AS ENUM ('ACTIVE', 'INACTIVE');
 
 -- CreateEnum
-CREATE TYPE "UnitOfMeasureKind" AS ENUM ('LENGTH', 'WEIGHT', 'CAPACITY', 'DISTANCE', 'DURATION', 'UNITY', 'AREA');
-
--- CreateEnum
-CREATE TYPE "UnitOfMeasureVariant" AS ENUM ('MT', 'CM', 'MM', 'KG', 'GR', 'MG', 'LT', 'ML', 'KM', 'HH', 'UN', 'M2');
-
--- CreateEnum
 CREATE TYPE "ReasonType" AS ENUM ('REJECTION', 'CANCELLATION');
 
 -- CreateEnum
 CREATE TYPE "DeliveryScheduleStatus" AS ENUM ('IN_PRODUCTION', 'DELIVERING', 'DONE', 'FINISHED', 'CANCELED');
 
 -- CreateEnum
-CREATE TYPE "ProductionStageStatus" AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'PAUSED', 'PENDING', 'DONE', 'CANCELED', 'WAITING_PRODUCTION', 'OVERDUE');
+CREATE TYPE "ProductionStageStatus" AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'PAUSED', 'PENDING', 'DONE', 'CANCELED', 'WAITING_PRODUCTION');
 
 -- CreateEnum
 CREATE TYPE "PlanType" AS ENUM ('START', 'LITE', 'PRO', 'ELITE', 'FULL', 'TRIAL');
@@ -102,6 +93,12 @@ CREATE TYPE "SubscriptionStatus" AS ENUM ('ACTIVE', 'EXPIRED', 'INACTIVE');
 
 -- CreateEnum
 CREATE TYPE "UnitKind" AS ENUM ('LENGTH', 'WEIGHT', 'CAPACITY', 'DISTANCE', 'DURATION', 'UNITY', 'AREA');
+
+-- CreateEnum
+CREATE TYPE "FinancialType" AS ENUM ('MAIN', 'DOWN_PAYMENT', 'COMMISSION', 'DELIVERY', 'ADVANCE');
+
+-- CreateEnum
+CREATE TYPE "ExpenseSource" AS ENUM ('SUPPLIER', 'EMPLOYEE', 'CLIENT', 'OTHER');
 
 -- CreateTable
 CREATE TABLE "companies" (
@@ -123,12 +120,12 @@ CREATE TABLE "companies" (
     "textAfterItems" TEXT,
     "textBeforeItems" TEXT,
     "principalCompanyId" TEXT,
-    "deliveryType" "DeliveryType"[],
     "trialEndsAt" TIMESTAMP(3),
     "facebook" TEXT,
     "instagram" TEXT,
     "linkedin" TEXT,
     "unitDefaults" JSONB,
+    "deliveryType" "DeliveryType"[],
 
     CONSTRAINT "companies_pkey" PRIMARY KEY ("id")
 );
@@ -155,16 +152,6 @@ CREATE TABLE "addresses" (
 );
 
 -- CreateTable
-CREATE TABLE "default_sectors" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "icon" TEXT,
-    "kind" "SectorKind" NOT NULL DEFAULT 'PRODUCTION',
-
-    CONSTRAINT "default_sectors_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "sectors" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -173,7 +160,6 @@ CREATE TABLE "sectors" (
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "kind" "SectorKind" NOT NULL DEFAULT 'PRODUCTION',
     "isProductionStage" BOOLEAN NOT NULL DEFAULT true,
-    "defaultSectorId" TEXT,
     "isSystem" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "sectors_pkey" PRIMARY KEY ("id")
@@ -388,7 +374,6 @@ CREATE TABLE "assets" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "companyId" TEXT,
-    "costGroupId" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "fixedMonthlyCost" DOUBLE PRECISION,
     "purchaseValue" DOUBLE PRECISION NOT NULL,
@@ -441,6 +426,7 @@ CREATE TABLE "receivables" (
     "quotationId" TEXT,
     "supplierId" TEXT,
     "mainAdditionalFee" DOUBLE PRECISION,
+    "financialType" "FinancialType" NOT NULL DEFAULT 'MAIN',
 
     CONSTRAINT "receivables_pkey" PRIMARY KEY ("id")
 );
@@ -501,9 +487,12 @@ CREATE TABLE "payables" (
     "updatedAt" TIMESTAMP(3),
     "quotationId" TEXT,
     "clientId" TEXT,
+    "employeeId" TEXT,
     "mainAdditionalFee" DOUBLE PRECISION,
     "totalValue" DOUBLE PRECISION,
     "scheduledExpenseId" TEXT,
+    "financialType" "FinancialType" NOT NULL DEFAULT 'MAIN',
+    "expenseSource" "ExpenseSource" NOT NULL DEFAULT 'SUPPLIER',
 
     CONSTRAINT "payables_pkey" PRIMARY KEY ("id")
 );
@@ -543,7 +532,7 @@ CREATE TABLE "payable_history" (
 );
 
 -- CreateTable
-CREATE TABLE "salary_sheets" (
+CREATE TABLE "payroll" (
     "id" TEXT NOT NULL,
     "month" INTEGER NOT NULL,
     "year" INTEGER NOT NULL,
@@ -553,56 +542,55 @@ CREATE TABLE "salary_sheets" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3),
 
-    CONSTRAINT "salary_sheets_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "payroll_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "salary_items" (
+CREATE TABLE "payroll_items" (
     "id" TEXT NOT NULL,
-    "salarySheetId" TEXT NOT NULL,
+    "payrollId" TEXT NOT NULL,
     "type" "ItemType" NOT NULL,
     "description" TEXT,
     "amount" DOUBLE PRECISION NOT NULL,
-    "reference" TEXT NOT NULL,
+    "reference" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "paidAt" TIMESTAMP(3),
 
-    CONSTRAINT "salary_items_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "payroll_items_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "salary_controls" (
+CREATE TABLE "payroll_setup" (
     "id" TEXT NOT NULL,
-    "reference" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
     "amount" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "type" "ItemType" NOT NULL DEFAULT 'INCREASE',
-    "date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "companyId" TEXT NOT NULL,
     "employeeId" TEXT NOT NULL,
+    "templateId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3),
     "isSet" BOOLEAN NOT NULL DEFAULT false,
 
-    CONSTRAINT "salary_controls_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "payroll_setup_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "payment_movements" (
+CREATE TABLE "payroll_template" (
     "id" TEXT NOT NULL,
-    "salarySheetId" TEXT NOT NULL,
-    "amount" DOUBLE PRECISION NOT NULL,
-    "paidDate" TIMESTAMP(3) NOT NULL,
-    "paymentStatus" "PaymentSalaryStatus" NOT NULL DEFAULT 'PENDING',
-    "paymentMethodId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "type" "ItemType" NOT NULL DEFAULT 'INCREASE',
+    "defaultAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "companyId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "updatedAt" TIMESTAMP(3),
 
-    CONSTRAINT "payment_movements_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "payroll_template_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "financial_flows" (
+CREATE TABLE "financial_flow" (
     "id" TEXT NOT NULL,
     "amount" DOUBLE PRECISION NOT NULL,
     "type" "FinancialFlowType" NOT NULL,
@@ -611,7 +599,7 @@ CREATE TABLE "financial_flows" (
     "companyId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "financial_flows_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "financial_flow_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -686,16 +674,6 @@ CREATE TABLE "user_roles" (
     "roleId" TEXT NOT NULL,
 
     CONSTRAINT "user_roles_pkey" PRIMARY KEY ("userId","roleId")
-);
-
--- CreateTable
-CREATE TABLE "attributes" (
-    "id" TEXT NOT NULL,
-    "key" TEXT NOT NULL,
-    "value" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-
-    CONSTRAINT "attributes_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -847,7 +825,7 @@ CREATE TABLE "quotations" (
     "companyId" TEXT NOT NULL,
     "status" "QuotationStatus" NOT NULL DEFAULT 'OPEN',
     "totalValue" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "dueDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "dueDate" TIMESTAMP(3),
     "approvedAt" TIMESTAMP(3),
     "contactType" TEXT,
     "tagId" TEXT,
@@ -905,8 +883,8 @@ CREATE TABLE "quotation_product_items" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3),
     "originalQuantity" INTEGER NOT NULL DEFAULT 1,
-    "unitOfMeasureId" TEXT,
     "unitKind" "UnitKind",
+    "defaultUnitOfMeasureId" TEXT,
 
     CONSTRAINT "quotation_product_items_pkey" PRIMARY KEY ("id")
 );
@@ -1040,23 +1018,22 @@ CREATE TABLE "product_items" (
     "volume" DOUBLE PRECISION,
     "weight" DOUBLE PRECISION,
     "width" DOUBLE PRECISION,
-    "unitOfMeasureId" TEXT,
     "unitKind" "UnitKind",
+    "defaultUnitOfMeasureId" TEXT,
 
     CONSTRAINT "product_items_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "defalt_unit_measures" (
+CREATE TABLE "default_unit_measures" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "code" TEXT NOT NULL,
     "description" TEXT,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "kind" "UnitOfMeasureKind",
-    "variant" "UnitOfMeasureVariant",
+    "kind" "UnitKind",
 
-    CONSTRAINT "defalt_unit_measures_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "default_unit_measures_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -1088,7 +1065,7 @@ CREATE TABLE "delivery_schedules" (
     "quotationId" TEXT,
     "deliveryInfoId" TEXT,
     "orderId" TEXT,
-    "status" "DeliveryScheduleStatus" NOT NULL,
+    "status" "DeliveryScheduleStatus" NOT NULL DEFAULT 'IN_PRODUCTION',
     "completed" BOOLEAN NOT NULL DEFAULT false,
     "notes" TEXT,
     "scheduledDate" TIMESTAMP(3) NOT NULL,
@@ -1281,7 +1258,7 @@ CREATE TABLE "subscriptions" (
     "nextDueDate" TIMESTAMP(3) NOT NULL,
     "plan_id" TEXT NOT NULL,
     "value" DOUBLE PRECISION NOT NULL,
-    "status" TEXT NOT NULL,
+    "status" "SubscriptionStatus" NOT NULL DEFAULT 'ACTIVE',
     "billingType" "BillingType" NOT NULL DEFAULT 'CREDIT_CARD',
     "cycle" "Cycle" NOT NULL DEFAULT 'MONTHLY',
 
@@ -1375,7 +1352,10 @@ CREATE INDEX "users_email_idx" ON "users"("email");
 CREATE UNIQUE INDEX "mail_verifications_email_key" ON "mail_verifications"("email");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "salary_sheets_employeeId_month_year_key" ON "salary_sheets"("employeeId", "month", "year");
+CREATE UNIQUE INDEX "payroll_employeeId_month_year_key" ON "payroll"("employeeId", "month", "year");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "payroll_template_name_type_companyId_key" ON "payroll_template"("name", "type", "companyId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "invoices_number_companyId_key" ON "invoices"("number", "companyId");
@@ -1408,7 +1388,7 @@ CREATE INDEX "orders_id_idx" ON "orders"("id");
 CREATE UNIQUE INDEX "products_code_companyId_key" ON "products"("code", "companyId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "defalt_unit_measures_code_key" ON "defalt_unit_measures"("code");
+CREATE UNIQUE INDEX "default_unit_measures_code_key" ON "default_unit_measures"("code");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "languages_code_key" ON "languages"("code");
@@ -1487,9 +1467,6 @@ ALTER TABLE "addresses" ADD CONSTRAINT "addresses_supplierId_fkey" FOREIGN KEY (
 
 -- AddForeignKey
 ALTER TABLE "sectors" ADD CONSTRAINT "sectors_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "sectors" ADD CONSTRAINT "sectors_defaultSectorId_fkey" FOREIGN KEY ("defaultSectorId") REFERENCES "default_sectors"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "roles" ADD CONSTRAINT "roles_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -1609,6 +1586,9 @@ ALTER TABLE "payables" ADD CONSTRAINT "payables_clientId_fkey" FOREIGN KEY ("cli
 ALTER TABLE "payables" ADD CONSTRAINT "payables_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "payables" ADD CONSTRAINT "payables_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "employees"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "payables" ADD CONSTRAINT "payables_natureId_fkey" FOREIGN KEY ("natureId") REFERENCES "natures"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -1639,28 +1619,28 @@ ALTER TABLE "payable_installments" ADD CONSTRAINT "payable_installments_transact
 ALTER TABLE "payable_history" ADD CONSTRAINT "payable_history_payableId_fkey" FOREIGN KEY ("payableId") REFERENCES "payables"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "salary_sheets" ADD CONSTRAINT "salary_sheets_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "payroll" ADD CONSTRAINT "payroll_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "salary_sheets" ADD CONSTRAINT "salary_sheets_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "employees"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "payroll" ADD CONSTRAINT "payroll_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "employees"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "salary_items" ADD CONSTRAINT "salary_items_salarySheetId_fkey" FOREIGN KEY ("salarySheetId") REFERENCES "salary_sheets"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "payroll_items" ADD CONSTRAINT "payroll_items_payrollId_fkey" FOREIGN KEY ("payrollId") REFERENCES "payroll"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "salary_controls" ADD CONSTRAINT "salary_controls_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "payroll_setup" ADD CONSTRAINT "payroll_setup_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "salary_controls" ADD CONSTRAINT "salary_controls_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "employees"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "payroll_setup" ADD CONSTRAINT "payroll_setup_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "employees"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "payment_movements" ADD CONSTRAINT "payment_movements_paymentMethodId_fkey" FOREIGN KEY ("paymentMethodId") REFERENCES "payment_methods"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "payroll_setup" ADD CONSTRAINT "payroll_setup_templateId_fkey" FOREIGN KEY ("templateId") REFERENCES "payroll_template"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "payment_movements" ADD CONSTRAINT "payment_movements_salarySheetId_fkey" FOREIGN KEY ("salarySheetId") REFERENCES "salary_sheets"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "payroll_template" ADD CONSTRAINT "payroll_template_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "financial_flows" ADD CONSTRAINT "financial_flows_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "financial_flow" ADD CONSTRAINT "financial_flow_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "cash_registers" ADD CONSTRAINT "cash_registers_bankAccountId_fkey" FOREIGN KEY ("bankAccountId") REFERENCES "bank_accounts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -1691,9 +1671,6 @@ ALTER TABLE "user_roles" ADD CONSTRAINT "user_roles_roleId_fkey" FOREIGN KEY ("r
 
 -- AddForeignKey
 ALTER TABLE "user_roles" ADD CONSTRAINT "user_roles_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "attributes" ADD CONSTRAINT "attributes_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "bank_accounts" ADD CONSTRAINT "bank_accounts_bankId_fkey" FOREIGN KEY ("bankId") REFERENCES "banks"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -1774,7 +1751,7 @@ ALTER TABLE "quotation_product_items" ADD CONSTRAINT "quotation_product_items_pr
 ALTER TABLE "quotation_product_items" ADD CONSTRAINT "quotation_product_items_quotationProductId_fkey" FOREIGN KEY ("quotationProductId") REFERENCES "quotation_products"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "quotation_product_items" ADD CONSTRAINT "quotation_product_items_unitOfMeasureId_fkey" FOREIGN KEY ("unitOfMeasureId") REFERENCES "defalt_unit_measures"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "quotation_product_items" ADD CONSTRAINT "quotation_product_items_defaultUnitOfMeasureId_fkey" FOREIGN KEY ("defaultUnitOfMeasureId") REFERENCES "default_unit_measures"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "quotation_payments" ADD CONSTRAINT "quotation_payments_commissionId_fkey" FOREIGN KEY ("commissionId") REFERENCES "commissions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -1837,7 +1814,7 @@ ALTER TABLE "products" ADD CONSTRAINT "products_sectorId_fkey" FOREIGN KEY ("sec
 ALTER TABLE "product_items" ADD CONSTRAINT "product_items_productId_fkey" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "product_items" ADD CONSTRAINT "product_items_unitOfMeasureId_fkey" FOREIGN KEY ("unitOfMeasureId") REFERENCES "defalt_unit_measures"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "product_items" ADD CONSTRAINT "product_items_defaultUnitOfMeasureId_fkey" FOREIGN KEY ("defaultUnitOfMeasureId") REFERENCES "default_unit_measures"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "languages" ADD CONSTRAINT "languages_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

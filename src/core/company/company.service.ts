@@ -4,7 +4,6 @@ import { UpdateCompanyDto } from './dto/update-company.dto';
 import { PlugService } from '../../svc/plug/plug.service';
 import {
   ClientKind,
-  ClientStatus,
   Company,
   PaymentConditionCostType,
   Prisma,
@@ -128,9 +127,15 @@ export class CompanyService {
                       type: template.type,
                       amount: template.defaultAmount,
                       isSet: true,
-                      companyId: companyId,
-                      employeeId: employee.id,
-                      templateId: template.id,
+                      company: {
+                        connect: { id: companyId },
+                      },
+                      employee: {
+                        connect: { id: employee.id },
+                      },
+                      payrollTemplate: {
+                        connect: { id: template.id },
+                      },
                     },
                   });
                 }),
@@ -458,10 +463,14 @@ export class CompanyService {
             data: {
               name: createPayrollSetupDto.name,
               amount: createPayrollSetupDto.amount,
-              companyId: createPayrollSetupDto.companyId,
               type: createPayrollSetupDto.type,
-              employeeId: employee.id,
               isSet: createPayrollSetupDto.isSet ?? true,
+              company: {
+                connect: { id: createPayrollSetupDto.companyId },
+              },
+              employee: {
+                connect: { id: employee.id },
+              },
             },
             include: {
               employee: {
@@ -994,7 +1003,6 @@ export class CompanyService {
             data: {
               name: seed.supplierName,
               email: seed.supplierEmail || '',
-              status: 'ACTIVE' as ClientStatus,
               cnpj: seed.supplierCnpj || '',
               corporateName: seed.supplierCorporateName || seed.supplierName,
               phone: seed.supplierPhone || '',
@@ -1308,7 +1316,6 @@ export class CompanyService {
     await this.prisma.client.create({
       data: {
         type: 'PERSON',
-        status: 'ACTIVE',
         name: 'Cliente Exemplo',
         email: 'cliente.exemplo@email.com',
         phone: '(11) 3333-4444',

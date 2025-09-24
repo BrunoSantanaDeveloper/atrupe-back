@@ -959,29 +959,31 @@ model QuotationProduct {
 }
 
 model QuotationProductItem {
-  productItemId      String
-  quantity           Int              @default(1)
-  productId          String
-  quotationId        String
-  totalValue         Float?
-  distance           Float?
-  duration           Float?
-  height             Float?
-  length             Float?
-  name               String
-  salePrice          Float?
-  unitCost           Float?
-  volume             Float?
-  weight             Float?
-  width              Float?
-  id                 String           @id @default(uuid())
-  quotationProductId String
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime?        @updatedAt
-  originalQuantity   Int              @default(1)
-  unitKind           UnitKind?
-  productItem        ProductItem      @relation(fields: [productItemId], references: [id])
-  quotationProduct   QuotationProduct @relation(fields: [quotationProductId], references: [id])
+  productItemId          String
+  quantity               Int                   @default(1)
+  productId              String
+  quotationId            String
+  totalValue             Float?
+  distance               Float?
+  duration               Float?
+  height                 Float?
+  length                 Float?
+  name                   String
+  salePrice              Float?
+  unitCost               Float?
+  volume                 Float?
+  weight                 Float?
+  width                  Float?
+  id                     String                @id @default(uuid())
+  quotationProductId     String
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime?             @updatedAt
+  originalQuantity       Int                   @default(1)
+  unitKind               UnitKind?
+  productItem            ProductItem           @relation(fields: [productItemId], references: [id])
+  quotationProduct       QuotationProduct      @relation(fields: [quotationProductId], references: [id])
+  DefaultUnitOfMeasure   DefaultUnitOfMeasure? @relation(fields: [defaultUnitOfMeasureId], references: [id])
+  defaultUnitOfMeasureId String?
 
   @@map("quotation_product_items")
 }
@@ -1112,6 +1114,7 @@ model Product {
   imageUrl             String?
   technicalDescription String?
   productionStages     Json?
+  status               ProductStatus      @default(ACTIVE)
   items                ProductItem[]
   category             Category           @relation(fields: [categoryId], references: [id])
   company              Company?           @relation(fields: [companyId], references: [id])
@@ -1124,23 +1127,38 @@ model Product {
 }
 
 model ProductItem {
-  id                   String                 @id @default(uuid())
-  name                 String
-  productId            String
-  unitCost             Float?
-  salePrice            Float?
-  distance             Float?
-  duration             Float?
-  height               Float?
-  length               Float?
-  volume               Float?
-  weight               Float?
-  width                Float?
-  unitKind             UnitKind?
-  product              Product                @relation(fields: [productId], references: [id])
-  quotationProductItem QuotationProductItem[]
+  id                     String                 @id @default(uuid())
+  name                   String
+  productId              String
+  unitCost               Float?
+  salePrice              Float?
+  distance               Float?
+  duration               Float?
+  height                 Float?
+  length                 Float?
+  volume                 Float?
+  weight                 Float?
+  width                  Float?
+  unitKind               UnitKind?
+  product                Product                @relation(fields: [productId], references: [id])
+  quotationProductItem   QuotationProductItem[]
+  DefaultUnitOfMeasure   DefaultUnitOfMeasure?  @relation(fields: [defaultUnitOfMeasureId], references: [id])
+  defaultUnitOfMeasureId String?
 
   @@map("product_items")
+}
+
+model DefaultUnitOfMeasure {
+  id                   String                 @id @default(uuid())
+  name                 String
+  code                 String                 @unique
+  description          String?
+  isActive             Boolean                @default(true)
+  kind                 UnitKind?
+  productItems         ProductItem[]
+  quotationProductItem QuotationProductItem[]
+
+  @@map("default_unit_measures")
 }
 
 model Language {
@@ -1173,7 +1191,7 @@ model DeliverySchedule {
   quotationId        String?                @unique
   deliveryInfoId     String?                @unique
   orderId            String?                @unique
-  status             DeliveryScheduleStatus
+  status             DeliveryScheduleStatus @default(IN_PRODUCTION)
   completed          Boolean                @default(false)
   notes              String?
   scheduledDate      DateTime
@@ -1630,6 +1648,11 @@ enum DeliveryType {
   INSTALLATION
   CARRIER
   PICKUP
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
 }
 
 enum ReasonType {

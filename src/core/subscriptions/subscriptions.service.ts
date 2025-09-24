@@ -23,7 +23,6 @@ export class SubscriptionsService {
     return this.prisma.subscription.findFirst({
       where: {
         companyId,
-        status: 'ACTIVE',
       },
       include: {
         plan: {
@@ -60,7 +59,6 @@ export class SubscriptionsService {
       {
         where: {
           companyId: request.user.companyId,
-          status: 'ACTIVE',
         },
       },
     );
@@ -236,7 +234,7 @@ export class SubscriptionsService {
     // Desativar subscription atual
     await this.prisma.subscription.update({
       where: { id: subscriptionId },
-      data: { status: 'CANCELED' },
+      data: { status: 'INACTIVE' },
     });
 
     // Criar nova subscription
@@ -523,7 +521,6 @@ export class SubscriptionsService {
 
     return {
       id: `sub_mock_${Date.now()}`,
-      status: 'ACTIVE',
       nextDueDate: subscriptionData.nextDueDate,
       value: subscriptionData.value,
       customer: subscriptionData.customer,

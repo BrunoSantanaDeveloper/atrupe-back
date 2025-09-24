@@ -208,7 +208,6 @@ export class QuotationService {
           productId: product.id,
           name: originalItem.name,
           unitKind: (item.unitKind || originalItem.unitKind || null) as any,
-          unitOfMeasureId: originalItem.unitOfMeasureId || null,
           width: item.width || 0,
           height: item.height || 0,
           length: item.length || 0,
@@ -659,7 +658,7 @@ export class QuotationService {
       'OPEN',
       'REJECTED',
       'DONE',
-      'OVERDUE',
+      'OVERDUE' as any, // Status virtual para cotações vencidas
     ];
 
     // Get all quotations to check for overdue status
@@ -728,7 +727,7 @@ export class QuotationService {
 
       if (dto.status) {
         // Special handling for OVERDUE status
-        if (dto.status === 'OVERDUE') {
+        if ((dto.status as any) === 'OVERDUE') {
           // For OVERDUE filter, we need to find DONE quotations that are past due date
           where = {
             ...where,
@@ -1015,7 +1014,6 @@ export class QuotationService {
                   id: true,
                   productItemId: true,
                   name: true,
-                  unitOfMeasure: true,
                   unitKind: true,
                   salePrice: true,
                   quantity: true,
@@ -1259,7 +1257,7 @@ export class QuotationService {
               id: item.id,
               originalCompositionId: item.productItemId,
               name: item.name,
-              unitOfMeasure: item.unitOfMeasure,
+              unitOfMeasure: null,
               unitKind: item.unitKind,
               quantity: item.quantity,
               originalQuantity: item.originalQuantity,
@@ -2083,11 +2081,6 @@ export class QuotationService {
                       name: true,
                     },
                   },
-                  unitOfMeasure: {
-                    select: {
-                      name: true,
-                    },
-                  },
                 },
               },
             },
@@ -2283,7 +2276,7 @@ export class QuotationService {
               id: item.id,
               originalCompositionId: item.productItemId,
               name: item.name,
-              unitOfMeasure: item.unitOfMeasure,
+              unitOfMeasure: null,
               quantity: item.quantity,
               originalQuantity: item.originalQuantity,
               unitValue: item.unitCost || 0,

@@ -15,7 +15,6 @@ export class UnitOfMeasureService {
         code: createUnitOfMeasureDto.code,
         description: createUnitOfMeasureDto.description,
         kind: createUnitOfMeasureDto.kind as any,
-        variant: createUnitOfMeasureDto.variant as any,
       },
     });
   }
@@ -43,7 +42,6 @@ export class UnitOfMeasureService {
         code: updateUnitOfMeasureDto.code,
         description: updateUnitOfMeasureDto.description,
         kind: updateUnitOfMeasureDto.kind as any,
-        variant: updateUnitOfMeasureDto.variant as any,
       },
     });
   }
@@ -117,18 +115,9 @@ export class UnitOfMeasureService {
     // Buscar as unidades padrão da empresa
     const defaultUnits = await this.prisma.defaultUnitOfMeasure.findMany({
       where: {
-        OR: [
-          {
-            variant: {
-              in: Object.values(unitDefaults),
-            },
-          },
-          {
-            code: {
-              in: Object.values(unitDefaults),
-            },
-          },
-        ],
+        code: {
+          in: Object.values(unitDefaults),
+        },
         isActive: true,
       },
       orderBy: {
@@ -142,11 +131,8 @@ export class UnitOfMeasureService {
     for (const unit of defaultUnits) {
       const kindValue = unitDefaults[unit.kind as string];
 
-      if (
-        kindValue &&
-        (unit.variant === kindValue || unit.code === kindValue)
-      ) {
-        if (!uniqueUnits.has(unit.kind) || unit.variant === kindValue) {
+      if (kindValue && unit.code === kindValue) {
+        if (!uniqueUnits.has(unit.kind)) {
           uniqueUnits.set(unit.kind, unit);
         }
       }

@@ -235,7 +235,6 @@ export class UserService {
               cycle: 'MONTHLY',
               billingType: 'CREDIT_CARD',
               value: trialPlan.basePrice,
-              status: 'ACTIVE',
             },
           });
 
@@ -512,9 +511,7 @@ export class UserService {
         customer: {
           include: {
             subscriptions: {
-              where: {
-                status: 'ACTIVE',
-              },
+              where: {},
               include: {
                 plan: { select: { planType: true } },
               },
