@@ -1584,7 +1584,6 @@ enum ClientKind {
 enum PaymentStatus {
   PENDING
   PAID
-  OVERDUE
   CANCELED
   PROVISIONED
 }
@@ -1667,7 +1666,6 @@ enum QuotationStatus {
   CANCELED
   REJECTED
   DONE
-  OVERDUE
 }
 
 enum InvoiceType {
@@ -1753,7 +1751,6 @@ enum ProductionStageStatus {
   DONE
   CANCELED
   WAITING_PRODUCTION
-  OVERDUE
 }
 
 enum PlanType {

@@ -1310,7 +1310,7 @@ export class CompanyService {
     await this.prisma.client.create({
       data: {
         type: 'PERSON',
-        status: 'PROSPECT',
+        status: 'ACTIVE',
         name: 'Cliente Exemplo',
         email: 'cliente.exemplo@email.com',
         phone: '(11) 3333-4444',

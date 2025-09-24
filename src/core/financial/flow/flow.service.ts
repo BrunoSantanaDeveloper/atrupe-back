@@ -10,6 +10,17 @@ import { FinancialFlowFilterDTO } from './dto/filter.dto';
 @Injectable()
 export class FlowService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private getActualStatus(installment: any): string {
+    if (
+      installment.status === 'PENDING' &&
+      new Date(installment.dueDate) < new Date()
+    ) {
+      return 'OVERDUE';
+    }
+    return installment.status;
+  }
+
   async findAllTotals(filter: FinancialFlowFilterDTO) {
     const {
       search,
@@ -362,7 +373,7 @@ export class FlowService {
                   ? {
                       id: currentInst.id,
                       installmentNumber: currentInst.installmentNumber || 1,
-                      status: currentInst.status,
+                      status: this.getActualStatus(currentInst),
                       paymentMethod: currentInst.paymentMethod
                         ? {
                             id: currentInst.paymentMethod.id,
@@ -469,7 +480,7 @@ export class FlowService {
                   ? {
                       id: currentInst.id,
                       installmentNumber: currentInst.installmentNumber || 1,
-                      status: currentInst.status,
+                      status: this.getActualStatus(currentInst),
                       paymentMethod: currentInst.paymentMethod
                         ? {
                             id: currentInst.paymentMethod.id,

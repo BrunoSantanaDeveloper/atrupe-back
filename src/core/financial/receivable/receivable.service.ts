@@ -17,15 +17,30 @@ import {
 } from './dto/update-receivable.dto';
 import { ReceivableFilterDto } from './dto/receivable-filter.dto';
 import { PaymentStatus, TransactionType } from '@prisma/client';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { endOfDay, add } from 'date-fns';
 
 @Injectable()
 export class ReceivableService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private getActualStatus(installment: any): string {
+    if (
+      installment.status === 'PENDING' &&
+      new Date(installment.dueDate) < new Date()
+    ) {
+      return 'OVERDUE';
+    }
+    return installment.status;
+  }
+
+  private applyDynamicStatus(installment: any): any {
+    return {
+      ...installment,
+      status: this.getActualStatus(installment),
+    };
+  }
+
   async create(dto: CreateReceivableDto) {
-    //TODO: ajustar o status da parcela para OVERDUE caso a data tiver velha
     const { installments, ...receivableData } = dto;
 
     if (installments.length === 0) {
@@ -55,6 +70,7 @@ export class ReceivableService {
             ...installment,
             installmentNumber: index + 1,
             dueDate: new Date(installment.dueDate),
+            status: 'PENDING',
             receivableId: receivable.id,
           })),
         });
@@ -231,7 +247,7 @@ export class ReceivableService {
                 ? {
                     id: currentInst.id,
                     installmentNumber: currentInst.installmentNumber || 1,
-                    status: currentInst.status || 'UNKNOWN',
+                    status: this.getActualStatus(currentInst),
                     paymentMethod: {
                       id: currentInst.paymentMethod?.id || null,
                       name: currentInst.paymentMethod?.name || null,
@@ -278,7 +294,14 @@ export class ReceivableService {
     });
     if (!receivable)
       throw new NotFoundException('Conta a receber não encontrada.');
-    return receivable;
+
+    // Aplicar status dinâmico nas parcelas
+    return {
+      ...receivable,
+      installments: receivable.installments.map((installment) =>
+        this.applyDynamicStatus(installment),
+      ),
+    };
   }
 
   async updateTitle(id: string, dto: UpdateReceivableDto) {
@@ -495,7 +518,7 @@ export class ReceivableService {
     if (
       installmentData.status !== 'PENDING' &&
       installmentData.status !== 'PROVISIONED' &&
-      installmentData.status !== 'OVERDUE'
+      this.getActualStatus(installmentData) !== 'OVERDUE'
     ) {
       throw new BadRequestException(
         'Parcela deve estar pendente, vencida ou provisionada para ser paga.',
@@ -975,7 +998,6 @@ export class ReceivableService {
   ): Promise<any> {
     try {
       const { installments, totalAmount, changeNotes, changeReason } = dto;
-      const currentDate = new Date();
       // let totalAmount = 0;
 
       const updatedReceivable = await this.prisma.$transaction(
@@ -990,8 +1012,7 @@ export class ReceivableService {
               if (updateData.dueDate) {
                 updateData.dueDate = new Date(updateData.dueDate);
                 if (updateData.status === 'PENDING') {
-                  updateData.status =
-                    updateData.dueDate < currentDate ? 'OVERDUE' : 'PENDING';
+                  updateData.status = 'PENDING';
                 }
               }
 
@@ -1012,10 +1033,7 @@ export class ReceivableService {
                   receivableId,
                   amount: installmentDto.amount,
                   dueDate: new Date(installmentDto.dueDate),
-                  status:
-                    new Date(installmentDto.dueDate) < currentDate
-                      ? 'OVERDUE'
-                      : 'PENDING',
+                  status: 'PENDING',
                   paymentMethodId: installmentDto.paymentMethodId,
                   installmentNumber: installments.indexOf(installmentDto) + 1,
                 },
@@ -1122,10 +1140,6 @@ export class ReceivableService {
     const hasCancelled = installments.some(
       (inst) => inst.status === PaymentStatus.CANCELED,
     );
-    const hasOverdue = installments.some(
-      (inst) =>
-        inst.status === PaymentStatus.PENDING && inst.dueDate < new Date(),
-    );
     const hasPending = installments.some(
       (inst) => inst.status === PaymentStatus.PENDING,
     );
@@ -1137,9 +1151,9 @@ export class ReceivableService {
 
     if (hasCancelled) {
       newStatus = PaymentStatus.CANCELED;
-    } else if (hasOverdue) {
-      newStatus = PaymentStatus.OVERDUE;
     } else if (hasPending) {
+      // Se tem pendentes, salva como PENDING no banco
+      // O status OVERDUE será calculado dinamicamente nas queries quando necessário
       newStatus = PaymentStatus.PENDING;
     } else if (allPaid) {
       newStatus = PaymentStatus.PAID;
@@ -1155,50 +1169,6 @@ export class ReceivableService {
       where: { id: receivableId },
       data: { status: newStatus },
     });
-  }
-
-  @Cron(CronExpression.EVERY_DAY_AT_1AM)
-  async checkOverdueInstallments(): Promise<void> {
-    const currentDate = new Date();
-
-    // Busca parcelas pendentes vencidas
-    const overdueInstallments =
-      await this.prisma.receivableInstallment.findMany({
-        where: {
-          status: PaymentStatus.PENDING,
-          dueDate: {
-            lt: currentDate,
-          },
-        },
-        select: {
-          id: true,
-          receivableId: true,
-        },
-      });
-
-    if (overdueInstallments.length === 0) {
-      return;
-    }
-
-    // Atualiza o status das parcelas para OVERDUE
-    const updatePromises = overdueInstallments.map((installment) =>
-      this.prisma.receivableInstallment.update({
-        where: { id: installment.id },
-        data: { status: PaymentStatus.OVERDUE },
-      }),
-    );
-
-    await Promise.all(updatePromises);
-
-    const receivableIds = Array.from(
-      new Set(overdueInstallments.map((inst) => inst.receivableId)),
-    );
-
-    const receivableUpdatePromises = receivableIds.map((id) =>
-      this.updateReceivableStatus(id),
-    );
-
-    await Promise.all(receivableUpdatePromises);
   }
 
   private async cancelRelatedFinancials(quotationId: string): Promise<void> {

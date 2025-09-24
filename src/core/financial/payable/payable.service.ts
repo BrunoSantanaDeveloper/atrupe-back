@@ -15,7 +15,6 @@ import {
 } from './dto/update-payable.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { PaymentStatus, TransactionType } from '@prisma/client';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { ReceivableFilterDto } from '../receivable/dto/receivable-filter.dto';
 import { add, endOfDay } from 'date-fns';
 import { CompensateDto } from '../receivable/dto/create-receivable.dto';
@@ -24,9 +23,25 @@ import { CompensateDto } from '../receivable/dto/create-receivable.dto';
 export class PayableService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private getActualStatus(installment: any): string {
+    if (
+      installment.status === 'PENDING' &&
+      new Date(installment.dueDate) < new Date()
+    ) {
+      return 'OVERDUE';
+    }
+    return installment.status;
+  }
+
+  private applyDynamicStatus(installment: any): any {
+    return {
+      ...installment,
+      status: this.getActualStatus(installment),
+    };
+  }
+
   async create(dto: CreatePayableDto) {
     const { installments, ...payableData } = dto;
-    const currentDate = new Date();
     if (installments.length === 0) {
       throw new Error('At least one installment is required.');
     }
@@ -63,10 +78,7 @@ export class PayableService {
             ...installment,
             installmentNumber: index + 1,
             dueDate: new Date(installment.dueDate),
-            status:
-              new Date(installment.dueDate) < currentDate
-                ? 'OVERDUE'
-                : 'PENDING',
+            status: 'PENDING',
             payableId: payable.id,
           })),
         });
@@ -253,7 +265,7 @@ export class PayableService {
                   ? {
                       id: currentInst.id,
                       installmentNumber: currentInst.installmentNumber || 1,
-                      status: currentInst.status || 'UNKNOWN',
+                      status: this.getActualStatus(currentInst),
                       paymentMethod: {
                         id: currentInst.paymentMethod?.id || null,
                         name: currentInst.paymentMethod?.name || null,
@@ -303,7 +315,14 @@ export class PayableService {
       },
     });
     if (!payable) throw new NotFoundException('Conta a pagar não encontrada.');
-    return payable;
+
+    // Aplicar status dinâmico nas parcelas
+    return {
+      ...payable,
+      installments: payable.installments.map((installment) =>
+        this.applyDynamicStatus(installment),
+      ),
+    };
   }
 
   async updateTitle(id: string, dto: UpdatePayableDto) {
@@ -516,7 +535,7 @@ export class PayableService {
     if (
       installmentData.status !== 'PENDING' &&
       installmentData.status !== 'PROVISIONED' &&
-      installmentData.status !== 'OVERDUE'
+      this.getActualStatus(installmentData) !== 'OVERDUE'
     ) {
       throw new BadRequestException(
         'Parcela deve estar pendente, vencida ou provisionada para ser paga.',
@@ -986,7 +1005,6 @@ export class PayableService {
   ): Promise<any> {
     try {
       const { installments, totalAmount, changeNotes, changeReason } = dto;
-      const currentDate = new Date();
       // let totalAmount = 0;
 
       const updatedPayable = await this.prisma.$transaction(async (prisma) => {
@@ -1000,8 +1018,7 @@ export class PayableService {
             if (updateData.dueDate) {
               updateData.dueDate = new Date(updateData.dueDate);
               if (updateData.status === 'PENDING') {
-                updateData.status =
-                  updateData.dueDate < currentDate ? 'OVERDUE' : 'PENDING';
+                updateData.status = 'PENDING';
               }
             }
 
@@ -1023,10 +1040,7 @@ export class PayableService {
                 payableId,
                 amount: installmentDto.amount,
                 dueDate: new Date(installmentDto.dueDate),
-                status:
-                  new Date(installmentDto.dueDate) < currentDate
-                    ? 'OVERDUE'
-                    : 'PENDING',
+                status: 'PENDING',
                 paymentMethodId: installmentDto.paymentMethodId,
                 installmentNumber: installments.indexOf(installmentDto) + 1,
               },
@@ -1128,10 +1142,6 @@ export class PayableService {
     const hasCancelled = installments.some(
       (inst) => inst.status === PaymentStatus.CANCELED,
     );
-    const hasOverdue = installments.some(
-      (inst) =>
-        inst.status === PaymentStatus.PENDING && inst.dueDate < new Date(),
-    );
     const hasPending = installments.some(
       (inst) => inst.status === PaymentStatus.PENDING,
     );
@@ -1143,9 +1153,9 @@ export class PayableService {
 
     if (hasCancelled) {
       newStatus = PaymentStatus.CANCELED;
-    } else if (hasOverdue) {
-      newStatus = PaymentStatus.OVERDUE;
     } else if (hasPending) {
+      // Se tem pendentes, salva como PENDING no banco
+      // O status OVERDUE será calculado dinamicamente nas queries quando necessário
       newStatus = PaymentStatus.PENDING;
     } else if (allPaid) {
       newStatus = PaymentStatus.PAID;
@@ -1161,49 +1171,6 @@ export class PayableService {
       where: { id: payableId },
       data: { status: newStatus },
     });
-  }
-
-  @Cron(CronExpression.EVERY_DAY_AT_2AM)
-  async checkOverdueInstallments(): Promise<void> {
-    const currentDate = new Date();
-
-    // Busca parcelas pendentes vencidas
-    const overdueInstallments = await this.prisma.payableInstallment.findMany({
-      where: {
-        status: PaymentStatus.PENDING,
-        dueDate: {
-          lt: currentDate,
-        },
-      },
-      select: {
-        id: true,
-        payableId: true,
-      },
-    });
-
-    if (overdueInstallments.length === 0) {
-      return;
-    }
-
-    // Atualiza o status das parcelas para OVERDUE
-    const updatePromises = overdueInstallments.map((installment) =>
-      this.prisma.payableInstallment.update({
-        where: { id: installment.id },
-        data: { status: PaymentStatus.OVERDUE },
-      }),
-    );
-
-    await Promise.all(updatePromises);
-
-    const payableIds = Array.from(
-      new Set(overdueInstallments.map((inst) => inst.payableId)),
-    );
-
-    const payableUpdatePromises = payableIds.map((id) =>
-      this.updatePayableStatus(id),
-    );
-
-    await Promise.all(payableUpdatePromises);
   }
 
   private async cancelRelatedFinancials(quotationId: string): Promise<void> {
