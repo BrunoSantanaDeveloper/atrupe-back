@@ -517,11 +517,10 @@ export class ReceivableService {
 
     if (
       installmentData.status !== 'PENDING' &&
-      installmentData.status !== 'PROVISIONED' &&
-      this.getActualStatus(installmentData) !== 'OVERDUE'
+      installmentData.status !== 'PROVISIONED'
     ) {
       throw new BadRequestException(
-        'Parcela deve estar pendente, vencida ou provisionada para ser paga.',
+        'Parcela deve estar pendente ou provisionada para ser paga.',
       );
     }
 
