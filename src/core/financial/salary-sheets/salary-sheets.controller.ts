@@ -27,7 +27,7 @@ import {
 } from './dto/update-salary.dto';
 import { GenerateSalarySheetsDto } from './dto/generate-salary-sheets.dto';
 
-const RESOURCE = 'salary-sheets';
+const RESOURCE = 'payroll';
 const GROUP = 'financial';
 
 @ApiTags('Folhas de pagamento')

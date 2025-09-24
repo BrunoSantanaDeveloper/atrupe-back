@@ -23,10 +23,10 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 
-const RESOURCE = 'salaries';
+const RESOURCE = 'payroll-setup';
 const GROUP = 'financial';
 
-@ApiTags('Configurações de salários')
+@ApiTags('Configurações de Folha de Pagamento')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)

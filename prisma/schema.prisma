@@ -602,7 +602,7 @@ model PayrollSetup {
   type            ItemType         @default(INCREASE)
   companyId       String
   employeeId      String
-  templateId      String? // Relacionamento com template
+  templateId      String
   createdAt       DateTime         @default(now())
   updatedAt       DateTime?        @updatedAt
   isSet           Boolean          @default(false)
