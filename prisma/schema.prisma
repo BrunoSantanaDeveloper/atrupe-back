@@ -792,10 +792,10 @@ model PaymentMethod {
   payableInstallment     PayableInstallment[]
   paymentCondition       PaymentCondition[]
   paymentConfigurations  PaymentConfiguration[]
-  company                Company                  @relation(fields: [companyId], references: [id])
   quotationInstallment   QuotationInstallment[]
   quotationPayment       QuotationPayment[]
   receivableInstallment  ReceivableInstallment[]
+  company                Company                  @relation(fields: [companyId], references: [id])
 
   @@map("payment_methods")
 }
