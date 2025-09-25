@@ -8,6 +8,7 @@ import {
   IsNumber,
   ValidateNested,
   IsUUID,
+  IsDateString,
 } from 'class-validator';
 import { ClientKind, ClientStatus } from '@prisma/client';
 import { IsCpf } from '../../../helpers/validators/cpf';
@@ -40,6 +41,7 @@ class GeneralInfoDto {
   category?: string;
 
   @IsOptional()
+  @ValidateIf((o) => o.categoryId && o.categoryId.trim() !== '')
   @IsUUID()
   categoryId?: string;
 
@@ -62,6 +64,10 @@ class GeneralInfoDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsDateString()
+  birthdate?: string;
 }
 
 class AddressDto {
@@ -206,6 +212,7 @@ export class PreRegisterClientDto {
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @IsOptional()
+  @ValidateIf((o) => o.categoryId && o.categoryId.trim() !== '')
   @IsUUID()
   categoryId?: string;
 

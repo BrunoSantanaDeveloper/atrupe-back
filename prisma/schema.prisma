@@ -242,7 +242,7 @@ model Client {
   rg                String?
   tradeName         String?
   type              ClientKind               @default(PERSON)
-  category          String?
+  category          String? // Verificar se pode ser removido, já que existe categoryId
   categoryId        String?
   blockClient       Boolean                  @default(false)
   maxValue          Float?
