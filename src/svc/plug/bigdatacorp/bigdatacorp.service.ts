@@ -15,7 +15,6 @@ export class BigdatacorpService {
   private readonly baseUrl = 'https://plataforma.bigdatacorp.com.br';
   private readonly timeout = 15000;
   private readonly retryAttempts = 3;
-  private readonly useMockData = this.config.get('plug.bigDataCorp.mockData');
 
   constructor(
     private readonly httpService: HttpService,
@@ -23,10 +22,6 @@ export class BigdatacorpService {
   ) {}
 
   async people(cpf: string): Promise<PeopleResponse> {
-    if (this.useMockData) {
-      return this.getMockPeopleData();
-    }
-
     const sanitizedCpf = cpf.replace(/[.-]/g, '');
     const body = {
       Datasets: 'basic_data',
@@ -77,78 +72,6 @@ export class BigdatacorpService {
   /***************************************************************************/
   // Private methods
   /***************************************************************************/
-
-  private getMockPeopleData(): PeopleResponse {
-    const mockResponse: PeopleResponseApi = {
-      Result: [
-        {
-          MatchKeys: 'doc{01234567890}',
-          BasicData: {
-            TaxIdNumber: '01234567890',
-            TaxIdCountry: 'BRAZIL',
-            AlternativeIdNumbers: {
-              SocialSecurityNumber: '12461176258',
-              'RG - GO': '0123456789',
-            },
-            ExtendedDocumentInformation: {
-              'RG - GO': {
-                DocumentNumber: '0123456789',
-                DocumentLast4Digits: '6789',
-                DocumentIssuingAgency: 'SSP',
-                DocumentIssuingStateCode: 'GO',
-                CreationDate: '2010-12-24T21:09:05.713Z',
-                LastUpdateDate: '2010-12-24T21:09:05.713Z',
-                Sources: ['MEI-RF'],
-              },
-            },
-            Name: 'SEBASTIANA M. DE CARVALHO',
-            Aliases: {
-              CommonName: 'SEBASTIANA CARVALHO',
-              StandardizedName: 'SEBASTIANA M CARVALHO',
-            },
-            Gender: 'F',
-            NameWordCount: 4,
-            NumberOfFullNameNamesakes: 2,
-            NameUniquenessScore: 1,
-            FirstNameUniquenessScore: 0.001,
-            FirstAndLastNameUniquenessScore: 0.001,
-            BirthDate: '1964-04-24T00:00:00Z',
-            CapturedBirthDateFromRFSource: '1964-04-24',
-            IsValidBirthDateInRFSource: true,
-            Age: 61,
-            ZodiacSign: 'TOURO',
-            ChineseSign: 'Dragon',
-            BirthCountry: 'BRASILEIRA',
-            MotherName: 'MARIA JOSE DA SILVA VALORES',
-            FatherName: '',
-            MaritalStatusData: {},
-            TaxIdStatus: 'SUSPENSA',
-            TaxIdOrigin: 'RECEITA FEDERAL',
-            TaxIdFiscalRegion: 'SP',
-            HasObitIndication: false,
-            TaxIdStatusDate: '2025-02-11T00:00:00Z',
-            TaxIdStatusRegistrationDate: '1990-11-10T00:00:00Z',
-            CreationDate: '2016-12-08T00:00:00Z',
-            LastUpdateDate: '2025-09-03T00:00:00Z',
-          },
-        },
-      ],
-      QueryId: '9e9633e0-43bb-4b16-837a-ac7f55d2d368',
-      ElapsedMilliseconds: 150,
-      QueryDate: '2025-09-16T19:44:52.7534614Z',
-      Status: {
-        basic_data: [
-          {
-            Code: 0,
-            Message: 'OK',
-          },
-        ],
-      },
-      Evidences: {},
-    };
-
-    return this.mapPeopleResponse(mockResponse);
-  }
 
   private validateApiResponse(response: PeopleResponseApi): void {
     // Verificar se há status de erro da API

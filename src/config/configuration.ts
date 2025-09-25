@@ -8,7 +8,6 @@ export default () => ({
     bigDataCorp: {
       baseUrl: process.env.BIG_DATA_CORP_BASE_URL,
       token: process.env.BIG_DATA_CORP_TOKEN,
-      mockData: process.env.BIG_DATA_CORP_USE_MOCK,
     },
   },
 });
