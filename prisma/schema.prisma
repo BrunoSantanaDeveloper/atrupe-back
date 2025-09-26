@@ -52,7 +52,7 @@ model Company {
   payables              Payable[]
   paymentConditions     PaymentCondition[]
   paymentConfigurations PaymentConfiguration[]
-  paymentMethods        PaymentMethod[]
+  paymentMethods        PaymentMethod[] // Remover
   Plan                  Plan[]
   products              Product[]
   reasons               Reasons[]
@@ -451,7 +451,7 @@ model ReceivableInstallment {
   installmentNumber    Int
   dueDate              DateTime
   amount               Float
-  paymentMethodId      String?
+  paymentMethodId      String? // Ver se vamos adicionar paymentConditionId. Verificar se o paymentMethod ainda faz sentido
   additionalFee        Float?
   status               PaymentStatus          @default(PENDING)
   paidDate             DateTime?
@@ -658,7 +658,7 @@ model CashRegister {
   bankAccountId  String
   description    String?
   notes          String?
-  cashControls   BankAccountCashControl[]
+  cashControls   BankAccountCashControl[] // Analisar pra que precisa dessas configurações da conta bancária aqui
   bankAccount    BankAccount              @relation(fields: [bankAccountId], references: [id])
   company        Company                  @relation(fields: [companyId], references: [id])
   transactions   Transaction[]
@@ -770,13 +770,13 @@ model BankAccountCashControl {
   paymentType                 BankAccountCashControlType @default(PAYSOFF)
   acceptIncomes               Boolean                    @default(true)
   incomeType                  BankAccountCashControlType @default(PAYSOFF)
-  paymentMethodId             String
+  paymentConditionId          String
   bankAccountId               String
   cashRegisterId              String?
   acceptMultipleCashRegisters Boolean                    @default(false)
   bankAccount                 BankAccount                @relation(fields: [bankAccountId], references: [id])
   cashRegister                CashRegister?              @relation(fields: [cashRegisterId], references: [id])
-  paymentMethod               PaymentMethod              @relation(fields: [paymentMethodId], references: [id])
+  paymentCondition            PaymentCondition           @relation(fields: [paymentConditionId], references: [id])
 
   @@map("bank_account_cash_controls")
 }
@@ -785,17 +785,16 @@ model PaymentMethod {
   id                     String                   @id @default(uuid())
   name                   String
   description            String?
-  companyId              String
+  companyId              String // Remover relacionamento, não vai mais ser por empresa, mas sim do sistema geral.
   createdAt              DateTime                 @default(now())
   isActive               Boolean                  @default(true)
-  bankAccountCashControl BankAccountCashControl[]
   payableInstallment     PayableInstallment[]
   paymentCondition       PaymentCondition[]
   paymentConfigurations  PaymentConfiguration[]
   quotationInstallment   QuotationInstallment[]
   quotationPayment       QuotationPayment[]
   receivableInstallment  ReceivableInstallment[]
-  company                Company                  @relation(fields: [companyId], references: [id])
+  company                Company                  @relation(fields: [companyId], references: [id]) // Remover
 
   @@map("payment_methods")
 }
@@ -822,6 +821,7 @@ model PaymentCondition {
   downPaymentConditions       QuotationPayment[]            @relation("downPaymentRelation")
   quotationPayments           QuotationPayment[]            @relation("defaultRelation")
   suppliers                   SupplierPaymentCondition[]
+  bankAccountCashControls     BankAccountCashControl[]      // Novo relacionamento
 
   @@map("payment_conditions")
 }
@@ -838,6 +838,7 @@ model Installment {
   @@map("installments")
 }
 
+// Analisar pra que serve PaymentConfiguration
 model PaymentConfiguration {
   id                 String           @id @default(uuid())
   paymentMethodId    String
@@ -991,8 +992,7 @@ model QuotationProductItem {
 model QuotationPayment {
   id                       String                 @id @default(uuid())
   quotationId              String                 @unique
-  downPayment              Float                  @default(0)
-  paymentMethodId          String?
+  paymentMethodId          String? // Pode ser removido se no front não precisar do input de forma de pagamento
   paymentConditionId       String?
   commissionId             String?                @unique
   totalValue               Float
@@ -1003,6 +1003,7 @@ model QuotationPayment {
   discountType             String                 @default("VALUE")
   type                     InvoiceType            @default(OTHER)
   billing                  BiilingKind            @default(ON_ORDER)
+  downPayment              Float                  @default(0)
   downPaymentConditionId   String?
   downPaymentDueDate       DateTime?
   downPaymentAdditionalFee Float                  @default(0)

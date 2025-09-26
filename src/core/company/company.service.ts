@@ -273,20 +273,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 5. Caixa (depende de métodos de pagamento)
-    {
-      name: 'cashbox',
-      logMessage: 'Creating Cashbox...',
-      createMethod: (companyId: string) =>
-        this.applyBaseCashboxToCompany(companyId),
-      checkMethod: async (companyId: string) => {
-        const existing = await this.prisma.bankAccount.findFirst({
-          where: { companyId, name: 'Caixa Empresa' },
-        });
-        return existing !== null;
-      },
-    },
-    // 6. Condições de pagamento (depende de métodos de pagamento)
+    // 5. Condições de pagamento (depende de métodos de pagamento)
     {
       name: 'payment-conditions',
       logMessage: 'Creating Payment conditions...',
@@ -297,6 +284,19 @@ export class CompanyService {
           where: { companyId },
         });
         return existing.length > 0;
+      },
+    },
+    // 6. Caixa (depende de condições de pagamento)
+    {
+      name: 'cashbox',
+      logMessage: 'Creating Cashbox...',
+      createMethod: (companyId: string) =>
+        this.applyBaseCashboxToCompany(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.bankAccount.findFirst({
+          where: { companyId, name: 'Caixa Empresa' },
+        });
+        return existing !== null;
       },
     },
     // 7. Naturezas (independente)
@@ -657,7 +657,7 @@ export class CompanyService {
     const data = {
       name: general?.name,
       legalName: general?.legalName,
-      cnpj: general?.cnpj.replace(/\D/g, ''),
+      cnpj: general?.cnpj ? general.cnpj.replace(/\D/g, '') : undefined,
       email: general?.email,
       phone: general?.phone,
       mobile: general?.mobile,
@@ -851,16 +851,16 @@ export class CompanyService {
       },
     });
 
-    const paymentMethods = await this.prisma.paymentMethod.findMany({
+    const paymentConditions = await this.prisma.paymentCondition.findMany({
       where: { companyId },
     });
 
-    for (const method of paymentMethods) {
+    for (const condition of paymentConditions) {
       await this.prisma.bankAccountCashControl.create({
         data: {
           bankAccountId: bankAccount.id,
           cashRegisterId: null,
-          paymentMethodId: method.id,
+          paymentConditionId: condition.id,
           acceptPayments: true,
           acceptIncomes: true,
           acceptMultipleCashRegisters: false,

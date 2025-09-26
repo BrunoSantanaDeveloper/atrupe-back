@@ -217,9 +217,20 @@ export class ConditionService {
 
   async remove(id: string) {
     try {
-      return await this.prisma.paymentCondition.update({
-        where: { id },
-        data: { isActive: false },
+      return await this.prisma.$transaction(async (tx) => {
+        const updatedCondition = await tx.paymentCondition.update({
+          where: { id },
+          data: { isActive: false },
+        });
+
+        // Remover controles de caixa associados à condição desativada
+        await tx.bankAccountCashControl.deleteMany({
+          where: {
+            paymentConditionId: updatedCondition.id,
+          },
+        });
+
+        return updatedCondition;
       });
     } catch (error) {
       console.error(error);

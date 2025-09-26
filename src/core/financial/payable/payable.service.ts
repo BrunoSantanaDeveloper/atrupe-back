@@ -512,7 +512,9 @@ export class PayableService {
     const bankAccountData = await this.prisma.bankAccountCashControl.findFirst({
       where: {
         bankAccountId: bankAccountId,
-        paymentMethodId: paymentMethodId,
+        paymentCondition: {
+          paymentMethodId: paymentMethodId,
+        },
       },
     });
 

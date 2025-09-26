@@ -60,13 +60,13 @@ export class BankAccountCashControlDto {
   })
   incomeType: BankAccountCashControlType;
 
-  @IsOptional()
+  @IsNotEmpty()
   @IsUUID()
   @ApiProperty({
-    description: 'ID do método de pagamento associado',
+    description: 'ID da condição de pagamento associada',
     example: '123e4567-e89b-12d3-a456-426614174002',
   })
-  paymentMethodId: string;
+  paymentConditionId: string;
 }
 
 export class CreateBankAccountDto {

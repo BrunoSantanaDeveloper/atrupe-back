@@ -96,16 +96,22 @@ export class AccountService {
             },
             bankAccountCashControl: {
               include: {
-                paymentMethod: {
+                paymentCondition: {
                   select: {
                     id: true,
                     name: true,
-                    description: true,
+                    paymentMethod: {
+                      select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                      },
+                    },
                   },
                 },
               },
               orderBy: {
-                paymentMethod: {
+                paymentCondition: {
                   name: 'asc',
                 },
               },
@@ -127,7 +133,7 @@ export class AccountService {
           take: +filter.limit || 10,
           skip: ((+filter.page || 1) - 1) * +filter.limit,
         }),
-        this.prisma.paymentMethod.findMany({
+        this.prisma.paymentCondition.findMany({
           where: {
             companyId: filter.companyId,
             isActive: true,
@@ -135,30 +141,36 @@ export class AccountService {
           select: {
             id: true,
             name: true,
-            description: true,
+            paymentMethod: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+              },
+            },
           },
         }),
       ]);
 
       const mappedData = data.map((account) => {
-        const existingPaymentMethodIds = account.bankAccountCashControl.map(
-          (control) => control.paymentMethod.id,
+        const existingPaymentConditionIds = account.bankAccountCashControl.map(
+          (control) => control.paymentCondition.id,
         );
 
-        const missingPaymentMethods = allPaymentMethods.filter(
-          (method) => !existingPaymentMethodIds.includes(method.id),
+        const missingPaymentConditions = allPaymentMethods.filter(
+          (condition) => !existingPaymentConditionIds.includes(condition.id),
         );
 
         const updatedBankAccountCashControl = [
           ...account.bankAccountCashControl.map((control) => ({
             ...control,
-            paymentMethod: {
-              ...control.paymentMethod,
+            paymentCondition: {
+              ...control.paymentCondition,
             },
           })),
-          ...missingPaymentMethods.map((method) => ({
-            paymentMethodId: method.id,
-            paymentMethod: method,
+          ...missingPaymentConditions.map((condition) => ({
+            paymentConditionId: condition.id,
+            paymentCondition: condition,
           })),
         ];
 
@@ -237,7 +249,7 @@ export class AccountService {
                       paymentType: item.paymentType,
                       acceptIncomes: item.acceptIncomes,
                       incomeType: item.incomeType,
-                      paymentMethodId: item.paymentMethodId,
+                      paymentConditionId: item.paymentConditionId,
                     },
                   }),
                 ),
@@ -252,7 +264,7 @@ export class AccountService {
                   paymentType: item.paymentType,
                   acceptIncomes: item.acceptIncomes,
                   incomeType: item.incomeType,
-                  paymentMethodId: item.paymentMethodId,
+                  paymentConditionId: item.paymentConditionId,
                   bankAccountId: accountId,
                 })),
               });

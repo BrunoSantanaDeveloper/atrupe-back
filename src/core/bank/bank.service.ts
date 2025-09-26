@@ -33,8 +33,8 @@ export class BankService {
           some: {
             bankAccountCashControl: {
               some: {
-                paymentMethod: {
-                  id: paymentMethod,
+                paymentCondition: {
+                  paymentMethodId: paymentMethod,
                 },
               },
             },

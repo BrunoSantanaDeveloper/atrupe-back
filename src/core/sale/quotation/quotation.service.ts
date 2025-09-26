@@ -2375,11 +2375,16 @@ export class QuotationService {
         where: {
           companyId,
           isActive: true,
-          bankAccountCashControl: {
+          paymentCondition: {
             some: {
-              acceptIncomes: true,
-              bankAccount: {
-                isActive: true,
+              isActive: true,
+              bankAccountCashControls: {
+                some: {
+                  acceptIncomes: true,
+                  bankAccount: {
+                    isActive: true,
+                  },
+                },
               },
             },
           },

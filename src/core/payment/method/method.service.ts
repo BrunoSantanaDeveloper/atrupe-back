@@ -21,12 +21,17 @@ export class MethodService {
     const where: Prisma.PaymentMethodWhereInput = {
       companyId,
       isActive: true,
-      bankAccountCashControl: {
+      paymentCondition: {
         some: {
-          ...(typePayment === 'RECEIVABLE' && { acceptIncomes: true }),
-          ...(typePayment === 'PAYABLE' && { acceptPayments: true }),
-          bankAccount: {
-            isActive: true,
+          isActive: true,
+          bankAccountCashControls: {
+            some: {
+              ...(typePayment === 'RECEIVABLE' && { acceptIncomes: true }),
+              ...(typePayment === 'PAYABLE' && { acceptPayments: true }),
+              bankAccount: {
+                isActive: true,
+              },
+            },
           },
         },
       },
@@ -135,18 +140,12 @@ export class MethodService {
   async remove(id: string) {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const updatedMethod = await tx.paymentMethod.update({
+        await tx.paymentMethod.update({
           where: {
             id,
           },
           data: {
             isActive: false,
-          },
-        });
-
-        await tx.bankAccountCashControl.deleteMany({
-          where: {
-            paymentMethodId: updatedMethod.id,
           },
         });
 
