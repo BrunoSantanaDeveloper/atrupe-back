@@ -373,21 +373,19 @@ export class OrderService {
                       },
                     },
                   },
-                  paymentMethod: {
-                    select: {
-                      id: true,
-                      name: true,
-                    },
-                  },
                   paymentCondition: {
-                    select: {
-                      id: true,
-                      name: true,
+                    include: {
+                      paymentMethod: {
+                        select: {
+                          id: true,
+                          name: true,
+                        },
+                      },
                     },
                   },
                   quotationInstallment: {
                     include: {
-                      paymentMethod: true,
+                      paymentCondition: true,
                       payableInstallment: true,
                       receivableInstallment: true,
                     },
@@ -584,12 +582,6 @@ export class OrderService {
                         quotation.quotationPayment.downPaymentConditionId,
                     }
                   : null,
-              paymentMethod: quotation.quotationPayment.paymentMethod
-                ? {
-                    id: quotation.quotationPayment.paymentMethod.id,
-                    name: quotation.quotationPayment.paymentMethod.name,
-                  }
-                : null,
               paymentCondition: quotation.quotationPayment.paymentCondition
                 ? {
                     id: quotation.quotationPayment.paymentCondition.id,
@@ -623,7 +615,7 @@ export class OrderService {
                         id: installment.id,
                         installmentNumber: index + 1,
                         dueDate: installment.dueDate,
-                        paymentMethodId: installment.paymentMethodId,
+                        paymentConditionId: installment.paymentConditionId,
                         additionalFee: installment.additionalFee,
                         amount: installment.value,
                       }),
@@ -767,7 +759,7 @@ function buildFinancialTableData(client, quotationPayment, deliveryInfo) {
     paymentInstallments.push({
       id: index + 1,
       company: client.name,
-      method: installment.paymentMethod?.name || 'Unknown',
+      method: installment.paymentCondition?.name || 'Unknown',
       installmentNumber: index + 1,
       installmentTotal: quotationInstallment.length,
       status: installmentStatus,

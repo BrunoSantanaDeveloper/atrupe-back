@@ -121,6 +121,19 @@ export class QuotationService {
         },
       });
 
+      // Find a default payment condition for the company
+      const defaultPaymentCondition =
+        await this.prisma.paymentCondition.findFirst({
+          where: {
+            companyId: createQuotationDto.companyId,
+            isActive: true,
+          },
+        });
+
+      if (!defaultPaymentCondition) {
+        throw new Error('No payment condition found for company');
+      }
+
       await this.prisma.quotationPayment.create({
         data: {
           quotation: {
@@ -128,6 +141,9 @@ export class QuotationService {
           },
           billing: series.billing,
           totalValue: 0,
+          paymentCondition: {
+            connect: { id: defaultPaymentCondition.id },
+          },
         },
       });
       return newQuotation;
@@ -769,6 +785,11 @@ export class QuotationService {
             tag: true,
             series: true,
             client: true,
+            order: {
+              select: {
+                id: true,
+              },
+            },
           },
           take: Number(dto.limit),
           skip: (Number(dto.page) - 1) * Number(dto.limit),
@@ -949,16 +970,10 @@ export class QuotationService {
               mainAdditionalFee: true,
               additionalFeeType: true,
 
-              paymentMethod: {
-                select: {
-                  id: true,
-                  name: true, // Forma de pagamento
-                },
-              },
               paymentCondition: {
                 select: {
                   id: true,
-                  name: true, // Condição de pagamento
+                  name: true,
                 },
               },
               totalValue: true,
@@ -981,7 +996,7 @@ export class QuotationService {
               },
               quotationInstallment: {
                 include: {
-                  paymentMethod: true,
+                  paymentCondition: true,
                 },
               },
             },
@@ -1161,12 +1176,6 @@ export class QuotationService {
                     }
                   : null,
 
-              paymentMethod: quotation.quotationPayment.paymentMethod
-                ? {
-                    id: quotation.quotationPayment.paymentMethod.id,
-                    name: quotation.quotationPayment.paymentMethod.name,
-                  }
-                : null,
               paymentCondition: quotation.quotationPayment.paymentCondition
                 ? {
                     id: quotation.quotationPayment.paymentCondition.id,
@@ -1200,7 +1209,7 @@ export class QuotationService {
                         id: installment.id,
                         installmentNumber: index + 1,
                         dueDate: installment.dueDate,
-                        paymentMethodId: installment.paymentMethodId,
+                        paymentConditionId: installment.paymentConditionId,
                         additionalFee: installment.additionalFee,
                         amount: installment.value,
                       }),
@@ -1354,7 +1363,6 @@ export class QuotationService {
       const newQuo = await this.prisma.quotationPayment.create({
         data: {
           quotationId: newQuotation.id,
-          paymentMethodId: quotation.quotationPayment.paymentMethodId,
           paymentConditionId: quotation.quotationPayment.paymentConditionId,
           totalValue: quotation.quotationPayment.totalValue,
           finalValue: quotation.quotationPayment.finalValue,
@@ -2121,18 +2129,22 @@ export class QuotationService {
               paymentCondition: {
                 select: {
                   name: true,
-                },
-              },
-              paymentMethod: {
-                select: {
-                  name: true,
+                  paymentMethod: {
+                    select: {
+                      name: true,
+                    },
+                  },
                 },
               },
               quotationInstallment: {
                 include: {
-                  paymentMethod: {
-                    select: {
-                      name: true,
+                  paymentCondition: {
+                    include: {
+                      paymentMethod: {
+                        select: {
+                          name: true,
+                        },
+                      },
                     },
                   },
                 },
@@ -2328,7 +2340,7 @@ export class QuotationService {
         payment: quotation.quotationPayment
           ? {
               condition: quotation.quotationPayment.paymentCondition?.name,
-              method: quotation.quotationPayment.paymentMethod?.name,
+              method: quotation.quotationPayment.paymentCondition?.name,
               description: quotation.quotationPayment.description,
               totalInstallments:
                 quotation.quotationPayment.quotationInstallment?.length || 0,
@@ -2337,7 +2349,7 @@ export class QuotationService {
                   number: installment.id,
                   dueDate: installment.dueDate,
                   value: installment.value,
-                  paymentMethod: installment.paymentMethod?.name,
+                  paymentMethod: installment.paymentCondition?.name,
                 }),
               ),
               availablePaymentMethods: await this.getAvailablePaymentMethods(
@@ -2443,7 +2455,7 @@ export class QuotationService {
           client.paymentConditions.forEach((cpc) => {
             // Verificar se a condição está ativa
             if (cpc.isActive) {
-              const method = cpc.paymentCondition.paymentMethod;
+              const method = cpc.paymentCondition;
               if (!clientPaymentMethods.has(method.id)) {
                 clientPaymentMethods.set(method.id, {
                   name: method.name,
@@ -2760,6 +2772,20 @@ export class QuotationService {
             },
           });
 
+          // Find a default payment condition for the company
+          const defaultPaymentCondition =
+            await this.prisma.paymentCondition.findFirst({
+              where: {
+                companyId,
+                isActive: true,
+              },
+            });
+
+          if (!defaultPaymentCondition) {
+            console.warn(`No payment condition found for company ${companyId}`);
+            continue;
+          }
+
           const quotationPayment = await this.prisma.quotationPayment.create({
             data: {
               quotationId: quotation.id,
@@ -2775,13 +2801,14 @@ export class QuotationService {
               installmentQty: 1,
               minInstallmentQty: 1,
               maxInstallmentQty: 1,
+              paymentConditionId: defaultPaymentCondition.id,
             },
           });
 
           await this.prisma.quotationInstallment.create({
             data: {
               quotationPaymentId: quotationPayment.id,
-              paymentMethodId: defaultPaymentMethod.id,
+              paymentConditionId: defaultPaymentMethod.id,
               dueDate: quotation.dueDate,
               value:
                 (parseFloat(row.venda_valor_final) -

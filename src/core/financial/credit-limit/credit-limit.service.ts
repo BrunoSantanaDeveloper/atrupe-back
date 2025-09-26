@@ -15,11 +15,7 @@ export class CreditLimitService {
       include: {
         paymentConditions: {
           include: {
-            paymentCondition: {
-              include: {
-                paymentMethod: true,
-              },
-            },
+            paymentCondition: true,
           },
         },
       },
@@ -33,7 +29,7 @@ export class CreditLimitService {
       where: {
         companyId: companyId,
       },
-      include: { paymentMethod: true },
+      select: { id: true, name: true },
     });
 
     const formatCreditLimit = (type: string) => {
@@ -53,7 +49,7 @@ export class CreditLimitService {
 
       // Mapear as condições associadas
       creditLimit.paymentConditions.forEach((pc) => {
-        const method = pc.paymentCondition.paymentMethod;
+        const method = pc.paymentCondition;
         if (!paymentMethodsMap.has(method.id)) {
           paymentMethodsMap.set(method.id, {
             id: method.id,
@@ -70,15 +66,14 @@ export class CreditLimitService {
       // Adicionar condições não associadas
       allPaymentConditions.forEach((condition) => {
         if (!associatedConditionIds.has(condition.id)) {
-          const method = condition.paymentMethod;
-          if (!paymentMethodsMap.has(method.id)) {
-            paymentMethodsMap.set(method.id, {
-              id: method.id,
-              name: method.name,
+          if (!paymentMethodsMap.has(condition.id)) {
+            paymentMethodsMap.set(condition.id, {
+              id: condition.id,
+              name: condition.name,
               conditions: [],
             });
           }
-          paymentMethodsMap.get(method.id).conditions.push({
+          paymentMethodsMap.get(condition.id).conditions.push({
             id: condition.id,
             name: condition.name,
             isActive: false,

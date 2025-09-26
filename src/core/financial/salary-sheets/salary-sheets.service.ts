@@ -354,7 +354,7 @@ export class SalarySheetsService {
                   },
                 },
               },
-              paymentMethod: true,
+              paymentCondition: true,
               bankAccount: {
                 include: {
                   bank: true,
@@ -441,12 +441,6 @@ export class SalarySheetsService {
                     status: installment.status,
                     paidDate: installment.paidDate,
                     paidAmount: installment.paidAmount,
-                    paymentMethod: installment.paymentMethod
-                      ? {
-                          id: installment.paymentMethod.id,
-                          name: installment.paymentMethod.name,
-                        }
-                      : null,
                     bankAccount: installment.bankAccount
                       ? {
                           id: installment.bankAccount.id,
@@ -541,12 +535,6 @@ export class SalarySheetsService {
               id: installment.id,
               installmentNumber: installment.installmentNumber || 1,
               status: installment.status || 'UNKNOWN',
-              paymentMethod: installment.paymentMethod
-                ? {
-                    id: installment.paymentMethod.id,
-                    name: installment.paymentMethod.name,
-                  }
-                : null,
               value: installment.amount || 0,
               additionalFee: installment.additionalFee || 0,
               dueDate: installment.dueDate || null,
@@ -1136,7 +1124,7 @@ export class SalarySheetsService {
         include: {
           installments: {
             include: {
-              paymentMethod: true,
+              paymentCondition: true,
             },
             orderBy: {
               installmentNumber: 'asc',
@@ -1192,12 +1180,6 @@ export class SalarySheetsService {
             status: installment.status,
             paidDate: installment.paidDate,
             paidAmount: installment.paidAmount,
-            paymentMethod: installment.paymentMethod
-              ? {
-                  id: installment.paymentMethod.id,
-                  name: installment.paymentMethod.name,
-                }
-              : null,
           })),
         })),
       };
@@ -1274,7 +1256,7 @@ export class SalarySheetsService {
         include: {
           installments: {
             include: {
-              paymentMethod: true,
+              paymentCondition: true,
             },
             orderBy: {
               installmentNumber: 'asc',
@@ -1335,12 +1317,6 @@ export class SalarySheetsService {
                     status: installment.status,
                     paidDate: installment.paidDate,
                     paidAmount: installment.paidAmount,
-                    paymentMethod: installment.paymentMethod
-                      ? {
-                          id: installment.paymentMethod.id,
-                          name: installment.paymentMethod.name,
-                        }
-                      : null,
                   }),
                 ),
               },

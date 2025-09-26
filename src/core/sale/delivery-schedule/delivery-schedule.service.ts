@@ -739,7 +739,9 @@ export class DeliveryScheduleService {
           select: {
             id: true,
             status: true,
-            paymentMethod: { select: { id: true, name: true } },
+            paymentCondition: {
+              select: { id: true, name: true },
+            },
             amount: true,
             paidAmount: true,
             additionalFee: true,
@@ -776,10 +778,6 @@ export class DeliveryScheduleService {
         receivable.installments.map((installment) => ({
           id: installment.id,
           status: installment.status,
-          paymentMethod: {
-            id: installment.paymentMethod?.id || null,
-            name: installment.paymentMethod?.name || null,
-          },
           value: installment.amount || 0,
           additionalFee: installment.additionalFee || 0,
           dueDate: installment.dueDate,

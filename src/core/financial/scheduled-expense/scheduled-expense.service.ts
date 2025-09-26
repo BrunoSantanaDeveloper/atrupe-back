@@ -704,7 +704,7 @@ export class ScheduledExpenseService {
             dueDate: new Date(launchData.dueDate),
             amount: launchData.amount,
             additionalFee: 0,
-            paymentMethodId: null,
+            paymentConditionId: null,
             status: 'PENDING',
             paidDate: null,
           },

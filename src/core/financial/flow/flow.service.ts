@@ -68,8 +68,8 @@ export class FlowService {
 
     // Filtro de método de pagamento
     if (paymentMethodId) {
-      filtersReceivables.paymentMethodId = paymentMethodId;
-      filtersPayables.paymentMethodId = paymentMethodId;
+      filtersReceivables.paymentConditionId = paymentMethodId;
+      filtersPayables.paymentConditionId = paymentMethodId;
     }
 
     if (bankAccountId) {
@@ -219,8 +219,8 @@ export class FlowService {
 
     // Filtro de método de pagamento
     if (paymentMethodId) {
-      filtersReceivables.paymentMethodId = paymentMethodId;
-      filtersPayables.paymentMethodId = paymentMethodId;
+      filtersReceivables.paymentConditionId = paymentMethodId;
+      filtersPayables.paymentConditionId = paymentMethodId;
     }
 
     if (bankAccountId) {
@@ -285,7 +285,7 @@ export class FlowService {
                 subCategory: true,
                 installments: {
                   include: {
-                    paymentMethod: true,
+                    paymentCondition: true,
                     bankAccount: { include: { bank: true } },
                   },
                   orderBy: { [dateType]: 'desc' },
@@ -310,7 +310,7 @@ export class FlowService {
               subCategory: true,
               installments: {
                 include: {
-                  paymentMethod: true,
+                  paymentCondition: true,
                   bankAccount: { include: { bank: true } },
                 },
                 orderBy: { [dateType]: 'desc' },
@@ -374,12 +374,6 @@ export class FlowService {
                       id: currentInst.id,
                       installmentNumber: currentInst.installmentNumber || 1,
                       status: this.getActualStatus(currentInst),
-                      paymentMethod: currentInst.paymentMethod
-                        ? {
-                            id: currentInst.paymentMethod.id,
-                            name: currentInst.paymentMethod.name,
-                          }
-                        : null,
                       bankAccount: currentInst.bankAccount
                         ? {
                             id: currentInst.bankAccount.id,
@@ -481,12 +475,6 @@ export class FlowService {
                       id: currentInst.id,
                       installmentNumber: currentInst.installmentNumber || 1,
                       status: this.getActualStatus(currentInst),
-                      paymentMethod: currentInst.paymentMethod
-                        ? {
-                            id: currentInst.paymentMethod.id,
-                            name: currentInst.paymentMethod.name,
-                          }
-                        : null,
                       bankAccount: currentInst.bankAccount
                         ? {
                             id: currentInst.bankAccount.id,
@@ -646,7 +634,7 @@ export class FlowService {
         subCategory: true,
         installments: {
           include: {
-            paymentMethod: true,
+            paymentCondition: true,
             bankAccount: { include: { bank: true } },
           },
           orderBy: { dueDate: 'asc' },
@@ -671,7 +659,7 @@ export class FlowService {
         subCategory: true,
         installments: {
           include: {
-            paymentMethod: true,
+            paymentCondition: true,
             bankAccount: { include: { bank: true } },
           },
           orderBy: { dueDate: 'asc' },
@@ -693,14 +681,14 @@ export class FlowService {
           receivable: {
             companyId: companyId,
           },
-          paymentMethodId: {
+          paymentConditionId: {
             not: null,
           },
         },
         select: {
-          paymentMethod: true,
+          paymentCondition: true,
         },
-        distinct: ['paymentMethodId'],
+        distinct: ['paymentConditionId'],
       });
 
     const payablePaymentMethods = await this.prisma.payableInstallment.findMany(
@@ -709,20 +697,24 @@ export class FlowService {
           payable: {
             companyId: companyId,
           },
-          paymentMethodId: {
+          paymentConditionId: {
             not: null,
           },
         },
         select: {
-          paymentMethod: true,
+          paymentCondition: true,
         },
-        distinct: ['paymentMethodId'],
+        distinct: ['paymentConditionId'],
       },
     );
 
     const allPaymentMethods = [
-      ...receivablePaymentMethods.map((item) => item.paymentMethod),
-      ...payablePaymentMethods.map((item) => item.paymentMethod),
+      ...receivablePaymentMethods
+        .map((item) => item.paymentCondition)
+        .filter(Boolean),
+      ...payablePaymentMethods
+        .map((item) => item.paymentCondition)
+        .filter(Boolean),
     ];
 
     const uniquePaymentMethods = allPaymentMethods.filter(

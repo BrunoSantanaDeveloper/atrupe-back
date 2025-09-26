@@ -18,7 +18,6 @@ export class PaymentService {
     return this.prisma.quotationPayment.findUnique({
       where: { quotationId: id },
       include: {
-        paymentMethod: true,
         paymentCondition: true,
         commission: true,
         quotationInstallment: true,
@@ -192,7 +191,9 @@ export class PaymentService {
                     dueDate: new Date(installmentData.dueDate),
                     additionalFee,
                     value: installmentData.amount,
-                    ...(paymentMethodId && { paymentMethodId }),
+                    ...(paymentConditionId && {
+                      paymentConditionId: paymentConditionId,
+                    }),
                   },
                 });
               }

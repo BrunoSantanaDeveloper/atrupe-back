@@ -451,7 +451,7 @@ model ReceivableInstallment {
   installmentNumber    Int
   dueDate              DateTime
   amount               Float
-  paymentMethodId      String? // Ver se vamos adicionar paymentConditionId. Verificar se o paymentMethod ainda faz sentido
+  paymentConditionId   String? // Ver se vamos adicionar paymentConditionId. Verificar se o paymentMethod ainda faz sentido
   additionalFee        Float?
   status               PaymentStatus          @default(PENDING)
   paidDate             DateTime?
@@ -463,7 +463,7 @@ model ReceivableInstallment {
   provisionDate        DateTime?
   quotationInstallment QuotationInstallment[]
   bankAccount          BankAccount?           @relation(fields: [bankAccountId], references: [id])
-  paymentMethod        PaymentMethod?         @relation(fields: [paymentMethodId], references: [id])
+  paymentCondition     PaymentCondition?      @relation(fields: [paymentConditionId], references: [id])
   receivable           Receivable             @relation(fields: [receivableId], references: [id])
   transactions         Transaction?           @relation(fields: [transactionId], references: [id])
 
@@ -531,7 +531,7 @@ model PayableInstallment {
   installmentNumber    Int
   dueDate              DateTime
   amount               Float
-  paymentMethodId      String?
+  paymentConditionId   String?
   additionalFee        Float?
   status               PaymentStatus          @default(PENDING)
   paidDate             DateTime?
@@ -543,7 +543,7 @@ model PayableInstallment {
   provisionDate        DateTime?
   bankAccount          BankAccount?           @relation(fields: [bankAccountId], references: [id])
   payable              Payable                @relation(fields: [payableId], references: [id])
-  paymentMethod        PaymentMethod?         @relation(fields: [paymentMethodId], references: [id])
+  paymentCondition     PaymentCondition?      @relation(fields: [paymentConditionId], references: [id])
   transactions         Transaction?           @relation(fields: [transactionId], references: [id])
   quotationInstallment QuotationInstallment[]
 
@@ -788,12 +788,7 @@ model PaymentMethod {
   companyId              String // Remover relacionamento, não vai mais ser por empresa, mas sim do sistema geral.
   createdAt              DateTime                 @default(now())
   isActive               Boolean                  @default(true)
-  payableInstallment     PayableInstallment[]
   paymentCondition       PaymentCondition[]
-  paymentConfigurations  PaymentConfiguration[]
-  quotationInstallment   QuotationInstallment[]
-  quotationPayment       QuotationPayment[]
-  receivableInstallment  ReceivableInstallment[]
   company                Company                  @relation(fields: [companyId], references: [id]) // Remover
 
   @@map("payment_methods")
@@ -821,7 +816,10 @@ model PaymentCondition {
   downPaymentConditions       QuotationPayment[]            @relation("downPaymentRelation")
   quotationPayments           QuotationPayment[]            @relation("defaultRelation")
   suppliers                   SupplierPaymentCondition[]
-  bankAccountCashControls     BankAccountCashControl[]      // Novo relacionamento
+  bankAccountCashControls     BankAccountCashControl[]
+  payableInstallments         PayableInstallment[]
+  receivableInstallments      ReceivableInstallment[]
+  quotationInstallments       QuotationInstallment[]
 
   @@map("payment_conditions")
 }
@@ -841,13 +839,11 @@ model Installment {
 // Analisar pra que serve PaymentConfiguration
 model PaymentConfiguration {
   id                 String           @id @default(uuid())
-  paymentMethodId    String
   paymentConditionId String
   companyId          String
   createdAt          DateTime         @default(now())
   company            Company          @relation(fields: [companyId], references: [id])
   paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
-  paymentMethod      PaymentMethod    @relation(fields: [paymentMethodId], references: [id])
 
   @@map("payment_configurations")
 }
@@ -992,8 +988,7 @@ model QuotationProductItem {
 model QuotationPayment {
   id                       String                 @id @default(uuid())
   quotationId              String                 @unique
-  paymentMethodId          String? // Pode ser removido se no front não precisar do input de forma de pagamento
-  paymentConditionId       String?
+  paymentConditionId       String
   commissionId             String?                @unique
   totalValue               Float
   description              String?
@@ -1017,8 +1012,7 @@ model QuotationPayment {
   quotationInstallment     QuotationInstallment[]
   commission               Commission?            @relation(fields: [commissionId], references: [id])
   downPaymentCondition     PaymentCondition?      @relation("downPaymentRelation", fields: [downPaymentConditionId], references: [id])
-  paymentCondition         PaymentCondition?      @relation("defaultRelation", fields: [paymentConditionId], references: [id])
-  paymentMethod            PaymentMethod?         @relation(fields: [paymentMethodId], references: [id])
+  paymentCondition         PaymentCondition       @relation("defaultRelation", fields: [paymentConditionId], references: [id])
   quotation                Quotation              @relation(fields: [quotationId], references: [id])
 
   @@map("quotation_payments")
@@ -1045,7 +1039,7 @@ model QuotationInstallment {
   id                      String                 @id @default(uuid())
   quotationPaymentId      String
   dueDate                 DateTime
-  paymentMethodId         String
+  paymentConditionId      String
   value                   Float
   createdAt               DateTime               @default(now())
   updatedAt               DateTime               @updatedAt
@@ -1053,7 +1047,7 @@ model QuotationInstallment {
   receivableInstallmentId String?
   additionalFee           Float                  @default(0)
   payableInstallment      PayableInstallment?    @relation(fields: [payableInstallmentId], references: [id])
-  paymentMethod           PaymentMethod          @relation(fields: [paymentMethodId], references: [id])
+  paymentCondition        PaymentCondition       @relation(fields: [paymentConditionId], references: [id])
   quotationPayment        QuotationPayment       @relation(fields: [quotationPaymentId], references: [id])
   receivableInstallment   ReceivableInstallment? @relation(fields: [receivableInstallmentId], references: [id])
 

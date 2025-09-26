@@ -172,7 +172,9 @@ export class ReceivableService {
                 id: true,
                 installmentNumber: true,
                 status: true,
-                paymentMethod: { select: { id: true, name: true } },
+                paymentCondition: {
+                  select: { id: true, name: true },
+                },
                 amount: true,
                 paidAmount: true,
                 additionalFee: true,
@@ -248,10 +250,6 @@ export class ReceivableService {
                     id: currentInst.id,
                     installmentNumber: currentInst.installmentNumber || 1,
                     status: this.getActualStatus(currentInst),
-                    paymentMethod: {
-                      id: currentInst.paymentMethod?.id || null,
-                      name: currentInst.paymentMethod?.name || null,
-                    },
                     value: currentInst.amount || 0,
                     additionalFee: currentInst.additionalFee || 0,
                     dueDate: currentInst.dueDate || null,
@@ -285,7 +283,7 @@ export class ReceivableService {
         subCategory: true,
         installments: {
           include: {
-            paymentMethod: true,
+            paymentCondition: true,
             bankAccount: { include: { bank: true } },
           },
           orderBy: { installmentNumber: 'asc' },
@@ -496,7 +494,9 @@ export class ReceivableService {
       where: {
         bankAccountId: bankAccountId,
         paymentCondition: {
-          paymentMethodId: paymentMethodId,
+          paymentMethod: {
+            id: paymentMethodId,
+          },
         },
       },
     });
@@ -536,7 +536,7 @@ export class ReceivableService {
           status:
             bankAccountData.incomeType === 'PROVISION' ? 'PROVISIONED' : 'PAID',
           paidAmount: amount,
-          paymentMethodId,
+          paymentConditionId: paymentMethodId,
           bankAccountId,
         };
         if (bankAccountData.incomeType === 'PROVISION') {
@@ -601,7 +601,7 @@ export class ReceivableService {
                 paidAmount: Math.abs(difference),
                 status: differenceStatus,
                 [dateField]: new Date(paidDate),
-                paymentMethodId,
+                paymentConditionId: paymentMethodId,
                 bankAccountId,
                 payableId: newPayable.id,
               },
@@ -682,7 +682,7 @@ export class ReceivableService {
                   paidAmount: Math.abs(difference),
                   status: differenceStatus,
                   [dateField]: new Date(paidDate),
-                  paymentMethodId,
+                  paymentConditionId: paymentMethodId,
                   bankAccountId,
                   receivableId: newReceivable.id,
                 },
@@ -758,7 +758,7 @@ export class ReceivableService {
         await this.prisma.receivableInstallment.findUnique({
           where: { id: installmentId },
           include: {
-            paymentMethod: true,
+            paymentCondition: true,
             bankAccount: { include: { bank: true } },
           },
         });
@@ -773,7 +773,6 @@ export class ReceivableService {
           paidAmount: updatedInstallment.paidAmount,
           dueDate: updatedInstallment.dueDate,
           paidDate: updatedInstallment.paidDate,
-          paymentMethod: updatedInstallment.paymentMethod,
           bankAccount: updatedInstallment.bankAccount,
         },
       };
@@ -905,7 +904,7 @@ export class ReceivableService {
         });
 
         // Reverte o status da parcela e remove os dados de pagamento/provisionamento
-        // MANTÉM paymentMethodId e bankAccountId para facilitar novo pagamento
+        // MANTÉM paymentConditionId e bankAccountId para facilitar novo pagamento
         await tx.receivableInstallment.update({
           where: { id: installmentId },
           data: {
@@ -913,7 +912,7 @@ export class ReceivableService {
             paidAmount: null,
             paidDate: null,
             provisionDate: null,
-            // paymentMethodId e bankAccountId são mantidos
+            // paymentConditionId e bankAccountId são mantidos
           },
         });
 
@@ -968,7 +967,7 @@ export class ReceivableService {
         await this.prisma.receivableInstallment.findUnique({
           where: { id: installmentId },
           include: {
-            paymentMethod: true,
+            paymentCondition: true,
             bankAccount: { include: { bank: true } },
           },
         });
@@ -983,7 +982,6 @@ export class ReceivableService {
           paidAmount: updatedInstallment.paidAmount,
           dueDate: updatedInstallment.dueDate,
           paidDate: updatedInstallment.paidDate,
-          paymentMethod: updatedInstallment.paymentMethod,
           bankAccount: updatedInstallment.bankAccount,
         },
       };
@@ -1035,7 +1033,7 @@ export class ReceivableService {
                   amount: installmentDto.amount,
                   dueDate: new Date(installmentDto.dueDate),
                   status: 'PENDING',
-                  paymentMethodId: installmentDto.paymentMethodId,
+                  paymentConditionId: installmentDto.paymentMethodId,
                   installmentNumber: installments.indexOf(installmentDto) + 1,
                 },
               });

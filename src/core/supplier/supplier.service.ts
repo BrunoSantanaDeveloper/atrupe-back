@@ -226,11 +226,7 @@ export class SupplierService {
         },
         paymentConditions: {
           include: {
-            paymentCondition: {
-              include: {
-                paymentMethod: true,
-              },
-            },
+            paymentCondition: true,
           },
         },
       },
@@ -242,8 +238,9 @@ export class SupplierService {
 
     // Obter todas as condições de pagamento
     const allPaymentConditions = await this.prisma.paymentCondition.findMany({
-      include: {
-        paymentMethod: true,
+      select: {
+        id: true,
+        name: true,
       },
     });
 
@@ -256,7 +253,7 @@ export class SupplierService {
     );
 
     supplier.paymentConditions.forEach((pc) => {
-      const method = pc.paymentCondition.paymentMethod;
+      const method = pc.paymentCondition;
       if (!paymentMethodsMap.has(method.id)) {
         paymentMethodsMap.set(method.id, {
           id: method.id,
@@ -274,15 +271,14 @@ export class SupplierService {
     // Adicionar condições de pagamento não associadas
     allPaymentConditions.forEach((condition) => {
       if (!associatedConditionIds.has(condition.id)) {
-        const method = condition.paymentMethod;
-        if (!paymentMethodsMap.has(method.id)) {
-          paymentMethodsMap.set(method.id, {
-            id: method.id,
-            name: method.name,
+        if (!paymentMethodsMap.has(condition.id)) {
+          paymentMethodsMap.set(condition.id, {
+            id: condition.id,
+            name: condition.name,
             conditions: [],
           });
         }
-        paymentMethodsMap.get(method.id).conditions.push({
+        paymentMethodsMap.get(condition.id).conditions.push({
           id: condition.id,
           name: condition.name,
           isActive: false,
