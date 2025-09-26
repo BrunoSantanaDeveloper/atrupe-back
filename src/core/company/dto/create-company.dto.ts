@@ -1,6 +1,6 @@
 import { IsOptional, ValidateNested, IsBoolean } from 'class-validator';
 import { IsCnpj } from '../../../helpers/validators/cnpj';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateAddressDto {
@@ -79,6 +79,9 @@ export class CreateGeneralInfoDto {
   legalName: string;
 
   @IsOptional()
+  @Transform(({ value }) =>
+    !value || value.trim() === '' ? undefined : value.trim(),
+  )
   @IsCnpj()
   @ApiProperty({
     description: 'CNPJ da empresa',
