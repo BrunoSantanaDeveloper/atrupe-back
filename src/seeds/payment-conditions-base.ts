@@ -7,7 +7,7 @@ export const BASE_PAYMENT_CONDITIONS = [
     minInstallments: 1,
     dayInterval: 0,
     receivingType: 'CASH',
-    paymentMethodName: 'Pix',
+    paymentMethodCode: 'PIX',
   },
   {
     name: 'Dinheiro',
@@ -17,7 +17,7 @@ export const BASE_PAYMENT_CONDITIONS = [
     minInstallments: 1,
     dayInterval: 0,
     receivingType: 'CASH',
-    paymentMethodName: 'Dinheiro',
+    paymentMethodCode: 'DIN',
   },
   {
     name: 'Cartão de Crédito',
@@ -27,7 +27,7 @@ export const BASE_PAYMENT_CONDITIONS = [
     minInstallments: 1,
     dayInterval: 30,
     receivingType: 'INSTALLMENTS',
-    paymentMethodName: 'Cartão de Crédito',
+    paymentMethodCode: 'CRD',
   },
   {
     name: 'Cartão de Débito',
@@ -37,7 +37,7 @@ export const BASE_PAYMENT_CONDITIONS = [
     minInstallments: 1,
     dayInterval: 30,
     receivingType: 'INSTALLMENTS',
-    paymentMethodName: 'Cartão de Débito',
+    paymentMethodCode: 'DEB',
   },
   {
     name: 'Boleto',
@@ -47,6 +47,6 @@ export const BASE_PAYMENT_CONDITIONS = [
     minInstallments: 1,
     dayInterval: 0,
     receivingType: 'CASH',
-    paymentMethodName: 'Boleto Bancário',
+    paymentMethodCode: 'BOL',
   },
 ];

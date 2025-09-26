@@ -867,12 +867,12 @@ export class CompanyService {
 
     for (const conditionSeed of BASE_PAYMENT_CONDITIONS) {
       const paymentMethod = paymentMethods.find(
-        (pm) => pm.name === conditionSeed.paymentMethodName,
+        (pm) => pm.code === conditionSeed.paymentMethodCode,
       );
 
       if (!paymentMethod) {
         console.warn(
-          `Forma de pagamento '${conditionSeed.paymentMethodName}' não encontrada na empresa ${companyId}`,
+          `Método de pagamento com código '${conditionSeed.paymentMethodCode}' não encontrado no sistema`,
         );
         continue;
       }
