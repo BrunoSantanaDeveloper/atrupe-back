@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateMethodDto {
@@ -10,20 +10,11 @@ export class CreateMethodDto {
   })
   name: string;
 
-  @IsOptional()
+  @IsNotEmpty()
   @IsString()
   @ApiProperty({
-    description: 'Descrição do método de pagamento',
-    example: 'Pagamento via cartão de crédito',
-    required: false,
+    description: 'Código do método de pagamento',
+    example: 'CRD',
   })
-  description: string;
-
-  // @IsNotEmpty()
-  // @IsUUID()
-  // @ApiProperty({
-  //   description: 'ID da empresa associada ao método de pagamento',
-  //   example: '123e4567-e89b-12d3-a456-426614174000',
-  // })
-  companyId: string;
+  code: string;
 }

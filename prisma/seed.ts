@@ -5,6 +5,7 @@ import { BASE_FEATURES } from '../src/seeds/features-base';
 import { BASE_LIMITS } from '../src/seeds/limits-base';
 import { PLAN_CONFIGURATIONS } from '../src/seeds/plans-complete';
 import { ACADEMY_ITEMS } from '../src/seeds/academy-base';
+import { BASE_PAYMENT_METHODS } from '../src/seeds/payment-methods-base';
 
 const prisma = new PrismaClient();
 
@@ -76,6 +77,36 @@ async function createDefaultLimits() {
       console.log(`Limit criado/atualizado: ${limit.name}`);
     } catch (error) {
       console.error(`Erro ao criar limit ${limit.name}:`, error);
+    }
+  }
+}
+
+async function createDefaultPaymentMethods() {
+  console.log('Criando métodos de pagamento padrão...');
+
+  for (const method of BASE_PAYMENT_METHODS) {
+    try {
+      const existingMethod = await prisma.paymentMethod.findFirst({
+        where: { code: method.code },
+      });
+
+      if (!existingMethod) {
+        await prisma.paymentMethod.create({
+          data: {
+            name: method.name,
+            code: method.code,
+          },
+        });
+        console.log(
+          `Método de pagamento criado: ${method.name} (${method.code})`,
+        );
+      } else {
+        console.log(
+          `Método de pagamento já existe: ${method.name} (${method.code})`,
+        );
+      }
+    } catch (error) {
+      console.error(`Erro ao criar método de pagamento ${method.name}:`, error);
     }
   }
 }
@@ -208,6 +239,9 @@ async function main() {
 
   // Criar bancos padrão
   await createDefaultBanks();
+
+  // Criar métodos de pagamento padrão
+  await createDefaultPaymentMethods();
 
   // Criar features, limits e planos
   await createDefaultFeatures();

@@ -2382,13 +2382,13 @@ export class QuotationService {
     clientId?: string,
   ): Promise<string[]> {
     try {
-      // Buscar métodos de pagamento ativos da empresa para recebíveis
+      // Buscar métodos de pagamento ativos para recebíveis da empresa
       const paymentMethods = await this.prisma.paymentMethod.findMany({
         where: {
-          companyId,
           isActive: true,
           paymentCondition: {
             some: {
+              companyId,
               isActive: true,
               bankAccountCashControls: {
                 some: {
@@ -2629,9 +2629,17 @@ export class QuotationService {
         throw new BadRequestException('Admin seller not found for the company');
       }
 
-      // Get all payment methods for the company
+      // Get all payment methods available for the company through payment conditions
       const paymentMethods = await this.prisma.paymentMethod.findMany({
-        where: { companyId },
+        where: {
+          isActive: true,
+          paymentCondition: {
+            some: {
+              companyId,
+              isActive: true,
+            },
+          },
+        },
         take: 1,
       });
 

@@ -104,7 +104,6 @@ export class AccountService {
                       select: {
                         id: true,
                         name: true,
-                        description: true,
                       },
                     },
                   },
@@ -145,7 +144,6 @@ export class AccountService {
               select: {
                 id: true,
                 name: true,
-                description: true,
               },
             },
           },

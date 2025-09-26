@@ -19,10 +19,10 @@ export class MethodService {
       throw new BadRequestException('Invalid type');
     }
     const where: Prisma.PaymentMethodWhereInput = {
-      companyId,
       isActive: true,
       paymentCondition: {
         some: {
+          companyId,
           isActive: true,
           bankAccountCashControls: {
             some: {
@@ -47,7 +47,18 @@ export class MethodService {
       throw new Error('Error on find payment method');
     }
   }
-  create(dto: CreateMethodDto) {
+  async create(dto: CreateMethodDto) {
+    // Verificar se o código já existe
+    const existingMethod = await this.prisma.paymentMethod.findFirst({
+      where: { code: dto.code },
+    });
+
+    if (existingMethod) {
+      throw new BadRequestException(
+        `Payment method with code '${dto.code}' already exists`,
+      );
+    }
+
     return this.prisma.paymentMethod.create({
       data: {
         ...dto,
@@ -58,7 +69,6 @@ export class MethodService {
   async findAll(filter) {
     try {
       const where = {
-        companyId: filter.companyId,
         isActive: true,
       };
 
@@ -92,7 +102,31 @@ export class MethodService {
     });
   }
 
-  update(id: string, updateMethodDto: UpdateMethodDto) {
+  findByCode(code: string) {
+    return this.prisma.paymentMethod.findUnique({
+      where: {
+        code,
+      },
+    });
+  }
+
+  async update(id: string, updateMethodDto: UpdateMethodDto) {
+    // Se estiver tentando atualizar o código, verificar se não há conflito
+    if (updateMethodDto.code) {
+      const existingMethod = await this.prisma.paymentMethod.findFirst({
+        where: {
+          code: updateMethodDto.code,
+          id: { not: id }, // Excluir o próprio registro
+        },
+      });
+
+      if (existingMethod) {
+        throw new BadRequestException(
+          `Payment method with code '${updateMethodDto.code}' already exists`,
+        );
+      }
+    }
+
     return this.prisma.paymentMethod.update({
       where: {
         id,
@@ -107,10 +141,10 @@ export class MethodService {
     try {
       const methods = await this.prisma.paymentMethod.findMany({
         where: {
-          companyId,
           isActive: true,
           paymentCondition: {
             some: {
+              companyId,
               isActive: true,
             },
           },
@@ -120,6 +154,7 @@ export class MethodService {
             select: {
               paymentCondition: {
                 where: {
+                  companyId,
                   isActive: true,
                 },
               },

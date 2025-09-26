@@ -260,20 +260,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 4. Métodos de pagamento (base para caixa e condições)
-    {
-      name: 'payment-methods',
-      logMessage: 'Creating Payment methods...',
-      createMethod: (companyId: string) =>
-        this.createDefaultPaymentMethods(companyId),
-      checkMethod: async (companyId: string) => {
-        const existing = await this.prisma.paymentMethod.findMany({
-          where: { companyId },
-        });
-        return existing.length > 0;
-      },
-    },
-    // 5. Condições de pagamento (depende de métodos de pagamento)
+    // 4. Condições de pagamento (depende de métodos de pagamento)
     {
       name: 'payment-conditions',
       logMessage: 'Creating Payment conditions...',
@@ -286,7 +273,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 6. Caixa (depende de condições de pagamento)
+    // 5. Caixa (depende de condições de pagamento)
     {
       name: 'cashbox',
       logMessage: 'Creating Cashbox...',
@@ -299,7 +286,7 @@ export class CompanyService {
         return existing !== null;
       },
     },
-    // 7. Naturezas (independente)
+    // 6. Naturezas (independente)
     {
       name: 'natures',
       logMessage: 'Creating Base natures...',
@@ -312,7 +299,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 8. Roles/Cargos (depende de setores)
+    // 7. Roles/Cargos (depende de setores)
     {
       name: 'roles',
       logMessage: 'Creating Base roles...',
@@ -325,7 +312,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 9. Categorias de produto (depende de setores)
+    // 8. Categorias de produto (depende de setores)
     {
       name: 'product-categories',
       logMessage: 'Creating Product categories...',
@@ -338,7 +325,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 10. Produtos (depende de setores e categorias de produto)
+    // 9. Produtos (depende de setores e categorias de produto)
     {
       name: 'products',
       logMessage: 'Creating Products...',
@@ -351,7 +338,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 11. Categorias de cliente/fornecedor (independente)
+    // 10. Categorias de cliente/fornecedor (independente)
     {
       name: 'client-categories',
       logMessage: 'Creating Client categories...',
@@ -364,7 +351,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 12. Cliente (depende de categorias de cliente)
+    // 11. Cliente (depende de categorias de cliente)
     {
       name: 'client',
       logMessage: 'Creating Client...',
@@ -376,7 +363,7 @@ export class CompanyService {
         return clients.length > 0;
       },
     },
-    // 13. Despesas programadas (independente, mas pode depender de naturezas)
+    // 12. Despesas programadas (independente, mas pode depender de naturezas)
     {
       name: 'scheduled-expenses',
       logMessage: 'Creating Scheduled expenses...',
@@ -389,7 +376,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 14. Motivos e status (independente)
+    // 13. Motivos e status (independente)
     {
       name: 'reasons-status',
       logMessage: 'Creating Reasons and status...',
@@ -402,7 +389,7 @@ export class CompanyService {
         return existing.length > 0;
       },
     },
-    // 15. Template base de salário
+    // 14. Template base de salário
     {
       name: 'base-salary-template',
       logMessage: 'Creating base salary template...',
@@ -873,7 +860,7 @@ export class CompanyService {
 
   async applyBasePaymentConditionsToCompany(companyId: string) {
     const paymentMethods = await this.prisma.paymentMethod.findMany({
-      where: { companyId },
+      where: { isActive: true },
     });
 
     const createdConditions = [];
@@ -1167,24 +1154,6 @@ export class CompanyService {
       console.error(error);
       throw error;
     }
-  }
-
-  private async createDefaultPaymentMethods(companyId: string) {
-    const paymentMethods = [
-      { name: 'Depósito Bancário', description: 'DEP', companyId: companyId },
-      { name: 'Dinheiro', description: 'DIN', companyId: companyId },
-      { name: 'Link de Pagamento', description: 'LKP', companyId: companyId },
-      { name: 'Pix', description: 'PIX', companyId: companyId },
-      { name: 'Cartão de Crédito', description: 'CRD', companyId: companyId },
-      { name: 'Boleto Bancário', description: 'BOL', companyId: companyId },
-      { name: 'Cartão de Débito', description: 'DEB', companyId: companyId },
-      { name: 'Cheque', description: 'CHQ', companyId: companyId },
-      { name: 'Permuta', description: 'PER', companyId: companyId },
-      { name: 'Pagamento Mensal', description: 'PGM', companyId: companyId },
-    ];
-    await this.prisma.paymentMethod.createMany({
-      data: paymentMethods,
-    });
   }
 
   private async createDefaultProductCategories(companyId: string) {

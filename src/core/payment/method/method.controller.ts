@@ -44,8 +44,7 @@ export class MethodController {
     status: 201,
     description: 'Método de pagamento criado com sucesso.',
   })
-  create(@Req() req, @Body() createMethodDto: CreateMethodDto) {
-    createMethodDto.companyId = req.user.companyId;
+  create(@Body() createMethodDto: CreateMethodDto) {
     return this.methodService.create(createMethodDto);
   }
 
@@ -86,9 +85,27 @@ export class MethodController {
     description: 'Lista de métodos de pagamento retornada com sucesso.',
     isArray: true,
   })
-  async findAll(@Query() filter: BaseFilterDTO, @Req() req) {
-    filter.companyId = req.user.companyId;
+  async findAll(@Query() filter: BaseFilterDTO) {
     return await this.methodService.findAll(filter);
+  }
+
+  @Get('by-code/:code')
+  @ApiOperation({ summary: 'Obtém um método de pagamento pelo código' })
+  @ApiParam({
+    name: 'code',
+    required: true,
+    description: 'Código do método de pagamento',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Método de pagamento retornado com sucesso.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Método de pagamento não encontrado.',
+  })
+  findByCode(@Param('code') code: string) {
+    return this.methodService.findByCode(code);
   }
 
   @Get(':id')

@@ -438,7 +438,7 @@ CREATE TABLE "receivable_installments" (
     "installmentNumber" INTEGER NOT NULL,
     "dueDate" TIMESTAMP(3) NOT NULL,
     "amount" DOUBLE PRECISION NOT NULL,
-    "paymentMethodId" TEXT,
+    "paymentConditionId" TEXT,
     "additionalFee" DOUBLE PRECISION,
     "status" "PaymentStatus" NOT NULL DEFAULT 'PENDING',
     "paidDate" TIMESTAMP(3),
@@ -504,7 +504,7 @@ CREATE TABLE "payable_installments" (
     "installmentNumber" INTEGER NOT NULL,
     "dueDate" TIMESTAMP(3) NOT NULL,
     "amount" DOUBLE PRECISION NOT NULL,
-    "paymentMethodId" TEXT,
+    "paymentConditionId" TEXT,
     "additionalFee" DOUBLE PRECISION,
     "status" "PaymentStatus" NOT NULL DEFAULT 'PENDING',
     "paidDate" TIMESTAMP(3),
@@ -714,7 +714,7 @@ CREATE TABLE "bank_account_cash_controls" (
     "paymentType" "BankAccountCashControlType" NOT NULL DEFAULT 'PAYSOFF',
     "acceptIncomes" BOOLEAN NOT NULL DEFAULT true,
     "incomeType" "BankAccountCashControlType" NOT NULL DEFAULT 'PAYSOFF',
-    "paymentMethodId" TEXT NOT NULL,
+    "paymentConditionId" TEXT NOT NULL,
     "bankAccountId" TEXT NOT NULL,
     "cashRegisterId" TEXT,
     "acceptMultipleCashRegisters" BOOLEAN NOT NULL DEFAULT false,
@@ -726,8 +726,7 @@ CREATE TABLE "bank_account_cash_controls" (
 CREATE TABLE "payment_methods" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
-    "description" TEXT,
-    "companyId" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
 
@@ -767,7 +766,6 @@ CREATE TABLE "installments" (
 -- CreateTable
 CREATE TABLE "payment_configurations" (
     "id" TEXT NOT NULL,
-    "paymentMethodId" TEXT NOT NULL,
     "paymentConditionId" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -893,9 +891,7 @@ CREATE TABLE "quotation_product_items" (
 CREATE TABLE "quotation_payments" (
     "id" TEXT NOT NULL,
     "quotationId" TEXT NOT NULL,
-    "downPayment" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "paymentMethodId" TEXT,
-    "paymentConditionId" TEXT,
+    "paymentConditionId" TEXT NOT NULL,
     "commissionId" TEXT,
     "totalValue" DOUBLE PRECISION NOT NULL,
     "description" TEXT,
@@ -905,6 +901,7 @@ CREATE TABLE "quotation_payments" (
     "discountType" TEXT NOT NULL DEFAULT 'VALUE',
     "type" "InvoiceType" NOT NULL DEFAULT 'OTHER',
     "billing" "BiilingKind" NOT NULL DEFAULT 'ON_ORDER',
+    "downPayment" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "downPaymentConditionId" TEXT,
     "downPaymentDueDate" TIMESTAMP(3),
     "downPaymentAdditionalFee" DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -939,7 +936,7 @@ CREATE TABLE "quotation_installments" (
     "id" TEXT NOT NULL,
     "quotationPaymentId" TEXT NOT NULL,
     "dueDate" TIMESTAMP(3) NOT NULL,
-    "paymentMethodId" TEXT NOT NULL,
+    "paymentConditionId" TEXT NOT NULL,
     "value" DOUBLE PRECISION NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -1361,6 +1358,9 @@ CREATE UNIQUE INDEX "payroll_template_name_type_companyId_key" ON "payroll_templ
 CREATE UNIQUE INDEX "invoices_number_companyId_key" ON "invoices"("number", "companyId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "payment_methods_code_key" ON "payment_methods"("code");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "sale_series_code_companyId_key" ON "sale_series"("code", "companyId");
 
 -- CreateIndex
@@ -1568,7 +1568,7 @@ ALTER TABLE "receivables" ADD CONSTRAINT "receivables_supplierId_fkey" FOREIGN K
 ALTER TABLE "receivable_installments" ADD CONSTRAINT "receivable_installments_bankAccountId_fkey" FOREIGN KEY ("bankAccountId") REFERENCES "bank_accounts"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "receivable_installments" ADD CONSTRAINT "receivable_installments_paymentMethodId_fkey" FOREIGN KEY ("paymentMethodId") REFERENCES "payment_methods"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "receivable_installments" ADD CONSTRAINT "receivable_installments_paymentConditionId_fkey" FOREIGN KEY ("paymentConditionId") REFERENCES "payment_conditions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "receivable_installments" ADD CONSTRAINT "receivable_installments_receivableId_fkey" FOREIGN KEY ("receivableId") REFERENCES "receivables"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -1610,7 +1610,7 @@ ALTER TABLE "payable_installments" ADD CONSTRAINT "payable_installments_bankAcco
 ALTER TABLE "payable_installments" ADD CONSTRAINT "payable_installments_payableId_fkey" FOREIGN KEY ("payableId") REFERENCES "payables"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "payable_installments" ADD CONSTRAINT "payable_installments_paymentMethodId_fkey" FOREIGN KEY ("paymentMethodId") REFERENCES "payment_methods"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "payable_installments" ADD CONSTRAINT "payable_installments_paymentConditionId_fkey" FOREIGN KEY ("paymentConditionId") REFERENCES "payment_conditions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "payable_installments" ADD CONSTRAINT "payable_installments_transactionId_fkey" FOREIGN KEY ("transactionId") REFERENCES "transactions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -1685,10 +1685,7 @@ ALTER TABLE "bank_account_cash_controls" ADD CONSTRAINT "bank_account_cash_contr
 ALTER TABLE "bank_account_cash_controls" ADD CONSTRAINT "bank_account_cash_controls_cashRegisterId_fkey" FOREIGN KEY ("cashRegisterId") REFERENCES "cash_registers"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "bank_account_cash_controls" ADD CONSTRAINT "bank_account_cash_controls_paymentMethodId_fkey" FOREIGN KEY ("paymentMethodId") REFERENCES "payment_methods"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "payment_methods" ADD CONSTRAINT "payment_methods_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "bank_account_cash_controls" ADD CONSTRAINT "bank_account_cash_controls_paymentConditionId_fkey" FOREIGN KEY ("paymentConditionId") REFERENCES "payment_conditions"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "payment_conditions" ADD CONSTRAINT "payment_conditions_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -1704,9 +1701,6 @@ ALTER TABLE "payment_configurations" ADD CONSTRAINT "payment_configurations_comp
 
 -- AddForeignKey
 ALTER TABLE "payment_configurations" ADD CONSTRAINT "payment_configurations_paymentConditionId_fkey" FOREIGN KEY ("paymentConditionId") REFERENCES "payment_conditions"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "payment_configurations" ADD CONSTRAINT "payment_configurations_paymentMethodId_fkey" FOREIGN KEY ("paymentMethodId") REFERENCES "payment_methods"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "sale_series" ADD CONSTRAINT "sale_series_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -1760,10 +1754,7 @@ ALTER TABLE "quotation_payments" ADD CONSTRAINT "quotation_payments_commissionId
 ALTER TABLE "quotation_payments" ADD CONSTRAINT "quotation_payments_downPaymentConditionId_fkey" FOREIGN KEY ("downPaymentConditionId") REFERENCES "payment_conditions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "quotation_payments" ADD CONSTRAINT "quotation_payments_paymentConditionId_fkey" FOREIGN KEY ("paymentConditionId") REFERENCES "payment_conditions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "quotation_payments" ADD CONSTRAINT "quotation_payments_paymentMethodId_fkey" FOREIGN KEY ("paymentMethodId") REFERENCES "payment_methods"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "quotation_payments" ADD CONSTRAINT "quotation_payments_paymentConditionId_fkey" FOREIGN KEY ("paymentConditionId") REFERENCES "payment_conditions"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "quotation_payments" ADD CONSTRAINT "quotation_payments_quotationId_fkey" FOREIGN KEY ("quotationId") REFERENCES "quotations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -1778,7 +1769,7 @@ ALTER TABLE "commissions" ADD CONSTRAINT "commissions_supplierId_fkey" FOREIGN K
 ALTER TABLE "quotation_installments" ADD CONSTRAINT "quotation_installments_payableInstallmentId_fkey" FOREIGN KEY ("payableInstallmentId") REFERENCES "payable_installments"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "quotation_installments" ADD CONSTRAINT "quotation_installments_paymentMethodId_fkey" FOREIGN KEY ("paymentMethodId") REFERENCES "payment_methods"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "quotation_installments" ADD CONSTRAINT "quotation_installments_paymentConditionId_fkey" FOREIGN KEY ("paymentConditionId") REFERENCES "payment_conditions"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "quotation_installments" ADD CONSTRAINT "quotation_installments_quotationPaymentId_fkey" FOREIGN KEY ("quotationPaymentId") REFERENCES "quotation_payments"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

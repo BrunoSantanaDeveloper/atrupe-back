@@ -52,7 +52,6 @@ model Company {
   payables              Payable[]
   paymentConditions     PaymentCondition[]
   paymentConfigurations PaymentConfiguration[]
-  paymentMethods        PaymentMethod[] // Remover
   Plan                  Plan[]
   products              Product[]
   reasons               Reasons[]
@@ -784,12 +783,10 @@ model BankAccountCashControl {
 model PaymentMethod {
   id                     String                   @id @default(uuid())
   name                   String
-  description            String?
-  companyId              String // Remover relacionamento, não vai mais ser por empresa, mas sim do sistema geral.
+  code                   String                   @unique
   createdAt              DateTime                 @default(now())
   isActive               Boolean                  @default(true)
   paymentCondition       PaymentCondition[]
-  company                Company                  @relation(fields: [companyId], references: [id]) // Remover
 
   @@map("payment_methods")
 }
