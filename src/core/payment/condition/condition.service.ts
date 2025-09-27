@@ -141,32 +141,42 @@ export class ConditionService {
         skip: (page - 1) * limit,
       });
 
-      const groupedByPaymentMethod = conditions.reduce((acc, condition) => {
-        const { paymentMethod } = condition;
-        if (!acc[paymentMethod.id]) {
-          acc[paymentMethod.id] = {
-            paymentMethod,
-            conditions: [],
-          };
-        }
-        acc[paymentMethod.id].conditions.push(condition);
-        return acc;
-      }, {});
+      // Se grouped for true, agrupa por método de pagamento
+      if (filter.grouped === true) {
+        const groupedByPaymentMethod = conditions.reduce((acc, condition) => {
+          const { paymentMethod } = condition;
+          if (!acc[paymentMethod.id]) {
+            acc[paymentMethod.id] = {
+              paymentMethod,
+              conditions: [],
+            };
+          }
+          acc[paymentMethod.id].conditions.push(condition);
+          return acc;
+        }, {});
 
-      const result = Object.values(groupedByPaymentMethod).map(
-        (group: any) => ({
-          paymentMethod: group.paymentMethod,
-          conditions: group.conditions.map(({ company, ...rest }) => ({
-            ...rest,
-            company,
-          })),
-        }),
-      );
+        const result = Object.values(groupedByPaymentMethod).map(
+          (group: any) => ({
+            paymentMethod: group.paymentMethod,
+            conditions: group.conditions.map(({ company, ...rest }) => ({
+              ...rest,
+              company,
+            })),
+          }),
+        );
 
+        return {
+          total,
+          lastPage,
+          data: result,
+        };
+      }
+
+      // Comportamento padrão: lista simples
       return {
         total,
         lastPage,
-        data: result,
+        data: conditions,
       };
     } catch (error) {
       console.error(error);

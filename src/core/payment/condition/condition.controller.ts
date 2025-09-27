@@ -50,7 +50,11 @@ export class ConditionController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Obtém a lista de todas as condições de pagamento' })
+  @ApiOperation({
+    summary: 'Obtém a lista de todas as condições de pagamento',
+    description:
+      'Lista condições de pagamento com opção de agrupamento por método. Por padrão, retorna lista simples (grouped=false). Use grouped=true para agrupar por método.',
+  })
   @ApiResponse({
     status: 200,
     description: 'Lista de condições de pagamento retornada com sucesso.',
