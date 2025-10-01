@@ -25,7 +25,7 @@ export class BankService {
       },
     });
   }
-  findAllByMethod(paymentMethod: string) {
+  findAllByCondition(paymentCondition: string) {
     return this.prisma.bank.findMany({
       where: {
         isActive: true,
@@ -34,9 +34,7 @@ export class BankService {
             bankAccountCashControl: {
               some: {
                 paymentCondition: {
-                  paymentMethod: {
-                    id: paymentMethod,
-                  },
+                  id: paymentCondition,
                 },
               },
             },

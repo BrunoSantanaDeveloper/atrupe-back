@@ -68,15 +68,17 @@ export class BankController {
     return this.bankService.findAll();
   }
 
-  @Get('method/:paymentMethod')
-  @ApiOperation({ summary: 'Obtém a lista de todos os bancos' })
+  @Get('condition/:paymentCondition')
+  @ApiOperation({
+    summary: 'Obtém a lista de todos os bancos por condição de pagamento',
+  })
   @ApiResponse({
     status: 200,
     description: 'Lista de bancos retornada com sucesso.',
     isArray: true,
   })
-  findAllByMethod(@Param('paymentMethod') paymentMethod: string) {
-    return this.bankService.findAllByMethod(paymentMethod);
+  findAllByCondition(@Param('paymentCondition') paymentCondition: string) {
+    return this.bankService.findAllByCondition(paymentCondition);
   }
 
   //---------------------------------------------------------------------------------

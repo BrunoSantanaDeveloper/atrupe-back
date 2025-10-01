@@ -3,10 +3,55 @@ import { CreateConditionDto } from './dto/create-condition.dto';
 import { UpdateConditionDto } from './dto/update-condition.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { ConditionFilterDto } from './dto/filter.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class ConditionService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async findAvailable(companyId: string, type: string) {
+    if (!type) {
+      throw new BadRequestException('Type is required');
+    }
+    if (type !== 'receivable' && type !== 'payable') {
+      throw new BadRequestException('Invalid type');
+    }
+    const typePayment = type === 'receivable' ? 'RECEIVABLE' : 'PAYABLE';
+
+    const where: Prisma.PaymentConditionWhereInput = {
+      companyId,
+      isActive: true,
+      bankAccountCashControls: {
+        some: {
+          ...(typePayment === 'RECEIVABLE' && { acceptIncomes: true }),
+          ...(typePayment === 'PAYABLE' && { acceptPayments: true }),
+          bankAccount: {
+            isActive: true,
+          },
+        },
+      },
+    };
+
+    try {
+      const conditions = await this.prisma.paymentCondition.findMany({
+        where: where,
+        include: {
+          paymentMethod: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            },
+          },
+        },
+      });
+      return conditions;
+    } catch (error) {
+      console.error(error);
+      throw new Error('Error on find payment conditions');
+    }
+  }
+
   async findDownPayment(companyId: string) {
     try {
       const conditions = await this.prisma.paymentCondition.findMany({
@@ -71,6 +116,7 @@ export class ConditionService {
       throw new Error('Error fetching down payment conditions');
     }
   }
+
   async create(dto: CreateConditionDto) {
     try {
       const { installments, ...conditionData } = dto;

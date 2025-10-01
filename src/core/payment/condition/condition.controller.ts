@@ -49,6 +49,20 @@ export class ConditionController {
     return this.conditionService.create(createConditionDto);
   }
 
+  @Get('available/:type')
+  @ApiOperation({
+    summary: 'Obtém a lista de todas as condições de pagamento disponíveis',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de condições de pagamento retornada com sucesso.',
+    isArray: true,
+  })
+  async findAvailable(@Req() req, @Param('type') type: string) {
+    const companyId = req.user.companyId;
+    return await this.conditionService.findAvailable(companyId, type);
+  }
+
   @Get()
   @ApiOperation({
     summary: 'Obtém a lista de todas as condições de pagamento',
