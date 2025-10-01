@@ -62,14 +62,6 @@ export class MethodService {
     });
   }
 
-  findByCode(code: string) {
-    return this.prisma.paymentMethod.findUnique({
-      where: {
-        code,
-      },
-    });
-  }
-
   async update(id: string, updateMethodDto: UpdateMethodDto) {
     // Se estiver tentando atualizar o código, verificar se não há conflito
     if (updateMethodDto.code) {

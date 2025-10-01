@@ -58,25 +58,6 @@ export class MethodController {
     return await this.methodService.findAll(filter);
   }
 
-  @Get('by-code/:code')
-  @ApiOperation({ summary: 'Obtém um método de pagamento pelo código' })
-  @ApiParam({
-    name: 'code',
-    required: true,
-    description: 'Código do método de pagamento',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Método de pagamento retornado com sucesso.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Método de pagamento não encontrado.',
-  })
-  findByCode(@Param('code') code: string) {
-    return this.methodService.findByCode(code);
-  }
-
   @Get(':id')
   @ApiOperation({ summary: 'Obtém um método de pagamento pelo ID' })
   @ApiParam({
