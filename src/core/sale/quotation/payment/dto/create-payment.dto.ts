@@ -148,11 +148,6 @@ export class UpdatePaymentDto {
   @IsOptional()
   billing?: BiilingKind;
 
-  @ApiProperty({ description: 'ID do método de pagamento' })
-  @IsUUID()
-  @IsOptional()
-  paymentMethodId?: string;
-
   @ApiProperty({ description: 'ID da condição de pagamento' })
   @IsUUID()
   @IsOptional()
