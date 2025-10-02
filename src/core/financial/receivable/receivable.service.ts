@@ -494,9 +494,7 @@ export class ReceivableService {
       where: {
         bankAccountId: bankAccountId,
         paymentCondition: {
-          paymentMethod: {
-            id: paymentConditionId,
-          },
+          id: paymentConditionId,
         },
       },
     });
@@ -536,7 +534,7 @@ export class ReceivableService {
           status:
             bankAccountData.incomeType === 'PROVISION' ? 'PROVISIONED' : 'PAID',
           paidAmount: amount,
-          paymentConditionId: paymentConditionId,
+          paymentConditionId,
           bankAccountId,
         };
         if (bankAccountData.incomeType === 'PROVISION') {
@@ -601,7 +599,7 @@ export class ReceivableService {
                 paidAmount: Math.abs(difference),
                 status: differenceStatus,
                 [dateField]: new Date(paidDate),
-                paymentConditionId: paymentConditionId,
+                paymentConditionId,
                 bankAccountId,
                 payableId: newPayable.id,
               },
@@ -682,7 +680,7 @@ export class ReceivableService {
                   paidAmount: Math.abs(difference),
                   status: differenceStatus,
                   [dateField]: new Date(paidDate),
-                  paymentConditionId: paymentConditionId,
+                  paymentConditionId,
                   bankAccountId,
                   receivableId: newReceivable.id,
                 },

@@ -510,7 +510,9 @@ export class PayableService {
     const bankAccountData = await this.prisma.bankAccountCashControl.findFirst({
       where: {
         bankAccountId: bankAccountId,
-        paymentConditionId: paymentConditionId,
+        paymentCondition: {
+          id: paymentConditionId,
+        },
       },
     });
 
@@ -547,7 +549,7 @@ export class PayableService {
               ? 'PROVISIONED'
               : 'PAID',
           paidAmount: amount,
-          paymentConditionId: paymentConditionId,
+          paymentConditionId,
           bankAccountId,
         };
         if (bankAccountData.paymentType === 'PROVISION') {
@@ -693,7 +695,7 @@ export class PayableService {
                   paidAmount: Math.abs(difference),
                   status: differenceStatus,
                   [dateField]: new Date(paidDate),
-                  paymentConditionId: paymentConditionId,
+                  paymentConditionId,
                   bankAccountId,
                   receivableId: newReceivable.id,
                 },
