@@ -30,7 +30,7 @@ export class CreateReceivableInstallmentDto {
     example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
   })
   @IsUUID()
-  paymentMethodId: string;
+  paymentConditionId: string;
 
   @ApiPropertyOptional({
     description: 'Acréscimos na parcela (opcional)',
@@ -188,7 +188,7 @@ export class ReceivableInstallmentDto {
   })
   @IsUUID()
   @IsOptional()
-  paymentMethodId?: string;
+  paymentConditionId?: string;
 }
 
 export class UpdateReceivableInstallmentsDto {

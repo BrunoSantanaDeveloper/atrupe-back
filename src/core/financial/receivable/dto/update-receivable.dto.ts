@@ -99,7 +99,7 @@ export class PayInstallmentDto {
   })
   @IsUUID()
   @IsOptional()
-  paymentMethodId?: string;
+  paymentConditionId?: string;
 
   @ApiProperty({
     description: 'ID da conta de banco',

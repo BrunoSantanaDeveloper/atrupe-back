@@ -425,7 +425,7 @@ export class ReceivableService {
     payInstallmentDto: PayInstallmentDto,
   ) {
     const {
-      paymentMethodId,
+      paymentConditionId,
       bankAccountId,
       amount,
       paidDate,
@@ -495,7 +495,7 @@ export class ReceivableService {
         bankAccountId: bankAccountId,
         paymentCondition: {
           paymentMethod: {
-            id: paymentMethodId,
+            id: paymentConditionId,
           },
         },
       },
@@ -536,7 +536,7 @@ export class ReceivableService {
           status:
             bankAccountData.incomeType === 'PROVISION' ? 'PROVISIONED' : 'PAID',
           paidAmount: amount,
-          paymentConditionId: paymentMethodId,
+          paymentConditionId: paymentConditionId,
           bankAccountId,
         };
         if (bankAccountData.incomeType === 'PROVISION') {
@@ -601,7 +601,7 @@ export class ReceivableService {
                 paidAmount: Math.abs(difference),
                 status: differenceStatus,
                 [dateField]: new Date(paidDate),
-                paymentConditionId: paymentMethodId,
+                paymentConditionId: paymentConditionId,
                 bankAccountId,
                 payableId: newPayable.id,
               },
@@ -682,7 +682,7 @@ export class ReceivableService {
                   paidAmount: Math.abs(difference),
                   status: differenceStatus,
                   [dateField]: new Date(paidDate),
-                  paymentConditionId: paymentMethodId,
+                  paymentConditionId: paymentConditionId,
                   bankAccountId,
                   receivableId: newReceivable.id,
                 },
@@ -1033,7 +1033,7 @@ export class ReceivableService {
                   amount: installmentDto.amount,
                   dueDate: new Date(installmentDto.dueDate),
                   status: 'PENDING',
-                  paymentConditionId: installmentDto.paymentMethodId,
+                  paymentConditionId: installmentDto.paymentConditionId,
                   installmentNumber: installments.indexOf(installmentDto) + 1,
                 },
               });

@@ -442,7 +442,7 @@ export class PayableService {
     payInstallmentDto: PayInstallmentDto,
   ) {
     const {
-      paymentMethodId,
+      paymentConditionId,
       bankAccountId,
       amount,
       paidDate,
@@ -510,11 +510,7 @@ export class PayableService {
     const bankAccountData = await this.prisma.bankAccountCashControl.findFirst({
       where: {
         bankAccountId: bankAccountId,
-        paymentCondition: {
-          paymentMethod: {
-            id: paymentMethodId,
-          },
-        },
+        paymentConditionId: paymentConditionId,
       },
     });
 
@@ -551,7 +547,7 @@ export class PayableService {
               ? 'PROVISIONED'
               : 'PAID',
           paidAmount: amount,
-          paymentConditionId: paymentMethodId,
+          paymentConditionId: paymentConditionId,
           bankAccountId,
         };
         if (bankAccountData.paymentType === 'PROVISION') {
@@ -616,7 +612,7 @@ export class PayableService {
                 paidAmount: Math.abs(difference),
                 status: differenceStatus,
                 [dateField]: new Date(paidDate),
-                paymentConditionId: paymentMethodId,
+                paymentConditionId: paymentConditionId,
                 bankAccountId,
                 payableId: newPayable.id,
               },
@@ -697,7 +693,7 @@ export class PayableService {
                   paidAmount: Math.abs(difference),
                   status: differenceStatus,
                   [dateField]: new Date(paidDate),
-                  paymentConditionId: paymentMethodId,
+                  paymentConditionId: paymentConditionId,
                   bankAccountId,
                   receivableId: newReceivable.id,
                 },
@@ -1040,7 +1036,7 @@ export class PayableService {
                 amount: installmentDto.amount,
                 dueDate: new Date(installmentDto.dueDate),
                 status: 'PENDING',
-                paymentConditionId: installmentDto.paymentMethodId,
+                paymentConditionId: installmentDto.paymentConditionId,
                 installmentNumber: installments.indexOf(installmentDto) + 1,
               },
             });
