@@ -27,7 +27,7 @@ export class FlowService {
       startDate,
       endDate,
       status,
-      paymentMethodId,
+      paymentConditionId,
       bankAccountId,
       dateType = 'dueDate',
     } = filter;
@@ -66,10 +66,10 @@ export class FlowService {
       filtersPayables.status = status;
     }
 
-    // Filtro de método de pagamento
-    if (paymentMethodId) {
-      filtersReceivables.paymentConditionId = paymentMethodId;
-      filtersPayables.paymentConditionId = paymentMethodId;
+    // Filtro de condição de pagamento
+    if (paymentConditionId) {
+      filtersReceivables.paymentConditionId = paymentConditionId;
+      filtersPayables.paymentConditionId = paymentConditionId;
     }
 
     if (bankAccountId) {
@@ -151,7 +151,7 @@ export class FlowService {
       supplierId,
       endDate,
       status,
-      paymentMethodId,
+      paymentConditionId,
       bankAccountId,
       sort = 'desc',
       dateType = 'dueDate',
@@ -217,10 +217,10 @@ export class FlowService {
       filtersPayables.status = status;
     }
 
-    // Filtro de método de pagamento
-    if (paymentMethodId) {
-      filtersReceivables.paymentConditionId = paymentMethodId;
-      filtersPayables.paymentConditionId = paymentMethodId;
+    // Filtro de condição de pagamento
+    if (paymentConditionId) {
+      filtersReceivables.paymentConditionId = paymentConditionId;
+      filtersPayables.paymentConditionId = paymentConditionId;
     }
 
     if (bankAccountId) {
