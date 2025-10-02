@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { PaymentService } from './payment.service';
 
 import {
@@ -6,6 +14,7 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import {
@@ -22,6 +31,20 @@ const GROUP = 'quotation';
 @Controller(`${GROUP}/${RESOURCE}`)
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
+
+  @Get('condition/in-use')
+  @ApiOperation({
+    summary:
+      'Obtém a lista de condições de pagamento que estão sendo utilizadas em lançamentos financeiros',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Lista de condições de pagamento em uso retornada com sucesso.',
+  })
+  async getPaymentConditionsInUse(@Req() req) {
+    return this.paymentService.getPaymentConditionsInUse(req.user.companyId);
+  }
 
   @Get(':id')
   @ApiOperation({

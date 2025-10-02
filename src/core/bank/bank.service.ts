@@ -63,4 +63,57 @@ export class BankService {
       },
     });
   }
+
+  async getBankAccountsInUse(companyId: string) {
+    const receivableBankAccounts =
+      await this.prisma.receivableInstallment.findMany({
+        where: {
+          receivable: {
+            companyId: companyId,
+          },
+          bankAccountId: {
+            not: null,
+          },
+        },
+        select: {
+          bankAccount: {
+            include: {
+              bank: true,
+            },
+          },
+        },
+        distinct: ['bankAccountId'],
+      });
+
+    const payableBankAccounts = await this.prisma.payableInstallment.findMany({
+      where: {
+        payable: {
+          companyId: companyId,
+        },
+        bankAccountId: {
+          not: null,
+        },
+      },
+      select: {
+        bankAccount: {
+          include: {
+            bank: true,
+          },
+        },
+      },
+      distinct: ['bankAccountId'],
+    });
+
+    const allBankAccounts = [
+      ...receivableBankAccounts.map((item) => item.bankAccount),
+      ...payableBankAccounts.map((item) => item.bankAccount),
+    ];
+
+    const uniqueBankAccounts = allBankAccounts.filter(
+      (account, index, self) =>
+        account && self.findIndex((a) => a?.id === account.id) === index,
+    );
+
+    return uniqueBankAccounts;
+  }
 }

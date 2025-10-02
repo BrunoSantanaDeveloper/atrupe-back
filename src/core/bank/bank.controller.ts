@@ -85,6 +85,19 @@ export class BankController {
   // Account
   //---------------------------------------------------------------------------------
 
+  @Get('account/in-use')
+  @ApiOperation({
+    summary:
+      'Obtém a lista de contas bancárias que estão sendo utilizadas em lançamentos',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de contas bancárias em uso retornada com sucesso.',
+  })
+  async getBankAccountsInUse(@Req() req) {
+    return this.bankService.getBankAccountsInUse(req.user.companyId);
+  }
+
   @Post('account')
   @ApiOperation({ summary: 'Cria uma nova conta bancária' })
   @ApiBody({

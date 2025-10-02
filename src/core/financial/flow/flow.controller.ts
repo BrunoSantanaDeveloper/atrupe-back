@@ -84,32 +84,6 @@ export class FlowController {
     return this.flowService.getPayableDetails(id);
   }
 
-  @Get('payment-methods/in-use')
-  @ApiOperation({
-    summary:
-      'Obtém a lista de métodos de pagamento que estão sendo utilizados em lançamentos',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Lista de métodos de pagamento em uso retornada com sucesso.',
-  })
-  async getPaymentMethodsInUse(@Req() req) {
-    return this.flowService.getPaymentMethodsInUse(req.user.companyId);
-  }
-
-  @Get('bank-accounts/in-use')
-  @ApiOperation({
-    summary:
-      'Obtém a lista de contas bancárias que estão sendo utilizadas em lançamentos',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Lista de contas bancárias em uso retornada com sucesso.',
-  })
-  async getBankAccountsInUse(@Req() req) {
-    return this.flowService.getBankAccountsInUse(req.user.companyId);
-  }
-
   @Get('overdue/last-7-days')
   @ApiOperation({
     summary:

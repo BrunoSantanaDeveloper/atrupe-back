@@ -286,4 +286,54 @@ export class PaymentService {
       );
     }
   }
+
+  async getPaymentConditionsInUse(companyId: string) {
+    const receivablePaymentConditions =
+      await this.prisma.receivableInstallment.findMany({
+        where: {
+          receivable: {
+            companyId: companyId,
+          },
+          paymentConditionId: {
+            not: null,
+          },
+        },
+        select: {
+          paymentCondition: true,
+        },
+        distinct: ['paymentConditionId'],
+      });
+
+    const payablePaymentConditions =
+      await this.prisma.payableInstallment.findMany({
+        where: {
+          payable: {
+            companyId: companyId,
+          },
+          paymentConditionId: {
+            not: null,
+          },
+        },
+        select: {
+          paymentCondition: true,
+        },
+        distinct: ['paymentConditionId'],
+      });
+
+    const allPaymentConditions = [
+      ...receivablePaymentConditions
+        .map((item) => item.paymentCondition)
+        .filter(Boolean),
+      ...payablePaymentConditions
+        .map((item) => item.paymentCondition)
+        .filter(Boolean),
+    ];
+
+    const uniquePaymentConditions = allPaymentConditions.filter(
+      (condition, index, self) =>
+        condition && self.findIndex((c) => c?.id === condition.id) === index,
+    );
+
+    return uniquePaymentConditions;
+  }
 }
