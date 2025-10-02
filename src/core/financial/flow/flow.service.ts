@@ -374,6 +374,12 @@ export class FlowService {
                       id: currentInst.id,
                       installmentNumber: currentInst.installmentNumber || 1,
                       status: this.getActualStatus(currentInst),
+                      paymentCondition: currentInst.paymentCondition
+                        ? {
+                            id: currentInst.paymentCondition.id,
+                            name: currentInst.paymentCondition.name,
+                          }
+                        : null,
                       bankAccount: currentInst.bankAccount
                         ? {
                             id: currentInst.bankAccount.id,
@@ -475,6 +481,12 @@ export class FlowService {
                       id: currentInst.id,
                       installmentNumber: currentInst.installmentNumber || 1,
                       status: this.getActualStatus(currentInst),
+                      paymentCondition: currentInst.paymentCondition
+                        ? {
+                            id: currentInst.paymentCondition.id,
+                            name: currentInst.paymentCondition.name,
+                          }
+                        : null,
                       bankAccount: currentInst.bankAccount
                         ? {
                             id: currentInst.bankAccount.id,
