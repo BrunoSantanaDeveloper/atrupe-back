@@ -530,7 +530,7 @@ export class DeliveryScheduleService {
             dueDate: add(new Date(), { days: 30 }),
             amount: commission.totalCommission || 0,
             additionalFee: 0,
-            paymentMethodId: null,
+            paymentConditionId: null,
             status: 'PENDING',
             paidDate: null,
           },
@@ -546,7 +546,7 @@ export class DeliveryScheduleService {
                 commission.totalCommission /
                 quotation.quotationPayment.quotationInstallment.length,
               additionalFee: 0,
-              paymentMethodId: null,
+              paymentConditionId: null,
               status: 'PENDING',
               paidDate: null,
             }),
@@ -597,7 +597,7 @@ export class DeliveryScheduleService {
           dueDate: add(new Date(), { days: 30 }),
           amount: deliveryCost,
           additionalFee: 0,
-          paymentMethodId: null,
+          paymentConditionId: null,
           status: 'PENDING',
           paidDate: null,
         },
@@ -614,9 +614,8 @@ export class DeliveryScheduleService {
     const downPaymentDueDate = quotation.quotationPayment.downPaymentDueDate;
     const downPaymentadditionalFee =
       quotation.quotationPayment.downPaymentAdditionalFee;
-    const paymentMethod =
-      quotation?.quotationPayment?.downPaymentCondition?.paymentMethodId ??
-      null;
+    const paymentCondition =
+      quotation?.quotationPayment?.downPaymentConditionId ?? null;
     if (!quotationInstallments || quotationInstallments.length === 0) {
       throw new BadRequestException(
         'Não há parcelas para gerar contas a receber.',
@@ -666,7 +665,7 @@ export class DeliveryScheduleService {
             dueDate: downPaymentDueDate,
             amount: downPayment,
             additionalFee: downPaymentadditionalFee || 0,
-            paymentMethodId: paymentMethod,
+            paymentConditionId: paymentCondition,
             status: 'PENDING',
             paidDate: null,
           },
@@ -701,7 +700,7 @@ export class DeliveryScheduleService {
           dueDate: installment.dueDate,
           amount: installment.value,
           additionalFee: installment.additionalFee || 0,
-          paymentMethodId: installment.paymentMethodId,
+          paymentConditionId: installment.paymentConditionId,
           status: 'PENDING',
           paidDate: null,
         }),
