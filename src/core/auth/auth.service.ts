@@ -84,8 +84,7 @@ export class AuthService {
               logo: user.employee[0].company.logoUrl,
               favicon: user.employee[0].company.favIconUrl,
               subscription: subscription,
-              trialEndsAt:
-                planInfo?.trialEndsAt ?? user.employee[0].company.trialEndsAt,
+              trialEndsAt: planInfo?.trialEndsAt ?? null,
               features: await this.getPlanFeatures(user.employee[0].company.id),
               limits: planInfo?.limits || null, // Sistema dinâmico - todos os limites automaticamente
             }

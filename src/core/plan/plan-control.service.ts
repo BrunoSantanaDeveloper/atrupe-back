@@ -21,7 +21,7 @@ interface PlanInfo {
   limits: CompanyLimits;
   additionalUsers: number;
   isTrialActive: boolean;
-  trialEndsAt?: Date;
+  trialEndsAt?: Date | null;
 }
 
 @Injectable()
@@ -45,11 +45,11 @@ export class PlanControlService {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
       select: {
-        trialEndsAt: true,
         Subscription: {
           select: {
             id: true,
             additionalUsers: true,
+            nextDueDate: true,
             plan: {
               select: {
                 id: true,
@@ -119,9 +119,11 @@ export class PlanControlService {
       limits[limitKey] = value;
     });
 
-    // Verificar se trial está ativo
+    // Verificar se trial está ativo através da subscription
     const isTrialActive =
-      company.trialEndsAt && company.trialEndsAt > new Date();
+      plan.planType === 'TRIAL' &&
+      subscription.nextDueDate &&
+      subscription.nextDueDate > new Date();
 
     return {
       planId: plan.id,
@@ -131,7 +133,7 @@ export class PlanControlService {
       limits,
       additionalUsers: subscription.additionalUsers,
       isTrialActive: !!isTrialActive,
-      trialEndsAt: company.trialEndsAt,
+      trialEndsAt: plan.planType === 'TRIAL' ? subscription.nextDueDate : null,
     };
   }
 
@@ -242,11 +244,26 @@ export class PlanControlService {
   async isTrialExpired(companyId: string): Promise<boolean> {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
-      select: { trialEndsAt: true },
+      select: {
+        Subscription: {
+          where: {
+            status: 'ACTIVE',
+          },
+          select: {
+            nextDueDate: true,
+            plan: {
+              select: {
+                planType: true,
+              },
+            },
+          },
+        },
+      },
     });
 
-    if (!company?.trialEndsAt) return false;
+    const subscription = company?.Subscription?.[0];
+    if (!subscription || subscription.plan.planType !== 'TRIAL') return false;
 
-    return company.trialEndsAt <= new Date();
+    return subscription.nextDueDate <= new Date();
   }
 }

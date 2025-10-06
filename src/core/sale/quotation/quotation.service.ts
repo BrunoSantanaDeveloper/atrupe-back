@@ -1460,7 +1460,6 @@ export class QuotationService {
       const companyData = await this.prisma.company.findUnique({
         where: { id: companyId },
         select: {
-          trialEndsAt: true,
           Subscription: {
             where: {
               status: 'ACTIVE',
@@ -1472,13 +1471,19 @@ export class QuotationService {
                   planType: true,
                 },
               },
+              nextDueDate: true,
             },
           },
         },
       });
       const subscription = companyData.Subscription?.[0];
 
-      if (companyData.trialEndsAt && companyData.trialEndsAt > new Date()) {
+      // Verifica se está em trial através da subscription
+      if (
+        subscription?.plan?.planType === 'TRIAL' &&
+        subscription?.nextDueDate &&
+        subscription.nextDueDate > new Date()
+      ) {
         isTrial = true;
       }
 
