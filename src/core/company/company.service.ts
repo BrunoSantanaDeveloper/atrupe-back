@@ -188,7 +188,6 @@ export class CompanyService {
             instagram: socialNetworks?.instagram,
             facebook: socialNetworks?.facebook,
             linkedin: socialNetworks?.linkedin,
-            trialEndsAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
             // Create related address
             address: address
               ? {

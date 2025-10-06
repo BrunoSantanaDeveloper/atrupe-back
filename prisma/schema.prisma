@@ -27,7 +27,6 @@ model Company {
   textAfterItems        String?
   textBeforeItems       String?
   principalCompanyId    String?
-  trialEndsAt           DateTime?
   facebook              String?
   instagram             String?
   linkedin              String?

@@ -40,7 +40,7 @@ export const PLAN_CONFIGURATIONS = {
       planType: 'TRIAL' as const,
       name: 'Trial',
       description:
-        'Plano de avaliação gratuito com funcionalidades limitadas para testar o sistema por um período determinado.\n\nIncluído no Trial:\n- Até 3 usuários\n- Funcionalidades básicas\n- Acesso limitado por 7 dias\n- Suporte básico\n\nPerfeito para conhecer o sistema antes de escolher um plano pago.',
+        'Plano de avaliação gratuito com funcionalidades limitadas para testar o sistema por um período determinado.\n\nIncluído no Trial:\n- Até 3 usuários\n- Funcionalidades básicas\n- Acesso limitado por 30 dias\n- Suporte básico\n\nPerfeito para conhecer o sistema antes de escolher um plano pago.',
       basePrice: 0,
       additionalUserPrice: 0,
       isActive: true,
@@ -49,7 +49,7 @@ export const PLAN_CONFIGURATIONS = {
     limits: {
       max_users: 3,
       max_companies: 1,
-      trial_days: 7,
+      trial_days: 30,
     },
   },
 

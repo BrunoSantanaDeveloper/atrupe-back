@@ -198,9 +198,22 @@ export class UserService {
         // Buscar plano TRIAL
         const trialPlan = await tx.plan.findFirst({
           where: { planType: 'TRIAL' },
+          include: {
+            planLimits: {
+              include: {
+                limit: true,
+              },
+            },
+          },
         });
 
         if (trialPlan) {
+          // Buscar trial_days do limite do plano
+          const trialDaysLimit = trialPlan.planLimits.find(
+            (pl) => pl.limit.key === 'trial_days',
+          );
+          const trialDays = trialDaysLimit?.value || 7; // 7 dias como fallback
+
           // Criar customer
           const customer = await tx.customer.create({
             data: {
@@ -221,7 +234,7 @@ export class UserService {
 
           // Criar subscription com plano TRIAL
           const trialEndDate = new Date();
-          trialEndDate.setDate(trialEndDate.getDate() + 7); // 7 dias de trial
+          trialEndDate.setDate(trialEndDate.getDate() + trialDays);
 
           await tx.subscription.create({
             data: {
@@ -239,7 +252,7 @@ export class UserService {
           });
 
           this.logger.log(
-            `Plano TRIAL criado para usuário ${user.email} - válido até ${trialEndDate.toISOString()}`,
+            `Plano TRIAL criado para usuário ${user.email} - válido até ${trialEndDate.toISOString()} (${trialDays} dias)`,
           );
         } else {
           this.logger.warn(
