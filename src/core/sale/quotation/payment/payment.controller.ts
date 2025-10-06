@@ -23,12 +23,11 @@ import {
 } from './dto/create-payment.dto';
 
 const RESOURCE = 'payment';
-const GROUP = 'quotation';
 
 @ApiTags('Informações de pagamento do orçamento')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
-@Controller(`${GROUP}/${RESOURCE}`)
+@Controller(RESOURCE)
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
 
