@@ -209,6 +209,28 @@ export class QuotationController {
     return this.quotationService.approve(id);
   }
 
+  @Post(':id/bill')
+  @ApiOperation({ summary: 'Faturamento manual de um orçamento pelo ID' })
+  @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
+  @ApiResponse({
+    status: 200,
+    description: 'Orçamento faturado com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'ID inválido.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Orçamento não encontrado.',
+  })
+  async bill(@Param('id') id: string) {
+    if (!isUUID(id, '4')) {
+      throw new BadRequestException('Invalid id');
+    }
+    return this.quotationService.billQuotation(id);
+  }
+
   @Post(':id/reject')
   @ApiOperation({ summary: 'Rejeita um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
