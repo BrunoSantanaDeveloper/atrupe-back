@@ -120,7 +120,6 @@ CREATE TABLE "companies" (
     "textAfterItems" TEXT,
     "textBeforeItems" TEXT,
     "principalCompanyId" TEXT,
-    "trialEndsAt" TIMESTAMP(3),
     "facebook" TEXT,
     "instagram" TEXT,
     "linkedin" TEXT,
@@ -271,7 +270,6 @@ CREATE TABLE "clients" (
     "rg" TEXT,
     "tradeName" TEXT,
     "type" "ClientKind" NOT NULL DEFAULT 'PERSON',
-    "category" TEXT,
     "categoryId" TEXT,
     "blockClient" BOOLEAN NOT NULL DEFAULT false,
     "maxValue" DOUBLE PRECISION,
@@ -306,7 +304,6 @@ CREATE TABLE "suppliers" (
     "tradeName" TEXT,
     "type" "ClientKind" NOT NULL DEFAULT 'PERSON',
     "blockClient" BOOLEAN NOT NULL DEFAULT false,
-    "category" TEXT,
     "categoryId" TEXT,
     "maxValue" DOUBLE PRECISION,
     "minValue" DOUBLE PRECISION,
@@ -458,7 +455,6 @@ CREATE TABLE "receivable_history" (
     "receivableId" TEXT NOT NULL,
     "action" TEXT NOT NULL,
     "description" TEXT NOT NULL,
-    "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdBy" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -524,7 +520,6 @@ CREATE TABLE "payable_history" (
     "payableId" TEXT NOT NULL,
     "action" TEXT NOT NULL,
     "description" TEXT NOT NULL,
-    "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdBy" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -761,16 +756,6 @@ CREATE TABLE "installments" (
     "dueDate" TIMESTAMP(3),
 
     CONSTRAINT "installments_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "payment_configurations" (
-    "id" TEXT NOT NULL,
-    "paymentConditionId" TEXT NOT NULL,
-    "companyId" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "payment_configurations_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -1695,12 +1680,6 @@ ALTER TABLE "payment_conditions" ADD CONSTRAINT "payment_conditions_paymentMetho
 
 -- AddForeignKey
 ALTER TABLE "installments" ADD CONSTRAINT "installments_paymentConditionId_fkey" FOREIGN KEY ("paymentConditionId") REFERENCES "payment_conditions"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "payment_configurations" ADD CONSTRAINT "payment_configurations_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "payment_configurations" ADD CONSTRAINT "payment_configurations_paymentConditionId_fkey" FOREIGN KEY ("paymentConditionId") REFERENCES "payment_conditions"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "sale_series" ADD CONSTRAINT "sale_series_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

@@ -50,7 +50,6 @@ model Company {
   nature                Nature[]
   payables              Payable[]
   paymentConditions     PaymentCondition[]
-  paymentConfigurations PaymentConfiguration[]
   Plan                  Plan[]
   products              Product[]
   reasons               Reasons[]
@@ -240,7 +239,6 @@ model Client {
   rg                String?
   tradeName         String?
   type              ClientKind               @default(PERSON)
-  category          String? // Verificar se pode ser removido, já que existe categoryId
   categoryId        String?
   blockClient       Boolean                  @default(false)
   maxValue          Float?
@@ -252,7 +250,7 @@ model Client {
   company           Company                  @relation(fields: [companyId], references: [id])
   responsible       Employee?                @relation(fields: [responsibleId], references: [id])
   supplier          Supplier?                @relation(fields: [supplierId], references: [id])
-  categoryRelation  Category?                @relation("ClientToCategory", fields: [categoryId], references: [id])
+  category          Category?                @relation("ClientToCategory", fields: [categoryId], references: [id])
   contacts          Contact[]
   payable           Payable[]
   quotation         Quotation[]
@@ -284,7 +282,6 @@ model Supplier {
   tradeName         String?
   type              ClientKind                 @default(PERSON)
   blockClient       Boolean                    @default(false)
-  category          String?
   categoryId        String?
   maxValue          Float?
   minValue          Float?
@@ -298,7 +295,7 @@ model Supplier {
   scheduledExpense  ScheduledExpense[]
   paymentConditions SupplierPaymentCondition[]
   company           Company                    @relation(fields: [companyId], references: [id])
-  categoryRelation  Category?                  @relation("SupplierToCategory", fields: [categoryId], references: [id])
+  category          Category?                  @relation("SupplierToCategory", fields: [categoryId], references: [id])
 
   @@map("suppliers")
 }
@@ -449,7 +446,7 @@ model ReceivableInstallment {
   installmentNumber    Int
   dueDate              DateTime
   amount               Float
-  paymentConditionId   String? // Ver se vamos adicionar paymentConditionId. Verificar se o paymentMethod ainda faz sentido
+  paymentConditionId   String?
   additionalFee        Float?
   status               PaymentStatus          @default(PENDING)
   paidDate             DateTime?
@@ -473,7 +470,6 @@ model ReceivableHistory {
   receivableId String
   action       String
   description  String
-  timestamp    DateTime   @default(now())
   createdBy    String
   createdAt    DateTime   @default(now())
   receivable   Receivable @relation(fields: [receivableId], references: [id])
@@ -553,7 +549,6 @@ model PayableHistory {
   payableId   String
   action      String
   description String
-  timestamp   DateTime @default(now())
   createdBy   String
   createdAt   DateTime @default(now())
   payable     Payable  @relation(fields: [payableId], references: [id])
@@ -780,12 +775,12 @@ model BankAccountCashControl {
 }
 
 model PaymentMethod {
-  id                     String                   @id @default(uuid())
-  name                   String
-  code                   String                   @unique
-  createdAt              DateTime                 @default(now())
-  isActive               Boolean                  @default(true)
-  paymentCondition       PaymentCondition[]
+  id               String             @id @default(uuid())
+  name             String
+  code             String             @unique
+  createdAt        DateTime           @default(now())
+  isActive         Boolean            @default(true)
+  paymentCondition PaymentCondition[]
 
   @@map("payment_methods")
 }
@@ -808,7 +803,6 @@ model PaymentCondition {
   installments                Installment[]
   company                     Company                       @relation(fields: [companyId], references: [id])
   paymentMethod               PaymentMethod                 @relation(fields: [paymentMethodId], references: [id])
-  paymentConfigurations       PaymentConfiguration[]
   downPaymentConditions       QuotationPayment[]            @relation("downPaymentRelation")
   quotationPayments           QuotationPayment[]            @relation("defaultRelation")
   suppliers                   SupplierPaymentCondition[]
@@ -832,17 +826,6 @@ model Installment {
   @@map("installments")
 }
 
-// Analisar pra que serve PaymentConfiguration
-model PaymentConfiguration {
-  id                 String           @id @default(uuid())
-  paymentConditionId String
-  companyId          String
-  createdAt          DateTime         @default(now())
-  company            Company          @relation(fields: [companyId], references: [id])
-  paymentCondition   PaymentCondition @relation(fields: [paymentConditionId], references: [id])
-
-  @@map("payment_configurations")
-}
 
 model SaleSeries {
   id                  String               @id @default(uuid())

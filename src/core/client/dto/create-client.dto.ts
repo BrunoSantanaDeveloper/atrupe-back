@@ -37,10 +37,6 @@ class GeneralInfoDto {
   mobile?: string;
 
   @IsOptional()
-  @IsString()
-  category?: string;
-
-  @IsOptional()
   @ValidateIf((o) => o.categoryId && o.categoryId.trim() !== '')
   @IsUUID()
   categoryId?: string;
@@ -196,15 +192,6 @@ export class PreRegisterClientDto {
   })
   @IsOptional()
   email?: string;
-
-  @ApiProperty({
-    description: 'Categoria do cliente',
-    required: false,
-    example: 'VIP',
-  })
-  @IsOptional()
-  @IsString()
-  category?: string;
 
   @ApiProperty({
     description: 'ID da categoria do cliente',

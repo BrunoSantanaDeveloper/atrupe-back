@@ -232,11 +232,11 @@ export class CategoryService {
       });
 
     const clientsUsingCategory = await this.prisma.client.count({
-      where: { category: id },
+      where: { categoryId: id },
     });
 
     const suppliersUsingCategory = await this.prisma.supplier.count({
-      where: { category: id },
+      where: { categoryId: id },
     });
 
     if (
