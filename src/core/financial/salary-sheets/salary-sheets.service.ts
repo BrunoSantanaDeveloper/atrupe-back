@@ -754,6 +754,10 @@ export class SalarySheetsService {
       select: {
         id: true,
         status: true,
+        employeeId: true,
+        month: true,
+        year: true,
+        companyId: true,
       },
     });
 
@@ -763,6 +767,47 @@ export class SalarySheetsService {
 
     if (payroll.status === status) {
       throw new BadRequestException(`A folha já está no estado ${status}.`);
+    }
+
+    // Se está tentando reabrir folha, validar se o salário principal não está pago ou provisionado
+    if (status === 'OPEN') {
+      const startDate = new Date(payroll.year, payroll.month, 1);
+      const endDate = new Date(payroll.year, payroll.month + 1, 0);
+
+      const salaryDescription = `Folha ${String(payroll.month + 1).padStart(2, '0')}/${payroll.year} - Salário`;
+
+      // Buscar a despesa de salário principal
+      const salaryPayable = await this.prisma.payable.findFirst({
+        where: {
+          companyId: payroll.companyId,
+          employeeId: payroll.employeeId,
+          expenseSource: 'EMPLOYEE',
+          financialType: 'MAIN',
+          description: salaryDescription,
+          referenceDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        include: {
+          installments: true,
+        },
+      });
+
+      // Verificar se há parcelas pagas ou provisionadas
+      if (salaryPayable) {
+        const hasPaidOrProvisioned = salaryPayable.installments.some(
+          (installment) =>
+            installment.status === 'PAID' ||
+            installment.status === 'PROVISIONED',
+        );
+
+        if (hasPaidOrProvisioned) {
+          throw new BadRequestException(
+            'Não é possível reabrir a folha de pagamento. O salário já foi pago.',
+          );
+        }
+      }
     }
 
     const updatedSalarySheet = await this.prisma.payroll.update({

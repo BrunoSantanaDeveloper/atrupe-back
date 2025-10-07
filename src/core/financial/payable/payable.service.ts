@@ -767,6 +767,47 @@ export class PayableService {
         });
       }
 
+      // Se expenseSource for EMPLOYEE e financialType for MAIN, fechar a folha de pagamento
+      // Isso ocorre tanto para pagamento (PAID) quanto para provisionamento (PROVISIONED)
+      const payableData = await this.prisma.payable.findUnique({
+        where: { id: result.payableId },
+        select: {
+          expenseSource: true,
+          financialType: true,
+          employeeId: true,
+          referenceDate: true,
+        },
+      });
+
+      if (
+        payableData?.expenseSource === 'EMPLOYEE' &&
+        payableData?.financialType === 'MAIN' &&
+        payableData?.employeeId
+      ) {
+        // Extrair mês e ano da referenceDate
+        const referenceDate = new Date(payableData.referenceDate);
+        const month = referenceDate.getMonth();
+        const year = referenceDate.getFullYear();
+
+        // Buscar a folha de pagamento correspondente
+        const payroll = await this.prisma.payroll.findFirst({
+          where: {
+            employeeId: payableData.employeeId,
+            month,
+            year,
+          },
+        });
+
+        // Se encontrou a folha, atualizar o status para CLOSED
+        // O status da parcela já foi definido como PAID ou PROVISIONED na transação acima
+        if (payroll && payroll.status !== 'CLOSED') {
+          await this.prisma.payroll.update({
+            where: { id: payroll.id },
+            data: { status: 'CLOSED' },
+          });
+        }
+      }
+
       // Buscar dados completos da parcela atualizada para retornar
       const updatedInstallment =
         await this.prisma.payableInstallment.findUnique({
