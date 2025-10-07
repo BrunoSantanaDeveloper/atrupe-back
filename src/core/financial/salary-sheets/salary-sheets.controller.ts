@@ -408,11 +408,16 @@ export class SalarySheetsController {
     return await this.salaryService.getAdvanceItemPdfData(itemId);
   }
 
-  @Post('item')
+  @Post('item/:payrollId')
   @ApiOperation({
     summary: 'Adicionar item à folha de pagamento',
     description:
       'Adiciona um novo item (acréscimo, desconto ou adiantamento) à folha de pagamento',
+  })
+  @ApiParam({
+    name: 'payrollId',
+    required: true,
+    description: 'ID da folha de pagamento',
   })
   @ApiResponse({
     status: 201,
@@ -422,14 +427,22 @@ export class SalarySheetsController {
     status: 400,
     description: 'Dados inválidos ou folha não está aberta',
   })
-  async addSalaryItem(@Body() addSalaryItemDto: AddSalaryItemDto) {
-    return await this.salaryService.addSalaryItem(addSalaryItemDto);
+  async addSalaryItem(
+    @Param('payrollId') payrollId: string,
+    @Body() addSalaryItemDto: AddSalaryItemDto,
+  ) {
+    return await this.salaryService.addSalaryItem(payrollId, addSalaryItemDto);
   }
 
-  @Patch('item')
+  @Patch('item/:itemId')
   @ApiOperation({
     summary: 'Atualizar item da folha de pagamento',
     description: 'Atualiza um item existente na folha de pagamento',
+  })
+  @ApiParam({
+    name: 'itemId',
+    required: true,
+    description: 'ID do item a ser atualizado',
   })
   @ApiResponse({
     status: 200,
@@ -439,8 +452,14 @@ export class SalarySheetsController {
     status: 404,
     description: 'Item não encontrado',
   })
-  async updateSalaryItem(@Body() updateSalaryItemDto: UpdateSalaryItemDto) {
-    return await this.salaryService.updateSalaryItem(updateSalaryItemDto);
+  async updateSalaryItem(
+    @Param('itemId') itemId: string,
+    @Body() updateSalaryItemDto: UpdateSalaryItemDto,
+  ) {
+    return await this.salaryService.updateSalaryItem(
+      itemId,
+      updateSalaryItemDto,
+    );
   }
 
   @Patch('toggle')

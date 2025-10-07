@@ -574,9 +574,9 @@ export class SalarySheetsService {
     }
   }
 
-  async addSalaryItem(addSalaryItemDto: AddSalaryItemDto) {
+  async addSalaryItem(payrollId: string, addSalaryItemDto: AddSalaryItemDto) {
     try {
-      const { payrollId, type, amount, description } = addSalaryItemDto;
+      const { type, amount, description } = addSalaryItemDto;
 
       const payroll = await this.prisma.payroll.findUnique({
         where: { id: payrollId },
@@ -585,6 +585,40 @@ export class SalarySheetsService {
       if (!payroll || payroll.status !== 'OPEN') {
         throw new NotFoundException(
           'Folha de pagamento não encontrada ou não está aberta.',
+        );
+      }
+
+      // Buscar itens atuais da folha para calcular o saldo
+      const currentItems = await this.prisma.payrollItem.findMany({
+        where: { payrollId },
+      });
+
+      const totalIncreases = currentItems
+        .filter((item) => item.type === 'INCREASE')
+        .reduce((sum, item) => sum + item.amount, 0);
+
+      const totalDiscounts = currentItems
+        .filter((item) => item.type === 'DISCOUNT')
+        .reduce((sum, item) => sum + item.amount, 0);
+
+      const totalAdvances = currentItems
+        .filter((item) => item.type === 'ADVANCE')
+        .reduce((sum, item) => sum + item.amount, 0);
+
+      // Calcular o saldo atual (salário a receber)
+      const currentBalance = totalIncreases - totalDiscounts - totalAdvances;
+
+      // Validar se o novo item fará o saldo ficar negativo
+      let newBalance = currentBalance;
+      if (type === 'DISCOUNT' || type === 'ADVANCE') {
+        newBalance = currentBalance - amount;
+      } else if (type === 'INCREASE') {
+        newBalance = currentBalance + amount;
+      }
+
+      if (newBalance < 0) {
+        throw new BadRequestException(
+          `O saldo não pode ficar negativo. Saldo disponível: R$ ${(currentBalance / 100).toFixed(2)}`,
         );
       }
 
@@ -614,15 +648,25 @@ export class SalarySheetsService {
       return payrollItem;
     } catch (error) {
       console.error('Error creating payment movement:', error.message);
+      // Se for BadRequestException ou NotFoundException, propagar a mensagem original
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
       throw new BadRequestException('Erro ao criar item de pagamento.');
     }
   }
 
-  async updateSalaryItem(updateSalaryItemDto: UpdateSalaryItemDto) {
-    const { id, ...itemData } = updateSalaryItemDto;
+  async updateSalaryItem(
+    itemId: string,
+    updateSalaryItemDto: UpdateSalaryItemDto,
+  ) {
+    const itemData = updateSalaryItemDto;
 
     const payrollItem = await this.prisma.payrollItem.findUnique({
-      where: { id },
+      where: { id: itemId },
     });
     if (!payrollItem) {
       throw new NotFoundException('Item de folha de pagamento não encontrado.');
@@ -642,13 +686,50 @@ export class SalarySheetsService {
     const oldAmount = payrollItem.amount;
     const oldType = payrollItem.type;
 
+    // Buscar todos os itens da folha exceto o que está sendo atualizado
+    const currentItems = await this.prisma.payrollItem.findMany({
+      where: {
+        payrollId: payrollItem.payrollId,
+        id: { not: itemId },
+      },
+    });
+
+    const totalIncreases = currentItems
+      .filter((item) => item.type === 'INCREASE')
+      .reduce((sum, item) => sum + item.amount, 0);
+
+    const totalDiscounts = currentItems
+      .filter((item) => item.type === 'DISCOUNT')
+      .reduce((sum, item) => sum + item.amount, 0);
+
+    const totalAdvances = currentItems
+      .filter((item) => item.type === 'ADVANCE')
+      .reduce((sum, item) => sum + item.amount, 0);
+
+    // Calcular o saldo sem o item que está sendo atualizado
+    const currentBalance = totalIncreases - totalDiscounts - totalAdvances;
+
+    // Aplicar a atualização ao saldo
+    const newType = itemData.type ?? payrollItem.type;
+    const newAmount = itemData.amount ?? payrollItem.amount;
+
+    let newBalance = currentBalance;
+    if (newType === 'DISCOUNT' || newType === 'ADVANCE') {
+      newBalance = currentBalance - newAmount;
+    } else if (newType === 'INCREASE') {
+      newBalance = currentBalance + newAmount;
+    }
+
+    if (newBalance < 0) {
+      throw new BadRequestException('O saldo não pode ficar negativo');
+    }
+
     const updatedSalaryItem = await this.prisma.payrollItem.update({
-      where: { id },
+      where: { id: itemId },
       data: itemData,
     });
 
     // Sincronizar despesas após atualização
-    const newType = updatedSalaryItem.type;
 
     if (oldType === 'ADVANCE' || newType === 'ADVANCE') {
       // Se era ou virou adiantamento, atualizar despesa de adiantamento

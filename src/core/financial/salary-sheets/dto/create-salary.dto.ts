@@ -1,11 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsEnum,
-  IsNotEmpty,
-  IsNumber,
-  IsString,
-  IsUUID,
-} from 'class-validator';
+import { IsEnum, IsNotEmpty, IsNumber, IsString } from 'class-validator';
 import { ItemType } from '@prisma/client';
 
 export class AddSalaryItemDto {
@@ -31,11 +25,4 @@ export class AddSalaryItemDto {
   })
   @IsNumber()
   amount: number;
-
-  @ApiProperty({
-    description: 'ID da folha de pagamento à qual o item será adicionado',
-    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
-  })
-  @IsUUID()
-  payrollId: string;
 }

@@ -1,7 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsEnum,
-  IsNotEmpty,
   IsNumber,
   IsString,
   IsUUID,
@@ -10,14 +9,6 @@ import {
 import { ItemType, SheetStatus } from '@prisma/client';
 
 export class UpdateSalaryItemDto {
-  @ApiProperty({
-    description: 'ID do item que será atualizado',
-    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
-  })
-  @IsUUID()
-  @IsNotEmpty()
-  id: string;
-
   @ApiProperty({
     description: 'Tipo do item (Acréscimo, Desconto ou Adiantamento)',
     enum: ItemType,
