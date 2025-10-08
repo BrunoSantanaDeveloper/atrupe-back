@@ -6,6 +6,7 @@ import { BASE_LIMITS } from '../src/seeds/limits-base';
 import { PLAN_CONFIGURATIONS } from '../src/seeds/plans-complete';
 import { ACADEMY_ITEMS } from '../src/seeds/academy-base';
 import { BASE_PAYMENT_METHODS } from '../src/seeds/payment-methods-base';
+import { BASE_CONTACT_SOURCES } from '../src/seeds/contact-sources-base';
 
 const prisma = new PrismaClient();
 
@@ -234,6 +235,31 @@ async function createDefaultAcademyItems() {
   );
 }
 
+async function createDefaultContactSources() {
+  console.log('Criando fontes de contato padrão...');
+
+  for (const source of BASE_CONTACT_SOURCES) {
+    try {
+      const existingSource = await prisma.contactSource.findFirst({
+        where: { name: source.name },
+      });
+
+      if (!existingSource) {
+        await prisma.contactSource.create({
+          data: {
+            name: source.name,
+          },
+        });
+        console.log(`Fonte de contato criada: ${source.name}`);
+      } else {
+        console.log(`Fonte de contato já existe: ${source.name}`);
+      }
+    } catch (error) {
+      console.error(`Erro ao criar fonte de contato ${source.name}:`, error);
+    }
+  }
+}
+
 async function main() {
   console.log('Iniciando o processo de seeding...');
 
@@ -242,6 +268,9 @@ async function main() {
 
   // Criar métodos de pagamento padrão
   await createDefaultPaymentMethods();
+
+  // Criar fontes de contato padrão
+  await createDefaultContactSources();
 
   // Criar features, limits e planos
   await createDefaultFeatures();

@@ -27,5 +27,3 @@ export const BASE_QUOTATION_TAGS = [
     color: '#ffc905',
   },
 ];
-
-export const BASE_CONTACT_SOURCES = [];
