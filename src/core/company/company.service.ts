@@ -1295,6 +1295,7 @@ export class CompanyService {
         minValue: 0,
         maxValue: 1000,
         blockClient: false,
+        status: 'ACTIVE',
       },
     });
   }

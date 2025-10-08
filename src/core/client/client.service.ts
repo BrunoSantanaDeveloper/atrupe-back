@@ -470,7 +470,8 @@ export class ClientService {
                 email: updateClientDto.general?.email,
                 phone: updateClientDto.general?.phone,
                 mobile: updateClientDto.general?.mobile,
-                categoryId: updateClientDto.general?.categoryId?.trim() || null,
+                categoryId:
+                  updateClientDto.general?.categoryId?.trim() || undefined,
                 cpf: updateClientDto.general?.cpf,
                 rg: updateClientDto.general?.rg,
                 cnpj: updateClientDto.general?.cnpj,
