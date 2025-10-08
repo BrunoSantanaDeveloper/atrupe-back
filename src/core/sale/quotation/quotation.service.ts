@@ -3400,4 +3400,15 @@ export class QuotationService {
 
     return payableDelivery;
   }
+
+  async findAllContactSources() {
+    try {
+      return await this.prisma.contactSource.findMany({
+        orderBy: { name: 'asc' },
+      });
+    } catch (error) {
+      console.error('Error finding all contact sources:', error);
+      throw error;
+    }
+  }
 }

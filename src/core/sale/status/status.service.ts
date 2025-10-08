@@ -22,7 +22,7 @@ export class StatusService {
     const { page = 1, limit = 10, companyId } = filter;
     const skip = (+page - 1) * +limit;
 
-    const [total, statusQuotations] = await Promise.all([
+    const [total, quotationTags] = await Promise.all([
       this.prisma.quotationTag.count({
         where: { isActive: true, companyId },
       }),
@@ -39,7 +39,7 @@ export class StatusService {
       total,
       page,
       limit,
-      statusQuotations,
+      quotationTags,
     };
   }
 

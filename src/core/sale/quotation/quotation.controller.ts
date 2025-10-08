@@ -156,6 +156,17 @@ export class QuotationController {
     return await this.quotationService.findAll(query);
   }
 
+  @Get('contact-sources')
+  @ApiOperation({ summary: 'Obtém a lista de todas as fontes de contato' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de fontes de contato retornada com sucesso.',
+    isArray: true,
+  })
+  async findAllContactSources() {
+    return this.quotationService.findAllContactSources();
+  }
+
   @Get('quantity')
   @ApiOperation({
     summary: 'Obtém a quantidade de todos os status de orçamentos',
