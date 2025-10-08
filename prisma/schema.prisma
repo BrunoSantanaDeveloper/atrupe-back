@@ -9,11 +9,11 @@ datasource db {
 }
 
 model Company {
-  id                    String                 @id @default(uuid())
+  id                    String               @id @default(uuid())
   name                  String
-  createdAt             DateTime               @default(now())
-  isActive              Boolean                @default(true)
-  updatedAt             DateTime?              @updatedAt
+  createdAt             DateTime             @default(now())
+  isActive              Boolean              @default(true)
+  updatedAt             DateTime?            @updatedAt
   cnpj                  String?
   legalName             String?
   municipalRegistration String?
@@ -61,15 +61,15 @@ model Company {
   saleSeries            SaleSeries[]
   scheduledExpenses     ScheduledExpense[]
   sellerProfile         SellerProfile[]
-  statusQuotation       StatusQuotation[]
+  quotationTag          QuotationTag[]
   subCategory           SubCategory[]
   Subscription          Subscription[]
   suppliers             Supplier[]
-  parentCompany         Company?               @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
-  subsidiaries          Company[]              @relation("CompanyHierarchy")
-  mainQuotations        Quotation[]            @relation("MainCompany")
-  fiscalQuotations      Quotation[]            @relation("FiscalSubCompany")
-  sectors               CompanySector[]        @relation("CompanyToCompanySector")
+  parentCompany         Company?             @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
+  subsidiaries          Company[]            @relation("CompanyHierarchy")
+  mainQuotations        Quotation[]          @relation("MainCompany")
+  fiscalQuotations      Quotation[]          @relation("FiscalSubCompany")
+  sectors               CompanySector[]      @relation("CompanyToCompanySector")
 
   @@map("companies")
 }
@@ -187,6 +187,14 @@ model Contact {
   quotations Quotation[]
 
   @@map("contacts")
+}
+
+model ContactSource {
+  id         String      @id @default(uuid())
+  name       String
+  quotations Quotation[]
+
+  @@map("contact_sources")
 }
 
 model CreditLimitDefault {
@@ -826,7 +834,6 @@ model Installment {
   @@map("installments")
 }
 
-
 model SaleSeries {
   id                  String               @id @default(uuid())
   createdAt           DateTime             @default(now())
@@ -853,7 +860,7 @@ model SaleSeries {
   @@map("sale_series")
 }
 
-model StatusQuotation {
+model QuotationTag {
   id        String      @id @default(uuid())
   createdAt DateTime    @default(now())
   updatedAt DateTime?   @updatedAt
@@ -864,7 +871,7 @@ model StatusQuotation {
   quotation Quotation[]
   company   Company     @relation(fields: [companyId], references: [id])
 
-  @@map("status_quotation")
+  @@map("quotation_tags")
 }
 
 model Quotation {
@@ -881,7 +888,7 @@ model Quotation {
   totalValue       Float              @default(0)
   dueDate          DateTime?
   approvedAt       DateTime?
-  contactType      String?
+  contactSourceId  String?
   tagId            String?
   quickSale        Boolean            @default(false)
   quotationNumber  Int?
@@ -898,11 +905,12 @@ model Quotation {
   client           Client?            @relation(fields: [clientId], references: [id])
   company          Company            @relation("MainCompany", fields: [companyId], references: [id])
   contact          Contact?           @relation(fields: [contactId], references: [id])
+  contactSource    ContactSource?     @relation(fields: [contactSourceId], references: [id])
   reasons          Reasons?           @relation(fields: [reasonId], references: [id])
   seller           Employee           @relation(fields: [sellerId], references: [id])
   series           SaleSeries?        @relation(fields: [seriesId], references: [id])
   subCompany       Company?           @relation("FiscalSubCompany", fields: [subCompanyId], references: [id])
-  tag              StatusQuotation?   @relation(fields: [tagId], references: [id])
+  tag              QuotationTag?      @relation(fields: [tagId], references: [id])
   receivable       Receivable[]
   products         Product[]          @relation("QuotationToProduct")
 

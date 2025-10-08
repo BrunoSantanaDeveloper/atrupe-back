@@ -105,6 +105,9 @@ export class OrderService {
               client: {
                 select: { id: true, name: true, email: true },
               },
+              contactSource: {
+                select: { id: true, name: true },
+              },
               tag: true,
             },
           },
@@ -265,6 +268,12 @@ export class OrderService {
                   name: true,
                 },
               },
+              contactSource: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
               company: {
                 select: {
                   id: true,
@@ -416,7 +425,7 @@ export class OrderService {
         status: quotation.status,
         dueDate: quotation.dueDate,
         totalValue: quotation.totalValue,
-        contactType: quotation.contactType,
+        contactSource: quotation.contactSource,
         quickSale: quotation.quickSale || false,
         serie: quotation.series
           ? {

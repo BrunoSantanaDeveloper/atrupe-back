@@ -19,7 +19,7 @@ import { BASE_NATURES } from 'src/seeds/natures-base';
 import { BASE_SCHEDULED_EXPENSES } from 'src/seeds/scheduled-expenses-base';
 import {
   BASE_REASONS,
-  BASE_STATUS_QUOTATIONS,
+  BASE_QUOTATION_TAGS,
 } from 'src/seeds/reasons-status-base';
 import { BASE_PRODUCTS_CATEGORIES } from 'src/seeds/products-categories';
 import { BASE_SECTORS } from 'src/seeds/sectors-base';
@@ -1052,9 +1052,9 @@ export class CompanyService {
       });
     }
 
-    // Criar status de orçamentos
-    for (const status of BASE_STATUS_QUOTATIONS) {
-      await this.prisma.statusQuotation.create({
+    // Criar tags de orçamentos
+    for (const status of BASE_QUOTATION_TAGS) {
+      await this.prisma.quotationTag.create({
         data: {
           title: status.title,
           color: status.color,
@@ -1064,7 +1064,7 @@ export class CompanyService {
     }
 
     this.logger.log(
-      `Motivos de rejeição e status de orçamento criados para empresa ${companyId}`,
+      `Motivos de rejeição e tags de orçamento criados para empresa ${companyId}`,
     );
   }
 

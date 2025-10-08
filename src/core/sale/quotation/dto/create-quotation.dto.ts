@@ -267,13 +267,13 @@ export class CreateQuotationDto {
   seriesId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   @ApiProperty({
-    description: 'Tipo de contato do orçamento',
-    example: 'facebook',
+    description: 'ID da fonte de contato do orçamento',
+    example: '123e4567-e89b-12d3-a456-426614174000',
     required: false,
   })
-  contactType?: string;
+  contactSourceId?: string;
 
   @IsNotEmpty()
   @IsUUID()

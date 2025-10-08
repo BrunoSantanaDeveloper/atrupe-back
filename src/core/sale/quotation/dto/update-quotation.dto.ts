@@ -91,13 +91,14 @@ export class UpdateQuotationDto extends PartialType(CreateQuotationDto) {
   clientId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   @ApiProperty({
-    description: 'Tipo de contato do orçamento (opcional para atualização)',
-    example: 'direct',
+    description:
+      'ID da fonte de contato do orçamento (opcional para atualização)',
+    example: '123e4567-e89b-12d3-a456-426614174000',
     required: false,
   })
-  contactType?: string;
+  contactSourceId?: string;
 
   @IsOptional()
   @IsString()

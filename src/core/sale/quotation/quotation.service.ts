@@ -41,7 +41,7 @@ export class QuotationService {
   async create(createQuotationDto: CreateQuotationDto): Promise<Quotation> {
     const {
       description,
-      contactType,
+      contactSourceId,
       companyId,
       sellerId,
       clientId,
@@ -88,7 +88,7 @@ export class QuotationService {
       const newQuotation = await this.prisma.quotation.create({
         data: {
           description,
-          contactType,
+          contactSourceId,
           companyId: mainCompany.principalCompanyId
             ? mainCompany.principalCompanyId
             : mainCompany.id,
@@ -916,6 +916,12 @@ export class QuotationService {
               name: true,
             },
           },
+          contactSource: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
           subCompany: {
             select: {
               id: true,
@@ -1071,7 +1077,7 @@ export class QuotationService {
         description: quotation.description,
         status: isOverdue ? 'OVERDUE' : quotation.status,
         totalValue: quotation.totalValue,
-        contactType: quotation.contactType,
+        contactSource: quotation.contactSource,
         quickSale: quotation.quickSale || false, // Se não for informado, assume-se como 'false'
         serie: quotation.series
           ? {
@@ -1326,7 +1332,7 @@ export class QuotationService {
         duplicateDto.description || `${quotation.description} (Cópia)`, // Modifica a descrição, se fornecida
       clientId: duplicateDto.clientId || quotation.clientId, // Mantém o clientId original, a menos que fornecido
       contactId: duplicateDto.contactId || quotation.contactId, // Mantém o contactId original, a menos que fornecido
-      contactType: quotation.contactType, // Mantém o contactType original
+      contactSourceId: quotation.contactSourceId, // Mantém o contactSourceId original
       totalValue: quotation.totalValue, // Mantém o totalValue original
       sellerId: quotation.sellerId, // Mantém o sellerId original
       seriesId: quotation.seriesId, // Mantém o seriesId original

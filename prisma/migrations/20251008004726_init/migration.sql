@@ -223,6 +223,14 @@ CREATE TABLE "contacts" (
 );
 
 -- CreateTable
+CREATE TABLE "contact_sources" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+
+    CONSTRAINT "contact_sources_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "credit_limit_default" (
     "id" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -783,7 +791,7 @@ CREATE TABLE "sale_series" (
 );
 
 -- CreateTable
-CREATE TABLE "status_quotation" (
+CREATE TABLE "quotation_tags" (
     "id" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3),
@@ -792,7 +800,7 @@ CREATE TABLE "status_quotation" (
     "color" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
 
-    CONSTRAINT "status_quotation_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "quotation_tags_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -810,7 +818,7 @@ CREATE TABLE "quotations" (
     "totalValue" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "dueDate" TIMESTAMP(3),
     "approvedAt" TIMESTAMP(3),
-    "contactType" TEXT,
+    "contactSourceId" TEXT,
     "tagId" TEXT,
     "quickSale" BOOLEAN NOT NULL DEFAULT false,
     "quotationNumber" INTEGER,
@@ -1685,7 +1693,7 @@ ALTER TABLE "installments" ADD CONSTRAINT "installments_paymentConditionId_fkey"
 ALTER TABLE "sale_series" ADD CONSTRAINT "sale_series_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "status_quotation" ADD CONSTRAINT "status_quotation_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "quotation_tags" ADD CONSTRAINT "quotation_tags_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "quotations" ADD CONSTRAINT "quotations_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "clients"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -1695,6 +1703,9 @@ ALTER TABLE "quotations" ADD CONSTRAINT "quotations_companyId_fkey" FOREIGN KEY 
 
 -- AddForeignKey
 ALTER TABLE "quotations" ADD CONSTRAINT "quotations_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "contacts"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "quotations" ADD CONSTRAINT "quotations_contactSourceId_fkey" FOREIGN KEY ("contactSourceId") REFERENCES "contact_sources"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "quotations" ADD CONSTRAINT "quotations_reasonId_fkey" FOREIGN KEY ("reasonId") REFERENCES "reasons"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -1709,7 +1720,7 @@ ALTER TABLE "quotations" ADD CONSTRAINT "quotations_seriesId_fkey" FOREIGN KEY (
 ALTER TABLE "quotations" ADD CONSTRAINT "quotations_subCompanyId_fkey" FOREIGN KEY ("subCompanyId") REFERENCES "companies"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "quotations" ADD CONSTRAINT "quotations_tagId_fkey" FOREIGN KEY ("tagId") REFERENCES "status_quotation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "quotations" ADD CONSTRAINT "quotations_tagId_fkey" FOREIGN KEY ("tagId") REFERENCES "quotation_tags"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "quotation_products" ADD CONSTRAINT "quotation_products_productId_fkey" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

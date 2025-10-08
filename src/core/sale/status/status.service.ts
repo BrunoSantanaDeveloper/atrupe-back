@@ -3,7 +3,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateStatusQuotationDto } from './dto/create-status.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { UpdateStatusQuotationDto } from './dto/update-status.dto';
-import { StatusQuotation } from '@prisma/client';
+import { QuotationTag } from '@prisma/client';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 @Injectable()
@@ -12,8 +12,8 @@ export class StatusService {
 
   async create(
     createStatusQuotationDto: CreateStatusQuotationDto,
-  ): Promise<StatusQuotation> {
-    return this.prisma.statusQuotation.create({
+  ): Promise<QuotationTag> {
+    return this.prisma.quotationTag.create({
       data: createStatusQuotationDto,
     });
   }
@@ -23,10 +23,10 @@ export class StatusService {
     const skip = (+page - 1) * +limit;
 
     const [total, statusQuotations] = await Promise.all([
-      this.prisma.statusQuotation.count({
+      this.prisma.quotationTag.count({
         where: { isActive: true, companyId },
       }),
-      this.prisma.statusQuotation.findMany({
+      this.prisma.quotationTag.findMany({
         where: { isActive: true, companyId },
         select: { id: true, title: true, color: true },
         orderBy: { title: 'asc' },
@@ -43,8 +43,8 @@ export class StatusService {
     };
   }
 
-  async findOne(id: string): Promise<StatusQuotation> {
-    const status = await this.prisma.statusQuotation.findUnique({
+  async findOne(id: string): Promise<QuotationTag> {
+    const status = await this.prisma.quotationTag.findUnique({
       where: { id },
     });
 
@@ -60,8 +60,8 @@ export class StatusService {
   async update(
     id: string,
     updateStatusQuotationDto: UpdateStatusQuotationDto,
-  ): Promise<StatusQuotation> {
-    const statusExists = await this.prisma.statusQuotation.findUnique({
+  ): Promise<QuotationTag> {
+    const statusExists = await this.prisma.quotationTag.findUnique({
       where: { id },
     });
 
@@ -71,14 +71,14 @@ export class StatusService {
       );
     }
 
-    return this.prisma.statusQuotation.update({
+    return this.prisma.quotationTag.update({
       where: { id },
       data: updateStatusQuotationDto,
     });
   }
 
-  async remove(id: string): Promise<StatusQuotation> {
-    const statusExists = await this.prisma.statusQuotation.findUnique({
+  async remove(id: string): Promise<QuotationTag> {
+    const statusExists = await this.prisma.quotationTag.findUnique({
       where: { id },
     });
 
@@ -97,7 +97,7 @@ export class StatusService {
       },
     });
 
-    return this.prisma.statusQuotation.update({
+    return this.prisma.quotationTag.update({
       where: { id },
       data: {
         isActive: false,

@@ -16,7 +16,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { StatusQuotation } from '@prisma/client';
+import { QuotationTag } from '@prisma/client';
 import { CreateStatusQuotationDto } from './dto/create-status.dto';
 import { StatusService } from './status.service';
 import { UpdateStatusQuotationDto } from './dto/update-status.dto';
@@ -39,7 +39,7 @@ export class StatusController {
   create(
     @Body() createStatusQuotationDto: CreateStatusQuotationDto,
     @Req() req,
-  ): Promise<StatusQuotation> {
+  ): Promise<QuotationTag> {
     createStatusQuotationDto.companyId = req.user.companyId;
     return this.statusQuotationService.create(createStatusQuotationDto);
   }
@@ -59,7 +59,7 @@ export class StatusController {
     status: 404,
     description: 'Status de orçamento não encontrado.',
   })
-  findOne(@Param('id') id: string): Promise<StatusQuotation> {
+  findOne(@Param('id') id: string): Promise<QuotationTag> {
     return this.statusQuotationService.findOne(id);
   }
 
@@ -72,7 +72,7 @@ export class StatusController {
   update(
     @Param('id') id: string,
     @Body() updateStatusQuotationDto: UpdateStatusQuotationDto,
-  ): Promise<StatusQuotation> {
+  ): Promise<QuotationTag> {
     return this.statusQuotationService.update(id, updateStatusQuotationDto);
   }
 
@@ -82,7 +82,7 @@ export class StatusController {
     status: 200,
     description: 'Status de orçamento removido com sucesso.',
   })
-  remove(@Param('id') id: string): Promise<StatusQuotation> {
+  remove(@Param('id') id: string): Promise<QuotationTag> {
     return this.statusQuotationService.remove(id);
   }
 }

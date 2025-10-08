@@ -16,7 +16,8 @@ export const BASE_REASONS = [
     type: 'CANCELLATION',
   },
 ];
-export const BASE_STATUS_QUOTATIONS = [
+
+export const BASE_QUOTATION_TAGS = [
   {
     title: 'Aguardado Aprovação',
     color: '#37bd2e',
@@ -26,3 +27,5 @@ export const BASE_STATUS_QUOTATIONS = [
     color: '#ffc905',
   },
 ];
+
+export const BASE_CONTACT_SOURCES = [];
