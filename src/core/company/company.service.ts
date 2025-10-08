@@ -36,12 +36,12 @@ export class CompanyService {
   ) {}
   async createFirstAccess(email: string, companyId: string) {
     try {
-      this.logger.log('Starting createFirstAccess process for email:', email);
+      this.logger.log(`Starting createFirstAccess process for email: ${email}`);
 
       return await this.prisma.$transaction(
         async (tx) => {
           try {
-            this.logger.log('Finding user with email:', email);
+            this.logger.log(`Finding user with email: ${email}`);
             const user = await tx.user.findFirst({
               where: {
                 email: email,
@@ -49,10 +49,10 @@ export class CompanyService {
             });
 
             if (!user) {
-              console.error('User not found for email:', email);
+              console.error(`User not found for email: ${email}`);
               throw new Error('User not found');
             }
-            this.logger.log('User found:', user.id);
+            this.logger.log(`User found: ${user.id}`);
 
             this.logger.log('Finding administration sector');
             const sector = await tx.companySector.findFirst({
@@ -64,12 +64,11 @@ export class CompanyService {
 
             if (!sector) {
               console.error(
-                'Administration sector not found for company:',
-                companyId,
+                `Administration sector not found for company: ${companyId}`,
               );
               throw new Error('Sector not found');
             }
-            this.logger.log('Administration sector found:', sector.id);
+            this.logger.log(`Administration sector found: ${sector.id}`);
 
             this.logger.log('Creating administrator role');
             const role = await tx.role.create({
@@ -80,9 +79,9 @@ export class CompanyService {
                 sectorId: sector.id,
               },
             });
-            this.logger.log('Administrator role created:', role.id);
+            this.logger.log(`Administrator role created: ${role.id}`);
 
-            this.logger.log('Creating seller profile for administrator');
+            this.logger.log('Creating seller profile for administrator...');
             const sellerProfile = await tx.sellerProfile.create({
               data: {
                 name: 'Admin',
@@ -95,11 +94,10 @@ export class CompanyService {
               },
             });
             this.logger.log(
-              'Administrator seller profile created:',
-              sellerProfile.id,
+              `Administrator seller profile created: ${sellerProfile.id}`,
             );
 
-            this.logger.log('Creating employee record');
+            this.logger.log('Creating employee record...');
             const employee = await tx.employee.create({
               data: {
                 name: user.name,
@@ -113,7 +111,7 @@ export class CompanyService {
             this.logger.log('Employee record created successfully');
 
             // Aplicar templates de salário ao colaborador admin
-            this.logger.log('Applying salary templates to admin employee');
+            this.logger.log('Applying salary templates to admin employee...');
             const templates = await tx.payrollTemplate.findMany({
               where: { companyId: companyId },
             });
@@ -408,7 +406,7 @@ export class CompanyService {
   ];
 
   async createDefaultItems(email: string, companyId: string) {
-    this.logger.log('creating default items for company', companyId);
+    this.logger.log(`creating default items for company ${companyId}...`);
 
     for (const item of this.defaultItemsConfig) {
       const exists = await item.checkMethod(companyId);
@@ -742,7 +740,9 @@ export class CompanyService {
   }
 
   async createMissingDefaultItems(companyId: string) {
-    this.logger.log('Creating missing default items for company', companyId);
+    this.logger.log(
+      `Creating missing default items for company ${companyId}...`,
+    );
 
     try {
       // Verificar se a empresa existe
@@ -761,7 +761,7 @@ export class CompanyService {
         const exists = await item.checkMethod(companyId);
         if (!exists) {
           this.logger.log(
-            `Creating missing ${item.name} for company ${companyId}`,
+            `Creating missing ${item.name} for company ${companyId}...`,
           );
           await item.createMethod(companyId);
           createdItems.push(item.name);
@@ -769,8 +769,7 @@ export class CompanyService {
       }
 
       this.logger.log(
-        'Missing default items creation completed for company',
-        companyId,
+        `Missing default items creation completed for company ${companyId}`,
       );
       return {
         message: 'Missing default items created successfully',
@@ -778,7 +777,7 @@ export class CompanyService {
         createdItems: createdItems,
       };
     } catch (error) {
-      this.logger.error('Error creating missing default items:', error);
+      this.logger.error(`Error creating missing default items: ${error}`);
       throw error;
     }
   }
@@ -928,8 +927,7 @@ export class CompanyService {
     }
 
     this.logger.log(
-      'Condições de pagamento e limites de crédito aplicados com sucesso para empresa:',
-      companyId,
+      `Condições de pagamento e limites de crédito aplicados com sucesso para empresa: ${companyId}`,
     );
   }
 
