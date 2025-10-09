@@ -22,12 +22,12 @@ import {
   UpdatePaymentDto,
 } from './dto/create-payment.dto';
 
-const RESOURCE = 'payment';
+const RESOURCE = 'quotation/payment';
 
 @ApiTags('Informações de pagamento do orçamento')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
-@Controller(RESOURCE)
+@Controller(`sale/${RESOURCE}`)
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
 
