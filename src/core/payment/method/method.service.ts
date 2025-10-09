@@ -28,6 +28,9 @@ export class MethodService {
 
   async findAll(filter) {
     try {
+      const page = +filter?.page || 1;
+      const limit = +filter?.limit || 10;
+
       const where = {
         isActive: true,
       };
@@ -36,20 +39,21 @@ export class MethodService {
         this.prisma.paymentMethod.count({ where }),
         this.prisma.paymentMethod.findMany({
           where,
-          take: +filter.limit,
-          skip: ((+filter.page || 1) - 1) * +filter.limit,
+          take: limit,
+          skip: (page - 1) * limit,
           orderBy: {
             name: 'asc',
           },
         }),
       ]);
+
       return {
         total,
-        lastPage: Math.ceil(total / +filter.limit),
+        lastPage: Math.ceil(total / limit),
         data,
       };
     } catch (error) {
-      console.error(error);
+      console.error('Erro no findAll:', error);
       throw new Error('Error on find payment method');
     }
   }

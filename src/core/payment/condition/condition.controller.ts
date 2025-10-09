@@ -24,13 +24,10 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 
-const GROUP = 'payment';
-const RESOURCE = 'condition';
-
 @ApiTags('Condições de Pagamento')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
-@Controller(`${GROUP}/${RESOURCE}`)
+@Controller('payment-condition')
 export class ConditionController {
   constructor(private readonly conditionService: ConditionService) {}
 

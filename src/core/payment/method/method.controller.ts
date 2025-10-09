@@ -23,13 +23,10 @@ import {
 } from '@nestjs/swagger';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
-const GROUP = 'payment';
-const RESOURCE = 'method';
-
 @ApiTags('Métodos de Pagamento')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
-@Controller(`${GROUP}/${RESOURCE}`)
+@Controller('payment-method')
 export class MethodController {
   constructor(private readonly methodService: MethodService) {}
 
