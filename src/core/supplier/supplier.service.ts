@@ -289,6 +289,7 @@ export class SupplierService {
     return {
       type: supplier.type,
       status: supplier.status,
+      createdAt: supplier.createdAt,
       general: {
         name: supplier.name,
         email: supplier.email,

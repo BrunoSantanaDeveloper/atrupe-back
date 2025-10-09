@@ -339,6 +339,7 @@ export class ClientService {
     return {
       type: client.type,
       status: client.status,
+      createdAt: client.createdAt,
       general: {
         name: client.name,
         corporateName: client.corporateName,
