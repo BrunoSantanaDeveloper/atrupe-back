@@ -35,7 +35,7 @@ npx prisma migrate status
 ### 3. Deploy
 
 ```bash
-npm run deploy:aws
+npm run deploy:prod
 ```
 
 ### 4. Atualização no Portainer
@@ -75,7 +75,7 @@ O `start.sh` executará automaticamente:
 1. **Deploy primeiro** (para atualizar imagem):
 
 ```bash
-npm run deploy:aws
+npm run deploy:prod
 ```
 
 2. **No Portainer:**
@@ -231,6 +231,7 @@ npx prisma migrate dev --name "sync-with-external-db"
 ## ⚠️ ATENÇÃO: Aviso de Perda de Dados no `migrate dev`
 
 **Cenário comum:**
+
 ```bash
 npx prisma migrate dev --name "minha-mudanca"
 # Prisma avisa: "We need to reset the database, this will result in data loss"
@@ -240,11 +241,13 @@ npx prisma migrate dev --name "minha-mudanca"
 ### 🔴 CUIDADO: Isso PODE afetar produção!
 
 **Por que isso acontece:**
+
 - Você fez uma mudança incompatível (ex: renomear coluna, mudar tipo)
 - Prisma detecta que não consegue migrar incrementalmente
 - Localmente: apaga seus dados e recria tudo
 
 **O que acontece no deploy:**
+
 ```bash
 # Em produção, o Prisma executará:
 npx prisma migrate deploy
@@ -262,12 +265,14 @@ npx prisma migrate deploy
 3. **Escolha a estratégia:**
 
 **Para mudanças compatíveis:**
+
 ```bash
 # Cancele e refaça de forma incremental
 # Ex: ao invés de renomear, adicione + remova depois
 ```
 
 **Para mudanças que realmente precisam resetar:**
+
 ```bash
 # Aceite localmente (seus dados locais são perdidos)
 # MAS: faça reset manual em produção quando deployar
@@ -291,6 +296,7 @@ npx prisma migrate deploy
 **✅ Solução segura:** 3 etapas com migrations incrementais
 
 ### Etapa 1: Adicionar campo novo
+
 ```prisma
 model User {
   id       Int    @id @default(autoincrement())
@@ -298,13 +304,16 @@ model User {
   fullName String? // campo novo
 }
 ```
+
 ```bash
 npx prisma migrate dev --name "add-fullName-field"
 # Deploy + atualizar produção
 ```
 
 ### Etapa 2: Migrar dados (SEM editar migration)
+
 **❌ ERRADO - Editar migration gerada:**
+
 ```bash
 # Nunca faça isso!
 npx prisma migrate dev --create-only --name "copy-data"
@@ -312,6 +321,7 @@ npx prisma migrate dev --create-only --name "copy-data"
 ```
 
 **✅ CORRETO - Script separado:**
+
 ```bash
 # Opção A: Script TypeScript
 # Criar: src/scripts/migrate-name-to-fullname.ts
@@ -323,6 +333,7 @@ npx ts-node src/scripts/migrate-name-to-fullname.ts
 ```
 
 **Script de exemplo:**
+
 ```typescript
 // src/scripts/migrate-name-to-fullname.ts
 import { PrismaClient } from '@prisma/client';
@@ -332,7 +343,7 @@ const prisma = new PrismaClient();
 async function migrateData() {
   const result = await prisma.user.updateMany({
     where: { fullName: null },
-    data: { fullName: { set: prisma.user.fields.name } }
+    data: { fullName: { set: prisma.user.fields.name } },
   });
   console.log(`Migrados ${result.count} registros`);
 }
@@ -341,18 +352,21 @@ migrateData().finally(() => prisma.$disconnect());
 ```
 
 ### Etapa 3: Remover campo antigo
+
 ```prisma
 model User {
   id       Int    @id @default(autoincrement())
   fullName String // só o novo campo
 }
 ```
+
 ```bash
 npx prisma migrate dev --name "remove-old-name-field"
 # Deploy + atualizar produção
 ```
 
 ### Resultado Final
+
 ✅ Dados preservados
 ✅ Campo renomeado
 ✅ Zero downtime
@@ -382,7 +396,7 @@ npx prisma migrate deploy
 
 ## Resumo
 
-**90% dos casos:** `migrate dev` → `deploy:aws` → atualizar stack
+**90% dos casos:** `migrate dev` → `deploy:prod` → atualizar stack
 **10% dos casos:** Reset manual quando há incompatibilidade
 
 O Prisma é inteligente e cria migrations incrementais na maioria dos casos, preservando dados existentes.
