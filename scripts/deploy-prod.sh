@@ -27,7 +27,10 @@ log "Conectando ao servidor AWS..."
 ssh atrupe-aws << 'EOF'
     echo "📁 Entrando na pasta do projeto..."
     cd atrupe-back || { echo "❌ Erro: pasta atrupe-back não encontrada"; exit 1; }
-    
+
+    echo "🔀 Mudando para branch main..."
+    git checkout main || { echo "❌ Erro ao fazer checkout da branch main"; exit 1; }
+
     echo "📥 Fazendo git pull..."
     git pull || { echo "❌ Erro no git pull"; exit 1; }
     
