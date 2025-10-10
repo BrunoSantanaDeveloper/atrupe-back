@@ -4,6 +4,7 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 export interface HealthCheck {
   status: string;
   uptime: string;
+  environment: string;
 }
 
 @Controller()
@@ -29,6 +30,7 @@ export class AppController {
 
     return {
       status: 'ok',
+      environment: process.env.APP_ENV || 'unknown',
       uptime: `${uptime.toFixed(2)} seconds`,
     };
   }
