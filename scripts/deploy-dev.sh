@@ -34,6 +34,9 @@ ssh atrupe-aws << 'EOF'
     echo "📥 Fazendo git pull..."
     git pull || { echo "❌ Erro no git pull"; exit 1; }
 
+    echo "📋 Copiando arquivo .env de desenvolvimento..."
+    cp .env.dev .env || { echo "❌ Erro: arquivo .env.dev não encontrado"; exit 1; }
+
     echo "🐳 Construindo imagem Docker..."
     docker build . -t atrupe-image-dev:latest || { echo "❌ Erro ao construir imagem"; exit 1; }
 
