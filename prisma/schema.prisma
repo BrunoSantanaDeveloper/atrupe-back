@@ -964,10 +964,10 @@ model QuotationProductItem {
   updatedAt              DateTime?             @updatedAt
   originalQuantity       Int                   @default(1)
   unitKind               UnitKind?
+  defaultUnitOfMeasureId String? // TODO: Analisar se ainda faz sentido gravar padrão de medida no orçamento, se já grava unitKind
   productItem            ProductItem           @relation(fields: [productItemId], references: [id])
   quotationProduct       QuotationProduct      @relation(fields: [quotationProductId], references: [id])
   DefaultUnitOfMeasure   DefaultUnitOfMeasure? @relation(fields: [defaultUnitOfMeasureId], references: [id])
-  defaultUnitOfMeasureId String?
 
   @@map("quotation_product_items")
 }

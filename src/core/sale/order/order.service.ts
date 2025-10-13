@@ -516,10 +516,13 @@ export class OrderService {
           notes: qp.notes,
           discountType: qp.discountType,
           discount: qp.discount,
-          unitValue: qp.items.reduce(
-            (total, item) => total + (item.unitCost || 0),
-            0,
-          ),
+          unitValue: (() => {
+            // Usar valores já calculados do banco ao invés de recalcular
+            const unitValue = qp.items.reduce((total, item) => {
+              return total + (item.unitCost || 0);
+            }, 0);
+            return unitValue;
+          })(),
           totalValue: qp.items.reduce(
             (total, item) => total + item.totalValue,
             0,
@@ -527,7 +530,9 @@ export class OrderService {
           finalValue: qp.finalValue,
           image: (() => {
             if (qp.imageUrl) {
-              return { url: qp.imageUrl, original: false };
+              // Se a imagem do produto no orçamento for diferente da imagem original do produto
+              const isOriginal = qp.imageUrl === qp.product.imageUrl;
+              return { url: qp.imageUrl, original: isOriginal };
             } else {
               return { url: qp.product.imageUrl, original: true };
             }
@@ -536,11 +541,13 @@ export class OrderService {
             originalProductId: qp.productId,
             name: qp.product.name,
             quantity: qp.quantity,
-            unitValue: qp.items.reduce(
-              (total, item) => total + item.totalValue * item.originalQuantity,
-              0,
-            ),
-
+            unitValue: (() => {
+              // Usar valores já calculados do banco ao invés de recalcular
+              const unitValue = qp.items.reduce((total, item) => {
+                return total + (item.unitCost || 0);
+              }, 0);
+              return unitValue;
+            })(),
             finalValue: qp.items.reduce(
               (total, item) => total + item.totalValue,
               0,
@@ -549,6 +556,7 @@ export class OrderService {
               id: item.id,
               originalCompositionId: item.productItemId,
               name: item.name,
+              unitKind: item.unitKind,
               quantity: item.quantity,
               originalQuantity: item.originalQuantity,
               unitValue: item.unitCost || 0,

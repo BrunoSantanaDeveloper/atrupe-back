@@ -1272,7 +1272,6 @@ export class QuotationService {
               id: item.id,
               originalCompositionId: item.productItemId,
               name: item.name,
-              unitOfMeasure: null,
               unitKind: item.unitKind,
               quantity: item.quantity,
               originalQuantity: item.originalQuantity,
