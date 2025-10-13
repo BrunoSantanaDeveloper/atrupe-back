@@ -56,6 +56,14 @@ export class CreateReceivableInstallmentDto {
   @IsOptional()
   @IsDateString()
   paidDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'ID da conta bancária padrão para a parcela (opcional)',
+    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
+  })
+  @IsOptional()
+  @IsUUID()
+  bankAccountId?: string;
 }
 export class CreateReceivableDto {
   reference?: string;
@@ -135,6 +143,15 @@ export class CreateReceivableDto {
   @IsArray()
   @Type(() => CreateReceivableInstallmentDto)
   installments: CreateReceivableInstallmentDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'ID da conta bancária padrão (opcional - se não informado, busca a primeira conta ativa da empresa)',
+    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
+  })
+  @IsOptional()
+  @IsUUID()
+  bankAccountId?: string;
 }
 
 export class ReceivableInstallmentDto {

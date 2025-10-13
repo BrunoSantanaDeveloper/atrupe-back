@@ -841,6 +841,18 @@ export class SalarySheetsService {
         payroll.companyId,
       );
 
+      // Buscar conta bancária padrão da empresa
+      const defaultBankAccount = await this.prisma.bankAccount.findFirst({
+        where: {
+          companyId: payroll.companyId,
+          isActive: true,
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+      });
+      const defaultBankAccountId = defaultBankAccount?.id || null;
+
       // Criar conta a pagar (despesa) para o salário líquido
       const payable = await this.prisma.payable.create({
         data: {
@@ -867,6 +879,7 @@ export class SalarySheetsService {
           dueDate: dueDate,
           amount: netAmount,
           additionalFee: 0,
+          bankAccountId: defaultBankAccountId, // ✅ Conta padrão
           status: 'PENDING',
         },
       });
@@ -898,6 +911,18 @@ export class SalarySheetsService {
         payroll.companyId,
       );
 
+      // Buscar conta bancária padrão da empresa
+      const defaultBankAccount = await this.prisma.bankAccount.findFirst({
+        where: {
+          companyId: payroll.companyId,
+          isActive: true,
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+      });
+      const defaultBankAccountId = defaultBankAccount?.id || null;
+
       // Criar conta a pagar (despesa) para o adiantamento
       const payable = await this.prisma.payable.create({
         data: {
@@ -925,6 +950,7 @@ export class SalarySheetsService {
           dueDate: currentDate, // Vencimento imediato
           amount: amount,
           additionalFee: 0,
+          bankAccountId: defaultBankAccountId, // ✅ Conta padrão
           status: 'PENDING',
         },
       });

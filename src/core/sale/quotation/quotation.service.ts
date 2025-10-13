@@ -3123,6 +3123,18 @@ export class QuotationService {
     );
 
     try {
+      // Buscar conta bancária padrão da empresa
+      const defaultBankAccount = await prisma.bankAccount.findFirst({
+        where: {
+          companyId: quotation.companyId,
+          isActive: true,
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+      });
+      const defaultBankAccountId = defaultBankAccount?.id || null;
+
       // Criar entrada se houver
       if (downPayment && downPayment > 0) {
         const receivableDownPayment = await prisma.receivable.create({
@@ -3151,6 +3163,7 @@ export class QuotationService {
             amount: downPayment,
             additionalFee: downPaymentadditionalFee || 0,
             paymentConditionId: paymentCondition,
+            bankAccountId: defaultBankAccountId, // ✅ Conta padrão
             status: 'PENDING',
             paidDate: null,
           },
@@ -3186,6 +3199,7 @@ export class QuotationService {
           amount: installment.value,
           additionalFee: installment.additionalFee || 0,
           paymentConditionId: installment.paymentConditionId,
+          bankAccountId: defaultBankAccountId, // ✅ Conta padrão
           status: 'PENDING',
           paidDate: null,
         }),

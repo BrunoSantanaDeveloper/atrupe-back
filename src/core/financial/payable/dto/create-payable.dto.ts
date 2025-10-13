@@ -58,6 +58,14 @@ export class CreatePayableInstallmentDto {
   @IsOptional()
   @IsDateString()
   paidDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'ID da conta bancária padrão para a parcela (opcional)',
+    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
+  })
+  @IsOptional()
+  @IsUUID()
+  bankAccountId?: string;
 }
 export class CreatePayableDto {
   @ApiProperty({
@@ -156,6 +164,15 @@ export class CreatePayableDto {
   @IsOptional()
   @IsEnum(['SUPPLIER', 'EMPLOYEE', 'CLIENT', 'OTHER'])
   expenseSource?: 'SUPPLIER' | 'EMPLOYEE' | 'CLIENT' | 'OTHER';
+
+  @ApiPropertyOptional({
+    description:
+      'ID da conta bancária padrão (opcional - se não informado, busca a primeira conta ativa da empresa)',
+    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
+  })
+  @IsOptional()
+  @IsUUID()
+  bankAccountId?: string;
 }
 
 export class PayableInstallmentDto {

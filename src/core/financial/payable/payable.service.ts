@@ -41,12 +41,12 @@ export class PayableService {
   }
 
   async create(dto: CreatePayableDto) {
-    const { installments, ...payableData } = dto;
+    const { installments, bankAccountId, ...payableData } = dto;
     if (installments.length === 0) {
       throw new Error('At least one installment is required.');
     }
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const payable = await this.prisma.$transaction(async (tx) => {
         const totalAmount = installments
           .reduce((sum, installment) => {
             const additionalFee = installment.additionalFee ?? 0;
@@ -72,19 +72,108 @@ export class PayableService {
           },
         });
 
-        // Cria as parcelas vinculadas
+        // Buscar conta bancária padrão se não informada
+        let defaultBankAccountId = bankAccountId;
+        if (!defaultBankAccountId) {
+          const firstBankAccount = await tx.bankAccount.findFirst({
+            where: {
+              companyId: payableData.companyId,
+              isActive: true,
+            },
+            orderBy: {
+              createdAt: 'asc',
+            },
+          });
+
+          if (firstBankAccount) {
+            defaultBankAccountId = firstBankAccount.id;
+          }
+        }
+
+        // Cria as parcelas vinculadas e coleta IDs das parcelas PAID
+        const installmentsData = installments.map((installment, index) => ({
+          ...installment,
+          installmentNumber: index + 1,
+          dueDate: new Date(installment.dueDate),
+          paidDate: installment.paidDate
+            ? new Date(installment.paidDate)
+            : null,
+          status: installment.status || 'PENDING',
+          // Se status é PAID, preenche paidAmount com o valor do amount
+          paidAmount: installment.status === 'PAID' ? installment.amount : null,
+          payableId: payable.id,
+          bankAccountId:
+            installment.bankAccountId || defaultBankAccountId || null,
+        }));
+
         await tx.payableInstallment.createMany({
-          data: installments.map((installment, index) => ({
-            ...installment,
-            installmentNumber: index + 1,
-            dueDate: new Date(installment.dueDate),
-            status: 'PENDING',
-            payableId: payable.id,
-          })),
+          data: installmentsData,
         });
+
+        // Buscar as parcelas criadas para obter seus IDs
+        const createdInstallments = await tx.payableInstallment.findMany({
+          where: { payableId: payable.id },
+          orderBy: { installmentNumber: 'asc' },
+        });
+
+        // Para cada parcela criada como PAID, fazer a compensação no caixa
+        for (let i = 0; i < createdInstallments.length; i++) {
+          const createdInstallment = createdInstallments[i];
+          const originalInstallment = installments[i];
+
+          if (
+            originalInstallment.status === 'PAID' &&
+            originalInstallment.paidDate &&
+            createdInstallment.bankAccountId
+          ) {
+            const amount =
+              createdInstallment.paidAmount || createdInstallment.amount || 0;
+            const paidDate = new Date(originalInstallment.paidDate);
+
+            // Busca o caixa aberto
+            const openCashRegister = await tx.cashRegister.findFirst({
+              where: {
+                bankAccountId: createdInstallment.bankAccountId,
+                status: 'OPEN',
+                openingDate: {
+                  lte: paidDate,
+                },
+              },
+              orderBy: {
+                openingDate: 'desc',
+              },
+            });
+
+            if (openCashRegister) {
+              await tx.transaction.create({
+                data: {
+                  type: 'OUTCOME',
+                  amount: amount,
+                  description: `Pagamento da parcela ${createdInstallment.installmentNumber} - ${payableData.description || 'Sem descrição'}`,
+                  transactionDate: paidDate,
+                  payableInstallment: {
+                    connect: { id: createdInstallment.id },
+                  },
+                  cashRegister: { connect: { id: openCashRegister.id } },
+                },
+              });
+
+              // Atualiza o valor total do caixa
+              await tx.cashRegister.update({
+                where: { id: openCashRegister.id },
+                data: { totalOutcomes: { increment: amount } },
+              });
+            }
+          }
+        }
 
         return payable;
       });
+
+      // Atualizar status do payable após criação
+      await this.updatePayableStatus(payable.id);
+
+      return payable;
     } catch (error) {
       console.error(error);
       throw new Error('Error creating payable' + error.message);

@@ -662,6 +662,18 @@ export class ScheduledExpenseService {
     let successCount = 0;
     let errorCount = 0;
 
+    // Buscar conta bancária padrão da empresa uma única vez
+    const defaultBankAccount = await this.prisma.bankAccount.findFirst({
+      where: {
+        companyId,
+        isActive: true,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+    const defaultBankAccountId = defaultBankAccount?.id || null;
+
     for (const scheduledExpenseId of launchData.scheduledExpenseIds) {
       try {
         // Buscar a despesa agendada
@@ -705,6 +717,7 @@ export class ScheduledExpenseService {
             amount: launchData.amount,
             additionalFee: 0,
             paymentConditionId: null,
+            bankAccountId: defaultBankAccountId, // ✅ Conta padrão
             status: 'PENDING',
             paidDate: null,
           },
