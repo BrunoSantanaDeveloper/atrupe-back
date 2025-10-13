@@ -411,7 +411,8 @@ export class OrderService {
 
       const quotation = order.quotation;
 
-      const financialTableData = buildFinancialTableData(
+      const financialTableData = await this.buildFinancialTableData(
+        quotation.id,
         quotation.client,
         quotation.quotationPayment,
         quotation.deliveryInfo,
@@ -759,107 +760,255 @@ export class OrderService {
       data: { isActive: false },
     });
   }
-}
 
-function buildFinancialTableData(client, quotationPayment, deliveryInfo) {
-  const { quotationInstallment, commission, totalValue } = quotationPayment;
-  const paymentInstallments = [];
-  const commissionInstallments = [];
-  const deliveryInstallments = [];
+  /**
+   * Constrói os dados da tabela financeira
+   * Prioriza dados reais de receivable/payable quando existirem
+   * Faz fallback para dados do quotation quando não houver movimentações financeiras criadas
+   */
+  private async buildFinancialTableData(
+    quotationId: string,
+    client: any,
+    quotationPayment: any,
+    deliveryInfo: any,
+  ) {
+    // Buscar receivables e payables reais do banco
+    const [receivables, payables] = await Promise.all([
+      this.prisma.receivable.findMany({
+        where: { quotationId },
+        include: {
+          installments: {
+            include: {
+              paymentCondition: true,
+            },
+            orderBy: {
+              installmentNumber: 'asc',
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+      }),
+      this.prisma.payable.findMany({
+        where: { quotationId },
+        include: {
+          installments: {
+            include: {
+              paymentCondition: true,
+            },
+            orderBy: {
+              installmentNumber: 'asc',
+            },
+          },
+          supplier: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+      }),
+    ]);
 
-  // Processar Payment
-  quotationInstallment.forEach((installment, index) => {
-    const installmentStatus = installment.receivableInstallmentId
-      ? installment.receivableInstallment?.status || 'PAID'
-      : 'PENDING';
-
-    paymentInstallments.push({
-      id: index + 1,
-      company: client.name,
-      method: installment.paymentCondition?.name || 'Unknown',
-      installmentNumber: index + 1,
-      installmentTotal: quotationInstallment.length,
-      status: installmentStatus,
-      dueAmount: installment.value,
-      dueDate: new Date(installment.dueDate).toLocaleDateString('pt-BR'),
-      paidAmount: installment.receivableInstallment?.paidAmount || 0,
-      paidDate: installment.receivableInstallment?.paidDate
-        ? new Date(
-            installment.receivableInstallment.paidDate,
-          ).toLocaleDateString('pt-BR')
-        : null,
-    });
-  });
-
-  // Processar Commission
-  if (commission) {
-    const commissionValue =
-      commission.commissionType === 'PERCENT'
-        ? (totalValue * commission.commissionValue) / 100
-        : commission.commissionValue;
-
-    if (commission.transferMethod === 'SINGLE') {
-      const commissionStatus = commission.payableInstallmentId
-        ? commission.payableInstallment?.status || 'PAID'
-        : 'PENDING';
-
-      commissionInstallments.push({
-        id: paymentInstallments.length + 1,
-        company: commission.supplier?.name || 'Vendedor',
-        method: 'Comissão',
-        installmentNumber: 1,
-        installmentTotal: 1,
-        status: commissionStatus,
-        dueAmount: commissionValue,
-        dueDate: new Date().toLocaleDateString('pt-BR'), // Ajustar conforme necessário
-        paidAmount: commission.receivableInstallment?.paidAmount || 0,
-        paidDate: commission.receivableInstallment?.paidDate
-          ? new Date(
-              commission.receivableInstallment.paidDate,
-            ).toLocaleDateString('pt-BR')
-          : null,
-      });
-    } else if (commission.transferMethod === 'PAYMENT_BASED') {
-      const installmentValue = commissionValue / quotationInstallment.length;
-      quotationInstallment.forEach((installment, index) => {
-        const commissionStatus = installment.receivableInstallmentId
-          ? installment.receivableInstallment?.status || 'PAID'
-          : 'PENDING';
-
-        commissionInstallments.push({
-          id: paymentInstallments.length + index + 1,
-          company: commission.supplier?.name || 'Vendedor',
-          method: 'Comissão',
-          installmentNumber: index + 1,
-          installmentTotal: quotationInstallment.length,
-          status: commissionStatus,
-          dueAmount: installmentValue,
-          dueDate: new Date(installment.dueDate).toLocaleDateString('pt-BR'),
-          paidAmount: installment.receivableInstallment?.paidAmount || 0,
-          paidDate: installment.receivableInstallment?.paidDate
-            ? new Date(
-                installment.receivableInstallment.paidDate,
-              ).toLocaleDateString('pt-BR')
-            : null,
-        });
-      });
+    // Se existirem receivables/payables, usar dados reais
+    if (receivables.length > 0 || payables.length > 0) {
+      return this.buildFromRealFinancialData(receivables, payables, client);
     }
+
+    // Caso contrário, construir dados "fictícios" baseados no quotationPayment
+    return this.buildFromQuotationData(client, quotationPayment, deliveryInfo);
   }
 
-  deliveryInstallments.push({
-    id: paymentInstallments.length + commissionInstallments.length + 1,
-    company: deliveryInfo.supplier?.name || 'Transportadora',
-    method: 'Frete',
-    status: 'PENDING',
-    dueAmount: deliveryInfo.cost,
-    dueDate: deliveryInfo.estimatedDate,
-    paidAmount: deliveryInfo.value,
-    paidDate: null,
-  });
+  /**
+   * Constrói dados financeiros a partir de receivables e payables reais do banco
+   */
+  private buildFromRealFinancialData(
+    receivables: any[],
+    payables: any[],
+    client: any,
+  ) {
+    const paymentInstallments = [];
+    const commissionInstallments = [];
+    const deliveryInstallments = [];
 
-  return {
-    payment: paymentInstallments,
-    commission: commissionInstallments,
-    delivery: deliveryInstallments,
-  };
+    let installmentId = 1;
+
+    // Processar RECEIVABLES (receitas - pagamentos do cliente)
+    receivables.forEach((receivable) => {
+      receivable.installments.forEach((installment) => {
+        paymentInstallments.push({
+          id: installmentId++,
+          company: client.name,
+          method: installment.paymentCondition?.name || 'A definir',
+          installmentNumber: installment.installmentNumber,
+          installmentTotal: receivable.installmentQty,
+          status: installment.status,
+          dueAmount: installment.amount + (installment.additionalFee || 0),
+          dueDate: new Date(installment.dueDate).toLocaleDateString('pt-BR'),
+          paidAmount: installment.paidAmount || 0,
+          paidDate: installment.paidDate
+            ? new Date(installment.paidDate).toLocaleDateString('pt-BR')
+            : null,
+          financialType: receivable.financialType, // DOWN_PAYMENT ou MAIN
+        });
+      });
+    });
+
+    // Processar PAYABLES (despesas - comissões e frete)
+    payables.forEach((payable) => {
+      const isCommission = payable.financialType === 'COMMISSION';
+      const isDelivery = payable.financialType === 'DELIVERY';
+
+      payable.installments.forEach((installment) => {
+        const installmentData = {
+          id: installmentId++,
+          company: payable.supplier?.name || 'Fornecedor',
+          method: isCommission ? 'Comissão' : 'Frete',
+          installmentNumber: installment.installmentNumber,
+          installmentTotal: payable.installmentQty,
+          status: installment.status,
+          dueAmount: installment.amount + (installment.additionalFee || 0),
+          dueDate: new Date(installment.dueDate).toLocaleDateString('pt-BR'),
+          paidAmount: installment.paidAmount || 0,
+          paidDate: installment.paidDate
+            ? new Date(installment.paidDate).toLocaleDateString('pt-BR')
+            : null,
+        };
+
+        if (isCommission) {
+          commissionInstallments.push(installmentData);
+        } else if (isDelivery) {
+          deliveryInstallments.push(installmentData);
+        }
+      });
+    });
+
+    return {
+      payment: paymentInstallments,
+      commission: commissionInstallments,
+      delivery: deliveryInstallments,
+    };
+  }
+
+  /**
+   * Constrói dados financeiros "fictícios" baseados no quotationPayment
+   * Usado quando ainda não foram criados receivables/payables
+   */
+  private buildFromQuotationData(
+    client: any,
+    quotationPayment: any,
+    deliveryInfo: any,
+  ) {
+    const { quotationInstallment, commission, downPayment } = quotationPayment;
+    const paymentInstallments = [];
+    const commissionInstallments = [];
+    const deliveryInstallments = [];
+
+    let installmentId = 1;
+
+    // Processar Entrada (Down Payment) se existir
+    if (downPayment && downPayment > 0) {
+      paymentInstallments.push({
+        id: installmentId++,
+        company: client.name,
+        method: 'Entrada',
+        installmentNumber: 1,
+        installmentTotal: 1,
+        status: 'PENDING',
+        dueAmount: downPayment,
+        dueDate: quotationPayment.downPaymentDueDate
+          ? new Date(quotationPayment.downPaymentDueDate).toLocaleDateString(
+              'pt-BR',
+            )
+          : new Date().toLocaleDateString('pt-BR'),
+        paidAmount: 0,
+        paidDate: null,
+        financialType: 'DOWN_PAYMENT',
+      });
+    }
+
+    // Processar parcelas principais (Payment)
+    quotationInstallment.forEach((installment, index) => {
+      paymentInstallments.push({
+        id: installmentId++,
+        company: client.name,
+        method: installment.paymentCondition?.name || 'A definir',
+        installmentNumber: index + 1,
+        installmentTotal: quotationInstallment.length,
+        status: 'PENDING',
+        dueAmount: installment.value + (installment.additionalFee || 0),
+        dueDate: new Date(installment.dueDate).toLocaleDateString('pt-BR'),
+        paidAmount: 0,
+        paidDate: null,
+        financialType: 'MAIN',
+      });
+    });
+
+    // Processar Comissão (Commission)
+    if (commission && commission.totalCommission > 0) {
+      if (commission.transferMethod === 'SINGLE') {
+        commissionInstallments.push({
+          id: installmentId++,
+          company: commission.supplier?.name || 'Vendedor',
+          method: 'Comissão',
+          installmentNumber: 1,
+          installmentTotal: 1,
+          status: 'PENDING',
+          dueAmount: commission.totalCommission,
+          dueDate: new Date(
+            Date.now() + 30 * 24 * 60 * 60 * 1000,
+          ).toLocaleDateString('pt-BR'),
+          paidAmount: 0,
+          paidDate: null,
+        });
+      } else if (commission.transferMethod === 'PAYMENT_BASED') {
+        const installmentValue =
+          commission.totalCommission / quotationInstallment.length;
+        quotationInstallment.forEach((installment, index) => {
+          commissionInstallments.push({
+            id: installmentId++,
+            company: commission.supplier?.name || 'Vendedor',
+            method: 'Comissão',
+            installmentNumber: index + 1,
+            installmentTotal: quotationInstallment.length,
+            status: 'PENDING',
+            dueAmount: installmentValue,
+            dueDate: new Date(installment.dueDate).toLocaleDateString('pt-BR'),
+            paidAmount: 0,
+            paidDate: null,
+          });
+        });
+      }
+    }
+
+    // Processar Frete (Delivery)
+    if (deliveryInfo && deliveryInfo.cost > 0) {
+      deliveryInstallments.push({
+        id: installmentId++,
+        company: deliveryInfo.supplier?.name || 'Transportadora',
+        method: 'Frete',
+        installmentNumber: 1,
+        installmentTotal: 1,
+        status: 'PENDING',
+        dueAmount: deliveryInfo.cost,
+        dueDate: deliveryInfo.estimatedDate
+          ? new Date(deliveryInfo.estimatedDate).toLocaleDateString('pt-BR')
+          : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString(
+              'pt-BR',
+            ),
+        paidAmount: 0,
+        paidDate: null,
+      });
+    }
+
+    return {
+      payment: paymentInstallments,
+      commission: commissionInstallments,
+      delivery: deliveryInstallments,
+    };
+  }
 }
