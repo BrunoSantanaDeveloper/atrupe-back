@@ -3299,6 +3299,18 @@ export class QuotationService {
     commission: any,
     prisma: any,
   ) {
+    // Buscar conta bancária padrão da empresa
+    const defaultBankAccount = await prisma.bankAccount.findFirst({
+      where: {
+        companyId: quotation.companyId,
+        isActive: true,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+    const defaultBankAccountId = defaultBankAccount?.id || null;
+
     // Criar conta a pagar da comissão
     const payableCommission = await prisma.payable.create({
       data: {
@@ -3338,6 +3350,7 @@ export class QuotationService {
             amount: commission.totalCommission || 0,
             additionalFee: 0,
             paymentConditionId: null,
+            bankAccountId: defaultBankAccountId,
             status: 'PENDING',
             paidDate: null,
           },
@@ -3354,6 +3367,7 @@ export class QuotationService {
                 quotation.quotationPayment.quotationInstallment.length,
               additionalFee: 0,
               paymentConditionId: null,
+              bankAccountId: defaultBankAccountId,
               status: 'PENDING',
               paidDate: null,
             }),
@@ -3374,6 +3388,18 @@ export class QuotationService {
     prisma: any,
   ) {
     const deliveryCost = delivery.cost || 0;
+
+    // Buscar conta bancária padrão da empresa
+    const defaultBankAccount = await prisma.bankAccount.findFirst({
+      where: {
+        companyId: quotation.companyId,
+        isActive: true,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+    const defaultBankAccountId = defaultBankAccount?.id || null;
 
     // Criar conta a pagar da entrega
     const payableDelivery = await prisma.payable.create({
@@ -3405,6 +3431,7 @@ export class QuotationService {
           amount: deliveryCost,
           additionalFee: 0,
           paymentConditionId: null,
+          bankAccountId: defaultBankAccountId,
           status: 'PENDING',
           paidDate: null,
         },
