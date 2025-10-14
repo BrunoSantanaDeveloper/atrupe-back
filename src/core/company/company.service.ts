@@ -1290,7 +1290,7 @@ export class CompanyService {
         rg: '12.345.678-9',
         categoryId: clientCategory?.id || '',
         notes:
-          'Este é um cliente de exemplo criado automaticamente para demonstração. Você pode editá-lo ou excluí-lo conforme necessário.',
+          'Este é um cliente de exemplo criado automaticamente para demonstração. Você pode editá-lo ou inativá-lo conforme necessário.',
         companyId: companyId,
         minValue: 0,
         maxValue: 1000,
