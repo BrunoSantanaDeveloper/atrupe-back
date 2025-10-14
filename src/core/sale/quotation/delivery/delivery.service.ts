@@ -86,13 +86,35 @@ export class DeliveryService {
       }
 
       // Validações específicas
+      // Se está mudando para CARRIER, validar se há supplierId
+      if (updateDeliveryInfoDto.deliveryType === 'CARRIER') {
+        const finalSupplierId = updateDeliveryInfoDto.hasOwnProperty(
+          'supplierId',
+        )
+          ? updateDeliveryInfoDto.supplierId
+          : existingDeliveryInfo.supplierId;
+
+        if (!finalSupplierId) {
+          throw new BadRequestException(
+            'Fornecedor é necessário quando o tipo de entrega for Transportadora',
+          );
+        }
+      }
+
+      // Se está removendo o supplierId, validar se o tipo de entrega permite
       if (
-        updateDeliveryInfoDto.deliveryType === 'CARRIER' &&
-        !updateDeliveryInfoDto.supplierId
+        updateDeliveryInfoDto.hasOwnProperty('supplierId') &&
+        updateDeliveryInfoDto.supplierId === null
       ) {
-        throw new BadRequestException(
-          'Fornecedor é necessário quando o tipo de entrega for Transportadora',
-        );
+        const finalDeliveryType =
+          updateDeliveryInfoDto.deliveryType ||
+          existingDeliveryInfo.deliveryType;
+
+        if (finalDeliveryType === 'CARRIER') {
+          throw new BadRequestException(
+            'Não é possível remover o fornecedor quando o tipo de entrega é Transportadora',
+          );
+        }
       }
 
       if (
@@ -171,23 +193,25 @@ export class DeliveryService {
       const deliveryData: any = { ...updateDeliveryInfoDto };
       delete deliveryData.customAddress;
 
-      // Converter valores null para undefined para evitar problemas no Prisma
-      if (deliveryData.supplierId === null) {
-        deliveryData.supplierId = undefined;
+      // Preparar dados para atualização
+      const updateData: any = {
+        ...deliveryData,
+        clientAddressId: addressId === 'custom' ? null : addressId || null,
+      };
+
+      // Se supplierId for explicitamente null, mantém null para desconectar a relação
+      if (updateDeliveryInfoDto.hasOwnProperty('supplierId')) {
+        updateData.supplierId = updateDeliveryInfoDto.supplierId;
       }
-      if (
-        deliveryData.clientAddressId === null ||
-        deliveryData.clientAddressId === ''
-      ) {
-        deliveryData.clientAddressId = undefined;
+
+      // Se clientAddressId for string vazia, converter para null
+      if (updateData.clientAddressId === '') {
+        updateData.clientAddressId = null;
       }
 
       const updatedDeliveryInfo = await this.prisma.deliveryInfo.update({
         where: { id },
-        data: {
-          ...deliveryData,
-          clientAddressId: addressId === 'custom' ? null : addressId || null,
-        },
+        data: updateData,
       });
 
       return updatedDeliveryInfo;
