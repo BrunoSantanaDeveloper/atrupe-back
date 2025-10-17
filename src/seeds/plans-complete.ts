@@ -42,6 +42,7 @@ export const PLAN_CONFIGURATIONS = {
       description: '',
       basePrice: 0,
       additionalUserPrice: 1500,
+      order: 0,
       isActive: true,
     },
     badge: null,
@@ -62,6 +63,7 @@ export const PLAN_CONFIGURATIONS = {
       description: '',
       basePrice: 11500,
       additionalUserPrice: 1500,
+      order: 1,
       isActive: true,
     },
     badge: null,
@@ -134,6 +136,7 @@ export const PLAN_CONFIGURATIONS = {
       description: '',
       basePrice: 23000,
       additionalUserPrice: 1500,
+      order: 2,
       isActive: true,
     },
     badge: {
@@ -183,6 +186,7 @@ export const PLAN_CONFIGURATIONS = {
       description: '',
       basePrice: 0,
       additionalUserPrice: 1500,
+      order: 3,
       isActive: false,
     },
     badge: {
@@ -220,6 +224,7 @@ export const PLAN_CONFIGURATIONS = {
       description: '',
       basePrice: 0,
       additionalUserPrice: 1500,
+      order: 4,
       isActive: false,
     },
     badge: {
@@ -268,6 +273,7 @@ export const PLAN_CONFIGURATIONS = {
       description: '',
       basePrice: 0,
       additionalUserPrice: 1500,
+      order: 5,
       isActive: false,
     },
     badge: {

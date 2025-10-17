@@ -1280,6 +1280,7 @@ model Plan {
   additionalUserPrice Float?         @default(0)
   basePrice           Float
   planType            PlanType       @default(START)
+  order               Int            @default(1) // Display order: TRIAL=0, START=1, LITE=2, PRO=3, ELITE=4, FULL=5
   isActive            Boolean        @default(true)
   badge               Json? // {text: string, variant: string}
   concept             Json? // {description, objective, mainActions, expectedResults, footer?}

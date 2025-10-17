@@ -51,12 +51,16 @@ export class PlanService {
    * Get plans formatted for the frontend subscription page
    * Returns plans with sections structure (concept + features)
    * Returns all plans (active and inactive) to show "coming soon" badges
+   * Excludes TRIAL plans and orders by the 'order' field: START, LITE, PRO, ELITE, FULL
    */
   async getPublicPlans() {
     try {
       const plans = await this.prisma.plan.findMany({
         where: {
           companyId: null, // Only global plans
+          planType: {
+            not: 'TRIAL', // Exclude TRIAL plans
+          },
         },
         select: {
           id: true,
@@ -68,7 +72,7 @@ export class PlanService {
           features: true,
         },
         orderBy: {
-          basePrice: 'asc',
+          order: 'asc', // Order by the new 'order' field
         },
       });
 
