@@ -76,8 +76,16 @@ export class SeedPlansService {
           additionalUserPrice: config.plan.additionalUserPrice,
           planType: config.plan.planType,
           isActive: config.plan.isActive,
+          badge: config.badge || null,
+          concept: config.concept || null,
+          features: config.featuresList || null,
         },
-        create: config.plan,
+        create: {
+          ...config.plan,
+          badge: config.badge || null,
+          concept: config.concept || null,
+          features: config.featuresList || null,
+        },
       });
 
       // Limpar features e limits antigos

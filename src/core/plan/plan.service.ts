@@ -47,6 +47,50 @@ export class PlanService {
     }
   }
 
+  /**
+   * Get plans formatted for the frontend subscription page
+   * Returns plans with sections structure (concept + features)
+   * Returns all plans (active and inactive) to show "coming soon" badges
+   */
+  async getPublicPlans() {
+    try {
+      const plans = await this.prisma.plan.findMany({
+        where: {
+          companyId: null, // Only global plans
+        },
+        select: {
+          id: true,
+          name: true,
+          basePrice: true,
+          isActive: true,
+          badge: true,
+          concept: true,
+          features: true,
+        },
+        orderBy: {
+          basePrice: 'asc',
+        },
+      });
+
+      // Format the response to match frontend structure
+      return plans.map((plan) => ({
+        id: plan.id,
+        name: plan.name,
+        basePrice: plan.isActive ? plan.basePrice : undefined,
+        isActive: plan.isActive,
+        badge: plan.badge as any,
+        sections: {
+          concept: plan.concept as any,
+          features: plan.features as any,
+        },
+      }));
+    } catch (error) {
+      throw new BadRequestException(
+        'Error fetching public plans: ' + error.message,
+      );
+    }
+  }
+
   async findPlanById(id: string) {
     try {
       const plan = await this.prisma.plan.findUnique({

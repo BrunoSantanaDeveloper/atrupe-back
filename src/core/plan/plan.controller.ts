@@ -42,6 +42,16 @@ export class PlanController {
     return this.planService.findAllPlans();
   }
 
+  @Get('public/subscription')
+  @ApiOperation({ summary: 'Lista planos públicos para página de contratação' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de planos públicos retornada com sucesso',
+  })
+  getPublicPlans() {
+    return this.planService.getPublicPlans();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Busca um plano pelo ID' })
   @ApiResponse({

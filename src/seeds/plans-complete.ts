@@ -39,13 +39,15 @@ export const PLAN_CONFIGURATIONS = {
     plan: {
       planType: 'TRIAL' as const,
       name: 'Trial',
-      description:
-        'Plano de avaliação gratuito com funcionalidades limitadas para testar o sistema por um período determinado.\n\nIncluído no Trial:\n- Até 3 usuários\n- Funcionalidades básicas\n- Acesso limitado por 30 dias\n- Suporte básico\n\nPerfeito para conhecer o sistema antes de escolher um plano pago.',
+      description: '',
       basePrice: 0,
-      additionalUserPrice: 0,
+      additionalUserPrice: 1500,
       isActive: true,
     },
+    badge: null,
+    concept: null,
     features: [],
+    featuresList: null,
     limits: {
       max_users: 3,
       max_companies: 1,
@@ -57,13 +59,67 @@ export const PLAN_CONFIGURATIONS = {
     plan: {
       planType: 'START' as const,
       name: 'Start',
-      description:
-        'Conceito:\nNa jornada da excelência, tudo começa com a organização e estruturação das informações. Esse ponto de partida cria as bases para que o negócio avance de forma organizada e profissional.\n\nObjetivo:\nDigitalizar e estruturar as informações principais, garantindo um início profissional e funcional.\n\nPrincipais Ações:\n- Cadastro de clientes, fornecedores, colaboradores e produtos.\n- Organização financeira básica: plano de contas, despesas fixas, folha de pagamento e receitas.\n- Implementação de um sistema simples para emissão de pedidos, controle financeiro básico e aparência profissional.\n\nResultados Esperados:\nA empresa sai do improviso, garantindo que nenhum trabalho seja esquecido, com informações organizadas e uma imagem mais profissional.',
-      basePrice: 11500, // R$ 115,00 em centavos
-      additionalUserPrice: 1500, // R$ 15,00 em centavos
+      description: '',
+      basePrice: 11500,
+      additionalUserPrice: 1500,
       isActive: true,
     },
+    badge: null,
+    concept: {
+      description:
+        'Na jornada da excelência, tudo começa com a organização e estruturação das informações. Esse ponto de partida cria as bases para que o negócio avance de forma organizada e profissional.',
+      objective:
+        'Digitalizar e estruturar as informações principais, garantindo um início profissional e funcional.',
+      mainActions: [
+        'Cadastro de clientes, fornecedores, colaboradores e produtos.',
+        'Organização financeira básica: plano de contas, despesas fixas, folha de pagamento e receitas.',
+        'Implementação de um sistema simples para emissão de pedidos, controle financeiro básico e aparência profissional.',
+      ],
+      expectedResults: {
+        text: 'A empresa sai do improviso, garantindo que nenhum trabalho seja esquecido, com informações organizadas e uma imagem mais profissional.',
+      },
+    },
     features: [],
+    featuresList: [
+      {
+        title: 'Empresa e sistema',
+        items: [
+          '3 usuários',
+          'Cadastro de 1 CNPJ',
+          'Padrões de medida',
+          'Cadastro de colaboradores',
+          'Perfis de usuário',
+          'Setores',
+        ],
+        videoUrl: 'https://vimeo.com/495579294',
+      },
+      {
+        title: 'Vendas',
+        items: ['Orçamentos', 'Ordens de serviço'],
+        videoUrl: 'https://vimeo.com/495579294',
+      },
+      {
+        title: 'Financeiro',
+        items: [
+          'Fluxo financeiro',
+          'Formas de pagamento',
+          'Despesas fixas',
+          'Folha de pagamento (Simplificada)',
+          'Plano de contas',
+        ],
+        videoUrl: 'https://vimeo.com/495579294',
+      },
+      {
+        title: 'Produtos',
+        items: ['Produtos sem composição'],
+        videoUrl: 'https://vimeo.com/495579294',
+      },
+      {
+        title: 'Cadastros',
+        items: ['Clientes (Simplificado)', 'Fornecedores (Simplificado)'],
+        videoUrl: 'https://vimeo.com/495579294',
+      },
+    ],
     limits: {
       max_users: 3,
       max_companies: 1,
@@ -75,13 +131,44 @@ export const PLAN_CONFIGURATIONS = {
     plan: {
       planType: 'LITE' as const,
       name: 'Lite',
-      description:
-        'Conceito:\nCom as bases lançadas na Etapa Start, o próximo passo é fortalecer a estabilidade financeira e comercial do negócio por meio de ferramentas mais robustas.\n\nObjetivo:\nAprofundar o controle financeiro da empresa enquanto integra informações comerciais (CRM) para facilitar tomadas de decisão estratégicas.\n\nPrincipais Ações:\n- Cadastro de produtos com composições básicas.\n- Controle financeiro avançado:\n  - Separação por contas bancárias.\n  - Definição de limites de crédito para clientes.\n  - Opção para repasse automático das taxas financeiras.\n- Introdução ao CRM (Gestão Comercial):\n  - Status das negociações em andamento.\n  - Motivos dos cancelamentos registrados no sistema.\n  - Histórico completo dos clientes.\n\nResultados Esperados:\nA empresa ganha previsibilidade financeira:\n- Redução significativa nas perdas financeiras;\n- Melhor controle sobre vendas/compras;\n- Decisões comerciais mais assertivas graças ao CRM integrado.\n\nObservação:\nAs informações cadastradas aqui evoluem diretamente pra próxima etapa — sem retrabalho!',
-      basePrice: 23000, // R$ 230,00 em centavos
-      additionalUserPrice: 2000, // R$ 20,00 em centavos
+      description: '',
+      basePrice: 23000,
+      additionalUserPrice: 1500,
       isActive: true,
     },
+    badge: {
+      text: 'Próximo nível',
+      variant: 'light',
+    },
+    concept: {
+      description:
+        'Com as bases lançadas na Etapa Start, o próximo passo é fortalecer a estabilidade financeira e comercial do negócio por meio de ferramentas mais robustas.',
+      objective:
+        'Aprofundar o controle financeiro da empresa enquanto integra informações comerciais (CRM) para facilitar tomadas de decisão estratégicas.',
+      mainActions: [
+        'Cadastro de produtos com composições básicas.',
+        'Controle financeiro avançado:',
+        'Separação por contas bancárias.',
+        'Definição de limites de crédito para clientes.',
+        'Opção para repasse automático das taxas financeiras.',
+        'Introdução ao CRM (Gestão Comercial):',
+        'Status das negociações em andamento.',
+        'Motivos dos cancelamentos registrados no sistema.',
+        'Histórico completo dos clientes:',
+      ],
+      expectedResults: {
+        text: 'A empresa ganha previsibilidade financeira:',
+        list: [
+          'Redução significativa nas perdas financeiras;',
+          'Melhor controle sobre vendas/compras;',
+          'Decisões comerciais mais assertivas graças ao CRM integrado.',
+        ],
+      },
+      footer:
+        'As informações cadastradas aqui evoluem diretamente pra próxima etapa — sem retrabalho!',
+    },
     features: liteFeatures,
+    featuresList: null,
     limits: {
       max_users: 5,
       max_companies: 1,
@@ -93,13 +180,32 @@ export const PLAN_CONFIGURATIONS = {
     plan: {
       planType: 'PRO' as const,
       name: 'Pro',
+      description: '',
+      basePrice: 0,
+      additionalUserPrice: 1500,
+      isActive: false,
+    },
+    badge: {
+      text: 'Em breve',
+      variant: 'orangeLight',
+    },
+    concept: {
       description:
-        'Conceito:\nEssa é a grande virada! Com a estabilidade financeira consolidada, é hora de aprofundar o conhecimento sobre custos e estruturar os processos para maior eficiência.\n\nObjetivo:\nCompreender os custos reais e criar padrões para processos e orçamentos.\n\nPrincipais Ações:\n- Cadastro detalhado de custos: mão de obra, materiais e equipamentos.\n- Identificação de trabalhos mais lucrativos e eliminação de serviços deficitários.\n- Padronização de processos de trabalho, criando fluxos claros para orçamentos e produção.\n- Delegação de funções antes centralizadas no dono da empresa baseada nesses processos.\n\nResultados Esperados:\nA empresa ganha clareza sobre sua operação, reduz sua linha de produtos para focar no que é mais lucrativo e padroniza processos, diminuindo a dependência exclusiva do dono.',
-      basePrice: 30000, // R$ 300,00 em centavos
-      additionalUserPrice: 2500, // R$ 25,00 em centavos
-      isActive: true,
+        'Essa é a grande virada! Com a estabilidade financeira consolidada, é hora de aprofundar o conhecimento sobre custos e estruturar os processos para maior eficiência.',
+      objective:
+        'Compreender os custos reais e criar padrões para processos e orçamentos.',
+      mainActions: [
+        'Cadastro detalhado de custos: mão de obra, materiais e equipamentos.',
+        'Identificação de trabalhos mais lucrativos e eliminação de serviços deficitários.',
+        'Padronização de processos de trabalho, criando fluxos claros para orçamentos e produção.',
+        'Delegação de funções antes centralizadas no dono da empresa baseada nesses processos.',
+      ],
+      expectedResults: {
+        text: 'A empresa ganha clareza sobre sua operação, reduz sua linha de produtos para focar no que é mais lucrativo e padroniza processos, diminuindo a dependência exclusiva do dono.',
+      },
     },
     features: proFeatures,
+    featuresList: null,
     limits: {
       max_users: 10,
       max_companies: 1,
@@ -111,13 +217,43 @@ export const PLAN_CONFIGURATIONS = {
     plan: {
       planType: 'ELITE' as const,
       name: 'Elite',
+      description: '',
+      basePrice: 0,
+      additionalUserPrice: 1500,
+      isActive: false,
+    },
+    badge: {
+      text: 'Em breve',
+      variant: 'orangeLight',
+    },
+    concept: {
       description:
-        'Conceito:\nNesta etapa, a empresa passa a contar com um gerenciador de produção exclusivo, desenvolvido para atender às necessidades específicas de empresas de comunicação visual e gráficas.\n\nEle utiliza as composições criadas na Etapa 3 (máquinas, materiais e mão-de-obra) para organizar e monitorar todo o fluxo produtivo.\n\nO grande diferencial desse gerenciador é sua capacidade de se adaptar à estrutura única de cada empresa — seja por setores ou fluxos personalizados — além de permitir análises detalhadas da produtividade por setor e por colaborador.\n\nObjetivo:\nIntegrar todos os setores ao sistema, garantindo um gerenciamento eficiente da produção com base em dados reais.\n\nPrincipais Ações:\n- Implementação do gerenciador de produção;\n- Adaptável à estrutura específica da empresa;\n- Baseado nas composições detalhadas dos produtos criadas na Etapa 3;\n- Treinamento direcionado;\n- Cada setor aprende como usar o sistema dentro das suas funções específicas;\n- Análise avançada da produtividade;\n- Medição precisa por setor;\n- Avaliação individual dos colaboradores com base nos tempos estimados versus realizados.\n\nResultados Esperados:\n- Produção totalmente integrada entre os setores;\n- Redução de erros operacionais;\n- Identificação clara de gargalos produtivos (setores ou indivíduos);\n- Melhor aproveitamento dos recursos disponíveis (tempo, máquinas e materiais).\n\nO gerenciador foi projetado exclusivamente para empresas gráficas e de comunicação visual, oferecendo flexibilidade máxima sem complicações desnecessárias!',
-      basePrice: 40000, // R$ 400,00 em centavos
-      additionalUserPrice: 3000, // R$ 30,00 em centavos
-      isActive: true,
+        'Nesta etapa, a empresa passa a contar com um gerenciador de produção exclusivo, desenvolvido para atender às necessidades específicas de empresas de comunicação visual e gráficas.',
+      objective:
+        'Integrar todos os setores ao sistema, garantindo um gerenciamento eficiente da produção com base em dados reais.',
+      mainActions: [
+        'Implementação do gerenciador de produção:',
+        'Adaptável à estrutura específica da empresa.',
+        'Baseado nas composições detalhadas dos produtos criadas na Etapa 3.',
+        'Treinamento direcionado:',
+        'Cada setor aprende como usar o sistema dentro das suas funções específicas.',
+        'Análise avançada da produtividade:',
+        'Medição precisa por setor.',
+        'Avaliação individual dos colaboradores com base nos tempos estimados versus realizados.',
+      ],
+      expectedResults: {
+        list: [
+          'Produção totalmente integrada entre os setores;',
+          'Redução de erros operacionais;',
+          'Identificação clara de gargalos produtivos (setores ou indivíduos);',
+          'Melhor aproveitamento dos recursos disponíveis (tempo, máquinas e materiais).',
+        ],
+      },
+      footer:
+        'O gerenciador foi projetado exclusivamente para empresas gráficas e de comunicação visual, oferecendo flexibilidade máxima sem complicações desnecessárias!',
     },
     features: eliteFeatures,
+    featuresList: null,
     limits: {
       max_users: 20,
       max_companies: 1,
@@ -129,13 +265,32 @@ export const PLAN_CONFIGURATIONS = {
     plan: {
       planType: 'FULL' as const,
       name: 'Full',
+      description: '',
+      basePrice: 0,
+      additionalUserPrice: 1500,
+      isActive: false,
+    },
+    badge: {
+      text: 'Em breve',
+      variant: 'orangeLight',
+    },
+    concept: {
       description:
-        'Conceito:\nNo ponto mais avançado da jornada, o foco é integrar todas as etapas anteriores para um gerenciamento completo e eficiente de estoque.\n\nObjetivo:\nGarantir que o estoque seja gerido com precisão, evitando desperdícios e alinhando-o às demandas da produção.\n\nPrincipais Ações:\n- Entrada de materiais correta no sistema.\n- Composição detalhada dos trabalhos, considerando aproveitamento e substituição de materiais na produção.\n- Integração com o gerenciamento de produção para rastrear o uso real de materiais.\n- Análise de custos estimados versus realizados, com ajustes nos processos para melhorias futuras.\n\nResultados Esperados:\nA empresa atinge excelência operacional, com controle total sobre custos, estoques e processos, resultando em mais eficiência e lucratividade.',
-      basePrice: 50000, // R$ 500,00 em centavos
-      additionalUserPrice: 3500, // R$ 35,00 em centavos
-      isActive: true,
+        'No ponto mais avançado da jornada, o foco é integrar todas as etapas anteriores para um gerenciamento completo e eficiente de estoque.',
+      objective:
+        'Garantir que o estoque seja gerido com precisão, evitando desperdícios e alinhando-o às demandas da produção.',
+      mainActions: [
+        'Entrada de materiais correta no sistema.',
+        'Composição detalhada dos trabalhos, considerando aproveitamento e substituição de materiais na produção.',
+        'Integração com o gerenciamento de produção para rastrear o uso real de materiais.',
+        'Análise de custos estimados versus realizados, com ajustes nos processos para melhorias futuras.',
+      ],
+      expectedResults: {
+        text: 'A empresa atinge excelência operacional, com controle total sobre custos, estoques e processos, resultando em mais eficiência e lucratividade.',
+      },
     },
     features: fullFeatures,
+    featuresList: null,
     limits: {
       max_users: -1, // ilimitado
       max_companies: -1, // ilimitado
