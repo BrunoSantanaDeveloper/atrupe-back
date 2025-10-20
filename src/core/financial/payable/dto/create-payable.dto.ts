@@ -227,6 +227,14 @@ export class PayableInstallmentDto {
   @IsUUID()
   @IsOptional()
   paymentConditionId?: string;
+
+  @ApiPropertyOptional({
+    description: 'ID da conta bancária (opcional)',
+    example: 'd5b0e414-6c7c-4b7a-88f3-5a3e216e1e2f',
+  })
+  @IsOptional()
+  @IsUUID()
+  bankAccountId?: string;
 }
 
 export class UpdatePayableInstallmentsDto {

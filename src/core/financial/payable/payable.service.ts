@@ -1319,20 +1319,50 @@ export class PayableService {
       const { installments, totalAmount, changeNotes, changeReason } = dto;
       // let totalAmount = 0;
 
-      // Capturar estado antes da alteração
-      const installmentsBefore =
-        await this.prisma.payableInstallment.findMany({
-          where: { payableId },
-          select: {
-            id: true,
-            installmentNumber: true,
-            amount: true,
-            dueDate: true,
-            status: true,
+      // Capturar estado antes da alteração (incluindo o totalAmount do payable)
+      const payableBefore = await this.prisma.payable.findUnique({
+        where: { id: payableId },
+        select: { totalAmount: true },
+      });
+
+      const installmentsBefore = await this.prisma.payableInstallment.findMany({
+        where: { payableId },
+        select: {
+          id: true,
+          installmentNumber: true,
+          amount: true,
+          dueDate: true,
+          status: true,
+        },
+      });
+
+      const updatedPayable = await this.prisma.$transaction(async (prisma) => {
+        // Buscar o payable para obter o companyId
+        const payable = await prisma.payable.findUnique({
+          where: { id: payableId },
+          select: { companyId: true },
+        });
+
+        if (!payable) {
+          throw new NotFoundException('Payable não encontrado.');
+        }
+
+        // Buscar conta bancária padrão para novas parcelas
+        let defaultBankAccountId: string | null = null;
+        const firstBankAccount = await prisma.bankAccount.findFirst({
+          where: {
+            companyId: payable.companyId,
+            isActive: true,
+          },
+          orderBy: {
+            createdAt: 'asc',
           },
         });
 
-      const updatedPayable = await this.prisma.$transaction(async (prisma) => {
+        if (firstBankAccount) {
+          defaultBankAccountId = firstBankAccount.id;
+        }
+
         const updatedInstallments = [];
         for (const installmentDto of installments) {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1368,6 +1398,8 @@ export class PayableService {
                 status: 'PENDING',
                 paymentConditionId: installmentDto.paymentConditionId,
                 installmentNumber: installments.indexOf(installmentDto) + 1,
+                bankAccountId:
+                  installmentDto.bankAccountId || defaultBankAccountId || null,
               },
             });
             updatedInstallments.push(newInstallment);
@@ -1411,6 +1443,9 @@ export class PayableService {
         if (totalAmount !== undefined) updateData.totalAmount = totalAmount;
         if (changeReason !== undefined) updateData.changeReason = changeReason;
         if (changeNotes !== undefined) updateData.changeNotes = changeNotes;
+
+        // Atualiza a quantidade de parcelas
+        updateData.installmentQty = allInstallments.length;
 
         if (Object.keys(updateData).length > 0) {
           await this.prisma.payable.update({
@@ -1493,6 +1528,8 @@ export class PayableService {
             removedCount,
             changeReason,
             changeNotes,
+            totalAmountBefore: payableBefore?.totalAmount,
+            totalAmountAfter: totalAmount,
           },
           createdBy: userId,
           createdByName: userName,

@@ -1262,7 +1262,12 @@ export class ReceivableService {
       const { installments, totalAmount, changeNotes, changeReason } = dto;
       // let totalAmount = 0;
 
-      // Capturar estado antes da alteração
+      // Capturar estado antes da alteração (incluindo o totalAmount do receivable)
+      const receivableBefore = await this.prisma.receivable.findUnique({
+        where: { id: receivableId },
+        select: { totalAmount: true },
+      });
+
       const installmentsBefore =
         await this.prisma.receivableInstallment.findMany({
           where: { receivableId },
@@ -1277,6 +1282,32 @@ export class ReceivableService {
 
       const updatedReceivable = await this.prisma.$transaction(
         async (prisma) => {
+          // Buscar o receivable para obter o companyId
+          const receivable = await prisma.receivable.findUnique({
+            where: { id: receivableId },
+            select: { companyId: true },
+          });
+
+          if (!receivable) {
+            throw new NotFoundException('Receivable não encontrado.');
+          }
+
+          // Buscar conta bancária padrão para novas parcelas
+          let defaultBankAccountId: string | null = null;
+          const firstBankAccount = await prisma.bankAccount.findFirst({
+            where: {
+              companyId: receivable.companyId,
+              isActive: true,
+            },
+            orderBy: {
+              createdAt: 'asc',
+            },
+          });
+
+          if (firstBankAccount) {
+            defaultBankAccountId = firstBankAccount.id;
+          }
+
           const updatedInstallments = [];
           for (const installmentDto of installments) {
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1311,6 +1342,10 @@ export class ReceivableService {
                   status: 'PENDING',
                   paymentConditionId: installmentDto.paymentConditionId,
                   installmentNumber: installments.indexOf(installmentDto) + 1,
+                  bankAccountId:
+                    installmentDto.bankAccountId ||
+                    defaultBankAccountId ||
+                    null,
                 },
               });
               updatedInstallments.push(newInstallment);
@@ -1358,6 +1393,9 @@ export class ReceivableService {
           if (changeReason !== undefined)
             updateData.changeReason = changeReason;
           if (changeNotes !== undefined) updateData.changeNotes = changeNotes;
+
+          // Atualiza a quantidade de parcelas
+          updateData.installmentQty = allInstallments.length;
 
           if (Object.keys(updateData).length > 0) {
             await this.prisma.receivable.update({
@@ -1442,6 +1480,8 @@ export class ReceivableService {
             removedCount,
             changeReason,
             changeNotes,
+            totalAmountBefore: receivableBefore?.totalAmount,
+            totalAmountAfter: totalAmount,
           },
           createdBy: userId,
           createdByName: userName,
