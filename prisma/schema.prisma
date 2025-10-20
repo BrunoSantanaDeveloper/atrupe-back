@@ -342,23 +342,25 @@ model Employee {
 }
 
 model User {
-  id                   String         @id @default(uuid())
+  id                   String              @id @default(uuid())
   password             String
-  email                String         @unique
+  email                String              @unique
   name                 String
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime?      @updatedAt
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime?           @updatedAt
   avatar               String?
-  isActive             Boolean        @default(true)
+  isActive             Boolean             @default(true)
   resetPasswordExpires DateTime?
   resetPasswordToken   String?
   phone                String?
-  isVerified           Boolean        @default(false)
+  isVerified           Boolean             @default(false)
   customerId           String?
   employee             Employee[]
   userContract         UserContract[]
   userRole             UserRole[]
-  customer             Customer?      @relation(fields: [customerId], references: [id])
+  receivableHistory    ReceivableHistory[] @relation("ReceivableHistoryUser")
+  payableHistory       PayableHistory[]    @relation("PayableHistoryUser")
+  customer             Customer?           @relation(fields: [customerId], references: [id])
 
   @@index([email])
   @@map("users")
@@ -474,14 +476,21 @@ model ReceivableInstallment {
 }
 
 model ReceivableHistory {
-  id           String     @id @default(uuid())
-  receivableId String
-  action       String
-  description  String
-  createdBy    String
-  createdAt    DateTime   @default(now())
-  receivable   Receivable @relation(fields: [receivableId], references: [id])
+  id            String     @id @default(uuid())
+  receivableId  String
+  action        String // CREATE, UPDATE_TITLE, UPDATE_INSTALLMENTS, PAY_INSTALLMENT, UNDO_PAYMENT, CANCEL, UNDO_CANCEL
+  description   String
+  changes       Json? // { before: {...}, after: {...} }
+  metadata      Json? // Dados adicionais (installmentNumber, bankAccount, etc.)
+  createdBy     String
+  createdByName String? // Desnormalizado para performance
+  createdAt     DateTime   @default(now())
+  receivable    Receivable @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+  user          User       @relation("ReceivableHistoryUser", fields: [createdBy], references: [id])
 
+  @@index([receivableId])
+  @@index([createdAt])
+  @@index([createdBy])
   @@map("receivable_history")
 }
 
@@ -553,14 +562,21 @@ model PayableInstallment {
 }
 
 model PayableHistory {
-  id          String   @id @default(uuid())
-  payableId   String
-  action      String
-  description String
-  createdBy   String
-  createdAt   DateTime @default(now())
-  payable     Payable  @relation(fields: [payableId], references: [id])
+  id            String   @id @default(uuid())
+  payableId     String
+  action        String // CREATE, UPDATE_TITLE, UPDATE_INSTALLMENTS, PAY_INSTALLMENT, UNDO_PAYMENT, CANCEL, UNDO_CANCEL
+  description   String
+  changes       Json? // { before: {...}, after: {...} }
+  metadata      Json? // Dados adicionais (installmentNumber, bankAccount, etc.)
+  createdBy     String
+  createdByName String? // Desnormalizado para performance
+  createdAt     DateTime @default(now())
+  payable       Payable  @relation(fields: [payableId], references: [id], onDelete: Cascade)
+  user          User     @relation("PayableHistoryUser", fields: [createdBy], references: [id])
 
+  @@index([payableId])
+  @@index([createdAt])
+  @@index([createdBy])
   @@map("payable_history")
 }
 

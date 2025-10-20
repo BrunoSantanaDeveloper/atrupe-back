@@ -18,10 +18,14 @@ import {
 import { ReceivableFilterDto } from './dto/receivable-filter.dto';
 import { PaymentStatus, TransactionType } from '@prisma/client';
 import { endOfDay, add } from 'date-fns';
+import { FinancialHistoryService } from '../history/history.service';
 
 @Injectable()
 export class ReceivableService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly historyService: FinancialHistoryService,
+  ) {}
 
   private getActualStatus(installment: any): string {
     if (
@@ -40,7 +44,7 @@ export class ReceivableService {
     };
   }
 
-  async create(dto: CreateReceivableDto) {
+  async create(dto: CreateReceivableDto, userId?: string, userName?: string) {
     const { installments, bankAccountId, ...receivableData } = dto;
 
     if (installments.length === 0) {
@@ -164,6 +168,27 @@ export class ReceivableService {
 
       // Atualizar status do receivable após criação
       await this.updateReceivableStatus(receivable.id);
+
+      // Registrar no histórico
+      if (userId) {
+        const client = await this.prisma.client.findUnique({
+          where: { id: receivableData.clientId },
+          select: { name: true },
+        });
+
+        await this.historyService.createReceivableHistory({
+          receivableId: receivable.id,
+          action: 'CREATE',
+          description: this.historyService.getCreateDescription(),
+          metadata: {
+            totalAmount: receivable.totalAmount,
+            installmentQty: installments.length,
+            clientName: client?.name || null,
+          },
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
 
       return receivable;
     } catch (error) {
@@ -391,12 +416,54 @@ export class ReceivableService {
     };
   }
 
-  async updateTitle(id: string, dto: UpdateReceivableDto) {
+  async updateTitle(
+    id: string,
+    dto: UpdateReceivableDto,
+    userId?: string,
+    userName?: string,
+  ) {
     try {
+      // Capturar estado anterior
+      const before = await this.prisma.receivable.findUnique({
+        where: { id },
+        select: {
+          description: true,
+          totalAmount: true,
+          referenceDate: true,
+          clientId: true,
+          supplierId: true,
+          natureId: true,
+          subCategoryId: true,
+        },
+      });
+
       const updatedReceivable = await this.prisma.receivable.update({
         where: { id },
         data: dto,
       });
+
+      // Registrar no histórico
+      if (userId) {
+        const changedFields = Object.keys(dto).filter(
+          (key) => dto[key] !== before[key],
+        );
+
+        if (changedFields.length > 0) {
+          await this.historyService.createReceivableHistory({
+            receivableId: id,
+            action: 'UPDATE_TITLE',
+            description: this.historyService.getUpdateTitleDescription({
+              after: dto,
+            }),
+            changes: {
+              before,
+              after: dto,
+            },
+            createdBy: userId,
+            createdByName: userName,
+          });
+        }
+      }
 
       return updatedReceivable;
     } catch (error) {
@@ -405,7 +472,12 @@ export class ReceivableService {
     }
   }
 
-  async cancel(id: string, dto: CancelReceivableDto) {
+  async cancel(
+    id: string,
+    dto: CancelReceivableDto,
+    userId?: string,
+    userName?: string,
+  ) {
     try {
       const receivable = await this.findOne(id);
 
@@ -436,6 +508,23 @@ export class ReceivableService {
         }),
       ]);
 
+      // Registrar no histórico
+      if (userId) {
+        await this.historyService.createReceivableHistory({
+          receivableId: id,
+          action: 'CANCEL',
+          description: this.historyService.getCancelDescription(
+            dto.cancelReason,
+          ),
+          metadata: {
+            cancelReason: dto.cancelReason,
+            cancelNotes: dto.cancelNotes,
+          },
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
+
       // Cancela títulos relacionados se for um título principal da venda
       if (receivable.quotationId && receivable.financialType === 'MAIN') {
         await this.cancelRelatedFinancials(receivable.quotationId);
@@ -447,7 +536,12 @@ export class ReceivableService {
     }
   }
 
-  async undoCancel(id: string, dto: UndoCancelReceivableDto) {
+  async undoCancel(
+    id: string,
+    dto: UndoCancelReceivableDto,
+    userId?: string,
+    userName?: string,
+  ) {
     try {
       const receivable = await this.findOne(id);
 
@@ -481,6 +575,21 @@ export class ReceivableService {
         }),
       ]);
 
+      // Registrar no histórico
+      if (userId) {
+        await this.historyService.createReceivableHistory({
+          receivableId: id,
+          action: 'UNDO_CANCEL',
+          description: this.historyService.getUndoCancelDescription(),
+          metadata: {
+            undoCancelReason: dto.undoCancelReason,
+            undoCancelNotes: dto.undoCancelNotes,
+          },
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
+
       // Reativa títulos relacionados se for um título principal da venda
       if (receivable.quotationId && receivable.financialType === 'MAIN') {
         await this.reactivateRelatedFinancials(receivable.quotationId);
@@ -509,9 +618,15 @@ export class ReceivableService {
     return this.prisma.receivable.count();
   }
 
+  async getHistory(id: string) {
+    return this.historyService.getReceivableHistory(id);
+  }
+
   async payInstallment(
     installmentId: string,
     payInstallmentDto: PayInstallmentDto,
+    userId?: string,
+    userName?: string,
   ) {
     const {
       paymentConditionId,
@@ -850,6 +965,29 @@ export class ReceivableService {
           },
         });
 
+      // Registrar no histórico
+      if (userId) {
+        await this.historyService.createReceivableHistory({
+          receivableId: result.receivableId,
+          action: 'PAY_INSTALLMENT',
+          description: this.historyService.getPayInstallmentDescription(
+            updatedInstallment.installmentNumber,
+          ),
+          metadata: {
+            installmentNumber: updatedInstallment.installmentNumber,
+            amount: updatedInstallment.amount,
+            paidAmount: updatedInstallment.paidAmount,
+            paidDate,
+            paymentConditionId: updatedInstallment.paymentConditionId,
+            paymentConditionName: updatedInstallment.paymentCondition?.name,
+            bankAccountId: updatedInstallment.bankAccountId,
+            bankAccountName: updatedInstallment.bankAccount?.name,
+          },
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
+
       return {
         message: 'Parcela paga com sucesso.',
         installment: {
@@ -940,7 +1078,11 @@ export class ReceivableService {
     });
   }
 
-  async undoPaymentInstallment(installmentId: string) {
+  async undoPaymentInstallment(
+    installmentId: string,
+    userId?: string,
+    userName?: string,
+  ) {
     try {
       const installmentData = await this.prisma.receivableInstallment.findFirst(
         {
@@ -962,6 +1104,9 @@ export class ReceivableService {
       }
 
       const paymentAmount = installmentData.paidAmount;
+      const previousStatus = installmentData.status;
+      const previousPaidDate = installmentData.paidDate;
+      const previousPaidAmount = installmentData.paidAmount;
 
       await this.prisma.$transaction(async (tx) => {
         // NOVO: Cancelar lançamentos de diferença criados para essa parcela
@@ -1048,6 +1193,35 @@ export class ReceivableService {
       });
 
       await this.updateReceivableStatus(installmentData.receivableId);
+
+      // Registrar no histórico
+      if (userId) {
+        await this.historyService.createReceivableHistory({
+          receivableId: installmentData.receivableId,
+          action: 'UNDO_PAYMENT',
+          description: this.historyService.getUndoPaymentDescription(
+            installmentData.installmentNumber,
+          ),
+          changes: {
+            before: {
+              status: previousStatus,
+              paidAmount: previousPaidAmount,
+              paidDate: previousPaidDate,
+            },
+            after: {
+              status: 'PENDING',
+              paidAmount: null,
+              paidDate: null,
+            },
+          },
+          metadata: {
+            installmentNumber: installmentData.installmentNumber,
+            revertedAmount: previousPaidAmount,
+          },
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
 
       // Buscar dados completos da parcela atualizada para retornar
       const updatedInstallment =

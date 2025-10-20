@@ -55,7 +55,11 @@ export class ReceivableController {
   })
   create(@Req() req, @Body() createReceivableDto: CreateReceivableDto) {
     createReceivableDto.companyId = req.user.companyId;
-    return this.receivableService.create(createReceivableDto);
+    return this.receivableService.create(
+      createReceivableDto,
+      req.user.userId,
+      req.user.name,
+    );
   }
 
   @Get()
@@ -86,6 +90,23 @@ export class ReceivableController {
     return this.receivableService.findOne(id);
   }
 
+  @Get(':id/history')
+  @ApiOperation({
+    summary: 'Obtém o histórico de alterações de uma conta a receber',
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    description: 'ID da conta a receber',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Histórico retornado com sucesso.',
+  })
+  getHistory(@Param('id') id: string) {
+    return this.receivableService.getHistory(id);
+  }
+
   @Get(':id/details')
   @ApiOperation({
     summary:
@@ -114,8 +135,17 @@ export class ReceivableController {
   })
   @ApiResponse({ status: 200, description: 'Título atualizado com sucesso.' })
   @ApiResponse({ status: 404, description: 'Título não encontrado.' })
-  async updateTitle(@Param('id') id: string, @Body() dto: UpdateReceivableDto) {
-    return await this.receivableService.updateTitle(id, dto);
+  async updateTitle(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() dto: UpdateReceivableDto,
+  ) {
+    return await this.receivableService.updateTitle(
+      id,
+      dto,
+      req.user.userId,
+      req.user.name,
+    );
   }
 
   @Patch(':id/upsert-installments')
@@ -156,10 +186,16 @@ export class ReceivableController {
     description: 'Conta a receber cancelada com sucesso.',
   })
   async cancel(
+    @Req() req,
     @Param('id') id: string,
     @Body() cancelReceivableDto: CancelReceivableDto,
   ) {
-    return await this.receivableService.cancel(id, cancelReceivableDto);
+    return await this.receivableService.cancel(
+      id,
+      cancelReceivableDto,
+      req.user.userId,
+      req.user.name,
+    );
   }
 
   @Post(':id/undo-cancel')
@@ -180,10 +216,16 @@ export class ReceivableController {
     description: 'Erro: conta não está cancelada ou possui parcelas pagas.',
   })
   async undoCancel(
+    @Req() req,
     @Param('id') id: string,
     @Body() undoCancelReceivableDto: UndoCancelReceivableDto,
   ) {
-    return await this.receivableService.undoCancel(id, undoCancelReceivableDto);
+    return await this.receivableService.undoCancel(
+      id,
+      undoCancelReceivableDto,
+      req.user.userId,
+      req.user.name,
+    );
   }
 
   @Patch('pay-installment/:installmentId')
@@ -201,12 +243,15 @@ export class ReceivableController {
     description: 'ID da parcela a ser paga',
   })
   async payInstallment(
+    @Req() req,
     @Param('installmentId') installmentId: string,
     @Body() payInstallmentDto: PayInstallmentDto,
   ) {
     return this.receivableService.payInstallment(
       installmentId,
       payInstallmentDto,
+      req.user.userId,
+      req.user.name,
     );
   }
 
@@ -236,8 +281,15 @@ export class ReceivableController {
     required: true,
     description: 'ID da parcela a ser paga',
   })
-  async undoPaymentInstallment(@Param('installmentId') installmentId: string) {
-    return this.receivableService.undoPaymentInstallment(installmentId);
+  async undoPaymentInstallment(
+    @Req() req,
+    @Param('installmentId') installmentId: string,
+  ) {
+    return this.receivableService.undoPaymentInstallment(
+      installmentId,
+      req.user.userId,
+      req.user.name,
+    );
   }
 
   @Delete(':id')

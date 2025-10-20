@@ -18,10 +18,14 @@ import { PaymentStatus, TransactionType } from '@prisma/client';
 import { ReceivableFilterDto } from '../receivable/dto/receivable-filter.dto';
 import { add, endOfDay } from 'date-fns';
 import { CompensateDto } from '../receivable/dto/create-receivable.dto';
+import { FinancialHistoryService } from '../history/history.service';
 
 @Injectable()
 export class PayableService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly historyService: FinancialHistoryService,
+  ) {}
 
   private getActualStatus(installment: any): string {
     if (
@@ -40,7 +44,7 @@ export class PayableService {
     };
   }
 
-  async create(dto: CreatePayableDto) {
+  async create(dto: CreatePayableDto, userId?: string, userName?: string) {
     const { installments, bankAccountId, ...payableData } = dto;
     if (installments.length === 0) {
       throw new Error('At least one installment is required.');
@@ -172,6 +176,38 @@ export class PayableService {
 
       // Atualizar status do payable após criação
       await this.updatePayableStatus(payable.id);
+
+      // Registrar no histórico
+      if (userId) {
+        const supplier = payableData.supplierId
+          ? await this.prisma.supplier.findUnique({
+              where: { id: payableData.supplierId },
+              select: { name: true },
+            })
+          : null;
+
+        const employee = payableData.employeeId
+          ? await this.prisma.employee.findUnique({
+              where: { id: payableData.employeeId },
+              select: { name: true },
+            })
+          : null;
+
+        await this.historyService.createPayableHistory({
+          payableId: payable.id,
+          action: 'CREATE',
+          description: this.historyService.getCreateDescription(),
+          metadata: {
+            totalAmount: payable.totalAmount,
+            installmentQty: installments.length,
+            supplierName: supplier?.name || null,
+            employeeName: employee?.name || null,
+            expenseSource: payableData.expenseSource,
+          },
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
 
       return payable;
     } catch (error) {
@@ -412,8 +448,27 @@ export class PayableService {
     };
   }
 
-  async updateTitle(id: string, dto: UpdatePayableDto) {
+  async updateTitle(
+    id: string,
+    dto: UpdatePayableDto,
+    userId?: string,
+    userName?: string,
+  ) {
     try {
+      // Capturar estado anterior
+      const before = await this.prisma.payable.findUnique({
+        where: { id },
+        select: {
+          description: true,
+          totalAmount: true,
+          referenceDate: true,
+          supplierId: true,
+          employeeId: true,
+          natureId: true,
+          subCategoryId: true,
+        },
+      });
+
       // Converter strings vazias em null para campos de relacionamento
       const sanitizedDto = {
         ...dto,
@@ -426,6 +481,29 @@ export class PayableService {
         data: sanitizedDto,
       });
 
+      // Registrar no histórico
+      if (userId) {
+        const changedFields = Object.keys(sanitizedDto).filter(
+          (key) => sanitizedDto[key] !== before[key],
+        );
+
+        if (changedFields.length > 0) {
+          await this.historyService.createPayableHistory({
+            payableId: id,
+            action: 'UPDATE_TITLE',
+            description: this.historyService.getUpdateTitleDescription({
+              after: sanitizedDto,
+            }),
+            changes: {
+              before,
+              after: sanitizedDto,
+            },
+            createdBy: userId,
+            createdByName: userName,
+          });
+        }
+      }
+
       return updatedPayable;
     } catch (error) {
       console.error('Error updating payable title:', error);
@@ -433,7 +511,12 @@ export class PayableService {
     }
   }
 
-  async cancel(id: string, dto: CancelPayableDto) {
+  async cancel(
+    id: string,
+    dto: CancelPayableDto,
+    userId?: string,
+    userName?: string,
+  ) {
     const payable = await this.findOne(id);
 
     // Verifica se o título já está cancelado
@@ -463,6 +546,21 @@ export class PayableService {
       }),
     ]);
 
+    // Registrar no histórico
+    if (userId) {
+      await this.historyService.createPayableHistory({
+        payableId: id,
+        action: 'CANCEL',
+        description: this.historyService.getCancelDescription(dto.cancelReason),
+        metadata: {
+          cancelReason: dto.cancelReason,
+          cancelNotes: dto.cancelNotes,
+        },
+        createdBy: userId,
+        createdByName: userName,
+      });
+    }
+
     // Cancela títulos relacionados se for um título principal da venda
     if (payable.quotationId && payable.financialType === 'MAIN') {
       await this.cancelRelatedFinancials(payable.quotationId);
@@ -471,7 +569,12 @@ export class PayableService {
     return { message: 'Conta a pagar cancelada com sucesso.' };
   }
 
-  async undoCancel(id: string, dto: UndoCancelPayableDto) {
+  async undoCancel(
+    id: string,
+    dto: UndoCancelPayableDto,
+    userId?: string,
+    userName?: string,
+  ) {
     const payable = await this.findOne(id);
 
     // Verifica se o título está cancelado
@@ -504,6 +607,21 @@ export class PayableService {
       }),
     ]);
 
+    // Registrar no histórico
+    if (userId) {
+      await this.historyService.createPayableHistory({
+        payableId: id,
+        action: 'UNDO_CANCEL',
+        description: this.historyService.getUndoCancelDescription(),
+        metadata: {
+          undoCancelReason: dto.undoCancelReason,
+          undoCancelNotes: dto.undoCancelNotes,
+        },
+        createdBy: userId,
+        createdByName: userName,
+      });
+    }
+
     // Reativa títulos relacionados se for um título principal da venda
     if (payable.quotationId && payable.financialType === 'MAIN') {
       await this.reactivateRelatedFinancials(payable.quotationId);
@@ -526,9 +644,15 @@ export class PayableService {
     return this.prisma.payable.count();
   }
 
+  async getHistory(id: string) {
+    return this.historyService.getPayableHistory(id);
+  }
+
   async payInstallment(
     installmentId: string,
     payInstallmentDto: PayInstallmentDto,
+    userId?: string,
+    userName?: string,
   ) {
     const {
       paymentConditionId,
@@ -907,6 +1031,29 @@ export class PayableService {
           },
         });
 
+      // Registrar no histórico
+      if (userId) {
+        await this.historyService.createPayableHistory({
+          payableId: result.payableId,
+          action: 'PAY_INSTALLMENT',
+          description: this.historyService.getPayInstallmentDescription(
+            updatedInstallment.installmentNumber,
+          ),
+          metadata: {
+            installmentNumber: updatedInstallment.installmentNumber,
+            amount: updatedInstallment.amount,
+            paidAmount: updatedInstallment.paidAmount,
+            paidDate,
+            paymentConditionId: updatedInstallment.paymentConditionId,
+            paymentConditionName: updatedInstallment.paymentCondition?.name,
+            bankAccountId: updatedInstallment.bankAccountId,
+            bankAccountName: updatedInstallment.bankAccount?.name,
+          },
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
+
       return {
         message: 'Parcela paga com sucesso.',
         installment: {
@@ -991,7 +1138,11 @@ export class PayableService {
     });
   }
 
-  async undoPaymentInstallment(installmentId: string) {
+  async undoPaymentInstallment(
+    installmentId: string,
+    userId?: string,
+    userName?: string,
+  ) {
     try {
       const installmentData = await this.prisma.payableInstallment.findFirst({
         where: { id: installmentId },
@@ -1011,6 +1162,9 @@ export class PayableService {
       }
 
       const paymentAmount = installmentData.paidAmount;
+      const previousStatus = installmentData.status;
+      const previousPaidDate = installmentData.paidDate;
+      const previousPaidAmount = installmentData.paidAmount;
 
       await this.prisma.$transaction(async (tx) => {
         // NOVO: Cancelar lançamentos de diferença criados para essa parcela
@@ -1097,6 +1251,35 @@ export class PayableService {
       });
 
       await this.updatePayableStatus(installmentData.payableId);
+
+      // Registrar no histórico
+      if (userId) {
+        await this.historyService.createPayableHistory({
+          payableId: installmentData.payableId,
+          action: 'UNDO_PAYMENT',
+          description: this.historyService.getUndoPaymentDescription(
+            installmentData.installmentNumber,
+          ),
+          changes: {
+            before: {
+              status: previousStatus,
+              paidAmount: previousPaidAmount,
+              paidDate: previousPaidDate,
+            },
+            after: {
+              status: 'PENDING',
+              paidAmount: null,
+              paidDate: null,
+            },
+          },
+          metadata: {
+            installmentNumber: installmentData.installmentNumber,
+            revertedAmount: previousPaidAmount,
+          },
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
 
       // Buscar dados completos da parcela atualizada para retornar
       const updatedInstallment =

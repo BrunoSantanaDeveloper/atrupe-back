@@ -56,7 +56,11 @@ export class PayableController {
   })
   create(@Req() req, @Body() createPayableDto: CreatePayableDto) {
     createPayableDto.companyId = req.user.companyId;
-    return this.payableService.create(createPayableDto);
+    return this.payableService.create(
+      createPayableDto,
+      req.user.userId,
+      req.user.name,
+    );
   }
 
   @Get()
@@ -87,6 +91,23 @@ export class PayableController {
     return this.payableService.findOne(id);
   }
 
+  @Get(':id/history')
+  @ApiOperation({
+    summary: 'Obtém o histórico de alterações de uma conta a pagar',
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    description: 'ID da conta a pagar',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Histórico retornado com sucesso.',
+  })
+  getHistory(@Param('id') id: string) {
+    return this.payableService.getHistory(id);
+  }
+
   @Get(':id/details')
   @ApiOperation({
     summary:
@@ -115,8 +136,17 @@ export class PayableController {
   })
   @ApiResponse({ status: 200, description: 'Título atualizado com sucesso.' })
   @ApiResponse({ status: 404, description: 'Título não encontrado.' })
-  async updateTitle(@Param('id') id: string, @Body() dto: UpdatePayableDto) {
-    return await this.payableService.updateTitle(id, dto);
+  async updateTitle(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() dto: UpdatePayableDto,
+  ) {
+    return await this.payableService.updateTitle(
+      id,
+      dto,
+      req.user.userId,
+      req.user.name,
+    );
   }
 
   @Patch(':id/upsert-installments')
@@ -157,10 +187,16 @@ export class PayableController {
     description: 'Conta a pagar cancelada com sucesso.',
   })
   async cancel(
+    @Req() req,
     @Param('id') id: string,
     @Body() cancelPayableDto: CancelPayableDto,
   ) {
-    return await this.payableService.cancel(id, cancelPayableDto);
+    return await this.payableService.cancel(
+      id,
+      cancelPayableDto,
+      req.user.userId,
+      req.user.name,
+    );
   }
 
   @Post(':id/undo-cancel')
@@ -181,10 +217,16 @@ export class PayableController {
     description: 'Erro: conta não está cancelada ou possui parcelas pagas.',
   })
   async undoCancel(
+    @Req() req,
     @Param('id') id: string,
     @Body() undoCancelPayableDto: UndoCancelPayableDto,
   ) {
-    return await this.payableService.undoCancel(id, undoCancelPayableDto);
+    return await this.payableService.undoCancel(
+      id,
+      undoCancelPayableDto,
+      req.user.userId,
+      req.user.name,
+    );
   }
 
   @Patch('pay-installment/:installmentId')
@@ -202,10 +244,16 @@ export class PayableController {
     description: 'ID da parcela a ser paga',
   })
   async payInstallment(
+    @Req() req,
     @Param('installmentId') installmentId: string,
     @Body() payInstallmentDto: PayInstallmentDto,
   ) {
-    return this.payableService.payInstallment(installmentId, payInstallmentDto);
+    return this.payableService.payInstallment(
+      installmentId,
+      payInstallmentDto,
+      req.user.userId,
+      req.user.name,
+    );
   }
 
   @Patch('compensate/:installmentId')
@@ -234,8 +282,15 @@ export class PayableController {
     required: true,
     description: 'ID da parcela a ser paga',
   })
-  async undoPaymentInstallment(@Param('installmentId') installmentId: string) {
-    return this.payableService.undoPaymentInstallment(installmentId);
+  async undoPaymentInstallment(
+    @Req() req,
+    @Param('installmentId') installmentId: string,
+  ) {
+    return this.payableService.undoPaymentInstallment(
+      installmentId,
+      req.user.userId,
+      req.user.name,
+    );
   }
 
   @Delete(':id')

@@ -9,9 +9,11 @@ import { SalarySheetsModule } from './salary-sheets/salary-sheets.module';
 import { NatureModule } from './nature/nature.module';
 import { CreditLimitModule } from './credit-limit/credit-limit.module';
 import { SalariesModule } from './salaries/salaries.module';
+import { FinancialHistoryModule } from './history/history.module';
 
 @Module({
   imports: [
+    FinancialHistoryModule,
     ReceivableModule,
     PayableModule,
     FlowModule,
@@ -24,6 +26,7 @@ import { SalariesModule } from './salaries/salaries.module';
     SalariesModule,
   ],
   exports: [
+    FinancialHistoryModule,
     ReceivableModule,
     PayableModule,
     FlowModule,
