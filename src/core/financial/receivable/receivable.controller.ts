@@ -163,6 +163,7 @@ export class ReceivableController {
     description: 'Erro ao processar as parcelas',
   })
   async upsertInstallments(
+    @Req() req,
     @Param('id') id: string,
     @Body()
     updateReceivableInstallmentsDto: UpdateReceivableInstallmentsDto,
@@ -170,6 +171,8 @@ export class ReceivableController {
     return this.receivableService.updateInstallments(
       id,
       updateReceivableInstallmentsDto,
+      req.user.userId,
+      req.user.name,
     );
   }
   @Patch(':id/cancel')

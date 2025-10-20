@@ -1255,10 +1255,25 @@ export class ReceivableService {
   async updateInstallments(
     receivableId: string,
     dto: UpdateReceivableInstallmentsDto,
+    userId?: string,
+    userName?: string,
   ): Promise<any> {
     try {
       const { installments, totalAmount, changeNotes, changeReason } = dto;
       // let totalAmount = 0;
+
+      // Capturar estado antes da alteração
+      const installmentsBefore =
+        await this.prisma.receivableInstallment.findMany({
+          where: { receivableId },
+          select: {
+            id: true,
+            installmentNumber: true,
+            amount: true,
+            dueDate: true,
+            status: true,
+          },
+        });
 
       const updatedReceivable = await this.prisma.$transaction(
         async (prisma) => {
@@ -1372,6 +1387,66 @@ export class ReceivableService {
       );
 
       await this.updateReceivableStatus(receivableId);
+
+      // Capturar estado depois da alteração
+      const installmentsAfter =
+        await this.prisma.receivableInstallment.findMany({
+          where: { receivableId },
+          select: {
+            id: true,
+            installmentNumber: true,
+            amount: true,
+            dueDate: true,
+            status: true,
+          },
+        });
+
+      // Registrar no histórico
+      if (userId) {
+        const addedCount = installmentsAfter.length - installmentsBefore.length;
+        const removedCount =
+          addedCount < 0
+            ? Math.abs(addedCount)
+            : installmentsBefore.length > 0
+              ? installmentsBefore.filter(
+                  (before) =>
+                    !installmentsAfter.some((after) => after.id === before.id),
+                ).length
+              : 0;
+        const modifiedCount = installmentsAfter.filter((after) => {
+          const before = installmentsBefore.find((b) => b.id === after.id);
+          return (
+            before &&
+            (before.amount !== after.amount ||
+              before.dueDate.getTime() !== after.dueDate.getTime())
+          );
+        }).length;
+
+        await this.historyService.createReceivableHistory({
+          receivableId,
+          action: 'UPDATE_INSTALLMENTS',
+          description: this.historyService.getUpdateInstallmentsDescription(
+            addedCount > 0 ? addedCount : 0,
+            modifiedCount,
+            removedCount,
+          ),
+          changes: {
+            before: installmentsBefore,
+            after: installmentsAfter,
+          },
+          metadata: {
+            totalInstallmentsBefore: installmentsBefore.length,
+            totalInstallmentsAfter: installmentsAfter.length,
+            addedCount: addedCount > 0 ? addedCount : 0,
+            modifiedCount,
+            removedCount,
+            changeReason,
+            changeNotes,
+          },
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
 
       return updatedReceivable;
     } catch (error) {

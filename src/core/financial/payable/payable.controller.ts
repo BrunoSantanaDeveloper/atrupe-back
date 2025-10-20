@@ -164,6 +164,7 @@ export class PayableController {
     description: 'Erro ao processar as parcelas',
   })
   async upsertInstallments(
+    @Req() req,
     @Param('id') id: string,
     @Body()
     updatePayableInstallmentsDto: UpdatePayableInstallmentsDto,
@@ -171,6 +172,8 @@ export class PayableController {
     return this.payableService.updateInstallments(
       id,
       updatePayableInstallmentsDto,
+      req.user.userId,
+      req.user.name,
     );
   }
   @Patch(':id/cancel')
