@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import { PlanControlService } from '../plan/plan-control.service';
 import * as argon2 from 'argon2';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class AuthService {
@@ -49,6 +50,9 @@ export class AuthService {
 
   async login(user: any) {
     try {
+      // Gerar sessionId único para rastreamento de atividade
+      const sessionId = uuidv4();
+
       // Obter informações do plano usando o novo sistema
       const companyId = user.employee[0]?.company.id;
       const planInfo = companyId
@@ -90,6 +94,7 @@ export class AuthService {
             }
           : null,
         access_token: this.jwtService.sign(payload),
+        sessionId: sessionId,
       };
     } catch (error) {
       console.log(error);

@@ -360,6 +360,7 @@ model User {
   userRole             UserRole[]
   receivableHistory    ReceivableHistory[] @relation("ReceivableHistoryUser")
   payableHistory       PayableHistory[]    @relation("PayableHistoryUser")
+  userActivities       UserActivity[]
   customer             Customer?           @relation(fields: [customerId], references: [id])
 
   @@index([email])
@@ -1489,6 +1490,30 @@ model AcademyProgress {
   company         Company       @relation(fields: [companyId], references: [id])
 
   @@map("academy_progress")
+}
+
+model UserActivity {
+  id          String    @id @default(uuid())
+  userId      String
+  companyId   String?
+  employeeId  String?
+  sessionId   String // Identificador único da sessão (gerado no login)
+  endpoint    String? // Endpoint acessado (ex: /api/clients, /api/quotations)
+  method      String? // Método HTTP (GET, POST, PUT, DELETE)
+  ipAddress   String?
+  userAgent   String?
+  lastActive  DateTime  @default(now()) // Última atividade registrada
+  createdAt   DateTime  @default(now()) // Primeira atividade da sessão
+  isActive    Boolean   @default(true) // Se a sessão está ativa
+  logoutAt    DateTime? // Quando o usuário fez logout
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([companyId])
+  @@index([lastActive])
+  @@index([isActive])
+  @@map("user_activities")
 }
 
 enum OwnerType {

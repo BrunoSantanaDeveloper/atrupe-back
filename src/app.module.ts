@@ -6,13 +6,16 @@ import { ReportModule } from './svc/report/report.module';
 import configuration from './config/configuration';
 import { ConfigModule } from '@nestjs/config';
 import { PlugModule } from './svc/plug/plug.module';
-import { APP_PIPE } from '@nestjs/core';
+import { APP_PIPE, APP_INTERCEPTOR } from '@nestjs/core';
 import { CacheModule } from './svc/cache/cache.module';
 import { UtilsModule } from './svc/utils/utils.module';
 import { PdfService } from './svc/pdf/pdf.service';
 import { PrismaModule } from './config/prisma/prisma.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ContractModule } from './core/contract/contract.module';
+import { ActivityTrackingInterceptor } from './core/activity-monitor/interceptors/activity-tracking.interceptor';
+import { ActivityMonitorService } from './core/activity-monitor/activity-monitor.service';
+import { PrismaService } from './config/prisma/prisma.service';
 
 @Module({
   imports: [
@@ -37,6 +40,12 @@ import { ContractModule } from './core/contract/contract.module';
         transform: true,
       }),
     },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ActivityTrackingInterceptor,
+    },
+    ActivityMonitorService,
+    PrismaService,
     PdfService,
   ],
 })

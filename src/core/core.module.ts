@@ -28,6 +28,7 @@ import { ContractModule } from './contract/contract.module';
 import { AcademyModule } from './academy/academy.module';
 import { CustomersModule } from './customers/customers.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { ActivityMonitorModule } from './activity-monitor/activity-monitor.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
     AcademyModule,
     CustomersModule,
     SubscriptionsModule,
+    ActivityMonitorModule,
   ],
 })
 export class CoreModule {}
