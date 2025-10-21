@@ -2,18 +2,23 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import axios from 'axios';
 import { CustomersService } from '../customers/customers.service';
+import { PaymentsService } from '../payments/payments.service';
 import { asaasConfig } from 'src/config/configuration';
 
 @Injectable()
 export class SubscriptionsService {
+  private readonly logger = new Logger(SubscriptionsService.name);
+
   constructor(
     private prisma: PrismaService,
     private customerSerivce: CustomersService,
+    private paymentsService: PaymentsService,
   ) {}
   private asaasToken = asaasConfig.token;
   private asaasApiUrl = asaasConfig.apiUrl;
@@ -157,8 +162,43 @@ export class SubscriptionsService {
         return newSubscription;
       });
 
-      return subscription;
+      // Criar primeira cobrança (payment)
+      this.logger.log('Criando primeira cobrança para subscription');
+
+      const firstPayment = await this.paymentsService.createFirstPayment({
+        subscriptionId: subscription.id,
+        asaasCustomerId: finalCustomer.asaasCustomerId,
+        value,
+        dueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)
+          .toISOString()
+          .split('T')[0],
+        billingType: createSubscriptionDto.billingType,
+        description: `Primeira cobrança - ${plan.name}`,
+        externalReference: subscription.id,
+        successUrl:
+          createSubscriptionDto.successUrl ||
+          'https://atrupe.com.br/payment/success',
+      });
+
+      this.logger.log('Subscription e Payment criados com sucesso');
+
+      // Retornar subscription + payment com URL de pagamento
+      return {
+        subscription,
+        payment: {
+          id: firstPayment.id,
+          asaasPaymentId: firstPayment.asaasPaymentId,
+          value: firstPayment.value,
+          status: firstPayment.status,
+          paymentUrl: firstPayment.invoiceUrl,
+          bankSlipUrl: firstPayment.bankSlipUrl,
+          pixQrCode: firstPayment.pixQrCode,
+          pixCopyPaste: firstPayment.pixCopyPaste,
+          dueDate: firstPayment.dueDate,
+        },
+      };
     } catch (error) {
+      this.logger.error('Erro ao criar subscription:', error);
       throw new BadRequestException(
         `Failed to create subscription: ${error.message}`,
       );

@@ -101,9 +101,29 @@ export class WebhooksService {
       `Pagamento confirmado: ${payload.payment?.id || payload.data?.id}`,
     );
 
-    const paymentId = payload.payment?.id || payload.data?.id;
+    const asaasPaymentId = payload.payment?.id || payload.data?.id;
     const subscriptionId =
       payload.payment?.subscription || payload.data?.subscription;
+
+    // Atualizar Payment local
+    const payment = await this.prisma.payment.findFirst({
+      where: { asaasPaymentId },
+    });
+
+    if (payment) {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: 'CONFIRMED',
+          confirmedDate: new Date(),
+          paymentDate: payload.payment?.paymentDate
+            ? new Date(payload.payment.paymentDate)
+            : new Date(),
+        },
+      });
+
+      this.logger.log(`Payment ${payment.id} atualizado para CONFIRMED`);
+    }
 
     if (subscriptionId) {
       // Atualizar status da subscription
@@ -135,8 +155,25 @@ export class WebhooksService {
       `Pagamento em atraso: ${payload.payment?.id || payload.data?.id}`,
     );
 
+    const asaasPaymentId = payload.payment?.id || payload.data?.id;
     const subscriptionId =
       payload.payment?.subscription || payload.data?.subscription;
+
+    // Atualizar Payment local
+    const payment = await this.prisma.payment.findFirst({
+      where: { asaasPaymentId },
+    });
+
+    if (payment) {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: 'OVERDUE',
+        },
+      });
+
+      this.logger.log(`Payment ${payment.id} atualizado para OVERDUE`);
+    }
 
     if (subscriptionId) {
       const subscription = await this.prisma.subscription.findFirst({
@@ -174,9 +211,7 @@ export class WebhooksService {
           data: { status: 'EXPIRED' },
         });
 
-        this.logger.log(
-          `Subscription ${subscription.id} marcada como EXPIRED`,
-        );
+        this.logger.log(`Subscription ${subscription.id} marcada como EXPIRED`);
 
         // Aqui você pode implementar lógica de notificação ao cliente
         // await this.notificationService.sendExpirationNotification(subscription);
@@ -203,7 +238,8 @@ export class WebhooksService {
         if (subscriptionData.value) updateData.value = subscriptionData.value;
         if (subscriptionData.nextDueDate)
           updateData.nextDueDate = new Date(subscriptionData.nextDueDate);
-        if (subscriptionData.status) updateData.status = subscriptionData.status;
+        if (subscriptionData.status)
+          updateData.status = subscriptionData.status;
         if (subscriptionData.cycle) updateData.cycle = subscriptionData.cycle;
         if (subscriptionData.billingType)
           updateData.billingType = subscriptionData.billingType;

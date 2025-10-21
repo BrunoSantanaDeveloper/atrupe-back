@@ -1421,8 +1421,36 @@ model Subscription {
   customer             Customer              @relation(fields: [customerId], references: [id])
   plan                 Plan                  @relation(fields: [planId], references: [id])
   subscriptionFeatures SubscriptionFeature[]
+  payments             Payment[]
 
   @@map("subscriptions")
+}
+
+model Payment {
+  id                String             @id @default(uuid())
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime?          @updatedAt
+  subscriptionId    String?
+  subscription      Subscription?      @relation(fields: [subscriptionId], references: [id])
+  asaasPaymentId    String             @unique
+  asaasCustomerId   String
+  value             Float
+  dueDate           DateTime
+  billingType       BillingType
+  status            AsaasPaymentStatus @default(PENDING)
+  description       String?
+  externalReference String?
+  invoiceUrl        String?
+  bankSlipUrl       String?
+  pixQrCode         String?
+  pixCopyPaste      String?
+  confirmedDate     DateTime?
+  paymentDate       DateTime?
+
+  @@index([subscriptionId])
+  @@index([asaasPaymentId])
+  @@index([status])
+  @@map("payments")
 }
 
 model SubscriptionFeature {
@@ -1493,20 +1521,20 @@ model AcademyProgress {
 }
 
 model UserActivity {
-  id          String    @id @default(uuid())
-  userId      String
-  companyId   String?
-  employeeId  String?
-  sessionId   String // Identificador único da sessão (gerado no login)
-  endpoint    String? // Endpoint acessado (ex: /api/clients, /api/quotations)
-  method      String? // Método HTTP (GET, POST, PUT, DELETE)
-  ipAddress   String?
-  userAgent   String?
-  lastActive  DateTime  @default(now()) // Última atividade registrada
-  createdAt   DateTime  @default(now()) // Primeira atividade da sessão
-  isActive    Boolean   @default(true) // Se a sessão está ativa
-  logoutAt    DateTime? // Quando o usuário fez logout
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String    @id @default(uuid())
+  userId     String
+  companyId  String?
+  employeeId String?
+  sessionId  String // Identificador único da sessão (gerado no login)
+  endpoint   String? // Endpoint acessado (ex: /api/clients, /api/quotations)
+  method     String? // Método HTTP (GET, POST, PUT, DELETE)
+  ipAddress  String?
+  userAgent  String?
+  lastActive DateTime  @default(now()) // Última atividade registrada
+  createdAt  DateTime  @default(now()) // Primeira atividade da sessão
+  isActive   Boolean   @default(true) // Se a sessão está ativa
+  logoutAt   DateTime? // Quando o usuário fez logout
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([sessionId])
@@ -1741,6 +1769,16 @@ enum SubscriptionStatus {
   ACTIVE
   EXPIRED
   INACTIVE
+}
+
+enum AsaasPaymentStatus {
+  PENDING
+  CONFIRMED
+  RECEIVED
+  OVERDUE
+  REFUNDED
+  CANCELED
+  FAILED
 }
 
 enum UnitKind {

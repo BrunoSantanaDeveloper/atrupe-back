@@ -11,6 +11,19 @@ export class CustomersService {
   private asaasToken = asaasConfig.token;
   private asaasApiUrl = asaasConfig.apiUrl;
 
+  private asaasApi() {
+    return axios.create({
+      baseURL: this.asaasApiUrl,
+      headers: {
+        common: {
+          'Content-Type': 'application/json',
+          access_token: this.asaasToken,
+          'User-Agent': 'Atrupe',
+        },
+      },
+    });
+  }
+
   async create(createCustomerDto: CreateCustomerDto) {
     const asaasCustomer = await this.createCustomerAsaas(createCustomerDto);
     try {
@@ -50,8 +63,8 @@ export class CustomersService {
   }
 
   private async createCustomerAsaas(createCustomerDto: CreateCustomerDto) {
-    const route = `${this.asaasApiUrl}/customers`;
-    console.log('Route:', route);
+    const route = '/customers';
+
     const data = {
       name: createCustomerDto.name,
       cpfCnpj: createCustomerDto.document,
@@ -63,13 +76,7 @@ export class CustomersService {
     };
 
     try {
-      const response = await axios.post(route, data, {
-        headers: {
-          'Content-Type': 'application/json',
-          access_token: this.asaasToken,
-          'User-Agent': 'Atrupe',
-        },
-      });
+      const response = await this.asaasApi().post(route, data);
       console.log('response', response.data);
       return response.data;
     } catch (error) {
@@ -90,7 +97,7 @@ export class CustomersService {
     asaasCustomerId: string,
     updateCustomerDto: UpdateCustomerDto,
   ) {
-    const route = `${this.asaasApiUrl}/customers/${asaasCustomerId}`;
+    const route = `/customers/${asaasCustomerId}`;
     const data: any = {};
 
     // Mapear apenas os campos que foram enviados
@@ -108,13 +115,7 @@ export class CustomersService {
     if (updateCustomerDto.province) data.province = updateCustomerDto.province;
 
     try {
-      const response = await axios.put(route, data, {
-        headers: {
-          'Content-Type': 'application/json',
-          access_token: this.asaasToken,
-          'User-Agent': 'Atrupe',
-        },
-      });
+      const response = await this.asaasApi().put(route, data);
       return response.data;
     } catch (error) {
       console.error('Error updating customer in Asaas:', {
@@ -131,16 +132,10 @@ export class CustomersService {
   }
 
   private async deleteCustomerAsaas(asaasCustomerId: string) {
-    const route = `${this.asaasApiUrl}/customers/${asaasCustomerId}`;
+    const route = `/customers/${asaasCustomerId}`;
 
     try {
-      await axios.delete(route, {
-        headers: {
-          'Content-Type': 'application/json',
-          access_token: this.asaasToken,
-          'User-Agent': 'Atrupe',
-        },
-      });
+      await this.asaasApi().delete(route);
     } catch (error) {
       console.error('Error deleting customer in Asaas:', {
         message: error.message,

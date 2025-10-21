@@ -44,4 +44,22 @@ export class CreateSubscriptionDto {
   @IsArray()
   @IsString({ each: true })
   additionalFeatures?: string[];
+
+  @ApiProperty({
+    required: false,
+    description: 'URL de retorno após pagamento bem-sucedido',
+    example: 'https://atrupe.com.br/payment/success',
+  })
+  @IsOptional()
+  @IsString()
+  successUrl?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'URL de retorno após pagamento falhar',
+    example: 'https://atrupe.com.br/payment/failure',
+  })
+  @IsOptional()
+  @IsString()
+  failureUrl?: string;
 }
