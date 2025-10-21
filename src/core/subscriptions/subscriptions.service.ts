@@ -17,7 +17,6 @@ export class SubscriptionsService {
   ) {}
   private asaasToken = asaasConfig.token;
   private asaasApiUrl = asaasConfig.apiUrl;
-  private isMockMode = asaasConfig.mockMode;
 
   async findActiveByCompanyId(companyId: string) {
     return this.prisma.subscription.findFirst({
@@ -421,14 +420,6 @@ export class SubscriptionsService {
   private async cancelAsaasSubscription(
     asaasSubscriptionId: string,
   ): Promise<void> {
-    if (this.isMockMode) {
-      console.log(
-        '🎭 MOCK MODE: Simulando cancelamento de subscription no Asaas',
-      );
-      console.log('Subscription ID:', asaasSubscriptionId);
-      return;
-    }
-
     try {
       await axios.delete(
         `${this.asaasApiUrl}/subscriptions/${asaasSubscriptionId}`,
@@ -436,7 +427,7 @@ export class SubscriptionsService {
           headers: {
             'Content-Type': 'application/json',
             access_token: this.asaasToken,
-            'User-Agent': 'YourAppName',
+            'User-Agent': 'Atrupe',
           },
         },
       );
@@ -453,19 +444,6 @@ export class SubscriptionsService {
     asaasSubscriptionId: string,
     data: any,
   ): Promise<any> {
-    if (this.isMockMode) {
-      console.log(
-        '🎭 MOCK MODE: Simulando atualização de subscription no Asaas',
-      );
-      console.log('Subscription ID:', asaasSubscriptionId);
-      console.log('Dados de atualização:', data);
-      return {
-        id: asaasSubscriptionId,
-        ...data,
-        dateUpdated: new Date().toISOString(),
-      };
-    }
-
     try {
       const response = await axios.post(
         `${this.asaasApiUrl}/subscriptions/${asaasSubscriptionId}`,
@@ -474,7 +452,7 @@ export class SubscriptionsService {
           headers: {
             'Content-Type': 'application/json',
             access_token: this.asaasToken,
-            'User-Agent': 'YourAppName',
+            'User-Agent': 'Atrupe',
           },
         },
       );
@@ -489,10 +467,6 @@ export class SubscriptionsService {
   }
 
   private async createSubscription(subscriptionData: any): Promise<any> {
-    if (this.isMockMode) {
-      return this.mockCreateSubscription(subscriptionData);
-    }
-
     try {
       const response = await axios.post(
         `${this.asaasApiUrl}/subscriptions`,
@@ -501,7 +475,7 @@ export class SubscriptionsService {
           headers: {
             'Content-Type': 'application/json',
             access_token: this.asaasToken,
-            'User-Agent': 'YourAppName',
+            'User-Agent': 'Atrupe',
           },
         },
       );
@@ -513,22 +487,6 @@ export class SubscriptionsService {
       );
       throw new Error('Falha ao criar assinatura no Asaas');
     }
-  }
-
-  private mockCreateSubscription(subscriptionData: any): any {
-    console.log('🎭 MOCK MODE: Simulando criação de subscription no Asaas');
-    console.log('Dados enviados:', subscriptionData);
-
-    return {
-      id: `sub_mock_${Date.now()}`,
-      nextDueDate: subscriptionData.nextDueDate,
-      value: subscriptionData.value,
-      customer: subscriptionData.customer,
-      billingType: subscriptionData.billingType,
-      cycle: subscriptionData.cycle,
-      description: subscriptionData.description,
-      dateCreated: new Date().toISOString(),
-    };
   }
 
   /**

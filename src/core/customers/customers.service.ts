@@ -10,7 +10,6 @@ export class CustomersService {
   constructor(private prisma: PrismaService) {}
   private asaasToken = asaasConfig.token;
   private asaasApiUrl = asaasConfig.apiUrl;
-  private isMockMode = asaasConfig.mockMode;
 
   async create(createCustomerDto: CreateCustomerDto) {
     const asaasCustomer = await this.createCustomerAsaas(createCustomerDto);
@@ -51,10 +50,6 @@ export class CustomersService {
   }
 
   private async createCustomerAsaas(createCustomerDto: CreateCustomerDto) {
-    if (this.isMockMode) {
-      return this.mockCreateCustomer(createCustomerDto);
-    }
-
     const route = `${this.asaasApiUrl}/customers`;
     console.log('Route:', route);
     const data = {
@@ -91,22 +86,73 @@ export class CustomersService {
     }
   }
 
-  private mockCreateCustomer(createCustomerDto: CreateCustomerDto): any {
-    console.log('🎭 MOCK MODE: Simulando criação de customer no Asaas');
-    console.log('Dados do customer:', createCustomerDto);
+  private async updateCustomerAsaas(
+    asaasCustomerId: string,
+    updateCustomerDto: UpdateCustomerDto,
+  ) {
+    const route = `${this.asaasApiUrl}/customers/${asaasCustomerId}`;
+    const data: any = {};
 
-    return {
-      id: `cus_mock_${Date.now()}`,
-      name: createCustomerDto.name,
-      email: createCustomerDto.email,
-      cpfCnpj: createCustomerDto.document,
-      phone: createCustomerDto.phone,
-      mobilePhone: createCustomerDto.phone,
-      postalCode: createCustomerDto.postalCode,
-      addressNumber: createCustomerDto.addressNumber,
-      dateCreated: new Date().toISOString(),
-      object: 'customer',
-    };
+    // Mapear apenas os campos que foram enviados
+    if (updateCustomerDto.name) data.name = updateCustomerDto.name;
+    if (updateCustomerDto.email) data.email = updateCustomerDto.email;
+    if (updateCustomerDto.phone) {
+      data.phone = updateCustomerDto.phone;
+      data.mobilePhone = updateCustomerDto.phone;
+    }
+    if (updateCustomerDto.postalCode)
+      data.postalCode = updateCustomerDto.postalCode;
+    if (updateCustomerDto.addressNumber)
+      data.addressNumber = updateCustomerDto.addressNumber;
+    if (updateCustomerDto.address) data.address = updateCustomerDto.address;
+    if (updateCustomerDto.province) data.province = updateCustomerDto.province;
+
+    try {
+      const response = await axios.put(route, data, {
+        headers: {
+          'Content-Type': 'application/json',
+          access_token: this.asaasToken,
+          'User-Agent': 'Atrupe',
+        },
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error updating customer in Asaas:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        asaasCustomerId,
+      });
+      // Não lançar erro para não bloquear a atualização local
+      console.warn(
+        'Customer update failed in Asaas, but local update will continue',
+      );
+    }
+  }
+
+  private async deleteCustomerAsaas(asaasCustomerId: string) {
+    const route = `${this.asaasApiUrl}/customers/${asaasCustomerId}`;
+
+    try {
+      await axios.delete(route, {
+        headers: {
+          'Content-Type': 'application/json',
+          access_token: this.asaasToken,
+          'User-Agent': 'Atrupe',
+        },
+      });
+    } catch (error) {
+      console.error('Error deleting customer in Asaas:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        asaasCustomerId,
+      });
+      // Não lançar erro para não bloquear a remoção local
+      console.warn(
+        'Customer deletion failed in Asaas, but local deletion will continue',
+      );
+    }
   }
 
   async findAll() {
@@ -129,6 +175,27 @@ export class CustomersService {
   }
 
   async update(id: string, updateCustomerDto: UpdateCustomerDto) {
+    // Buscar customer para obter asaasCustomerId
+    const customer = await this.prisma.customer.findUnique({
+      where: { id },
+    });
+
+    if (!customer) {
+      throw new BadRequestException('Customer not found');
+    }
+
+    // Atualizar no Asaas se não for um customer trial/temporário
+    if (
+      customer.asaasCustomerId &&
+      !customer.asaasCustomerId.startsWith('trial_')
+    ) {
+      await this.updateCustomerAsaas(
+        customer.asaasCustomerId,
+        updateCustomerDto,
+      );
+    }
+
+    // Atualizar localmente
     return this.prisma.customer.update({
       where: { id },
       data: updateCustomerDto,
@@ -140,6 +207,24 @@ export class CustomersService {
   }
 
   async remove(id: string) {
+    // Buscar customer para obter asaasCustomerId
+    const customer = await this.prisma.customer.findUnique({
+      where: { id },
+    });
+
+    if (!customer) {
+      throw new BadRequestException('Customer not found');
+    }
+
+    // Deletar no Asaas se não for um customer trial/temporário
+    if (
+      customer.asaasCustomerId &&
+      !customer.asaasCustomerId.startsWith('trial_')
+    ) {
+      await this.deleteCustomerAsaas(customer.asaasCustomerId);
+    }
+
+    // Deletar localmente
     return this.prisma.customer.delete({
       where: { id },
     });

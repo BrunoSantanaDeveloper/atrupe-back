@@ -29,6 +29,7 @@ import { AcademyModule } from './academy/academy.module';
 import { CustomersModule } from './customers/customers.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { ActivityMonitorModule } from './activity-monitor/activity-monitor.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { ActivityMonitorModule } from './activity-monitor/activity-monitor.modul
     CustomersModule,
     SubscriptionsModule,
     ActivityMonitorModule,
+    WebhooksModule,
   ],
 })
 export class CoreModule {}

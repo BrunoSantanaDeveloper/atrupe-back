@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  UseGuards,
 } from '@nestjs/common';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto } from './dto/create-customer.dto';
@@ -16,10 +17,14 @@ import {
   ApiResponse,
   ApiParam,
   ApiBody,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 
 @Controller('customers')
 @ApiTags('Customers')
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
 
