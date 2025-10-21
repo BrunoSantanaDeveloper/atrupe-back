@@ -125,6 +125,7 @@ async function createDefaultPlans() {
           basePrice: config.plan.basePrice,
           additionalUserPrice: config.plan.additionalUserPrice,
           planType: config.plan.planType,
+          order: config.plan.order,
           isActive: config.plan.isActive,
           badge: config.badge || null,
           concept: config.concept || null,

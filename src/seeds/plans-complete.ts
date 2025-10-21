@@ -137,11 +137,11 @@ export const PLAN_CONFIGURATIONS = {
       basePrice: 23000,
       additionalUserPrice: 1500,
       order: 2,
-      isActive: true,
+      isActive: false,
     },
     badge: {
-      text: 'Próximo nível',
-      variant: 'light',
+      text: 'Em breve',
+      variant: 'orangeLight',
     },
     concept: {
       description:
