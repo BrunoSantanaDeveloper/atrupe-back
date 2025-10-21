@@ -15,5 +15,5 @@ export default () => ({
 export const asaasConfig = {
   mockMode: process.env.ASAAS_MOCK_MODE === 'true',
   token: `$${process.env.ASAAS_TOKEN}`,
-  apiUrl: process.env.ASAAS_API_URL || 'https://sandbox.asaas.com/api/v3',
+  apiUrl: process.env.ASAAS_API_URL || 'https://api-sandbox.asaas.com/api/v3',
 };
