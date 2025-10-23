@@ -12,7 +12,7 @@ export class CustomersService {
   private asaasApiUrl = asaasConfig.apiUrl;
 
   private asaasApi() {
-    return axios.create({
+    const api = axios.create({
       baseURL: this.asaasApiUrl,
       headers: {
         common: {
@@ -22,43 +22,50 @@ export class CustomersService {
         },
       },
     });
+
+    return api;
   }
 
   async create(createCustomerDto: CreateCustomerDto) {
+    // Criar cliente no Asaas
     const asaasCustomer = await this.createCustomerAsaas(createCustomerDto);
-    try {
-      return await this.prisma.customer.create({
-        data: {
-          name: createCustomerDto.name,
-          email: createCustomerDto.email,
-          document: createCustomerDto.document,
-          phone: createCustomerDto.phone,
-          address: createCustomerDto.address,
-          addressNumber: createCustomerDto.addressNumber,
-          complement: createCustomerDto.complement,
-          province: createCustomerDto.province,
-          postalCode: createCustomerDto.postalCode,
-          city: createCustomerDto.city,
-          state: createCustomerDto.state,
-          asaasCustomerId: asaasCustomer.id,
-          companyId: createCustomerDto.companyId,
-          user: {
-            connect: {
-              id: createCustomerDto.userId,
+
+    // Criar cliente no Atrupe
+    if (!!asaasCustomer) {
+      try {
+        return await this.prisma.customer.create({
+          data: {
+            name: createCustomerDto.name,
+            email: createCustomerDto.email,
+            document: createCustomerDto.document,
+            phone: createCustomerDto.phone,
+            address: createCustomerDto.address,
+            addressNumber: createCustomerDto.addressNumber,
+            complement: createCustomerDto.complement,
+            province: createCustomerDto.province,
+            postalCode: createCustomerDto.postalCode,
+            city: createCustomerDto.city,
+            state: createCustomerDto.state,
+            asaasCustomerId: asaasCustomer.id,
+            companyId: createCustomerDto.companyId,
+            user: {
+              connect: {
+                id: createCustomerDto.userId,
+              },
             },
           },
-        },
-        include: {
-          company: true,
-          subscriptions: true,
-          user: true,
-        },
-      });
-    } catch (error) {
-      console.error(error);
-      throw new BadRequestException(
-        'Error creating customer: ' + error.message,
-      );
+          include: {
+            company: true,
+            subscriptions: true,
+            user: true,
+          },
+        });
+      } catch (error) {
+        console.error(error);
+        throw new BadRequestException(
+          'Error creating customer: ' + error.message,
+        );
+      }
     }
   }
 
@@ -71,8 +78,18 @@ export class CustomersService {
       email: createCustomerDto.email,
       phone: createCustomerDto.phone,
       mobilePhone: createCustomerDto.phone,
-      postalCode: createCustomerDto.postalCode,
+      postalCode: createCustomerDto.postalCode, // Enviando postalCode, não é necessário enviar city, province e address, somente addressNumber e complement
       addressNumber: createCustomerDto.addressNumber,
+      complement: createCustomerDto.complement,
+      externalReference: 'companyId', // TODO: Identificador do cliente no seu sistema
+      // notificationDisabled: false, // true para desabilitar o envio de notificações de cobrança
+      // additionalEmails: 'john.doe@asaas.com,john.doe.silva@asaas.com.br', // Emails adicionais para envio de notificações de cobrança separados por ","
+      // municipalInscription: '46683695908', // Inscrição municipal do cliente
+      // stateInscription: '646681195275', // Inscrição estadual do cliente
+      // observations: 'ótimo pagador, nenhum problema até o momento',
+      // groupName: null, // Nome do grupo ao qual o cliente pertence
+      // company: 'Nome da Empresa',
+      // foreignCustomer: false, // informe true caso seja pagador estrangeiro
     };
 
     try {

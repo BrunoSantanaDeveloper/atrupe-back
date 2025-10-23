@@ -23,6 +23,21 @@ export class SubscriptionsService {
   private asaasToken = asaasConfig.token;
   private asaasApiUrl = asaasConfig.apiUrl;
 
+  private asaasApi() {
+    const api = axios.create({
+      baseURL: this.asaasApiUrl,
+      headers: {
+        common: {
+          'Content-Type': 'application/json',
+          access_token: this.asaasToken,
+          'User-Agent': 'Atrupe',
+        },
+      },
+    });
+
+    return api;
+  }
+
   async findActiveByCompanyId(companyId: string) {
     return this.prisma.subscription.findFirst({
       where: {
@@ -63,18 +78,25 @@ export class SubscriptionsService {
       {
         where: {
           companyId: request.user.companyId,
+          plan: {
+            planType: {
+              not: 'TRIAL',
+            },
+          },
         },
       },
     );
 
     if (existingActiveSubscription) {
       throw new BadRequestException(
-        'Uma subscription ativa já existe para esta empresa. Use o método de upgrade para alterar o plano.',
+        'Uma assinatura ativa já existe para esta empresa. Use o método de upgrade para alterar o plano.',
       );
     }
+
     const existingCustomer = await this.prisma.customer.findUnique({
       where: { document: customer.document },
     });
+    console.log('Cliente encontrado:', existingCustomer);
 
     // Get customer and plan from database
     const [plan, additionalFeatures] = await Promise.all([
@@ -85,7 +107,7 @@ export class SubscriptionsService {
         ? this.prisma.feature.findMany({
             where: { key: { in: createSubscriptionDto.additionalFeatures } },
           })
-        : [],
+        : Promise.resolve([]),
     ]);
 
     if (!plan) {
@@ -98,29 +120,36 @@ export class SubscriptionsService {
       finalCustomer = await this.customerSerivce.create(customer);
     }
 
-    // Calculate total value
-    const additionalFeaturesValue = 0; // Features extras via subscriptionFeatures
+    // Soma o preço das features adicionais selecionadas
+    const additionalFeaturesValue = additionalFeatures.reduce(
+      (acc, feature) => acc + (feature.price || 0),
+      0,
+    );
+    console.log('Valor total dos módulos adicionais:', additionalFeaturesValue);
+
+    // Soma o preço da quantidade de usuários adicionais
     const additionalUsersValue =
       (plan.additionalUserPrice || 0) *
       (createSubscriptionDto.additionalUsers || 0);
+    console.log('Valor total de usuários adicionais:', additionalUsersValue);
 
+    const planPrice = plan.basePrice;
+    console.log('Preço base do plano:', planPrice);
+
+    // Soma o valor total a ser cobrado em centavos e divide por 100
     const value =
-      plan.basePrice + additionalFeaturesValue + additionalUsersValue;
-
-    console.log('plan.basePrice', plan.basePrice);
-    console.log('additionalFeaturesValue', additionalFeaturesValue);
-    console.log('additionalUsersValue', additionalUsersValue);
-    console.log('total value', value);
+      (planPrice + additionalFeaturesValue + additionalUsersValue) / 100;
+    console.log('Valor final:', value);
 
     const data = {
-      billingType: createSubscriptionDto.billingType,
-      cycle: createSubscriptionDto.cycle,
       customer: finalCustomer.asaasCustomerId,
+      billingType: createSubscriptionDto.billingType,
       value,
       nextDueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30),
+      cycle: 'MONTHLY',
       description: `Assinatura ${plan.name}`,
       callback: {
-        successUrl: 'https://homolog.atrupe.com.br',
+        successUrl: createSubscriptionDto.successUrl,
       },
     };
 
@@ -138,7 +167,7 @@ export class SubscriptionsService {
             additionalUsers: createSubscriptionDto.additionalUsers || 0,
             asaasSubscriptionId: asaasSubscription.id,
             nextDueDate: new Date(asaasSubscription.nextDueDate),
-            cycle: createSubscriptionDto.cycle,
+            cycle: 'MONTHLY',
             billingType: createSubscriptionDto.billingType,
             value,
             status: asaasSubscription.status,
@@ -175,9 +204,7 @@ export class SubscriptionsService {
         billingType: createSubscriptionDto.billingType,
         description: `Primeira cobrança - ${plan.name}`,
         externalReference: subscription.id,
-        successUrl:
-          createSubscriptionDto.successUrl ||
-          'https://atrupe.com.br/payment/success',
+        successUrl: createSubscriptionDto.successUrl,
       });
 
       this.logger.log('Subscription e Payment criados com sucesso');
@@ -460,17 +487,10 @@ export class SubscriptionsService {
   private async cancelAsaasSubscription(
     asaasSubscriptionId: string,
   ): Promise<void> {
+    const route = `/subscriptions/${asaasSubscriptionId}`;
+
     try {
-      await axios.delete(
-        `${this.asaasApiUrl}/subscriptions/${asaasSubscriptionId}`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            access_token: this.asaasToken,
-            'User-Agent': 'Atrupe',
-          },
-        },
-      );
+      await this.asaasApi().delete(route);
     } catch (error) {
       console.error(
         'Error canceling Asaas subscription:',
@@ -484,18 +504,10 @@ export class SubscriptionsService {
     asaasSubscriptionId: string,
     data: any,
   ): Promise<any> {
+    const route = `${this.asaasApiUrl}/subscriptions/${asaasSubscriptionId}`;
+
     try {
-      const response = await axios.post(
-        `${this.asaasApiUrl}/subscriptions/${asaasSubscriptionId}`,
-        data,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            access_token: this.asaasToken,
-            'User-Agent': 'Atrupe',
-          },
-        },
-      );
+      const response = await this.asaasApi().post(route, data);
       return response.data;
     } catch (error) {
       console.error(
@@ -507,18 +519,10 @@ export class SubscriptionsService {
   }
 
   private async createSubscription(subscriptionData: any): Promise<any> {
+    const route = 'subscriptions';
+    console.log('payload asaas:', subscriptionData);
     try {
-      const response = await axios.post(
-        `${this.asaasApiUrl}/subscriptions`,
-        subscriptionData,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            access_token: this.asaasToken,
-            'User-Agent': 'Atrupe',
-          },
-        },
-      );
+      const response = await this.asaasApi().post(route, subscriptionData);
       return response.data;
     } catch (error) {
       console.error(
