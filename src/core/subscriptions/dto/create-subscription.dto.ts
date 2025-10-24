@@ -33,6 +33,7 @@ export class CreateSubscriptionDto {
 
   @ApiProperty({ enum: Cycle })
   @IsEnum(Cycle)
+  @IsOptional()
   cycle: Cycle;
 
   @ApiProperty({
@@ -62,4 +63,6 @@ export class CreateSubscriptionDto {
   @IsOptional()
   @IsString()
   failureUrl?: string;
+
+  companyId?: string;
 }

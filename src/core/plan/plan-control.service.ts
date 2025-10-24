@@ -46,6 +46,9 @@ export class PlanControlService {
       where: { id: companyId },
       select: {
         Subscription: {
+          where: {
+            status: 'ACTIVE',
+          },
           select: {
             id: true,
             additionalUsers: true,

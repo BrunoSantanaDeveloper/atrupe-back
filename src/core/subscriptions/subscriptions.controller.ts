@@ -53,6 +53,7 @@ export class SubscriptionsController {
     @Body() createSubscriptionDto: CreateSubscriptionDto,
     @Req() req,
   ) {
+    createSubscriptionDto.companyId = req.user.companyId;
     return await this.subscriptionsService.create(createSubscriptionDto, req);
   }
 

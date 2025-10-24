@@ -10,6 +10,7 @@ import axios from 'axios';
 import { CustomersService } from '../customers/customers.service';
 import { PaymentsService } from '../payments/payments.service';
 import { asaasConfig } from 'src/config/configuration';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class SubscriptionsService {
@@ -17,7 +18,7 @@ export class SubscriptionsService {
 
   constructor(
     private prisma: PrismaService,
-    private customerSerivce: CustomersService,
+    private customerService: CustomersService,
     private paymentsService: PaymentsService,
   ) {}
   private asaasToken = asaasConfig.token;
@@ -74,31 +75,31 @@ export class SubscriptionsService {
     const { customer } = createSubscriptionDto;
 
     // Verificar se já existe uma subscription ativa para a empresa
-    const existingActiveSubscription = await this.prisma.subscription.findFirst(
-      {
-        where: {
-          companyId: request.user.companyId,
-          plan: {
-            planType: {
-              not: 'TRIAL',
-            },
-          },
-        },
+    const existingSubscription = await this.prisma.subscription.findFirst({
+      where: {
+        companyId: request.user.companyId,
+        status: 'ACTIVE',
       },
-    );
+      include: {
+        plan: true,
+        customer: true,
+      },
+    });
 
-    if (existingActiveSubscription) {
+    // Se existe uma subscription e não é TRIAL, impede a criação
+    if (
+      existingSubscription &&
+      existingSubscription.plan.planType !== 'TRIAL'
+    ) {
+      this.logger.error(
+        'The company already has an active subscription. Use upgrade method instead.',
+      );
       throw new BadRequestException(
-        'Uma assinatura ativa já existe para esta empresa. Use o método de upgrade para alterar o plano.',
+        'Uma assinatura ativa já existe para esta empresa.',
       );
     }
 
-    const existingCustomer = await this.prisma.customer.findUnique({
-      where: { document: customer.document },
-    });
-    console.log('Cliente encontrado:', existingCustomer);
-
-    // Get customer and plan from database
+    // Get plan from database
     const [plan, additionalFeatures] = await Promise.all([
       this.prisma.plan.findUnique({
         where: { id: createSubscriptionDto.planId },
@@ -114,10 +115,60 @@ export class SubscriptionsService {
       throw new NotFoundException('Plan not found');
     }
 
-    let finalCustomer = existingCustomer;
-    if (!existingCustomer) {
-      console.log('customer not found, creating...');
-      finalCustomer = await this.customerSerivce.create(customer);
+    let finalCustomer: any;
+
+    // Se existe uma subscription TRIAL, atualiza o customer existente
+    if (
+      existingSubscription &&
+      existingSubscription.plan.planType === 'TRIAL'
+    ) {
+      this.logger.log(
+        'Subscription TRIAL encontrada, atualizando customer existente',
+      );
+
+      // Preparar dados para atualização
+      const updateData = {
+        name: customer.name,
+        email: customer.email,
+        document: customer.document,
+        phone: customer.phone,
+        address: customer.address,
+        addressNumber: customer.addressNumber,
+        complement: customer.complement,
+        province: customer.province,
+        postalCode: customer.postalCode,
+        city: customer.city,
+        state: customer.state,
+      };
+
+      finalCustomer = await this.customerService.update(
+        existingSubscription.customer.id,
+        updateData,
+      );
+
+      // Desativar a subscription TRIAL antiga
+      // Não desativar aqui, só desativar quando confirmar pagamento do novo plano
+      // await this.prisma.subscription.update({
+      //   where: { id: existingSubscription.id },
+      //   data: { status: 'INACTIVE' },
+      // });
+
+      // this.logger.log('Subscription TRIAL desativada');
+    } else {
+      // Caso contrário, busca ou cria um novo customer
+      const existingCustomer = await this.prisma.customer.findFirst({
+        where: {
+          companyId: createSubscriptionDto.companyId,
+        },
+      });
+
+      if (existingCustomer) {
+        this.logger.log('Cliente encontrado:', existingCustomer);
+        finalCustomer = existingCustomer;
+      } else {
+        this.logger.log('customer not found, creating...');
+        finalCustomer = await this.customerService.create(customer);
+      }
     }
 
     // Soma o preço das features adicionais selecionadas
@@ -141,23 +192,8 @@ export class SubscriptionsService {
       (planPrice + additionalFeaturesValue + additionalUsersValue) / 100;
     console.log('Valor final:', value);
 
-    const data = {
-      customer: finalCustomer.asaasCustomerId,
-      billingType: createSubscriptionDto.billingType,
-      value,
-      nextDueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30),
-      cycle: 'MONTHLY',
-      description: `Assinatura ${plan.name}`,
-      callback: {
-        successUrl: createSubscriptionDto.successUrl,
-      },
-    };
-
     try {
-      // Create subscription in Asaas
-      const asaasSubscription = await this.createSubscription(data);
-
-      // Create subscription in local database
+      // Primeiro criar a subscription no banco para obter o ID
       const subscription = await this.prisma.$transaction(async (tx) => {
         const newSubscription = await tx.subscription.create({
           data: {
@@ -165,12 +201,12 @@ export class SubscriptionsService {
             planId: plan.id,
             companyId: request.user.companyId,
             additionalUsers: createSubscriptionDto.additionalUsers || 0,
-            asaasSubscriptionId: asaasSubscription.id,
-            nextDueDate: new Date(asaasSubscription.nextDueDate),
+            asaasSubscriptionId: `temp_${uuidv4()}`, // Temporário único, será atualizado após criação no Asaas
+            nextDueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30),
             cycle: 'MONTHLY',
             billingType: createSubscriptionDto.billingType,
             value,
-            status: asaasSubscription.status,
+            status: 'INACTIVE', // Criar com status inativo, ativar somente após pagamento confirmado
           },
         });
 
@@ -191,6 +227,31 @@ export class SubscriptionsService {
         return newSubscription;
       });
 
+      // Agora criar a subscription no Asaas usando o ID do banco como externalReference
+      const data = {
+        customer: finalCustomer.asaasCustomerId,
+        billingType: createSubscriptionDto.billingType,
+        value,
+        nextDueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30),
+        cycle: 'MONTHLY',
+        description: `Assinatura ${plan.name}`,
+        externalReference: subscription.id, // ID do banco de dados
+        callback: {
+          successUrl: createSubscriptionDto.successUrl,
+        },
+      };
+
+      const asaasSubscription = await this.createSubscription(data);
+
+      // Atualizar a subscription local com o ID do Asaas
+      await this.prisma.subscription.update({
+        where: { id: subscription.id },
+        data: {
+          asaasSubscriptionId: asaasSubscription.id,
+          nextDueDate: new Date(asaasSubscription.nextDueDate),
+        },
+      });
+
       // Criar primeira cobrança (payment)
       this.logger.log('Criando primeira cobrança para subscription');
 
@@ -203,7 +264,6 @@ export class SubscriptionsService {
           .split('T')[0],
         billingType: createSubscriptionDto.billingType,
         description: `Primeira cobrança - ${plan.name}`,
-        externalReference: subscription.id,
         successUrl: createSubscriptionDto.successUrl,
       });
 
@@ -504,32 +564,56 @@ export class SubscriptionsService {
     asaasSubscriptionId: string,
     data: any,
   ): Promise<any> {
-    const route = `${this.asaasApiUrl}/subscriptions/${asaasSubscriptionId}`;
+    const route = `/subscriptions/${asaasSubscriptionId}`;
 
     try {
       const response = await this.asaasApi().post(route, data);
       return response.data;
     } catch (error) {
-      console.error(
-        'Error updating Asaas subscription:',
-        error.response?.data || error.message,
+      const errorResponse = error.response?.data.errors;
+      const errorDescription = errorResponse
+        ?.map((err) => err.description)
+        .join(', ');
+
+      console.error('Error updating Asaas subscription:', {
+        message: error.message,
+        response: errorResponse,
+        status: error.response?.status,
+        route,
+        data,
+      });
+      throw new Error(
+        errorDescription ||
+          error.message ||
+          'Falha ao atualizar assinatura no Asaas',
       );
-      throw new Error('Failed to update subscription in Asaas');
     }
   }
 
   private async createSubscription(subscriptionData: any): Promise<any> {
-    const route = 'subscriptions';
+    const route = '/subscriptions';
     console.log('payload asaas:', subscriptionData);
     try {
       const response = await this.asaasApi().post(route, subscriptionData);
       return response.data;
     } catch (error) {
-      console.error(
-        'Erro ao criar assinatura no Asaas:',
-        error.response?.data || error.message,
+      const errorResponse = error.response?.data.errors;
+      const errorDescription = errorResponse
+        ?.map((err) => err.description)
+        .join(', ');
+
+      console.error('Erro ao criar assinatura no Asaas:', {
+        message: error.message,
+        response: errorResponse,
+        status: error.response?.status,
+        route,
+        data: subscriptionData,
+      });
+      throw new Error(
+        errorDescription ||
+          error.message ||
+          'Falha ao criar assinatura no Asaas',
       );
-      throw new Error('Falha ao criar assinatura no Asaas');
     }
   }
 

@@ -4,6 +4,7 @@ import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import axios from 'axios';
 import { asaasConfig } from 'src/config/configuration';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class CustomersService {
@@ -27,49 +28,78 @@ export class CustomersService {
   }
 
   async create(createCustomerDto: CreateCustomerDto) {
-    // Criar cliente no Asaas
-    const asaasCustomer = await this.createCustomerAsaas(createCustomerDto);
+    // Verificar se já existe cliente com o documento informado
+    const existingCustomer = await this.prisma.customer.findFirst({
+      where: {
+        document: createCustomerDto.document,
+      },
+    });
 
-    // Criar cliente no Atrupe
-    if (!!asaasCustomer) {
-      try {
-        return await this.prisma.customer.create({
-          data: {
-            name: createCustomerDto.name,
-            email: createCustomerDto.email,
-            document: createCustomerDto.document,
-            phone: createCustomerDto.phone,
-            address: createCustomerDto.address,
-            addressNumber: createCustomerDto.addressNumber,
-            complement: createCustomerDto.complement,
-            province: createCustomerDto.province,
-            postalCode: createCustomerDto.postalCode,
-            city: createCustomerDto.city,
-            state: createCustomerDto.state,
-            asaasCustomerId: asaasCustomer.id,
-            companyId: createCustomerDto.companyId,
-            user: {
-              connect: {
-                id: createCustomerDto.userId,
-              },
+    if (existingCustomer) {
+      throw new BadRequestException(
+        'O documento informado já está sendo usado.',
+      );
+    }
+
+    try {
+      // Primeiro criar o customer no banco para obter o ID
+      const customer = await this.prisma.customer.create({
+        data: {
+          name: createCustomerDto.name,
+          email: createCustomerDto.email,
+          document: createCustomerDto.document,
+          phone: createCustomerDto.phone,
+          address: createCustomerDto.address,
+          addressNumber: createCustomerDto.addressNumber,
+          complement: createCustomerDto.complement,
+          province: createCustomerDto.province,
+          postalCode: createCustomerDto.postalCode,
+          city: createCustomerDto.city,
+          state: createCustomerDto.state,
+          asaasCustomerId: `temp_${uuidv4()}`, // Temporário único, será atualizado após criação no Asaas
+          companyId: createCustomerDto.companyId,
+          user: {
+            connect: {
+              id: createCustomerDto.userId,
             },
           },
-          include: {
-            company: true,
-            subscriptions: true,
-            user: true,
-          },
-        });
-      } catch (error) {
-        console.error(error);
-        throw new BadRequestException(
-          'Error creating customer: ' + error.message,
-        );
-      }
+        },
+        include: {
+          company: true,
+          subscriptions: true,
+          user: true,
+        },
+      });
+
+      // Criar cliente no Asaas usando o ID do banco como externalReference
+      const customerDataForAsaas = {
+        ...createCustomerDto,
+        externalReference: customer.id, // ID do banco de dados
+      };
+      const asaasCustomer =
+        await this.createCustomerAsaas(customerDataForAsaas);
+
+      // Atualizar o customer local com o ID do Asaas
+      return await this.prisma.customer.update({
+        where: { id: customer.id },
+        data: {
+          asaasCustomerId: asaasCustomer.id,
+        },
+        include: {
+          company: true,
+          subscriptions: true,
+          user: true,
+        },
+      });
+    } catch (error) {
+      console.error(`Error creating customer: ${error}`);
+      throw new BadRequestException(error.message);
     }
   }
 
-  private async createCustomerAsaas(createCustomerDto: CreateCustomerDto) {
+  private async createCustomerAsaas(
+    createCustomerDto: CreateCustomerDto & { externalReference?: string },
+  ) {
     const route = '/customers';
 
     const data = {
@@ -81,7 +111,7 @@ export class CustomersService {
       postalCode: createCustomerDto.postalCode, // Enviando postalCode, não é necessário enviar city, province e address, somente addressNumber e complement
       addressNumber: createCustomerDto.addressNumber,
       complement: createCustomerDto.complement,
-      externalReference: 'companyId', // TODO: Identificador do cliente no seu sistema
+      externalReference: createCustomerDto.externalReference, // ID do cliente no banco de dados
       // notificationDisabled: false, // true para desabilitar o envio de notificações de cobrança
       // additionalEmails: 'john.doe@asaas.com,john.doe.silva@asaas.com.br', // Emails adicionais para envio de notificações de cobrança separados por ","
       // municipalInscription: '46683695908', // Inscrição municipal do cliente
@@ -92,21 +122,26 @@ export class CustomersService {
       // foreignCustomer: false, // informe true caso seja pagador estrangeiro
     };
 
+    console.log('criar cliente asaas:', data);
+
     try {
       const response = await this.asaasApi().post(route, data);
       console.log('response', response.data);
       return response.data;
     } catch (error) {
+      const errorResponse = error.response?.data.errors;
+      const errorDescription = errorResponse
+        ?.map((err) => err.description)
+        .join(', ');
+
       console.error('Error creating customer in Asaas:', {
         message: error.message,
-        response: error.response?.data.errors,
+        response: errorResponse,
         status: error.response?.status,
         route,
         data,
       });
-      throw new BadRequestException(
-        `Error creating customer in Asaas: ${error.message}`,
-      );
+      throw new BadRequestException(errorDescription || error.message);
     }
   }
 

@@ -8,6 +8,7 @@ import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { asaasConfig } from 'src/config/configuration';
 import axios from 'axios';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class PaymentsService {
@@ -24,31 +25,44 @@ export class PaymentsService {
     this.logger.log('Criando primeira cobrança para subscription');
 
     try {
-      // Criar payment no Asaas
-      const asaasPayment = await this.createPaymentAsaas(data);
-
-      // Salvar payment localmente
+      // Primeiro criar o payment no banco para obter o ID
       const payment = await this.prisma.payment.create({
         data: {
           subscriptionId: data.subscriptionId,
-          asaasPaymentId: asaasPayment.id,
+          asaasPaymentId: `temp_${uuidv4()}`, // Temporário único, será atualizado após criação no Asaas
           asaasCustomerId: data.asaasCustomerId,
           value: data.value,
           dueDate: new Date(data.dueDate),
           billingType: data.billingType,
           description: data.description,
-          externalReference: data.externalReference,
-          invoiceUrl: asaasPayment.invoiceUrl,
-          bankSlipUrl: asaasPayment.bankSlipUrl,
-          pixQrCode: asaasPayment.pixQrCodeId,
-          pixCopyPaste: asaasPayment.encodedImage,
+          externalReference: '', // Será preenchido com o próprio ID
           status: 'PENDING',
         },
       });
 
-      this.logger.log(`Payment criado com sucesso: ${payment.id}`);
+      // Criar payment no Asaas usando o ID do banco como externalReference
+      const paymentDataForAsaas = {
+        ...data,
+        externalReference: payment.id, // ID do banco de dados
+      };
+      const asaasPayment = await this.createPaymentAsaas(paymentDataForAsaas);
 
-      return payment;
+      // Atualizar o payment local com dados do Asaas
+      const updatedPayment = await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          asaasPaymentId: asaasPayment.id,
+          externalReference: payment.id, // O externalReference é o próprio ID
+          invoiceUrl: asaasPayment.invoiceUrl,
+          bankSlipUrl: asaasPayment.bankSlipUrl,
+          pixQrCode: asaasPayment.pixQrCodeId,
+          pixCopyPaste: asaasPayment.encodedImage,
+        },
+      });
+
+      this.logger.log(`Payment criado com sucesso: ${updatedPayment.id}`);
+
+      return updatedPayment;
     } catch (error) {
       this.logger.error('Erro ao criar primeira cobrança:', error);
       throw new BadRequestException(`Erro ao criar cobrança: ${error.message}`);

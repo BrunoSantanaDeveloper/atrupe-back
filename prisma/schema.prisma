@@ -1322,6 +1322,7 @@ model Feature {
   updatedAt            DateTime?             @updatedAt
   planFeatures         PlanFeature[]
   subscriptionFeatures SubscriptionFeature[]
+  // isAdditional         Boolean?
 
   @@map("features")
 }
@@ -1439,7 +1440,7 @@ model Payment {
   billingType       BillingType
   status            AsaasPaymentStatus @default(PENDING)
   description       String?
-  externalReference String?
+  externalReference String? // TODO: Remover, este é o próprio id do payment
   invoiceUrl        String?
   bankSlipUrl       String?
   pixQrCode         String?

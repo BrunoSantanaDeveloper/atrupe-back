@@ -241,13 +241,9 @@ export class UserService {
               customerId: customer.id,
               planId: trialPlan.id,
               companyId: company.id,
-              additionalUsers: 0,
               asaasSubscriptionId: `trial_sub_${user.id}`,
-              // modules campo removido - usar subscriptionFeatures
               nextDueDate: trialEndDate,
-              cycle: 'MONTHLY',
-              billingType: 'CREDIT_CARD',
-              value: trialPlan.basePrice,
+              value: 0,
             },
           });
 

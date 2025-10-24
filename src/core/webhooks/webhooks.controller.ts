@@ -47,7 +47,8 @@ export class WebhooksController {
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Listar eventos não processados',
-    description: 'Retorna todos os eventos de webhook que ainda não foram processados',
+    description:
+      'Retorna todos os eventos de webhook que ainda não foram processados',
   })
   @ApiResponse({
     status: 200,

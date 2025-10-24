@@ -40,7 +40,8 @@ export class FinancialFlowFilterDTO extends BaseFilterDTO {
   @IsOptional()
   @IsUUID()
   @ApiProperty({
-    description: 'ID da condição de pagamento para filtrar os fluxos financeiros',
+    description:
+      'ID da condição de pagamento para filtrar os fluxos financeiros',
     example: '123e4567-e89b-12d3-a456-426614174001',
     required: false,
   })
