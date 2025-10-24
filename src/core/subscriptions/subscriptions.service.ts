@@ -8,7 +8,6 @@ import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import axios from 'axios';
 import { CustomersService } from '../customers/customers.service';
-import { PaymentsService } from '../payments/payments.service';
 import { asaasConfig } from 'src/config/configuration';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -19,7 +18,6 @@ export class SubscriptionsService {
   constructor(
     private prisma: PrismaService,
     private customerService: CustomersService,
-    private paymentsService: PaymentsService,
   ) {}
   private asaasToken = asaasConfig.token;
   private asaasApiUrl = asaasConfig.apiUrl;
@@ -127,7 +125,7 @@ export class SubscriptionsService {
       );
 
       // Preparar dados para atualização
-      const updateData = {
+      const customerUpdateData = {
         name: customer.name,
         email: customer.email,
         document: customer.document,
@@ -143,7 +141,7 @@ export class SubscriptionsService {
 
       finalCustomer = await this.customerService.update(
         existingSubscription.customer.id,
-        updateData,
+        customerUpdateData,
       );
 
       // Desativar a subscription TRIAL antiga
@@ -163,7 +161,7 @@ export class SubscriptionsService {
       });
 
       if (existingCustomer) {
-        this.logger.log('Cliente encontrado:', existingCustomer);
+        this.logger.log('Cliente encontrado:', existingCustomer.name);
         finalCustomer = existingCustomer;
       } else {
         this.logger.log('customer not found, creating...');
@@ -232,7 +230,7 @@ export class SubscriptionsService {
         customer: finalCustomer.asaasCustomerId,
         billingType: createSubscriptionDto.billingType,
         value,
-        nextDueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30),
+        nextDueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 2), // 2 dias
         cycle: 'MONTHLY',
         description: `Assinatura ${plan.name}`,
         externalReference: subscription.id, // ID do banco de dados
@@ -252,19 +250,39 @@ export class SubscriptionsService {
         },
       });
 
-      // Criar primeira cobrança (payment)
-      this.logger.log('Criando primeira cobrança para subscription');
+      // Buscar a primeira cobrança criada automaticamente pelo Asaas
+      this.logger.log('Buscando primeira cobrança criada pelo Asaas');
 
-      const firstPayment = await this.paymentsService.createFirstPayment({
-        subscriptionId: subscription.id,
-        asaasCustomerId: finalCustomer.asaasCustomerId,
-        value,
-        dueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)
-          .toISOString()
-          .split('T')[0],
-        billingType: createSubscriptionDto.billingType,
-        description: `Primeira cobrança - ${plan.name}`,
-        successUrl: createSubscriptionDto.successUrl,
+      const asaasPayments = await this.getAsaasSubscriptionPayments(
+        asaasSubscription.id,
+      );
+
+      if (!asaasPayments || asaasPayments.length === 0) {
+        throw new BadRequestException(
+          'Asaas não criou a primeira cobrança automaticamente',
+        );
+      }
+
+      // Pegar a primeira cobrança (a mais recente)
+      const firstAsaasPayment = asaasPayments[0];
+
+      // Salvar a cobrança do Asaas no nosso banco
+      const firstPayment = await this.prisma.payment.create({
+        data: {
+          subscriptionId: subscription.id,
+          asaasPaymentId: firstAsaasPayment.id,
+          asaasCustomerId: finalCustomer.asaasCustomerId,
+          value: firstAsaasPayment.value,
+          dueDate: new Date(firstAsaasPayment.dueDate),
+          billingType: firstAsaasPayment.billingType,
+          description: firstAsaasPayment.description,
+          externalReference: firstAsaasPayment.id,
+          status: this.mapAsaasPaymentStatus(firstAsaasPayment.status),
+          invoiceUrl: firstAsaasPayment.invoiceUrl,
+          bankSlipUrl: firstAsaasPayment.bankSlipUrl,
+          pixQrCode: firstAsaasPayment.pixQrCodeId,
+          pixCopyPaste: firstAsaasPayment.encodedImage,
+        },
       });
 
       this.logger.log('Subscription e Payment criados com sucesso');
@@ -627,5 +645,51 @@ export class SubscriptionsService {
       (total, sf) => total + (sf.price || 0),
       0,
     );
+  }
+
+  /**
+   * Busca os pagamentos de uma subscription no Asaas
+   */
+  private async getAsaasSubscriptionPayments(
+    asaasSubscriptionId: string,
+  ): Promise<any[]> {
+    const route = `/subscriptions/${asaasSubscriptionId}/payments`;
+
+    try {
+      const response = await this.asaasApi().get(route);
+      return response.data.data || [];
+    } catch (error) {
+      this.logger.error('Erro ao buscar payments da subscription no Asaas:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
+      throw new Error(
+        `Falha ao buscar cobranças da assinatura no Asaas: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Mapeia status do payment do Asaas para nosso enum
+   */
+  private mapAsaasPaymentStatus(asaasStatus: string): any {
+    const statusMap: Record<string, string> = {
+      PENDING: 'PENDING',
+      CONFIRMED: 'CONFIRMED',
+      RECEIVED: 'RECEIVED',
+      RECEIVED_IN_CASH: 'RECEIVED',
+      OVERDUE: 'OVERDUE',
+      REFUNDED: 'REFUNDED',
+      REFUND_REQUESTED: 'REFUNDED',
+      CHARGEBACK_REQUESTED: 'REFUNDED',
+      CHARGEBACK_DISPUTE: 'REFUNDED',
+      AWAITING_CHARGEBACK_REVERSAL: 'REFUNDED',
+      DUNNING_REQUESTED: 'OVERDUE',
+      DUNNING_RECEIVED: 'RECEIVED',
+      AWAITING_RISK_ANALYSIS: 'PENDING',
+    };
+
+    return statusMap[asaasStatus] || 'PENDING';
   }
 }
