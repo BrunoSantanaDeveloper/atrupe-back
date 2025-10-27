@@ -29,16 +29,27 @@ export class CustomersService {
 
   async create(createCustomerDto: CreateCustomerDto) {
     // Verificar se já existe cliente com o documento informado
-    const existingCustomer = await this.prisma.customer.findFirst({
+    const existingCustomerByDocument = await this.prisma.customer.findFirst({
       where: {
         document: createCustomerDto.document,
       },
     });
 
-    if (existingCustomer) {
+    if (existingCustomerByDocument) {
       throw new BadRequestException(
         'O documento informado já está sendo usado.',
       );
+    }
+
+    // Verificar se já existe cliente com o email informado
+    const existingCustomerByEmail = await this.prisma.customer.findFirst({
+      where: {
+        email: createCustomerDto.email,
+      },
+    });
+
+    if (existingCustomerByEmail) {
+      throw new BadRequestException('O e-mail informado já está sendo usado.');
     }
 
     try {
@@ -229,6 +240,42 @@ export class CustomersService {
 
     if (!customer) {
       throw new BadRequestException('Customer not found');
+    }
+
+    // Verificar se o documento está sendo alterado e se já existe outro cliente com o mesmo documento
+    if (updateCustomerDto.document) {
+      const existingCustomerByDocument = await this.prisma.customer.findFirst({
+        where: {
+          document: updateCustomerDto.document,
+          NOT: {
+            id: id,
+          },
+        },
+      });
+
+      if (existingCustomerByDocument) {
+        throw new BadRequestException(
+          'O documento informado já está sendo usado.',
+        );
+      }
+    }
+
+    // Verificar se o email está sendo alterado e se já existe outro cliente com o mesmo email
+    if (updateCustomerDto.email) {
+      const existingCustomerByEmail = await this.prisma.customer.findFirst({
+        where: {
+          email: updateCustomerDto.email,
+          NOT: {
+            id: id,
+          },
+        },
+      });
+
+      if (existingCustomerByEmail) {
+        throw new BadRequestException(
+          'O e-mail informado já está sendo usado.',
+        );
+      }
     }
 
     // Atualizar no Asaas se não for um customer trial/temporário

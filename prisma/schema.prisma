@@ -1322,7 +1322,6 @@ model Feature {
   updatedAt            DateTime?             @updatedAt
   planFeatures         PlanFeature[]
   subscriptionFeatures SubscriptionFeature[]
-  // isAdditional         Boolean?
 
   @@map("features")
 }

@@ -304,9 +304,7 @@ export class SubscriptionsService {
       };
     } catch (error) {
       this.logger.error('Erro ao criar subscription:', error);
-      throw new BadRequestException(
-        `Failed to create subscription: ${error.message}`,
-      );
+      throw new BadRequestException(error.message);
     }
   }
 
@@ -633,18 +631,6 @@ export class SubscriptionsService {
           'Falha ao criar assinatura no Asaas',
       );
     }
-  }
-
-  /**
-   * Calcula o valor total das features extras de uma subscription
-   */
-  private async calculateSubscriptionFeaturesValue(
-    subscriptionFeatures: any[],
-  ): Promise<number> {
-    return subscriptionFeatures.reduce(
-      (total, sf) => total + (sf.price || 0),
-      0,
-    );
   }
 
   /**
