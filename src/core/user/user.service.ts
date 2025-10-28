@@ -426,7 +426,9 @@ export class UserService {
       console.error(error);
       if (error instanceof PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
-          throw new ConflictException('Email already exists');
+          throw new ConflictException(
+            'O endereço de e-mail informado já está atribuído a outro usuário',
+          );
         }
       }
       throw error;

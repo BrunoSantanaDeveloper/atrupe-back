@@ -2273,8 +2273,23 @@ export class QuotationService {
               totalValue: true,
               finalValue: true,
               description: true,
+              downPayment: true,
+              downPaymentConditionId: true,
+              downPaymentDueDate: true,
+              downPaymentAdditionalFee: true,
               paymentCondition: {
                 select: {
+                  name: true,
+                  paymentMethod: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                },
+              },
+              downPaymentCondition: {
+                select: {
+                  id: true,
                   name: true,
                   paymentMethod: {
                     select: {
@@ -2499,6 +2514,30 @@ export class QuotationService {
                   paymentMethod: installment.paymentCondition?.name,
                 }),
               ),
+              hasDownPayment: quotation.quotationPayment.downPayment > 0,
+              downPayment:
+                quotation.quotationPayment.downPayment > 0
+                  ? {
+                      amount: quotation.quotationPayment.downPayment,
+                      dueDate: quotation.quotationPayment.downPaymentDueDate,
+                      additionalFee:
+                        quotation.quotationPayment.downPaymentAdditionalFee,
+                      paymentConditionId:
+                        quotation.quotationPayment.downPaymentConditionId,
+                      paymentCondition: quotation.quotationPayment
+                        .downPaymentCondition
+                        ? {
+                            id: quotation.quotationPayment.downPaymentCondition
+                              .id,
+                            name: quotation.quotationPayment
+                              .downPaymentCondition.name,
+                            paymentMethod:
+                              quotation.quotationPayment.downPaymentCondition
+                                .paymentMethod?.name,
+                          }
+                        : null,
+                    }
+                  : null,
               availablePaymentMethods: await this.getAvailablePaymentMethods(
                 quotation.companyId,
                 quotation.clientId,

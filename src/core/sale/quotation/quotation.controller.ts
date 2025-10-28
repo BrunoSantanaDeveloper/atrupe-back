@@ -526,6 +526,18 @@ export class QuotationController {
                 paymentMethod: 'PIX',
               },
             ],
+            hasDownPayment: true,
+            downPayment: {
+              amount: 5000,
+              dueDate: '2023-01-15T14:45:00Z',
+              additionalFee: 0,
+              paymentConditionId: '550e8400-e29b-41d4-a716-446655440005',
+              paymentCondition: {
+                id: '550e8400-e29b-41d4-a716-446655440005',
+                name: 'PIX',
+                paymentMethod: 'PIX',
+              },
+            },
           },
           total: {
             subtotal: 35000,
