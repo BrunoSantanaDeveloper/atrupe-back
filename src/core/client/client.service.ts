@@ -454,6 +454,63 @@ export class ClientService {
 
   async update(id: string, updateClientDto: UpdateClientDto, sellerId: string) {
     await this.verifySellerPermission(sellerId);
+
+    // Verificar permissão para alterar status para ACTIVE
+    let canChangeStatusToActive = false;
+    if (updateClientDto.status === 'ACTIVE') {
+      const seller = await this.prisma.sellerProfile.findFirst({
+        where: {
+          employees: {
+            some: {
+              user: {
+                id: sellerId,
+              },
+            },
+          },
+        },
+        select: {
+          id: true,
+          canApprovePreRegistration: true,
+        },
+      });
+
+      // Se não encontrou um seller profile, verificar se é admin
+      if (!seller) {
+        const user = await this.prisma.user.findUnique({
+          where: {
+            id: sellerId,
+          },
+          select: {
+            employee: {
+              select: {
+                role: {
+                  select: {
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        // Se for Admin, pode alterar
+        if (user?.employee?.[0]?.role?.name === 'Admin') {
+          canChangeStatusToActive = true;
+        }
+      } else if (seller.canApprovePreRegistration) {
+        // Se encontrou o seller e ele tem permissão
+        canChangeStatusToActive = true;
+      }
+
+      // Se não tem permissão, ignorar a alteração de status e logar
+      if (!canChangeStatusToActive) {
+        console.log(
+          `Usuário ${sellerId} tentou alterar status para ACTIVE sem permissão. Ignorando a alteração de status.`,
+        );
+        delete updateClientDto.status;
+      }
+    }
+
     try {
       const client = await this.prisma.client.findUnique({ where: { id } });
       if (!client) {
