@@ -1854,7 +1854,7 @@ export class ReceivableService {
         linkedin: true,
         address: {
           where: {
-            type: 'PRINCIPAL',
+            type: 'Principal',
           },
           select: {
             street: true,
@@ -1891,15 +1891,13 @@ export class ReceivableService {
     // Obter endereço principal da empresa
     const principalAddress = company.address?.[0];
 
-    // Retornar dados do recibo
+    // Retornar dados do recibo (mesmo formato do PDF de orçamento)
     return {
       company: {
         name: company.name,
         cnpj: company.cnpj || '',
         email: company.email || '',
-        phone: company.phone || undefined,
         siteUrl: company.siteUrl || undefined,
-        logoUrl: company.logoUrl || undefined,
         address: principalAddress
           ? {
               street: principalAddress.street || '',
@@ -1908,7 +1906,7 @@ export class ReceivableService {
               neighborhood: principalAddress.neighborhood || '',
               city: principalAddress.city || '',
               state: principalAddress.state || '',
-              zipcode: principalAddress.zipcode || '',
+              zipCode: principalAddress.zipcode || '',
             }
           : {
               street: '',
@@ -1916,8 +1914,9 @@ export class ReceivableService {
               neighborhood: '',
               city: '',
               state: '',
-              zipcode: '',
+              zipCode: '',
             },
+        logo: company.logoUrl || undefined,
         socialNetworks: {
           instagram: company.instagram || undefined,
           facebook: company.facebook || undefined,

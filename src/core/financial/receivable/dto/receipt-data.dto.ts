@@ -37,7 +37,7 @@ export class CompanyAddressDto {
   state: string;
 
   @ApiProperty({ example: '01234-567' })
-  zipcode: string;
+  zipCode: string;
 }
 
 export class CompanySocialNetworksDto {
@@ -61,17 +61,14 @@ export class CompanyDataDto {
   @ApiProperty({ example: 'contato@atrupe.com.br' })
   email: string;
 
-  @ApiProperty({ example: '(47) 98406-4148', required: false })
-  phone?: string;
-
   @ApiProperty({ example: 'https://atrupe.com.br', required: false })
   siteUrl?: string;
 
-  @ApiProperty({ example: 'https://exemplo.com/logo.png', required: false })
-  logoUrl?: string;
-
   @ApiProperty({ type: CompanyAddressDto })
   address: CompanyAddressDto;
+
+  @ApiProperty({ example: 'https://exemplo.com/logo.png', required: false })
+  logo?: string;
 
   @ApiProperty({ type: CompanySocialNetworksDto, required: false })
   socialNetworks?: CompanySocialNetworksDto;
