@@ -29,16 +29,30 @@ export class BigdatacorpService {
       Limit: 1,
     };
 
-    const response$ = this.httpService
-      .post<PeopleResponseApi>(`${this.baseUrl}/pessoas`, body, {
-        timeout: this.timeout,
-        headers: {
-          AccessToken: this.config.get('plug.bigDataCorp.token'),
-        },
-      })
-      .pipe(map((response) => this.mapPeopleResponse(response.data)));
+    try {
+      const response$ = this.httpService
+        .post<PeopleResponseApi>(`${this.baseUrl}/pessoas`, body, {
+          timeout: this.timeout,
+          headers: {
+            AccessToken: this.config.get('plug.bigDataCorp.token'),
+          },
+        })
+        .pipe(map((response) => this.mapPeopleResponse(response.data)));
 
-    return await firstValueFrom(response$);
+      const result = await firstValueFrom(response$);
+
+      if (!result) {
+        throw new BadRequestException('CPF não encontrado na base de dados');
+      }
+
+      return result;
+    } catch (error) {
+      console.error(
+        'Error in BigDataCorp people service:',
+        error.message || error,
+      );
+      throw error;
+    }
   }
 
   /***************************************************************************/
@@ -74,6 +88,8 @@ export class BigdatacorpService {
   /***************************************************************************/
 
   private validateApiResponse(response: PeopleResponseApi): void {
+    console.log('Validating API response...');
+
     // Verificar se há status de erro da API
     if (response.Status) {
       const status = response.Status as any;
@@ -81,22 +97,35 @@ export class BigdatacorpService {
       // Verificar erros de login/autenticação
       if (status.login) {
         const loginError = status.login[0];
+        console.error('Login error:', loginError);
         if (loginError.Code === -111) {
           throw new UnauthorizedException('Token de acesso inválido');
+        }
+        // Lançar erro para qualquer código de erro de login
+        if (loginError.Code !== 0) {
+          throw new UnauthorizedException(
+            `Erro de autenticação: ${loginError.Message}`,
+          );
         }
       }
 
       // Verificar erros da API
       if (status.api) {
         const apiError = status.api[0];
+        console.error('API error:', apiError);
         if (apiError.Code === -114) {
           throw new BadRequestException('Parâmetro de documento inválido');
+        }
+        // Lançar erro para qualquer código de erro da API
+        if (apiError.Code !== 0) {
+          throw new BadRequestException(`Erro na API: ${apiError.Message}`);
         }
       }
 
       // Verificar se o dataset retornou erro
       if (status.basic_data) {
         const dataError = status.basic_data[0];
+        console.log('Dataset status:', dataError);
         if (dataError.Code !== 0) {
           throw new InternalServerErrorException(
             `Erro na consulta: ${dataError.Message}`,
@@ -112,10 +141,18 @@ export class BigdatacorpService {
     this.validateApiResponse(response);
 
     if (!response.Result || response.Result.length === 0) {
+      console.warn('No results found in API response');
+      console.log('Response structure:', {
+        hasResult: !!response.Result,
+        resultLength: response.Result?.length || 0,
+        queryId: response.QueryId,
+        status: response.Status,
+      });
       return null;
     }
 
     const basicData = response.Result[0].BasicData;
+    console.log('Mapping people data for CPF:', basicData.TaxIdNumber);
 
     // Extract RG data from AlternativeIdNumbers and ExtendedDocumentInformation
     let rg: string | undefined;
