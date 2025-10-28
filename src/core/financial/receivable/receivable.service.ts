@@ -16,8 +16,10 @@ import {
   UndoCancelReceivableDto,
 } from './dto/update-receivable.dto';
 import { ReceivableFilterDto } from './dto/receivable-filter.dto';
+import { ReceiptDataResponseDto } from './dto/receipt-data.dto';
 import { PaymentStatus, TransactionType } from '@prisma/client';
-import { endOfDay, add } from 'date-fns';
+import { endOfDay, add, format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { FinancialHistoryService } from '../history/history.service';
 
 @Injectable()
@@ -1817,5 +1819,129 @@ export class ReceivableService {
         },
       }),
     ]);
+  }
+
+  async getReceiptData(installmentId: string): Promise<ReceiptDataResponseDto> {
+    // Buscar a parcela com todas as informações necessárias
+    const installment = await this.prisma.receivableInstallment.findUnique({
+      where: { id: installmentId },
+      include: {
+        paymentCondition: true,
+        receivable: {
+          include: {
+            client: true,
+          },
+        },
+      },
+    });
+
+    if (!installment) {
+      throw new NotFoundException('Parcela não encontrada.');
+    }
+
+    // Buscar dados da empresa
+    const company = await this.prisma.company.findUnique({
+      where: { id: installment.receivable.companyId },
+      select: {
+        name: true,
+        cnpj: true,
+        email: true,
+        phone: true,
+        siteUrl: true,
+        logoUrl: true,
+        instagram: true,
+        facebook: true,
+        linkedin: true,
+        address: {
+          where: {
+            type: 'PRINCIPAL',
+          },
+          select: {
+            street: true,
+            number: true,
+            complement: true,
+            neighborhood: true,
+            city: true,
+            state: true,
+            zipcode: true,
+          },
+        },
+      },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Empresa não encontrada.');
+    }
+
+    // Calcular o valor total da parcela
+    const totalValue =
+      (installment.amount || 0) + (installment.additionalFee || 0);
+
+    // Formatar data do recibo (usar data de pagamento se existir, senão data de vencimento)
+    const receiptDate =
+      installment.paidDate || installment.dueDate || new Date();
+
+    const day = format(receiptDate, 'dd', { locale: ptBR });
+    const month = format(receiptDate, 'MMMM', { locale: ptBR });
+    const year = format(receiptDate, 'yyyy', { locale: ptBR });
+
+    // Nome do cliente
+    const clientName = installment.receivable.client?.name || 'Cliente';
+
+    // Obter endereço principal da empresa
+    const principalAddress = company.address?.[0];
+
+    // Retornar dados do recibo
+    return {
+      company: {
+        name: company.name,
+        cnpj: company.cnpj || '',
+        email: company.email || '',
+        phone: company.phone || undefined,
+        siteUrl: company.siteUrl || undefined,
+        logoUrl: company.logoUrl || undefined,
+        address: principalAddress
+          ? {
+              street: principalAddress.street || '',
+              number: principalAddress.number || '',
+              complement: principalAddress.complement || undefined,
+              neighborhood: principalAddress.neighborhood || '',
+              city: principalAddress.city || '',
+              state: principalAddress.state || '',
+              zipcode: principalAddress.zipcode || '',
+            }
+          : {
+              street: '',
+              number: '',
+              neighborhood: '',
+              city: '',
+              state: '',
+              zipcode: '',
+            },
+        socialNetworks: {
+          instagram: company.instagram || undefined,
+          facebook: company.facebook || undefined,
+          linkedin: company.linkedin || undefined,
+        },
+      },
+      clientName,
+      totalValue,
+      day,
+      month,
+      year,
+      items: [
+        {
+          reference: String(installment.installmentNumber || 1).padStart(
+            2,
+            '0',
+          ),
+          description:
+            installment.receivable.description || 'Descrição do serviço',
+          date: format(installment.dueDate, 'dd/MM/yyyy', { locale: ptBR }),
+          paymentMethod: installment.paymentCondition?.name || 'N/D',
+          value: totalValue,
+        },
+      ],
+    };
   }
 }

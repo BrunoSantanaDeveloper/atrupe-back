@@ -32,6 +32,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { ReceivableFilterDto } from './dto/receivable-filter.dto';
+import { ReceiptDataResponseDto } from './dto/receipt-data.dto';
 
 const RESOURCE = 'receivable';
 const GROUP = 'financial';
@@ -309,5 +310,27 @@ export class ReceivableController {
   @ApiResponse({ status: 404, description: 'Conta a receber não encontrada.' })
   remove(@Param('id') id: string) {
     return this.receivableService.remove(id);
+  }
+
+  @Get('installment/:installmentId/receipt-data')
+  @ApiOperation({
+    summary: 'Retorna os dados formatados para gerar um recibo de uma parcela',
+  })
+  @ApiParam({
+    name: 'installmentId',
+    required: true,
+    description: 'ID da parcela',
+    type: String,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Dados do recibo retornados com sucesso.',
+    type: ReceiptDataResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Parcela não encontrada.' })
+  getReceiptData(
+    @Param('installmentId') installmentId: string,
+  ): Promise<ReceiptDataResponseDto> {
+    return this.receivableService.getReceiptData(installmentId);
   }
 }
