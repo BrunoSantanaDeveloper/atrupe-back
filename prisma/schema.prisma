@@ -1800,7 +1800,7 @@ enum FinancialType {
 }
 
 enum ExpenseSource {
-  SUPPLIER // Fornecedor
+  SUPPLIER // Fornecedor (despesa fixa)
   EMPLOYEE // Funcionário (salário)
   CLIENT // Cliente (reembolso, etc.)
   OTHER // Outros

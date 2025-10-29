@@ -467,11 +467,12 @@ export class ScheduledExpenseService {
       const page = parseInt(filters.page) || 1;
       const limit = parseInt(filters.limit) || 10;
       const skip = (page - 1) * limit;
-      const month = filters.month || new Date().getMonth() + 1;
+      // month já vem no formato 0-11 do DTO
+      const adjustedMonth =
+        filters.month !== undefined ? filters.month : new Date().getMonth();
       const year = filters.year || new Date().getFullYear();
-
-      // Ajusta o mês para o formato do banco (0-11)
-      const adjustedMonth = month - 1;
+      // Para retornar no response (formato 1-12 para exibição)
+      const month = adjustedMonth + 1;
 
       // Buscar fornecedores que têm despesas agendadas
       const whereSupplier: any = {

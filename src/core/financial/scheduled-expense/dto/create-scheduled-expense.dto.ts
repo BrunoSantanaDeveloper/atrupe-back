@@ -168,17 +168,17 @@ export class LaunchScheduledExpenseDto {
 
 export class ScheduledExpenseFilterDto extends BaseFilterDTO {
   @ApiProperty({
-    description: 'Mês de referência (1-12)',
+    description: 'Mês de referência (0-11, onde 0=Janeiro, 11=Dezembro)',
     required: false,
-    example: 1,
+    example: 0,
   })
   @IsOptional()
   @IsNumber()
-  @Min(1)
-  @Max(12)
+  @Min(0)
+  @Max(11)
   @Transform(({ value }) => {
-    if (!value) {
-      return new Date().getMonth() + 1;
+    if (value === undefined || value === null) {
+      return new Date().getMonth();
     }
     return parseInt(value);
   })
