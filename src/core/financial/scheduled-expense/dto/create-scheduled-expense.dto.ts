@@ -103,30 +103,58 @@ export class LaunchScheduledExpenseDto {
   })
   scheduledExpenseIds: string[];
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsDateString()
   @ApiProperty({
-    description: 'Data de competência da movimentação',
+    description:
+      'Data de competência (se informada, sobrescreve o valor padrão da despesa)',
     example: '2025-02-02',
+    required: false,
   })
-  competenceDate: string;
+  competenceDate?: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsDateString()
   @ApiProperty({
-    description: 'Data de vencimento da movimentação',
+    description:
+      'Data de vencimento (se informada, sobrescreve o valor padrão da despesa)',
     example: '2025-02-02',
+    required: false,
   })
-  dueDate: string;
+  dueDate?: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsNumber()
   @Min(0)
   @ApiProperty({
-    description: 'Valor da movimentação',
+    description:
+      'Valor da movimentação (se informado, sobrescreve o valor padrão da despesa)',
     example: 40000,
+    required: false,
   })
-  amount: number;
+  amount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(11)
+  @ApiProperty({
+    description:
+      'Mês de referência para lançamento automático (0-11, onde 0=Janeiro, 11=Dezembro). Se não informado, usa o mês atual.',
+    example: 8,
+    required: false,
+  })
+  month?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @ApiProperty({
+    description:
+      'Ano de referência para lançamento automático. Se não informado, usa o ano atual.',
+    example: 2025,
+    required: false,
+  })
+  year?: number;
 
   @IsOptional()
   @IsString()

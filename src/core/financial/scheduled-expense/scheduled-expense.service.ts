@@ -662,6 +662,22 @@ export class ScheduledExpenseService {
     let successCount = 0;
     let errorCount = 0;
 
+    // Verifica se foram enviados dados customizados (datas e valor)
+    const hasCustomData = !!(
+      launchData.competenceDate &&
+      launchData.dueDate &&
+      launchData.amount
+    );
+
+    // Define o mês e ano de referência
+    const now = new Date();
+    // month vem no formato 0-11 (JavaScript padrão), então adiciona +1 para usar no Date
+    const referenceMonth =
+      launchData.month !== undefined
+        ? launchData.month + 1
+        : now.getMonth() + 1;
+    const referenceYear = launchData.year || now.getFullYear();
+
     // Buscar conta bancária padrão da empresa uma única vez
     const defaultBankAccount = await this.prisma.bankAccount.findFirst({
       where: {
@@ -682,16 +698,44 @@ export class ScheduledExpenseService {
           companyId,
         );
 
+        let dueDate: Date;
+        let competenceDate: Date;
+        let amount: number;
+
+        if (hasCustomData) {
+          // Usa os dados customizados enviados no request
+          dueDate = new Date(launchData.dueDate);
+          competenceDate = new Date(launchData.competenceDate);
+          amount = launchData.amount;
+        } else {
+          // Usa os dados da despesa agendada
+          const dueDay = scheduledExpense.dueDay;
+          const lastDayOfMonth = new Date(
+            referenceYear,
+            referenceMonth,
+            0,
+          ).getDate();
+          const adjustedDueDay = Math.min(dueDay, lastDayOfMonth);
+
+          // Data de vencimento: dia especificado no mês/ano de referência
+          dueDate = new Date(referenceYear, referenceMonth - 1, adjustedDueDay);
+
+          // Data de competência: primeiro dia do mês de referência
+          competenceDate = new Date(referenceYear, referenceMonth - 1, 1);
+
+          amount = scheduledExpense.amount;
+        }
+
         // Criar a conta a pagar baseada na despesa agendada
         const payable = await this.prisma.payable.create({
           data: {
-            referenceDate: new Date(launchData.competenceDate),
+            referenceDate: competenceDate,
             description:
               scheduledExpense.description ||
               `Despesa agendada - ${scheduledExpense.supplier?.name || 'Sem fornecedor'}`,
             notes: launchData.notes,
-            totalAmount: launchData.amount,
-            totalValue: launchData.amount,
+            totalAmount: amount,
+            totalValue: amount,
             mainAdditionalFee: 0,
             installmentQty: 1,
             status: 'PENDING',
@@ -699,7 +743,7 @@ export class ScheduledExpenseService {
             companyId,
             natureId: scheduledExpense.categoryId,
             subCategoryId: scheduledExpense.subCategoryId,
-            scheduledExpenseId: scheduledExpenseId, // ✅ Vincula à despesa programada
+            scheduledExpenseId: scheduledExpenseId,
           },
           include: {
             supplier: true,
@@ -713,11 +757,11 @@ export class ScheduledExpenseService {
           data: {
             payableId: payable.id,
             installmentNumber: 1,
-            dueDate: new Date(launchData.dueDate),
-            amount: launchData.amount,
+            dueDate: dueDate,
+            amount: amount,
             additionalFee: 0,
             paymentConditionId: null,
-            bankAccountId: defaultBankAccountId, // ✅ Conta padrão
+            bankAccountId: defaultBankAccountId,
             status: 'PENDING',
             paidDate: null,
           },
