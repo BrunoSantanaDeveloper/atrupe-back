@@ -540,6 +540,13 @@ export class SalarySheetsService {
               dueDate: installment.dueDate || null,
               paidValue: installment.paidAmount || 0,
               paymentDate: installment.paidDate || null,
+              bankAccount: installment.bankAccount
+                ? {
+                    id: installment.bankAccount.id,
+                    name: installment.bankAccount.name,
+                    bank: installment.bankAccount.bank,
+                  }
+                : null,
             },
           };
 
