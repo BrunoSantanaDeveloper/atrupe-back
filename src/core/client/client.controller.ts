@@ -187,6 +187,25 @@ export class ClientController {
     return this.clientService.update(id, updateClientDto, req.user.userId);
   }
 
+  @Patch(':id/toggle-status')
+  @ApiOperation({
+    summary: 'Ativa ou desativa um cliente',
+    description:
+      'Se o cliente está INACTIVE, ativa para PROSPECT (só nome) ou ACTIVE (dados completos). Se está ACTIVE/PROSPECT, desativa para INACTIVE.',
+  })
+  @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
+  @ApiResponse({
+    status: 200,
+    description: 'Status do cliente alterado com sucesso.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Cliente não encontrado.',
+  })
+  toggleStatus(@Param('id') id: string, @Req() req) {
+    return this.clientService.toggleClientStatus(id, req.user.userId);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Remove um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })

@@ -15,9 +15,58 @@ import * as fastCsv from 'fast-csv';
 @Injectable()
 export class ClientService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Determina o status do cliente baseado nos dados fornecidos
+   * Regras:
+   * - Se tiver só o nome: PROSPECT
+   * - Se tiver nome, CPF/CNPJ, endereço e telefone: ACTIVE
+   */
+  private determineClientStatus(
+    name: string,
+    cpfCnpj: string | undefined,
+    addresses: any[] | undefined,
+    phone: string | undefined,
+    mobile: string | undefined,
+  ): ClientStatus {
+    // Verifica se tem nome (obrigatório)
+    if (!name) {
+      return 'PROSPECT';
+    }
+
+    // Verifica se tem CPF ou CNPJ
+    const hasCpfCnpj = !!cpfCnpj;
+
+    // Verifica se tem pelo menos um endereço válido
+    const hasAddress = addresses && addresses.length > 0;
+
+    // Verifica se tem telefone (phone ou mobile)
+    const hasPhone = !!phone || !!mobile;
+
+    // Se tiver nome, CPF/CNPJ, endereço e telefone: ACTIVE
+    if (hasCpfCnpj && hasAddress && hasPhone) {
+      return 'ACTIVE';
+    }
+
+    // Caso contrário: PROSPECT
+    return 'PROSPECT';
+  }
+
   async create(createClientDto: CreateClientDto, sellerId: string) {
     try {
       await this.verifySellerPermission(sellerId);
+
+      // Determina o status baseado nos dados fornecidos
+      const cpfCnpj =
+        createClientDto.general.cpf || createClientDto.general.cnpj;
+      const autoStatus = this.determineClientStatus(
+        createClientDto.general.name,
+        cpfCnpj,
+        createClientDto.addresses,
+        createClientDto.general.phone,
+        createClientDto.general.mobile,
+      );
+
       const client = await this.prisma.$transaction(
         async (prisma) => {
           // Criar o cliente
@@ -42,6 +91,7 @@ export class ClientService {
               minValue: createClientDto.creditLimit?.minValue || 0,
               maxValue: createClientDto.creditLimit?.maxValue || 0,
               blockClient: createClientDto.creditLimit?.blockClient || false,
+              status: autoStatus,
             },
           });
 
@@ -453,68 +503,109 @@ export class ClientService {
   }
 
   async update(id: string, updateClientDto: UpdateClientDto, sellerId: string) {
-    await this.verifySellerPermission(sellerId);
-
-    // Verificar permissão para alterar status para ACTIVE
-    let canChangeStatusToActive = false;
-    if (updateClientDto.status === 'ACTIVE') {
-      const seller = await this.prisma.sellerProfile.findFirst({
-        where: {
-          employees: {
-            some: {
-              user: {
-                id: sellerId,
-              },
-            },
-          },
-        },
-        select: {
-          id: true,
-          canApprovePreRegistration: true,
-        },
-      });
-
-      // Se não encontrou um seller profile, verificar se é admin
-      if (!seller) {
-        const user = await this.prisma.user.findUnique({
-          where: {
-            id: sellerId,
-          },
-          select: {
-            employee: {
-              select: {
-                role: {
-                  select: {
-                    name: true,
-                  },
-                },
-              },
-            },
-          },
-        });
-
-        // Se for Admin, pode alterar
-        if (user?.employee?.[0]?.role?.name === 'Admin') {
-          canChangeStatusToActive = true;
-        }
-      } else if (seller.canApprovePreRegistration) {
-        // Se encontrou o seller e ele tem permissão
-        canChangeStatusToActive = true;
-      }
-
-      // Se não tem permissão, ignorar a alteração de status e logar
-      if (!canChangeStatusToActive) {
-        console.log(
-          `Usuário ${sellerId} tentou alterar status para ACTIVE sem permissão. Ignorando a alteração de status.`,
-        );
-        delete updateClientDto.status;
-      }
-    }
-
     try {
       const client = await this.prisma.client.findUnique({ where: { id } });
       if (!client) {
         throw new NotFoundException('Client not found');
+      }
+
+      // Determinar o status automaticamente baseado nos dados atualizados
+      // Se o status atual for INACTIVE, não altera
+      let finalStatus: ClientStatus | undefined = undefined;
+
+      if (client.status !== 'INACTIVE') {
+        // Combinar dados atuais com dados atualizados
+        const updatedName = updateClientDto.general?.name || client.name;
+        const updatedCpf = updateClientDto.general?.cpf ?? client.cpf;
+        const updatedCnpj = updateClientDto.general?.cnpj ?? client.cnpj;
+        const cpfCnpj = updatedCpf || updatedCnpj;
+        const updatedPhone = updateClientDto.general?.phone ?? client.phone;
+        const updatedMobile = updateClientDto.general?.mobile ?? client.mobile;
+
+        // Verificar endereços: se estiver atualizando, usa os novos, senão busca os existentes
+        let hasAddress = false;
+        if (updateClientDto.addresses !== undefined) {
+          hasAddress = updateClientDto.addresses.length > 0;
+        } else {
+          // Buscar endereços existentes
+          const existingAddresses = await this.prisma.address.findMany({
+            where: { ownerId: id, ownerType: 'CLIENT' },
+          });
+          hasAddress = existingAddresses.length > 0;
+        }
+
+        // Determina o status baseado nos dados combinados
+        const calculatedStatus = this.determineClientStatus(
+          updatedName,
+          cpfCnpj,
+          hasAddress ? [{}] : undefined, // Array não vazio se houver endereço
+          updatedPhone,
+          updatedMobile,
+        );
+
+        // Se o status calculado for ACTIVE e o status atual não for ACTIVE,
+        // precisa verificar permissão para aprovar
+        if (calculatedStatus === 'ACTIVE' && client.status !== 'ACTIVE') {
+          // Verificar se tem permissão para aprovar
+          let canApprove = false;
+
+          const seller = await this.prisma.sellerProfile.findFirst({
+            where: {
+              employees: {
+                some: {
+                  user: {
+                    id: sellerId,
+                  },
+                },
+              },
+            },
+            select: {
+              id: true,
+              canApprovePreRegistration: true,
+            },
+          });
+
+          // Se não encontrou um seller profile, verificar se é admin
+          if (!seller) {
+            const user = await this.prisma.user.findUnique({
+              where: {
+                id: sellerId,
+              },
+              select: {
+                employee: {
+                  select: {
+                    role: {
+                      select: {
+                        name: true,
+                      },
+                    },
+                  },
+                },
+              },
+            });
+
+            // Se for Admin, pode aprovar
+            if (user?.employee?.[0]?.role?.name === 'Admin') {
+              canApprove = true;
+            }
+          } else if (seller.canApprovePreRegistration) {
+            // Se encontrou o seller e ele tem permissão
+            canApprove = true;
+          }
+
+          // Se tem permissão, usa ACTIVE, senão mantém PROSPECT
+          if (canApprove) {
+            finalStatus = 'ACTIVE';
+          } else {
+            finalStatus = 'PROSPECT';
+            console.log(
+              `Usuário ${sellerId} não tem permissão para aprovar cliente. Status mantido como PROSPECT.`,
+            );
+          }
+        } else {
+          // Para outros casos, usa o status calculado
+          finalStatus = calculatedStatus;
+        }
       }
 
       return await this.prisma
@@ -541,7 +632,7 @@ export class ClientService {
                 minValue: updateClientDto.creditLimit?.minValue,
                 maxValue: updateClientDto.creditLimit?.maxValue,
                 blockClient: updateClientDto.creditLimit?.blockClient,
-                status: updateClientDto.status,
+                status: finalStatus,
               },
             });
 
@@ -698,6 +789,110 @@ export class ClientService {
     });
 
     return address;
+  }
+
+  async toggleClientStatus(id: string, sellerId: string) {
+    const client = await this.prisma.client.findUnique({
+      where: { id },
+      include: {
+        address: true,
+      },
+    });
+
+    if (!client) {
+      throw new NotFoundException('Cliente não encontrado');
+    }
+
+    let newStatus: ClientStatus;
+
+    if (client.status === 'INACTIVE') {
+      // Se está INACTIVE, ao ativar determina o status baseado nos dados
+      const cpfCnpj = client.cpf || client.cnpj;
+      const hasAddress = client.address && client.address.length > 0;
+      const phone = client.phone;
+      const mobile = client.mobile;
+
+      const calculatedStatus = this.determineClientStatus(
+        client.name,
+        cpfCnpj,
+        hasAddress ? [{}] : undefined,
+        phone,
+        mobile,
+      );
+
+      // Se o status calculado for ACTIVE, precisa verificar permissão
+      if (calculatedStatus === 'ACTIVE') {
+        // Verificar se tem permissão para aprovar
+        let canApprove = false;
+
+        const seller = await this.prisma.sellerProfile.findFirst({
+          where: {
+            employees: {
+              some: {
+                user: {
+                  id: sellerId,
+                },
+              },
+            },
+          },
+          select: {
+            id: true,
+            canApprovePreRegistration: true,
+          },
+        });
+
+        // Se não encontrou um seller profile, verificar se é admin
+        if (!seller) {
+          const user = await this.prisma.user.findUnique({
+            where: {
+              id: sellerId,
+            },
+            select: {
+              employee: {
+                select: {
+                  role: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+
+          // Se for Admin, pode aprovar
+          if (user?.employee?.[0]?.role?.name === 'Admin') {
+            canApprove = true;
+          }
+        } else if (seller.canApprovePreRegistration) {
+          // Se encontrou o seller e ele tem permissão
+          canApprove = true;
+        }
+
+        // Se tem permissão, usa ACTIVE, senão usa PROSPECT
+        if (canApprove) {
+          newStatus = 'ACTIVE';
+        } else {
+          newStatus = 'PROSPECT';
+          console.log(
+            `Usuário ${sellerId} não tem permissão para ativar cliente como ACTIVE. Status definido como PROSPECT.`,
+          );
+        }
+      } else {
+        // Se o status calculado for PROSPECT, usa PROSPECT
+        newStatus = calculatedStatus;
+      }
+    } else {
+      // Se está ACTIVE ou PROSPECT, muda para INACTIVE (não precisa permissão especial)
+      newStatus = 'INACTIVE';
+    }
+
+    await this.prisma.client.update({
+      where: { id },
+      data: { status: newStatus },
+    });
+
+    return this.findOne(id);
   }
 
   remove(id: string) {

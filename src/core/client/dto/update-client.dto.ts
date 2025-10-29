@@ -1,7 +1,6 @@
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateClientDto } from './create-client.dto';
-import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
-import { ClientStatus } from '@prisma/client';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateClientDto extends PartialType(CreateClientDto) {
@@ -39,16 +38,6 @@ export class UpdateClientDto extends PartialType(CreateClientDto) {
     required: false,
   })
   facebook: string;
-
-  @IsOptional()
-  @IsEnum(ClientStatus)
-  @ApiProperty({
-    description: 'Status do cliente',
-    example: ClientStatus.ACTIVE,
-    required: false,
-    enum: ClientStatus,
-  })
-  status: ClientStatus;
 
   @IsOptional()
   @IsString()
