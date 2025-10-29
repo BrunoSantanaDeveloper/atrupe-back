@@ -90,6 +90,23 @@ export class SupplierController {
     return this.supplierService.findOne(id);
   }
 
+  @Patch(':id/toggle-status')
+  @ApiOperation({
+    summary: 'Alterna o status (ativo/inativo) de um fornecedor',
+  })
+  @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })
+  @ApiResponse({
+    status: 200,
+    description: 'Status do fornecedor alternado com sucesso.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Fornecedor não encontrado.',
+  })
+  toggleStatus(@Param('id') id: string) {
+    return this.supplierService.toggleStatus(id);
+  }
+
   @Patch(':id')
   @ApiOperation({ summary: 'Atualiza um fornecedor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })

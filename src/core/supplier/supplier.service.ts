@@ -357,7 +357,6 @@ export class SupplierService {
             minValue: updateSupplierDto.creditLimit?.minValue,
             maxValue: updateSupplierDto.creditLimit?.maxValue,
             blockClient: updateSupplierDto.creditLimit?.blockClient,
-            status: updateSupplierDto.status,
           },
         });
 
@@ -515,6 +514,33 @@ export class SupplierService {
     });
 
     return address;
+  }
+
+  async toggleStatus(id: string) {
+    const supplier = await this.prisma.supplier.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
+
+    if (!supplier) {
+      throw new NotFoundException('Supplier not found');
+    }
+
+    const newStatus =
+      supplier.status === ClientStatus.ACTIVE
+        ? ClientStatus.INACTIVE
+        : ClientStatus.ACTIVE;
+
+    return await this.prisma.supplier.update({
+      where: { id },
+      data: { status: newStatus },
+      select: {
+        id: true,
+        status: true,
+        name: true,
+        email: true,
+      },
+    });
   }
 
   remove(id: string) {
