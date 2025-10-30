@@ -38,7 +38,18 @@ export class ClientService {
     const hasCpfCnpj = !!cpfCnpj;
 
     // Verifica se tem pelo menos um endereço válido
-    const hasAddress = addresses && addresses.length > 0;
+    // (deve ter CEP, estado, cidade, bairro e rua preenchidos)
+    const hasAddress =
+      addresses &&
+      addresses.length > 0 &&
+      addresses.some(
+        (addr) =>
+          addr.zipcode &&
+          addr.state &&
+          addr.city &&
+          addr.neighborhood &&
+          addr.street,
+      );
 
     // Verifica se tem telefone (phone ou mobile)
     const hasPhone = !!phone || !!mobile;
@@ -523,22 +534,22 @@ export class ClientService {
         const updatedMobile = updateClientDto.general?.mobile ?? client.mobile;
 
         // Verificar endereços: se estiver atualizando, usa os novos, senão busca os existentes
-        let hasAddress = false;
+        let addressesToCheck: any[] | undefined = undefined;
         if (updateClientDto.addresses !== undefined) {
-          hasAddress = updateClientDto.addresses.length > 0;
+          addressesToCheck = updateClientDto.addresses;
         } else {
           // Buscar endereços existentes
           const existingAddresses = await this.prisma.address.findMany({
             where: { ownerId: id, ownerType: 'CLIENT' },
           });
-          hasAddress = existingAddresses.length > 0;
+          addressesToCheck = existingAddresses;
         }
 
         // Determina o status baseado nos dados combinados
         const calculatedStatus = this.determineClientStatus(
           updatedName,
           cpfCnpj,
-          hasAddress ? [{}] : undefined, // Array não vazio se houver endereço
+          addressesToCheck,
           updatedPhone,
           updatedMobile,
         );
