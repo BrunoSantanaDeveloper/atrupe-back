@@ -9,6 +9,50 @@ import { Prisma } from '@prisma/client';
 export class ConditionService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async findInUse(companyId: string) {
+    try {
+      const conditions = await this.prisma.paymentCondition.findMany({
+        where: {
+          companyId,
+          OR: [
+            {
+              payableInstallments: {
+                some: {},
+              },
+            },
+            {
+              receivableInstallments: {
+                some: {},
+              },
+            },
+          ],
+        },
+        include: {
+          paymentMethod: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            },
+          },
+          _count: {
+            select: {
+              payableInstallments: true,
+              receivableInstallments: true,
+            },
+          },
+        },
+        orderBy: {
+          name: 'asc',
+        },
+      });
+      return conditions;
+    } catch (error) {
+      console.error(error);
+      throw new Error('Error on find payment conditions in use');
+    }
+  }
+
   async findAvailable(companyId: string, type: string) {
     if (!type) {
       throw new BadRequestException('Type is required');

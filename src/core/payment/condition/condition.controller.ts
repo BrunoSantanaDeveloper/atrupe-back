@@ -46,6 +46,23 @@ export class ConditionController {
     return this.conditionService.create(createConditionDto);
   }
 
+  @Get('in-use')
+  @ApiOperation({
+    summary: 'Obtém a lista de todas as condições de pagamento em uso',
+    description:
+      'Lista todas as condições de pagamento que possuem pelo menos uma receita ou despesa associada',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Lista de condições de pagamento em uso retornada com sucesso.',
+    isArray: true,
+  })
+  async findInUse(@Req() req) {
+    const companyId = req.user.companyId;
+    return await this.conditionService.findInUse(companyId);
+  }
+
   @Get('available/:type')
   @ApiOperation({
     summary: 'Obtém a lista de todas as condições de pagamento disponíveis',
