@@ -15,8 +15,47 @@ export class SupplierService {
 
   async create(createDto: CreateSupplierDto) {
     try {
+      // Validar duplicidade de documento (CPF/CNPJ)
+      // Ignora se o registro atual é filial OU se os registros existentes são filiais
+      if (!createDto.general.isBranch) {
+        const cpf = createDto.general.cpf;
+        const cnpj = createDto.general.cnpj;
+
+        if (cpf) {
+          const existingSupplier = await this.prisma.supplier.findFirst({
+            where: {
+              cpf: cpf,
+              companyId: createDto.companyId,
+              isBranch: false, // Só valida se o existente NÃO for filial
+            },
+          });
+
+          if (existingSupplier) {
+            throw new BadRequestException(
+              `Já existe um fornecedor cadastrado com o CPF ${cpf}`,
+            );
+          }
+        }
+
+        if (cnpj) {
+          const existingSupplier = await this.prisma.supplier.findFirst({
+            where: {
+              cnpj: cnpj,
+              companyId: createDto.companyId,
+              isBranch: false, // Só valida se o existente NÃO for filial
+            },
+          });
+
+          if (existingSupplier) {
+            throw new BadRequestException(
+              `Já existe um fornecedor cadastrado com o CNPJ ${cnpj}`,
+            );
+          }
+        }
+      }
+
       const supplier = await this.prisma.$transaction(async (prisma) => {
-        // Criar o cliente
+        // Criar o fornecedor
         const supplier = await prisma.supplier.create({
           data: {
             type: createDto.type,
@@ -35,6 +74,7 @@ export class SupplierService {
             cnpj: createDto.general.cnpj,
             activity: createDto.general.activity,
             notes: createDto.general.notes,
+            isBranch: createDto.general.isBranch || false,
             // minValue: createDto.creditLimit.minValue,
             // maxValue: createDto.creditLimit.maxValue,
             // blockClient: createDto.creditLimit.blockClient,
@@ -302,6 +342,7 @@ export class SupplierService {
         phone: supplier.phone,
         mobile: supplier.mobile,
         notes: supplier.notes,
+        isBranch: supplier.isBranch || false,
       },
       addresses: supplier.address.map((address) => ({
         type: address.type,
@@ -331,13 +372,54 @@ export class SupplierService {
 
   async update(id: string, updateSupplierDto: UpdateSupplierDto) {
     try {
-      const client = await this.prisma.supplier.findUnique({ where: { id } });
-      if (!client) {
+      const supplier = await this.prisma.supplier.findUnique({ where: { id } });
+      if (!supplier) {
         throw new NotFoundException('SUPPLIER not found');
       }
 
+      // Validar duplicidade de documento (CPF/CNPJ) se estiver sendo alterado
+      // Ignora se o registro atual é filial OU se os registros existentes são filiais
+      if (!updateSupplierDto.general?.isBranch) {
+        const cpf = updateSupplierDto.general?.cpf;
+        const cnpj = updateSupplierDto.general?.cnpj;
+
+        if (cpf && cpf !== supplier.cpf) {
+          const existingSupplier = await this.prisma.supplier.findFirst({
+            where: {
+              cpf: cpf,
+              companyId: supplier.companyId,
+              id: { not: id },
+              isBranch: false, // Só valida se o existente NÃO for filial
+            },
+          });
+
+          if (existingSupplier) {
+            throw new BadRequestException(
+              `Já existe um fornecedor cadastrado com o CPF ${cpf}`,
+            );
+          }
+        }
+
+        if (cnpj && cnpj !== supplier.cnpj) {
+          const existingSupplier = await this.prisma.supplier.findFirst({
+            where: {
+              cnpj: cnpj,
+              companyId: supplier.companyId,
+              id: { not: id },
+              isBranch: false, // Só valida se o existente NÃO for filial
+            },
+          });
+
+          if (existingSupplier) {
+            throw new BadRequestException(
+              `Já existe um fornecedor cadastrado com o CNPJ ${cnpj}`,
+            );
+          }
+        }
+      }
+
       return await this.prisma.$transaction(async (prisma) => {
-        // Atualizar dados do cliente
+        // Atualizar dados do fornecedor
         await prisma.supplier.update({
           where: { id },
           data: {
@@ -357,6 +439,7 @@ export class SupplierService {
             minValue: updateSupplierDto.creditLimit?.minValue,
             maxValue: updateSupplierDto.creditLimit?.maxValue,
             blockClient: updateSupplierDto.creditLimit?.blockClient,
+            isBranch: updateSupplierDto.general?.isBranch,
           },
         });
 

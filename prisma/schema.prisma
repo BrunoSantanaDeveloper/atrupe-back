@@ -253,6 +253,7 @@ model Client {
   minValue          Float?
   supplierId        String?
   planId            String?
+  isBranch          Boolean                  @default(false)
   address           Address[]
   paymentConditions ClientPaymentCondition[]
   company           Company                  @relation(fields: [companyId], references: [id])
@@ -293,6 +294,7 @@ model Supplier {
   categoryId        String?
   maxValue          Float?
   minValue          Float?
+  isBranch          Boolean                    @default(false)
   address           Address[]
   client            Client[]
   commission        Commission[]

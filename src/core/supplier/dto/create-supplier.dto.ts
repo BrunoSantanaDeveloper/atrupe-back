@@ -58,6 +58,10 @@ class GeneralInfoDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isBranch?: boolean;
 }
 
 class AddressDto {

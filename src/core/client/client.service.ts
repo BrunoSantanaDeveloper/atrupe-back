@@ -67,6 +67,45 @@ export class ClientService {
     try {
       await this.verifySellerPermission(sellerId);
 
+      // Validar duplicidade de documento (CPF/CNPJ)
+      // Ignora se o registro atual é filial OU se os registros existentes são filiais
+      if (!createClientDto.general.isBranch) {
+        const cpf = createClientDto.general.cpf;
+        const cnpj = createClientDto.general.cnpj;
+
+        if (cpf) {
+          const existingClient = await this.prisma.client.findFirst({
+            where: {
+              cpf: cpf,
+              companyId: createClientDto.companyId,
+              isBranch: false, // Só valida se o existente NÃO for filial
+            },
+          });
+
+          if (existingClient) {
+            throw new BadRequestException(
+              `Já existe um cliente cadastrado com o CPF ${cpf}`,
+            );
+          }
+        }
+
+        if (cnpj) {
+          const existingClient = await this.prisma.client.findFirst({
+            where: {
+              cnpj: cnpj,
+              companyId: createClientDto.companyId,
+              isBranch: false, // Só valida se o existente NÃO for filial
+            },
+          });
+
+          if (existingClient) {
+            throw new BadRequestException(
+              `Já existe um cliente cadastrado com o CNPJ ${cnpj}`,
+            );
+          }
+        }
+      }
+
       // Determina o status baseado nos dados fornecidos
       const cpfCnpj =
         createClientDto.general.cpf || createClientDto.general.cnpj;
@@ -103,6 +142,7 @@ export class ClientService {
               maxValue: createClientDto.creditLimit?.maxValue || 0,
               blockClient: createClientDto.creditLimit?.blockClient || false,
               status: autoStatus,
+              isBranch: createClientDto.general.isBranch || false,
             },
           });
 
@@ -414,6 +454,7 @@ export class ClientService {
         mobile: client.mobile,
         notes: client.notes,
         birthdate: client.birthdate?.toISOString().split('T')[0] || null,
+        isBranch: client.isBranch || false,
       },
       addresses: client.address.map((address) => ({
         type: address.type,
@@ -518,6 +559,47 @@ export class ClientService {
       const client = await this.prisma.client.findUnique({ where: { id } });
       if (!client) {
         throw new NotFoundException('Client not found');
+      }
+
+      // Validar duplicidade de documento (CPF/CNPJ) se estiver sendo alterado
+      // Ignora se o registro atual é filial OU se os registros existentes são filiais
+      if (!updateClientDto.general?.isBranch) {
+        const cpf = updateClientDto.general?.cpf;
+        const cnpj = updateClientDto.general?.cnpj;
+
+        if (cpf && cpf !== client.cpf) {
+          const existingClient = await this.prisma.client.findFirst({
+            where: {
+              cpf: cpf,
+              companyId: client.companyId,
+              id: { not: id },
+              isBranch: false, // Só valida se o existente NÃO for filial
+            },
+          });
+
+          if (existingClient) {
+            throw new BadRequestException(
+              `Já existe um cliente cadastrado com o CPF ${cpf}`,
+            );
+          }
+        }
+
+        if (cnpj && cnpj !== client.cnpj) {
+          const existingClient = await this.prisma.client.findFirst({
+            where: {
+              cnpj: cnpj,
+              companyId: client.companyId,
+              id: { not: id },
+              isBranch: false, // Só valida se o existente NÃO for filial
+            },
+          });
+
+          if (existingClient) {
+            throw new BadRequestException(
+              `Já existe um cliente cadastrado com o CNPJ ${cnpj}`,
+            );
+          }
+        }
       }
 
       // Determinar o status automaticamente baseado nos dados atualizados
@@ -644,6 +726,7 @@ export class ClientService {
                 maxValue: updateClientDto.creditLimit?.maxValue,
                 blockClient: updateClientDto.creditLimit?.blockClient,
                 status: finalStatus,
+                isBranch: updateClientDto.general?.isBranch,
               },
             });
 

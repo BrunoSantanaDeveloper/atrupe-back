@@ -64,6 +64,17 @@ class GeneralInfoDto {
   @IsOptional()
   @IsDateString()
   birthdate?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({
+    description:
+      'Indica se este cliente é uma filial (desativa validação de duplicidade de documento)',
+    example: false,
+    required: false,
+    default: false,
+  })
+  isBranch?: boolean;
 }
 
 class AddressDto {
