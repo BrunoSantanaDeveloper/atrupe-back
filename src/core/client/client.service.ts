@@ -17,6 +17,16 @@ export class ClientService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
+   * Remove pontuação de CPF/CNPJ para normalização
+   */
+  private normalizeDocument(
+    document: string | null | undefined,
+  ): string | null {
+    if (!document) return null;
+    return document.replace(/[.\-/]/g, '');
+  }
+
+  /**
    * Determina o status do cliente baseado nos dados fornecidos
    * Regras:
    * - Se tiver só o nome: PROSPECT
@@ -129,9 +139,9 @@ export class ClientService {
               mobile: createClientDto.general.mobile,
               companyId: createClientDto.companyId,
               categoryId: createClientDto.general.categoryId?.trim() || null,
-              cpf: createClientDto.general.cpf,
+              cpf: this.normalizeDocument(createClientDto.general.cpf),
               rg: createClientDto.general.rg,
-              cnpj: createClientDto.general.cnpj,
+              cnpj: this.normalizeDocument(createClientDto.general.cnpj),
               activity: createClientDto.general.activity,
               corporateName: createClientDto.general.corporateName,
               notes: createClientDto.general.notes,
@@ -295,14 +305,17 @@ export class ClientService {
       }
 
       if (filter.search) {
+        // Normalizar busca para documentos (remover pontuação)
+        const normalizedSearch = this.normalizeDocument(filter.search);
+
         where = {
           ...where,
           OR: [
             { name: { contains: filter.search, mode: 'insensitive' } },
             { corporateName: { contains: filter.search, mode: 'insensitive' } },
             { email: { contains: filter.search, mode: 'insensitive' } },
-            { cpf: { contains: filter.search, mode: 'insensitive' } },
-            { cnpj: { contains: filter.search, mode: 'insensitive' } },
+            { cpf: { contains: normalizedSearch, mode: 'insensitive' } },
+            { cnpj: { contains: normalizedSearch, mode: 'insensitive' } },
           ],
         };
       }
@@ -563,11 +576,16 @@ export class ClientService {
 
       // Validar duplicidade de documento (CPF/CNPJ) se estiver sendo alterado
       // Ignora se o registro atual é filial OU se os registros existentes são filiais
-      if (!updateClientDto.general?.isBranch) {
-        const cpf = updateClientDto.general?.cpf;
-        const cnpj = updateClientDto.general?.cnpj;
+      const isBecomingNonBranch =
+        updateClientDto.general?.isBranch === false && client.isBranch === true;
+      const shouldValidate =
+        updateClientDto.general?.isBranch === false || isBecomingNonBranch;
 
-        if (cpf && cpf !== client.cpf) {
+      if (shouldValidate) {
+        const cpf = updateClientDto.general?.cpf ?? client.cpf;
+        const cnpj = updateClientDto.general?.cnpj ?? client.cnpj;
+
+        if (cpf) {
           const existingClient = await this.prisma.client.findFirst({
             where: {
               cpf: cpf,
@@ -584,7 +602,7 @@ export class ClientService {
           }
         }
 
-        if (cnpj && cnpj !== client.cnpj) {
+        if (cnpj) {
           const existingClient = await this.prisma.client.findFirst({
             where: {
               cnpj: cnpj,
@@ -714,9 +732,13 @@ export class ClientService {
                 mobile: updateClientDto.general?.mobile,
                 categoryId:
                   updateClientDto.general?.categoryId?.trim() || undefined,
-                cpf: updateClientDto.general?.cpf,
+                cpf: updateClientDto.general?.cpf
+                  ? this.normalizeDocument(updateClientDto.general.cpf)
+                  : undefined,
                 rg: updateClientDto.general?.rg,
-                cnpj: updateClientDto.general?.cnpj,
+                cnpj: updateClientDto.general?.cnpj
+                  ? this.normalizeDocument(updateClientDto.general.cnpj)
+                  : undefined,
                 activity: updateClientDto.general?.activity,
                 notes: updateClientDto.general?.notes,
                 birthdate: updateClientDto.general?.birthdate

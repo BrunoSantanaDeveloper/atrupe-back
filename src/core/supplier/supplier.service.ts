@@ -13,6 +13,16 @@ import { ClientStatus, OwnerType, Prisma } from '@prisma/client';
 export class SupplierService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Remove pontuação de CPF/CNPJ para normalização
+   */
+  private normalizeDocument(
+    document: string | null | undefined,
+  ): string | null {
+    if (!document) return null;
+    return document.replace(/[.\-/]/g, '');
+  }
+
   async create(createDto: CreateSupplierDto) {
     try {
       // Validar duplicidade de documento (CPF/CNPJ)
@@ -69,9 +79,9 @@ export class SupplierService {
               createDto.general.categoryId === ''
                 ? null
                 : createDto.general.categoryId,
-            cpf: createDto.general.cpf,
+            cpf: this.normalizeDocument(createDto.general.cpf),
             rg: createDto.general.rg,
-            cnpj: createDto.general.cnpj,
+            cnpj: this.normalizeDocument(createDto.general.cnpj),
             activity: createDto.general.activity,
             notes: createDto.general.notes,
             isBranch: createDto.general.isBranch || false,
@@ -158,14 +168,17 @@ export class SupplierService {
         where = { ...where, companyId: filter.companyId };
       }
       if (filter.search) {
+        // Normalizar busca para documentos (remover pontuação)
+        const normalizedSearch = this.normalizeDocument(filter.search);
+
         where = {
           ...where,
           OR: [
             { name: { contains: filter.search, mode: 'insensitive' } },
             { corporateName: { contains: filter.search, mode: 'insensitive' } },
             { email: { contains: filter.search, mode: 'insensitive' } },
-            { cpf: { contains: filter.search, mode: 'insensitive' } },
-            { cnpj: { contains: filter.search, mode: 'insensitive' } },
+            { cpf: { contains: normalizedSearch, mode: 'insensitive' } },
+            { cnpj: { contains: normalizedSearch, mode: 'insensitive' } },
           ],
         };
       }
@@ -379,11 +392,17 @@ export class SupplierService {
 
       // Validar duplicidade de documento (CPF/CNPJ) se estiver sendo alterado
       // Ignora se o registro atual é filial OU se os registros existentes são filiais
-      if (!updateSupplierDto.general?.isBranch) {
-        const cpf = updateSupplierDto.general?.cpf;
-        const cnpj = updateSupplierDto.general?.cnpj;
+      const isBecomingNonBranch =
+        updateSupplierDto.general?.isBranch === false &&
+        supplier.isBranch === true;
+      const shouldValidate =
+        updateSupplierDto.general?.isBranch === false || isBecomingNonBranch;
 
-        if (cpf && cpf !== supplier.cpf) {
+      if (shouldValidate) {
+        const cpf = updateSupplierDto.general?.cpf ?? supplier.cpf;
+        const cnpj = updateSupplierDto.general?.cnpj ?? supplier.cnpj;
+
+        if (cpf) {
           const existingSupplier = await this.prisma.supplier.findFirst({
             where: {
               cpf: cpf,
@@ -400,7 +419,7 @@ export class SupplierService {
           }
         }
 
-        if (cnpj && cnpj !== supplier.cnpj) {
+        if (cnpj) {
           const existingSupplier = await this.prisma.supplier.findFirst({
             where: {
               cnpj: cnpj,
@@ -431,9 +450,13 @@ export class SupplierService {
               updateSupplierDto.general?.categoryId === ''
                 ? null
                 : updateSupplierDto.general?.categoryId,
-            cpf: updateSupplierDto.general?.cpf,
+            cpf: updateSupplierDto.general?.cpf
+              ? this.normalizeDocument(updateSupplierDto.general.cpf)
+              : undefined,
             rg: updateSupplierDto.general?.rg,
-            cnpj: updateSupplierDto.general?.cnpj,
+            cnpj: updateSupplierDto.general?.cnpj
+              ? this.normalizeDocument(updateSupplierDto.general.cnpj)
+              : undefined,
             activity: updateSupplierDto.general?.activity,
             notes: updateSupplierDto.general?.notes,
             minValue: updateSupplierDto.creditLimit?.minValue,
