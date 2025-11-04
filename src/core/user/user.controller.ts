@@ -85,7 +85,11 @@ export class UserController {
   })
   async createEmployee(@Req() req, @Body() body: CreateUserByEmployeeDto) {
     body.company = req.user.companyId;
-    return await this.userService.createUserForEmployee(body);
+    return await this.userService.createUserForEmployee(
+      body,
+      req.user?.userId,
+      undefined, // userName será buscado do relacionamento com user
+    );
   }
 
   @UseGuards(JwtAuthGuard)

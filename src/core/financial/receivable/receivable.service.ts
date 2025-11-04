@@ -1443,16 +1443,17 @@ export class ReceivableService {
 
       // Registrar no histórico
       if (userId) {
-        const addedCount = installmentsAfter.length - installmentsBefore.length;
-        const removedCount =
-          addedCount < 0
-            ? Math.abs(addedCount)
-            : installmentsBefore.length > 0
-              ? installmentsBefore.filter(
-                  (before) =>
-                    !installmentsAfter.some((after) => after.id === before.id),
-                ).length
-              : 0;
+        // Contar parcelas adicionadas (que existem em after mas não em before)
+        const addedCount = installmentsAfter.filter(
+          (after) =>
+            !installmentsBefore.some((before) => before.id === after.id),
+        ).length;
+
+        // Contar parcelas removidas (que existem em before mas não em after)
+        const removedCount = installmentsBefore.filter(
+          (before) =>
+            !installmentsAfter.some((after) => after.id === before.id),
+        ).length;
         const modifiedCount = installmentsAfter.filter((after) => {
           const before = installmentsBefore.find((b) => b.id === after.id);
           return (
@@ -1466,7 +1467,7 @@ export class ReceivableService {
           receivableId,
           action: 'UPDATE_INSTALLMENTS',
           description: this.historyService.getUpdateInstallmentsDescription(
-            addedCount > 0 ? addedCount : 0,
+            addedCount,
             modifiedCount,
             removedCount,
           ),
@@ -1477,7 +1478,7 @@ export class ReceivableService {
           metadata: {
             totalInstallmentsBefore: installmentsBefore.length,
             totalInstallmentsAfter: installmentsAfter.length,
-            addedCount: addedCount > 0 ? addedCount : 0,
+            addedCount,
             modifiedCount,
             removedCount,
             changeReason,

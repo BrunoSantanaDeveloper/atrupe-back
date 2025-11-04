@@ -339,8 +339,28 @@ model Employee {
   PayrollSetup    PayrollSetup[]
   payroll         Payroll[]
   payables        Payable[]
+  employeeHistory EmployeeHistory[]
 
   @@map("employees")
+}
+
+model EmployeeHistory {
+  id            String   @id @default(uuid())
+  employeeId    String
+  action        String // CREATE, UPDATE, DEACTIVATE, REACTIVATE, CREATE_USER, UPDATE_USER
+  description   String
+  changes       Json? // { before: {...}, after: {...} }
+  metadata      Json? // Dados adicionais
+  createdBy     String
+  createdByName String? // Desnormalizado para performance
+  createdAt     DateTime @default(now())
+  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  user          User     @relation("EmployeeHistoryUser", fields: [createdBy], references: [id])
+
+  @@index([employeeId])
+  @@index([createdAt])
+  @@index([createdBy])
+  @@map("employee_history")
 }
 
 model User {
@@ -362,6 +382,7 @@ model User {
   userRole             UserRole[]
   receivableHistory    ReceivableHistory[] @relation("ReceivableHistoryUser")
   payableHistory       PayableHistory[]    @relation("PayableHistoryUser")
+  employeeHistory      EmployeeHistory[]   @relation("EmployeeHistoryUser")
   userActivities       UserActivity[]
   customer             Customer?           @relation(fields: [customerId], references: [id])
 

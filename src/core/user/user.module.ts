@@ -6,6 +6,7 @@ import { CacheModule } from 'src/svc/cache/cache.module';
 import { PlugModule } from 'src/svc/plug/plug.module';
 import { AbacService } from '../auth/abac/abac.service';
 import { CompanyModule } from '../company/company.module';
+import { EmployeeHistoryModule } from '../employee/history/history.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { CompanyModule } from '../company/company.module';
     CacheModule,
     PlugModule,
     forwardRef(() => CompanyModule),
+    EmployeeHistoryModule,
   ],
   controllers: [UserController],
   providers: [UserService, AbacService],

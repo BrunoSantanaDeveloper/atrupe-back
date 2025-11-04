@@ -4,12 +4,20 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { FilterEmployeeDto } from './dto/filter-employee.dto';
 import { Prisma } from '@prisma/client';
+import { EmployeeHistoryService } from './history/history.service';
 
 @Injectable()
 export class EmployeeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly historyService: EmployeeHistoryService,
+  ) {}
 
-  async create(createEmployeeDto: CreateEmployeeDto) {
+  async create(
+    createEmployeeDto: CreateEmployeeDto,
+    userId?: string,
+    userName?: string,
+  ) {
     try {
       return this.prisma.$transaction(async (tx) => {
         // 1. Criar o employee
@@ -58,6 +66,23 @@ export class EmployeeService {
               });
             }),
           );
+        }
+
+        // 4. Registrar no histórico
+        if (userId) {
+          await this.historyService.createEmployeeHistory({
+            employeeId: employee.id,
+            action: 'CREATE',
+            description: this.historyService.getCreateDescription(
+              employee.name || 'Sem nome',
+            ),
+            metadata: {
+              roleId: createEmployeeDto.roleId,
+              sectorId: createEmployeeDto.sectorId,
+            },
+            createdBy: userId,
+            createdByName: userName,
+          });
         }
 
         return employee;
@@ -285,10 +310,35 @@ export class EmployeeService {
     return `This action returns a #${id} employee`;
   }
 
-  async update(id: string, updateEmployeeDto: UpdateEmployeeDto) {
+  async update(
+    id: string,
+    updateEmployeeDto: UpdateEmployeeDto,
+    userId?: string,
+    userName?: string,
+  ) {
     const { isActive, address, ...rest } = updateEmployeeDto;
 
     return this.prisma.$transaction(async (tx) => {
+      // Capturar estado antes da atualização
+      // IMPORTANTE: Ao adicionar novos campos editáveis no Employee,
+      // inclua-os neste select para que sejam rastreados no histórico
+      const employeeBefore = await tx.employee.findUnique({
+        where: { id },
+        select: {
+          name: true,
+          isActive: true,
+          roleId: true,
+          sectorId: true,
+          avatarUrl: true,
+          signatureUrl: true,
+          sallary: true,
+          cpf: true,
+          mobile: true,
+          phone: true,
+          rg: true,
+        },
+      });
+
       // Atualiza os dados do Employee
       const employeeUpdate = await tx.employee.update({
         where: { id },
@@ -341,15 +391,69 @@ export class EmployeeService {
         }
       }
 
+      // Registrar no histórico
+      if (userId && employeeBefore) {
+        const changedFields: string[] = [];
+        const changes: any = { before: {}, after: {} };
+
+        // Detectar campos alterados
+        Object.keys(rest).forEach((key) => {
+          if (
+            employeeBefore[key] !== undefined &&
+            employeeBefore[key] !== rest[key]
+          ) {
+            changedFields.push(key);
+            changes.before[key] = employeeBefore[key];
+            changes.after[key] = rest[key];
+          }
+        });
+
+        // Tratamento especial para isActive
+        if (isActive !== undefined && employeeBefore.isActive !== isActive) {
+          const action = isActive ? 'REACTIVATE' : 'DEACTIVATE';
+          const description = isActive
+            ? this.historyService.getReactivateDescription(
+                employeeUpdate.name || 'Sem nome',
+              )
+            : this.historyService.getDeactivateDescription(
+                employeeUpdate.name || 'Sem nome',
+              );
+
+          await this.historyService.createEmployeeHistory({
+            employeeId: id,
+            action,
+            description,
+            changes: {
+              before: { isActive: employeeBefore.isActive },
+              after: { isActive },
+            },
+            createdBy: userId,
+            createdByName: userName,
+          });
+        } else if (changedFields.length > 0) {
+          // Registro de alterações normais
+          await this.historyService.createEmployeeHistory({
+            employeeId: id,
+            action: 'UPDATE',
+            description:
+              this.historyService.getUpdateDescription(changedFields),
+            changes,
+            metadata: { changedFields },
+            createdBy: userId,
+            createdByName: userName,
+          });
+        }
+      }
+
       return employeeUpdate;
     });
   }
 
-  async remove(id: string) {
+  async remove(id: string, userId?: string, userName?: string) {
     return this.prisma.$transaction(async (tx) => {
       const employee = await tx.employee.findUnique({
         where: { id },
-        select: { userId: true },
+        select: { userId: true, name: true },
       });
 
       if (employee?.userId) {
@@ -359,12 +463,38 @@ export class EmployeeService {
         });
       }
 
-      return await tx.employee.update({
+      const result = await tx.employee.update({
         where: { id },
         data: {
           isActive: false,
         },
       });
+
+      // Registrar no histórico
+      if (userId) {
+        await this.historyService.createEmployeeHistory({
+          employeeId: id,
+          action: 'DEACTIVATE',
+          description: this.historyService.getDeactivateDescription(
+            employee?.name || 'Sem nome',
+          ),
+          changes: {
+            before: { isActive: true },
+            after: { isActive: false },
+          },
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
+
+      return result;
     });
+  }
+
+  /**
+   * Busca o histórico completo de um colaborador
+   */
+  async getHistory(employeeId: string) {
+    return this.historyService.getEmployeeHistory(employeeId);
   }
 }

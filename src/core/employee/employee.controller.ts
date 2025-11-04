@@ -44,7 +44,11 @@ export class EmployeeController {
   })
   create(@Req() req, @Body() createEmployeeDto: CreateEmployeeDto) {
     createEmployeeDto.companyId = req.user.companyId;
-    return this.employeeService.create(createEmployeeDto);
+    return this.employeeService.create(
+      createEmployeeDto,
+      req.user?.userId,
+      undefined, // userName será buscado do relacionamento com user
+    );
   }
 
   @Get('quantity')
@@ -119,10 +123,16 @@ export class EmployeeController {
     description: 'Colaborador não encontrado.',
   })
   async update(
+    @Req() req,
     @Param('id') id: string,
     @Body() updateEmployeeDto: UpdateEmployeeDto,
   ) {
-    return await this.employeeService.update(id, updateEmployeeDto);
+    return await this.employeeService.update(
+      id,
+      updateEmployeeDto,
+      req.user?.userId,
+      undefined, // userName será buscado do relacionamento com user
+    );
   }
 
   @Delete(':id')
@@ -136,7 +146,32 @@ export class EmployeeController {
     status: 404,
     description: 'Colaborador não encontrado.',
   })
-  remove(@Param('id') id: string) {
-    return this.employeeService.remove(id);
+  remove(@Req() req, @Param('id') id: string) {
+    return this.employeeService.remove(
+      id,
+      req.user?.userId,
+      undefined, // userName será buscado do relacionamento com user
+    );
+  }
+
+  @Get(':id/history')
+  @ApiOperation({
+    summary: 'Obtém o histórico de alterações de um colaborador',
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    description: 'ID do colaborador',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Histórico do colaborador retornado com sucesso.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Colaborador não encontrado.',
+  })
+  getHistory(@Param('id') id: string) {
+    return this.employeeService.getHistory(id);
   }
 }

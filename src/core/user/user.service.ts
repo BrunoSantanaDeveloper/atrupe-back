@@ -25,6 +25,7 @@ import { MailerService } from '@nestjs-modules/mailer';
 import { CompanyService } from '../company/company.service';
 import { CreateCompanyDto } from '../company/dto/create-company.dto';
 import { Logger } from '@nestjs/common';
+import { EmployeeHistoryService } from '../employee/history/history.service';
 
 @Injectable()
 export class UserService {
@@ -36,6 +37,7 @@ export class UserService {
     private readonly plug: PlugService,
     private readonly companyService: CompanyService,
     private readonly mailerService: MailerService,
+    private readonly employeeHistoryService: EmployeeHistoryService,
   ) {}
 
   async sendEmailValidation(email: string) {
@@ -336,6 +338,8 @@ export class UserService {
 
   async createUserForEmployee(
     createUserDto: CreateUserByEmployeeDto,
+    createdByUserId?: string,
+    createdByUserName?: string,
   ): Promise<any> {
     console.log(createUserDto);
     // const company = await this.prisma.company.findFirst({
@@ -408,6 +412,7 @@ export class UserService {
       if (createUserDto.employeeId) {
         const employee = await this.prisma.employee.findFirst({
           where: { id: createUserDto.employeeId },
+          select: { id: true },
         });
 
         if (!employee) {
@@ -419,9 +424,27 @@ export class UserService {
         };
       }
 
-      return await this.prisma.user.create({
+      const user = await this.prisma.user.create({
         data: data,
       });
+
+      // Registrar no histórico do colaborador se foi vinculado
+      if (createUserDto.employeeId && createdByUserId) {
+        await this.employeeHistoryService.createEmployeeHistory({
+          employeeId: createUserDto.employeeId,
+          action: 'CREATE_USER',
+          description: `Usuário criado: ${user.email} (${user.name})`,
+          metadata: {
+            userId: user.id,
+            userEmail: user.email,
+            userName: user.name,
+          },
+          createdBy: createdByUserId,
+          createdByName: createdByUserName,
+        });
+      }
+
+      return user;
     } catch (error) {
       console.error(error);
       if (error instanceof PrismaClientKnownRequestError) {
