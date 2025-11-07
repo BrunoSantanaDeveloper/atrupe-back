@@ -1377,8 +1377,137 @@ export class QuotationService {
     } catch (error) {
       console.error(error);
     }
+
+    // Se updatePrices for true, buscar os produtos atualizados com preços
+    let productsWithCurrentPrices = null;
+    if (duplicateDto.updatePrices) {
+      const productIds = quotation.quotationProduct.map((p) => p.productId);
+      productsWithCurrentPrices = await this.prisma.product.findMany({
+        where: {
+          id: { in: productIds },
+        },
+        include: {
+          items: true,
+        },
+      });
+    }
+
     // Criar os produtos e itens duplicados
     for (const product of quotation.quotationProduct) {
+      // Se updatePrices for true, buscar o produto atual com preços atualizados
+      const currentProduct = duplicateDto.updatePrices
+        ? productsWithCurrentPrices.find((p) => p.id === product.productId)
+        : null;
+
+      // Calcular os valores dos itens primeiro
+      const calculatedItems: {
+        item: any;
+        currentItem: any;
+        calculatedSalePrice: number;
+      }[] = [];
+
+      for (const item of product.items) {
+        const currentItem = currentProduct?.items.find(
+          (i) => i.id === item.productItemId,
+        );
+
+        let calculatedSalePrice: number;
+
+        if (duplicateDto.updatePrices) {
+          // Quando updatePrices = true, usar o preço base do ProductItem e calcular
+          const baseSalePrice = currentItem?.salePrice;
+
+          console.log('=== DEBUG DUPLICATE PRICES ===');
+          console.log('Item name:', item.name);
+          console.log('Original item.salePrice (orçamento):', item.salePrice);
+          console.log('Current ProductItem.salePrice:', baseSalePrice);
+          console.log('unitKind:', item.unitKind);
+          console.log('duration:', item.duration);
+          console.log('quantity:', item.quantity);
+
+          if (!baseSalePrice) {
+            // Se o ProductItem não existe mais, manter o valor original do orçamento
+            calculatedSalePrice = item.salePrice ?? 0;
+            console.log(
+              'ProductItem not found, using original:',
+              calculatedSalePrice,
+            );
+          } else {
+            // Calcular o salePrice total baseado no unitKind
+            if (item.unitKind === 'DURATION' && item.duration) {
+              // duration está em segundos, converter para horas
+              const durationInHours = item.duration / 3600;
+              calculatedSalePrice =
+                baseSalePrice * durationInHours * item.quantity;
+              console.log(
+                `Calculated (DURATION): ${baseSalePrice} × ${durationInHours}h (${item.duration}s) × ${item.quantity} = ${calculatedSalePrice}`,
+              );
+            } else if (item.unitKind === 'AREA' && item.width && item.height) {
+              calculatedSalePrice =
+                baseSalePrice * item.width * item.height * item.quantity;
+              console.log(
+                `Calculated (AREA): ${baseSalePrice} × ${item.width} × ${item.height} × ${item.quantity} = ${calculatedSalePrice}`,
+              );
+            } else if (item.unitKind === 'DISTANCE' && item.distance) {
+              calculatedSalePrice =
+                baseSalePrice * item.distance * item.quantity;
+              console.log(
+                `Calculated (DISTANCE): ${baseSalePrice} × ${item.distance} × ${item.quantity} = ${calculatedSalePrice}`,
+              );
+            } else if (item.unitKind === 'LENGTH' && item.length) {
+              calculatedSalePrice = baseSalePrice * item.length * item.quantity;
+              console.log(
+                `Calculated (LENGTH): ${baseSalePrice} × ${item.length} × ${item.quantity} = ${calculatedSalePrice}`,
+              );
+            } else if (item.unitKind === 'WEIGHT' && item.weight) {
+              calculatedSalePrice = baseSalePrice * item.weight * item.quantity;
+              console.log(
+                `Calculated (WEIGHT): ${baseSalePrice} × ${item.weight} × ${item.quantity} = ${calculatedSalePrice}`,
+              );
+            } else if (item.unitKind === 'CAPACITY' && item.volume) {
+              calculatedSalePrice = baseSalePrice * item.volume * item.quantity;
+              console.log(
+                `Calculated (CAPACITY): ${baseSalePrice} × ${item.volume} × ${item.quantity} = ${calculatedSalePrice}`,
+              );
+            } else {
+              // UNITY ou null - multiplica apenas pela quantity
+              calculatedSalePrice = baseSalePrice * item.quantity;
+              console.log(
+                `Calculated (UNITY): ${baseSalePrice} × ${item.quantity} = ${calculatedSalePrice}`,
+              );
+            }
+          }
+          console.log('=== END DEBUG ===\n');
+        } else {
+          // Quando updatePrices = false, manter o valor original do orçamento
+          calculatedSalePrice = item.salePrice ?? 0;
+        }
+
+        calculatedItems.push({ item, currentItem, calculatedSalePrice });
+      }
+
+      // Calcular o novo totalValue do produto somando os salePrices calculados
+      let newProductTotalValue = product.totalValue;
+      let newProductFinalValue = product.finalValue;
+
+      if (duplicateDto.updatePrices) {
+        newProductTotalValue = calculatedItems.reduce(
+          (total, { calculatedSalePrice }) => total + calculatedSalePrice,
+          0,
+        );
+
+        // Recalcular o finalValue aplicando o desconto
+        if (product.discount && product.discountType === 'PERCENT') {
+          newProductFinalValue =
+            newProductTotalValue -
+            (newProductTotalValue * product.discount) / 100;
+        } else if (product.discount && product.discountType === 'VALUE') {
+          newProductFinalValue = newProductTotalValue - product.discount;
+        } else {
+          newProductFinalValue = newProductTotalValue;
+        }
+      }
+
       // Criar o produto duplicado com todos os campos
       const productDto: DuplicateQuotationProductDto = {
         description: product.description,
@@ -1386,8 +1515,8 @@ export class QuotationService {
         technicalDescription: product.technicalDescription,
         imageUrl: product.imageUrl,
         notes: product.notes,
-        totalValue: product.totalValue,
-        finalValue: product.finalValue,
+        totalValue: newProductTotalValue,
+        finalValue: newProductFinalValue,
         discount: product.discount,
         discountType: product.discountType,
         allowEditDescription: product.allowEditDescription,
@@ -1400,8 +1529,17 @@ export class QuotationService {
         data: productDto,
       });
 
-      // Criar os itens do produto duplicado com valores já calculados
-      for (const item of product.items) {
+      // Criar os itens do produto duplicado usando os valores já calculados
+      for (const {
+        item,
+        currentItem,
+        calculatedSalePrice,
+      } of calculatedItems) {
+        // Determinar o unitCost a ser usado
+        const baseUnitCost = duplicateDto.updatePrices
+          ? (currentItem?.unitCost ?? item.unitCost)
+          : item.unitCost;
+
         const itemDto: DuplicateQuotationProductItemDto = {
           quotationId: newQuotation.id,
           productId: newProduct.productId,
@@ -1409,7 +1547,7 @@ export class QuotationService {
           quotationProductId: newProduct.id,
           name: item.name,
           quantity: item.quantity,
-          originalQuantity: item.originalQuantity, // Incluir originalQuantity
+          originalQuantity: item.originalQuantity,
           unitKind: item.unitKind as any,
           width: item.width,
           height: item.height,
@@ -1418,9 +1556,9 @@ export class QuotationService {
           volume: item.volume,
           distance: item.distance,
           duration: item.duration,
-          unitCost: item.unitCost,
-          salePrice: item.salePrice,
-          totalValue: item.totalValue, // Usar valor já calculado
+          unitCost: baseUnitCost,
+          salePrice: calculatedSalePrice,
+          totalValue: calculatedSalePrice,
         };
 
         try {

@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class DuplicateQuotationDto {
@@ -29,6 +29,17 @@ export class DuplicateQuotationDto {
     required: false,
   })
   description?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({
+    description:
+      'Se true, atualiza os preços dos produtos com os preços atuais. Se false, mantém os preços do orçamento original',
+    example: false,
+    required: false,
+    default: false,
+  })
+  updatePrices?: boolean;
 }
 
 // Exemplo de estrutura do DTO
