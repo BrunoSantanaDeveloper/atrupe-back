@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsUUID, IsOptional } from 'class-validator';
+import { IsNotEmpty, IsUUID, IsOptional, ValidateIf } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateOrderDto {
@@ -14,6 +14,9 @@ export class CreateOrderDto {
 
 export class CancelOrderDto {
   @IsOptional()
+  @ValidateIf(
+    (o) => o.reasonId !== null && o.reasonId !== undefined && o.reasonId !== '',
+  )
   @IsUUID()
   @ApiProperty({
     description: 'ID do motivo de cancelamento',

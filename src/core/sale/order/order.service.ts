@@ -706,41 +706,189 @@ export class OrderService {
     if (!order) {
       throw new NotFoundException('Ordem de serviço não encontrada.');
     }
-    if (!dto.reasonId) {
-      return await this.prisma.order.update({
-        where: { id: orderId },
-        data: {
-          canceledAt: new Date(),
-          status: OrderStatus.CANCELED,
-        },
-      });
-    }
+
     try {
-      // Verifica se o motivo do cancelamento existe
-      const reason = await this.prisma.reasons.findFirst({
-        where: { id: dto.reasonId },
+      // Verifica se o motivo do cancelamento existe (se fornecido)
+      if (dto.reasonId) {
+        const reason = await this.prisma.reasons.findFirst({
+          where: { id: dto.reasonId },
+        });
+
+        if (!reason) {
+          throw new NotFoundException('Motivo de cancelamento não encontrado.');
+        }
+      }
+
+      // Cancelar parcelas pendentes dos receivables e payables
+      const quotationId = order.quotation.id;
+
+      // Conta total de parcelas de receivables antes do cancelamento
+      const totalReceivableInstallments =
+        await this.prisma.receivableInstallment.count({
+          where: {
+            receivable: {
+              quotationId: quotationId,
+            },
+          },
+        });
+
+      // Conta total de parcelas de payables antes do cancelamento
+      const totalPayableInstallments =
+        await this.prisma.payableInstallment.count({
+          where: {
+            payable: {
+              quotationId: quotationId,
+            },
+          },
+        });
+
+      // Busca todos os receivables e payables relacionados à quotation
+      const receivables = await this.prisma.receivable.findMany({
+        where: { quotationId: quotationId },
+        include: {
+          installments: true,
+        },
       });
 
-      if (!reason) {
-        throw new NotFoundException('Motivo de cancelamento não encontrado.');
-      }
-      await this.prisma.deliverySchedule.update({
-        where: {
-          id: order.quotation.id,
-        },
-        data: {
-          status: 'CANCELED',
+      const payables = await this.prisma.payable.findMany({
+        where: { quotationId: quotationId },
+        include: {
+          installments: true,
         },
       });
+
+      // Cancela parcelas pendentes e atualiza status dos receivables
+      let canceledReceivableInstallmentsCount = 0;
+      for (const receivable of receivables) {
+        const pendingInstallments = receivable.installments.filter(
+          (inst) => inst.status === 'PENDING' || inst.status === 'OVERDUE',
+        );
+
+        // Cancela as parcelas pendentes
+        if (pendingInstallments.length > 0) {
+          await this.prisma.receivableInstallment.updateMany({
+            where: {
+              receivableId: receivable.id,
+              status: {
+                in: ['PENDING', 'OVERDUE'],
+              },
+            },
+            data: {
+              status: 'CANCELED',
+            },
+          });
+
+          canceledReceivableInstallmentsCount += pendingInstallments.length;
+        }
+
+        // Marca o receivable como cancelado (independente de ter parcelas pagas)
+        await this.prisma.receivable.update({
+          where: { id: receivable.id },
+          data: {
+            status: 'CANCELED',
+            cancelReason:
+              'Cancelado automaticamente pelo cancelamento da ordem de serviço',
+          },
+        });
+      }
+
+      // Cancela parcelas pendentes e atualiza status dos payables
+      let canceledPayableInstallmentsCount = 0;
+      for (const payable of payables) {
+        const pendingInstallments = payable.installments.filter(
+          (inst) => inst.status === 'PENDING' || inst.status === 'OVERDUE',
+        );
+
+        // Cancela as parcelas pendentes
+        if (pendingInstallments.length > 0) {
+          await this.prisma.payableInstallment.updateMany({
+            where: {
+              payableId: payable.id,
+              status: {
+                in: ['PENDING', 'OVERDUE'],
+              },
+            },
+            data: {
+              status: 'CANCELED',
+            },
+          });
+
+          canceledPayableInstallmentsCount += pendingInstallments.length;
+        }
+
+        // Marca o payable como cancelado (independente de ter parcelas pagas)
+        await this.prisma.payable.update({
+          where: { id: payable.id },
+          data: {
+            status: 'CANCELED',
+            cancelReason:
+              'Cancelado automaticamente pelo cancelamento da ordem de serviço',
+          },
+        });
+      }
+
+      const canceledReceivableInstallments = {
+        count: canceledReceivableInstallmentsCount,
+      };
+      const canceledPayableInstallments = {
+        count: canceledPayableInstallmentsCount,
+      };
+
+      // Atualiza o status do deliverySchedule para CANCELED (se existir)
+      try {
+        await this.prisma.deliverySchedule.update({
+          where: {
+            id: quotationId,
+          },
+          data: {
+            status: 'CANCELED',
+          },
+        });
+      } catch (error) {
+        // Ignora se não existir deliverySchedule
+        console.log('DeliverySchedule não encontrado ou já cancelado');
+      }
+
       // Atualiza o pedido para status cancelado
-      return await this.prisma.order.update({
+      const updatedOrder = await this.prisma.order.update({
         where: { id: orderId },
         data: {
           canceledAt: new Date(),
           status: OrderStatus.CANCELED,
-          reasonId: dto.reasonId,
+          reasonId: dto.reasonId || null,
         },
       });
+
+      // Calcula parcelas que não foram canceladas (já pagas)
+      const keptReceivableInstallments =
+        totalReceivableInstallments - canceledReceivableInstallments.count;
+      const keptPayableInstallments =
+        totalPayableInstallments - canceledPayableInstallments.count;
+
+      return {
+        order: updatedOrder,
+        canceledInstallments: {
+          receivables: canceledReceivableInstallments.count,
+          payables: canceledPayableInstallments.count,
+          total:
+            canceledReceivableInstallments.count +
+            canceledPayableInstallments.count,
+        },
+        keptInstallments: {
+          receivables: keptReceivableInstallments,
+          payables: keptPayableInstallments,
+          total: keptReceivableInstallments + keptPayableInstallments,
+        },
+        summary: {
+          totalInstallments:
+            totalReceivableInstallments + totalPayableInstallments,
+          canceledInstallments:
+            canceledReceivableInstallments.count +
+            canceledPayableInstallments.count,
+          keptInstallments:
+            keptReceivableInstallments + keptPayableInstallments,
+        },
+      };
     } catch (error) {
       if (error instanceof PrismaClientKnownRequestError) {
         // Tratamento específico para erros do Prisma
