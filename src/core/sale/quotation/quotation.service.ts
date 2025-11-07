@@ -1417,21 +1417,9 @@ export class QuotationService {
           // Quando updatePrices = true, usar o preço base do ProductItem e calcular
           const baseSalePrice = currentItem?.salePrice;
 
-          console.log('=== DEBUG DUPLICATE PRICES ===');
-          console.log('Item name:', item.name);
-          console.log('Original item.salePrice (orçamento):', item.salePrice);
-          console.log('Current ProductItem.salePrice:', baseSalePrice);
-          console.log('unitKind:', item.unitKind);
-          console.log('duration:', item.duration);
-          console.log('quantity:', item.quantity);
-
           if (!baseSalePrice) {
             // Se o ProductItem não existe mais, manter o valor original do orçamento
             calculatedSalePrice = item.salePrice ?? 0;
-            console.log(
-              'ProductItem not found, using original:',
-              calculatedSalePrice,
-            );
           } else {
             // Calcular o salePrice total baseado no unitKind
             if (item.unitKind === 'DURATION' && item.duration) {
@@ -1439,45 +1427,23 @@ export class QuotationService {
               const durationInHours = item.duration / 3600;
               calculatedSalePrice =
                 baseSalePrice * durationInHours * item.quantity;
-              console.log(
-                `Calculated (DURATION): ${baseSalePrice} × ${durationInHours}h (${item.duration}s) × ${item.quantity} = ${calculatedSalePrice}`,
-              );
             } else if (item.unitKind === 'AREA' && item.width && item.height) {
               calculatedSalePrice =
                 baseSalePrice * item.width * item.height * item.quantity;
-              console.log(
-                `Calculated (AREA): ${baseSalePrice} × ${item.width} × ${item.height} × ${item.quantity} = ${calculatedSalePrice}`,
-              );
             } else if (item.unitKind === 'DISTANCE' && item.distance) {
               calculatedSalePrice =
                 baseSalePrice * item.distance * item.quantity;
-              console.log(
-                `Calculated (DISTANCE): ${baseSalePrice} × ${item.distance} × ${item.quantity} = ${calculatedSalePrice}`,
-              );
             } else if (item.unitKind === 'LENGTH' && item.length) {
               calculatedSalePrice = baseSalePrice * item.length * item.quantity;
-              console.log(
-                `Calculated (LENGTH): ${baseSalePrice} × ${item.length} × ${item.quantity} = ${calculatedSalePrice}`,
-              );
             } else if (item.unitKind === 'WEIGHT' && item.weight) {
               calculatedSalePrice = baseSalePrice * item.weight * item.quantity;
-              console.log(
-                `Calculated (WEIGHT): ${baseSalePrice} × ${item.weight} × ${item.quantity} = ${calculatedSalePrice}`,
-              );
             } else if (item.unitKind === 'CAPACITY' && item.volume) {
               calculatedSalePrice = baseSalePrice * item.volume * item.quantity;
-              console.log(
-                `Calculated (CAPACITY): ${baseSalePrice} × ${item.volume} × ${item.quantity} = ${calculatedSalePrice}`,
-              );
             } else {
               // UNITY ou null - multiplica apenas pela quantity
               calculatedSalePrice = baseSalePrice * item.quantity;
-              console.log(
-                `Calculated (UNITY): ${baseSalePrice} × ${item.quantity} = ${calculatedSalePrice}`,
-              );
             }
           }
-          console.log('=== END DEBUG ===\n');
         } else {
           // Quando updatePrices = false, manter o valor original do orçamento
           calculatedSalePrice = item.salePrice ?? 0;
