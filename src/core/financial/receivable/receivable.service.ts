@@ -640,6 +640,45 @@ export class ReceivableService {
       differenceCategoryId,
     } = payInstallmentDto;
 
+    // Buscar parcela e título associado para validar natureza e categoria
+    const installmentData = await this.prisma.receivableInstallment.findFirst({
+      where: {
+        id: installmentId,
+      },
+      include: {
+        receivable: {
+          select: {
+            natureId: true,
+            subCategoryId: true,
+          },
+        },
+      },
+    });
+
+    if (!installmentData) {
+      throw new NotFoundException('Parcela não encontrada.');
+    }
+
+    // Validar se o título possui natureza e categoria configuradas
+    if (
+      !installmentData.receivable.natureId ||
+      !installmentData.receivable.subCategoryId
+    ) {
+      throw new BadRequestException(
+        'Natureza e categoria devem estar configuradas no título para realizar o pagamento.',
+      );
+    }
+
+    // Validar status da parcela
+    if (
+      installmentData.status !== 'PENDING' &&
+      installmentData.status !== 'PROVISIONED'
+    ) {
+      throw new BadRequestException(
+        'Parcela deve estar pendente ou provisionada para ser paga.',
+      );
+    }
+
     // Validação dos campos de diferença
     if (difference && difference !== 0) {
       if (!differenceNatureId || !differenceCategoryId) {
@@ -708,25 +747,6 @@ export class ReceivableService {
     if (!bankAccountData) {
       throw new BadRequestException(
         'Configuração de conta bancária não encontrada para os dados fornecidos.',
-      );
-    }
-
-    const installmentData = await this.prisma.receivableInstallment.findFirst({
-      where: {
-        id: installmentId,
-      },
-    });
-
-    if (!installmentData) {
-      throw new NotFoundException('Parcela não encontrada.');
-    }
-
-    if (
-      installmentData.status !== 'PENDING' &&
-      installmentData.status !== 'PROVISIONED'
-    ) {
-      throw new BadRequestException(
-        'Parcela deve estar pendente ou provisionada para ser paga.',
       );
     }
 
