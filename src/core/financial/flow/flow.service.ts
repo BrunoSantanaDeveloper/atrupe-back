@@ -263,12 +263,23 @@ export class FlowService {
             );
 
       // Extrair as datas para busca detalhada
+      // Normalizar datas para o início do dia (00:00:00.000) para agrupar corretamente
       const dueDates = [
         ...new Set([
-          ...receivablesGrouped.map((g) => g[dateType]?.toISOString()),
-          ...payablesGrouped.map((g) => g[dateType]?.toISOString()),
+          ...receivablesGrouped.map((g) => {
+            if (!g[dateType]) return null;
+            const date = new Date(g[dateType]);
+            date.setUTCHours(0, 0, 0, 0);
+            return date.toISOString();
+          }),
+          ...payablesGrouped.map((g) => {
+            if (!g[dateType]) return null;
+            const date = new Date(g[dateType]);
+            date.setUTCHours(0, 0, 0, 0);
+            return date.toISOString();
+          }),
         ]),
-      ];
+      ].filter((d) => d !== null);
 
       const receivableDetails =
         await this.prisma.receivableInstallment.findMany({
@@ -322,11 +333,21 @@ export class FlowService {
 
       const groupedData = dueDates.map((date) => {
         const receivables = receivableDetails
-          .filter((inst) => inst[dateType]?.toISOString() === date)
+          .filter((inst) => {
+            if (!inst[dateType]) return false;
+            const instDate = new Date(inst[dateType]);
+            instDate.setUTCHours(0, 0, 0, 0);
+            return instDate.toISOString() === date;
+          })
           .map((inst) => {
             // Filtrar apenas as parcelas com a mesma data do grupo
             const relevantInstallments = inst.receivable.installments.filter(
-              (i) => i[dateType]?.toISOString() === date,
+              (i) => {
+                if (!i[dateType]) return false;
+                const iDate = new Date(i[dateType]);
+                iDate.setUTCHours(0, 0, 0, 0);
+                return iDate.toISOString() === date;
+              },
             );
 
             return {
@@ -422,11 +443,21 @@ export class FlowService {
           });
 
         const payables = payableDetails
-          .filter((inst) => inst[dateType]?.toISOString() === date)
+          .filter((inst) => {
+            if (!inst[dateType]) return false;
+            const instDate = new Date(inst[dateType]);
+            instDate.setUTCHours(0, 0, 0, 0);
+            return instDate.toISOString() === date;
+          })
           .map((inst) => {
             // Filtrar apenas as parcelas com a mesma data do grupo
             const relevantInstallments = inst.payable.installments.filter(
-              (i) => i[dateType]?.toISOString() === date,
+              (i) => {
+                if (!i[dateType]) return false;
+                const iDate = new Date(i[dateType]);
+                iDate.setUTCHours(0, 0, 0, 0);
+                return iDate.toISOString() === date;
+              },
             );
 
             return {
