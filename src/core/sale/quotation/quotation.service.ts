@@ -3286,6 +3286,12 @@ export class QuotationService {
     );
 
     try {
+      // Buscar natureza e categoria para receitas de venda
+      const { natureId, subCategoryId } = await this.findSalesCategories(
+        quotation.companyId,
+        prisma,
+      );
+
       // Buscar conta bancária padrão da empresa
       const defaultBankAccount = await prisma.bankAccount.findFirst({
         where: {
@@ -3312,8 +3318,8 @@ export class QuotationService {
             status: 'PENDING',
             clientId: quotation.clientId,
             companyId: quotation.companyId,
-            natureId: null,
-            subCategoryId: null,
+            natureId: natureId,
+            subCategoryId: subCategoryId,
             quotationId: quotation.id,
             financialType: 'DOWN_PAYMENT',
           },
@@ -3346,8 +3352,8 @@ export class QuotationService {
           status: 'PENDING',
           clientId: quotation.clientId,
           companyId: quotation.companyId,
-          natureId: null,
-          subCategoryId: null,
+          natureId: natureId,
+          subCategoryId: subCategoryId,
           quotationId: quotation.id,
           financialType: 'MAIN',
         },
@@ -3463,6 +3469,12 @@ export class QuotationService {
     commission: any,
     prisma: any,
   ) {
+    // Buscar natureza e categoria para comissão
+    const { natureId, subCategoryId } = await this.findCommissionCategories(
+      quotation.companyId,
+      prisma,
+    );
+
     // Buscar conta bancária padrão da empresa
     const defaultBankAccount = await prisma.bankAccount.findFirst({
       where: {
@@ -3491,8 +3503,8 @@ export class QuotationService {
         status: 'PENDING',
         supplierId: commission.supplierId,
         companyId: quotation.companyId,
-        natureId: null,
-        subCategoryId: null,
+        natureId: natureId,
+        subCategoryId: subCategoryId,
         quotationId: quotation.id,
         financialType: 'COMMISSION',
         commission: {
@@ -3553,6 +3565,12 @@ export class QuotationService {
   ) {
     const deliveryCost = delivery.cost || 0;
 
+    // Buscar natureza e categoria para entrega/frete
+    const { natureId, subCategoryId } = await this.findDeliveryCategories(
+      quotation.companyId,
+      prisma,
+    );
+
     // Buscar conta bancária padrão da empresa
     const defaultBankAccount = await prisma.bankAccount.findFirst({
       where: {
@@ -3578,8 +3596,8 @@ export class QuotationService {
         status: 'PENDING',
         supplierId: delivery.supplierId,
         companyId: quotation.companyId,
-        natureId: null,
-        subCategoryId: null,
+        natureId: natureId,
+        subCategoryId: subCategoryId,
         quotationId: quotation.id,
         financialType: 'DELIVERY',
       },
@@ -3603,6 +3621,183 @@ export class QuotationService {
     }
 
     return payableDelivery;
+  }
+
+  /**
+   * Busca a natureza e categoria para receitas de venda
+   */
+  private async findSalesCategories(companyId: string, prisma: any) {
+    try {
+      // Buscar natureza "Vendas"
+      const nature = await prisma.nature.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          description: {
+            equals: 'Vendas',
+            mode: 'insensitive',
+          },
+        },
+      });
+
+      if (!nature) {
+        console.warn(
+          `Natureza "Vendas" não encontrada para empresa ${companyId}`,
+        );
+        return {
+          natureId: null,
+          subCategoryId: null,
+        };
+      }
+
+      // Buscar subcategoria "Prestação de Serviços"
+      const subCategory = await prisma.subCategory.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          natureId: nature.id,
+          description: {
+            equals: 'Prestação de Serviços',
+            mode: 'insensitive',
+          },
+        },
+      });
+
+      if (!subCategory) {
+        console.warn(
+          `Subcategoria "Prestação de Serviços" não encontrada para natureza "Vendas" na empresa ${companyId}`,
+        );
+      }
+
+      return {
+        natureId: nature.id,
+        subCategoryId: subCategory?.id || null,
+      };
+    } catch (error) {
+      console.warn(`Erro ao buscar categorias de venda: ${error.message}`);
+      return {
+        natureId: null,
+        subCategoryId: null,
+      };
+    }
+  }
+
+  /**
+   * Busca a natureza e categoria para comissão
+   */
+  private async findCommissionCategories(companyId: string, prisma: any) {
+    try {
+      // Buscar natureza "Operacional"
+      const nature = await prisma.nature.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          description: {
+            equals: 'Operacional',
+            mode: 'insensitive',
+          },
+        },
+      });
+
+      if (!nature) {
+        console.warn(
+          `Natureza "Operacional" não encontrada para empresa ${companyId}`,
+        );
+        return {
+          natureId: null,
+          subCategoryId: null,
+        };
+      }
+
+      // Buscar subcategoria "Comissão de Venda"
+      const subCategory = await prisma.subCategory.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          natureId: nature.id,
+          description: {
+            equals: 'Comissão de Venda',
+            mode: 'insensitive',
+          },
+        },
+      });
+
+      if (!subCategory) {
+        console.warn(
+          `Subcategoria "Comissão de Venda" não encontrada para natureza "Operacional" na empresa ${companyId}`,
+        );
+      }
+
+      return {
+        natureId: nature.id,
+        subCategoryId: subCategory?.id || null,
+      };
+    } catch (error) {
+      console.warn(`Erro ao buscar categorias de comissão: ${error.message}`);
+      return {
+        natureId: null,
+        subCategoryId: null,
+      };
+    }
+  }
+
+  /**
+   * Busca a natureza e categoria para frete/entrega de venda
+   */
+  private async findDeliveryCategories(companyId: string, prisma: any) {
+    try {
+      // Buscar natureza "Operacional"
+      const nature = await prisma.nature.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          description: {
+            equals: 'Operacional',
+            mode: 'insensitive',
+          },
+        },
+      });
+
+      if (!nature) {
+        console.warn(
+          `Natureza "Operacional" não encontrada para empresa ${companyId}`,
+        );
+        return {
+          natureId: null,
+          subCategoryId: null,
+        };
+      }
+
+      // Buscar subcategoria "Frete de Venda"
+      const subCategory = await prisma.subCategory.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          natureId: nature.id,
+          description: {
+            equals: 'Frete de Venda',
+            mode: 'insensitive',
+          },
+        },
+      });
+
+      if (!subCategory) {
+        console.warn(
+          `Subcategoria "Frete de Venda" não encontrada para natureza "Operacional" na empresa ${companyId}`,
+        );
+      }
+
+      return {
+        natureId: nature.id,
+        subCategoryId: subCategory?.id || null,
+      };
+    } catch (error) {
+      console.warn(`Erro ao buscar categorias de entrega: ${error.message}`);
+      return {
+        natureId: null,
+        subCategoryId: null,
+      };
+    }
   }
 
   async findAllContactSources() {
