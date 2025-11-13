@@ -9,7 +9,13 @@ import {
 import { AddItemDto, CreateQuotationDto } from './dto/create-quotation.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { FilterQuotationDto } from './dto/filter.dto';
-import { Order, Prisma, Quotation, QuotationStatus } from '@prisma/client';
+import {
+  Order,
+  OrderStatus,
+  Prisma,
+  Quotation,
+  QuotationStatus,
+} from '@prisma/client';
 import { UpdateItemDto, UpdateQuotationDto } from './dto/update-quotation.dto';
 
 import { OrderService } from '../order/order.service';
@@ -1643,7 +1649,14 @@ export class QuotationService {
                 },
               },
               client: true,
-              series: true,
+              series: {
+                select: {
+                  id: true,
+                  title: true,
+                  code: true,
+                  productionStatus: true,
+                },
+              },
             },
           });
 
@@ -1656,11 +1669,19 @@ export class QuotationService {
             where: { quotationId: quotation.id },
           });
 
+          // Determinar o status da ordem baseado no productionStatus da série
+          let orderStatus: OrderStatus = OrderStatus.IN_PRODUCTION; // Status padrão
+
+          if (quotation.series?.productionStatus === 'PRODUCTION_COMPLETED') {
+            orderStatus = OrderStatus.FINISHED;
+          }
+
           // Se não existir, criar o pedido
           if (!order) {
             order = await prisma.order.create({
               data: {
                 quotationId: quotation.id,
+                status: orderStatus,
               },
             });
           }
