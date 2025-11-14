@@ -76,71 +76,89 @@ export class EmployeeHistoryService {
       user: item.user,
     }));
 
-    // Se o colaborador tem um usuário associado, buscar históricos de quotation e order
+    // Se o colaborador tem um usuário associado, buscar históricos de quotation, order e acesso
     if (employee.userId) {
-      const [quotationHistories, orderHistories] = await Promise.all([
-        // Histórico de orçamentos onde o usuário é o autor
-        this.prisma.quotationHistory.findMany({
-          where: { createdBy: employee.userId },
-          orderBy: { createdAt: 'desc' },
-          include: {
-            quotation: {
-              select: {
-                id: true,
-                quotationNumber: true,
-                description: true,
-                client: {
-                  select: {
-                    id: true,
-                    name: true,
+      const [quotationHistories, orderHistories, userActivities] =
+        await Promise.all([
+          // Histórico de orçamentos onde o usuário é o autor
+          this.prisma.quotationHistory.findMany({
+            where: { createdBy: employee.userId },
+            orderBy: { createdAt: 'desc' },
+            include: {
+              quotation: {
+                select: {
+                  id: true,
+                  quotationNumber: true,
+                  description: true,
+                  client: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
                   },
                 },
               },
-            },
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                avatar: true,
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  avatar: true,
+                },
               },
             },
-          },
-        }),
-        // Histórico de ordens de serviço onde o usuário é o autor
-        this.prisma.orderHistory.findMany({
-          where: { createdBy: employee.userId },
-          orderBy: { createdAt: 'desc' },
-          include: {
-            order: {
-              select: {
-                id: true,
-                quotation: {
-                  select: {
-                    id: true,
-                    quotationNumber: true,
-                    description: true,
-                    client: {
-                      select: {
-                        id: true,
-                        name: true,
+          }),
+          // Histórico de ordens de serviço onde o usuário é o autor
+          this.prisma.orderHistory.findMany({
+            where: { createdBy: employee.userId },
+            orderBy: { createdAt: 'desc' },
+            include: {
+              order: {
+                select: {
+                  id: true,
+                  quotation: {
+                    select: {
+                      id: true,
+                      quotationNumber: true,
+                      description: true,
+                      client: {
+                        select: {
+                          id: true,
+                          name: true,
+                        },
                       },
                     },
                   },
                 },
               },
-            },
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                avatar: true,
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  avatar: true,
+                },
               },
             },
-          },
-        }),
-      ]);
+          }),
+          // Histórico de acesso do usuário (UserActivity)
+          // Busca sessões agrupadas por sessionId para mostrar apenas login/reativações significativas
+          this.prisma.userActivity.findMany({
+            where: { userId: employee.userId },
+            orderBy: { lastActive: 'desc' },
+            distinct: ['sessionId'],
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  avatar: true,
+                },
+              },
+            },
+          }),
+        ]);
 
       // Adicionar históricos de orçamentos
       const quotationHistoryMapped = quotationHistories.map((item) => ({
@@ -183,11 +201,79 @@ export class EmployeeHistoryService {
         user: item.user,
       }));
 
+      // Adicionar históricos de acesso (UserActivity)
+      const userActivityMapped = userActivities.map((item) => {
+        // Calcular duração da sessão
+        const startTime = new Date(item.createdAt);
+        const endTime = item.logoutAt
+          ? new Date(item.logoutAt)
+          : new Date(item.lastActive);
+        const durationMs = endTime.getTime() - startTime.getTime();
+        const durationMinutes = Math.floor(durationMs / 1000 / 60);
+        const durationHours = Math.floor(durationMinutes / 60);
+        const remainingMinutes = durationMinutes % 60;
+
+        let durationText = '';
+        if (durationHours > 0) {
+          durationText = `${durationHours}h ${remainingMinutes}m`;
+        } else {
+          durationText = `${durationMinutes}m`;
+        }
+
+        // Definir a descrição baseada no status da sessão
+        let description = '';
+        let action = 'SESSION_ACTIVE';
+
+        if (item.logoutAt) {
+          description = `Sessão encerrada (duração: ${durationText})`;
+          action = 'LOGOUT';
+        } else if (!item.isActive && !item.logoutAt) {
+          description = `Sessão expirou após ${durationText} de inatividade`;
+          action = 'SESSION_EXPIRED';
+        } else if (item.isActive) {
+          const lastActiveTime = new Date(item.lastActive);
+          const timeSinceActive = Date.now() - lastActiveTime.getTime();
+          const minutesSinceActive = Math.floor(timeSinceActive / 1000 / 60);
+
+          if (minutesSinceActive < 5) {
+            description = 'Acesso ao sistema (ativo agora)';
+          } else {
+            description = `Acesso ao sistema (última atividade há ${minutesSinceActive}m)`;
+          }
+          action = 'SESSION_ACTIVE';
+        }
+
+        return {
+          id: item.id,
+          type: 'ACCESS' as const,
+          action,
+          description,
+          changes: null,
+          metadata: {
+            sessionId: item.sessionId,
+            ipAddress: item.ipAddress,
+            userAgent: item.userAgent,
+            endpoint: item.endpoint,
+            method: item.method,
+            lastActive: item.lastActive,
+            logoutAt: item.logoutAt,
+            isActive: item.isActive,
+            durationText,
+            durationMinutes,
+          },
+          createdBy: item.userId,
+          createdByName: item.user?.name,
+          createdAt: item.createdAt,
+          user: item.user,
+        };
+      });
+
       // Unificar todos os históricos
       allHistory = [
         ...allHistory,
         ...quotationHistoryMapped,
         ...orderHistoryMapped,
+        ...userActivityMapped,
       ];
     }
 
