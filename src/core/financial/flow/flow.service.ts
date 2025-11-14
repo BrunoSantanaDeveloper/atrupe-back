@@ -383,7 +383,6 @@ export class FlowService {
               period: inst.receivable?.referenceDate || null,
               notes: inst.receivable.notes || '',
               status: inst.receivable.status,
-              isSale: inst.receivable.quotationId ? true : false,
 
               // Na listagem, retornamos apenas a parcela atual (correspondente à data da linha)
               currentInstallment: (() => {
@@ -500,7 +499,6 @@ export class FlowService {
               period: inst.payable?.referenceDate || null,
               notes: inst.payable.notes || '',
               status: inst.payable.status,
-              isSale: inst.payable.quotationId ? true : false,
 
               // Na listagem, retornamos apenas a parcela atual (correspondente à data da linha)
               currentInstallment: (() => {
