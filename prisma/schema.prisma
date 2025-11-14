@@ -311,14 +311,14 @@ model Supplier {
 }
 
 model Employee {
-  id              String         @id @default(uuid())
+  id              String            @id @default(uuid())
   companyId       String
   roleId          String?
   sectorId        String?
   userId          String?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime?      @updatedAt
-  isActive        Boolean        @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime?         @updatedAt
+  isActive        Boolean           @default(true)
   sallary         Float?
   sellerProfileId String?
   name            String?
@@ -330,11 +330,11 @@ model Employee {
   signatureUrl    String?
   address         Address[]
   client          Client[]
-  company         Company        @relation(fields: [companyId], references: [id])
-  role            Role?          @relation(fields: [roleId], references: [id])
-  sector          CompanySector? @relation(fields: [sectorId], references: [id])
-  sellerProfile   SellerProfile? @relation(fields: [sellerProfileId], references: [id])
-  user            User?          @relation(fields: [userId], references: [id])
+  company         Company           @relation(fields: [companyId], references: [id])
+  role            Role?             @relation(fields: [roleId], references: [id])
+  sector          CompanySector?    @relation(fields: [sectorId], references: [id])
+  sellerProfile   SellerProfile?    @relation(fields: [sellerProfileId], references: [id])
+  user            User?             @relation(fields: [userId], references: [id])
   quotation       Quotation[]
   PayrollSetup    PayrollSetup[]
   payroll         Payroll[]
@@ -383,6 +383,8 @@ model User {
   receivableHistory    ReceivableHistory[] @relation("ReceivableHistoryUser")
   payableHistory       PayableHistory[]    @relation("PayableHistoryUser")
   employeeHistory      EmployeeHistory[]   @relation("EmployeeHistoryUser")
+  quotationHistory     QuotationHistory[]  @relation("QuotationHistoryUser")
+  orderHistory         OrderHistory[]      @relation("OrderHistoryUser")
   userActivities       UserActivity[]
   customer             Customer?           @relation(fields: [customerId], references: [id])
 
@@ -953,6 +955,7 @@ model Quotation {
   tag              QuotationTag?      @relation(fields: [tagId], references: [id])
   receivable       Receivable[]
   products         Product[]          @relation("QuotationToProduct")
+  history          QuotationHistory[]
 
   @@index([id, companyId])
   @@map("quotations")
@@ -1117,9 +1120,48 @@ model Order {
   deliverySchedule DeliverySchedule?
   quotation        Quotation         @relation(fields: [quotationId], references: [id])
   cancelReason     Reasons?          @relation(fields: [reasonId], references: [id])
+  history          OrderHistory[]
 
   @@index([id])
   @@map("orders")
+}
+
+model QuotationHistory {
+  id            String    @id @default(uuid())
+  quotationId   String
+  action        String // CREATED, FINISHED, REOPENED, REJECTED, VALUE_CHANGED, APPROVED
+  description   String
+  changes       Json? // { before: {...}, after: {...} }
+  metadata      Json? // Dados adicionais
+  createdBy     String
+  createdByName String? // Desnormalizado para performance
+  createdAt     DateTime  @default(now())
+  quotation     Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  user          User      @relation("QuotationHistoryUser", fields: [createdBy], references: [id])
+
+  @@index([quotationId])
+  @@index([createdAt])
+  @@index([createdBy])
+  @@map("quotation_history")
+}
+
+model OrderHistory {
+  id            String   @id @default(uuid())
+  orderId       String
+  action        String // CREATED, CANCELED
+  description   String
+  changes       Json? // Dados adicionais sobre a ação
+  metadata      Json? // Informações adicionais (ex: motivo de cancelamento, quem aprovou)
+  createdBy     String
+  createdByName String? // Desnormalizado para performance
+  createdAt     DateTime @default(now())
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user          User     @relation("OrderHistoryUser", fields: [createdBy], references: [id])
+
+  @@index([orderId])
+  @@index([createdAt])
+  @@index([createdBy])
+  @@map("order_history")
 }
 
 model Product {

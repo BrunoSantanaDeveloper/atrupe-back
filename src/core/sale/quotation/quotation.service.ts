@@ -28,6 +28,7 @@ import { add, endOfDay } from 'date-fns';
 import { CancelOrderDto } from '../order/dto/create-order.dto';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.service';
+import { QuotationHistoryService } from './history/quotation-history.service';
 import * as fs from 'fs';
 import * as fastCsv from 'fast-csv';
 
@@ -42,6 +43,7 @@ export class QuotationService {
     private prisma: PrismaService,
     private orderService: OrderService,
     private deliveryScheduleService: DeliveryScheduleService,
+    private quotationHistoryService: QuotationHistoryService,
   ) {}
 
   async create(createQuotationDto: CreateQuotationDto): Promise<Quotation> {
@@ -152,6 +154,20 @@ export class QuotationService {
           },
         },
       });
+
+      // Registrar no histórico
+      await this.quotationHistoryService.createQuotationHistory({
+        quotationId: newQuotation.id,
+        action: 'CREATED',
+        description: this.quotationHistoryService.getCreateDescription(),
+        createdBy: sellerId,
+        metadata: {
+          seriesId,
+          companyId,
+          quotationNumber: newQuotation.quotationNumber,
+        },
+      });
+
       return newQuotation;
     } catch (error) {
       console.log(error);
@@ -1556,7 +1572,7 @@ export class QuotationService {
     return newQuotation; // Retorna o novo orçamento criado
   }
 
-  async approve(quotationId: string): Promise<Order> {
+  async approve(quotationId: string, userId?: string): Promise<Order> {
     const quotation = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
       select: {
@@ -1685,6 +1701,22 @@ export class QuotationService {
               },
             });
           }
+
+          // Registrar aprovação no histórico do orçamento
+          if (userId) {
+            await this.quotationHistoryService.createQuotationHistory({
+              quotationId: quotation.id,
+              action: 'APPROVED',
+              description:
+                this.quotationHistoryService.getApprovedDescription(),
+              createdBy: userId,
+              metadata: {
+                approvedAt: quotation.approvedAt,
+                orderId: order.id,
+              },
+            });
+          }
+
           const deliveryStatus = isTrial ? 'DELIVERING' : 'IN_PRODUCTION';
 
           // Calcular a data estimada baseada na aprovação
@@ -1991,7 +2023,11 @@ export class QuotationService {
     }
   }
 
-  async reject(quotationId: string, dto: CancelOrderDto): Promise<Quotation> {
+  async reject(
+    quotationId: string,
+    dto: CancelOrderDto,
+    userId?: string,
+  ): Promise<Quotation> {
     const quotation = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
       select: { status: true },
@@ -2010,12 +2046,24 @@ export class QuotationService {
     }
 
     if (!dto.reasonId) {
-      return await this.prisma.quotation.update({
+      const updatedQuotation = await this.prisma.quotation.update({
         where: { id: quotationId },
         data: {
           status: QuotationStatus.REJECTED,
         },
       });
+
+      // Registrar no histórico
+      if (userId) {
+        await this.quotationHistoryService.createQuotationHistory({
+          quotationId,
+          action: 'REJECTED',
+          description: this.quotationHistoryService.getRejectDescription(),
+          createdBy: userId,
+        });
+      }
+
+      return updatedQuotation;
     }
 
     try {
@@ -2029,13 +2077,31 @@ export class QuotationService {
       }
 
       // Atualiza o pedido para status cancelado
-      return await this.prisma.quotation.update({
+      const updatedQuotation = await this.prisma.quotation.update({
         where: { id: quotationId },
         data: {
           status: QuotationStatus.REJECTED,
           reasonId: dto.reasonId,
         },
       });
+
+      // Registrar no histórico
+      if (userId) {
+        await this.quotationHistoryService.createQuotationHistory({
+          quotationId,
+          action: 'REJECTED',
+          description: this.quotationHistoryService.getRejectDescription(
+            reason.reason,
+          ),
+          createdBy: userId,
+          metadata: {
+            reasonId: dto.reasonId,
+            reason: reason.reason,
+          },
+        });
+      }
+
+      return updatedQuotation;
     } catch (error) {
       if (error instanceof PrismaClientKnownRequestError) {
         throw new BadRequestException(
@@ -2047,7 +2113,7 @@ export class QuotationService {
     }
   }
 
-  async finish(quotationId: string): Promise<Quotation> {
+  async finish(quotationId: string, userId?: string): Promise<Quotation> {
     //checkout do orçamento
     const quotation = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
@@ -2193,7 +2259,7 @@ export class QuotationService {
         : quotation.dueDate; // Mantém a data atual se não houver validade configurada
 
     try {
-      return this.prisma.quotation.update({
+      const updatedQuotation = await this.prisma.quotation.update({
         where: { id: quotationId },
         data: {
           status: QuotationStatus.DONE,
@@ -2201,13 +2267,29 @@ export class QuotationService {
           dueDate: newDueDate,
         },
       });
+
+      // Registrar no histórico
+      if (userId) {
+        await this.quotationHistoryService.createQuotationHistory({
+          quotationId,
+          action: 'FINISHED',
+          description: this.quotationHistoryService.getFinishDescription(),
+          createdBy: userId,
+          metadata: {
+            finishedAt,
+            newDueDate,
+          },
+        });
+      }
+
+      return updatedQuotation;
     } catch (error) {
       console.error(error);
       throw new BadRequestException('Erro ao atualizar o status do orçamento.');
     }
   }
 
-  async open(quotationId: string): Promise<Quotation> {
+  async open(quotationId: string, userId?: string): Promise<Quotation> {
     const quotation = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
       select: { status: true },
@@ -2226,7 +2308,7 @@ export class QuotationService {
     }
 
     try {
-      return await this.prisma.quotation.update({
+      const updatedQuotation = await this.prisma.quotation.update({
         where: { id: quotationId },
         data: {
           status: QuotationStatus.OPEN,
@@ -2237,6 +2319,18 @@ export class QuotationService {
           },
         },
       });
+
+      // Registrar no histórico
+      if (userId) {
+        await this.quotationHistoryService.createQuotationHistory({
+          quotationId,
+          action: 'REOPENED',
+          description: this.quotationHistoryService.getReopenDescription(),
+          createdBy: userId,
+        });
+      }
+
+      return updatedQuotation;
     } catch (error) {
       console.error('Error updating quotation status to OPEN:', error);
       throw new BadRequestException('Erro ao reabrir o orçamento.');

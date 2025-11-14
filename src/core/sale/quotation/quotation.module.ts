@@ -7,6 +7,7 @@ import { OrderModule } from '../order/order.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { PaymentModule } from './payment/payment.module';
 import { DeliveryScheduleModule } from '../delivery-schedule/delivery-schedule.module';
+import { QuotationHistoryModule } from './history/quotation-history.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { DeliveryScheduleModule } from '../delivery-schedule/delivery-schedule.m
     DeliveryModule,
     PaymentModule,
     DeliveryScheduleModule,
+    QuotationHistoryModule,
   ],
   controllers: [QuotationController],
   providers: [QuotationService],
