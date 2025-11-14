@@ -83,10 +83,12 @@ export class QuotationController {
   async updateProduct(
     @Param('productId') productId: string,
     @Body() updateQuotationProductDto: UpdateItemDto,
+    @Req() req,
   ): Promise<QuotationProduct> {
     const updatedProduct = await this.quotationService.updateProductInQuotation(
       productId,
       updateQuotationProductDto,
+      req.user?.userId,
     );
     if (!updatedProduct) {
       throw new NotFoundException('Produto ou orçamento não encontrados.');
@@ -213,11 +215,11 @@ export class QuotationController {
     status: 400,
     description: 'ID inválido.',
   })
-  async approve(@Param('id') id: string) {
+  async approve(@Param('id') id: string, @Req() req) {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
-    return this.quotationService.approve(id);
+    return this.quotationService.approve(id, req.user?.userId);
   }
 
   @Post(':id/bill')
@@ -253,11 +255,15 @@ export class QuotationController {
     status: 400,
     description: 'ID inválido.',
   })
-  async reject(@Param('id') id: string, @Body() dto: CancelOrderDto) {
+  async reject(
+    @Param('id') id: string,
+    @Body() dto: CancelOrderDto,
+    @Req() req,
+  ) {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
-    return this.quotationService.reject(id, dto);
+    return this.quotationService.reject(id, dto, req.user?.userId);
   }
 
   @Post(':id/finish')
@@ -271,11 +277,11 @@ export class QuotationController {
     status: 400,
     description: 'ID inválido.',
   })
-  async finish(@Param('id') id: string) {
+  async finish(@Param('id') id: string, @Req() req) {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
-    return await this.quotationService.finish(id);
+    return await this.quotationService.finish(id, req.user?.userId);
   }
 
   @Post(':id/open')
@@ -289,11 +295,11 @@ export class QuotationController {
     status: 400,
     description: 'ID inválido.',
   })
-  async open(@Param('id') id: string) {
+  async open(@Param('id') id: string, @Req() req) {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
-    return this.quotationService.open(id);
+    return this.quotationService.open(id, req.user?.userId);
   }
 
   @Get(':id')

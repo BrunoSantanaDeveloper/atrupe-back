@@ -46,6 +46,31 @@ export class QuotationService {
     private quotationHistoryService: QuotationHistoryService,
   ) {}
 
+  /**
+   * Método auxiliar para buscar userId a partir de employeeId
+   */
+  private async getUserIdFromEmployee(
+    employeeId: string,
+  ): Promise<{ userId: string; userName: string } | null> {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: {
+        userId: true,
+        name: true,
+        user: { select: { name: true } },
+      },
+    });
+
+    if (!employee?.userId) {
+      return null;
+    }
+
+    return {
+      userId: employee.userId,
+      userName: employee.name || employee.user?.name || 'Usuário',
+    };
+  }
+
   async create(createQuotationDto: CreateQuotationDto): Promise<Quotation> {
     const {
       description,
@@ -156,17 +181,21 @@ export class QuotationService {
       });
 
       // Registrar no histórico
-      await this.quotationHistoryService.createQuotationHistory({
-        quotationId: newQuotation.id,
-        action: 'CREATED',
-        description: this.quotationHistoryService.getCreateDescription(),
-        createdBy: sellerId,
-        metadata: {
-          seriesId,
-          companyId,
-          quotationNumber: newQuotation.quotationNumber,
-        },
-      });
+      const userInfo = await this.getUserIdFromEmployee(sellerId);
+      if (userInfo) {
+        await this.quotationHistoryService.createQuotationHistory({
+          quotationId: newQuotation.id,
+          action: 'CREATED',
+          description: this.quotationHistoryService.getCreateDescription(),
+          createdBy: userInfo.userId,
+          createdByName: userInfo.userName,
+          metadata: {
+            seriesId,
+            companyId,
+            quotationNumber: newQuotation.quotationNumber,
+          },
+        });
+      }
 
       return newQuotation;
     } catch (error) {
@@ -282,7 +311,11 @@ export class QuotationService {
     }
   }
 
-  async updateProductInQuotation(productId: string, data: UpdateItemDto) {
+  async updateProductInQuotation(
+    productId: string,
+    data: UpdateItemDto,
+    userId?: string,
+  ) {
     try {
       const product = await this.prisma.quotationProduct.findUnique({
         where: { id: productId },
@@ -296,6 +329,23 @@ export class QuotationService {
       if (!product) {
         throw new NotFoundException(`Produto não encontrado`);
       }
+
+      // Capturar valores originais para o histórico
+      const originalValues = {
+        productName: data.description || product.description || product.product.name,
+        totalValue: product.totalValue,
+        finalValue: product.finalValue,
+        discount: product.discount,
+        discountType: product.discountType,
+        quantity: product.quantity,
+        items: product.items.map((item) => ({
+          id: item.id,
+          name: item.name,
+          quantity: item.quantity,
+          unitCost: item.unitCost,
+          totalValue: item.totalValue,
+        })),
+      };
 
       // Atualiza o produto dentro do orçamento com valores do frontend
       const updatedQuotationProduct = await this.prisma.quotationProduct.update(
@@ -486,6 +536,65 @@ export class QuotationService {
 
       // Atualizar o valor total do orçamento sem recalcular os itens
       await this.recalculateQuotationTotalValue(product.quotationId);
+
+      // Registrar no histórico
+      if (userId) {
+        // Buscar valores atualizados
+        const updatedProduct = await this.prisma.quotationProduct.findUnique({
+          where: { id: productId },
+          include: { items: true, product: true },
+        });
+
+        if (updatedProduct) {
+          const changes: any = {
+            before: originalValues,
+            after: {
+              productName: updatedProduct.description || updatedProduct.product?.name,
+              totalValue: updatedProduct.totalValue,
+              finalValue: updatedProduct.finalValue,
+              discount: updatedProduct.discount,
+              discountType: updatedProduct.discountType,
+              quantity: updatedProduct.quantity,
+            },
+          };
+
+          // Verificar quais campos mudaram
+          const changedFields: string[] = [];
+          if (originalValues.totalValue !== updatedProduct.totalValue) {
+            changedFields.push('valor total');
+          }
+          if (originalValues.finalValue !== updatedProduct.finalValue) {
+            changedFields.push('valor final');
+          }
+          if (originalValues.discount !== updatedProduct.discount) {
+            changedFields.push('desconto');
+          }
+          if (originalValues.quantity !== updatedProduct.quantity) {
+            changedFields.push('quantidade');
+          }
+
+          // Verificar se houve mudanças nos itens
+          if (data.items && data.items.length > 0) {
+            changedFields.push('itens do produto');
+          }
+
+          if (changedFields.length > 0) {
+            const description = `${originalValues.productName}: ${changedFields.join(', ')} alterado(s)`;
+
+            await this.quotationHistoryService.createQuotationHistory({
+              quotationId: product.quotationId,
+              action: 'VALUE_CHANGED',
+              description,
+              createdBy: userId,
+              changes,
+              metadata: {
+                productId,
+                changedFields,
+              },
+            });
+          }
+        }
+      }
 
       return updatedQuotationProduct;
     } catch (error) {
