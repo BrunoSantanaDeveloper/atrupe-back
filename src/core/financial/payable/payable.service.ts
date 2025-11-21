@@ -19,6 +19,7 @@ import { ReceivableFilterDto } from '../receivable/dto/receivable-filter.dto';
 import { add, endOfDay } from 'date-fns';
 import { CompensateDto } from '../receivable/dto/create-receivable.dto';
 import { FinancialHistoryService } from '../history/history.service';
+import { FinancialNotesUtil } from '../utils/financial-notes.util';
 
 @Injectable()
 export class PayableService {
@@ -466,6 +467,7 @@ export class PayableService {
           employeeId: true,
           natureId: true,
           subCategoryId: true,
+          notes: true,
         },
       });
 
@@ -476,9 +478,35 @@ export class PayableService {
         employeeId: dto.employeeId === '' ? null : dto.employeeId,
       };
 
+      // Gerar notas automáticas para as alterações
+      const notesToAdd: string[] = [];
+
+      // Verificar alteração no valor total
+      if (
+        sanitizedDto.totalAmount !== undefined &&
+        before.totalAmount !== sanitizedDto.totalAmount
+      ) {
+        notesToAdd.push(
+          FinancialNotesUtil.generateTotalAmountChangeNote(
+            before.totalAmount,
+            sanitizedDto.totalAmount,
+          ),
+        );
+      }
+
+      // Adicionar as notas ao DTO se houver alterações
+      let dataToUpdate = { ...sanitizedDto };
+      if (notesToAdd.length > 0) {
+        const updatedNotes = FinancialNotesUtil.appendNote(
+          before.notes,
+          FinancialNotesUtil.generateMultipleChangesNote(notesToAdd),
+        );
+        dataToUpdate = { ...dataToUpdate, notes: updatedNotes };
+      }
+
       const updatedPayable = await this.prisma.payable.update({
         where: { id },
-        data: sanitizedDto,
+        data: dataToUpdate,
       });
 
       // Registrar no histórico
@@ -1507,6 +1535,49 @@ export class PayableService {
         },
       });
 
+      // Gerar notas automáticas para as alterações
+      const notesToAdd: string[] = [];
+
+      // Verificar alterações individuais nas parcelas
+      installmentsAfter.forEach((after) => {
+        const before = installmentsBefore.find((b) => b.id === after.id);
+        if (before) {
+          // Verificar mudança de valor
+          if (before.amount !== after.amount) {
+            notesToAdd.push(
+              FinancialNotesUtil.generateInstallmentValueChangeNote(
+                after.installmentNumber,
+                before.amount,
+                after.amount,
+              ),
+            );
+          }
+          // Verificar mudança de data de vencimento
+          if (before.dueDate.getTime() !== after.dueDate.getTime()) {
+            notesToAdd.push(
+              FinancialNotesUtil.generateInstallmentDueDateChangeNote(
+                after.installmentNumber,
+                before.dueDate,
+                after.dueDate,
+              ),
+            );
+          }
+        }
+      });
+
+      // Verificar alteração no valor total
+      if (
+        totalAmount !== undefined &&
+        payableBefore?.totalAmount !== totalAmount
+      ) {
+        notesToAdd.push(
+          FinancialNotesUtil.generateTotalAmountChangeNote(
+            payableBefore.totalAmount,
+            totalAmount,
+          ),
+        );
+      }
+
       // Registrar no histórico
       if (userId) {
         // Contar parcelas adicionadas (que existem em after mas não em before)
@@ -1528,6 +1599,19 @@ export class PayableService {
               before.dueDate.getTime() !== after.dueDate.getTime())
           );
         }).length;
+
+        // Adicionar nota sobre quantidade de parcelas alteradas
+        // Só adiciona o resumo se houver parcelas adicionadas ou removidas
+        // Modificações individuais já foram registradas acima
+        if (addedCount > 0 || removedCount > 0) {
+          const changeNote = FinancialNotesUtil.generateInstallmentChangesNote(
+            addedCount,
+            removedCount,
+          );
+          if (changeNote) {
+            notesToAdd.push(changeNote);
+          }
+        }
 
         await this.historyService.createPayableHistory({
           payableId,
@@ -1554,6 +1638,24 @@ export class PayableService {
           },
           createdBy: userId,
           createdByName: userName,
+        });
+      }
+
+      // Atualizar o campo notes com as alterações registradas
+      if (notesToAdd.length > 0) {
+        const currentPayable = await this.prisma.payable.findUnique({
+          where: { id: payableId },
+          select: { notes: true },
+        });
+
+        const updatedNotes = FinancialNotesUtil.appendNote(
+          currentPayable.notes,
+          FinancialNotesUtil.generateMultipleChangesNote(notesToAdd),
+        );
+
+        await this.prisma.payable.update({
+          where: { id: payableId },
+          data: { notes: updatedNotes },
         });
       }
 

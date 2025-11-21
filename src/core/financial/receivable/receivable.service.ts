@@ -21,6 +21,7 @@ import { PaymentStatus, TransactionType } from '@prisma/client';
 import { endOfDay, add, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { FinancialHistoryService } from '../history/history.service';
+import { FinancialNotesUtil } from '../utils/financial-notes.util';
 
 @Injectable()
 export class ReceivableService {
@@ -436,12 +437,39 @@ export class ReceivableService {
           supplierId: true,
           natureId: true,
           subCategoryId: true,
+          notes: true,
         },
       });
 
+      // Gerar notas automáticas para as alterações
+      const notesToAdd: string[] = [];
+
+      // Verificar alteração no valor total
+      if (
+        dto.totalAmount !== undefined &&
+        before.totalAmount !== dto.totalAmount
+      ) {
+        notesToAdd.push(
+          FinancialNotesUtil.generateTotalAmountChangeNote(
+            before.totalAmount,
+            dto.totalAmount,
+          ),
+        );
+      }
+
+      // Adicionar as notas ao DTO se houver alterações
+      let dataToUpdate = { ...dto };
+      if (notesToAdd.length > 0) {
+        const updatedNotes = FinancialNotesUtil.appendNote(
+          before.notes,
+          FinancialNotesUtil.generateMultipleChangesNote(notesToAdd),
+        );
+        dataToUpdate = { ...dataToUpdate, notes: updatedNotes };
+      }
+
       const updatedReceivable = await this.prisma.receivable.update({
         where: { id },
-        data: dto,
+        data: dataToUpdate,
       });
 
       // Registrar no histórico
@@ -1461,6 +1489,49 @@ export class ReceivableService {
           },
         });
 
+      // Gerar notas automáticas para as alterações
+      const notesToAdd: string[] = [];
+
+      // Verificar alterações individuais nas parcelas
+      installmentsAfter.forEach((after) => {
+        const before = installmentsBefore.find((b) => b.id === after.id);
+        if (before) {
+          // Verificar mudança de valor
+          if (before.amount !== after.amount) {
+            notesToAdd.push(
+              FinancialNotesUtil.generateInstallmentValueChangeNote(
+                after.installmentNumber,
+                before.amount,
+                after.amount,
+              ),
+            );
+          }
+          // Verificar mudança de data de vencimento
+          if (before.dueDate.getTime() !== after.dueDate.getTime()) {
+            notesToAdd.push(
+              FinancialNotesUtil.generateInstallmentDueDateChangeNote(
+                after.installmentNumber,
+                before.dueDate,
+                after.dueDate,
+              ),
+            );
+          }
+        }
+      });
+
+      // Verificar alteração no valor total
+      if (
+        totalAmount !== undefined &&
+        receivableBefore?.totalAmount !== totalAmount
+      ) {
+        notesToAdd.push(
+          FinancialNotesUtil.generateTotalAmountChangeNote(
+            receivableBefore.totalAmount,
+            totalAmount,
+          ),
+        );
+      }
+
       // Registrar no histórico
       if (userId) {
         // Contar parcelas adicionadas (que existem em after mas não em before)
@@ -1482,6 +1553,19 @@ export class ReceivableService {
               before.dueDate.getTime() !== after.dueDate.getTime())
           );
         }).length;
+
+        // Adicionar nota sobre quantidade de parcelas alteradas
+        // Só adiciona o resumo se houver parcelas adicionadas ou removidas
+        // Modificações individuais já foram registradas acima
+        if (addedCount > 0 || removedCount > 0) {
+          const changeNote = FinancialNotesUtil.generateInstallmentChangesNote(
+            addedCount,
+            removedCount,
+          );
+          if (changeNote) {
+            notesToAdd.push(changeNote);
+          }
+        }
 
         await this.historyService.createReceivableHistory({
           receivableId,
@@ -1508,6 +1592,24 @@ export class ReceivableService {
           },
           createdBy: userId,
           createdByName: userName,
+        });
+      }
+
+      // Atualizar o campo notes com as alterações registradas
+      if (notesToAdd.length > 0) {
+        const currentReceivable = await this.prisma.receivable.findUnique({
+          where: { id: receivableId },
+          select: { notes: true },
+        });
+
+        const updatedNotes = FinancialNotesUtil.appendNote(
+          currentReceivable.notes,
+          FinancialNotesUtil.generateMultipleChangesNote(notesToAdd),
+        );
+
+        await this.prisma.receivable.update({
+          where: { id: receivableId },
+          data: { notes: updatedNotes },
         });
       }
 

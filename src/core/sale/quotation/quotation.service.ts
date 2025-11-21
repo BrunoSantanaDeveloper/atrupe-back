@@ -332,7 +332,8 @@ export class QuotationService {
 
       // Capturar valores originais para o histórico
       const originalValues = {
-        productName: data.description || product.description || product.product.name,
+        productName:
+          data.description || product.description || product.product.name,
         totalValue: product.totalValue,
         finalValue: product.finalValue,
         discount: product.discount,
@@ -549,7 +550,8 @@ export class QuotationService {
           const changes: any = {
             before: originalValues,
             after: {
-              productName: updatedProduct.description || updatedProduct.product?.name,
+              productName:
+                updatedProduct.description || updatedProduct.product?.name,
               totalValue: updatedProduct.totalValue,
               finalValue: updatedProduct.finalValue,
               discount: updatedProduct.discount,
