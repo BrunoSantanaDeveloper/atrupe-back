@@ -57,6 +57,24 @@ export class FilterQuotationDto extends BaseFilterDTO {
   date?: string;
 
   @IsOptional()
+  @IsDateString()
+  @ApiProperty({
+    description: 'Data inicial para filtrar os orçamentos',
+    example: '2023-05-01',
+    required: false,
+  })
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  @ApiProperty({
+    description: 'Data final para filtrar os orçamentos',
+    example: '2023-05-31',
+    required: false,
+  })
+  endDate?: string;
+
+  @IsOptional()
   @IsUUID()
   @ApiProperty({
     description: 'ID do cliente para filtrar os orçamentos',

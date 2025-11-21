@@ -911,6 +911,25 @@ export class QuotationService {
           },
         };
       }
+
+      if (dto.startDate || dto.endDate) {
+        const dateFilter: any = {};
+
+        if (dto.startDate) {
+          dateFilter.gte = new Date(dto.startDate);
+        }
+
+        if (dto.endDate) {
+          const endDate = new Date(dto.endDate);
+          endDate.setHours(23, 59, 59, 999);
+          dateFilter.lte = endDate;
+        }
+
+        where = {
+          ...where,
+          createdAt: dateFilter,
+        };
+      }
       const [quotations, total] = await Promise.all([
         this.prisma.quotation.findMany({
           where,
