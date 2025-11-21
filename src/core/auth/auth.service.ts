@@ -4,6 +4,7 @@ import { UserService } from '../user/user.service';
 import { PlanControlService } from '../plan/plan-control.service';
 import * as argon2 from 'argon2';
 import { v4 as uuidv4 } from 'uuid';
+import { jwtConstants } from './constants';
 
 @Injectable()
 export class AuthService {
@@ -14,6 +15,16 @@ export class AuthService {
     private jwtService: JwtService,
     private planControlService: PlanControlService,
   ) {}
+
+  /**
+   * Gerar refresh token
+   */
+  private generateRefreshToken(payload: any): string {
+    return this.jwtService.sign(payload, {
+      secret: jwtConstants.refreshSecret,
+      expiresIn: '4h',
+    });
+  }
 
   /**
    * Obter features do plano da empresa
@@ -71,6 +82,9 @@ export class AuthService {
         subscription: subscription,
       };
 
+      const accessToken = this.jwtService.sign(payload);
+      const refreshToken = this.generateRefreshToken(payload);
+
       return {
         id: user.id,
         name: user.employee[0]?.name ?? user.name,
@@ -93,12 +107,56 @@ export class AuthService {
               limits: planInfo?.limits || null, // Sistema dinâmico - todos os limites automaticamente
             }
           : null,
-        access_token: this.jwtService.sign(payload),
+        access_token: accessToken,
+        refresh_token: refreshToken,
         sessionId: sessionId,
       };
     } catch (error) {
       console.log(error);
       throw new Error('Erro ao gerar token');
+    }
+  }
+
+  async refreshToken(userId: string) {
+    try {
+      // Buscar usuário atualizado
+      const user = await this.usersService.findOne(userId);
+      if (!user) {
+        throw new Error('Usuário não encontrado');
+      }
+
+      // Gerar novo sessionId para o refresh
+      const sessionId = uuidv4();
+
+      // Obter informações do plano
+      const companyId = user.employee[0]?.company.id;
+      const planInfo = companyId
+        ? await this.planControlService.getCompanyPlanInfo(companyId)
+        : null;
+
+      const subscription = planInfo?.planType ?? 'TRIAL';
+
+      const payload = {
+        username: user.email,
+        sub: user.id,
+        companyId: companyId,
+        role: user.employee[0]?.role?.id,
+        isAdmin: user.employee[0]?.role?.isAdmin,
+        employeeId: user.employee[0]?.id,
+        subscription: subscription,
+      };
+
+      const accessToken = this.jwtService.sign(payload);
+      const refreshToken = this.generateRefreshToken(payload);
+
+      return {
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        sessionId: sessionId,
+      };
+    } catch (error) {
+      console.log(error);
+      throw new Error('Erro ao renovar token');
     }
   }
 }

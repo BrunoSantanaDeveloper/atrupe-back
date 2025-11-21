@@ -6,6 +6,7 @@ import { jwtConstants } from './constants';
 import { UserModule } from '../user/user.module';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { AbacService } from './abac/abac.service';
 import { PrismaModule } from 'nestjs-prisma';
@@ -18,13 +19,19 @@ import { PlanControlModule } from '../plan/plan-control.module';
     JwtModule.register({
       global: true,
       secret: jwtConstants.secret,
-      signOptions: { expiresIn: '60d' },
+      signOptions: { expiresIn: '7d' }, // TODO: Alterar para 4h
     }),
     forwardRef(() => UserModule),
     PlanControlModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, AbacService, JwtStrategy, LocalStrategy],
+  providers: [
+    AuthService,
+    AbacService,
+    JwtStrategy,
+    JwtRefreshStrategy,
+    LocalStrategy,
+  ],
   exports: [AuthService, AbacService],
 })
 export class AuthModule {}

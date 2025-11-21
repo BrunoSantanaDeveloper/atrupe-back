@@ -1,7 +1,14 @@
 import { Controller, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './guards/local.guard';
-import { ApiOperation, ApiResponse, ApiTags, ApiBody } from '@nestjs/swagger';
+import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
+import {
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  ApiBody,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 class LoginDto {
   username: string;
   password: string;
@@ -78,5 +85,28 @@ export class AuthController {
     // console.log('IP da requisição:', ip);
     // console.log('User-Agent:', userAgent);
     return this.authService.login(req.user);
+  }
+
+  @Post('refresh')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Renova o access token usando o refresh token' })
+  @ApiResponse({
+    status: 201,
+    description: 'Token renovado com sucesso.',
+    schema: {
+      example: {
+        access_token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9......',
+        refresh_token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9......',
+        sessionId: 'uuid-da-sessao',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Refresh token inválido ou expirado.',
+  })
+  @UseGuards(JwtRefreshGuard)
+  async refresh(@Req() req) {
+    return this.authService.refreshToken(req.user.userId);
   }
 }
