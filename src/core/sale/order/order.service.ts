@@ -10,7 +10,6 @@ import { PrismaService } from 'nestjs-prisma';
 import { FilterOrderDto } from './dto/filter.dto';
 import { Order, OrderStatus, Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
-import { OrderHistoryService } from './history/order-history.service';
 
 export interface OrderGroup {
   date: string;
@@ -19,31 +18,15 @@ export interface OrderGroup {
 
 @Injectable()
 export class OrderService {
-  constructor(
-    private prisma: PrismaService,
-    private orderHistoryService: OrderHistoryService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
-  async create(createOrderDto: CreateOrderDto, userId?: string) {
+  async create(createOrderDto: CreateOrderDto) {
     const order = await this.prisma.order.create({
       data: {
         quotationId: createOrderDto.quotationId,
         status: OrderStatus.PENDING,
       },
     });
-
-    // Registrar no histórico
-    if (userId) {
-      await this.orderHistoryService.createOrderHistory({
-        orderId: order.id,
-        action: 'CREATED',
-        description: this.orderHistoryService.getCreateDescription(),
-        createdBy: userId,
-        metadata: {
-          quotationId: createOrderDto.quotationId,
-        },
-      });
-    }
 
     return order;
   }
@@ -875,32 +858,6 @@ export class OrderService {
           canceledAt: new Date(),
           status: OrderStatus.CANCELED,
           reasonId: dto.reasonId || null,
-        },
-      });
-
-      // Buscar o motivo do cancelamento para o histórico
-      let reasonText: string | undefined;
-      if (dto.reasonId) {
-        const reason = await this.prisma.reasons.findUnique({
-          where: { id: dto.reasonId },
-          select: { reason: true },
-        });
-        reasonText = reason?.reason;
-      }
-
-      // Registrar no histórico
-      await this.orderHistoryService.createOrderHistory({
-        orderId,
-        action: 'CANCELED',
-        description: this.orderHistoryService.getCancelDescription(reasonText),
-        createdBy: sellerId,
-        metadata: {
-          reasonId: dto.reasonId,
-          reason: reasonText,
-          canceledInstallments: {
-            receivables: canceledReceivableInstallmentsCount,
-            payables: canceledPayableInstallmentsCount,
-          },
         },
       });
 

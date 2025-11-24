@@ -28,7 +28,6 @@ import { add, endOfDay } from 'date-fns';
 import { CancelOrderDto } from '../order/dto/create-order.dto';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.service';
-import { QuotationHistoryService } from './history/quotation-history.service';
 import * as fs from 'fs';
 import * as fastCsv from 'fast-csv';
 
@@ -43,7 +42,6 @@ export class QuotationService {
     private prisma: PrismaService,
     private orderService: OrderService,
     private deliveryScheduleService: DeliveryScheduleService,
-    private quotationHistoryService: QuotationHistoryService,
   ) {}
 
   /**
@@ -179,23 +177,6 @@ export class QuotationService {
           },
         },
       });
-
-      // Registrar no histórico
-      const userInfo = await this.getUserIdFromEmployee(sellerId);
-      if (userInfo) {
-        await this.quotationHistoryService.createQuotationHistory({
-          quotationId: newQuotation.id,
-          action: 'CREATED',
-          description: this.quotationHistoryService.getCreateDescription(),
-          createdBy: userInfo.userId,
-          createdByName: userInfo.userName,
-          metadata: {
-            seriesId,
-            companyId,
-            quotationNumber: newQuotation.quotationNumber,
-          },
-        });
-      }
 
       return newQuotation;
     } catch (error) {
@@ -580,21 +561,7 @@ export class QuotationService {
             changedFields.push('itens do produto');
           }
 
-          if (changedFields.length > 0) {
-            const description = `${originalValues.productName}: ${changedFields.join(', ')} alterado(s)`;
-
-            await this.quotationHistoryService.createQuotationHistory({
-              quotationId: product.quotationId,
-              action: 'VALUE_CHANGED',
-              description,
-              createdBy: userId,
-              changes,
-              metadata: {
-                productId,
-                changedFields,
-              },
-            });
-          }
+          // Histórico removido - changedFields calculados mas não registrados
         }
       }
 
@@ -1832,21 +1799,6 @@ export class QuotationService {
             });
           }
 
-          // Registrar aprovação no histórico do orçamento
-          if (userId) {
-            await this.quotationHistoryService.createQuotationHistory({
-              quotationId: quotation.id,
-              action: 'APPROVED',
-              description:
-                this.quotationHistoryService.getApprovedDescription(),
-              createdBy: userId,
-              metadata: {
-                approvedAt: quotation.approvedAt,
-                orderId: order.id,
-              },
-            });
-          }
-
           const deliveryStatus = isTrial ? 'DELIVERING' : 'IN_PRODUCTION';
 
           // Calcular a data estimada baseada na aprovação
@@ -2183,16 +2135,6 @@ export class QuotationService {
         },
       });
 
-      // Registrar no histórico
-      if (userId) {
-        await this.quotationHistoryService.createQuotationHistory({
-          quotationId,
-          action: 'REJECTED',
-          description: this.quotationHistoryService.getRejectDescription(),
-          createdBy: userId,
-        });
-      }
-
       return updatedQuotation;
     }
 
@@ -2214,22 +2156,6 @@ export class QuotationService {
           reasonId: dto.reasonId,
         },
       });
-
-      // Registrar no histórico
-      if (userId) {
-        await this.quotationHistoryService.createQuotationHistory({
-          quotationId,
-          action: 'REJECTED',
-          description: this.quotationHistoryService.getRejectDescription(
-            reason.reason,
-          ),
-          createdBy: userId,
-          metadata: {
-            reasonId: dto.reasonId,
-            reason: reason.reason,
-          },
-        });
-      }
 
       return updatedQuotation;
     } catch (error) {
@@ -2398,20 +2324,6 @@ export class QuotationService {
         },
       });
 
-      // Registrar no histórico
-      if (userId) {
-        await this.quotationHistoryService.createQuotationHistory({
-          quotationId,
-          action: 'FINISHED',
-          description: this.quotationHistoryService.getFinishDescription(),
-          createdBy: userId,
-          metadata: {
-            finishedAt,
-            newDueDate,
-          },
-        });
-      }
-
       return updatedQuotation;
     } catch (error) {
       console.error(error);
@@ -2449,16 +2361,6 @@ export class QuotationService {
           },
         },
       });
-
-      // Registrar no histórico
-      if (userId) {
-        await this.quotationHistoryService.createQuotationHistory({
-          quotationId,
-          action: 'REOPENED',
-          description: this.quotationHistoryService.getReopenDescription(),
-          createdBy: userId,
-        });
-      }
 
       return updatedQuotation;
     } catch (error) {

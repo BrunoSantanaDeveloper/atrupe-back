@@ -184,7 +184,17 @@ src/
 
 ---
 
-## ✅ IMPLEMENTAÇÃO CONCLUÍDA
+## ⚠️ IMPLEMENTAÇÃO SUBSTITUÍDA
+
+Esta implementação foi substituída pelo **Histórico de Vendas Unificado**.
+
+Veja a nova documentação em: [historico-vendas-unificado.md](./historico-vendas-unificado.md)
+
+Os módulos separados (`QuotationHistoryModule` e `OrderHistoryModule`) foram removidos e substituídos por um único módulo (`SaleHistoryModule`) que unifica todos os históricos relacionados a vendas (orçamentos, ordens, receitas e despesas).
+
+---
+
+## ✅ IMPLEMENTAÇÃO CONCLUÍDA (HISTÓRICO - SUBSTITUÍDO)
 
 ### Resumo da Implementação
 
