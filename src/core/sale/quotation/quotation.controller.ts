@@ -197,12 +197,17 @@ export class QuotationController {
     status: 400,
     description: 'ID inválido.',
   })
-  async duplicate(@Param('id') id: string, @Body() dto: DuplicateQuotationDto) {
+  async duplicate(
+    @Param('id') id: string,
+    @Body() dto: DuplicateQuotationDto,
+    @Req() req: any,
+  ) {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
 
-    return this.quotationService.duplicate(id, dto);
+    const userId = req.user?.sub || req.user?.id;
+    return this.quotationService.duplicate(id, dto, userId);
   }
   @Post(':id/approve')
   @ApiOperation({ summary: 'Aprova um orçamento pelo ID' })

@@ -1415,6 +1415,7 @@ export class QuotationService {
   async duplicate(
     quotationId: string,
     duplicateDto: DuplicateQuotationDto,
+    userId?: string,
   ): Promise<Quotation> {
     // Buscar o orçamento original, incluindo os produtos e itens
     const quotation = await this.prisma.quotation.findUnique({
@@ -1665,6 +1666,39 @@ export class QuotationService {
 
     // Recalcular apenas o total do orçamento uma vez no final
     await this.recalculateQuotationTotalValue(newQuotation.id);
+
+    // Registrar no histórico que o orçamento foi duplicado
+    if (userId) {
+      try {
+        await this.prisma.quotationHistory.create({
+          data: {
+            quotationId: newQuotation.id,
+            action: 'DUPLICATED',
+            description: `Orçamento duplicado a partir do orçamento #${quotation.quotationNumber}`,
+            changes: null,
+            metadata: {
+              originalQuotationId: quotation.id,
+              originalQuotationNumber: quotation.quotationNumber,
+              updatedPrices: duplicateDto.updatePrices || false,
+              clientChanged: duplicateDto.clientId
+                ? duplicateDto.clientId !== quotation.clientId
+                : false,
+              contactChanged: duplicateDto.contactId
+                ? duplicateDto.contactId !== quotation.contactId
+                : false,
+              descriptionChanged: duplicateDto.description
+                ? duplicateDto.description !== quotation.description
+                : false,
+            },
+            createdBy: userId,
+            createdByName: null,
+          },
+        });
+      } catch (error) {
+        console.error('Error creating quotation duplication history:', error);
+        // Não lançar erro para não quebrar a operação principal
+      }
+    }
 
     return newQuotation; // Retorna o novo orçamento criado
   }

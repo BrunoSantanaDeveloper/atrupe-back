@@ -1129,7 +1129,7 @@ model Order {
 model QuotationHistory {
   id            String    @id @default(uuid())
   quotationId   String
-  action        String // CREATED, FINISHED, REOPENED, REJECTED, VALUE_CHANGED, APPROVED
+  action        String // CREATED, FINISHED, REOPENED, REJECTED, VALUE_CHANGED, APPROVED, DUPLICATED
   description   String
   changes       Json? // { before: {...}, after: {...} }
   metadata      Json? // Dados adicionais
