@@ -5,6 +5,7 @@ import { OrderModule } from './order/order.module';
 import { StatusModule } from './status/status.module';
 import { DeliveryScheduleModule } from './delivery-schedule/delivery-schedule.module';
 import { ProductionStageModule } from './production-stage/production-stage.module';
+import { SaleHistoryModule } from './sale-history/sale-history.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ProductionStageModule } from './production-stage/production-stage.modul
     StatusModule,
     DeliveryScheduleModule,
     ProductionStageModule,
+    SaleHistoryModule,
   ],
   exports: [SeriesModule, QuotationModule, OrderModule],
 })
