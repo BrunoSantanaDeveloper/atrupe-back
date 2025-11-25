@@ -60,4 +60,26 @@ export class UserResponseDto {
     ],
   })
   policies?: string[];
+
+  @ApiProperty({
+    description: 'Roles diretos do usuário (UserRole)',
+    isArray: true,
+    required: false,
+    example: [
+      {
+        isSystemAdmin: true,
+        role: {
+          permissions: ['*'],
+          isAdmin: true,
+        },
+      },
+    ],
+  })
+  userRole?: {
+    isSystemAdmin: boolean;
+    role: {
+      permissions: string[];
+      isAdmin: boolean;
+    };
+  }[];
 }

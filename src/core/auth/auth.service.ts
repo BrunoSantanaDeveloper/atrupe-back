@@ -64,7 +64,46 @@ export class AuthService {
       // Gerar sessionId único para rastreamento de atividade
       const sessionId = uuidv4();
 
-      // Obter informações do plano usando o novo sistema
+      // Verificar se é um administrador do sistema
+      // Verifica APENAS pelo campo isSystemAdmin no UserRole
+      const isSystemAdmin = user.userRole?.some(
+        (ur: any) => ur.isSystemAdmin === true,
+      );
+
+      if (isSystemAdmin) {
+        // Login especial para administrador do sistema
+        const payload = {
+          username: user.email,
+          sub: user.id,
+          companyId: null,
+          role: 'SYSTEM_ADMIN',
+          isAdmin: true,
+          isSystemAdmin: true,
+          employeeId: null,
+          subscription: 'FULL',
+        };
+
+        const accessToken = this.jwtService.sign(payload);
+        const refreshToken = this.generateRefreshToken(payload);
+
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar,
+          role: 'Administrador do Sistema',
+          employeeId: null,
+          isAdmin: true,
+          isSystemAdmin: true,
+          permissions: ['*'], // Permissão total
+          company: null,
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          sessionId: sessionId,
+        };
+      }
+
+      // Login normal para usuários de empresa
       const companyId = user.employee[0]?.company.id;
       const planInfo = companyId
         ? await this.planControlService.getCompanyPlanInfo(companyId)
@@ -78,6 +117,7 @@ export class AuthService {
         companyId: companyId,
         role: user.employee[0]?.role?.id,
         isAdmin: user.employee[0]?.role?.isAdmin,
+        isSystemAdmin: false,
         employeeId: user.employee[0]?.id,
         subscription: subscription,
       };
@@ -93,6 +133,7 @@ export class AuthService {
         role: user.employee[0] ? user.employee[0].role?.name : null,
         employeeId: user.employee[0]?.id,
         isAdmin: user.employee[0]?.role?.isAdmin,
+        isSystemAdmin: false,
         permissions: user.employee[0]?.role?.permissions,
         company: user.employee[0]?.company
           ? {
@@ -128,7 +169,36 @@ export class AuthService {
       // Gerar novo sessionId para o refresh
       const sessionId = uuidv4();
 
-      // Obter informações do plano
+      // Verificar se é um administrador do sistema
+      // Verifica APENAS pelo campo isSystemAdmin no UserRole
+      const isSystemAdmin = user.userRole?.some(
+        (ur: any) => ur.isSystemAdmin === true,
+      );
+
+      if (isSystemAdmin) {
+        // Refresh token para administrador do sistema
+        const payload = {
+          username: user.email,
+          sub: user.id,
+          companyId: null,
+          role: 'SYSTEM_ADMIN',
+          isAdmin: true,
+          isSystemAdmin: true,
+          employeeId: null,
+          subscription: 'FULL',
+        };
+
+        const accessToken = this.jwtService.sign(payload);
+        const refreshToken = this.generateRefreshToken(payload);
+
+        return {
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          sessionId: sessionId,
+        };
+      }
+
+      // Refresh token normal para usuários de empresa
       const companyId = user.employee[0]?.company.id;
       const planInfo = companyId
         ? await this.planControlService.getCompanyPlanInfo(companyId)
@@ -142,6 +212,7 @@ export class AuthService {
         companyId: companyId,
         role: user.employee[0]?.role?.id,
         isAdmin: user.employee[0]?.role?.isAdmin,
+        isSystemAdmin: false,
         employeeId: user.employee[0]?.id,
         subscription: subscription,
       };

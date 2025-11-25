@@ -499,6 +499,7 @@ export class UserService {
         },
         userRole: {
           select: {
+            isSystemAdmin: true,
             role: {
               select: {
                 permissions: true,
@@ -559,6 +560,11 @@ export class UserService {
             role: true,
             avatarUrl: true,
             company: true,
+          },
+        },
+        userRole: {
+          include: {
+            role: true,
           },
         },
       },

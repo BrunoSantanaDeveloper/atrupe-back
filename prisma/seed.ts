@@ -7,6 +7,7 @@ import { PLAN_CONFIGURATIONS } from '../src/seeds/plans-complete';
 import { ACADEMY_ITEMS } from '../src/seeds/academy-base';
 import { BASE_PAYMENT_METHODS } from '../src/seeds/payment-methods-base';
 import { BASE_CONTACT_SOURCES } from '../src/seeds/contact-sources-base';
+import * as argon2 from 'argon2';
 
 const prisma = new PrismaClient();
 
@@ -269,8 +270,114 @@ async function createDefaultContactSources() {
   }
 }
 
+async function createSystemAdminUser() {
+  console.log('Criando usuário administrador do sistema...');
+
+  const adminEmail = 'sistema@atrupe.com.br';
+  const adminPassword = 'fkD31=b5y&1$';
+
+  try {
+    // Verifica se o usuário já existe
+    let adminUser = await prisma.user.findUnique({
+      where: { email: adminEmail },
+    });
+
+    if (adminUser) {
+      console.log(`Usuário administrador já existe: ${adminEmail}`);
+    } else {
+      // Hash da senha usando argon2
+      const hashedPassword = await argon2.hash(adminPassword);
+
+      // Cria o usuário administrador do sistema
+      // Este usuário não está vinculado a nenhuma empresa específica
+      // e tem permissões especiais para gerenciar o sistema
+      adminUser = await prisma.user.create({
+        data: {
+          email: adminEmail,
+          password: hashedPassword,
+          name: 'Administrador do Sistema',
+          isActive: true,
+          isVerified: true,
+          phone: '+55 (00) 00000-0000', // Identificador especial para admin de sistema
+        },
+      });
+
+      console.log(`Usuário administrador criado com sucesso: ${adminEmail}`);
+    }
+
+    // Criar uma Company especial para o sistema (se não existir)
+    let systemCompany = await prisma.company.findFirst({
+      where: { name: 'Sistema Atrupe' },
+    });
+
+    if (!systemCompany) {
+      systemCompany = await prisma.company.create({
+        data: {
+          name: 'Sistema Atrupe',
+          cnpj: '00.000.000/0000-00',
+          legalName: 'Sistema Administrativo Atrupe',
+          email: 'sistema@atrupe.com.br',
+          isActive: true,
+        },
+      });
+      console.log('Empresa do sistema criada com sucesso');
+    }
+
+    // Criar um Role de administrador do sistema
+    let systemRole = await prisma.role.findFirst({
+      where: {
+        name: 'Administrador do Sistema',
+        companyId: systemCompany.id,
+      },
+    });
+
+    if (!systemRole) {
+      systemRole = await prisma.role.create({
+        data: {
+          name: 'Administrador do Sistema',
+          companyId: systemCompany.id,
+          isAdmin: true,
+          isActive: true,
+          permissions: ['*'], // Todas as permissões
+        },
+      });
+      console.log('Role de administrador do sistema criado com sucesso');
+    }
+
+    // Criar UserRole marcando como administrador do sistema
+    const existingUserRole = await prisma.userRole.findUnique({
+      where: {
+        userId_roleId: {
+          userId: adminUser.id,
+          roleId: systemRole.id,
+        },
+      },
+    });
+
+    if (!existingUserRole) {
+      await prisma.userRole.create({
+        data: {
+          userId: adminUser.id,
+          roleId: systemRole.id,
+          isSystemAdmin: true,
+        },
+      });
+      console.log('UserRole de administrador do sistema criado com sucesso');
+    }
+
+    console.log(
+      `ID do admin: ${adminUser.id} - Use este ID para identificar o admin do sistema`,
+    );
+  } catch (error) {
+    console.error('Erro ao criar usuário administrador do sistema:', error);
+  }
+}
+
 async function main() {
   console.log('Iniciando o processo de seeding...');
+
+  // Criar usuário administrador do sistema
+  await createSystemAdminUser();
 
   // Criar bancos padrão
   await createDefaultBanks();
