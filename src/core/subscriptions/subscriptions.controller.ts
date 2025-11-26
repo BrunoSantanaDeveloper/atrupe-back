@@ -32,7 +32,9 @@ export class SubscriptionsController {
   constructor(private readonly subscriptionsService: SubscriptionsService) {}
 
   @Get('incomplete-registrations')
-  @ApiOperation({ summary: 'List incomplete registrations (unverified emails)' })
+  @ApiOperation({
+    summary: 'List incomplete registrations (unverified emails)',
+  })
   @ApiResponse({
     status: 200,
     description: 'List of incomplete registrations',

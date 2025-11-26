@@ -294,7 +294,7 @@ export class SubscriptionsService {
 
           acc[dateKey].push({
             id: company.id,
-            avatar: company.logoUrl || null,
+            avatar: company.favIconUrl || null,
             companyName: company.legalName || company.name,
             displayName: company.name,
             code: `#${company.id.slice(0, 4).toUpperCase()}`,
