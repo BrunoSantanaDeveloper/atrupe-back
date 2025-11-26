@@ -21,6 +21,7 @@ import { SubscriptionsService } from './subscriptions.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpgradeSubscriptionDto } from './dto/upgrade-subscription.dto';
 import { ListTrialCompaniesDto } from './dto/list-trial-companies.dto';
+import { ListIncompleteRegistrationsDto } from './dto/list-incomplete-registrations.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 
 @ApiTags('subscriptions')
@@ -29,6 +30,21 @@ import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 @ApiBearerAuth()
 export class SubscriptionsController {
   constructor(private readonly subscriptionsService: SubscriptionsService) {}
+
+  @Get('incomplete-registrations')
+  @ApiOperation({ summary: 'List incomplete registrations (unverified emails)' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of incomplete registrations',
+  })
+  async listIncompleteRegistrations(
+    @Query() query: ListIncompleteRegistrationsDto,
+  ) {
+    return await this.subscriptionsService.listIncompleteRegistrations(
+      query.page,
+      query.limit,
+    );
+  }
 
   @Get('trial-companies/totals')
   @ApiOperation({ summary: 'Get trial subscriptions totals by status' })
