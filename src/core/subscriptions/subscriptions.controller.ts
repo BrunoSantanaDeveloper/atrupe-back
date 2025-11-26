@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Delete,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -19,6 +20,7 @@ import {
 import { SubscriptionsService } from './subscriptions.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpgradeSubscriptionDto } from './dto/upgrade-subscription.dto';
+import { ListTrialCompaniesDto } from './dto/list-trial-companies.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 
 @ApiTags('subscriptions')
@@ -27,6 +29,19 @@ import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 @ApiBearerAuth()
 export class SubscriptionsController {
   constructor(private readonly subscriptionsService: SubscriptionsService) {}
+
+  @Get('trial-companies')
+  @ApiOperation({ summary: 'List all companies with trial subscriptions' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of companies with trial subscriptions',
+  })
+  async listTrialCompanies(@Query() query: ListTrialCompaniesDto) {
+    return await this.subscriptionsService.listTrialCompanies(
+      query.page,
+      query.limit,
+    );
+  }
 
   @Get('active')
   @ApiOperation({ summary: 'Get active subscription for company' })

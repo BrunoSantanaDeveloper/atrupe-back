@@ -67,6 +67,146 @@ export class SubscriptionsService {
     });
   }
 
+  async listTrialCompanies(page: number = 1, limit: number = 10) {
+    const skip = (page - 1) * limit;
+
+    // Buscar subscriptions TRIAL ativas
+    const [subscriptions, total] = await Promise.all([
+      this.prisma.subscription.findMany({
+        where: {
+          plan: {
+            planType: 'TRIAL',
+          },
+          status: 'ACTIVE',
+        },
+        include: {
+          plan: true,
+          Company: {
+            include: {
+              address: {
+                where: {
+                  type: 'Principal',
+                },
+                take: 1,
+              },
+            },
+          },
+          customer: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        skip,
+        take: limit,
+      }),
+      this.prisma.subscription.count({
+        where: {
+          plan: {
+            planType: 'TRIAL',
+          },
+          status: 'ACTIVE',
+        },
+      }),
+    ]);
+
+    // Buscar informações dos usuários (primeiro employee da empresa que tem user)
+    const companiesWithUsers = await Promise.all(
+      subscriptions.map(async (sub) => {
+        if (!sub.Company) return null;
+
+        const employee = await this.prisma.employee.findFirst({
+          where: {
+            companyId: sub.Company.id,
+            userId: {
+              not: null,
+            },
+          },
+          include: {
+            user: true,
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        });
+
+        const address = sub.Company.address[0];
+
+        // Período de trial: data de criação até nextDueDate
+        const trialStart = new Date(sub.createdAt);
+        const trialEnd = new Date(sub.nextDueDate);
+
+        const formatDate = (date: Date) => {
+          return date.toLocaleDateString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+          });
+        };
+
+        return {
+          subscription: sub,
+          company: sub.Company,
+          employee,
+          address,
+          trialPeriod: `${formatDate(trialStart)} - ${formatDate(trialEnd)}`,
+        };
+      }),
+    );
+
+    // Agrupar por data de criação
+    const groupedByDate = companiesWithUsers
+      .filter((item) => item !== null)
+      .reduce(
+        (acc, item) => {
+          const dateKey = new Date(item.subscription.createdAt)
+            .toISOString()
+            .split('T')[0];
+
+          if (!acc[dateKey]) {
+            acc[dateKey] = [];
+          }
+
+          const company = item.company;
+          const user = item.employee?.user;
+
+          acc[dateKey].push({
+            id: company.id,
+            avatar: company.logoUrl || null,
+            companyName: company.legalName || company.name,
+            displayName: company.name,
+            code: `#${company.id.slice(0, 4).toUpperCase()}`,
+            document: company.cnpj || null,
+            userName: user?.name || 'N/A',
+            phone: user?.phone || company.phone || company.mobile || null,
+            email: user?.email || company.email || null,
+            trialPeriod: item.trialPeriod,
+            stateId: item.address?.state || null,
+            cityId: item.address?.city || null,
+            createdAt: item.subscription.createdAt,
+          });
+
+          return acc;
+        },
+        {} as Record<string, any[]>,
+      );
+
+    // Formatar resposta
+    const data = Object.entries(groupedByDate)
+      .map(([date, items]) => ({
+        date,
+        data: items,
+      }))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const lastPage = Math.ceil(total / limit);
+
+    return {
+      data,
+      total,
+      lastPage,
+    };
+  }
+
   async create(createSubscriptionDto: CreateSubscriptionDto, request) {
     createSubscriptionDto.customer.userId = request.user.userId;
     createSubscriptionDto.customer.companyId = request.user.companyId;
