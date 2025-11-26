@@ -13,6 +13,7 @@ import {
   CreateUserByEmployeeDto,
   CreateUserDto,
 } from './dto/create.dto';
+import { CompleteRegistrationDto } from './dto/complete-registration.dto';
 import * as argon2 from 'argon2';
 import { UserResponseDto } from './dto/response.dto';
 import { CacheService } from 'src/svc/cache/cache.service';
@@ -706,5 +707,246 @@ export class UserService {
         resetPasswordExpires: null,
       },
     });
+  }
+
+  async completeRegistration(
+    completeRegistrationDto: CompleteRegistrationDto,
+    adminUserId: string,
+  ) {
+    // Verifica se o cadastro incompleto existe usando apenas o ID
+    const mailVerification = await this.prisma.mailVerification.findUnique({
+      where: {
+        id: completeRegistrationDto.id,
+      },
+    });
+
+    if (!mailVerification) {
+      throw new NotFoundException('Cadastro incompleto não encontrado.');
+    }
+
+    // Busca o usuário admin para validar a senha
+    const adminUser = await this.prisma.user.findFirst({
+      where: { id: adminUserId },
+    });
+
+    if (!adminUser) {
+      throw new UnauthorizedException('Usuário administrador não encontrado.');
+    }
+
+    // Valida a senha do administrador
+    const isPasswordValid = await argon2.verify(
+      adminUser.password,
+      completeRegistrationDto.password,
+    );
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Senha do administrador incorreta.');
+    }
+
+    // Verifica se já existe um User com este email
+    const existingUser = await this.prisma.user.findFirst({
+      where: { email: completeRegistrationDto.email },
+    });
+    if (existingUser) {
+      throw new ConflictException('E-mail já cadastrado.');
+    }
+
+    // Verifica se já existe um Customer com este email
+    const existingCustomer = await this.prisma.customer.findFirst({
+      where: { email: completeRegistrationDto.email },
+    });
+    if (existingCustomer) {
+      throw new ConflictException('E-mail já cadastrado.');
+    }
+
+    // Verifica se já existe uma Company com este CNPJ/CPF
+    if (completeRegistrationDto.document) {
+      const existingCompany = await this.prisma.company.findFirst({
+        where: { cnpj: completeRegistrationDto.document },
+      });
+      if (existingCompany) {
+        throw new ConflictException('CNPJ/CPF já cadastrado.');
+      }
+    }
+
+    let createdUserId: string | null = null;
+    let createdCompanyId: string | null = null;
+    let createdCustomerId: string | null = null;
+
+    try {
+      // Gera uma senha temporária
+      const temporaryPassword = Math.random().toString(36).slice(-8);
+      const hashedPassword = await argon2.hash(temporaryPassword);
+
+      // Criar usuário
+      const userData: Prisma.UserCreateInput = {
+        name: completeRegistrationDto.userName,
+        email: completeRegistrationDto.email,
+        password: hashedPassword,
+        phone: completeRegistrationDto.phone,
+      };
+      const user = await this.prisma.user.create({
+        data: userData,
+      });
+      createdUserId = user.id;
+
+      // Criar empresa
+      const createCompany: CreateCompanyDto = {
+        general: {
+          phone: completeRegistrationDto.phone,
+          name: completeRegistrationDto.companyName,
+          legalName: completeRegistrationDto.legalName,
+          cnpj: completeRegistrationDto.document,
+          email: completeRegistrationDto.email,
+          siteUrl: '',
+          municipalRegistration: '',
+          mobile: completeRegistrationDto.phone,
+        },
+        address: {
+          street: '',
+          number: '',
+          neighborhood: '',
+          city: completeRegistrationDto.cityId,
+          state: completeRegistrationDto.stateId,
+          zipcode: '',
+        },
+      };
+
+      const company = await this.companyService.createMainCompany(
+        completeRegistrationDto.email,
+        createCompany,
+      );
+      createdCompanyId = company.id;
+      this.logger.log('Company created successfully');
+
+      // Configurar primeiro acesso
+      await this.companyService.createFirstAccess(
+        completeRegistrationDto.email,
+        company.id,
+      );
+      this.logger.log('First access configured successfully');
+
+      // Configurar plano TRIAL
+      await this.prisma.$transaction(async (tx) => {
+        this.logger.log('Attempting to create trial plan...');
+
+        const trialPlan = await tx.plan.findFirst({
+          where: { planType: 'TRIAL' },
+          include: {
+            planLimits: {
+              include: {
+                limit: true,
+              },
+            },
+          },
+        });
+
+        if (trialPlan) {
+          const trialDaysLimit = trialPlan.planLimits.find(
+            (pl) => pl.limit.key === 'trial_days',
+          );
+          const trialDays = trialDaysLimit?.value || 7;
+
+          // Criar customer
+          const customer = await tx.customer.create({
+            data: {
+              name: completeRegistrationDto.userName,
+              email: completeRegistrationDto.email,
+              document: completeRegistrationDto.document,
+              asaasCustomerId: `trial_${user.id}`,
+              companyId: company.id,
+            },
+          });
+          createdCustomerId = customer.id;
+
+          // Conectar user ao customer
+          await tx.user.update({
+            where: { id: user.id },
+            data: { customerId: customer.id },
+          });
+
+          // Criar subscription com plano TRIAL
+          const trialEndDate = new Date();
+          trialEndDate.setDate(trialEndDate.getDate() + trialDays);
+
+          await tx.subscription.create({
+            data: {
+              customerId: customer.id,
+              planId: trialPlan.id,
+              companyId: company.id,
+              asaasSubscriptionId: `trial_sub_${user.id}`,
+              nextDueDate: trialEndDate,
+              value: 0,
+            },
+          });
+
+          this.logger.log(
+            `Plano TRIAL criado para usuário ${user.email} - válido até ${trialEndDate.toISOString()} (${trialDays} dias)`,
+          );
+        } else {
+          this.logger.warn(
+            'Plano TRIAL não encontrado - subscription não criada',
+          );
+        }
+      });
+
+      // Enviar email com a senha temporária
+      await this.mailerService
+        .sendMail({
+          to: completeRegistrationDto.email,
+          subject: 'Cadastro Efetuado - Atrupe',
+          template: 'registration-complete',
+          context: {
+            name: completeRegistrationDto.userName,
+            email: completeRegistrationDto.email,
+            temporaryPassword,
+            loginUrl: `${process.env.FRONTEND_URL}/login`,
+          },
+        })
+        .catch((err) => {
+          this.logger.error('Erro ao enviar email:', err);
+        });
+
+      // Limpar verificação de email
+      await this.prisma.mailVerification.delete({
+        where: { id: completeRegistrationDto.id },
+      });
+
+      return {
+        message: 'Cadastro efetuado com sucesso. Email enviado ao cliente.',
+      };
+    } catch (error) {
+      this.logger.error('Erro ao completar cadastro:', error);
+
+      // Rollback manual
+      try {
+        if (createdCustomerId) {
+          await this.prisma.customer
+            .delete({ where: { id: createdCustomerId } })
+            .catch(() => {});
+        }
+
+        if (createdCompanyId) {
+          await this.prisma.company
+            .delete({ where: { id: createdCompanyId } })
+            .catch(() => {});
+        }
+
+        if (createdUserId) {
+          await this.prisma.user
+            .delete({ where: { id: createdUserId } })
+            .catch(() => {});
+        }
+      } catch (rollbackError) {
+        this.logger.error('Erro durante rollback:', rollbackError);
+      }
+
+      if (error instanceof PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException('E-mail ou CNPJ já cadastrado.');
+        }
+      }
+      throw error;
+    }
   }
 }

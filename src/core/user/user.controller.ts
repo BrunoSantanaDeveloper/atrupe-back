@@ -15,7 +15,9 @@ import {
   CreateUserByEmployeeDto,
   CreateUserDto,
 } from './dto/create.dto';
+import { CompleteRegistrationDto } from './dto/complete-registration.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 import { UserResponseDto } from './dto/response.dto';
 import {
   ApiTags,
@@ -295,5 +297,42 @@ export class UserController {
   async createPassword(@Body() createUserDto: CreateUserDto) {
     await this.userService.createPassword(createUserDto);
     return { message: 'Senha criada com sucesso.' };
+  }
+
+  @Post('complete-registration')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Efetiva o cadastro de um cliente a partir de um cadastro incompleto (apenas SystemAdmin)',
+  })
+  @ApiBody({
+    description: 'Dados completos para efetivar o cadastro',
+    type: CompleteRegistrationDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Cadastro efetuado com sucesso.',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Senha do administrador incorreta.',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado. Apenas administradores do sistema.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Cadastro incompleto não encontrado.',
+  })
+  async completeRegistration(
+    @Req() req,
+    @Body() completeRegistrationDto: CompleteRegistrationDto,
+  ) {
+    return await this.userService.completeRegistration(
+      completeRegistrationDto,
+      req.user.userId,
+    );
   }
 }
