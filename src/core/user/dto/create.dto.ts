@@ -3,7 +3,36 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateMailVerificationDto {
   @IsNotEmpty()
+  @ApiProperty({
+    description: 'Email do usuário',
+    example: 'johndoe@example.com',
+    required: true,
+  })
   email: string;
+
+  @IsString()
+  @ApiProperty({
+    description: 'Nome do usuário',
+    example: 'John Doe',
+    required: false,
+  })
+  name?: string;
+
+  @IsString()
+  @ApiProperty({
+    description: 'Nome da empresa',
+    example: 'Empresa XYZ',
+    required: false,
+  })
+  companyName?: string;
+
+  @IsString()
+  @ApiProperty({
+    description: 'Telefone do usuário',
+    example: '(11) 98765-4321',
+    required: false,
+  })
+  phone?: string;
 }
 
 export class CreateUserDto {

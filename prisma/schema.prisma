@@ -393,13 +393,16 @@ model User {
 }
 
 model MailVerification {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-  email     String    @unique
-  token     String?
-  expiresAt DateTime?
-  verified  Boolean   @default(false)
+  id          String    @id @default(uuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime? @updatedAt
+  email       String    @unique
+  token       String?
+  expiresAt   DateTime?
+  verified    Boolean   @default(false)
+  name        String?
+  companyName String?
+  phone       String?
 
   @@map("mail_verifications")
 }

@@ -40,7 +40,12 @@ export class UserService {
     private readonly employeeHistoryService: EmployeeHistoryService,
   ) {}
 
-  async sendEmailValidation(email: string) {
+  async sendEmailValidation(
+    email: string,
+    name?: string,
+    companyName?: string,
+    phone?: string,
+  ) {
     const existToken = await this.prisma.mailVerification.findFirst({
       where: {
         email,
@@ -59,8 +64,8 @@ export class UserService {
         canResendIn: timeUntilExpiry,
       };
     }
-    let token;
-    let isUnique;
+    let token: string;
+    let isUnique: any;
     // Gera um código numérico de 4 dígitos
     do {
       token = Math.floor(1000 + Math.random() * 9000).toString();
@@ -81,11 +86,17 @@ export class UserService {
         token,
         expiresAt: resetPasswordExpires,
         verified: false,
+        name,
+        companyName,
+        phone,
       },
       update: {
         token,
         expiresAt: resetPasswordExpires,
         verified: false,
+        name,
+        companyName,
+        phone,
       },
     });
 
@@ -324,7 +335,12 @@ export class UserService {
         throw new ConflictException('E-mail já cadastrado.');
       }
 
-      return await this.sendEmailValidation(createUserDto.email);
+      return await this.sendEmailValidation(
+        createUserDto.email,
+        createUserDto.name,
+        createUserDto.companyName,
+        createUserDto.phone,
+      );
     } catch (error) {
       console.error(error);
       if (error instanceof PrismaClientKnownRequestError) {

@@ -70,23 +70,16 @@ export class SubscriptionsService {
   async listIncompleteRegistrations(page: number = 1, limit: number = 10) {
     const skip = (page - 1) * limit;
 
-    // Buscar registros de MailVerification que ainda não foram verificados
+    // Buscar todos os registros de MailVerification
     const [mailVerifications, total] = await Promise.all([
       this.prisma.mailVerification.findMany({
-        where: {
-          verified: false,
-        },
         orderBy: {
           createdAt: 'desc',
         },
         skip,
         take: limit,
       }),
-      this.prisma.mailVerification.count({
-        where: {
-          verified: false,
-        },
-      }),
+      this.prisma.mailVerification.count(),
     ]);
 
     // Agrupar por data de criação
@@ -100,25 +93,17 @@ export class SubscriptionsService {
           acc[dateKey] = [];
         }
 
-        const formatDateTime = (date: Date) => {
-          return date.toLocaleString('pt-BR', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          });
-        };
+        // Gerar código baseado no ID
+        const code = verification.id.slice(0, 4).toUpperCase();
 
         acc[dateKey].push({
           id: verification.id,
+          companyName: verification.companyName || null,
+          code: code,
+          userName: verification.name || null,
+          phone: verification.phone || null,
           email: verification.email,
           createdAt: verification.createdAt,
-          createdAtFormatted: formatDateTime(verification.createdAt),
-          tokenExpired: verification.expiresAt
-            ? new Date() > verification.expiresAt
-            : true,
-          expiresAt: verification.expiresAt,
         });
 
         return acc;
@@ -134,12 +119,9 @@ export class SubscriptionsService {
       }))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    const lastPage = Math.ceil(total / limit);
-
     return {
       data,
       total,
-      lastPage,
     };
   }
 
