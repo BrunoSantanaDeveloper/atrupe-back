@@ -158,6 +158,197 @@ export class SubscriptionsService {
     };
   }
 
+  async getActiveTotals() {
+    // Buscar todas as subscriptions que NÃO são TRIAL agrupadas por status
+    const subscriptions = await this.prisma.subscription.findMany({
+      where: {
+        plan: {
+          planType: {
+            not: 'TRIAL',
+          },
+        },
+      },
+      select: {
+        status: true,
+      },
+    });
+
+    // Contar por status
+    const totals = subscriptions.reduce(
+      (acc, sub) => {
+        acc[sub.status] = (acc[sub.status] || 0) + 1;
+        acc.TOTAL += 1;
+        return acc;
+      },
+      {
+        ACTIVE: 0,
+        BLOCKED: 0,
+        INACTIVE: 0,
+        CANCELED: 0,
+        TOTAL: 0,
+      },
+    );
+
+    return {
+      data: totals,
+    };
+  }
+
+  async listActiveClients(
+    page: number = 1,
+    limit: number = 10,
+    statusFilter?: string,
+  ) {
+    const skip = (page - 1) * limit;
+
+    // Mapear o status em português para o enum do banco
+    const statusMap: Record<string, string> = {
+      ativas: 'ACTIVE',
+      bloqueadas: 'BLOCKED',
+      inativas: 'INACTIVE',
+      canceladas: 'CANCELED',
+    };
+
+    const mappedStatus = statusFilter ? statusMap[statusFilter] : undefined;
+
+    // Construir o where com filtro opcional de status (clientes que NÃO são TRIAL)
+    const whereCondition: any = {
+      plan: {
+        planType: {
+          not: 'TRIAL',
+        },
+      },
+    };
+
+    if (mappedStatus) {
+      whereCondition.status = mappedStatus;
+    }
+
+    // Buscar subscriptions que não são TRIAL
+    const [subscriptions, total] = await Promise.all([
+      this.prisma.subscription.findMany({
+        where: whereCondition,
+        include: {
+          plan: true,
+          Company: {
+            include: {
+              address: {
+                where: {
+                  type: 'Principal',
+                },
+                take: 1,
+              },
+            },
+          },
+          customer: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        skip,
+        take: limit,
+      }),
+      this.prisma.subscription.count({
+        where: whereCondition,
+      }),
+    ]);
+
+    // Buscar informações dos usuários (primeiro employee da empresa que tem user)
+    const companiesWithUsers = await Promise.all(
+      subscriptions.map(async (sub) => {
+        if (!sub.Company) return null;
+
+        const employee = await this.prisma.employee.findFirst({
+          where: {
+            companyId: sub.Company.id,
+            userId: {
+              not: null,
+            },
+          },
+          include: {
+            user: true,
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        });
+
+        const address = sub.Company.address[0];
+
+        // Período de assinatura: data de criação até nextDueDate
+        const subscriptionStart = new Date(sub.createdAt);
+        const nextDue = new Date(sub.nextDueDate);
+
+        const formatDate = (date: Date) => {
+          return date.toLocaleDateString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+          });
+        };
+
+        return {
+          subscription: sub,
+          company: sub.Company,
+          employee,
+          address,
+          subscriptionPeriod: `${formatDate(subscriptionStart)} - ${formatDate(nextDue)}`,
+        };
+      }),
+    );
+
+    // Agrupar por data de criação
+    const groupedByDate = companiesWithUsers
+      .filter((item) => item !== null)
+      .reduce(
+        (acc, item) => {
+          const dateKey = new Date(item.subscription.createdAt)
+            .toISOString()
+            .split('T')[0];
+
+          if (!acc[dateKey]) {
+            acc[dateKey] = [];
+          }
+
+          const company = item.company;
+          const user = item.employee?.user;
+
+          acc[dateKey].push({
+            id: company.id,
+            avatar: company.favIconUrl || undefined,
+            companyName: company.legalName || company.name,
+            code: `#${company.id.slice(0, 4).toUpperCase()}`,
+            document: company.cnpj || '',
+            userName: user?.name || 'N/A',
+            phone: user?.phone || company.phone || company.mobile || '',
+            email: user?.email || company.email || '',
+            createdAt: item.subscription.createdAt,
+            plan: item.subscription.plan.name,
+            planType: item.subscription.plan.planType,
+          });
+
+          return acc;
+        },
+        {} as Record<string, any[]>,
+      );
+
+    // Formatar resposta
+    const data = Object.entries(groupedByDate)
+      .map(([date, items]) => ({
+        date,
+        data: items,
+      }))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const lastPage = Math.ceil(total / limit);
+
+    return {
+      data,
+      total,
+      lastPage,
+    };
+  }
+
   async listTrialCompanies(
     page: number = 1,
     limit: number = 10,

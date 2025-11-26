@@ -1838,6 +1838,8 @@ enum SubscriptionStatus {
   ACTIVE
   EXPIRED
   INACTIVE
+  BLOCKED
+  CANCELED
 }
 
 enum AsaasPaymentStatus {

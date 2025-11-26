@@ -22,6 +22,7 @@ import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpgradeSubscriptionDto } from './dto/upgrade-subscription.dto';
 import { ListTrialCompaniesDto } from './dto/list-trial-companies.dto';
 import { ListIncompleteRegistrationsDto } from './dto/list-incomplete-registrations.dto';
+import { ListActiveClientsDto } from './dto/list-active-clients.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 
 @ApiTags('subscriptions')
@@ -66,6 +67,30 @@ export class SubscriptionsController {
   })
   async listTrialCompanies(@Query() query: ListTrialCompaniesDto) {
     return await this.subscriptionsService.listTrialCompanies(
+      query.page,
+      query.limit,
+      query.status,
+    );
+  }
+
+  @Get('active-clients/totals')
+  @ApiOperation({ summary: 'Get active clients totals by status' })
+  @ApiResponse({
+    status: 200,
+    description: 'Active clients totals',
+  })
+  async getActiveTotals() {
+    return await this.subscriptionsService.getActiveTotals();
+  }
+
+  @Get('active-clients')
+  @ApiOperation({ summary: 'List all companies with active subscriptions (non-trial)' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of companies with active subscriptions',
+  })
+  async listActiveClients(@Query() query: ListActiveClientsDto) {
+    return await this.subscriptionsService.listActiveClients(
       query.page,
       query.limit,
       query.status,
