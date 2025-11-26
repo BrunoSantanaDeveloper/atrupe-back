@@ -67,18 +67,70 @@ export class SubscriptionsService {
     });
   }
 
-  async listTrialCompanies(page: number = 1, limit: number = 10) {
+  async getTrialTotals() {
+    // Buscar todas as subscriptions TRIAL agrupadas por status
+    const subscriptions = await this.prisma.subscription.findMany({
+      where: {
+        plan: {
+          planType: 'TRIAL',
+        },
+      },
+      select: {
+        status: true,
+      },
+    });
+
+    // Contar por status
+    const totals = subscriptions.reduce(
+      (acc, sub) => {
+        acc[sub.status] = (acc[sub.status] || 0) + 1;
+        acc.TOTAL += 1;
+        return acc;
+      },
+      {
+        ACTIVE: 0,
+        INACTIVE: 0,
+        DISCARDED: 0,
+        TOTAL: 0,
+      },
+    );
+
+    return {
+      data: totals,
+    };
+  }
+
+  async listTrialCompanies(
+    page: number = 1,
+    limit: number = 10,
+    statusFilter?: string,
+  ) {
     const skip = (page - 1) * limit;
 
-    // Buscar subscriptions TRIAL ativas
+    // Mapear o status em português para o enum do banco
+    const statusMap: Record<string, string> = {
+      ativas: 'ACTIVE',
+      inativas: 'INACTIVE',
+      descartadas: 'DISCARDED',
+    };
+
+    const mappedStatus = statusFilter ? statusMap[statusFilter] : undefined;
+
+    // Construir o where com filtro opcional de status
+    const whereCondition: any = {
+      plan: {
+        planType: 'TRIAL',
+      },
+    };
+
+    if (mappedStatus) {
+      whereCondition.status = mappedStatus;
+    }
+
+    // Buscar subscriptions TRIAL
     const [subscriptions, total] = await Promise.all([
       this.prisma.subscription.findMany({
-        where: {
-          plan: {
-            planType: 'TRIAL',
-          },
-          status: 'ACTIVE',
-        },
+        where: whereCondition,
         include: {
           plan: true,
           Company: {
@@ -100,12 +152,7 @@ export class SubscriptionsService {
         take: limit,
       }),
       this.prisma.subscription.count({
-        where: {
-          plan: {
-            planType: 'TRIAL',
-          },
-          status: 'ACTIVE',
-        },
+        where: whereCondition,
       }),
     ]);
 

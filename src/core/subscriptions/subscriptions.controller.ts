@@ -30,6 +30,16 @@ import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 export class SubscriptionsController {
   constructor(private readonly subscriptionsService: SubscriptionsService) {}
 
+  @Get('trial-companies/totals')
+  @ApiOperation({ summary: 'Get trial subscriptions totals by status' })
+  @ApiResponse({
+    status: 200,
+    description: 'Trial subscriptions totals',
+  })
+  async getTrialTotals() {
+    return await this.subscriptionsService.getTrialTotals();
+  }
+
   @Get('trial-companies')
   @ApiOperation({ summary: 'List all companies with trial subscriptions' })
   @ApiResponse({
@@ -40,6 +50,7 @@ export class SubscriptionsController {
     return await this.subscriptionsService.listTrialCompanies(
       query.page,
       query.limit,
+      query.status,
     );
   }
 

@@ -1,4 +1,4 @@
-import { IsOptional, IsNumber, Min } from 'class-validator';
+import { IsOptional, IsNumber, Min, IsIn, IsString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -20,4 +20,13 @@ export class ListTrialCompaniesDto {
   @IsNumber()
   @Min(1)
   limit?: number = 10;
+
+  @ApiPropertyOptional({
+    description: 'Filtrar por status',
+    enum: ['ativas', 'inativas', 'descartadas'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['ativas', 'inativas', 'descartadas'])
+  status?: string;
 }
