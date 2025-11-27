@@ -141,35 +141,81 @@ export class SubscriptionsService {
   }
 
   async getTrialTotals() {
-    // Buscar todas as subscriptions TRIAL agrupadas por status
-    const subscriptions = await this.prisma.subscription.findMany({
+    // Buscar todas as subscriptions TRIAL com status ACTIVE
+    const activeTrialSubscriptions = await this.prisma.subscription.findMany({
       where: {
         plan: {
           planType: 'TRIAL',
         },
+        status: 'ACTIVE',
       },
       select: {
-        status: true,
+        id: true,
+        companyId: true,
+        nextDueDate: true,
+        createdAt: true,
       },
     });
 
-    // Contar por status
-    const totals = subscriptions.reduce(
-      (acc, sub) => {
-        acc[sub.status] = (acc[sub.status] || 0) + 1;
-        acc.TOTAL += 1;
-        return acc;
+    // Buscar todas as subscriptions TRIAL com status INACTIVE
+    const inactiveTrialSubscriptions = await this.prisma.subscription.findMany({
+      where: {
+        plan: {
+          planType: 'TRIAL',
+        },
+        status: 'INACTIVE',
       },
-      {
-        ACTIVE: 0,
-        INACTIVE: 0,
-        DISCARDED: 0,
-        TOTAL: 0,
+      select: {
+        id: true,
+        companyId: true,
       },
-    );
+    });
+
+    const now = new Date();
+    let ativas = 0; // Trial ativas que ainda não venceram ou venceram há menos de 7 dias
+    let inativas = 0; // Trial ativas que venceram há mais de 7 dias
+    let descartadas = 0; // Trial inativas sem outra subscription ativa
+
+    // Processar subscriptions ACTIVE
+    for (const sub of activeTrialSubscriptions) {
+      const daysAfterDueDate = Math.floor(
+        (now.getTime() - sub.nextDueDate.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      // Se ainda não venceu ou venceu há menos de 7 dias
+      if (daysAfterDueDate < 7) {
+        ativas++;
+      } else {
+        // Se venceu há mais de 7 dias
+        inativas++;
+      }
+    }
+
+    // Processar subscriptions INACTIVE (descartadas)
+    for (const sub of inactiveTrialSubscriptions) {
+      // Verificar se a empresa tem outra subscription ativa
+      const hasActiveSubscription = await this.prisma.subscription.findFirst({
+        where: {
+          companyId: sub.companyId,
+          status: 'ACTIVE',
+          id: {
+            not: sub.id,
+          },
+        },
+      });
+
+      if (!hasActiveSubscription) {
+        descartadas++;
+      }
+    }
 
     return {
-      data: totals,
+      data: {
+        ACTIVE: ativas,
+        INACTIVE: inativas,
+        DISCARDED: descartadas,
+        TOTAL: ativas + inativas + descartadas,
+      },
     };
   }
 
@@ -372,26 +418,6 @@ export class SubscriptionsService {
   ) {
     const skip = (page - 1) * limit;
 
-    // Mapear o status em português para o enum do banco
-    const statusMap: Record<string, string> = {
-      ativas: 'ACTIVE',
-      inativas: 'INACTIVE',
-      descartadas: 'DISCARDED',
-    };
-
-    const mappedStatus = statusFilter ? statusMap[statusFilter] : undefined;
-
-    // Construir o where com filtro opcional de status
-    const whereCondition: any = {
-      plan: {
-        planType: 'TRIAL',
-      },
-    };
-
-    if (mappedStatus) {
-      whereCondition.status = mappedStatus;
-    }
-
     // Mapear o campo de ordenação para o campo do Prisma
     let orderByConfig: any;
     if (sort === 'name') {
@@ -410,32 +436,72 @@ export class SubscriptionsService {
       };
     }
 
-    // Buscar subscriptions TRIAL
-    const [subscriptions, total] = await Promise.all([
-      this.prisma.subscription.findMany({
-        where: whereCondition,
-        include: {
-          plan: true,
-          Company: {
-            include: {
-              address: {
-                where: {
-                  type: 'Principal',
-                },
-                take: 1,
+    // Buscar todas as subscriptions TRIAL
+    const allTrialSubscriptions = await this.prisma.subscription.findMany({
+      where: {
+        plan: {
+          planType: 'TRIAL',
+        },
+      },
+      include: {
+        plan: true,
+        Company: {
+          include: {
+            address: {
+              where: {
+                type: 'Principal',
               },
+              take: 1,
             },
           },
-          customer: true,
         },
-        orderBy: orderByConfig,
-        skip,
-        take: limit,
-      }),
-      this.prisma.subscription.count({
-        where: whereCondition,
-      }),
-    ]);
+        customer: true,
+      },
+      orderBy: orderByConfig,
+    });
+
+    // Filtrar subscriptions baseado na nova lógica de status
+    const now = new Date();
+    const filteredSubscriptions = [];
+
+    for (const sub of allTrialSubscriptions) {
+      const daysAfterDueDate = Math.floor(
+        (now.getTime() - sub.nextDueDate.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      let subscriptionCategory: string | null = null;
+
+      // Se ainda não venceu ou venceu há menos de 7 dias
+      if (sub.status === 'ACTIVE' && daysAfterDueDate < 7) {
+        subscriptionCategory = 'ativas';
+      } else if (sub.status === 'ACTIVE' && daysAfterDueDate >= 7) {
+        subscriptionCategory = 'inativas';
+      } else if (sub.status === 'INACTIVE') {
+        // Verificar se tem outra subscription ativa
+        const hasActiveSubscription = await this.prisma.subscription.findFirst({
+          where: {
+            companyId: sub.companyId,
+            status: 'ACTIVE',
+            id: {
+              not: sub.id,
+            },
+          },
+        });
+
+        if (!hasActiveSubscription) {
+          subscriptionCategory = 'descartadas';
+        }
+      }
+
+      // Adicionar à lista se corresponder ao filtro ou se não houver filtro
+      if (!statusFilter || subscriptionCategory === statusFilter) {
+        filteredSubscriptions.push(sub);
+      }
+    }
+
+    // Aplicar paginação
+    const total = filteredSubscriptions.length;
+    const subscriptions = filteredSubscriptions.slice(skip, skip + limit);
 
     // Buscar informações dos usuários (primeiro employee da empresa que tem user)
     const companiesWithUsers = await Promise.all(
@@ -498,6 +564,7 @@ export class SubscriptionsService {
           const user = item.employee?.user;
 
           acc[dateKey].push({
+            subscriptionId: item.subscription.id,
             company: {
               id: company.id,
               name: company.name,
@@ -1029,6 +1096,76 @@ export class SubscriptionsService {
         customer: true,
       },
     });
+  }
+
+  async extendTrialPeriod(
+    subscriptionId: string,
+    password: string,
+    adminUserId: string,
+  ) {
+    // Validar senha do administrador
+    const adminUser = await this.prisma.user.findFirst({
+      where: { id: adminUserId },
+    });
+
+    if (!adminUser) {
+      throw new UnauthorizedException('Usuário administrador não encontrado.');
+    }
+
+    const isPasswordValid = await argon2.verify(adminUser.password, password);
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Senha do administrador incorreta.');
+    }
+
+    // Buscar a subscription
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+      include: {
+        plan: true,
+        Company: true,
+      },
+    });
+
+    if (!subscription) {
+      throw new NotFoundException('Subscription não encontrada.');
+    }
+
+    // Verificar se é uma subscription TRIAL
+    if (subscription.plan.planType !== 'TRIAL') {
+      throw new BadRequestException(
+        'Apenas subscriptions TRIAL podem ter o período estendido.',
+      );
+    }
+
+    // Calcular nova data: hoje + 7 dias
+    const now = new Date();
+    const newDueDate = new Date(now);
+    newDueDate.setDate(newDueDate.getDate() + 7);
+
+    // Atualizar a subscription
+    const updatedSubscription = await this.prisma.subscription.update({
+      where: { id: subscriptionId },
+      data: {
+        nextDueDate: newDueDate,
+      },
+      include: {
+        plan: true,
+        Company: true,
+        customer: true,
+      },
+    });
+
+    this.logger.log(
+      `Período trial estendido para ${subscription.Company?.name} pelo admin ${adminUser.name}. Novo vencimento: ${newDueDate.toISOString()}`,
+    );
+
+    return {
+      message: 'Período trial estendido com sucesso.',
+      subscription: updatedSubscription,
+      previousDueDate: subscription.nextDueDate,
+      newDueDate,
+    };
   }
 
   async assignManual(assignDto: AssignSubscriptionDto, adminUserId: string) {

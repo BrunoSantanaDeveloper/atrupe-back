@@ -21,6 +21,7 @@ import {
 import { SubscriptionsService } from './subscriptions.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { AssignSubscriptionDto } from './dto/assign-subscription.dto';
+import { ExtendTrialDto } from './dto/extend-trial.dto';
 import { UpgradeSubscriptionDto } from './dto/upgrade-subscription.dto';
 import { ListTrialCompaniesDto } from './dto/list-trial-companies.dto';
 import { ListIncompleteRegistrationsDto } from './dto/list-incomplete-registrations.dto';
@@ -164,6 +165,46 @@ export class SubscriptionsController {
   ) {
     createSubscriptionDto.companyId = req.user.companyId;
     return await this.subscriptionsService.create(createSubscriptionDto, req);
+  }
+
+  @Patch(':id/extend-trial')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary:
+      'Estende o período trial por mais 7 dias a partir de hoje (apenas SystemAdmin)',
+  })
+  @ApiParam({ name: 'id', description: 'Subscription ID' })
+  @ApiBody({
+    description: 'Senha do administrador para autorizar a extensão',
+    type: ExtendTrialDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Trial period extended successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Only TRIAL subscriptions can be extended',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Senha do administrador incorreta.',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado. Apenas administradores do sistema.',
+  })
+  @ApiResponse({ status: 404, description: 'Subscription not found' })
+  async extendTrialPeriod(
+    @Param('id') subscriptionId: string,
+    @Body() extendTrialDto: ExtendTrialDto,
+    @Req() req,
+  ) {
+    return await this.subscriptionsService.extendTrialPeriod(
+      subscriptionId,
+      extendTrialDto.password,
+      req.user.userId,
+    );
   }
 
   @Patch(':id/upgrade')
