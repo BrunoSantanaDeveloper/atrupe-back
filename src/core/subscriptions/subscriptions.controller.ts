@@ -16,14 +16,17 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiParam,
+  ApiBody,
 } from '@nestjs/swagger';
 import { SubscriptionsService } from './subscriptions.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
+import { AssignSubscriptionDto } from './dto/assign-subscription.dto';
 import { UpgradeSubscriptionDto } from './dto/upgrade-subscription.dto';
 import { ListTrialCompaniesDto } from './dto/list-trial-companies.dto';
 import { ListIncompleteRegistrationsDto } from './dto/list-incomplete-registrations.dto';
 import { ListActiveClientsDto } from './dto/list-active-clients.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 
 @ApiTags('subscriptions')
 @Controller('subscriptions')
@@ -84,7 +87,9 @@ export class SubscriptionsController {
   }
 
   @Get('active-clients')
-  @ApiOperation({ summary: 'List all companies with active subscriptions (non-trial)' })
+  @ApiOperation({
+    summary: 'List all companies with active subscriptions (non-trial)',
+  })
   @ApiResponse({
     status: 200,
     description: 'List of companies with active subscriptions',
@@ -107,6 +112,39 @@ export class SubscriptionsController {
   async getActive(@Req() req) {
     return await this.subscriptionsService.findActiveByCompanyId(
       req.user.companyId,
+    );
+  }
+
+  @Post('assign-manual')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary:
+      'Atribui o plano START manualmente a uma empresa (apenas SystemAdmin)',
+  })
+  @ApiBody({
+    description: 'Dados para atribuir o plano START à empresa',
+    type: AssignSubscriptionDto,
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Plano START atribuído com sucesso',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Senha do administrador incorreta.',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado. Apenas administradores do sistema.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Empresa não encontrada ou plano START não existe no sistema.',
+  })
+  async assignManual(@Body() assignDto: AssignSubscriptionDto, @Req() req) {
+    return await this.subscriptionsService.assignManual(
+      assignDto,
+      req.user.userId,
     );
   }
 

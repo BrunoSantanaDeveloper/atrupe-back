@@ -3,13 +3,16 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
+import { AssignSubscriptionDto } from './dto/assign-subscription.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import axios from 'axios';
 import { CustomersService } from '../customers/customers.service';
 import { asaasConfig } from 'src/config/configuration';
 import { v4 as uuidv4 } from 'uuid';
+import * as argon2 from 'argon2';
 
 @Injectable()
 export class SubscriptionsService {
@@ -466,7 +469,10 @@ export class SubscriptionsService {
           const user = item.employee?.user;
 
           acc[dateKey].push({
-            id: company.id,
+            company: {
+              id: company.id,
+              name: company.name,
+            },
             avatar: company.favIconUrl || null,
             companyName: company.legalName || company.name,
             displayName: company.name,
@@ -994,6 +1000,132 @@ export class SubscriptionsService {
         customer: true,
       },
     });
+  }
+
+  async assignManual(assignDto: AssignSubscriptionDto, adminUserId: string) {
+    // Validar senha do administrador
+    const adminUser = await this.prisma.user.findFirst({
+      where: { id: adminUserId },
+    });
+
+    if (!adminUser) {
+      throw new UnauthorizedException('Usuário administrador não encontrado.');
+    }
+
+    const isPasswordValid = await argon2.verify(
+      adminUser.password,
+      assignDto.password,
+    );
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Senha do administrador incorreta.');
+    }
+
+    // Verificar se a empresa existe
+    const company = await this.prisma.company.findUnique({
+      where: { id: assignDto.companyId },
+      include: {
+        customer: true,
+      },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Empresa não encontrada.');
+    }
+
+    // Buscar o plano START automaticamente
+    const plan = await this.prisma.plan.findFirst({
+      where: { planType: 'START' },
+    });
+
+    if (!plan) {
+      throw new NotFoundException('Plano START não encontrado no sistema.');
+    }
+
+    // Calcular valor base do plano (sem features ou usuários adicionais)
+    const totalValue = plan.basePrice / 100;
+
+    // Verificar se já existe subscription ativa para a empresa
+    const existingSubscription = await this.prisma.subscription.findFirst({
+      where: {
+        companyId: assignDto.companyId,
+        status: 'ACTIVE',
+      },
+    });
+
+    if (existingSubscription) {
+      // Desativar subscription anterior
+      await this.prisma.subscription.update({
+        where: { id: existingSubscription.id },
+        data: { status: 'INACTIVE' },
+      });
+      this.logger.log(
+        `Subscription anterior ${existingSubscription.id} desativada`,
+      );
+    }
+
+    // Buscar ou criar customer
+    let customer;
+    if (company.customer && company.customer.length > 0) {
+      customer = company.customer[0];
+      this.logger.log(`Customer existente encontrado: ${customer.id}`);
+    } else {
+      // Criar customer básico se não existir
+      const user = await this.prisma.user.findFirst({
+        where: {
+          employee: {
+            some: {
+              companyId: assignDto.companyId,
+            },
+          },
+        },
+      });
+
+      customer = await this.prisma.customer.create({
+        data: {
+          name: company.name || company.legalName,
+          email: company.email || user?.email || 'sem-email@temp.com',
+          document: company.cnpj || `temp_${company.id}`,
+          asaasCustomerId: `manual_${uuidv4()}`,
+          companyId: company.id,
+        },
+      });
+      this.logger.log(`Customer criado: ${customer.id}`);
+    }
+
+    // Criar subscription manualmente (sem passar pelo Asaas)
+    const nextDueDate = new Date();
+    nextDueDate.setDate(nextDueDate.getDate() + 30); // 30 dias
+
+    const subscription = await this.prisma.subscription.create({
+      data: {
+        customerId: customer.id,
+        planId: plan.id,
+        companyId: assignDto.companyId,
+        additionalUsers: 0,
+        asaasSubscriptionId: `manual_${uuidv4()}`, // ID manual, não vem do Asaas
+        nextDueDate,
+        cycle: 'MONTHLY',
+        billingType: 'CREDIT_CARD',
+        value: totalValue,
+        status: 'ACTIVE', // Ativar imediatamente
+      },
+    });
+
+    this.logger.log(
+      `Subscription START atribuída manualmente: ${subscription.id} para empresa ${company.name}`,
+    );
+
+    return {
+      message: 'Plano START atribuído com sucesso à empresa.',
+      subscription: await this.prisma.subscription.findUnique({
+        where: { id: subscription.id },
+        include: {
+          plan: true,
+          customer: true,
+        },
+      }),
+    };
   }
 
   private async cancelAsaasSubscription(
