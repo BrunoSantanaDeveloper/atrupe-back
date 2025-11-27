@@ -14,6 +14,7 @@ import {
   CreateUserDto,
 } from './dto/create.dto';
 import { CompleteRegistrationDto } from './dto/complete-registration.dto';
+import { EditClientDto } from './dto/edit-client.dto';
 import * as argon2 from 'argon2';
 import { UserResponseDto } from './dto/response.dto';
 import { CacheService } from 'src/svc/cache/cache.service';
@@ -940,6 +941,168 @@ export class UserService {
       } catch (rollbackError) {
         this.logger.error('Erro durante rollback:', rollbackError);
       }
+
+      if (error instanceof PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException('E-mail ou CNPJ já cadastrado.');
+        }
+      }
+      throw error;
+    }
+  }
+
+  async editClient(editClientDto: EditClientDto, adminUserId: string) {
+    // Busca o usuário admin para validar a senha
+    const adminUser = await this.prisma.user.findFirst({
+      where: { id: adminUserId },
+    });
+
+    if (!adminUser) {
+      throw new UnauthorizedException('Usuário administrador não encontrado.');
+    }
+
+    // Valida a senha do administrador
+    const isPasswordValid = await argon2.verify(
+      adminUser.password,
+      editClientDto.password,
+    );
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Senha do administrador incorreta.');
+    }
+
+    // Busca a empresa pelo ID
+    const company = await this.prisma.company.findUnique({
+      where: { id: editClientDto.id },
+      include: {
+        customer: {
+          include: {
+            user: true,
+          },
+        },
+        address: true,
+      },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Empresa não encontrada.');
+    }
+
+    // Verifica se o email está sendo alterado e se já existe outro registro com esse email
+    if (company.customer.length > 0) {
+      const currentEmail = company.customer[0].email;
+      if (currentEmail !== editClientDto.email) {
+        // Email está sendo alterado, verifica duplicação
+        const userToExclude =
+          company.customer[0].user && company.customer[0].user.length > 0
+            ? company.customer[0].user[0].id
+            : undefined;
+
+        if (userToExclude) {
+          const existingUser = await this.prisma.user.findFirst({
+            where: {
+              email: editClientDto.email,
+              id: { not: userToExclude },
+            },
+          });
+          if (existingUser) {
+            throw new ConflictException('E-mail já cadastrado.');
+          }
+        }
+
+        const existingCustomer = await this.prisma.customer.findFirst({
+          where: {
+            email: editClientDto.email,
+            id: { not: company.customer[0].id },
+          },
+        });
+        if (existingCustomer) {
+          throw new ConflictException('E-mail já cadastrado.');
+        }
+      }
+    }
+
+    // Verifica se o CNPJ está sendo alterado e se já existe outro registro
+    if (company.cnpj !== editClientDto.document) {
+      const existingCompany = await this.prisma.company.findFirst({
+        where: {
+          cnpj: editClientDto.document,
+          id: { not: editClientDto.id },
+        },
+      });
+      if (existingCompany) {
+        throw new ConflictException('CNPJ/CPF já cadastrado.');
+      }
+    }
+
+    try {
+      // Atualiza a empresa
+      await this.prisma.company.update({
+        where: { id: editClientDto.id },
+        data: {
+          name: editClientDto.companyName,
+          legalName: editClientDto.legalName,
+          cnpj: editClientDto.document,
+          email: editClientDto.email,
+          phone: editClientDto.phone,
+          mobile: editClientDto.phone,
+        },
+      });
+
+      // Atualiza o endereço da empresa (se existir)
+      if (company.address.length > 0) {
+        await this.prisma.address.update({
+          where: { id: company.address[0].id },
+          data: {
+            city: editClientDto.cityId,
+            state: editClientDto.stateId,
+          },
+        });
+      } else {
+        // Cria endereço se não existir
+        await this.prisma.address.create({
+          data: {
+            companyId: editClientDto.id,
+            city: editClientDto.cityId,
+            state: editClientDto.stateId,
+            street: '',
+            number: '',
+            neighborhood: '',
+            zipcode: '',
+          },
+        });
+      }
+
+      // Atualiza o customer (se existir)
+      if (company.customer.length > 0) {
+        const customer = company.customer[0];
+        await this.prisma.customer.update({
+          where: { id: customer.id },
+          data: {
+            name: editClientDto.userName,
+            email: editClientDto.email,
+            document: editClientDto.document,
+          },
+        });
+
+        // Atualiza o user (se existir)
+        if (customer.user && customer.user.length > 0) {
+          await this.prisma.user.update({
+            where: { id: customer.user[0].id },
+            data: {
+              name: editClientDto.userName,
+              email: editClientDto.email,
+              phone: editClientDto.phone,
+            },
+          });
+        }
+      }
+
+      return {
+        message: 'Cliente atualizado com sucesso.',
+      };
+    } catch (error) {
+      this.logger.error('Erro ao editar cliente:', error);
 
       if (error instanceof PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
