@@ -145,6 +145,40 @@ export class UserController {
     return user;
   }
 
+  @Patch('edit-client')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Edita um cliente já cadastrado (apenas SystemAdmin)',
+  })
+  @ApiBody({
+    description: 'Dados atualizados do cliente',
+    type: EditClientDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Cliente atualizado com sucesso.',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Senha do administrador incorreta.',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado. Apenas administradores do sistema.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Empresa não encontrada.',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'E-mail ou CNPJ já cadastrado.',
+  })
+  async editClient(@Req() req, @Body() editClientDto: EditClientDto) {
+    return await this.userService.editClient(editClientDto, req.user.userId);
+  }
+
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   @ApiParam({ name: 'id', required: true, description: 'ID do usuário' })
@@ -335,39 +369,5 @@ export class UserController {
       completeRegistrationDto,
       req.user.userId,
     );
-  }
-
-  @Patch('edit-client')
-  @UseGuards(JwtAuthGuard, SystemAdminGuard)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Edita um cliente já cadastrado (apenas SystemAdmin)',
-  })
-  @ApiBody({
-    description: 'Dados atualizados do cliente',
-    type: EditClientDto,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Cliente atualizado com sucesso.',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Senha do administrador incorreta.',
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Acesso negado. Apenas administradores do sistema.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Empresa não encontrada.',
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'E-mail ou CNPJ já cadastrado.',
-  })
-  async editClient(@Req() req, @Body() editClientDto: EditClientDto) {
-    return await this.userService.editClient(editClientDto, req.user.userId);
   }
 }

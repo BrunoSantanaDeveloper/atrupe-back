@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class EditClientDto {
@@ -65,6 +65,7 @@ export class EditClientDto {
   })
   phone: string;
 
+  @IsOptional()
   @IsString()
   @ApiProperty({
     description: 'ID do Estado',
@@ -73,6 +74,7 @@ export class EditClientDto {
   })
   stateId?: string;
 
+  @IsOptional()
   @IsString()
   @ApiProperty({
     description: 'ID da Cidade',

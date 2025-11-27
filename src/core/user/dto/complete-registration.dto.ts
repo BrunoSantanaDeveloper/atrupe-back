@@ -1,4 +1,9 @@
-import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CompleteRegistrationDto {
@@ -65,6 +70,7 @@ export class CompleteRegistrationDto {
   })
   phone: string;
 
+  @IsOptional()
   @IsString()
   @ApiProperty({
     description: 'ID do Estado',
@@ -73,6 +79,7 @@ export class CompleteRegistrationDto {
   })
   stateId?: string;
 
+  @IsOptional()
   @IsString()
   @ApiProperty({
     description: 'ID da Cidade',
