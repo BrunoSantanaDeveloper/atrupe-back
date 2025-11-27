@@ -70,8 +70,28 @@ model Company {
   mainQuotations        Quotation[]          @relation("MainCompany")
   fiscalQuotations      Quotation[]          @relation("FiscalSubCompany")
   sectors               CompanySector[]      @relation("CompanyToCompanySector")
+  history               CompanyHistory[]
 
   @@map("companies")
+}
+
+model CompanyHistory {
+  id            String   @id @default(uuid())
+  companyId     String
+  action        String // CREATE, UPDATE, ACTIVATE, DEACTIVATE, UPDATE_PROFILE, UPDATE_SETTINGS
+  description   String
+  changes       Json? // { before: {...}, after: {...} }
+  metadata      Json? // Dados adicionais
+  createdBy     String?
+  createdByName String? // Desnormalizado para performance
+  createdAt     DateTime @default(now())
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user          User?    @relation("CompanyHistoryUser", fields: [createdBy], references: [id])
+
+  @@index([companyId])
+  @@index([createdAt])
+  @@index([createdBy])
+  @@map("company_history")
 }
 
 model Address {
@@ -380,13 +400,14 @@ model User {
   employee             Employee[]
   userContract         UserContract[]
   userRole             UserRole[]
-  receivableHistory    ReceivableHistory[] @relation("ReceivableHistoryUser")
-  payableHistory       PayableHistory[]    @relation("PayableHistoryUser")
-  employeeHistory      EmployeeHistory[]   @relation("EmployeeHistoryUser")
-  quotationHistory     QuotationHistory[]  @relation("QuotationHistoryUser")
-  orderHistory         OrderHistory[]      @relation("OrderHistoryUser")
-  userActivities       UserActivity[]
-  customer             Customer?           @relation(fields: [customerId], references: [id])
+  receivableHistory          ReceivableHistory[]          @relation("ReceivableHistoryUser")
+  payableHistory             PayableHistory[]             @relation("PayableHistoryUser")
+  employeeHistory            EmployeeHistory[]            @relation("EmployeeHistoryUser")
+  quotationHistory           QuotationHistory[]           @relation("QuotationHistoryUser")
+  orderHistory               OrderHistory[]               @relation("OrderHistoryUser")
+  companyHistory             CompanyHistory[]             @relation("CompanyHistoryUser")
+  userActivities             UserActivity[]
+  customer                   Customer?                    @relation(fields: [customerId], references: [id])
 
   @@index([email])
   @@map("users")

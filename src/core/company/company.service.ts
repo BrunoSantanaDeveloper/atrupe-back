@@ -1393,4 +1393,70 @@ export class CompanyService {
       data: supplierCategories,
     });
   }
+
+  // Métodos de histórico
+  async createHistory(
+    companyId: string,
+    action: string,
+    description: string,
+    changes?: { before?: any; after?: any },
+    metadata?: Record<string, any>,
+    userId?: string,
+    userName?: string,
+  ) {
+    return await this.prisma.companyHistory.create({
+      data: {
+        companyId,
+        action,
+        description,
+        changes: changes || undefined,
+        metadata: metadata || undefined,
+        createdBy: userId || null,
+        createdByName: userName || null,
+      },
+    });
+  }
+
+  async listHistory(companyId: string, page: number = 1, limit: number = 10) {
+    const skip = (page - 1) * limit;
+
+    const [history, total] = await Promise.all([
+      this.prisma.companyHistory.findMany({
+        where: {
+          companyId,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        skip,
+        take: limit,
+      }),
+      this.prisma.companyHistory.count({
+        where: {
+          companyId,
+        },
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data: history,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+      },
+    };
+  }
 }

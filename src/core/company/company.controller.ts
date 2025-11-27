@@ -13,6 +13,8 @@ import {
 import { CompanyService } from './company.service';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
+import { CreateCompanyHistoryDto } from './dto/create-company-history.dto';
+import { ListCompanyHistoryDto } from './dto/list-company-history.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import {
   ApiBody,
@@ -162,5 +164,43 @@ export class CompanyController {
   })
   remove(@Param('id') id: string) {
     return this.companyService.remove(id);
+  }
+
+  @Get(':id/history')
+  @ApiOperation({ summary: 'Lista o histórico de uma empresa' })
+  @ApiParam({ name: 'id', required: true, description: 'ID da empresa' })
+  @ApiResponse({
+    status: 200,
+    description: 'Histórico da empresa retornado com sucesso.',
+  })
+  async listHistory(
+    @Param('id') id: string,
+    @Query() query: ListCompanyHistoryDto,
+  ) {
+    return await this.companyService.listHistory(id, query.page, query.limit);
+  }
+
+  @Post(':id/history')
+  @ApiOperation({ summary: 'Adiciona um registro ao histórico da empresa' })
+  @ApiParam({ name: 'id', required: true, description: 'ID da empresa' })
+  @ApiBody({ type: CreateCompanyHistoryDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Registro de histórico criado com sucesso.',
+  })
+  async createHistory(
+    @Param('id') id: string,
+    @Body() createHistoryDto: CreateCompanyHistoryDto,
+    @Req() req,
+  ) {
+    return await this.companyService.createHistory(
+      id,
+      createHistoryDto.action,
+      createHistoryDto.description,
+      createHistoryDto.changes,
+      createHistoryDto.metadata,
+      req.user.userId,
+      req.user.name,
+    );
   }
 }
