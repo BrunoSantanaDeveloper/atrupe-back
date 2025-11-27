@@ -373,19 +373,29 @@ export class SubscriptionsService {
 
           const company = item.company;
           const user = item.employee?.user;
+          const employee = item.employee;
+          const address = item.address;
 
           acc[dateKey].push({
             id: company.id,
-            avatar: company.favIconUrl || undefined,
+            avatar: company.favIconUrl || '',
             companyName: company.legalName || company.name,
             code: `#${company.id.slice(0, 4).toUpperCase()}`,
             document: company.cnpj || '',
-            userName: user?.name || 'N/A',
+            userName: user?.name || '',
+            userDocument: employee?.cpf || '',
             phone: user?.phone || company.phone || company.mobile || '',
             email: user?.email || company.email || '',
             createdAt: item.subscription.createdAt,
             plan: item.subscription.plan.name,
             planType: item.subscription.plan.planType,
+            status: item.subscription.status,
+            state: address?.state
+              ? { id: address.state, name: address.state }
+              : { id: '', name: '' },
+            city: address?.city
+              ? { id: address.city, name: address.city }
+              : { id: '', name: '' },
           });
 
           return acc;
