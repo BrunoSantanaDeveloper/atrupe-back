@@ -807,8 +807,8 @@ export class UserService {
           street: '',
           number: '',
           neighborhood: '',
-          city: completeRegistrationDto.cityId,
-          state: completeRegistrationDto.stateId,
+          city: completeRegistrationDto.cityId || '',
+          state: completeRegistrationDto.stateId || '',
           zipcode: '',
         },
       };
@@ -1054,17 +1054,17 @@ export class UserService {
         await this.prisma.address.update({
           where: { id: company.address[0].id },
           data: {
-            city: editClientDto.cityId,
-            state: editClientDto.stateId,
+            city: editClientDto.cityId || company.address[0].city,
+            state: editClientDto.stateId || company.address[0].state,
           },
         });
-      } else {
-        // Cria endereço se não existir
+      } else if (editClientDto.cityId || editClientDto.stateId) {
+        // Cria endereço se não existir e ao menos um campo foi fornecido
         await this.prisma.address.create({
           data: {
             companyId: editClientDto.id,
-            city: editClientDto.cityId,
-            state: editClientDto.stateId,
+            city: editClientDto.cityId || '',
+            state: editClientDto.stateId || '',
             street: '',
             number: '',
             neighborhood: '',

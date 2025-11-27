@@ -65,23 +65,21 @@ export class EditClientDto {
   })
   phone: string;
 
-  @IsNotEmpty()
   @IsString()
   @ApiProperty({
     description: 'ID do Estado',
     example: 'SP',
-    required: true,
+    required: false,
   })
-  stateId: string;
+  stateId?: string;
 
-  @IsNotEmpty()
   @IsString()
   @ApiProperty({
     description: 'ID da Cidade',
     example: 'São Paulo',
-    required: true,
+    required: false,
   })
-  cityId: string;
+  cityId?: string;
 
   @IsNotEmpty()
   @IsString()

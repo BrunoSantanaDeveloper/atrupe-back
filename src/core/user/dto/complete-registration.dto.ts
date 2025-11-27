@@ -65,23 +65,21 @@ export class CompleteRegistrationDto {
   })
   phone: string;
 
-  @IsNotEmpty()
   @IsString()
   @ApiProperty({
     description: 'ID do Estado',
-    example: 'uuid-do-estado',
-    required: true,
+    example: 'SP',
+    required: false,
   })
-  stateId: string;
+  stateId?: string;
 
-  @IsNotEmpty()
   @IsString()
   @ApiProperty({
     description: 'ID da Cidade',
-    example: 'uuid-da-cidade',
-    required: true,
+    example: 'São Paulo',
+    required: false,
   })
-  cityId: string;
+  cityId?: string;
 
   @IsNotEmpty()
   @IsString()
