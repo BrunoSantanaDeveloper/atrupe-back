@@ -49,6 +49,7 @@ export class SubscriptionsController {
     return await this.subscriptionsService.listIncompleteRegistrations(
       query.page,
       query.limit,
+      query.sort,
     );
   }
 
@@ -73,6 +74,7 @@ export class SubscriptionsController {
       query.page,
       query.limit,
       query.status,
+      query.sort,
     );
   }
 

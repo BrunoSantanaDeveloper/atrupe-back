@@ -70,14 +70,26 @@ export class SubscriptionsService {
     });
   }
 
-  async listIncompleteRegistrations(page: number = 1, limit: number = 10) {
+  async listIncompleteRegistrations(
+    page: number = 1,
+    limit: number = 10,
+    sort: 'name' | 'updated_at' | 'created_at' = 'name',
+  ) {
     const skip = (page - 1) * limit;
+
+    // Mapear o campo de ordenação para o campo do Prisma
+    const orderByField =
+      sort === 'updated_at'
+        ? 'updatedAt'
+        : sort === 'created_at'
+          ? 'createdAt'
+          : 'name';
 
     // Buscar todos os registros de MailVerification
     const [mailVerifications, total] = await Promise.all([
       this.prisma.mailVerification.findMany({
         orderBy: {
-          createdAt: 'desc',
+          [orderByField]: orderByField === 'name' ? 'asc' : 'desc',
         },
         skip,
         take: limit,
@@ -356,6 +368,7 @@ export class SubscriptionsService {
     page: number = 1,
     limit: number = 10,
     statusFilter?: string,
+    sort: 'name' | 'updated_at' | 'created_at' = 'name',
   ) {
     const skip = (page - 1) * limit;
 
@@ -379,6 +392,24 @@ export class SubscriptionsService {
       whereCondition.status = mappedStatus;
     }
 
+    // Mapear o campo de ordenação para o campo do Prisma
+    let orderByConfig: any;
+    if (sort === 'name') {
+      orderByConfig = {
+        Company: {
+          name: 'asc',
+        },
+      };
+    } else if (sort === 'updated_at') {
+      orderByConfig = {
+        updatedAt: 'desc',
+      };
+    } else {
+      orderByConfig = {
+        createdAt: 'desc',
+      };
+    }
+
     // Buscar subscriptions TRIAL
     const [subscriptions, total] = await Promise.all([
       this.prisma.subscription.findMany({
@@ -397,9 +428,7 @@ export class SubscriptionsService {
           },
           customer: true,
         },
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: orderByConfig,
         skip,
         take: limit,
       }),

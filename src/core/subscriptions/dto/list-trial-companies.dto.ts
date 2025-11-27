@@ -29,4 +29,13 @@ export class ListTrialCompaniesDto {
   @IsString()
   @IsIn(['ativas', 'inativas', 'descartadas'])
   status?: string;
+
+  @ApiPropertyOptional({
+    description: 'Campo de ordenação',
+    enum: ['name', 'updated_at', 'created_at'],
+    default: 'name',
+  })
+  @IsOptional()
+  @IsIn(['name', 'updated_at', 'created_at'])
+  sort?: 'name' | 'updated_at' | 'created_at' = 'name';
 }

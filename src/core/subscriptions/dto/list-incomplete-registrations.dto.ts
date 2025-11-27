@@ -1,4 +1,4 @@
-import { IsOptional, IsNumber, Min } from 'class-validator';
+import { IsOptional, IsNumber, Min, IsIn } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -20,4 +20,13 @@ export class ListIncompleteRegistrationsDto {
   @IsNumber()
   @Min(1)
   limit?: number = 10;
+
+  @ApiPropertyOptional({
+    description: 'Campo de ordenação',
+    enum: ['name', 'updated_at', 'created_at'],
+    default: 'name',
+  })
+  @IsOptional()
+  @IsIn(['name', 'updated_at', 'created_at'])
+  sort?: 'name' | 'updated_at' | 'created_at' = 'name';
 }
