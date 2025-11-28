@@ -40,6 +40,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: '',
+    page: null,
+    modal: null,
+    buttonTitle: null,
   },
 
   // --- Empresa e Sistema ---
@@ -47,7 +50,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Empresa e Sistema',
     description:
-      'Configure os dados essenciais da sua empresa no sistema Atrupe.',
+      'Configurações da empresa - Configure os dados essenciais da sua empresa no sistema Atrupe.',
     order: 2,
     files: [
       {
@@ -64,7 +67,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Empresa e Sistema',
     description:
-      'Defina os setores da sua empresa para organizar melhor suas operações.',
+      'Setores - Defina os setores da sua empresa para organizar melhor suas operações.',
     order: 3,
     files: [
       {
@@ -73,15 +76,15 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: '',
-    page: null,
-    modal: 'SectorsModal',
+    page: '/configuracoes/empresa-e-sistema/setores',
+    modal: null,
     buttonTitle: 'Setores',
   },
   {
     type: ['START'],
     section: 'Empresa e Sistema',
     description:
-      'Configure os padrões de unidades de medida utilizados pela sua empresa para os produtos.',
+      'Padrão de medida - Configure os padrões de unidades de medida utilizados pela sua empresa para os produtos.',
     order: 4,
     files: [
       {
@@ -90,15 +93,15 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: 'https://vimeo.com/1140147584',
-    page: '/configuracoes/medidas',
-    modal: null,
+    page: null,
+    modal: 'UnitOfMeasureModal',
     buttonTitle: 'Padrão de medida',
   },
   {
     type: ['START'],
     section: 'Empresa e Sistema',
     description:
-      'Adicione e gerencie os colaboradores que terão acesso ao sistema, definindo seus perfis e permissões.',
+      'Colaboradores e usuários - Adicione e gerencie os colaboradores que terão acesso ao sistema, definindo seus perfis e permissões.',
     order: 5,
     files: [
       {
@@ -107,7 +110,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: 'https://vimeo.com/1140154101',
-    page: '/configuracoes/colaboradores',
+    page: '/configuracoes/empresa-e-sistema/colaboradores-e-usuarios',
     modal: null,
     buttonTitle: 'Colaboradores e usuários',
   },
@@ -117,7 +120,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Produtos',
     description:
-      'Gerencie seus produtos: cadastre novos itens, edite os existentes e organize seu catálogo.',
+      'Produtos - Gerencie seus produtos: cadastre novos itens, edite os existentes e organize seu catálogo.',
     order: 6,
     files: [
       {
@@ -126,7 +129,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: '',
-    page: '/produtos',
+    page: '/configuracoes/produtos',
     modal: null,
     buttonTitle: 'Produtos',
   },
@@ -136,7 +139,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Cadastros',
     description:
-      'Cadastre e gerencie seus clientes para facilitar o processo de vendas e atendimento.',
+      'Clientes - Cadastre e gerencie seus clientes para facilitar o processo de vendas e atendimento.',
     order: 7,
     files: [
       {
@@ -145,7 +148,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: '',
-    page: '/clientes',
+    page: '/cadastros/clientes',
     modal: null,
     buttonTitle: 'Clientes',
   },
@@ -153,7 +156,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Cadastros',
     description:
-      'Cadastre e gerencie seus fornecedores para controlar melhor suas compras e estoque.',
+      'Fornecedores - Cadastre e gerencie seus fornecedores para controlar melhor suas compras e estoque.',
     order: 8,
     files: [
       {
@@ -162,7 +165,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: '',
-    page: '/fornecedores',
+    page: '/cadastros/fornecedores',
     modal: null,
     buttonTitle: 'Fornecedores',
   },
@@ -172,7 +175,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Configurações / Vendas',
     description:
-      'Configure as séries de vendas para organizar e numerar seus documentos de vendas (orçamentos, pedidos, notas fiscais).',
+      'Série de vendas - Configure as séries de vendas para organizar e numerar seus documentos de vendas (orçamentos, pedidos, notas fiscais).',
     order: 9,
     files: [
       {
@@ -181,15 +184,15 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: '',
-    page: null,
-    modal: 'SalesSeriesModal',
+    page: '/configuracoes/vendas/series-de-venda',
+    modal: null,
     buttonTitle: 'Série de vendas',
   },
   {
     type: ['START'],
     section: 'Configurações / Vendas',
     description:
-      'Defina os perfis de vendedor para estabelecer permissões, metas e comissões da equipe de vendas.',
+      'Perfil de vendedor - Defina os perfis de vendedor para estabelecer permissões, metas e comissões da equipe de vendas.',
     order: 10,
     files: [
       {
@@ -198,8 +201,8 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: '',
-    page: null,
-    modal: 'SalesProfileModal',
+    page: '/configuracoes/vendas/perfil-de-vendedor',
+    modal: null,
     buttonTitle: 'Perfil de vendedor',
   },
 
@@ -208,7 +211,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Vendas',
     description:
-      'Aprenda a criar e gerenciar orçamentos para seus clientes de forma eficiente.',
+      'Orçamentos - Aprenda a criar e gerenciar orçamentos para seus clientes de forma eficiente.',
     order: 11,
     files: [
       {
@@ -225,7 +228,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Vendas',
     description:
-      'Conheça as melhores práticas para criar orçamentos assertivos e aumentar suas conversões em vendas.',
+      'Boas práticas orçamentos - Conheça as melhores práticas para criar orçamentos assertivos e aumentar suas conversões em vendas.',
     order: 12,
     files: [
       {
@@ -234,15 +237,15 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: '',
-    page: '/academy/start/boas-praticas-orcamentos',
+    page: null,
     modal: null,
-    buttonTitle: 'Boas práticas orçamentos',
+    buttonTitle: null,
   },
   {
     type: ['START'],
     section: 'Vendas',
     description:
-      'Gerencie ordens de serviço para controlar a execução de serviços e manutenções.',
+      'Ordens de serviço - Gerencie ordens de serviço para controlar a execução de serviços e manutenções.',
     order: 13,
     files: [
       {
@@ -251,7 +254,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: '',
-    page: '/vendas/ordens-servico',
+    page: '/vendas/ordens-de-servico',
     modal: null,
     buttonTitle: 'Ordens de serviço',
   },
@@ -261,7 +264,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Configurações / Financeiro',
     description:
-      'Configure as contas bancárias da sua empresa para controle financeiro.',
+      'Configuração de bancos e contas - Configure as contas bancárias da sua empresa para controle financeiro.',
     order: 14,
     files: [
       {
@@ -270,15 +273,15 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: '',
-    page: null,
-    modal: 'BankAccountsModal',
+    page: '/configuracoes/financeiro/contas-bancarias',
+    modal: null,
     buttonTitle: 'Configuração de bancos e contas',
   },
   {
     type: ['START'],
     section: 'Configurações / Financeiro',
     description:
-      'Defina as formas de pagamento aceitas pela sua empresa (dinheiro, cartão, PIX, boleto, etc).',
+      'Configuração de pagamentos - Defina as formas de pagamento aceitas pela sua empresa (dinheiro, cartão, PIX, boleto, etc).',
     order: 15,
     files: [
       {
@@ -287,15 +290,15 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: '',
-    page: null,
-    modal: 'PaymentMethodsModal',
+    page: '/configuracoes/financeiro/configuracoes-de-pagamento/condicoes-de-pagamento',
+    modal: null,
     buttonTitle: 'Configuração de pagamentos',
   },
   {
     type: ['START'],
     section: 'Configurações / Financeiro',
     description:
-      'Configure o plano de contas para categorizar receitas e despesas da sua empresa.',
+      'Configuração do plano de contas - Configure o plano de contas para categorizar receitas e despesas da sua empresa.',
     order: 16,
     files: [
       {
@@ -304,15 +307,15 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: '',
-    page: null,
-    modal: 'ChartOfAccountsModal',
+    page: '/configuracoes/financeiro/plano-de-contas',
+    modal: null,
     buttonTitle: 'Configuração do plano de contas',
   },
   {
     type: ['START'],
     section: 'Configurações / Financeiro',
     description:
-      'Cadastre as despesas fixas mensais da sua empresa (aluguel, energia, internet, etc).',
+      'Cadastro das despesas fixas - Cadastre as despesas fixas mensais da sua empresa (aluguel, energia, internet, etc).',
     order: 17,
     files: [
       {
@@ -321,15 +324,15 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: '',
-    page: null,
-    modal: 'FixedExpensesModal',
+    page: '/configuracoes/financeiro/config-despesas-fixas',
+    modal: null,
     buttonTitle: 'Cadastro das despesas fixas',
   },
   {
     type: ['START'],
     section: 'Configurações / Financeiro',
     description:
-      'Configure os parâmetros da folha de pagamento para gerenciar salários e encargos dos colaboradores.',
+      'Configuração da folha de pagamento - Configure os parâmetros da folha de pagamento para gerenciar salários e encargos dos colaboradores.',
     order: 18,
     files: [
       {
@@ -338,8 +341,8 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
       },
     ],
     videoUrl: '',
-    page: null,
-    modal: 'PayrollConfigModal',
+    page: '/configuracoes/financeiro/folhas-de-pagamento',
+    modal: null,
     buttonTitle: 'Configuração da folha de pagamento',
   },
 
@@ -348,11 +351,11 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Financeiro',
     description:
-      'Acompanhe o fluxo financeiro da sua empresa: receitas, despesas e saldo disponível.',
+      'Fluxo financeiro - Acompanhe o fluxo financeiro da sua empresa: receitas, despesas e saldo disponível.',
     order: 19,
     files: [],
     videoUrl: '',
-    page: '/financeiro/fluxo',
+    page: '/financeiro/fluxo-financeiro',
     modal: null,
     buttonTitle: 'Fluxo financeiro',
   },
@@ -360,7 +363,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Financeiro',
     description:
-      'Gerencie e acompanhe as despesas fixas cadastradas da sua empresa.',
+      'Despesas fixas - Gerencie e acompanhe as despesas fixas cadastradas da sua empresa.',
     order: 20,
     files: [],
     videoUrl: '',
@@ -372,11 +375,11 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Financeiro',
     description:
-      'Acesse e gerencie a folha de pagamento dos colaboradores da sua empresa.',
+      'Folha de pagamento - Acesse e gerencie a folha de pagamento dos colaboradores da sua empresa.',
     order: 21,
     files: [],
     videoUrl: '',
-    page: '/financeiro/folha-pagamento',
+    page: '/financeiro/folha-de-pagamento',
     modal: null,
     buttonTitle: 'Folha de pagamento',
   },
@@ -390,8 +393,8 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     order: 22,
     files: [],
     videoUrl: '',
-    page: '/relatorios',
+    page: null,
     modal: null,
-    buttonTitle: 'Relatórios',
+    buttonTitle: null,
   },
 ];
