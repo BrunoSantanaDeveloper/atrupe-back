@@ -1,4 +1,20 @@
-import { IsArray, IsOptional, IsString, IsInt, Min } from 'class-validator';
+import {
+  IsArray,
+  IsOptional,
+  IsString,
+  IsInt,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class AcademyFileDto {
+  @IsString()
+  url: string;
+
+  @IsString()
+  name: string;
+}
 
 export class CreateAcademySystemDto {
   @IsArray()
@@ -33,7 +49,8 @@ export class CreateAcademySystemDto {
   buttonTitle?: string;
 
   @IsArray()
-  @IsString({ each: true })
+  @ValidateNested({ each: true })
+  @Type(() => AcademyFileDto)
   @IsOptional()
-  files?: string[];
+  files?: AcademyFileDto[];
 }

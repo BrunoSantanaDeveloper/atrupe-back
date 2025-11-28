@@ -2,7 +2,7 @@ import {
   Controller,
   Get,
   Post,
-  Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -28,7 +28,7 @@ export class AcademyController {
     return this.academyService.createAcademySystem(data);
   }
 
-  @Put(':id')
+  @Patch(':id')
   updateAcademySystem(
     @Param('id') id: string,
     @Body() data: UpdateAcademySystemDto,

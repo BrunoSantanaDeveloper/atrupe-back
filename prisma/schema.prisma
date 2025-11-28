@@ -1592,7 +1592,7 @@ model AcademySystem {
   page            String?           @default("/")
   modal           String?           @default("CompanyInfo")
   buttonTitle     String?           @default("Cadastrar dados")
-  files           String[]
+  files           Json              @default("[]")
   AcademyProgress AcademyProgress[]
 
   @@map("academy")

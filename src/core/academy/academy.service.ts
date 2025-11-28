@@ -10,14 +10,20 @@ export class AcademyService {
 
   async createAcademySystem(data: CreateAcademySystemDto) {
     return this.prisma.academySystem.create({
-      data,
+      data: {
+        ...data,
+        files: data.files as any,
+      },
     });
   }
 
   async updateAcademySystem(id: string, data: UpdateAcademySystemDto) {
     return await this.prisma.academySystem.update({
       where: { id },
-      data,
+      data: {
+        ...data,
+        files: data.files as any,
+      },
     });
   }
 
