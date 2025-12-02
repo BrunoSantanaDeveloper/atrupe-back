@@ -66,6 +66,7 @@ export class AcademyService {
     // Transform the data to match the frontend interface
     const transformedSystems = systems.map((system) => ({
       id: system.id,
+      title: system.title,
       description: system.description || '',
       checked:
         system.AcademyProgress.length > 0
