@@ -8,6 +8,7 @@ export interface AcademyFile {
 export interface AcademyItem {
   type: string[];
   section: string;
+  title: string;
   description: string;
   order: number;
   files: AcademyFile[];
@@ -26,6 +27,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Apresentação Atrupe Start',
+    title: 'Apresentação Atrupe Start',
     description:
       'Bem-vindo à Atrupe! Abra os documentos com a introdução completa ao sistema e suas funcionalidades.',
     order: 1,
@@ -34,12 +36,8 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         url: 'https://files-atrupe.s3.us-east-1.amazonaws.com/apresentacao_atrupe_start-ece6eb20-2ace-496a-8f2b-b07002af2e7b.pdf',
         name: 'Apresentação Atrupe Start',
       },
-      {
-        url: 'https://files-atrupe.s3.us-east-1.amazonaws.com/atrupe_academy_start-35b123aa-c87f-437b-8f14-5ad20967c89d.pdf',
-        name: 'Atrupe Academy Start',
-      },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: null,
     modal: null,
     buttonTitle: null,
@@ -49,8 +47,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Empresa e Sistema',
+    title: 'Configurações da empresa',
     description:
-      'Configurações da empresa - Configure os dados essenciais da sua empresa no sistema Atrupe.',
+      'Configure os dados essenciais da sua empresa no sistema Atrupe.',
     order: 2,
     files: [
       {
@@ -58,7 +57,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Configuração da Empresa',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/1140143779',
     page: null,
     modal: 'CompanyConfigModal',
     buttonTitle: 'Configurações da empresa',
@@ -66,8 +65,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Empresa e Sistema',
+    title: 'Setores',
     description:
-      'Setores - Defina os setores da sua empresa para organizar melhor suas operações.',
+      'Defina os setores da sua empresa para organizar melhor suas operações.',
     order: 3,
     files: [
       {
@@ -75,7 +75,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Setores',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/1140144204',
     page: '/configuracoes/empresa-e-sistema/setores',
     modal: null,
     buttonTitle: 'Setores',
@@ -83,8 +83,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Empresa e Sistema',
+    title: 'Padrão de medida',
     description:
-      'Padrão de medida - Configure os padrões de unidades de medida utilizados pela sua empresa para os produtos.',
+      'Configure os padrões de unidades de medida utilizados pela sua empresa para os produtos.',
     order: 4,
     files: [
       {
@@ -100,8 +101,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Empresa e Sistema',
+    title: 'Colaboradores e usuários',
     description:
-      'Colaboradores e usuários - Adicione e gerencie os colaboradores que terão acesso ao sistema, definindo seus perfis e permissões.',
+      'Adicione e gerencie os colaboradores que terão acesso ao sistema, definindo seus perfis e permissões.',
     order: 5,
     files: [
       {
@@ -119,8 +121,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Produtos',
+    title: 'Produtos',
     description:
-      'Produtos - Gerencie seus produtos: cadastre novos itens, edite os existentes e organize seu catálogo.',
+      'Gerencie seus produtos: cadastre novos itens, edite os existentes e organize seu catálogo.',
     order: 6,
     files: [
       {
@@ -128,7 +131,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Produtos',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/configuracoes/produtos',
     modal: null,
     buttonTitle: 'Produtos',
@@ -138,8 +141,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Cadastros',
+    title: 'Clientes',
     description:
-      'Clientes - Cadastre e gerencie seus clientes para facilitar o processo de vendas e atendimento.',
+      'Cadastre e gerencie seus clientes para facilitar o processo de vendas e atendimento.',
     order: 7,
     files: [
       {
@@ -147,7 +151,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Clientes',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/cadastros/clientes',
     modal: null,
     buttonTitle: 'Clientes',
@@ -155,8 +159,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Cadastros',
+    title: 'Fornecedores',
     description:
-      'Fornecedores - Cadastre e gerencie seus fornecedores para controlar melhor suas compras e estoque.',
+      'Cadastre e gerencie seus fornecedores para controlar melhor suas compras e estoque.',
     order: 8,
     files: [
       {
@@ -164,7 +169,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Fornecedores',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/cadastros/fornecedores',
     modal: null,
     buttonTitle: 'Fornecedores',
@@ -174,8 +179,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Configurações / Vendas',
+    title: 'Série de vendas',
     description:
-      'Série de vendas - Configure as séries de vendas para organizar e numerar seus documentos de vendas (orçamentos, pedidos, notas fiscais).',
+      'Configure as séries de vendas para organizar e numerar seus documentos de vendas (orçamentos, pedidos, notas fiscais).',
     order: 9,
     files: [
       {
@@ -183,7 +189,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Série de Vendas',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/configuracoes/vendas/series-de-venda',
     modal: null,
     buttonTitle: 'Série de vendas',
@@ -191,8 +197,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Configurações / Vendas',
+    title: 'Perfil de vendedor',
     description:
-      'Perfil de vendedor - Defina os perfis de vendedor para estabelecer permissões, metas e comissões da equipe de vendas.',
+      'Defina os perfis de vendedor para estabelecer permissões, metas e comissões da equipe de vendas.',
     order: 10,
     files: [
       {
@@ -200,7 +207,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Perfil de Vendedor',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/configuracoes/vendas/perfil-de-vendedor',
     modal: null,
     buttonTitle: 'Perfil de vendedor',
@@ -210,8 +217,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Vendas',
+    title: 'Orçamentos',
     description:
-      'Orçamentos - Aprenda a criar e gerenciar orçamentos para seus clientes de forma eficiente.',
+      'Aprenda a criar e gerenciar orçamentos para seus clientes de forma eficiente.',
     order: 11,
     files: [
       {
@@ -219,7 +227,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Orçamentos',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/vendas/orcamentos',
     modal: null,
     buttonTitle: 'Orçamentos',
@@ -227,8 +235,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Vendas',
+    title: 'Boas práticas orçamentos',
     description:
-      'Boas práticas orçamentos - Conheça as melhores práticas para criar orçamentos assertivos e aumentar suas conversões em vendas.',
+      'Conheça as melhores práticas para criar orçamentos assertivos e aumentar suas conversões em vendas.',
     order: 12,
     files: [
       {
@@ -236,7 +245,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Boas Práticas de Orçamento',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: null,
     modal: null,
     buttonTitle: null,
@@ -244,8 +253,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Vendas',
+    title: 'Ordens de serviço',
     description:
-      'Ordens de serviço - Gerencie ordens de serviço para controlar a execução de serviços e manutenções.',
+      'Gerencie ordens de serviço para controlar a execução de serviços e manutenções.',
     order: 13,
     files: [
       {
@@ -253,7 +263,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Ordens de Serviço',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/vendas/ordens-de-servico',
     modal: null,
     buttonTitle: 'Ordens de serviço',
@@ -263,8 +273,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Configurações / Financeiro',
+    title: 'Configuração de bancos e contas',
     description:
-      'Configuração de bancos e contas - Configure as contas bancárias da sua empresa para controle financeiro.',
+      'Configure as contas bancárias da sua empresa para controle financeiro.',
     order: 14,
     files: [
       {
@@ -272,7 +283,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Configuração de Bancos e Contas',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/configuracoes/financeiro/contas-bancarias',
     modal: null,
     buttonTitle: 'Configuração de bancos e contas',
@@ -280,8 +291,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Configurações / Financeiro',
+    title: 'Configuração de pagamentos',
     description:
-      'Configuração de pagamentos - Defina as formas de pagamento aceitas pela sua empresa (dinheiro, cartão, PIX, boleto, etc).',
+      'Defina as formas de pagamento aceitas pela sua empresa (dinheiro, cartão, PIX, boleto, etc).',
     order: 15,
     files: [
       {
@@ -289,7 +301,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Configuração de Pagamentos',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/configuracoes/financeiro/configuracoes-de-pagamento/condicoes-de-pagamento',
     modal: null,
     buttonTitle: 'Configuração de pagamentos',
@@ -297,8 +309,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Configurações / Financeiro',
+    title: 'Configuração do plano de contas',
     description:
-      'Configuração do plano de contas - Configure o plano de contas para categorizar receitas e despesas da sua empresa.',
+      'Configure o plano de contas para categorizar receitas e despesas da sua empresa.',
     order: 16,
     files: [
       {
@@ -306,7 +319,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Configuração do Plano de Contas',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/configuracoes/financeiro/plano-de-contas',
     modal: null,
     buttonTitle: 'Configuração do plano de contas',
@@ -314,8 +327,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Configurações / Financeiro',
+    title: 'Cadastro das despesas fixas',
     description:
-      'Cadastro das despesas fixas - Cadastre as despesas fixas mensais da sua empresa (aluguel, energia, internet, etc).',
+      'Cadastre as despesas fixas mensais da sua empresa (aluguel, energia, internet, etc).',
     order: 17,
     files: [
       {
@@ -323,7 +337,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Cadastro das Despesas Fixas',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/configuracoes/financeiro/config-despesas-fixas',
     modal: null,
     buttonTitle: 'Cadastro das despesas fixas',
@@ -331,8 +345,9 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Configurações / Financeiro',
+    title: 'Configuração da folha de pagamento',
     description:
-      'Configuração da folha de pagamento - Configure os parâmetros da folha de pagamento para gerenciar salários e encargos dos colaboradores.',
+      'Configure os parâmetros da folha de pagamento para gerenciar salários e encargos dos colaboradores.',
     order: 18,
     files: [
       {
@@ -340,7 +355,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Configuração da Folha de Pagamento',
       },
     ],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/configuracoes/financeiro/folhas-de-pagamento',
     modal: null,
     buttonTitle: 'Configuração da folha de pagamento',
@@ -350,11 +365,12 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Financeiro',
+    title: 'Fluxo financeiro',
     description:
-      'Fluxo financeiro - Acompanhe o fluxo financeiro da sua empresa: receitas, despesas e saldo disponível.',
+      'Acompanhe o fluxo financeiro da sua empresa: receitas, despesas e saldo disponível.',
     order: 19,
     files: [],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/financeiro/fluxo-financeiro',
     modal: null,
     buttonTitle: 'Fluxo financeiro',
@@ -362,11 +378,12 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Financeiro',
+    title: 'Despesas fixas',
     description:
-      'Despesas fixas - Gerencie e acompanhe as despesas fixas cadastradas da sua empresa.',
+      'Gerencie e acompanhe as despesas fixas cadastradas da sua empresa.',
     order: 20,
     files: [],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/financeiro/despesas-fixas',
     modal: null,
     buttonTitle: 'Despesas fixas',
@@ -374,11 +391,12 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Financeiro',
+    title: 'Folha de pagamento',
     description:
-      'Folha de pagamento - Acesse e gerencie a folha de pagamento dos colaboradores da sua empresa.',
+      'Acesse e gerencie a folha de pagamento dos colaboradores da sua empresa.',
     order: 21,
     files: [],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: '/financeiro/folha-de-pagamento',
     modal: null,
     buttonTitle: 'Folha de pagamento',
@@ -388,11 +406,12 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Relatórios',
+    title: 'Relatórios',
     description:
       'Acesse relatórios completos sobre vendas, financeiro, estoque e desempenho da sua empresa.',
     order: 22,
     files: [],
-    videoUrl: '',
+    videoUrl: 'https://vimeo.com/38382575',
     page: null,
     modal: null,
     buttonTitle: null,
