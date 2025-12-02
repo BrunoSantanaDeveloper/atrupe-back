@@ -44,94 +44,90 @@ export class SaleHistoryService {
     }
 
     // Buscar todos os históricos em paralelo
-    const [
-      quotationHistory,
-      orderHistory,
-      receivableHistory,
-      payableHistory,
-    ] = await Promise.all([
-      // Histórico do orçamento
-      this.prisma.quotationHistory.findMany({
-        where: { quotationId },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatar: true,
-            },
-          },
-        },
-      }),
-
-      // Histórico da ordem (se existir)
-      quotation.order
-        ? this.prisma.orderHistory.findMany({
-            where: { orderId: quotation.order.id },
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                  avatar: true,
-                },
+    const [quotationHistory, orderHistory, receivableHistory, payableHistory] =
+      await Promise.all([
+        // Histórico do orçamento
+        this.prisma.quotationHistory.findMany({
+          where: { quotationId },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar: true,
               },
             },
-          })
-        : Promise.resolve([]),
+          },
+        }),
 
-      // Histórico de receitas relacionadas ao orçamento
-      this.prisma.receivableHistory.findMany({
-        where: {
-          receivable: {
-            quotationId,
-          },
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatar: true,
-            },
-          },
-          receivable: {
-            select: {
-              id: true,
-              description: true,
-            },
-          },
-        },
-      }),
+        // Histórico da ordem (se existir)
+        quotation.order
+          ? this.prisma.orderHistory.findMany({
+              where: { orderId: quotation.order.id },
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    avatar: true,
+                  },
+                },
+              },
+            })
+          : Promise.resolve([]),
 
-      // Histórico de despesas relacionadas ao orçamento
-      this.prisma.payableHistory.findMany({
-        where: {
-          payable: {
-            quotationId,
-          },
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatar: true,
+        // Histórico de receitas relacionadas ao orçamento
+        this.prisma.receivableHistory.findMany({
+          where: {
+            receivable: {
+              quotationId,
             },
           },
-          payable: {
-            select: {
-              id: true,
-              description: true,
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar: true,
+              },
+            },
+            receivable: {
+              select: {
+                id: true,
+                description: true,
+              },
             },
           },
-        },
-      }),
-    ]);
+        }),
+
+        // Histórico de despesas relacionadas ao orçamento
+        this.prisma.payableHistory.findMany({
+          where: {
+            payable: {
+              quotationId,
+            },
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar: true,
+              },
+            },
+            payable: {
+              select: {
+                id: true,
+                description: true,
+              },
+            },
+          },
+        }),
+      ]);
 
     // Unificar e normalizar todos os históricos
     const unifiedHistory: UnifiedHistoryItem[] = [
@@ -203,7 +199,9 @@ export class SaleHistoryService {
     ];
 
     // Ordenar por data (mais recente primeiro)
-    unifiedHistory.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    unifiedHistory.sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+    );
 
     return {
       total: unifiedHistory.length,

@@ -29,7 +29,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     section: 'Apresentação Atrupe Start',
     title: 'Apresentação Atrupe Start',
     description:
-      'Bem-vindo à Atrupe! Abra os documentos com a introdução completa ao sistema e suas funcionalidades.',
+      'Visão geral do Atrupe Start e dos primeiros passos para organizar a empresa.',
     order: 1,
     files: [
       {
@@ -48,8 +48,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Empresa e Sistema',
     title: 'Configurações da empresa',
-    description:
-      'Configure os dados essenciais da sua empresa no sistema Atrupe.',
+    description: 'Cadastro das informações principais da empresa no sistema.',
     order: 2,
     files: [
       {
@@ -66,8 +65,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Empresa e Sistema',
     title: 'Setores',
-    description:
-      'Defina os setores da sua empresa para organizar melhor suas operações.',
+    description: 'Criação e organização dos setores da empresa.',
     order: 3,
     files: [
       {
@@ -85,7 +83,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     section: 'Empresa e Sistema',
     title: 'Padrão de medida',
     description:
-      'Configure os padrões de unidades de medida utilizados pela sua empresa para os produtos.',
+      'Definição das unidades de medida usadas nos produtos e serviços.',
     order: 4,
     files: [
       {
@@ -103,7 +101,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     section: 'Empresa e Sistema',
     title: 'Colaboradores e usuários',
     description:
-      'Adicione e gerencie os colaboradores que terão acesso ao sistema, definindo seus perfis e permissões.',
+      'Cadastro da equipe e definição dos níveis de acesso ao sistema.',
     order: 5,
     files: [
       {
@@ -122,8 +120,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Produtos',
     title: 'Produtos',
-    description:
-      'Gerencie seus produtos: cadastre novos itens, edite os existentes e organize seu catálogo.',
+    description: 'Cadastro dos produtos e serviços comercializados.',
     order: 6,
     files: [
       {
@@ -143,7 +140,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     section: 'Cadastros',
     title: 'Clientes',
     description:
-      'Cadastre e gerencie seus clientes para facilitar o processo de vendas e atendimento.',
+      'Cadastro e organização dos clientes para orçamentos e vendas.',
     order: 7,
     files: [
       {
@@ -161,7 +158,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     section: 'Cadastros',
     title: 'Fornecedores',
     description:
-      'Cadastre e gerencie seus fornecedores para controlar melhor suas compras e estoque.',
+      'Cadastro dos fornecedores para controle de compras e serviços.',
     order: 8,
     files: [
       {
@@ -180,8 +177,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Configurações / Vendas',
     title: 'Série de vendas',
-    description:
-      'Configure as séries de vendas para organizar e numerar seus documentos de vendas (orçamentos, pedidos, notas fiscais).',
+    description: 'Configuração da numeração e prazos padrões dos orçamentos.',
     order: 9,
     files: [
       {
@@ -198,8 +194,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Configurações / Vendas',
     title: 'Perfil de vendedor',
-    description:
-      'Defina os perfis de vendedor para estabelecer permissões, metas e comissões da equipe de vendas.',
+    description: 'Definição de permissões e limites de atuação dos vendedores.',
     order: 10,
     files: [
       {
@@ -218,8 +213,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Vendas',
     title: 'Orçamentos',
-    description:
-      'Aprenda a criar e gerenciar orçamentos para seus clientes de forma eficiente.',
+    description: 'Criação, envio e acompanhamento dos orçamentos.',
     order: 11,
     files: [
       {
@@ -235,9 +229,8 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
   {
     type: ['START'],
     section: 'Vendas',
-    title: 'Boas práticas orçamentos',
-    description:
-      'Conheça as melhores práticas para criar orçamentos assertivos e aumentar suas conversões em vendas.',
+    title: 'Boas práticas em orçamentos',
+    description: 'Acompanhamento de oportunidades de venda.',
     order: 12,
     files: [
       {
@@ -255,7 +248,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     section: 'Vendas',
     title: 'Ordens de serviço',
     description:
-      'Gerencie ordens de serviço para controlar a execução de serviços e manutenções.',
+      'Geração das ordens de produção a partir dos orçamentos aprovados.',
     order: 13,
     files: [
       {
@@ -274,8 +267,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Configurações / Financeiro',
     title: 'Configuração de bancos e contas',
-    description:
-      'Configure as contas bancárias da sua empresa para controle financeiro.',
+    description: 'Definição das formas de pagamento utilizadas nas vendas.',
     order: 14,
     files: [
       {
@@ -292,8 +284,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Configurações / Financeiro',
     title: 'Configuração de pagamentos',
-    description:
-      'Defina as formas de pagamento aceitas pela sua empresa (dinheiro, cartão, PIX, boleto, etc).',
+    description: 'Definição das formas de pagamento utilizadas nas vendas.',
     order: 15,
     files: [
       {
@@ -310,8 +301,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Configurações / Financeiro',
     title: 'Configuração do plano de contas',
-    description:
-      'Configure o plano de contas para categorizar receitas e despesas da sua empresa.',
+    description: 'Configure ou crie novas formas de pagamento para a empresa.',
     order: 16,
     files: [
       {
@@ -328,8 +318,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Configurações / Financeiro',
     title: 'Cadastro das despesas fixas',
-    description:
-      'Cadastre as despesas fixas mensais da sua empresa (aluguel, energia, internet, etc).',
+    description: 'Registro das despesas fixas da empresa.',
     order: 17,
     files: [
       {
@@ -346,8 +335,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Configurações / Financeiro',
     title: 'Configuração da folha de pagamento',
-    description:
-      'Configure os parâmetros da folha de pagamento para gerenciar salários e encargos dos colaboradores.',
+    description: 'Definição da estrutura básica da folha de pagamento.',
     order: 18,
     files: [
       {
@@ -366,8 +354,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Financeiro',
     title: 'Fluxo financeiro',
-    description:
-      'Acompanhe o fluxo financeiro da sua empresa: receitas, despesas e saldo disponível.',
+    description: 'Acompanhamento das entradas e saídas financeiras.',
     order: 19,
     files: [],
     videoUrl: 'https://vimeo.com/38382575',
@@ -379,8 +366,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Financeiro',
     title: 'Despesas fixas',
-    description:
-      'Gerencie e acompanhe as despesas fixas cadastradas da sua empresa.',
+    description: 'Controle mensal dos custos fixos da operação.',
     order: 20,
     files: [],
     videoUrl: 'https://vimeo.com/38382575',
@@ -392,8 +378,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
     type: ['START'],
     section: 'Financeiro',
     title: 'Folha de pagamento',
-    description:
-      'Acesse e gerencie a folha de pagamento dos colaboradores da sua empresa.',
+    description: 'Gestão dos gastos com colaboradores.',
     order: 21,
     files: [],
     videoUrl: 'https://vimeo.com/38382575',
