@@ -233,6 +233,10 @@ export class ClientService {
             preRegisterClientDto.type === ClientKind.PERSON
               ? preRegisterClientDto.cpf || null
               : null,
+          birthdate:
+            preRegisterClientDto.type === ClientKind.PERSON
+              ? preRegisterClientDto.birthdate || null
+              : null,
           cnpj:
             preRegisterClientDto.type === ClientKind.COMPANY
               ? preRegisterClientDto.cnpj || null

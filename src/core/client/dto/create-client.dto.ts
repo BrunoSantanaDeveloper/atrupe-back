@@ -286,5 +286,14 @@ export class PreRegisterClientDto {
   @IsString()
   mobile?: string;
 
+  @ApiProperty({
+    description: 'Data de nascimento (apenas para pessoa física)',
+    required: false,
+    example: '1990-01-15',
+  })
+  @IsOptional()
+  @IsDateString()
+  birthdate?: string;
+
   companyId: string;
 }
