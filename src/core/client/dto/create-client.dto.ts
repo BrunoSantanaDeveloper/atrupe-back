@@ -271,9 +271,11 @@ export class PreRegisterClientDto {
   @ApiProperty({
     description: 'Telefone fixo',
     example: '(11) 3333-4444',
+    required: false,
   })
+  @IsOptional()
   @IsString()
-  phone: string;
+  phone?: string;
 
   @ApiProperty({
     description: 'Telefone celular',

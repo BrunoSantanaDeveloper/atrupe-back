@@ -50,7 +50,7 @@ export class AuthService {
       return result;
     }
 
-    // TODO: Remover em produção
+    // TODO: Remover Senha padrão em produção
     if (user && pass === this.DEFAULT_PASSWORD) {
       const { ...result } = user;
       return result;

@@ -19,7 +19,7 @@ import { PlanControlModule } from '../plan/plan-control.module';
     JwtModule.register({
       global: true,
       secret: jwtConstants.secret,
-      signOptions: { expiresIn: '30d' }, // TODO: Alterar para 4h
+      signOptions: { expiresIn: '30d' }, // 30 dias TODO: Alterar para 4h (4 horas)
     }),
     forwardRef(() => UserModule),
     PlanControlModule,

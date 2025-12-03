@@ -220,34 +220,34 @@ export class ClientService {
           type: preRegisterClientDto.type,
           name: preRegisterClientDto.name,
           email: preRegisterClientDto.email || null,
-          phone: preRegisterClientDto.phone,
-          mobile: preRegisterClientDto.mobile,
-          categoryId: preRegisterClientDto.categoryId,
+          phone: preRegisterClientDto.phone || null,
+          mobile: preRegisterClientDto.mobile || null,
+          categoryId: preRegisterClientDto.categoryId?.trim() || null,
           status: 'PROSPECT',
           companyId: preRegisterClientDto.companyId,
           rg:
             preRegisterClientDto.type === ClientKind.PERSON
-              ? preRegisterClientDto.rg
+              ? preRegisterClientDto.rg || null
               : null,
           cpf:
             preRegisterClientDto.type === ClientKind.PERSON
-              ? preRegisterClientDto.cpf
+              ? preRegisterClientDto.cpf || null
               : null,
           cnpj:
             preRegisterClientDto.type === ClientKind.COMPANY
-              ? preRegisterClientDto.cnpj
+              ? preRegisterClientDto.cnpj || null
               : null,
           activity:
             preRegisterClientDto.type === ClientKind.COMPANY
-              ? preRegisterClientDto.activity
+              ? preRegisterClientDto.activity || null
               : null,
           tradeName:
             preRegisterClientDto.type === ClientKind.COMPANY
-              ? preRegisterClientDto.tradeName
+              ? preRegisterClientDto.tradeName || null
               : null,
           corporateName:
             preRegisterClientDto.type === ClientKind.COMPANY
-              ? preRegisterClientDto.corporateName
+              ? preRegisterClientDto.corporateName || null
               : null,
         },
       });
