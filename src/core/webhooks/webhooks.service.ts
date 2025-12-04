@@ -153,6 +153,47 @@ export class WebhooksService {
       if (subscription) {
         const previousStatus = subscription.status;
 
+        // Buscar subscription TRIAL da mesma empresa, se existir
+        const trialSubscription = await this.prisma.subscription.findFirst({
+          where: {
+            companyId: subscription.companyId,
+            status: 'ACTIVE',
+            plan: {
+              planType: 'TRIAL',
+            },
+          },
+        });
+
+        // Se existe uma subscription TRIAL ativa, desativá-la
+        if (trialSubscription) {
+          await this.prisma.subscription.update({
+            where: { id: trialSubscription.id },
+            data: { status: 'INACTIVE' },
+          });
+
+          this.logger.log(
+            `Subscription TRIAL ${trialSubscription.id} desativada automaticamente`,
+          );
+
+          // Registrar no histórico
+          await this.prisma.subscriptionHistory.create({
+            data: {
+              subscriptionId: trialSubscription.id,
+              action: 'DEACTIVATED',
+              description: 'Trial desativado após ativação de plano pago',
+              changes: {
+                before: { status: 'ACTIVE' },
+                after: { status: 'INACTIVE' },
+              },
+              metadata: {
+                reason: 'Nova subscription ativada',
+                newSubscriptionId: subscription.id,
+              },
+              createdByName: 'Sistema Asaas',
+            },
+          });
+        }
+
         await this.prisma.subscription.update({
           where: { id: subscription.id },
           data: {
