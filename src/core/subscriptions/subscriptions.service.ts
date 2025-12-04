@@ -172,8 +172,8 @@ export class SubscriptionsService {
     });
 
     const now = new Date();
-    let ativas = 0; // Trial ativas que ainda não venceram ou venceram há menos de 7 dias
-    let inativas = 0; // Trial ativas que venceram há mais de 7 dias
+    let ativas = 0; // Trial ativas que ainda não venceram
+    let inativas = 0; // Trial ativas que já venceram
     let descartadas = 0; // Trial inativas sem outra subscription ativa
 
     // Processar subscriptions ACTIVE
@@ -182,11 +182,11 @@ export class SubscriptionsService {
         (now.getTime() - sub.nextDueDate.getTime()) / (1000 * 60 * 60 * 24),
       );
 
-      // Se ainda não venceu ou venceu há menos de 7 dias
-      if (daysAfterDueDate < 7) {
+      // Se ainda não venceu (data de vencimento no futuro)
+      if (daysAfterDueDate < 0) {
         ativas++;
       } else {
-        // Se venceu há mais de 7 dias
+        // Venceu ou está vencendo hoje - conta como inativa imediatamente
         inativas++;
       }
     }
@@ -599,10 +599,11 @@ export class SubscriptionsService {
 
       let subscriptionCategory: string | null = null;
 
-      // Se ainda não venceu ou venceu há menos de 7 dias
-      if (sub.status === 'ACTIVE' && daysAfterDueDate < 7) {
+      // Se ainda não venceu (data de vencimento no futuro)
+      if (sub.status === 'ACTIVE' && daysAfterDueDate < 0) {
         subscriptionCategory = 'ativas';
-      } else if (sub.status === 'ACTIVE' && daysAfterDueDate >= 7) {
+      } else if (sub.status === 'ACTIVE' && daysAfterDueDate >= 0) {
+        // Venceu ou está vencendo hoje - move para inativas imediatamente
         subscriptionCategory = 'inativas';
       } else if (sub.status === 'INACTIVE') {
         // Verificar se tem outra subscription ativa
@@ -1269,7 +1270,7 @@ export class SubscriptionsService {
     // Calcular nova data: hoje + 7 dias
     const now = new Date();
     const newDueDate = new Date(now);
-    newDueDate.setDate(newDueDate.getDate() + 7);
+    newDueDate.setDate(newDueDate.getDate() + 7); // + 7 dias de teste trial
 
     // Atualizar a subscription
     const updatedSubscription = await this.prisma.subscription.update({
@@ -1389,7 +1390,7 @@ export class SubscriptionsService {
 
     // Criar subscription manualmente (sem passar pelo Asaas)
     const nextDueDate = new Date();
-    nextDueDate.setDate(nextDueDate.getDate() + 30); // 30 dias
+    nextDueDate.setDate(nextDueDate.getDate() + 15); // 15 dias de teste trial
 
     const subscription = await this.prisma.subscription.create({
       data: {

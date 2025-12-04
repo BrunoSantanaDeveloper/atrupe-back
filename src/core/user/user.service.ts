@@ -227,7 +227,7 @@ export class UserService {
           const trialDaysLimit = trialPlan.planLimits.find(
             (pl) => pl.limit.key === 'trial_days',
           );
-          const trialDays = trialDaysLimit?.value || 7; // 7 dias como fallback
+          const trialDays = trialDaysLimit?.value || 7; // 7 dias de teste trial como fallback
 
           // Criar customer
           const customer = await tx.customer.create({
@@ -846,7 +846,7 @@ export class UserService {
           const trialDaysLimit = trialPlan.planLimits.find(
             (pl) => pl.limit.key === 'trial_days',
           );
-          const trialDays = trialDaysLimit?.value || 7;
+          const trialDays = trialDaysLimit?.value || 7; // 7 dias de teste trial como fallback
 
           // Criar customer
           const customer = await tx.customer.create({
