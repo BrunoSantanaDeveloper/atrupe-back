@@ -30,6 +30,8 @@ export class FlowService {
       paymentConditionId,
       bankAccountId,
       dateType = 'dueDate',
+      clientId,
+      supplierId,
     } = filter;
 
     const filtersReceivables: any = {
@@ -42,6 +44,30 @@ export class FlowService {
         companyId: filter.companyId,
       },
     };
+
+    // Filtro de cliente
+    if (clientId) {
+      filtersReceivables.receivable = {
+        ...filtersReceivables.receivable,
+        clientId: clientId,
+      };
+      filtersPayables.payable = {
+        ...filtersPayables.payable,
+        clientId: { not: null },
+      };
+    }
+
+    // Filtro de fornecedor
+    if (supplierId) {
+      filtersReceivables.receivable = {
+        ...filtersReceivables.receivable,
+        supplierId: { not: null },
+      };
+      filtersPayables.payable = {
+        ...filtersPayables.payable,
+        supplierId: supplierId,
+      };
+    }
 
     if (startDate || endDate) {
       const dateFilter: any = {};
@@ -58,6 +84,18 @@ export class FlowService {
 
       filtersReceivables[dateType] = dateFilter;
       filtersPayables[dateType] = dateFilter;
+    }
+
+    // Quando filtrando por paidDate, só considerar parcelas que foram pagas
+    if (dateType === 'paidDate') {
+      filtersReceivables.paidDate = {
+        ...filtersReceivables.paidDate,
+        not: null,
+      };
+      filtersPayables.paidDate = {
+        ...filtersPayables.paidDate,
+        not: null,
+      };
     }
 
     // Filtro de status
@@ -111,7 +149,10 @@ export class FlowService {
     // Calcular totais para recebíveis
     const totalReceivables = receivableDetails.reduce(
       (acc, inst) => {
-        const expected = inst.status !== 'CANCELED' ? (inst.amount ?? 0) : 0;
+        const expected =
+          inst.status !== 'CANCELED'
+            ? (inst.amount ?? 0) + (inst.additionalFee ?? 0)
+            : 0;
         const totalPaid = inst.paidAmount ?? 0;
 
         return {
@@ -125,7 +166,10 @@ export class FlowService {
     // Calcular totais para pagáveis
     const totalPayables = payableDetails.reduce(
       (acc, inst) => {
-        const expected = inst.status !== 'CANCELED' ? (inst.amount ?? 0) : 0;
+        const expected =
+          inst.status !== 'CANCELED'
+            ? (inst.amount ?? 0) + (inst.additionalFee ?? 0)
+            : 0;
         const totalPaid = inst.paidAmount ?? 0;
 
         return {
@@ -430,7 +474,11 @@ export class FlowService {
               })(),
               ...(showValues === 'on' && {
                 expectedRevenue: relevantInstallments.reduce(
-                  (sum, i) => sum + (i.amount || 0) + (i.additionalFee || 0),
+                  (sum, i) =>
+                    sum +
+                    (i.status !== 'CANCELED'
+                      ? (i.amount || 0) + (i.additionalFee || 0)
+                      : 0),
                   0,
                 ),
                 realizedRevenue: relevantInstallments.reduce(
@@ -546,7 +594,11 @@ export class FlowService {
               })(),
               ...(showValues === 'on' && {
                 expectedExpense: relevantInstallments.reduce(
-                  (sum, i) => sum + (i.amount || 0) + (i.additionalFee || 0),
+                  (sum, i) =>
+                    sum +
+                    (i.status !== 'CANCELED'
+                      ? (i.amount || 0) + (i.additionalFee || 0)
+                      : 0),
                   0,
                 ),
                 realizedExpense: relevantInstallments.reduce(
