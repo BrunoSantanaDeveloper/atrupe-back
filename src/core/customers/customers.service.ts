@@ -28,28 +28,32 @@ export class CustomersService {
   }
 
   async create(createCustomerDto: CreateCustomerDto) {
-    // Verificar se já existe cliente com o documento informado
+    // Verificar se já existe cliente com o documento informado NA MESMA EMPRESA
     const existingCustomerByDocument = await this.prisma.customer.findFirst({
       where: {
         document: createCustomerDto.document,
+        companyId: createCustomerDto.companyId,
       },
     });
 
     if (existingCustomerByDocument) {
       throw new BadRequestException(
-        'O documento informado já está sendo usado.',
+        'Já existe um cliente cadastrado com este documento para esta empresa.',
       );
     }
 
-    // Verificar se já existe cliente com o email informado
+    // Verificar se já existe cliente com o email informado NA MESMA EMPRESA
     const existingCustomerByEmail = await this.prisma.customer.findFirst({
       where: {
         email: createCustomerDto.email,
+        companyId: createCustomerDto.companyId,
       },
     });
 
     if (existingCustomerByEmail) {
-      throw new BadRequestException('O e-mail informado já está sendo usado.');
+      throw new BadRequestException(
+        'Já existe um cliente cadastrado com este e-mail para esta empresa.',
+      );
     }
 
     try {

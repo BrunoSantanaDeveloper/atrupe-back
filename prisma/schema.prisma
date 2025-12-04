@@ -1474,8 +1474,8 @@ model Customer {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime?      @updatedAt
   name            String
-  email           String         @unique
-  document        String         @unique
+  email           String
+  document        String
   phone           String?
   asaasCustomerId String         @unique
   address         String?
@@ -1490,6 +1490,8 @@ model Customer {
   subscriptions   Subscription[]
   user            User[]
 
+  @@unique([document, companyId], name: "unique_document_per_company")
+  @@unique([email, companyId], name: "unique_email_per_company")
   @@map("customers")
 }
 

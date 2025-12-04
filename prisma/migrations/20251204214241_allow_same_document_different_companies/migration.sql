@@ -1,0 +1,18 @@
+/*
+  Warnings:
+
+  - A unique constraint covering the columns `[document,company_id]` on the table `customers` will be added. If there are existing duplicate values, this will fail.
+  - A unique constraint covering the columns `[email,company_id]` on the table `customers` will be added. If there are existing duplicate values, this will fail.
+
+*/
+-- DropIndex
+DROP INDEX "customers_document_key";
+
+-- DropIndex
+DROP INDEX "customers_email_key";
+
+-- CreateIndex
+CREATE UNIQUE INDEX "customers_document_company_id_key" ON "customers"("document", "company_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "customers_email_company_id_key" ON "customers"("email", "company_id");
