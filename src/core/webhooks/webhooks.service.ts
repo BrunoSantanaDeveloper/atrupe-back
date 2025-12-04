@@ -108,6 +108,7 @@ export class WebhooksService {
     // Atualizar Payment local
     const payment = await this.prisma.payment.findFirst({
       where: { asaasPaymentId },
+      include: { subscription: true },
     });
 
     if (payment) {
@@ -123,6 +124,24 @@ export class WebhooksService {
       });
 
       this.logger.log(`Payment ${payment.id} atualizado para CONFIRMED`);
+
+      // Registrar no histórico da subscription
+      if (payment.subscriptionId) {
+        await this.prisma.subscriptionHistory.create({
+          data: {
+            subscriptionId: payment.subscriptionId,
+            action: 'PAYMENT_CONFIRMED',
+            description: 'Pagamento confirmado',
+            metadata: {
+              paymentId: asaasPaymentId,
+              value: payment.value,
+              billingType: payment.billingType,
+              confirmedDate: new Date(),
+            },
+            createdByName: 'Sistema Asaas',
+          },
+        });
+      }
     }
 
     if (subscriptionId) {
@@ -132,6 +151,8 @@ export class WebhooksService {
       });
 
       if (subscription) {
+        const previousStatus = subscription.status;
+
         await this.prisma.subscription.update({
           where: { id: subscription.id },
           data: {
@@ -146,6 +167,26 @@ export class WebhooksService {
         this.logger.log(
           `Subscription ${subscription.id} atualizada para ACTIVE`,
         );
+
+        // Registrar ativação no histórico se o status mudou
+        if (previousStatus !== 'ACTIVE') {
+          await this.prisma.subscriptionHistory.create({
+            data: {
+              subscriptionId: subscription.id,
+              action: 'ACTIVATED',
+              description: 'Conta ativada após confirmação de pagamento',
+              changes: {
+                before: { status: previousStatus },
+                after: { status: 'ACTIVE' },
+              },
+              metadata: {
+                reason: 'Pagamento confirmado',
+                paymentId: asaasPaymentId,
+              },
+              createdByName: 'Sistema Asaas',
+            },
+          });
+        }
       }
     }
   }
@@ -162,6 +203,7 @@ export class WebhooksService {
     // Atualizar Payment local
     const payment = await this.prisma.payment.findFirst({
       where: { asaasPaymentId },
+      include: { subscription: true },
     });
 
     if (payment) {
@@ -173,6 +215,23 @@ export class WebhooksService {
       });
 
       this.logger.log(`Payment ${payment.id} atualizado para OVERDUE`);
+
+      // Registrar no histórico da subscription
+      if (payment.subscriptionId) {
+        await this.prisma.subscriptionHistory.create({
+          data: {
+            subscriptionId: payment.subscriptionId,
+            action: 'PAYMENT_OVERDUE',
+            description: 'Pagamento em atraso',
+            metadata: {
+              paymentId: asaasPaymentId,
+              value: payment.value,
+              dueDate: payment.dueDate,
+            },
+            createdByName: 'Sistema Asaas',
+          },
+        });
+      }
     }
 
     if (subscriptionId) {

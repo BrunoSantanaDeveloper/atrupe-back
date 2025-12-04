@@ -255,6 +255,124 @@ export class SubscriptionsService {
     };
   }
 
+  async getCompanyHistory(companyId: string) {
+    // Buscar a empresa
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      include: {
+        Subscription: {
+          include: {
+            plan: true,
+            history: {
+              orderBy: {
+                createdAt: 'desc',
+              },
+            },
+            payments: {
+              orderBy: {
+                createdAt: 'desc',
+              },
+              take: 50,
+            },
+          },
+        },
+      },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Company not found');
+    }
+
+    // Buscar último acesso do usuário (da tabela UserActivity)
+    const lastActivity = await this.prisma.userActivity.findFirst({
+      where: {
+        companyId: companyId,
+      },
+      orderBy: {
+        lastActive: 'desc',
+      },
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    // Buscar todos os eventos de histórico de subscription
+    const allSubscriptions = company.Subscription || [];
+    const allHistory: any[] = [];
+
+    for (const subscription of allSubscriptions) {
+      // Adicionar eventos de histórico de subscription
+      for (const historyItem of subscription.history || []) {
+        allHistory.push({
+          ...historyItem,
+          type: 'subscription',
+        });
+      }
+
+      // Adicionar eventos de pagamentos como histórico
+      for (const payment of subscription.payments || []) {
+        allHistory.push({
+          id: payment.id,
+          action: `PAYMENT_${payment.status}`,
+          description: this.getPaymentDescription(payment.status),
+          metadata: {
+            paymentId: payment.asaasPaymentId,
+            value: payment.value,
+            billingType: payment.billingType,
+            dueDate: payment.dueDate,
+            confirmedDate: payment.confirmedDate,
+            paymentDate: payment.paymentDate,
+            invoiceUrl: payment.invoiceUrl,
+          },
+          createdAt: payment.createdAt,
+          createdBy: null,
+          createdByName: 'Sistema Asaas',
+          type: 'payment',
+        });
+      }
+    }
+
+    // Ordenar por data mais recente
+    allHistory.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
+    return {
+      data: allHistory,
+      lastAccess: lastActivity
+        ? {
+            date: lastActivity.lastActive,
+            user: lastActivity.user,
+            ipAddress: lastActivity.ipAddress,
+          }
+        : null,
+      company: {
+        id: company.id,
+        name: company.name,
+        isActive: company.isActive,
+      },
+    };
+  }
+
+  private getPaymentDescription(status: string): string {
+    const descriptions: Record<string, string> = {
+      PENDING: 'Pagamento pendente',
+      CONFIRMED: 'Pagamento confirmado',
+      RECEIVED: 'Pagamento recebido',
+      OVERDUE: 'Pagamento em atraso',
+      REFUNDED: 'Pagamento reembolsado',
+      CANCELED: 'Pagamento cancelado',
+      FAILED: 'Pagamento falhou',
+    };
+    return descriptions[status] || 'Evento de pagamento';
+  }
+
   async listActiveClients(
     page: number = 1,
     limit: number = 10,

@@ -400,14 +400,14 @@ model User {
   employee             Employee[]
   userContract         UserContract[]
   userRole             UserRole[]
-  receivableHistory          ReceivableHistory[]          @relation("ReceivableHistoryUser")
-  payableHistory             PayableHistory[]             @relation("PayableHistoryUser")
-  employeeHistory            EmployeeHistory[]            @relation("EmployeeHistoryUser")
-  quotationHistory           QuotationHistory[]           @relation("QuotationHistoryUser")
-  orderHistory               OrderHistory[]               @relation("OrderHistoryUser")
-  companyHistory             CompanyHistory[]             @relation("CompanyHistoryUser")
-  userActivities             UserActivity[]
-  customer                   Customer?                    @relation(fields: [customerId], references: [id])
+  receivableHistory    ReceivableHistory[] @relation("ReceivableHistoryUser")
+  payableHistory       PayableHistory[]    @relation("PayableHistoryUser")
+  employeeHistory      EmployeeHistory[]   @relation("EmployeeHistoryUser")
+  quotationHistory     QuotationHistory[]  @relation("QuotationHistoryUser")
+  orderHistory         OrderHistory[]      @relation("OrderHistoryUser")
+  companyHistory       CompanyHistory[]    @relation("CompanyHistoryUser")
+  userActivities       UserActivity[]
+  customer             Customer?           @relation(fields: [customerId], references: [id])
 
   @@index([email])
   @@map("users")
@@ -1493,6 +1493,24 @@ model Customer {
   @@map("customers")
 }
 
+model SubscriptionHistory {
+  id             String       @id @default(uuid())
+  subscriptionId String
+  action         String // CREATED, ACTIVATED, BLOCKED, PAYMENT_RECEIVED, PAYMENT_CONFIRMED, PAYMENT_OVERDUE, STATUS_CHANGED, etc
+  description    String
+  changes        Json? // { before: {...}, after: {...} }
+  metadata       Json? // Dados adicionais do webhook Asaas, info de pagamento, etc
+  createdBy      String? // Pode ser null para eventos automáticos (webhooks)
+  createdByName  String? // Desnormalizado para performance
+  createdAt      DateTime     @default(now())
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("subscription_history")
+}
+
 model Subscription {
   id                   String                @id @default(uuid())
   createdAt            DateTime              @default(now())
@@ -1512,6 +1530,7 @@ model Subscription {
   plan                 Plan                  @relation(fields: [planId], references: [id])
   subscriptionFeatures SubscriptionFeature[]
   payments             Payment[]
+  history              SubscriptionHistory[]
 
   @@map("subscriptions")
 }

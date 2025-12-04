@@ -105,6 +105,23 @@ export class SubscriptionsController {
     );
   }
 
+  @Get('active-clients/:companyId/history')
+  @ApiOperation({
+    summary: 'Get subscription history for a company',
+  })
+  @ApiParam({ name: 'companyId', description: 'Company ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Subscription history retrieved successfully',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Company or subscription not found',
+  })
+  async getCompanyHistory(@Param('companyId') companyId: string) {
+    return await this.subscriptionsService.getCompanyHistory(companyId);
+  }
+
   @Get('active')
   @ApiOperation({ summary: 'Get active subscription for company' })
   @ApiResponse({
