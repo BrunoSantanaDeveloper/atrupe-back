@@ -76,162 +76,89 @@ export class EmployeeHistoryService {
       user: item.user,
     }));
 
-    // Se o colaborador tem um usuário associado, buscar históricos de quotation, order, receitas, despesas e acesso
+    // Se o colaborador tem um usuário associado, buscar históricos de quotation, order e acesso
     if (employee.userId) {
-      const [
-        quotationHistories,
-        orderHistories,
-        receivableHistories,
-        payableHistories,
-        userActivities,
-      ] = await Promise.all([
-        // Histórico de orçamentos onde o usuário é o autor
-        this.prisma.quotationHistory.findMany({
-          where: { createdBy: employee.userId },
-          orderBy: { createdAt: 'desc' },
-          include: {
-            quotation: {
-              select: {
-                id: true,
-                quotationNumber: true,
-                description: true,
-                client: {
-                  select: {
-                    id: true,
-                    name: true,
+      const [quotationHistories, orderHistories, userActivities] =
+        await Promise.all([
+          // Histórico de orçamentos onde o usuário é o autor
+          this.prisma.quotationHistory.findMany({
+            where: { createdBy: employee.userId },
+            orderBy: { createdAt: 'desc' },
+            include: {
+              quotation: {
+                select: {
+                  id: true,
+                  quotationNumber: true,
+                  description: true,
+                  client: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
                   },
                 },
               },
-            },
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                avatar: true,
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  avatar: true,
+                },
               },
             },
-          },
-        }),
-        // Histórico de ordens de serviço onde o usuário é o autor
-        this.prisma.orderHistory.findMany({
-          where: { createdBy: employee.userId },
-          orderBy: { createdAt: 'desc' },
-          include: {
-            order: {
-              select: {
-                id: true,
-                quotation: {
-                  select: {
-                    id: true,
-                    quotationNumber: true,
-                    description: true,
-                    client: {
-                      select: {
-                        id: true,
-                        name: true,
+          }),
+          // Histórico de ordens de serviço onde o usuário é o autor
+          this.prisma.orderHistory.findMany({
+            where: { createdBy: employee.userId },
+            orderBy: { createdAt: 'desc' },
+            include: {
+              order: {
+                select: {
+                  id: true,
+                  quotation: {
+                    select: {
+                      id: true,
+                      quotationNumber: true,
+                      description: true,
+                      client: {
+                        select: {
+                          id: true,
+                          name: true,
+                        },
                       },
                     },
                   },
                 },
               },
-            },
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                avatar: true,
-              },
-            },
-          },
-        }),
-        // Histórico de receitas onde o usuário é o autor
-        this.prisma.receivableHistory.findMany({
-          where: { createdBy: employee.userId },
-          orderBy: { createdAt: 'desc' },
-          include: {
-            receivable: {
-              select: {
-                id: true,
-                description: true,
-                totalValue: true,
-                quotation: {
-                  select: {
-                    id: true,
-                    quotationNumber: true,
-                    client: {
-                      select: {
-                        id: true,
-                        name: true,
-                      },
-                    },
-                  },
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  avatar: true,
                 },
               },
             },
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                avatar: true,
-              },
-            },
-          },
-        }),
-        // Histórico de despesas onde o usuário é o autor
-        this.prisma.payableHistory.findMany({
-          where: { createdBy: employee.userId },
-          orderBy: { createdAt: 'desc' },
-          include: {
-            payable: {
-              select: {
-                id: true,
-                description: true,
-                totalAmount: true,
-                quotation: {
-                  select: {
-                    id: true,
-                    quotationNumber: true,
-                    client: {
-                      select: {
-                        id: true,
-                        name: true,
-                      },
-                    },
-                  },
+          }),
+          // Histórico de acesso do usuário (UserActivity)
+          // Busca sessões agrupadas por sessionId para mostrar apenas login/reativações significativas
+          this.prisma.userActivity.findMany({
+            where: { userId: employee.userId },
+            orderBy: { lastActive: 'desc' },
+            distinct: ['sessionId'],
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  avatar: true,
                 },
               },
             },
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                avatar: true,
-              },
-            },
-          },
-        }),
-        // Histórico de acesso do usuário (UserActivity)
-        // Busca sessões agrupadas por sessionId para mostrar apenas login/reativações significativas
-        this.prisma.userActivity.findMany({
-          where: { userId: employee.userId },
-          orderBy: { lastActive: 'desc' },
-          distinct: ['sessionId'],
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                avatar: true,
-              },
-            },
-          },
-        }),
-      ]);
+          }),
+        ]);
 
       // Adicionar históricos de orçamentos
       const quotationHistoryMapped = quotationHistories.map((item) => ({
@@ -267,50 +194,6 @@ export class EmployeeHistoryService {
           quotationNumber: item.order.quotation.quotationNumber,
           quotationDescription: item.order.quotation.description,
           clientName: item.order.quotation.client?.name,
-        },
-        createdBy: item.createdBy,
-        createdByName: item.createdByName || item.user?.name,
-        createdAt: item.createdAt,
-        user: item.user,
-      }));
-
-      // Adicionar históricos de receitas
-      const receivableHistoryMapped = receivableHistories.map((item) => ({
-        id: item.id,
-        type: 'RECEIVABLE' as const,
-        action: item.action,
-        description: `[Receita] ${item.description}`,
-        changes: item.changes,
-        metadata: {
-          ...((item.metadata as object) || {}),
-          receivableId: item.receivable.id,
-          receivableDescription: item.receivable.description,
-          totalValue: item.receivable.totalValue,
-          quotationId: item.receivable.quotation?.id,
-          quotationNumber: item.receivable.quotation?.quotationNumber,
-          clientName: item.receivable.quotation?.client?.name,
-        },
-        createdBy: item.createdBy,
-        createdByName: item.createdByName || item.user?.name,
-        createdAt: item.createdAt,
-        user: item.user,
-      }));
-
-      // Adicionar históricos de despesas
-      const payableHistoryMapped = payableHistories.map((item) => ({
-        id: item.id,
-        type: 'PAYABLE' as const,
-        action: item.action,
-        description: `[Despesa] ${item.description}`,
-        changes: item.changes,
-        metadata: {
-          ...((item.metadata as object) || {}),
-          payableId: item.payable.id,
-          payableDescription: item.payable.description,
-          totalAmount: item.payable.totalAmount,
-          quotationId: item.payable.quotation?.id,
-          quotationNumber: item.payable.quotation?.quotationNumber,
-          clientName: item.payable.quotation?.client?.name,
         },
         createdBy: item.createdBy,
         createdByName: item.createdByName || item.user?.name,
@@ -390,8 +273,6 @@ export class EmployeeHistoryService {
         ...allHistory,
         ...quotationHistoryMapped,
         ...orderHistoryMapped,
-        ...receivableHistoryMapped,
-        ...payableHistoryMapped,
         ...userActivityMapped,
       ];
     }
