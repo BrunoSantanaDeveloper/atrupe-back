@@ -9,6 +9,7 @@ import {
   Patch,
   Delete,
   Query,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -29,6 +30,7 @@ import { ListActiveClientsDto } from './dto/list-active-clients.dto';
 import { UpdateActiveClientDto } from './dto/update-active-client.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
+import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
 
 @ApiTags('subscriptions')
 @Controller('subscriptions')
@@ -208,6 +210,7 @@ export class SubscriptionsController {
   }
 
   @Post()
+  @UseInterceptors(IdempotencyInterceptor)
   @ApiOperation({ summary: 'Create a new subscription' })
   @ApiResponse({
     status: 201,
@@ -215,6 +218,10 @@ export class SubscriptionsController {
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiResponse({ status: 404, description: 'Customer or Plan not found' })
+  @ApiResponse({
+    status: 409,
+    description: 'Request already being processed (duplicate idempotency key)',
+  })
   async create(
     @Body() createSubscriptionDto: CreateSubscriptionDto,
     @Req() req,

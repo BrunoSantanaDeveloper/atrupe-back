@@ -1534,6 +1534,7 @@ model Subscription {
   payments             Payment[]
   history              SubscriptionHistory[]
 
+  @@unique([companyId, status], name: "unique_active_subscription_per_company")
   @@map("subscriptions")
 }
 
@@ -1918,4 +1919,25 @@ enum ExpenseSource {
   EMPLOYEE // Funcionário (salário)
   CLIENT // Cliente (reembolso, etc.)
   OTHER // Outros
+}
+
+model IdempotencyKey {
+  id            String            @id @default(uuid())
+  key           String            @unique
+  status        IdempotencyStatus @default(PROCESSING)
+  requestPath   String
+  requestMethod String
+  userId        String?
+  response      String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([key])
+  @@map("idempotency_keys")
+}
+
+enum IdempotencyStatus {
+  PROCESSING
+  SUCCESS
+  ERROR
 }

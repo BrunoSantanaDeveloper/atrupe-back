@@ -494,7 +494,12 @@ export class SubscriptionsService {
           const employee = item.employee;
           const address = item.address;
 
-          acc[dateKey].push({
+          // Verificar se a empresa já foi adicionada neste grupo de data
+          const existingCompanyIndex = acc[dateKey].findIndex(
+            (entry) => entry.id === company.id,
+          );
+
+          const companyData = {
             id: company.id,
             avatar: company.favIconUrl || '',
             companyName: company.legalName || company.name,
@@ -514,7 +519,22 @@ export class SubscriptionsService {
             city: address?.city
               ? { id: address.city, name: address.city }
               : { id: '', name: '' },
-          });
+          };
+
+          // Se a empresa já existe, manter apenas a assinatura mais recente
+          if (existingCompanyIndex >= 0) {
+            const existing = acc[dateKey][existingCompanyIndex];
+            const existingDate = new Date(existing.createdAt);
+            const currentDate = new Date(item.subscription.createdAt);
+
+            // Substituir se a assinatura atual for mais recente
+            if (currentDate > existingDate) {
+              acc[dateKey][existingCompanyIndex] = companyData;
+            }
+          } else {
+            // Empresa ainda não foi adicionada, adicionar normalmente
+            acc[dateKey].push(companyData);
+          }
 
           return acc;
         },
@@ -739,30 +759,8 @@ export class SubscriptionsService {
     createSubscriptionDto.customer.companyId = request.user.companyId;
     const { customer } = createSubscriptionDto;
 
-    // Verificar se já existe uma subscription ativa para a empresa
-    const existingSubscription = await this.prisma.subscription.findFirst({
-      where: {
-        companyId: request.user.companyId,
-        status: 'ACTIVE',
-      },
-      include: {
-        plan: true,
-        customer: true,
-      },
-    });
-
-    // Se existe uma subscription e não é TRIAL, impede a criação
-    if (
-      existingSubscription &&
-      existingSubscription.plan.planType !== 'TRIAL'
-    ) {
-      this.logger.error(
-        'The company already has an active subscription. Use upgrade method instead.',
-      );
-      throw new BadRequestException(
-        'Uma assinatura ativa já existe para esta empresa.',
-      );
-    }
+    // NOTA: A verificação de duplicatas agora será feita dentro da transação
+    // para evitar race conditions. O constraint único no banco também previne duplicatas.
 
     // Get plan from database
     const [plan, additionalFeatures] = await Promise.all([
@@ -780,60 +778,20 @@ export class SubscriptionsService {
       throw new NotFoundException('Plan not found');
     }
 
+    // Buscar customer existente ou criar um novo
     let finalCustomer: any;
+    const existingCustomer = await this.prisma.customer.findFirst({
+      where: {
+        companyId: createSubscriptionDto.companyId,
+      },
+    });
 
-    // Se existe uma subscription TRIAL, atualiza o customer existente
-    if (
-      existingSubscription &&
-      existingSubscription.plan.planType === 'TRIAL'
-    ) {
-      this.logger.log(
-        'Subscription TRIAL encontrada, atualizando customer existente',
-      );
-
-      // Preparar dados para atualização
-      const customerUpdateData = {
-        name: customer.name,
-        email: customer.email,
-        document: customer.document,
-        phone: customer.phone,
-        address: customer.address,
-        addressNumber: customer.addressNumber,
-        complement: customer.complement,
-        province: customer.province,
-        postalCode: customer.postalCode,
-        city: customer.city,
-        state: customer.state,
-      };
-
-      finalCustomer = await this.customerService.update(
-        existingSubscription.customer.id,
-        customerUpdateData,
-      );
-
-      // Desativar a subscription TRIAL antiga
-      // Não desativar aqui, só desativar quando confirmar pagamento do novo plano
-      // await this.prisma.subscription.update({
-      //   where: { id: existingSubscription.id },
-      //   data: { status: 'INACTIVE' },
-      // });
-
-      // this.logger.log('Subscription TRIAL desativada');
+    if (existingCustomer) {
+      this.logger.log('Cliente encontrado:', existingCustomer.name);
+      finalCustomer = existingCustomer;
     } else {
-      // Caso contrário, busca ou cria um novo customer
-      const existingCustomer = await this.prisma.customer.findFirst({
-        where: {
-          companyId: createSubscriptionDto.companyId,
-        },
-      });
-
-      if (existingCustomer) {
-        this.logger.log('Cliente encontrado:', existingCustomer.name);
-        finalCustomer = existingCustomer;
-      } else {
-        this.logger.log('customer not found, creating...');
-        finalCustomer = await this.customerService.create(customer);
-      }
+      this.logger.log('customer not found, creating...');
+      finalCustomer = await this.customerService.create(customer);
     }
 
     // Soma o preço das features adicionais selecionadas
@@ -860,6 +818,27 @@ export class SubscriptionsService {
     try {
       // Primeiro criar a subscription no banco para obter o ID
       const subscription = await this.prisma.$transaction(async (tx) => {
+        // Verificar dentro da transação se já existe uma subscription ativa (proteção contra race condition)
+        const existingSubscription = await tx.subscription.findFirst({
+          where: {
+            companyId: request.user.companyId,
+            status: 'ACTIVE',
+          },
+          include: {
+            plan: true,
+          },
+        });
+
+        // Se existe uma subscription e não é TRIAL, impede a criação
+        if (
+          existingSubscription &&
+          existingSubscription.plan.planType !== 'TRIAL'
+        ) {
+          throw new BadRequestException(
+            'Uma assinatura ativa já existe para esta empresa.',
+          );
+        }
+
         const newSubscription = await tx.subscription.create({
           data: {
             customerId: finalCustomer.id,
