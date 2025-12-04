@@ -410,10 +410,26 @@ export class ProductService {
     try {
       const product = await this.prisma.product.findUnique({
         where: { id },
+        include: {
+          sector: true,
+        },
       });
 
       if (!product) {
         throw new NotFoundException('Product not found');
+      }
+
+      // Se está tentando ativar o produto, validar se o setor está ativo
+      if (isActive && product.sectorId) {
+        if (!product.sector) {
+          throw new BadRequestException('Setor do produto não encontrado');
+        }
+
+        if (!product.sector.isActive) {
+          throw new BadRequestException(
+            'Não é possível ativar o produto porque o setor está inativo',
+          );
+        }
       }
 
       return this.prisma.product.update({
