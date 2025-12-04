@@ -1519,6 +1519,163 @@ export class SubscriptionsService {
   }
 
   /**
+   * Atualiza dados de um cliente ativo (empresa, endereço e usuário)
+   */
+  async updateActiveClient(
+    companyId: string,
+    updateDto: any,
+    userId: string,
+  ): Promise<any> {
+    // Buscar a empresa
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      include: {
+        address: {
+          where: { type: 'Principal' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Empresa não encontrada');
+    }
+
+    // Buscar o usuário que está realizando a alteração
+    const adminUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!adminUser) {
+      throw new UnauthorizedException('Usuário não encontrado');
+    }
+
+    // Verificar a senha do administrador
+    const isPasswordValid = await argon2.verify(
+      adminUser.password,
+      updateDto.password,
+    );
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Senha incorreta');
+    }
+
+    // Buscar o employee/user principal da empresa
+    const employee = await this.prisma.employee.findFirst({
+      where: {
+        companyId: company.id,
+        userId: { not: null },
+      },
+      include: { user: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Preparar dados para atualização
+    const changes: any = {
+      before: {
+        companyName: company.legalName || company.name,
+        document: company.cnpj,
+        state: company.address[0]?.state,
+        city: company.address[0]?.city,
+        userName: employee?.user?.name,
+        userDocument: employee?.cpf,
+        email: employee?.user?.email || company.email,
+        phone: employee?.user?.phone || company.phone || company.mobile,
+      },
+      after: {},
+    };
+
+    // Atualizar a empresa
+    const companyUpdateData: any = {};
+    if (updateDto.companyName) {
+      companyUpdateData.legalName = updateDto.companyName;
+      companyUpdateData.name = updateDto.companyName;
+      changes.after.companyName = updateDto.companyName;
+    }
+    if (updateDto.document) {
+      companyUpdateData.cnpj = updateDto.document;
+      changes.after.document = updateDto.document;
+    }
+
+    // Atualizar empresa se houver alterações
+    if (Object.keys(companyUpdateData).length > 0) {
+      await this.prisma.company.update({
+        where: { id: companyId },
+        data: companyUpdateData,
+      });
+    }
+
+    // Atualizar endereço
+    if (updateDto.stateId || updateDto.cityId) {
+      const address = company.address[0];
+      if (address) {
+        await this.prisma.address.update({
+          where: { id: address.id },
+          data: {
+            state: updateDto.stateId || address.state,
+            city: updateDto.cityId || address.city,
+          },
+        });
+        if (updateDto.stateId) changes.after.state = updateDto.stateId;
+        if (updateDto.cityId) changes.after.city = updateDto.cityId;
+      }
+    }
+
+    // Atualizar usuário
+    if (employee?.user) {
+      const userUpdateData: any = {};
+      if (updateDto.userName) {
+        userUpdateData.name = updateDto.userName;
+        changes.after.userName = updateDto.userName;
+      }
+      if (updateDto.email) {
+        userUpdateData.email = updateDto.email;
+        changes.after.email = updateDto.email;
+      }
+      if (updateDto.phone) {
+        userUpdateData.phone = updateDto.phone;
+        changes.after.phone = updateDto.phone;
+      }
+
+      if (Object.keys(userUpdateData).length > 0) {
+        await this.prisma.user.update({
+          where: { id: employee.user.id },
+          data: userUpdateData,
+        });
+      }
+
+      // Atualizar employee (CPF)
+      if (updateDto.userDocument) {
+        await this.prisma.employee.update({
+          where: { id: employee.id },
+          data: { cpf: updateDto.userDocument },
+        });
+        changes.after.userDocument = updateDto.userDocument;
+      }
+    }
+
+    // Criar histórico da empresa
+    await this.prisma.companyHistory.create({
+      data: {
+        companyId: company.id,
+        action: 'UPDATE',
+        description: 'Dados da empresa atualizados via painel administrativo',
+        changes,
+        metadata: {
+          updatedBy: adminUser.name,
+          updatedAt: new Date().toISOString(),
+        },
+        createdBy: userId,
+        createdByName: adminUser.name,
+      },
+    });
+
+    return {
+      message: 'Cliente atualizado com sucesso',
+    };
+  }
+
+  /**
    * Mapeia status do payment do Asaas para nosso enum
    */
   private mapAsaasPaymentStatus(asaasStatus: string): any {

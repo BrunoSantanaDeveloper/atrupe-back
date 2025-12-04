@@ -26,6 +26,7 @@ import { UpgradeSubscriptionDto } from './dto/upgrade-subscription.dto';
 import { ListTrialCompaniesDto } from './dto/list-trial-companies.dto';
 import { ListIncompleteRegistrationsDto } from './dto/list-incomplete-registrations.dto';
 import { ListActiveClientsDto } from './dto/list-active-clients.dto';
+import { UpdateActiveClientDto } from './dto/update-active-client.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 
@@ -120,6 +121,44 @@ export class SubscriptionsController {
   })
   async getCompanyHistory(@Param('companyId') companyId: string) {
     return await this.subscriptionsService.getCompanyHistory(companyId);
+  }
+
+  @Patch('active-clients/:companyId')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary: 'Atualiza dados de um cliente ativo (apenas SystemAdmin)',
+  })
+  @ApiParam({ name: 'companyId', description: 'Company ID' })
+  @ApiBody({
+    description: 'Dados para atualizar o cliente',
+    type: UpdateActiveClientDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Cliente atualizado com sucesso',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Senha do administrador incorreta',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado. Apenas administradores do sistema',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Empresa não encontrada',
+  })
+  async updateActiveClient(
+    @Param('companyId') companyId: string,
+    @Body() updateDto: UpdateActiveClientDto,
+    @Req() req,
+  ) {
+    return await this.subscriptionsService.updateActiveClient(
+      companyId,
+      updateDto,
+      req.user.userId,
+    );
   }
 
   @Get('active')
