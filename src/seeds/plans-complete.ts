@@ -52,7 +52,7 @@ export const PLAN_CONFIGURATIONS = {
     limits: {
       max_users: 3,
       max_companies: 1,
-      trial_days: 15,
+      trial_days: 15, // 15 dias de teste trial
     },
   },
 
