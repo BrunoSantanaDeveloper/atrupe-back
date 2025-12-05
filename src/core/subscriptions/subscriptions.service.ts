@@ -788,7 +788,72 @@ export class SubscriptionsService {
 
     if (existingCustomer) {
       this.logger.log('Cliente encontrado:', existingCustomer.name);
-      finalCustomer = existingCustomer;
+
+      // Verificar se o customer existente é um trial (não criado no Asaas ainda)
+      if (existingCustomer.asaasCustomerId?.startsWith('trial_')) {
+        this.logger.log('Cliente trial detectado, criando no Asaas...');
+
+        // Criar o customer no Asaas com os dados recebidos
+        const customerDataForAsaas = {
+          name: customer.name,
+          cpfCnpj: customer.document,
+          email: customer.email,
+          phone: customer.phone,
+          mobilePhone: customer.phone,
+          postalCode: customer.postalCode,
+          addressNumber: customer.addressNumber,
+          complement: customer.complement,
+          externalReference: existingCustomer.id,
+        };
+
+        try {
+          const asaasCustomer = await this.asaasApi().post(
+            '/customers',
+            customerDataForAsaas,
+          );
+
+          // Atualizar o customer no banco com o ID real do Asaas
+          finalCustomer = await this.prisma.customer.update({
+            where: { id: existingCustomer.id },
+            data: {
+              asaasCustomerId: asaasCustomer.data.id,
+              // Atualizar também os dados do customer com os dados recebidos
+              name: customer.name,
+              document: customer.document,
+              email: customer.email,
+              phone: customer.phone,
+              postalCode: customer.postalCode,
+              address: customer.address,
+              addressNumber: customer.addressNumber,
+              complement: customer.complement,
+              province: customer.province,
+              city: customer.city,
+              state: customer.state,
+            },
+          });
+
+          this.logger.log(
+            'Cliente criado no Asaas com sucesso:',
+            asaasCustomer.data.id,
+          );
+        } catch (error) {
+          const errorResponse = error.response?.data.errors;
+          const errorDescription = errorResponse
+            ?.map((err) => err.description)
+            .join(', ');
+
+          this.logger.error('Erro ao criar cliente no Asaas:', {
+            message: error.message,
+            response: errorResponse,
+          });
+
+          throw new BadRequestException(
+            errorDescription || 'Falha ao criar cliente no Asaas',
+          );
+        }
+      } else {
+        finalCustomer = existingCustomer;
+      }
     } else {
       this.logger.log('customer not found, creating...');
       finalCustomer = await this.customerService.create(customer);
@@ -818,27 +883,29 @@ export class SubscriptionsService {
     try {
       // Primeiro criar a subscription no banco para obter o ID
       const subscription = await this.prisma.$transaction(async (tx) => {
-        // Verificar dentro da transação se já existe uma subscription ativa (proteção contra race condition)
-        const existingSubscription = await tx.subscription.findFirst({
+        // Verificar dentro da transação se já existe uma subscription ativa não-TRIAL (proteção contra race condition)
+        const existingActiveSubscription = await tx.subscription.findFirst({
           where: {
             companyId: request.user.companyId,
             status: 'ACTIVE',
-          },
-          include: {
-            plan: true,
+            plan: {
+              planType: {
+                not: 'TRIAL',
+              },
+            },
           },
         });
 
-        // Se existe uma subscription e não é TRIAL, impede a criação
-        if (
-          existingSubscription &&
-          existingSubscription.plan.planType !== 'TRIAL'
-        ) {
+        // Se existe uma subscription ativa que não é TRIAL, impede a criação
+        if (existingActiveSubscription) {
           throw new BadRequestException(
             'Uma assinatura ativa já existe para esta empresa.',
           );
         }
 
+        // Criar nova subscription com status INACTIVE
+        // A subscription só será ativada quando o pagamento for confirmado via webhook
+        // Nesse momento, o webhook também desativará a subscription TRIAL se existir
         const newSubscription = await tx.subscription.create({
           data: {
             customerId: finalCustomer.id,
@@ -850,7 +917,7 @@ export class SubscriptionsService {
             cycle: 'MONTHLY',
             billingType: createSubscriptionDto.billingType,
             value,
-            status: 'INACTIVE', // Criar com status inativo, ativar somente após pagamento confirmado
+            status: 'INACTIVE', // Inativo até pagamento ser confirmado
           },
         });
 

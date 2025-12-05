@@ -1534,7 +1534,6 @@ model Subscription {
   payments             Payment[]
   history              SubscriptionHistory[]
 
-  @@unique([companyId, status], name: "unique_active_subscription_per_company")
   @@map("subscriptions")
 }
 
