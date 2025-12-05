@@ -4,6 +4,7 @@ import {
   BadRequestException,
   Logger,
   UnauthorizedException,
+  ConflictException,
 } from '@nestjs/common';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { AssignSubscriptionDto } from './dto/assign-subscription.dto';
@@ -1774,6 +1775,7 @@ export class SubscriptionsService {
           where: { type: 'Principal' },
           take: 1,
         },
+        customer: true,
       },
     });
 
@@ -1809,6 +1811,36 @@ export class SubscriptionsService {
       include: { user: true },
       orderBy: { createdAt: 'asc' },
     });
+
+    // Verificar se o email está sendo alterado e se já existe outro registro com esse email
+    if (updateDto.email && employee?.user) {
+      const currentEmail = employee.user.email;
+      if (currentEmail !== updateDto.email) {
+        // Email está sendo alterado, verifica duplicação na tabela User
+        const existingUser = await this.prisma.user.findFirst({
+          where: {
+            email: updateDto.email,
+            id: { not: employee.user.id },
+          },
+        });
+        if (existingUser) {
+          throw new ConflictException('E-mail já cadastrado.');
+        }
+
+        // Verifica duplicação na tabela Customer
+        if (company.customer && company.customer.length > 0) {
+          const existingCustomer = await this.prisma.customer.findFirst({
+            where: {
+              email: updateDto.email,
+              id: { not: company.customer[0].id },
+            },
+          });
+          if (existingCustomer) {
+            throw new ConflictException('E-mail já cadastrado.');
+          }
+        }
+      }
+    }
 
     // Preparar dados para atualização
     const changes: any = {
@@ -1891,6 +1923,27 @@ export class SubscriptionsService {
           data: { cpf: updateDto.userDocument },
         });
         changes.after.userDocument = updateDto.userDocument;
+      }
+    }
+
+    // Atualizar customer (se existir)
+    if (company.customer && company.customer.length > 0) {
+      const customerUpdateData: any = {};
+      if (updateDto.userName) {
+        customerUpdateData.name = updateDto.userName;
+      }
+      if (updateDto.email) {
+        customerUpdateData.email = updateDto.email;
+      }
+      if (updateDto.userDocument) {
+        customerUpdateData.document = updateDto.userDocument;
+      }
+
+      if (Object.keys(customerUpdateData).length > 0) {
+        await this.prisma.customer.update({
+          where: { id: company.customer[0].id },
+          data: customerUpdateData,
+        });
       }
     }
 
