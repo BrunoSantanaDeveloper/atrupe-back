@@ -176,6 +176,42 @@ export class SubscriptionsController {
     );
   }
 
+  @Post('check-status')
+  @ApiOperation({
+    summary: 'Check and sync subscription status with Asaas',
+    description:
+      'Verifica o status do pagamento diretamente no Asaas e atualiza a subscription local se o pagamento foi confirmado. Útil em ambientes sandbox onde o webhook pode não ser disparado automaticamente.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Status verificado e sincronizado',
+    schema: {
+      example: {
+        status: 'activated',
+        subscription: {
+          id: 'sub_123',
+          status: 'ACTIVE',
+          plan: {
+            name: 'Plano Pro',
+          },
+        },
+        payment: {
+          id: 'pay_123',
+          status: 'CONFIRMED',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Erro ao verificar status',
+  })
+  async checkSubscriptionStatus(@Req() req) {
+    return await this.subscriptionsService.checkAndSyncSubscriptionStatus(
+      req.user.companyId,
+    );
+  }
+
   @Post('assign-manual')
   @UseGuards(JwtAuthGuard, SystemAdminGuard)
   @ApiOperation({

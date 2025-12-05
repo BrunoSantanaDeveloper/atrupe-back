@@ -1566,6 +1566,199 @@ export class SubscriptionsService {
   }
 
   /**
+   * Verifica o status da subscription e sincroniza com o Asaas
+   * Útil para quando o webhook não é disparado (ex: sandbox)
+   */
+  async checkAndSyncSubscriptionStatus(companyId: string) {
+    this.logger.log(
+      `Verificando status da subscription para empresa ${companyId}`,
+    );
+
+    // Buscar a subscription mais recente da empresa que não seja TRIAL
+    const subscription = await this.prisma.subscription.findFirst({
+      where: {
+        companyId,
+        plan: {
+          planType: {
+            not: 'TRIAL',
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      include: {
+        payments: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+          take: 1,
+        },
+      },
+    });
+
+    if (!subscription) {
+      this.logger.warn(
+        `Nenhuma subscription encontrada para empresa ${companyId}`,
+      );
+      return { status: 'not_found', subscription: null };
+    }
+
+    // Se já está ativa, não precisa verificar
+    if (subscription.status === 'ACTIVE') {
+      return { status: 'already_active', subscription };
+    }
+
+    try {
+      // Buscar os pagamentos da subscription no Asaas
+      const asaasPayments = await this.getAsaasSubscriptionPayments(
+        subscription.asaasSubscriptionId,
+      );
+
+      if (!asaasPayments || asaasPayments.length === 0) {
+        this.logger.warn(
+          `Nenhum pagamento encontrado no Asaas para subscription ${subscription.asaasSubscriptionId}`,
+        );
+        return { status: 'no_payments', subscription };
+      }
+
+      // Pegar o primeiro pagamento (mais recente)
+      const latestPayment = asaasPayments[0];
+
+      this.logger.log(
+        `Status do pagamento no Asaas: ${latestPayment.status} (${latestPayment.id})`,
+      );
+
+      // Verificar se o pagamento foi confirmado ou recebido no Asaas
+      const isPaymentConfirmed =
+        latestPayment.status === 'CONFIRMED' ||
+        latestPayment.status === 'RECEIVED' ||
+        latestPayment.status === 'RECEIVED_IN_CASH';
+
+      if (isPaymentConfirmed) {
+        this.logger.log(
+          `Pagamento confirmado no Asaas! Ativando subscription ${subscription.id}`,
+        );
+
+        // Atualizar o payment local
+        const localPayment = subscription.payments[0];
+        if (localPayment) {
+          await this.prisma.payment.update({
+            where: { id: localPayment.id },
+            data: {
+              status: 'CONFIRMED',
+              confirmedDate: new Date(),
+              paymentDate: latestPayment.paymentDate
+                ? new Date(latestPayment.paymentDate)
+                : new Date(),
+            },
+          });
+
+          this.logger.log(
+            `Payment ${localPayment.id} atualizado para CONFIRMED`,
+          );
+        }
+
+        // Verificar se existe subscription TRIAL ativa da mesma empresa
+        const trialSubscription = await this.prisma.subscription.findFirst({
+          where: {
+            companyId: subscription.companyId,
+            status: 'ACTIVE',
+            plan: {
+              planType: 'TRIAL',
+            },
+          },
+        });
+
+        // Desativar subscription TRIAL se existir
+        if (trialSubscription) {
+          await this.prisma.subscription.update({
+            where: { id: trialSubscription.id },
+            data: { status: 'INACTIVE' },
+          });
+
+          this.logger.log(
+            `Subscription TRIAL ${trialSubscription.id} desativada automaticamente`,
+          );
+
+          // Registrar no histórico
+          await this.prisma.subscriptionHistory.create({
+            data: {
+              subscriptionId: trialSubscription.id,
+              action: 'DEACTIVATED',
+              description: 'Trial desativado após ativação de plano pago',
+              changes: {
+                before: { status: 'ACTIVE' },
+                after: { status: 'INACTIVE' },
+              },
+              metadata: {
+                reason: 'Nova subscription ativada via sincronização',
+                newSubscriptionId: subscription.id,
+              },
+              createdByName: 'Sistema - Sincronização',
+            },
+          });
+        }
+
+        // Ativar a subscription
+        const updatedSubscription = await this.prisma.subscription.update({
+          where: { id: subscription.id },
+          data: {
+            status: 'ACTIVE',
+            nextDueDate: latestPayment.dueDate
+              ? new Date(latestPayment.dueDate)
+              : subscription.nextDueDate,
+          },
+          include: {
+            plan: true,
+          },
+        });
+
+        // Registrar no histórico
+        await this.prisma.subscriptionHistory.create({
+          data: {
+            subscriptionId: subscription.id,
+            action: 'ACTIVATED',
+            description: 'Conta ativada após sincronização com Asaas',
+            changes: {
+              before: { status: 'INACTIVE' },
+              after: { status: 'ACTIVE' },
+            },
+            metadata: {
+              reason: 'Pagamento confirmado via sincronização',
+              paymentId: latestPayment.id,
+            },
+            createdByName: 'Sistema - Sincronização',
+          },
+        });
+
+        return {
+          status: 'activated',
+          subscription: updatedSubscription,
+          payment: latestPayment,
+        };
+      } else {
+        this.logger.log(
+          `Pagamento ainda pendente no Asaas: ${latestPayment.status}`,
+        );
+        return {
+          status: 'payment_pending',
+          subscription,
+          payment: latestPayment,
+        };
+      }
+    } catch (error) {
+      this.logger.error(
+        `Erro ao verificar status da subscription: ${error.message}`,
+        error,
+      );
+      throw new BadRequestException(
+        `Erro ao verificar status: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Atualiza dados de um cliente ativo (empresa, endereço e usuário)
    */
   async updateActiveClient(
