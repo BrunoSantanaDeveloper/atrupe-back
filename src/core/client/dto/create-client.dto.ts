@@ -292,6 +292,7 @@ export class PreRegisterClientDto {
     example: '1990-01-15',
   })
   @IsOptional()
+  @ValidateIf((o) => o.birthdate && o.birthdate.trim() !== '')
   @IsDateString()
   birthdate?: string;
 
