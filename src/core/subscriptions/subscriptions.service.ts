@@ -1595,6 +1595,20 @@ export class SubscriptionsService {
           },
           take: 1,
         },
+        plan: {
+          include: {
+            planFeatures: {
+              include: {
+                feature: true,
+              },
+            },
+            planLimits: {
+              include: {
+                limit: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -1711,7 +1725,20 @@ export class SubscriptionsService {
               : subscription.nextDueDate,
           },
           include: {
-            plan: true,
+            plan: {
+              include: {
+                planFeatures: {
+                  include: {
+                    feature: true,
+                  },
+                },
+                planLimits: {
+                  include: {
+                    limit: true,
+                  },
+                },
+              },
+            },
           },
         });
 
