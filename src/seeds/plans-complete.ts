@@ -61,7 +61,7 @@ export const PLAN_CONFIGURATIONS = {
       planType: 'START' as const,
       name: 'Start',
       description: '',
-      basePrice: 11500,
+      basePrice: 14700, // preço start
       additionalUserPrice: 1500,
       order: 1,
       isActive: true,
@@ -134,7 +134,7 @@ export const PLAN_CONFIGURATIONS = {
       planType: 'LITE' as const,
       name: 'Lite',
       description: '',
-      basePrice: 23000,
+      basePrice: 23000, // preço lite
       additionalUserPrice: 1500,
       order: 2,
       isActive: false,
@@ -184,7 +184,7 @@ export const PLAN_CONFIGURATIONS = {
       planType: 'PRO' as const,
       name: 'Pro',
       description: '',
-      basePrice: 0,
+      basePrice: 0, // preço pro
       additionalUserPrice: 1500,
       order: 3,
       isActive: false,
@@ -222,7 +222,7 @@ export const PLAN_CONFIGURATIONS = {
       planType: 'ELITE' as const,
       name: 'Elite',
       description: '',
-      basePrice: 0,
+      basePrice: 0, // preço elite
       additionalUserPrice: 1500,
       order: 4,
       isActive: false,
@@ -271,7 +271,7 @@ export const PLAN_CONFIGURATIONS = {
       planType: 'FULL' as const,
       name: 'Full',
       description: '',
-      basePrice: 0,
+      basePrice: 0, // preço full
       additionalUserPrice: 1500,
       order: 5,
       isActive: false,
