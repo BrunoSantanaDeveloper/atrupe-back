@@ -499,6 +499,23 @@ export class ScheduledExpenseService {
 
       if (filters.status) {
         whereScheduledExpense.isActive = filters.status === 'ACTIVE';
+      } else {
+        // Se não houver filtro de status, mostrar apenas despesas ativas
+        // OU despesas inativas que já foram lançadas no período
+        whereScheduledExpense.OR = [
+          { isActive: true },
+          {
+            isActive: false,
+            payables: {
+              some: {
+                referenceDate: {
+                  gte: new Date(year, adjustedMonth, 1),
+                  lt: new Date(year, adjustedMonth + 1, 1),
+                },
+              },
+            },
+          },
+        ];
       }
 
       if (filters.level1) {
