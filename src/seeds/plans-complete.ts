@@ -48,6 +48,7 @@ export const PLAN_CONFIGURATIONS = {
     badge: null,
     concept: null,
     features: [],
+    videoUrl: null,
     featuresList: null,
     limits: {
       max_users: 3,
@@ -82,6 +83,7 @@ export const PLAN_CONFIGURATIONS = {
       },
     },
     features: [],
+    videoUrl: 'https://youtu.be/kGTQD84QJ1U',
     featuresList: [
       {
         title: 'Empresa e sistema',
@@ -93,12 +95,12 @@ export const PLAN_CONFIGURATIONS = {
           'Perfis de usuário',
           'Setores',
         ],
-        videoUrl: 'https://vimeo.com/495579294',
+        videoUrl: '',
       },
       {
         title: 'Vendas',
         items: ['Orçamentos', 'Ordens de serviço'],
-        videoUrl: 'https://vimeo.com/495579294',
+        videoUrl: '',
       },
       {
         title: 'Financeiro',
@@ -109,17 +111,17 @@ export const PLAN_CONFIGURATIONS = {
           'Folha de pagamento (Simplificada)',
           'Plano de contas',
         ],
-        videoUrl: 'https://vimeo.com/495579294',
+        videoUrl: '',
       },
       {
         title: 'Produtos',
         items: ['Produtos sem composição'],
-        videoUrl: 'https://vimeo.com/495579294',
+        videoUrl: '',
       },
       {
         title: 'Cadastros',
         items: ['Clientes (Simplificado)', 'Fornecedores (Simplificado)'],
-        videoUrl: 'https://vimeo.com/495579294',
+        videoUrl: '',
       },
     ],
     limits: {
@@ -171,6 +173,7 @@ export const PLAN_CONFIGURATIONS = {
         'As informações cadastradas aqui evoluem diretamente pra próxima etapa — sem retrabalho!',
     },
     features: liteFeatures,
+    videoUrl: 'https://youtu.be/phhbVqmLWdM',
     featuresList: null,
     limits: {
       max_users: 5,
@@ -209,6 +212,7 @@ export const PLAN_CONFIGURATIONS = {
       },
     },
     features: proFeatures,
+    videoUrl: 'https://youtu.be/dEn2hnlz0tk',
     featuresList: null,
     limits: {
       max_users: 10,
@@ -258,6 +262,7 @@ export const PLAN_CONFIGURATIONS = {
         'O gerenciador foi projetado exclusivamente para empresas gráficas e de comunicação visual, oferecendo flexibilidade máxima sem complicações desnecessárias!',
     },
     features: eliteFeatures,
+    videoUrl: 'https://youtu.be/Xr2Yxrsg2sw',
     featuresList: null,
     limits: {
       max_users: 20,
@@ -296,6 +301,7 @@ export const PLAN_CONFIGURATIONS = {
       },
     },
     features: fullFeatures,
+    videoUrl: 'https://youtu.be/NkHw5AVLblg',
     featuresList: null,
     limits: {
       max_users: -1, // ilimitado

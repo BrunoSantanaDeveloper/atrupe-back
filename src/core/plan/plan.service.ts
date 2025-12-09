@@ -70,6 +70,7 @@ export class PlanService {
           badge: true,
           concept: true,
           features: true,
+          videoUrl: true,
         },
         orderBy: {
           order: 'asc', // Order by the new 'order' field
@@ -82,6 +83,7 @@ export class PlanService {
         name: plan.name,
         basePrice: plan.isActive ? plan.basePrice : undefined,
         isActive: plan.isActive,
+        videoUrl: plan.videoUrl,
         badge: plan.badge as any,
         sections: {
           concept: plan.concept as any,

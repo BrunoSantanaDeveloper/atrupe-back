@@ -79,12 +79,14 @@ export class SeedPlansService {
           badge: config.badge || null,
           concept: config.concept || null,
           features: config.featuresList || null,
+          videoUrl: config.videoUrl || null,
         },
         create: {
           ...config.plan,
           badge: config.badge || null,
           concept: config.concept || null,
           features: config.featuresList || null,
+          videoUrl: config.videoUrl || null,
         },
       });
 

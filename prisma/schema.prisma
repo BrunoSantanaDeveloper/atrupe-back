@@ -1392,6 +1392,7 @@ model Plan {
   badge               Json? // {text: string, variant: string}
   concept             Json? // {description, objective, mainActions, expectedResults, footer?}
   features            Json? // [{title, items: string[], videoUrl}]
+  videoUrl            String? // URL do vídeo principal do plano
   Company             Company?       @relation(fields: [companyId], references: [id])
   subscriptions       Subscription[]
   planFeatures        PlanFeature[]
