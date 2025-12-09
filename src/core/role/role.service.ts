@@ -66,14 +66,20 @@ export class RoleService {
 
       // Agrupar as roles por setor
       const rolesBySector = roles.reduce((acc, role) => {
-        const sectorId = role.sector.id;
+        // Handle roles without sector (sectorId is nullable)
+        const sectorId = role.sector?.id || 'no-sector';
 
         if (!acc[sectorId]) {
           acc[sectorId] = {
-            sector: {
-              id: role.sector.id,
-              name: role.sector.name,
-            },
+            sector: role.sector
+              ? {
+                  id: role.sector.id,
+                  name: role.sector.name,
+                }
+              : {
+                  id: 'no-sector',
+                  name: 'Sem Setor',
+                },
             roles: [],
           };
         }
