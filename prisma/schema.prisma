@@ -71,6 +71,7 @@ model Company {
   fiscalQuotations      Quotation[]          @relation("FiscalSubCompany")
   sectors               CompanySector[]      @relation("CompanyToCompanySector")
   history               CompanyHistory[]
+  importLogs            ImportLog[]
 
   @@map("companies")
 }
@@ -407,6 +408,7 @@ model User {
   orderHistory         OrderHistory[]      @relation("OrderHistoryUser")
   companyHistory       CompanyHistory[]    @relation("CompanyHistoryUser")
   userActivities       UserActivity[]
+  importLogs           ImportLog[]
   customer             Customer?           @relation(fields: [customerId], references: [id])
 
   @@index([email])
@@ -1940,4 +1942,46 @@ enum IdempotencyStatus {
   PROCESSING
   SUCCESS
   ERROR
+}
+
+enum ImportStatus {
+  QUEUED
+  VALIDATING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model ImportLog {
+  id            String       @id @default(uuid())
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  entity        String       // 'client', 'product', 'quotation', 'supplier'
+  status        ImportStatus @default(QUEUED)
+
+  userId        String       @map("user_id")
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  companyId     String       @map("company_id")
+  company       Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  fileName      String       @map("file_name")
+  fileSize      Int          @map("file_size")
+  fileUrl       String       @map("file_url")
+
+  totalRows     Int          @default(0) @map("total_rows")
+  successRows   Int          @default(0) @map("success_rows")
+  failedRows    Int          @default(0) @map("failed_rows")
+  errors        Json?
+
+  startedAt     DateTime?    @map("started_at")
+  completedAt   DateTime?    @map("completed_at")
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([status])
+  @@index([entity])
+  @@map("import_logs")
 }

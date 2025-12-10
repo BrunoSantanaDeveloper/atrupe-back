@@ -11,6 +11,11 @@ export class MinioService {
   private baseUrl: string;
 
   constructor(private readonly configService: ConfigService) {
+    // Configurar para aceitar certificados auto-assinados em desenvolvimento
+    if (process.env.NODE_ENV !== 'production') {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+    }
+
     this.minioClient = new Minio.Client({
       endPoint: this.configService.get<string>('MINIO_ENDPOINT') || null,
       port: Number(this.configService.get<string>('MINIO_PORT')),
@@ -25,10 +30,21 @@ export class MinioService {
   }
 
   async createBucketIfNotExists() {
-    const bucketExists = await this.minioClient.bucketExists(this.bucketName);
+    try {
+      const bucketExists = await this.minioClient.bucketExists(this.bucketName);
 
-    if (!bucketExists) {
-      await this.minioClient.makeBucket(this.bucketName, 'us-east-1');
+      if (!bucketExists) {
+        await this.minioClient.makeBucket(this.bucketName, 'us-east-1');
+      }
+    } catch (error) {
+      console.error('MinIO connection error:', {
+        endpoint: this.configService.get('MINIO_ENDPOINT'),
+        port: this.configService.get('MINIO_PORT'),
+        bucket: this.bucketName,
+        useSSL: this.configService.get('MINIO_USE_SSL'),
+        error: error.message,
+      });
+      throw error;
     }
   }
 

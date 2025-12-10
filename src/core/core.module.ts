@@ -31,6 +31,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { ActivityMonitorModule } from './activity-monitor/activity-monitor.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { PaymentsModule } from './payments/payments.module';
+import { ImportModule } from './import/import.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { PaymentsModule } from './payments/payments.module';
     ActivityMonitorModule,
     WebhooksModule,
     PaymentsModule,
+    ImportModule,
   ],
 })
 export class CoreModule {}
