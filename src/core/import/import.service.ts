@@ -230,7 +230,7 @@ export class ImportService {
           row: rowNumber,
           field: field.name,
           value: value || '',
-          error: `Field '${field.name}' is required`,
+          error: `Campo '${field.name}' é obrigatório`,
         });
         continue;
       }
@@ -246,7 +246,7 @@ export class ImportService {
           row: rowNumber,
           field: field.name,
           value,
-          error: `Invalid email format`,
+          error: `Formato de email inválido`,
         });
       }
 
@@ -256,7 +256,7 @@ export class ImportService {
           row: rowNumber,
           field: field.name,
           value,
-          error: `Value does not match required pattern`,
+          error: `Valor não corresponde ao padrão esperado`,
         });
       }
 
@@ -266,7 +266,7 @@ export class ImportService {
           row: rowNumber,
           field: field.name,
           value,
-          error: `Value exceeds maximum length of ${field.maxLength}`,
+          error: `Valor excede o tamanho máximo de ${field.maxLength} caracteres`,
         });
       }
 

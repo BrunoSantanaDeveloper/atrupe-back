@@ -25,7 +25,7 @@ export const CLIENT_IMPORT_SCHEMA = {
       example: 'PERSON',
       validate: async (value: string) => {
         if (!['PERSON', 'COMPANY', 'F', 'J'].includes(value.toUpperCase())) {
-          return 'Type must be PERSON, COMPANY, F, or J';
+          return 'Tipo deve ser PERSON, COMPANY, F ou J';
         }
         return null;
       },
@@ -47,7 +47,7 @@ export const CLIENT_IMPORT_SCHEMA = {
         // Validar CPF
         const cpfClean = value.replace(/\D/g, '');
         if (cpfClean.length !== 11) {
-          return 'Invalid CPF format';
+          return 'Formato de CPF inválido';
         }
 
         // Verificar duplicata
@@ -56,7 +56,7 @@ export const CLIENT_IMPORT_SCHEMA = {
         });
 
         if (existing) {
-          return `CPF already exists for client: ${existing.name}`;
+          return `CPF já existe para o cliente: ${existing.name}`;
         }
 
         return null;
@@ -79,7 +79,7 @@ export const CLIENT_IMPORT_SCHEMA = {
         // Validar CNPJ
         const cnpjClean = value.replace(/\D/g, '');
         if (cnpjClean.length !== 14) {
-          return 'Invalid CNPJ format';
+          return 'Formato de CNPJ inválido';
         }
 
         // Verificar duplicata
@@ -88,7 +88,7 @@ export const CLIENT_IMPORT_SCHEMA = {
         });
 
         if (existing) {
-          return `CNPJ already exists for client: ${existing.name}`;
+          return `CNPJ já existe para o cliente: ${existing.name}`;
         }
 
         return null;
