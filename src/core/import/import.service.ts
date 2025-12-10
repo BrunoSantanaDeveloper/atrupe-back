@@ -123,8 +123,8 @@ export class ImportService {
         },
       });
 
-      // Limpar buffer da memória após processamento
-      this.fileBuffers.delete(importId);
+      // NÃO limpar buffer aqui - será necessário para o processamento
+      // O buffer será limpo apenas após o processamento ou em caso de erro FATAL
 
       return {
         importId,
@@ -135,7 +135,7 @@ export class ImportService {
         preview: rows.slice(0, 10),
       };
     } catch (error) {
-      // Limpar buffer da memória em caso de erro também
+      // Limpar buffer da memória em caso de erro de validação
       this.fileBuffers.delete(importId);
 
       await this.prisma.importLog.update({
@@ -325,6 +325,153 @@ export class ImportService {
       startedAt: importLog.startedAt,
       completedAt: importLog.completedAt,
     };
+  }
+
+  /**
+   * Processar importação após validação
+   */
+  async processImport(importId: string): Promise<any> {
+    const importLog = await this.prisma.importLog.findUnique({
+      where: { id: importId },
+    });
+
+    if (!importLog) {
+      throw new BadRequestException('Import not found');
+    }
+
+    if (importLog.status !== ImportStatus.QUEUED) {
+      throw new BadRequestException(
+        'Import must be validated before processing',
+      );
+    }
+
+    // Atualizar status para PROCESSING
+    await this.prisma.importLog.update({
+      where: { id: importId },
+      data: {
+        status: ImportStatus.PROCESSING,
+        startedAt: new Date(),
+      },
+    });
+
+    try {
+      // Obter arquivo do buffer
+      const fileBuffer = this.fileBuffers.get(importId);
+
+      if (!fileBuffer) {
+        throw new BadRequestException(
+          'File not found. Please upload the file again.',
+        );
+      }
+
+      // Parse CSV novamente
+      const rows = await this.parseCsv(fileBuffer);
+
+      let successCount = 0;
+      let failedCount = 0;
+      const errors: any[] = [];
+
+      // Processar cada linha
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rowNumber = i + 2;
+
+        try {
+          // Importar baseado na entidade
+          if (importLog.entity === 'client') {
+            await this.importClient(row, importLog.companyId);
+          }
+          // TODO: adicionar outras entidades (product, quotation)
+
+          successCount++;
+        } catch (error) {
+          failedCount++;
+          errors.push({
+            row: rowNumber,
+            error: error.message,
+          });
+        }
+      }
+
+      // Limpar buffer após processamento
+      this.fileBuffers.delete(importId);
+
+      // Atualizar registro final
+      await this.prisma.importLog.update({
+        where: { id: importId },
+        data: {
+          status: ImportStatus.COMPLETED,
+          successRows: successCount,
+          failedRows: failedCount,
+          completedAt: new Date(),
+          errors: errors.length > 0 ? errors : [],
+        },
+      });
+
+      return {
+        importId,
+        successRows: successCount,
+        failedRows: failedCount,
+        errors,
+      };
+    } catch (error) {
+      // Limpar buffer em caso de erro
+      this.fileBuffers.delete(importId);
+
+      await this.prisma.importLog.update({
+        where: { id: importId },
+        data: {
+          status: ImportStatus.FAILED,
+          completedAt: new Date(),
+          errors: [{ message: error.message }],
+        },
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Importar um cliente do CSV
+   */
+  private async importClient(row: any, companyId: string): Promise<void> {
+    // Normalizar tipo
+    let type = row.type?.toUpperCase();
+    if (type === 'F') type = 'PERSON';
+    if (type === 'J') type = 'COMPANY';
+
+    // Criar cliente
+    await this.prisma.client.create({
+      data: {
+        companyId,
+        type: type || 'PERSON',
+        name: row.name,
+        email: row.email || null,
+        cpf: row.cpf || null,
+        cnpj: row.cnpj || null,
+        rg: row.rg || null,
+        phone: row.phone || null,
+        mobile: row.mobile || null,
+        activity: row.activity || null,
+        corporateName: row.corporateName || null,
+        notes: row.notes || null,
+        address: row.cep
+          ? {
+              create: [
+                {
+                  type: 'Principal',
+                  zipcode: row.cep || null,
+                  street: row.rua || null,
+                  number: row.numero || null,
+                  complement: row.complemento || null,
+                  neighborhood: row.bairro || null,
+                  city: row.cidade || null,
+                  state: row.uf || null,
+                },
+              ],
+            }
+          : undefined,
+      },
+    });
   }
 
   /**

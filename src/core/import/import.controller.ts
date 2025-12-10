@@ -80,6 +80,13 @@ export class ImportController {
     return result;
   }
 
+  @Post(':id/process')
+  @ApiOperation({ summary: 'Process import after validation' })
+  async processImport(@Param('id') importId: string) {
+    const result = await this.importService.processImport(importId);
+    return result;
+  }
+
   @Get(':id/status')
   @ApiOperation({ summary: 'Get import status' })
   async getStatus(@Param('id') importId: string) {
