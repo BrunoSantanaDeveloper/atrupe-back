@@ -10,6 +10,7 @@ import {
   PRODUCT_IMPORT_SCHEMA,
   QUOTATION_IMPORT_SCHEMA,
   ORDER_IMPORT_SCHEMA,
+  FINANCIAL_IMPORT_SCHEMA,
 } from './schemas';
 
 @Injectable()
@@ -175,6 +176,7 @@ export class ImportService {
       product: PRODUCT_IMPORT_SCHEMA,
       quotation: QUOTATION_IMPORT_SCHEMA,
       order: ORDER_IMPORT_SCHEMA,
+      financial: FINANCIAL_IMPORT_SCHEMA,
     };
 
     return schemas[entity];
@@ -383,6 +385,12 @@ export class ImportService {
       } else if (importLog.entity === 'order') {
         // Para ordens de serviço, processar todos de uma vez (estrutura complexa com múltiplas linhas por ordem)
         const result = await this.importOrders(rows, importLog.companyId);
+        successCount = result.successCount;
+        failedCount = result.failedCount;
+        errors.push(...result.errors);
+      } else if (importLog.entity === 'financial') {
+        // Para lançamentos financeiros, processar todos de uma vez (estrutura complexa com múltiplas parcelas por lançamento)
+        const result = await this.importFinancial(rows, importLog.companyId);
         successCount = result.successCount;
         failedCount = result.failedCount;
         errors.push(...result.errors);
@@ -943,6 +951,338 @@ export class ImportService {
         errors.push({
           row: firstRowNumber,
           error: `Ordem ${key}: ${error.message}`,
+        });
+      }
+    }
+
+    return { successCount, failedCount, errors };
+  }
+
+  /**
+   * Importar lançamentos financeiros (múltiplas parcelas por lançamento)
+   */
+  private async importFinancial(rows: any[], companyId: string) {
+    let successCount = 0;
+    let failedCount = 0;
+    const errors: any[] = [];
+
+    // Agrupar linhas por Tipo-Descricao-DataReferencia
+    const financialMap = new Map<string, any[]>();
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const key = `${row.Tipo}-${row.Descricao}-${row.DataReferencia}`;
+
+      if (!financialMap.has(key)) {
+        financialMap.set(key, []);
+      }
+
+      financialMap.get(key)!.push({
+        ...row,
+        rowNumber: i + 2, // Linha no CSV (considerando header)
+      });
+    }
+
+    // Processar cada lançamento
+    for (const [key, installments] of financialMap) {
+      try {
+        const firstItem = installments[0];
+        const isReceivable = firstItem.Tipo.toUpperCase() === 'RECEITA';
+
+        // Buscar cliente (se for receita)
+        let clientId: string | null = null;
+        if (isReceivable && firstItem.ClienteCpfCnpj) {
+          const cleanCpfCnpj = firstItem.ClienteCpfCnpj.replace(/[^\d]/g, '');
+          const client = await this.prisma.client.findFirst({
+            where: {
+              companyId,
+              OR: [
+                { cpf: { contains: cleanCpfCnpj } },
+                { cnpj: { contains: cleanCpfCnpj } },
+              ],
+            },
+          });
+          if (!client) {
+            throw new Error(
+              `Cliente com CPF/CNPJ '${firstItem.ClienteCpfCnpj}' não encontrado`,
+            );
+          }
+          clientId = client.id;
+        }
+
+        // Buscar fornecedor (se for despesa)
+        let supplierId: string | null = null;
+        if (!isReceivable && firstItem.FornecedorCpfCnpj) {
+          const cleanCpfCnpj = firstItem.FornecedorCpfCnpj.replace(/[^\d]/g, '');
+          const supplier = await this.prisma.supplier.findFirst({
+            where: {
+              companyId,
+              OR: [
+                { cpf: { contains: cleanCpfCnpj } },
+                { cnpj: { contains: cleanCpfCnpj } },
+              ],
+            },
+          });
+          if (!supplier) {
+            throw new Error(
+              `Fornecedor com CPF/CNPJ '${firstItem.FornecedorCpfCnpj}' não encontrado`,
+            );
+          }
+          supplierId = supplier.id;
+        }
+
+        // Buscar natureza
+        let natureId: string | null = null;
+        if (firstItem.Natureza) {
+          const nature = await this.prisma.nature.findFirst({
+            where: {
+              name: firstItem.Natureza,
+              companyId,
+              isActive: true,
+            },
+          });
+          if (!nature) {
+            throw new Error(`Natureza '${firstItem.Natureza}' não encontrada`);
+          }
+          natureId = nature.id;
+        }
+
+        // Buscar subcategoria
+        let subCategoryId: string | null = null;
+        if (firstItem.SubCategoria) {
+          const subCategory = await this.prisma.subCategory.findFirst({
+            where: {
+              name: firstItem.SubCategoria,
+              companyId,
+              isActive: true,
+            },
+          });
+          if (!subCategory) {
+            throw new Error(
+              `Subcategoria '${firstItem.SubCategoria}' não encontrada`,
+            );
+          }
+          subCategoryId = subCategory.id;
+        }
+
+        const totalAmount = parseFloat(firstItem.ValorTotal) || 0;
+        const referenceDate = firstItem.DataReferencia
+          ? new Date(firstItem.DataReferencia)
+          : new Date();
+
+        if (isReceivable) {
+          // Criar conta a receber (Receivable)
+          const receivable = await this.prisma.receivable.create({
+            data: {
+              description: firstItem.Descricao,
+              reference: firstItem.Referencia || null,
+              referenceDate,
+              totalAmount,
+              totalValue: totalAmount,
+              companyId,
+              clientId,
+              natureId,
+              subCategoryId,
+              notes: firstItem.Observacoes || null,
+              status: 'PENDING', // Será atualizado se houver parcelas pagas
+              installmentQty: installments.length,
+            },
+          });
+
+          // Criar parcelas
+          for (const item of installments) {
+            const installmentAmount = parseFloat(item.ValorParcela) || 0;
+            const dueDate = item.DataVencimento
+              ? new Date(item.DataVencimento)
+              : new Date();
+
+            // Validar status
+            let status: 'PENDING' | 'PAID' | 'OVERDUE' | 'CANCELED' =
+              'PENDING';
+            if (item.Status) {
+              const validStatuses = ['PENDING', 'PAID', 'OVERDUE', 'CANCELED'];
+              if (validStatuses.includes(item.Status.toUpperCase())) {
+                status = item.Status.toUpperCase() as
+                  | 'PENDING'
+                  | 'PAID'
+                  | 'OVERDUE'
+                  | 'CANCELED';
+              }
+            }
+
+            // Buscar condição de pagamento
+            let paymentConditionId: string | null = null;
+            if (item.CondicaoPagamento) {
+              const paymentCondition =
+                await this.prisma.paymentCondition.findFirst({
+                  where: {
+                    name: item.CondicaoPagamento,
+                    companyId,
+                    isActive: true,
+                  },
+                });
+              if (paymentCondition) {
+                paymentConditionId = paymentCondition.id;
+              }
+            }
+
+            // Buscar conta bancária
+            let bankAccountId: string | null = null;
+            if (item.ContaBancaria) {
+              const bankAccount = await this.prisma.bankAccount.findFirst({
+                where: {
+                  name: item.ContaBancaria,
+                  companyId,
+                  isActive: true,
+                },
+              });
+              if (bankAccount) {
+                bankAccountId = bankAccount.id;
+              }
+            }
+
+            await this.prisma.receivableInstallment.create({
+              data: {
+                receivableId: receivable.id,
+                installmentNumber: parseInt(item.Parcela) || 1,
+                dueDate,
+                amount: installmentAmount,
+                status,
+                paidDate:
+                  status === 'PAID' && item.DataPagamento
+                    ? new Date(item.DataPagamento)
+                    : null,
+                paidAmount:
+                  status === 'PAID' && item.ValorPago
+                    ? parseFloat(item.ValorPago)
+                    : null,
+                paymentConditionId,
+                bankAccountId,
+              },
+            });
+          }
+
+          // Atualizar status da receivable baseado nas parcelas
+          const allPaid = installments.every(
+            (item) => item.Status?.toUpperCase() === 'PAID',
+          );
+          if (allPaid) {
+            await this.prisma.receivable.update({
+              where: { id: receivable.id },
+              data: { status: 'PAID' },
+            });
+          }
+        } else {
+          // Criar conta a pagar (Payable)
+          const payable = await this.prisma.payable.create({
+            data: {
+              description: firstItem.Descricao,
+              reference: firstItem.Referencia || null,
+              referenceDate,
+              totalAmount,
+              totalValue: totalAmount,
+              companyId,
+              supplierId,
+              natureId,
+              subCategoryId,
+              notes: firstItem.Observacoes || null,
+              status: 'PENDING', // Será atualizado se houver parcelas pagas
+              installmentQty: installments.length,
+            },
+          });
+
+          // Criar parcelas
+          for (const item of installments) {
+            const installmentAmount = parseFloat(item.ValorParcela) || 0;
+            const dueDate = item.DataVencimento
+              ? new Date(item.DataVencimento)
+              : new Date();
+
+            // Validar status
+            let status: 'PENDING' | 'PAID' | 'OVERDUE' | 'CANCELED' =
+              'PENDING';
+            if (item.Status) {
+              const validStatuses = ['PENDING', 'PAID', 'OVERDUE', 'CANCELED'];
+              if (validStatuses.includes(item.Status.toUpperCase())) {
+                status = item.Status.toUpperCase() as
+                  | 'PENDING'
+                  | 'PAID'
+                  | 'OVERDUE'
+                  | 'CANCELED';
+              }
+            }
+
+            // Buscar condição de pagamento
+            let paymentConditionId: string | null = null;
+            if (item.CondicaoPagamento) {
+              const paymentCondition =
+                await this.prisma.paymentCondition.findFirst({
+                  where: {
+                    name: item.CondicaoPagamento,
+                    companyId,
+                    isActive: true,
+                  },
+                });
+              if (paymentCondition) {
+                paymentConditionId = paymentCondition.id;
+              }
+            }
+
+            // Buscar conta bancária
+            let bankAccountId: string | null = null;
+            if (item.ContaBancaria) {
+              const bankAccount = await this.prisma.bankAccount.findFirst({
+                where: {
+                  name: item.ContaBancaria,
+                  companyId,
+                  isActive: true,
+                },
+              });
+              if (bankAccount) {
+                bankAccountId = bankAccount.id;
+              }
+            }
+
+            await this.prisma.payableInstallment.create({
+              data: {
+                payableId: payable.id,
+                installmentNumber: parseInt(item.Parcela) || 1,
+                dueDate,
+                amount: installmentAmount,
+                status,
+                paidDate:
+                  status === 'PAID' && item.DataPagamento
+                    ? new Date(item.DataPagamento)
+                    : null,
+                paidAmount:
+                  status === 'PAID' && item.ValorPago
+                    ? parseFloat(item.ValorPago)
+                    : null,
+                paymentConditionId,
+                bankAccountId,
+              },
+            });
+          }
+
+          // Atualizar status da payable baseado nas parcelas
+          const allPaid = installments.every(
+            (item) => item.Status?.toUpperCase() === 'PAID',
+          );
+          if (allPaid) {
+            await this.prisma.payable.update({
+              where: { id: payable.id },
+              data: { status: 'PAID' },
+            });
+          }
+        }
+
+        successCount++;
+      } catch (error) {
+        failedCount++;
+        const firstRowNumber = installments[0].rowNumber;
+        errors.push({
+          row: firstRowNumber,
+          error: `Lançamento ${key}: ${error.message}`,
         });
       }
     }
