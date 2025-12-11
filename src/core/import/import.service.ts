@@ -372,26 +372,33 @@ export class ImportService {
       const errors: any[] = [];
 
       // Processar cada linha
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const rowNumber = i + 2;
+      if (importLog.entity === 'quotation') {
+        // Para orçamentos, processar todos de uma vez (estrutura complexa com múltiplas linhas por orçamento)
+        const result = await this.importQuotations(rows, importLog.companyId);
+        successCount = result.successCount;
+        failedCount = result.failedCount;
+        errors.push(...result.errors);
+      } else {
+        // Para outras entidades, processar linha por linha
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          const rowNumber = i + 2;
 
-        try {
-          // Importar baseado na entidade
-          if (importLog.entity === 'client') {
-            await this.importClient(row, importLog.companyId);
-          } else if (importLog.entity === 'product') {
-            await this.importProduct(row, importLog.companyId);
+          try {
+            if (importLog.entity === 'client') {
+              await this.importClient(row, importLog.companyId);
+            } else if (importLog.entity === 'product') {
+              await this.importProduct(row, importLog.companyId);
+            }
+
+            successCount++;
+          } catch (error) {
+            failedCount++;
+            errors.push({
+              row: rowNumber,
+              error: error.message,
+            });
           }
-          // TODO: adicionar outras entidades (quotation)
-
-          successCount++;
-        } catch (error) {
-          failedCount++;
-          errors.push({
-            row: rowNumber,
-            error: error.message,
-          });
         }
       }
 
@@ -535,6 +542,188 @@ export class ImportService {
         },
       });
     }
+  }
+
+  /**
+   * Importar orçamentos do CSV (agrupa linhas por NumeroVenda)
+   */
+  private async importQuotations(
+    rows: any[],
+    companyId: string,
+  ): Promise<{ successCount: number; failedCount: number; errors: any[] }> {
+    const errors: any[] = [];
+    let successCount = 0;
+    let failedCount = 0;
+
+    // Agrupar linhas por NumeroVenda + Serie
+    const quotationsMap = new Map<string, any[]>();
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const key = `${row.NumeroVenda}-${row.Serie}`;
+
+      if (!quotationsMap.has(key)) {
+        quotationsMap.set(key, []);
+      }
+      quotationsMap.get(key)!.push({ ...row, rowNumber: i + 2 });
+    }
+
+    // Processar cada orçamento
+    for (const [key, items] of quotationsMap.entries()) {
+      try {
+        const firstItem = items[0];
+
+        // Buscar série
+        const series = await this.prisma.saleSeries.findFirst({
+          where: {
+            code: firstItem.Serie,
+            companyId,
+            isActive: true,
+          },
+        });
+
+        if (!series) {
+          throw new Error(`Série '${firstItem.Serie}' não encontrada`);
+        }
+
+        // Buscar cliente por CPF/CNPJ
+        const cleanCpfCnpj = firstItem.ClienteCpfCnpj.replace(/[^\d]/g, '');
+        const client = await this.prisma.client.findFirst({
+          where: {
+            companyId,
+            OR: [
+              { cpf: { contains: cleanCpfCnpj } },
+              { cnpj: { contains: cleanCpfCnpj } },
+            ],
+          },
+        });
+
+        if (!client) {
+          throw new Error(
+            `Cliente com CPF/CNPJ '${firstItem.ClienteCpfCnpj}' não encontrado`,
+          );
+        }
+
+        // Buscar vendedor
+        const seller = await this.prisma.employee.findFirst({
+          where: {
+            user: {
+              email: firstItem.VendedorEmail,
+            },
+            companyId,
+            isActive: true,
+          },
+        });
+
+        if (!seller) {
+          throw new Error(
+            `Vendedor '${firstItem.VendedorEmail}' não encontrado`,
+          );
+        }
+
+        // Mapear status
+        let status: 'OPEN' | 'DONE' | 'REJECTED' | 'OVERDUE' = 'OPEN';
+        if (firstItem.Status === 'APROVADO' || firstItem.Status === 'DONE') {
+          status = 'DONE';
+        } else if (firstItem.Status === 'REJEITADO' || firstItem.Status === 'REJECTED') {
+          status = 'REJECTED';
+        }
+
+        // Criar orçamento
+        const quotation = await this.prisma.quotation.create({
+          data: {
+            companyId,
+            seriesId: series.id,
+            clientId: client.id,
+            sellerId: seller.id,
+            status,
+            description: firstItem.ObservacaoItem || null,
+            dueDate: firstItem.DataValidade
+              ? new Date(firstItem.DataValidade)
+              : null,
+            quotationNumber: parseInt(firstItem.NumeroVenda),
+            totalValue: 0, // Será calculado depois
+          },
+        });
+
+        let quotationTotalValue = 0;
+
+        // Processar cada item do orçamento
+        for (const item of items) {
+          // Buscar produto
+          const product = await this.prisma.product.findUnique({
+            where: {
+              code_companyId: {
+                code: item.ProdutoCodigo,
+                companyId,
+              },
+            },
+            include: {
+              items: true,
+            },
+          });
+
+          if (!product) {
+            throw new Error(`Produto '${item.ProdutoCodigo}' não encontrado`);
+          }
+
+          const itemTotalValue = parseFloat(item.ValorTotal);
+          quotationTotalValue += itemTotalValue;
+
+          // Criar QuotationProduct
+          const quotationProduct = await this.prisma.quotationProduct.create({
+            data: {
+              quotationId: quotation.id,
+              productId: product.id,
+              quantity: parseInt(item.Quantidade),
+              totalValue: itemTotalValue,
+              finalValue: itemTotalValue,
+              description: item.ObservacaoItem || product.name,
+              technicalDescription: product.technicalDescription,
+            },
+          });
+
+          // Criar QuotationProductItem para cada ProductItem
+          if (product.items && product.items.length > 0) {
+            const productItem = product.items[0]; // Usar o primeiro item como padrão
+
+            await this.prisma.quotationProductItem.create({
+              data: {
+                quotationId: quotation.id,
+                productId: product.id,
+                quotationProductId: quotationProduct.id,
+                productItemId: productItem.id,
+                quantity: parseInt(item.Quantidade),
+                name: productItem.name,
+                salePrice: parseFloat(item.ValorUnitario),
+                unitCost: productItem.unitCost,
+                totalValue: itemTotalValue,
+                width: productItem.width,
+                height: productItem.height,
+                unitKind: productItem.unitKind,
+              },
+            });
+          }
+        }
+
+        // Atualizar total do orçamento
+        await this.prisma.quotation.update({
+          where: { id: quotation.id },
+          data: { totalValue: quotationTotalValue },
+        });
+
+        successCount++;
+      } catch (error) {
+        failedCount++;
+        const firstRowNumber = items[0].rowNumber;
+        errors.push({
+          row: firstRowNumber,
+          error: `Orçamento ${key}: ${error.message}`,
+        });
+      }
+    }
+
+    return { successCount, failedCount, errors };
   }
 
   /**

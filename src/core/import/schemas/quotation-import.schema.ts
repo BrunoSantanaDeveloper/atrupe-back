@@ -14,14 +14,27 @@ export const QUOTATION_IMPORT_SCHEMA = {
       maxLength: 10,
       description: 'Série do orçamento',
       example: 'V1',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        const series = await prisma.saleSeries.findFirst({
+          where: {
+            code: value,
+            companyId,
+            isActive: true,
+          },
+        });
+        if (!series) {
+          return 'Série não encontrada. Cadastre a série antes de importar';
+        }
+        return null;
+      },
     },
     {
       name: 'Status',
       required: true,
       type: 'string',
       maxLength: 50,
-      description: 'Status do orçamento',
-      example: 'APROVADO',
+      description: 'Status do orçamento: OPEN, DONE, REJECTED',
+      example: 'OPEN',
     },
     {
       name: 'DataVenda',
@@ -38,34 +51,63 @@ export const QUOTATION_IMPORT_SCHEMA = {
       example: '2024-02-15',
     },
     {
-      name: 'ClienteID',
+      name: 'ClienteCpfCnpj',
       required: true,
-      type: 'number',
-      description: 'ID do cliente no sistema antigo',
-      example: '123',
+      type: 'string',
+      maxLength: 18,
+      description: 'CPF ou CNPJ do cliente (apenas números ou formatado)',
+      example: '12345678900 ou 12.345.678/0001-90',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        // Remover formatação
+        const cleanValue = value.replace(/[^\d]/g, '');
+
+        // Buscar cliente por CPF ou CNPJ
+        const client = await prisma.client.findFirst({
+          where: {
+            companyId,
+            OR: [
+              { cpf: { contains: cleanValue } },
+              { cnpj: { contains: cleanValue } },
+            ],
+          },
+        });
+
+        if (!client) {
+          return 'Cliente não encontrado. Cadastre o cliente antes de importar';
+        }
+        return null;
+      },
     },
     {
       name: 'ClienteNome',
-      required: true,
+      required: false,
       type: 'string',
       maxLength: 255,
-      description: 'Nome do cliente',
+      description: 'Nome do cliente (opcional, usado apenas para referência)',
       example: 'João Silva',
     },
     {
-      name: 'VendedorID',
-      required: false,
-      type: 'number',
-      description: 'ID do vendedor no sistema antigo',
-      example: '456',
-    },
-    {
-      name: 'VendedorNome',
-      required: false,
+      name: 'VendedorEmail',
+      required: true,
       type: 'string',
       maxLength: 255,
-      description: 'Nome do vendedor',
-      example: 'Carlos Vendedor',
+      description: 'Email do vendedor',
+      example: 'vendedor@empresa.com',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        const employee = await prisma.employee.findFirst({
+          where: {
+            user: {
+              email: value,
+            },
+            companyId,
+            isActive: true,
+          },
+        });
+        if (!employee) {
+          return 'Vendedor não encontrado. Cadastre o vendedor antes de importar';
+        }
+        return null;
+      },
     },
     {
       name: 'ItemID',
@@ -81,6 +123,20 @@ export const QUOTATION_IMPORT_SCHEMA = {
       maxLength: 100,
       description: 'Código do produto',
       example: 'PROD-001',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        const product = await prisma.product.findUnique({
+          where: {
+            code_companyId: {
+              code: value,
+              companyId,
+            },
+          },
+        });
+        if (!product) {
+          return 'Produto não encontrado. Cadastre o produto antes de importar';
+        }
+        return null;
+      },
     },
     {
       name: 'ProdutoNome',
