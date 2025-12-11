@@ -1013,7 +1013,10 @@ export class ImportService {
         // Buscar fornecedor (se for despesa)
         let supplierId: string | null = null;
         if (!isReceivable && firstItem.FornecedorCpfCnpj) {
-          const cleanCpfCnpj = firstItem.FornecedorCpfCnpj.replace(/[^\d]/g, '');
+          const cleanCpfCnpj = firstItem.FornecedorCpfCnpj.replace(
+            /[^\d]/g,
+            '',
+          );
           const supplier = await this.prisma.supplier.findFirst({
             where: {
               companyId,
@@ -1036,7 +1039,7 @@ export class ImportService {
         if (firstItem.Natureza) {
           const nature = await this.prisma.nature.findFirst({
             where: {
-              name: firstItem.Natureza,
+              description: firstItem.Natureza,
               companyId,
               isActive: true,
             },
@@ -1052,7 +1055,7 @@ export class ImportService {
         if (firstItem.SubCategoria) {
           const subCategory = await this.prisma.subCategory.findFirst({
             where: {
-              name: firstItem.SubCategoria,
+              description: firstItem.SubCategoria,
               companyId,
               isActive: true,
             },
@@ -1097,8 +1100,7 @@ export class ImportService {
               : new Date();
 
             // Validar status
-            let status: 'PENDING' | 'PAID' | 'OVERDUE' | 'CANCELED' =
-              'PENDING';
+            let status: 'PENDING' | 'PAID' | 'OVERDUE' | 'CANCELED' = 'PENDING';
             if (item.Status) {
               const validStatuses = ['PENDING', 'PAID', 'OVERDUE', 'CANCELED'];
               if (validStatuses.includes(item.Status.toUpperCase())) {
@@ -1199,8 +1201,7 @@ export class ImportService {
               : new Date();
 
             // Validar status
-            let status: 'PENDING' | 'PAID' | 'OVERDUE' | 'CANCELED' =
-              'PENDING';
+            let status: 'PENDING' | 'PAID' | 'OVERDUE' | 'CANCELED' = 'PENDING';
             if (item.Status) {
               const validStatuses = ['PENDING', 'PAID', 'OVERDUE', 'CANCELED'];
               if (validStatuses.includes(item.Status.toUpperCase())) {

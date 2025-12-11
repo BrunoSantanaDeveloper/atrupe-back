@@ -110,7 +110,7 @@ export const FINANCIAL_IMPORT_SCHEMA = {
 
         const nature = await prisma.nature.findFirst({
           where: {
-            name: value,
+            description: value,
             companyId,
             isActive: true,
           },
