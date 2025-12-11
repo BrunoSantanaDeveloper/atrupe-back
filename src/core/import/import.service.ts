@@ -380,8 +380,10 @@ export class ImportService {
           // Importar baseado na entidade
           if (importLog.entity === 'client') {
             await this.importClient(row, importLog.companyId);
+          } else if (importLog.entity === 'product') {
+            await this.importProduct(row, importLog.companyId);
           }
-          // TODO: adicionar outras entidades (product, quotation)
+          // TODO: adicionar outras entidades (quotation)
 
           successCount++;
         } catch (error) {
@@ -472,6 +474,67 @@ export class ImportService {
           : undefined,
       },
     });
+  }
+
+  /**
+   * Importar um produto do CSV
+   */
+  private async importProduct(row: any, companyId: string): Promise<void> {
+    // Buscar categoria por nome (já validado, então deve existir)
+    const category = await this.prisma.category.findFirst({
+      where: {
+        name: row.categoria,
+        companyId,
+      },
+    });
+
+    // Buscar setor por nome (já validado, então deve existir)
+    const sector = await this.prisma.companySector.findFirst({
+      where: {
+        name: row.setor,
+        companyId,
+      },
+    });
+
+    // Criar produto
+    const product = await this.prisma.product.create({
+      data: {
+        companyId,
+        code: row.codigo,
+        name: row.nome,
+        technicalDescription: row.descricao || null,
+        categoryId: category.id,
+        sectorId: sector.id,
+        isActive: true,
+        status: 'ACTIVE',
+      },
+    });
+
+    // Se houver dados do serviço 1, criar ProductItem
+    if (row.servico1 && row.servico1.trim() !== '') {
+      // Buscar unidade de medida
+      let unitOfMeasureId = null;
+      if (row.servico1UnidadeMedida) {
+        const unitOfMeasure = await this.prisma.defaultUnitOfMeasure.findFirst({
+          where: {
+            code: row.servico1UnidadeMedida.toUpperCase(),
+          },
+        });
+        unitOfMeasureId = unitOfMeasure?.id || null;
+      }
+
+      await this.prisma.productItem.create({
+        data: {
+          productId: product.id,
+          name: row.servico1,
+          width: row.servico1Largura ? parseFloat(row.servico1Largura) : null,
+          height: row.servico1Altura ? parseFloat(row.servico1Altura) : null,
+          unitCost: row.servico1Custo ? parseFloat(row.servico1Custo) : null,
+          salePrice: row.servico1Preco ? parseFloat(row.servico1Preco) : null,
+          defaultUnitOfMeasureId: unitOfMeasureId,
+        },
+      });
+    }
   }
 
   /**

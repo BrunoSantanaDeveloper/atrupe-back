@@ -7,6 +7,20 @@ export const PRODUCT_IMPORT_SCHEMA = {
       maxLength: 100,
       description: 'Código único do produto',
       example: 'PROD-001',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        const existing = await prisma.product.findUnique({
+          where: {
+            code_companyId: {
+              code: value,
+              companyId,
+            },
+          },
+        });
+        if (existing) {
+          return 'Código já existe para outro produto';
+        }
+        return null;
+      },
     },
     {
       name: 'nome',
@@ -30,6 +44,18 @@ export const PRODUCT_IMPORT_SCHEMA = {
       maxLength: 255,
       description: 'Nome da categoria',
       example: 'Portas',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        const category = await prisma.category.findFirst({
+          where: {
+            name: value,
+            companyId,
+          },
+        });
+        if (!category) {
+          return 'Categoria não encontrada. Cadastre a categoria antes de importar';
+        }
+        return null;
+      },
     },
     {
       name: 'setor',
@@ -38,6 +64,18 @@ export const PRODUCT_IMPORT_SCHEMA = {
       maxLength: 255,
       description: 'Nome do setor',
       example: 'MARCENARIA',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        const sector = await prisma.companySector.findFirst({
+          where: {
+            name: value,
+            companyId,
+          },
+        });
+        if (!sector) {
+          return 'Setor não encontrado. Cadastre o setor antes de importar';
+        }
+        return null;
+      },
     },
     {
       name: 'servico1',
