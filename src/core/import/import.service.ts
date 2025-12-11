@@ -9,6 +9,7 @@ import {
   CLIENT_IMPORT_SCHEMA,
   PRODUCT_IMPORT_SCHEMA,
   QUOTATION_IMPORT_SCHEMA,
+  ORDER_IMPORT_SCHEMA,
 } from './schemas';
 
 @Injectable()
@@ -173,6 +174,7 @@ export class ImportService {
       client: CLIENT_IMPORT_SCHEMA,
       product: PRODUCT_IMPORT_SCHEMA,
       quotation: QUOTATION_IMPORT_SCHEMA,
+      order: ORDER_IMPORT_SCHEMA,
     };
 
     return schemas[entity];
@@ -375,6 +377,12 @@ export class ImportService {
       if (importLog.entity === 'quotation') {
         // Para orçamentos, processar todos de uma vez (estrutura complexa com múltiplas linhas por orçamento)
         const result = await this.importQuotations(rows, importLog.companyId);
+        successCount = result.successCount;
+        failedCount = result.failedCount;
+        errors.push(...result.errors);
+      } else if (importLog.entity === 'order') {
+        // Para ordens de serviço, processar todos de uma vez (estrutura complexa com múltiplas linhas por ordem)
+        const result = await this.importOrders(rows, importLog.companyId);
         successCount = result.successCount;
         failedCount = result.failedCount;
         errors.push(...result.errors);
@@ -625,7 +633,10 @@ export class ImportService {
         let status: 'OPEN' | 'DONE' | 'REJECTED' | 'OVERDUE' = 'OPEN';
         if (firstItem.Status === 'APROVADO' || firstItem.Status === 'DONE') {
           status = 'DONE';
-        } else if (firstItem.Status === 'REJEITADO' || firstItem.Status === 'REJECTED') {
+        } else if (
+          firstItem.Status === 'REJEITADO' ||
+          firstItem.Status === 'REJECTED'
+        ) {
           status = 'REJECTED';
         }
 
@@ -719,6 +730,219 @@ export class ImportService {
         errors.push({
           row: firstRowNumber,
           error: `Orçamento ${key}: ${error.message}`,
+        });
+      }
+    }
+
+    return { successCount, failedCount, errors };
+  }
+
+  /**
+   * Importar ordens de serviço (múltiplas linhas por ordem)
+   */
+  private async importOrders(rows: any[], companyId: string) {
+    let successCount = 0;
+    let failedCount = 0;
+    const errors: any[] = [];
+
+    // Agrupar linhas por NumeroVenda-Serie
+    const ordersMap = new Map<string, any[]>();
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const key = `${row.NumeroVenda}-${row.Serie}`;
+
+      if (!ordersMap.has(key)) {
+        ordersMap.set(key, []);
+      }
+
+      ordersMap.get(key)!.push({
+        ...row,
+        rowNumber: i + 2, // Linha no CSV (considerando header)
+      });
+    }
+
+    // Processar cada ordem
+    for (const [key, items] of ordersMap) {
+      try {
+        const firstItem = items[0];
+
+        // Buscar série
+        const series = await this.prisma.saleSeries.findFirst({
+          where: {
+            code: firstItem.Serie,
+            companyId,
+            isActive: true,
+          },
+        });
+
+        if (!series) {
+          throw new Error(`Série '${firstItem.Serie}' não encontrada`);
+        }
+
+        // Buscar cliente por CPF/CNPJ
+        const cleanCpfCnpj = firstItem.ClienteCpfCnpj.replace(/[^\d]/g, '');
+        const client = await this.prisma.client.findFirst({
+          where: {
+            companyId,
+            OR: [
+              { cpf: { contains: cleanCpfCnpj } },
+              { cnpj: { contains: cleanCpfCnpj } },
+            ],
+          },
+        });
+
+        if (!client) {
+          throw new Error(
+            `Cliente com CPF/CNPJ '${firstItem.ClienteCpfCnpj}' não encontrado`,
+          );
+        }
+
+        // Buscar vendedor
+        const employee = await this.prisma.employee.findFirst({
+          where: {
+            user: {
+              email: firstItem.VendedorEmail,
+            },
+            companyId,
+            isActive: true,
+          },
+          include: {
+            user: true,
+          },
+        });
+
+        if (!employee) {
+          throw new Error(
+            `Vendedor com email '${firstItem.VendedorEmail}' não encontrado`,
+          );
+        }
+
+        // Validar status da ordem
+        let orderStatus: 'IN_PRODUCTION' | 'FINISHED' | 'CANCELED' =
+          'IN_PRODUCTION';
+        if (firstItem.StatusOrdem) {
+          const validStatuses = ['IN_PRODUCTION', 'FINISHED', 'CANCELED'];
+          if (validStatuses.includes(firstItem.StatusOrdem)) {
+            orderStatus = firstItem.StatusOrdem as
+              | 'IN_PRODUCTION'
+              | 'FINISHED'
+              | 'CANCELED';
+          }
+        }
+
+        // Criar orçamento primeiro (pois Order depende de Quotation)
+        const quotation = await this.prisma.quotation.create({
+          data: {
+            quotationNumber: parseInt(firstItem.NumeroVenda),
+            seriesId: series.id,
+            status: 'DONE', // Orçamento já aprovado vira ordem
+            createdAt: firstItem.DataVenda
+              ? new Date(firstItem.DataVenda)
+              : new Date(),
+            dueDate: firstItem.DataValidade
+              ? new Date(firstItem.DataValidade)
+              : null,
+            clientId: client.id,
+            sellerId: employee.id,
+            companyId,
+            totalValue: 0, // Será calculado depois
+          },
+        });
+
+        let quotationTotalValue = 0;
+
+        // Criar produtos do orçamento
+        for (const item of items) {
+          // Buscar produto
+          const product = await this.prisma.product.findUnique({
+            where: {
+              code_companyId: {
+                code: item.ProdutoCodigo,
+                companyId,
+              },
+            },
+            include: {
+              items: true,
+            },
+          });
+
+          if (!product) {
+            throw new Error(
+              `Produto com código '${item.ProdutoCodigo}' não encontrado`,
+            );
+          }
+
+          const quantity = parseFloat(item.Quantidade) || 0;
+          const unitValue = parseFloat(item.ValorUnitario) || 0;
+          const itemTotalValue = parseFloat(item.ValorTotal) || 0;
+          const discount = parseFloat(item.Desconto) || 0;
+
+          quotationTotalValue += itemTotalValue;
+
+          // Criar produto do orçamento
+          const quotationProduct = await this.prisma.quotationProduct.create({
+            data: {
+              quotationId: quotation.id,
+              productId: product.id,
+              description: item.ProdutoNome || product.name,
+              quantity,
+              totalValue: itemTotalValue,
+              discount,
+              notes: item.ObservacaoItem || null,
+            },
+          });
+
+          // Criar itens do produto (se o produto tiver items)
+          for (const productItem of product.items) {
+            await this.prisma.quotationProductItem.create({
+              data: {
+                quotationProductId: quotationProduct.id,
+                quotationId: quotation.id,
+                productId: product.id,
+                productItemId: productItem.id,
+                name: productItem.name,
+                quantity,
+                unitCost: productItem.unitCost,
+                salePrice: productItem.salePrice,
+                totalValue: (productItem.salePrice || 0) * quantity,
+                width: productItem.width,
+                height: productItem.height,
+                length: productItem.length,
+                weight: productItem.weight,
+                volume: productItem.volume,
+                distance: productItem.distance,
+                duration: productItem.duration,
+              },
+            });
+          }
+        }
+
+        // Atualizar total do orçamento
+        await this.prisma.quotation.update({
+          where: { id: quotation.id },
+          data: { totalValue: quotationTotalValue },
+        });
+
+        // Criar ordem de serviço vinculada ao orçamento
+        await this.prisma.order.create({
+          data: {
+            quotationId: quotation.id,
+            status: orderStatus,
+            deliveredAt:
+              firstItem.DataEntrega && orderStatus === 'FINISHED'
+                ? new Date(firstItem.DataEntrega)
+                : null,
+          },
+        });
+
+        successCount++;
+      } catch (error) {
+        failedCount++;
+        const firstRowNumber = items[0].rowNumber;
+        errors.push({
+          row: firstRowNumber,
+          error: `Ordem ${key}: ${error.message}`,
         });
       }
     }
