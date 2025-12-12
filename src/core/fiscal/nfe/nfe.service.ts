@@ -164,7 +164,8 @@ export class NfeService {
         status: NfeStatus.PROCESSING,
         ambiente: config.ambiente,
         valorTotal: dto.items.reduce(
-          (acc, item) => acc + item.quantity * item.unitValue - (item.discount || 0),
+          (acc, item) =>
+            acc + item.quantity * item.unitValue - (item.discount || 0),
           0,
         ),
       },
@@ -240,7 +241,9 @@ export class NfeService {
 
     try {
       // TODO: Implementar chamada real à API do Invoicy para cancelamento
-      this.logger.log(`Cancelando NF-e ${nfe.numero} para empresa ${companyId}`);
+      this.logger.log(
+        `Cancelando NF-e ${nfe.numero} para empresa ${companyId}`,
+      );
 
       const updatedNfe = await this.prisma.nfe.update({
         where: { id },
@@ -279,9 +282,7 @@ export class NfeService {
 
     try {
       // TODO: Implementar chamada real à API do Invoicy para carta de correção
-      this.logger.log(
-        `Enviando carta de correção para NF-e ${nfe.numero}`,
-      );
+      this.logger.log(`Enviando carta de correção para NF-e ${nfe.numero}`);
 
       const updatedNfe = await this.prisma.nfe.update({
         where: { id },
