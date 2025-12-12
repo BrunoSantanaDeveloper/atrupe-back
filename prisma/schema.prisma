@@ -72,6 +72,8 @@ model Company {
   sectors               CompanySector[]      @relation("CompanyToCompanySector")
   history               CompanyHistory[]
   importLogs            ImportLog[]
+  invoicyConfig         InvoicyConfig?
+  nfes                  Nfe[]
 
   @@map("companies")
 }
@@ -983,6 +985,7 @@ model Quotation {
   receivable       Receivable[]
   products         Product[]          @relation("QuotationToProduct")
   history          QuotationHistory[]
+  nfes             Nfe[]
 
   @@index([id, companyId])
   @@map("quotations")
@@ -1148,6 +1151,7 @@ model Order {
   quotation        Quotation         @relation(fields: [quotationId], references: [id])
   cancelReason     Reasons?          @relation(fields: [reasonId], references: [id])
   history          OrderHistory[]
+  nfes             Nfe[]
 
   @@index([id])
   @@map("orders")
@@ -1212,6 +1216,7 @@ model Product {
   sector               CompanySector      @relation(fields: [sectorId], references: [id])
   quotationProduct     QuotationProduct[]
   quotations           Quotation[]        @relation("QuotationToProduct")
+  fiscalData           ProductFiscalData?
 
   @@unique([code, companyId])
   @@map("products")
@@ -1954,34 +1959,136 @@ enum ImportStatus {
 }
 
 model ImportLog {
-  id            String       @id @default(uuid())
-  createdAt     DateTime     @default(now()) @map("created_at")
-  updatedAt     DateTime     @updatedAt @map("updated_at")
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  entity        String       // 'client', 'product', 'quotation', 'supplier'
-  status        ImportStatus @default(QUEUED)
+  entity String // 'client', 'product', 'quotation', 'supplier'
+  status ImportStatus @default(QUEUED)
 
-  userId        String       @map("user_id")
-  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  companyId     String       @map("company_id")
-  company       Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String  @map("company_id")
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  fileName      String       @map("file_name")
-  fileSize      Int          @map("file_size")
-  fileUrl       String       @map("file_url")
+  fileName String @map("file_name")
+  fileSize Int    @map("file_size")
+  fileUrl  String @map("file_url")
 
-  totalRows     Int          @default(0) @map("total_rows")
-  successRows   Int          @default(0) @map("success_rows")
-  failedRows    Int          @default(0) @map("failed_rows")
-  errors        Json?
+  totalRows   Int   @default(0) @map("total_rows")
+  successRows Int   @default(0) @map("success_rows")
+  failedRows  Int   @default(0) @map("failed_rows")
+  errors      Json?
 
-  startedAt     DateTime?    @map("started_at")
-  completedAt   DateTime?    @map("completed_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
 
   @@index([userId])
   @@index([companyId])
   @@index([status])
   @@index([entity])
   @@map("import_logs")
+}
+
+// ==================== NF-e / Fiscal Models ====================
+
+model InvoicyConfig {
+  id               String   @id @default(uuid())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  companyId        String   @unique
+  apiToken         String
+  ambiente         Int      @default(2) // 1 = Produção, 2 = Homologação
+  emitCnpj         String
+  emitIe           String?
+  emitRazaoSocial  String
+  emitNomeFantasia String?
+  emitCrt          Int      @default(1) // 1 = Simples Nacional, 2 = SN Excesso, 3 = Regime Normal
+  emitEndereco     String?
+  emitNumero       String?
+  emitBairro       String?
+  emitCep          String?
+  emitCmun         String?
+  emitUf           String?
+  emitPais         String?  @default("1058")
+  serieNfe         Int      @default(1)
+  proximoNumeroNfe Int      @default(1)
+  isActive         Boolean  @default(true)
+  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("invoicy_configs")
+}
+
+enum NfeStatus {
+  PENDING
+  PROCESSING
+  AUTHORIZED
+  REJECTED
+  CANCELLED
+  CORRECTION_SENT
+}
+
+model Nfe {
+  id                 String     @id @default(uuid())
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  companyId          String
+  orderId            String?
+  quotationId        String?
+  numero             Int
+  serie              Int
+  chaveAcesso        String?    @unique
+  protocolo          String?
+  status             NfeStatus  @default(PENDING)
+  ambiente           Int // 1 = Produção, 2 = Homologação
+  dataEmissao        DateTime?
+  dataAutorizacao    DateTime?
+  valorTotal         Float
+  xmlEnvio           String?    @db.Text
+  xmlRetorno         String?    @db.Text
+  xmlAutorizado      String?    @db.Text
+  danfeUrl           String?
+  motivoRejeicao     String?
+  motivoCancelamento String?
+  dataCancelamento   DateTime?
+  cartaCorrecao      String?    @db.Text
+  dataCorrecao       DateTime?
+  invoicyId          String? // ID retornado pelo Invoicy
+  invoicyProtocol    String?
+  company            Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order              Order?     @relation(fields: [orderId], references: [id])
+  quotation          Quotation? @relation(fields: [quotationId], references: [id])
+
+  @@index([companyId])
+  @@index([orderId])
+  @@index([status])
+  @@index([numero, serie, companyId])
+  @@map("nfes")
+}
+
+model ProductFiscalData {
+  id               String  @id @default(uuid())
+  productId        String  @unique
+  ncm              String?
+  cest             String?
+  cfop             String?
+  productCode      String? // Código do produto específico para NF-e
+  commercialUnit   String? // Unidade comercial (UN, KG, M, etc.)
+  origem           Int? // Origem da mercadoria (0-8)
+  icmsCst          String? // CST do ICMS
+  icmsAliquota     Float? // Alíquota do ICMS
+  icmsReducao      Float? // Redução da base de cálculo ICMS
+  icmsCreditRate   Float? // Alíquota do crédito ICMS (Simples Nacional)
+  icmsBaseModality Int? // Modalidade da base de cálculo ICMS
+  pisCst           String? // CST do PIS
+  pisAliquota      Float? // Alíquota do PIS
+  cofinsCst        String? // CST do COFINS
+  cofinsAliquota   Float? // Alíquota do COFINS
+  ipiCst           String? // CST do IPI
+  ipiAliquota      Float? // Alíquota do IPI
+  ipiFramework     String? // Enquadramento do IPI
+  product          Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_fiscal_data")
 }
