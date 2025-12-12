@@ -15,6 +15,7 @@ import { AssetModule } from './asset/asset.module';
 import { SaleModule } from './sale/sale.module';
 import { EmployeeModule } from './employee/employee.module';
 import { FinancialModule } from './financial/financial.module';
+import { FiscalModule } from './fiscal/fiscal.module';
 import { PaymentModule } from './payment/payment.module';
 import { CategoryModule } from './category/category.module';
 import { UnitOfMeasureModule } from './unit-of-measure/unit-of-measure.module';
@@ -51,6 +52,7 @@ import { ImportModule } from './import/import.module';
     SaleModule,
     EmployeeModule,
     FinancialModule,
+    FiscalModule,
     PaymentModule,
     CategoryModule,
     UnitOfMeasureModule,
