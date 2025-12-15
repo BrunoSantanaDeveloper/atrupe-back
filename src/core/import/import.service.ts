@@ -747,6 +747,7 @@ export class ImportService {
 
   /**
    * Importar ordens de serviço (múltiplas linhas por ordem)
+   * Inclui criação de lançamentos financeiros (receitas e despesas)
    */
   private async importOrders(rows: any[], companyId: string) {
     let successCount = 0;
@@ -845,6 +846,9 @@ export class ImportService {
             quotationNumber: parseInt(firstItem.NumeroVenda),
             seriesId: series.id,
             status: 'DONE', // Orçamento já aprovado vira ordem
+            approvedAt: firstItem.DataVenda
+              ? new Date(firstItem.DataVenda)
+              : new Date(),
             createdAt: firstItem.DataVenda
               ? new Date(firstItem.DataVenda)
               : new Date(),
@@ -882,7 +886,6 @@ export class ImportService {
           }
 
           const quantity = parseFloat(item.Quantidade) || 0;
-          const unitValue = parseFloat(item.ValorUnitario) || 0;
           const itemTotalValue = parseFloat(item.ValorTotal) || 0;
           const discount = parseFloat(item.Desconto) || 0;
 
@@ -896,6 +899,7 @@ export class ImportService {
               description: item.ProdutoNome || product.name,
               quantity,
               totalValue: itemTotalValue,
+              finalValue: itemTotalValue - discount,
               discount,
               notes: item.ObservacaoItem || null,
             },
@@ -932,6 +936,133 @@ export class ImportService {
           data: { totalValue: quotationTotalValue },
         });
 
+        // === CRIAR DELIVERY INFO ===
+        const tipoEntrega = firstItem.TipoEntrega || 'PICKUP';
+        await this.prisma.deliveryInfo.create({
+          data: {
+            quotationId: quotation.id,
+            deliveryType: tipoEntrega === 'CARRIER' ? 'CARRIER' : 'PICKUP',
+            cost: parseFloat(firstItem.FreteCusto) || null,
+            estimatedDate: firstItem.DataEntrega
+              ? new Date(firstItem.DataEntrega)
+              : null,
+          },
+        });
+
+        // === CRIAR QUOTATION PAYMENT E PARCELAS ===
+        let paymentCondition = null;
+        if (firstItem.CondicaoPagamento) {
+          paymentCondition = await this.prisma.paymentCondition.findFirst({
+            where: {
+              name: firstItem.CondicaoPagamento,
+              companyId,
+              isActive: true,
+            },
+          });
+        }
+
+        // Fallback: buscar primeira condição de pagamento ativa
+        if (!paymentCondition) {
+          paymentCondition = await this.prisma.paymentCondition.findFirst({
+            where: {
+              companyId,
+              isActive: true,
+            },
+          });
+        }
+
+        if (paymentCondition) {
+          const entradaValor = parseFloat(firstItem.EntradaValor) || 0;
+          const qtdParcelas = parseInt(firstItem.QtdParcelas) || 1;
+
+          const quotationPayment = await this.prisma.quotationPayment.create({
+            data: {
+              quotationId: quotation.id,
+              paymentConditionId: paymentCondition.id,
+              totalValue: quotationTotalValue,
+              finalValue: quotationTotalValue,
+              billing: 'ON_ORDER',
+              downPayment: entradaValor,
+              downPaymentDueDate: firstItem.EntradaVencimento
+                ? new Date(firstItem.EntradaVencimento)
+                : null,
+              downPaymentConditionId:
+                entradaValor > 0 ? paymentCondition.id : null,
+              installmentQty: qtdParcelas,
+            },
+          });
+
+          // Criar parcelas do QuotationInstallment
+          const parcelas = [];
+          for (let i = 1; i <= 3; i++) {
+            const valor = parseFloat(firstItem[`Parcela${i}Valor`]);
+            const vencimento = firstItem[`Parcela${i}Vencimento`];
+            if (valor && valor > 0 && vencimento) {
+              parcelas.push({
+                quotationPaymentId: quotationPayment.id,
+                paymentConditionId: paymentCondition.id,
+                value: valor,
+                dueDate: new Date(vencimento),
+              });
+            }
+          }
+
+          // Se não há parcelas informadas, criar uma parcela única
+          if (parcelas.length === 0 && quotationTotalValue > entradaValor) {
+            const valorParcela = quotationTotalValue - entradaValor;
+            const vencimentoPadrao = new Date();
+            vencimentoPadrao.setDate(vencimentoPadrao.getDate() + 30);
+            parcelas.push({
+              quotationPaymentId: quotationPayment.id,
+              paymentConditionId: paymentCondition.id,
+              value: valorParcela,
+              dueDate: vencimentoPadrao,
+            });
+          }
+
+          if (parcelas.length > 0) {
+            await this.prisma.quotationInstallment.createMany({
+              data: parcelas,
+            });
+
+            // === CRIAR RECEIVABLE (RECEITA) ===
+            await this.createOrderReceivable(
+              quotation,
+              parcelas,
+              client,
+              companyId,
+              series,
+              entradaValor,
+              firstItem.EntradaVencimento,
+              paymentCondition,
+            );
+          }
+        }
+
+        // === CRIAR PAYABLE DE FRETE ===
+        const freteCusto = parseFloat(firstItem.FreteCusto) || 0;
+        if (freteCusto > 0 && firstItem.FreteFornecedorCpfCnpj) {
+          await this.createOrderFreightPayable(
+            quotation,
+            firstItem,
+            companyId,
+            series,
+            freteCusto,
+          );
+        }
+
+        // === CRIAR PAYABLE DE COMISSÃO ===
+        const comissaoValor = parseFloat(firstItem.ComissaoValor) || 0;
+        if (comissaoValor > 0 && firstItem.ComissaoFornecedorCpfCnpj) {
+          await this.createOrderCommissionPayable(
+            quotation,
+            firstItem,
+            companyId,
+            series,
+            comissaoValor,
+          );
+        }
+
         // Criar ordem de serviço vinculada ao orçamento
         await this.prisma.order.create({
           data: {
@@ -956,6 +1087,307 @@ export class ImportService {
     }
 
     return { successCount, failedCount, errors };
+  }
+
+  /**
+   * Criar Receivable e suas parcelas a partir da ordem importada
+   */
+  private async createOrderReceivable(
+    quotation: any,
+    parcelas: any[],
+    client: any,
+    companyId: string,
+    series: any,
+    entradaValor: number,
+    entradaVencimento: string,
+    paymentCondition: any,
+  ) {
+    // Buscar natureza de vendas
+    const nature = await this.prisma.nature.findFirst({
+      where: {
+        companyId,
+        isActive: true,
+        description: { equals: 'Vendas', mode: 'insensitive' },
+      },
+    });
+
+    // Buscar subcategoria
+    let subCategory = null;
+    if (nature) {
+      subCategory = await this.prisma.subCategory.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          natureId: nature.id,
+          description: { equals: 'Prestação de Serviços', mode: 'insensitive' },
+        },
+      });
+    }
+
+    // Buscar conta bancária padrão
+    const defaultBankAccount = await this.prisma.bankAccount.findFirst({
+      where: { companyId, isActive: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Criar entrada se houver
+    if (entradaValor > 0) {
+      const receivableDownPayment = await this.prisma.receivable.create({
+        data: {
+          referenceDate: quotation.createdAt,
+          description: `Entrada da venda ${quotation.quotationNumber}-${series.code}`,
+          totalAmount: entradaValor,
+          totalValue: entradaValor,
+          installmentQty: 1,
+          status: 'PENDING',
+          clientId: client.id,
+          companyId,
+          natureId: nature?.id || null,
+          subCategoryId: subCategory?.id || null,
+          quotationId: quotation.id,
+          financialType: 'DOWN_PAYMENT',
+        },
+      });
+
+      await this.prisma.receivableInstallment.create({
+        data: {
+          receivableId: receivableDownPayment.id,
+          installmentNumber: 1,
+          dueDate: entradaVencimento
+            ? new Date(entradaVencimento)
+            : quotation.createdAt,
+          amount: entradaValor,
+          paymentConditionId: paymentCondition?.id || null,
+          bankAccountId: defaultBankAccount?.id || null,
+          status: 'PENDING',
+        },
+      });
+    }
+
+    // Criar Receivable principal
+    const totalAmount = parcelas.reduce((sum, p) => sum + p.value, 0);
+    const receivable = await this.prisma.receivable.create({
+      data: {
+        referenceDate: quotation.createdAt,
+        description: `Venda ${quotation.quotationNumber}-${series.code}`,
+        totalAmount,
+        totalValue: totalAmount,
+        installmentQty: parcelas.length,
+        status: 'PENDING',
+        clientId: client.id,
+        companyId,
+        natureId: nature?.id || null,
+        subCategoryId: subCategory?.id || null,
+        quotationId: quotation.id,
+        financialType: 'MAIN',
+      },
+    });
+
+    // Criar parcelas do Receivable
+    const installmentsData = parcelas.map((parcela, index) => ({
+      receivableId: receivable.id,
+      installmentNumber: index + 1,
+      dueDate: parcela.dueDate,
+      amount: parcela.value,
+      paymentConditionId: paymentCondition?.id || null,
+      bankAccountId: defaultBankAccount?.id || null,
+      status: 'PENDING' as const,
+    }));
+
+    await this.prisma.receivableInstallment.createMany({
+      data: installmentsData,
+    });
+
+    return receivable;
+  }
+
+  /**
+   * Criar Payable de frete a partir da ordem importada
+   */
+  private async createOrderFreightPayable(
+    quotation: any,
+    firstItem: any,
+    companyId: string,
+    series: any,
+    freteCusto: number,
+  ) {
+    // Buscar fornecedor (transportador)
+    const cleanCpfCnpj = firstItem.FreteFornecedorCpfCnpj.replace(/[^\d]/g, '');
+    const supplier = await this.prisma.supplier.findFirst({
+      where: {
+        companyId,
+        OR: [
+          { cpf: { contains: cleanCpfCnpj } },
+          { cnpj: { contains: cleanCpfCnpj } },
+        ],
+      },
+    });
+
+    if (!supplier) {
+      console.warn(
+        `Transportador com CPF/CNPJ ${firstItem.FreteFornecedorCpfCnpj} não encontrado`,
+      );
+      return null;
+    }
+
+    // Buscar natureza operacional
+    const nature = await this.prisma.nature.findFirst({
+      where: {
+        companyId,
+        isActive: true,
+        description: { equals: 'Operacional', mode: 'insensitive' },
+      },
+    });
+
+    // Buscar subcategoria de frete
+    let subCategory = null;
+    if (nature) {
+      subCategory = await this.prisma.subCategory.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          natureId: nature.id,
+          description: { equals: 'Frete', mode: 'insensitive' },
+        },
+      });
+    }
+
+    // Buscar conta bancária padrão
+    const defaultBankAccount = await this.prisma.bankAccount.findFirst({
+      where: { companyId, isActive: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Criar Payable
+    const payable = await this.prisma.payable.create({
+      data: {
+        referenceDate: quotation.createdAt,
+        description: `Frete da venda ${quotation.quotationNumber}-${series.code}`,
+        totalAmount: freteCusto,
+        totalValue: freteCusto,
+        installmentQty: 1,
+        status: 'PENDING',
+        supplierId: supplier.id,
+        companyId,
+        natureId: nature?.id || null,
+        subCategoryId: subCategory?.id || null,
+        quotationId: quotation.id,
+        financialType: 'DELIVERY',
+      },
+    });
+
+    // Criar parcela única
+    const vencimento = new Date(quotation.createdAt);
+    vencimento.setDate(vencimento.getDate() + 30);
+
+    await this.prisma.payableInstallment.create({
+      data: {
+        payableId: payable.id,
+        installmentNumber: 1,
+        dueDate: vencimento,
+        amount: freteCusto,
+        bankAccountId: defaultBankAccount?.id || null,
+        status: 'PENDING',
+      },
+    });
+
+    return payable;
+  }
+
+  /**
+   * Criar Payable de comissão a partir da ordem importada
+   */
+  private async createOrderCommissionPayable(
+    quotation: any,
+    firstItem: any,
+    companyId: string,
+    series: any,
+    comissaoValor: number,
+  ) {
+    // Buscar fornecedor (comissionado)
+    const cleanCpfCnpj = firstItem.ComissaoFornecedorCpfCnpj.replace(
+      /[^\d]/g,
+      '',
+    );
+    const supplier = await this.prisma.supplier.findFirst({
+      where: {
+        companyId,
+        OR: [
+          { cpf: { contains: cleanCpfCnpj } },
+          { cnpj: { contains: cleanCpfCnpj } },
+        ],
+      },
+    });
+
+    if (!supplier) {
+      console.warn(
+        `Comissionado com CPF/CNPJ ${firstItem.ComissaoFornecedorCpfCnpj} não encontrado`,
+      );
+      return null;
+    }
+
+    // Buscar natureza operacional
+    const nature = await this.prisma.nature.findFirst({
+      where: {
+        companyId,
+        isActive: true,
+        description: { equals: 'Operacional', mode: 'insensitive' },
+      },
+    });
+
+    // Buscar subcategoria de comissão
+    let subCategory = null;
+    if (nature) {
+      subCategory = await this.prisma.subCategory.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          natureId: nature.id,
+          description: { equals: 'Comissões', mode: 'insensitive' },
+        },
+      });
+    }
+
+    // Buscar conta bancária padrão
+    const defaultBankAccount = await this.prisma.bankAccount.findFirst({
+      where: { companyId, isActive: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Criar Payable
+    const payable = await this.prisma.payable.create({
+      data: {
+        referenceDate: quotation.createdAt,
+        description: `Comissão da venda ${quotation.quotationNumber}-${series.code}`,
+        totalAmount: comissaoValor,
+        totalValue: comissaoValor,
+        installmentQty: 1,
+        status: 'PENDING',
+        supplierId: supplier.id,
+        companyId,
+        natureId: nature?.id || null,
+        subCategoryId: subCategory?.id || null,
+        quotationId: quotation.id,
+        financialType: 'COMMISSION',
+      },
+    });
+
+    // Criar parcela única
+    const vencimento = new Date(quotation.createdAt);
+    vencimento.setDate(vencimento.getDate() + 30);
+
+    await this.prisma.payableInstallment.create({
+      data: {
+        payableId: payable.id,
+        installmentNumber: 1,
+        dueDate: vencimento,
+        amount: comissaoValor,
+        bankAccountId: defaultBankAccount?.id || null,
+        status: 'PENDING',
+      },
+    });
+
+    return payable;
   }
 
   /**
