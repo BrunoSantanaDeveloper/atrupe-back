@@ -277,6 +277,7 @@ model Client {
   supplierId        String?
   planId            String?
   isBranch          Boolean                  @default(false)
+  isImported        Boolean                  @default(false)
   address           Address[]
   paymentConditions ClientPaymentCondition[]
   company           Company                  @relation(fields: [companyId], references: [id])
@@ -962,6 +963,7 @@ model Quotation {
   contactSourceId  String?
   tagId            String?
   quickSale        Boolean            @default(false)
+  isImported       Boolean            @default(false)
   quotationNumber  Int?
   finishedAt       DateTime?
   reasonId         String?
@@ -1144,6 +1146,7 @@ model Order {
   quotationId      String            @unique
   status           OrderStatus       @default(IN_PRODUCTION)
   isActive         Boolean           @default(true)
+  isImported       Boolean           @default(false)
   canceledAt       DateTime?
   deliveredAt      DateTime?
   reasonId         String?
@@ -1210,6 +1213,7 @@ model Product {
   technicalDescription String?
   productionStages     Json?
   status               ProductStatus      @default(ACTIVE)
+  isImported           Boolean            @default(false)
   items                ProductItem[]
   category             Category           @relation(fields: [categoryId], references: [id])
   company              Company?           @relation(fields: [companyId], references: [id])

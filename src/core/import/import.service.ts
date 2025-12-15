@@ -495,6 +495,7 @@ export class ImportService {
               ],
             }
           : undefined,
+        isImported: true,
       },
     });
   }
@@ -530,6 +531,7 @@ export class ImportService {
         sectorId: sector.id,
         isActive: true,
         status: 'ACTIVE',
+        isImported: true,
       },
     });
 
@@ -673,6 +675,7 @@ export class ImportService {
               : null,
             quotationNumber: parseInt(firstItem.NumeroVenda),
             totalValue: 0, // Será calculado depois
+            isImported: true,
           },
         });
 
@@ -965,6 +968,7 @@ export class ImportService {
             sellerId: employee.id,
             companyId,
             totalValue: 0, // Será calculado depois
+            isImported: true,
           },
         });
 
@@ -1178,6 +1182,7 @@ export class ImportService {
               firstItem.DataEntrega && orderStatus === 'FINISHED'
                 ? new Date(firstItem.DataEntrega)
                 : null,
+            isImported: true,
           },
         });
 
