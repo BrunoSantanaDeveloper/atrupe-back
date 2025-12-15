@@ -638,14 +638,25 @@ export class ImportService {
         }
 
         // Mapear status
-        let status: 'OPEN' | 'DONE' | 'REJECTED' | 'OVERDUE' = 'OPEN';
-        if (firstItem.Status === 'APROVADO' || firstItem.Status === 'DONE') {
+        let status:
+          | 'OPEN'
+          | 'APPROVED'
+          | 'DONE'
+          | 'REJECTED'
+          | 'CANCELED'
+          | 'OVERDUE' = 'OPEN';
+        const statusUpper = (firstItem.Status || 'OPEN').toUpperCase();
+
+        if (statusUpper === 'APPROVED' || statusUpper === 'APROVADO') {
+          status = 'APPROVED';
+        } else if (statusUpper === 'DONE' || statusUpper === 'CONCLUIDO') {
           status = 'DONE';
-        } else if (
-          firstItem.Status === 'REJEITADO' ||
-          firstItem.Status === 'REJECTED'
-        ) {
+        } else if (statusUpper === 'REJECTED' || statusUpper === 'REJEITADO') {
           status = 'REJECTED';
+        } else if (statusUpper === 'CANCELED' || statusUpper === 'CANCELADO') {
+          status = 'CANCELED';
+        } else if (statusUpper === 'OVERDUE' || statusUpper === 'VENCIDO') {
+          status = 'OVERDUE';
         }
 
         // Criar orçamento
@@ -730,6 +741,101 @@ export class ImportService {
           where: { id: quotation.id },
           data: { totalValue: quotationTotalValue },
         });
+
+        // === CRIAR DELIVERY INFO ===
+        const tipoEntrega = firstItem.TipoEntrega || 'PICKUP';
+        const freteCusto = parseFloat(firstItem.FreteCusto) || null;
+        const freteValor = parseFloat(firstItem.FreteValor) || null;
+
+        await this.prisma.deliveryInfo.create({
+          data: {
+            quotationId: quotation.id,
+            deliveryType: tipoEntrega === 'CARRIER' ? 'CARRIER' : 'PICKUP',
+            cost: freteCusto,
+            value: freteValor,
+            estimatedDate: firstItem.DataEntrega
+              ? new Date(firstItem.DataEntrega)
+              : null,
+          },
+        });
+
+        // === CRIAR QUOTATION PAYMENT E PARCELAS ===
+        let paymentCondition = null;
+        if (firstItem.CondicaoPagamento) {
+          paymentCondition = await this.prisma.paymentCondition.findFirst({
+            where: {
+              name: firstItem.CondicaoPagamento,
+              companyId,
+              isActive: true,
+            },
+          });
+        }
+
+        // Fallback: buscar primeira condição de pagamento ativa
+        if (!paymentCondition) {
+          paymentCondition = await this.prisma.paymentCondition.findFirst({
+            where: {
+              companyId,
+              isActive: true,
+            },
+          });
+        }
+
+        if (paymentCondition) {
+          const entradaValor = parseFloat(firstItem.EntradaValor) || 0;
+          const qtdParcelas = parseInt(firstItem.QtdParcelas) || 1;
+
+          const quotationPayment = await this.prisma.quotationPayment.create({
+            data: {
+              quotationId: quotation.id,
+              paymentConditionId: paymentCondition.id,
+              totalValue: quotationTotalValue,
+              finalValue: quotationTotalValue,
+              billing: 'ON_ORDER',
+              downPayment: entradaValor,
+              downPaymentDueDate: firstItem.EntradaVencimento
+                ? new Date(firstItem.EntradaVencimento)
+                : null,
+              downPaymentConditionId:
+                entradaValor > 0 ? paymentCondition.id : null,
+              installmentQty: qtdParcelas,
+            },
+          });
+
+          // Criar parcelas do QuotationInstallment
+          const parcelas = [];
+          for (let i = 1; i <= 3; i++) {
+            const valor = parseFloat(firstItem[`Parcela${i}Valor`]);
+            const vencimento = firstItem[`Parcela${i}Vencimento`];
+            if (valor && valor > 0 && vencimento) {
+              parcelas.push({
+                quotationPaymentId: quotationPayment.id,
+                paymentConditionId: paymentCondition.id,
+                value: valor,
+                dueDate: new Date(vencimento),
+              });
+            }
+          }
+
+          // Se não há parcelas informadas, criar uma parcela única
+          if (parcelas.length === 0 && quotationTotalValue > entradaValor) {
+            const valorParcela = quotationTotalValue - entradaValor;
+            const vencimentoPadrao = new Date();
+            vencimentoPadrao.setDate(vencimentoPadrao.getDate() + 30);
+            parcelas.push({
+              quotationPaymentId: quotationPayment.id,
+              paymentConditionId: paymentCondition.id,
+              value: valorParcela,
+              dueDate: vencimentoPadrao,
+            });
+          }
+
+          if (parcelas.length > 0) {
+            await this.prisma.quotationInstallment.createMany({
+              data: parcelas,
+            });
+          }
+        }
 
         successCount++;
       } catch (error) {
@@ -845,7 +951,7 @@ export class ImportService {
           data: {
             quotationNumber: parseInt(firstItem.NumeroVenda),
             seriesId: series.id,
-            status: 'DONE', // Orçamento já aprovado vira ordem
+            status: 'APPROVED', // Orçamento aprovado que virou ordem
             approvedAt: firstItem.DataVenda
               ? new Date(firstItem.DataVenda)
               : new Date(),

@@ -33,7 +33,8 @@ export const QUOTATION_IMPORT_SCHEMA = {
       required: true,
       type: 'string',
       maxLength: 50,
-      description: 'Status do orçamento: OPEN, DONE, REJECTED',
+      description:
+        'Status do orçamento: OPEN, APPROVED, DONE, REJECTED, CANCELED',
       example: 'OPEN',
     },
     {
@@ -49,6 +50,13 @@ export const QUOTATION_IMPORT_SCHEMA = {
       type: 'date',
       description: 'Data de validade',
       example: '2024-02-15',
+    },
+    {
+      name: 'DataEntrega',
+      required: false,
+      type: 'date',
+      description: 'Data de entrega prevista',
+      example: '2024-02-20',
     },
     {
       name: 'ClienteCpfCnpj',
@@ -180,6 +188,115 @@ export const QUOTATION_IMPORT_SCHEMA = {
       type: 'string',
       description: 'Observação do item',
       example: 'Entrega em 15 dias',
+    },
+    // === CAMPOS FINANCEIROS (opcionais, apenas na primeira linha de cada orçamento) ===
+    {
+      name: 'CondicaoPagamento',
+      required: false,
+      type: 'string',
+      maxLength: 100,
+      description: 'Nome da condição de pagamento',
+      example: 'Boleto',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        if (!value) return null;
+        const paymentCondition = await prisma.paymentCondition.findFirst({
+          where: {
+            name: value,
+            companyId,
+            isActive: true,
+          },
+        });
+        if (!paymentCondition) {
+          return 'Condição de pagamento não encontrada';
+        }
+        return null;
+      },
+    },
+    {
+      name: 'QtdParcelas',
+      required: false,
+      type: 'number',
+      description: 'Quantidade de parcelas',
+      example: '3',
+    },
+    {
+      name: 'Parcela1Valor',
+      required: false,
+      type: 'decimal',
+      description: 'Valor da 1ª parcela',
+      example: '400.00',
+    },
+    {
+      name: 'Parcela1Vencimento',
+      required: false,
+      type: 'date',
+      description: 'Vencimento da 1ª parcela',
+      example: '2024-02-15',
+    },
+    {
+      name: 'Parcela2Valor',
+      required: false,
+      type: 'decimal',
+      description: 'Valor da 2ª parcela',
+      example: '400.00',
+    },
+    {
+      name: 'Parcela2Vencimento',
+      required: false,
+      type: 'date',
+      description: 'Vencimento da 2ª parcela',
+      example: '2024-03-15',
+    },
+    {
+      name: 'Parcela3Valor',
+      required: false,
+      type: 'decimal',
+      description: 'Valor da 3ª parcela',
+      example: '350.00',
+    },
+    {
+      name: 'Parcela3Vencimento',
+      required: false,
+      type: 'date',
+      description: 'Vencimento da 3ª parcela',
+      example: '2024-04-15',
+    },
+    {
+      name: 'EntradaValor',
+      required: false,
+      type: 'decimal',
+      description: 'Valor da entrada',
+      example: '200.00',
+    },
+    {
+      name: 'EntradaVencimento',
+      required: false,
+      type: 'date',
+      description: 'Vencimento da entrada',
+      example: '2024-01-15',
+    },
+    // === CAMPOS DE ENTREGA ===
+    {
+      name: 'TipoEntrega',
+      required: false,
+      type: 'string',
+      maxLength: 20,
+      description: 'Tipo de entrega: PICKUP (retira) ou CARRIER (entrega)',
+      example: 'CARRIER',
+    },
+    {
+      name: 'FreteCusto',
+      required: false,
+      type: 'decimal',
+      description: 'Custo do frete',
+      example: '150.00',
+    },
+    {
+      name: 'FreteValor',
+      required: false,
+      type: 'decimal',
+      description: 'Valor cobrado do cliente pelo frete',
+      example: '200.00',
     },
   ],
 };
