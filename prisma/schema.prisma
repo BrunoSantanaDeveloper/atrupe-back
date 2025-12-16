@@ -74,6 +74,8 @@ model Company {
   importLogs            ImportLog[]
   invoicyConfig         InvoicyConfig?
   nfes                  Nfe[]
+  nfses                 Nfse[]
+  nfces                 Nfce[]
 
   @@map("companies")
 }
@@ -986,6 +988,8 @@ model Quotation {
   products         Product[]          @relation("QuotationToProduct")
   history          QuotationHistory[]
   nfes             Nfe[]
+  nfses            Nfse[]
+  nfces            Nfce[]
 
   @@index([id, companyId])
   @@map("quotations")
@@ -1152,6 +1156,8 @@ model Order {
   cancelReason     Reasons?          @relation(fields: [reasonId], references: [id])
   history          OrderHistory[]
   nfes             Nfe[]
+  nfses            Nfse[]
+  nfces            Nfce[]
 
   @@index([id])
   @@map("orders")
@@ -2014,6 +2020,13 @@ model InvoicyConfig {
   emitPais         String?  @default("1058")
   serieNfe         Int      @default(1)
   proximoNumeroNfe Int      @default(1)
+  serieNfse        String?  @default("A1") // NFS-e usa série alfanumérica
+  proximoRpsNfse   Int      @default(1) // Próximo número do RPS
+  serieNfce        Int      @default(1)
+  proximoNumeroNfce Int     @default(1)
+  emitIm           String? // Inscrição Municipal (necessária para NFS-e)
+  codigoServico    String? // Código do serviço municipal padrão
+  aliquotaIss      Float?  // Alíquota ISS padrão
   isActive         Boolean  @default(true)
   company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -2072,23 +2085,142 @@ model ProductFiscalData {
   productId        String  @unique
   ncm              String?
   cest             String?
-  cfop             String?
+  cean             String? // Código de barras
   productCode      String? // Código do produto específico para NF-e
   commercialUnit   String? // Unidade comercial (UN, KG, M, etc.)
-  origem           Int? // Origem da mercadoria (0-8)
+  icmsOrigin       String? // Origem da mercadoria (0-8)
   icmsCst          String? // CST do ICMS
-  icmsAliquota     Float? // Alíquota do ICMS
+  icmsRate         Float? // Alíquota do ICMS
   icmsReducao      Float? // Redução da base de cálculo ICMS
   icmsCreditRate   Float? // Alíquota do crédito ICMS (Simples Nacional)
-  icmsBaseModality Int? // Modalidade da base de cálculo ICMS
+  icmsBaseModality String? // Modalidade da base de cálculo ICMS
   pisCst           String? // CST do PIS
-  pisAliquota      Float? // Alíquota do PIS
+  pisRate          Float? // Alíquota do PIS
   cofinsCst        String? // CST do COFINS
-  cofinsAliquota   Float? // Alíquota do COFINS
+  cofinsRate       Float? // Alíquota do COFINS
   ipiCst           String? // CST do IPI
-  ipiAliquota      Float? // Alíquota do IPI
+  ipiRate          Float? // Alíquota do IPI
   ipiFramework     String? // Enquadramento do IPI
+  cfopInState      String? // CFOP para venda dentro do estado
+  cfopOutState     String? // CFOP para venda fora do estado
+  cfopExport       String? // CFOP para exportação
   product          Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@map("product_fiscal_data")
+}
+
+// NFS-e Status
+enum NfseStatus {
+  PENDING
+  PROCESSING
+  AUTHORIZED
+  REJECTED
+  CANCELLED
+}
+
+// NFS-e Model - Nota Fiscal de Serviço Eletrônica
+model Nfse {
+  id                 String      @id @default(uuid())
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  companyId          String
+  orderId            String?
+  quotationId        String?
+  numero             Int
+  serie              String // NFS-e usa série alfanumérica
+  rpsNumero          Int // Número do RPS
+  rpsSerie           String
+  rpsTipo            Int         @default(1)
+  codigoVerificacao  String?
+  protocolo          String?
+  status             NfseStatus  @default(PENDING)
+  ambiente           Int // 1 = Produção, 2 = Homologação
+  dataEmissao        DateTime?
+  dataCompetencia    DateTime?
+  valorServicos      Float
+  valorDeducoes      Float?      @default(0)
+  valorPis           Float?      @default(0)
+  valorCofins        Float?      @default(0)
+  valorInss          Float?      @default(0)
+  valorIr            Float?      @default(0)
+  valorCsll          Float?      @default(0)
+  valorIss           Float?
+  aliquotaIss        Float?
+  baseCalculo        Float?
+  issRetido          Boolean     @default(false)
+  codigoServico      String? // Código do serviço municipal
+  discriminacao      String?     @db.Text // Descrição do serviço
+  codigoMunicipio    String? // Código IBGE do município
+  xmlEnvio           String?     @db.Text
+  xmlRetorno         String?     @db.Text
+  pdfUrl             String?
+  motivoRejeicao     String?
+  motivoCancelamento String?
+  dataCancelamento   DateTime?
+  invoicyId          String?
+  invoicyProtocol    String?
+  company            Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order              Order?      @relation(fields: [orderId], references: [id])
+  quotation          Quotation?  @relation(fields: [quotationId], references: [id])
+
+  @@index([companyId])
+  @@index([orderId])
+  @@index([status])
+  @@index([numero, serie, companyId])
+  @@map("nfses")
+}
+
+// NFC-e Status
+enum NfceStatus {
+  PENDING
+  PROCESSING
+  AUTHORIZED
+  REJECTED
+  CANCELLED
+  CONTINGENCY // Contingência offline
+}
+
+// NFC-e Model - Nota Fiscal de Consumidor Eletrônica
+model Nfce {
+  id                 String      @id @default(uuid())
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  companyId          String
+  orderId            String?
+  quotationId        String?
+  numero             Int
+  serie              Int
+  chaveAcesso        String?     @unique
+  protocolo          String?
+  status             NfceStatus  @default(PENDING)
+  ambiente           Int // 1 = Produção, 2 = Homologação
+  dataEmissao        DateTime?
+  dataAutorizacao    DateTime?
+  valorTotal         Float
+  valorDesconto      Float?      @default(0)
+  valorTroco         Float?      @default(0)
+  formaPagamento     String? // Código da forma de pagamento
+  xmlEnvio           String?     @db.Text
+  xmlRetorno         String?     @db.Text
+  xmlAutorizado      String?     @db.Text
+  qrCodeUrl          String? // URL do QR Code
+  urlConsulta        String? // URL para consulta pública
+  danfeUrl           String?
+  motivoRejeicao     String?
+  motivoCancelamento String?
+  dataCancelamento   DateTime?
+  contingencia       Boolean     @default(false)
+  dataContingencia   DateTime?
+  motivoContingencia String?
+  invoicyId          String?
+  invoicyProtocol    String?
+  company            Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order              Order?      @relation(fields: [orderId], references: [id])
+  quotation          Quotation?  @relation(fields: [quotationId], references: [id])
+
+  @@index([companyId])
+  @@index([orderId])
+  @@index([status])
+  @@index([numero, serie, companyId])
+  @@map("nfces")
 }

@@ -35,35 +35,21 @@ export class ProductFiscalService {
       where: { productId: dto.productId },
     });
 
+    const data = this.mapDtoToData(dto);
+
     if (existing) {
       // Se já existe, atualiza
       return this.prisma.productFiscalData.update({
         where: { productId: dto.productId },
-        data: {
-          ncm: dto.ncm,
-          cest: dto.cest,
-          cfop: dto.cfop,
-          productCode: dto.productCode,
-          commercialUnit: dto.commercialUnit,
-          origem: dto.origem,
-          icmsCst: dto.icmsCst,
-          icmsAliquota: dto.icmsAliquota,
-          icmsReducao: dto.icmsReducao,
-          icmsCreditRate: dto.icmsCreditRate,
-          icmsBaseModality: dto.icmsBaseModality,
-          pisCst: dto.pisCst,
-          pisAliquota: dto.pisAliquota,
-          cofinsCst: dto.cofinsCst,
-          cofinsAliquota: dto.cofinsAliquota,
-          ipiCst: dto.ipiCst,
-          ipiAliquota: dto.ipiAliquota,
-          ipiFramework: dto.ipiFramework,
-        },
+        data,
       });
     }
 
     return this.prisma.productFiscalData.create({
-      data: dto,
+      data: {
+        product: { connect: { id: dto.productId } },
+        ...data,
+      },
     });
   }
 
@@ -78,9 +64,11 @@ export class ProductFiscalService {
       );
     }
 
+    const data = this.mapDtoToData(dto);
+
     return this.prisma.productFiscalData.update({
       where: { productId },
-      data: dto,
+      data,
     });
   }
 
@@ -94,29 +82,15 @@ export class ProductFiscalService {
       throw new NotFoundException('Produto não encontrado');
     }
 
+    const data = this.mapDtoToData(dto);
+
     return this.prisma.productFiscalData.upsert({
       where: { productId: dto.productId },
-      create: dto,
-      update: {
-        ncm: dto.ncm,
-        cest: dto.cest,
-        cfop: dto.cfop,
-        productCode: dto.productCode,
-        commercialUnit: dto.commercialUnit,
-        origem: dto.origem,
-        icmsCst: dto.icmsCst,
-        icmsAliquota: dto.icmsAliquota,
-        icmsReducao: dto.icmsReducao,
-        icmsCreditRate: dto.icmsCreditRate,
-        icmsBaseModality: dto.icmsBaseModality,
-        pisCst: dto.pisCst,
-        pisAliquota: dto.pisAliquota,
-        cofinsCst: dto.cofinsCst,
-        cofinsAliquota: dto.cofinsAliquota,
-        ipiCst: dto.ipiCst,
-        ipiAliquota: dto.ipiAliquota,
-        ipiFramework: dto.ipiFramework,
+      create: {
+        product: { connect: { id: dto.productId } },
+        ...data,
       },
+      update: data,
     });
   }
 
@@ -142,5 +116,31 @@ export class ProductFiscalService {
         productId: { in: productIds },
       },
     });
+  }
+
+  private mapDtoToData(dto: CreateProductFiscalDataDto | UpdateProductFiscalDataDto) {
+    return {
+      ncm: dto.ncm || null,
+      cest: dto.cest || null,
+      cean: dto.cean || null,
+      productCode: dto.productCode || null,
+      commercialUnit: dto.commercialUnit || null,
+      icmsOrigin: dto.icmsOrigin || null,
+      icmsCst: dto.icmsCst || null,
+      icmsRate: dto.icmsRate ?? null,
+      icmsCreditRate: dto.icmsCreditRate ?? null,
+      icmsBaseModality: dto.icmsBaseModality || null,
+      icmsReducao: dto.icmsReducao ?? null,
+      pisCst: dto.pisCst || null,
+      pisRate: dto.pisRate ?? null,
+      cofinsCst: dto.cofinsCst || null,
+      cofinsRate: dto.cofinsRate ?? null,
+      ipiCst: dto.ipiCst || null,
+      ipiRate: dto.ipiRate ?? null,
+      ipiFramework: dto.ipiFramework || null,
+      cfopInState: dto.cfopInState || null,
+      cfopOutState: dto.cfopOutState || null,
+      cfopExport: dto.cfopExport || null,
+    };
   }
 }

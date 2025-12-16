@@ -1,13 +1,15 @@
-import {
-  IsString,
-  IsNotEmpty,
-  IsOptional,
-  IsInt,
-  IsNumber,
-  Min,
-  Max,
-} from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsNumber, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+
+// Helper to parse numeric strings or undefined
+const parseNumber = ({ value }) => {
+  if (value === '' || value === null || value === undefined || value === '$undefined') {
+    return undefined;
+  }
+  const parsed = parseFloat(value);
+  return isNaN(parsed) ? undefined : parsed;
+};
 
 export class CreateProductFiscalDataDto {
   @ApiProperty({ description: 'ID do produto' })
@@ -20,42 +22,30 @@ export class CreateProductFiscalDataDto {
   @IsOptional()
   ncm?: string;
 
-  @ApiPropertyOptional({
-    description: 'CEST - Código Especificador da Substituição Tributária',
-  })
+  @ApiPropertyOptional({ description: 'CEST - Código Especificador da Substituição Tributária' })
   @IsString()
   @IsOptional()
   cest?: string;
 
-  @ApiPropertyOptional({
-    description: 'CFOP - Código Fiscal de Operações e Prestações',
-  })
+  @ApiPropertyOptional({ description: 'CEAN - Código de barras' })
   @IsString()
   @IsOptional()
-  cfop?: string;
+  cean?: string;
 
   @ApiPropertyOptional({ description: 'Código do produto para NF-e' })
   @IsString()
   @IsOptional()
   productCode?: string;
 
-  @ApiPropertyOptional({
-    description: 'Unidade comercial (UN, KG, M, etc.)',
-  })
+  @ApiPropertyOptional({ description: 'Unidade comercial (UN, KG, M, etc.)' })
   @IsString()
   @IsOptional()
   commercialUnit?: string;
 
-  @ApiPropertyOptional({
-    description: 'Origem da mercadoria (0-8)',
-    minimum: 0,
-    maximum: 8,
-  })
-  @IsInt()
+  @ApiPropertyOptional({ description: 'Origem da mercadoria (0-8)' })
+  @IsString()
   @IsOptional()
-  @Min(0)
-  @Max(8)
-  origem?: number;
+  icmsOrigin?: string;
 
   @ApiPropertyOptional({ description: 'CST do ICMS' })
   @IsString()
@@ -63,34 +53,33 @@ export class CreateProductFiscalDataDto {
   icmsCst?: string;
 
   @ApiPropertyOptional({ description: 'Alíquota do ICMS' })
+  @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(0)
   @Max(100)
-  icmsAliquota?: number;
+  icmsRate?: number;
 
-  @ApiPropertyOptional({ description: 'Redução da base de cálculo ICMS' })
-  @IsNumber()
-  @IsOptional()
-  @Min(0)
-  @Max(100)
-  icmsReducao?: number;
-
-  @ApiPropertyOptional({
-    description: 'Alíquota do crédito ICMS (Simples Nacional)',
-  })
+  @ApiPropertyOptional({ description: 'Alíquota do crédito ICMS (Simples Nacional)' })
+  @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(0)
   @Max(100)
   icmsCreditRate?: number;
 
-  @ApiPropertyOptional({
-    description: 'Modalidade da base de cálculo ICMS',
-  })
-  @IsInt()
+  @ApiPropertyOptional({ description: 'Modalidade da base de cálculo ICMS' })
+  @IsString()
   @IsOptional()
-  icmsBaseModality?: number;
+  icmsBaseModality?: string;
+
+  @ApiPropertyOptional({ description: 'Redução da base de cálculo ICMS' })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  icmsReducao?: number;
 
   @ApiPropertyOptional({ description: 'CST do PIS' })
   @IsString()
@@ -98,11 +87,12 @@ export class CreateProductFiscalDataDto {
   pisCst?: string;
 
   @ApiPropertyOptional({ description: 'Alíquota do PIS' })
+  @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(0)
   @Max(100)
-  pisAliquota?: number;
+  pisRate?: number;
 
   @ApiPropertyOptional({ description: 'CST do COFINS' })
   @IsString()
@@ -110,11 +100,12 @@ export class CreateProductFiscalDataDto {
   cofinsCst?: string;
 
   @ApiPropertyOptional({ description: 'Alíquota do COFINS' })
+  @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(0)
   @Max(100)
-  cofinsAliquota?: number;
+  cofinsRate?: number;
 
   @ApiPropertyOptional({ description: 'CST do IPI' })
   @IsString()
@@ -122,16 +113,32 @@ export class CreateProductFiscalDataDto {
   ipiCst?: string;
 
   @ApiPropertyOptional({ description: 'Alíquota do IPI' })
+  @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(0)
   @Max(100)
-  ipiAliquota?: number;
+  ipiRate?: number;
 
   @ApiPropertyOptional({ description: 'Enquadramento do IPI' })
   @IsString()
   @IsOptional()
   ipiFramework?: string;
+
+  @ApiPropertyOptional({ description: 'CFOP para venda dentro do estado' })
+  @IsString()
+  @IsOptional()
+  cfopInState?: string;
+
+  @ApiPropertyOptional({ description: 'CFOP para venda fora do estado' })
+  @IsString()
+  @IsOptional()
+  cfopOutState?: string;
+
+  @ApiPropertyOptional({ description: 'CFOP para exportação' })
+  @IsString()
+  @IsOptional()
+  cfopExport?: string;
 }
 
 export class UpdateProductFiscalDataDto {
@@ -140,42 +147,30 @@ export class UpdateProductFiscalDataDto {
   @IsOptional()
   ncm?: string;
 
-  @ApiPropertyOptional({
-    description: 'CEST - Código Especificador da Substituição Tributária',
-  })
+  @ApiPropertyOptional({ description: 'CEST - Código Especificador da Substituição Tributária' })
   @IsString()
   @IsOptional()
   cest?: string;
 
-  @ApiPropertyOptional({
-    description: 'CFOP - Código Fiscal de Operações e Prestações',
-  })
+  @ApiPropertyOptional({ description: 'CEAN - Código de barras' })
   @IsString()
   @IsOptional()
-  cfop?: string;
+  cean?: string;
 
   @ApiPropertyOptional({ description: 'Código do produto para NF-e' })
   @IsString()
   @IsOptional()
   productCode?: string;
 
-  @ApiPropertyOptional({
-    description: 'Unidade comercial (UN, KG, M, etc.)',
-  })
+  @ApiPropertyOptional({ description: 'Unidade comercial (UN, KG, M, etc.)' })
   @IsString()
   @IsOptional()
   commercialUnit?: string;
 
-  @ApiPropertyOptional({
-    description: 'Origem da mercadoria (0-8)',
-    minimum: 0,
-    maximum: 8,
-  })
-  @IsInt()
+  @ApiPropertyOptional({ description: 'Origem da mercadoria (0-8)' })
+  @IsString()
   @IsOptional()
-  @Min(0)
-  @Max(8)
-  origem?: number;
+  icmsOrigin?: string;
 
   @ApiPropertyOptional({ description: 'CST do ICMS' })
   @IsString()
@@ -183,34 +178,33 @@ export class UpdateProductFiscalDataDto {
   icmsCst?: string;
 
   @ApiPropertyOptional({ description: 'Alíquota do ICMS' })
+  @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(0)
   @Max(100)
-  icmsAliquota?: number;
+  icmsRate?: number;
 
-  @ApiPropertyOptional({ description: 'Redução da base de cálculo ICMS' })
-  @IsNumber()
-  @IsOptional()
-  @Min(0)
-  @Max(100)
-  icmsReducao?: number;
-
-  @ApiPropertyOptional({
-    description: 'Alíquota do crédito ICMS (Simples Nacional)',
-  })
+  @ApiPropertyOptional({ description: 'Alíquota do crédito ICMS (Simples Nacional)' })
+  @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(0)
   @Max(100)
   icmsCreditRate?: number;
 
-  @ApiPropertyOptional({
-    description: 'Modalidade da base de cálculo ICMS',
-  })
-  @IsInt()
+  @ApiPropertyOptional({ description: 'Modalidade da base de cálculo ICMS' })
+  @IsString()
   @IsOptional()
-  icmsBaseModality?: number;
+  icmsBaseModality?: string;
+
+  @ApiPropertyOptional({ description: 'Redução da base de cálculo ICMS' })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  icmsReducao?: number;
 
   @ApiPropertyOptional({ description: 'CST do PIS' })
   @IsString()
@@ -218,11 +212,12 @@ export class UpdateProductFiscalDataDto {
   pisCst?: string;
 
   @ApiPropertyOptional({ description: 'Alíquota do PIS' })
+  @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(0)
   @Max(100)
-  pisAliquota?: number;
+  pisRate?: number;
 
   @ApiPropertyOptional({ description: 'CST do COFINS' })
   @IsString()
@@ -230,11 +225,12 @@ export class UpdateProductFiscalDataDto {
   cofinsCst?: string;
 
   @ApiPropertyOptional({ description: 'Alíquota do COFINS' })
+  @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(0)
   @Max(100)
-  cofinsAliquota?: number;
+  cofinsRate?: number;
 
   @ApiPropertyOptional({ description: 'CST do IPI' })
   @IsString()
@@ -242,14 +238,30 @@ export class UpdateProductFiscalDataDto {
   ipiCst?: string;
 
   @ApiPropertyOptional({ description: 'Alíquota do IPI' })
+  @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(0)
   @Max(100)
-  ipiAliquota?: number;
+  ipiRate?: number;
 
   @ApiPropertyOptional({ description: 'Enquadramento do IPI' })
   @IsString()
   @IsOptional()
   ipiFramework?: string;
+
+  @ApiPropertyOptional({ description: 'CFOP para venda dentro do estado' })
+  @IsString()
+  @IsOptional()
+  cfopInState?: string;
+
+  @ApiPropertyOptional({ description: 'CFOP para venda fora do estado' })
+  @IsString()
+  @IsOptional()
+  cfopOutState?: string;
+
+  @ApiPropertyOptional({ description: 'CFOP para exportação' })
+  @IsString()
+  @IsOptional()
+  cfopExport?: string;
 }
