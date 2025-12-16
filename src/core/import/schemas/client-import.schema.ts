@@ -3,7 +3,7 @@ import { PrismaService } from 'nestjs-prisma';
 export const CLIENT_IMPORT_SCHEMA = {
   fields: [
     {
-      name: 'name',
+      name: 'nome',
       required: true,
       type: 'string',
       maxLength: 255,
@@ -18,14 +18,18 @@ export const CLIENT_IMPORT_SCHEMA = {
       example: 'joao@example.com',
     },
     {
-      name: 'type',
+      name: 'tipo',
       required: true,
       type: 'string',
-      description: 'Tipo: PERSON ou COMPANY (ou F/J)',
-      example: 'PERSON',
+      description: 'Tipo: PESSOA ou EMPRESA (ou F/J)',
+      example: 'PESSOA',
       validate: async (value: string) => {
-        if (!['PERSON', 'COMPANY', 'F', 'J'].includes(value.toUpperCase())) {
-          return 'Tipo deve ser PERSON, COMPANY, F ou J';
+        if (
+          !['PESSOA', 'EMPRESA', 'PERSON', 'COMPANY', 'F', 'J'].includes(
+            value.toUpperCase(),
+          )
+        ) {
+          return 'Tipo deve ser PESSOA, EMPRESA, F ou J';
         }
         return null;
       },
@@ -95,7 +99,7 @@ export const CLIENT_IMPORT_SCHEMA = {
       },
     },
     {
-      name: 'phone',
+      name: 'telefone',
       required: false,
       type: 'string',
       maxLength: 20,
@@ -103,7 +107,7 @@ export const CLIENT_IMPORT_SCHEMA = {
       example: '(11) 3333-4444',
     },
     {
-      name: 'mobile',
+      name: 'celular',
       required: false,
       type: 'string',
       maxLength: 20,
@@ -119,7 +123,7 @@ export const CLIENT_IMPORT_SCHEMA = {
       example: '12.345.678-9',
     },
     {
-      name: 'activity',
+      name: 'atividade',
       required: false,
       type: 'string',
       maxLength: 255,
@@ -127,7 +131,7 @@ export const CLIENT_IMPORT_SCHEMA = {
       example: 'Comércio',
     },
     {
-      name: 'corporateName',
+      name: 'razaoSocial',
       required: false,
       type: 'string',
       maxLength: 255,
@@ -135,7 +139,7 @@ export const CLIENT_IMPORT_SCHEMA = {
       example: 'Empresa ABC Ltda',
     },
     {
-      name: 'notes',
+      name: 'observacoes',
       required: false,
       type: 'string',
       description: 'Observações',

@@ -460,25 +460,25 @@ export class ImportService {
    */
   private async importClient(row: any, companyId: string): Promise<void> {
     // Normalizar tipo
-    let type = row.type?.toUpperCase();
-    if (type === 'F') type = 'PERSON';
-    if (type === 'J') type = 'COMPANY';
+    let type = row.tipo?.toUpperCase();
+    if (type === 'F' || type === 'PESSOA') type = 'PERSON';
+    if (type === 'J' || type === 'EMPRESA') type = 'COMPANY';
 
     // Criar cliente
     await this.prisma.client.create({
       data: {
         companyId,
         type: type || 'PERSON',
-        name: row.name,
+        name: row.nome,
         email: row.email || null,
         cpf: row.cpf || null,
         cnpj: row.cnpj || null,
         rg: row.rg || null,
-        phone: row.phone || null,
-        mobile: row.mobile || null,
-        activity: row.activity || null,
-        corporateName: row.corporateName || null,
-        notes: row.notes || null,
+        phone: row.telefone || null,
+        mobile: row.celular || null,
+        activity: row.atividade || null,
+        corporateName: row.razaoSocial || null,
+        notes: row.observacoes || null,
         address: row.cep
           ? {
               create: [
@@ -535,14 +535,14 @@ export class ImportService {
       },
     });
 
-    // Se houver dados do serviço 1, criar ProductItem
-    if (row.servico1 && row.servico1.trim() !== '') {
+    // Se houver dados do serviço, criar ProductItem
+    if (row.servico && row.servico.trim() !== '') {
       // Buscar unidade de medida
       let unitOfMeasureId = null;
-      if (row.servico1UnidadeMedida) {
+      if (row.unidadeMedida) {
         const unitOfMeasure = await this.prisma.defaultUnitOfMeasure.findFirst({
           where: {
-            code: row.servico1UnidadeMedida.toUpperCase(),
+            code: row.unidadeMedida.toUpperCase(),
           },
         });
         unitOfMeasureId = unitOfMeasure?.id || null;
@@ -551,11 +551,11 @@ export class ImportService {
       await this.prisma.productItem.create({
         data: {
           productId: product.id,
-          name: row.servico1,
-          width: row.servico1Largura ? parseFloat(row.servico1Largura) : null,
-          height: row.servico1Altura ? parseFloat(row.servico1Altura) : null,
-          unitCost: row.servico1Custo ? parseFloat(row.servico1Custo) : null,
-          salePrice: row.servico1Preco ? parseFloat(row.servico1Preco) : null,
+          name: row.servico,
+          width: row.largura ? parseFloat(row.largura) : null,
+          height: row.altura ? parseFloat(row.altura) : null,
+          unitCost: row.custo ? parseFloat(row.custo) : null,
+          salePrice: row.preco ? parseFloat(row.preco) : null,
           defaultUnitOfMeasureId: unitOfMeasureId,
         },
       });
