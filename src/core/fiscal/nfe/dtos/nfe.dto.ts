@@ -35,6 +35,25 @@ export class NfeItemDto {
   discount?: number;
 }
 
+// DTO simplificado para emissão a partir de uma ordem
+export class EmitNfeFromOrderDto {
+  @ApiProperty({ description: 'ID da ordem de serviço' })
+  @IsString()
+  @IsNotEmpty()
+  orderId: string;
+
+  @ApiPropertyOptional({ description: 'Natureza da operação' })
+  @IsString()
+  @IsOptional()
+  operationNature?: string;
+
+  @ApiPropertyOptional({ description: 'Informações complementares' })
+  @IsString()
+  @IsOptional()
+  additionalInfo?: string;
+}
+
+// DTO completo para emissão manual com todos os dados
 export class EmitNfeDto {
   @ApiPropertyOptional({ description: 'ID do orçamento' })
   @IsString()
@@ -46,25 +65,25 @@ export class EmitNfeDto {
   @IsOptional()
   orderId?: string;
 
-  @ApiProperty({ description: 'Natureza da operação' })
+  @ApiPropertyOptional({ description: 'Natureza da operação' })
   @IsString()
-  @IsNotEmpty()
-  operationNature: string;
+  @IsOptional()
+  operationNature?: string;
 
   @ApiPropertyOptional({ description: 'Informações complementares' })
   @IsString()
   @IsOptional()
   additionalInfo?: string;
 
-  @ApiProperty({ description: 'CNPJ/CPF do destinatário' })
+  @ApiPropertyOptional({ description: 'CNPJ/CPF do destinatário' })
   @IsString()
-  @IsNotEmpty()
-  destCnpjCpf: string;
+  @IsOptional()
+  destCnpjCpf?: string;
 
-  @ApiProperty({ description: 'Nome/Razão Social do destinatário' })
+  @ApiPropertyOptional({ description: 'Nome/Razão Social do destinatário' })
   @IsString()
-  @IsNotEmpty()
-  destNome: string;
+  @IsOptional()
+  destNome?: string;
 
   @ApiPropertyOptional({ description: 'IE do destinatário' })
   @IsString()
@@ -76,45 +95,45 @@ export class EmitNfeDto {
   @IsOptional()
   destEmail?: string;
 
-  @ApiProperty({ description: 'Endereço do destinatário' })
+  @ApiPropertyOptional({ description: 'Endereço do destinatário' })
   @IsString()
-  @IsNotEmpty()
-  destEndereco: string;
+  @IsOptional()
+  destEndereco?: string;
 
-  @ApiProperty({ description: 'Número do endereço' })
+  @ApiPropertyOptional({ description: 'Número do endereço' })
   @IsString()
-  @IsNotEmpty()
-  destNumero: string;
+  @IsOptional()
+  destNumero?: string;
 
   @ApiPropertyOptional({ description: 'Complemento' })
   @IsString()
   @IsOptional()
   destComplemento?: string;
 
-  @ApiProperty({ description: 'Bairro' })
+  @ApiPropertyOptional({ description: 'Bairro' })
   @IsString()
-  @IsNotEmpty()
-  destBairro: string;
+  @IsOptional()
+  destBairro?: string;
 
-  @ApiProperty({ description: 'CEP' })
+  @ApiPropertyOptional({ description: 'CEP' })
   @IsString()
-  @IsNotEmpty()
-  destCep: string;
+  @IsOptional()
+  destCep?: string;
 
-  @ApiProperty({ description: 'Código do município IBGE' })
+  @ApiPropertyOptional({ description: 'Código do município IBGE' })
   @IsString()
-  @IsNotEmpty()
-  destCmun: string;
+  @IsOptional()
+  destCmun?: string;
 
-  @ApiProperty({ description: 'Nome do município' })
+  @ApiPropertyOptional({ description: 'Nome do município' })
   @IsString()
-  @IsNotEmpty()
-  destMunicipio: string;
+  @IsOptional()
+  destMunicipio?: string;
 
-  @ApiProperty({ description: 'UF' })
+  @ApiPropertyOptional({ description: 'UF' })
   @IsString()
-  @IsNotEmpty()
-  destUf: string;
+  @IsOptional()
+  destUf?: string;
 
   @ApiPropertyOptional({
     description: 'Código do país (padrão: 1058)',
@@ -124,11 +143,12 @@ export class EmitNfeDto {
   @IsOptional()
   destPais?: string;
 
-  @ApiProperty({ description: 'Itens da NF-e', type: [NfeItemDto] })
+  @ApiPropertyOptional({ description: 'Itens da NF-e', type: [NfeItemDto] })
   @IsArray()
+  @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => NfeItemDto)
-  items: NfeItemDto[];
+  items?: NfeItemDto[];
 }
 
 export class CancelNfeDto {

@@ -7,7 +7,12 @@ import {
 import { PrismaService } from 'nestjs-prisma';
 import { NfseStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
-import { EmitNfseDto, CancelNfseDto, NfseFilterDto } from './dtos/nfse.dto';
+import {
+  EmitNfseDto,
+  EmitNfseFromOrderDto,
+  CancelNfseDto,
+  NfseFilterDto,
+} from './dtos/nfse.dto';
 
 @Injectable()
 export class NfseService {
@@ -118,6 +123,97 @@ export class NfseService {
     }
 
     return nfse;
+  }
+
+  // Emitir NFS-e a partir de uma ordem de serviço (busca dados automaticamente)
+  async emitFromOrder(companyId: string, dto: EmitNfseFromOrderDto) {
+    // Buscar a ordem via quotation para garantir o filtro por companyId
+    const quotation = await this.prisma.quotation.findFirst({
+      where: {
+        companyId,
+        order: { id: dto.orderId },
+      },
+      include: {
+        client: {
+          include: {
+            address: true,
+          },
+        },
+        order: true,
+        quotationProduct: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
+
+    if (!quotation || !quotation.order) {
+      throw new NotFoundException('Ordem de serviço não encontrada');
+    }
+
+    const client = quotation.client;
+    if (!client) {
+      throw new BadRequestException('Cliente não encontrado no orçamento');
+    }
+
+    // Buscar configuração do Invoicy para defaults
+    const config = await this.invoicyService.getConfig(companyId);
+    if (!config) {
+      throw new BadRequestException(
+        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
+      );
+    }
+
+    // Calcular valor total dos serviços (usar finalValue ou totalValue)
+    const valorServicos = quotation.quotationProduct.reduce(
+      (acc: number, qp) => acc + (qp.finalValue || qp.totalValue || 0),
+      0,
+    );
+
+    // Obter endereço principal do cliente
+    const clientAddress = client.address?.[0];
+
+    // Construir DTO completo
+    const fullDto: EmitNfseDto = {
+      orderId: dto.orderId,
+      quotationId: quotation.id,
+      dataCompetencia: new Date().toISOString().split('T')[0],
+      naturezaOperacao: 1, // Tributação no município
+      codigoServico: dto.codigoServico,
+      discriminacao: dto.discriminacao,
+      codigoMunicipio: config.emitCmun || '',
+      valorServicos,
+      aliquotaIss: dto.aliquotaIss || config.aliquotaIss || 0,
+      issRetido: dto.issRetido || false,
+      tomador: {
+        cnpj: client.cnpj || undefined,
+        cpf: client.cpf || undefined,
+        razaoSocial: client.corporateName || client.name || '',
+        endereco: clientAddress?.street || '',
+        numero: clientAddress?.number || 'S/N',
+        complemento: clientAddress?.complement || '',
+        bairro: clientAddress?.neighborhood || '',
+        cep: clientAddress?.zipcode || '',
+        codigoMunicipio: config.emitCmun || '',
+        municipio: clientAddress?.city || '',
+        uf: clientAddress?.state || '',
+        email: client.email || '',
+        telefone: client.phone || client.mobile || '',
+      },
+    };
+
+    // Validar dados obrigatórios
+    if (!fullDto.tomador.razaoSocial) {
+      throw new BadRequestException('Cliente não possui nome cadastrado');
+    }
+    if (!fullDto.codigoMunicipio) {
+      throw new BadRequestException(
+        'Código do município não informado. Verifique o cadastro do cliente ou a configuração fiscal.',
+      );
+    }
+
+    return this.emit(companyId, fullDto);
   }
 
   async emit(companyId: string, dto: EmitNfseDto) {

@@ -9,6 +9,7 @@ import { NfeStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import {
   EmitNfeDto,
+  EmitNfeFromOrderDto,
   CancelNfeDto,
   CorrectionLetterDto,
   NfeFilterDto,
@@ -22,6 +23,106 @@ export class NfeService {
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
   ) {}
+
+  // Emitir NF-e a partir de uma ordem de serviço (busca dados automaticamente)
+  async emitFromOrder(companyId: string, dto: EmitNfeFromOrderDto) {
+    // Buscar a ordem via quotation para garantir o filtro por companyId
+    const quotation = await this.prisma.quotation.findFirst({
+      where: {
+        companyId,
+        order: { id: dto.orderId },
+      },
+      include: {
+        client: {
+          include: {
+            address: true,
+          },
+        },
+        order: true,
+        quotationProduct: {
+          include: {
+            product: {
+              include: {
+                fiscalData: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!quotation || !quotation.order) {
+      throw new NotFoundException('Ordem de serviço não encontrada');
+    }
+
+    const client = quotation.client;
+    if (!client) {
+      throw new BadRequestException('Cliente não encontrado no orçamento');
+    }
+
+    // Buscar configuração do Invoicy para defaults
+    const config = await this.invoicyService.getConfig(companyId);
+    if (!config) {
+      throw new BadRequestException(
+        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
+      );
+    }
+
+    // Preparar itens da NF-e (usar totalValue ou finalValue dividido pela quantidade)
+    const items = quotation.quotationProduct.map((qp) => {
+      const totalValue = qp.finalValue || qp.totalValue || 0;
+      const unitValue = qp.quantity > 0 ? totalValue / qp.quantity : 0;
+      return {
+        productId: qp.productId,
+        quantity: qp.quantity,
+        unitValue,
+        discount: qp.discount || 0,
+      };
+    });
+
+    if (items.length === 0) {
+      throw new BadRequestException('Orçamento não possui itens');
+    }
+
+    // Obter endereço principal do cliente
+    const clientAddress = client.address?.[0];
+
+    // Construir DTO completo
+    const fullDto: EmitNfeDto = {
+      orderId: dto.orderId,
+      quotationId: quotation.id,
+      operationNature:
+        dto.operationNature ||
+        config.defaultOperationNature ||
+        'Venda de mercadoria',
+      additionalInfo: dto.additionalInfo || config.taxInfoText || '',
+      destCnpjCpf: client.cnpj || client.cpf || '',
+      destNome: client.corporateName || client.name || '',
+      destEmail: client.email || '',
+      destEndereco: clientAddress?.street || '',
+      destNumero: clientAddress?.number || 'S/N',
+      destComplemento: clientAddress?.complement || '',
+      destBairro: clientAddress?.neighborhood || '',
+      destCep: clientAddress?.zipcode || '',
+      destMunicipio: clientAddress?.city || '',
+      destUf: clientAddress?.state || '',
+      destPais: '1058',
+      items,
+    };
+
+    // Validar dados obrigatórios
+    if (!fullDto.destCnpjCpf) {
+      throw new BadRequestException('Cliente não possui CPF/CNPJ cadastrado');
+    }
+    if (!fullDto.destNome) {
+      throw new BadRequestException('Cliente não possui nome cadastrado');
+    }
+    if (!fullDto.destEndereco) {
+      throw new BadRequestException('Cliente não possui endereço cadastrado');
+    }
+
+    return this.emit(companyId, fullDto);
+  }
 
   async findAll(companyId: string, filters: NfeFilterDto) {
     const page = filters.page || 1;
@@ -150,8 +251,20 @@ export class NfeService {
       throw new BadRequestException('Integração com Invoicy está desativada.');
     }
 
+    // Validar que temos itens
+    if (!dto.items || dto.items.length === 0) {
+      throw new BadRequestException('NF-e deve conter ao menos um item');
+    }
+
     // Obter próximo número da NF-e
     const numero = await this.invoicyService.incrementNfeNumber(companyId);
+
+    // Calcular valor total
+    const valorTotal = dto.items.reduce(
+      (acc, item) =>
+        acc + item.quantity * item.unitValue - (item.discount || 0),
+      0,
+    );
 
     // Criar registro da NF-e
     const nfe = await this.prisma.nfe.create({

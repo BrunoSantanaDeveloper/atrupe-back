@@ -13,6 +13,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import { NfeService } from './nfe.service';
 import {
   EmitNfeDto,
+  EmitNfeFromOrderDto,
   CancelNfeDto,
   CorrectionLetterDto,
   NfeFilterDto,
@@ -38,8 +39,14 @@ export class NfeController {
   }
 
   @Post('emit')
-  @ApiOperation({ summary: 'Emitir NF-e' })
-  async emit(@Req() req, @Body() dto: EmitNfeDto) {
+  @ApiOperation({ summary: 'Emitir NF-e a partir de uma ordem de serviço' })
+  async emit(@Req() req, @Body() dto: EmitNfeFromOrderDto) {
+    return this.nfeService.emitFromOrder(req.user.companyId, dto);
+  }
+
+  @Post('emit-full')
+  @ApiOperation({ summary: 'Emitir NF-e com todos os dados (manual)' })
+  async emitFull(@Req() req, @Body() dto: EmitNfeDto) {
     return this.nfeService.emit(req.user.companyId, dto);
   }
 
