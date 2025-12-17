@@ -95,6 +95,52 @@ export class InvoicyService {
     return currentNumber;
   }
 
+  async incrementNfseRpsNumber(companyId: string): Promise<number> {
+    const config = await this.prisma.invoicyConfig.findUnique({
+      where: { companyId },
+    });
+
+    if (!config) {
+      throw new NotFoundException(
+        'Configuração do Invoicy não encontrada para esta empresa',
+      );
+    }
+
+    const currentNumber = config.proximoRpsNfse;
+
+    await this.prisma.invoicyConfig.update({
+      where: { companyId },
+      data: {
+        proximoRpsNfse: currentNumber + 1,
+      },
+    });
+
+    return currentNumber;
+  }
+
+  async incrementNfceNumber(companyId: string): Promise<number> {
+    const config = await this.prisma.invoicyConfig.findUnique({
+      where: { companyId },
+    });
+
+    if (!config) {
+      throw new NotFoundException(
+        'Configuração do Invoicy não encontrada para esta empresa',
+      );
+    }
+
+    const currentNumber = config.proximoNumeroNfce;
+
+    await this.prisma.invoicyConfig.update({
+      where: { companyId },
+      data: {
+        proximoNumeroNfce: currentNumber + 1,
+      },
+    });
+
+    return currentNumber;
+  }
+
   async testConnection(companyId: string): Promise<boolean> {
     const config = await this.getConfig(companyId);
 
