@@ -11,7 +11,12 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import { NfseService } from './nfse.service';
-import { EmitNfseDto, CancelNfseDto, NfseFilterDto } from './dtos/nfse.dto';
+import {
+  EmitNfseDto,
+  EmitNfseFromOrderDto,
+  CancelNfseDto,
+  NfseFilterDto,
+} from './dtos/nfse.dto';
 
 @ApiTags('Fiscal - NFS-e')
 @ApiBearerAuth()
@@ -33,8 +38,14 @@ export class NfseController {
   }
 
   @Post('emit')
-  @ApiOperation({ summary: 'Emitir NFS-e' })
-  async emit(@Req() req, @Body() dto: EmitNfseDto) {
+  @ApiOperation({ summary: 'Emitir NFS-e a partir de uma ordem de serviço' })
+  async emit(@Req() req, @Body() dto: EmitNfseFromOrderDto) {
+    return this.nfseService.emitFromOrder(req.user.companyId, dto);
+  }
+
+  @Post('emit-full')
+  @ApiOperation({ summary: 'Emitir NFS-e com todos os dados (manual)' })
+  async emitFull(@Req() req, @Body() dto: EmitNfseDto) {
     return this.nfseService.emit(req.user.companyId, dto);
   }
 

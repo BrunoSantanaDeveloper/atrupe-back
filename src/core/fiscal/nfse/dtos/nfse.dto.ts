@@ -143,6 +143,35 @@ export class TomadorDto {
   telefone?: string;
 }
 
+// DTO simplificado para emissão a partir de uma ordem
+export class EmitNfseFromOrderDto {
+  @ApiProperty({ description: 'ID da ordem de serviço' })
+  @IsString()
+  @IsNotEmpty()
+  orderId: string;
+
+  @ApiProperty({ description: 'Código do serviço municipal' })
+  @IsString()
+  @IsNotEmpty()
+  codigoServico: string;
+
+  @ApiProperty({ description: 'Discriminação do serviço' })
+  @IsString()
+  @IsNotEmpty()
+  discriminacao: string;
+
+  @ApiPropertyOptional({ description: 'Alíquota ISS (%)' })
+  @IsNumber()
+  @IsOptional()
+  aliquotaIss?: number;
+
+  @ApiPropertyOptional({ description: 'ISS Retido' })
+  @IsBoolean()
+  @IsOptional()
+  issRetido?: boolean;
+}
+
+// DTO completo para emissão manual
 export class EmitNfseDto {
   @ApiPropertyOptional({ description: 'ID do orçamento' })
   @IsString()
@@ -154,10 +183,10 @@ export class EmitNfseDto {
   @IsOptional()
   orderId?: string;
 
-  @ApiProperty({ description: 'Data de competência' })
+  @ApiPropertyOptional({ description: 'Data de competência' })
   @IsString()
-  @IsNotEmpty()
-  dataCompetencia: string;
+  @IsOptional()
+  dataCompetencia?: string;
 
   @ApiProperty({ description: 'Natureza da operação' })
   @IsInt()
