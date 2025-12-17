@@ -2004,11 +2004,21 @@ model InvoicyConfig {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   companyId        String   @unique
-  apiToken         String
+
+  // Credenciais Invoicy (campos novos)
+  partnerKey       String?  // Partner Key do Invoicy
+  accessKey        String?  // Access Key do Invoicy
+  environment      String?  @default("HOMOLOGACAO") // PRODUCAO ou HOMOLOGACAO
+
+  // Campos legados (mantidos para compatibilidade)
+  apiToken         String?
   ambiente         Int      @default(2) // 1 = Produção, 2 = Homologação
-  emitCnpj         String
+
+  // Dados do emitente
+  emitCnpj         String?
   emitIe           String?
-  emitRazaoSocial  String
+  emitIm           String?  // Inscrição Municipal (necessária para NFS-e)
+  emitRazaoSocial  String?
   emitNomeFantasia String?
   emitCrt          Int      @default(1) // 1 = Simples Nacional, 2 = SN Excesso, 3 = Regime Normal
   emitEndereco     String?
@@ -2018,15 +2028,26 @@ model InvoicyConfig {
   emitCmun         String?
   emitUf           String?
   emitPais         String?  @default("1058")
+
+  // NF-e
   serieNfe         Int      @default(1)
   proximoNumeroNfe Int      @default(1)
+
+  // NFS-e
   serieNfse        String?  @default("A1") // NFS-e usa série alfanumérica
   proximoRpsNfse   Int      @default(1) // Próximo número do RPS
+  codigoServico    String?  // Código do serviço municipal padrão
+  aliquotaIss      Float?   // Alíquota ISS padrão
+
+  // NFC-e
   serieNfce        Int      @default(1)
   proximoNumeroNfce Int     @default(1)
-  emitIm           String? // Inscrição Municipal (necessária para NFS-e)
-  codigoServico    String? // Código do serviço municipal padrão
-  aliquotaIss      Float?  // Alíquota ISS padrão
+
+  // Padrões fiscais
+  defaultCfop             String?  // CFOP padrão
+  defaultOperationNature  String?  // Natureza da operação padrão
+  taxInfoText             String?  // Informações fiscais complementares
+
   isActive         Boolean  @default(true)
   company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 

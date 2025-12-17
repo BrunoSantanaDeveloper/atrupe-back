@@ -11,21 +11,104 @@ export class InvoicyService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  // Map frontend fields to database fields
+  private mapDtoToDb(dto: CreateInvoicyConfigDto | UpdateInvoicyConfigDto) {
+    const data: any = {};
+
+    // Direct mappings (fields that exist in both)
+    if (dto.partnerKey !== undefined) data.partnerKey = dto.partnerKey;
+    if (dto.accessKey !== undefined) data.accessKey = dto.accessKey;
+    if (dto.environment !== undefined) data.environment = dto.environment;
+    if (dto.apiToken !== undefined) data.apiToken = dto.apiToken;
+    if (dto.ambiente !== undefined) data.ambiente = dto.ambiente;
+    if (dto.emitCnpj !== undefined) data.emitCnpj = dto.emitCnpj;
+    if (dto.emitIe !== undefined) data.emitIe = dto.emitIe;
+    if (dto.emitIm !== undefined) data.emitIm = dto.emitIm;
+    if (dto.emitRazaoSocial !== undefined)
+      data.emitRazaoSocial = dto.emitRazaoSocial;
+    if (dto.emitNomeFantasia !== undefined)
+      data.emitNomeFantasia = dto.emitNomeFantasia;
+    if (dto.emitCrt !== undefined) data.emitCrt = dto.emitCrt;
+    if (dto.emitEndereco !== undefined) data.emitEndereco = dto.emitEndereco;
+    if (dto.emitNumero !== undefined) data.emitNumero = dto.emitNumero;
+    if (dto.emitBairro !== undefined) data.emitBairro = dto.emitBairro;
+    if (dto.emitCep !== undefined) data.emitCep = dto.emitCep;
+    if (dto.emitCmun !== undefined) data.emitCmun = dto.emitCmun;
+    if (dto.emitUf !== undefined) data.emitUf = dto.emitUf;
+    if (dto.emitPais !== undefined) data.emitPais = dto.emitPais;
+    if (dto.codigoServico !== undefined) data.codigoServico = dto.codigoServico;
+    if (dto.aliquotaIss !== undefined) data.aliquotaIss = dto.aliquotaIss;
+    if (dto.defaultCfop !== undefined) data.defaultCfop = dto.defaultCfop;
+    if (dto.defaultOperationNature !== undefined)
+      data.defaultOperationNature = dto.defaultOperationNature;
+    if (dto.taxInfoText !== undefined) data.taxInfoText = dto.taxInfoText;
+
+    // NF-e field mappings (frontend -> database)
+    if (dto.nfeSeries !== undefined) {
+      const parsed = parseInt(dto.nfeSeries, 10);
+      data.serieNfe = isNaN(parsed) ? 1 : parsed;
+    }
+    if (dto.serieNfe !== undefined) data.serieNfe = dto.serieNfe;
+    if (dto.nfeNextNumber !== undefined)
+      data.proximoNumeroNfe = dto.nfeNextNumber;
+    if (dto.proximoNumeroNfe !== undefined)
+      data.proximoNumeroNfe = dto.proximoNumeroNfe;
+
+    // NFS-e field mappings (frontend -> database)
+    if (dto.nfseSeries !== undefined) data.serieNfse = dto.nfseSeries;
+    if (dto.nfseNextNumber !== undefined)
+      data.proximoRpsNfse = dto.nfseNextNumber;
+
+    // NFC-e field mappings (frontend -> database)
+    if (dto.nfceSeries !== undefined) {
+      const parsed = parseInt(dto.nfceSeries, 10);
+      data.serieNfce = isNaN(parsed) ? 1 : parsed;
+    }
+    if (dto.nfceNextNumber !== undefined)
+      data.proximoNumeroNfce = dto.nfceNextNumber;
+
+    // Boolean field
+    if ('isActive' in dto && dto.isActive !== undefined)
+      data.isActive = dto.isActive;
+
+    return data;
+  }
+
+  // Map database fields to frontend fields
+  private mapDbToResponse(config: any) {
+    if (!config) return null;
+
+    return {
+      ...config,
+      // Map database names to frontend names
+      nfeSeries: config.serieNfe?.toString() || '1',
+      nfeNextNumber: config.proximoNumeroNfe || 1,
+      nfseSeries: config.serieNfse || 'A1',
+      nfseNextNumber: config.proximoRpsNfse || 1,
+      nfceSeries: config.serieNfce?.toString() || '1',
+      nfceNextNumber: config.proximoNumeroNfce || 1,
+    };
+  }
+
   async getConfig(companyId: string) {
     const config = await this.prisma.invoicyConfig.findUnique({
       where: { companyId },
     });
 
-    return config;
+    return this.mapDbToResponse(config);
   }
 
   async createConfig(companyId: string, dto: CreateInvoicyConfigDto) {
-    return this.prisma.invoicyConfig.create({
+    const data = this.mapDtoToDb(dto);
+
+    const result = await this.prisma.invoicyConfig.create({
       data: {
-        ...dto,
+        ...data,
         companyId,
       },
     });
+
+    return this.mapDbToResponse(result);
   }
 
   async updateConfig(companyId: string, dto: UpdateInvoicyConfigDto) {
@@ -39,21 +122,29 @@ export class InvoicyService {
       );
     }
 
-    return this.prisma.invoicyConfig.update({
+    const data = this.mapDtoToDb(dto);
+
+    const result = await this.prisma.invoicyConfig.update({
       where: { companyId },
-      data: dto,
+      data,
     });
+
+    return this.mapDbToResponse(result);
   }
 
   async upsertConfig(companyId: string, dto: CreateInvoicyConfigDto) {
-    return this.prisma.invoicyConfig.upsert({
+    const data = this.mapDtoToDb(dto);
+
+    const result = await this.prisma.invoicyConfig.upsert({
       where: { companyId },
       create: {
-        ...dto,
+        ...data,
         companyId,
       },
-      update: dto,
+      update: data,
     });
+
+    return this.mapDbToResponse(result);
   }
 
   async deleteConfig(companyId: string) {
