@@ -152,7 +152,9 @@ export class EmitNfeDto {
 }
 
 export class CancelNfeDto {
-  @ApiProperty({ description: 'Justificativa do cancelamento (mín 15 caracteres)' })
+  @ApiProperty({
+    description: 'Justificativa do cancelamento (mín 15 caracteres)',
+  })
   @IsString()
   @IsNotEmpty()
   justificativa: string;

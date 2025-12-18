@@ -1,10 +1,22 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, Min, Max } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsNumber,
+  Min,
+  Max,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 
 // Helper to parse numeric strings or undefined
 const parseNumber = ({ value }) => {
-  if (value === '' || value === null || value === undefined || value === '$undefined') {
+  if (
+    value === '' ||
+    value === null ||
+    value === undefined ||
+    value === '$undefined'
+  ) {
     return undefined;
   }
   const parsed = parseFloat(value);
@@ -22,7 +34,9 @@ export class CreateProductFiscalDataDto {
   @IsOptional()
   ncm?: string;
 
-  @ApiPropertyOptional({ description: 'CEST - Código Especificador da Substituição Tributária' })
+  @ApiPropertyOptional({
+    description: 'CEST - Código Especificador da Substituição Tributária',
+  })
   @IsString()
   @IsOptional()
   cest?: string;
@@ -60,7 +74,9 @@ export class CreateProductFiscalDataDto {
   @Max(100)
   icmsRate?: number;
 
-  @ApiPropertyOptional({ description: 'Alíquota do crédito ICMS (Simples Nacional)' })
+  @ApiPropertyOptional({
+    description: 'Alíquota do crédito ICMS (Simples Nacional)',
+  })
   @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
@@ -147,7 +163,9 @@ export class UpdateProductFiscalDataDto {
   @IsOptional()
   ncm?: string;
 
-  @ApiPropertyOptional({ description: 'CEST - Código Especificador da Substituição Tributária' })
+  @ApiPropertyOptional({
+    description: 'CEST - Código Especificador da Substituição Tributária',
+  })
   @IsString()
   @IsOptional()
   cest?: string;
@@ -185,7 +203,9 @@ export class UpdateProductFiscalDataDto {
   @Max(100)
   icmsRate?: number;
 
-  @ApiPropertyOptional({ description: 'Alíquota do crédito ICMS (Simples Nacional)' })
+  @ApiPropertyOptional({
+    description: 'Alíquota do crédito ICMS (Simples Nacional)',
+  })
   @Transform(parseNumber)
   @IsNumber()
   @IsOptional()

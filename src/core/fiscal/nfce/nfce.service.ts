@@ -286,18 +286,14 @@ export class NfceService {
         `Erro ao cancelar NFC-e: ${error.message}`,
         error.stack,
       );
-      throw new BadRequestException(
-        `Erro ao cancelar NFC-e: ${error.message}`,
-      );
+      throw new BadRequestException(`Erro ao cancelar NFC-e: ${error.message}`);
     }
   }
 
   async inutilizar(companyId: string, dto: InutilizarNfceDto) {
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
-      throw new BadRequestException(
-        'Configuração do Invoicy não encontrada.',
-      );
+      throw new BadRequestException('Configuração do Invoicy não encontrada.');
     }
 
     if (dto.justificativa.length < 15) {
@@ -338,9 +334,7 @@ export class NfceService {
   async toggleContingencia(companyId: string, dto: ContingenciaNfceDto) {
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
-      throw new BadRequestException(
-        'Configuração do Invoicy não encontrada.',
-      );
+      throw new BadRequestException('Configuração do Invoicy não encontrada.');
     }
 
     // TODO: Implementar lógica de contingência

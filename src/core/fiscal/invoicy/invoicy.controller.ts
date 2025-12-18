@@ -56,7 +56,9 @@ export class InvoicyController {
   @Post('test-connection')
   @ApiOperation({ summary: 'Testar conexão com a API do Invoicy' })
   async testConnection(@Req() req) {
-    const success = await this.invoicyService.testConnection(req.user.companyId);
+    const success = await this.invoicyService.testConnection(
+      req.user.companyId,
+    );
     return { success };
   }
 }

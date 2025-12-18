@@ -118,7 +118,9 @@ export class ProductFiscalService {
     });
   }
 
-  private mapDtoToData(dto: CreateProductFiscalDataDto | UpdateProductFiscalDataDto) {
+  private mapDtoToData(
+    dto: CreateProductFiscalDataDto | UpdateProductFiscalDataDto,
+  ) {
     return {
       ncm: dto.ncm || null,
       cest: dto.cest || null,

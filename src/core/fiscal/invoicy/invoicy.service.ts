@@ -87,6 +87,9 @@ export class InvoicyService {
       nfseNextNumber: config.proximoRpsNfse || 1,
       nfceSeries: config.serieNfce?.toString() || '1',
       nfceNextNumber: config.proximoNumeroNfce || 1,
+      // Ensure emitCmun is explicitly included
+      emitCmun: config.emitCmun || null,
+      emitIm: config.emitIm || null,
     };
   }
 

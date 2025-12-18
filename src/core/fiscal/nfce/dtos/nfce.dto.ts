@@ -107,7 +107,10 @@ export class NfceItemDto {
 }
 
 export class PagamentoDto {
-  @ApiProperty({ description: 'Forma de pagamento (01=Dinheiro, 02=Cheque, 03=Cartão Crédito, etc.)' })
+  @ApiProperty({
+    description:
+      'Forma de pagamento (01=Dinheiro, 02=Cheque, 03=Cartão Crédito, etc.)',
+  })
   @IsString()
   @IsNotEmpty()
   tipo: string;
