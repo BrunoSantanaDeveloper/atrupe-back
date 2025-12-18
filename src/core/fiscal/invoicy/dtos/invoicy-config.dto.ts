@@ -168,7 +168,10 @@ export class CreateInvoicyConfigDto {
   @Transform(emptyToUndefined)
   nfeSeries?: string;
 
-  @ApiPropertyOptional({ description: 'Série da NF-e (legado int)', default: 1 })
+  @ApiPropertyOptional({
+    description: 'Série da NF-e (legado int)',
+    default: 1,
+  })
   @Transform(parseNumber)
   @IsNumber()
   @IsOptional()

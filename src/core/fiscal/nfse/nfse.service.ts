@@ -236,9 +236,8 @@ export class NfseService {
     }
 
     // Obter próximo número do RPS
-    const rpsNumero = await this.invoicyService.incrementNfseRpsNumber(
-      companyId,
-    );
+    const rpsNumero =
+      await this.invoicyService.incrementNfseRpsNumber(companyId);
     const rpsSerie = config.serieNfse || 'A1';
 
     // Calcular valores
@@ -362,9 +361,7 @@ export class NfseService {
         `Erro ao cancelar NFS-e: ${error.message}`,
         error.stack,
       );
-      throw new BadRequestException(
-        `Erro ao cancelar NFS-e: ${error.message}`,
-      );
+      throw new BadRequestException(`Erro ao cancelar NFS-e: ${error.message}`);
     }
   }
 

@@ -179,7 +179,8 @@ export const FINANCIAL_IMPORT_SCHEMA = {
       name: 'Status',
       required: false,
       type: 'string',
-      description: 'Status da parcela: PENDING, PAID, OVERDUE, CANCELED (padrão: PENDING)',
+      description:
+        'Status da parcela: PENDING, PAID, OVERDUE, CANCELED (padrão: PENDING)',
       example: 'PAID',
     },
     {
