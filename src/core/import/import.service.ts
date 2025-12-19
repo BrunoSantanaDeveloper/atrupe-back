@@ -11,6 +11,7 @@ import {
   QUOTATION_IMPORT_SCHEMA,
   ORDER_IMPORT_SCHEMA,
   FINANCIAL_IMPORT_SCHEMA,
+  SUPPLIER_IMPORT_SCHEMA,
 } from './schemas';
 
 @Injectable()
@@ -177,6 +178,7 @@ export class ImportService {
       quotation: QUOTATION_IMPORT_SCHEMA,
       order: ORDER_IMPORT_SCHEMA,
       financial: FINANCIAL_IMPORT_SCHEMA,
+      supplier: SUPPLIER_IMPORT_SCHEMA,
     };
 
     return schemas[entity];
@@ -405,6 +407,8 @@ export class ImportService {
               await this.importClient(row, importLog.companyId);
             } else if (importLog.entity === 'product') {
               await this.importProduct(row, importLog.companyId);
+            } else if (importLog.entity === 'supplier') {
+              await this.importSupplier(row, importLog.companyId);
             }
 
             successCount++;
@@ -479,6 +483,64 @@ export class ImportService {
         activity: row.atividade || null,
         corporateName: row.razaoSocial || null,
         notes: row.observacoes || null,
+        address: row.cep
+          ? {
+              create: [
+                {
+                  type: 'Principal',
+                  zipcode: row.cep || null,
+                  street: row.rua || null,
+                  number: row.numero || null,
+                  complement: row.complemento || null,
+                  neighborhood: row.bairro || null,
+                  city: row.cidade || null,
+                  state: row.uf || null,
+                },
+              ],
+            }
+          : undefined,
+        isImported: true,
+      },
+    });
+  }
+
+  /**
+   * Importar um fornecedor do CSV
+   */
+  private async importSupplier(row: any, companyId: string): Promise<void> {
+    // Normalizar tipo
+    let type = row.tipo?.toUpperCase();
+    if (type === 'F' || type === 'PESSOA') type = 'PERSON';
+    if (type === 'J' || type === 'EMPRESA') type = 'COMPANY';
+
+    // Buscar categoria se fornecida
+    let categoryId = null;
+    if (row.categoria) {
+      const category = await this.prisma.supplierCategory.findFirst({
+        where: {
+          name: row.categoria,
+          companyId,
+        },
+      });
+      categoryId = category?.id || null;
+    }
+
+    // Criar fornecedor
+    await this.prisma.supplier.create({
+      data: {
+        companyId,
+        type: type || 'COMPANY',
+        name: row.nome,
+        email: row.email || null,
+        cpf: row.cpf || null,
+        cnpj: row.cnpj || null,
+        rg: row.rg || null,
+        phone: row.telefone || null,
+        mobile: row.celular || null,
+        activity: row.atividade || null,
+        corporateName: row.razaoSocial || null,
+        notes: row.observacoes || null,
+        categoryId,
         address: row.cep
           ? {
               create: [
