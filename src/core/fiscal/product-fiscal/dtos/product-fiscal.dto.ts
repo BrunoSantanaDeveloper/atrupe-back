@@ -155,6 +155,25 @@ export class CreateProductFiscalDataDto {
   @IsString()
   @IsOptional()
   cfopExport?: string;
+
+  // NFS-e fields
+  @ApiPropertyOptional({ description: 'Código do serviço municipal (LC 116/03)' })
+  @IsString()
+  @IsOptional()
+  codigoServico?: string;
+
+  @ApiPropertyOptional({ description: 'Alíquota do ISS' })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  aliquotaIss?: number;
+
+  @ApiPropertyOptional({ description: 'Discriminação do serviço para NFS-e' })
+  @IsString()
+  @IsOptional()
+  discriminacao?: string;
 }
 
 export class UpdateProductFiscalDataDto {
@@ -284,4 +303,23 @@ export class UpdateProductFiscalDataDto {
   @IsString()
   @IsOptional()
   cfopExport?: string;
+
+  // NFS-e fields
+  @ApiPropertyOptional({ description: 'Código do serviço municipal (LC 116/03)' })
+  @IsString()
+  @IsOptional()
+  codigoServico?: string;
+
+  @ApiPropertyOptional({ description: 'Alíquota do ISS' })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  aliquotaIss?: number;
+
+  @ApiPropertyOptional({ description: 'Discriminação do serviço para NFS-e' })
+  @IsString()
+  @IsOptional()
+  discriminacao?: string;
 }

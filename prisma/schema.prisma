@@ -2125,6 +2125,10 @@ model ProductFiscalData {
   cfopInState      String? // CFOP para venda dentro do estado
   cfopOutState     String? // CFOP para venda fora do estado
   cfopExport       String? // CFOP para exportação
+  // NFS-e fields
+  codigoServico    String? // Código do serviço municipal (LC 116/03)
+  aliquotaIss      Float?  // Alíquota do ISS
+  discriminacao    String? // Discriminação do serviço para NFS-e
   product          Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@map("product_fiscal_data")
