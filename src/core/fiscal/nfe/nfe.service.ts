@@ -69,14 +69,17 @@ export class NfeService {
     }
 
     // Preparar itens da NF-e (usar totalValue ou finalValue dividido pela quantidade)
+    // IMPORTANTE: Valores no banco estão em centavos, dividir por 100 para reais
     const items = quotation.quotationProduct.map((qp) => {
-      const totalValue = qp.finalValue || qp.totalValue || 0;
-      const unitValue = qp.quantity > 0 ? totalValue / qp.quantity : 0;
+      const totalValueCents = qp.finalValue || qp.totalValue || 0;
+      const totalValueReais = totalValueCents / 100;
+      const unitValue = qp.quantity > 0 ? totalValueReais / qp.quantity : 0;
+      const discountReais = (qp.discount || 0) / 100;
       return {
         productId: qp.productId,
         quantity: qp.quantity,
         unitValue,
-        discount: qp.discount || 0,
+        discount: discountReais,
       };
     });
 

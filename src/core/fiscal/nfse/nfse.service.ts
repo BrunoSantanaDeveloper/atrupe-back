@@ -166,10 +166,12 @@ export class NfseService {
     }
 
     // Calcular valor total dos serviços (usar finalValue ou totalValue)
-    const valorServicos = quotation.quotationProduct.reduce(
-      (acc: number, qp) => acc + (qp.finalValue || qp.totalValue || 0),
-      0,
-    );
+    // IMPORTANTE: Valores no banco estão em centavos, dividir por 100 para reais
+    const valorServicos =
+      quotation.quotationProduct.reduce(
+        (acc: number, qp) => acc + (qp.finalValue || qp.totalValue || 0),
+        0,
+      ) / 100;
 
     // Obter endereço principal do cliente
     const clientAddress = client.address?.[0];
