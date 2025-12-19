@@ -2557,6 +2557,9 @@ export class QuotationService {
               billing: true,
               totalValue: true,
               finalValue: true,
+              discountType: true,
+              discountValue: true,
+              discountTotal: true,
               description: true,
               downPayment: true,
               downPaymentConditionId: true,
@@ -2830,12 +2833,14 @@ export class QuotationService {
             }
           : null,
         total: {
+          // subtotal = valor final dos itens (após descontos nos itens)
           subtotal: quotation.totalValue,
-          totalDiscount:
-            quotation.totalValue -
-            (quotation.quotationPayment?.finalValue || quotation.totalValue),
+          // totalDiscount = desconto das condições de pagamento (não inclui descontos dos itens)
+          totalDiscount: quotation.quotationPayment?.discountTotal || 0,
+          // finalTotal = subtotal - desconto das condições de pagamento
           finalTotal:
-            quotation.quotationPayment?.finalValue || quotation.totalValue,
+            quotation.totalValue -
+            (quotation.quotationPayment?.discountTotal || 0),
         },
       };
 
