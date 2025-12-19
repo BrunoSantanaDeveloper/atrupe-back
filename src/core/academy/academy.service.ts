@@ -143,4 +143,21 @@ export class AcademyService {
     });
     return products;
   }
+
+  async getHelpDataByPage(page: string) {
+    const item = await this.prisma.academySystem.findFirst({
+      where: { page },
+      select: {
+        videoUrl: true,
+        files: true,
+      },
+    });
+
+    if (!item) return null;
+
+    return {
+      video: item.videoUrl || undefined,
+      files: (item.files as any[])?.map((f) => f.url) || [],
+    };
+  }
 }

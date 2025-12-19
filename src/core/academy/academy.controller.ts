@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   Req,
 } from '@nestjs/common';
@@ -39,6 +40,13 @@ export class AcademyController {
   @Delete(':id')
   deleteAcademySystem(@Param('id') id: string) {
     return this.academyService.deleteAcademySystem(id);
+  }
+
+  @Get('help-by-page')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  async getHelpDataByPage(@Query('page') page: string) {
+    return this.academyService.getHelpDataByPage(page);
   }
 
   @Get(':type')
