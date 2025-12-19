@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'nestjs-prisma';
 import {
   CreateInvoicyConfigDto,
@@ -9,15 +10,30 @@ import {
 export class InvoicyService {
   private readonly logger = new Logger(InvoicyService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  /**
+   * Retorna as credenciais globais do Invoicy (Atrupe como revendedor)
+   * Estas credenciais são usadas para todas as empresas
+   */
+  getGlobalCredentials() {
+    return {
+      partnerKey: this.configService.get<string>('INVOICY_PARTNER_KEY'),
+      accessKey: this.configService.get<string>('INVOICY_ACCESS_KEY'),
+      environment:
+        this.configService.get<string>('INVOICY_ENVIRONMENT') || 'HOMOLOGACAO',
+    };
+  }
 
   // Map frontend fields to database fields
   private mapDtoToDb(dto: CreateInvoicyConfigDto | UpdateInvoicyConfigDto) {
     const data: any = {};
 
     // Direct mappings (fields that exist in both)
-    if (dto.partnerKey !== undefined) data.partnerKey = dto.partnerKey;
-    if (dto.accessKey !== undefined) data.accessKey = dto.accessKey;
+    // Note: partnerKey and accessKey are global credentials (from env vars), not per-client
     if (dto.environment !== undefined) data.environment = dto.environment;
     if (dto.apiToken !== undefined) data.apiToken = dto.apiToken;
     if (dto.ambiente !== undefined) data.ambiente = dto.ambiente;
