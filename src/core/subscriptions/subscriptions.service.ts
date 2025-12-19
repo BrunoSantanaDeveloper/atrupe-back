@@ -1437,7 +1437,7 @@ export class SubscriptionsService {
 
     // Criar subscription manualmente (sem passar pelo Asaas)
     const nextDueDate = new Date();
-    nextDueDate.setDate(nextDueDate.getDate() + 15); // 15 dias de teste trial
+    nextDueDate.setDate(nextDueDate.getDate() + 7); // 7 dias de teste trial
 
     const subscription = await this.prisma.subscription.create({
       data: {
