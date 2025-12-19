@@ -516,7 +516,7 @@ export class ImportService {
     // Buscar categoria se fornecida
     let categoryId = null;
     if (row.categoria) {
-      const category = await this.prisma.supplierCategory.findFirst({
+      const category = await this.prisma.category.findFirst({
         where: {
           name: row.categoria,
           companyId,
@@ -557,7 +557,6 @@ export class ImportService {
               ],
             }
           : undefined,
-        isImported: true,
       },
     });
   }
@@ -1639,6 +1638,26 @@ export class ImportService {
           supplierId = supplier.id;
         }
 
+        // Buscar funcionário (se for despesa de salário)
+        let employeeId: string | null = null;
+        if (!isReceivable && firstItem.FuncionarioEmail) {
+          const employee = await this.prisma.employee.findFirst({
+            where: {
+              user: {
+                email: firstItem.FuncionarioEmail,
+              },
+              companyId,
+              isActive: true,
+            },
+          });
+          if (!employee) {
+            throw new Error(
+              `Funcionário com email '${firstItem.FuncionarioEmail}' não encontrado`,
+            );
+          }
+          employeeId = employee.id;
+        }
+
         // Buscar natureza
         let natureId: string | null = null;
         if (firstItem.Natureza) {
@@ -1790,6 +1809,7 @@ export class ImportService {
               totalValue: totalAmount,
               companyId,
               supplierId,
+              employeeId,
               natureId,
               subCategoryId,
               notes: firstItem.Observacoes || null,

@@ -152,8 +152,8 @@ export const SUPPLIER_IMPORT_SCHEMA = {
       ) => {
         if (!value) return null;
 
-        // Verificar se a categoria existe
-        const category = await prisma.supplierCategory.findFirst({
+        // Verificar se a categoria existe (Category com relação SupplierToCategory)
+        const category = await prisma.category.findFirst({
           where: { name: value, companyId },
         });
 

@@ -99,6 +99,32 @@ export const FINANCIAL_IMPORT_SCHEMA = {
       },
     },
     {
+      name: 'FuncionarioEmail',
+      required: false,
+      type: 'string',
+      maxLength: 255,
+      description: 'Email do funcionário (para despesas de salário)',
+      example: 'funcionario@empresa.com',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        if (!value || value.trim() === '') return null;
+
+        const employee = await prisma.employee.findFirst({
+          where: {
+            user: {
+              email: value,
+            },
+            companyId,
+            isActive: true,
+          },
+        });
+
+        if (!employee) {
+          return 'Funcionário não encontrado. Cadastre o funcionário antes de importar';
+        }
+        return null;
+      },
+    },
+    {
       name: 'Natureza',
       required: false,
       type: 'string',
