@@ -121,6 +121,15 @@ export class ProductService {
         where = { ...where, sectorId: filter.sectorId };
       }
 
+      if (filter.categoryKind) {
+        where = {
+          ...where,
+          category: {
+            kind: filter.categoryKind,
+          },
+        };
+      }
+
       // Se não informar status, mostra apenas ativos (isActive: true)
       // Se informar status, filtra pelo isActive correspondente
       if (filter.status) {
@@ -157,6 +166,7 @@ export class ProductService {
               select: {
                 id: true,
                 name: true,
+                kind: true,
               },
             },
             sector: {
@@ -172,6 +182,17 @@ export class ProductService {
                 unitKind: true,
               },
             },
+            fiscalData: {
+              select: {
+                ncm: true,
+                cest: true,
+                cfopInState: true,
+                cfopOutState: true,
+                icmsCst: true,
+                pisCst: true,
+                cofinsCst: true,
+              },
+            },
           },
           take: +filter.limit,
           skip: (+filter.page - 1) * +filter.limit,
@@ -181,7 +202,7 @@ export class ProductService {
 
       // Mapear os produtos para calcular os totais de unitCost e salePrice
       const data = products.map((product) => {
-        const { id, name, code, sector, category, items } = product;
+        const { id, name, code, sector, category, items, fiscalData } = product;
 
         // Calculando os totais
         const unitCost = items.reduce(
@@ -198,11 +219,13 @@ export class ProductService {
           name,
           code,
           categoryId: category?.id || null,
+          category: category || null,
           sectorId: sector?.id || null,
           sectorName: sector?.name || null,
           unitOfMeasureCode: 'UN',
           unitCost,
           salePrice,
+          fiscalData: fiscalData || null,
           items: items.map((item) => ({
             unitCost: item.unitCost,
             salePrice: item.salePrice,

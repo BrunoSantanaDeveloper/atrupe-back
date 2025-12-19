@@ -1,7 +1,7 @@
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ApiProperty } from '@nestjs/swagger';
-import { ProductStatus, UnitKind } from '@prisma/client';
+import { CategoryKind, ProductStatus, UnitKind } from '@prisma/client';
 
 export class ProductFilterDTO extends BaseFilterDTO {
   @IsOptional()
@@ -49,4 +49,14 @@ export class ProductFilterDTO extends BaseFilterDTO {
     required: false,
   })
   status: ProductStatus;
+
+  @IsOptional()
+  @IsEnum(CategoryKind)
+  @ApiProperty({
+    description: 'Filtrar por tipo de categoria (PRODUCT ou SERVICE)',
+    enum: CategoryKind,
+    example: CategoryKind.PRODUCT,
+    required: false,
+  })
+  categoryKind: CategoryKind;
 }
