@@ -42,18 +42,7 @@ export class CreateInvoicyConfigDto {
   @Transform(emptyToUndefined)
   apiToken?: string;
 
-  // New fields from frontend
-  @ApiPropertyOptional({ description: 'Partner Key do Invoicy' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  partnerKey?: string;
-
-  @ApiPropertyOptional({ description: 'Access Key do Invoicy' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  accessKey?: string;
+  // Note: partnerKey and accessKey are now global credentials from env vars (Atrupe as reseller)
 
   @ApiPropertyOptional({
     description: 'Ambiente: PRODUCAO ou HOMOLOGACAO',
@@ -268,18 +257,7 @@ export class UpdateInvoicyConfigDto {
   @Transform(emptyToUndefined)
   apiToken?: string;
 
-  // New fields from frontend
-  @ApiPropertyOptional({ description: 'Partner Key do Invoicy' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  partnerKey?: string;
-
-  @ApiPropertyOptional({ description: 'Access Key do Invoicy' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  accessKey?: string;
+  // Note: partnerKey and accessKey are now global credentials from env vars (Atrupe as reseller)
 
   @ApiPropertyOptional({
     description: 'Ambiente: PRODUCAO ou HOMOLOGACAO',
