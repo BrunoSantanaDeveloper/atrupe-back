@@ -218,8 +218,9 @@ export class ReportService {
       }
     });
 
-    // Convert to array
+    // Convert to array - only include months with sales (filter out zero values)
     const result: SalesEvolutionDataPoint[] = Object.entries(monthlyData)
+      .filter(([_, data]) => data.approved > 0 || data.inProgress > 0)
       .map(([month, data]) => ({
         month,
         approved: data.approved,
@@ -234,12 +235,15 @@ export class ReportService {
     companyId: string,
     filters: SalesReportFilterDto,
   ): Promise<ApprovedRejectedDataPoint[]> {
-    const { startDate, endDate } = this.getDateRange(filters);
+    // Always show current month + last 5 months (6 months total)
+    const now = new Date();
+    const sixMonthsAgo = startOfMonth(subMonths(now, 5));
+    const currentMonthEnd = endOfMonth(now);
 
     const quotations = await this.prisma.quotation.findMany({
       where: {
         companyId,
-        createdAt: { gte: startDate, lte: endDate },
+        createdAt: { gte: sixMonthsAgo, lte: currentMonthEnd },
         ...(filters.sellerId && { sellerId: filters.sellerId }),
         ...(filters.originId && { contactSourceId: filters.originId }),
       },
@@ -248,31 +252,64 @@ export class ReportService {
       },
     });
 
-    // Group by month
+    // Get filter period for due date/rejection checks
+    const { startDate: filterStart, endDate: filterEnd } =
+      this.getDateRange(filters);
+
+    // Pre-populate all 6 months to ensure they all appear
     const monthlyData: Record<
       string,
-      { approved: number; expired: number; rejected: number }
+      {
+        monthIndex: number;
+        approved: number;
+        expired: number;
+        rejected: number;
+      }
     > = {};
+
+    for (let i = 5; i >= 0; i--) {
+      const date = subMonths(now, i);
+      const monthKey = format(date, 'MMM', { locale: ptBR });
+      const monthIndex = 5 - i;
+      monthlyData[monthKey] = {
+        monthIndex,
+        approved: 0,
+        expired: 0,
+        rejected: 0,
+      };
+    }
 
     quotations.forEach((q) => {
       const month = format(q.createdAt, 'MMM', { locale: ptBR });
-      if (!monthlyData[month]) {
-        monthlyData[month] = { approved: 0, expired: 0, rejected: 0 };
-      }
+      if (!monthlyData[month]) return;
 
       if (q.order) {
         monthlyData[month].approved++;
       } else if (q.status === 'REJECTED') {
-        monthlyData[month].rejected++;
+        // Check if rejection is within filter period
+        if (
+          q.updatedAt &&
+          q.updatedAt >= filterStart &&
+          q.updatedAt <= filterEnd
+        ) {
+          monthlyData[month].rejected++;
+        }
       } else if (q.dueDate && q.dueDate < new Date() && !q.approvedAt) {
-        monthlyData[month].expired++;
+        // Check if due date is within filter period
+        if (q.dueDate >= filterStart && q.dueDate <= filterEnd) {
+          monthlyData[month].expired++;
+        }
       }
     });
 
-    return Object.entries(monthlyData).map(([label, data]) => ({
-      label: label.charAt(0).toUpperCase() + label.slice(1),
-      ...data,
-    }));
+    return Object.entries(monthlyData)
+      .sort(([, a], [, b]) => a.monthIndex - b.monthIndex)
+      .map(([label, data]) => ({
+        label: label.charAt(0).toUpperCase() + label.slice(1),
+        approved: data.approved,
+        expired: data.expired,
+        rejected: data.rejected,
+      }));
   }
 
   async getQuotationsOrigin(
