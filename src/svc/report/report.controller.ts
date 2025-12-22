@@ -89,4 +89,13 @@ export class ReportController {
     const companyId = (req as any).user?.companyId;
     return this.reportService.getSalesTableData(companyId, filters);
   }
+
+  @Get('sales/pdf-data')
+  async getSalesPdfData(
+    @Query() filters: SalesReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.getSalesReportPdfData(companyId, filters);
+  }
 }

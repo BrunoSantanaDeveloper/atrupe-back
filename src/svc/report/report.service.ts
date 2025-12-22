@@ -600,4 +600,136 @@ export class ReportService {
       return { grouped: false, records, totalCount, pagination };
     }
   }
+
+  async getSalesReportPdfData(
+    companyId: string,
+    filters: SalesReportFilterDto,
+  ) {
+    const { startDate, endDate } = this.getDateRange(filters);
+
+    // Get company info
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      include: {
+        address: true,
+      },
+    });
+
+    // Get all orders for the period (no pagination for PDF)
+    const orders = await this.prisma.order.findMany({
+      where: {
+        quotation: {
+          companyId,
+          approvedAt: { gte: startDate, lte: endDate },
+          ...(filters.sellerId && { sellerId: filters.sellerId }),
+          ...(filters.originId && { contactSourceId: filters.originId }),
+        },
+      },
+      include: {
+        quotation: {
+          include: {
+            client: { select: { id: true, name: true } },
+            series: { select: { code: true } },
+          },
+        },
+      },
+      orderBy: { quotation: { approvedAt: 'desc' } },
+    });
+
+    // Calculate total value
+    const totalValue = orders.reduce(
+      (sum, o) => sum + (o.quotation.totalValue || 0),
+      0,
+    );
+
+    // Group by client
+    const groupsMap: Record<
+      string,
+      {
+        clientId: string;
+        clientName: string;
+        records: any[];
+        total: number;
+      }
+    > = {};
+
+    orders.forEach((order) => {
+      const q = order.quotation;
+      const clientId = q.clientId || 'no-client';
+      const clientName = q.client?.name || 'Cliente não informado';
+
+      if (!groupsMap[clientId]) {
+        groupsMap[clientId] = {
+          clientId,
+          clientName,
+          records: [],
+          total: 0,
+        };
+      }
+
+      const phase =
+        order.status === 'FINISHED'
+          ? 'Entregue'
+          : order.status === 'IN_PRODUCTION' ||
+              order.status === 'COMPLETED' ||
+              order.status === 'DELIVERY'
+            ? 'Em produção'
+            : 'Fase atual';
+
+      const value = q.totalValue || 0;
+      const percentage =
+        totalValue > 0 ? Math.round((value / totalValue) * 100) : 0;
+
+      groupsMap[clientId].records.push({
+        id: order.id,
+        clientName,
+        serviceCode: `${q.series?.code || ''}-${q.quotationNumber || ''}`,
+        description: q.description || 'Descrição do serviço',
+        approvedDate: q.approvedAt ? format(q.approvedAt, 'dd/MM/yyyy') : null,
+        phase,
+        value,
+        percentage,
+      });
+
+      groupsMap[clientId].total += value;
+    });
+
+    const groups = Object.values(groupsMap).map((g) => ({
+      ...g,
+      count: g.records.length,
+      percentage: totalValue > 0 ? Math.round((g.total / totalValue) * 100) : 0,
+    }));
+
+    // Get first address from array
+    const companyAddress = company?.address?.[0];
+
+    return {
+      company: {
+        name: company?.name,
+        cnpj: company?.cnpj,
+        logoUrl: company?.logoUrl,
+        email: company?.email,
+        siteUrl: company?.siteUrl,
+        phone: company?.phone,
+        address: companyAddress
+          ? {
+              street: companyAddress.street,
+              number: companyAddress.number,
+              neighborhood: companyAddress.neighborhood,
+              city: companyAddress.city,
+              state: companyAddress.state,
+            }
+          : undefined,
+        socialNetworks: {
+          instagram: company?.instagram,
+          facebook: company?.facebook,
+          linkedin: company?.linkedin,
+        },
+      },
+      sellerName: filters.sellerId ? 'Vendedor' : undefined,
+      totalValue,
+      totalPercentage: 100,
+      groups,
+    };
+  }
 }
