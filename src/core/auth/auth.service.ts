@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import { PlanControlService } from '../plan/plan-control.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import * as argon2 from 'argon2';
 import { v4 as uuidv4 } from 'uuid';
 import { jwtConstants } from './constants';
@@ -9,11 +10,14 @@ import { jwtConstants } from './constants';
 @Injectable()
 export class AuthService {
   private readonly DEFAULT_PASSWORD = 'd92wS£#nF81%';
+  private readonly logger = new Logger(AuthService.name);
 
   constructor(
     private usersService: UserService,
     private jwtService: JwtService,
     private planControlService: PlanControlService,
+    @Inject(forwardRef(() => SubscriptionsService))
+    private subscriptionsService: SubscriptionsService,
   ) {}
 
   /**
@@ -105,9 +109,42 @@ export class AuthService {
 
       // Login normal para usuários de empresa
       const companyId = user.employee[0]?.company.id;
-      const planInfo = companyId
+      let planInfo = companyId
         ? await this.planControlService.getCompanyPlanInfo(companyId)
         : null;
+
+      // Verificar se o trial expirou e sincronizar pagamentos pendentes
+      // Só verifica se ainda está no plano TRIAL (não tem assinatura paga ativa)
+      const isTrialPlan = planInfo?.planType === 'TRIAL';
+      const trialExpired = planInfo?.trialEndsAt
+        ? new Date(planInfo.trialEndsAt) < new Date()
+        : false;
+
+      if (companyId && isTrialPlan && trialExpired) {
+        try {
+          this.logger.log(
+            `Trial expirado para empresa ${companyId}, verificando pagamentos pendentes...`,
+          );
+          const syncResult =
+            await this.subscriptionsService.checkAndSyncSubscriptionStatus(
+              companyId,
+            );
+
+          // Se a assinatura foi ativada, buscar novamente as informações do plano
+          if (syncResult.status === 'activated') {
+            this.logger.log(
+              `Assinatura ativada durante login para empresa ${companyId}`,
+            );
+            planInfo =
+              await this.planControlService.getCompanyPlanInfo(companyId);
+          }
+        } catch (error) {
+          this.logger.error(
+            `Erro ao verificar pagamentos pendentes: ${error.message}`,
+          );
+          // Continua o login normalmente mesmo se a verificação falhar
+        }
+      }
 
       const subscription = planInfo?.planType ?? 'TRIAL';
 

@@ -11,6 +11,7 @@ import { LocalStrategy } from './strategies/local.strategy';
 import { AbacService } from './abac/abac.service';
 import { PrismaModule } from 'nestjs-prisma';
 import { PlanControlModule } from '../plan/plan-control.module';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { PlanControlModule } from '../plan/plan-control.module';
     }),
     forwardRef(() => UserModule),
     PlanControlModule,
+    forwardRef(() => SubscriptionsModule),
   ],
   controllers: [AuthController],
   providers: [
