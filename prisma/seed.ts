@@ -191,47 +191,65 @@ async function createDefaultPlans() {
 }
 
 async function createDefaultAcademyItems() {
-  console.log('Criando itens da Academy...');
+  console.log('Criando/atualizando itens da Academy...');
 
-  try {
-    // Limpar todos os dados existentes de Academy
-    console.log('Limpando dados existentes da Academy...');
-    await prisma.academyProgress.deleteMany({});
-    console.log('AcademyProgress limpo.');
+  let created = 0;
+  let updated = 0;
 
-    await prisma.academySystem.deleteMany({});
-    console.log('AcademySystem limpo.');
+  for (const item of ACADEMY_ITEMS) {
+    try {
+      // Buscar registro existente pelo identificador único (section + title)
+      const existing = await prisma.academySystem.findFirst({
+        where: {
+          section: item.section,
+          title: item.title,
+        },
+      });
 
-    // Criar novos registros
-    for (const item of ACADEMY_ITEMS) {
-      try {
+      if (existing) {
+        // Atualizar registro existente
+        await prisma.academySystem.update({
+          where: { id: existing.id },
+          data: {
+            type: item.type,
+            description: item.description,
+            order: item.order,
+            videoUrl: item.videoUrl,
+            page: item.page ?? null,
+            modal: item.modal ?? null,
+            buttonTitle: item.buttonTitle ?? null,
+            files: item.files as any,
+          },
+        });
+        updated++;
+        console.log(
+          `Item da Academy atualizado: ${item.title} (${item.section})`,
+        );
+      } else {
+        // Criar novo registro
         await prisma.academySystem.create({
           data: {
             ...item,
-            files: item.files as any, // Cast to any for JSON field
+            files: item.files as any,
             page: item.page ?? null,
             modal: item.modal ?? null,
             buttonTitle: item.buttonTitle ?? null,
           },
         });
-        console.log(
-          `Item da Academy criado: ${item.buttonTitle} (${item.section})`,
-        );
-      } catch (error) {
-        console.error(
-          `Erro ao criar item da Academy ${item.buttonTitle}:`,
-          error,
-        );
+        created++;
+        console.log(`Item da Academy criado: ${item.title} (${item.section})`);
       }
+    } catch (error) {
+      console.error(
+        `Erro ao criar/atualizar item da Academy ${item.title}:`,
+        error,
+      );
     }
-
-    console.log(
-      `Academy seeding concluído! ${ACADEMY_ITEMS.length} registros criados na tabela "academy".`,
-    );
-  } catch (error) {
-    console.error('Erro ao processar Academy seeding:', error);
-    throw error;
   }
+
+  console.log(
+    `Academy seeding concluído! ${created} criados, ${updated} atualizados.`,
+  );
 }
 
 async function createDefaultContactSources() {
