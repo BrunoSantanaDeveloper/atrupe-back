@@ -2116,6 +2116,39 @@ export class SubscriptionsService {
       }
     }
 
+    // Atualizar status da subscription (se fornecido)
+    if (updateDto.status) {
+      const subscription = await this.prisma.subscription.findFirst({
+        where: { companyId: company.id },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (subscription) {
+        await this.prisma.subscription.update({
+          where: { id: subscription.id },
+          data: { status: updateDto.status },
+        });
+        changes.after.status = updateDto.status;
+
+        // Criar histórico da subscription
+        await this.prisma.subscriptionHistory.create({
+          data: {
+            subscriptionId: subscription.id,
+            action: 'STATUS_CHANGE',
+            description: `Status alterado para ${updateDto.status}`,
+            metadata: {
+              previousStatus: subscription.status,
+              newStatus: updateDto.status,
+              changedBy: adminUser.name,
+              changedAt: new Date().toISOString(),
+            },
+            createdBy: userId,
+            createdByName: adminUser.name,
+          },
+        });
+      }
+    }
+
     // Criar histórico da empresa
     await this.prisma.companyHistory.create({
       data: {

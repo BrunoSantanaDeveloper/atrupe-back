@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MinLength,
+} from 'class-validator';
+import { SubscriptionStatus } from '@prisma/client';
 
 export class UpdateActiveClientDto {
   @IsOptional()
@@ -73,6 +80,16 @@ export class UpdateActiveClientDto {
     example: '(47) 98406-4148',
   })
   phone?: string;
+
+  @IsOptional()
+  @IsEnum(SubscriptionStatus)
+  @ApiProperty({
+    description: 'Status da assinatura',
+    required: false,
+    enum: SubscriptionStatus,
+    example: 'ACTIVE',
+  })
+  status?: SubscriptionStatus;
 
   @IsString()
   @MinLength(6)
