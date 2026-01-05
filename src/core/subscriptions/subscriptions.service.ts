@@ -2159,4 +2159,289 @@ export class SubscriptionsService {
 
     return statusMap[asaasStatus] || 'PENDING';
   }
+
+  /**
+   * Exclui uma conta (empresa) completamente do sistema.
+   * Remove todos os dados relacionados de forma permanente.
+   * Requer senha do administrador para confirmação.
+   */
+  async deleteCompany(
+    companyId: string,
+    password: string,
+    adminUserId: string,
+  ) {
+    // Validar senha do administrador
+    const adminUser = await this.prisma.user.findFirst({
+      where: { id: adminUserId },
+    });
+
+    if (!adminUser) {
+      throw new UnauthorizedException('Usuário administrador não encontrado.');
+    }
+
+    const isPasswordValid = await argon2.verify(adminUser.password, password);
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Senha do administrador incorreta.');
+    }
+
+    // Verificar se a empresa existe
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      include: {
+        Subscription: {
+          include: {
+            plan: true,
+          },
+        },
+      },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Empresa não encontrada.');
+    }
+
+    const companyName = company.name;
+
+    // Buscar IDs dos usuários relacionados à empresa (via Employee)
+    const employees = await this.prisma.employee.findMany({
+      where: { companyId },
+      select: { userId: true },
+    });
+    const userIds = employees
+      .filter((e) => e.userId !== null)
+      .map((e) => e.userId as string);
+
+    // Buscar customer IDs das subscriptions
+    const subscriptions = await this.prisma.subscription.findMany({
+      where: { companyId },
+      select: { id: true, customerId: true, asaasSubscriptionId: true },
+    });
+    const subscriptionIds = subscriptions.map((s) => s.id);
+    const customerIds = [...new Set(subscriptions.map((s) => s.customerId))];
+
+    this.logger.log(
+      `Iniciando exclusão da empresa ${companyName} (${companyId}) pelo admin ${adminUser.name}`,
+    );
+
+    // Executar exclusão em cascata dentro de uma transação
+    await this.prisma.$transaction(
+      async (tx) => {
+        // 1. Fiscal - NF-e, NFS-e, NFC-e
+        await tx.nfce.deleteMany({ where: { companyId } });
+        await tx.nfse.deleteMany({ where: { companyId } });
+        await tx.nfe.deleteMany({ where: { companyId } });
+        await tx.invoicyConfig.deleteMany({ where: { companyId } });
+
+        // 2. Produção e Entregas
+        await tx.productionStage.deleteMany({
+          where: { schedule: { companyId } },
+        });
+        await tx.deliverySchedule.deleteMany({ where: { companyId } });
+        await tx.orderHistory.deleteMany({
+          where: { order: { quotation: { companyId } } },
+        });
+        await tx.order.deleteMany({
+          where: { quotation: { companyId } },
+        });
+        await tx.deliveryInfo.deleteMany({
+          where: { quotation: { companyId } },
+        });
+
+        // 3. Orçamentos
+        await tx.quotationHistory.deleteMany({
+          where: { quotation: { companyId } },
+        });
+        await tx.quotationInstallment.deleteMany({
+          where: { quotationPayment: { quotation: { companyId } } },
+        });
+        await tx.quotationPayment.deleteMany({
+          where: { quotation: { companyId } },
+        });
+        await tx.quotationProductItem.deleteMany({
+          where: { quotationProduct: { quotation: { companyId } } },
+        });
+        await tx.quotationProduct.deleteMany({
+          where: { quotation: { companyId } },
+        });
+        await tx.quotation.deleteMany({ where: { companyId } });
+
+        // 4. Financeiro - Transactions, Payables, Receivables
+        await tx.transaction.deleteMany({
+          where: { cashRegister: { companyId } },
+        });
+        await tx.receivableHistory.deleteMany({
+          where: { receivable: { companyId } },
+        });
+        await tx.receivableInstallment.deleteMany({
+          where: { receivable: { companyId } },
+        });
+        await tx.receivable.deleteMany({ where: { companyId } });
+        await tx.payableHistory.deleteMany({
+          where: { payable: { companyId } },
+        });
+        await tx.payableInstallment.deleteMany({
+          where: { payable: { companyId } },
+        });
+        await tx.commission.deleteMany({
+          where: { supplier: { companyId } },
+        });
+        await tx.payable.deleteMany({ where: { companyId } });
+
+        // 5. Cash Register
+        await tx.bankAccountCashControl.deleteMany({
+          where: { bankAccount: { companyId } },
+        });
+        await tx.cashRegister.deleteMany({ where: { companyId } });
+
+        // 6. Clientes e Fornecedores
+        await tx.clientPaymentCondition.deleteMany({
+          where: { client: { companyId } },
+        });
+        await tx.supplierPaymentCondition.deleteMany({
+          where: { supplier: { companyId } },
+        });
+        await tx.contact.deleteMany({
+          where: {
+            OR: [{ client: { companyId } }, { supplier: { companyId } }],
+          },
+        });
+        await tx.address.deleteMany({
+          where: {
+            OR: [{ companyId }, { client: { companyId } }],
+          },
+        });
+        await tx.client.deleteMany({ where: { companyId } });
+        await tx.supplier.deleteMany({ where: { companyId } });
+
+        // 7. Produtos
+        await tx.productFiscalData.deleteMany({
+          where: { product: { companyId } },
+        });
+        await tx.productItem.deleteMany({
+          where: { product: { companyId } },
+        });
+        await tx.product.deleteMany({ where: { companyId } });
+
+        // 8. Categorias e Naturezas
+        await tx.subCategory.deleteMany({ where: { companyId } });
+        await tx.nature.deleteMany({ where: { companyId } });
+        await tx.category.deleteMany({ where: { companyId } });
+
+        // 9. Despesas Agendadas
+        await tx.scheduledExpense.deleteMany({ where: { companyId } });
+
+        // 10. Financeiro extra
+        await tx.financialFlow.deleteMany({ where: { companyId } });
+        await tx.invoice.deleteMany({ where: { companyId } });
+        await tx.creditLimitPaymentCondition.deleteMany({
+          where: { creditLimitDefault: { companyId } },
+        });
+        await tx.creditLimitDefault.deleteMany({ where: { companyId } });
+
+        // 11. Folha de Pagamento
+        await tx.payrollItem.deleteMany({
+          where: { payroll: { companyId } },
+        });
+        await tx.payroll.deleteMany({ where: { companyId } });
+        await tx.payrollSetup.deleteMany({ where: { companyId } });
+        await tx.payrollTemplate.deleteMany({ where: { companyId } });
+
+        // 12. Funcionários
+        await tx.employeeHistory.deleteMany({
+          where: { employee: { companyId } },
+        });
+        await tx.employee.deleteMany({ where: { companyId } });
+
+        // 13. Ativos
+        await tx.asset.deleteMany({ where: { companyId } });
+        await tx.assetType.deleteMany({ where: { companyId } });
+
+        // 14. Configurações Bancárias
+        await tx.installment.deleteMany({
+          where: { paymentCondition: { companyId } },
+        });
+        await tx.paymentCondition.deleteMany({ where: { companyId } });
+        await tx.bankAccount.deleteMany({ where: { companyId } });
+
+        // 15. Séries e Tags
+        await tx.saleSeries.deleteMany({ where: { companyId } });
+        await tx.quotationTag.deleteMany({ where: { companyId } });
+
+        // 16. Perfis e Cargos
+        await tx.sellerProfile.deleteMany({ where: { companyId } });
+        await tx.userRole.deleteMany({
+          where: { role: { companyId } },
+        });
+        await tx.role.deleteMany({ where: { companyId } });
+        await tx.companySector.deleteMany({ where: { companyId } });
+
+        // 17. Academy
+        await tx.academyProgress.deleteMany({ where: { companyId } });
+
+        // 18. Motivos
+        await tx.reasons.deleteMany({ where: { companyId } });
+
+        // 19. Idiomas
+        await tx.language.deleteMany({ where: { companyId } });
+
+        // 20. Import Logs
+        await tx.importLog.deleteMany({ where: { companyId } });
+
+        // 21. Subscription relacionados
+        await tx.subscriptionFeature.deleteMany({
+          where: { subscriptionId: { in: subscriptionIds } },
+        });
+        await tx.subscriptionHistory.deleteMany({
+          where: { subscriptionId: { in: subscriptionIds } },
+        });
+        await tx.payment.deleteMany({
+          where: { subscriptionId: { in: subscriptionIds } },
+        });
+        await tx.subscription.deleteMany({ where: { companyId } });
+
+        // 22. Company History
+        await tx.companyHistory.deleteMany({ where: { companyId } });
+
+        // 23. Company
+        await tx.company.delete({ where: { id: companyId } });
+
+        // 24. Customer (se não tiver outras subscriptions)
+        for (const customerId of customerIds) {
+          const otherSubscriptions = await tx.subscription.count({
+            where: { customerId },
+          });
+          if (otherSubscriptions === 0) {
+            await tx.customer.delete({ where: { id: customerId } });
+          }
+        }
+
+        // 25. Usuários (se não tiverem vínculo com outras empresas)
+        for (const userId of userIds) {
+          const otherEmployees = await tx.employee.count({
+            where: { userId },
+          });
+          if (otherEmployees === 0) {
+            await tx.userActivity.deleteMany({ where: { userId } });
+            await tx.userContract.deleteMany({ where: { userId } });
+            await tx.userRole.deleteMany({ where: { userId } });
+            await tx.user.delete({ where: { id: userId } });
+          }
+        }
+      },
+      {
+        timeout: 60000, // 60 segundos para operações complexas
+      },
+    );
+
+    this.logger.log(
+      `Empresa ${companyName} (${companyId}) excluída com sucesso pelo admin ${adminUser.name}`,
+    );
+
+    return {
+      message: `Conta "${companyName}" excluída permanentemente com sucesso.`,
+      deletedCompanyId: companyId,
+      deletedCompanyName: companyName,
+    };
+  }
 }

@@ -28,6 +28,7 @@ import { ListTrialCompaniesDto } from './dto/list-trial-companies.dto';
 import { ListIncompleteRegistrationsDto } from './dto/list-incomplete-registrations.dto';
 import { ListActiveClientsDto } from './dto/list-active-clients.dto';
 import { UpdateActiveClientDto } from './dto/update-active-client.dto';
+import { DeleteAccountDto } from './dto/delete-account.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
@@ -371,6 +372,46 @@ export class SubscriptionsController {
       subscriptionId,
       moduleId,
       req,
+    );
+  }
+
+  @Delete(':companyId/delete-account')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary: 'Exclui uma conta completamente do sistema (apenas SystemAdmin)',
+    description:
+      'Remove permanentemente uma empresa e todos os seus dados relacionados. Esta ação é irreversível.',
+  })
+  @ApiParam({ name: 'companyId', description: 'Company ID to delete' })
+  @ApiBody({
+    description: 'Senha do administrador para autorizar a exclusão',
+    type: DeleteAccountDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Conta excluída permanentemente com sucesso',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Senha do administrador incorreta',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado. Apenas administradores do sistema',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Empresa não encontrada',
+  })
+  async deleteAccount(
+    @Param('companyId') companyId: string,
+    @Body() deleteDto: DeleteAccountDto,
+    @Req() req,
+  ) {
+    return await this.subscriptionsService.deleteCompany(
+      companyId,
+      deleteDto.password,
+      req.user.userId,
     );
   }
 }
