@@ -75,6 +75,7 @@ export class SubscriptionsService {
     page: number = 1,
     limit: number = 10,
     sort: 'name' | 'updated_at' | 'created_at' = 'name',
+    search?: string,
   ) {
     const skip = (page - 1) * limit;
 
@@ -86,16 +87,49 @@ export class SubscriptionsService {
           ? 'createdAt'
           : 'name';
 
+    // Construir filtro de busca
+    const whereCondition: any = {};
+    if (search) {
+      whereCondition.OR = [
+        {
+          name: {
+            contains: search,
+            mode: 'insensitive',
+          },
+        },
+        {
+          companyName: {
+            contains: search,
+            mode: 'insensitive',
+          },
+        },
+        {
+          email: {
+            contains: search,
+            mode: 'insensitive',
+          },
+        },
+        {
+          phone: {
+            contains: search,
+          },
+        },
+      ];
+    }
+
     // Buscar todos os registros de MailVerification
     const [mailVerifications, total] = await Promise.all([
       this.prisma.mailVerification.findMany({
+        where: whereCondition,
         orderBy: {
           [orderByField]: orderByField === 'name' ? 'asc' : 'desc',
         },
         skip,
         take: limit,
       }),
-      this.prisma.mailVerification.count(),
+      this.prisma.mailVerification.count({
+        where: whereCondition,
+      }),
     ]);
 
     // Agrupar por data de criação
@@ -378,6 +412,7 @@ export class SubscriptionsService {
     page: number = 1,
     limit: number = 10,
     statusFilter?: string,
+    search?: string,
   ) {
     const skip = (page - 1) * limit;
 
@@ -402,6 +437,58 @@ export class SubscriptionsService {
 
     if (mappedStatus) {
       whereCondition.status = mappedStatus;
+    }
+
+    // Adicionar filtro de busca se fornecido
+    if (search) {
+      const searchLower = search.toLowerCase();
+      whereCondition.OR = [
+        {
+          Company: {
+            name: {
+              contains: searchLower,
+              mode: 'insensitive',
+            },
+          },
+        },
+        {
+          Company: {
+            legalName: {
+              contains: searchLower,
+              mode: 'insensitive',
+            },
+          },
+        },
+        {
+          Company: {
+            email: {
+              contains: searchLower,
+              mode: 'insensitive',
+            },
+          },
+        },
+        {
+          Company: {
+            phone: {
+              contains: search,
+            },
+          },
+        },
+        {
+          Company: {
+            mobile: {
+              contains: search,
+            },
+          },
+        },
+        {
+          Company: {
+            cnpj: {
+              contains: search,
+            },
+          },
+        },
+      ];
     }
 
     // Buscar subscriptions que não são TRIAL
@@ -564,6 +651,7 @@ export class SubscriptionsService {
     limit: number = 10,
     statusFilter?: string,
     sort: 'name' | 'updated_at' | 'created_at' = 'name',
+    search?: string,
   ) {
     const skip = (page - 1) * limit;
 
@@ -585,13 +673,67 @@ export class SubscriptionsService {
       };
     }
 
+    // Construir condição de busca
+    const whereCondition: any = {
+      plan: {
+        planType: 'TRIAL',
+      },
+    };
+
+    // Adicionar filtro de busca se fornecido
+    if (search) {
+      whereCondition.OR = [
+        {
+          Company: {
+            name: {
+              contains: search,
+              mode: 'insensitive',
+            },
+          },
+        },
+        {
+          Company: {
+            legalName: {
+              contains: search,
+              mode: 'insensitive',
+            },
+          },
+        },
+        {
+          Company: {
+            email: {
+              contains: search,
+              mode: 'insensitive',
+            },
+          },
+        },
+        {
+          Company: {
+            phone: {
+              contains: search,
+            },
+          },
+        },
+        {
+          Company: {
+            mobile: {
+              contains: search,
+            },
+          },
+        },
+        {
+          Company: {
+            cnpj: {
+              contains: search,
+            },
+          },
+        },
+      ];
+    }
+
     // Buscar todas as subscriptions TRIAL
     const allTrialSubscriptions = await this.prisma.subscription.findMany({
-      where: {
-        plan: {
-          planType: 'TRIAL',
-        },
-      },
+      where: whereCondition,
       include: {
         plan: true,
         Company: {

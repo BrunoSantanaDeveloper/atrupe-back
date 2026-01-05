@@ -38,4 +38,11 @@ export class ListTrialCompaniesDto {
   @IsOptional()
   @IsIn(['name', 'updated_at', 'created_at'])
   sort?: 'name' | 'updated_at' | 'created_at' = 'name';
+
+  @ApiPropertyOptional({
+    description: 'Busca por nome da empresa, email ou telefone',
+  })
+  @IsOptional()
+  @IsString()
+  search?: string;
 }

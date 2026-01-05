@@ -54,6 +54,7 @@ export class SubscriptionsController {
       query.page,
       query.limit,
       query.sort,
+      query.search,
     );
   }
 
@@ -79,6 +80,7 @@ export class SubscriptionsController {
       query.limit,
       query.status,
       query.sort,
+      query.search,
     );
   }
 
@@ -105,6 +107,7 @@ export class SubscriptionsController {
       query.page,
       query.limit,
       query.status,
+      query.search,
     );
   }
 

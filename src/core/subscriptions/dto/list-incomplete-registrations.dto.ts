@@ -1,4 +1,4 @@
-import { IsOptional, IsNumber, Min, IsIn } from 'class-validator';
+import { IsOptional, IsNumber, Min, IsIn, IsString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -29,4 +29,11 @@ export class ListIncompleteRegistrationsDto {
   @IsOptional()
   @IsIn(['name', 'updated_at', 'created_at'])
   sort?: 'name' | 'updated_at' | 'created_at' = 'name';
+
+  @ApiPropertyOptional({
+    description: 'Busca por nome, email ou telefone',
+  })
+  @IsOptional()
+  @IsString()
+  search?: string;
 }

@@ -29,4 +29,11 @@ export class ListActiveClientsDto {
   @IsString()
   @IsIn(['ativas', 'bloqueadas', 'inativas', 'canceladas'])
   status?: string;
+
+  @ApiPropertyOptional({
+    description: 'Busca por nome da empresa, email ou telefone',
+  })
+  @IsOptional()
+  @IsString()
+  search?: string;
 }
