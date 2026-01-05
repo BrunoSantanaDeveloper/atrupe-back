@@ -154,6 +154,7 @@ export class SubscriptionsService {
           phone: verification.phone || null,
           email: verification.email,
           createdAt: verification.createdAt,
+          emailVerified: verification.verified,
         });
 
         return acc;
