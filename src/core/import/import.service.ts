@@ -654,13 +654,15 @@ export class ImportService {
    * Importar um produto do CSV
    */
   private async importProduct(row: any, companyId: string): Promise<void> {
-    // Buscar categoria por nome (já validado, então deve existir)
-    const category = await this.prisma.category.findFirst({
-      where: {
-        name: row.categoria,
-        companyId,
-      },
+    // Buscar ou criar categoria por nome
+    let category = await this.prisma.category.findFirst({
+      where: { name: row.categoria, companyId, kind: 'PRODUCT' },
     });
+    if (!category) {
+      category = await this.prisma.category.create({
+        data: { name: row.categoria, companyId, kind: 'PRODUCT' },
+      });
+    }
 
     // Buscar setor por nome (já validado, então deve existir)
     const sector = await this.prisma.companySector.findFirst({
@@ -669,6 +671,18 @@ export class ImportService {
         companyId,
       },
     });
+
+    // Converter campos de permissão
+    const allowEditValues = row.permitirEditarValor
+      ? ['SIM', 'S', 'TRUE', '1', 'YES'].includes(
+          row.permitirEditarValor.toUpperCase(),
+        )
+      : true;
+    const allowEditDescription = row.permitirEditarDescricao
+      ? ['SIM', 'S', 'TRUE', '1', 'YES'].includes(
+          row.permitirEditarDescricao.toUpperCase(),
+        )
+      : true;
 
     // Criar produto
     const product = await this.prisma.product.create({
@@ -682,6 +696,8 @@ export class ImportService {
         isActive: true,
         status: 'ACTIVE',
         isImported: true,
+        allowEditValues,
+        allowEditDescription,
       },
     });
 

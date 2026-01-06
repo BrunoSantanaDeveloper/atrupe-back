@@ -42,20 +42,8 @@ export const PRODUCT_IMPORT_SCHEMA = {
       required: true,
       type: 'string',
       maxLength: 255,
-      description: 'Nome da categoria',
+      description: 'Nome da categoria (será criada se não existir)',
       example: 'Impressos Comerciais',
-      validate: async (value: string, companyId: string, prisma: any) => {
-        const category = await prisma.category.findFirst({
-          where: {
-            name: value,
-            companyId,
-          },
-        });
-        if (!category) {
-          return 'Categoria não encontrada. Cadastre a categoria antes de importar';
-        }
-        return null;
-      },
     },
     {
       name: 'setor',
@@ -86,11 +74,18 @@ export const PRODUCT_IMPORT_SCHEMA = {
       example: 'Impressão Offset',
     },
     {
-      name: 'servicoDescricao',
+      name: 'permitirEditarValor',
       required: false,
       type: 'string',
-      description: 'Descrição do serviço',
-      example: 'Impressão offset 4x4 cores em papel couché',
+      description: 'Permitir editar valor (SIM/NAO)',
+      example: 'SIM',
+    },
+    {
+      name: 'permitirEditarDescricao',
+      required: false,
+      type: 'string',
+      description: 'Permitir editar descrição (SIM/NAO)',
+      example: 'SIM',
     },
     {
       name: 'unidadeMedida',
@@ -114,13 +109,7 @@ export const PRODUCT_IMPORT_SCHEMA = {
       description: 'Altura em metros',
       example: '0.05',
     },
-    {
-      name: 'quantidade',
-      required: false,
-      type: 'decimal',
-      description: 'Quantidade',
-      example: '1',
-    },
+
     {
       name: 'custo',
       required: false,
