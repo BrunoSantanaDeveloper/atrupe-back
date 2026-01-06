@@ -123,14 +123,6 @@ export const SUPPLIER_IMPORT_SCHEMA = {
       example: '12.345.678-9',
     },
     {
-      name: 'atividade',
-      required: false,
-      type: 'string',
-      maxLength: 255,
-      description: 'Atividade/Segmento',
-      example: 'Indústria',
-    },
-    {
       name: 'razaoSocial',
       required: false,
       type: 'string',
@@ -143,26 +135,46 @@ export const SUPPLIER_IMPORT_SCHEMA = {
       required: false,
       type: 'string',
       maxLength: 255,
-      description: 'Categoria do fornecedor',
+      description: 'Categoria do fornecedor (será criada se não existir)',
       example: 'Matéria Prima',
-      validate: async (
-        value: string,
-        companyId: string,
-        prisma: PrismaService,
-      ) => {
-        if (!value) return null;
-
-        // Verificar se a categoria existe (Category com relação SupplierToCategory)
-        const category = await prisma.category.findFirst({
-          where: { name: value, companyId },
-        });
-
-        if (!category) {
-          return `Categoria '${value}' não encontrada. Cadastre a categoria antes de importar.`;
-        }
-
-        return null;
-      },
+    },
+    {
+      name: 'filial',
+      required: false,
+      type: 'string',
+      description: 'Se é filial (SIM/NAO, S/N, TRUE/FALSE, 1/0)',
+      example: 'NAO',
+    },
+    {
+      name: 'responsavelNome',
+      required: false,
+      type: 'string',
+      maxLength: 255,
+      description: 'Nome do responsável/contato',
+      example: 'Maria Santos',
+    },
+    {
+      name: 'responsavelEmail',
+      required: false,
+      type: 'email',
+      description: 'Email do responsável',
+      example: 'maria@empresa.com',
+    },
+    {
+      name: 'responsavelTelefone',
+      required: false,
+      type: 'string',
+      maxLength: 20,
+      description: 'Telefone do responsável',
+      example: '(11) 3333-4444',
+    },
+    {
+      name: 'responsavelCelular',
+      required: false,
+      type: 'string',
+      maxLength: 20,
+      description: 'Celular do responsável',
+      example: '(11) 99999-8888',
     },
     {
       name: 'observacoes',

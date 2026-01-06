@@ -580,16 +580,25 @@ export class ImportService {
     if (type === 'F' || type === 'PESSOA') type = 'PERSON';
     if (type === 'J' || type === 'EMPRESA') type = 'COMPANY';
 
-    // Buscar categoria se fornecida
+    // Buscar ou criar categoria
     let categoryId = null;
-    if (row.categoria) {
-      const category = await this.prisma.category.findFirst({
-        where: {
-          name: row.categoria,
-          companyId,
-        },
+    if (row.categoria && row.categoria.trim() !== '') {
+      let category = await this.prisma.category.findFirst({
+        where: { name: row.categoria, companyId, kind: 'SUPPLIER' },
       });
-      categoryId = category?.id || null;
+      if (!category) {
+        category = await this.prisma.category.create({
+          data: { name: row.categoria, companyId, kind: 'SUPPLIER' },
+        });
+      }
+      categoryId = category.id;
+    }
+
+    // Converter filial (boolean)
+    let isBranch = false;
+    if (row.filial) {
+      const v = row.filial.toUpperCase();
+      isBranch = ['SIM', 'S', 'TRUE', '1', 'YES'].includes(v);
     }
 
     // Criar fornecedor
@@ -604,10 +613,10 @@ export class ImportService {
         rg: row.rg || null,
         phone: row.telefone || null,
         mobile: row.celular || null,
-        activity: row.atividade || null,
         corporateName: row.razaoSocial || null,
         notes: row.observacoes || null,
         categoryId,
+        isBranch,
         address: row.cep
           ? {
               create: [
@@ -624,6 +633,19 @@ export class ImportService {
               ],
             }
           : undefined,
+        contacts:
+          row.responsavelNome && row.responsavelNome.trim() !== ''
+            ? {
+                create: [
+                  {
+                    name: row.responsavelNome,
+                    email: row.responsavelEmail || null,
+                    phone: row.responsavelTelefone || null,
+                    mobile: row.responsavelCelular || null,
+                  },
+                ],
+              }
+            : undefined,
       },
     });
   }
