@@ -468,6 +468,33 @@ export class ImportService {
     if (type === 'F' || type === 'PESSOA') type = 'PERSON';
     if (type === 'J' || type === 'EMPRESA') type = 'COMPANY';
 
+    // Buscar ou criar categoria/grupo
+    let categoryId = null;
+    if (row.grupo && row.grupo.trim() !== '') {
+      let category = await this.prisma.category.findFirst({
+        where: { name: row.grupo, companyId, kind: 'CLIENT' },
+      });
+      if (!category) {
+        category = await this.prisma.category.create({
+          data: { name: row.grupo, companyId, kind: 'CLIENT' },
+        });
+      }
+      categoryId = category.id;
+    }
+
+    // Converter data de nascimento
+    let birthdate = null;
+    if (row.dataNascimento && row.dataNascimento.trim() !== '') {
+      birthdate = this.parseDateString(row.dataNascimento);
+    }
+
+    // Converter filial (boolean)
+    let isBranch = false;
+    if (row.filial) {
+      const v = row.filial.toUpperCase();
+      isBranch = ['SIM', 'S', 'TRUE', '1', 'YES'].includes(v);
+    }
+
     // Criar cliente
     await this.prisma.client.create({
       data: {
@@ -480,7 +507,9 @@ export class ImportService {
         rg: row.rg || null,
         phone: row.telefone || null,
         mobile: row.celular || null,
-        activity: row.atividade || null,
+        categoryId,
+        birthdate,
+        isBranch,
         corporateName: row.razaoSocial || null,
         notes: row.observacoes || null,
         address: row.cep
@@ -499,9 +528,47 @@ export class ImportService {
               ],
             }
           : undefined,
+        contacts:
+          row.responsavelNome && row.responsavelNome.trim() !== ''
+            ? {
+                create: [
+                  {
+                    name: row.responsavelNome,
+                    email: row.responsavelEmail || null,
+                    phone: row.responsavelTelefone || null,
+                    mobile: row.responsavelCelular || null,
+                  },
+                ],
+              }
+            : undefined,
         isImported: true,
       },
     });
+  }
+
+  /**
+   * Parse date string in DD/MM/YYYY or YYYY-MM-DD format
+   */
+  private parseDateString(dateStr: string): Date | null {
+    if (!dateStr) return null;
+
+    // Try DD/MM/YYYY format
+    const brFormat = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+    const brMatch = dateStr.match(brFormat);
+    if (brMatch) {
+      const [, day, month, year] = brMatch;
+      return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    }
+
+    // Try YYYY-MM-DD format
+    const isoFormat = /^(\d{4})-(\d{2})-(\d{2})$/;
+    const isoMatch = dateStr.match(isoFormat);
+    if (isoMatch) {
+      const [, year, month, day] = isoMatch;
+      return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    }
+
+    return null;
   }
 
   /**
