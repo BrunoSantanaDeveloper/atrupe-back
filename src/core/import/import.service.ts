@@ -495,6 +495,38 @@ export class ImportService {
       isBranch = ['SIM', 'S', 'TRUE', '1', 'YES'].includes(v);
     }
 
+    // Determinar status: ACTIVE se tiver nome + CPF/CNPJ + endereço completo + telefone
+    const hasCpfCnpj = !!(row.cpf || row.cnpj);
+    const hasFullAddress = !!(
+      row.cep &&
+      row.uf &&
+      row.cidade &&
+      row.bairro &&
+      row.rua
+    );
+    const hasPhone = !!(row.telefone || row.celular);
+    const status =
+      hasCpfCnpj && hasFullAddress && hasPhone ? 'ACTIVE' : 'PROSPECT';
+
+    // Normalizar CPF/CNPJ (remover pontuação e completar zeros à esquerda)
+    let cpfNormalized: string | null = null;
+    if (row.cpf) {
+      let cpfClean = row.cpf.replace(/\D/g, '');
+      if (cpfClean.length < 11 && cpfClean.length >= 9) {
+        cpfClean = cpfClean.padStart(11, '0');
+      }
+      cpfNormalized = cpfClean;
+    }
+
+    let cnpjNormalized: string | null = null;
+    if (row.cnpj) {
+      let cnpjClean = row.cnpj.replace(/\D/g, '');
+      if (cnpjClean.length < 14 && cnpjClean.length >= 12) {
+        cnpjClean = cnpjClean.padStart(14, '0');
+      }
+      cnpjNormalized = cnpjClean;
+    }
+
     // Criar cliente
     await this.prisma.client.create({
       data: {
@@ -502,8 +534,8 @@ export class ImportService {
         type: type || 'PERSON',
         name: row.nome,
         email: row.email || null,
-        cpf: row.cpf || null,
-        cnpj: row.cnpj || null,
+        cpf: cpfNormalized,
+        cnpj: cnpjNormalized,
         rg: row.rg || null,
         phone: row.telefone || null,
         mobile: row.celular || null,
@@ -512,6 +544,7 @@ export class ImportService {
         isBranch,
         corporateName: row.razaoSocial || null,
         notes: row.observacoes || null,
+        status,
         address: row.cep
           ? {
               create: [
@@ -601,6 +634,25 @@ export class ImportService {
       isBranch = ['SIM', 'S', 'TRUE', '1', 'YES'].includes(v);
     }
 
+    // Normalizar CPF/CNPJ (remover pontuação e completar zeros à esquerda)
+    let cpfNormalized: string | null = null;
+    if (row.cpf) {
+      let cpfClean = row.cpf.replace(/\D/g, '');
+      if (cpfClean.length < 11 && cpfClean.length >= 9) {
+        cpfClean = cpfClean.padStart(11, '0');
+      }
+      cpfNormalized = cpfClean;
+    }
+
+    let cnpjNormalized: string | null = null;
+    if (row.cnpj) {
+      let cnpjClean = row.cnpj.replace(/\D/g, '');
+      if (cnpjClean.length < 14 && cnpjClean.length >= 12) {
+        cnpjClean = cnpjClean.padStart(14, '0');
+      }
+      cnpjNormalized = cnpjClean;
+    }
+
     // Criar fornecedor
     await this.prisma.supplier.create({
       data: {
@@ -608,8 +660,8 @@ export class ImportService {
         type: type || 'COMPANY',
         name: row.nome,
         email: row.email || null,
-        cpf: row.cpf || null,
-        cnpj: row.cnpj || null,
+        cpf: cpfNormalized,
+        cnpj: cnpjNormalized,
         rg: row.rg || null,
         phone: row.telefone || null,
         mobile: row.celular || null,
