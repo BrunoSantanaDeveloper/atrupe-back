@@ -1530,6 +1530,29 @@ export class ImportService {
 
     // Criar Receivable principal
     const totalAmount = parcelas.reduce((sum, p) => sum + p.value, 0);
+    const firstDueDate = parcelas[0]?.dueDate;
+
+    // Verificar se já existe Receivable similar (evitar duplicatas)
+    const existingReceivable = await this.prisma.receivable.findFirst({
+      where: {
+        companyId,
+        clientId: client.id,
+        totalAmount,
+        subCategoryId: subCategory?.id || null,
+        referenceDate: quotation.createdAt,
+        installments: firstDueDate
+          ? { some: { dueDate: firstDueDate } }
+          : undefined,
+      },
+    });
+
+    if (existingReceivable) {
+      console.log(
+        `Receivable já existe para cliente ${client.id} com valor ${totalAmount}, pulando criação duplicada`,
+      );
+      return existingReceivable;
+    }
+
     const receivable = await this.prisma.receivable.create({
       data: {
         referenceDate: quotation.createdAt,
@@ -1544,6 +1567,7 @@ export class ImportService {
         subCategoryId: subCategory?.id || null,
         quotationId: quotation.id,
         financialType: 'MAIN',
+        isImported: true,
       },
     });
 
@@ -1890,6 +1914,33 @@ export class ImportService {
           : new Date();
 
         if (isReceivable) {
+          // Obter primeiro vencimento para verificação de duplicata
+          const firstDueDate = installments[0]?.DataVencimento
+            ? new Date(installments[0].DataVencimento)
+            : null;
+
+          // Verificar se já existe Receivable similar (evitar duplicatas)
+          const existingReceivable = await this.prisma.receivable.findFirst({
+            where: {
+              companyId,
+              clientId: clientId || undefined,
+              totalAmount,
+              subCategoryId: subCategoryId || undefined,
+              referenceDate,
+              installments: firstDueDate
+                ? { some: { dueDate: firstDueDate } }
+                : undefined,
+            },
+          });
+
+          if (existingReceivable) {
+            console.log(
+              `Receivable já existe (cliente: ${clientId}, valor: ${totalAmount}), pulando criação duplicada`,
+            );
+            successCount++;
+            continue;
+          }
+
           // Criar conta a receber (Receivable)
           const receivable = await this.prisma.receivable.create({
             data: {
@@ -1992,6 +2043,34 @@ export class ImportService {
             });
           }
         } else {
+          // Obter primeiro vencimento para verificação de duplicata
+          const firstDueDate = installments[0]?.DataVencimento
+            ? new Date(installments[0].DataVencimento)
+            : null;
+
+          // Verificar se já existe Payable similar (evitar duplicatas)
+          const existingPayable = await this.prisma.payable.findFirst({
+            where: {
+              companyId,
+              supplierId: supplierId || undefined,
+              employeeId: employeeId || undefined,
+              totalAmount,
+              subCategoryId: subCategoryId || undefined,
+              referenceDate,
+              installments: firstDueDate
+                ? { some: { dueDate: firstDueDate } }
+                : undefined,
+            },
+          });
+
+          if (existingPayable) {
+            console.log(
+              `Payable já existe (fornecedor: ${supplierId || employeeId}, valor: ${totalAmount}), pulando criação duplicada`,
+            );
+            successCount++;
+            continue;
+          }
+
           // Criar conta a pagar (Payable)
           const payable = await this.prisma.payable.create({
             data: {
