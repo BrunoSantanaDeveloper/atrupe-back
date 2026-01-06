@@ -827,6 +827,21 @@ export class ImportService {
           status = 'OVERDUE';
         }
 
+        // Buscar contato/responsável se informado
+        let contactId = null;
+        if (
+          firstItem.ResponsavelNome &&
+          firstItem.ResponsavelNome.trim() !== ''
+        ) {
+          const contact = await this.prisma.contact.findFirst({
+            where: {
+              name: firstItem.ResponsavelNome,
+              clientId: client.id,
+            },
+          });
+          contactId = contact?.id || null;
+        }
+
         // Criar orçamento
         const quotation = await this.prisma.quotation.create({
           data: {
@@ -834,6 +849,7 @@ export class ImportService {
             seriesId: series.id,
             clientId: client.id,
             sellerId: seller.id,
+            contactId,
             status,
             description: firstItem.ObservacaoItem || null,
             dueDate: firstItem.DataValidade
@@ -916,12 +932,35 @@ export class ImportService {
         const freteCusto = parseFloat(firstItem.FreteCusto) || null;
         const freteValor = parseFloat(firstItem.FreteValor) || null;
 
+        // Buscar transportador se informado
+        let transportadorId = null;
+        if (
+          firstItem.TransportadorCpfCnpj &&
+          firstItem.TransportadorCpfCnpj.trim() !== ''
+        ) {
+          const cleanTransportador = firstItem.TransportadorCpfCnpj.replace(
+            /[^\d]/g,
+            '',
+          );
+          const transportador = await this.prisma.supplier.findFirst({
+            where: {
+              companyId,
+              OR: [
+                { cpf: { contains: cleanTransportador } },
+                { cnpj: { contains: cleanTransportador } },
+              ],
+            },
+          });
+          transportadorId = transportador?.id || null;
+        }
+
         await this.prisma.deliveryInfo.create({
           data: {
             quotationId: quotation.id,
             deliveryType: tipoEntrega === 'CARRIER' ? 'CARRIER' : 'PICKUP',
             cost: freteCusto,
             value: freteValor,
+            supplierId: transportadorId,
             estimatedDate: firstItem.DataEntrega
               ? new Date(firstItem.DataEntrega)
               : null,

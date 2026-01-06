@@ -118,6 +118,75 @@ export const QUOTATION_IMPORT_SCHEMA = {
       },
     },
     {
+      name: 'ResponsavelNome',
+      required: false,
+      type: 'string',
+      maxLength: 255,
+      description: 'Nome do contato/responsável do cliente',
+      example: 'Maria Santos',
+      validate: async (
+        value: string,
+        companyId: string,
+        prisma: any,
+        row: any,
+      ) => {
+        if (!value) return null;
+
+        // Precisa do cliente para buscar o contato
+        const cleanCpfCnpj = (row.ClienteCpfCnpj || '').replace(/[^\d]/g, '');
+        const client = await prisma.client.findFirst({
+          where: {
+            companyId,
+            OR: [
+              { cpf: { contains: cleanCpfCnpj } },
+              { cnpj: { contains: cleanCpfCnpj } },
+            ],
+          },
+        });
+
+        if (!client) return null; // Cliente já validado em outro campo
+
+        const contact = await prisma.contact.findFirst({
+          where: {
+            name: value,
+            clientId: client.id,
+          },
+        });
+
+        if (!contact) {
+          return `Contato '${value}' não encontrado para este cliente`;
+        }
+        return null;
+      },
+    },
+    {
+      name: 'TransportadorCpfCnpj',
+      required: false,
+      type: 'string',
+      maxLength: 18,
+      description: 'CPF ou CNPJ do transportador/fornecedor de frete',
+      example: '12.345.678/0001-90',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        if (!value) return null;
+
+        const cleanValue = value.replace(/[^\d]/g, '');
+        const supplier = await prisma.supplier.findFirst({
+          where: {
+            companyId,
+            OR: [
+              { cpf: { contains: cleanValue } },
+              { cnpj: { contains: cleanValue } },
+            ],
+          },
+        });
+
+        if (!supplier) {
+          return `Transportador com CPF/CNPJ '${value}' não encontrado`;
+        }
+        return null;
+      },
+    },
+    {
       name: 'ItemID',
       required: true,
       type: 'number',
