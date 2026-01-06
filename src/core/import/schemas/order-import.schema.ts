@@ -117,6 +117,89 @@ export const ORDER_IMPORT_SCHEMA = {
       },
     },
     {
+      name: 'ResponsavelNome',
+      required: false,
+      type: 'string',
+      maxLength: 255,
+      description: 'Nome do contato/responsável do cliente',
+      example: 'Maria Santos',
+      validate: async (
+        value: string,
+        companyId: string,
+        prisma: any,
+        row: any,
+      ) => {
+        if (!value) return null;
+
+        const cleanCpfCnpj = (row.ClienteCpfCnpj || '').replace(/[^\d]/g, '');
+        const client = await prisma.client.findFirst({
+          where: {
+            companyId,
+            OR: [
+              { cpf: { contains: cleanCpfCnpj } },
+              { cnpj: { contains: cleanCpfCnpj } },
+            ],
+          },
+        });
+
+        if (!client) return null;
+
+        const contact = await prisma.contact.findFirst({
+          where: {
+            name: value,
+            clientId: client.id,
+          },
+        });
+
+        if (!contact) {
+          return `Contato '${value}' não encontrado para este cliente`;
+        }
+        return null;
+      },
+    },
+    {
+      name: 'ResponsavelEmail',
+      required: false,
+      type: 'string',
+      maxLength: 255,
+      description:
+        'Email do contato/responsável do cliente (alternativo ao nome)',
+      example: 'maria@empresa.com',
+      validate: async (
+        value: string,
+        companyId: string,
+        prisma: any,
+        row: any,
+      ) => {
+        if (!value) return null;
+
+        const cleanCpfCnpj = (row.ClienteCpfCnpj || '').replace(/[^\d]/g, '');
+        const client = await prisma.client.findFirst({
+          where: {
+            companyId,
+            OR: [
+              { cpf: { contains: cleanCpfCnpj } },
+              { cnpj: { contains: cleanCpfCnpj } },
+            ],
+          },
+        });
+
+        if (!client) return null;
+
+        const contact = await prisma.contact.findFirst({
+          where: {
+            email: value,
+            clientId: client.id,
+          },
+        });
+
+        if (!contact) {
+          return `Contato com email '${value}' não encontrado para este cliente`;
+        }
+        return null;
+      },
+    },
+    {
       name: 'ItemID',
       required: true,
       type: 'number',
@@ -289,6 +372,13 @@ export const ORDER_IMPORT_SCHEMA = {
       type: 'decimal',
       description: 'Custo do frete (despesa)',
       example: '150.00',
+    },
+    {
+      name: 'FreteValor',
+      required: false,
+      type: 'decimal',
+      description: 'Valor do frete cobrado do cliente',
+      example: '200.00',
     },
     {
       name: 'FreteFornecedorCpfCnpj',

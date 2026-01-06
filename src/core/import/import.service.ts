@@ -827,15 +827,30 @@ export class ImportService {
           status = 'OVERDUE';
         }
 
-        // Buscar contato/responsável se informado
+        // Buscar contato/responsável se informado (por nome ou email)
         let contactId = null;
         if (
           firstItem.ResponsavelNome &&
           firstItem.ResponsavelNome.trim() !== ''
         ) {
+          // Buscar por nome
           const contact = await this.prisma.contact.findFirst({
             where: {
               name: firstItem.ResponsavelNome,
+              clientId: client.id,
+            },
+          });
+          contactId = contact?.id || null;
+        }
+        // Se não encontrar por nome, tentar por email
+        if (
+          !contactId &&
+          firstItem.ResponsavelEmail &&
+          firstItem.ResponsavelEmail.trim() !== ''
+        ) {
+          const contact = await this.prisma.contact.findFirst({
+            where: {
+              email: firstItem.ResponsavelEmail,
               clientId: client.id,
             },
           });
@@ -1154,6 +1169,36 @@ export class ImportService {
           }
         }
 
+        // Buscar contato/responsável se informado (por nome ou email)
+        let contactId = null;
+        if (
+          firstItem.ResponsavelNome &&
+          firstItem.ResponsavelNome.trim() !== ''
+        ) {
+          // Buscar por nome
+          const contact = await this.prisma.contact.findFirst({
+            where: {
+              name: firstItem.ResponsavelNome,
+              clientId: client.id,
+            },
+          });
+          contactId = contact?.id || null;
+        }
+        // Se não encontrar por nome, tentar por email
+        if (
+          !contactId &&
+          firstItem.ResponsavelEmail &&
+          firstItem.ResponsavelEmail.trim() !== ''
+        ) {
+          const contact = await this.prisma.contact.findFirst({
+            where: {
+              email: firstItem.ResponsavelEmail,
+              clientId: client.id,
+            },
+          });
+          contactId = contact?.id || null;
+        }
+
         // Criar orçamento primeiro (pois Order depende de Quotation)
         const quotation = await this.prisma.quotation.create({
           data: {
@@ -1171,6 +1216,7 @@ export class ImportService {
               : null,
             clientId: client.id,
             sellerId: employee.id,
+            contactId,
             companyId,
             totalValue: 0, // Será calculado depois
             isImported: true,
@@ -1258,6 +1304,7 @@ export class ImportService {
             quotationId: quotation.id,
             deliveryType: tipoEntrega === 'CARRIER' ? 'CARRIER' : 'PICKUP',
             cost: parseFloat(firstItem.FreteCusto) || null,
+            value: parseFloat(firstItem.FreteValor) || null,
             estimatedDate: firstItem.DataEntrega
               ? new Date(firstItem.DataEntrega)
               : null,
