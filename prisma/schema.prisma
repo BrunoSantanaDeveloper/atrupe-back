@@ -321,6 +321,7 @@ model Supplier {
   maxValue          Float?
   minValue          Float?
   isBranch          Boolean                    @default(false)
+  isImported        Boolean                    @default(false)
   address           Address[]
   client            Client[]
   commission        Commission[]
@@ -495,6 +496,7 @@ model Receivable {
   supplierId        String?
   mainAdditionalFee Float?
   financialType     FinancialType           @default(MAIN)
+  isImported        Boolean                 @default(false)
   history           ReceivableHistory[]
   installments      ReceivableInstallment[]
   client            Client?                 @relation(fields: [clientId], references: [id])
@@ -578,6 +580,7 @@ model Payable {
   scheduledExpenseId String?
   financialType      FinancialType        @default(MAIN)
   expenseSource      ExpenseSource        @default(SUPPLIER)
+  isImported         Boolean              @default(false)
   commission         Commission[]
   history            PayableHistory[]
   installments       PayableInstallment[]
@@ -2004,56 +2007,56 @@ model ImportLog {
 // ==================== NF-e / Fiscal Models ====================
 
 model InvoicyConfig {
-  id               String   @id @default(uuid())
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  companyId        String   @unique
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  companyId String   @unique
 
   // Credenciais Invoicy (campos novos)
-  partnerKey       String?  // Partner Key do Invoicy
-  accessKey        String?  // Access Key do Invoicy
-  environment      String?  @default("HOMOLOGACAO") // PRODUCAO ou HOMOLOGACAO
+  partnerKey  String? // Partner Key do Invoicy
+  accessKey   String? // Access Key do Invoicy
+  environment String? @default("HOMOLOGACAO") // PRODUCAO ou HOMOLOGACAO
 
   // Campos legados (mantidos para compatibilidade)
-  apiToken         String?
-  ambiente         Int      @default(2) // 1 = Produção, 2 = Homologação
+  apiToken String?
+  ambiente Int     @default(2) // 1 = Produção, 2 = Homologação
 
   // Dados do emitente
   emitCnpj         String?
   emitIe           String?
-  emitIm           String?  // Inscrição Municipal (necessária para NFS-e)
+  emitIm           String? // Inscrição Municipal (necessária para NFS-e)
   emitRazaoSocial  String?
   emitNomeFantasia String?
-  emitCrt          Int      @default(1) // 1 = Simples Nacional, 2 = SN Excesso, 3 = Regime Normal
+  emitCrt          Int     @default(1) // 1 = Simples Nacional, 2 = SN Excesso, 3 = Regime Normal
   emitEndereco     String?
   emitNumero       String?
   emitBairro       String?
   emitCep          String?
   emitCmun         String?
   emitUf           String?
-  emitPais         String?  @default("1058")
+  emitPais         String? @default("1058")
 
   // NF-e
-  serieNfe         Int      @default(1)
-  proximoNumeroNfe Int      @default(1)
+  serieNfe         Int @default(1)
+  proximoNumeroNfe Int @default(1)
 
   // NFS-e
-  serieNfse        String?  @default("A1") // NFS-e usa série alfanumérica
-  proximoRpsNfse   Int      @default(1) // Próximo número do RPS
-  codigoServico    String?  // Código do serviço municipal padrão
-  aliquotaIss      Float?   // Alíquota ISS padrão
+  serieNfse      String? @default("A1") // NFS-e usa série alfanumérica
+  proximoRpsNfse Int     @default(1) // Próximo número do RPS
+  codigoServico  String? // Código do serviço municipal padrão
+  aliquotaIss    Float? // Alíquota ISS padrão
 
   // NFC-e
-  serieNfce        Int      @default(1)
-  proximoNumeroNfce Int     @default(1)
+  serieNfce         Int @default(1)
+  proximoNumeroNfce Int @default(1)
 
   // Padrões fiscais
-  defaultCfop             String?  // CFOP padrão
-  defaultOperationNature  String?  // Natureza da operação padrão
-  taxInfoText             String?  // Informações fiscais complementares
+  defaultCfop            String? // CFOP padrão
+  defaultOperationNature String? // Natureza da operação padrão
+  taxInfoText            String? // Informações fiscais complementares
 
-  isActive         Boolean  @default(true)
-  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  isActive Boolean @default(true)
+  company  Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("invoicy_configs")
 }
@@ -2131,7 +2134,7 @@ model ProductFiscalData {
   cfopExport       String? // CFOP para exportação
   // NFS-e fields
   codigoServico    String? // Código do serviço municipal (LC 116/03)
-  aliquotaIss      Float?  // Alíquota do ISS
+  aliquotaIss      Float? // Alíquota do ISS
   discriminacao    String? // Discriminação do serviço para NFS-e
   product          Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
@@ -2149,9 +2152,9 @@ enum NfseStatus {
 
 // NFS-e Model - Nota Fiscal de Serviço Eletrônica
 model Nfse {
-  id                 String      @id @default(uuid())
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  id                 String     @id @default(uuid())
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
   companyId          String
   orderId            String?
   quotationId        String?
@@ -2159,38 +2162,38 @@ model Nfse {
   serie              String // NFS-e usa série alfanumérica
   rpsNumero          Int // Número do RPS
   rpsSerie           String
-  rpsTipo            Int         @default(1)
+  rpsTipo            Int        @default(1)
   codigoVerificacao  String?
   protocolo          String?
-  status             NfseStatus  @default(PENDING)
+  status             NfseStatus @default(PENDING)
   ambiente           Int // 1 = Produção, 2 = Homologação
   dataEmissao        DateTime?
   dataCompetencia    DateTime?
   valorServicos      Float
-  valorDeducoes      Float?      @default(0)
-  valorPis           Float?      @default(0)
-  valorCofins        Float?      @default(0)
-  valorInss          Float?      @default(0)
-  valorIr            Float?      @default(0)
-  valorCsll          Float?      @default(0)
+  valorDeducoes      Float?     @default(0)
+  valorPis           Float?     @default(0)
+  valorCofins        Float?     @default(0)
+  valorInss          Float?     @default(0)
+  valorIr            Float?     @default(0)
+  valorCsll          Float?     @default(0)
   valorIss           Float?
   aliquotaIss        Float?
   baseCalculo        Float?
-  issRetido          Boolean     @default(false)
+  issRetido          Boolean    @default(false)
   codigoServico      String? // Código do serviço municipal
-  discriminacao      String?     @db.Text // Descrição do serviço
+  discriminacao      String?    @db.Text // Descrição do serviço
   codigoMunicipio    String? // Código IBGE do município
-  xmlEnvio           String?     @db.Text
-  xmlRetorno         String?     @db.Text
+  xmlEnvio           String?    @db.Text
+  xmlRetorno         String?    @db.Text
   pdfUrl             String?
   motivoRejeicao     String?
   motivoCancelamento String?
   dataCancelamento   DateTime?
   invoicyId          String?
   invoicyProtocol    String?
-  company            Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order              Order?      @relation(fields: [orderId], references: [id])
-  quotation          Quotation?  @relation(fields: [quotationId], references: [id])
+  company            Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order              Order?     @relation(fields: [orderId], references: [id])
+  quotation          Quotation? @relation(fields: [quotationId], references: [id])
 
   @@index([companyId])
   @@index([orderId])
@@ -2211,41 +2214,41 @@ enum NfceStatus {
 
 // NFC-e Model - Nota Fiscal de Consumidor Eletrônica
 model Nfce {
-  id                 String      @id @default(uuid())
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  id                 String     @id @default(uuid())
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
   companyId          String
   orderId            String?
   quotationId        String?
   numero             Int
   serie              Int
-  chaveAcesso        String?     @unique
+  chaveAcesso        String?    @unique
   protocolo          String?
-  status             NfceStatus  @default(PENDING)
+  status             NfceStatus @default(PENDING)
   ambiente           Int // 1 = Produção, 2 = Homologação
   dataEmissao        DateTime?
   dataAutorizacao    DateTime?
   valorTotal         Float
-  valorDesconto      Float?      @default(0)
-  valorTroco         Float?      @default(0)
+  valorDesconto      Float?     @default(0)
+  valorTroco         Float?     @default(0)
   formaPagamento     String? // Código da forma de pagamento
-  xmlEnvio           String?     @db.Text
-  xmlRetorno         String?     @db.Text
-  xmlAutorizado      String?     @db.Text
+  xmlEnvio           String?    @db.Text
+  xmlRetorno         String?    @db.Text
+  xmlAutorizado      String?    @db.Text
   qrCodeUrl          String? // URL do QR Code
   urlConsulta        String? // URL para consulta pública
   danfeUrl           String?
   motivoRejeicao     String?
   motivoCancelamento String?
   dataCancelamento   DateTime?
-  contingencia       Boolean     @default(false)
+  contingencia       Boolean    @default(false)
   dataContingencia   DateTime?
   motivoContingencia String?
   invoicyId          String?
   invoicyProtocol    String?
-  company            Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order              Order?      @relation(fields: [orderId], references: [id])
-  quotation          Quotation?  @relation(fields: [quotationId], references: [id])
+  company            Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order              Order?     @relation(fields: [orderId], references: [id])
+  quotation          Quotation? @relation(fields: [quotationId], references: [id])
 
   @@index([companyId])
   @@index([orderId])

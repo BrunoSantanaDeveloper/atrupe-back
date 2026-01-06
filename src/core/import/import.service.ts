@@ -617,6 +617,7 @@ export class ImportService {
         notes: row.observacoes || null,
         categoryId,
         isBranch,
+        isImported: true,
         address: row.cep
           ? {
               create: [
@@ -1904,6 +1905,7 @@ export class ImportService {
               notes: firstItem.Observacoes || null,
               status: 'PENDING', // Será atualizado se houver parcelas pagas
               installmentQty: installments.length,
+              isImported: true,
             },
           });
 
@@ -2006,6 +2008,7 @@ export class ImportService {
               notes: firstItem.Observacoes || null,
               status: 'PENDING', // Será atualizado se houver parcelas pagas
               installmentQty: installments.length,
+              isImported: true,
             },
           });
 
