@@ -1027,6 +1027,11 @@ export class QuotationService {
                   name: true,
                 },
               },
+              sellerProfile: {
+                select: {
+                  maxDiscount: true,
+                },
+              },
             },
           },
           contact: {
@@ -1210,6 +1215,7 @@ export class QuotationService {
           ? {
               id: quotation.seller.id,
               name: quotation.seller.name ?? quotation.seller.user.name,
+              maxDiscount: quotation.seller.sellerProfile?.maxDiscount ?? null,
             }
           : null,
         contact: quotation.contact
