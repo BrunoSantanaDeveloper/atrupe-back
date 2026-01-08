@@ -32,6 +32,14 @@ export class NfeController {
     return this.nfeService.findAll(req.user.companyId, filters);
   }
 
+  @Get('prepare/:orderId')
+  @ApiOperation({
+    summary: 'Preparar dados para emissão de NF-e a partir de uma ordem',
+  })
+  async prepareFromOrder(@Req() req, @Param('orderId') orderId: string) {
+    return this.nfeService.prepareFromOrder(req.user.companyId, orderId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Obter NF-e por ID' })
   async findById(@Req() req, @Param('id') id: string) {

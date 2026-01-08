@@ -24,7 +24,207 @@ export class NfeService {
     private readonly invoicyService: InvoicyService,
   ) {}
 
+  /**
+   * Prepara os dados para emissão de NF-e a partir de uma ordem de serviço.
+   * Retorna todos os dados pré-preenchidos para o frontend editar antes de emitir.
+   */
+  async prepareFromOrder(companyId: string, orderId: string) {
+    // Buscar a ordem via quotation para garantir o filtro por companyId
+    const quotation = (await this.prisma.quotation.findFirst({
+      where: {
+        companyId,
+        order: { id: orderId },
+      },
+      include: {
+        client: {
+          include: {
+            address: true,
+          },
+        },
+        order: {
+          include: {
+            nfes: true, // Incluir NF-e já emitidas
+          },
+        },
+        quotationProduct: {
+          include: {
+            product: {
+              include: {
+                fiscalData: true,
+              },
+            },
+          },
+        },
+        series: true,
+        quotationPayment: {
+          include: {
+            paymentCondition: true,
+          },
+        },
+      },
+    })) as any;
+
+    if (!quotation || !quotation.order) {
+      throw new NotFoundException('Ordem de serviço não encontrada');
+    }
+
+    const client = quotation.client;
+    if (!client) {
+      throw new BadRequestException('Cliente não encontrado no orçamento');
+    }
+
+    // Buscar configuração do Invoicy para defaults
+    const config = await this.invoicyService.getConfig(companyId);
+    if (!config) {
+      throw new BadRequestException(
+        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
+      );
+    }
+
+    // Obter endereço principal do cliente
+    const clientAddress = client.address?.[0];
+
+    // Preparar itens da NF-e com dados fiscais completos
+    const items = quotation.quotationProduct.map((qp, index) => {
+      const totalValueCents = qp.finalValue || qp.totalValue || 0;
+      const totalValueReais = totalValueCents / 100;
+      const unitValue = qp.quantity > 0 ? totalValueReais / qp.quantity : 0;
+      const discountReais = (qp.discount || 0) / 100;
+      const fiscalData = qp.product?.fiscalData;
+
+      return {
+        itemNumber: index + 1,
+        productId: qp.productId,
+        productCode: qp.product?.code || '',
+        description: qp.product?.name || 'Produto/Serviço',
+        ncm: fiscalData?.ncm || '',
+        cfop: fiscalData?.cfop || config.defaultCfop || '',
+        cstIcms: fiscalData?.cstIcms || '102',
+        cstIpi: fiscalData?.cstIpi || '',
+        cstPis: fiscalData?.cstPis || '',
+        cstCofins: fiscalData?.cstCofins || '',
+        unit: qp.product?.unit || 'UN',
+        quantity: qp.quantity,
+        unitValue: Number(unitValue.toFixed(2)),
+        discount: Number(discountReais.toFixed(2)),
+        freight: 0,
+        insurance: 0,
+        totalValue: Number(totalValueReais.toFixed(2)),
+        needsConfiguration: !fiscalData?.ncm || !fiscalData?.cfop,
+      };
+    });
+
+    // Calcular totais
+    const valorProdutos = items.reduce((acc, item) => acc + item.totalValue, 0);
+    const valorDescontos = items.reduce((acc, item) => acc + item.discount, 0);
+    const valorNota = valorProdutos - valorDescontos;
+
+    // Verificar se já existe NF-e emitida para esta ordem
+    const existingNfe = quotation.order.nfes?.[0];
+
+    return {
+      // Metadados
+      orderId,
+      quotationId: quotation.id,
+      orderCode: `${quotation.series?.code || ''}-${quotation.series?.quotation || ''}`,
+      hasExistingNfe: !!existingNfe,
+      existingNfe: existingNfe
+        ? {
+            id: existingNfe.id,
+            numero: existingNfe.numero,
+            serie: existingNfe.serie,
+            status: existingNfe.status,
+            chaveAcesso: existingNfe.chaveAcesso,
+            danfeUrl: existingNfe.danfeUrl,
+            dataEmissao: existingNfe.dataEmissao,
+          }
+        : null,
+
+      // Configuração de emissão
+      emissao: {
+        emissor: config.emitRazaoSocial || config.emitNomeFantasia || '',
+        emissorCnpj: config.emitCnpj || '',
+        proximoDocumento: `${config.proximoNumeroNfe || 1} - ${config.serieNfe || 1}`,
+        serie: config.serieNfe || 1,
+        tipo: 1, // 1 = Saída
+        finalidade: 1, // 1 = NF-e normal
+        operationNature: config.defaultOperationNature || 'Venda de mercadoria',
+        consumidorFinal: client.cnpj ? 0 : 1, // 0 = Não, 1 = Sim (pessoa física)
+        presencaConsumidor: 1, // 1 = Operação presencial
+        nfeReferenciada: null,
+        dataSaida: new Date().toISOString(),
+        destinoOperacao: clientAddress?.state === config.emitUf ? 1 : 2, // 1 = Interna, 2 = Interestadual
+        modalidadeFrete: 9, // 9 = Sem ocorrência de transporte
+        ambiente: config.ambiente || 'HOMOLOGACAO',
+      },
+
+      // Destinatário
+      destinatario: {
+        razaoSocial: client.corporateName || client.name || '',
+        cnpjCpf: client.cnpj || client.cpf || '',
+        ie: client.ie || '',
+        email: client.email || '',
+        telefone: client.phone || '',
+        cep: clientAddress?.zipcode || '',
+        estado: clientAddress?.state || '',
+        cidade: clientAddress?.city || '',
+        bairro: clientAddress?.neighborhood || '',
+        endereco: clientAddress?.street || '',
+        numero: clientAddress?.number || 'S/N',
+        complemento: clientAddress?.complement || '',
+        pais: '1058', // Brasil
+      },
+
+      // Itens
+      items,
+
+      // Transportadora (vazio por padrão)
+      transportadora: {
+        cnpjCpf: '',
+        razaoSocial: '',
+        ie: '',
+        endereco: '',
+        cidade: '',
+        uf: '',
+      },
+
+      // Volumes
+      volumes: [],
+
+      // Pagamento
+      pagamento: {
+        forma: quotation.quotationPayment?.paymentCondition?.name || 'Dinheiro',
+        valor: valorNota,
+      },
+
+      // Duplicatas
+      duplicatas: [],
+
+      // Informações complementares
+      informacoesComplementares: config.taxInfoText || '',
+
+      // Totais
+      totais: {
+        valorProdutos: Number(valorProdutos.toFixed(2)),
+        baseCalculoIcms: 0,
+        valorIcms: 0,
+        baseCalculoIcmsSt: 0,
+        valorIcmsSt: 0,
+        valorPis: 0,
+        valorCofins: 0,
+        valorIpi: 0,
+        valorFrete: 0,
+        valorSeguro: 0,
+        outrasDesepesas: 0,
+        valorDesconto: Number(valorDescontos.toFixed(2)),
+        valorTotalTributos: 0,
+        valorNota: Number(valorNota.toFixed(2)),
+      },
+    };
+  }
+
   // Emitir NF-e a partir de uma ordem de serviço (busca dados automaticamente)
+
   async emitFromOrder(companyId: string, dto: EmitNfeFromOrderDto) {
     // Buscar a ordem via quotation para garantir o filtro por companyId
     const quotation = await this.prisma.quotation.findFirst({
@@ -263,11 +463,11 @@ export class NfeService {
     const numero = await this.invoicyService.incrementNfeNumber(companyId);
 
     // Calcular valor total
-    const valorTotal = dto.items.reduce(
-      (acc, item) =>
-        acc + item.quantity * item.unitValue - (item.discount || 0),
-      0,
-    );
+    // const valorTotal = dto.items.reduce(
+    //   (acc, item) =>
+    //     acc + item.quantity * item.unitValue - (item.discount || 0),
+    //   0,
+    // );
 
     // Criar registro da NF-e
     const nfe = await this.prisma.nfe.create({
