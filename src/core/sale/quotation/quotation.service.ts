@@ -2522,7 +2522,13 @@ export class QuotationService {
                     },
                   },
                 },
+                orderBy: {
+                  createdAt: 'asc',
+                },
               },
+            },
+            orderBy: {
+              createdAt: 'asc',
             },
           },
           deliveryInfo: {
