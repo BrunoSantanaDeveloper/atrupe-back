@@ -2165,6 +2165,7 @@ model Nfse {
   rpsTipo            Int        @default(1)
   codigoVerificacao  String?
   protocolo          String?
+  protocoloCancelamento String?
   status             NfseStatus @default(PENDING)
   ambiente           Int // 1 = Produção, 2 = Homologação
   dataEmissao        DateTime?
