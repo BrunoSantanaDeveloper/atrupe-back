@@ -3,6 +3,20 @@ import { ptBR } from 'date-fns/locale';
 
 export class FinancialNotesUtil {
   /**
+   * Formata um valor em centavos para o formato de moeda brasileira
+   * @param cents - Valor em centavos (ex: 66389 = R$ 663,89)
+   * @returns String formatada (ex: "R$ 663,89")
+   */
+  private static formatCurrency(cents: number): string {
+    return (cents / 100).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  /**
    * Adiciona uma nova nota ao campo notes, preservando o conteúdo anterior
    * @param currentNotes - Notas atuais
    * @param newNote - Nova nota a ser adicionada
@@ -35,10 +49,10 @@ export class FinancialNotesUtil {
     const difference = newAmount - oldAmount;
     const diffText =
       difference > 0
-        ? `acréscimo de R$ ${difference.toFixed(2)}`
-        : `redução de R$ ${Math.abs(difference).toFixed(2)}`;
+        ? `acréscimo de ${this.formatCurrency(difference)}`
+        : `redução de ${this.formatCurrency(Math.abs(difference))}`;
 
-    return `Valor total alterado de R$ ${oldAmount.toFixed(2)} para R$ ${newAmount.toFixed(2)} (${diffText})`;
+    return `Valor total alterado de ${this.formatCurrency(oldAmount)} para ${this.formatCurrency(newAmount)} (${diffText})`;
   }
 
   /**
@@ -87,10 +101,10 @@ export class FinancialNotesUtil {
     const difference = newAmount - oldAmount;
     const diffText =
       difference > 0
-        ? `acréscimo de R$ ${difference.toFixed(2)}`
-        : `redução de R$ ${Math.abs(difference).toFixed(2)}`;
+        ? `acréscimo de ${this.formatCurrency(difference)}`
+        : `redução de ${this.formatCurrency(Math.abs(difference))}`;
 
-    return `Parcela ${installmentNumber}: valor alterado de R$ ${oldAmount.toFixed(2)} para R$ ${newAmount.toFixed(2)} (${diffText})`;
+    return `Parcela ${installmentNumber}: valor alterado de ${this.formatCurrency(oldAmount)} para ${this.formatCurrency(newAmount)} (${diffText})`;
   }
 
   /**

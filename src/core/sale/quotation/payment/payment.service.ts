@@ -199,11 +199,7 @@ export class PaymentService {
 
             // Handle commission if provided or explicitly set to null
             if (commission !== undefined) {
-              await this.updateCommission(
-                quotationId,
-                commission,
-                updatedPayment.totalValue,
-              );
+              await this.handleCommission(prisma, updatedPayment, commission);
             }
 
             return updatedPayment;
@@ -222,6 +218,60 @@ export class PaymentService {
     }
   }
 
+  /**
+   * Internal method to handle commission within a transaction.
+   * Uses the transaction's prisma client to avoid deadlocks.
+   */
+  private async handleCommission(
+    prisma: Prisma.TransactionClient,
+    quotationPayment: { id: string; commissionId: string | null },
+    commissionData: UpdateCommissionDto,
+  ) {
+    // If commission value is empty, delete existing commission
+    if (
+      commissionData.commissionValue === 0 ||
+      commissionData.commissionValue === undefined ||
+      commissionData.commissionValue === null
+    ) {
+      if (quotationPayment.commissionId) {
+        await prisma.commission.delete({
+          where: { id: quotationPayment.commissionId },
+        });
+      }
+      return;
+    }
+
+    const commissionPayload = {
+      type: commissionData.type,
+      supplierId: commissionData.supplier.value,
+      transferMethod: commissionData.transferMethod,
+      commissionType: commissionData.commissionType,
+      commissionValue: commissionData.commissionValue,
+      totalCommission: commissionData.totalCommission,
+    };
+
+    if (quotationPayment.commissionId) {
+      // Update existing commission
+      await prisma.commission.update({
+        where: { id: quotationPayment.commissionId },
+        data: commissionPayload,
+      });
+    } else {
+      // Create new commission and connect to payment
+      const newCommission = await prisma.commission.create({
+        data: {
+          ...commissionPayload,
+          quotationPayment: { connect: { id: quotationPayment.id } },
+        },
+      });
+      // Update payment to reference the new commission
+      await prisma.quotationPayment.update({
+        where: { id: quotationPayment.id },
+        data: { commissionId: newCommission.id },
+      });
+    }
+  }
+
   async updateCommission(
     quotationId: string,
     commissionData: UpdateCommissionDto,
@@ -231,7 +281,7 @@ export class PaymentService {
       // Busca o pagamento relacionado à venda
       const quotationPayment = await this.prisma.quotationPayment.findUnique({
         where: { quotationId },
-        include: { commission: true }, // Inclui a comissão associada, se houver
+        include: { commission: true },
       });
 
       if (!quotationPayment) {
@@ -264,23 +314,15 @@ export class PaymentService {
       let updatedCommission;
 
       if (quotationPayment.commission) {
-        // Atualiza a comissão existente
         updatedCommission = await this.prisma.commission.update({
           where: { id: quotationPayment.commission.id },
           data: commissionPayload,
         });
       } else {
-        // Cria uma nova comissão
         updatedCommission = await this.prisma.commission.create({
           data: commissionPayload,
         });
       }
-
-      // await this.prisma.quotation.update({
-      //   where: {
-      //     id: quotationId,
-      //   },
-      // });
 
       return updatedCommission;
     } catch (error) {
