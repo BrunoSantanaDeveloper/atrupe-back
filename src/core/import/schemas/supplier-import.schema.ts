@@ -135,11 +135,11 @@ export const SUPPLIER_IMPORT_SCHEMA = {
       example: 'Fornecedor ABC Ltda',
     },
     {
-      name: 'categoria',
+      name: 'grupo',
       required: false,
       type: 'string',
       maxLength: 255,
-      description: 'Categoria do fornecedor (será criada se não existir)',
+      description: 'Grupo do fornecedor (será criado se não existir)',
       example: 'Matéria Prima',
     },
     {

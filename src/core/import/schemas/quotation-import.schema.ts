@@ -67,21 +67,38 @@ export const QUOTATION_IMPORT_SCHEMA = {
       example: '12345678900 ou 12.345.678/0001-90',
       validate: async (value: string, companyId: string, prisma: any) => {
         // Remover formatação
-        const cleanValue = value.replace(/[^\d]/g, '');
+        const cleanValue = value.replace(/[^\\d]/g, '');
 
-        // Buscar cliente por CPF ou CNPJ
+        // Buscar cliente por CPF ou CNPJ (removendo formatação do banco também)
         const client = await prisma.client.findFirst({
           where: {
             companyId,
             OR: [
               { cpf: { contains: cleanValue } },
               { cnpj: { contains: cleanValue } },
+              { cpf: value }, // Busca também pelo valor original formatado
+              { cnpj: value },
             ],
           },
         });
 
+        // Se não encontrou, tentar busca mais flexível
         if (!client) {
-          return 'Cliente não encontrado. Cadastre o cliente antes de importar';
+          // Buscar todos os clientes da empresa e comparar CPF/CNPJ limpo
+          const clients = await prisma.client.findMany({
+            where: { companyId },
+            select: { id: true, cpf: true, cnpj: true },
+          });
+
+          const found = clients.find((c: any) => {
+            const cleanCpf = (c.cpf || '').replace(/[^\\d]/g, '');
+            const cleanCnpj = (c.cnpj || '').replace(/[^\\d]/g, '');
+            return cleanCpf === cleanValue || cleanCnpj === cleanValue;
+          });
+
+          if (!found) {
+            return 'Cliente não encontrado. Cadastre o cliente antes de importar';
+          }
         }
         return null;
       },

@@ -38,11 +38,11 @@ export const PRODUCT_IMPORT_SCHEMA = {
       example: 'Cartão de visita 4x4 cores em papel couché 300g',
     },
     {
-      name: 'categoria',
+      name: 'grupo',
       required: true,
       type: 'string',
       maxLength: 255,
-      description: 'Nome da categoria (será criada se não existir)',
+      description: 'Nome do grupo de produtos (será criado se não existir)',
       example: 'Impressos Comerciais',
     },
     {

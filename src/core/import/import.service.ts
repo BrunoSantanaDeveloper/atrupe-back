@@ -24,6 +24,17 @@ export class ImportService {
   ) {}
 
   /**
+   * Converte valor em reais para centavos (multiplica por 100)
+   * Trata valores vazios, nulos e arredonda para evitar erros de ponto flutuante
+   */
+  private toCents(value: string | number | null | undefined): number | null {
+    if (value === null || value === undefined || value === '') return null;
+    const numValue = typeof value === 'string' ? parseFloat(value) : value;
+    if (isNaN(numValue)) return null;
+    return Math.round(numValue * 100);
+  }
+
+  /**
    * Criar registro de importação e fazer upload do arquivo
    */
   async createImport(
@@ -168,7 +179,14 @@ export class ImportService {
       const stream = Readable.from(buffer);
 
       stream
-        .pipe(csv.parse({ headers: true, trim: true }))
+        .pipe(
+          csv.parse({
+            headers: true,
+            trim: true,
+            discardUnmappedColumns: true, // Ignore extra columns that don't have a header
+            // strictColumnHandling: false, // Don't throw on column count mismatch
+          }),
+        )
         .on('data', (row) => rows.push(row))
         .on('end', () => resolve(rows))
         .on('error', (error) => reject(error));
@@ -785,8 +803,8 @@ export class ImportService {
           name: row.servico,
           width: row.largura ? parseFloat(row.largura) : null,
           height: row.altura ? parseFloat(row.altura) : null,
-          unitCost: row.custo ? parseFloat(row.custo) : null,
-          salePrice: row.preco ? parseFloat(row.preco) : null,
+          unitCost: this.toCents(row.custo),
+          salePrice: this.toCents(row.preco),
           defaultUnitOfMeasureId: unitOfMeasureId,
         },
       });
@@ -837,15 +855,30 @@ export class ImportService {
 
         // Buscar cliente por CPF/CNPJ
         const cleanCpfCnpj = firstItem.ClienteCpfCnpj.replace(/[^\d]/g, '');
-        const client = await this.prisma.client.findFirst({
+        let client = await this.prisma.client.findFirst({
           where: {
             companyId,
             OR: [
               { cpf: { contains: cleanCpfCnpj } },
               { cnpj: { contains: cleanCpfCnpj } },
+              { cpf: firstItem.ClienteCpfCnpj },
+              { cnpj: firstItem.ClienteCpfCnpj },
             ],
           },
         });
+
+        // Se não encontrou, tentar busca mais flexível
+        if (!client) {
+          const clients = await this.prisma.client.findMany({
+            where: { companyId },
+          });
+          client =
+            clients.find((c: any) => {
+              const cleanCpf = (c.cpf || '').replace(/[^\d]/g, '');
+              const cleanCnpj = (c.cnpj || '').replace(/[^\d]/g, '');
+              return cleanCpf === cleanCpfCnpj || cleanCnpj === cleanCpfCnpj;
+            }) || null;
+        }
 
         if (!client) {
           throw new Error(
@@ -962,7 +995,7 @@ export class ImportService {
             throw new Error(`Produto '${item.ProdutoCodigo}' não encontrado`);
           }
 
-          const itemTotalValue = parseFloat(item.ValorTotal);
+          const itemTotalValue = this.toCents(item.ValorTotal) || 0;
           quotationTotalValue += itemTotalValue;
 
           // Criar QuotationProduct
@@ -990,7 +1023,7 @@ export class ImportService {
                 productItemId: productItem.id,
                 quantity: parseInt(item.Quantidade),
                 name: productItem.name,
-                salePrice: parseFloat(item.ValorUnitario),
+                salePrice: this.toCents(item.ValorUnitario),
                 unitCost: productItem.unitCost,
                 totalValue: itemTotalValue,
                 width: productItem.width,
@@ -1009,8 +1042,8 @@ export class ImportService {
 
         // === CRIAR DELIVERY INFO ===
         const tipoEntrega = firstItem.TipoEntrega || 'PICKUP';
-        const freteCusto = parseFloat(firstItem.FreteCusto) || null;
-        const freteValor = parseFloat(firstItem.FreteValor) || null;
+        const freteCusto = this.toCents(firstItem.FreteCusto);
+        const freteValor = this.toCents(firstItem.FreteValor);
 
         // Buscar transportador se informado
         let transportadorId = null;
@@ -1070,7 +1103,7 @@ export class ImportService {
         }
 
         if (paymentCondition) {
-          const entradaValor = parseFloat(firstItem.EntradaValor) || 0;
+          const entradaValor = this.toCents(firstItem.EntradaValor) || 0;
           const qtdParcelas = parseInt(firstItem.QtdParcelas) || 1;
 
           const quotationPayment = await this.prisma.quotationPayment.create({
@@ -1093,7 +1126,7 @@ export class ImportService {
           // Criar parcelas do QuotationInstallment
           const parcelas = [];
           for (let i = 1; i <= 3; i++) {
-            const valor = parseFloat(firstItem[`Parcela${i}Valor`]);
+            const valor = this.toCents(firstItem[`Parcela${i}Valor`]);
             const vencimento = firstItem[`Parcela${i}Vencimento`];
             if (valor && valor > 0 && vencimento) {
               parcelas.push({
@@ -1185,15 +1218,30 @@ export class ImportService {
 
         // Buscar cliente por CPF/CNPJ
         const cleanCpfCnpj = firstItem.ClienteCpfCnpj.replace(/[^\d]/g, '');
-        const client = await this.prisma.client.findFirst({
+        let client = await this.prisma.client.findFirst({
           where: {
             companyId,
             OR: [
               { cpf: { contains: cleanCpfCnpj } },
               { cnpj: { contains: cleanCpfCnpj } },
+              { cpf: firstItem.ClienteCpfCnpj },
+              { cnpj: firstItem.ClienteCpfCnpj },
             ],
           },
         });
+
+        // Se não encontrou, tentar busca mais flexível
+        if (!client) {
+          const clients = await this.prisma.client.findMany({
+            where: { companyId },
+          });
+          client =
+            clients.find((c: any) => {
+              const cleanCpf = (c.cpf || '').replace(/[^\d]/g, '');
+              const cleanCnpj = (c.cnpj || '').replace(/[^\d]/g, '');
+              return cleanCpf === cleanCpfCnpj || cleanCnpj === cleanCpfCnpj;
+            }) || null;
+        }
 
         if (!client) {
           throw new Error(
@@ -1312,7 +1360,7 @@ export class ImportService {
           }
 
           const quantity = parseFloat(item.Quantidade) || 0;
-          const itemTotalValue = parseFloat(item.ValorTotal) || 0;
+          const itemTotalValue = this.toCents(item.ValorTotal) || 0;
           const discount = parseFloat(item.Desconto) || 0;
 
           quotationTotalValue += itemTotalValue;
@@ -1368,8 +1416,8 @@ export class ImportService {
           data: {
             quotationId: quotation.id,
             deliveryType: tipoEntrega === 'CARRIER' ? 'CARRIER' : 'PICKUP',
-            cost: parseFloat(firstItem.FreteCusto) || null,
-            value: parseFloat(firstItem.FreteValor) || null,
+            cost: this.toCents(firstItem.FreteCusto),
+            value: this.toCents(firstItem.FreteValor),
             estimatedDate: firstItem.DataEntrega
               ? new Date(firstItem.DataEntrega)
               : null,
@@ -1399,7 +1447,7 @@ export class ImportService {
         }
 
         if (paymentCondition) {
-          const entradaValor = parseFloat(firstItem.EntradaValor) || 0;
+          const entradaValor = this.toCents(firstItem.EntradaValor) || 0;
           const qtdParcelas = parseInt(firstItem.QtdParcelas) || 1;
 
           const quotationPayment = await this.prisma.quotationPayment.create({
@@ -1422,7 +1470,7 @@ export class ImportService {
           // Criar parcelas do QuotationInstallment
           const parcelas = [];
           for (let i = 1; i <= 3; i++) {
-            const valor = parseFloat(firstItem[`Parcela${i}Valor`]);
+            const valor = this.toCents(firstItem[`Parcela${i}Valor`]);
             const vencimento = firstItem[`Parcela${i}Vencimento`];
             if (valor && valor > 0 && vencimento) {
               parcelas.push({
@@ -1467,7 +1515,7 @@ export class ImportService {
         }
 
         // === CRIAR PAYABLE DE FRETE ===
-        const freteCusto = parseFloat(firstItem.FreteCusto) || 0;
+        const freteCusto = this.toCents(firstItem.FreteCusto) || 0;
         if (freteCusto > 0 && firstItem.FreteFornecedorCpfCnpj) {
           await this.createOrderFreightPayable(
             quotation,
@@ -1479,7 +1527,7 @@ export class ImportService {
         }
 
         // === CRIAR PAYABLE DE COMISSÃO ===
-        const comissaoValor = parseFloat(firstItem.ComissaoValor) || 0;
+        const comissaoValor = this.toCents(firstItem.ComissaoValor) || 0;
         if (comissaoValor > 0 && firstItem.ComissaoFornecedorCpfCnpj) {
           await this.createOrderCommissionPayable(
             quotation,
@@ -1877,15 +1925,31 @@ export class ImportService {
         let clientId: string | null = null;
         if (isReceivable && firstItem.ClienteCpfCnpj) {
           const cleanCpfCnpj = firstItem.ClienteCpfCnpj.replace(/[^\d]/g, '');
-          const client = await this.prisma.client.findFirst({
+          let client = await this.prisma.client.findFirst({
             where: {
               companyId,
               OR: [
                 { cpf: { contains: cleanCpfCnpj } },
                 { cnpj: { contains: cleanCpfCnpj } },
+                { cpf: firstItem.ClienteCpfCnpj },
+                { cnpj: firstItem.ClienteCpfCnpj },
               ],
             },
           });
+
+          // Se não encontrou, tentar busca mais flexível
+          if (!client) {
+            const clients = await this.prisma.client.findMany({
+              where: { companyId },
+            });
+            client =
+              clients.find((c: any) => {
+                const cleanCpf = (c.cpf || '').replace(/[^\d]/g, '');
+                const cleanCnpj = (c.cnpj || '').replace(/[^\d]/g, '');
+                return cleanCpf === cleanCpfCnpj || cleanCnpj === cleanCpfCnpj;
+              }) || null;
+          }
+
           if (!client) {
             throw new Error(
               `Cliente com CPF/CNPJ '${firstItem.ClienteCpfCnpj}' não encontrado`,
@@ -1972,7 +2036,7 @@ export class ImportService {
           subCategoryId = subCategory.id;
         }
 
-        const totalAmount = parseFloat(firstItem.ValorTotal) || 0;
+        const totalAmount = this.toCents(firstItem.ValorTotal) || 0;
         const referenceDate = firstItem.DataReferencia
           ? new Date(firstItem.DataReferencia)
           : new Date();
@@ -2026,7 +2090,7 @@ export class ImportService {
 
           // Criar parcelas
           for (const item of installments) {
-            const installmentAmount = parseFloat(item.ValorParcela) || 0;
+            const installmentAmount = this.toCents(item.ValorParcela) || 0;
             const dueDate = item.DataVencimento
               ? new Date(item.DataVencimento)
               : new Date();
@@ -2088,7 +2152,7 @@ export class ImportService {
                     : null,
                 paidAmount:
                   status === 'PAID' && item.ValorPago
-                    ? parseFloat(item.ValorPago)
+                    ? this.toCents(item.ValorPago)
                     : null,
                 paymentConditionId,
                 bankAccountId,
@@ -2157,7 +2221,7 @@ export class ImportService {
 
           // Criar parcelas
           for (const item of installments) {
-            const installmentAmount = parseFloat(item.ValorParcela) || 0;
+            const installmentAmount = this.toCents(item.ValorParcela) || 0;
             const dueDate = item.DataVencimento
               ? new Date(item.DataVencimento)
               : new Date();
@@ -2219,7 +2283,7 @@ export class ImportService {
                     : null,
                 paidAmount:
                   status === 'PAID' && item.ValorPago
-                    ? parseFloat(item.ValorPago)
+                    ? this.toCents(item.ValorPago)
                     : null,
                 paymentConditionId,
                 bankAccountId,

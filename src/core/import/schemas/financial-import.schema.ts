@@ -55,18 +55,36 @@ export const FINANCIAL_IMPORT_SCHEMA = {
         if (!value || value.trim() === '') return null;
 
         const cleanValue = value.replace(/[^\d]/g, '');
+
+        // Buscar cliente por CPF ou CNPJ (removendo formatação do banco também)
         const client = await prisma.client.findFirst({
           where: {
             companyId,
             OR: [
               { cpf: { contains: cleanValue } },
               { cnpj: { contains: cleanValue } },
+              { cpf: value }, // Busca também pelo valor original formatado
+              { cnpj: value },
             ],
           },
         });
 
+        // Se não encontrou, tentar busca mais flexível
         if (!client) {
-          return 'Cliente não encontrado. Cadastre o cliente antes de importar';
+          const clients = await prisma.client.findMany({
+            where: { companyId },
+            select: { id: true, cpf: true, cnpj: true },
+          });
+
+          const found = clients.find((c: any) => {
+            const cleanCpf = (c.cpf || '').replace(/[^\d]/g, '');
+            const cleanCnpj = (c.cnpj || '').replace(/[^\d]/g, '');
+            return cleanCpf === cleanValue || cleanCnpj === cleanValue;
+          });
+
+          if (!found) {
+            return 'Cliente não encontrado. Cadastre o cliente antes de importar';
+          }
         }
         return null;
       },
