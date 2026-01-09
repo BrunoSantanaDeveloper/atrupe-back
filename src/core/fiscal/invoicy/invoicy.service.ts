@@ -15,7 +15,7 @@ export class InvoicyService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly invoicyHttpService: InvoicyHttpService,
-  ) { }
+  ) {}
 
   /**
    * Retorna as credenciais globais do Invoicy (Atrupe como revendedor)
@@ -33,8 +33,11 @@ export class InvoicyService {
   private mapDtoToDb(dto: CreateInvoicyConfigDto | UpdateInvoicyConfigDto) {
     const data: any = {};
 
+    // Invoicy credentials (per-company)
+    if (dto.accessKey !== undefined) data.accessKey = dto.accessKey;
+    if (dto.partnerKey !== undefined) data.partnerKey = dto.partnerKey;
+
     // Direct mappings (fields that exist in both)
-    // Note: partnerKey and accessKey are global credentials (from env vars), not per-client
     if (dto.environment !== undefined) data.environment = dto.environment;
     if (dto.apiToken !== undefined) data.apiToken = dto.apiToken;
     if (dto.ambiente !== undefined) data.ambiente = dto.ambiente;
