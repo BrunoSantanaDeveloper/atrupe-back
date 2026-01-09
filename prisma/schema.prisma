@@ -2093,8 +2093,11 @@ model Nfe {
   motivoRejeicao     String?
   motivoCancelamento String?
   dataCancelamento   DateTime?
+  protocoloCancelamento String?
   cartaCorrecao      String?    @db.Text
   dataCorrecao       DateTime?
+  protocoloCorrecao  String?
+  sequenciaCorrecao  Int?
   invoicyId          String? // ID retornado pelo Invoicy
   invoicyProtocol    String?
   company            Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -2242,6 +2245,7 @@ model Nfce {
   motivoRejeicao     String?
   motivoCancelamento String?
   dataCancelamento   DateTime?
+  protocoloCancelamento String?
   contingencia       Boolean    @default(false)
   dataContingencia   DateTime?
   motivoContingencia String?

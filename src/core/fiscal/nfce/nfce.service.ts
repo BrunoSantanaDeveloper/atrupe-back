@@ -266,7 +266,7 @@ export class NfceService {
               cEANTrib: 'SEM GTIN',
               xProd: item.descricao || `Produto ${index + 1}`,
               NCM: item.ncm || '00000000',
-              CFOP: item.cfop || 5102,
+              CFOP: item.cfop ? Number(item.cfop) : 5102,
               uCOM: item.unidade || 'UN',
               qCOM: item.quantidade.toFixed(4),
               vUnCom: item.valorUnitario.toFixed(10),

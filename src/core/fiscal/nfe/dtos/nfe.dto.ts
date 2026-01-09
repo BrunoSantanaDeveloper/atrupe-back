@@ -215,6 +215,11 @@ export class CorrectionLetterDto {
   @IsString()
   @IsNotEmpty()
   correcao: string;
+
+  @ApiPropertyOptional({ description: 'Sequência do evento (1-20)', default: 1 })
+  @IsInt()
+  @IsOptional()
+  sequenciaEvento?: number;
 }
 
 export class NfeFilterDto {

@@ -155,7 +155,7 @@ export class EmitNfceDto {
   @ApiPropertyOptional({ description: 'Nome do consumidor' })
   @IsString()
   @IsOptional()
-  nomeConsumidor?: string;
+  consumidorNome?: string;
 
   @ApiProperty({ description: 'Natureza da operação' })
   @IsString()

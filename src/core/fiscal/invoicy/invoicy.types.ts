@@ -181,6 +181,9 @@ export interface InvoicyNfeImposto {
     COFINS: {
         CST_cofins: string;
     };
+    IPI?: {
+        CST_ipi: string;
+    };
 }
 
 export interface InvoicyNfeDet {
