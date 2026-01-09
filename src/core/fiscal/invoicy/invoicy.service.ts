@@ -5,6 +5,7 @@ import {
   CreateInvoicyConfigDto,
   UpdateInvoicyConfigDto,
 } from './dtos/invoicy-config.dto';
+import { InvoicyHttpService } from './invoicy-http.service';
 
 @Injectable()
 export class InvoicyService {
@@ -13,16 +14,16 @@ export class InvoicyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
-  ) {}
+    private readonly invoicyHttpService: InvoicyHttpService,
+  ) { }
 
   /**
    * Retorna as credenciais globais do Invoicy (Atrupe como revendedor)
-   * Estas credenciais são usadas para todas as empresas
+   * A partnerKey é global, mas accessKey deve ser configurada por empresa
    */
   getGlobalCredentials() {
     return {
       partnerKey: this.configService.get<string>('INVOICY_PARTNER_KEY'),
-      accessKey: this.configService.get<string>('INVOICY_ACCESS_KEY'),
       environment:
         this.configService.get<string>('INVOICY_ENVIRONMENT') || 'HOMOLOGACAO',
     };
@@ -260,10 +261,16 @@ export class InvoicyService {
       );
     }
 
+    if (!config.accessKey) {
+      this.logger.warn(
+        `Chave de acesso (accessKey) não configurada para empresa ${companyId}`,
+      );
+      return false;
+    }
+
     try {
-      // TODO: Implementar chamada real à API do Invoicy para testar conexão
       this.logger.log(`Testando conexão com Invoicy para empresa ${companyId}`);
-      return true;
+      return await this.invoicyHttpService.testConnection(companyId);
     } catch (error) {
       this.logger.error(
         `Erro ao testar conexão com Invoicy: ${error.message}`,

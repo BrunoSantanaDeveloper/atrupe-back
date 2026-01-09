@@ -33,6 +33,56 @@ export class NfeItemDto {
   @IsNumber()
   @IsOptional()
   discount?: number;
+
+  @ApiPropertyOptional({ description: 'Descrição do produto' })
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @ApiPropertyOptional({ description: 'NCM' })
+  @IsString()
+  @IsOptional()
+  ncm?: string;
+
+  @ApiPropertyOptional({ description: 'CFOP' })
+  @IsInt()
+  @IsOptional()
+  cfop?: number;
+
+  @ApiPropertyOptional({ description: 'Unidade Comercial' })
+  @IsString()
+  @IsOptional()
+  uCom?: string;
+
+  @ApiPropertyOptional({ description: 'GTIN/EAN' })
+  @IsString()
+  @IsOptional()
+  ean?: string;
+
+  @ApiPropertyOptional({ description: 'GTIN/EAN Tributável' })
+  @IsString()
+  @IsOptional()
+  ceantrib?: string;
+
+  @ApiPropertyOptional({ description: 'CST ICMS' })
+  @IsString()
+  @IsOptional()
+  cstIcms?: string;
+
+  @ApiPropertyOptional({ description: 'CST PIS' })
+  @IsString()
+  @IsOptional()
+  cstPis?: string;
+
+  @ApiPropertyOptional({ description: 'CST COFINS' })
+  @IsString()
+  @IsOptional()
+  cstCofins?: string;
+
+  @ApiPropertyOptional({ description: 'CST IPI' })
+  @IsString()
+  @IsOptional()
+  cstIpi?: string;
 }
 
 // DTO simplificado para emissão a partir de uma ordem

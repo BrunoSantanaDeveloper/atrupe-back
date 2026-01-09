@@ -7,6 +7,11 @@ import {
 import { PrismaService } from 'nestjs-prisma';
 import { NfseStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
+import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
+import {
+  InvoicyNfseRequest,
+  INVOICY_SUCCESS_CODES,
+} from '../invoicy/invoicy.types';
 import {
   EmitNfseDto,
   EmitNfseFromOrderDto,
@@ -21,7 +26,8 @@ export class NfseService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
-  ) {}
+    private readonly invoicyHttpService: InvoicyHttpService,
+  ) { }
 
   async findAll(companyId: string, filters: NfseFilterDto) {
     const page = filters.page || 1;
@@ -238,8 +244,7 @@ export class NfseService {
     }
 
     // Obter próximo número do RPS
-    const rpsNumero =
-      await this.invoicyService.incrementNfseRpsNumber(companyId);
+    const rpsNumero = await this.invoicyService.incrementNfseRpsNumber(companyId);
     const rpsSerie = config.serieNfse || 'A1';
 
     // Calcular valores
@@ -281,35 +286,170 @@ export class NfseService {
     });
 
     try {
-      // TODO: Implementar chamada real à API do Invoicy para NFS-e
       this.logger.log(
         `Emitindo NFS-e (RPS ${rpsNumero}) para empresa ${companyId}`,
       );
 
-      // Simulação de resposta do Invoicy (remover em produção)
-      const invoicyResponse = {
-        id: `INV-NFSE-${Date.now()}`,
-        protocol: `PROT-NFSE-${Date.now()}`,
-        numero: Math.floor(Math.random() * 1000000),
-        codigoVerificacao: `VRF-${Date.now().toString(36).toUpperCase()}`,
-        status: 'AUTHORIZED',
-        pdfUrl: null,
+      // Função auxiliar para construir lista de itens
+      const listaItens = dto.itens?.map((item, index) => ({
+        ItemSeq: index + 1,
+        ItemCod: item.codigo,
+        ItemDesc: item.descricao,
+        ItemQtde: item.quantidade,
+        ItemvUnit: item.valorUnitario,
+        ItemuMed: item.unidade || 'UN',
+        ItemvlDed: 0,
+        ItemTributavel: 'S',
+        ItemTributMunicipio: parseInt(item.codigoServico || dto.codigoMunicipio || '0', 10),
+        ItemvIss: (item.quantidade * item.valorUnitario * (item.aliquotaIss || aliquotaIss)) / 100,
+        ItemAliquota: item.aliquotaIss || aliquotaIss,
+        ItemVlrTotal: item.quantidade * item.valorUnitario,
+        ItemBaseCalculo: item.quantidade * item.valorUnitario,
+        ItemIssRetido: item.issRetido ? 1 : 2,
+        ItemIteListServico: parseInt(config.codigoServico?.replace(/\D/g, '') || '0', 10), // Usar código do serviço principal se não informado no item
+        ItemExigibilidadeISS: 1, // Exigível
+        ItemcMunIncidencia: parseInt(dto.codigoMunicipio || config.emitCmun || '0', 10),
+      })) || [
+          {
+            ItemSeq: 1,
+            ItemCod: 'SERV',
+            ItemDesc: dto.discriminacao.substring(0, 100), // Invoicy pode ter limite
+            ItemQtde: 1,
+            ItemvUnit: valorServicos,
+            ItemuMed: 'SV',
+            ItemvlDed: valorDeducoes,
+            ItemTributavel: 'S',
+            ItemTributMunicipio: parseInt(dto.codigoMunicipio || config.emitCmun || '0', 10),
+            ItemvIss: valorIss,
+            ItemAliquota: aliquotaIss,
+            ItemVlrTotal: valorServicos,
+            ItemBaseCalculo: baseCalculo,
+            ItemIssRetido: dto.issRetido ? 1 : 2,
+            ItemIteListServico: parseInt(dto.codigoServico.replace(/\D/g, ''), 10),
+            ItemExigibilidadeISS: 1,
+            ItemcMunIncidencia: parseInt(dto.codigoMunicipio || config.emitCmun || '0', 10),
+          },
+        ];
+
+      // Construir payload para o Invoicy
+      const invoicyRequest: InvoicyNfseRequest = {
+        Documento: {
+          ModeloDocumento: 'NFSE',
+          Versao: 1,
+          RPS: [
+            {
+              RPSNumero: rpsNumero.toString(),
+              RPSSerie: rpsSerie,
+              RPSTipo: 1, // 1 = RPS
+              dEmis: new Date().toISOString(),
+              dCompetencia: new Date(dto.dataCompetencia).toISOString(),
+              LocalPrestServ: 1, // 1 = No município (default)
+              natOp: dto.naturezaOperacao || 1, // 1 = Tributação no município
+              Operacao: 1,
+              RegEspTrib: 1, // 1 = Nenhum
+              OptSN: config.emitCrt === 1 ? 1 : 2, // 1 = Sim, 2 = Não
+              IncCult: 2, // 2 = Não
+              Status: 1, // 1 = Normal
+              tpAmb: config.ambiente === 'PRODUCAO' ? 1 : 2,
+              Prestador: {
+                CNPJ_prest: (config.emitCnpj || '').replace(/\D/g, ''),
+                xNome: config.emitRazaoSocial || '',
+                xFant: config.emitNomeFantasia || '',
+                IM: (config.emitIm || '').replace(/\D/g, ''),
+                enderPrest: {
+                  TPEnd: 'Rua', // Default
+                  xLgr: config.emitEndereco || '',
+                  nro: config.emitNumero || 'S/N',
+                  xBairro: config.emitBairro || '',
+                  cMun: parseInt(config.emitCmun || '0', 10),
+                  UF: config.emitUf || '',
+                  CEP: parseInt((config.emitCep || '').replace(/\D/g, ''), 10) || 0,
+                },
+              },
+              ListaItens: listaItens,
+              Servico: {
+                Valores: {
+                  ValServicos: valorServicos,
+                  ValDeducoes: valorDeducoes,
+                  ValPIS: dto.valorPis || 0,
+                  ValCOFINS: dto.valorCofins || 0,
+                  ValINSS: dto.valorInss || 0,
+                  ValIR: dto.valorIr || 0,
+                  ValCSLL: dto.valorCsll || 0,
+                  ISSRetido: dto.issRetido ? 1 : 2, // 1 = Sim, 2 = Não
+                  ValISS: valorIss,
+                  ValOutrasRetencoes: 0,
+                  ValBaseCalculo: baseCalculo,
+                  ValAliqISS: aliquotaIss,
+                },
+                IteListServico: parseInt(dto.codigoServico.replace(/\D/g, ''), 10),
+                Discriminacao: dto.discriminacao,
+                cMun: parseInt(dto.codigoMunicipio || config.emitCmun || '0', 10),
+                TributMunicipio: parseInt(dto.codigoMunicipio || config.emitCmun || '0', 10),
+              },
+              Tomador: {
+                TomaCNPJ: dto.tomador.cnpj ? dto.tomador.cnpj.replace(/\D/g, '') : undefined,
+                TomaCPF: dto.tomador.cpf ? dto.tomador.cpf.replace(/\D/g, '') : undefined,
+                TomaRazaoSocial: dto.tomador.razaoSocial,
+                TomaEndereco: dto.tomador.endereco,
+                TomaNumero: dto.tomador.numero,
+                TomaBairro: dto.tomador.bairro,
+                TomacMun: parseInt(dto.tomador.codigoMunicipio || '0', 10),
+                TomaxMun: dto.tomador.municipio,
+                TomaUF: dto.tomador.uf,
+                TomaCEP: parseInt((dto.tomador.cep || '').replace(/\D/g, ''), 10) || 0,
+              },
+            },
+          ],
+        },
       };
+
+      // Chamar API do Invoicy
+      const invoicyResponses = await this.invoicyHttpService.emitNfse(
+        companyId,
+        [invoicyRequest],
+      );
+
+      // Processar resposta
+      const response = invoicyResponses[0];
+      if (!response) {
+        throw new Error('Nenhuma resposta recebida do Invoicy');
+      }
+
+      if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
+        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+      }
+
+      const doc = response.Documentos?.[0];
+      if (!doc) {
+        throw new Error('Documento não retornado pelo Invoicy');
+      }
+
+      const situacao = doc.Situacao;
+      const isAuthorized = situacao?.SitCodigo === 100; // 100 = Autorizada
 
       // Atualizar NFS-e com resposta
       const updatedNfse = await this.prisma.nfse.update({
         where: { id: nfse.id },
         data: {
-          status: NfseStatus.AUTHORIZED,
-          numero: invoicyResponse.numero,
-          codigoVerificacao: invoicyResponse.codigoVerificacao,
-          protocolo: invoicyResponse.protocol,
-          invoicyId: invoicyResponse.id,
-          invoicyProtocol: invoicyResponse.protocol,
+          status: isAuthorized ? NfseStatus.AUTHORIZED : NfseStatus.REJECTED,
+          numero: doc.NFSe?.NFSeNumero || 0,
+          codigoVerificacao: doc.NFSe?.NFSeCodVerificacao || null,
+          protocolo: doc.DocProtocolo || null,
+          invoicyId: doc.DocIDUnico || null,
+          invoicyProtocol: doc.DocProtocolo || null,
           dataEmissao: new Date(),
-          pdfUrl: invoicyResponse.pdfUrl,
+          pdfUrl: doc.DocPDFDownload || null,
+          xmlRetorno: doc.DocXMLBase64,
+          motivoRejeicao: !isAuthorized ? situacao?.SitDescricao : null,
         },
       });
+
+      if (!isAuthorized) {
+        throw new BadRequestException(
+          `NFS-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}`,
+        );
+      }
 
       return updatedNfse;
     } catch (error) {
@@ -343,10 +483,35 @@ export class NfseService {
     }
 
     try {
-      // TODO: Implementar chamada real à API do Invoicy para cancelamento de NFS-e
       this.logger.log(
         `Cancelando NFS-e ${nfse.numero} para empresa ${companyId}`,
       );
+
+      // Chamar API do Invoicy para cancelamento de NFS-e
+      const invoicyResponses = await this.invoicyHttpService.cancelNfse(
+        companyId,
+        nfse.numero,
+        nfse.codigoVerificacao,
+        dto.justificativa,
+      );
+
+      // Processar resposta
+      const response = invoicyResponses[0];
+      if (!response) {
+        throw new Error('Nenhuma resposta recebida do Invoicy');
+      }
+
+      if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
+        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+      }
+
+      const doc = response.Documentos?.[0];
+      const situacao = doc?.Situacao;
+      const isCancelled = situacao?.SitCodigo === 101; // Cancelamento autorizado
+
+      if (!isCancelled) {
+        throw new Error(situacao?.SitDescricao || 'Cancelamento não autorizado pela Prefeitura');
+      }
 
       const updatedNfse = await this.prisma.nfse.update({
         where: { id },
@@ -354,6 +519,7 @@ export class NfseService {
           status: NfseStatus.CANCELLED,
           motivoCancelamento: dto.justificativa,
           dataCancelamento: new Date(),
+          protocoloCancelamento: doc?.DocProtocolo || null,
         },
       });
 

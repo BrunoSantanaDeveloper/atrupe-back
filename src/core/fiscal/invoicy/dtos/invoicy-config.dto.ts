@@ -42,7 +42,29 @@ export class CreateInvoicyConfigDto {
   @Transform(emptyToUndefined)
   apiToken?: string;
 
-  // Note: partnerKey and accessKey are now global credentials from env vars (Atrupe as reseller)
+  @ApiPropertyOptional({ description: 'Chave de Acesso (API Key)' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  accessKey?: string;
+
+  @ApiPropertyOptional({ description: 'Chave de Parceiro (Partner Key)' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  partnerKey?: string;
+
+  @ApiPropertyOptional({ description: 'Senha do Certificado Digital' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  certificatePassword?: string;
+
+  @ApiPropertyOptional({ description: 'Certificado Digital (Base64)' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  certificate?: string;
 
   @ApiPropertyOptional({
     description: 'Ambiente: PRODUCAO ou HOMOLOGACAO',
@@ -257,7 +279,29 @@ export class UpdateInvoicyConfigDto {
   @Transform(emptyToUndefined)
   apiToken?: string;
 
-  // Note: partnerKey and accessKey are now global credentials from env vars (Atrupe as reseller)
+  @ApiPropertyOptional({ description: 'Chave de Acesso (API Key)' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  accessKey?: string;
+
+  @ApiPropertyOptional({ description: 'Chave de Parceiro (Partner Key)' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  partnerKey?: string;
+
+  @ApiPropertyOptional({ description: 'Senha do Certificado Digital' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  certificatePassword?: string;
+
+  @ApiPropertyOptional({ description: 'Certificado Digital (Base64)' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  certificate?: string;
 
   @ApiPropertyOptional({
     description: 'Ambiente: PRODUCAO ou HOMOLOGACAO',

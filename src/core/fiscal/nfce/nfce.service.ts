@@ -7,6 +7,12 @@ import {
 import { PrismaService } from 'nestjs-prisma';
 import { NfceStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
+import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
+import {
+  InvoicyNfeRequest,
+  InvoicyResponse,
+  INVOICY_SUCCESS_CODES,
+} from '../invoicy/invoicy.types';
 import {
   EmitNfceDto,
   CancelNfceDto,
@@ -22,7 +28,8 @@ export class NfceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
-  ) {}
+    private readonly invoicyHttpService: InvoicyHttpService,
+  ) { }
 
   async findAll(companyId: string, filters: NfceFilterDto) {
     const page = filters.page || 1;
@@ -194,36 +201,172 @@ export class NfceService {
     });
 
     try {
-      // TODO: Implementar chamada real à API do Invoicy para NFC-e
       this.logger.log(`Emitindo NFC-e ${numero} para empresa ${companyId}`);
 
-      // Simulação de resposta do Invoicy (remover em produção)
-      const invoicyResponse = {
-        id: `INV-NFCE-${Date.now()}`,
-        protocol: `PROT-NFCE-${Date.now()}`,
-        chaveAcesso: `${config.emitUf || '43'}${new Date().getFullYear().toString().slice(-2)}${(new Date().getMonth() + 1).toString().padStart(2, '0')}${config.emitCnpj}65${(config.serieNfce || 1).toString().padStart(3, '0')}${numero.toString().padStart(9, '0')}1${Math.random().toString().slice(2, 11)}`,
-        status: 'AUTHORIZED',
-        qrCodeUrl: `https://www.sefaz.rs.gov.br/NFCE/NFCE-COM.aspx?chave=${Date.now()}`,
-        urlConsulta: 'https://www.sefaz.rs.gov.br/NFCE/NFCE-COM.aspx',
-        danfeUrl: null,
+      // Construir payload para o Invoicy (NFC-e usa modelo 65)
+      const now = new Date();
+      const invoicyRequest: InvoicyNfeRequest = {
+        Documento: {
+          ModeloDocumento: 'NFCe',
+          Versao: 4,
+          ide: {
+            cUF: this.getUfCode(config.emitUf),
+            natOp: 'Venda de mercadoria',
+            mod: '65',
+            serie: (config.serieNfce || 1).toString(),
+            nNF: numero,
+            dhEmi: now.toISOString(),
+            fusoHorario: '-03:00',
+            tpNf: 1, // Saída
+            idDest: 1, // Operação interna
+            cMunFg: parseInt(config.emitCmun || '0', 10),
+            tpImp: 4, // DANFE NFC-e
+            tpEmis: 1, // Emissão normal
+            cDV: 0,
+            tpAmb: config.ambiente === 'PRODUCAO' ? 1 : 2,
+            finNFe: 1,
+            indFinal: 1, // Consumidor final
+            indPres: 1, // Presença do comprador
+            procEmi: 0,
+            verProc: 'Atrupe 1.0',
+          },
+          emit: {
+            CNPJ_emit: (config.emitCnpj || '').replace(/\D/g, ''),
+            xNome: config.emitRazaoSocial || '',
+            IE: (config.emitIe || '').replace(/\D/g, ''),
+            CRT: config.emitCrt || 1,
+            enderEmit: {
+              xLgr: config.emitEndereco || '',
+              nro: config.emitNumero || 'S/N',
+              xBairro: config.emitBairro || '',
+              cMun: parseInt(config.emitCmun || '0', 10),
+              xMun: '',
+              UF: config.emitUf || '',
+              CEP: parseInt((config.emitCep || '').replace(/\D/g, ''), 10) || 0,
+            },
+          },
+          dest: {
+            xNome_dest: dto.consumidorNome || 'CONSUMIDOR NAO IDENTIFICADO',
+            indIEDest: 9,
+            enderDest: {
+              xLgr_dest: '',
+              nro_dest: '',
+              xBairro_dest: '',
+              cMun_dest: 0,
+              xMun_dest: '',
+              UF_dest: config.emitUf || '',
+              CEP_dest: 0,
+              cPais_dest: 1058,
+            },
+          },
+          det: dto.itens.map((item, index) => ({
+            prod: {
+              cProd: item.codigo || `ITEM${index + 1}`,
+              cEAN: 'SEM GTIN',
+              cEANTrib: 'SEM GTIN',
+              xProd: item.descricao || `Produto ${index + 1}`,
+              NCM: item.ncm || '00000000',
+              CFOP: item.cfop || 5102,
+              uCOM: item.unidade || 'UN',
+              qCOM: item.quantidade.toFixed(4),
+              vUnCom: item.valorUnitario.toFixed(10),
+              vProd: (item.quantidade * item.valorUnitario).toFixed(2),
+              uTrib: item.unidade || 'UN',
+              qTrib: item.quantidade.toFixed(4),
+              vUnTrib: item.valorUnitario.toFixed(10),
+              indTot: 1,
+            },
+            imposto: {
+              ICMS: {
+                orig: 0,
+                CST: '102',
+              },
+              PIS: {
+                CST_pis: '49',
+              },
+              COFINS: {
+                CST_cofins: '49',
+              },
+            },
+          })),
+          total: {
+            ICMStot: {
+              vBC_ttlnfe: '0.00',
+              vICMS_ttlnfe: '0.00',
+              vICMSDeson_ttlnfe: '0.00',
+              vBCST_ttlnfe: '0.00',
+              vProd_ttlnfe: valorTotal.toFixed(2),
+              vFrete_ttlnfe: '0.00',
+              vSeg_ttlnfe: '0.00',
+              vDesc_ttlnfe: dto.itens.reduce((acc, i) => acc + (i.valorDesconto || 0), 0).toFixed(2),
+              vII_ttlnfe: '0.00',
+              vIPI_ttlnfe: '0.00',
+              vPIS_ttlnfe: '0.00',
+              vCOFINS_ttlnfe: '0.00',
+              vOutro: '0.00',
+              vNF: valorTotal.toFixed(2),
+            },
+          },
+          pag: dto.pagamentos.map(pag => ({
+            tPag: pag.tipo,
+            vPag: pag.valor.toFixed(2),
+          })),
+          transp: {
+            modFrete: '9',
+          },
+        },
       };
+
+      // Chamar API do Invoicy
+      const invoicyResponses = await this.invoicyHttpService.emitNfe(
+        companyId,
+        [invoicyRequest],
+      );
+
+      // Processar resposta
+      const response = invoicyResponses[0];
+      if (!response) {
+        throw new Error('Nenhuma resposta recebida do Invoicy');
+      }
+
+      if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
+        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+      }
+
+      const doc = response.Documentos?.[0];
+      if (!doc) {
+        throw new Error('Documento não retornado pelo Invoicy');
+      }
+
+      const situacao = doc.Situacao;
+      const isAuthorized = situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150;
 
       // Atualizar NFC-e com resposta
       const updatedNfce = await this.prisma.nfce.update({
         where: { id: nfce.id },
         data: {
-          status: NfceStatus.AUTHORIZED,
-          chaveAcesso: invoicyResponse.chaveAcesso,
-          protocolo: invoicyResponse.protocol,
-          invoicyId: invoicyResponse.id,
-          invoicyProtocol: invoicyResponse.protocol,
+          status: isAuthorized ? NfceStatus.AUTHORIZED : NfceStatus.REJECTED,
+          chaveAcesso: doc.DocChaAcesso || null,
+          protocolo: doc.DocProtocolo || null,
+          invoicyId: doc.DocIDUnico || null,
+          invoicyProtocol: doc.DocProtocolo || null,
           dataEmissao: new Date(),
-          dataAutorizacao: new Date(),
-          qrCodeUrl: invoicyResponse.qrCodeUrl,
-          urlConsulta: invoicyResponse.urlConsulta,
-          danfeUrl: invoicyResponse.danfeUrl,
+          dataAutorizacao: isAuthorized ? new Date() : null,
+          qrCodeUrl: doc.DocCompleto || null, // URL do QR Code
+          urlConsulta: doc.DocPDFDownload || null,
+          danfeUrl: doc.DocPDFDownload || null,
+          xmlAutorizado: doc.DocXMLBase64
+            ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
+            : null,
+          motivoRejeicao: !isAuthorized ? situacao?.SitDescricao : null,
         },
       });
+
+      if (!isAuthorized) {
+        throw new BadRequestException(
+          `NFC-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}`,
+        );
+      }
 
       return updatedNfce;
     } catch (error) {
@@ -240,6 +383,21 @@ export class NfceService {
       throw new BadRequestException(`Erro ao emitir NFC-e: ${error.message}`);
     }
   }
+
+  /**
+   * Helper method to get UF numeric code
+   */
+  private getUfCode(uf: string): number {
+    const ufCodes: Record<string, number> = {
+      RO: 11, AC: 12, AM: 13, RR: 14, PA: 15, AP: 16, TO: 17,
+      MA: 21, PI: 22, CE: 23, RN: 24, PB: 25, PE: 26, AL: 27, SE: 28, BA: 29,
+      MG: 31, ES: 32, RJ: 33, SP: 35,
+      PR: 41, SC: 42, RS: 43,
+      MS: 50, MT: 51, GO: 52, DF: 53,
+    };
+    return ufCodes[uf?.toUpperCase()] || 43;
+  }
+
 
   async cancel(id: string, companyId: string, dto: CancelNfceDto) {
     const nfce = await this.findById(id, companyId);
@@ -266,10 +424,34 @@ export class NfceService {
     }
 
     try {
-      // TODO: Implementar chamada real à API do Invoicy para cancelamento
       this.logger.log(
         `Cancelando NFC-e ${nfce.numero} para empresa ${companyId}`,
       );
+
+      // Chamar API do Invoicy para cancelamento (NFC-e usa mesmo endpoint que NF-e)
+      const invoicyResponses = await this.invoicyHttpService.cancelNfe(
+        companyId,
+        nfce.chaveAcesso,
+        dto.justificativa,
+      );
+
+      // Processar resposta
+      const response = invoicyResponses[0];
+      if (!response) {
+        throw new Error('Nenhuma resposta recebida do Invoicy');
+      }
+
+      if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
+        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+      }
+
+      const doc = response.Documentos?.[0];
+      const situacao = doc?.Situacao;
+      const isCancelled = situacao?.SitCodigo === 135 || situacao?.SitCodigo === 101;
+
+      if (!isCancelled) {
+        throw new Error(situacao?.SitDescricao || 'Cancelamento não autorizado pela SEFAZ');
+      }
 
       const updatedNfce = await this.prisma.nfce.update({
         where: { id },
@@ -277,6 +459,7 @@ export class NfceService {
           status: NfceStatus.CANCELLED,
           motivoCancelamento: dto.justificativa,
           dataCancelamento: new Date(),
+          protocoloCancelamento: doc?.DocProtocolo || null,
         },
       });
 
@@ -309,16 +492,43 @@ export class NfceService {
     }
 
     try {
-      // TODO: Implementar chamada real à API do Invoicy para inutilização
       this.logger.log(
         `Inutilizando NFC-e ${dto.numeroInicial} a ${dto.numeroFinal} para empresa ${companyId}`,
       );
+
+      // Chamar API do Invoicy para inutilização
+      const invoicyResponses = await this.invoicyHttpService.inutilizarNfce(
+        companyId,
+        config.serieNfce || 1,
+        dto.numeroInicial,
+        dto.numeroFinal,
+        dto.justificativa,
+      );
+
+      // Processar resposta
+      const response = invoicyResponses[0];
+      if (!response) {
+        throw new Error('Nenhuma resposta recebida do Invoicy');
+      }
+
+      if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
+        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+      }
+
+      const doc = response.Documentos?.[0];
+      const situacao = doc?.Situacao;
+      const isInutilized = situacao?.SitCodigo === 102;
+
+      if (!isInutilized) {
+        throw new Error(situacao?.SitDescricao || 'Inutilização não autorizada pela SEFAZ');
+      }
 
       return {
         success: true,
         message: `Numeração ${dto.numeroInicial} a ${dto.numeroFinal} inutilizada com sucesso`,
         numeroInicial: dto.numeroInicial,
         numeroFinal: dto.numeroFinal,
+        protocolo: doc?.DocProtocolo || null,
       };
     } catch (error) {
       this.logger.error(

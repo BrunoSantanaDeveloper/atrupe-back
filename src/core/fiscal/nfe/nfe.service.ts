@@ -7,6 +7,12 @@ import {
 import { PrismaService } from 'nestjs-prisma';
 import { NfeStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
+import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
+import {
+  InvoicyNfeRequest,
+  InvoicyResponse,
+  INVOICY_SUCCESS_CODES,
+} from '../invoicy/invoicy.types';
 import {
   EmitNfeDto,
   EmitNfeFromOrderDto,
@@ -22,7 +28,8 @@ export class NfeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
-  ) {}
+    private readonly invoicyHttpService: InvoicyHttpService,
+  ) { }
 
   /**
    * Prepara os dados para emissão de NF-e a partir de uma ordem de serviço.
@@ -130,14 +137,14 @@ export class NfeService {
       hasExistingNfe: !!existingNfe,
       existingNfe: existingNfe
         ? {
-            id: existingNfe.id,
-            numero: existingNfe.numero,
-            serie: existingNfe.serie,
-            status: existingNfe.status,
-            chaveAcesso: existingNfe.chaveAcesso,
-            danfeUrl: existingNfe.danfeUrl,
-            dataEmissao: existingNfe.dataEmissao,
-          }
+          id: existingNfe.id,
+          numero: existingNfe.numero,
+          serie: existingNfe.serie,
+          status: existingNfe.status,
+          chaveAcesso: existingNfe.chaveAcesso,
+          danfeUrl: existingNfe.danfeUrl,
+          dataEmissao: existingNfe.dataEmissao,
+        }
         : null,
 
       // Configuração de emissão
@@ -463,11 +470,11 @@ export class NfeService {
     const numero = await this.invoicyService.incrementNfeNumber(companyId);
 
     // Calcular valor total
-    // const valorTotal = dto.items.reduce(
-    //   (acc, item) =>
-    //     acc + item.quantity * item.unitValue - (item.discount || 0),
-    //   0,
-    // );
+    const valorTotal = dto.items.reduce(
+      (acc, item) =>
+        acc + item.quantity * item.unitValue - (item.discount || 0),
+      0,
+    );
 
     // Criar registro da NF-e
     const nfe = await this.prisma.nfe.create({
@@ -479,41 +486,184 @@ export class NfeService {
         serie: config.serieNfe,
         status: NfeStatus.PROCESSING,
         ambiente: config.ambiente,
-        valorTotal: dto.items.reduce(
-          (acc, item) =>
-            acc + item.quantity * item.unitValue - (item.discount || 0),
-          0,
-        ),
+        valorTotal,
       },
     });
 
     try {
-      // TODO: Implementar chamada real à API do Invoicy
       this.logger.log(`Emitindo NF-e ${numero} para empresa ${companyId}`);
 
-      // Simulação de resposta do Invoicy (remover em produção)
-      const invoicyResponse = {
-        id: `INV-${Date.now()}`,
-        protocol: `PROT-${Date.now()}`,
-        chaveAcesso: `${config.emitUf}${new Date().getFullYear().toString().slice(-2)}${new Date().getMonth().toString().padStart(2, '0')}${config.emitCnpj}55${config.serieNfe.toString().padStart(3, '0')}${numero.toString().padStart(9, '0')}1${Math.random().toString().slice(2, 11)}`,
-        status: 'AUTHORIZED',
-        danfeUrl: null,
+      // Construir payload para o Invoicy
+      const now = new Date();
+      const invoicyRequest: InvoicyNfeRequest = {
+        Documento: {
+          ModeloDocumento: 'NFe',
+          Versao: 4,
+          ide: {
+            cUF: this.getUfCode(config.emitUf),
+            natOp: dto.operationNature || config.defaultOperationNature || 'Venda de mercadoria',
+            mod: '55',
+            serie: config.serieNfe?.toString() || '1',
+            nNF: numero,
+            dhEmi: now.toISOString(),
+            fusoHorario: '-03:00',
+            tpNf: 1, // 1 = Saída
+            idDest: dto.destUf === config.emitUf ? 1 : 2, // 1 = Interna, 2 = Interestadual
+            cMunFg: parseInt(config.emitCmun || '0', 10),
+            tpImp: 1, // DANFE retrato
+            tpEmis: 1, // Emissão normal
+            cDV: 0, // Será calculado pelo Invoicy
+            tpAmb: config.ambiente === 'PRODUCAO' ? 1 : 2,
+            finNFe: 1, // NF-e normal
+            indFinal: dto.destCnpjCpf?.length === 11 ? 1 : 0, // 1 = Consumidor final (CPF)
+            indPres: 1, // Operação presencial
+            procEmi: 0, // Aplicativo do contribuinte
+            verProc: 'Atrupe 1.0',
+          },
+          emit: {
+            CNPJ_emit: (config.emitCnpj || '').replace(/\D/g, ''),
+            xNome: config.emitRazaoSocial || '',
+            IE: (config.emitIe || '').replace(/\D/g, ''),
+            IM: config.emitIm || undefined,
+            CRT: config.emitCrt || 1,
+            enderEmit: {
+              xLgr: config.emitEndereco || '',
+              nro: config.emitNumero || 'S/N',
+              xBairro: config.emitBairro || '',
+              cMun: parseInt(config.emitCmun || '0', 10),
+              xMun: '', // Será preenchido automaticamente pelo Invoicy
+              UF: config.emitUf || '',
+              CEP: parseInt((config.emitCep || '').replace(/\D/g, ''), 10) || 0,
+            },
+          },
+          dest: {
+            ...(dto.destCnpjCpf?.length === 14 ? { CNPJ_dest: dto.destCnpjCpf.replace(/\D/g, '') } : {}),
+            ...(dto.destCnpjCpf?.length === 11 ? { CPF_dest: dto.destCnpjCpf.replace(/\D/g, '') } : {}),
+            xNome_dest: dto.destNome || '',
+            indIEDest: 9, // 9 = Não contribuinte
+            enderDest: {
+              xLgr_dest: dto.destEndereco || '',
+              nro_dest: dto.destNumero || 'S/N',
+              xBairro_dest: dto.destBairro || '',
+              cMun_dest: 0, // Será preenchido pelo Invoicy baseado no CEP/cidade
+              xMun_dest: dto.destMunicipio || '',
+              UF_dest: dto.destUf || '',
+              CEP_dest: parseInt((dto.destCep || '').replace(/\D/g, ''), 10) || 0,
+              cPais_dest: parseInt(dto.destPais || '1058', 10),
+            },
+          },
+          det: dto.items.map((item, index) => ({
+            prod: {
+              cProd: item.productId || `ITEM${index + 1}`,
+              cEAN: item.ean || 'SEM GTIN',
+              cEANTrib: item.ceantrib || 'SEM GTIN',
+              xProd: item.description || `Produto ${index + 1}`,
+              NCM: (item.ncm || '00000000').replace(/\D/g, ''),
+              CFOP: item.cfop || parseInt(config.defaultCfop || '5102', 10),
+              uCOM: item.uCom || 'UN',
+              qCOM: item.quantity.toFixed(4),
+              vUnCom: item.unitValue.toFixed(10),
+              vProd: (item.quantity * item.unitValue).toFixed(2),
+              uTrib: item.uCom || 'UN', // Usually same as uCom
+              qTrib: item.quantity.toFixed(4),
+              vUnTrib: item.unitValue.toFixed(10),
+              indTot: 1,
+            },
+            imposto: {
+              ICMS: {
+                orig: 0, // Nacional
+                CST: item.cstIcms || '102', // Default Simples Nacional if missing
+              },
+              PIS: {
+                CST_pis: item.cstPis || '49',
+              },
+              COFINS: {
+                CST_cofins: item.cstCofins || '49',
+              },
+              IPI: {
+                CST_ipi: item.cstIpi || '99',
+              },
+            },
+          })),
+          total: {
+            ICMStot: {
+              vBC_ttlnfe: '0.00',
+              vICMS_ttlnfe: '0.00',
+              vICMSDeson_ttlnfe: '0.00',
+              vBCST_ttlnfe: '0.00',
+              vProd_ttlnfe: valorTotal.toFixed(2),
+              vFrete_ttlnfe: '0.00',
+              vSeg_ttlnfe: '0.00',
+              vDesc_ttlnfe: dto.items.reduce((acc, i) => acc + (i.discount || 0), 0).toFixed(2),
+              vII_ttlnfe: '0.00',
+              vIPI_ttlnfe: '0.00',
+              vPIS_ttlnfe: '0.00',
+              vCOFINS_ttlnfe: '0.00',
+              vOutro: '0.00',
+              vNF: valorTotal.toFixed(2),
+            },
+          },
+          pag: [
+            {
+              tPag: '01', // Dinheiro
+              vPag: valorTotal.toFixed(2),
+            },
+          ],
+          transp: {
+            modFrete: '9', // Sem frete
+          },
+        },
       };
+
+      // Chamar API do Invoicy
+      const invoicyResponses = await this.invoicyHttpService.emitNfe(
+        companyId,
+        [invoicyRequest],
+      );
+
+      // Processar resposta
+      const response = invoicyResponses[0];
+      if (!response) {
+        throw new Error('Nenhuma resposta recebida do Invoicy');
+      }
+
+      if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
+        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+      }
+
+      const doc = response.Documentos?.[0];
+      if (!doc) {
+        throw new Error('Documento não retornado pelo Invoicy');
+      }
+
+      // Verificar situação do documento
+      const situacao = doc.Situacao;
+      const isAuthorized = situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150;
 
       // Atualizar NF-e com resposta
       const updatedNfe = await this.prisma.nfe.update({
         where: { id: nfe.id },
         data: {
-          status: NfeStatus.AUTHORIZED,
-          chaveAcesso: invoicyResponse.chaveAcesso,
-          protocolo: invoicyResponse.protocol,
-          invoicyId: invoicyResponse.id,
-          invoicyProtocol: invoicyResponse.protocol,
+          status: isAuthorized ? NfeStatus.AUTHORIZED : NfeStatus.REJECTED,
+          chaveAcesso: doc.DocChaAcesso || null,
+          protocolo: doc.DocProtocolo || null,
+          invoicyId: doc.DocIDUnico || null,
+          invoicyProtocol: doc.DocProtocolo || null,
           dataEmissao: new Date(),
-          dataAutorizacao: new Date(),
-          danfeUrl: invoicyResponse.danfeUrl,
+          dataAutorizacao: isAuthorized ? new Date() : null,
+          danfeUrl: doc.DocPDFDownload || null,
+          xmlAutorizado: doc.DocXMLBase64
+            ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
+            : null,
+          motivoRejeicao: !isAuthorized ? situacao?.SitDescricao : null,
         },
       });
+
+      if (!isAuthorized) {
+        throw new BadRequestException(
+          `NF-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}`,
+        );
+      }
 
       return updatedNfe;
     } catch (error) {
@@ -529,6 +679,20 @@ export class NfeService {
       this.logger.error(`Erro ao emitir NF-e: ${error.message}`, error.stack);
       throw new BadRequestException(`Erro ao emitir NF-e: ${error.message}`);
     }
+  }
+
+  /**
+   * Helper method to get UF numeric code
+   */
+  private getUfCode(uf: string): number {
+    const ufCodes: Record<string, number> = {
+      RO: 11, AC: 12, AM: 13, RR: 14, PA: 15, AP: 16, TO: 17,
+      MA: 21, PI: 22, CE: 23, RN: 24, PB: 25, PE: 26, AL: 27, SE: 28, BA: 29,
+      MG: 31, ES: 32, RJ: 33, SP: 35,
+      PR: 41, SC: 42, RS: 43,
+      MS: 50, MT: 51, GO: 52, DF: 53,
+    };
+    return ufCodes[uf?.toUpperCase()] || 43; // Default RS
   }
 
   async cancel(id: string, companyId: string, dto: CancelNfeDto) {
@@ -556,10 +720,34 @@ export class NfeService {
     }
 
     try {
-      // TODO: Implementar chamada real à API do Invoicy para cancelamento
       this.logger.log(
         `Cancelando NF-e ${nfe.numero} para empresa ${companyId}`,
       );
+
+      // Chamar API do Invoicy para cancelamento
+      const invoicyResponses = await this.invoicyHttpService.cancelNfe(
+        companyId,
+        nfe.chaveAcesso,
+        dto.justificativa,
+      );
+
+      // Processar resposta
+      const response = invoicyResponses[0];
+      if (!response) {
+        throw new Error('Nenhuma resposta recebida do Invoicy');
+      }
+
+      if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
+        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+      }
+
+      const doc = response.Documentos?.[0];
+      const situacao = doc?.Situacao;
+      const isCancelled = situacao?.SitCodigo === 135 || situacao?.SitCodigo === 101;
+
+      if (!isCancelled) {
+        throw new Error(situacao?.SitDescricao || 'Cancelamento não autorizado pela SEFAZ');
+      }
 
       const updatedNfe = await this.prisma.nfe.update({
         where: { id },
@@ -567,6 +755,7 @@ export class NfeService {
           status: NfeStatus.CANCELLED,
           motivoCancelamento: dto.justificativa,
           dataCancelamento: new Date(),
+          protocoloCancelamento: doc?.DocProtocolo || null,
         },
       });
 
@@ -597,8 +786,36 @@ export class NfeService {
     }
 
     try {
-      // TODO: Implementar chamada real à API do Invoicy para carta de correção
       this.logger.log(`Enviando carta de correção para NF-e ${nfe.numero}`);
+
+      // Obter sequência do evento (max 20 cartas de correção por NF-e)
+      const sequenciaEvento = dto.sequenciaEvento || 1;
+
+      // Chamar API do Invoicy para carta de correção
+      const invoicyResponses = await this.invoicyHttpService.sendCorrectionLetter(
+        companyId,
+        nfe.chaveAcesso,
+        dto.correcao,
+        sequenciaEvento,
+      );
+
+      // Processar resposta
+      const response = invoicyResponses[0];
+      if (!response) {
+        throw new Error('Nenhuma resposta recebida do Invoicy');
+      }
+
+      if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
+        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+      }
+
+      const doc = response.Documentos?.[0];
+      const situacao = doc?.Situacao;
+      const isApproved = situacao?.SitCodigo === 135;
+
+      if (!isApproved) {
+        throw new Error(situacao?.SitDescricao || 'Carta de correção não autorizada pela SEFAZ');
+      }
 
       const updatedNfe = await this.prisma.nfe.update({
         where: { id },
@@ -606,6 +823,8 @@ export class NfeService {
           status: NfeStatus.CORRECTION_SENT,
           cartaCorrecao: dto.correcao,
           dataCorrecao: new Date(),
+          protocoloCorrecao: doc?.DocProtocolo || null,
+          sequenciaCorrecao: sequenciaEvento,
         },
       });
 
