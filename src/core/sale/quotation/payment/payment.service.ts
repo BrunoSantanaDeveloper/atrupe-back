@@ -167,28 +167,32 @@ export class PaymentService {
                 where: { quotationPaymentId: updatedPayment.id },
               });
 
-              // Create new installments
-              for (const installmentData of installments) {
-                if (!installmentData.dueDate || !installmentData.amount) {
-                  continue; // Skip invalid installments
-                }
+              // Prepare installments data for batch insert
+              const installmentsData = installments
+                .filter(
+                  (installmentData) =>
+                    installmentData.dueDate && installmentData.amount,
+                )
+                .map((installmentData) => {
+                  const additionalFee =
+                    conditionConfig?.costType === 'VALUE'
+                      ? installmentData.additionalFee || 0
+                      : ((installmentData.additionalFee || 0) / 100) *
+                        installmentData.amount;
 
-                const additionalFee =
-                  conditionConfig?.costType === 'VALUE'
-                    ? installmentData.additionalFee || 0
-                    : ((installmentData.additionalFee || 0) / 100) *
-                      installmentData.amount;
-
-                await prisma.quotationInstallment.create({
-                  data: {
+                  return {
                     quotationPaymentId: updatedPayment.id,
                     dueDate: new Date(installmentData.dueDate),
                     additionalFee,
                     value: installmentData.amount,
-                    ...(paymentConditionId && {
-                      paymentConditionId: paymentConditionId,
-                    }),
-                  },
+                    paymentConditionId: paymentConditionId,
+                  };
+                });
+
+              // Create all installments in a single query
+              if (installmentsData.length > 0) {
+                await prisma.quotationInstallment.createMany({
+                  data: installmentsData,
                 });
               }
             }
