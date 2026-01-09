@@ -33,7 +33,14 @@ export class ImportService {
     companyId: string,
   ) {
     // Validar entidade
-    const allowedEntities = ['client', 'product', 'quotation', 'supplier'];
+    const allowedEntities = [
+      'client',
+      'product',
+      'quotation',
+      'supplier',
+      'financial',
+      'order',
+    ];
     if (!allowedEntities.includes(entity)) {
       throw new BadRequestException('Invalid entity type');
     }
@@ -278,7 +285,12 @@ export class ImportService {
 
       // Validações customizadas
       if (field.validate) {
-        const customError = await field.validate(value, companyId, this.prisma);
+        const customError = await field.validate(
+          value,
+          companyId,
+          this.prisma,
+          row,
+        );
         if (customError) {
           errors.push({
             row: rowNumber,

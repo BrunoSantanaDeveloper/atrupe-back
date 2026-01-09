@@ -6,6 +6,8 @@ export enum ImportEntity {
   PRODUCT = 'product',
   QUOTATION = 'quotation',
   SUPPLIER = 'supplier',
+  FINANCIAL = 'financial',
+  ORDER = 'order',
 }
 
 export class UploadImportDto {
