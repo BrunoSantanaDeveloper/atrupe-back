@@ -37,11 +37,13 @@ export class FlowService {
     const filtersReceivables: any = {
       receivable: {
         companyId: filter.companyId,
+        status: { not: 'CANCELED' },
       },
     };
     const filtersPayables: any = {
       payable: {
         companyId: filter.companyId,
+        status: { not: 'CANCELED' },
       },
     };
 
@@ -781,13 +783,14 @@ export class FlowService {
         where: {
           receivable: {
             companyId: companyId,
+            status: { not: 'CANCELED' },
           },
           dueDate: {
             gte: sevenDaysAgo,
             lt: todayEnd,
           },
           status: {
-            not: 'PAID',
+            notIn: ['PAID', 'CANCELED'],
           },
         },
         select: {
@@ -803,13 +806,14 @@ export class FlowService {
       where: {
         payable: {
           companyId: companyId,
+          status: { not: 'CANCELED' },
         },
         dueDate: {
           gte: sevenDaysAgo,
           lt: todayEnd,
         },
         status: {
-          not: 'PAID',
+          notIn: ['PAID', 'CANCELED'],
         },
       },
       select: {
