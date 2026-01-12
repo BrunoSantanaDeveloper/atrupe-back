@@ -157,6 +157,12 @@ export class CreateInvoicyConfigDto {
   @Transform(emptyToUndefined)
   emitCmun?: string;
 
+  @ApiPropertyOptional({ description: 'Nome do município' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  emitXMun?: string;
+
   @ApiPropertyOptional({ description: 'UF do emitente' })
   @IsString()
   @IsOptional()
@@ -390,6 +396,12 @@ export class UpdateInvoicyConfigDto {
   @IsOptional()
   @Transform(emptyToUndefined)
   emitCmun?: string;
+
+  @ApiPropertyOptional({ description: 'Nome do município' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  emitXMun?: string;
 
   @ApiPropertyOptional({ description: 'UF do emitente' })
   @IsString()

@@ -2033,6 +2033,7 @@ model InvoicyConfig {
   emitBairro       String?
   emitCep          String?
   emitCmun         String?
+  emitXMun         String? // Nome do município (obrigatório para NF-e)
   emitUf           String?
   emitPais         String? @default("1058")
 
@@ -2071,38 +2072,38 @@ enum NfeStatus {
 }
 
 model Nfe {
-  id                 String     @id @default(uuid())
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
-  companyId          String
-  orderId            String?
-  quotationId        String?
-  numero             Int
-  serie              Int
-  chaveAcesso        String?    @unique
-  protocolo          String?
-  status             NfeStatus  @default(PENDING)
-  ambiente           Int // 1 = Produção, 2 = Homologação
-  dataEmissao        DateTime?
-  dataAutorizacao    DateTime?
-  valorTotal         Float
-  xmlEnvio           String?    @db.Text
-  xmlRetorno         String?    @db.Text
-  xmlAutorizado      String?    @db.Text
-  danfeUrl           String?
-  motivoRejeicao     String?
-  motivoCancelamento String?
-  dataCancelamento   DateTime?
+  id                    String     @id @default(uuid())
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  companyId             String
+  orderId               String?
+  quotationId           String?
+  numero                Int
+  serie                 Int
+  chaveAcesso           String?    @unique
+  protocolo             String?
+  status                NfeStatus  @default(PENDING)
+  ambiente              Int // 1 = Produção, 2 = Homologação
+  dataEmissao           DateTime?
+  dataAutorizacao       DateTime?
+  valorTotal            Float
+  xmlEnvio              String?    @db.Text
+  xmlRetorno            String?    @db.Text
+  xmlAutorizado         String?    @db.Text
+  danfeUrl              String?
+  motivoRejeicao        String?
+  motivoCancelamento    String?
+  dataCancelamento      DateTime?
   protocoloCancelamento String?
-  cartaCorrecao      String?    @db.Text
-  dataCorrecao       DateTime?
-  protocoloCorrecao  String?
-  sequenciaCorrecao  Int?
-  invoicyId          String? // ID retornado pelo Invoicy
-  invoicyProtocol    String?
-  company            Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order              Order?     @relation(fields: [orderId], references: [id])
-  quotation          Quotation? @relation(fields: [quotationId], references: [id])
+  cartaCorrecao         String?    @db.Text
+  dataCorrecao          DateTime?
+  protocoloCorrecao     String?
+  sequenciaCorrecao     Int?
+  invoicyId             String? // ID retornado pelo Invoicy
+  invoicyProtocol       String?
+  company               Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order                 Order?     @relation(fields: [orderId], references: [id])
+  quotation             Quotation? @relation(fields: [quotationId], references: [id])
 
   @@index([companyId])
   @@index([orderId])
@@ -2155,49 +2156,49 @@ enum NfseStatus {
 
 // NFS-e Model - Nota Fiscal de Serviço Eletrônica
 model Nfse {
-  id                 String     @id @default(uuid())
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
-  companyId          String
-  orderId            String?
-  quotationId        String?
-  numero             Int
-  serie              String // NFS-e usa série alfanumérica
-  rpsNumero          Int // Número do RPS
-  rpsSerie           String
-  rpsTipo            Int        @default(1)
-  codigoVerificacao  String?
-  protocolo          String?
+  id                    String     @id @default(uuid())
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  companyId             String
+  orderId               String?
+  quotationId           String?
+  numero                Int
+  serie                 String // NFS-e usa série alfanumérica
+  rpsNumero             Int // Número do RPS
+  rpsSerie              String
+  rpsTipo               Int        @default(1)
+  codigoVerificacao     String?
+  protocolo             String?
   protocoloCancelamento String?
-  status             NfseStatus @default(PENDING)
-  ambiente           Int // 1 = Produção, 2 = Homologação
-  dataEmissao        DateTime?
-  dataCompetencia    DateTime?
-  valorServicos      Float
-  valorDeducoes      Float?     @default(0)
-  valorPis           Float?     @default(0)
-  valorCofins        Float?     @default(0)
-  valorInss          Float?     @default(0)
-  valorIr            Float?     @default(0)
-  valorCsll          Float?     @default(0)
-  valorIss           Float?
-  aliquotaIss        Float?
-  baseCalculo        Float?
-  issRetido          Boolean    @default(false)
-  codigoServico      String? // Código do serviço municipal
-  discriminacao      String?    @db.Text // Descrição do serviço
-  codigoMunicipio    String? // Código IBGE do município
-  xmlEnvio           String?    @db.Text
-  xmlRetorno         String?    @db.Text
-  pdfUrl             String?
-  motivoRejeicao     String?
-  motivoCancelamento String?
-  dataCancelamento   DateTime?
-  invoicyId          String?
-  invoicyProtocol    String?
-  company            Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order              Order?     @relation(fields: [orderId], references: [id])
-  quotation          Quotation? @relation(fields: [quotationId], references: [id])
+  status                NfseStatus @default(PENDING)
+  ambiente              Int // 1 = Produção, 2 = Homologação
+  dataEmissao           DateTime?
+  dataCompetencia       DateTime?
+  valorServicos         Float
+  valorDeducoes         Float?     @default(0)
+  valorPis              Float?     @default(0)
+  valorCofins           Float?     @default(0)
+  valorInss             Float?     @default(0)
+  valorIr               Float?     @default(0)
+  valorCsll             Float?     @default(0)
+  valorIss              Float?
+  aliquotaIss           Float?
+  baseCalculo           Float?
+  issRetido             Boolean    @default(false)
+  codigoServico         String? // Código do serviço municipal
+  discriminacao         String?    @db.Text // Descrição do serviço
+  codigoMunicipio       String? // Código IBGE do município
+  xmlEnvio              String?    @db.Text
+  xmlRetorno            String?    @db.Text
+  pdfUrl                String?
+  motivoRejeicao        String?
+  motivoCancelamento    String?
+  dataCancelamento      DateTime?
+  invoicyId             String?
+  invoicyProtocol       String?
+  company               Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order                 Order?     @relation(fields: [orderId], references: [id])
+  quotation             Quotation? @relation(fields: [quotationId], references: [id])
 
   @@index([companyId])
   @@index([orderId])
@@ -2218,42 +2219,42 @@ enum NfceStatus {
 
 // NFC-e Model - Nota Fiscal de Consumidor Eletrônica
 model Nfce {
-  id                 String     @id @default(uuid())
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
-  companyId          String
-  orderId            String?
-  quotationId        String?
-  numero             Int
-  serie              Int
-  chaveAcesso        String?    @unique
-  protocolo          String?
-  status             NfceStatus @default(PENDING)
-  ambiente           Int // 1 = Produção, 2 = Homologação
-  dataEmissao        DateTime?
-  dataAutorizacao    DateTime?
-  valorTotal         Float
-  valorDesconto      Float?     @default(0)
-  valorTroco         Float?     @default(0)
-  formaPagamento     String? // Código da forma de pagamento
-  xmlEnvio           String?    @db.Text
-  xmlRetorno         String?    @db.Text
-  xmlAutorizado      String?    @db.Text
-  qrCodeUrl          String? // URL do QR Code
-  urlConsulta        String? // URL para consulta pública
-  danfeUrl           String?
-  motivoRejeicao     String?
-  motivoCancelamento String?
-  dataCancelamento   DateTime?
+  id                    String     @id @default(uuid())
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  companyId             String
+  orderId               String?
+  quotationId           String?
+  numero                Int
+  serie                 Int
+  chaveAcesso           String?    @unique
+  protocolo             String?
+  status                NfceStatus @default(PENDING)
+  ambiente              Int // 1 = Produção, 2 = Homologação
+  dataEmissao           DateTime?
+  dataAutorizacao       DateTime?
+  valorTotal            Float
+  valorDesconto         Float?     @default(0)
+  valorTroco            Float?     @default(0)
+  formaPagamento        String? // Código da forma de pagamento
+  xmlEnvio              String?    @db.Text
+  xmlRetorno            String?    @db.Text
+  xmlAutorizado         String?    @db.Text
+  qrCodeUrl             String? // URL do QR Code
+  urlConsulta           String? // URL para consulta pública
+  danfeUrl              String?
+  motivoRejeicao        String?
+  motivoCancelamento    String?
+  dataCancelamento      DateTime?
   protocoloCancelamento String?
-  contingencia       Boolean    @default(false)
-  dataContingencia   DateTime?
-  motivoContingencia String?
-  invoicyId          String?
-  invoicyProtocol    String?
-  company            Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order              Order?     @relation(fields: [orderId], references: [id])
-  quotation          Quotation? @relation(fields: [quotationId], references: [id])
+  contingencia          Boolean    @default(false)
+  dataContingencia      DateTime?
+  motivoContingencia    String?
+  invoicyId             String?
+  invoicyProtocol       String?
+  company               Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order                 Order?     @relation(fields: [orderId], references: [id])
+  quotation             Quotation? @relation(fields: [quotationId], references: [id])
 
   @@index([companyId])
   @@index([orderId])

@@ -29,7 +29,7 @@ export class NfeService {
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
     private readonly invoicyHttpService: InvoicyHttpService,
-  ) { }
+  ) {}
 
   /**
    * Prepara os dados para emissão de NF-e a partir de uma ordem de serviço.
@@ -137,14 +137,14 @@ export class NfeService {
       hasExistingNfe: !!existingNfe,
       existingNfe: existingNfe
         ? {
-          id: existingNfe.id,
-          numero: existingNfe.numero,
-          serie: existingNfe.serie,
-          status: existingNfe.status,
-          chaveAcesso: existingNfe.chaveAcesso,
-          danfeUrl: existingNfe.danfeUrl,
-          dataEmissao: existingNfe.dataEmissao,
-        }
+            id: existingNfe.id,
+            numero: existingNfe.numero,
+            serie: existingNfe.serie,
+            status: existingNfe.status,
+            chaveAcesso: existingNfe.chaveAcesso,
+            danfeUrl: existingNfe.danfeUrl,
+            dataEmissao: existingNfe.dataEmissao,
+          }
         : null,
 
       // Configuração de emissão
@@ -501,7 +501,10 @@ export class NfeService {
           Versao: 4,
           ide: {
             cUF: this.getUfCode(config.emitUf),
-            natOp: dto.operationNature || config.defaultOperationNature || 'Venda de mercadoria',
+            natOp:
+              dto.operationNature ||
+              config.defaultOperationNature ||
+              'Venda de mercadoria',
             mod: '55',
             serie: config.serieNfe?.toString() || '1',
             nNF: numero,
@@ -531,14 +534,19 @@ export class NfeService {
               nro: config.emitNumero || 'S/N',
               xBairro: config.emitBairro || '',
               cMun: parseInt(config.emitCmun || '0', 10),
-              xMun: '', // Será preenchido automaticamente pelo Invoicy
+              xMun: config.emitXMun || '',
               UF: config.emitUf || '',
               CEP: parseInt((config.emitCep || '').replace(/\D/g, ''), 10) || 0,
             },
           },
           dest: {
-            ...(dto.destCnpjCpf?.length === 14 ? { CNPJ_dest: dto.destCnpjCpf.replace(/\D/g, '') } : {}),
-            ...(dto.destCnpjCpf?.length === 11 ? { CPF_dest: dto.destCnpjCpf.replace(/\D/g, '') } : {}),
+            // CNPJ ou CPF devem vir ANTES de xNome no schema da SEFAZ
+            ...(dto.destCnpjCpf?.replace(/\D/g, '').length === 14
+              ? { CNPJ_dest: dto.destCnpjCpf.replace(/\D/g, '') }
+              : {}),
+            ...(dto.destCnpjCpf?.replace(/\D/g, '').length === 11
+              ? { CPF_dest: dto.destCnpjCpf.replace(/\D/g, '') }
+              : {}),
             xNome_dest: dto.destNome || '',
             indIEDest: 9, // 9 = Não contribuinte
             enderDest: {
@@ -548,7 +556,8 @@ export class NfeService {
               cMun_dest: 0, // Será preenchido pelo Invoicy baseado no CEP/cidade
               xMun_dest: dto.destMunicipio || '',
               UF_dest: dto.destUf || '',
-              CEP_dest: parseInt((dto.destCep || '').replace(/\D/g, ''), 10) || 0,
+              CEP_dest:
+                parseInt((dto.destCep || '').replace(/\D/g, ''), 10) || 0,
               cPais_dest: parseInt(dto.destPais || '1058', 10),
             },
           },
@@ -594,7 +603,9 @@ export class NfeService {
               vProd_ttlnfe: valorTotal.toFixed(2),
               vFrete_ttlnfe: '0.00',
               vSeg_ttlnfe: '0.00',
-              vDesc_ttlnfe: dto.items.reduce((acc, i) => acc + (i.discount || 0), 0).toFixed(2),
+              vDesc_ttlnfe: dto.items
+                .reduce((acc, i) => acc + (i.discount || 0), 0)
+                .toFixed(2),
               vII_ttlnfe: '0.00',
               vIPI_ttlnfe: '0.00',
               vPIS_ttlnfe: '0.00',
@@ -628,7 +639,9 @@ export class NfeService {
       }
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+        throw new Error(
+          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+        );
       }
 
       const doc = response.Documentos?.[0];
@@ -638,7 +651,8 @@ export class NfeService {
 
       // Verificar situação do documento
       const situacao = doc.Situacao;
-      const isAuthorized = situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150;
+      const isAuthorized =
+        situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150;
 
       // Atualizar NF-e com resposta
       const updatedNfe = await this.prisma.nfe.update({
@@ -686,11 +700,33 @@ export class NfeService {
    */
   private getUfCode(uf: string): number {
     const ufCodes: Record<string, number> = {
-      RO: 11, AC: 12, AM: 13, RR: 14, PA: 15, AP: 16, TO: 17,
-      MA: 21, PI: 22, CE: 23, RN: 24, PB: 25, PE: 26, AL: 27, SE: 28, BA: 29,
-      MG: 31, ES: 32, RJ: 33, SP: 35,
-      PR: 41, SC: 42, RS: 43,
-      MS: 50, MT: 51, GO: 52, DF: 53,
+      RO: 11,
+      AC: 12,
+      AM: 13,
+      RR: 14,
+      PA: 15,
+      AP: 16,
+      TO: 17,
+      MA: 21,
+      PI: 22,
+      CE: 23,
+      RN: 24,
+      PB: 25,
+      PE: 26,
+      AL: 27,
+      SE: 28,
+      BA: 29,
+      MG: 31,
+      ES: 32,
+      RJ: 33,
+      SP: 35,
+      PR: 41,
+      SC: 42,
+      RS: 43,
+      MS: 50,
+      MT: 51,
+      GO: 52,
+      DF: 53,
     };
     return ufCodes[uf?.toUpperCase()] || 43; // Default RS
   }
@@ -738,15 +774,20 @@ export class NfeService {
       }
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+        throw new Error(
+          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+        );
       }
 
       const doc = response.Documentos?.[0];
       const situacao = doc?.Situacao;
-      const isCancelled = situacao?.SitCodigo === 135 || situacao?.SitCodigo === 101;
+      const isCancelled =
+        situacao?.SitCodigo === 135 || situacao?.SitCodigo === 101;
 
       if (!isCancelled) {
-        throw new Error(situacao?.SitDescricao || 'Cancelamento não autorizado pela SEFAZ');
+        throw new Error(
+          situacao?.SitDescricao || 'Cancelamento não autorizado pela SEFAZ',
+        );
       }
 
       const updatedNfe = await this.prisma.nfe.update({
@@ -792,12 +833,13 @@ export class NfeService {
       const sequenciaEvento = dto.sequenciaEvento || 1;
 
       // Chamar API do Invoicy para carta de correção
-      const invoicyResponses = await this.invoicyHttpService.sendCorrectionLetter(
-        companyId,
-        nfe.chaveAcesso,
-        dto.correcao,
-        sequenciaEvento,
-      );
+      const invoicyResponses =
+        await this.invoicyHttpService.sendCorrectionLetter(
+          companyId,
+          nfe.chaveAcesso,
+          dto.correcao,
+          sequenciaEvento,
+        );
 
       // Processar resposta
       const response = invoicyResponses[0];
@@ -806,7 +848,9 @@ export class NfeService {
       }
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+        throw new Error(
+          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+        );
       }
 
       const doc = response.Documentos?.[0];
@@ -814,7 +858,10 @@ export class NfeService {
       const isApproved = situacao?.SitCodigo === 135;
 
       if (!isApproved) {
-        throw new Error(situacao?.SitDescricao || 'Carta de correção não autorizada pela SEFAZ');
+        throw new Error(
+          situacao?.SitDescricao ||
+            'Carta de correção não autorizada pela SEFAZ',
+        );
       }
 
       const updatedNfe = await this.prisma.nfe.update({

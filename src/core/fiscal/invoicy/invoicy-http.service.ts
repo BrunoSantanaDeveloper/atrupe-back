@@ -198,15 +198,16 @@ export class InvoicyHttpService {
 
     try {
       const fullUrl = `${baseUrl}${endpoint}`;
-      this.logger.log(`Making ${method} request to: ${fullUrl}`);
+      const requestHeaders = {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      };
 
       const response = await this.httpClient.request<T>({
         method,
         url: fullUrl,
         data,
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: requestHeaders,
       });
 
       return response.data;

@@ -6,6 +6,7 @@ import {
   UpdateInvoicyConfigDto,
 } from './dtos/invoicy-config.dto';
 import { InvoicyHttpService } from './invoicy-http.service';
+import { fetchCepData } from '../utils/cep.util';
 
 @Injectable()
 export class InvoicyService {
@@ -54,6 +55,7 @@ export class InvoicyService {
     if (dto.emitBairro !== undefined) data.emitBairro = dto.emitBairro;
     if (dto.emitCep !== undefined) data.emitCep = dto.emitCep;
     if (dto.emitCmun !== undefined) data.emitCmun = dto.emitCmun;
+    if (dto.emitXMun !== undefined) data.emitXMun = dto.emitXMun;
     if (dto.emitUf !== undefined) data.emitUf = dto.emitUf;
     if (dto.emitPais !== undefined) data.emitPais = dto.emitPais;
     if (dto.codigoServico !== undefined) data.codigoServico = dto.codigoServico;
@@ -157,6 +159,28 @@ export class InvoicyService {
 
   async upsertConfig(companyId: string, dto: CreateInvoicyConfigDto) {
     const data = this.mapDtoToDb(dto);
+
+    // Auto-fill address fields from CEP if IBGE code is not provided
+    if (dto.emitCep && (!dto.emitCmun || !dto.emitXMun)) {
+      this.logger.log(`Fetching address data from CEP: ${dto.emitCep}`);
+      const cepData = await fetchCepData(dto.emitCep);
+
+      if (cepData) {
+        this.logger.log(
+          `Found address: ${cepData.cidade}/${cepData.uf} - IBGE: ${cepData.codigoIbge}`,
+        );
+
+        // Only fill fields that weren't explicitly provided
+        if (!dto.emitCmun) data.emitCmun = cepData.codigoIbge;
+        if (!dto.emitXMun) data.emitXMun = cepData.cidade;
+        if (!dto.emitUf) data.emitUf = cepData.uf;
+        if (!dto.emitBairro && cepData.bairro) data.emitBairro = cepData.bairro;
+        if (!dto.emitEndereco && cepData.logradouro)
+          data.emitEndereco = cepData.logradouro;
+      } else {
+        this.logger.warn(`CEP not found: ${dto.emitCep}`);
+      }
+    }
 
     const result = await this.prisma.invoicyConfig.upsert({
       where: { companyId },
