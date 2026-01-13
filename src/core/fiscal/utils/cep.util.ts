@@ -29,33 +29,46 @@ export interface CepData {
  * @returns Address data including IBGE code, or null if not found
  */
 export async function fetchCepData(cep: string): Promise<CepData | null> {
-  try {
-    // Remove non-numeric characters
-    const cleanCep = cep.replace(/\D/g, '');
+  // Remove non-numeric characters
+  const cleanCep = cep.replace(/\D/g, '');
 
-    if (cleanCep.length !== 8) {
-      return null;
-    }
-
-    const response = await axios.get<ViaCepResponse>(
-      `https://viacep.com.br/ws/${cleanCep}/json/`,
-      { timeout: 5000 },
-    );
-
-    if (response.data.erro) {
-      return null;
-    }
-
-    return {
-      cep: response.data.cep,
-      logradouro: response.data.logradouro,
-      bairro: response.data.bairro,
-      cidade: response.data.localidade,
-      uf: response.data.uf,
-      codigoIbge: response.data.ibge,
-    };
-  } catch (error) {
-    console.error('Error fetching CEP data:', error.message);
+  if (cleanCep.length !== 8) {
     return null;
   }
+
+  // Retry up to 3 times with increasing timeout
+  const maxRetries = 3;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const timeoutMs = 10000 + (attempt - 1) * 5000; // 10s, 15s, 20s
+      const response = await axios.get<ViaCepResponse>(
+        `https://viacep.com.br/ws/${cleanCep}/json/`,
+        { timeout: timeoutMs },
+      );
+
+      if (response.data.erro) {
+        return null;
+      }
+
+      return {
+        cep: response.data.cep,
+        logradouro: response.data.logradouro,
+        bairro: response.data.bairro,
+        cidade: response.data.localidade,
+        uf: response.data.uf,
+        codigoIbge: response.data.ibge,
+      };
+    } catch (error) {
+      if (attempt === maxRetries) {
+        console.error(
+          `Error fetching CEP data after ${maxRetries} attempts:`,
+          error.message,
+        );
+        return null;
+      }
+      console.warn(`CEP lookup attempt ${attempt} failed, retrying...`);
+    }
+  }
+
+  return null;
 }

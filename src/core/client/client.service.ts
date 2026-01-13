@@ -381,7 +381,11 @@ export class ClientService {
       where: { id },
       include: {
         contacts: true,
-        address: true,
+        address: {
+          where: {
+            ownerType: 'CLIENT', // Filtra apenas endereços do tipo CLIENT
+          },
+        },
         category: {
           select: {
             id: true,

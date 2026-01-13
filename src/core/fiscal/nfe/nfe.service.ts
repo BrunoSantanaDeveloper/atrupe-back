@@ -10,9 +10,9 @@ import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
 import {
   InvoicyNfeRequest,
-  InvoicyResponse,
   INVOICY_SUCCESS_CODES,
 } from '../invoicy/invoicy.types';
+import { fetchCepData } from '../utils/cep.util';
 import {
   EmitNfeDto,
   EmitNfeFromOrderDto,
@@ -466,6 +466,47 @@ export class NfeService {
       throw new BadRequestException('NF-e deve conter ao menos um item');
     }
 
+    // Validar destinatário
+    const cleanCnpjCpf = dto.destCnpjCpf?.replace(/\D/g, '') || '';
+    if (
+      !cleanCnpjCpf ||
+      (cleanCnpjCpf.length !== 11 && cleanCnpjCpf.length !== 14)
+    ) {
+      throw new BadRequestException(
+        'CPF/CNPJ do destinatário é obrigatório e deve ser válido (11 dígitos para CPF ou 14 para CNPJ)',
+      );
+    }
+
+    // Buscar código IBGE do município do destinatário via CEP
+    let destCmun = 0;
+    let destUfFromCep = dto.destUf || '';
+    let destMunFromCep = dto.destMunicipio || '';
+    if (dto.destCep) {
+      this.logger.log(
+        `Buscando código IBGE para CEP do destinatário: ${dto.destCep}`,
+      );
+      const cepData = await fetchCepData(dto.destCep);
+      if (cepData) {
+        destCmun = parseInt(cepData.codigoIbge, 10) || 0;
+        destUfFromCep = cepData.uf; // Usar UF do CEP para garantir consistência
+        destMunFromCep = cepData.cidade; // Usar cidade do CEP
+        this.logger.log(
+          `Código IBGE do destinatário: ${destCmun} (${destMunFromCep}/${destUfFromCep})`,
+        );
+      } else {
+        this.logger.warn(`CEP do destinatário não encontrado: ${dto.destCep}`);
+      }
+    } else {
+      this.logger.warn('Destinatário sem CEP cadastrado');
+    }
+
+    // Validar que temos o código IBGE do destinatário
+    if (!destCmun) {
+      throw new BadRequestException(
+        'CEP do destinatário é obrigatório para emissão de NF-e. Cadastre um CEP válido para o cliente.',
+      );
+    }
+
     // Obter próximo número da NF-e
     const numero = await this.invoicyService.incrementNfeNumber(companyId);
 
@@ -511,7 +552,7 @@ export class NfeService {
             dhEmi: now.toISOString(),
             fusoHorario: '-03:00',
             tpNf: 1, // 1 = Saída
-            idDest: dto.destUf === config.emitUf ? 1 : 2, // 1 = Interna, 2 = Interestadual
+            idDest: destUfFromCep === config.emitUf ? 1 : 2, // 1 = Interna, 2 = Interestadual
             cMunFg: parseInt(config.emitCmun || '0', 10),
             tpImp: 1, // DANFE retrato
             tpEmis: 1, // Emissão normal
@@ -547,15 +588,19 @@ export class NfeService {
             ...(dto.destCnpjCpf?.replace(/\D/g, '').length === 11
               ? { CPF_dest: dto.destCnpjCpf.replace(/\D/g, '') }
               : {}),
-            xNome_dest: dto.destNome || '',
+            // Em homologação, SEFAZ exige este nome exato para o destinatário
+            xNome_dest:
+              config.ambiente === 'HOMOLOGACAO' || config.ambiente !== 1
+                ? 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
+                : dto.destNome || '',
             indIEDest: 9, // 9 = Não contribuinte
             enderDest: {
               xLgr_dest: dto.destEndereco || '',
               nro_dest: dto.destNumero || 'S/N',
               xBairro_dest: dto.destBairro || '',
-              cMun_dest: 0, // Será preenchido pelo Invoicy baseado no CEP/cidade
-              xMun_dest: dto.destMunicipio || '',
-              UF_dest: dto.destUf || '',
+              cMun_dest: destCmun, // Código IBGE do município do destinatário
+              xMun_dest: destMunFromCep, // Nome do município (do CEP)
+              UF_dest: destUfFromCep, // UF do destinatário (do CEP para garantir consistência)
               CEP_dest:
                 parseInt((dto.destCep || '').replace(/\D/g, ''), 10) || 0,
               cPais_dest: parseInt(dto.destPais || '1058', 10),
@@ -568,7 +613,19 @@ export class NfeService {
               cEANTrib: item.ceantrib || 'SEM GTIN',
               xProd: item.description || `Produto ${index + 1}`,
               NCM: (item.ncm || '00000000').replace(/\D/g, ''),
-              CFOP: item.cfop || parseInt(config.defaultCfop || '5102', 10),
+              // CFOP: 5xxx para operação interna (mesmo estado), 6xxx para interestadual
+              CFOP: (() => {
+                const baseCfop =
+                  item.cfop || parseInt(config.defaultCfop || '5102', 10);
+                // Se é operação interestadual e CFOP começa com 5, converter para 6
+                if (
+                  destUfFromCep !== config.emitUf &&
+                  Math.floor(baseCfop / 1000) === 5
+                ) {
+                  return baseCfop + 1000; // 5102 -> 6102
+                }
+                return baseCfop;
+              })(),
               uCOM: item.uCom || 'UN',
               qCOM: item.quantity.toFixed(4),
               vUnCom: item.unitValue.toFixed(10),
