@@ -396,7 +396,7 @@ export class InvoicyHttpService {
     return this.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
-      '/nfse',
+      '/senddocuments/nfse?type=Emissao',
       documents,
     );
   }
