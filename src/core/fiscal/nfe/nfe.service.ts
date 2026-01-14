@@ -262,6 +262,20 @@ export class NfeService {
       throw new NotFoundException('Ordem de serviço não encontrada');
     }
 
+    // Verificar se já existe NF-e autorizada para esta ordem
+    const existingNfe = await this.prisma.nfe.findFirst({
+      where: {
+        orderId: dto.orderId,
+        status: NfeStatus.AUTHORIZED,
+      },
+    });
+
+    if (existingNfe) {
+      throw new BadRequestException(
+        `Já existe uma NF-e autorizada para esta ordem de serviço (Nº ${existingNfe.numero}/${existingNfe.serie})`,
+      );
+    }
+
     const client = quotation.client;
     if (!client) {
       throw new BadRequestException('Cliente não encontrado no orçamento');

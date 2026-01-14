@@ -113,6 +113,18 @@ export class OrderService {
               tag: true,
             },
           },
+          nfes: {
+            where: { status: 'AUTHORIZED' },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              id: true,
+              numero: true,
+              serie: true,
+              status: true,
+              danfeUrl: true,
+            },
+          },
         },
         take: Number(dto.limit),
         skip: (Number(dto.page) - 1) * Number(dto.limit),
@@ -166,6 +178,7 @@ export class OrderService {
                 }
               : null,
           },
+          nfes: order.nfes || [],
         });
 
         return acc;
@@ -403,6 +416,20 @@ export class OrderService {
                   },
                 },
               },
+            },
+          },
+          nfes: {
+            where: { status: 'AUTHORIZED' },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              id: true,
+              numero: true,
+              serie: true,
+              status: true,
+              chaveAcesso: true,
+              danfeUrl: true,
+              dataEmissao: true,
             },
           },
         },
@@ -658,6 +685,7 @@ export class OrderService {
         deliveredAt: order.deliveredAt,
         status: order.status,
         quotation: formattedQuotation,
+        nfes: order.nfes || [],
       };
     } catch (error) {
       console.error(error);
