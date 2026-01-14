@@ -35,6 +35,16 @@ export class RoleService {
       };
     }
 
+    if (filter.search) {
+      where = {
+        ...where,
+        name: {
+          contains: filter.search,
+          mode: 'insensitive',
+        },
+      };
+    }
+
     // Primeiro, vamos buscar o total de registros para calcular a paginação
     const total = await this.prisma.role.count({ where });
     const lastPage = Math.ceil(total / +filter.limit);
