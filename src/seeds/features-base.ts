@@ -221,4 +221,14 @@ export const BASE_FEATURES = [
     price: 0,
     isActive: true,
   },
+  // Módulos adicionais pagos (aparecem na página de assinatura)
+  {
+    key: 'nota_fiscal',
+    name: 'Nota Fiscal',
+    description:
+      'NF-e (Nota Fiscal Eletrônica)\nNFS-e (Nota Fiscal de Serviço Eletrônica)\nNFC-e (Nota Fiscal de Consumidor Eletrônica)',
+    category: 'fiscal',
+    price: 7000, // R$ 70,00 em centavos
+    isActive: true,
+  },
 ];

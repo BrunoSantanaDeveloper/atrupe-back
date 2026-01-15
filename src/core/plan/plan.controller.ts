@@ -52,6 +52,16 @@ export class PlanController {
     return this.planService.getPublicPlans();
   }
 
+  @Get('public/modules')
+  @ApiOperation({ summary: 'Lista módulos disponíveis para contratação' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de módulos retornada com sucesso',
+  })
+  getPublicModules() {
+    return this.planService.getPublicModules();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Busca um plano pelo ID' })
   @ApiResponse({

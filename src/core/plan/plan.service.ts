@@ -97,6 +97,36 @@ export class PlanService {
     }
   }
 
+  /**
+   * Get paid modules (features with price > 0) for the subscription page
+   * These are additional modules that can be purchased on top of a plan
+   */
+  async getPublicModules() {
+    try {
+      const features = await this.prisma.feature.findMany({
+        where: {
+          isActive: true,
+          price: { gt: 0 },
+        },
+        select: {
+          id: true,
+          key: true,
+          name: true,
+          description: true,
+          price: true,
+          category: true,
+        },
+        orderBy: {
+          name: 'asc',
+        },
+      });
+
+      return features;
+    } catch (error) {
+      throw new BadRequestException('Error fetching modules: ' + error.message);
+    }
+  }
+
   async findPlanById(id: string) {
     try {
       const plan = await this.prisma.plan.findUnique({
