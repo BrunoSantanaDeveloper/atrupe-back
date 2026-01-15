@@ -29,6 +29,7 @@ import {
 } from '@nestjs/swagger';
 import { QuotationProduct } from '@prisma/client';
 import { CancelOrderDto } from '../order/dto/create-order.dto';
+import { AbacService } from '../../auth/abac/abac.service';
 
 const RESOURCE = 'quotation';
 
@@ -37,7 +38,10 @@ const RESOURCE = 'quotation';
 @ApiBearerAuth()
 @Controller(`sale/${RESOURCE}`)
 export class QuotationController {
-  constructor(private readonly quotationService: QuotationService) {}
+  constructor(
+    private readonly quotationService: QuotationService,
+    private readonly abacService: AbacService,
+  ) {}
   @Get('test')
   async test() {
     return await this.quotationService.test();
@@ -155,6 +159,19 @@ export class QuotationController {
   })
   async findAll(@Req() req, @Query() query: FilterQuotationDto) {
     query.companyId = req.user.companyId;
+
+    // Verificar se o usuário tem permissão para ver orçamentos de outros vendedores
+    // Se não tiver, filtra apenas os orçamentos do próprio vendedor
+    const canSeeOtherQuotations = await this.abacService.hasPermission(
+      { userId: req.user.userId, username: req.user.username },
+      'view',
+      'sale:other_quotation',
+    );
+
+    if (!canSeeOtherQuotations && !req.user.isAdmin && req.user.employeeId) {
+      query.sellerId = req.user.employeeId;
+    }
+
     return await this.quotationService.findAll(query);
   }
 
