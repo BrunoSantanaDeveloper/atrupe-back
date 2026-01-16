@@ -113,17 +113,16 @@ export class AuthService {
         ? await this.planControlService.getCompanyPlanInfo(companyId)
         : null;
 
-      // Verificar se o trial expirou e sincronizar pagamentos pendentes
-      // Só verifica se ainda está no plano TRIAL (não tem assinatura paga ativa)
+      // Verificar pagamentos pendentes no Asaas e sincronizar subscriptions
+      // Verifica se a empresa está no plano TRIAL (pode ter subscription paga aguardando ativação)
       const isTrialPlan = planInfo?.planType === 'TRIAL';
-      const trialExpired = planInfo?.trialEndsAt
-        ? new Date(planInfo.trialEndsAt) < new Date()
-        : false;
 
-      if (companyId && isTrialPlan && trialExpired) {
+      // Sempre verificar para empresas com TRIAL ativo, pois pode ter comprado um plano
+      // pago que ainda não foi ativado (pagamento confirmado mas subscription INACTIVE)
+      if (companyId && isTrialPlan) {
         try {
           this.logger.log(
-            `Trial expirado para empresa ${companyId}, verificando pagamentos pendentes...`,
+            `Empresa ${companyId} em plano TRIAL, verificando se há subscription paga pendente...`,
           );
           const syncResult =
             await this.subscriptionsService.checkAndSyncSubscriptionStatus(
@@ -133,7 +132,7 @@ export class AuthService {
           // Se a assinatura foi ativada, buscar novamente as informações do plano
           if (syncResult.status === 'activated') {
             this.logger.log(
-              `Assinatura ativada durante login para empresa ${companyId}`,
+              `Assinatura paga ativada durante login para empresa ${companyId}`,
             );
             planInfo =
               await this.planControlService.getCompanyPlanInfo(companyId);

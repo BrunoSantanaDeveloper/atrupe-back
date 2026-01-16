@@ -1948,6 +1948,14 @@ export class SubscriptionsService {
       return { status: 'already_active', subscription };
     }
 
+    // TODO: Cenário de risco identificado - Se um admin desativar manualmente uma conta
+    // (por fraude, abuso, etc.) e o cliente tiver pagamento confirmado no Asaas,
+    // essa função irá reativar a conta no próximo login.
+    // Possíveis soluções:
+    // 1. Criar campo `blockedFromAutoActivation` na subscription
+    // 2. Verificar histórico se última ação foi desativação manual
+    // 3. Só ativar subscriptions criadas recentemente (últimos 30 dias)
+
     try {
       // Buscar os pagamentos da subscription no Asaas
       const asaasPayments = await this.getAsaasSubscriptionPayments(
@@ -1961,11 +1969,23 @@ export class SubscriptionsService {
         return { status: 'no_payments', subscription };
       }
 
-      // Pegar o primeiro pagamento (mais recente)
-      const latestPayment = asaasPayments[0];
+      // Encontrar o pagamento mais relevante:
+      // PRIORIDADE: pagamento confirmado/recebido > outros
+      const confirmedPayment = asaasPayments.find(
+        (p) =>
+          p.status === 'CONFIRMED' ||
+          p.status === 'RECEIVED' ||
+          p.status === 'RECEIVED_IN_CASH',
+      );
+
+      // Priorizar pagamento confirmado, senão pegar o primeiro
+      const latestPayment = confirmedPayment || asaasPayments[0];
 
       this.logger.log(
-        `Status do pagamento no Asaas: ${latestPayment.status} (${latestPayment.id})`,
+        `Pagamentos encontrados: ${asaasPayments.length}, Confirmado: ${confirmedPayment ? 'SIM' : 'NÃO'}`,
+      );
+      this.logger.log(
+        `Status do pagamento selecionado: ${latestPayment.status} (${latestPayment.id})`,
       );
 
       // Verificar se o pagamento foi confirmado ou recebido no Asaas
@@ -1973,6 +1993,26 @@ export class SubscriptionsService {
         latestPayment.status === 'CONFIRMED' ||
         latestPayment.status === 'RECEIVED' ||
         latestPayment.status === 'RECEIVED_IN_CASH';
+
+      // Verificar se há inadimplência (pagamento vencido não pago)
+      const today = new Date().toISOString().split('T')[0];
+      const overduePayment = asaasPayments.find((p) => p.status === 'OVERDUE');
+      const pendingOverduePayment = asaasPayments.find(
+        (p) => p.status === 'PENDING' && p.dueDate < today,
+      );
+      const hasOverduePayment = !!(overduePayment || pendingOverduePayment);
+
+      if (hasOverduePayment) {
+        this.logger.warn(
+          `Cliente inadimplente! Não será ativado. Pagamento vencido: ${(overduePayment || pendingOverduePayment)?.id}`,
+        );
+        return {
+          status: 'overdue',
+          subscription,
+          message:
+            'Cliente possui pagamento vencido. Não pode ser ativado automaticamente.',
+        };
+      }
 
       if (isPaymentConfirmed) {
         this.logger.log(
