@@ -257,6 +257,7 @@ export class SubscriptionsService {
 
   async getActiveTotals() {
     // Buscar todas as subscriptions que NÃO são TRIAL agrupadas por status
+    // Buscar todas as subscriptions que NÃO são TRIAL
     const subscriptions = await this.prisma.subscription.findMany({
       where: {
         plan: {
@@ -266,25 +267,53 @@ export class SubscriptionsService {
         },
       },
       select: {
+        companyId: true,
         status: true,
       },
     });
 
-    // Contar por status
-    const totals = subscriptions.reduce(
-      (acc, sub) => {
-        acc[sub.status] = (acc[sub.status] || 0) + 1;
-        acc.TOTAL += 1;
-        return acc;
-      },
-      {
-        ACTIVE: 0,
-        BLOCKED: 0,
-        INACTIVE: 0,
-        CANCELED: 0,
-        TOTAL: 0,
-      },
-    );
+    // Agrupar por empresa
+    const companyStatuses: Record<string, string[]> = {};
+
+    for (const sub of subscriptions) {
+      if (!companyStatuses[sub.companyId]) {
+        companyStatuses[sub.companyId] = [];
+      }
+      companyStatuses[sub.companyId].push(sub.status);
+    }
+
+    // Calcular totais baseados no status prioritário da empresa
+    const totals = {
+      ACTIVE: 0,
+      BLOCKED: 0,
+      INACTIVE: 0,
+      CANCELED: 0,
+      TOTAL: 0,
+    };
+
+    for (const companyId in companyStatuses) {
+      const statuses = companyStatuses[companyId];
+      let finalStatus = 'INACTIVE'; // Default fallback
+
+      // Lógica de prioridade: ACTIVE > BLOCKED > INACTIVE > CANCELED
+      if (statuses.includes('ACTIVE')) {
+        finalStatus = 'ACTIVE';
+      } else if (statuses.includes('BLOCKED')) {
+        finalStatus = 'BLOCKED';
+      } else if (statuses.includes('INACTIVE')) {
+        finalStatus = 'INACTIVE';
+      } else if (statuses.includes('CANCELED')) {
+        finalStatus = 'CANCELED';
+      }
+
+      // Incrementa o contador do status determinado
+      if (totals[finalStatus] !== undefined) {
+        totals[finalStatus]++;
+      }
+
+      // Incrementa o total de empresas únicas
+      totals.TOTAL++;
+    }
 
     return {
       data: totals,
@@ -438,6 +467,24 @@ export class SubscriptionsService {
 
     if (mappedStatus) {
       whereCondition.status = mappedStatus;
+
+      // Se o status pesquisado NÃO for 'ACTIVE', garantir que a empresa NÃO tenha nenhuma assinatura ativa.
+      // Isso evita que a empresa apareça duplicada (ex: uma inativa e uma ativa).
+      // A prioridade é mostrar como 'Ativa'.
+      if (mappedStatus !== 'ACTIVE') {
+        whereCondition.Company = {
+          Subscription: {
+            none: {
+              status: 'ACTIVE',
+              plan: {
+                planType: {
+                  not: 'TRIAL',
+                },
+              },
+            },
+          },
+        };
+      }
     }
 
     // Adicionar filtro de busca se fornecido
