@@ -1710,6 +1710,187 @@ export class SubscriptionsService {
   }
 
   /**
+   * Verifica o status da subscription no Asaas sem fazer alterações
+   * Útil para verificar antes de sincronizar manualmente
+   */
+  async checkAsaasStatus(companyId: string) {
+    this.logger.log(
+      `Verificando status no Asaas para empresa ${companyId} (apenas leitura)`,
+    );
+
+    // Buscar a subscription mais recente da empresa que não seja TRIAL
+    const subscription = await this.prisma.subscription.findFirst({
+      where: {
+        companyId,
+        plan: {
+          planType: {
+            not: 'TRIAL',
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      include: {
+        plan: true,
+        payments: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+          take: 1,
+        },
+      },
+    });
+
+    if (!subscription) {
+      return {
+        found: false,
+        message: 'Nenhuma subscription encontrada para esta empresa',
+      };
+    }
+
+    // Se o ID começa com "manual_", não tem vínculo com Asaas
+    if (subscription.asaasSubscriptionId?.startsWith('manual_')) {
+      return {
+        found: true,
+        hasAsaasLink: false,
+        message:
+          'Esta subscription foi criada manualmente e não tem vínculo com Asaas',
+        localStatus: subscription.status,
+        subscription: {
+          id: subscription.id,
+          plan: subscription.plan?.name,
+        },
+      };
+    }
+
+    try {
+      // Buscar os pagamentos da subscription no Asaas
+      this.logger.log(
+        `Buscando pagamentos no Asaas para subscription ID: ${subscription.asaasSubscriptionId}`,
+      );
+
+      const asaasPayments = await this.getAsaasSubscriptionPayments(
+        subscription.asaasSubscriptionId,
+      );
+
+      if (!asaasPayments || asaasPayments.length === 0) {
+        return {
+          found: true,
+          hasAsaasLink: true,
+          hasPendingSync: false,
+          message: 'Nenhum pagamento encontrado no Asaas',
+          localStatus: subscription.status,
+          asaasSubscriptionId: subscription.asaasSubscriptionId,
+          subscription: {
+            id: subscription.id,
+            plan: subscription.plan?.name,
+          },
+        };
+      }
+
+      // Encontrar o pagamento mais relevante:
+      // PRIORIDADE para detectar inadimplência:
+      // 1. Pagamento OVERDUE (vencido e não pago) - indica inadimplência
+      // 2. Pagamento PENDING com vencimento passado - possível atraso
+      // 3. Pagamento confirmado/recebido - cliente em dia
+      // 4. Primeiro da lista como fallback
+      const today = new Date().toISOString().split('T')[0];
+
+      // Verificar inadimplência primeiro
+      const overduePayment = asaasPayments.find((p) => p.status === 'OVERDUE');
+
+      // Pagamento pendente com vencimento passado (possível atraso)
+      const pendingOverduePayment = asaasPayments.find(
+        (p) => p.status === 'PENDING' && p.dueDate < today,
+      );
+
+      // Pagamento confirmado/recebido
+      const confirmedPayment = asaasPayments.find(
+        (p) =>
+          p.status === 'CONFIRMED' ||
+          p.status === 'RECEIVED' ||
+          p.status === 'RECEIVED_IN_CASH',
+      );
+
+      // Prioridade: OVERDUE > PENDING vencido > CONFIRMED > primeiro
+      const relevantPayment =
+        overduePayment ||
+        pendingOverduePayment ||
+        confirmedPayment ||
+        asaasPayments[0];
+
+      // Determinar se há inadimplência
+      const hasOverduePayment = !!(overduePayment || pendingOverduePayment);
+
+      this.logger.log(
+        `Resposta Asaas - Total de pagamentos: ${asaasPayments.length}`,
+      );
+      this.logger.log(
+        `Inadimplência detectada: ${hasOverduePayment ? 'SIM' : 'NÃO'}`,
+      );
+      this.logger.log(
+        `Pagamento relevante: ${JSON.stringify({
+          id: relevantPayment.id,
+          status: relevantPayment.status,
+          value: relevantPayment.value,
+          dueDate: relevantPayment.dueDate,
+          paymentDate: relevantPayment.paymentDate,
+        })}`,
+      );
+
+      // Verificar se o pagamento foi confirmado ou recebido no Asaas
+      const isPaymentConfirmed =
+        relevantPayment.status === 'CONFIRMED' ||
+        relevantPayment.status === 'RECEIVED' ||
+        relevantPayment.status === 'RECEIVED_IN_CASH';
+
+      // Só permite sincronização se NÃO houver inadimplência E pagamento confirmado
+      const hasPendingSync =
+        isPaymentConfirmed &&
+        !hasOverduePayment &&
+        subscription.status !== 'ACTIVE';
+
+      // Determinar mensagem apropriada baseada nos status
+      let message: string;
+      if (hasOverduePayment) {
+        message = '⚠️ Cliente inadimplente! Há pagamento vencido ou em atraso.';
+      } else if (hasPendingSync) {
+        message =
+          'Pagamento confirmado no Asaas! A subscription local pode ser ativada.';
+      } else if (subscription.status === 'ACTIVE' && isPaymentConfirmed) {
+        message = 'Tudo certo! Subscription ativa e pagamento confirmado.';
+      } else if (relevantPayment.status === 'PENDING') {
+        message = 'Aguardando pagamento no Asaas.';
+      } else {
+        message = `Status do pagamento no Asaas: ${relevantPayment.status}`;
+      }
+
+      return {
+        found: true,
+        hasAsaasLink: true,
+        hasPendingSync,
+        message,
+        localStatus: subscription.status,
+        asaasPaymentStatus: relevantPayment.status,
+        asaasPaymentId: relevantPayment.id,
+        subscription: {
+          id: subscription.id,
+          plan: subscription.plan?.name,
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        `Erro ao verificar status no Asaas: ${error.message}`,
+        error,
+      );
+      throw new BadRequestException(
+        `Erro ao verificar status no Asaas: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Verifica o status da subscription e sincroniza com o Asaas
    * Útil para quando o webhook não é disparado (ex: sandbox)
    */
@@ -2125,6 +2306,51 @@ export class SubscriptionsService {
       });
 
       if (subscription) {
+        // Se está ativando uma subscription, desativar todas as outras ativas da mesma empresa
+        if (updateDto.status === 'ACTIVE') {
+          const otherActiveSubscriptions =
+            await this.prisma.subscription.findMany({
+              where: {
+                companyId: company.id,
+                status: 'ACTIVE',
+                id: { not: subscription.id },
+              },
+            });
+
+          for (const otherSubscription of otherActiveSubscriptions) {
+            await this.prisma.subscription.update({
+              where: { id: otherSubscription.id },
+              data: { status: 'INACTIVE' },
+            });
+
+            // Criar histórico para cada subscription desativada
+            await this.prisma.subscriptionHistory.create({
+              data: {
+                subscriptionId: otherSubscription.id,
+                action: 'DEACTIVATED',
+                description:
+                  'Subscription desativada automaticamente ao ativar outra',
+                changes: {
+                  before: { status: 'ACTIVE' },
+                  after: { status: 'INACTIVE' },
+                },
+                metadata: {
+                  reason: 'Nova subscription ativada manualmente',
+                  newSubscriptionId: subscription.id,
+                  changedBy: adminUser.name,
+                  changedAt: new Date().toISOString(),
+                },
+                createdBy: userId,
+                createdByName: adminUser.name,
+              },
+            });
+
+            this.logger.log(
+              `Subscription ${otherSubscription.id} desativada automaticamente ao ativar ${subscription.id}`,
+            );
+          }
+        }
+
         await this.prisma.subscription.update({
           where: { id: subscription.id },
           data: { status: updateDto.status },

@@ -112,6 +112,48 @@ export class SubscriptionsController {
     );
   }
 
+  @Get('active-clients/:companyId/check-asaas')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary: 'Verifica status da subscription no Asaas (apenas SystemAdmin)',
+    description:
+      'Compara o status local com o status no Asaas sem fazer alterações. Útil para verificar antes de sincronizar.',
+  })
+  @ApiParam({ name: 'companyId', description: 'Company ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Status verificado',
+  })
+  async checkAsaasStatus(@Param('companyId') companyId: string) {
+    return await this.subscriptionsService.checkAsaasStatus(companyId);
+  }
+
+  @Post('active-clients/:companyId/sync-asaas')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary: 'Sincroniza status da subscription com Asaas (apenas SystemAdmin)',
+    description:
+      'Verifica o status do pagamento diretamente no Asaas e atualiza a subscription local se necessário. Útil quando webhook ou cronjob falham.',
+  })
+  @ApiParam({ name: 'companyId', description: 'Company ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Status sincronizado com sucesso',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Erro ao sincronizar status',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado. Apenas administradores do sistema',
+  })
+  async syncWithAsaas(@Param('companyId') companyId: string) {
+    return await this.subscriptionsService.checkAndSyncSubscriptionStatus(
+      companyId,
+    );
+  }
+
   @Get('active-clients/:companyId/history')
   @ApiOperation({
     summary: 'Get subscription history for a company',
