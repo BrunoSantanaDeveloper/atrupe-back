@@ -1982,7 +1982,7 @@ export class SubscriptionsService {
       const latestPayment = confirmedPayment || asaasPayments[0];
 
       this.logger.log(
-        `Pagamentos encontrados: ${asaasPayments.length}, Confirmado: ${confirmedPayment ? 'SIM' : 'NÃO'}`,
+        `Cobranças encontradas: ${asaasPayments.length}, Paga: ${confirmedPayment ? 'SIM' : 'NÃO'}`,
       );
       this.logger.log(
         `Status do pagamento selecionado: ${latestPayment.status} (${latestPayment.id})`,
