@@ -34,12 +34,11 @@ export class OrderService {
   async findAll(dto: FilterOrderDto) {
     try {
       const where: Prisma.OrderWhereInput = {};
+      const quotationFilters: Prisma.QuotationWhereInput = {};
 
-      // Filtros básicos
+      // Filtros básicos - acumulando em quotationFilters
       if (dto.companyId) {
-        where.quotation = {
-          is: { companyId: dto.companyId },
-        };
+        quotationFilters.companyId = dto.companyId;
       }
 
       if (dto.status) {
@@ -47,40 +46,35 @@ export class OrderService {
       }
 
       if (dto.sellerId) {
-        where.quotation = {
-          is: { sellerId: dto.sellerId },
-        };
+        quotationFilters.sellerId = dto.sellerId;
       }
 
       if (dto.serieId) {
-        where.quotation = {
-          is: { seriesId: dto.serieId },
-        };
+        quotationFilters.seriesId = dto.serieId;
       }
 
       if (dto.clientId) {
-        where.quotation = {
-          is: { clientId: dto.clientId },
-        };
+        quotationFilters.clientId = dto.clientId;
       }
 
-      // Busca por texto
+      // Busca por texto - combinando com os filtros existentes
       if (dto.search) {
-        where.quotation = {
-          is: {
-            OR: [
-              { description: { contains: dto.search, mode: 'insensitive' } },
-              {
-                client: { name: { contains: dto.search, mode: 'insensitive' } },
-              },
-              {
-                seller: {
-                  user: { name: { contains: dto.search, mode: 'insensitive' } },
-                },
-              },
-            ],
+        quotationFilters.OR = [
+          { description: { contains: dto.search, mode: 'insensitive' } },
+          {
+            client: { name: { contains: dto.search, mode: 'insensitive' } },
           },
-        };
+          {
+            seller: {
+              user: { name: { contains: dto.search, mode: 'insensitive' } },
+            },
+          },
+        ];
+      }
+
+      // Aplicar filtros de quotation se houver algum
+      if (Object.keys(quotationFilters).length > 0) {
+        where.quotation = { is: quotationFilters };
       }
 
       const totalOrders = await this.prisma.order.count({ where });

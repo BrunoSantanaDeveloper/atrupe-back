@@ -141,14 +141,18 @@ export class ProductService {
       if (filter.search) {
         where = {
           ...where,
-          OR: [
-            { name: { contains: filter.search, mode: 'insensitive' } },
-            { code: { contains: filter.search, mode: 'insensitive' } },
+          AND: [
             {
-              technicalDescription: {
-                contains: filter.search,
-                mode: 'insensitive',
-              },
+              OR: [
+                { name: { contains: filter.search, mode: 'insensitive' } },
+                { code: { contains: filter.search, mode: 'insensitive' } },
+                {
+                  technicalDescription: {
+                    contains: filter.search,
+                    mode: 'insensitive',
+                  },
+                },
+              ],
             },
           ],
         };

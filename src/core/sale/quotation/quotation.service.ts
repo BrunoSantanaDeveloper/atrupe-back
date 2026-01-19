@@ -832,12 +832,30 @@ export class QuotationService {
       if (dto.search) {
         where = {
           ...where,
-          seller: {
-            name: {
-              contains: dto.search,
-              mode: 'insensitive',
+          AND: [
+            ...(where.AND
+              ? Array.isArray(where.AND)
+                ? where.AND
+                : [where.AND]
+              : []),
+            {
+              OR: [
+                { description: { contains: dto.search, mode: 'insensitive' } },
+                {
+                  client: {
+                    name: { contains: dto.search, mode: 'insensitive' },
+                  },
+                },
+                {
+                  seller: {
+                    user: {
+                      name: { contains: dto.search, mode: 'insensitive' },
+                    },
+                  },
+                },
+              ],
             },
-          },
+          ],
         };
       }
 

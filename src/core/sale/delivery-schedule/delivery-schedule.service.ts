@@ -32,26 +32,25 @@ export class DeliveryScheduleService {
   async findAll(dto: DeliveryScheduleFitlerDto) {
     try {
       let where: Prisma.DeliveryScheduleWhereInput = {};
+      const quotationFilters: Prisma.QuotationWhereInput = {};
+
       if (dto.companyId) {
         where = { ...where, companyId: dto.companyId };
       }
 
+      // Busca por texto - acumulando em quotationFilters
       if (dto.search) {
-        where.quotation = {
-          is: {
-            OR: [
-              { description: { contains: dto.search, mode: 'insensitive' } },
-              {
-                client: { name: { contains: dto.search, mode: 'insensitive' } },
-              },
-              {
-                seller: {
-                  user: { name: { contains: dto.search, mode: 'insensitive' } },
-                },
-              },
-            ],
+        quotationFilters.OR = [
+          { description: { contains: dto.search, mode: 'insensitive' } },
+          {
+            client: { name: { contains: dto.search, mode: 'insensitive' } },
           },
-        };
+          {
+            seller: {
+              user: { name: { contains: dto.search, mode: 'insensitive' } },
+            },
+          },
+        ];
       }
 
       if (dto.status) {
@@ -59,12 +58,18 @@ export class DeliveryScheduleService {
       }
 
       if (dto.sellerId) {
-        where = { ...where, quotation: { sellerId: dto.sellerId } };
+        quotationFilters.sellerId = dto.sellerId;
       }
 
       if (dto.serieId) {
-        where = { ...where, quotation: { seriesId: dto.serieId } };
+        quotationFilters.seriesId = dto.serieId;
       }
+
+      // Aplicar filtros de quotation se houver algum
+      if (Object.keys(quotationFilters).length > 0) {
+        where.quotation = { is: quotationFilters };
+      }
+
       const [deliveries, total] = await Promise.all([
         this.prisma.deliverySchedule.findMany({
           where,
