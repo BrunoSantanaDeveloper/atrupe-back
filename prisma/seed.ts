@@ -1,4 +1,4 @@
-// prisma/seed.ts
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { BASE_BANKS } from '../src/seeds/banks-base';
 import { BASE_FEATURES } from '../src/seeds/features-base';
@@ -380,11 +380,152 @@ async function createSystemAdminUser() {
   }
 }
 
+async function createCommonUser() {
+  console.log('Criando usuário comum para testes...');
+
+  const commonEmail = 'bruno@atrupe.com.br';
+  const commonPassword = 'fkD31=b5y&1$';
+
+  try {
+    // 1. Criar Empresa
+    let company = await prisma.company.findFirst({
+      where: { name: 'Bruno Digital S.A.' },
+    });
+
+    if (!company) {
+      company = await prisma.company.create({
+        data: {
+          name: 'Bruno Digital S.A.',
+          cnpj: '12.345.678/0001-90',
+          legalName: 'Bruno Digital Tecnologia S.A.',
+          email: commonEmail,
+          isActive: true,
+        },
+      });
+      console.log('Empresa comum criada com sucesso');
+    }
+
+    // 2. Criar Role de administrador da empresa
+    let adminRole = await prisma.role.findFirst({
+      where: {
+        name: 'Administrador',
+        companyId: company.id,
+      },
+    });
+
+    if (!adminRole) {
+      adminRole = await prisma.role.create({
+        data: {
+          name: 'Administrador',
+          companyId: company.id,
+          isAdmin: true,
+          isActive: true,
+          permissions: ['*'],
+        },
+      });
+      console.log('Role de administrador da empresa criado com sucesso');
+    }
+
+    // 3. Criar Usuário
+    let user = await prisma.user.findUnique({
+      where: { email: commonEmail },
+    });
+
+    if (!user) {
+      const hashedPassword = await argon2.hash(commonPassword);
+      user = await prisma.user.create({
+        data: {
+          email: commonEmail,
+          password: hashedPassword,
+          name: 'Bruno Usuário',
+          isActive: true,
+          isVerified: true,
+          phone: '+55 (11) 99999-9999',
+        },
+      });
+      console.log(`Usuário comum criado: ${commonEmail}`);
+    }
+
+    // 4. Vincular Usuário à Empresa e Role
+    const existingUserRole = await prisma.userRole.findUnique({
+      where: {
+        userId_roleId: {
+          userId: user.id,
+          roleId: adminRole.id,
+        },
+      },
+    });
+
+    if (!existingUserRole) {
+      await prisma.userRole.create({
+        data: {
+          userId: user.id,
+          roleId: adminRole.id,
+          isSystemAdmin: false,
+        },
+      });
+      console.log('UserRole vinculado com sucesso');
+    }
+
+    // 5. Criar Customer (Asaas) para a empresa/usuário
+    let customer = await prisma.customer.findFirst({
+      where: { email: commonEmail, companyId: company.id },
+    });
+
+    if (!customer) {
+      customer = await prisma.customer.create({
+        data: {
+          name: 'Bruno Usuário',
+          email: commonEmail,
+          document: '12345678901',
+          asaasCustomerId: 'cus_local_test_bruno',
+          companyId: company.id,
+        },
+      });
+      console.log('Customer criado com sucesso');
+    }
+
+    // 6. Criar Subscription (para passar nas travas do middleware)
+    const fullPlan = await prisma.plan.findUnique({
+      where: { name: 'Full' },
+    });
+
+    if (fullPlan) {
+      const existingSub = await prisma.subscription.findFirst({
+        where: { companyId: company.id },
+      });
+
+      if (!existingSub) {
+        await prisma.subscription.create({
+          data: {
+            companyId: company.id,
+            customerId: customer.id,
+            planId: fullPlan.id,
+            asaasSubscriptionId: 'sub_local_test_bruno',
+            nextDueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // +30 dias
+            value: 497.0,
+            status: 'ACTIVE',
+            billingType: 'CREDIT_CARD',
+            cycle: 'MONTHLY',
+          },
+        });
+        console.log('Assinatura Full criada com sucesso');
+      }
+    }
+
+  } catch (error) {
+    console.error('Erro ao criar usuário comum:', error);
+  }
+}
+
 async function main() {
   console.log('Iniciando o processo de seeding...');
 
   // Criar usuário administrador do sistema
   await createSystemAdminUser();
+
+  // Criar usuário comum
+  await createCommonUser();
 
   // Criar bancos padrão
   await createDefaultBanks();

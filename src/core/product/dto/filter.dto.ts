@@ -1,4 +1,5 @@
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ApiProperty } from '@nestjs/swagger';
 import { CategoryKind, ProductStatus, UnitKind } from '@prisma/client';
@@ -59,4 +60,13 @@ export class ProductFilterDTO extends BaseFilterDTO {
     required: false,
   })
   categoryKind: CategoryKind;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Filtrar produtos que são serviços',
+    example: true,
+    required: false,
+  })
+  @Transform(({ value }) => value === 'true' || value === true)
+  isService?: boolean;
 }

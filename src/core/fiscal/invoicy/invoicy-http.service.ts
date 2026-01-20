@@ -55,8 +55,8 @@ export class InvoicyHttpService {
    * Get company credentials from database
    */
   async getCompanyCredentials(companyId: string) {
-    const config = await this.prisma.invoicyConfig.findUnique({
-      where: { companyId },
+    const config = await this.prisma.invoicyConfig.findFirst({
+      where: { companyId, isDefault: true },
     });
 
     if (!config) {
@@ -68,7 +68,7 @@ export class InvoicyHttpService {
     if (!config.accessKey) {
       throw new Error(
         `Chave de acesso (accessKey) não configurada para empresa ${companyId}. ` +
-          `Entre em contato com o suporte para obter sua chave de acesso Invoicy.`,
+        `Entre em contato com o suporte para obter sua chave de acesso Invoicy.`,
       );
     }
 
@@ -350,8 +350,8 @@ export class InvoicyHttpService {
     );
 
     const credentials = await this.getCompanyCredentials(companyId);
-    const config = await this.prisma.invoicyConfig.findUnique({
-      where: { companyId },
+    const config = await this.prisma.invoicyConfig.findFirst({
+      where: { companyId, isDefault: true },
     });
 
     const inutRequest = [

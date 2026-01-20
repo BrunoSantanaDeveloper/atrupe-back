@@ -7,7 +7,7 @@ import {
 
 @Injectable()
 export class ProductFiscalService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async findByProductId(productId: string) {
     const fiscalData = await this.prisma.productFiscalData.findUnique({
@@ -143,6 +143,9 @@ export class ProductFiscalService {
       cfopInState: dto.cfopInState || null,
       cfopOutState: dto.cfopOutState || null,
       cfopExport: dto.cfopExport || null,
+      codigoServico: dto.codigoServico || null,
+      aliquotaIss: dto.aliquotaIss ?? null,
+      discriminacao: dto.discriminacao || null,
     };
   }
 }

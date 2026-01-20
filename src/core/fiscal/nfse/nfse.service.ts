@@ -244,7 +244,7 @@ export class NfseService {
     }
 
     // Obter próximo número do RPS
-    const rpsNumero = await this.invoicyService.incrementNfseRpsNumber(companyId);
+    const rpsNumero = await this.invoicyService.incrementNfseRpsNumber(config.id);
     const rpsSerie = config.serieNfse || 'A1';
 
     // Calcular valores

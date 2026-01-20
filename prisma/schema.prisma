@@ -72,10 +72,12 @@ model Company {
   sectors               CompanySector[]      @relation("CompanyToCompanySector")
   history               CompanyHistory[]
   importLogs            ImportLog[]
-  invoicyConfig         InvoicyConfig?
+  invoicyConfigs        InvoicyConfig[]
   nfes                  Nfe[]
   nfses                 Nfse[]
   nfces                 Nfce[]
+  cfopConfigs           CfopConfig[]
+  operationNatures      OperationNature[]
 
   @@map("companies")
 }
@@ -1214,6 +1216,7 @@ model Product {
   categoryId           String
   isActive             Boolean            @default(true)
   isStandard           Boolean            @default(false)
+  isService            Boolean            @default(false)
   code                 String
   sectorId             String
   allowEditDescription Boolean            @default(true)
@@ -2010,12 +2013,20 @@ model InvoicyConfig {
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  companyId String   @unique
+  companyId String
+
+  // Identificação do emissor
+  name      String   // Nome identificador (ex: "Matriz", "Filial SP")
+  isDefault Boolean  @default(false) // Indica se é o emissor padrão da empresa
 
   // Credenciais Invoicy (campos novos)
   partnerKey  String? // Partner Key do Invoicy
   accessKey   String? // Access Key do Invoicy
   environment String? @default("HOMOLOGACAO") // PRODUCAO ou HOMOLOGACAO
+
+  // Certificado Digital
+  certificate         String? @db.Text // Certificado em Base64
+  certificatePassword String? // Senha do certificado
 
   // Campos legados (mantidos para compatibilidade)
   apiToken String?
@@ -2059,7 +2070,60 @@ model InvoicyConfig {
   isActive Boolean @default(true)
   company  Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@map("invoicy_configs")
+}
+
+// ==================== CFOP Config ====================
+
+model CfopConfig {
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  companyId   String
+
+  code        String   // Código CFOP (ex: "5102")
+  description String   // Descrição (ex: "Venda de mercadoria adquirida")
+  type        String   // "ENTRADA" ou "SAIDA"
+  nature      String?  // Natureza da operação (ex: "Venda de mercadoria")
+  info        String?  // Informações de uso
+  isActive    Boolean  @default(true)
+
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  naturesInternal OperationNature[] @relation("NatureInternal")
+  naturesExternal OperationNature[] @relation("NatureExternal")
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@map("cfop_configs")
+}
+
+// ==================== Operation Nature ====================
+
+model OperationNature {
+  id               String   @id @default(uuid())
+  companyId        String
+  
+  description      String
+  type             String   // ENTRADA, SAIDA
+  finality         String   // 1=Normal, 2=Complementar, etc.
+  consumerPresence String   // 0=Não, 1=Presencial, etc.
+  info             String?
+  
+  // Relations to CFOPs
+  cfopInternalId   String?
+  cfopExternalId   String?
+  
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  company          Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  cfopInternal     CfopConfig? @relation("NatureInternal", fields: [cfopInternalId], references: [id])
+  cfopExternal     CfopConfig? @relation("NatureExternal", fields: [cfopExternalId], references: [id])
+
+  @@map("operation_natures")
 }
 
 enum NfeStatus {

@@ -200,6 +200,14 @@ export class CreateProductDto {
   })
   isStandard?: boolean = false;
 
+  @IsBoolean()
+  @ApiPropertyOptional({
+    description: 'Indica se o produto é um serviço',
+    example: false,
+    required: false,
+  })
+  isService?: boolean = false;
+
   companyId?: string;
 
   @IsUUID()

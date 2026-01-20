@@ -4,6 +4,8 @@ import { NfeModule } from './nfe/nfe.module';
 import { NfseModule } from './nfse/nfse.module';
 import { NfceModule } from './nfce/nfce.module';
 import { ProductFiscalModule } from './product-fiscal/product-fiscal.module';
+import { CfopModule } from './cfop/cfop.module';
+import { OperationNatureModule } from './operation-nature/operation-nature.module';
 
 @Module({
   imports: [
@@ -12,6 +14,8 @@ import { ProductFiscalModule } from './product-fiscal/product-fiscal.module';
     NfseModule,
     NfceModule,
     ProductFiscalModule,
+    CfopModule,
+    OperationNatureModule,
   ],
   exports: [
     InvoicyModule,
@@ -19,6 +23,9 @@ import { ProductFiscalModule } from './product-fiscal/product-fiscal.module';
     NfseModule,
     NfceModule,
     ProductFiscalModule,
+    CfopModule,
+    OperationNatureModule,
   ],
 })
-export class FiscalModule {}
+export class FiscalModule { }
+
