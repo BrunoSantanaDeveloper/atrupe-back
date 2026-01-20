@@ -159,7 +159,7 @@ export class NfceService {
     }
 
     // Obter próximo número da NFC-e
-    const numero = await this.invoicyService.incrementNfceNumber(companyId);
+    const numero = await this.invoicyService.incrementNfceNumber(config.id);
 
     // Calcular valor total
     const valorTotal = dto.itens.reduce((acc, item) => {

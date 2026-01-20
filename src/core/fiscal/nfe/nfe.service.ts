@@ -29,7 +29,7 @@ export class NfeService {
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
     private readonly invoicyHttpService: InvoicyHttpService,
-  ) {}
+  ) { }
 
   /**
    * Prepara os dados para emissão de NF-e a partir de uma ordem de serviço.
@@ -99,17 +99,24 @@ export class NfeService {
       const discountReais = (qp.discount || 0) / 100;
       const fiscalData = qp.product?.fiscalData;
 
+      const selectedCfop =
+        (clientAddress?.state === config.emitUf
+          ? fiscalData?.cfopInState
+          : fiscalData?.cfopOutState) ||
+        config.defaultCfop ||
+        '';
+
       return {
         itemNumber: index + 1,
         productId: qp.productId,
         productCode: qp.product?.code || '',
         description: qp.product?.name || 'Produto/Serviço',
         ncm: fiscalData?.ncm || '',
-        cfop: fiscalData?.cfop || config.defaultCfop || '',
-        cstIcms: fiscalData?.cstIcms || '102',
-        cstIpi: fiscalData?.cstIpi || '',
-        cstPis: fiscalData?.cstPis || '',
-        cstCofins: fiscalData?.cstCofins || '',
+        cfop: selectedCfop,
+        cstIcms: fiscalData?.icmsCst || '102',
+        cstIpi: fiscalData?.ipiCst || '',
+        cstPis: fiscalData?.pisCst || '',
+        cstCofins: fiscalData?.cofinsCst || '',
         unit: qp.product?.unit || 'UN',
         quantity: qp.quantity,
         unitValue: Number(unitValue.toFixed(2)),
@@ -117,7 +124,7 @@ export class NfeService {
         freight: 0,
         insurance: 0,
         totalValue: Number(totalValueReais.toFixed(2)),
-        needsConfiguration: !fiscalData?.ncm || !fiscalData?.cfop,
+        needsConfiguration: !fiscalData?.ncm || !selectedCfop,
       };
     });
 
@@ -137,14 +144,14 @@ export class NfeService {
       hasExistingNfe: !!existingNfe,
       existingNfe: existingNfe
         ? {
-            id: existingNfe.id,
-            numero: existingNfe.numero,
-            serie: existingNfe.serie,
-            status: existingNfe.status,
-            chaveAcesso: existingNfe.chaveAcesso,
-            danfeUrl: existingNfe.danfeUrl,
-            dataEmissao: existingNfe.dataEmissao,
-          }
+          id: existingNfe.id,
+          numero: existingNfe.numero,
+          serie: existingNfe.serie,
+          status: existingNfe.status,
+          chaveAcesso: existingNfe.chaveAcesso,
+          danfeUrl: existingNfe.danfeUrl,
+          dataEmissao: existingNfe.dataEmissao,
+        }
         : null,
 
       // Configuração de emissão
@@ -522,7 +529,7 @@ export class NfeService {
     }
 
     // Obter próximo número da NF-e
-    const numero = await this.invoicyService.incrementNfeNumber(companyId);
+    const numero = await this.invoicyService.incrementNfeNumber(config.id);
 
     // Calcular valor total
     const valorTotal = dto.items.reduce(
@@ -931,7 +938,7 @@ export class NfeService {
       if (!isApproved) {
         throw new Error(
           situacao?.SitDescricao ||
-            'Carta de correção não autorizada pela SEFAZ',
+          'Carta de correção não autorizada pela SEFAZ',
         );
       }
 

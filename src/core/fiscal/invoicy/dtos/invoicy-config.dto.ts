@@ -35,6 +35,16 @@ const emptyToUndefined = ({ value }) => {
 };
 
 export class CreateInvoicyConfigDto {
+  @ApiProperty({ description: 'Nome identificador do emissor (ex: "Matriz", "Filial SP")' })
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @ApiPropertyOptional({ description: 'Define se é o emissor padrão da empresa', default: false })
+  @IsBoolean()
+  @IsOptional()
+  isDefault?: boolean;
+
   // Legacy field (for backwards compatibility)
   @ApiPropertyOptional({ description: 'Token da API do Invoicy (legado)' })
   @IsString()
@@ -222,12 +232,25 @@ export class CreateInvoicyConfigDto {
   @Transform(emptyToUndefined)
   nfceSeries?: string;
 
+  @ApiPropertyOptional({ description: 'Série da NFC-e (Prisma)' })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  serieNfce?: number;
+
   @ApiPropertyOptional({ description: 'Próximo número da NFC-e' })
   @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(1)
   nfceNextNumber?: number;
+
+  @ApiPropertyOptional({ description: 'Próximo número da NFC-e (Prisma)' })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  proximoNumeroNfce?: number;
 
   // NFS-e fields
   @ApiPropertyOptional({ description: 'Série da NFS-e (RPS)' })
@@ -236,12 +259,25 @@ export class CreateInvoicyConfigDto {
   @Transform(emptyToUndefined)
   nfseSeries?: string;
 
+  @ApiPropertyOptional({ description: 'Série da NFS-e (RPS) (Prisma)' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  serieNfse?: string;
+
   @ApiPropertyOptional({ description: 'Próximo número do RPS (NFS-e)' })
   @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(1)
   nfseNextNumber?: number;
+
+  @ApiPropertyOptional({ description: 'Próximo número do RPS (NFS-e) (Prisma)' })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  proximoRpsNfse?: number;
 
   @ApiPropertyOptional({ description: 'Código do serviço municipal' })
   @IsString()
@@ -278,6 +314,16 @@ export class CreateInvoicyConfigDto {
 }
 
 export class UpdateInvoicyConfigDto {
+  @ApiPropertyOptional({ description: 'Nome identificador do emissor (ex: "Matriz", "Filial SP")' })
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @ApiPropertyOptional({ description: 'Define se é o emissor padrão da empresa' })
+  @IsBoolean()
+  @IsOptional()
+  isDefault?: boolean;
+
   // Legacy field
   @ApiPropertyOptional({ description: 'Token da API do Invoicy (legado)' })
   @IsString()
@@ -450,12 +496,25 @@ export class UpdateInvoicyConfigDto {
   @Transform(emptyToUndefined)
   nfceSeries?: string;
 
+  @ApiPropertyOptional({ description: 'Série da NFC-e (Prisma)' })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  serieNfce?: number;
+
   @ApiPropertyOptional({ description: 'Próximo número da NFC-e' })
   @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(1)
   nfceNextNumber?: number;
+
+  @ApiPropertyOptional({ description: 'Próximo número da NFC-e (Prisma)' })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  proximoNumeroNfce?: number;
 
   // NFS-e fields
   @ApiPropertyOptional({ description: 'Série da NFS-e (RPS)' })
@@ -464,12 +523,25 @@ export class UpdateInvoicyConfigDto {
   @Transform(emptyToUndefined)
   nfseSeries?: string;
 
+  @ApiPropertyOptional({ description: 'Série da NFS-e (RPS) (Prisma)' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  serieNfse?: string;
+
   @ApiPropertyOptional({ description: 'Próximo número do RPS (NFS-e)' })
   @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(1)
   nfseNextNumber?: number;
+
+  @ApiPropertyOptional({ description: 'Próximo número do RPS (NFS-e) (Prisma)' })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  proximoRpsNfse?: number;
 
   @ApiPropertyOptional({ description: 'Código do serviço municipal' })
   @IsString()

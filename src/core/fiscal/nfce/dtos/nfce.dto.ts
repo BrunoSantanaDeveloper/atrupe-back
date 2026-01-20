@@ -253,11 +253,13 @@ export class NfceFilterDto {
   @IsInt()
   @IsOptional()
   @Min(1)
+  @Type(() => Number)
   page?: number;
 
   @ApiPropertyOptional({ description: 'Itens por página', default: 20 })
   @IsInt()
   @IsOptional()
   @Min(1)
+  @Type(() => Number)
   limit?: number;
 }

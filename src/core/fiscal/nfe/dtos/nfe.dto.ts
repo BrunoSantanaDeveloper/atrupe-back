@@ -83,6 +83,16 @@ export class NfeItemDto {
   @IsString()
   @IsOptional()
   cstIpi?: string;
+
+  @ApiPropertyOptional({ description: 'Valor do Frete' })
+  @IsNumber()
+  @IsOptional()
+  freight?: number;
+
+  @ApiPropertyOptional({ description: 'Valor do Seguro' })
+  @IsNumber()
+  @IsOptional()
+  insurance?: number;
 }
 
 // DTO simplificado para emissão a partir de uma ordem
@@ -104,6 +114,99 @@ export class EmitNfeFromOrderDto {
 }
 
 // DTO completo para emissão manual com todos os dados
+export class NfeTransportDto {
+  @ApiPropertyOptional({ description: 'CNPJ/CPF da transportadora' })
+  @IsString()
+  @IsOptional()
+  cnpjCpf?: string;
+
+  @ApiPropertyOptional({ description: 'Razão Social' })
+  @IsString()
+  @IsOptional()
+  razaoSocial?: string;
+
+  @ApiPropertyOptional({ description: 'Inscrição Estadual' })
+  @IsString()
+  @IsOptional()
+  ie?: string;
+
+  @ApiPropertyOptional({ description: 'Endereço completo' })
+  @IsString()
+  @IsOptional()
+  endereco?: string;
+
+  @ApiPropertyOptional({ description: 'Cidade' })
+  @IsString()
+  @IsOptional()
+  cidade?: string;
+
+  @ApiPropertyOptional({ description: 'UF' })
+  @IsString()
+  @IsOptional()
+  uf?: string;
+}
+
+export class NfeVolumeDto {
+  @ApiPropertyOptional({ description: 'Quantidade de volumes' })
+  @IsNumber()
+  @IsOptional()
+  quantidade?: number;
+
+  @ApiPropertyOptional({ description: 'Espécie dos volumes' })
+  @IsString()
+  @IsOptional()
+  especie?: string;
+
+  @ApiPropertyOptional({ description: 'Marca dos volumes' })
+  @IsString()
+  @IsOptional()
+  marca?: string;
+
+  @ApiPropertyOptional({ description: 'Numeração dos volumes' })
+  @IsString()
+  @IsOptional()
+  numeracao?: string;
+
+  @ApiPropertyOptional({ description: 'Peso Líquido' })
+  @IsNumber()
+  @IsOptional()
+  pesoLiquido?: number;
+
+  @ApiPropertyOptional({ description: 'Peso Bruto' })
+  @IsNumber()
+  @IsOptional()
+  pesoBruto?: number;
+}
+
+export class NfePaymentDto {
+  @ApiPropertyOptional({ description: 'Forma de pagamento (01, 02, etc)' })
+  @IsString()
+  @IsOptional()
+  forma?: string;
+
+  @ApiPropertyOptional({ description: 'Valor do pagamento' })
+  @IsNumber()
+  @IsOptional()
+  valor?: number;
+}
+
+export class NfeDuplicateDto {
+  @ApiPropertyOptional({ description: 'Número da duplicata' })
+  @IsString()
+  @IsOptional()
+  numero?: string;
+
+  @ApiPropertyOptional({ description: 'Data de vencimento (YYYY-MM-DD)' })
+  @IsString()
+  @IsOptional()
+  dataVencimento?: string;
+
+  @ApiPropertyOptional({ description: 'Valor da duplicata' })
+  @IsNumber()
+  @IsOptional()
+  valor?: number;
+}
+
 export class EmitNfeDto {
   @ApiPropertyOptional({ description: 'ID do orçamento' })
   @IsString()
@@ -124,6 +227,11 @@ export class EmitNfeDto {
   @IsString()
   @IsOptional()
   additionalInfo?: string;
+
+  @ApiPropertyOptional({ description: 'Modalidade de frete: 0=CIF, 1=FOB, 9=Sem Frete, etc' })
+  @IsInt()
+  @IsOptional()
+  modalidadeFrete?: number;
 
   @ApiPropertyOptional({ description: 'CNPJ/CPF do destinatário' })
   @IsString()
@@ -199,6 +307,32 @@ export class EmitNfeDto {
   @ValidateNested({ each: true })
   @Type(() => NfeItemDto)
   items?: NfeItemDto[];
+
+  @ApiPropertyOptional({ description: 'Dados da transportadora', type: NfeTransportDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NfeTransportDto)
+  transportadora?: NfeTransportDto;
+
+  @ApiPropertyOptional({ description: 'Volumes transportados', type: [NfeVolumeDto] })
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => NfeVolumeDto)
+  volumes?: NfeVolumeDto[];
+
+  @ApiPropertyOptional({ description: 'Dados de pagamento', type: NfePaymentDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NfePaymentDto)
+  pagamento?: NfePaymentDto;
+
+  @ApiPropertyOptional({ description: 'Duplicatas', type: [NfeDuplicateDto] })
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => NfeDuplicateDto)
+  duplicatas?: NfeDuplicateDto[];
 }
 
 export class CancelNfeDto {
@@ -252,11 +386,13 @@ export class NfeFilterDto {
   @IsInt()
   @IsOptional()
   @Min(1)
+  @Type(() => Number)
   page?: number;
 
   @ApiPropertyOptional({ description: 'Itens por página', default: 20 })
   @IsInt()
   @IsOptional()
   @Min(1)
+  @Type(() => Number)
   limit?: number;
 }
