@@ -196,7 +196,20 @@ export class QuotationController {
   })
   async findAllQuantity(@Req() req) {
     const companyId = req.user.companyId;
-    return this.quotationService.findAllQuantity(companyId);
+
+    // Verificar se o usuário tem permissão para ver orçamentos de outros vendedores
+    const canSeeOtherQuotations = await this.abacService.hasPermission(
+      { userId: req.user.userId, username: req.user.username },
+      'view',
+      'sale:other_quotation',
+    );
+
+    let sellerId: string | undefined;
+    if (!canSeeOtherQuotations && !req.user.isAdmin && req.user.employeeId) {
+      sellerId = req.user.employeeId;
+    }
+
+    return this.quotationService.findAllQuantity(companyId, sellerId);
   }
 
   @Post(':id/duplicate')
@@ -339,11 +352,41 @@ export class QuotationController {
     status: 404,
     description: 'Orçamento não encontrado.',
   })
-  async findOne(@Param('id') id: string) {
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado.',
+  })
+  async findOne(@Param('id') id: string, @Req() req) {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
-    return await this.quotationService.findOne(id);
+
+    const quotation = await this.quotationService.findOne(id);
+
+    if (!quotation) {
+      throw new NotFoundException('Orçamento não encontrado');
+    }
+
+    // Verificar se o orçamento pertence à empresa do usuário
+    if (quotation.companyId !== req.user.companyId) {
+      throw new NotFoundException('Orçamento não encontrado');
+    }
+
+    // Verificar se o usuário pode ver orçamentos de outros vendedores
+    const canSeeOtherQuotations = await this.abacService.hasPermission(
+      { userId: req.user.userId, username: req.user.username },
+      'view',
+      'sale:other_quotation',
+    );
+
+    // Se não pode ver orçamentos de outros, verificar se é o dono do orçamento
+    if (!canSeeOtherQuotations && !req.user.isAdmin && req.user.employeeId) {
+      if (quotation.sellerId !== req.user.employeeId) {
+        throw new NotFoundException('Orçamento não encontrado');
+      }
+    }
+
+    return quotation;
   }
 
   @Patch(':id')

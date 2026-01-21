@@ -769,7 +769,7 @@ export class QuotationService {
     });
   }
 
-  async findAllQuantity(companyId: string) {
+  async findAllQuantity(companyId: string, sellerId?: string) {
     const allStatuses: QuotationStatus[] = [
       'OPEN',
       'REJECTED',
@@ -777,9 +777,15 @@ export class QuotationService {
       'OVERDUE' as any, // Status virtual para cotações vencidas
     ];
 
+    // Build where clause with optional sellerId filter
+    const where: any = { companyId, status: { in: allStatuses } };
+    if (sellerId) {
+      where.sellerId = sellerId;
+    }
+
     // Get all quotations to check for overdue status
     const quotations = await this.prisma.quotation.findMany({
-      where: { companyId, status: { in: allStatuses } },
+      where,
       select: {
         status: true,
         dueDate: true,
@@ -1211,6 +1217,8 @@ export class QuotationService {
 
       return {
         id: quotation.id,
+        companyId: quotation.companyId,
+        sellerId: quotation.sellerId,
         orderId: quotation.order?.id ?? null,
         createdAt: quotation.createdAt,
         updatedAt: quotation.updatedAt,
