@@ -193,7 +193,7 @@ export class OrderService {
     }
   }
 
-  async findAllQuantity(companyId: string) {
+  async findAllQuantity(companyId: string, sellerId?: string) {
     const allStatuses: OrderStatus[] = [
       'PENDING',
       'IN_PRODUCTION',
@@ -201,10 +201,16 @@ export class OrderService {
       'FINISHED',
     ];
 
+    // Build quotation filter with optional sellerId
+    const quotationFilter: any = { companyId };
+    if (sellerId) {
+      quotationFilter.sellerId = sellerId;
+    }
+
     const result = await this.prisma.order.groupBy({
       by: ['status'],
       where: {
-        quotation: { companyId },
+        quotation: quotationFilter,
         status: {
           in: [
             'PENDING',
@@ -673,6 +679,8 @@ export class OrderService {
 
       return {
         id: order.id,
+        companyId: quotation.companyId,
+        sellerId: quotation.sellerId,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
         canceledAt: order.canceledAt,

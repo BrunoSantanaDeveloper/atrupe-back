@@ -8,6 +8,7 @@ import {
   Query,
   UseGuards,
   Req,
+  NotFoundException,
 } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { CancelOrderDto, CreateOrderDto } from './dto/create-order.dto';
@@ -21,6 +22,7 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { AbacService } from '../../auth/abac/abac.service';
 
 const RESOURCE = 'order';
 
@@ -29,7 +31,10 @@ const RESOURCE = 'order';
 @ApiBearerAuth()
 @Controller(`sale/${RESOURCE}`)
 export class OrderController {
-  constructor(private readonly orderService: OrderService) {}
+  constructor(
+    private readonly orderService: OrderService,
+    private readonly abacService: AbacService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Cria uma nova ordem de serviço' })
@@ -54,44 +59,46 @@ export class OrderController {
   })
   async findAll(@Req() req, @Query() query: FilterOrderDto) {
     query.companyId = req.user.companyId;
+
+    // Verificar se o usuário pode ver ordens de outros vendedores
+    const canSeeOtherOrders = await this.abacService.hasPermission(
+      { userId: req.user.userId, username: req.user.username },
+      'view',
+      'sale:other_quotation',
+    );
+
+    if (!canSeeOtherOrders && !req.user.isAdmin && req.user.employeeId) {
+      query.sellerId = req.user.employeeId;
+    }
+
     return await this.orderService.findAll(query);
   }
 
   @Get('quantity')
   @ApiOperation({
-    summary: 'Obtém a quantidade de todos os status de orçamentos',
+    summary: 'Obtém a quantidade de todos os status de ordens',
   })
   @ApiResponse({
     status: 200,
-    description: 'Lista de quantidade de orçamentos retornada com sucesso.',
+    description: 'Lista de quantidade de ordens retornada com sucesso.',
   })
   async findAllQuantity(@Req() req) {
     const companyId = req.user.companyId;
-    return this.orderService.findAllQuantity(companyId);
+
+    // Verificar se o usuário pode ver ordens de outros vendedores
+    const canSeeOtherOrders = await this.abacService.hasPermission(
+      { userId: req.user.userId, username: req.user.username },
+      'view',
+      'sale:other_quotation',
+    );
+
+    let sellerId: string | undefined;
+    if (!canSeeOtherOrders && !req.user.isAdmin && req.user.employeeId) {
+      sellerId = req.user.employeeId;
+    }
+
+    return this.orderService.findAllQuantity(companyId, sellerId);
   }
-
-  // @Post(':id/duplicate')
-  // @ApiOperation({ summary: 'Duplica uma ordem de serviço pelo ID' })
-  // @ApiParam({
-  //   name: 'id',
-  //   required: true,
-  //   description: 'ID da ordem de serviço',
-  // })
-  // @ApiResponse({
-  //   status: 200,
-  //   description: 'Ordem de serviço duplicada com sucesso.',
-  // })
-  // @ApiResponse({
-  //   status: 400,
-  //   description: 'ID inválido.',
-  // })
-  // async duplicate(@Param('id') id: string) {
-  //   if (!isUUID(id, '4')) {
-  //     throw new BadRequestException('Invalid id');
-  //   }
-
-  //   return this.orderService.duplicate(id);
-  // }
 
   @Get(':id')
   @ApiOperation({ summary: 'Obtém uma ordem de serviço pelo ID' })
@@ -108,8 +115,33 @@ export class OrderController {
     status: 404,
     description: 'Ordem de serviço não encontrada.',
   })
-  findOne(@Param('id') id: string) {
-    return this.orderService.findOne(id);
+  async findOne(@Param('id') id: string, @Req() req) {
+    const order = await this.orderService.findOne(id);
+
+    if (!order) {
+      throw new NotFoundException('Ordem de serviço não encontrada');
+    }
+
+    // Verificar se a ordem pertence à empresa do usuário
+    if (order.companyId !== req.user.companyId) {
+      throw new NotFoundException('Ordem de serviço não encontrada');
+    }
+
+    // Verificar se o usuário pode ver ordens de outros vendedores
+    const canSeeOtherOrders = await this.abacService.hasPermission(
+      { userId: req.user.userId, username: req.user.username },
+      'view',
+      'sale:other_quotation',
+    );
+
+    // Se não pode ver ordens de outros, verificar se é o dono
+    if (!canSeeOtherOrders && !req.user.isAdmin && req.user.employeeId) {
+      if (order.sellerId !== req.user.employeeId) {
+        throw new NotFoundException('Ordem de serviço não encontrada');
+      }
+    }
+
+    return order;
   }
 
   @Post(':id/cancel')
