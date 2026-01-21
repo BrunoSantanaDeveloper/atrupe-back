@@ -29,7 +29,7 @@ export class NfceService {
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
     private readonly invoicyHttpService: InvoicyHttpService,
-  ) { }
+  ) {}
 
   async findAll(companyId: string, filters: NfceFilterDto) {
     const page = filters.page || 1;
@@ -158,8 +158,8 @@ export class NfceService {
       throw new BadRequestException('Integração com Invoicy está desativada.');
     }
 
-    // Obter próximo número da NFC-e
-    const numero = await this.invoicyService.incrementNfceNumber(config.id);
+    // Obter próximo número da NFC-e (sem incrementar ainda - só incrementa após emissão bem-sucedida)
+    const numero = config.proximoNumeroNfce || 1;
 
     // Calcular valor total
     const valorTotal = dto.itens.reduce((acc, item) => {
@@ -298,7 +298,9 @@ export class NfceService {
               vProd_ttlnfe: valorTotal.toFixed(2),
               vFrete_ttlnfe: '0.00',
               vSeg_ttlnfe: '0.00',
-              vDesc_ttlnfe: dto.itens.reduce((acc, i) => acc + (i.valorDesconto || 0), 0).toFixed(2),
+              vDesc_ttlnfe: dto.itens
+                .reduce((acc, i) => acc + (i.valorDesconto || 0), 0)
+                .toFixed(2),
               vII_ttlnfe: '0.00',
               vIPI_ttlnfe: '0.00',
               vPIS_ttlnfe: '0.00',
@@ -307,7 +309,7 @@ export class NfceService {
               vNF: valorTotal.toFixed(2),
             },
           },
-          pag: dto.pagamentos.map(pag => ({
+          pag: dto.pagamentos.map((pag) => ({
             tPag: pag.tipo,
             vPag: pag.valor.toFixed(2),
           })),
@@ -330,7 +332,9 @@ export class NfceService {
       }
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+        throw new Error(
+          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+        );
       }
 
       const doc = response.Documentos?.[0];
@@ -339,7 +343,8 @@ export class NfceService {
       }
 
       const situacao = doc.Situacao;
-      const isAuthorized = situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150;
+      const isAuthorized =
+        situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150;
 
       // Atualizar NFC-e com resposta
       const updatedNfce = await this.prisma.nfce.update({
@@ -368,6 +373,9 @@ export class NfceService {
         );
       }
 
+      // Incrementar número da NFC-e somente após emissão bem-sucedida
+      await this.invoicyService.incrementNfceNumber(config.id);
+
       return updatedNfce;
     } catch (error) {
       // Atualizar status para rejeitado em caso de erro
@@ -389,15 +397,36 @@ export class NfceService {
    */
   private getUfCode(uf: string): number {
     const ufCodes: Record<string, number> = {
-      RO: 11, AC: 12, AM: 13, RR: 14, PA: 15, AP: 16, TO: 17,
-      MA: 21, PI: 22, CE: 23, RN: 24, PB: 25, PE: 26, AL: 27, SE: 28, BA: 29,
-      MG: 31, ES: 32, RJ: 33, SP: 35,
-      PR: 41, SC: 42, RS: 43,
-      MS: 50, MT: 51, GO: 52, DF: 53,
+      RO: 11,
+      AC: 12,
+      AM: 13,
+      RR: 14,
+      PA: 15,
+      AP: 16,
+      TO: 17,
+      MA: 21,
+      PI: 22,
+      CE: 23,
+      RN: 24,
+      PB: 25,
+      PE: 26,
+      AL: 27,
+      SE: 28,
+      BA: 29,
+      MG: 31,
+      ES: 32,
+      RJ: 33,
+      SP: 35,
+      PR: 41,
+      SC: 42,
+      RS: 43,
+      MS: 50,
+      MT: 51,
+      GO: 52,
+      DF: 53,
     };
     return ufCodes[uf?.toUpperCase()] || 43;
   }
-
 
   async cancel(id: string, companyId: string, dto: CancelNfceDto) {
     const nfce = await this.findById(id, companyId);
@@ -442,15 +471,20 @@ export class NfceService {
       }
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+        throw new Error(
+          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+        );
       }
 
       const doc = response.Documentos?.[0];
       const situacao = doc?.Situacao;
-      const isCancelled = situacao?.SitCodigo === 135 || situacao?.SitCodigo === 101;
+      const isCancelled =
+        situacao?.SitCodigo === 135 || situacao?.SitCodigo === 101;
 
       if (!isCancelled) {
-        throw new Error(situacao?.SitDescricao || 'Cancelamento não autorizado pela SEFAZ');
+        throw new Error(
+          situacao?.SitDescricao || 'Cancelamento não autorizado pela SEFAZ',
+        );
       }
 
       const updatedNfce = await this.prisma.nfce.update({
@@ -512,7 +546,9 @@ export class NfceService {
       }
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+        throw new Error(
+          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+        );
       }
 
       const doc = response.Documentos?.[0];
@@ -520,7 +556,9 @@ export class NfceService {
       const isInutilized = situacao?.SitCodigo === 102;
 
       if (!isInutilized) {
-        throw new Error(situacao?.SitDescricao || 'Inutilização não autorizada pela SEFAZ');
+        throw new Error(
+          situacao?.SitDescricao || 'Inutilização não autorizada pela SEFAZ',
+        );
       }
 
       return {

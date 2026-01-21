@@ -29,7 +29,7 @@ export class NfeService {
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
     private readonly invoicyHttpService: InvoicyHttpService,
-  ) { }
+  ) {}
 
   /**
    * Prepara os dados para emissão de NF-e a partir de uma ordem de serviço.
@@ -144,14 +144,14 @@ export class NfeService {
       hasExistingNfe: !!existingNfe,
       existingNfe: existingNfe
         ? {
-          id: existingNfe.id,
-          numero: existingNfe.numero,
-          serie: existingNfe.serie,
-          status: existingNfe.status,
-          chaveAcesso: existingNfe.chaveAcesso,
-          danfeUrl: existingNfe.danfeUrl,
-          dataEmissao: existingNfe.dataEmissao,
-        }
+            id: existingNfe.id,
+            numero: existingNfe.numero,
+            serie: existingNfe.serie,
+            status: existingNfe.status,
+            chaveAcesso: existingNfe.chaveAcesso,
+            danfeUrl: existingNfe.danfeUrl,
+            dataEmissao: existingNfe.dataEmissao,
+          }
         : null,
 
       // Configuração de emissão
@@ -528,8 +528,8 @@ export class NfeService {
       );
     }
 
-    // Obter próximo número da NF-e
-    const numero = await this.invoicyService.incrementNfeNumber(config.id);
+    // Obter próximo número da NF-e (sem incrementar ainda - só incrementa após emissão bem-sucedida)
+    const numero = config.proximoNumeroNfe || 1;
 
     // Calcular valor total
     const valorTotal = dto.items.reduce(
@@ -757,6 +757,9 @@ export class NfeService {
         );
       }
 
+      // Incrementar número da NF-e somente após emissão bem-sucedida
+      await this.invoicyService.incrementNfeNumber(config.id);
+
       return updatedNfe;
     } catch (error) {
       // Atualizar status para rejeitado em caso de erro
@@ -938,7 +941,7 @@ export class NfeService {
       if (!isApproved) {
         throw new Error(
           situacao?.SitDescricao ||
-          'Carta de correção não autorizada pela SEFAZ',
+            'Carta de correção não autorizada pela SEFAZ',
         );
       }
 
