@@ -175,6 +175,7 @@ export class CompanyService {
             phone: general.phone,
             mobile: general.mobile,
             municipalRegistration: general.municipalRegistration,
+            stateRegistration: general.stateRegistration,
             siteUrl: general.siteUrl,
             // Personalization fields
             logoUrl: personalization?.logoUrl,
@@ -506,6 +507,7 @@ export class CompanyService {
           phone: general.phone,
           mobile: general.mobile,
           municipalRegistration: general.municipalRegistration,
+          stateRegistration: general.stateRegistration,
           siteUrl: general.siteUrl,
           principalCompanyId: parentCompanyId,
           // Personalization fields
@@ -594,6 +596,7 @@ export class CompanyService {
         name: company.name,
         legalName: company.legalName,
         municipalRegistration: company.municipalRegistration,
+        stateRegistration: company.stateRegistration,
         cnpj: company.cnpj,
         email: company.email,
         siteUrl: company.siteUrl,
@@ -646,6 +649,7 @@ export class CompanyService {
       phone: general?.phone,
       mobile: general?.mobile,
       municipalRegistration: general?.municipalRegistration,
+      stateRegistration: general?.stateRegistration,
       siteUrl: general?.siteUrl,
       // Personalization fields
       logoUrl: personalization?.logoUrl,

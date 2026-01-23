@@ -124,6 +124,14 @@ export class CreateGeneralInfoDto {
 
   @IsOptional()
   @ApiProperty({
+    description: 'Inscrição Estadual',
+    required: false,
+    example: '123456789',
+  })
+  stateRegistration?: string;
+
+  @IsOptional()
+  @ApiProperty({
     description: 'Inscrição Municipal',
     required: false,
     example: '987654321',

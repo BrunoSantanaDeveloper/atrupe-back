@@ -10,12 +10,12 @@ datasource db {
 
 model Company {
   id                    String               @id @default(uuid())
-  name                  String
+  name                  String // Nome Fantasia
   createdAt             DateTime             @default(now())
   isActive              Boolean              @default(true)
   updatedAt             DateTime?            @updatedAt
   cnpj                  String?
-  legalName             String?
+  legalName             String? // Razão Social
   municipalRegistration String?
   stateRegistration     String?
   email                 String?
@@ -2016,8 +2016,8 @@ model InvoicyConfig {
   companyId String
 
   // Identificação do emissor
-  name      String   // Nome identificador (ex: "Matriz", "Filial SP")
-  isDefault Boolean  @default(false) // Indica se é o emissor padrão da empresa
+  name      String // Nome identificador (ex: "Matriz", "Filial SP")
+  isDefault Boolean @default(false) // Indica se é o emissor padrão da empresa
 
   // Credenciais Invoicy (campos novos)
   partnerKey  String? // Partner Key do Invoicy
@@ -2077,20 +2077,20 @@ model InvoicyConfig {
 // ==================== CFOP Config ====================
 
 model CfopConfig {
-  id          String   @id @default(uuid())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  companyId   String
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  companyId String
 
-  code        String   // Código CFOP (ex: "5102")
-  description String   // Descrição (ex: "Venda de mercadoria adquirida")
-  type        String   // "ENTRADA" ou "SAIDA"
-  nature      String?  // Natureza da operação (ex: "Venda de mercadoria")
-  info        String?  // Informações de uso
-  isActive    Boolean  @default(true)
+  code        String // Código CFOP (ex: "5102")
+  description String // Descrição (ex: "Venda de mercadoria adquirida")
+  type        String // "ENTRADA" ou "SAIDA"
+  nature      String? // Natureza da operação (ex: "Venda de mercadoria")
+  info        String? // Informações de uso
+  isActive    Boolean @default(true)
 
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   naturesInternal OperationNature[] @relation("NatureInternal")
   naturesExternal OperationNature[] @relation("NatureExternal")
 
@@ -2102,26 +2102,26 @@ model CfopConfig {
 // ==================== Operation Nature ====================
 
 model OperationNature {
-  id               String   @id @default(uuid())
-  companyId        String
-  
+  id        String @id @default(uuid())
+  companyId String
+
   description      String
-  type             String   // ENTRADA, SAIDA
-  finality         String   // 1=Normal, 2=Complementar, etc.
-  consumerPresence String   // 0=Não, 1=Presencial, etc.
+  type             String // ENTRADA, SAIDA
+  finality         String // 1=Normal, 2=Complementar, etc.
+  consumerPresence String // 0=Não, 1=Presencial, etc.
   info             String?
-  
+
   // Relations to CFOPs
-  cfopInternalId   String?
-  cfopExternalId   String?
-  
-  isActive         Boolean  @default(true)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  
-  company          Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  cfopInternal     CfopConfig? @relation("NatureInternal", fields: [cfopInternalId], references: [id])
-  cfopExternal     CfopConfig? @relation("NatureExternal", fields: [cfopExternalId], references: [id])
+  cfopInternalId String?
+  cfopExternalId String?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company      Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  cfopInternal CfopConfig? @relation("NatureInternal", fields: [cfopInternalId], references: [id])
+  cfopExternal CfopConfig? @relation("NatureExternal", fields: [cfopExternalId], references: [id])
 
   @@map("operation_natures")
 }
