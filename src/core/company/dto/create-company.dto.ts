@@ -199,6 +199,56 @@ export class CreateSocialNetworksDto {
   linkedin?: string;
 }
 
+export class CreateFiscalDto {
+  @IsOptional()
+  @ApiProperty({
+    description: 'CNAE',
+    required: false,
+    example: '1234567',
+  })
+  cnae?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Chave do parceiro',
+    required: false,
+    example: 'ElsppfsapoPo23w4+PH545s5MA==',
+  })
+  partnerKey?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Chave de acesso (AccessKey)',
+    required: false,
+    example: 'ElsppfsapoPo23w4+PH545s5MA==',
+  })
+  accessKey?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Tipo do certificado',
+    required: false,
+    example: 'Certificado A1',
+  })
+  certificateType?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Descrição do certificado',
+    required: false,
+    example: 'Teste de Nota',
+  })
+  certificateDescription?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Senha do certificado',
+    required: false,
+    example: '********',
+  })
+  certificatePassword?: string;
+}
+
 export class CreateCompanyDto {
   @IsOptional()
   @IsBoolean()
@@ -247,4 +297,14 @@ export class CreateCompanyDto {
     type: () => CreateSocialNetworksDto,
   })
   socialNetworks?: CreateSocialNetworksDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreateFiscalDto)
+  @ApiProperty({
+    description: 'Dados fiscais',
+    required: false,
+    type: () => CreateFiscalDto,
+  })
+  fiscal?: CreateFiscalDto;
 }

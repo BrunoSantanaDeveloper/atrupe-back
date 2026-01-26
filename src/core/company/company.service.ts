@@ -162,7 +162,7 @@ export class CompanyService {
 
   async createMainCompany(email: string, createCompanyDto: CreateCompanyDto) {
     try {
-      const { general, address, personalization, socialNetworks } =
+      const { general, address, personalization, socialNetworks, fiscal } =
         createCompanyDto;
 
       const company = await this.prisma.$transaction(async (tx) => {
@@ -187,6 +187,13 @@ export class CompanyService {
             instagram: socialNetworks?.instagram,
             facebook: socialNetworks?.facebook,
             linkedin: socialNetworks?.linkedin,
+            // Fiscal fields
+            cnae: fiscal?.cnae,
+            partnerKey: fiscal?.partnerKey,
+            accessKey: fiscal?.accessKey,
+            certificateType: fiscal?.certificateType,
+            certificateDescription: fiscal?.certificateDescription,
+            certificatePassword: fiscal?.certificatePassword,
             // Create related address
             address: address
               ? {
@@ -495,7 +502,7 @@ export class CompanyService {
         throw new Error('Company not found');
       }
 
-      const { general, address, personalization, socialNetworks } =
+      const { general, address, personalization, socialNetworks, fiscal } =
         createCompanyDto;
 
       return await this.prisma.company.create({
@@ -523,6 +530,12 @@ export class CompanyService {
           instagram: socialNetworks?.instagram,
           facebook: socialNetworks?.facebook,
           linkedin: socialNetworks?.linkedin,
+          // Fiscal fields
+          cnae: fiscal?.cnae,
+          partnerKey: fiscal?.partnerKey,
+          certificateType: fiscal?.certificateType,
+          certificateDescription: fiscal?.certificateDescription,
+          certificatePassword: fiscal?.certificatePassword,
 
           // Create related address
           address: address
@@ -625,6 +638,14 @@ export class CompanyService {
         facebook: company.facebook,
         linkedin: company.linkedin,
       },
+      fiscal: {
+        cnae: company.cnae,
+        partnerKey: company.partnerKey,
+        accessKey: company.accessKey,
+        certificateType: company.certificateType,
+        certificateDescription: company.certificateDescription,
+        certificatePassword: company.certificatePassword,
+      },
     }));
 
     return {
@@ -639,7 +660,7 @@ export class CompanyService {
   }
 
   async update(id: string, updateCompanyDto: UpdateCompanyDto) {
-    const { general, address, personalization, socialNetworks } =
+    const { general, address, personalization, socialNetworks, fiscal } =
       updateCompanyDto;
     const data = {
       name: general?.name,
@@ -660,6 +681,13 @@ export class CompanyService {
       instagram: socialNetworks?.instagram,
       facebook: socialNetworks?.facebook,
       linkedin: socialNetworks?.linkedin,
+      // Fiscal fields
+      cnae: fiscal?.cnae,
+      partnerKey: fiscal?.partnerKey,
+      accessKey: fiscal?.accessKey,
+      certificateType: fiscal?.certificateType,
+      certificateDescription: fiscal?.certificateDescription,
+      certificatePassword: fiscal?.certificatePassword,
     };
 
     if (updateCompanyDto.isActive !== undefined) {
