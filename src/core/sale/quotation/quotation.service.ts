@@ -1839,6 +1839,48 @@ export class QuotationService {
             },
           });
 
+          if (quotation.client?.status !== 'ACTIVE') {
+            let canApprove = false;
+
+            if (userId) {
+              const user = await prisma.user.findUnique({
+                where: { id: userId },
+                select: {
+                  employee: {
+                    select: {
+                      role: {
+                        select: { name: true },
+                      },
+                    },
+                  },
+                },
+              });
+
+              if (user?.employee?.[0]?.role?.name === 'Admin') {
+                canApprove = true;
+              } else {
+                const seller = await prisma.sellerProfile.findFirst({
+                  where: {
+                    employees: {
+                      some: { user: { id: userId } },
+                    },
+                  },
+                  select: { canApprovePreRegistration: true },
+                });
+
+                if (seller?.canApprovePreRegistration) {
+                  canApprove = true;
+                }
+              }
+            }
+
+            if (!canApprove) {
+              throw new BadRequestException(
+                'Não é possível aprovar orçamento para cliente com cadastro não regular. Por favor, complete o cadastro do cliente primeiro ou solicite aprovação a um administrador.',
+              );
+            }
+          }
+
           if (!quotation.deliveryInfo) {
             throw new Error('Informações de entrega ausentes na venda.');
           }

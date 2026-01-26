@@ -49,7 +49,7 @@ export class ClientController {
     if (createClientDto.companyId !== req.user.companyId) {
       throw new UnauthorizedException('Unauthorized');
     }
-    return this.clientService.create(createClientDto, req.user.userId);
+    return this.clientService.create(createClientDto);
   }
 
   @Post('import-csv')
@@ -179,15 +179,11 @@ export class ClientController {
     status: 404,
     description: 'Cliente não encontrado.',
   })
-  update(
-    @Param('id') id: string,
-    @Body() updateClientDto: UpdateClientDto,
-    @Req() req,
-  ) {
-    return this.clientService.update(id, updateClientDto, req.user.userId);
+  update(@Param('id') id: string, @Body() updateClientDto: UpdateClientDto) {
+    return this.clientService.update(id, updateClientDto);
   }
 
-  @Patch(':id/toggle-status')
+  @Patch(':id/status')
   @ApiOperation({
     summary: 'Ativa ou desativa um cliente',
     description:
@@ -202,8 +198,8 @@ export class ClientController {
     status: 404,
     description: 'Cliente não encontrado.',
   })
-  toggleStatus(@Param('id') id: string, @Req() req) {
-    return this.clientService.toggleClientStatus(id, req.user.userId);
+  toggleStatus(@Param('id') id: string) {
+    return this.clientService.toggleClientStatus(id);
   }
 
   @Delete(':id')

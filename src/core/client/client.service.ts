@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -73,10 +72,8 @@ export class ClientService {
     return 'PROSPECT';
   }
 
-  async create(createClientDto: CreateClientDto, sellerId: string) {
+  async create(createClientDto: CreateClientDto) {
     try {
-      await this.verifySellerPermission(sellerId);
-
       // Validar duplicidade de documento (CPF/CNPJ)
       // Ignora se o registro atual é filial OU se os registros existentes são filiais
       if (!createClientDto.general.isBranch) {
@@ -503,53 +500,6 @@ export class ClientService {
     };
   }
 
-  private async verifySellerPermission(sellerId) {
-    const user = await this.prisma.user.findUnique({
-      where: {
-        id: sellerId,
-      },
-      select: {
-        employee: {
-          select: {
-            role: {
-              select: {
-                name: true,
-              },
-            },
-          },
-        },
-      },
-    });
-    if (user.employee[0].role.name === 'Admin') {
-      return;
-    }
-    const seller = await this.prisma.sellerProfile.findFirst({
-      where: {
-        employees: {
-          some: {
-            user: {
-              id: sellerId,
-            },
-          },
-        },
-      },
-      select: {
-        id: true,
-        canApprovePreRegistration: true,
-      },
-    });
-
-    if (!seller) {
-      throw new NotFoundException('Seller not found');
-    }
-
-    if (!seller.canApprovePreRegistration) {
-      throw new ForbiddenException(
-        'Você não tem permissão para aprovar um pré-cadastro de um cliente.',
-      );
-    }
-  }
-
   async findClientContacts(clientId: string) {
     const client = await this.prisma.client.findUnique({
       where: { id: clientId },
@@ -575,7 +525,7 @@ export class ClientService {
     return client.contacts;
   }
 
-  async update(id: string, updateClientDto: UpdateClientDto, sellerId: string) {
+  async update(id: string, updateClientDto: UpdateClientDto) {
     try {
       const client = await this.prisma.client.findUnique({ where: { id } });
       if (!client) {
@@ -663,68 +613,8 @@ export class ClientService {
         );
 
         // Se o status calculado for ACTIVE e o status atual não for ACTIVE,
-        // precisa verificar permissão para aprovar
-        if (calculatedStatus === 'ACTIVE' && client.status !== 'ACTIVE') {
-          // Verificar se tem permissão para aprovar
-          let canApprove = false;
-
-          const seller = await this.prisma.sellerProfile.findFirst({
-            where: {
-              employees: {
-                some: {
-                  user: {
-                    id: sellerId,
-                  },
-                },
-              },
-            },
-            select: {
-              id: true,
-              canApprovePreRegistration: true,
-            },
-          });
-
-          // Se não encontrou um seller profile, verificar se é admin
-          if (!seller) {
-            const user = await this.prisma.user.findUnique({
-              where: {
-                id: sellerId,
-              },
-              select: {
-                employee: {
-                  select: {
-                    role: {
-                      select: {
-                        name: true,
-                      },
-                    },
-                  },
-                },
-              },
-            });
-
-            // Se for Admin, pode aprovar
-            if (user?.employee?.[0]?.role?.name === 'Admin') {
-              canApprove = true;
-            }
-          } else if (seller.canApprovePreRegistration) {
-            // Se encontrou o seller e ele tem permissão
-            canApprove = true;
-          }
-
-          // Se tem permissão, usa ACTIVE, senão mantém PROSPECT
-          if (canApprove) {
-            finalStatus = 'ACTIVE';
-          } else {
-            finalStatus = 'PROSPECT';
-            console.log(
-              `Usuário ${sellerId} não tem permissão para aprovar cliente. Status mantido como PROSPECT.`,
-            );
-          }
-        } else {
-          // Para outros casos, usa o status calculado
-          finalStatus = calculatedStatus;
-        }
+        // agora qualquer usuário pode aprovar (a restrição foi movida para o checkout do orçamento)
+        finalStatus = calculatedStatus;
       }
 
       return await this.prisma
@@ -915,7 +805,7 @@ export class ClientService {
     return address;
   }
 
-  async toggleClientStatus(id: string, sellerId: string) {
+  async toggleClientStatus(id: string) {
     const client = await this.prisma.client.findUnique({
       where: { id },
       include: {
@@ -944,68 +834,9 @@ export class ClientService {
         mobile,
       );
 
-      // Se o status calculado for ACTIVE, precisa verificar permissão
-      if (calculatedStatus === 'ACTIVE') {
-        // Verificar se tem permissão para aprovar
-        let canApprove = false;
-
-        const seller = await this.prisma.sellerProfile.findFirst({
-          where: {
-            employees: {
-              some: {
-                user: {
-                  id: sellerId,
-                },
-              },
-            },
-          },
-          select: {
-            id: true,
-            canApprovePreRegistration: true,
-          },
-        });
-
-        // Se não encontrou um seller profile, verificar se é admin
-        if (!seller) {
-          const user = await this.prisma.user.findUnique({
-            where: {
-              id: sellerId,
-            },
-            select: {
-              employee: {
-                select: {
-                  role: {
-                    select: {
-                      name: true,
-                    },
-                  },
-                },
-              },
-            },
-          });
-
-          // Se for Admin, pode aprovar
-          if (user?.employee?.[0]?.role?.name === 'Admin') {
-            canApprove = true;
-          }
-        } else if (seller.canApprovePreRegistration) {
-          // Se encontrou o seller e ele tem permissão
-          canApprove = true;
-        }
-
-        // Se tem permissão, usa ACTIVE, senão usa PROSPECT
-        if (canApprove) {
-          newStatus = 'ACTIVE';
-        } else {
-          newStatus = 'PROSPECT';
-          console.log(
-            `Usuário ${sellerId} não tem permissão para ativar cliente como ACTIVE. Status definido como PROSPECT.`,
-          );
-        }
-      } else {
-        // Se o status calculado for PROSPECT, usa PROSPECT
-        newStatus = calculatedStatus;
-      }
+      // Se o status calculado for ACTIVE, agora qualquer usuário pode ativar
+      // (a restrição foi movida para o checkout do orçamento)
+      newStatus = calculatedStatus;
     } else {
       // Se está ACTIVE ou PROSPECT, muda para INACTIVE (não precisa permissão especial)
       newStatus = 'INACTIVE';
