@@ -2340,6 +2340,7 @@ model DigitalCertificate {
   id          String                 @id @default(uuid())
   companyId   String                 @unique
   type        DigitalCertificateType @default(A1)
+  name        String?
   description String?
   password    String?
   certificate String?                @db.Text

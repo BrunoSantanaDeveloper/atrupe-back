@@ -255,6 +255,13 @@ export class CreateFiscalDto {
     required: false,
   })
   certificate?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Nome do arquivo do certificado',
+    required: false,
+  })
+  certificateName?: string;
 }
 
 export class CreateCompanyDto {

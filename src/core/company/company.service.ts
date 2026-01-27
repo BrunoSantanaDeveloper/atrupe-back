@@ -200,6 +200,7 @@ export class CompanyService {
                       description: fiscal.certificateDescription,
                       password: fiscal.certificatePassword,
                       certificate: fiscal.certificate,
+                      name: fiscal.certificateName,
                     },
                   }
                 : undefined,
@@ -230,7 +231,7 @@ export class CompanyService {
       await this.createDefaultItems(email, company.id);
       this.logger.log('Default items created successfully');
 
-      return company;
+      return this.formatCompany(company);
     } catch (e) {
       console.error(e);
       throw e;
@@ -553,6 +554,7 @@ export class CompanyService {
                     description: fiscal.certificateDescription,
                     password: fiscal.certificatePassword,
                     certificate: fiscal.certificate,
+                    name: fiscal.certificateName,
                   },
                 }
               : undefined,
@@ -623,53 +625,9 @@ export class CompanyService {
       return 0;
     });
 
-    const formattedCompanies = sortedCompanies.map((company, index) => ({
-      id: company.id,
-      isActive: company.isActive,
-      principal: index === 0,
-      general: {
-        name: company.name,
-        legalName: company.legalName,
-        municipalRegistration: company.municipalRegistration,
-        stateRegistration: company.stateRegistration,
-        cnpj: company.cnpj,
-        email: company.email,
-        siteUrl: company.siteUrl,
-        phone: company.phone,
-        mobile: company.mobile,
-      },
-      address: company.address?.length
-        ? {
-            zipcode: company.address[0].zipcode,
-            state: company.address[0].state,
-            city: company.address[0].city,
-            neighborhood: company.address[0].neighborhood,
-            street: company.address[0].street,
-            number: company.address[0].number,
-            complement: company.address[0].complement,
-          }
-        : null,
-      personalization: {
-        logoUrl: company.logoUrl,
-        favIconUrl: company.favIconUrl,
-        textsBeforeItems: company.textBeforeItems,
-        textsAfterItems: company.textAfterItems,
-      },
-      socialNetworks: {
-        instagram: company.instagram,
-        facebook: company.facebook,
-        linkedin: company.linkedin,
-      },
-      fiscal: {
-        cnae: company.cnae,
-        partnerKey: company.partnerKey,
-        accessKey: company.accessKey,
-        certificateType: company.DigitalCertificate?.type,
-        certificateDescription: company.DigitalCertificate?.description,
-        certificatePassword: company.DigitalCertificate?.password,
-        certificate: company.DigitalCertificate?.certificate,
-      },
-    }));
+    const formattedCompanies = sortedCompanies.map((company, index) =>
+      this.formatCompany(company, index === 0),
+    );
 
     return {
       total,
@@ -736,6 +694,7 @@ export class CompanyService {
               description: fiscal.certificateDescription,
               password: fiscal.certificatePassword,
               certificate: fiscal.certificate,
+              name: fiscal.certificateName,
             },
             create: {
               companyId: id,
@@ -743,6 +702,7 @@ export class CompanyService {
               description: fiscal.certificateDescription,
               password: fiscal.certificatePassword,
               certificate: fiscal.certificate,
+              name: fiscal.certificateName,
             },
           });
         } else if (
@@ -807,13 +767,15 @@ export class CompanyService {
       }
 
       // Return updated company with address and certificate
-      return await this.prisma.company.findUnique({
+      const finalCompany = await this.prisma.company.findUnique({
         where: { id },
         include: {
           address: true,
           DigitalCertificate: true,
         },
       });
+
+      return this.formatCompany(finalCompany);
     } catch (e) {
       console.error(e);
       throw e;
@@ -1546,6 +1508,60 @@ export class CompanyService {
         page,
         limit,
         totalPages,
+      },
+    };
+  }
+
+  private formatCompany(company: any, isPrincipal?: boolean) {
+    return {
+      id: company.id,
+      principal: isPrincipal ?? company.principal,
+      isActive: company.isActive,
+      general: {
+        name: company.name,
+        legalName: company.legalName,
+        municipalRegistration: company.municipalRegistration,
+        stateRegistration: company.stateRegistration,
+        cnpj: company.cnpj,
+        email: company.email,
+        siteUrl: company.siteUrl,
+        phone: company.phone,
+        mobile: company.mobile,
+      },
+      address: company.address?.length
+        ? {
+            zipcode: company.address[0].zipcode,
+            state: company.address[0].state,
+            city: company.address[0].city,
+            neighborhood: company.address[0].neighborhood,
+            street: company.address[0].street,
+            number: company.address[0].number,
+            complement: company.address[0].complement,
+          }
+        : company.address && !Array.isArray(company.address)
+          ? company.address
+          : null,
+      personalization: {
+        logoUrl: company.logoUrl,
+        favIconUrl: company.favIconUrl,
+        textsBeforeItems: company.textBeforeItems,
+        textsAfterItems: company.textAfterItems,
+      },
+      socialNetworks: {
+        instagram: company.instagram,
+        facebook: company.facebook,
+        linkedin: company.linkedin,
+      },
+      fiscal: {
+        cnae: company.cnae,
+        partnerKey: company.partnerKey,
+        accessKey: company.accessKey,
+        certificateType: company.DigitalCertificate?.type,
+        certificateDescription: company.DigitalCertificate?.description,
+        certificatePassword: company.DigitalCertificate?.password,
+        certificate: company.DigitalCertificate?.certificate,
+        certificateName: company.DigitalCertificate?.name,
+        certificateUpdatedAt: company.DigitalCertificate?.updatedAt,
       },
     };
   }
