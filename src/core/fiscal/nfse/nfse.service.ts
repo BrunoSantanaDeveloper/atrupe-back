@@ -27,7 +27,7 @@ export class NfseService {
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
     private readonly invoicyHttpService: InvoicyHttpService,
-  ) { }
+  ) {}
 
   async findAll(companyId: string, filters: NfseFilterDto) {
     const page = filters.page || 1;
@@ -190,7 +190,7 @@ export class NfseService {
       naturezaOperacao: 1, // Tributação no município
       codigoServico: dto.codigoServico,
       discriminacao: dto.discriminacao,
-      codigoMunicipio: config.emitCmun || '',
+      codigoMunicipio: config.ibgeCode || '',
       valorServicos,
       aliquotaIss: dto.aliquotaIss || config.aliquotaIss || 0,
       issRetido: dto.issRetido || false,
@@ -203,7 +203,7 @@ export class NfseService {
         complemento: clientAddress?.complement || '',
         bairro: clientAddress?.neighborhood || '',
         cep: clientAddress?.zipcode || '',
-        codigoMunicipio: config.emitCmun || '',
+        codigoMunicipio: config.ibgeCode || '',
         municipio: clientAddress?.city || '',
         uf: clientAddress?.state || '',
         email: client.email || '',
@@ -237,14 +237,16 @@ export class NfseService {
       throw new BadRequestException('Integração com Invoicy está desativada.');
     }
 
-    if (!config.emitIm) {
+    if (!config.company.municipalRegistration) {
       throw new BadRequestException(
         'Inscrição Municipal não configurada. Necessária para emissão de NFS-e.',
       );
     }
 
     // Obter próximo número do RPS
-    const rpsNumero = await this.invoicyService.incrementNfseRpsNumber(config.id);
+    const rpsNumero = await this.invoicyService.incrementNfseRpsNumber(
+      config.id,
+    );
     const rpsSerie = config.serieNfse || 'A1';
 
     // Calcular valores
@@ -300,36 +302,58 @@ export class NfseService {
         ItemuMed: item.unidade || 'UN',
         ItemvlDed: 0,
         ItemTributavel: 'S',
-        ItemTributMunicipio: parseInt(item.codigoServico || dto.codigoMunicipio || '0', 10),
-        ItemvIss: (item.quantidade * item.valorUnitario * (item.aliquotaIss || aliquotaIss)) / 100,
+        ItemTributMunicipio: parseInt(
+          item.codigoServico || dto.codigoMunicipio || '0',
+          10,
+        ),
+        ItemvIss:
+          (item.quantidade *
+            item.valorUnitario *
+            (item.aliquotaIss || aliquotaIss)) /
+          100,
         ItemAliquota: item.aliquotaIss || aliquotaIss,
         ItemVlrTotal: item.quantidade * item.valorUnitario,
         ItemBaseCalculo: item.quantidade * item.valorUnitario,
         ItemIssRetido: item.issRetido ? 1 : 2,
-        ItemIteListServico: parseInt(config.codigoServico?.replace(/\D/g, '') || '0', 10), // Usar código do serviço principal se não informado no item
+        ItemIteListServico: parseInt(
+          config.codigoServico?.replace(/\D/g, '') || '0',
+          10,
+        ), // Usar código do serviço principal se não informado no item
         ItemExigibilidadeISS: 1, // Exigível
-        ItemcMunIncidencia: parseInt(dto.codigoMunicipio || config.emitCmun || '0', 10),
+        ItemcMunIncidencia: parseInt(
+          dto.codigoMunicipio || config.ibgeCode || '0',
+          10,
+        ),
       })) || [
-          {
-            ItemSeq: 1,
-            ItemCod: 'SERV',
-            ItemDesc: dto.discriminacao.substring(0, 100), // Invoicy pode ter limite
-            ItemQtde: 1,
-            ItemvUnit: valorServicos,
-            ItemuMed: 'SV',
-            ItemvlDed: valorDeducoes,
-            ItemTributavel: 'S',
-            ItemTributMunicipio: parseInt(dto.codigoMunicipio || config.emitCmun || '0', 10),
-            ItemvIss: valorIss,
-            ItemAliquota: aliquotaIss,
-            ItemVlrTotal: valorServicos,
-            ItemBaseCalculo: baseCalculo,
-            ItemIssRetido: dto.issRetido ? 1 : 2,
-            ItemIteListServico: parseInt(dto.codigoServico.replace(/\D/g, ''), 10),
-            ItemExigibilidadeISS: 1,
-            ItemcMunIncidencia: parseInt(dto.codigoMunicipio || config.emitCmun || '0', 10),
-          },
-        ];
+        {
+          ItemSeq: 1,
+          ItemCod: 'SERV',
+          ItemDesc: dto.discriminacao.substring(0, 100), // Invoicy pode ter limite
+          ItemQtde: 1,
+          ItemvUnit: valorServicos,
+          ItemuMed: 'SV',
+          ItemvlDed: valorDeducoes,
+          ItemTributavel: 'S',
+          ItemTributMunicipio: parseInt(
+            dto.codigoMunicipio || config.ibgeCode || '0',
+            10,
+          ),
+          ItemvIss: valorIss,
+          ItemAliquota: aliquotaIss,
+          ItemVlrTotal: valorServicos,
+          ItemBaseCalculo: baseCalculo,
+          ItemIssRetido: dto.issRetido ? 1 : 2,
+          ItemIteListServico: parseInt(
+            dto.codigoServico.replace(/\D/g, ''),
+            10,
+          ),
+          ItemExigibilidadeISS: 1,
+          ItemcMunIncidencia: parseInt(
+            dto.codigoMunicipio || config.ibgeCode || '0',
+            10,
+          ),
+        },
+      ];
 
       // Construir payload para o Invoicy
       const invoicyRequest: InvoicyNfseRequest = {
@@ -352,18 +376,25 @@ export class NfseService {
               Status: 1, // 1 = Normal
               tpAmb: config.ambiente === 'PRODUCAO' ? 1 : 2,
               Prestador: {
-                CNPJ_prest: (config.emitCnpj || '').replace(/\D/g, ''),
-                xNome: config.emitRazaoSocial || '',
-                xFant: config.emitNomeFantasia || '',
-                IM: (config.emitIm || '').replace(/\D/g, ''),
+                CNPJ_prest: (config.company.cnpj || '').replace(/\D/g, ''),
+                xNome: config.company.legalName || '',
+                xFant: config.company.name || '',
+                IM: (config.company.municipalRegistration || '').replace(
+                  /\D/g,
+                  '',
+                ),
                 enderPrest: {
                   TPEnd: 'Rua', // Default
-                  xLgr: config.emitEndereco || '',
-                  nro: config.emitNumero || 'S/N',
-                  xBairro: config.emitBairro || '',
-                  cMun: parseInt(config.emitCmun || '0', 10),
-                  UF: config.emitUf || '',
-                  CEP: parseInt((config.emitCep || '').replace(/\D/g, ''), 10) || 0,
+                  xLgr: config.company.address.street || '',
+                  nro: config.company.address.number || 'S/N',
+                  xBairro: config.company.address.neighborhood || '',
+                  cMun: parseInt(config.ibgeCode || '0', 10),
+                  UF: config.company.address.state || '',
+                  CEP:
+                    parseInt(
+                      (config.company.address.zipcode || '').replace(/\D/g, ''),
+                      10,
+                    ) || 0,
                 },
               },
               ListaItens: listaItens,
@@ -382,14 +413,27 @@ export class NfseService {
                   ValBaseCalculo: baseCalculo,
                   ValAliqISS: aliquotaIss,
                 },
-                IteListServico: parseInt(dto.codigoServico.replace(/\D/g, ''), 10),
+                IteListServico: parseInt(
+                  dto.codigoServico.replace(/\D/g, ''),
+                  10,
+                ),
                 Discriminacao: dto.discriminacao,
-                cMun: parseInt(dto.codigoMunicipio || config.emitCmun || '0', 10),
-                TributMunicipio: parseInt(dto.codigoMunicipio || config.emitCmun || '0', 10),
+                cMun: parseInt(
+                  dto.codigoMunicipio || config.ibgeCode || '0',
+                  10,
+                ),
+                TributMunicipio: parseInt(
+                  dto.codigoMunicipio || config.ibgeCode || '0',
+                  10,
+                ),
               },
               Tomador: {
-                TomaCNPJ: dto.tomador.cnpj ? dto.tomador.cnpj.replace(/\D/g, '') : undefined,
-                TomaCPF: dto.tomador.cpf ? dto.tomador.cpf.replace(/\D/g, '') : undefined,
+                TomaCNPJ: dto.tomador.cnpj
+                  ? dto.tomador.cnpj.replace(/\D/g, '')
+                  : undefined,
+                TomaCPF: dto.tomador.cpf
+                  ? dto.tomador.cpf.replace(/\D/g, '')
+                  : undefined,
                 TomaRazaoSocial: dto.tomador.razaoSocial,
                 TomaEndereco: dto.tomador.endereco,
                 TomaNumero: dto.tomador.numero,
@@ -397,7 +441,8 @@ export class NfseService {
                 TomacMun: parseInt(dto.tomador.codigoMunicipio || '0', 10),
                 TomaxMun: dto.tomador.municipio,
                 TomaUF: dto.tomador.uf,
-                TomaCEP: parseInt((dto.tomador.cep || '').replace(/\D/g, ''), 10) || 0,
+                TomaCEP:
+                  parseInt((dto.tomador.cep || '').replace(/\D/g, ''), 10) || 0,
               },
             },
           ],
@@ -417,7 +462,9 @@ export class NfseService {
       }
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+        throw new Error(
+          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+        );
       }
 
       const doc = response.Documentos?.[0];
@@ -502,7 +549,9 @@ export class NfseService {
       }
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-        throw new Error(response.Descricao || `Erro Invoicy: código ${response.Codigo}`);
+        throw new Error(
+          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+        );
       }
 
       const doc = response.Documentos?.[0];
@@ -510,7 +559,10 @@ export class NfseService {
       const isCancelled = situacao?.SitCodigo === 101; // Cancelamento autorizado
 
       if (!isCancelled) {
-        throw new Error(situacao?.SitDescricao || 'Cancelamento não autorizado pela Prefeitura');
+        throw new Error(
+          situacao?.SitDescricao ||
+            'Cancelamento não autorizado pela Prefeitura',
+        );
       }
 
       const updatedNfse = await this.prisma.nfse.update({

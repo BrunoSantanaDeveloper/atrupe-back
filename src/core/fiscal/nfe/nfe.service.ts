@@ -156,8 +156,8 @@ export class NfeService {
 
       // Configuração de emissão
       emissao: {
-        emissor: config.emitRazaoSocial || config.emitNomeFantasia || '',
-        emissorCnpj: config.emitCnpj || '',
+        emissor: config.company.legalName || config.company.name || '',
+        emissorCnpj: config.company.cnpj || '',
         proximoDocumento: `${config.proximoNumeroNfe || 1} - ${config.serieNfe || 1}`,
         serie: config.serieNfe || 1,
         tipo: 1, // 1 = Saída
@@ -167,7 +167,8 @@ export class NfeService {
         presencaConsumidor: 1, // 1 = Operação presencial
         nfeReferenciada: null,
         dataSaida: new Date().toISOString(),
-        destinoOperacao: clientAddress?.state === config.emitUf ? 1 : 2, // 1 = Interna, 2 = Interestadual
+        destinoOperacao:
+          clientAddress?.state === config.company.address.state ? 1 : 2, // 1 = Interna, 2 = Interestadual
         modalidadeFrete: 9, // 9 = Sem ocorrência de transporte
         ambiente: config.ambiente || 'HOMOLOGACAO',
       },
@@ -556,18 +557,20 @@ export class NfeService {
       this.logger.log(`Emitindo NF-e ${numero} para empresa ${companyId}`);
 
       // Ensure we have emitter IBGE code
-      let emitCmun = config.emitCmun;
-      if (!emitCmun && config.emitCep) {
+      let emitCmun = config.ibgeCode;
+      const emitCep = config.company.address.zipcode;
+
+      if (!emitCmun && emitCep) {
         this.logger.log(
-          `Emitente (Empresa) sem código IBGE configurado. Buscando via CEP do emitente: ${config.emitCep}`,
+          `Emitente (Empresa) sem código IBGE configurado. Buscando via CEP do emitente: ${emitCep}`,
         );
-        const cepData = await fetchCepData(config.emitCep);
+        const cepData = await fetchCepData(emitCep);
         if (cepData) {
           emitCmun = cepData.codigoIbge;
           this.logger.log(`IBGE do emitente encontrado: ${emitCmun}`);
         } else {
           this.logger.warn(
-            `Não foi possível encontrar IBGE para CEP do emitente: ${config.emitCep}`,
+            `Não foi possível encontrar IBGE para CEP do emitente: ${emitCep}`,
           );
         }
       }
@@ -579,7 +582,7 @@ export class NfeService {
           ModeloDocumento: 'NFe',
           Versao: 4,
           ide: {
-            cUF: this.getUfCode(config.emitUf),
+            cUF: this.getUfCode(config.company.address.state),
             natOp:
               dto.operationNature ||
               config.defaultOperationNature ||
@@ -590,7 +593,7 @@ export class NfeService {
             dhEmi: now.toISOString(),
             fusoHorario: '-03:00',
             tpNf: 1, // 1 = Saída
-            idDest: destUfFromCep === config.emitUf ? 1 : 2, // 1 = Interna, 2 = Interestadual
+            idDest: destUfFromCep === config.company.address.state ? 1 : 2, // 1 = Interna, 2 = Interestadual
             cMunFg: parseInt(emitCmun || '0', 10),
             tpImp: 1, // DANFE retrato
             tpEmis: 1, // Emissão normal
@@ -603,19 +606,23 @@ export class NfeService {
             verProc: 'Atrupe 1.0',
           },
           emit: {
-            CNPJ_emit: (config.emitCnpj || '').replace(/\D/g, ''),
-            xNome: config.emitRazaoSocial || '',
-            IE: (config.emitIe || '').replace(/\D/g, ''),
-            IM: config.emitIm || undefined,
+            CNPJ_emit: (config.company.cnpj || '').replace(/\D/g, ''),
+            xNome: config.company.legalName || '',
+            IE: (config.company.stateRegistration || '').replace(/\D/g, ''),
+            IM: config.company.municipalRegistration || undefined,
             CRT: config.emitCrt || 1,
             enderEmit: {
-              xLgr: config.emitEndereco || '',
-              nro: config.emitNumero || 'S/N',
-              xBairro: config.emitBairro || '',
+              xLgr: config.company.address.street || '',
+              nro: config.company.address.number || 'S/N',
+              xBairro: config.company.address.neighborhood || '',
               cMun: parseInt(emitCmun || '0', 10),
-              xMun: config.emitXMun || '',
-              UF: config.emitUf || '',
-              CEP: parseInt((config.emitCep || '').replace(/\D/g, ''), 10) || 0,
+              xMun: config.company.address.city || '',
+              UF: config.company.address.state || '',
+              CEP:
+                parseInt(
+                  (config.company.address.zipcode || '').replace(/\D/g, ''),
+                  10,
+                ) || 0,
             },
           },
           dest: {
@@ -657,7 +664,7 @@ export class NfeService {
                   item.cfop || parseInt(config.defaultCfop || '5102', 10);
                 // Se é operação interestadual e CFOP começa com 5, converter para 6
                 if (
-                  destUfFromCep !== config.emitUf &&
+                  destUfFromCep !== config.company.address.state &&
                   Math.floor(baseCfop / 1000) === 5
                 ) {
                   return baseCfop + 1000; // 5102 -> 6102

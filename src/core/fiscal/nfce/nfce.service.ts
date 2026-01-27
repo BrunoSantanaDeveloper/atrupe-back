@@ -204,18 +204,20 @@ export class NfceService {
       this.logger.log(`Emitindo NFC-e ${numero} para empresa ${companyId}`);
 
       // Ensure we have emitter IBGE code
-      let emitCmun = config.emitCmun;
-      if (!emitCmun && config.emitCep) {
+      let emitCmun = config.ibgeCode;
+      const emitCep = config.company?.address?.zipcode;
+
+      if (!emitCmun && emitCep) {
         this.logger.log(
-          `Emitente (Empresa) sem código IBGE configurado. Buscando via CEP do emitente: ${config.emitCep}`,
+          `Emitente (Empresa) sem código IBGE configurado. Buscando via CEP do emitente: ${emitCep}`,
         );
-        const cepData = await fetchCepData(config.emitCep);
+        const cepData = await fetchCepData(emitCep);
         if (cepData) {
           emitCmun = cepData.codigoIbge;
           this.logger.log(`IBGE do emitente encontrado: ${emitCmun}`);
         } else {
           this.logger.warn(
-            `Não foi possível encontrar IBGE para CEP do emitente: ${config.emitCep}`,
+            `Não foi possível encontrar IBGE para CEP do emitente: ${emitCep}`,
           );
         }
       }
@@ -227,7 +229,7 @@ export class NfceService {
           ModeloDocumento: 'NFCe',
           Versao: 4,
           ide: {
-            cUF: this.getUfCode(config.emitUf),
+            cUF: this.getUfCode(config.company.address.state),
             natOp: 'Venda de mercadoria',
             mod: '65',
             serie: (config.serieNfce || 1).toString(),
@@ -248,18 +250,22 @@ export class NfceService {
             verProc: 'Atrupe 1.0',
           },
           emit: {
-            CNPJ_emit: (config.emitCnpj || '').replace(/\D/g, ''),
-            xNome: config.emitRazaoSocial || '',
-            IE: (config.emitIe || '').replace(/\D/g, ''),
+            CNPJ_emit: (config.company.cnpj || '').replace(/\D/g, ''),
+            xNome: config.company.legalName || '',
+            IE: (config.company.stateRegistration || '').replace(/\D/g, ''),
             CRT: config.emitCrt || 1,
             enderEmit: {
-              xLgr: config.emitEndereco || '',
-              nro: config.emitNumero || 'S/N',
-              xBairro: config.emitBairro || '',
+              xLgr: config.company.address.street || '',
+              nro: config.company.address.number || 'S/N',
+              xBairro: config.company.address.neighborhood || '',
               cMun: parseInt(emitCmun || '0', 10),
               xMun: '', // Empty for NFC-e sometimes? Or use emitXMun?
-              UF: config.emitUf || '',
-              CEP: parseInt((config.emitCep || '').replace(/\D/g, ''), 10) || 0,
+              UF: config.company.address.state || '',
+              CEP:
+                parseInt(
+                  (config.company.address.zipcode || '').replace(/\D/g, ''),
+                  10,
+                ) || 0,
             },
           },
           dest: {
@@ -271,7 +277,7 @@ export class NfceService {
               xBairro_dest: '',
               cMun_dest: 0,
               xMun_dest: '',
-              UF_dest: config.emitUf || '',
+              UF_dest: config.company.address.state || '',
               CEP_dest: 0,
               cPais_dest: 1058,
             },
