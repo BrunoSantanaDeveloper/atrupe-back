@@ -729,8 +729,9 @@ export class CompanyService {
             });
           }
         } else if (
-          fiscal.certificateType === null ||
-          fiscal.certificate === null
+          (fiscal.certificateType === null ||
+            (fiscal.certificateType as any) === '') &&
+          (fiscal.certificate === null || fiscal.certificate === '')
         ) {
           // Explicitly requested deletion of certificate (e.g. by sending null)
           // You might need to adjust this logic based on how you want to handle "delete" from frontend
