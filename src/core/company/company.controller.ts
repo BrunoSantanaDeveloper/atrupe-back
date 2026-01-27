@@ -24,7 +24,6 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { Company } from '@prisma/client';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 const RESOURCE = 'company';
@@ -40,13 +39,12 @@ export class CompanyController {
   @ApiResponse({
     status: 201,
     description: 'A empresa foi criada com sucesso.',
-    type: Promise<Company>,
   })
   @ApiBody({ type: CreateCompanyDto })
   async create(
     @Req() req,
     @Body() createCompanyDto: CreateCompanyDto,
-  ): Promise<Company> {
+  ): Promise<any> {
     const companyId = req.user.companyId;
     return await this.companyService.create(createCompanyDto, companyId);
   }
@@ -56,13 +54,12 @@ export class CompanyController {
   @ApiResponse({
     status: 201,
     description: 'A empresa foi criada com sucesso.',
-    type: Promise<Company>,
   })
   @ApiBody({ type: CreateCompanyDto })
   async createMain(
     @Req() req,
     @Body() createCompanyDto: CreateCompanyDto,
-  ): Promise<Company> {
+  ): Promise<any> {
     return await this.companyService.createMainCompany(
       req.user.email,
       createCompanyDto,
@@ -104,7 +101,6 @@ export class CompanyController {
   @ApiResponse({
     status: 200,
     description: 'A empresa foi encontrada.',
-    type: Promise<Company>,
   })
   @ApiResponse({
     status: 404,
@@ -121,7 +117,6 @@ export class CompanyController {
   @ApiResponse({
     status: 200,
     description: 'A empresa foi encontrada.',
-    type: Promise<Company>,
   })
   @ApiResponse({
     status: 404,
@@ -138,7 +133,6 @@ export class CompanyController {
   @ApiResponse({
     status: 200,
     description: 'A empresa foi atualizada com sucesso.',
-    type: Promise<Company>,
   })
   @ApiResponse({
     status: 404,

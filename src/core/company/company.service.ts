@@ -4,7 +4,6 @@ import { UpdateCompanyDto } from './dto/update-company.dto';
 import { PlugService } from '../../svc/plug/plug.service';
 import {
   ClientKind,
-  Company,
   PaymentConditionCostType,
   Prisma,
   ReasonType,
@@ -500,10 +499,7 @@ export class CompanyService {
     }
   }
 
-  async create(
-    createCompanyDto: CreateCompanyDto,
-    parentCompanyId: string,
-  ): Promise<Company> {
+  async create(createCompanyDto: CreateCompanyDto, parentCompanyId: string) {
     try {
       const company = await this.prisma.company.findUnique({
         where: { id: parentCompanyId },
@@ -580,6 +576,8 @@ export class CompanyService {
           DigitalCertificate: true,
         },
       });
+
+      return this.formatCompany(company);
     } catch (e) {
       console.error(e);
       throw e;
@@ -636,8 +634,15 @@ export class CompanyService {
     };
   }
 
-  findOne(id: string) {
-    return this.prisma.company.findFirst({ where: { id: id } });
+  async findOne(id: string) {
+    const company = await this.prisma.company.findFirst({
+      where: { id: id },
+      include: {
+        address: true,
+        DigitalCertificate: true,
+      },
+    });
+    return this.formatCompany(company);
   }
 
   async update(id: string, updateCompanyDto: UpdateCompanyDto) {
