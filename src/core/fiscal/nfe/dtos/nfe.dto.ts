@@ -228,7 +228,9 @@ export class EmitNfeDto {
   @IsOptional()
   additionalInfo?: string;
 
-  @ApiPropertyOptional({ description: 'Modalidade de frete: 0=CIF, 1=FOB, 9=Sem Frete, etc' })
+  @ApiPropertyOptional({
+    description: 'Modalidade de frete: 0=CIF, 1=FOB, 9=Sem Frete, etc',
+  })
   @IsInt()
   @IsOptional()
   modalidadeFrete?: number;
@@ -308,20 +310,29 @@ export class EmitNfeDto {
   @Type(() => NfeItemDto)
   items?: NfeItemDto[];
 
-  @ApiPropertyOptional({ description: 'Dados da transportadora', type: NfeTransportDto })
+  @ApiPropertyOptional({
+    description: 'Dados da transportadora',
+    type: NfeTransportDto,
+  })
   @IsOptional()
   @ValidateNested()
   @Type(() => NfeTransportDto)
   transportadora?: NfeTransportDto;
 
-  @ApiPropertyOptional({ description: 'Volumes transportados', type: [NfeVolumeDto] })
+  @ApiPropertyOptional({
+    description: 'Volumes transportados',
+    type: [NfeVolumeDto],
+  })
   @IsArray()
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => NfeVolumeDto)
   volumes?: NfeVolumeDto[];
 
-  @ApiPropertyOptional({ description: 'Dados de pagamento', type: NfePaymentDto })
+  @ApiPropertyOptional({
+    description: 'Dados de pagamento',
+    type: NfePaymentDto,
+  })
   @IsOptional()
   @ValidateNested()
   @Type(() => NfePaymentDto)
@@ -333,6 +344,12 @@ export class EmitNfeDto {
   @ValidateNested({ each: true })
   @Type(() => NfeDuplicateDto)
   duplicatas?: NfeDuplicateDto[];
+
+  @ApiPropertyOptional({ description: 'CNPJ/CPFs autorizados a baixar o XML' })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  autXml?: string[];
 }
 
 export class CancelNfeDto {
@@ -350,7 +367,10 @@ export class CorrectionLetterDto {
   @IsNotEmpty()
   correcao: string;
 
-  @ApiPropertyOptional({ description: 'Sequência do evento (1-20)', default: 1 })
+  @ApiPropertyOptional({
+    description: 'Sequência do evento (1-20)',
+    default: 1,
+  })
   @IsInt()
   @IsOptional()
   sequenciaEvento?: number;

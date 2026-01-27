@@ -235,6 +235,9 @@ export class NfeService {
         valorTotalTributos: 0,
         valorNota: Number(valorNota.toFixed(2)),
       },
+
+      // Autorização para download (XML)
+      autXml: [],
     };
   }
 
@@ -725,6 +728,35 @@ export class NfeService {
           transp: {
             modFrete: '9', // Sem frete
           },
+          // Duplicatas/Cobrança
+          ...(dto.duplicatas && dto.duplicatas.length > 0
+            ? {
+                cobr: {
+                  fat: {
+                    nFat: numero.toString(),
+                    vOrig: valorTotal.toFixed(2),
+                    vDesc: '0.00',
+                    vLiq: valorTotal.toFixed(2),
+                  },
+                  dup: dto.duplicatas.map((d) => ({
+                    nDup: d.numero || '',
+                    dVenc: d.dataVencimento || '',
+                    vDup: (d.valor || 0).toFixed(2),
+                  })),
+                },
+              }
+            : {}),
+          // Autorização de download
+          ...(dto.autXml && dto.autXml.length > 0
+            ? {
+                autXML: dto.autXml.map((doc) => {
+                  const cleanDoc = doc.replace(/\D/g, '');
+                  return cleanDoc.length === 14
+                    ? { CNPJ: cleanDoc }
+                    : { CPF: cleanDoc };
+                }),
+              }
+            : {}),
         },
       };
 
