@@ -124,7 +124,8 @@ export class NfeService {
         freight: 0,
         insurance: 0,
         totalValue: Number(totalValueReais.toFixed(2)),
-        needsConfiguration: !fiscalData?.ncm || !selectedCfop,
+        needsConfiguration:
+          !fiscalData?.ncm || fiscalData.ncm.length !== 8 || !selectedCfop,
       };
     });
 
@@ -657,21 +658,38 @@ export class NfeService {
           det: dto.items.map((item, index) => ({
             prod: {
               cProd: item.productId || `ITEM${index + 1}`,
-              cEAN: item.ean || 'SEM GTIN',
-              cEANTrib: item.ceantrib || 'SEM GTIN',
+              cEAN:
+                item.ean &&
+                /^\d+$/.test(item.ean) &&
+                [8, 12, 13, 14].includes(item.ean.length)
+                  ? item.ean
+                  : 'SEM GTIN',
+              cEANTrib:
+                item.ceantrib &&
+                /^\d+$/.test(item.ceantrib) &&
+                [8, 12, 13, 14].includes(item.ceantrib.length)
+                  ? item.ceantrib
+                  : 'SEM GTIN',
               xProd: item.description || `Produto ${index + 1}`,
               NCM: (item.ncm || '00000000').replace(/\D/g, ''),
               // CFOP: 5xxx para operação interna (mesmo estado), 6xxx para interestadual
               CFOP: (() => {
                 const baseCfop =
                   item.cfop || parseInt(config.defaultCfop || '5102', 10);
+
+                const isInterestadual =
+                  destUfFromCep !== config.company.address.state;
+
                 // Se é operação interestadual e CFOP começa com 5, converter para 6
-                if (
-                  destUfFromCep !== config.company.address.state &&
-                  Math.floor(baseCfop / 1000) === 5
-                ) {
+                if (isInterestadual && Math.floor(baseCfop / 1000) === 5) {
                   return baseCfop + 1000; // 5102 -> 6102
                 }
+
+                // Se é operação interna e CFOP começa com 6, converter para 5
+                if (!isInterestadual && Math.floor(baseCfop / 1000) === 6) {
+                  return baseCfop - 1000; // 6102 -> 5102
+                }
+
                 return baseCfop;
               })(),
               uCOM: item.uCom || 'UN',
@@ -787,6 +805,28 @@ export class NfeService {
       const situacao = doc.Situacao;
       const isAuthorized =
         situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150;
+
+      // Check for key collision before updating
+      if (doc.DocChaAcesso) {
+        const conflictingNfe = await this.prisma.nfe.findFirst({
+          where: {
+            chaveAcesso: doc.DocChaAcesso,
+            id: { not: nfe.id },
+          },
+        });
+
+        if (conflictingNfe) {
+          this.logger.warn(
+            `Conflito de chave de acesso detectado. NFe antiga: ${conflictingNfe.id}, Nova NFe: ${nfe.id}. Removendo chave da antiga para prosseguir.`,
+          );
+          // Opção: Limpar a chave da antiga ou deletá-la se for lixo/rejeitada.
+          // Como estamos em um novo processo, vamos limpar a chave da antiga para permitir a atualização.
+          await this.prisma.nfe.update({
+            where: { id: conflictingNfe.id },
+            data: { chaveAcesso: null },
+          });
+        }
+      }
 
       // Atualizar NF-e com resposta
       const updatedNfe = await this.prisma.nfe.update({
