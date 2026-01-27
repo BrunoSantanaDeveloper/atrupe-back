@@ -9,83 +9,79 @@ datasource db {
 }
 
 model Company {
-  id                     String               @id @default(uuid())
-  name                   String // Nome Fantasia
-  createdAt              DateTime             @default(now())
-  isActive               Boolean              @default(true)
-  updatedAt              DateTime?            @updatedAt
-  cnpj                   String?
-  legalName              String? // Razão Social
-  municipalRegistration  String?
-  stateRegistration      String?
-  email                  String?
-  favIconUrl             String?
-  logoUrl                String?
-  mobile                 String?
-  phone                  String?
-  siteUrl                String?
-  textAfterItems         String?
-  textBeforeItems        String?
-  principalCompanyId     String?
-  facebook               String?
-  instagram              String?
-  linkedin               String?
-  unitDefaults           Json?
-  cnae                   String?
-  partnerKey             String?
-  accessKey              String?
-  certificateType        String? // A1 / A3
-  certificateDescription String?
-  certificatePassword    String?
-  certificateUrl         String?
-  certificateModifiedAt  DateTime?
-  deliveryType           DeliveryType[]
-  AcademyProgress        AcademyProgress[]
-  address                Address[]
-  assetTypes             AssetType[]
-  assets                 Asset[]
-  bankAccounts           BankAccount[]
-  cashControls           CashRegister[]
-  categories             Category[]
-  clients                Client[]
-  creditLimitDefault     CreditLimitDefault[]
-  customer               Customer[]
-  deliverySchedule       DeliverySchedule[]
-  employees              Employee[]
-  financialFlows         FinancialFlow[]
-  invoices               Invoice[]
-  language               Language[]
-  nature                 Nature[]
-  payables               Payable[]
-  paymentConditions      PaymentCondition[]
-  Plan                   Plan[]
-  products               Product[]
-  reasons                Reasons[]
-  receivables            Receivable[]
-  roles                  Role[]
-  PayrollSetup           PayrollSetup[]
-  payrollTemplates       PayrollTemplate[]
-  payroll                Payroll[]
-  saleSeries             SaleSeries[]
-  scheduledExpenses      ScheduledExpense[]
-  sellerProfile          SellerProfile[]
-  quotationTag           QuotationTag[]
-  subCategory            SubCategory[]
-  Subscription           Subscription[]
-  suppliers              Supplier[]
-  parentCompany          Company?             @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
-  subsidiaries           Company[]            @relation("CompanyHierarchy")
-  mainQuotations         Quotation[]          @relation("MainCompany")
-  fiscalQuotations       Quotation[]          @relation("FiscalSubCompany")
-  sectors                CompanySector[]      @relation("CompanyToCompanySector")
-  history                CompanyHistory[]
-  importLogs             ImportLog[]
-  invoicyConfigs         InvoicyConfig[]
-  nfes                   Nfe[]
-  nfses                  Nfse[]
-  nfces                  Nfce[]
-  cfopConfigs            CfopConfig[]
-  operationNatures       OperationNature[]
+  id                    String               @id @default(uuid())
+  name                  String // Nome Fantasia
+  createdAt             DateTime             @default(now())
+  isActive              Boolean              @default(true)
+  updatedAt             DateTime?            @updatedAt
+  cnpj                  String?
+  legalName             String? // Razão Social
+  municipalRegistration String?
+  stateRegistration     String?
+  email                 String?
+  favIconUrl            String?
+  logoUrl               String?
+  mobile                String?
+  phone                 String?
+  siteUrl               String?
+  textAfterItems        String?
+  textBeforeItems       String?
+  principalCompanyId    String?
+  facebook              String?
+  instagram             String?
+  linkedin              String?
+  unitDefaults          Json?
+  cnae                  String?
+  partnerKey            String?
+  accessKey             String?
+  deliveryType          DeliveryType[]
+  DigitalCertificate    DigitalCertificate?
+  AcademyProgress       AcademyProgress[]
+  address               Address[]
+  assetTypes            AssetType[]
+  assets                Asset[]
+  bankAccounts          BankAccount[]
+  cashControls          CashRegister[]
+  categories            Category[]
+  clients               Client[]
+  creditLimitDefault    CreditLimitDefault[]
+  customer              Customer[]
+  deliverySchedule      DeliverySchedule[]
+  employees             Employee[]
+  financialFlows        FinancialFlow[]
+  invoices              Invoice[]
+  language              Language[]
+  nature                Nature[]
+  payables              Payable[]
+  paymentConditions     PaymentCondition[]
+  Plan                  Plan[]
+  products              Product[]
+  reasons               Reasons[]
+  receivables           Receivable[]
+  roles                 Role[]
+  PayrollSetup          PayrollSetup[]
+  payrollTemplates      PayrollTemplate[]
+  payroll               Payroll[]
+  saleSeries            SaleSeries[]
+  scheduledExpenses     ScheduledExpense[]
+  sellerProfile         SellerProfile[]
+  quotationTag          QuotationTag[]
+  subCategory           SubCategory[]
+  Subscription          Subscription[]
+  suppliers             Supplier[]
+  parentCompany         Company?             @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
+  subsidiaries          Company[]            @relation("CompanyHierarchy")
+  mainQuotations        Quotation[]          @relation("MainCompany")
+  fiscalQuotations      Quotation[]          @relation("FiscalSubCompany")
+  sectors               CompanySector[]      @relation("CompanyToCompanySector")
+  history               CompanyHistory[]
+  importLogs            ImportLog[]
+  invoicyConfigs        InvoicyConfig[]
+  nfes                  Nfe[]
+  nfses                 Nfse[]
+  nfces                 Nfce[]
+  cfopConfigs           CfopConfig[]
+  operationNatures      OperationNature[]
 
   @@map("companies")
 }
@@ -2333,4 +2329,24 @@ model Nfce {
   @@index([status])
   @@index([numero, serie, companyId])
   @@map("nfces")
+}
+
+enum DigitalCertificateType {
+  A1
+  A3
+}
+
+model DigitalCertificate {
+  id          String                 @id @default(uuid())
+  companyId   String                 @unique
+  type        DigitalCertificateType @default(A1)
+  description String?
+  password    String?
+  certificate String?                @db.Text
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("digital_certificates")
 }

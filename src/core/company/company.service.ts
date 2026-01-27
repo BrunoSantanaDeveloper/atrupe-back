@@ -191,9 +191,18 @@ export class CompanyService {
             cnae: fiscal?.cnae,
             partnerKey: fiscal?.partnerKey,
             accessKey: fiscal?.accessKey,
-            certificateType: fiscal?.certificateType,
-            certificateDescription: fiscal?.certificateDescription,
-            certificatePassword: fiscal?.certificatePassword,
+            // Certificate relation
+            DigitalCertificate:
+              fiscal?.certificateType || fiscal?.certificate
+                ? {
+                    create: {
+                      type: fiscal.certificateType,
+                      description: fiscal.certificateDescription,
+                      password: fiscal.certificatePassword,
+                      certificate: fiscal.certificate,
+                    },
+                  }
+                : undefined,
             // Create related address
             address: address
               ? {
@@ -212,6 +221,7 @@ export class CompanyService {
           },
           include: {
             address: true,
+            DigitalCertificate: true,
           },
         });
         return company;
@@ -533,9 +543,19 @@ export class CompanyService {
           // Fiscal fields
           cnae: fiscal?.cnae,
           partnerKey: fiscal?.partnerKey,
-          certificateType: fiscal?.certificateType,
-          certificateDescription: fiscal?.certificateDescription,
-          certificatePassword: fiscal?.certificatePassword,
+          accessKey: fiscal?.accessKey,
+          // Certificate relation
+          DigitalCertificate:
+            fiscal?.certificateType || fiscal?.certificate
+              ? {
+                  create: {
+                    type: fiscal.certificateType,
+                    description: fiscal.certificateDescription,
+                    password: fiscal.certificatePassword,
+                    certificate: fiscal.certificate,
+                  },
+                }
+              : undefined,
 
           // Create related address
           address: address
@@ -555,6 +575,7 @@ export class CompanyService {
         },
         include: {
           address: true,
+          DigitalCertificate: true,
         },
       });
     } catch (e) {
@@ -586,6 +607,7 @@ export class CompanyService {
         },
         include: {
           address: true,
+          DigitalCertificate: true,
         },
         orderBy: {
           principalCompanyId: 'desc',
@@ -642,9 +664,10 @@ export class CompanyService {
         cnae: company.cnae,
         partnerKey: company.partnerKey,
         accessKey: company.accessKey,
-        certificateType: company.certificateType,
-        certificateDescription: company.certificateDescription,
-        certificatePassword: company.certificatePassword,
+        certificateType: company.DigitalCertificate?.type,
+        certificateDescription: company.DigitalCertificate?.description,
+        certificatePassword: company.DigitalCertificate?.password,
+        certificate: company.DigitalCertificate?.certificate,
       },
     }));
 
@@ -685,9 +708,6 @@ export class CompanyService {
       cnae: fiscal?.cnae,
       partnerKey: fiscal?.partnerKey,
       accessKey: fiscal?.accessKey,
-      certificateType: fiscal?.certificateType,
-      certificateDescription: fiscal?.certificateDescription,
-      certificatePassword: fiscal?.certificatePassword,
     };
 
     if (updateCompanyDto.isActive !== undefined) {
@@ -701,8 +721,45 @@ export class CompanyService {
         data: data,
         include: {
           address: true,
+          DigitalCertificate: true,
         },
       });
+
+      // Handle DigitalCertificate update/create/delete
+      if (fiscal) {
+        if (fiscal.certificateType || fiscal.certificate) {
+          // If we have certificate data, upsert it
+          await this.prisma.digitalCertificate.upsert({
+            where: { companyId: id },
+            update: {
+              type: fiscal.certificateType,
+              description: fiscal.certificateDescription,
+              password: fiscal.certificatePassword,
+              certificate: fiscal.certificate,
+            },
+            create: {
+              companyId: id,
+              type: fiscal.certificateType,
+              description: fiscal.certificateDescription,
+              password: fiscal.certificatePassword,
+              certificate: fiscal.certificate,
+            },
+          });
+        } else if (
+          fiscal.certificateType === null ||
+          fiscal.certificate === null
+        ) {
+          // Explicitly requested deletion of certificate (e.g. by sending null)
+          // You might need to adjust this logic based on how you want to handle "delete" from frontend
+          try {
+            await this.prisma.digitalCertificate.delete({
+              where: { companyId: id },
+            });
+          } catch (e) {
+            // Ignore if already deleted
+          }
+        }
+      }
 
       // If address is provided, update or create it
       if (address) {
@@ -749,11 +806,12 @@ export class CompanyService {
         }
       }
 
-      // Return updated company with address
+      // Return updated company with address and certificate
       return await this.prisma.company.findUnique({
         where: { id },
         include: {
           address: true,
+          DigitalCertificate: true,
         },
       });
     } catch (e) {

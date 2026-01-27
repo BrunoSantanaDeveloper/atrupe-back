@@ -228,15 +228,16 @@ export class CreateFiscalDto {
   @ApiProperty({
     description: 'Tipo do certificado',
     required: false,
-    example: 'Certificado A1',
+    example: 'A1',
+    enum: ['A1', 'A3'],
   })
-  certificateType?: string;
+  certificateType?: 'A1' | 'A3';
 
   @IsOptional()
   @ApiProperty({
     description: 'Descrição do certificado',
     required: false,
-    example: 'Teste de Nota',
+    example: 'Certificado Matriz',
   })
   certificateDescription?: string;
 
@@ -247,6 +248,13 @@ export class CreateFiscalDto {
     example: '********',
   })
   certificatePassword?: string;
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Certificado em Base64',
+    required: false,
+  })
+  certificate?: string;
 }
 
 export class CreateCompanyDto {
