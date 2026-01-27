@@ -2344,6 +2344,7 @@ model DigitalCertificate {
   description String?
   password    String?
   certificate String?                @db.Text
+  lastUpload  DateTime?
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
 

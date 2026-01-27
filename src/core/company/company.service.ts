@@ -691,25 +691,43 @@ export class CompanyService {
       // Handle DigitalCertificate update/create/delete
       if (fiscal) {
         if (fiscal.certificateType || fiscal.certificate) {
-          // If we have certificate data, upsert it
-          await this.prisma.digitalCertificate.upsert({
-            where: { companyId: id },
-            update: {
-              type: fiscal.certificateType,
+          const existingCert = updatedCompany.DigitalCertificate;
+          const isFileChanged =
+            fiscal.certificate &&
+            (!existingCert || existingCert.certificate !== fiscal.certificate);
+
+          const hasChanges =
+            !existingCert ||
+            isFileChanged ||
+            existingCert.type !== fiscal.certificateType ||
+            existingCert.description !== fiscal.certificateDescription ||
+            existingCert.password !== fiscal.certificatePassword ||
+            existingCert.name !== fiscal.certificateName;
+
+          if (hasChanges) {
+            // If we have certificate data and it changed, upsert it
+            const updateData = {
+              type: fiscal.certificateType as any,
               description: fiscal.certificateDescription,
               password: fiscal.certificatePassword,
               certificate: fiscal.certificate,
               name: fiscal.certificateName,
-            },
-            create: {
-              companyId: id,
-              type: fiscal.certificateType,
-              description: fiscal.certificateDescription,
-              password: fiscal.certificatePassword,
-              certificate: fiscal.certificate,
-              name: fiscal.certificateName,
-            },
-          });
+            };
+
+            if (isFileChanged) {
+              updateData['lastUpload'] = new Date();
+            }
+
+            await this.prisma.digitalCertificate.upsert({
+              where: { companyId: id },
+              update: updateData,
+              create: {
+                companyId: id,
+                ...updateData,
+                lastUpload: isFileChanged ? new Date() : undefined,
+              },
+            });
+          }
         } else if (
           fiscal.certificateType === null ||
           fiscal.certificate === null
@@ -1566,6 +1584,7 @@ export class CompanyService {
         certificatePassword: company.DigitalCertificate?.password,
         certificate: company.DigitalCertificate?.certificate,
         certificateName: company.DigitalCertificate?.name,
+        certificateLastUpload: company.DigitalCertificate?.lastUpload,
         certificateUpdatedAt: company.DigitalCertificate?.updatedAt,
       },
     };
