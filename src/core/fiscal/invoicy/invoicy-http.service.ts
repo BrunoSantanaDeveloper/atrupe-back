@@ -57,6 +57,9 @@ export class InvoicyHttpService {
   async getCompanyCredentials(companyId: string) {
     const config = await this.prisma.invoicyConfig.findFirst({
       where: { companyId, isDefault: true },
+      include: {
+        company: true,
+      },
     });
 
     if (!config) {
@@ -65,16 +68,16 @@ export class InvoicyHttpService {
       );
     }
 
-    if (!config.accessKey) {
+    if (!config.company?.accessKey) {
       throw new Error(
         `Chave de acesso (accessKey) não configurada para empresa ${companyId}. ` +
-        `Entre em contato com o suporte para obter sua chave de acesso Invoicy.`,
+          `Entre em contato com o suporte para obter sua chave de acesso Invoicy.`,
       );
     }
 
     return {
-      cnpj: config.emitCnpj || '',
-      accessKey: config.accessKey,
+      cnpj: config.company.cnpj || '',
+      accessKey: config.company.accessKey,
       environment: (config.environment as InvoicyEnvironment) || 'HOMOLOGACAO',
     };
   }

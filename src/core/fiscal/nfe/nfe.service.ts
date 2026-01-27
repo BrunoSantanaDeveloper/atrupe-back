@@ -555,6 +555,23 @@ export class NfeService {
     try {
       this.logger.log(`Emitindo NF-e ${numero} para empresa ${companyId}`);
 
+      // Ensure we have emitter IBGE code
+      let emitCmun = config.emitCmun;
+      if (!emitCmun && config.emitCep) {
+        this.logger.log(
+          `Emitente (Empresa) sem código IBGE configurado. Buscando via CEP do emitente: ${config.emitCep}`,
+        );
+        const cepData = await fetchCepData(config.emitCep);
+        if (cepData) {
+          emitCmun = cepData.codigoIbge;
+          this.logger.log(`IBGE do emitente encontrado: ${emitCmun}`);
+        } else {
+          this.logger.warn(
+            `Não foi possível encontrar IBGE para CEP do emitente: ${config.emitCep}`,
+          );
+        }
+      }
+
       // Construir payload para o Invoicy
       const now = new Date();
       const invoicyRequest: InvoicyNfeRequest = {
@@ -574,7 +591,7 @@ export class NfeService {
             fusoHorario: '-03:00',
             tpNf: 1, // 1 = Saída
             idDest: destUfFromCep === config.emitUf ? 1 : 2, // 1 = Interna, 2 = Interestadual
-            cMunFg: parseInt(config.emitCmun || '0', 10),
+            cMunFg: parseInt(emitCmun || '0', 10),
             tpImp: 1, // DANFE retrato
             tpEmis: 1, // Emissão normal
             cDV: 0, // Será calculado pelo Invoicy
@@ -595,7 +612,7 @@ export class NfeService {
               xLgr: config.emitEndereco || '',
               nro: config.emitNumero || 'S/N',
               xBairro: config.emitBairro || '',
-              cMun: parseInt(config.emitCmun || '0', 10),
+              cMun: parseInt(emitCmun || '0', 10),
               xMun: config.emitXMun || '',
               UF: config.emitUf || '',
               CEP: parseInt((config.emitCep || '').replace(/\D/g, ''), 10) || 0,

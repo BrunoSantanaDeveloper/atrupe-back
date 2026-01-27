@@ -2017,62 +2017,40 @@ model InvoicyConfig {
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  // Identificação do emissor
-  name      String // Nome identificador (ex: "Matriz", "Filial SP")
-  isDefault Boolean @default(false) // Indica se é o emissor padrão da empresa
+  // Identificação do emissor no sistema (ex: "Matriz", "Filial SP")
+  name      String
+  isDefault Boolean @default(false)
 
-  // Credenciais Invoicy (campos novos)
-  partnerKey  String? // Partner Key do Invoicy
-  accessKey   String? // Access Key do Invoicy
-  environment String? @default("HOMOLOGACAO") // PRODUCAO ou HOMOLOGACAO
+  // Configuração de ambiente
+  environment String @default("HOMOLOGACAO") // PRODUCAO ou HOMOLOGACAO
+  ambiente    Int    @default(2) // 1=Produção, 2=Homologação
 
-  // Certificado Digital
-  certificate         String? @db.Text // Certificado em Base64
-  certificatePassword String? // Senha do certificado
+  // Dados Fiscais específicos do emissor (que não estão na Company)
+  emitCrt Int? @default(1) // 1=Simples Nacional, 2=SN Excesso, 3=Regime Normal
 
-  // Campos legados (mantidos para compatibilidade)
-  apiToken String?
-  ambiente Int     @default(2) // 1 = Produção, 2 = Homologação
+  // Configurações fiscais padrão
+  codigoServico          String?
+  aliquotaIss            Float?
+  defaultCfop            String?
+  defaultOperationNature String?
+  taxInfoText            String? @db.Text
+  isActive               Boolean @default(true)
 
-  // Dados do emitente
-  emitCnpj         String?
-  emitIe           String?
-  emitIm           String? // Inscrição Municipal (necessária para NFS-e)
-  emitRazaoSocial  String?
-  emitNomeFantasia String?
-  emitCrt          Int     @default(1) // 1 = Simples Nacional, 2 = SN Excesso, 3 = Regime Normal
-  emitEndereco     String?
-  emitNumero       String?
-  emitBairro       String?
-  emitCep          String?
-  emitCmun         String?
-  emitXMun         String? // Nome do município (obrigatório para NF-e)
-  emitUf           String?
-  emitPais         String? @default("1058")
+  // Numeração NF-e
+  serieNfe         Int? @default(1)
+  proximoNumeroNfe Int? @default(1)
 
-  // NF-e
-  serieNfe         Int @default(1)
-  proximoNumeroNfe Int @default(1)
+  // Numeração NFC-e
+  serieNfce         Int? @default(1)
+  proximoNumeroNfce Int? @default(1)
 
-  // NFS-e
-  serieNfse      String? @default("A1") // NFS-e usa série alfanumérica
-  proximoRpsNfse Int     @default(1) // Próximo número do RPS
-  codigoServico  String? // Código do serviço municipal padrão
-  aliquotaIss    Float? // Alíquota ISS padrão
-
-  // NFC-e
-  serieNfce         Int @default(1)
-  proximoNumeroNfce Int @default(1)
-
-  // Padrões fiscais
-  defaultCfop            String? // CFOP padrão
-  defaultOperationNature String? // Natureza da operação padrão
-  taxInfoText            String? // Informações fiscais complementares
-
-  isActive Boolean @default(true)
-  company  Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // Numeração NFS-e (RPS)
+  serieNfse      String? @default("A1")
+  proximoRpsNfse Int?    @default(1)
 
   @@index([companyId])
   @@map("invoicy_configs")

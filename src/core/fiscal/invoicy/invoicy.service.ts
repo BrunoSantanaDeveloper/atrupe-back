@@ -11,7 +11,6 @@ import {
   UpdateInvoicyConfigDto,
 } from './dtos/invoicy-config.dto';
 import { InvoicyHttpService } from './invoicy-http.service';
-import { fetchCepData } from '../utils/cep.util';
 
 @Injectable()
 export class InvoicyService {
@@ -21,7 +20,7 @@ export class InvoicyService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly invoicyHttpService: InvoicyHttpService,
-  ) { }
+  ) {}
 
   /**
    * Retorna as credenciais globais do Invoicy (Atrupe como revendedor)
@@ -43,35 +42,10 @@ export class InvoicyService {
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.isDefault !== undefined) data.isDefault = dto.isDefault;
 
-    // Invoicy credentials (per-company)
-    if (dto.accessKey !== undefined) data.accessKey = dto.accessKey;
-    if (dto.partnerKey !== undefined) data.partnerKey = dto.partnerKey;
-
-    // Certificado digital
-    if (dto.certificate !== undefined) data.certificate = dto.certificate;
-    if (dto.certificatePassword !== undefined)
-      data.certificatePassword = dto.certificatePassword;
-
     // Direct mappings (fields that exist in both)
     if (dto.environment !== undefined) data.environment = dto.environment;
-    if (dto.apiToken !== undefined) data.apiToken = dto.apiToken;
     if (dto.ambiente !== undefined) data.ambiente = dto.ambiente;
-    if (dto.emitCnpj !== undefined) data.emitCnpj = dto.emitCnpj;
-    if (dto.emitIe !== undefined) data.emitIe = dto.emitIe;
-    if (dto.emitIm !== undefined) data.emitIm = dto.emitIm;
-    if (dto.emitRazaoSocial !== undefined)
-      data.emitRazaoSocial = dto.emitRazaoSocial;
-    if (dto.emitNomeFantasia !== undefined)
-      data.emitNomeFantasia = dto.emitNomeFantasia;
     if (dto.emitCrt !== undefined) data.emitCrt = dto.emitCrt;
-    if (dto.emitEndereco !== undefined) data.emitEndereco = dto.emitEndereco;
-    if (dto.emitNumero !== undefined) data.emitNumero = dto.emitNumero;
-    if (dto.emitBairro !== undefined) data.emitBairro = dto.emitBairro;
-    if (dto.emitCep !== undefined) data.emitCep = dto.emitCep;
-    if (dto.emitCmun !== undefined) data.emitCmun = dto.emitCmun;
-    if (dto.emitXMun !== undefined) data.emitXMun = dto.emitXMun;
-    if (dto.emitUf !== undefined) data.emitUf = dto.emitUf;
-    if (dto.emitPais !== undefined) data.emitPais = dto.emitPais;
     if (dto.codigoServico !== undefined) data.codigoServico = dto.codigoServico;
     if (dto.aliquotaIss !== undefined) data.aliquotaIss = dto.aliquotaIss;
     if (dto.defaultCfop !== undefined) data.defaultCfop = dto.defaultCfop;
@@ -114,22 +88,45 @@ export class InvoicyService {
   private mapDbToResponse(config: any) {
     if (!config) return null;
 
+    const company = config.company || {};
+    const address = company.address?.[0] || {}; // Assume first address is principal
+    const digitalCertificate = company.DigitalCertificate || {};
+
     return {
       ...config,
-      // Map database names to frontend names
+      // Nested company structure
+      company: {
+        id: company.id,
+        name: company.name, // Nome Fantasia
+        legalName: company.legalName, // Razão Social
+        cnpj: company.cnpj,
+        stateRegistration: company.stateRegistration, // IE
+        municipalRegistration: company.municipalRegistration, // IM
+        accessKey: company.accessKey,
+        partnerKey: company.partnerKey,
+        address: {
+          street: address.street,
+          number: address.number,
+          neighborhood: address.neighborhood,
+          zipcode: address.zipcode,
+          city: address.city,
+          state: address.state,
+          country: address.country || '1058',
+        },
+        hasCertificate: !!digitalCertificate.id, // Or check certificate content/password presence
+      },
+
+      // Fiscal specific config
       nfeSeries: config.serieNfe?.toString() || '1',
       nfeNextNumber: config.proximoNumeroNfe || 1,
       nfseSeries: config.serieNfse || 'A1',
       nfseNextNumber: config.proximoRpsNfse || 1,
       nfceSeries: config.serieNfce?.toString() || '1',
       nfceNextNumber: config.proximoNumeroNfce || 1,
-      // Ensure emitCmun is explicitly included
-      emitCmun: config.emitCmun || null,
-      emitIm: config.emitIm || null,
-      // Mask certificate password for security
-      certificatePassword: config.certificatePassword ? '********' : null,
-      // Indicate if certificate is configured
-      hasCertificate: !!config.certificate,
+
+      // IBGE Code (Configuration specific if we want to override, or just null)
+      // Keeping it on root as it might be relevant for the configuration specifically
+      ibgeCode: config.emitCmun || null,
     };
   }
 
@@ -140,6 +137,14 @@ export class InvoicyService {
     const configs = await this.prisma.invoicyConfig.findMany({
       where: { companyId },
       orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+      include: {
+        company: {
+          include: {
+            address: true,
+            DigitalCertificate: true, // Assuming this is the relation name
+          },
+        },
+      },
     });
 
     return configs.map((config) => this.mapDbToResponse(config));
@@ -151,6 +156,14 @@ export class InvoicyService {
   async getById(id: string) {
     const config = await this.prisma.invoicyConfig.findUnique({
       where: { id },
+      include: {
+        company: {
+          include: {
+            address: true,
+            DigitalCertificate: true,
+          },
+        },
+      },
     });
 
     return this.mapDbToResponse(config);
@@ -162,6 +175,14 @@ export class InvoicyService {
   async getDefault(companyId: string) {
     const config = await this.prisma.invoicyConfig.findFirst({
       where: { companyId, isDefault: true },
+      include: {
+        company: {
+          include: {
+            address: true,
+            DigitalCertificate: true,
+          },
+        },
+      },
     });
 
     // Se não houver emissor padrão, retorna o primeiro
@@ -169,6 +190,14 @@ export class InvoicyService {
       const firstConfig = await this.prisma.invoicyConfig.findFirst({
         where: { companyId },
         orderBy: { createdAt: 'asc' },
+        include: {
+          company: {
+            include: {
+              address: true,
+              DigitalCertificate: true,
+            },
+          },
+        },
       });
       return this.mapDbToResponse(firstConfig);
     }
@@ -222,6 +251,14 @@ export class InvoicyService {
         companyId,
         isDefault,
       },
+      include: {
+        company: {
+          include: {
+            address: true,
+            DigitalCertificate: true,
+          },
+        },
+      },
     });
 
     return this.mapDbToResponse(result);
@@ -264,7 +301,11 @@ export class InvoicyService {
     // Se está marcando como padrão, remover padrão dos outros
     if (dto.isDefault === true) {
       await this.prisma.invoicyConfig.updateMany({
-        where: { companyId: config.companyId, isDefault: true, id: { not: id } },
+        where: {
+          companyId: config.companyId,
+          isDefault: true,
+          id: { not: id },
+        },
         data: { isDefault: false },
       });
     }
@@ -272,6 +313,14 @@ export class InvoicyService {
     const result = await this.prisma.invoicyConfig.update({
       where: { id },
       data,
+      include: {
+        company: {
+          include: {
+            address: true,
+            DigitalCertificate: true,
+          },
+        },
+      },
     });
 
     return this.mapDbToResponse(result);
@@ -385,6 +434,14 @@ export class InvoicyService {
     const result = await this.prisma.invoicyConfig.update({
       where: { id },
       data: { isDefault: true },
+      include: {
+        company: {
+          include: {
+            address: true,
+            DigitalCertificate: true,
+          },
+        },
+      },
     });
 
     return this.mapDbToResponse(result);
@@ -480,7 +537,9 @@ export class InvoicyService {
     }
 
     try {
-      this.logger.log(`Testando conexão com Invoicy para emissor ${emissoreId}`);
+      this.logger.log(
+        `Testando conexão com Invoicy para emissor ${emissoreId}`,
+      );
       // Usar companyId do emissor para o teste
       const fullConfig = await this.prisma.invoicyConfig.findUnique({
         where: { id: emissoreId },
@@ -496,35 +555,12 @@ export class InvoicyService {
   }
 
   /**
-   * Helper para preparar dados com busca de CEP
+   * Helper para preparar dados (simplified)
    */
   private async prepareDataWithCep(
     dto: CreateInvoicyConfigDto | UpdateInvoicyConfigDto,
   ) {
-    const data = this.mapDtoToDb(dto);
-
-    // Auto-fill address fields from CEP if IBGE code is not provided
-    if (dto.emitCep && (!dto.emitCmun || !dto.emitXMun)) {
-      this.logger.log(`Fetching address data from CEP: ${dto.emitCep}`);
-      const cepData = await fetchCepData(dto.emitCep);
-
-      if (cepData) {
-        this.logger.log(
-          `Found address: ${cepData.cidade}/${cepData.uf} - IBGE: ${cepData.codigoIbge}`,
-        );
-
-        // Only fill fields that weren't explicitly provided
-        if (!dto.emitCmun) data.emitCmun = cepData.codigoIbge;
-        if (!dto.emitXMun) data.emitXMun = cepData.cidade;
-        if (!dto.emitUf) data.emitUf = cepData.uf;
-        if (!dto.emitBairro && cepData.bairro) data.emitBairro = cepData.bairro;
-        if (!dto.emitEndereco && cepData.logradouro)
-          data.emitEndereco = cepData.logradouro;
-      } else {
-        this.logger.warn(`CEP not found: ${dto.emitCep}`);
-      }
-    }
-
-    return data;
+    // We no longer fetch address from CEP here as address is managed by Company
+    return this.mapDtoToDb(dto);
   }
 }

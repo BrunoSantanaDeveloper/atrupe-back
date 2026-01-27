@@ -10,9 +10,9 @@ import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
 import {
   InvoicyNfeRequest,
-  InvoicyResponse,
   INVOICY_SUCCESS_CODES,
 } from '../invoicy/invoicy.types';
+import { fetchCepData } from '../utils/cep.util';
 import {
   EmitNfceDto,
   CancelNfceDto,
@@ -203,6 +203,23 @@ export class NfceService {
     try {
       this.logger.log(`Emitindo NFC-e ${numero} para empresa ${companyId}`);
 
+      // Ensure we have emitter IBGE code
+      let emitCmun = config.emitCmun;
+      if (!emitCmun && config.emitCep) {
+        this.logger.log(
+          `Emitente (Empresa) sem código IBGE configurado. Buscando via CEP do emitente: ${config.emitCep}`,
+        );
+        const cepData = await fetchCepData(config.emitCep);
+        if (cepData) {
+          emitCmun = cepData.codigoIbge;
+          this.logger.log(`IBGE do emitente encontrado: ${emitCmun}`);
+        } else {
+          this.logger.warn(
+            `Não foi possível encontrar IBGE para CEP do emitente: ${config.emitCep}`,
+          );
+        }
+      }
+
       // Construir payload para o Invoicy (NFC-e usa modelo 65)
       const now = new Date();
       const invoicyRequest: InvoicyNfeRequest = {
@@ -219,7 +236,7 @@ export class NfceService {
             fusoHorario: '-03:00',
             tpNf: 1, // Saída
             idDest: 1, // Operação interna
-            cMunFg: parseInt(config.emitCmun || '0', 10),
+            cMunFg: parseInt(emitCmun || '0', 10),
             tpImp: 4, // DANFE NFC-e
             tpEmis: 1, // Emissão normal
             cDV: 0,
@@ -239,8 +256,8 @@ export class NfceService {
               xLgr: config.emitEndereco || '',
               nro: config.emitNumero || 'S/N',
               xBairro: config.emitBairro || '',
-              cMun: parseInt(config.emitCmun || '0', 10),
-              xMun: '',
+              cMun: parseInt(emitCmun || '0', 10),
+              xMun: '', // Empty for NFC-e sometimes? Or use emitXMun?
               UF: config.emitUf || '',
               CEP: parseInt((config.emitCep || '').replace(/\D/g, ''), 10) || 0,
             },

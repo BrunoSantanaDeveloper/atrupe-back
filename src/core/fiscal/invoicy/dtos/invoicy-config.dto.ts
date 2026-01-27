@@ -2,12 +2,10 @@ import {
   IsString,
   IsNotEmpty,
   IsOptional,
-  IsInt,
   IsBoolean,
   IsNumber,
   Min,
   Max,
-  IsEnum,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
@@ -35,46 +33,20 @@ const emptyToUndefined = ({ value }) => {
 };
 
 export class CreateInvoicyConfigDto {
-  @ApiProperty({ description: 'Nome identificador do emissor (ex: "Matriz", "Filial SP")' })
+  @ApiProperty({
+    description: 'Nome identificador do emissor (ex: "Matriz", "Filial SP")',
+  })
   @IsString()
   @IsNotEmpty()
   name: string;
 
-  @ApiPropertyOptional({ description: 'Define se é o emissor padrão da empresa', default: false })
+  @ApiPropertyOptional({
+    description: 'Define se é o emissor padrão da empresa',
+    default: false,
+  })
   @IsBoolean()
   @IsOptional()
   isDefault?: boolean;
-
-  // Legacy field (for backwards compatibility)
-  @ApiPropertyOptional({ description: 'Token da API do Invoicy (legado)' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  apiToken?: string;
-
-  @ApiPropertyOptional({ description: 'Chave de Acesso (API Key)' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  accessKey?: string;
-
-  @ApiPropertyOptional({ description: 'Chave de Parceiro (Partner Key)' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  partnerKey?: string;
-
-  @ApiPropertyOptional({ description: 'Senha do Certificado Digital' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  certificatePassword?: string;
-
-  @ApiPropertyOptional({ description: 'Certificado Digital (Base64)' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  certificate?: string;
 
   @ApiPropertyOptional({
     description: 'Ambiente: PRODUCAO ou HOMOLOGACAO',
@@ -96,36 +68,6 @@ export class CreateInvoicyConfigDto {
   @Max(2)
   ambiente?: number;
 
-  @ApiPropertyOptional({ description: 'CNPJ do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitCnpj?: string;
-
-  @ApiPropertyOptional({ description: 'Inscrição Estadual do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitIe?: string;
-
-  @ApiPropertyOptional({ description: 'Inscrição Municipal do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitIm?: string;
-
-  @ApiPropertyOptional({ description: 'Razão Social do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitRazaoSocial?: string;
-
-  @ApiPropertyOptional({ description: 'Nome Fantasia do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitNomeFantasia?: string;
-
   @ApiPropertyOptional({
     description: 'CRT: 1 = Simples Nacional, 2 = SN Excesso, 3 = Regime Normal',
     default: 1,
@@ -136,57 +78,6 @@ export class CreateInvoicyConfigDto {
   @Min(1)
   @Max(3)
   emitCrt?: number;
-
-  @ApiPropertyOptional({ description: 'Endereço do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitEndereco?: string;
-
-  @ApiPropertyOptional({ description: 'Número do endereço' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitNumero?: string;
-
-  @ApiPropertyOptional({ description: 'Bairro do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitBairro?: string;
-
-  @ApiPropertyOptional({ description: 'CEP do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitCep?: string;
-
-  @ApiPropertyOptional({ description: 'Código do município IBGE' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitCmun?: string;
-
-  @ApiPropertyOptional({ description: 'Nome do município' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitXMun?: string;
-
-  @ApiPropertyOptional({ description: 'UF do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitUf?: string;
-
-  @ApiPropertyOptional({
-    description: 'Código do país (padrão: 1058 = Brasil)',
-    default: '1058',
-  })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitPais?: string;
 
   // NF-e fields
   @ApiPropertyOptional({ description: 'Série da NF-e (string)', default: '1' })
@@ -272,7 +163,9 @@ export class CreateInvoicyConfigDto {
   @Min(1)
   nfseNextNumber?: number;
 
-  @ApiPropertyOptional({ description: 'Próximo número do RPS (NFS-e) (Prisma)' })
+  @ApiPropertyOptional({
+    description: 'Próximo número do RPS (NFS-e) (Prisma)',
+  })
   @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
@@ -314,46 +207,19 @@ export class CreateInvoicyConfigDto {
 }
 
 export class UpdateInvoicyConfigDto {
-  @ApiPropertyOptional({ description: 'Nome identificador do emissor (ex: "Matriz", "Filial SP")' })
+  @ApiPropertyOptional({
+    description: 'Nome identificador do emissor (ex: "Matriz", "Filial SP")',
+  })
   @IsString()
   @IsOptional()
   name?: string;
 
-  @ApiPropertyOptional({ description: 'Define se é o emissor padrão da empresa' })
+  @ApiPropertyOptional({
+    description: 'Define se é o emissor padrão da empresa',
+  })
   @IsBoolean()
   @IsOptional()
   isDefault?: boolean;
-
-  // Legacy field
-  @ApiPropertyOptional({ description: 'Token da API do Invoicy (legado)' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  apiToken?: string;
-
-  @ApiPropertyOptional({ description: 'Chave de Acesso (API Key)' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  accessKey?: string;
-
-  @ApiPropertyOptional({ description: 'Chave de Parceiro (Partner Key)' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  partnerKey?: string;
-
-  @ApiPropertyOptional({ description: 'Senha do Certificado Digital' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  certificatePassword?: string;
-
-  @ApiPropertyOptional({ description: 'Certificado Digital (Base64)' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  certificate?: string;
 
   @ApiPropertyOptional({
     description: 'Ambiente: PRODUCAO ou HOMOLOGACAO',
@@ -373,36 +239,6 @@ export class UpdateInvoicyConfigDto {
   @Max(2)
   ambiente?: number;
 
-  @ApiPropertyOptional({ description: 'CNPJ do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitCnpj?: string;
-
-  @ApiPropertyOptional({ description: 'Inscrição Estadual do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitIe?: string;
-
-  @ApiPropertyOptional({ description: 'Inscrição Municipal do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitIm?: string;
-
-  @ApiPropertyOptional({ description: 'Razão Social do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitRazaoSocial?: string;
-
-  @ApiPropertyOptional({ description: 'Nome Fantasia do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitNomeFantasia?: string;
-
   @ApiPropertyOptional({
     description: 'CRT: 1 = Simples Nacional, 2 = SN Excesso, 3 = Regime Normal',
   })
@@ -412,54 +248,6 @@ export class UpdateInvoicyConfigDto {
   @Min(1)
   @Max(3)
   emitCrt?: number;
-
-  @ApiPropertyOptional({ description: 'Endereço do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitEndereco?: string;
-
-  @ApiPropertyOptional({ description: 'Número do endereço' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitNumero?: string;
-
-  @ApiPropertyOptional({ description: 'Bairro do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitBairro?: string;
-
-  @ApiPropertyOptional({ description: 'CEP do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitCep?: string;
-
-  @ApiPropertyOptional({ description: 'Código do município IBGE' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitCmun?: string;
-
-  @ApiPropertyOptional({ description: 'Nome do município' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitXMun?: string;
-
-  @ApiPropertyOptional({ description: 'UF do emitente' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitUf?: string;
-
-  @ApiPropertyOptional({ description: 'Código do país' })
-  @IsString()
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  emitPais?: string;
 
   // NF-e fields
   @ApiPropertyOptional({ description: 'Série da NF-e (string)' })
@@ -536,7 +324,9 @@ export class UpdateInvoicyConfigDto {
   @Min(1)
   nfseNextNumber?: number;
 
-  @ApiPropertyOptional({ description: 'Próximo número do RPS (NFS-e) (Prisma)' })
+  @ApiPropertyOptional({
+    description: 'Próximo número do RPS (NFS-e) (Prisma)',
+  })
   @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
