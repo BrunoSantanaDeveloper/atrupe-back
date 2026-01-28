@@ -2109,6 +2109,7 @@ model OperationNature {
 }
 
 enum NfeStatus {
+  DRAFT
   PENDING
   PROCESSING
   AUTHORIZED
@@ -2147,6 +2148,7 @@ model Nfe {
   sequenciaCorrecao     Int?
   invoicyId             String? // ID retornado pelo Invoicy
   invoicyProtocol       String?
+  draftData             Json? // Dados do rascunho (destinatário, itens, etc.)
   company               Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   order                 Order?     @relation(fields: [orderId], references: [id])
   quotation             Quotation? @relation(fields: [quotationId], references: [id])

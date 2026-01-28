@@ -416,3 +416,136 @@ export class NfeFilterDto {
   @Type(() => Number)
   limit?: number;
 }
+
+// DTO para dados do destinatário no rascunho
+export class DraftDestinatarioDto {
+  @ApiPropertyOptional({ description: 'Razão Social' })
+  @IsString()
+  @IsOptional()
+  razaoSocial?: string;
+
+  @ApiPropertyOptional({ description: 'CNPJ/CPF' })
+  @IsString()
+  @IsOptional()
+  cnpjCpf?: string;
+
+  @ApiPropertyOptional({ description: 'Inscrição Estadual' })
+  @IsString()
+  @IsOptional()
+  ie?: string;
+
+  @ApiPropertyOptional({ description: 'Email' })
+  @IsString()
+  @IsOptional()
+  email?: string;
+
+  @ApiPropertyOptional({ description: 'Telefone' })
+  @IsString()
+  @IsOptional()
+  telefone?: string;
+
+  @ApiPropertyOptional({ description: 'CEP' })
+  @IsString()
+  @IsOptional()
+  cep?: string;
+
+  @ApiPropertyOptional({ description: 'Estado' })
+  @IsString()
+  @IsOptional()
+  estado?: string;
+
+  @ApiPropertyOptional({ description: 'Cidade' })
+  @IsString()
+  @IsOptional()
+  cidade?: string;
+
+  @ApiPropertyOptional({ description: 'Bairro' })
+  @IsString()
+  @IsOptional()
+  bairro?: string;
+
+  @ApiPropertyOptional({ description: 'Endereço' })
+  @IsString()
+  @IsOptional()
+  endereco?: string;
+
+  @ApiPropertyOptional({ description: 'Número' })
+  @IsString()
+  @IsOptional()
+  numero?: string;
+
+  @ApiPropertyOptional({ description: 'Complemento' })
+  @IsString()
+  @IsOptional()
+  complemento?: string;
+
+  @ApiPropertyOptional({ description: 'País' })
+  @IsString()
+  @IsOptional()
+  pais?: string;
+}
+
+// DTO para atualizar rascunho
+export class UpdateNfeDraftDto {
+  @ApiPropertyOptional({
+    description: 'Dados do destinatário',
+    type: DraftDestinatarioDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DraftDestinatarioDto)
+  destinatario?: DraftDestinatarioDto;
+
+  @ApiPropertyOptional({ description: 'Itens da NF-e', type: [NfeItemDto] })
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => NfeItemDto)
+  items?: NfeItemDto[];
+
+  @ApiPropertyOptional({
+    description: 'Dados da transportadora',
+    type: NfeTransportDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NfeTransportDto)
+  transportadora?: NfeTransportDto;
+
+  @ApiPropertyOptional({
+    description: 'Volumes transportados',
+    type: [NfeVolumeDto],
+  })
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => NfeVolumeDto)
+  volumes?: NfeVolumeDto[];
+
+  @ApiPropertyOptional({
+    description: 'Dados de pagamento',
+    type: NfePaymentDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NfePaymentDto)
+  pagamento?: NfePaymentDto;
+
+  @ApiPropertyOptional({ description: 'Duplicatas', type: [NfeDuplicateDto] })
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => NfeDuplicateDto)
+  duplicatas?: NfeDuplicateDto[];
+
+  @ApiPropertyOptional({ description: 'CNPJ/CPFs autorizados a baixar o XML' })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  autXml?: string[];
+
+  @ApiPropertyOptional({ description: 'Informações complementares' })
+  @IsString()
+  @IsOptional()
+  informacoesComplementares?: string;
+}

@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -17,6 +19,7 @@ import {
   CancelNfeDto,
   CorrectionLetterDto,
   NfeFilterDto,
+  UpdateNfeDraftDto,
 } from './dtos/nfe.dto';
 
 @ApiTags('Fiscal - NF-e')
@@ -39,6 +42,34 @@ export class NfeController {
   async prepareFromOrder(@Req() req, @Param('orderId') orderId: string) {
     return this.nfeService.prepareFromOrder(req.user.companyId, orderId);
   }
+
+  // ==================== Draft Endpoints ====================
+
+  @Post('draft/:orderId')
+  @ApiOperation({
+    summary: 'Criar ou obter rascunho de NF-e para uma ordem',
+  })
+  async createOrGetDraft(@Req() req, @Param('orderId') orderId: string) {
+    return this.nfeService.createOrGetDraft(req.user.companyId, orderId);
+  }
+
+  @Patch('draft/:id')
+  @ApiOperation({ summary: 'Atualizar rascunho de NF-e' })
+  async updateDraft(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() dto: UpdateNfeDraftDto,
+  ) {
+    return this.nfeService.updateDraft(req.user.companyId, id, dto);
+  }
+
+  @Delete('draft/:id')
+  @ApiOperation({ summary: 'Deletar rascunho de NF-e (cancelar digitação)' })
+  async deleteDraft(@Req() req, @Param('id') id: string) {
+    return this.nfeService.deleteDraft(req.user.companyId, id);
+  }
+
+  // ==================== NF-e Endpoints ====================
 
   @Get(':id')
   @ApiOperation({ summary: 'Obter NF-e por ID' })

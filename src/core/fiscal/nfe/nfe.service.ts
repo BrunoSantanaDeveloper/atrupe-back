@@ -19,6 +19,7 @@ import {
   CancelNfeDto,
   CorrectionLetterDto,
   NfeFilterDto,
+  UpdateNfeDraftDto,
 } from './dtos/nfe.dto';
 
 @Injectable()
@@ -1112,5 +1113,172 @@ export class NfeService {
     }
 
     return { xml: nfe.xmlAutorizado };
+  }
+
+  // ==================== Draft Methods ====================
+
+  /**
+   * Cria um rascunho de NF-e ou retorna um existente.
+   * Se já existe um rascunho para esta ordem, retorna os dados dele.
+   * Se não existe, cria um novo com os dados do prepareFromOrder.
+   */
+  async createOrGetDraft(companyId: string, orderId: string) {
+    // Verificar se já existe rascunho para esta ordem
+    const existingDraft = await this.prisma.nfe.findFirst({
+      where: {
+        companyId,
+        orderId,
+        status: NfeStatus.DRAFT,
+      },
+    });
+
+    // Se já existe rascunho, retornar dados preparados com dados do rascunho
+    if (existingDraft) {
+      const preparedData = await this.prepareFromOrder(companyId, orderId);
+      const draftData = (existingDraft.draftData as Record<string, any>) || {};
+
+      return {
+        ...preparedData,
+        draftId: existingDraft.id,
+        isDraft: true,
+        // Sobrescrever com dados do rascunho
+        destinatario: draftData.destinatario || preparedData.destinatario,
+        items: draftData.items || preparedData.items,
+        transportadora: draftData.transportadora || preparedData.transportadora,
+        volumes: draftData.volumes || preparedData.volumes,
+        pagamento: draftData.pagamento || preparedData.pagamento,
+        duplicatas: draftData.duplicatas || preparedData.duplicatas,
+        autXml: draftData.autXml || preparedData.autXml,
+        informacoesComplementares:
+          draftData.informacoesComplementares ||
+          preparedData.informacoesComplementares,
+      };
+    }
+
+    // Buscar dados preparados
+    const preparedData = await this.prepareFromOrder(companyId, orderId);
+
+    // Obter config para série e número
+    const config = await this.invoicyService.getConfig(companyId);
+    if (!config) {
+      throw new BadRequestException('Configuração do Invoicy não encontrada.');
+    }
+
+    // Criar novo rascunho
+    const draft = await this.prisma.nfe.create({
+      data: {
+        companyId,
+        orderId,
+        quotationId: preparedData.quotationId,
+        numero: config.proximoNumeroNfe || 1,
+        serie: config.serieNfe || 1,
+        status: NfeStatus.DRAFT,
+        ambiente: config.ambiente || 2,
+        valorTotal: preparedData.totais.valorNota,
+        draftData: JSON.parse(
+          JSON.stringify({
+            destinatario: preparedData.destinatario,
+            items: preparedData.items,
+            transportadora: preparedData.transportadora,
+            volumes: preparedData.volumes,
+            pagamento: preparedData.pagamento,
+            duplicatas: preparedData.duplicatas,
+            autXml: preparedData.autXml,
+            informacoesComplementares: preparedData.informacoesComplementares,
+          }),
+        ),
+      },
+    });
+
+    this.logger.log(
+      `Rascunho de NF-e criado: ${draft.id} para ordem ${orderId}`,
+    );
+
+    return {
+      ...preparedData,
+      draftId: draft.id,
+      isDraft: true,
+    };
+  }
+
+  /**
+   * Atualiza os dados de um rascunho.
+   */
+  async updateDraft(
+    companyId: string,
+    draftId: string,
+    dto: UpdateNfeDraftDto,
+  ) {
+    const draft = await this.prisma.nfe.findFirst({
+      where: {
+        id: draftId,
+        companyId,
+        status: NfeStatus.DRAFT,
+      },
+    });
+
+    if (!draft) {
+      throw new NotFoundException('Rascunho não encontrado');
+    }
+
+    const existingDraftData = (draft.draftData as Record<string, any>) || {};
+
+    // Mesclar dados existentes com novos dados
+    const updatedDraftData = {
+      ...existingDraftData,
+      ...(dto.destinatario && { destinatario: dto.destinatario }),
+      ...(dto.items && { items: dto.items }),
+      ...(dto.transportadora && { transportadora: dto.transportadora }),
+      ...(dto.volumes && { volumes: dto.volumes }),
+      ...(dto.pagamento && { pagamento: dto.pagamento }),
+      ...(dto.duplicatas && { duplicatas: dto.duplicatas }),
+      ...(dto.autXml && { autXml: dto.autXml }),
+      ...(dto.informacoesComplementares !== undefined && {
+        informacoesComplementares: dto.informacoesComplementares,
+      }),
+    };
+
+    const updatedDraft = await this.prisma.nfe.update({
+      where: { id: draftId },
+      data: {
+        draftData: JSON.parse(JSON.stringify(updatedDraftData)),
+      },
+    });
+
+    this.logger.log(`Rascunho de NF-e atualizado: ${draftId}`);
+
+    return {
+      id: updatedDraft.id,
+      success: true,
+      draftData: updatedDraftData,
+    };
+  }
+
+  /**
+   * Deleta um rascunho (cancelar digitação).
+   */
+  async deleteDraft(companyId: string, draftId: string) {
+    const draft = await this.prisma.nfe.findFirst({
+      where: {
+        id: draftId,
+        companyId,
+        status: NfeStatus.DRAFT,
+      },
+    });
+
+    if (!draft) {
+      throw new NotFoundException('Rascunho não encontrado');
+    }
+
+    await this.prisma.nfe.delete({
+      where: { id: draftId },
+    });
+
+    this.logger.log(`Rascunho de NF-e deletado: ${draftId}`);
+
+    return {
+      success: true,
+      message: 'Rascunho deletado com sucesso',
+    };
   }
 }
