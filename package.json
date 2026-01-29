@@ -25,7 +25,8 @@
     "update:permissions": "ts-node src/scripts/update-roles-permissions.ts",
     "cleanup:duplicates": "ts-node scripts/cleanup-duplicate-subscriptions.ts",
     "deploy:prod": "./scripts/deploy-prod.sh",
-    "deploy:dev": "./scripts/deploy-dev.sh"
+    "deploy:dev": "./scripts/deploy-dev.sh",
+    "seed:fiscal": "ts-node prisma/apply-fiscal-seeds.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",
