@@ -22,6 +22,8 @@ import {
 } from 'src/seeds/reasons-status-base';
 import { BASE_PRODUCTS_CATEGORIES } from 'src/seeds/products-categories';
 import { BASE_SECTORS } from 'src/seeds/sectors-base';
+import { BASE_CFOPS } from 'src/seeds/cfop-base';
+import { BASE_OPERATION_NATURES } from 'src/seeds/operation-nature-base';
 import { CreatePayrollSetupDto } from '../financial/salaries/dto/create-payroll-setup.dto';
 import { Logger } from '@nestjs/common';
 
@@ -32,7 +34,7 @@ export class CompanyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly plugService: PlugService,
-  ) {}
+  ) { }
   async createFirstAccess(email: string, companyId: string) {
     try {
       this.logger.log(`Starting createFirstAccess process for email: ${email}`);
@@ -194,29 +196,29 @@ export class CompanyService {
             DigitalCertificate:
               fiscal?.certificateType || fiscal?.certificate
                 ? {
-                    create: {
-                      type: fiscal.certificateType,
-                      description: fiscal.certificateDescription,
-                      password: fiscal.certificatePassword,
-                      certificate: fiscal.certificate,
-                      name: fiscal.certificateName,
-                    },
-                  }
+                  create: {
+                    type: fiscal.certificateType,
+                    description: fiscal.certificateDescription,
+                    password: fiscal.certificatePassword,
+                    certificate: fiscal.certificate,
+                    name: fiscal.certificateName,
+                  },
+                }
                 : undefined,
             // Create related address
             address: address
               ? {
-                  create: {
-                    street: address.street,
-                    number: address.number,
-                    complement: address.complement,
-                    neighborhood: address.neighborhood,
-                    city: address.city,
-                    state: address.state,
-                    zipcode: address.zipcode,
-                    ownerType: 'COMPANY',
-                  },
-                }
+                create: {
+                  street: address.street,
+                  number: address.number,
+                  complement: address.complement,
+                  neighborhood: address.neighborhood,
+                  city: address.city,
+                  state: address.state,
+                  zipcode: address.zipcode,
+                  ownerType: 'COMPANY',
+                },
+              }
               : undefined,
           },
           include: {
@@ -421,6 +423,32 @@ export class CompanyService {
         return existing !== null;
       },
     },
+    // 15. CFOPs Base (fiscal)
+    {
+      name: 'cfops',
+      logMessage: 'Creating Base CFOPs...',
+      createMethod: (companyId: string) =>
+        this.applyBaseCfopsToCompany(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.cfopConfig.findMany({
+          where: { companyId },
+        });
+        return existing.length > 0;
+      },
+    },
+    // 16. Naturezas de Operação Base (fiscal) - depende de CFOPs
+    {
+      name: 'operation-natures',
+      logMessage: 'Creating Base Operation Natures...',
+      createMethod: (companyId: string) =>
+        this.applyBaseOperationNaturesToCompany(companyId),
+      checkMethod: async (companyId: string) => {
+        const existing = await this.prisma.operationNature.findMany({
+          where: { companyId },
+        });
+        return existing.length > 0;
+      },
+    },
   ];
 
   async createDefaultItems(email: string, companyId: string) {
@@ -545,30 +573,30 @@ export class CompanyService {
           DigitalCertificate:
             fiscal?.certificateType || fiscal?.certificate
               ? {
-                  create: {
-                    type: fiscal.certificateType,
-                    description: fiscal.certificateDescription,
-                    password: fiscal.certificatePassword,
-                    certificate: fiscal.certificate,
-                    name: fiscal.certificateName,
-                  },
-                }
+                create: {
+                  type: fiscal.certificateType,
+                  description: fiscal.certificateDescription,
+                  password: fiscal.certificatePassword,
+                  certificate: fiscal.certificate,
+                  name: fiscal.certificateName,
+                },
+              }
               : undefined,
 
           // Create related address
           address: address
             ? {
-                create: {
-                  street: address.street,
-                  number: address.number,
-                  complement: address.complement,
-                  neighborhood: address.neighborhood,
-                  city: address.city,
-                  state: address.state,
-                  zipcode: address.zipcode,
-                  ownerType: 'COMPANY',
-                },
-              }
+              create: {
+                street: address.street,
+                number: address.number,
+                complement: address.complement,
+                neighborhood: address.neighborhood,
+                city: address.city,
+                state: address.state,
+                zipcode: address.zipcode,
+                ownerType: 'COMPANY',
+              },
+            }
             : undefined,
         },
         include: {
@@ -886,6 +914,82 @@ export class CompanyService {
     }
   }
 
+  private async applyBaseCfopsToCompany(companyId: string) {
+    for (const cfop of BASE_CFOPS) {
+      await this.prisma.cfopConfig.upsert({
+        where: {
+          companyId_code: {
+            companyId,
+            code: cfop.code,
+          },
+        },
+        update: {},
+        create: {
+          companyId,
+          code: cfop.code,
+          description: cfop.description,
+          type: cfop.type,
+          nature: cfop.nature,
+          info: cfop.info,
+        },
+      });
+    }
+  }
+
+  private async applyBaseOperationNaturesToCompany(companyId: string) {
+    for (const nature of BASE_OPERATION_NATURES) {
+      // Buscar CFOPs relacionados
+      // O seed define códigos de CFOP, precisamos achar os IDs inseridos no banco
+      const cfopInternal = await this.prisma.cfopConfig.findUnique({
+        where: {
+          companyId_code: {
+            companyId,
+            code: nature.cfopInternalCode,
+          },
+        },
+      });
+
+      const cfopExternal = await this.prisma.cfopConfig.findUnique({
+        where: {
+          companyId_code: {
+            companyId,
+            code: nature.cfopExternalCode,
+          },
+        },
+      });
+
+      if (!cfopInternal || !cfopExternal) {
+        this.logger.warn(
+          `CFOPs não encontrados para natureza '${nature.description}' na empresa ${companyId}. Internal: ${nature.cfopInternalCode}, External: ${nature.cfopExternalCode}`,
+        );
+        continue;
+      }
+
+      // Evitar duplicidade checando description + companyId
+      const existing = await this.prisma.operationNature.findFirst({
+        where: {
+          companyId,
+          description: nature.description,
+        },
+      });
+
+      if (!existing) {
+        await this.prisma.operationNature.create({
+          data: {
+            companyId,
+            description: nature.description,
+            type: nature.type,
+            finality: nature.finality,
+            consumerPresence: nature.consumerPresence,
+            info: nature.info,
+            cfopInternalId: cfopInternal.id,
+            cfopExternalId: cfopExternal.id,
+          },
+        });
+      }
+    }
+  }
+
   async applyBaseCashboxToCompany(companyId: string) {
     const bank = await this.prisma.bank.findFirst({
       where: { code: '000' },
@@ -1091,12 +1195,12 @@ export class CompanyService {
       // Buscar subcategoria por código e natureza
       const subCategory = nature?.id
         ? await this.prisma.subCategory.findFirst({
-            where: {
-              companyId,
-              code: seed.subCategoryCode,
-              natureId: nature.id,
-            },
-          })
+          where: {
+            companyId,
+            code: seed.subCategoryCode,
+            natureId: nature.id,
+          },
+        })
         : null;
 
       // Criar despesa fixa
@@ -1554,14 +1658,14 @@ export class CompanyService {
       },
       address: company.address?.length
         ? {
-            zipcode: company.address[0].zipcode,
-            state: company.address[0].state,
-            city: company.address[0].city,
-            neighborhood: company.address[0].neighborhood,
-            street: company.address[0].street,
-            number: company.address[0].number,
-            complement: company.address[0].complement,
-          }
+          zipcode: company.address[0].zipcode,
+          state: company.address[0].state,
+          city: company.address[0].city,
+          neighborhood: company.address[0].neighborhood,
+          street: company.address[0].street,
+          number: company.address[0].number,
+          complement: company.address[0].complement,
+        }
         : company.address && !Array.isArray(company.address)
           ? company.address
           : null,
