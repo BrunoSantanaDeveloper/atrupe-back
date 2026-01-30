@@ -2579,6 +2579,9 @@ export class SubscriptionsService {
         await tx.nfse.deleteMany({ where: { companyId } });
         await tx.nfe.deleteMany({ where: { companyId } });
         await tx.invoicyConfig.deleteMany({ where: { companyId } });
+        await tx.cfopConfig.deleteMany({ where: { companyId } });
+        await tx.operationNature.deleteMany({ where: { companyId } });
+        await tx.digitalCertificate.deleteMany({ where: { companyId } });
 
         // 2. Produção e Entregas
         await tx.productionStage.deleteMany({
@@ -2655,7 +2658,12 @@ export class SubscriptionsService {
         });
         await tx.address.deleteMany({
           where: {
-            OR: [{ companyId }, { client: { companyId } }],
+            OR: [
+              { companyId },
+              { client: { companyId } },
+              { supplier: { companyId } },
+              { employee: { companyId } },
+            ],
           },
         });
         await tx.client.deleteMany({ where: { companyId } });
@@ -2749,6 +2757,9 @@ export class SubscriptionsService {
 
         // 22. Company History
         await tx.companyHistory.deleteMany({ where: { companyId } });
+
+        // 22.1 User Activity (para esta empresa especificamente, mesmo que o usuário permaneça)
+        await tx.userActivity.deleteMany({ where: { companyId } });
 
         // 23. Company
         await tx.company.delete({ where: { id: companyId } });
