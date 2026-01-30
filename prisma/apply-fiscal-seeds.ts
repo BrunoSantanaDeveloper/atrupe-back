@@ -7,10 +7,13 @@
  * 1. Buscar todas as empresas ativas no banco
  * 2. Para cada empresa, aplicar os itens padrão faltantes (incluindo CFOPs e Naturezas)
  */
-import 'dotenv/config';
-import { PrismaClient } from '@prisma/client';
-import { BASE_CFOPS } from '../src/seeds/cfop-base';
-import { BASE_OPERATION_NATURES } from '../src/seeds/operation-nature-base';
+/* eslint-disable @typescript-eslint/no-var-requires */
+require('dotenv/config');
+const { PrismaClient } = require('@prisma/client');
+const { BASE_CFOPS } = require('../src/seeds/cfop-base');
+const {
+  BASE_OPERATION_NATURES,
+} = require('../src/seeds/operation-nature-base');
 
 const prisma = new PrismaClient();
 
