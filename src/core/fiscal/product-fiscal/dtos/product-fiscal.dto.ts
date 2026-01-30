@@ -157,7 +157,9 @@ export class CreateProductFiscalDataDto {
   cfopExport?: string;
 
   // NFS-e fields
-  @ApiPropertyOptional({ description: 'Código do serviço municipal (LC 116/03)' })
+  @ApiPropertyOptional({
+    description: 'Código do serviço municipal (LC 116/03)',
+  })
   @IsString()
   @IsOptional()
   codigoServico?: string;
@@ -174,6 +176,33 @@ export class CreateProductFiscalDataDto {
   @IsString()
   @IsOptional()
   discriminacao?: string;
+
+  @ApiPropertyOptional({
+    description: 'Código tributação município (000/001/002/003)',
+  })
+  @IsString()
+  @IsOptional()
+  codTribMunicipio?: string;
+
+  @ApiPropertyOptional({ description: 'CNAE vinculado ao serviço' })
+  @IsString()
+  @IsOptional()
+  cnae?: string;
+
+  @ApiPropertyOptional({ description: 'Nomenclatura Brasileira de Serviços' })
+  @IsString()
+  @IsOptional()
+  nbs?: string;
+
+  @ApiPropertyOptional({ description: 'Código tributação nacional' })
+  @IsString()
+  @IsOptional()
+  codTribNacional?: string;
+
+  @ApiPropertyOptional({ description: 'Classificação IBS/CBS' })
+  @IsString()
+  @IsOptional()
+  codClassificacao?: string;
 }
 
 export class UpdateProductFiscalDataDto {
@@ -305,7 +334,9 @@ export class UpdateProductFiscalDataDto {
   cfopExport?: string;
 
   // NFS-e fields
-  @ApiPropertyOptional({ description: 'Código do serviço municipal (LC 116/03)' })
+  @ApiPropertyOptional({
+    description: 'Código do serviço municipal (LC 116/03)',
+  })
   @IsString()
   @IsOptional()
   codigoServico?: string;
@@ -322,4 +353,31 @@ export class UpdateProductFiscalDataDto {
   @IsString()
   @IsOptional()
   discriminacao?: string;
+
+  @ApiPropertyOptional({
+    description: 'Código tributação município (000/001/002/003)',
+  })
+  @IsString()
+  @IsOptional()
+  codTribMunicipio?: string;
+
+  @ApiPropertyOptional({ description: 'CNAE vinculado ao serviço' })
+  @IsString()
+  @IsOptional()
+  cnae?: string;
+
+  @ApiPropertyOptional({ description: 'Nomenclatura Brasileira de Serviços' })
+  @IsString()
+  @IsOptional()
+  nbs?: string;
+
+  @ApiPropertyOptional({ description: 'Código tributação nacional' })
+  @IsString()
+  @IsOptional()
+  codTribNacional?: string;
+
+  @ApiPropertyOptional({ description: 'Classificação IBS/CBS' })
+  @IsString()
+  @IsOptional()
+  codClassificacao?: string;
 }

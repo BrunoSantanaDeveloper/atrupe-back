@@ -2188,6 +2188,11 @@ model ProductFiscalData {
   codigoServico    String? // Código do serviço municipal (LC 116/03)
   aliquotaIss      Float? // Alíquota do ISS
   discriminacao    String? // Discriminação do serviço para NFS-e
+  codTribMunicipio String? // Código tributação município (000/001/002/003)
+  cnae             String? // CNAE vinculado ao serviço
+  nbs              String? // Nomenclatura Brasileira de Serviços
+  codTribNacional  String? // Código tributação nacional
+  codClassificacao String? @default("000001") // Classificação IBS/CBS
   product          Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@map("product_fiscal_data")
