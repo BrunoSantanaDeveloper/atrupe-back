@@ -570,6 +570,7 @@ export class OrderService {
           product: {
             originalProductId: qp.productId,
             name: qp.product.name,
+            isService: qp.product.isService || false,
             quantity: qp.quantity,
             unitValue: (() => {
               // Usar valores já calculados do banco ao invés de recalcular

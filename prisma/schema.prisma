@@ -2200,6 +2200,7 @@ model ProductFiscalData {
 
 // NFS-e Status
 enum NfseStatus {
+  DRAFT
   PENDING
   PROCESSING
   AUTHORIZED
@@ -2249,6 +2250,7 @@ model Nfse {
   dataCancelamento      DateTime?
   invoicyId             String?
   invoicyProtocol       String?
+  draftData             Json? // Dados do rascunho (tomador, itens, etc.)
   company               Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   order                 Order?     @relation(fields: [orderId], references: [id])
   quotation             Quotation? @relation(fields: [quotationId], references: [id])

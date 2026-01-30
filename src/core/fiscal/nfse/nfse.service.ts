@@ -18,6 +18,7 @@ import {
   CancelNfseDto,
   NfseFilterDto,
 } from './dtos/nfse.dto';
+import { fetchCepData } from '../utils/cep.util';
 
 @Injectable()
 export class NfseService {
@@ -171,6 +172,25 @@ export class NfseService {
       );
     }
 
+    // Garantir código IBGE do PRESTADOR (empresa emissora)
+    let prestadorCmun = config.ibgeCode || '';
+    const emitCep = config.company?.address?.zipcode;
+
+    if (!prestadorCmun && emitCep) {
+      this.logger.log(
+        `Prestador sem código IBGE configurado. Buscando via CEP: ${emitCep}`,
+      );
+      const cepData = await fetchCepData(emitCep);
+      if (cepData) {
+        prestadorCmun = cepData.codigoIbge;
+        this.logger.log(`IBGE do prestador encontrado: ${prestadorCmun}`);
+      } else {
+        this.logger.warn(
+          `Não foi possível encontrar IBGE para CEP do prestador: ${emitCep}`,
+        );
+      }
+    }
+
     // Calcular valor total dos serviços (usar finalValue ou totalValue)
     // IMPORTANTE: Valores no banco estão em centavos, dividir por 100 para reais
     const valorServicos =
@@ -182,6 +202,32 @@ export class NfseService {
     // Obter endereço principal do cliente
     const clientAddress = client.address?.[0];
 
+    // Buscar código IBGE do município do tomador via CEP
+    let tomadorCmun = '';
+    let tomadorMunicipio = clientAddress?.city || '';
+    let tomadorUf = clientAddress?.state || '';
+
+    if (clientAddress?.zipcode) {
+      this.logger.log(
+        `Buscando código IBGE para CEP do tomador: ${clientAddress.zipcode}`,
+      );
+      const cepData = await fetchCepData(clientAddress.zipcode);
+      if (cepData) {
+        tomadorCmun = cepData.codigoIbge;
+        tomadorMunicipio = cepData.cidade;
+        tomadorUf = cepData.uf;
+        this.logger.log(
+          `Código IBGE do tomador: ${tomadorCmun} (${tomadorMunicipio}/${tomadorUf})`,
+        );
+      } else {
+        this.logger.warn(
+          `CEP do tomador não encontrado: ${clientAddress.zipcode}`,
+        );
+      }
+    } else {
+      this.logger.warn('Tomador sem CEP cadastrado');
+    }
+
     // Construir DTO completo
     const fullDto: EmitNfseDto = {
       orderId: dto.orderId,
@@ -190,7 +236,7 @@ export class NfseService {
       naturezaOperacao: 1, // Tributação no município
       codigoServico: dto.codigoServico,
       discriminacao: dto.discriminacao,
-      codigoMunicipio: config.ibgeCode || '',
+      codigoMunicipio: prestadorCmun, // Código IBGE do PRESTADOR (via CEP se não configurado)
       valorServicos,
       aliquotaIss: dto.aliquotaIss || config.aliquotaIss || 0,
       issRetido: dto.issRetido || false,
@@ -203,9 +249,9 @@ export class NfseService {
         complemento: clientAddress?.complement || '',
         bairro: clientAddress?.neighborhood || '',
         cep: clientAddress?.zipcode || '',
-        codigoMunicipio: config.ibgeCode || '',
-        municipio: clientAddress?.city || '',
-        uf: clientAddress?.state || '',
+        codigoMunicipio: tomadorCmun, // Código IBGE do município do TOMADOR (via CEP)
+        municipio: tomadorMunicipio,
+        uf: tomadorUf,
         email: client.email || '',
         telefone: client.phone || client.mobile || '',
       },
@@ -217,7 +263,12 @@ export class NfseService {
     }
     if (!fullDto.codigoMunicipio) {
       throw new BadRequestException(
-        'Código do município não informado. Verifique o cadastro do cliente ou a configuração fiscal.',
+        'Código do município do prestador não configurado. Verifique a configuração fiscal do emissor.',
+      );
+    }
+    if (!fullDto.tomador.codigoMunicipio) {
+      throw new BadRequestException(
+        'Código do município do tomador não encontrado. Verifique o CEP cadastrado para o cliente.',
       );
     }
 
