@@ -10,7 +10,12 @@ import {
   UseGuards,
   Req,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiParam,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import { InvoicyService } from './invoicy.service';
 import {
@@ -23,7 +28,7 @@ import {
 @UseGuards(JwtAuthGuard)
 @Controller('fiscal/emissores')
 export class EmissoresController {
-  constructor(private readonly invoicyService: InvoicyService) { }
+  constructor(private readonly invoicyService: InvoicyService) {}
 
   @Get()
   @ApiOperation({ summary: 'Listar todos os emissores da empresa' })
@@ -86,10 +91,12 @@ export class EmissoresController {
 @UseGuards(JwtAuthGuard)
 @Controller('fiscal/invoicy')
 export class InvoicyController {
-  constructor(private readonly invoicyService: InvoicyService) { }
+  constructor(private readonly invoicyService: InvoicyService) {}
 
   @Get('config')
-  @ApiOperation({ summary: 'Obter configuração do Invoicy (legado - usa emissor padrão)' })
+  @ApiOperation({
+    summary: 'Obter configuração do Invoicy (legado - usa emissor padrão)',
+  })
   async getConfig(@Req() req) {
     return this.invoicyService.getConfig(req.user.companyId);
   }
@@ -107,7 +114,9 @@ export class InvoicyController {
   }
 
   @Post('config/upsert')
-  @ApiOperation({ summary: 'Criar ou atualizar configuração do Invoicy (legado)' })
+  @ApiOperation({
+    summary: 'Criar ou atualizar configuração do Invoicy (legado)',
+  })
   async upsertConfig(@Req() req, @Body() dto: CreateInvoicyConfigDto) {
     return this.invoicyService.upsertConfig(req.user.companyId, dto);
   }
@@ -119,9 +128,14 @@ export class InvoicyController {
   }
 
   @Post('test-connection')
-  @ApiOperation({ summary: 'Testar conexão com a API do Invoicy (legado - usa emissor padrão)' })
+  @ApiOperation({
+    summary:
+      'Testar conexão com a API do Invoicy (legado - usa emissor padrão)',
+  })
   async testConnection(@Req() req) {
-    const defaultEmissor = await this.invoicyService.getDefault(req.user.companyId);
+    const defaultEmissor = await this.invoicyService.getDefault(
+      req.user.companyId,
+    );
     if (!defaultEmissor) {
       return { success: false };
     }

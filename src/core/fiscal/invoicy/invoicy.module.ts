@@ -10,4 +10,4 @@ import { PrismaModule } from 'nestjs-prisma';
   providers: [InvoicyService, InvoicyHttpService],
   exports: [InvoicyService, InvoicyHttpService],
 })
-export class InvoicyModule { }
+export class InvoicyModule {}

@@ -14,11 +14,14 @@ import * as fastCsv from 'fast-csv';
 
 @Injectable()
 export class ProductService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   async create(createProductDto: CreateProductDto) {
     try {
-      console.log('Creating product with isService:', createProductDto.isService);
+      console.log(
+        'Creating product with isService:',
+        createProductDto.isService,
+      );
       // Check if product code already exists
       const existingProduct = await this.prisma.product.findFirst({
         where: {
@@ -217,7 +220,16 @@ export class ProductService {
 
       // Mapear os produtos para calcular os totais de unitCost e salePrice
       const data = products.map((product) => {
-        const { id, name, code, isActive, sector, category, items, fiscalData } = product;
+        const {
+          id,
+          name,
+          code,
+          isActive,
+          sector,
+          category,
+          items,
+          fiscalData,
+        } = product;
 
         // Calculando os totais
         const unitCost = items.reduce(
@@ -312,10 +324,10 @@ export class ProductService {
         const sector = activeSectors.find((s) => s.id === stage.id);
         return sector
           ? {
-            id: stage.id,
-            isActive: stage.isActive,
-            ...sector,
-          }
+              id: stage.id,
+              isActive: stage.isActive,
+              ...sector,
+            }
           : null;
       }),
     );
@@ -344,7 +356,12 @@ export class ProductService {
 
   async update(id: string, updateProductDto: UpdateProductDto) {
     try {
-      console.log('Updating product', id, 'isService:', updateProductDto.isService);
+      console.log(
+        'Updating product',
+        id,
+        'isService:',
+        updateProductDto.isService,
+      );
       const product = await this.prisma.product.findUnique({
         where: { id },
         include: { items: true },
@@ -416,19 +433,46 @@ export class ProductService {
       return await this.prisma.product.update({
         where: { id },
         data: {
-          ...(updateProductDto.name !== undefined && { name: updateProductDto.name }),
-          ...(updateProductDto.code !== undefined && { code: updateProductDto.code }),
-          ...(updateProductDto.isActive !== undefined && { isActive: updateProductDto.isActive }),
-          ...(updateProductDto.isService !== undefined && { isService: updateProductDto.isService }),
-          ...(updateProductDto.imageUrl !== undefined && { imageUrl: updateProductDto.imageUrl }),
-          ...(updateProductDto.isStandard !== undefined && { isStandard: updateProductDto.isStandard }),
-          ...(updateProductDto.companyId !== undefined && { companyId: updateProductDto.companyId || undefined }),
-          ...(updateProductDto.categoryId !== undefined && { categoryId: updateProductDto.categoryId || undefined }),
-          ...(updateProductDto.sectorId !== undefined && { sectorId: updateProductDto.sectorId || undefined }),
-          ...(updateProductDto.status !== undefined && { status: updateProductDto.status }),
-          ...(updateProductDto.technicalDescription !== undefined && { technicalDescription: updateProductDto.technicalDescription || undefined }),
-          ...(updateProductDto.allowEditDescription !== undefined && { allowEditDescription: updateProductDto.allowEditDescription }),
-          ...(updateProductDto.allowEditValues !== undefined && { allowEditValues: updateProductDto.allowEditValues }),
+          ...(updateProductDto.name !== undefined && {
+            name: updateProductDto.name,
+          }),
+          ...(updateProductDto.code !== undefined && {
+            code: updateProductDto.code,
+          }),
+          ...(updateProductDto.isActive !== undefined && {
+            isActive: updateProductDto.isActive,
+          }),
+          ...(updateProductDto.isService !== undefined && {
+            isService: updateProductDto.isService,
+          }),
+          ...(updateProductDto.imageUrl !== undefined && {
+            imageUrl: updateProductDto.imageUrl,
+          }),
+          ...(updateProductDto.isStandard !== undefined && {
+            isStandard: updateProductDto.isStandard,
+          }),
+          ...(updateProductDto.companyId !== undefined && {
+            companyId: updateProductDto.companyId || undefined,
+          }),
+          ...(updateProductDto.categoryId !== undefined && {
+            categoryId: updateProductDto.categoryId || undefined,
+          }),
+          ...(updateProductDto.sectorId !== undefined && {
+            sectorId: updateProductDto.sectorId || undefined,
+          }),
+          ...(updateProductDto.status !== undefined && {
+            status: updateProductDto.status,
+          }),
+          ...(updateProductDto.technicalDescription !== undefined && {
+            technicalDescription:
+              updateProductDto.technicalDescription || undefined,
+          }),
+          ...(updateProductDto.allowEditDescription !== undefined && {
+            allowEditDescription: updateProductDto.allowEditDescription,
+          }),
+          ...(updateProductDto.allowEditValues !== undefined && {
+            allowEditValues: updateProductDto.allowEditValues,
+          }),
           items: {
             upsert: itemsWithId?.map((item) => ({
               where: { id: item.id },

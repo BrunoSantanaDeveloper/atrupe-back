@@ -4,9 +4,9 @@ import { CfopController } from './cfop.controller';
 import { PrismaModule } from 'nestjs-prisma';
 
 @Module({
-    imports: [PrismaModule],
-    controllers: [CfopController],
-    providers: [CfopService],
-    exports: [CfopService],
+  imports: [PrismaModule],
+  controllers: [CfopController],
+  providers: [CfopService],
+  exports: [CfopService],
 })
-export class CfopModule { }
+export class CfopModule {}

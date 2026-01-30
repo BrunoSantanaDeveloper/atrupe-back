@@ -27,5 +27,4 @@ import { OperationNatureModule } from './operation-nature/operation-nature.modul
     OperationNatureModule,
   ],
 })
-export class FiscalModule { }
-
+export class FiscalModule {}

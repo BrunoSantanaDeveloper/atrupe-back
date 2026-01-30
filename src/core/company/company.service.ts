@@ -34,7 +34,7 @@ export class CompanyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly plugService: PlugService,
-  ) { }
+  ) {}
   async createFirstAccess(email: string, companyId: string) {
     try {
       this.logger.log(`Starting createFirstAccess process for email: ${email}`);
@@ -196,29 +196,29 @@ export class CompanyService {
             DigitalCertificate:
               fiscal?.certificateType || fiscal?.certificate
                 ? {
-                  create: {
-                    type: fiscal.certificateType,
-                    description: fiscal.certificateDescription,
-                    password: fiscal.certificatePassword,
-                    certificate: fiscal.certificate,
-                    name: fiscal.certificateName,
-                  },
-                }
+                    create: {
+                      type: fiscal.certificateType,
+                      description: fiscal.certificateDescription,
+                      password: fiscal.certificatePassword,
+                      certificate: fiscal.certificate,
+                      name: fiscal.certificateName,
+                    },
+                  }
                 : undefined,
             // Create related address
             address: address
               ? {
-                create: {
-                  street: address.street,
-                  number: address.number,
-                  complement: address.complement,
-                  neighborhood: address.neighborhood,
-                  city: address.city,
-                  state: address.state,
-                  zipcode: address.zipcode,
-                  ownerType: 'COMPANY',
-                },
-              }
+                  create: {
+                    street: address.street,
+                    number: address.number,
+                    complement: address.complement,
+                    neighborhood: address.neighborhood,
+                    city: address.city,
+                    state: address.state,
+                    zipcode: address.zipcode,
+                    ownerType: 'COMPANY',
+                  },
+                }
               : undefined,
           },
           include: {
@@ -573,30 +573,30 @@ export class CompanyService {
           DigitalCertificate:
             fiscal?.certificateType || fiscal?.certificate
               ? {
-                create: {
-                  type: fiscal.certificateType,
-                  description: fiscal.certificateDescription,
-                  password: fiscal.certificatePassword,
-                  certificate: fiscal.certificate,
-                  name: fiscal.certificateName,
-                },
-              }
+                  create: {
+                    type: fiscal.certificateType,
+                    description: fiscal.certificateDescription,
+                    password: fiscal.certificatePassword,
+                    certificate: fiscal.certificate,
+                    name: fiscal.certificateName,
+                  },
+                }
               : undefined,
 
           // Create related address
           address: address
             ? {
-              create: {
-                street: address.street,
-                number: address.number,
-                complement: address.complement,
-                neighborhood: address.neighborhood,
-                city: address.city,
-                state: address.state,
-                zipcode: address.zipcode,
-                ownerType: 'COMPANY',
-              },
-            }
+                create: {
+                  street: address.street,
+                  number: address.number,
+                  complement: address.complement,
+                  neighborhood: address.neighborhood,
+                  city: address.city,
+                  state: address.state,
+                  zipcode: address.zipcode,
+                  ownerType: 'COMPANY',
+                },
+              }
             : undefined,
         },
         include: {
@@ -1195,12 +1195,12 @@ export class CompanyService {
       // Buscar subcategoria por código e natureza
       const subCategory = nature?.id
         ? await this.prisma.subCategory.findFirst({
-          where: {
-            companyId,
-            code: seed.subCategoryCode,
-            natureId: nature.id,
-          },
-        })
+            where: {
+              companyId,
+              code: seed.subCategoryCode,
+              natureId: nature.id,
+            },
+          })
         : null;
 
       // Criar despesa fixa
@@ -1658,14 +1658,14 @@ export class CompanyService {
       },
       address: company.address?.length
         ? {
-          zipcode: company.address[0].zipcode,
-          state: company.address[0].state,
-          city: company.address[0].city,
-          neighborhood: company.address[0].neighborhood,
-          street: company.address[0].street,
-          number: company.address[0].number,
-          complement: company.address[0].complement,
-        }
+            zipcode: company.address[0].zipcode,
+            state: company.address[0].state,
+            city: company.address[0].city,
+            neighborhood: company.address[0].neighborhood,
+            street: company.address[0].street,
+            number: company.address[0].number,
+            complement: company.address[0].complement,
+          }
         : company.address && !Array.isArray(company.address)
           ? company.address
           : null,

@@ -125,6 +125,7 @@ export class NfeService {
         freight: 0,
         insurance: 0,
         totalValue: Number(totalValueReais.toFixed(2)),
+        isService: qp.product?.isService || !!fiscalData?.isService,
         needsConfiguration:
           !fiscalData?.ncm || fiscalData.ncm.length !== 8 || !selectedCfop,
       };
@@ -1143,7 +1144,15 @@ export class NfeService {
         isDraft: true,
         // Sobrescrever com dados do rascunho
         destinatario: draftData.destinatario || preparedData.destinatario,
-        items: draftData.items || preparedData.items,
+        items: (draftData.items || preparedData.items).map((item: any) => {
+          const preparedItem = preparedData.items.find(
+            (pi) => pi.productId === item.productId,
+          );
+          return {
+            ...item,
+            isService: preparedItem?.isService || false,
+          };
+        }),
         transportadora: draftData.transportadora || preparedData.transportadora,
         volumes: draftData.volumes || preparedData.volumes,
         pagamento: draftData.pagamento || preparedData.pagamento,

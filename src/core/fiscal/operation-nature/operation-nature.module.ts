@@ -4,9 +4,9 @@ import { OperationNatureController } from './operation-nature.controller';
 import { PrismaModule } from 'nestjs-prisma';
 
 @Module({
-    imports: [PrismaModule],
-    controllers: [OperationNatureController],
-    providers: [OperationNatureService],
-    exports: [OperationNatureService],
+  imports: [PrismaModule],
+  controllers: [OperationNatureController],
+  providers: [OperationNatureService],
+  exports: [OperationNatureService],
 })
-export class OperationNatureModule { }
+export class OperationNatureModule {}
