@@ -26,7 +26,7 @@
     "cleanup:duplicates": "ts-node scripts/cleanup-duplicate-subscriptions.ts",
     "deploy:prod": "./scripts/deploy-prod.sh",
     "deploy:dev": "./scripts/deploy-dev.sh",
-    "seed:fiscal": "ts-node prisma/apply-fiscal-seeds.ts"
+    "seed:fiscal": "node prisma/apply-fiscal-seeds.js"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",
