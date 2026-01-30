@@ -3,15 +3,87 @@
  *
  * Uso: node prisma/apply-fiscal-seeds.js
  */
-/* eslint-disable @typescript-eslint/no-var-requires */
 require('dotenv/config');
 const { PrismaClient } = require('@prisma/client');
-const { BASE_CFOPS } = require('../src/seeds/cfop-base');
-const {
-  BASE_OPERATION_NATURES,
-} = require('../src/seeds/operation-nature-base');
 
 const prisma = new PrismaClient();
+
+// Dados de CFOPs embutidos diretamente
+const BASE_CFOPS = [
+  {
+    code: '5101',
+    description: 'Venda de produção do estabelecimento',
+    type: 'SAIDA',
+    nature: 'ESTADUAL',
+    info: 'Venda de produção do estabelecimento - Operação Estadual',
+  },
+  {
+    code: '5102',
+    description: 'Venda de mercadoria adquirida ou recebida de terceiros',
+    type: 'SAIDA',
+    nature: 'ESTADUAL',
+    info: 'Venda de mercadoria adquirida ou recebida de terceiros - Operação Estadual',
+  },
+  {
+    code: '5202',
+    description: 'Devolução de compra para comercialização',
+    type: 'SAIDA',
+    nature: 'ESTADUAL',
+    info: 'Devolução de compra para comercialização - Operação Estadual',
+  },
+  {
+    code: '6101',
+    description: 'Venda de produção do estabelecimento',
+    type: 'SAIDA',
+    nature: 'INTERESTADUAL',
+    info: 'Venda de produção do estabelecimento - Operação Interestadual',
+  },
+  {
+    code: '6102',
+    description: 'Venda de mercadoria adquirida ou recebida de terceiros',
+    type: 'SAIDA',
+    nature: 'INTERESTADUAL',
+    info: 'Venda de mercadoria adquirida ou recebida de terceiros - Operação Interestadual',
+  },
+  {
+    code: '6202',
+    description: 'Devolução de compra para comercialização',
+    type: 'SAIDA',
+    nature: 'INTERESTADUAL',
+    info: 'Devolução de compra para comercialização - Operação Interestadual',
+  },
+];
+
+// Dados de Naturezas de Operação embutidos diretamente
+const BASE_OPERATION_NATURES = [
+  {
+    description: 'Vendas de produção do estabelecimento',
+    type: 'SAIDA',
+    finality: 1,
+    consumerPresence: 1,
+    info: 'NF-e Normal - Vendas de produção do estabelecimento',
+    cfopInternalCode: '5102',
+    cfopExternalCode: '6102',
+  },
+  {
+    description: 'Devolução de compra para comercialização',
+    type: 'SAIDA',
+    finality: 4,
+    consumerPresence: 9,
+    info: 'Devolução/Retorno - Devolução de compra para comercialização',
+    cfopInternalCode: '5202',
+    cfopExternalCode: '6202',
+  },
+  {
+    description: 'Venda de produção própria',
+    type: 'SAIDA',
+    finality: 1,
+    consumerPresence: 1,
+    info: 'NF-e Normal - Venda de produção própria do estabelecimento',
+    cfopInternalCode: '5101',
+    cfopExternalCode: '6101',
+  },
+];
 
 async function applyBaseCfopsToCompany(companyId) {
   let created = 0;
