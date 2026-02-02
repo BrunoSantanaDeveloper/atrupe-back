@@ -6,6 +6,18 @@ import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { NfseStatus } from '@prisma/client';
 
+// Mock fetchCepData para evitar chamadas HTTP reais
+jest.mock('../utils/cep.util', () => ({
+  fetchCepData: jest.fn().mockResolvedValue({
+    cep: '01310100',
+    logradouro: 'Avenida Paulista',
+    bairro: 'Bela Vista',
+    cidade: 'São Paulo',
+    uf: 'SP',
+    codigoIbge: '3550308',
+  }),
+}));
+
 const mockCompanyId = 'company-uuid-123';
 const mockOrderId = 'order-uuid-456';
 const mockNfseId = 'nfse-uuid-789';
@@ -35,11 +47,19 @@ const mockOrder = {
     id: 'client-1',
     name: 'Cliente Teste',
     document: '12345678901234',
-    address: {
-      city: 'São Paulo',
-      state: 'SP',
-      ibgeCode: '3550308',
-    },
+    corporateName: 'Cliente Teste LTDA',
+    cnpj: '12345678901234',
+    email: 'cliente@teste.com',
+    address: [
+      {
+        street: 'Avenida Paulista',
+        number: '1000',
+        neighborhood: 'Bela Vista',
+        city: 'São Paulo',
+        state: 'SP',
+        zipcode: '01310100',
+      },
+    ],
   },
   company: {
     id: mockCompanyId,
@@ -61,19 +81,33 @@ const mockNfse = {
   valorServicos: 500,
 };
 
-const mockInvoicyResponse = {
-  success: true,
-  data: {
-    numero: 1,
-    codigoVerificacao: 'ABC123',
-    status: 'AUTORIZADO',
-    pdfUrl: 'https://invoicy.com/pdf/123',
+const mockInvoicyResponse = [
+  {
+    Codigo: 100,
+    Descricao: 'Documentos processados com sucesso',
+    Documentos: [
+      {
+        DocProtocolo: '123456789',
+        DocIDUnico: 'unique-id-123',
+        DocPDFDownload: 'https://invoicy.com/pdf/123',
+        DocXMLBase64: 'base64xml',
+        NFSe: {
+          NFSeNumero: 1,
+          NFSeCodVerificacao: 'ABC123',
+        },
+        Situacao: {
+          SitCodigo: 100,
+          SitDescricao: 'NFS-e autorizada',
+        },
+      },
+    ],
   },
-};
+];
 
 const mockPrismaService = {
   order: { findUnique: jest.fn() },
   company: { findUnique: jest.fn() },
+  quotation: { findFirst: jest.fn() },
   nfse: {
     findMany: jest.fn(),
     findUnique: jest.fn(),
@@ -87,7 +121,9 @@ const mockPrismaService = {
 
 const mockInvoicyService = {
   getDefaultConfig: jest.fn(),
+  getConfig: jest.fn(),
   incrementRpsNumber: jest.fn(),
+  incrementNfseRpsNumber: jest.fn().mockResolvedValue(1),
 };
 
 const mockInvoicyHttpService = {
@@ -129,7 +165,7 @@ describe('NfseService', () => {
 
       const result = await service.findAll(mockCompanyId, {});
 
-      expect(result.data).toHaveLength(1);
+      expect(result.items).toHaveLength(1);
       expect(result.total).toBe(1);
     });
   });
@@ -154,8 +190,51 @@ describe('NfseService', () => {
 
   describe('emitFromOrder', () => {
     beforeEach(() => {
+      // Mock quotation para emitFromOrder
+      prisma.quotation.findFirst.mockResolvedValue({
+        id: 'quotation-1',
+        companyId: mockCompanyId,
+        order: mockOrder,
+        client: mockOrder.client,
+        quotationProduct: [
+          {
+            id: 'qp-1',
+            productId: 'service-1',
+            quantity: 1,
+            finalValue: 500,
+            totalValue: 500,
+            product: mockOrder.items[0].product,
+          },
+        ],
+      });
       prisma.order.findUnique.mockResolvedValue(mockOrder);
       prisma.company.findUnique.mockResolvedValue(mockOrder.company);
+      mockInvoicyService.getConfig.mockResolvedValue({
+        id: 'config-1',
+        serieNfse: 'A1',
+        proximoRpsNfse: 1,
+        ambiente: 2,
+        isActive: true,
+        ibgeCode: '4314902',
+        aliquotaIss: 5,
+        codigoServico: '1.05',
+        emitCrt: 1,
+        company: {
+          cnpj: '12345678000123',
+          legalName: 'Empresa Teste LTDA',
+          name: 'Empresa Teste',
+          municipalRegistration: '12345',
+          stateRegistration: '1234567890',
+          address: {
+            street: 'Rua Teste',
+            number: '100',
+            neighborhood: 'Centro',
+            city: 'Porto Alegre',
+            state: 'RS',
+            zipcode: '90000000',
+          },
+        },
+      });
       mockInvoicyService.getDefaultConfig.mockResolvedValue({
         serieNfse: 'A1',
         proximoRpsNfse: 1,
@@ -172,6 +251,8 @@ describe('NfseService', () => {
     it('should emit NFSe from order', async () => {
       const result = await service.emitFromOrder(mockCompanyId, {
         orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Serviço de consultoria em TI',
       });
 
       expect(result).toBeDefined();
@@ -188,23 +269,35 @@ describe('NfseService', () => {
       };
       prisma.order.findUnique.mockResolvedValue(orderWithProducts);
 
-      await service.emitFromOrder(mockCompanyId, { orderId: mockOrderId });
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Serviço de consultoria em TI',
+      });
 
-      // Verify only service items are processed
+      // Verify emitNfse was called with InvoicyNfseRequest structure
       expect(invoicyHttpService.emitNfse).toHaveBeenCalledWith(
-        expect.objectContaining({
-          servicos: expect.arrayContaining([
-            expect.objectContaining({ descricao: expect.any(String) }),
-          ]),
-        }),
+        mockCompanyId,
+        expect.arrayContaining([
+          expect.objectContaining({
+            Documento: expect.objectContaining({
+              ModeloDocumento: 'NFSE',
+              RPS: expect.any(Array),
+            }),
+          }),
+        ]),
       );
     });
 
     it('should throw if order not found', async () => {
-      prisma.order.findUnique.mockResolvedValue(null);
+      prisma.quotation.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.emitFromOrder(mockCompanyId, { orderId: 'invalid' }),
+        service.emitFromOrder(mockCompanyId, {
+          orderId: 'invalid',
+          codigoServico: '1.05',
+          discriminacao: 'Teste',
+        }),
       ).rejects.toThrow(NotFoundException);
     });
   });
@@ -218,7 +311,27 @@ describe('NfseService', () => {
 
     beforeEach(() => {
       prisma.nfse.findFirst.mockResolvedValue(authorizedNfse);
-      invoicyHttpService.cancelNfse.mockResolvedValue({ success: true });
+      mockInvoicyService.getConfig.mockResolvedValue({
+        id: 'config-1',
+        serieNfse: 'A1',
+        ambiente: 2,
+        isActive: true,
+      });
+      invoicyHttpService.cancelNfse.mockResolvedValue([
+        {
+          Codigo: 100,
+          Descricao: 'Documentos processados com sucesso',
+          Documentos: [
+            {
+              DocProtocolo: '123456789',
+              Situacao: {
+                SitCodigo: 101,
+                SitDescricao: 'Cancelamento homologado',
+              },
+            },
+          ],
+        },
+      ]);
       prisma.nfse.update.mockResolvedValue({
         ...authorizedNfse,
         status: NfseStatus.CANCELLED,
@@ -253,7 +366,7 @@ describe('NfseService', () => {
 
       const result = await service.getPdfUrl(mockNfseId, mockCompanyId);
 
-      expect(result).toBe('https://invoicy.com/pdf/123');
+      expect(result.url).toBe('https://invoicy.com/pdf/123');
     });
   });
 });

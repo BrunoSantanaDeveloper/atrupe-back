@@ -19,6 +19,10 @@ export class InvoicyHttpService {
   private readonly tokenCache = new Map<string, InvoicyTokenCache>();
   private readonly httpClient: AxiosInstance;
 
+  // Retry configuration
+  private readonly MAX_RETRIES = 3;
+  private readonly INITIAL_DELAY_MS = 1000;
+
   // Base URLs for Invoicy API
   private readonly INVOICY_URLS = {
     HOMOLOGACAO: 'https://apibrhomolog.invoicy.com.br',
@@ -96,7 +100,9 @@ export class InvoicyHttpService {
       return cached.token;
     }
 
-    this.logger.log(`Generating new Invoicy token for company ${companyId}`);
+    this.logger.log(
+      `Generating new Invoicy token for company ${this.maskCompanyId(companyId)}`,
+    );
 
     const credentials = await this.getCompanyCredentials(companyId);
     const partnerKey = this.getPartnerKey();
@@ -116,21 +122,14 @@ export class InvoicyHttpService {
       partnerKey: partnerKey,
     };
 
-    this.logger.log(`JWT Payload: ${JSON.stringify(jwtPayload)}`);
-    this.logger.log(`AccessKey: ${credentials.accessKey}`);
-    this.logger.log(`PartnerKey: ${partnerKey}`);
+    this.logger.debug(
+      `Generating JWT for CNPJ: ${this.maskCnpj(credentials.cnpj)}`,
+    );
 
-    // Decode the accessKey from Base64 before using as signing secret
-    // NOTE: jwt.io with "secret base64 encoded" checked expects the secret as-is (string)
-    // and decodes internally. We'll try WITHOUT decoding first.
-    this.logger.log(`Using accessKey as signing secret (raw string)`);
-
-    // Sign the JWT with the accessKey as string (not decoded)
+    // Sign the JWT with the accessKey as string
     const jwtToken = jwt.sign(jwtPayload, credentials.accessKey, {
       algorithm: 'HS256',
     });
-
-    this.logger.log(`Generated JWT Token: ${jwtToken}`);
 
     const baseUrl = this.getBaseUrl(credentials.environment);
 
@@ -160,26 +159,32 @@ export class InvoicyHttpService {
       });
 
       this.logger.log(
-        `Successfully authenticated with Invoicy for company ${companyId}`,
+        `Successfully authenticated with Invoicy for company ${this.maskCompanyId(companyId)}`,
       );
       return accessToken;
     } catch (error) {
       this.logger.error(
         `Failed to authenticate with Invoicy: ${error.message}`,
-        error.response?.data || error.stack,
       );
 
-      // Log more details about the error
+      // Log error status without exposing sensitive data
       if (error.response) {
         this.logger.error(`Response status: ${error.response.status}`);
-        this.logger.error(
-          `Response data: ${JSON.stringify(error.response.data)}`,
-        );
+        // Only log error code/message, not full response
+        const errorCode =
+          error.response.data?.codigo || error.response.data?.code;
+        const errorMsg =
+          error.response.data?.mensagem || error.response.data?.message;
+        if (errorCode || errorMsg) {
+          this.logger.error(`Error: ${errorCode} - ${errorMsg}`);
+        }
       }
 
       throw new Error(`Falha na autenticação com Invoicy: ${error.message}`);
     }
-  } /**
+  }
+
+  /**
    * Clear cached token for a company (useful when credentials change)
    */
   clearTokenCache(companyId: string): void {
@@ -187,9 +192,45 @@ export class InvoicyHttpService {
   }
 
   /**
-   * Make authenticated request to Invoicy API
+   * Make authenticated request to Invoicy API with retry logic
    */
   private async makeRequest<T>(
+    companyId: string,
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    endpoint: string,
+    data?: unknown,
+  ): Promise<T> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
+      try {
+        return await this.executeRequest<T>(companyId, method, endpoint, data);
+      } catch (error) {
+        lastError = error;
+
+        // Don't retry client errors (4xx) except 401 (handled in executeRequest)
+        if (this.isClientError(error) && error.response?.status !== 401) {
+          throw error;
+        }
+
+        // Don't retry on last attempt
+        if (attempt < this.MAX_RETRIES && this.isRetryableError(error)) {
+          const delay = this.INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+          this.logger.warn(
+            `Request to ${endpoint} failed (attempt ${attempt}/${this.MAX_RETRIES}), retrying in ${delay}ms...`,
+          );
+          await this.delay(delay);
+        }
+      }
+    }
+
+    throw lastError || new Error('Request failed after retries');
+  }
+
+  /**
+   * Execute a single request (without retry logic)
+   */
+  private async executeRequest<T>(
     companyId: string,
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     endpoint: string,
@@ -215,9 +256,11 @@ export class InvoicyHttpService {
 
       return response.data;
     } catch (error) {
-      // If unauthorized, clear cache and retry once
+      // If unauthorized, clear cache and retry once with new token
       if (error.response?.status === 401) {
-        this.logger.warn(`Token expired for company ${companyId}, retrying...`);
+        this.logger.warn(
+          `Token expired for company ${this.maskCompanyId(companyId)}, refreshing...`,
+        );
         this.clearTokenCache(companyId);
         const newToken = await this.authenticate(companyId);
 
@@ -227,6 +270,7 @@ export class InvoicyHttpService {
           data,
           headers: {
             Authorization: `Bearer ${newToken}`,
+            'Content-Type': 'application/json',
           },
         });
 
@@ -235,6 +279,64 @@ export class InvoicyHttpService {
 
       throw error;
     }
+  }
+
+  /**
+   * Check if error is retryable (server errors, timeouts, network issues)
+   */
+  private isRetryableError(error: any): boolean {
+    // Network errors
+    if (
+      error.code === 'ECONNRESET' ||
+      error.code === 'ETIMEDOUT' ||
+      error.code === 'ENOTFOUND'
+    ) {
+      return true;
+    }
+    // Server errors (5xx)
+    if (error.response?.status >= 500) {
+      return true;
+    }
+    // Axios timeout
+    if (error.code === 'ECONNABORTED') {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Check if error is a client error (4xx)
+   */
+  private isClientError(error: any): boolean {
+    return error.response?.status >= 400 && error.response?.status < 500;
+  }
+
+  /**
+   * Delay execution for specified milliseconds
+   */
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Mask CNPJ for safe logging
+   */
+  private maskCnpj(cnpj: string): string {
+    const clean = cnpj.replace(/\D/g, '');
+    if (clean.length >= 8) {
+      return `${clean.substring(0, 2)}.xxx.xxx/${clean.substring(8, 12)}-xx`;
+    }
+    return 'xx.xxx.xxx/xxxx-xx';
+  }
+
+  /**
+   * Mask company ID for safe logging
+   */
+  private maskCompanyId(companyId: string): string {
+    if (companyId.length > 8) {
+      return `${companyId.substring(0, 4)}...${companyId.substring(companyId.length - 4)}`;
+    }
+    return '****';
   }
 
   // ============================================

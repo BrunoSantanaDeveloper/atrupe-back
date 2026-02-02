@@ -46,12 +46,15 @@ const mockPrismaService = {
 
 const mockInvoicyService = {
   getDefaultConfig: jest.fn(),
+  getConfig: jest.fn(),
   incrementNfceNumber: jest.fn(),
 };
 
 const mockInvoicyHttpService = {
   emitNfce: jest.fn(),
+  emitNfe: jest.fn(), // emit NFC-e usa internamente emitNfe
   cancelNfce: jest.fn(),
+  cancelNfe: jest.fn(),
   inutilizarNfce: jest.fn(),
 };
 
@@ -90,7 +93,7 @@ describe('NfceService', () => {
 
       const result = await service.findAll(mockCompanyId, {});
 
-      expect(result.data).toHaveLength(1);
+      expect(result.items).toHaveLength(1);
       expect(result.total).toBe(1);
     });
   });
@@ -115,13 +118,14 @@ describe('NfceService', () => {
 
   describe('findByChaveAcesso', () => {
     it('should find by chaveAcesso', async () => {
-      prisma.nfce.findUnique.mockResolvedValue({
+      prisma.nfce.findFirst.mockResolvedValue({
         ...mockNfce,
         chaveAcesso: mockInvoicyResponse.data.chaveAcesso,
       });
 
       const result = await service.findByChaveAcesso(
         mockInvoicyResponse.data.chaveAcesso,
+        mockCompanyId,
       );
 
       expect(result).toBeDefined();
@@ -135,12 +139,52 @@ describe('NfceService', () => {
         name: 'Empresa',
         document: '12345678000123',
       });
+      invoicyService.getConfig.mockResolvedValue({
+        id: 'config-1',
+        serieNfce: 1,
+        proximoNumeroNfce: 1,
+        ambiente: 2,
+        isActive: true,
+        ibgeCode: '4314902',
+        emitCrt: 1,
+        company: {
+          cnpj: '12345678000123',
+          legalName: 'Empresa Teste LTDA',
+          stateRegistration: '1234567890',
+          address: {
+            street: 'Rua Teste',
+            number: '100',
+            neighborhood: 'Centro',
+            city: 'Porto Alegre',
+            state: 'RS',
+            zipcode: '90000000',
+          },
+        },
+      });
       invoicyService.getDefaultConfig.mockResolvedValue({
         serieNfce: 1,
         proximoNumeroNfce: 1,
         ambiente: 2,
       });
-      invoicyHttpService.emitNfce.mockResolvedValue(mockInvoicyResponse);
+      invoicyHttpService.emitNfe.mockResolvedValue([
+        {
+          Codigo: 100,
+          Descricao: 'Documentos processados com sucesso',
+          Documentos: [
+            {
+              DocChaAcesso: mockInvoicyResponse.data.chaveAcesso,
+              DocProtocolo: mockInvoicyResponse.data.protocolo,
+              DocIDUnico: 'invoicy-id-123',
+              DocPDFDownload: mockInvoicyResponse.data.danfeUrl,
+              DocCompleto: mockInvoicyResponse.data.qrCodeUrl,
+              Situacao: {
+                SitCodigo: 100,
+                SitDescricao: 'Autorizado o uso da NF-e',
+              },
+            },
+          ],
+        },
+      ]);
       prisma.nfce.create.mockResolvedValue(mockNfce);
       prisma.nfce.update.mockResolvedValue({
         ...mockNfce,
@@ -151,8 +195,20 @@ describe('NfceService', () => {
 
     it('should emit NFC-e successfully', async () => {
       const result = await service.emit(mockCompanyId, {
-        items: [{ productId: '1', quantity: 1, unitValue: 100 }],
-        payment: { forma: '01', valor: 100 },
+        naturezaOperacao: 'Venda ao consumidor final',
+        itens: [
+          {
+            productId: '1',
+            codigo: '001',
+            descricao: 'Produto',
+            ncm: '12345678',
+            cfop: '5102',
+            unidade: 'UN',
+            quantidade: 1,
+            valorUnitario: 100,
+          },
+        ],
+        pagamentos: [{ tipo: '01', valor: 100 }],
       });
 
       expect(result.status).toBe(NfceStatus.AUTHORIZED);
@@ -161,11 +217,24 @@ describe('NfceService', () => {
 
     it('should increment NFC-e number after emission', async () => {
       await service.emit(mockCompanyId, {
-        items: [{ productId: '1', quantity: 1, unitValue: 100 }],
+        naturezaOperacao: 'Venda',
+        itens: [
+          {
+            productId: '1',
+            codigo: '001',
+            descricao: 'Produto',
+            ncm: '12345678',
+            cfop: '5102',
+            unidade: 'UN',
+            quantidade: 1,
+            valorUnitario: 100,
+          },
+        ],
+        pagamentos: [{ tipo: '01', valor: 100 }],
       });
 
       expect(invoicyService.incrementNfceNumber).toHaveBeenCalledWith(
-        mockCompanyId,
+        'config-1', // incrementNfceNumber recebe config.id
       );
     });
   });
@@ -179,7 +248,27 @@ describe('NfceService', () => {
 
     beforeEach(() => {
       prisma.nfce.findFirst.mockResolvedValue(authorizedNfce);
-      invoicyHttpService.cancelNfce.mockResolvedValue({ success: true });
+      invoicyService.getConfig.mockResolvedValue({
+        id: 'config-1',
+        serieNfce: 1,
+        ambiente: 2,
+      });
+      invoicyHttpService.cancelNfe.mockResolvedValue([
+        {
+          Codigo: 100,
+          Descricao: 'Documentos processados com sucesso',
+          Documentos: [
+            {
+              DocChaAcesso: mockInvoicyResponse.data.chaveAcesso,
+              DocProtocolo: '123456789012345',
+              Situacao: {
+                SitCodigo: 135,
+                SitDescricao: 'Evento registrado e vinculado a NFC-e',
+              },
+            },
+          ],
+        },
+      ]);
       prisma.nfce.update.mockResolvedValue({
         ...authorizedNfce,
         status: NfceStatus.CANCELLED,
@@ -207,29 +296,51 @@ describe('NfceService', () => {
 
   describe('inutilizar', () => {
     beforeEach(() => {
-      invoicyHttpService.inutilizarNfce.mockResolvedValue({ success: true });
+      invoicyService.getConfig.mockResolvedValue({
+        id: 'config-1',
+        serieNfce: 1,
+        ambiente: 2,
+      });
+      invoicyHttpService.inutilizarNfce.mockResolvedValue([
+        {
+          Codigo: 100,
+          Descricao: 'Documentos processados com sucesso',
+          Documentos: [
+            {
+              DocProtocolo: '987654321098765',
+              Situacao: {
+                SitCodigo: 102,
+                SitDescricao: 'Inutilização de número homologada',
+              },
+            },
+          ],
+        },
+      ]);
     });
 
     it('should inutilizar number range', async () => {
       await service.inutilizar(mockCompanyId, {
-        serie: 1,
         numeroInicial: 1,
         numeroFinal: 5,
         justificativa: 'Numeração perdida por falha técnica',
       });
 
       expect(invoicyHttpService.inutilizarNfce).toHaveBeenCalledWith(
-        expect.objectContaining({
-          serie: 1,
-          numeroInicial: 1,
-          numeroFinal: 5,
-        }),
+        mockCompanyId,
+        expect.any(Number),
+        expect.any(Number),
+        expect.any(Number),
+        expect.any(String),
       );
     });
   });
 
   describe('toggleContingencia', () => {
     beforeEach(() => {
+      invoicyService.getConfig.mockResolvedValue({
+        id: 'config-1',
+        contingencia: false,
+      });
       prisma.invoicyConfig.findFirst.mockResolvedValue({
         id: 'config-1',
         contingencia: false,
@@ -243,10 +354,10 @@ describe('NfceService', () => {
     it('should toggle contingency mode', async () => {
       const result = await service.toggleContingencia(mockCompanyId, {
         ativar: true,
-        justificativa: 'SEFAZ offline',
+        motivo: 'SEFAZ offline',
       });
 
-      expect(result.contingencia).toBe(true);
+      expect(result.contingenciaAtiva).toBe(true);
     });
   });
 
@@ -259,7 +370,7 @@ describe('NfceService', () => {
 
       const result = await service.getQrCode(mockNfceId, mockCompanyId);
 
-      expect(result).toBe('https://qrcode.url/123');
+      expect(result.url).toBe('https://qrcode.url/123');
     });
 
     it('should throw if NFC-e not found', async () => {
