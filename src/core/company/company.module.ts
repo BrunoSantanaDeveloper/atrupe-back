@@ -8,6 +8,8 @@ import { PlugModule } from '../../svc/plug/plug.module';
 import { CancelReasonModule } from './cancel-reason/cancel-reason.module';
 import { SupplierModule } from '../supplier/supplier.module';
 import { ClientModule } from '../client/client.module';
+import { CompanySeedsService } from './company-seeds.service';
+import { CompanyHistoryService } from './company-history.service';
 
 @Module({
   imports: [
@@ -20,7 +22,7 @@ import { ClientModule } from '../client/client.module';
     SupplierModule,
   ],
   controllers: [CompanyController],
-  providers: [CompanyService],
-  exports: [CompanyService],
+  providers: [CompanyService, CompanySeedsService, CompanyHistoryService],
+  exports: [CompanyService, CompanySeedsService, CompanyHistoryService],
 })
 export class CompanyModule {}

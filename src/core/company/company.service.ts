@@ -26,6 +26,8 @@ import { BASE_CFOPS } from 'src/seeds/cfop-base';
 import { BASE_OPERATION_NATURES } from 'src/seeds/operation-nature-base';
 import { CreatePayrollSetupDto } from '../financial/salaries/dto/create-payroll-setup.dto';
 import { Logger } from '@nestjs/common';
+import { CompanySeedsService } from './company-seeds.service';
+import { CompanyHistoryService } from './company-history.service';
 
 @Injectable()
 export class CompanyService {
@@ -34,6 +36,8 @@ export class CompanyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly plugService: PlugService,
+    private readonly companySeedsService: CompanySeedsService,
+    private readonly companyHistoryService: CompanyHistoryService,
   ) {}
   async createFirstAccess(email: string, companyId: string) {
     try {
@@ -481,7 +485,7 @@ export class CompanyService {
           name: true,
         },
       });
-      console.log(employees);
+
       if (employees.length === 0) {
         return 'no employees';
       }
@@ -604,8 +608,6 @@ export class CompanyService {
           DigitalCertificate: true,
         },
       });
-
-      return this.formatCompany(company);
     } catch (e) {
       console.error(e);
       throw e;
@@ -706,7 +708,7 @@ export class CompanyService {
     }
 
     try {
-      // First update the company
+      // Update company basic data
       const updatedCompany = await this.prisma.company.update({
         where: { id },
         data: data,
@@ -716,106 +718,18 @@ export class CompanyService {
         },
       });
 
-      // Handle DigitalCertificate update/create/delete
+      // Handle digital certificate
       if (fiscal) {
-        if (fiscal.certificateType || fiscal.certificate) {
-          const existingCert = updatedCompany.DigitalCertificate;
-          const isFileChanged =
-            fiscal.certificate &&
-            (!existingCert || existingCert.certificate !== fiscal.certificate);
-
-          const hasChanges =
-            !existingCert ||
-            isFileChanged ||
-            existingCert.type !== fiscal.certificateType ||
-            existingCert.description !== fiscal.certificateDescription ||
-            existingCert.password !== fiscal.certificatePassword ||
-            existingCert.name !== fiscal.certificateName;
-
-          if (hasChanges) {
-            // If we have certificate data and it changed, upsert it
-            const updateData = {
-              type: fiscal.certificateType as any,
-              description: fiscal.certificateDescription,
-              password: fiscal.certificatePassword,
-              certificate: fiscal.certificate,
-              name: fiscal.certificateName,
-            };
-
-            if (isFileChanged) {
-              updateData['lastUpload'] = new Date();
-            }
-
-            await this.prisma.digitalCertificate.upsert({
-              where: { companyId: id },
-              update: updateData,
-              create: {
-                companyId: id,
-                ...updateData,
-                lastUpload: isFileChanged ? new Date() : undefined,
-              },
-            });
-          }
-        } else if (
-          (fiscal.certificateType === null ||
-            (fiscal.certificateType as any) === '') &&
-          (fiscal.certificate === null || fiscal.certificate === '')
-        ) {
-          // Explicitly requested deletion of certificate (e.g. by sending null)
-          // You might need to adjust this logic based on how you want to handle "delete" from frontend
-          try {
-            await this.prisma.digitalCertificate.delete({
-              where: { companyId: id },
-            });
-          } catch (e) {
-            // Ignore if already deleted
-          }
-        }
+        await this.handleCertificateUpdate(
+          id,
+          fiscal,
+          updatedCompany.DigitalCertificate,
+        );
       }
 
-      // If address is provided, update or create it
+      // Handle address
       if (address) {
-        if (updatedCompany.address?.length > 0) {
-          // Update existing address
-          try {
-            await this.prisma.address.updateMany({
-              where: {
-                companyId: id,
-                ownerType: 'COMPANY',
-              },
-              data: {
-                street: address.street,
-                number: address.number,
-                complement: address.complement,
-                neighborhood: address.neighborhood,
-                city: address.city,
-                state: address.state,
-                zipcode: address.zipcode,
-              },
-            });
-          } catch (error) {
-            console.error(error);
-          }
-        } else {
-          // Create new address
-          try {
-            await this.prisma.address.create({
-              data: {
-                street: address.street,
-                number: address.number,
-                complement: address.complement,
-                neighborhood: address.neighborhood,
-                city: address.city,
-                state: address.state,
-                zipcode: address.zipcode,
-                ownerType: 'COMPANY',
-                companyId: updatedCompany.id,
-              },
-            });
-          } catch (error) {
-            console.error(error);
-          }
-        }
+        await this.handleAddressUpdate(id, address, updatedCompany.address);
       }
 
       // Return updated company with address and certificate
@@ -829,8 +743,114 @@ export class CompanyService {
 
       return this.formatCompany(finalCompany);
     } catch (e) {
-      console.error(e);
+      this.logger.error(`Error updating company ${id}:`, e);
       throw e;
+    }
+  }
+
+  /**
+   * Handles digital certificate upsert or deletion during company update.
+   */
+  private async handleCertificateUpdate(
+    companyId: string,
+    fiscal: UpdateCompanyDto['fiscal'],
+    existingCert: any,
+  ) {
+    if (fiscal.certificateType || fiscal.certificate) {
+      const isFileChanged =
+        fiscal.certificate &&
+        (!existingCert || existingCert.certificate !== fiscal.certificate);
+
+      const hasChanges =
+        !existingCert ||
+        isFileChanged ||
+        existingCert.type !== fiscal.certificateType ||
+        existingCert.description !== fiscal.certificateDescription ||
+        existingCert.password !== fiscal.certificatePassword ||
+        existingCert.name !== fiscal.certificateName;
+
+      if (hasChanges) {
+        const updateData = {
+          type: fiscal.certificateType as any,
+          description: fiscal.certificateDescription,
+          password: fiscal.certificatePassword,
+          certificate: fiscal.certificate,
+          name: fiscal.certificateName,
+        };
+
+        if (isFileChanged) {
+          updateData['lastUpload'] = new Date();
+        }
+
+        await this.prisma.digitalCertificate.upsert({
+          where: { companyId },
+          update: updateData,
+          create: {
+            companyId,
+            ...updateData,
+            lastUpload: isFileChanged ? new Date() : undefined,
+          },
+        });
+      }
+    } else if (
+      (fiscal.certificateType === null ||
+        (fiscal.certificateType as any) === '') &&
+      (fiscal.certificate === null || fiscal.certificate === '')
+    ) {
+      // Explicitly requested deletion
+      try {
+        await this.prisma.digitalCertificate.delete({
+          where: { companyId },
+        });
+      } catch {
+        // Ignore if already deleted
+      }
+    }
+  }
+
+  /**
+   * Handles address update or creation during company update.
+   */
+  private async handleAddressUpdate(
+    companyId: string,
+    address: UpdateCompanyDto['address'],
+    existingAddresses: any[],
+  ) {
+    const addressData = {
+      street: address.street,
+      number: address.number,
+      complement: address.complement,
+      neighborhood: address.neighborhood,
+      city: address.city,
+      state: address.state,
+      zipcode: address.zipcode,
+    };
+
+    try {
+      if (existingAddresses?.length > 0) {
+        // Update existing address
+        await this.prisma.address.updateMany({
+          where: {
+            companyId,
+            ownerType: 'COMPANY',
+          },
+          data: addressData,
+        });
+      } else {
+        // Create new address
+        await this.prisma.address.create({
+          data: {
+            ...addressData,
+            ownerType: 'COMPANY',
+            companyId,
+          },
+        });
+      }
+    } catch (error) {
+      this.logger.error(
+        `Error handling address for company ${companyId}:`,
+        error,
+      );
     }
   }
 
