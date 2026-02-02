@@ -7,7 +7,7 @@ import {
 import { PrismaService } from 'nestjs-prisma';
 import { NfseStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
-import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
+import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import {
   InvoicyNfseRequest,
   INVOICY_SUCCESS_CODES,
@@ -27,7 +27,7 @@ export class NfseService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
-    private readonly invoicyHttpService: InvoicyHttpService,
+    private readonly invoicyApiService: InvoicyApiService,
   ) {}
 
   async findAll(companyId: string, filters: NfseFilterDto) {
@@ -501,7 +501,7 @@ export class NfseService {
       };
 
       // Chamar API do Invoicy
-      const invoicyResponses = await this.invoicyHttpService.emitNfse(
+      const invoicyResponses = await this.invoicyApiService.emitNfse(
         companyId,
         [invoicyRequest],
       );
@@ -586,7 +586,7 @@ export class NfseService {
       );
 
       // Chamar API do Invoicy para cancelamento de NFS-e
-      const invoicyResponses = await this.invoicyHttpService.cancelNfse(
+      const invoicyResponses = await this.invoicyApiService.cancelNfse(
         companyId,
         nfse.numero,
         nfse.codigoVerificacao,

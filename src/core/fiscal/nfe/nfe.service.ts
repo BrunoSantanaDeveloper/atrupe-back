@@ -7,7 +7,7 @@ import {
 import { PrismaService } from 'nestjs-prisma';
 import { NfeStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
-import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
+import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import {
   InvoicyNfeRequest,
   INVOICY_SUCCESS_CODES,
@@ -29,7 +29,7 @@ export class NfeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
-    private readonly invoicyHttpService: InvoicyHttpService,
+    private readonly invoicyApiService: InvoicyApiService,
   ) {}
 
   /**
@@ -781,10 +781,9 @@ export class NfeService {
       };
 
       // Chamar API do Invoicy
-      const invoicyResponses = await this.invoicyHttpService.emitNfe(
-        companyId,
-        [invoicyRequest],
-      );
+      const invoicyResponses = await this.invoicyApiService.emitNfe(companyId, [
+        invoicyRequest,
+      ]);
 
       // Processar resposta
       const response = invoicyResponses[0];
@@ -940,7 +939,7 @@ export class NfeService {
       );
 
       // Chamar API do Invoicy para cancelamento
-      const invoicyResponses = await this.invoicyHttpService.cancelNfe(
+      const invoicyResponses = await this.invoicyApiService.cancelNfe(
         companyId,
         nfe.chaveAcesso,
         dto.justificativa,
@@ -1013,7 +1012,7 @@ export class NfeService {
 
       // Chamar API do Invoicy para carta de correção
       const invoicyResponses =
-        await this.invoicyHttpService.sendCorrectionLetter(
+        await this.invoicyApiService.sendCorrectionLetter(
           companyId,
           nfe.chaveAcesso,
           dto.correcao,

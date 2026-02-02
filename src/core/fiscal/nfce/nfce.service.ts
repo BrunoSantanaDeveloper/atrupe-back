@@ -7,7 +7,7 @@ import {
 import { PrismaService } from 'nestjs-prisma';
 import { NfceStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
-import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
+import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import {
   InvoicyNfeRequest,
   INVOICY_SUCCESS_CODES,
@@ -28,7 +28,7 @@ export class NfceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
-    private readonly invoicyHttpService: InvoicyHttpService,
+    private readonly invoicyApiService: InvoicyApiService,
   ) {}
 
   async findAll(companyId: string, filters: NfceFilterDto) {
@@ -343,10 +343,9 @@ export class NfceService {
       };
 
       // Chamar API do Invoicy
-      const invoicyResponses = await this.invoicyHttpService.emitNfe(
-        companyId,
-        [invoicyRequest],
-      );
+      const invoicyResponses = await this.invoicyApiService.emitNfe(companyId, [
+        invoicyRequest,
+      ]);
 
       // Processar resposta
       const response = invoicyResponses[0];
@@ -481,7 +480,7 @@ export class NfceService {
       );
 
       // Chamar API do Invoicy para cancelamento (NFC-e usa mesmo endpoint que NF-e)
-      const invoicyResponses = await this.invoicyHttpService.cancelNfe(
+      const invoicyResponses = await this.invoicyApiService.cancelNfe(
         companyId,
         nfce.chaveAcesso,
         dto.justificativa,
@@ -554,7 +553,7 @@ export class NfceService {
       );
 
       // Chamar API do Invoicy para inutilização
-      const invoicyResponses = await this.invoicyHttpService.inutilizarNfce(
+      const invoicyResponses = await this.invoicyApiService.inutilizarNfce(
         companyId,
         config.serieNfce || 1,
         dto.numeroInicial,

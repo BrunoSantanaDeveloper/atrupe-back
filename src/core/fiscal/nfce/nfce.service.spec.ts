@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NfceService } from './nfce.service';
 import { PrismaService } from 'nestjs-prisma';
 import { InvoicyService } from '../invoicy/invoicy.service';
-import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
+import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { NfceStatus } from '@prisma/client';
 
@@ -50,7 +50,7 @@ const mockInvoicyService = {
   incrementNfceNumber: jest.fn(),
 };
 
-const mockInvoicyHttpService = {
+const mockInvoicyApiService = {
   emitNfce: jest.fn(),
   emitNfe: jest.fn(), // emit NFC-e usa internamente emitNfe
   cancelNfce: jest.fn(),
@@ -62,7 +62,7 @@ describe('NfceService', () => {
   let service: NfceService;
   let prisma: typeof mockPrismaService;
   let invoicyService: typeof mockInvoicyService;
-  let invoicyHttpService: typeof mockInvoicyHttpService;
+  let invoicyApiService: typeof mockInvoicyApiService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -72,14 +72,14 @@ describe('NfceService', () => {
         NfceService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: InvoicyService, useValue: mockInvoicyService },
-        { provide: InvoicyHttpService, useValue: mockInvoicyHttpService },
+        { provide: InvoicyApiService, useValue: mockInvoicyApiService },
       ],
     }).compile();
 
     service = module.get<NfceService>(NfceService);
     prisma = module.get(PrismaService);
     invoicyService = module.get(InvoicyService);
-    invoicyHttpService = module.get(InvoicyHttpService);
+    invoicyApiService = module.get(InvoicyApiService);
   });
 
   it('should be defined', () => {
@@ -166,7 +166,7 @@ describe('NfceService', () => {
         proximoNumeroNfce: 1,
         ambiente: 2,
       });
-      invoicyHttpService.emitNfe.mockResolvedValue([
+      invoicyApiService.emitNfe.mockResolvedValue([
         {
           Codigo: 100,
           Descricao: 'Documentos processados com sucesso',
@@ -253,7 +253,7 @@ describe('NfceService', () => {
         serieNfce: 1,
         ambiente: 2,
       });
-      invoicyHttpService.cancelNfe.mockResolvedValue([
+      invoicyApiService.cancelNfe.mockResolvedValue([
         {
           Codigo: 100,
           Descricao: 'Documentos processados com sucesso',
@@ -301,7 +301,7 @@ describe('NfceService', () => {
         serieNfce: 1,
         ambiente: 2,
       });
-      invoicyHttpService.inutilizarNfce.mockResolvedValue([
+      invoicyApiService.inutilizarNfce.mockResolvedValue([
         {
           Codigo: 100,
           Descricao: 'Documentos processados com sucesso',
@@ -325,7 +325,7 @@ describe('NfceService', () => {
         justificativa: 'Numeração perdida por falha técnica',
       });
 
-      expect(invoicyHttpService.inutilizarNfce).toHaveBeenCalledWith(
+      expect(invoicyApiService.inutilizarNfce).toHaveBeenCalledWith(
         mockCompanyId,
         expect.any(Number),
         expect.any(Number),

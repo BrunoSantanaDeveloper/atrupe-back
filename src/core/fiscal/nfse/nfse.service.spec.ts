@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NfseService } from './nfse.service';
 import { PrismaService } from 'nestjs-prisma';
 import { InvoicyService } from '../invoicy/invoicy.service';
-import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
+import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { NfseStatus } from '@prisma/client';
 
@@ -126,7 +126,7 @@ const mockInvoicyService = {
   incrementNfseRpsNumber: jest.fn().mockResolvedValue(1),
 };
 
-const mockInvoicyHttpService = {
+const mockInvoicyApiService = {
   emitNfse: jest.fn(),
   cancelNfse: jest.fn(),
   getStatusNfse: jest.fn(),
@@ -135,7 +135,7 @@ const mockInvoicyHttpService = {
 describe('NfseService', () => {
   let service: NfseService;
   let prisma: typeof mockPrismaService;
-  let invoicyHttpService: typeof mockInvoicyHttpService;
+  let invoicyApiService: typeof mockInvoicyApiService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -145,13 +145,13 @@ describe('NfseService', () => {
         NfseService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: InvoicyService, useValue: mockInvoicyService },
-        { provide: InvoicyHttpService, useValue: mockInvoicyHttpService },
+        { provide: InvoicyApiService, useValue: mockInvoicyApiService },
       ],
     }).compile();
 
     service = module.get<NfseService>(NfseService);
     prisma = module.get(PrismaService);
-    invoicyHttpService = module.get(InvoicyHttpService);
+    invoicyApiService = module.get(InvoicyApiService);
   });
 
   it('should be defined', () => {
@@ -240,7 +240,7 @@ describe('NfseService', () => {
         proximoRpsNfse: 1,
         ambiente: 2,
       });
-      invoicyHttpService.emitNfse.mockResolvedValue(mockInvoicyResponse);
+      invoicyApiService.emitNfse.mockResolvedValue(mockInvoicyResponse);
       prisma.nfse.create.mockResolvedValue(mockNfse);
       prisma.nfse.update.mockResolvedValue({
         ...mockNfse,
@@ -256,7 +256,7 @@ describe('NfseService', () => {
       });
 
       expect(result).toBeDefined();
-      expect(invoicyHttpService.emitNfse).toHaveBeenCalled();
+      expect(invoicyApiService.emitNfse).toHaveBeenCalled();
     });
 
     it('should only include service items', async () => {
@@ -276,7 +276,7 @@ describe('NfseService', () => {
       });
 
       // Verify emitNfse was called with InvoicyNfseRequest structure
-      expect(invoicyHttpService.emitNfse).toHaveBeenCalledWith(
+      expect(invoicyApiService.emitNfse).toHaveBeenCalledWith(
         mockCompanyId,
         expect.arrayContaining([
           expect.objectContaining({
@@ -317,7 +317,7 @@ describe('NfseService', () => {
         ambiente: 2,
         isActive: true,
       });
-      invoicyHttpService.cancelNfse.mockResolvedValue([
+      invoicyApiService.cancelNfse.mockResolvedValue([
         {
           Codigo: 100,
           Descricao: 'Documentos processados com sucesso',

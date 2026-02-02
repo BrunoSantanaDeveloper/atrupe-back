@@ -194,7 +194,7 @@ export class InvoicyHttpService {
   /**
    * Make authenticated request to Invoicy API with retry logic
    */
-  private async makeRequest<T>(
+  async makeRequest<T>(
     companyId: string,
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     endpoint: string,

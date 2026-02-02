@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NfeService } from './nfe.service';
 import { PrismaService } from 'nestjs-prisma';
 import { InvoicyService } from '../invoicy/invoicy.service';
-import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
+import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { NfeStatus } from '@prisma/client';
 
@@ -222,7 +222,7 @@ const mockInvoicyService = {
   incrementNfeNumber: jest.fn(),
 };
 
-const mockInvoicyHttpService = {
+const mockInvoicyApiService = {
   emitNfe: jest.fn(),
   cancelNfe: jest.fn(),
   getStatusNfe: jest.fn(),
@@ -233,7 +233,7 @@ describe('NfeService', () => {
   let service: NfeService;
   let prisma: typeof mockPrismaService;
   let invoicyService: typeof mockInvoicyService;
-  let invoicyHttpService: typeof mockInvoicyHttpService;
+  let invoicyApiService: typeof mockInvoicyApiService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -243,14 +243,14 @@ describe('NfeService', () => {
         NfeService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: InvoicyService, useValue: mockInvoicyService },
-        { provide: InvoicyHttpService, useValue: mockInvoicyHttpService },
+        { provide: InvoicyApiService, useValue: mockInvoicyApiService },
       ],
     }).compile();
 
     service = module.get<NfeService>(NfeService);
     prisma = module.get(PrismaService);
     invoicyService = module.get(InvoicyService);
-    invoicyHttpService = module.get(InvoicyHttpService);
+    invoicyApiService = module.get(InvoicyApiService);
   });
 
   it('should be defined', () => {
@@ -529,7 +529,7 @@ describe('NfeService', () => {
       });
       prisma.company.findUnique.mockResolvedValue(mockCompany);
       invoicyService.getConfig.mockResolvedValue(mockConfig);
-      invoicyHttpService.emitNfe.mockResolvedValue(mockInvoicyResponse);
+      invoicyApiService.emitNfe.mockResolvedValue(mockInvoicyResponse);
       prisma.nfe.update.mockResolvedValue({
         ...mockNfe,
         status: NfeStatus.AUTHORIZED,
@@ -542,7 +542,7 @@ describe('NfeService', () => {
 
       expect(result.status).toBe(NfeStatus.AUTHORIZED);
       expect(result.chaveAcesso).toBeDefined();
-      expect(invoicyHttpService.emitNfe).toHaveBeenCalled();
+      expect(invoicyApiService.emitNfe).toHaveBeenCalled();
       expect(invoicyService.incrementNfeNumber).toHaveBeenCalled();
     });
 
@@ -553,7 +553,7 @@ describe('NfeService', () => {
     });
 
     it('should handle Invoicy failure', async () => {
-      invoicyHttpService.emitNfe.mockResolvedValue([
+      invoicyApiService.emitNfe.mockResolvedValue([
         { Codigo: 225, Descricao: 'Rejeitado pela SEFAZ' },
       ]);
 
@@ -571,7 +571,7 @@ describe('NfeService', () => {
 
     beforeEach(() => {
       prisma.nfe.findFirst.mockResolvedValue(authorizedNfe);
-      invoicyHttpService.cancelNfe.mockResolvedValue(mockCancelResponse);
+      invoicyApiService.cancelNfe.mockResolvedValue(mockCancelResponse);
       prisma.nfe.update.mockResolvedValue({
         ...authorizedNfe,
         status: NfeStatus.CANCELLED,
@@ -584,7 +584,7 @@ describe('NfeService', () => {
       });
 
       expect(result.status).toBe(NfeStatus.CANCELLED);
-      expect(invoicyHttpService.cancelNfe).toHaveBeenCalled();
+      expect(invoicyApiService.cancelNfe).toHaveBeenCalled();
     });
 
     it('should throw if NFe is not authorized', async () => {
@@ -615,7 +615,7 @@ describe('NfeService', () => {
 
     beforeEach(() => {
       prisma.nfe.findFirst.mockResolvedValue(authorizedNfe);
-      invoicyHttpService.sendCorrectionLetter.mockResolvedValue(
+      invoicyApiService.sendCorrectionLetter.mockResolvedValue(
         mockCorrectionResponse,
       );
       prisma.nfe.update.mockResolvedValue({
