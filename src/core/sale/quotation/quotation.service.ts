@@ -35,18 +35,42 @@ import { transformQuotationToResponse } from './quotation.transformers';
 import { QUOTATION_PDF_DATA_INCLUDE } from './quotation-pdf.includes';
 import { transformQuotationToPdfData } from './quotation-pdf.transformers';
 
+// Sub-services (Facade Pattern)
+import { QuotationCrudService } from './quotation-crud.service';
+import { QuotationItemsService } from './quotation-items.service';
+import { QuotationWorkflowService } from './quotation-workflow.service';
+import { QuotationFinancialService } from './quotation-financial.service';
+import { QuotationPdfService } from './quotation-pdf.service';
+import { QuotationImportService } from './quotation-import.service';
+
 export interface QuotationGroup {
   date: string;
   quotations: Quotation[];
 }
 
+/**
+ * QuotationService - Facade
+ * Este service atua como facade delegando para os sub-services especializados.
+ * Os métodos originais são mantidos para compatibilidade, mas gradualmente
+ * serão refatorados para usar os sub-services.
+ */
 @Injectable()
 export class QuotationService {
   constructor(
     private prisma: PrismaService,
     private orderService: OrderService,
     private deliveryScheduleService: DeliveryScheduleService,
-  ) {}
+    // Sub-services injetados para padrão Facade
+    private crudService: QuotationCrudService,
+    private itemsService: QuotationItemsService,
+    private workflowService: QuotationWorkflowService,
+    private financialService: QuotationFinancialService,
+    private pdfService: QuotationPdfService,
+    private importService: QuotationImportService,
+  ) {
+    // Configura o approver para o ImportService evitar dependência circular
+    this.importService.setApprover(this.workflowService);
+  }
 
   /**
    * Método auxiliar para buscar userId a partir de employeeId

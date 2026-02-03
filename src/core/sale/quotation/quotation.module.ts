@@ -8,6 +8,14 @@ import { DeliveryModule } from './delivery/delivery.module';
 import { PaymentModule } from './payment/payment.module';
 import { DeliveryScheduleModule } from '../delivery-schedule/delivery-schedule.module';
 
+// Sub-services
+import { QuotationCrudService } from './quotation-crud.service';
+import { QuotationItemsService } from './quotation-items.service';
+import { QuotationWorkflowService } from './quotation-workflow.service';
+import { QuotationFinancialService } from './quotation-financial.service';
+import { QuotationPdfService } from './quotation-pdf.service';
+import { QuotationImportService } from './quotation-import.service';
+
 @Module({
   imports: [
     PrismaModule,
@@ -18,7 +26,23 @@ import { DeliveryScheduleModule } from '../delivery-schedule/delivery-schedule.m
     DeliveryScheduleModule,
   ],
   controllers: [QuotationController],
-  providers: [QuotationService],
-  exports: [QuotationService],
+  providers: [
+    QuotationService,
+    QuotationCrudService,
+    QuotationItemsService,
+    QuotationWorkflowService,
+    QuotationFinancialService,
+    QuotationPdfService,
+    QuotationImportService,
+  ],
+  exports: [
+    QuotationService,
+    QuotationCrudService,
+    QuotationItemsService,
+    QuotationWorkflowService,
+    QuotationFinancialService,
+    QuotationPdfService,
+    QuotationImportService,
+  ],
 })
 export class QuotationModule {}
