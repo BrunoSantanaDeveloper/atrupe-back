@@ -244,4 +244,90 @@ export class InvoicyApiService {
       return false;
     }
   }
+
+  // ============================================
+  // Contingency Operations
+  // ============================================
+
+  /**
+   * Sync contingency NFC-e to SEFAZ
+   * Tries to transmit an offline NFC-e that was saved during contingency mode
+   */
+  async syncContingency(
+    companyId: string,
+    chaveOuId: string,
+  ): Promise<InvoicyResponse[]> {
+    this.logger.log(
+      `Syncing contingency NFC-e ${chaveOuId} for company ${companyId}`,
+    );
+
+    const syncRequest = [
+      {
+        Documento: {
+          ModeloDocumento: 'NFCe',
+          Versao: 4,
+          Consulta: {
+            Chave: chaveOuId,
+            TipoConsulta: 'Sincronizacao',
+          },
+        },
+      },
+    ];
+
+    return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
+      companyId,
+      'POST',
+      '/senddocuments/nfe?type=ConsultaSincronizacao',
+      syncRequest,
+    );
+  }
+
+  /**
+   * Check SEFAZ availability status
+   * Returns true if SEFAZ is responding, false otherwise
+   */
+  async checkSefazStatus(
+    companyId: string,
+  ): Promise<{ available: boolean; message?: string }> {
+    this.logger.debug(`Checking SEFAZ status for company ${companyId}`);
+
+    try {
+      const statusRequest = [
+        {
+          Documento: {
+            ModeloDocumento: 'NFCe',
+            Versao: 4,
+            Consulta: {
+              TipoConsulta: 'StatusServico',
+            },
+          },
+        },
+      ];
+
+      const response = await this.invoicyHttpService.makeRequest<
+        InvoicyResponse[]
+      >(
+        companyId,
+        'POST',
+        '/senddocuments/nfe?type=StatusServico',
+        statusRequest,
+      );
+
+      // Status 107 = Serviço em operação
+      const isAvailable =
+        response[0]?.Codigo === 107 ||
+        response[0]?.Codigo === INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED;
+
+      return {
+        available: isAvailable,
+        message: response[0]?.Descricao,
+      };
+    } catch (error) {
+      this.logger.warn(`SEFAZ status check failed: ${error.message}`);
+      return {
+        available: false,
+        message: error.message,
+      };
+    }
+  }
 }

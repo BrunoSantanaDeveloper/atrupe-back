@@ -206,8 +206,8 @@ export class InvoicyService {
   }
 
   /**
-   * @deprecated Use getAllByCompany instead
-   * Mantido para compatibilidade com código existente
+   * Alias para getDefault - retorna o emissor padrão de uma empresa
+   * Este método é mantido por compatibilidade e conveniência
    */
   async getConfig(companyId: string) {
     return this.getDefault(companyId);
@@ -264,12 +264,7 @@ export class InvoicyService {
     return this.mapDbToResponse(result);
   }
 
-  /**
-   * @deprecated Use create instead
-   */
-  async createConfig(companyId: string, dto: CreateInvoicyConfigDto) {
-    return this.create(companyId, dto);
-  }
+  // createConfig - alias removido, usar create() diretamente
 
   /**
    * Atualizar emissor por ID
@@ -326,22 +321,7 @@ export class InvoicyService {
     return this.mapDbToResponse(result);
   }
 
-  /**
-   * @deprecated Use update with id instead
-   */
-  async updateConfig(companyId: string, dto: UpdateInvoicyConfigDto) {
-    const config = await this.prisma.invoicyConfig.findFirst({
-      where: { companyId, isDefault: true },
-    });
-
-    if (!config) {
-      throw new NotFoundException(
-        'Configuração do Invoicy não encontrada para esta empresa',
-      );
-    }
-
-    return this.update(config.id, dto);
-  }
+  // updateConfig - alias removido, usar update() com id diretamente
 
   /**
    * Upsert - criar ou atualizar emissor padrão (para compatibilidade)
@@ -395,22 +375,7 @@ export class InvoicyService {
     return { success: true };
   }
 
-  /**
-   * @deprecated Use delete with id instead
-   */
-  async deleteConfig(companyId: string) {
-    const config = await this.prisma.invoicyConfig.findFirst({
-      where: { companyId, isDefault: true },
-    });
-
-    if (!config) {
-      throw new NotFoundException(
-        'Configuração do Invoicy não encontrada para esta empresa',
-      );
-    }
-
-    return this.delete(config.id);
-  }
+  // deleteConfig - alias removido, usar delete() com id diretamente
 
   /**
    * Definir emissor como padrão
