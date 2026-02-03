@@ -933,6 +933,11 @@ export class QuotationService {
                 id: true,
               },
             },
+            quotationPayment: {
+              select: {
+                finalValue: true,
+              },
+            },
           },
           take: Number(dto.limit),
           skip: (Number(dto.page) - 1) * Number(dto.limit),
@@ -1735,63 +1740,224 @@ export class QuotationService {
     return newQuotation; // Retorna o novo orçamento criado
   }
 
-  async approve(quotationId: string, userId?: string): Promise<Order> {
-    const quotation = await this.prisma.quotation.findUnique({
-      where: { id: quotationId },
-      select: {
-        companyId: true,
-      },
-    });
-    if (!quotation) {
-      throw new NotFoundException(
-        `Quotation with ID '${quotationId}' not found.`,
-      );
-    }
+  // =====================================================
+  // APPROVE HELPER METHODS (SA.P1.1 Refactoring)
+  // =====================================================
 
-    const companyId = quotation.companyId;
-    let isTrial = false;
+  /**
+   * Verifica se a empresa está em trial ou plano START
+   * @returns true se está em trial/start, false caso contrário
+   */
+  private async checkTrialStatus(companyId: string): Promise<boolean> {
     try {
       const companyData = await this.prisma.company.findUnique({
         where: { id: companyId },
         select: {
           Subscription: {
-            where: {
-              status: 'ACTIVE',
-            },
-            take: 1, // garante que só pega uma assinatura
+            where: { status: 'ACTIVE' },
+            take: 1,
             select: {
-              plan: {
-                select: {
-                  planType: true,
-                },
-              },
+              plan: { select: { planType: true } },
               nextDueDate: true,
             },
           },
         },
       });
-      const subscription = companyData.Subscription?.[0];
 
-      // Verifica se está em trial através da subscription
+      const subscription = companyData?.Subscription?.[0];
+      if (!subscription) return false;
+
+      // Plano START sempre é considerado trial
+      if (subscription.plan?.planType === 'START') return true;
+
+      // Plano TRIAL com data válida
       if (
-        subscription?.plan?.planType === 'TRIAL' &&
-        subscription?.nextDueDate &&
+        subscription.plan?.planType === 'TRIAL' &&
+        subscription.nextDueDate &&
         subscription.nextDueDate > new Date()
       ) {
-        isTrial = true;
+        return true;
       }
 
-      if (subscription?.plan?.planType === 'START') {
-        isTrial = true;
-      }
+      return false;
     } catch (error) {
-      console.error('Error finding company:', error);
+      console.error('Error checking trial status:', error);
+      return false;
     }
+  }
+
+  /**
+   * Valida se o cliente pode ter o orçamento aprovado
+   * @throws BadRequestException se cliente inativo e usuário sem permissão
+   */
+  private async validateClientForApproval(
+    client: { status: string } | null,
+    userId: string | undefined,
+    prisma: Prisma.TransactionClient,
+  ): Promise<void> {
+    if (!client || client.status === 'ACTIVE') return;
+
+    let canApprove = false;
+
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          employee: {
+            select: {
+              role: { select: { name: true } },
+            },
+          },
+        },
+      });
+
+      if (user?.employee?.[0]?.role?.name === 'Admin') {
+        canApprove = true;
+      } else {
+        const seller = await prisma.sellerProfile.findFirst({
+          where: {
+            employees: { some: { user: { id: userId } } },
+          },
+          select: { canApprovePreRegistration: true },
+        });
+        canApprove = seller?.canApprovePreRegistration ?? false;
+      }
+    }
+
+    if (!canApprove) {
+      throw new BadRequestException(
+        'Não é possível aprovar orçamento para cliente com cadastro não regular. ' +
+          'Por favor, complete o cadastro do cliente primeiro ou solicite aprovação a um administrador.',
+      );
+    }
+  }
+
+  /**
+   * Cria ou retorna o pedido existente para o orçamento
+   */
+  private async createOrUpdateOrder(
+    quotation: { id: string; series?: { productionStatus: string } | null },
+    prisma: Prisma.TransactionClient,
+  ): Promise<Order> {
+    let order = await prisma.order.findUnique({
+      where: { quotationId: quotation.id },
+    });
+
+    // Determinar status baseado no productionStatus da série
+    let orderStatus: OrderStatus = OrderStatus.IN_PRODUCTION;
+    if (quotation.series?.productionStatus === 'PRODUCTION_COMPLETED') {
+      orderStatus = OrderStatus.FINISHED;
+    }
+
+    if (!order) {
+      order = await prisma.order.create({
+        data: {
+          quotationId: quotation.id,
+          status: orderStatus,
+        },
+      });
+    }
+
+    return order;
+  }
+
+  /**
+   * Cria o agendamento de entrega para o orçamento aprovado
+   */
+  private async createDeliveryScheduleForApproval(
+    quotation: {
+      id: string;
+      companyId: string;
+      approvedAt: Date;
+      deliveryInfo: {
+        id: string;
+        daysAfterApproval: number | null;
+      } | null;
+    },
+    order: Order,
+    isTrial: boolean,
+    prisma: Prisma.TransactionClient,
+  ): Promise<void> {
+    if (!quotation.deliveryInfo) return;
+
+    const deliveryStatus = isTrial ? 'DELIVERING' : 'IN_PRODUCTION';
+
+    const estimatedDate = quotation.deliveryInfo.daysAfterApproval
+      ? add(quotation.approvedAt, {
+          days: quotation.deliveryInfo.daysAfterApproval,
+        })
+      : quotation.approvedAt;
+
+    await prisma.deliveryInfo.update({
+      where: { id: quotation.deliveryInfo.id },
+      data: { estimatedDate },
+    });
+
+    await prisma.deliverySchedule.create({
+      data: {
+        company: { connect: { id: quotation.companyId } },
+        quotation: { connect: { id: quotation.id } },
+        order: { connect: { id: order.id } },
+        deliveryInfo: { connect: { id: quotation.deliveryInfo.id } },
+        scheduledDate: estimatedDate,
+        status: deliveryStatus,
+      },
+    });
+  }
+
+  /**
+   * Gera receivables e payables se billing for ON_ORDER
+   */
+  private async handleApprovalFinancials(
+    quotationId: string,
+    quotation: any,
+    prisma: Prisma.TransactionClient,
+  ): Promise<void> {
+    const [existingReceivables, existingPayables] = await Promise.all([
+      prisma.receivable.findMany({
+        where: { quotationId },
+        select: { id: true },
+      }),
+      prisma.payable.findMany({
+        where: { quotationId },
+        select: { id: true },
+      }),
+    ]);
+
+    if (
+      existingReceivables.length === 0 &&
+      existingPayables.length === 0 &&
+      quotation.quotationPayment?.billing === 'ON_ORDER'
+    ) {
+      await this.generateReceivableFromQuotation(quotation, prisma);
+      await this.generatePayableFromQuotation(quotation, prisma);
+    }
+  }
+
+  // =====================================================
+  // MAIN APPROVE METHOD (Refactored)
+  // =====================================================
+
+  async approve(quotationId: string, userId?: string): Promise<Order> {
+    // Validar que o orçamento existe
+    const quotationBase = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      select: { companyId: true },
+    });
+
+    if (!quotationBase) {
+      throw new NotFoundException(
+        `Quotation with ID '${quotationId}' not found.`,
+      );
+    }
+
+    // Verificar status de trial (fora da transação)
+    const isTrial = await this.checkTrialStatus(quotationBase.companyId);
 
     return await this.prisma
       .$transaction(
         async (prisma) => {
-          // Atualizar a venda como aprovada e buscar dados completos
+          // Atualizar status e buscar dados completos
           const quotation = await prisma.quotation.update({
             where: { id: quotationId },
             data: {
@@ -1839,138 +2005,35 @@ export class QuotationService {
             },
           });
 
-          if (quotation.client?.status !== 'ACTIVE') {
-            let canApprove = false;
+          // Validar cliente
+          await this.validateClientForApproval(
+            quotation.client,
+            userId,
+            prisma,
+          );
 
-            if (userId) {
-              const user = await prisma.user.findUnique({
-                where: { id: userId },
-                select: {
-                  employee: {
-                    select: {
-                      role: {
-                        select: { name: true },
-                      },
-                    },
-                  },
-                },
-              });
-
-              if (user?.employee?.[0]?.role?.name === 'Admin') {
-                canApprove = true;
-              } else {
-                const seller = await prisma.sellerProfile.findFirst({
-                  where: {
-                    employees: {
-                      some: { user: { id: userId } },
-                    },
-                  },
-                  select: { canApprovePreRegistration: true },
-                });
-
-                if (seller?.canApprovePreRegistration) {
-                  canApprove = true;
-                }
-              }
-            }
-
-            if (!canApprove) {
-              throw new BadRequestException(
-                'Não é possível aprovar orçamento para cliente com cadastro não regular. Por favor, complete o cadastro do cliente primeiro ou solicite aprovação a um administrador.',
-              );
-            }
-          }
-
+          // Validar delivery info
           if (!quotation.deliveryInfo) {
             throw new Error('Informações de entrega ausentes na venda.');
           }
 
-          // Verificar se já existe um pedido para esta venda
-          let order = await prisma.order.findUnique({
-            where: { quotationId: quotation.id },
-          });
+          // Criar ou pegar pedido existente
+          const order = await this.createOrUpdateOrder(quotation, prisma);
 
-          // Determinar o status da ordem baseado no productionStatus da série
-          let orderStatus: OrderStatus = OrderStatus.IN_PRODUCTION; // Status padrão
+          // Criar agendamento de entrega
+          await this.createDeliveryScheduleForApproval(
+            quotation as any,
+            order,
+            isTrial,
+            prisma,
+          );
 
-          if (quotation.series?.productionStatus === 'PRODUCTION_COMPLETED') {
-            orderStatus = OrderStatus.FINISHED;
-          }
-
-          // Se não existir, criar o pedido
-          if (!order) {
-            order = await prisma.order.create({
-              data: {
-                quotationId: quotation.id,
-                status: orderStatus,
-              },
-            });
-          }
-
-          const deliveryStatus = isTrial ? 'DELIVERING' : 'IN_PRODUCTION';
-
-          // Calcular a data estimada baseada na aprovação
-          const estimatedDate = quotation.deliveryInfo.daysAfterApproval
-            ? add(quotation.approvedAt, {
-                days: quotation.deliveryInfo.daysAfterApproval,
-              })
-            : quotation.approvedAt;
-
-          // Atualizar a data estimada no deliveryInfo
-          await prisma.deliveryInfo.update({
-            where: { id: quotation.deliveryInfo.id },
-            data: { estimatedDate },
-          });
-
-          // Criar o agendamento de entrega diretamente no Prisma
-          await prisma.deliverySchedule.create({
-            data: {
-              company: {
-                connect: { id: quotation.companyId },
-              },
-              quotation: {
-                connect: { id: quotation.id },
-              },
-              order: {
-                connect: { id: order.id },
-              },
-              deliveryInfo: {
-                connect: { id: quotation.deliveryInfo.id },
-              },
-              scheduledDate: estimatedDate,
-              status: deliveryStatus,
-            },
-          });
-
-          // CRIAR RECEIVABLES E PAYABLES DENTRO DA TRANSAÇÃO
-          // Verificar se já existem receivables ou payables para evitar duplicação
-          const [existingReceivables, existingPayables] = await Promise.all([
-            prisma.receivable.findMany({
-              where: { quotationId },
-              select: { id: true },
-            }),
-            prisma.payable.findMany({
-              where: { quotationId },
-              select: { id: true },
-            }),
-          ]);
-
-          // Só criar se não existirem e se billing for ON_ORDER
-          if (
-            existingReceivables.length === 0 &&
-            existingPayables.length === 0 &&
-            quotation.quotationPayment.billing === 'ON_ORDER'
-          ) {
-            // Gerar receivables e payables
-            await this.generateReceivableFromQuotation(quotation, prisma);
-            await this.generatePayableFromQuotation(quotation, prisma);
-          }
+          // Gerar financials se necessário
+          await this.handleApprovalFinancials(quotationId, quotation, prisma);
 
           return order;
         },
-        {
-          timeout: 20000, // Aumentar timeout para 20 segundos devido à criação de financials
-        },
+        { timeout: 20000 },
       )
       .then(async (order) => {
         // Criar etapas de produção FORA da transação principal

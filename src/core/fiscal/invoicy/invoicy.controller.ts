@@ -104,13 +104,19 @@ export class InvoicyController {
   @Post('config')
   @ApiOperation({ summary: 'Criar configuração do Invoicy (legado)' })
   async createConfig(@Req() req, @Body() dto: CreateInvoicyConfigDto) {
-    return this.invoicyService.createConfig(req.user.companyId, dto);
+    return this.invoicyService.create(req.user.companyId, dto);
   }
 
   @Put('config')
   @ApiOperation({ summary: 'Atualizar configuração do Invoicy (legado)' })
   async updateConfig(@Req() req, @Body() dto: UpdateInvoicyConfigDto) {
-    return this.invoicyService.updateConfig(req.user.companyId, dto);
+    const defaultEmissor = await this.invoicyService.getDefault(
+      req.user.companyId,
+    );
+    if (!defaultEmissor) {
+      throw new Error('Nenhum emissor padrão encontrado');
+    }
+    return this.invoicyService.update(defaultEmissor.id, dto);
   }
 
   @Post('config/upsert')
@@ -124,7 +130,13 @@ export class InvoicyController {
   @Delete('config')
   @ApiOperation({ summary: 'Deletar configuração do Invoicy (legado)' })
   async deleteConfig(@Req() req) {
-    return this.invoicyService.deleteConfig(req.user.companyId);
+    const defaultEmissor = await this.invoicyService.getDefault(
+      req.user.companyId,
+    );
+    if (!defaultEmissor) {
+      throw new Error('Nenhum emissor padrão encontrado');
+    }
+    return this.invoicyService.delete(defaultEmissor.id);
   }
 
   @Post('test-connection')
