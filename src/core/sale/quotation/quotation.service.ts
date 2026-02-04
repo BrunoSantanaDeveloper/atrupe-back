@@ -958,9 +958,27 @@ export class QuotationService {
                 id: true,
               },
             },
+            deliveryInfo: {
+              select: {
+                value: true,
+              },
+            },
             quotationPayment: {
               select: {
                 finalValue: true,
+                discountTotal: true,
+                downPaymentAdditionalFee: true,
+                commission: {
+                  select: {
+                    type: true,
+                    totalCommission: true,
+                  },
+                },
+                quotationInstallment: {
+                  select: {
+                    additionalFee: true,
+                  },
+                },
               },
             },
           },
@@ -995,6 +1013,8 @@ export class QuotationService {
             dueDate: quotation.dueDate,
             finishedAt: quotation.finishedAt,
             totalValue: quotation.totalValue,
+            deliveryInfo: quotation.deliveryInfo,
+            quotationPayment: quotation.quotationPayment,
             tag: quotation.tag
               ? {
                   id: quotation.tag.id,

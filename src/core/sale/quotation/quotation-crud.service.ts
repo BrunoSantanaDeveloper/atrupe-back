@@ -333,9 +333,27 @@ export class QuotationCrudService {
                 id: true,
               },
             },
+            deliveryInfo: {
+              select: {
+                value: true,
+              },
+            },
             quotationPayment: {
               select: {
                 finalValue: true,
+                discountTotal: true,
+                downPaymentAdditionalFee: true,
+                commission: {
+                  select: {
+                    type: true,
+                    totalCommission: true,
+                  },
+                },
+                quotationInstallment: {
+                  select: {
+                    additionalFee: true,
+                  },
+                },
               },
             },
           },

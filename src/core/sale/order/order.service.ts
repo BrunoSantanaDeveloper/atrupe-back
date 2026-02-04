@@ -107,6 +107,28 @@ export class OrderService {
                 select: { id: true, name: true },
               },
               tag: true,
+              deliveryInfo: {
+                select: {
+                  value: true,
+                },
+              },
+              quotationPayment: {
+                select: {
+                  discountTotal: true,
+                  downPaymentAdditionalFee: true,
+                  commission: {
+                    select: {
+                      type: true,
+                      totalCommission: true,
+                    },
+                  },
+                  quotationInstallment: {
+                    select: {
+                      additionalFee: true,
+                    },
+                  },
+                },
+              },
             },
           },
           nfes: {
@@ -173,6 +195,8 @@ export class OrderService {
                   name: quotation.seller.name ?? quotation.seller.user.name,
                 }
               : null,
+            deliveryInfo: quotation.deliveryInfo,
+            quotationPayment: quotation.quotationPayment,
           },
           nfes: order.nfes || [],
         });
