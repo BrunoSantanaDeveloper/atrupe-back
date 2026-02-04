@@ -214,11 +214,14 @@ export function transformQuotationItem(qp: any) {
   );
 
   const getImage = () => {
+    // Determina o tamanho da imagem: usa imageSize se disponível, senão fallback para lógica legada
+    const isOriginal = qp.imageUrl ? qp.imageUrl === qp.product.imageUrl : true;
+    const size = qp.imageSize ?? (isOriginal ? 'small' : 'large');
+
     if (qp.imageUrl) {
-      const isOriginal = qp.imageUrl === qp.product.imageUrl;
-      return { url: qp.imageUrl, original: isOriginal };
+      return { url: qp.imageUrl, original: isOriginal, size };
     }
-    return { url: qp.product.imageUrl, original: true };
+    return { url: qp.product.imageUrl, original: true, size: 'small' };
   };
 
   return {

@@ -13,6 +13,9 @@ const s3Config = new S3Client({
 });
 
 const multerConfigS3: MulterOptions = {
+  limits: {
+    fileSize: 1 * 1024 * 1024, // 1MB - imagens já comprimidas no client
+  },
   storage: multerS3({
     s3: s3Config,
     bucket: process.env.S3_BUCKET,

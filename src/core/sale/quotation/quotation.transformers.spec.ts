@@ -402,6 +402,143 @@ describe('Quotation Transformers', () => {
 
       expect(result.image.url).toBe('https://example.com/original.jpg');
       expect(result.image.original).toBe(true);
+      expect(result.image.size).toBe('small');
+    });
+
+    it('should use imageSize from database when available', () => {
+      const qp = {
+        id: 'qp-1',
+        description: 'Produto',
+        allowEditDescription: false,
+        allowEditValues: false,
+        technicalDescription: null,
+        notes: null,
+        discountType: null,
+        discount: 0,
+        finalValue: 100,
+        imageUrl: 'https://example.com/custom.jpg',
+        imageSize: 'large',
+        productId: 'prod-1',
+        quantity: 1,
+        product: {
+          name: 'Produto',
+          imageUrl: 'https://example.com/original.jpg',
+        },
+        items: [
+          {
+            id: 'item-1',
+            productItemId: 'pi-1',
+            name: 'Item',
+            unitKind: 'UN',
+            quantity: 1,
+            originalQuantity: 1,
+            unitCost: 100,
+            totalValue: 100,
+            weight: null,
+            width: null,
+            height: null,
+            duration: null,
+            length: null,
+            distance: null,
+            volume: null,
+          },
+        ],
+      };
+      const result = transformQuotationItem(qp);
+
+      expect(result.image.url).toBe('https://example.com/custom.jpg');
+      expect(result.image.original).toBe(false);
+      expect(result.image.size).toBe('large');
+    });
+
+    it('should fallback to small when imageSize is null and image is original', () => {
+      const qp = {
+        id: 'qp-1',
+        description: 'Produto',
+        allowEditDescription: false,
+        allowEditValues: false,
+        technicalDescription: null,
+        notes: null,
+        discountType: null,
+        discount: 0,
+        finalValue: 100,
+        imageUrl: 'https://example.com/original.jpg',
+        imageSize: null,
+        productId: 'prod-1',
+        quantity: 1,
+        product: {
+          name: 'Produto',
+          imageUrl: 'https://example.com/original.jpg',
+        },
+        items: [
+          {
+            id: 'item-1',
+            productItemId: 'pi-1',
+            name: 'Item',
+            unitKind: 'UN',
+            quantity: 1,
+            originalQuantity: 1,
+            unitCost: 100,
+            totalValue: 100,
+            weight: null,
+            width: null,
+            height: null,
+            duration: null,
+            length: null,
+            distance: null,
+            volume: null,
+          },
+        ],
+      };
+      const result = transformQuotationItem(qp);
+
+      expect(result.image.original).toBe(true);
+      expect(result.image.size).toBe('small');
+    });
+
+    it('should fallback to large when imageSize is null and image is not original', () => {
+      const qp = {
+        id: 'qp-1',
+        description: 'Produto',
+        allowEditDescription: false,
+        allowEditValues: false,
+        technicalDescription: null,
+        notes: null,
+        discountType: null,
+        discount: 0,
+        finalValue: 100,
+        imageUrl: 'https://example.com/custom.jpg',
+        imageSize: null,
+        productId: 'prod-1',
+        quantity: 1,
+        product: {
+          name: 'Produto',
+          imageUrl: 'https://example.com/original.jpg',
+        },
+        items: [
+          {
+            id: 'item-1',
+            productItemId: 'pi-1',
+            name: 'Item',
+            unitKind: 'UN',
+            quantity: 1,
+            originalQuantity: 1,
+            unitCost: 100,
+            totalValue: 100,
+            weight: null,
+            width: null,
+            height: null,
+            duration: null,
+            length: null,
+            distance: null,
+            volume: null,
+          },
+        ],
+      };
+      const result = transformQuotationItem(qp);
+
+      expect(result.image.original).toBe(false);
+      expect(result.image.size).toBe('large');
     });
   });
 

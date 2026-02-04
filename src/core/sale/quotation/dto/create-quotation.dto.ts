@@ -201,6 +201,16 @@ export class QuotationProductDto {
   })
   imageUrl?: string;
 
+  @IsString()
+  @IsOptional()
+  @ApiProperty({
+    description: 'Tamanho da imagem no PDF (small ou large)',
+    example: 'small',
+    enum: ['small', 'large'],
+    required: false,
+  })
+  imageSize?: 'small' | 'large';
+
   @IsNumber()
   @Min(0)
   @IsOptional()
@@ -469,6 +479,15 @@ export class AddItemDto {
     example: 'https://example.com/image.png',
   })
   imageUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  @ApiProperty({
+    description: 'Tamanho da imagem no PDF (small ou large)',
+    example: 'small',
+    enum: ['small', 'large'],
+  })
+  imageSize?: 'small' | 'large';
 
   @IsString()
   @IsOptional()

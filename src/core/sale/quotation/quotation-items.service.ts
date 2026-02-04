@@ -55,6 +55,7 @@ export class QuotationItemsService {
           technicalDescription:
             data.technicalDescription || product.technicalDescription,
           imageUrl: data.imageUrl || product.imageUrl,
+          imageSize: data.imageSize || 'small',
           totalValue: data.totalValue || totalValue,
           finalValue: data.finalValue || data.totalValue || totalValue,
           discount: data.discount || 0,
@@ -123,11 +124,7 @@ export class QuotationItemsService {
   /**
    * Atualiza um produto dentro do orçamento
    */
-  async updateProductInQuotation(
-    productId: string,
-    data: UpdateItemDto,
-    userId?: string,
-  ) {
+  async updateProductInQuotation(productId: string, data: UpdateItemDto) {
     try {
       const product = await this.prisma.quotationProduct.findUnique({
         where: { id: productId },
@@ -143,22 +140,22 @@ export class QuotationItemsService {
       }
 
       // Capturar valores originais para o histórico
-      const originalValues = {
-        productName:
-          data.description || product.description || product.product.name,
-        totalValue: product.totalValue,
-        finalValue: product.finalValue,
-        discount: product.discount,
-        discountType: product.discountType,
-        quantity: product.quantity,
-        items: product.items.map((item) => ({
-          id: item.id,
-          name: item.name,
-          quantity: item.quantity,
-          unitCost: item.unitCost,
-          totalValue: item.totalValue,
-        })),
-      };
+      // const originalValues = {
+      //   productName:
+      //     data.description || product.description || product.product.name,
+      //   totalValue: product.totalValue,
+      //   finalValue: product.finalValue,
+      //   discount: product.discount,
+      //   discountType: product.discountType,
+      //   quantity: product.quantity,
+      //   items: product.items.map((item) => ({
+      //     id: item.id,
+      //     name: item.name,
+      //     quantity: item.quantity,
+      //     unitCost: item.unitCost,
+      //     totalValue: item.totalValue,
+      //   })),
+      // };
 
       // Atualiza o produto dentro do orçamento com valores do frontend
       const updatedQuotationProduct = await this.prisma.quotationProduct.update(
@@ -169,6 +166,7 @@ export class QuotationItemsService {
               description: data.description,
             }),
             ...(data.imageUrl && { imageUrl: data.imageUrl }),
+            ...(data.imageSize && { imageSize: data.imageSize }),
             ...(data.notes !== undefined && { notes: data.notes }),
             ...(data.discount !== undefined && { discount: data.discount }),
             ...(data.discountType && { discountType: data.discountType }),
@@ -373,6 +371,7 @@ export class QuotationItemsService {
           description: originalQuotationProduct.description,
           technicalDescription: originalQuotationProduct.technicalDescription,
           imageUrl: originalQuotationProduct.imageUrl,
+          imageSize: originalQuotationProduct.imageSize,
           notes: originalQuotationProduct.notes,
           totalValue: originalQuotationProduct.totalValue,
           finalValue: originalQuotationProduct.finalValue,

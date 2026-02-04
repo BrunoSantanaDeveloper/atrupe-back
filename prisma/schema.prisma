@@ -1015,6 +1015,7 @@ model QuotationProduct {
   allowEditDescription Boolean                @default(true)
   allowEditValues      Boolean                @default(true)
   imageUrl             String?
+  imageSize            String? // 'small' | 'large' | null (legacy)
   technicalDescription String?
   notes                String?
   id                   String                 @id @default(uuid())
