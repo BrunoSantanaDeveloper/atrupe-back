@@ -216,7 +216,7 @@ export function transformQuotationItem(qp: any) {
   const getImage = () => {
     // Determina o tamanho da imagem: usa imageSize se disponível, senão fallback para lógica legada
     const isOriginal = qp.imageUrl ? qp.imageUrl === qp.product.imageUrl : true;
-    const size = qp.imageSize ?? (isOriginal ? 'small' : 'large');
+    const size = qp.imageSize || (isOriginal ? 'small' : 'large');
 
     if (qp.imageUrl) {
       return { url: qp.imageUrl, original: isOriginal, size };

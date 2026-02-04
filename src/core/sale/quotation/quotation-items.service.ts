@@ -165,8 +165,8 @@ export class QuotationItemsService {
             ...(data.description !== undefined && {
               description: data.description,
             }),
-            ...(data.imageUrl && { imageUrl: data.imageUrl }),
-            ...(data.imageSize && { imageSize: data.imageSize }),
+            ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
+            ...(data.imageSize !== undefined && { imageSize: data.imageSize }),
             ...(data.notes !== undefined && { notes: data.notes }),
             ...(data.discount !== undefined && { discount: data.discount }),
             ...(data.discountType && { discountType: data.discountType }),

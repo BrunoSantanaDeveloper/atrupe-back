@@ -184,6 +184,7 @@ export const QUOTATION_PRODUCT_SELECT = {
   id: true,
   notes: true,
   imageUrl: true,
+  imageSize: true,
   discount: true,
   technicalDescription: true,
   discountType: true,

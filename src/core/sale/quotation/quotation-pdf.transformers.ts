@@ -189,11 +189,17 @@ export function transformPdfQuotationItem(qp: any) {
   );
 
   const getImage = () => {
-    if (qp.imageUrl) {
-      const isOriginal = qp.imageUrl === qp.product.imageUrl;
-      return { url: qp.imageUrl, original: isOriginal };
+    const hasCustomImage = qp.imageUrl !== null && qp.imageUrl !== undefined;
+    const isOriginal = hasCustomImage
+      ? qp.imageUrl === qp.product.imageUrl
+      : true;
+    // Usar imageSize do banco ou fallback para lógica legada
+    const size = qp.imageSize ?? (isOriginal ? 'small' : 'large');
+
+    if (hasCustomImage) {
+      return { url: qp.imageUrl, original: isOriginal, size };
     }
-    return { url: qp.product.imageUrl, original: true };
+    return { url: qp.product.imageUrl, original: true, size: 'small' };
   };
 
   return {

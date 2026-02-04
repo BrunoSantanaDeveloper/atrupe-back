@@ -255,6 +255,7 @@ export class QuotationService {
           technicalDescription:
             data.technicalDescription || product.technicalDescription,
           imageUrl: data.imageUrl || product.imageUrl,
+          imageSize: data.imageSize || 'small',
           totalValue: data.totalValue || totalValue,
           finalValue: data.finalValue || data.totalValue || totalValue,
           discount: data.discount || 0,
@@ -365,7 +366,8 @@ export class QuotationService {
             ...(data.description !== undefined && {
               description: data.description,
             }),
-            ...(data.imageUrl && { imageUrl: data.imageUrl }),
+            ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
+            ...(data.imageSize !== undefined && { imageSize: data.imageSize }),
             ...(data.notes !== undefined && { notes: data.notes }),
             ...(data.discount !== undefined && { discount: data.discount }),
             ...(data.discountType && { discountType: data.discountType }),

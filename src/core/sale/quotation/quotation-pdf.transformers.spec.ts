@@ -339,6 +339,64 @@ describe('QuotationPdfTransformers', () => {
 
       expect(result.image.original).toBe(false);
       expect(result.image.url).toBe('https://example.com/custom.png');
+      expect(result.image.size).toBe('large'); // fallback when imageSize is null and not original
+    });
+
+    it('should use imageSize from database when available', () => {
+      const item = {
+        id: 'qp-id',
+        productId: 'product-id',
+        description: 'Test',
+        allowEditDescription: false,
+        allowEditValues: false,
+        technicalDescription: null,
+        notes: null,
+        discountType: null,
+        discount: 0,
+        quantity: 1,
+        finalValue: 100,
+        imageUrl: 'https://example.com/custom.png',
+        imageSize: 'small', // explicitly set to small
+        product: {
+          name: 'Product',
+          imageUrl: 'https://example.com/original.png',
+          technicalDescription: null,
+        },
+        items: [],
+      };
+
+      const result = transformPdfQuotationItem(item);
+
+      expect(result.image.size).toBe('small');
+    });
+
+    it('should fallback to small for original images without imageSize', () => {
+      const item = {
+        id: 'qp-id',
+        productId: 'product-id',
+        description: 'Test',
+        allowEditDescription: false,
+        allowEditValues: false,
+        technicalDescription: null,
+        notes: null,
+        discountType: null,
+        discount: 0,
+        quantity: 1,
+        finalValue: 100,
+        imageUrl: null,
+        imageSize: null,
+        product: {
+          name: 'Product',
+          imageUrl: 'https://example.com/original.png',
+          technicalDescription: null,
+        },
+        items: [],
+      };
+
+      const result = transformPdfQuotationItem(item);
+
+      expect(result.image.original).toBe(true);
+      expect(result.image.size).toBe('small');
     });
   });
 
