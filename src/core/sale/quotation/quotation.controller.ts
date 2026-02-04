@@ -42,11 +42,6 @@ export class QuotationController {
     private readonly quotationService: QuotationService,
     private readonly abacService: AbacService,
   ) {}
-  @Get('test')
-  async test() {
-    return await this.quotationService.test();
-  }
-
   @Post()
   @ApiOperation({ summary: 'Cria um novo orçamento' })
   @ApiResponse({

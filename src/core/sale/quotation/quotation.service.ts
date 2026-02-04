@@ -726,11 +726,6 @@ export class QuotationService {
       );
     }
   }
-  async test() {
-    return await this.recalculateQuotationProductsTotalValue(
-      '3299fcd5-8d1b-492c-8d20-29374b4eafbe',
-    );
-  }
   private async recalculateQuotationProductsTotalValue(quotationId: string) {
     // Obter o produto para recalcular apenas o valor final com desconto
     const quotationProduct = await this.prisma.quotationProduct.findFirst({
