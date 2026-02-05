@@ -295,4 +295,85 @@ describe('SubscriptionBlockService', () => {
       );
     });
   });
+
+  describe('getPendingPaymentUrl', () => {
+    beforeEach(() => {
+      // Add subscription mock to prisma
+      (mockPrismaService as any).subscription = {
+        findFirst: jest.fn(),
+      };
+    });
+
+    it('should return invoiceUrl when available', async () => {
+      (mockPrismaService as any).subscription.findFirst.mockResolvedValue({
+        payments: [
+          {
+            invoiceUrl: 'https://asaas.com/invoice/123',
+            bankSlipUrl: 'https://asaas.com/boleto/123',
+            asaasPaymentId: 'pay_123',
+            dueDate: new Date('2024-01-15'),
+          },
+        ],
+      });
+
+      const result = await service.getPendingPaymentUrl('company-1');
+
+      expect(result.paymentUrl).toBe('https://asaas.com/invoice/123');
+      expect(result.dueDate).toEqual(new Date('2024-01-15'));
+    });
+
+    it('should fallback to bankSlipUrl when invoiceUrl is null', async () => {
+      (mockPrismaService as any).subscription.findFirst.mockResolvedValue({
+        payments: [
+          {
+            invoiceUrl: null,
+            bankSlipUrl: 'https://asaas.com/boleto/123',
+            asaasPaymentId: 'pay_123',
+            dueDate: new Date('2024-01-15'),
+          },
+        ],
+      });
+
+      const result = await service.getPendingPaymentUrl('company-1');
+
+      expect(result.paymentUrl).toBe('https://asaas.com/boleto/123');
+    });
+
+    it('should construct URL from asaasPaymentId when no URLs available', async () => {
+      (mockPrismaService as any).subscription.findFirst.mockResolvedValue({
+        payments: [
+          {
+            invoiceUrl: null,
+            bankSlipUrl: null,
+            asaasPaymentId: 'pay_abc123',
+            dueDate: new Date('2024-01-15'),
+          },
+        ],
+      });
+
+      const result = await service.getPendingPaymentUrl('company-1');
+
+      expect(result.paymentUrl).toBe('https://www.asaas.com/i/pay_abc123');
+    });
+
+    it('should return null when no payments found', async () => {
+      (mockPrismaService as any).subscription.findFirst.mockResolvedValue({
+        payments: [],
+      });
+
+      const result = await service.getPendingPaymentUrl('company-1');
+
+      expect(result.paymentUrl).toBeNull();
+      expect(result.dueDate).toBeNull();
+    });
+
+    it('should return null when no subscription found', async () => {
+      (mockPrismaService as any).subscription.findFirst.mockResolvedValue(null);
+
+      const result = await service.getPendingPaymentUrl('company-1');
+
+      expect(result.paymentUrl).toBeNull();
+      expect(result.dueDate).toBeNull();
+    });
+  });
 });
