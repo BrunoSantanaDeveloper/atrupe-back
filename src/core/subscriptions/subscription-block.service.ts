@@ -278,63 +278,100 @@ export class SubscriptionBlockService {
   async getPendingPaymentUrl(
     companyId: string,
   ): Promise<{ paymentUrl: string | null; dueDate: Date | null }> {
-    // First try to find a subscription with pending/overdue payments
-    const subscription = await this.prisma.subscription.findFirst({
+    console.log(
+      `[SubscriptionBlockService] Getting pending payment URL for company: ${companyId}`,
+    );
+
+    // 1. Find the oldest pending/overdue payment for this company (searching all its subscriptions)
+    const payment = await this.prisma.payment.findFirst({
       where: {
-        companyId,
-        // Don't filter by status - blocked companies may have various subscription states
+        status: { in: ['PENDING', 'OVERDUE'] },
+        subscription: {
+          companyId,
+        },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { dueDate: 'asc' },
       select: {
-        asaasSubscriptionId: true,
-        payments: {
-          where: {
-            status: { in: ['PENDING', 'OVERDUE'] },
-          },
-          orderBy: { dueDate: 'asc' },
-          take: 1,
+        invoiceUrl: true,
+        bankSlipUrl: true,
+        asaasPaymentId: true,
+        dueDate: true,
+        subscription: {
           select: {
-            invoiceUrl: true,
-            bankSlipUrl: true,
-            asaasPaymentId: true,
-            dueDate: true,
+            asaasSubscriptionId: true,
           },
         },
       },
     });
 
-    const payment = subscription?.payments?.[0];
+    if (payment) {
+      console.log(
+        `[SubscriptionBlockService] Pending payment found: ${payment.asaasPaymentId}`,
+      );
+      console.log(
+        `[SubscriptionBlockService] - invoiceUrl: ${payment.invoiceUrl || 'N/A'}`,
+      );
+      console.log(
+        `[SubscriptionBlockService] - bankSlipUrl: ${payment.bankSlipUrl || 'N/A'}`,
+      );
 
-    if (!payment) {
-      // No pending payment found - try to use subscription's Asaas portal link as fallback
-      if (subscription?.asaasSubscriptionId) {
-        return {
-          paymentUrl: `https://www.asaas.com/c/${subscription.asaasSubscriptionId}`,
-          dueDate: null,
-        };
+      // Priority: invoiceUrl > bankSlipUrl > constructed URL with asaasPaymentId
+      let paymentUrl = payment.invoiceUrl || payment.bankSlipUrl;
+
+      // If no saved URLs, construct Asaas URL
+      if (!paymentUrl && payment.asaasPaymentId) {
+        paymentUrl = `https://www.asaas.com/i/${payment.asaasPaymentId}`;
+        console.log(
+          `[SubscriptionBlockService] Constructed payment URL: ${paymentUrl}`,
+        );
       }
+
+      // Ultimate fallback: use subscription's Asaas portal
+      if (!paymentUrl && payment.subscription?.asaasSubscriptionId) {
+        paymentUrl = `https://www.asaas.com/c/${payment.subscription.asaasSubscriptionId}`;
+        console.log(
+          `[SubscriptionBlockService] Using payment's subscription portal URL: ${paymentUrl}`,
+        );
+      }
+
+      console.log(
+        `[SubscriptionBlockService] Final paymentUrl: ${paymentUrl || 'NULL'}`,
+      );
+
       return {
-        paymentUrl: null,
+        paymentUrl: paymentUrl || null,
+        dueDate: payment.dueDate || null,
+      };
+    }
+
+    // 2. If no pending payment found, fallback to the portal link of the LATEST subscription
+    console.log(
+      `[SubscriptionBlockService] No pending payment found across all subscriptions. Checking fallback portal.`,
+    );
+
+    const latestSubscription = await this.prisma.subscription.findFirst({
+      where: { companyId },
+      orderBy: { createdAt: 'desc' },
+      select: { asaasSubscriptionId: true },
+    });
+
+    if (latestSubscription?.asaasSubscriptionId) {
+      const fallbackUrl = `https://www.asaas.com/c/${latestSubscription.asaasSubscriptionId}`;
+      console.log(
+        `[SubscriptionBlockService] Using fallback portal URL from latest sub: ${fallbackUrl}`,
+      );
+      return {
+        paymentUrl: fallbackUrl,
         dueDate: null,
       };
     }
 
-    // Priority: invoiceUrl > bankSlipUrl > constructed URL with asaasPaymentId
-    let paymentUrl = payment.invoiceUrl || payment.bankSlipUrl;
-
-    // If no saved URLs, construct Asaas URL
-    if (!paymentUrl && payment.asaasPaymentId) {
-      paymentUrl = `https://www.asaas.com/i/${payment.asaasPaymentId}`;
-    }
-
-    // Ultimate fallback: use subscription's Asaas portal
-    if (!paymentUrl && subscription?.asaasSubscriptionId) {
-      paymentUrl = `https://www.asaas.com/c/${subscription.asaasSubscriptionId}`;
-    }
-
+    console.log(
+      `[SubscriptionBlockService] No subscription or asaasSubscriptionId found at all. Returning null.`,
+    );
     return {
-      paymentUrl: paymentUrl || null,
-      dueDate: payment.dueDate || null,
+      paymentUrl: null,
+      dueDate: null,
     };
   }
 }

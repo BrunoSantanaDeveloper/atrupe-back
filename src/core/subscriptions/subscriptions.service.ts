@@ -1989,6 +1989,13 @@ export class SubscriptionsService {
    * Útil para quando o webhook não é disparado (ex: sandbox)
    */
   async checkAndSyncSubscriptionStatus(companyId: string) {
+    if (!companyId) {
+      this.logger.warn(
+        'Tentativa de sincronizar subscription com companyId nulo',
+      );
+      return { success: false, message: 'ID da empresa não informado' };
+    }
+
     this.logger.log(
       `Verificando status da subscription para empresa ${companyId}`,
     );

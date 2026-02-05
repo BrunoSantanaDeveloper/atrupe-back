@@ -542,7 +542,7 @@ export class SubscriptionsController {
   })
   async getMyPendingPayment(@Req() req) {
     const user = req.user;
-    const companyId = user.employee[0]?.companyId;
+    const companyId = user.companyId;
     if (!companyId) {
       return { paymentUrl: null, dueDate: null };
     }
