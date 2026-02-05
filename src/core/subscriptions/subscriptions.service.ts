@@ -669,6 +669,7 @@ export class SubscriptionsService {
     );
 
     // Agrupar por data de criação
+    const addedCompanyIds = new Set<string>(); // Track globally added companies
     const groupedByDate = companiesWithUsers
       .filter((item) => item !== null)
       .reduce(
@@ -686,10 +687,10 @@ export class SubscriptionsService {
           const employee = item.employee;
           const address = item.address;
 
-          // Verificar se a empresa já foi adicionada neste grupo de data
-          const existingCompanyIndex = acc[dateKey].findIndex(
-            (entry) => entry.id === company.id,
-          );
+          // Skip if company was already added in any date group
+          if (addedCompanyIds.has(company.id)) {
+            return acc;
+          }
 
           const companyData = {
             id: company.id,
@@ -713,20 +714,9 @@ export class SubscriptionsService {
               : { id: '', name: '' },
           };
 
-          // Se a empresa já existe, manter apenas a assinatura mais recente
-          if (existingCompanyIndex >= 0) {
-            const existing = acc[dateKey][existingCompanyIndex];
-            const existingDate = new Date(existing.createdAt);
-            const currentDate = new Date(item.subscription.createdAt);
-
-            // Substituir se a assinatura atual for mais recente
-            if (currentDate > existingDate) {
-              acc[dateKey][existingCompanyIndex] = companyData;
-            }
-          } else {
-            // Empresa ainda não foi adicionada, adicionar normalmente
-            acc[dateKey].push(companyData);
-          }
+          // Add company to this date group and mark as added
+          acc[dateKey].push(companyData);
+          addedCompanyIds.add(company.id);
 
           return acc;
         },
