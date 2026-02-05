@@ -257,7 +257,7 @@ export class SubscriptionsService {
 
   async getActiveTotals() {
     // Buscar todas as subscriptions que NÃO são TRIAL agrupadas por status
-    // Buscar todas as subscriptions que NÃO são TRIAL
+    // Incluir também o blockLevel da empresa
     const subscriptions = await this.prisma.subscription.findMany({
       where: {
         plan: {
@@ -269,17 +269,28 @@ export class SubscriptionsService {
       select: {
         companyId: true,
         status: true,
+        Company: {
+          select: {
+            blockLevel: true,
+          },
+        },
       },
     });
 
     // Agrupar por empresa
-    const companyStatuses: Record<string, string[]> = {};
+    const companyData: Record<
+      string,
+      { statuses: string[]; blockLevel: string }
+    > = {};
 
     for (const sub of subscriptions) {
-      if (!companyStatuses[sub.companyId]) {
-        companyStatuses[sub.companyId] = [];
+      if (!companyData[sub.companyId]) {
+        companyData[sub.companyId] = {
+          statuses: [],
+          blockLevel: sub.Company?.blockLevel || 'NONE',
+        };
       }
-      companyStatuses[sub.companyId].push(sub.status);
+      companyData[sub.companyId].statuses.push(sub.status);
     }
 
     // Calcular totais baseados no status prioritário da empresa
@@ -291,12 +302,20 @@ export class SubscriptionsService {
       TOTAL: 0,
     };
 
-    for (const companyId in companyStatuses) {
-      const statuses = companyStatuses[companyId];
+    for (const companyId in companyData) {
+      const { statuses, blockLevel } = companyData[companyId];
       let finalStatus = 'INACTIVE'; // Default fallback
 
-      // Lógica de prioridade: ACTIVE > BLOCKED > INACTIVE > CANCELED
-      if (statuses.includes('ACTIVE')) {
+      // Verificar primeiro o blockLevel da empresa
+      // PARTIAL = Bloqueadas (ainda pode usar, mas com restrições)
+      // FULL = Inativas (não pode usar o sistema)
+      if (blockLevel === 'PARTIAL') {
+        finalStatus = 'BLOCKED';
+      } else if (blockLevel === 'FULL') {
+        finalStatus = 'INACTIVE';
+      }
+      // Lógica de prioridade para empresas sem bloqueio: ACTIVE > BLOCKED > INACTIVE > CANCELED
+      else if (statuses.includes('ACTIVE')) {
         finalStatus = 'ACTIVE';
       } else if (statuses.includes('BLOCKED')) {
         finalStatus = 'BLOCKED';
@@ -466,13 +485,50 @@ export class SubscriptionsService {
     };
 
     if (mappedStatus) {
-      whereCondition.status = mappedStatus;
-
-      // Se o status pesquisado NÃO for 'ACTIVE', garantir que a empresa NÃO tenha nenhuma assinatura ativa.
-      // Isso evita que a empresa apareça duplicada (ex: uma inativa e uma ativa).
-      // A prioridade é mostrar como 'Ativa'.
-      if (mappedStatus !== 'ACTIVE') {
+      // Para "bloqueadas", filtrar pelo blockLevel PARTIAL (ainda pode usar com restrições)
+      if (statusFilter === 'bloqueadas') {
         whereCondition.Company = {
+          blockLevel: 'PARTIAL',
+        };
+      }
+      // Para "inativas", incluir empresas com blockLevel FULL ou subscription inativa
+      else if (statusFilter === 'inativas') {
+        whereCondition.OR = [
+          {
+            Company: {
+              blockLevel: 'FULL',
+            },
+          },
+          {
+            status: 'INACTIVE',
+            Company: {
+              blockLevel: 'NONE',
+              Subscription: {
+                none: {
+                  status: 'ACTIVE',
+                  plan: {
+                    planType: {
+                      not: 'TRIAL',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ];
+      }
+      // Para "ativas", garantir que empresa não está bloqueada e subscription ativa
+      else if (mappedStatus === 'ACTIVE') {
+        whereCondition.status = 'ACTIVE';
+        whereCondition.Company = {
+          blockLevel: 'NONE',
+        };
+      }
+      // Para outros status (canceladas)
+      else {
+        whereCondition.status = mappedStatus;
+        whereCondition.Company = {
+          blockLevel: 'NONE',
           Subscription: {
             none: {
               status: 'ACTIVE',

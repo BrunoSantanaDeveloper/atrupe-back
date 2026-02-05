@@ -529,4 +529,23 @@ export class SubscriptionsController {
   async runBlockCheck() {
     return await this.subscriptionBlockService.checkAndApplyBlocks();
   }
+
+  @Get('my-pending-payment')
+  @ApiOperation({
+    summary: 'Obtém URL de pagamento pendente para a empresa do usuário logado',
+    description:
+      'Retorna a URL de pagamento (invoice) do Asaas se houver pagamento pendente ou em atraso.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'URL de pagamento pendente',
+  })
+  async getMyPendingPayment(@Req() req) {
+    const user = req.user;
+    const companyId = user.employee[0]?.companyId;
+    if (!companyId) {
+      return { paymentUrl: null, dueDate: null };
+    }
+    return await this.subscriptionBlockService.getPendingPaymentUrl(companyId);
+  }
 }

@@ -270,4 +270,57 @@ export class SubscriptionBlockService {
       orderBy: { blockedAt: 'desc' },
     });
   }
+
+  /**
+   * Obtém a URL de pagamento pendente para uma empresa bloqueada
+   * Utiliza invoiceUrl, bankSlipUrl, ou constrói URL a partir do asaasPaymentId
+   */
+  async getPendingPaymentUrl(
+    companyId: string,
+  ): Promise<{ paymentUrl: string | null; dueDate: Date | null }> {
+    const subscription = await this.prisma.subscription.findFirst({
+      where: {
+        companyId,
+        status: 'ACTIVE',
+      },
+      select: {
+        payments: {
+          where: {
+            status: { in: ['PENDING', 'OVERDUE'] },
+          },
+          orderBy: { dueDate: 'asc' },
+          take: 1,
+          select: {
+            invoiceUrl: true,
+            bankSlipUrl: true,
+            asaasPaymentId: true,
+            dueDate: true,
+          },
+        },
+      },
+    });
+
+    const payment = subscription?.payments?.[0];
+
+    if (!payment) {
+      return {
+        paymentUrl: null,
+        dueDate: null,
+      };
+    }
+
+    // Prioridade: invoiceUrl > bankSlipUrl > URL construída com asaasPaymentId
+    let paymentUrl = payment.invoiceUrl || payment.bankSlipUrl;
+
+    // Se não tiver URLs salvas, construir URL do Asaas
+    if (!paymentUrl && payment.asaasPaymentId) {
+      // URL padrão do Asaas para visualizar cobrança
+      paymentUrl = `https://www.asaas.com/i/${payment.asaasPaymentId}`;
+    }
+
+    return {
+      paymentUrl: paymentUrl || null,
+      dueDate: payment.dueDate || null,
+    };
+  }
 }
