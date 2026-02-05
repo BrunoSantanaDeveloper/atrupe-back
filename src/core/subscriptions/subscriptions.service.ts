@@ -723,8 +723,9 @@ export class SubscriptionsService {
         {} as Record<string, any[]>,
       );
 
-    // Formatar resposta
+    // Formatar resposta - filter out empty date groups
     const data = Object.entries(groupedByDate)
+      .filter(([, items]) => items.length > 0) // Remove empty date groups
       .map(([date, items]) => ({
         date,
         data: items,

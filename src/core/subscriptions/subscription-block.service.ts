@@ -278,12 +278,15 @@ export class SubscriptionBlockService {
   async getPendingPaymentUrl(
     companyId: string,
   ): Promise<{ paymentUrl: string | null; dueDate: Date | null }> {
+    // First try to find a subscription with pending/overdue payments
     const subscription = await this.prisma.subscription.findFirst({
       where: {
         companyId,
-        status: 'ACTIVE',
+        // Don't filter by status - blocked companies may have various subscription states
       },
+      orderBy: { createdAt: 'desc' },
       select: {
+        asaasSubscriptionId: true,
         payments: {
           where: {
             status: { in: ['PENDING', 'OVERDUE'] },
@@ -303,19 +306,30 @@ export class SubscriptionBlockService {
     const payment = subscription?.payments?.[0];
 
     if (!payment) {
+      // No pending payment found - try to use subscription's Asaas portal link as fallback
+      if (subscription?.asaasSubscriptionId) {
+        return {
+          paymentUrl: `https://www.asaas.com/c/${subscription.asaasSubscriptionId}`,
+          dueDate: null,
+        };
+      }
       return {
         paymentUrl: null,
         dueDate: null,
       };
     }
 
-    // Prioridade: invoiceUrl > bankSlipUrl > URL construída com asaasPaymentId
+    // Priority: invoiceUrl > bankSlipUrl > constructed URL with asaasPaymentId
     let paymentUrl = payment.invoiceUrl || payment.bankSlipUrl;
 
-    // Se não tiver URLs salvas, construir URL do Asaas
+    // If no saved URLs, construct Asaas URL
     if (!paymentUrl && payment.asaasPaymentId) {
-      // URL padrão do Asaas para visualizar cobrança
       paymentUrl = `https://www.asaas.com/i/${payment.asaasPaymentId}`;
+    }
+
+    // Ultimate fallback: use subscription's Asaas portal
+    if (!paymentUrl && subscription?.asaasSubscriptionId) {
+      paymentUrl = `https://www.asaas.com/c/${subscription.asaasSubscriptionId}`;
     }
 
     return {
