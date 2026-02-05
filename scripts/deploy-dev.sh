@@ -22,9 +22,21 @@ error() {
     exit 1
 }
 
+# Controle de versão
+VERSION_FILE="./deploy-v-dev.txt"
+if [ ! -f "$VERSION_FILE" ]; then
+    echo "0" > "$VERSION_FILE"
+fi
+
+CURRENT_VERSION=$(cat "$VERSION_FILE")
+NEXT_VERSION=$((CURRENT_VERSION + 1))
+echo "$NEXT_VERSION" > "$VERSION_FILE"
+
+log "Versão do Deploy: v$NEXT_VERSION"
+
 # Executar comandos no servidor AWS (ambiente dev)
 log "Conectando ao servidor AWS (ambiente dev)..."
-ssh atrupe-aws << 'EOF'
+ssh atrupe-aws VERSION=$NEXT_VERSION << 'EOF'
     echo "📁 Entrando na pasta do projeto..."
     cd atrupe-back || { echo "❌ Erro: pasta atrupe-back não encontrada"; exit 1; }
 
@@ -37,10 +49,10 @@ ssh atrupe-aws << 'EOF'
     echo "📋 Copiando arquivo .env de desenvolvimento..."
     cp .env.dev .env || { echo "❌ Erro: arquivo .env.dev não encontrado"; exit 1; }
 
-    echo "🐳 Construindo imagem Docker..."
-    docker build . -t atrupe-image-dev:latest || { echo "❌ Erro ao construir imagem"; exit 1; }
+    echo "🐳 Construindo imagem Docker (v$VERSION)..."
+    docker build . -t atrupe-image-dev:latest -t atrupe-image-dev:v$VERSION || { echo "❌ Erro ao construir imagem"; exit 1; }
 
-    echo "✅ Deploy concluído! Agora atualize a stack no Portainer."
+    echo "✅ Deploy da versão v$VERSION concluído! Agora atualize a stack no Portainer."
 EOF
 
 if [ $? -eq 0 ]; then
