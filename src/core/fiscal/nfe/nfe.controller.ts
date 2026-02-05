@@ -12,6 +12,10 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
+import {
+  BlockLevelGuard,
+  RequireUnblocked,
+} from '../../auth/guards/block-level.guard';
 import { NfeService } from './nfe.service';
 import {
   EmitNfeDto,
@@ -24,7 +28,7 @@ import {
 
 @ApiTags('Fiscal - NF-e')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, BlockLevelGuard)
 @Controller('fiscal/nfe')
 export class NfeController {
   constructor(private readonly nfeService: NfeService) {}
@@ -78,12 +82,14 @@ export class NfeController {
   }
 
   @Post('emit')
+  @RequireUnblocked()
   @ApiOperation({ summary: 'Emitir NF-e a partir de uma ordem de serviço' })
   async emit(@Req() req, @Body() dto: EmitNfeFromOrderDto) {
     return this.nfeService.emitFromOrder(req.user.companyId, dto);
   }
 
   @Post('emit-full')
+  @RequireUnblocked()
   @ApiOperation({ summary: 'Emitir NF-e com todos os dados (manual)' })
   async emitFull(@Req() req, @Body() dto: EmitNfeDto) {
     return this.nfeService.emit(req.user.companyId, dto);

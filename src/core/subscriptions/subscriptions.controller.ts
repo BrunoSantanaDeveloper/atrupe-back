@@ -18,8 +18,10 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiBody,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { SubscriptionsService } from './subscriptions.service';
+import { SubscriptionBlockService } from './subscription-block.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { AssignSubscriptionDto } from './dto/assign-subscription.dto';
 import { ExtendTrialDto } from './dto/extend-trial.dto';
@@ -32,13 +34,17 @@ import { DeleteAccountDto } from './dto/delete-account.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
+import { BlockLevel } from '@prisma/client';
 
 @ApiTags('subscriptions')
 @Controller('subscriptions')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class SubscriptionsController {
-  constructor(private readonly subscriptionsService: SubscriptionsService) {}
+  constructor(
+    private readonly subscriptionsService: SubscriptionsService,
+    private readonly subscriptionBlockService: SubscriptionBlockService,
+  ) {}
 
   @Get('incomplete-registrations')
   @ApiOperation({
@@ -455,5 +461,72 @@ export class SubscriptionsController {
       deleteDto.password,
       req.user.userId,
     );
+  }
+
+  // ============== Blocked Companies Endpoints ==============
+
+  @Get('blocked-companies')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary: 'Lista empresas bloqueadas ou inativas (apenas SystemAdmin)',
+  })
+  @ApiQuery({ name: 'status', enum: ['PARTIAL', 'FULL'], required: false })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de empresas bloqueadas',
+  })
+  async listBlockedCompanies(@Query('status') status?: BlockLevel) {
+    return await this.subscriptionBlockService.listBlockedCompanies(status);
+  }
+
+  @Post('blocked-companies/:companyId/unblock')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary: 'Desbloqueia uma empresa manualmente (apenas SystemAdmin)',
+  })
+  @ApiParam({ name: 'companyId', description: 'Company ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Empresa desbloqueada com sucesso',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Empresa não encontrada',
+  })
+  async unblockCompany(@Param('companyId') companyId: string, @Req() req) {
+    return await this.subscriptionBlockService.manualUnblock(
+      companyId,
+      req.user.userId,
+    );
+  }
+
+  @Get('blocked-companies/:companyId/status')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary: 'Obtém status de bloqueio de uma empresa (apenas SystemAdmin)',
+  })
+  @ApiParam({ name: 'companyId', description: 'Company ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Status de bloqueio da empresa',
+  })
+  async getBlockStatus(@Param('companyId') companyId: string) {
+    return await this.subscriptionBlockService.getBlockStatus(companyId);
+  }
+
+  @Post('blocked-companies/run-check')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary:
+      'Executa verificação de bloqueios manualmente (apenas SystemAdmin)',
+    description:
+      'Útil para testar ou forçar verificação fora do horário do cron.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Verificação executada com sucesso',
+  })
+  async runBlockCheck() {
+    return await this.subscriptionBlockService.checkAndApplyBlocks();
   }
 }

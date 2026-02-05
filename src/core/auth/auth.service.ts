@@ -180,6 +180,7 @@ export class AuthService {
               favicon: user.employee[0].company.favIconUrl,
               subscription: subscription,
               trialEndsAt: planInfo?.trialEndsAt ?? null,
+              blockLevel: user.employee[0].company.blockLevel ?? 'NONE',
               features: await this.getPlanFeatures(user.employee[0].company.id),
               limits: planInfo?.limits || null, // Sistema dinâmico - todos os limites automaticamente
             }

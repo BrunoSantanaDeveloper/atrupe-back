@@ -10,6 +10,10 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
+import {
+  BlockLevelGuard,
+  RequireUnblocked,
+} from '../../auth/guards/block-level.guard';
 import { NfseService } from './nfse.service';
 import {
   EmitNfseDto,
@@ -20,7 +24,7 @@ import {
 
 @ApiTags('Fiscal - NFS-e')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, BlockLevelGuard)
 @Controller('fiscal/nfse')
 export class NfseController {
   constructor(private readonly nfseService: NfseService) {}
@@ -38,12 +42,14 @@ export class NfseController {
   }
 
   @Post('emit')
+  @RequireUnblocked()
   @ApiOperation({ summary: 'Emitir NFS-e a partir de uma ordem de serviço' })
   async emit(@Req() req, @Body() dto: EmitNfseFromOrderDto) {
     return this.nfseService.emitFromOrder(req.user.companyId, dto);
   }
 
   @Post('emit-full')
+  @RequireUnblocked()
   @ApiOperation({ summary: 'Emitir NFS-e com todos os dados (manual)' })
   async emitFull(@Req() req, @Body() dto: EmitNfseDto) {
     return this.nfseService.emit(req.user.companyId, dto);

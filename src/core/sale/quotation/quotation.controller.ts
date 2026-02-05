@@ -15,6 +15,10 @@ import {
 import { QuotationService } from './quotation.service';
 import { AddItemDto, CreateQuotationDto } from './dto/create-quotation.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
+import {
+  BlockLevelGuard,
+  RequireUnblocked,
+} from '../../auth/guards/block-level.guard';
 import { FilterQuotationDto } from './dto/filter.dto';
 import { isUUID } from 'class-validator';
 import { DuplicateQuotationDto } from './dto/duplicate-quotation.dto';
@@ -34,7 +38,7 @@ import { AbacService } from '../../auth/abac/abac.service';
 const RESOURCE = 'quotation';
 
 @ApiTags('Orçamentos')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, BlockLevelGuard)
 @ApiBearerAuth()
 @Controller(`sale/${RESOURCE}`)
 export class QuotationController {
@@ -43,6 +47,7 @@ export class QuotationController {
     private readonly abacService: AbacService,
   ) {}
   @Post()
+  @RequireUnblocked()
   @ApiOperation({ summary: 'Cria um novo orçamento' })
   @ApiResponse({
     status: 201,
@@ -235,6 +240,7 @@ export class QuotationController {
     return this.quotationService.duplicate(id, dto, userId);
   }
   @Post(':id/approve')
+  @RequireUnblocked()
   @ApiOperation({ summary: 'Aprova um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
   @ApiResponse({
