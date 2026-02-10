@@ -2,6 +2,7 @@ import { Controller, Get, Query, UseGuards, Req } from '@nestjs/common';
 import { ReportService } from './report.service';
 import { JwtAuthGuard } from '../../core/auth/guards/jwt.guard';
 import { SalesReportFilterDto } from './dto/sales-report.dto';
+import { FinancialReportFilterDto } from './dto/financial-report.dto';
 import { Request } from 'express';
 
 const RESOURCE = 'report';
@@ -14,6 +15,35 @@ export class ReportController {
   @Get('menu')
   findAll() {
     return this.reportService.menu();
+  }
+
+  // ============== FINANCIAL REPORT ENDPOINTS ==============
+
+  @Get('financial/summary')
+  async getFinancialSummary(
+    @Query() filters: FinancialReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.getFinancialSummary(companyId, filters);
+  }
+
+  @Get('financial/chart')
+  async getFinancialChart(
+    @Query() filters: FinancialReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.getFinancialChart(companyId, filters);
+  }
+
+  @Get('financial/table')
+  async getFinancialTable(
+    @Query() filters: FinancialReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.getFinancialTable(companyId, filters);
   }
 
   // ============== SALES REPORT ENDPOINTS ==============

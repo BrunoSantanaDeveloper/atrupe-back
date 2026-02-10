@@ -14,6 +14,7 @@ import {
   SalesClientGroup,
   SalePhase,
 } from './dto/sales-report.dto';
+import { FinancialReportFilterDto } from './dto/financial-report.dto';
 import { QuotationService } from '../../core/sale/quotation/quotation.service';
 import { OrderService } from '../../core/sale/order/order.service';
 import { PayableService } from '../../core/financial/payable/payable.service';
@@ -806,5 +807,472 @@ export class ReportService {
     );
 
     return { sectors, generalTotal };
+  }
+
+  // ============== FINANCIAL REPORT METHODS ==============
+
+  private getFinancialDateRange(filters: FinancialReportFilterDto) {
+    const now = new Date();
+    const startDate = filters.startDate
+      ? new Date(filters.startDate)
+      : startOfMonth(subMonths(now, 5));
+    const endDate = filters.endDate
+      ? new Date(filters.endDate)
+      : endOfMonth(now);
+    return { startDate, endDate };
+  }
+
+  private getInstallmentStatus(installment: {
+    paidDate: Date | null;
+    provisionDate: Date | null;
+    dueDate: Date;
+    status: string;
+  }): 'received' | 'confirmed' | 'to_receive' | 'overdue' {
+    if (installment.status === 'PAID' || installment.paidDate)
+      return 'received';
+    if (installment.status === 'PROVISIONED' || installment.provisionDate)
+      return 'confirmed';
+    if (installment.status === 'OVERDUE' || installment.dueDate < new Date())
+      return 'overdue';
+    return 'to_receive';
+  }
+
+  async getFinancialSummary(
+    companyId: string,
+    filters: FinancialReportFilterDto,
+  ) {
+    const { startDate, endDate } = this.getFinancialDateRange(filters);
+    const isReceitas = filters.tab !== 'despesas';
+
+    if (isReceitas) {
+      const installments = await this.prisma.receivableInstallment.findMany({
+        where: {
+          receivable: {
+            companyId,
+            status: { not: 'CANCELED' },
+          },
+          dueDate: { gte: startDate, lte: endDate },
+        },
+      });
+
+      const result = {
+        received: 0,
+        confirmed: 0,
+        toReceive: 0,
+        overdue: 0,
+        receivedCount: 0,
+        confirmedCount: 0,
+        toReceiveCount: 0,
+        overdueCount: 0,
+      };
+
+      installments.forEach((inst) => {
+        const status = this.getInstallmentStatus(inst);
+        const amount = inst.paidAmount || inst.amount;
+        switch (status) {
+          case 'received':
+            result.received += amount;
+            result.receivedCount++;
+            break;
+          case 'confirmed':
+            result.confirmed += amount;
+            result.confirmedCount++;
+            break;
+          case 'overdue':
+            result.overdue += amount;
+            result.overdueCount++;
+            break;
+          default:
+            result.toReceive += amount;
+            result.toReceiveCount++;
+        }
+      });
+
+      return result;
+    } else {
+      const installments = await this.prisma.payableInstallment.findMany({
+        where: {
+          payable: {
+            companyId,
+            status: { not: 'CANCELED' },
+          },
+          dueDate: { gte: startDate, lte: endDate },
+        },
+      });
+
+      const result = {
+        received: 0,
+        confirmed: 0,
+        toReceive: 0,
+        overdue: 0,
+        receivedCount: 0,
+        confirmedCount: 0,
+        toReceiveCount: 0,
+        overdueCount: 0,
+      };
+
+      installments.forEach((inst) => {
+        const status = this.getInstallmentStatus(inst);
+        const amount = inst.paidAmount || inst.amount;
+        switch (status) {
+          case 'received':
+            result.received += amount;
+            result.receivedCount++;
+            break;
+          case 'confirmed':
+            result.confirmed += amount;
+            result.confirmedCount++;
+            break;
+          case 'overdue':
+            result.overdue += amount;
+            result.overdueCount++;
+            break;
+          default:
+            result.toReceive += amount;
+            result.toReceiveCount++;
+        }
+      });
+
+      return result;
+    }
+  }
+
+  async getFinancialChart(
+    companyId: string,
+    filters: FinancialReportFilterDto,
+  ) {
+    const { startDate, endDate } = this.getFinancialDateRange(filters);
+    const isReceitas = filters.tab !== 'despesas';
+
+    const installments = isReceitas
+      ? await this.prisma.receivableInstallment.findMany({
+          where: {
+            receivable: { companyId, status: { not: 'CANCELED' } },
+            dueDate: { gte: startDate, lte: endDate },
+          },
+        })
+      : await this.prisma.payableInstallment.findMany({
+          where: {
+            payable: { companyId, status: { not: 'CANCELED' } },
+            dueDate: { gte: startDate, lte: endDate },
+          },
+        });
+
+    // Group by month
+    const monthlyData: Record<
+      string,
+      {
+        date: string;
+        label: string;
+        received: number;
+        confirmed: number;
+        toReceive: number;
+        overdue: number;
+      }
+    > = {};
+
+    installments.forEach((inst: any) => {
+      const monthKey = format(inst.dueDate, 'yyyy-MM');
+      const label = format(inst.dueDate, 'MMM/yy', { locale: ptBR });
+
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = {
+          date: monthKey,
+          label: label.charAt(0).toUpperCase() + label.slice(1),
+          received: 0,
+          confirmed: 0,
+          toReceive: 0,
+          overdue: 0,
+        };
+      }
+
+      const status = this.getInstallmentStatus(inst);
+      const amount = inst.paidAmount || inst.amount;
+      monthlyData[monthKey][status] += amount;
+    });
+
+    return Object.values(monthlyData).sort((a, b) =>
+      a.date.localeCompare(b.date),
+    );
+  }
+
+  async getFinancialTable(
+    companyId: string,
+    filters: FinancialReportFilterDto,
+  ) {
+    const { startDate, endDate } = this.getFinancialDateRange(filters);
+    const isReceitas = filters.tab !== 'despesas';
+    const page = filters.page || 1;
+    const limit = filters.limit || 10;
+    const groupBy = filters.groupBy || 'none';
+    const statusFilter = filters.status || 'all';
+
+    if (isReceitas) {
+      // Build where clause
+      const where: any = {
+        receivable: {
+          companyId,
+          status: { not: 'CANCELED' },
+        },
+        dueDate: { gte: startDate, lte: endDate },
+      };
+
+      // Apply status filter at DB level where possible
+      if (statusFilter === 'received') {
+        where.status = 'PAID';
+      } else if (statusFilter === 'confirmed') {
+        where.status = 'PROVISIONED';
+      } else if (statusFilter === 'overdue') {
+        where.status = 'OVERDUE';
+      }
+
+      const allInstallments = await this.prisma.receivableInstallment.findMany({
+        where,
+        include: {
+          receivable: {
+            include: {
+              client: { select: { id: true, name: true } },
+            },
+          },
+        },
+        orderBy: this.getFinancialOrderBy(filters.orderBy),
+      });
+
+      // Compute status and filter post-query for statuses that require runtime check
+      let records = allInstallments.map((inst) => {
+        const computedStatus = this.getInstallmentStatus(inst);
+        const totalValue = allInstallments.reduce(
+          (sum, i) => sum + (i.paidAmount || i.amount),
+          0,
+        );
+        return {
+          id: inst.id,
+          clientId: inst.receivable.clientId || '',
+          clientName: inst.receivable.client?.name || 'Não informado',
+          description: inst.receivable.description || 'Sem descrição',
+          receivedDate: inst.paidDate
+            ? format(inst.paidDate, 'dd/MM/yyyy')
+            : null,
+          value: inst.paidAmount || inst.amount,
+          percentage:
+            totalValue > 0
+              ? Math.round(
+                  ((inst.paidAmount || inst.amount) / totalValue) * 100,
+                )
+              : 0,
+          status: computedStatus,
+        };
+      });
+
+      // Post-filter for to_receive (PENDING status but not overdue)
+      if (statusFilter === 'to_receive') {
+        records = records.filter((r) => r.status === 'to_receive');
+      } else if (
+        statusFilter !== 'all' &&
+        statusFilter !== 'received' &&
+        statusFilter !== 'confirmed' &&
+        statusFilter !== 'overdue'
+      ) {
+        records = records.filter((r) => r.status === statusFilter);
+      }
+
+      // Apply client name ordering if needed
+      if (filters.orderBy === 'clientName') {
+        records.sort((a, b) => a.clientName.localeCompare(b.clientName));
+      }
+
+      const totalCount = records.length;
+
+      // Paginate if not grouped
+      if (groupBy === 'client') {
+        const groupsMap: Record<
+          string,
+          { clientId: string; clientName: string; records: typeof records }
+        > = {};
+
+        records.forEach((r) => {
+          if (!groupsMap[r.clientId]) {
+            groupsMap[r.clientId] = {
+              clientId: r.clientId,
+              clientName: r.clientName,
+              records: [],
+            };
+          }
+          groupsMap[r.clientId].records.push(r);
+        });
+
+        const groups = Object.values(groupsMap).map((g) => ({
+          clientId: g.clientId,
+          clientName: g.clientName,
+          count: g.records.length,
+          total: g.records.reduce((sum, r) => sum + r.value, 0),
+          records: g.records,
+        }));
+
+        return {
+          grouped: true,
+          records: [],
+          groups,
+          totalCount,
+          pagination: {
+            page,
+            totalPages: Math.ceil(totalCount / limit),
+            totalRecords: totalCount,
+          },
+        };
+      } else {
+        const paginatedRecords = records.slice(
+          (page - 1) * limit,
+          page * limit,
+        );
+        return {
+          grouped: false,
+          records: paginatedRecords,
+          totalCount,
+          pagination: {
+            page,
+            totalPages: Math.ceil(totalCount / limit),
+            totalRecords: totalCount,
+          },
+        };
+      }
+    } else {
+      // Despesas (Payable)
+      const where: any = {
+        payable: {
+          companyId,
+          status: { not: 'CANCELED' },
+        },
+        dueDate: { gte: startDate, lte: endDate },
+      };
+
+      if (statusFilter === 'received') {
+        where.status = 'PAID';
+      } else if (statusFilter === 'confirmed') {
+        where.status = 'PROVISIONED';
+      } else if (statusFilter === 'overdue') {
+        where.status = 'OVERDUE';
+      }
+
+      const allInstallments = await this.prisma.payableInstallment.findMany({
+        where,
+        include: {
+          payable: {
+            include: {
+              supplier: { select: { id: true, name: true } },
+              client: { select: { id: true, name: true } },
+            },
+          },
+        },
+        orderBy: this.getFinancialOrderBy(filters.orderBy),
+      });
+
+      let records = allInstallments.map((inst) => {
+        const computedStatus = this.getInstallmentStatus(inst);
+        const totalValue = allInstallments.reduce(
+          (sum, i) => sum + (i.paidAmount || i.amount),
+          0,
+        );
+        const entityName =
+          inst.payable.supplier?.name ||
+          inst.payable.client?.name ||
+          'Não informado';
+        const entityId = inst.payable.supplierId || inst.payable.clientId || '';
+
+        return {
+          id: inst.id,
+          clientId: entityId,
+          clientName: entityName,
+          description: inst.payable.description || 'Sem descrição',
+          receivedDate: inst.paidDate
+            ? format(inst.paidDate, 'dd/MM/yyyy')
+            : null,
+          value: inst.paidAmount || inst.amount,
+          percentage:
+            totalValue > 0
+              ? Math.round(
+                  ((inst.paidAmount || inst.amount) / totalValue) * 100,
+                )
+              : 0,
+          status: computedStatus,
+        };
+      });
+
+      if (statusFilter === 'to_receive') {
+        records = records.filter((r) => r.status === 'to_receive');
+      }
+
+      if (filters.orderBy === 'clientName') {
+        records.sort((a, b) => a.clientName.localeCompare(b.clientName));
+      }
+
+      const totalCount = records.length;
+
+      if (groupBy === 'client') {
+        const groupsMap: Record<
+          string,
+          { clientId: string; clientName: string; records: typeof records }
+        > = {};
+
+        records.forEach((r) => {
+          if (!groupsMap[r.clientId]) {
+            groupsMap[r.clientId] = {
+              clientId: r.clientId,
+              clientName: r.clientName,
+              records: [],
+            };
+          }
+          groupsMap[r.clientId].records.push(r);
+        });
+
+        const groups = Object.values(groupsMap).map((g) => ({
+          clientId: g.clientId,
+          clientName: g.clientName,
+          count: g.records.length,
+          total: g.records.reduce((sum, r) => sum + r.value, 0),
+          records: g.records,
+        }));
+
+        return {
+          grouped: true,
+          records: [],
+          groups,
+          totalCount,
+          pagination: {
+            page,
+            totalPages: Math.ceil(totalCount / limit),
+            totalRecords: totalCount,
+          },
+        };
+      } else {
+        const paginatedRecords = records.slice(
+          (page - 1) * limit,
+          page * limit,
+        );
+        return {
+          grouped: false,
+          records: paginatedRecords,
+          totalCount,
+          pagination: {
+            page,
+            totalPages: Math.ceil(totalCount / limit),
+            totalRecords: totalCount,
+          },
+        };
+      }
+    }
+  }
+
+  private getFinancialOrderBy(orderBy?: string): any {
+    switch (orderBy) {
+      case 'valueDesc':
+        return { amount: 'desc' };
+      case 'valueAsc':
+        return { amount: 'asc' };
+      case 'receivedDate':
+        return { paidDate: 'desc' };
+      default:
+        return { dueDate: 'desc' };
+    }
   }
 }
