@@ -818,7 +818,7 @@ export class ReportService {
     const now = new Date();
     const startDate = filters.startDate
       ? new Date(filters.startDate)
-      : startOfMonth(subMonths(now, 5));
+      : startOfMonth(now);
     const endDate = filters.endDate
       ? new Date(filters.endDate)
       : endOfMonth(now);
@@ -961,8 +961,8 @@ export class ReportService {
           },
         });
 
-    // Group by month
-    const monthlyData: Record<
+    // Group by day
+    const dailyData: Record<
       string,
       {
         date: string;
@@ -975,12 +975,12 @@ export class ReportService {
     > = {};
 
     installments.forEach((inst: any) => {
-      const monthKey = format(inst.dueDate, 'yyyy-MM');
-      const label = format(inst.dueDate, 'MMM/yy', { locale: ptBR });
+      const dayKey = format(inst.dueDate, 'yyyy-MM-dd');
+      const label = format(inst.dueDate, 'dd MMM yy', { locale: ptBR });
 
-      if (!monthlyData[monthKey]) {
-        monthlyData[monthKey] = {
-          date: monthKey,
+      if (!dailyData[dayKey]) {
+        dailyData[dayKey] = {
+          date: dayKey,
           label: label.charAt(0).toUpperCase() + label.slice(1),
           received: 0,
           confirmed: 0,
@@ -991,10 +991,10 @@ export class ReportService {
 
       const status = this.getInstallmentStatus(inst);
       const amount = inst.paidAmount || inst.amount;
-      monthlyData[monthKey][status] += amount;
+      dailyData[dayKey][status] += amount;
     });
 
-    return Object.values(monthlyData).sort((a, b) =>
+    return Object.values(dailyData).sort((a, b) =>
       a.date.localeCompare(b.date),
     );
   }
@@ -1268,6 +1268,8 @@ export class ReportService {
 
   private getFinancialOrderBy(orderBy?: string): any {
     switch (orderBy) {
+      case 'saleDate':
+        return { createdAt: 'desc' };
       case 'valueDesc':
         return { amount: 'desc' };
       case 'valueAsc':
