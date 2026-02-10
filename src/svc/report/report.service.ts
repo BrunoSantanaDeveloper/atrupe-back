@@ -15,6 +15,7 @@ import {
   SalePhase,
 } from './dto/sales-report.dto';
 import { FinancialReportFilterDto } from './dto/financial-report.dto';
+import { CashFlowReportFilterDto } from './dto/cash-flow-report.dto';
 import { QuotationService } from '../../core/sale/quotation/quotation.service';
 import { OrderService } from '../../core/sale/order/order.service';
 import { PayableService } from '../../core/financial/payable/payable.service';
@@ -1273,6 +1274,308 @@ export class ReportService {
         return { paidDate: 'desc' };
       default:
         return { dueDate: 'desc' };
+    }
+  }
+
+  // ============== CASH FLOW REPORT METHODS ==============
+
+  private getCashFlowDateRange(filters: CashFlowReportFilterDto) {
+    const now = new Date();
+    const startDate = filters.startDate
+      ? new Date(filters.startDate)
+      : startOfMonth(now);
+    const endDate = filters.endDate
+      ? new Date(filters.endDate)
+      : endOfMonth(now);
+    return { startDate, endDate };
+  }
+
+  async getCashFlowSummary(
+    companyId: string,
+    filters: CashFlowReportFilterDto,
+  ) {
+    const { startDate, endDate } = this.getCashFlowDateRange(filters);
+
+    // Get receivable installments (revenue)
+    const receivableInstallments =
+      await this.prisma.receivableInstallment.findMany({
+        where: {
+          receivable: { companyId, status: { not: 'CANCELED' } },
+          dueDate: { gte: startDate, lte: endDate },
+        },
+      });
+
+    // Get payable installments (expenses)
+    const payableInstallments = await this.prisma.payableInstallment.findMany({
+      where: {
+        payable: { companyId, status: { not: 'CANCELED' } },
+        dueDate: { gte: startDate, lte: endDate },
+      },
+    });
+
+    const expectedRevenue = receivableInstallments.reduce(
+      (sum, inst) => sum + (inst.paidAmount || inst.amount),
+      0,
+    );
+
+    const expectedExpenses = payableInstallments.reduce(
+      (sum, inst) => sum + (inst.paidAmount || inst.amount),
+      0,
+    );
+
+    return {
+      expectedRevenue,
+      expectedExpenses,
+      expectedBalance: expectedRevenue - expectedExpenses,
+    };
+  }
+
+  async getCashFlowChart(companyId: string, filters: CashFlowReportFilterDto) {
+    const { startDate, endDate } = this.getCashFlowDateRange(filters);
+
+    const receivableInstallments =
+      await this.prisma.receivableInstallment.findMany({
+        where: {
+          receivable: { companyId, status: { not: 'CANCELED' } },
+          dueDate: { gte: startDate, lte: endDate },
+        },
+      });
+
+    const payableInstallments = await this.prisma.payableInstallment.findMany({
+      where: {
+        payable: { companyId, status: { not: 'CANCELED' } },
+        dueDate: { gte: startDate, lte: endDate },
+      },
+    });
+
+    // Group by day
+    const dailyData: Record<
+      string,
+      { date: string; label: string; revenue: number; expenses: number }
+    > = {};
+
+    receivableInstallments.forEach((inst) => {
+      const dayKey = format(inst.dueDate, 'yyyy-MM-dd');
+      const label = format(inst.dueDate, 'dd MMM yy', { locale: ptBR });
+      if (!dailyData[dayKey]) {
+        dailyData[dayKey] = { date: dayKey, label, revenue: 0, expenses: 0 };
+      }
+      dailyData[dayKey].revenue += inst.paidAmount || inst.amount;
+    });
+
+    payableInstallments.forEach((inst) => {
+      const dayKey = format(inst.dueDate, 'yyyy-MM-dd');
+      const label = format(inst.dueDate, 'dd MMM yy', { locale: ptBR });
+      if (!dailyData[dayKey]) {
+        dailyData[dayKey] = { date: dayKey, label, revenue: 0, expenses: 0 };
+      }
+      dailyData[dayKey].expenses += inst.paidAmount || inst.amount;
+    });
+
+    // Calculate running balance
+    const sorted = Object.values(dailyData).sort((a, b) =>
+      a.date.localeCompare(b.date),
+    );
+
+    let runningBalance = 0;
+    return sorted.map((day) => {
+      runningBalance += day.revenue - day.expenses;
+      return {
+        ...day,
+        balance: runningBalance,
+      };
+    });
+  }
+
+  async getCashFlowTable(companyId: string, filters: CashFlowReportFilterDto) {
+    const { startDate, endDate } = this.getCashFlowDateRange(filters);
+    const page = filters.page || 1;
+    const limit = filters.limit || 10;
+    const groupBy = filters.groupBy || 'none';
+    const movement = filters.movement || 'all';
+
+    // Build where clauses
+    const receivableWhere: any = {
+      receivable: { companyId, status: { not: 'CANCELED' } },
+      dueDate: { gte: startDate, lte: endDate },
+    };
+    const payableWhere: any = {
+      payable: { companyId, status: { not: 'CANCELED' } },
+      dueDate: { gte: startDate, lte: endDate },
+    };
+
+    const orderBy = this.getFinancialOrderBy(filters.orderBy);
+
+    // Fetch both based on movement filter
+    let allRecords: Array<{
+      id: string;
+      clientId: string;
+      clientName: string;
+      description: string;
+      dueDate: string;
+      value: number;
+      type: 'revenue' | 'expense';
+    }> = [];
+
+    if (movement !== 'expense') {
+      const receivables = await this.prisma.receivableInstallment.findMany({
+        where: receivableWhere,
+        include: {
+          receivable: {
+            include: { client: { select: { id: true, name: true } } },
+          },
+        },
+        orderBy,
+      });
+
+      allRecords.push(
+        ...receivables.map((inst) => ({
+          id: inst.id,
+          clientId: inst.receivable.clientId || '',
+          clientName: inst.receivable.client?.name || 'Não informado',
+          description: inst.receivable.description || 'Sem descrição',
+          dueDate: format(inst.dueDate, 'dd/MM/yyyy'),
+          value: inst.paidAmount || inst.amount,
+          type: 'revenue' as const,
+        })),
+      );
+    }
+
+    if (movement !== 'revenue') {
+      const payables = await this.prisma.payableInstallment.findMany({
+        where: payableWhere,
+        include: {
+          payable: {
+            include: {
+              supplier: { select: { id: true, name: true } },
+              client: { select: { id: true, name: true } },
+            },
+          },
+        },
+        orderBy,
+      });
+
+      allRecords.push(
+        ...payables.map((inst) => ({
+          id: inst.id,
+          clientId: inst.payable.supplierId || inst.payable.clientId || '',
+          clientName:
+            inst.payable.supplier?.name ||
+            inst.payable.client?.name ||
+            'Não informado',
+          description: inst.payable.description || 'Sem descrição',
+          dueDate: format(inst.dueDate, 'dd/MM/yyyy'),
+          value: -(inst.paidAmount || inst.amount),
+          type: 'expense' as const,
+        })),
+      );
+    }
+
+    // Sort by client name if requested
+    if (filters.orderBy === 'clientName') {
+      allRecords.sort((a, b) => a.clientName.localeCompare(b.clientName));
+    } else if (filters.orderBy === 'valueDesc') {
+      allRecords.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+    } else if (filters.orderBy === 'valueAsc') {
+      allRecords.sort((a, b) => Math.abs(a.value) - Math.abs(b.value));
+    }
+
+    // Calculate percentage
+    const totalAbsValue = allRecords.reduce(
+      (sum, r) => sum + Math.abs(r.value),
+      0,
+    );
+
+    const records = allRecords.map((r) => ({
+      ...r,
+      percentage:
+        totalAbsValue > 0
+          ? Math.round((Math.abs(r.value) / totalAbsValue) * 100)
+          : 0,
+    }));
+
+    const totalCount = records.length;
+
+    if (groupBy === 'date') {
+      const groupsMap: Record<
+        string,
+        { date: string; records: typeof records }
+      > = {};
+
+      records.forEach((r) => {
+        if (!groupsMap[r.dueDate]) {
+          groupsMap[r.dueDate] = { date: r.dueDate, records: [] };
+        }
+        groupsMap[r.dueDate].records.push(r);
+      });
+
+      const groups = Object.values(groupsMap).map((g) => ({
+        date: g.date,
+        count: g.records.length,
+        total: g.records.reduce((sum, r) => sum + r.value, 0),
+        records: g.records,
+      }));
+
+      return {
+        grouped: true,
+        records: [],
+        groups,
+        totalCount,
+        pagination: {
+          page,
+          totalPages: Math.ceil(totalCount / limit),
+          totalRecords: totalCount,
+        },
+      };
+    } else if (groupBy === 'client') {
+      const groupsMap: Record<
+        string,
+        { clientId: string; clientName: string; records: typeof records }
+      > = {};
+
+      records.forEach((r) => {
+        if (!groupsMap[r.clientId]) {
+          groupsMap[r.clientId] = {
+            clientId: r.clientId,
+            clientName: r.clientName,
+            records: [],
+          };
+        }
+        groupsMap[r.clientId].records.push(r);
+      });
+
+      const groups = Object.values(groupsMap).map((g) => ({
+        date: '',
+        clientId: g.clientId,
+        clientName: g.clientName,
+        count: g.records.length,
+        total: g.records.reduce((sum, r) => sum + r.value, 0),
+        records: g.records,
+      }));
+
+      return {
+        grouped: true,
+        records: [],
+        groups,
+        totalCount,
+        pagination: {
+          page,
+          totalPages: Math.ceil(totalCount / limit),
+          totalRecords: totalCount,
+        },
+      };
+    } else {
+      const paginatedRecords = records.slice((page - 1) * limit, page * limit);
+      return {
+        grouped: false,
+        records: paginatedRecords,
+        totalCount,
+        pagination: {
+          page,
+          totalPages: Math.ceil(totalCount / limit),
+          totalRecords: totalCount,
+        },
+      };
     }
   }
 }

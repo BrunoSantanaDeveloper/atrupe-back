@@ -3,6 +3,7 @@ import { ReportService } from './report.service';
 import { JwtAuthGuard } from '../../core/auth/guards/jwt.guard';
 import { SalesReportFilterDto } from './dto/sales-report.dto';
 import { FinancialReportFilterDto } from './dto/financial-report.dto';
+import { CashFlowReportFilterDto } from './dto/cash-flow-report.dto';
 import { Request } from 'express';
 
 const RESOURCE = 'report';
@@ -127,6 +128,35 @@ export class ReportController {
   ) {
     const companyId = (req as any).user?.companyId;
     return this.reportService.getSalesReportPdfData(companyId, filters);
+  }
+
+  // ============== CASH FLOW REPORT ENDPOINTS ==============
+
+  @Get('cash-flow/summary')
+  async getCashFlowSummary(
+    @Query() filters: CashFlowReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.getCashFlowSummary(companyId, filters);
+  }
+
+  @Get('cash-flow/chart')
+  async getCashFlowChart(
+    @Query() filters: CashFlowReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.getCashFlowChart(companyId, filters);
+  }
+
+  @Get('cash-flow/table')
+  async getCashFlowTable(
+    @Query() filters: CashFlowReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.getCashFlowTable(companyId, filters);
   }
 
   // ============== SECTOR REPORT ==============
