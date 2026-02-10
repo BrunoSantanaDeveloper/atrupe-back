@@ -732,4 +732,79 @@ export class ReportService {
       groups,
     };
   }
+
+  // ============== SECTOR REPORT ==============
+
+  async getSectorResults(
+    companyId: string,
+    filters: SalesReportFilterDto,
+  ): Promise<{
+    sectors: {
+      id: string;
+      name: string;
+      icon: string;
+      value: number;
+    }[];
+    generalTotal: number;
+  }> {
+    const { startDate, endDate } = this.getDateRange(filters);
+
+    const orderProducts = await this.prisma.quotationProduct.findMany({
+      where: {
+        quotation: {
+          companyId,
+          approvedAt: { gte: startDate, lte: endDate },
+          order: { isNot: null },
+          ...(filters.sellerId && { sellerId: filters.sellerId }),
+          ...(filters.originId && { contactSourceId: filters.originId }),
+        },
+      },
+      include: {
+        product: {
+          select: {
+            sectorId: true,
+            sector: {
+              select: {
+                id: true,
+                name: true,
+                icon: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Aggregate by sector
+    const sectorTotals: Record<
+      string,
+      { id: string; name: string; icon: string; value: number }
+    > = {};
+
+    let generalTotal = 0;
+
+    orderProducts.forEach((qp) => {
+      const value = qp.finalValue ?? qp.totalValue ?? 0;
+      generalTotal += value;
+
+      const sector = qp.product?.sector;
+      if (!sector) return;
+
+      if (!sectorTotals[sector.id]) {
+        sectorTotals[sector.id] = {
+          id: sector.id,
+          name: sector.name,
+          icon: sector.icon || '',
+          value: 0,
+        };
+      }
+      sectorTotals[sector.id].value += value;
+    });
+
+    const sectors = Object.values(sectorTotals).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+
+    return { sectors, generalTotal };
+  }
 }
