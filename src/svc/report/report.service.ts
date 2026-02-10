@@ -16,6 +16,7 @@ import {
 } from './dto/sales-report.dto';
 import { FinancialReportFilterDto } from './dto/financial-report.dto';
 import { CashFlowReportFilterDto } from './dto/cash-flow-report.dto';
+import { DfcReportFilterDto } from './dto/dfc-report.dto';
 import { QuotationService } from '../../core/sale/quotation/quotation.service';
 import { OrderService } from '../../core/sale/order/order.service';
 import { PayableService } from '../../core/financial/payable/payable.service';
@@ -1577,5 +1578,526 @@ export class ReportService {
         },
       };
     }
+  }
+
+  // ============== DFC REPORT METHODS ==============
+
+  private getDfcDateRange(filters: DfcReportFilterDto) {
+    const now = new Date();
+    const startDate = filters.startDate
+      ? new Date(filters.startDate)
+      : startOfMonth(subMonths(now, 5));
+    const endDate = filters.endDate
+      ? new Date(filters.endDate)
+      : endOfMonth(now);
+    return { startDate, endDate };
+  }
+
+  private getDfcDateField(filters: DfcReportFilterDto): 'paidDate' | 'dueDate' {
+    return filters.regime === 'orcado' ? 'dueDate' : 'paidDate';
+  }
+
+  async getDfcSummary(companyId: string, filters: DfcReportFilterDto) {
+    const { startDate, endDate } = this.getDfcDateRange(filters);
+    const isRealizado = filters.regime !== 'orcado';
+
+    // For "realizado", filter by paidDate; for "orcado", filter by dueDate
+    const receivableWhere: any = {
+      receivable: { companyId, status: { not: 'CANCELED' } },
+    };
+    const payableWhere: any = {
+      payable: { companyId, status: { not: 'CANCELED' } },
+    };
+
+    if (isRealizado) {
+      receivableWhere.paidDate = { gte: startDate, lte: endDate };
+      receivableWhere.status = 'PAID';
+      payableWhere.paidDate = { gte: startDate, lte: endDate };
+      payableWhere.status = 'PAID';
+    } else {
+      receivableWhere.dueDate = { gte: startDate, lte: endDate };
+      payableWhere.dueDate = { gte: startDate, lte: endDate };
+    }
+
+    const receivableInstallments =
+      await this.prisma.receivableInstallment.findMany({
+        where: receivableWhere,
+      });
+
+    const payableInstallments = await this.prisma.payableInstallment.findMany({
+      where: payableWhere,
+    });
+
+    const totalRevenue = receivableInstallments.reduce(
+      (sum, inst) => sum + (inst.paidAmount || inst.amount),
+      0,
+    );
+
+    const totalExpenses = payableInstallments.reduce(
+      (sum, inst) => sum + (inst.paidAmount || inst.amount),
+      0,
+    );
+
+    return {
+      totalRevenue,
+      totalExpenses: -totalExpenses,
+      finalCashFlow: totalRevenue - totalExpenses,
+    };
+  }
+
+  async getDfcCashFlowChart(companyId: string, filters: DfcReportFilterDto) {
+    const { startDate, endDate } = this.getDfcDateRange(filters);
+    const isRealizado = filters.regime !== 'orcado';
+
+    const receivableWhere: any = {
+      receivable: { companyId, status: { not: 'CANCELED' } },
+    };
+    const payableWhere: any = {
+      payable: { companyId, status: { not: 'CANCELED' } },
+    };
+
+    if (isRealizado) {
+      receivableWhere.paidDate = { gte: startDate, lte: endDate };
+      receivableWhere.status = 'PAID';
+      payableWhere.paidDate = { gte: startDate, lte: endDate };
+      payableWhere.status = 'PAID';
+    } else {
+      receivableWhere.dueDate = { gte: startDate, lte: endDate };
+      payableWhere.dueDate = { gte: startDate, lte: endDate };
+    }
+
+    const receivables = await this.prisma.receivableInstallment.findMany({
+      where: receivableWhere,
+    });
+
+    const payables = await this.prisma.payableInstallment.findMany({
+      where: payableWhere,
+    });
+
+    const dateField = isRealizado ? 'paidDate' : 'dueDate';
+    const monthlyData: Record<string, { revenue: number; expenses: number }> =
+      {};
+
+    receivables.forEach((inst) => {
+      const d = inst[dateField] || inst.dueDate;
+      const monthKey = format(d, 'yyyy-MM');
+      if (!monthlyData[monthKey])
+        monthlyData[monthKey] = { revenue: 0, expenses: 0 };
+      monthlyData[monthKey].revenue += inst.paidAmount || inst.amount;
+    });
+
+    payables.forEach((inst) => {
+      const d = inst[dateField] || inst.dueDate;
+      const monthKey = format(d, 'yyyy-MM');
+      if (!monthlyData[monthKey])
+        monthlyData[monthKey] = { revenue: 0, expenses: 0 };
+      monthlyData[monthKey].expenses += inst.paidAmount || inst.amount;
+    });
+
+    return Object.entries(monthlyData)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([monthKey, data]) => {
+        const label = format(new Date(monthKey + '-01'), 'MMM yy', {
+          locale: ptBR,
+        });
+        const net = data.revenue - data.expenses;
+        return {
+          month: monthKey,
+          label: label.charAt(0).toUpperCase() + label.slice(1),
+          positive: net > 0 ? net : 0,
+          negative: net < 0 ? net : 0,
+        };
+      });
+  }
+
+  async getDfcRevenueExpenseChart(
+    companyId: string,
+    filters: DfcReportFilterDto,
+  ) {
+    const { startDate, endDate } = this.getDfcDateRange(filters);
+    const isRealizado = filters.regime !== 'orcado';
+
+    const receivableWhere: any = {
+      receivable: { companyId, status: { not: 'CANCELED' } },
+    };
+    const payableWhere: any = {
+      payable: { companyId, status: { not: 'CANCELED' } },
+    };
+
+    if (isRealizado) {
+      receivableWhere.paidDate = { gte: startDate, lte: endDate };
+      receivableWhere.status = 'PAID';
+      payableWhere.paidDate = { gte: startDate, lte: endDate };
+      payableWhere.status = 'PAID';
+    } else {
+      receivableWhere.dueDate = { gte: startDate, lte: endDate };
+      payableWhere.dueDate = { gte: startDate, lte: endDate };
+    }
+
+    const receivables = await this.prisma.receivableInstallment.findMany({
+      where: receivableWhere,
+    });
+
+    const payables = await this.prisma.payableInstallment.findMany({
+      where: payableWhere,
+    });
+
+    const dateField = isRealizado ? 'paidDate' : 'dueDate';
+    const monthlyData: Record<string, { revenue: number; expenses: number }> =
+      {};
+
+    receivables.forEach((inst) => {
+      const d = inst[dateField] || inst.dueDate;
+      const monthKey = format(d, 'yyyy-MM');
+      if (!monthlyData[monthKey])
+        monthlyData[monthKey] = { revenue: 0, expenses: 0 };
+      monthlyData[monthKey].revenue += inst.paidAmount || inst.amount;
+    });
+
+    payables.forEach((inst) => {
+      const d = inst[dateField] || inst.dueDate;
+      const monthKey = format(d, 'yyyy-MM');
+      if (!monthlyData[monthKey])
+        monthlyData[monthKey] = { revenue: 0, expenses: 0 };
+      monthlyData[monthKey].expenses += inst.paidAmount || inst.amount;
+    });
+
+    return Object.entries(monthlyData)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([monthKey, data]) => {
+        const label = format(new Date(monthKey + '-01'), 'MMM yy', {
+          locale: ptBR,
+        });
+        return {
+          month: monthKey,
+          label: label.charAt(0).toUpperCase() + label.slice(1),
+          revenue: data.revenue,
+          expenses: data.expenses,
+        };
+      });
+  }
+
+  async getDfcTable(companyId: string, filters: DfcReportFilterDto) {
+    const { startDate, endDate } = this.getDfcDateRange(filters);
+    const isRealizado = filters.regime !== 'orcado';
+    const dateField = isRealizado ? 'paidDate' : 'dueDate';
+
+    // Build where clauses
+    const receivableWhere: any = {
+      companyId,
+      status: { not: 'CANCELED' },
+    };
+    const payableWhere: any = {
+      companyId,
+      status: { not: 'CANCELED' },
+    };
+
+    // We need at least one installment in the date range
+    const installmentDateFilter: any = {};
+    if (isRealizado) {
+      installmentDateFilter.paidDate = { gte: startDate, lte: endDate };
+      installmentDateFilter.status = 'PAID';
+    } else {
+      installmentDateFilter.dueDate = { gte: startDate, lte: endDate };
+    }
+
+    // Fetch receivables with nature + subCategory
+    const receivables = await this.prisma.receivable.findMany({
+      where: {
+        ...receivableWhere,
+        installments: { some: installmentDateFilter },
+      },
+      include: {
+        nature: true,
+        subCategory: true,
+        installments: {
+          where: installmentDateFilter,
+        },
+      },
+    });
+
+    // Fetch payables with nature + subCategory
+    const payables = await this.prisma.payable.findMany({
+      where: {
+        ...payableWhere,
+        installments: { some: installmentDateFilter },
+      },
+      include: {
+        nature: true,
+        subCategory: true,
+        installments: {
+          where: installmentDateFilter,
+        },
+      },
+    });
+
+    // Collect all months in the period
+    const months: string[] = [];
+    let cursor = startOfMonth(startDate);
+    while (cursor <= endDate) {
+      months.push(format(cursor, 'yyyy-MM'));
+      cursor = startOfMonth(subMonths(cursor, -1));
+    }
+
+    const headers = months.map((m) => {
+      const label = format(new Date(m + '-01'), 'MMM yy', { locale: ptBR });
+      return label.charAt(0).toUpperCase() + label.slice(1);
+    });
+
+    // Helper to build monthly values for a set of parent records
+    const buildMonthlyValues = (
+      records: any[],
+      isExpense: boolean,
+    ): {
+      level1Groups: Record<
+        string,
+        {
+          level2: string;
+          natures: Record<
+            string,
+            {
+              natureId: string;
+              code: string;
+              description: string;
+              subCategories: Record<
+                string,
+                {
+                  id: string;
+                  code: string;
+                  description: string;
+                  monthlyValues: Record<string, number>;
+                }
+              >;
+              monthlyValues: Record<string, number>;
+            }
+          >;
+          monthlyValues: Record<string, number>;
+        }
+      >;
+      monthlyTotals: Record<string, number>;
+    } => {
+      const level1Groups: any = {};
+      const monthlyTotals: Record<string, number> = {};
+      months.forEach((m) => (monthlyTotals[m] = 0));
+
+      records.forEach((record) => {
+        const nature = record.nature;
+        const subCategory = record.subCategory;
+        const level2Key = nature?.level2 || 'Sem Grupo';
+        const natureKey = nature?.id || 'sem-natureza';
+
+        if (!level1Groups[level2Key]) {
+          level1Groups[level2Key] = {
+            level2: level2Key,
+            natures: {},
+            monthlyValues: {},
+          };
+          months.forEach((m) => (level1Groups[level2Key].monthlyValues[m] = 0));
+        }
+
+        if (!level1Groups[level2Key].natures[natureKey]) {
+          level1Groups[level2Key].natures[natureKey] = {
+            natureId: nature?.id || '',
+            code: nature?.code || '',
+            description: nature?.description || 'Sem Natureza',
+            subCategories: {},
+            monthlyValues: {},
+          };
+          months.forEach(
+            (m) =>
+              (level1Groups[level2Key].natures[natureKey].monthlyValues[m] = 0),
+          );
+        }
+
+        const subCatKey = subCategory?.id || 'sem-subcategoria';
+        if (
+          !level1Groups[level2Key].natures[natureKey].subCategories[subCatKey]
+        ) {
+          level1Groups[level2Key].natures[natureKey].subCategories[subCatKey] =
+            {
+              id: subCategory?.id || '',
+              code: subCategory?.code || '',
+              description: subCategory?.description || 'Sem Subcategoria',
+              monthlyValues: {},
+            };
+          months.forEach(
+            (m) =>
+              (level1Groups[level2Key].natures[natureKey].subCategories[
+                subCatKey
+              ].monthlyValues[m] = 0),
+          );
+        }
+
+        // Distribute installment values by month
+        record.installments.forEach((inst: any) => {
+          const d = inst[dateField] || inst.dueDate;
+          const monthKey = format(d, 'yyyy-MM');
+          if (!months.includes(monthKey)) return;
+
+          const amount = inst.paidAmount || inst.amount;
+          const value = isExpense ? -amount : amount;
+
+          monthlyTotals[monthKey] = (monthlyTotals[monthKey] || 0) + value;
+          level1Groups[level2Key].monthlyValues[monthKey] += value;
+          level1Groups[level2Key].natures[natureKey].monthlyValues[monthKey] +=
+            value;
+          level1Groups[level2Key].natures[natureKey].subCategories[
+            subCatKey
+          ].monthlyValues[monthKey] += value;
+        });
+      });
+
+      return { level1Groups, monthlyTotals };
+    };
+
+    // Build revenue tree
+    const revenueData = buildMonthlyValues(receivables, false);
+    // Build expense tree
+    const expenseData = buildMonthlyValues(payables, true);
+
+    // Convert to flat rows
+    const rows: any[] = [];
+
+    const toHeaderValues = (monthlyValues: Record<string, number>) => {
+      const values: Record<string, number> = {};
+      months.forEach((m, i) => {
+        values[headers[i]] = monthlyValues[m] || 0;
+      });
+      return values;
+    };
+
+    // Revenue section
+    const revenueId = 'receitas';
+    rows.push({
+      id: revenueId,
+      code: '',
+      name: 'Receitas',
+      level: 0,
+      isExpandable: true,
+      values: toHeaderValues(revenueData.monthlyTotals),
+    });
+
+    Object.entries(revenueData.level1Groups)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([level2Key, group]) => {
+        const groupId = `rec-${level2Key}`;
+        rows.push({
+          id: groupId,
+          code: '',
+          name: level2Key,
+          level: 1,
+          isExpandable: true,
+          parentId: revenueId,
+          values: toHeaderValues(group.monthlyValues),
+        });
+
+        Object.values(group.natures)
+          .sort((a: any, b: any) => (a.code || '').localeCompare(b.code || ''))
+          .forEach((nature: any) => {
+            const natureId = `rec-nat-${nature.natureId}`;
+            const hasSubCategories =
+              Object.keys(nature.subCategories).length > 0 &&
+              !(
+                Object.keys(nature.subCategories).length === 1 &&
+                Object.keys(nature.subCategories)[0] === 'sem-subcategoria'
+              );
+
+            rows.push({
+              id: natureId,
+              code: nature.code || '',
+              name: nature.description,
+              level: 2,
+              isExpandable: hasSubCategories,
+              parentId: groupId,
+              values: toHeaderValues(nature.monthlyValues),
+            });
+
+            if (hasSubCategories) {
+              Object.values(nature.subCategories)
+                .sort((a: any, b: any) =>
+                  (a.code || '').localeCompare(b.code || ''),
+                )
+                .forEach((subCat: any) => {
+                  rows.push({
+                    id: `rec-sub-${subCat.id || subCat.description}`,
+                    code: subCat.code || '',
+                    name: subCat.description,
+                    level: 3,
+                    isExpandable: false,
+                    parentId: natureId,
+                    values: toHeaderValues(subCat.monthlyValues),
+                  });
+                });
+            }
+          });
+      });
+
+    // Expenses section
+    const expenseId = 'despesas';
+    rows.push({
+      id: expenseId,
+      code: '',
+      name: 'Despesas',
+      level: 0,
+      isExpandable: true,
+      values: toHeaderValues(expenseData.monthlyTotals),
+    });
+
+    Object.entries(expenseData.level1Groups)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([level2Key, group]) => {
+        const groupId = `desp-${level2Key}`;
+        rows.push({
+          id: groupId,
+          code: '',
+          name: level2Key,
+          level: 1,
+          isExpandable: true,
+          parentId: expenseId,
+          values: toHeaderValues(group.monthlyValues),
+        });
+
+        Object.values(group.natures)
+          .sort((a: any, b: any) => (a.code || '').localeCompare(b.code || ''))
+          .forEach((nature: any) => {
+            const natureId = `desp-nat-${nature.natureId}`;
+            const hasSubCategories =
+              Object.keys(nature.subCategories).length > 0 &&
+              !(
+                Object.keys(nature.subCategories).length === 1 &&
+                Object.keys(nature.subCategories)[0] === 'sem-subcategoria'
+              );
+
+            rows.push({
+              id: natureId,
+              code: nature.code || '',
+              name: nature.description,
+              level: 2,
+              isExpandable: hasSubCategories,
+              parentId: groupId,
+              values: toHeaderValues(nature.monthlyValues),
+            });
+
+            if (hasSubCategories) {
+              Object.values(nature.subCategories)
+                .sort((a: any, b: any) =>
+                  (a.code || '').localeCompare(b.code || ''),
+                )
+                .forEach((subCat: any) => {
+                  rows.push({
+                    id: `desp-sub-${subCat.id || subCat.description}`,
+                    code: subCat.code || '',
+                    name: subCat.description,
+                    level: 3,
+                    isExpandable: false,
+                    parentId: natureId,
+                    values: toHeaderValues(subCat.monthlyValues),
+                  });
+                });
+            }
+          });
+      });
+
+    return { headers, rows };
   }
 }
