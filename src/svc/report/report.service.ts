@@ -2297,9 +2297,20 @@ export class ReportService {
 
     const totalCount = records.length;
 
-    if (groupBy === 'vendedor' || groupBy === 'cliente') {
-      const keyField = groupBy === 'vendedor' ? 'vendedorId' : 'clientId';
-      const nameField = groupBy === 'vendedor' ? 'vendedorName' : 'clientName';
+    if (groupBy !== 'none') {
+      let keyFn: (r: (typeof records)[0]) => string;
+      let nameFn: (r: (typeof records)[0]) => string;
+
+      if (groupBy === 'vendedor') {
+        keyFn = (r) => r.vendedorId || 'unknown';
+        nameFn = (r) => r.vendedorName;
+      } else if (groupBy === 'saleDate') {
+        keyFn = (r) => r.saleDate || 'Sem data';
+        nameFn = (r) => r.saleDate || 'Sem data';
+      } else {
+        keyFn = (r) => r.receivedDate || 'Sem data';
+        nameFn = (r) => r.receivedDate || 'Sem data';
+      }
 
       const groupsMap: Record<
         string,
@@ -2307,13 +2318,9 @@ export class ReportService {
       > = {};
 
       records.forEach((r) => {
-        const key = r[keyField] || 'unknown';
+        const key = keyFn(r);
         if (!groupsMap[key]) {
-          groupsMap[key] = {
-            id: key,
-            name: r[nameField],
-            records: [],
-          };
+          groupsMap[key] = { id: key, name: nameFn(r), records: [] };
         }
         groupsMap[key].records.push(r);
       });

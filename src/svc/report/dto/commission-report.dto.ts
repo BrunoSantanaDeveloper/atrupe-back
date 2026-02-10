@@ -1,10 +1,10 @@
-import { IsOptional, IsString, IsEnum, IsDateString } from 'class-validator';
+import { IsOptional, IsEnum, IsDateString } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CommissionReportFilterDto {
   @IsOptional()
-  @IsEnum(['sold_value', 'received_value'])
-  commissionType?: 'sold_value' | 'received_value';
+  @IsEnum(['all', 'sold_value', 'received_value'])
+  commissionType?: 'all' | 'sold_value' | 'received_value';
 
   @IsOptional()
   @IsDateString()
@@ -15,8 +15,8 @@ export class CommissionReportFilterDto {
   endDate?: string;
 
   @IsOptional()
-  @IsEnum(['vendedor', 'cliente', 'none'])
-  groupBy?: 'vendedor' | 'cliente' | 'none';
+  @IsEnum(['vendedor', 'saleDate', 'receivedDate', 'none'])
+  groupBy?: 'vendedor' | 'saleDate' | 'receivedDate' | 'none';
 
   @IsOptional()
   @IsEnum(['receivedDate', 'saleDate', 'valueDesc', 'valueAsc'])
