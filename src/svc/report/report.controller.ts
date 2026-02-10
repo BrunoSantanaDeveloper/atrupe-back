@@ -5,6 +5,7 @@ import { SalesReportFilterDto } from './dto/sales-report.dto';
 import { FinancialReportFilterDto } from './dto/financial-report.dto';
 import { CashFlowReportFilterDto } from './dto/cash-flow-report.dto';
 import { DfcReportFilterDto } from './dto/dfc-report.dto';
+import { CommissionReportFilterDto } from './dto/commission-report.dto';
 import { Request } from 'express';
 
 const RESOURCE = 'report';
@@ -204,5 +205,25 @@ export class ReportController {
   async getDfcTable(@Query() filters: DfcReportFilterDto, @Req() req: Request) {
     const companyId = (req as any).user?.companyId;
     return this.reportService.getDfcTable(companyId, filters);
+  }
+
+  // ============== COMMISSION REPORT ENDPOINTS ==============
+
+  @Get('commission/summary')
+  async getCommissionSummary(
+    @Query() filters: CommissionReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.getCommissionSummary(companyId, filters);
+  }
+
+  @Get('commission/table')
+  async getCommissionTable(
+    @Query() filters: CommissionReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.getCommissionTable(companyId, filters);
   }
 }

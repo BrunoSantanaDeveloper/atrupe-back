@@ -17,6 +17,7 @@ import {
 import { FinancialReportFilterDto } from './dto/financial-report.dto';
 import { CashFlowReportFilterDto } from './dto/cash-flow-report.dto';
 import { DfcReportFilterDto } from './dto/dfc-report.dto';
+import { CommissionReportFilterDto } from './dto/commission-report.dto';
 import { QuotationService } from '../../core/sale/quotation/quotation.service';
 import { OrderService } from '../../core/sale/order/order.service';
 import { PayableService } from '../../core/financial/payable/payable.service';
@@ -1408,7 +1409,7 @@ export class ReportService {
     const orderBy = this.getFinancialOrderBy(filters.orderBy);
 
     // Fetch both based on movement filter
-    let allRecords: Array<{
+    const allRecords: Array<{
       id: string;
       clientId: string;
       clientName: string;
@@ -2099,5 +2100,255 @@ export class ReportService {
       });
 
     return { headers, rows };
+  }
+
+  // ============== COMMISSION REPORT METHODS ==============
+
+  private getCommissionDateRange(filters: CommissionReportFilterDto) {
+    const now = new Date();
+    const startDate = filters.startDate
+      ? new Date(filters.startDate)
+      : startOfMonth(now);
+    const endDate = filters.endDate ? new Date(filters.endDate) : now;
+    return { startDate, endDate };
+  }
+
+  async getCommissionSummary(
+    companyId: string,
+    filters: CommissionReportFilterDto,
+  ) {
+    const { startDate, endDate } = this.getCommissionDateRange(filters);
+
+    const orders = await this.prisma.order.findMany({
+      where: {
+        quotation: {
+          companyId,
+          approvedAt: { gte: startDate, lte: endDate },
+        },
+      },
+      include: {
+        quotation: {
+          select: {
+            totalValue: true,
+            seller: {
+              select: {
+                sellerProfile: { select: { commission: true } },
+              },
+            },
+            receivable: {
+              select: {
+                installments: {
+                  where: {
+                    status: 'PAID',
+                    paidDate: { gte: startDate, lte: endDate },
+                  },
+                  select: { paidAmount: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    let salesTotal = 0;
+    let salesCount = 0;
+    let receivedTotal = 0;
+    let receivedCount = 0;
+    let commissionTotal = 0;
+
+    orders.forEach((order) => {
+      const q = order.quotation;
+      const saleValue = q.totalValue || 0;
+      const commissionPct = q.seller?.sellerProfile?.commission || 0;
+
+      salesTotal += saleValue;
+      salesCount++;
+
+      let orderReceived = 0;
+      q.receivable.forEach((rec) => {
+        rec.installments.forEach((inst) => {
+          const paid = inst.paidAmount || 0;
+          orderReceived += paid;
+          receivedCount++;
+        });
+      });
+      receivedTotal += orderReceived;
+
+      if (filters.commissionType === 'received_value') {
+        commissionTotal += orderReceived * (commissionPct / 100);
+      } else {
+        commissionTotal += saleValue * (commissionPct / 100);
+      }
+    });
+
+    return {
+      salesTotal,
+      salesCount,
+      receivedTotal,
+      receivedCount,
+      commissionTotal,
+    };
+  }
+
+  async getCommissionTable(
+    companyId: string,
+    filters: CommissionReportFilterDto,
+  ) {
+    const { startDate, endDate } = this.getCommissionDateRange(filters);
+    const page = filters.page || 1;
+    const limit = filters.limit || 10;
+    const groupBy = filters.groupBy || 'none';
+
+    const orders = await this.prisma.order.findMany({
+      where: {
+        quotation: {
+          companyId,
+          approvedAt: { gte: startDate, lte: endDate },
+        },
+      },
+      include: {
+        quotation: {
+          select: {
+            id: true,
+            description: true,
+            totalValue: true,
+            approvedAt: true,
+            quotationNumber: true,
+            client: { select: { id: true, name: true } },
+            seller: {
+              select: {
+                id: true,
+                name: true,
+                sellerProfile: { select: { commission: true } },
+              },
+            },
+            receivable: {
+              select: {
+                installments: {
+                  where: {
+                    status: 'PAID',
+                    paidDate: { gte: startDate, lte: endDate },
+                  },
+                  select: { paidAmount: true, paidDate: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Build flat records
+    const records = orders.map((order) => {
+      const q = order.quotation;
+      const commissionPct = q.seller?.sellerProfile?.commission || 0;
+      let receivedValue = 0;
+      let lastPaidDate: Date | null = null;
+
+      q.receivable.forEach((rec) => {
+        rec.installments.forEach((inst) => {
+          receivedValue += inst.paidAmount || 0;
+          if (
+            inst.paidDate &&
+            (!lastPaidDate || inst.paidDate > lastPaidDate)
+          ) {
+            lastPaidDate = inst.paidDate;
+          }
+        });
+      });
+
+      return {
+        id: q.id,
+        clientName: q.client?.name || 'Não informado',
+        clientId: q.client?.id || '',
+        vendedorId: q.seller?.id || '',
+        vendedorName: q.seller?.name || 'Não informado',
+        description: `${q.quotationNumber || ''} - ${q.description || 'Sem descrição'}`,
+        saleDate: q.approvedAt ? format(q.approvedAt, 'dd/MM/yyyy') : '',
+        receivedDate: lastPaidDate ? format(lastPaidDate, 'dd/MM/yyyy') : '',
+        saleValue: q.totalValue || 0,
+        receivedValue,
+        percentage: commissionPct,
+      };
+    });
+
+    // Sort
+    switch (filters.orderBy) {
+      case 'saleDate':
+        records.sort((a, b) =>
+          (a.saleDate || '').localeCompare(b.saleDate || ''),
+        );
+        break;
+      case 'receivedDate':
+        records.sort((a, b) =>
+          (a.receivedDate || '').localeCompare(b.receivedDate || ''),
+        );
+        break;
+      case 'valueDesc':
+        records.sort((a, b) => b.saleValue - a.saleValue);
+        break;
+      case 'valueAsc':
+        records.sort((a, b) => a.saleValue - b.saleValue);
+        break;
+    }
+
+    const totalCount = records.length;
+
+    if (groupBy === 'vendedor' || groupBy === 'cliente') {
+      const keyField = groupBy === 'vendedor' ? 'vendedorId' : 'clientId';
+      const nameField = groupBy === 'vendedor' ? 'vendedorName' : 'clientName';
+
+      const groupsMap: Record<
+        string,
+        { id: string; name: string; records: typeof records }
+      > = {};
+
+      records.forEach((r) => {
+        const key = r[keyField] || 'unknown';
+        if (!groupsMap[key]) {
+          groupsMap[key] = {
+            id: key,
+            name: r[nameField],
+            records: [],
+          };
+        }
+        groupsMap[key].records.push(r);
+      });
+
+      const groups = Object.values(groupsMap).map((g) => ({
+        vendedorId: g.id,
+        vendedorName: g.name,
+        count: g.records.length,
+        saleTotal: g.records.reduce((sum, r) => sum + r.saleValue, 0),
+        receivedTotal: g.records.reduce((sum, r) => sum + r.receivedValue, 0),
+        records: g.records,
+      }));
+
+      return {
+        grouped: true,
+        records: [],
+        groups,
+        totalCount,
+        pagination: {
+          page,
+          totalPages: Math.ceil(totalCount / limit),
+        },
+      };
+    }
+
+    // No grouping — paginate
+    const paginatedRecords = records.slice((page - 1) * limit, page * limit);
+
+    return {
+      grouped: false,
+      records: paginatedRecords,
+      groups: [],
+      totalCount,
+      pagination: {
+        page,
+        totalPages: Math.ceil(totalCount / limit),
+      },
+    };
   }
 }
