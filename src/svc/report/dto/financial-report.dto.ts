@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsEnum, IsDateString } from 'class-validator';
+import { IsOptional, IsEnum, IsDateString } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class FinancialReportFilterDto {
@@ -15,16 +15,16 @@ export class FinancialReportFilterDto {
   endDate?: string;
 
   @IsOptional()
-  @IsEnum(['all', 'received', 'confirmed', 'to_receive', 'overdue'])
-  status?: 'all' | 'received' | 'confirmed' | 'to_receive' | 'overdue';
+  @IsEnum(['received', 'confirmed', 'to_receive', 'overdue'])
+  status?: 'received' | 'confirmed' | 'to_receive' | 'overdue';
 
   @IsOptional()
-  @IsEnum(['none', 'client', 'date'])
-  groupBy?: 'none' | 'client' | 'date';
+  @IsEnum(['none', 'client'])
+  groupBy?: 'none' | 'client';
 
   @IsOptional()
-  @IsEnum(['receivedDate', 'valueDesc', 'valueAsc', 'clientName'])
-  orderBy?: 'receivedDate' | 'valueDesc' | 'valueAsc' | 'clientName';
+  @IsEnum(['saleDate', 'dueDate', 'receivedDate', 'valueDesc', 'valueAsc'])
+  orderBy?: 'saleDate' | 'dueDate' | 'receivedDate' | 'valueDesc' | 'valueAsc';
 
   @IsOptional()
   @Type(() => Number)

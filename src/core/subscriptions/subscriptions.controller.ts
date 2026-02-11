@@ -115,6 +115,7 @@ export class SubscriptionsController {
       query.limit,
       query.status,
       query.search,
+      query.sort,
     );
   }
 

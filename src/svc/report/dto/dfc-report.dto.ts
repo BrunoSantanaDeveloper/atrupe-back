@@ -10,6 +10,6 @@ export class DfcReportFilterDto {
   endDate?: string;
 
   @IsOptional()
-  @IsEnum(['realizado', 'orcado'])
-  regime?: 'realizado' | 'orcado';
+  @IsEnum(['competencia', 'realizado'])
+  regime?: 'competencia' | 'realizado';
 }

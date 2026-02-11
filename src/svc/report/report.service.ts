@@ -1079,11 +1079,6 @@ export class ReportService {
         records = records.filter((r) => r.status === statusFilter);
       }
 
-      // Apply client name ordering if needed
-      if (filters.orderBy === 'clientName') {
-        records.sort((a, b) => a.clientName.localeCompare(b.clientName));
-      }
-
       const totalCount = records.length;
 
       // Paginate if not grouped
@@ -1203,10 +1198,6 @@ export class ReportService {
 
       if (statusFilter === 'to_receive') {
         records = records.filter((r) => r.status === 'to_receive');
-      }
-
-      if (filters.orderBy === 'clientName') {
-        records.sort((a, b) => a.clientName.localeCompare(b.clientName));
       }
 
       const totalCount = records.length;
@@ -1597,14 +1588,14 @@ export class ReportService {
   }
 
   private getDfcDateField(filters: DfcReportFilterDto): 'paidDate' | 'dueDate' {
-    return filters.regime === 'orcado' ? 'dueDate' : 'paidDate';
+    return filters.regime === 'realizado' ? 'paidDate' : 'dueDate';
   }
 
   async getDfcSummary(companyId: string, filters: DfcReportFilterDto) {
     const { startDate, endDate } = this.getDfcDateRange(filters);
-    const isRealizado = filters.regime !== 'orcado';
+    const isRealizado = filters.regime === 'realizado';
 
-    // For "realizado", filter by paidDate; for "orcado", filter by dueDate
+    // For "realizado", filter by paidDate; for "competencia", filter by dueDate
     const receivableWhere: any = {
       receivable: { companyId, status: { not: 'CANCELED' } },
     };
@@ -1650,7 +1641,7 @@ export class ReportService {
 
   async getDfcCashFlowChart(companyId: string, filters: DfcReportFilterDto) {
     const { startDate, endDate } = this.getDfcDateRange(filters);
-    const isRealizado = filters.regime !== 'orcado';
+    const isRealizado = filters.regime === 'realizado';
 
     const receivableWhere: any = {
       receivable: { companyId, status: { not: 'CANCELED' } },
@@ -1718,7 +1709,7 @@ export class ReportService {
     filters: DfcReportFilterDto,
   ) {
     const { startDate, endDate } = this.getDfcDateRange(filters);
-    const isRealizado = filters.regime !== 'orcado';
+    const isRealizado = filters.regime === 'realizado';
 
     const receivableWhere: any = {
       receivable: { companyId, status: { not: 'CANCELED' } },
@@ -1782,7 +1773,7 @@ export class ReportService {
 
   async getDfcTable(companyId: string, filters: DfcReportFilterDto) {
     const { startDate, endDate } = this.getDfcDateRange(filters);
-    const isRealizado = filters.regime !== 'orcado';
+    const isRealizado = filters.regime === 'realizado';
     const dateField = isRealizado ? 'paidDate' : 'dueDate';
 
     // Build where clauses

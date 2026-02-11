@@ -462,8 +462,27 @@ export class SubscriptionsService {
     limit: number = 10,
     statusFilter?: string,
     search?: string,
+    sort: 'name' | 'updated_at' | 'created_at' = 'name',
   ) {
     const skip = (page - 1) * limit;
+
+    // Mapear o campo de ordenação para o campo do Prisma
+    let orderByConfig: any;
+    if (sort === 'name') {
+      orderByConfig = {
+        Company: {
+          name: 'asc',
+        },
+      };
+    } else if (sort === 'updated_at') {
+      orderByConfig = {
+        updatedAt: 'desc',
+      };
+    } else {
+      orderByConfig = {
+        createdAt: 'desc',
+      };
+    }
 
     // Mapear o status em português para o enum do banco
     const statusMap: Record<string, string> = {
@@ -613,9 +632,7 @@ export class SubscriptionsService {
           },
           customer: true,
         },
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: orderByConfig,
         skip,
         take: limit,
       }),

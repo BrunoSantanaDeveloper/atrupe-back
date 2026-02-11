@@ -36,4 +36,14 @@ export class ListActiveClientsDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @ApiPropertyOptional({
+    description: 'Ordenação dos resultados',
+    enum: ['name', 'updated_at', 'created_at'],
+    default: 'name',
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['name', 'updated_at', 'created_at'])
+  sort?: 'name' | 'updated_at' | 'created_at' = 'name';
 }
