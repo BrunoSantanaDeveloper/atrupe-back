@@ -125,8 +125,12 @@ export class ReportService {
             totalValue: true,
             approvedAt: true,
             createdAt: true,
-            quotationPayment: {
-              select: { commission: { select: { totalCommission: true } } },
+            seller: {
+              select: {
+                sellerProfile: {
+                  select: { commission: true },
+                },
+              },
             },
           },
         },
@@ -139,11 +143,12 @@ export class ReportService {
     );
     const approvedCount = approvedOrders.length;
 
-    // Commission total
+    // Commission total (seller profile percentage * totalValue)
     const commission = approvedOrders.reduce((sum, o) => {
-      const comm =
-        o.quotation.quotationPayment?.commission?.totalCommission || 0;
-      return sum + comm;
+      const sellerCommission =
+        o.quotation.seller?.sellerProfile?.commission || 0;
+      const value = o.quotation.totalValue || 0;
+      return sum + (value * sellerCommission) / 100;
     }, 0);
 
     // Average approval time
