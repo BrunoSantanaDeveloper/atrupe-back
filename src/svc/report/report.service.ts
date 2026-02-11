@@ -31,14 +31,40 @@ import {
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-// Origin colors for chart
+// Origin colors for chart - known origins get fixed colors
 const ORIGIN_COLORS: Record<string, string> = {
   WhatsApp: '#039855',
   Balcão: '#F97066',
   Instagram: '#475467',
   Site: '#F79009',
+  'E-mail': '#6172F3',
+  'Venda Direta': '#EE46BC',
+  Indicação: '#15B79E',
+  Telefone: '#7A5AF8',
+  Facebook: '#1877F2',
+  LinkedIn: '#0A66C2',
   Outros: '#FDB022',
 };
+
+// Fallback palette for origins not in the map above
+const FALLBACK_COLORS = [
+  '#F97066',
+  '#6172F3',
+  '#EE46BC',
+  '#15B79E',
+  '#7A5AF8',
+  '#F79009',
+  '#0EA5E9',
+  '#84CC16',
+  '#D946EF',
+  '#F43F5E',
+  '#14B8A6',
+  '#A855F7',
+];
+
+function getOriginColor(name: string, index: number): string {
+  return ORIGIN_COLORS[name] || FALLBACK_COLORS[index % FALLBACK_COLORS.length];
+}
 
 @Injectable()
 export class ReportService {
@@ -202,35 +228,28 @@ export class ReportService {
       },
     });
 
-    // Group by month
-    const monthlyData: Record<
-      string,
-      { approved: number; inProgress: number }
-    > = {};
+    // Group by day
+    const dailyData: Record<string, { sortKey: string; approved: number }> = {};
 
     orders.forEach((order) => {
       if (order.quotation.approvedAt) {
-        const month = format(order.quotation.approvedAt, 'MM');
-        if (!monthlyData[month]) {
-          monthlyData[month] = { approved: 0, inProgress: 0 };
+        const day = format(order.quotation.approvedAt, 'dd/MM');
+        const sortKey = format(order.quotation.approvedAt, 'yyyy-MM-dd');
+        if (!dailyData[day]) {
+          dailyData[day] = { sortKey, approved: 0 };
         }
-        if (order.status === 'FINISHED' || order.status === 'COMPLETED') {
-          monthlyData[month].approved += order.quotation.totalValue || 0;
-        } else {
-          monthlyData[month].inProgress += order.quotation.totalValue || 0;
-        }
+        dailyData[day].approved += order.quotation.totalValue || 0;
       }
     });
 
-    // Convert to array - only include months with sales (filter out zero values)
-    const result: SalesEvolutionDataPoint[] = Object.entries(monthlyData)
-      .filter(([_, data]) => data.approved > 0 || data.inProgress > 0)
-      .map(([month, data]) => ({
-        month,
+    // Convert to array - only include days with sales
+    const result: SalesEvolutionDataPoint[] = Object.entries(dailyData)
+      .filter(([_, data]) => data.approved > 0)
+      .sort(([, a], [, b]) => a.sortKey.localeCompare(b.sortKey))
+      .map(([day, data]) => ({
+        day,
         approved: data.approved,
-        inProgress: data.inProgress,
-      }))
-      .sort((a, b) => a.month.localeCompare(b.month));
+      }));
 
     return result;
   }
@@ -329,6 +348,7 @@ export class ReportService {
         createdAt: { gte: startDate, lte: endDate },
         contactSourceId: { not: null },
         ...(filters.sellerId && { sellerId: filters.sellerId }),
+        ...(filters.originId && { contactSourceId: filters.originId }),
       },
       _count: true,
     });
@@ -343,12 +363,12 @@ export class ReportService {
 
     const originMap = new Map(origins.map((o) => [o.id, o.name]));
 
-    return quotationsWithOrigin.map((q) => {
+    return quotationsWithOrigin.map((q, index) => {
       const name = originMap.get(q.contactSourceId!) || 'Outros';
       return {
         name,
         value: q._count,
-        color: ORIGIN_COLORS[name] || ORIGIN_COLORS['Outros'],
+        color: getOriginColor(name, index),
       };
     });
   }
@@ -366,6 +386,7 @@ export class ReportService {
           approvedAt: { gte: startDate, lte: endDate },
           contactSourceId: { not: null },
           ...(filters.sellerId && { sellerId: filters.sellerId }),
+          ...(filters.originId && { contactSourceId: filters.originId }),
         },
       },
       include: {
@@ -392,12 +413,12 @@ export class ReportService {
 
     const originMap = new Map(origins.map((o) => [o.id, o.name]));
 
-    return originIds.map((id) => {
+    return originIds.map((id, index) => {
       const name = originMap.get(id) || 'Outros';
       return {
         name,
         value: originCounts[id],
-        color: ORIGIN_COLORS[name] || ORIGIN_COLORS['Outros'],
+        color: getOriginColor(name, index),
       };
     });
   }

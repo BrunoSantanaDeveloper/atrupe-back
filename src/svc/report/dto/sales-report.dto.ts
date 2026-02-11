@@ -52,9 +52,8 @@ export interface SalesReportSummaryResponse {
 }
 
 export interface SalesEvolutionDataPoint {
-  month: string;
+  day: string;
   approved: number;
-  inProgress: number;
 }
 
 export interface ApprovedRejectedDataPoint {
