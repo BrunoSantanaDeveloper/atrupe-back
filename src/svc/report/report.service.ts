@@ -244,16 +244,22 @@ export class ReportService {
     });
 
     // Group by day
-    const dailyData: Record<string, { sortKey: string; approved: number }> = {};
+    const dailyData: Record<
+      string,
+      { sortKey: string; approved: number; count: number }
+    > = {};
 
     orders.forEach((order) => {
       if (order.quotation.approvedAt) {
-        const day = format(order.quotation.approvedAt, 'dd/MM');
+        const day = format(order.quotation.approvedAt, 'd/MMM', {
+          locale: ptBR,
+        });
         const sortKey = format(order.quotation.approvedAt, 'yyyy-MM-dd');
         if (!dailyData[day]) {
-          dailyData[day] = { sortKey, approved: 0 };
+          dailyData[day] = { sortKey, approved: 0, count: 0 };
         }
         dailyData[day].approved += order.quotation.totalValue || 0;
+        dailyData[day].count += 1;
       }
     });
 
@@ -264,6 +270,7 @@ export class ReportService {
       .map(([day, data]) => ({
         day,
         approved: data.approved,
+        count: data.count,
       }));
 
     return result;

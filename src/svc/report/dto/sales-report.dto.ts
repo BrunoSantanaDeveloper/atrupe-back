@@ -55,6 +55,7 @@ export interface SalesReportSummaryResponse {
 export interface SalesEvolutionDataPoint {
   day: string;
   approved: number;
+  count: number;
 }
 
 export interface ApprovedRejectedDataPoint {
