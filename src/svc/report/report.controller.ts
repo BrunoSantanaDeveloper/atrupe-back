@@ -1,6 +1,7 @@
 import { Controller, Get, Query, UseGuards, Req } from '@nestjs/common';
 import { ReportService } from './report.service';
 import { JwtAuthGuard } from '../../core/auth/guards/jwt.guard';
+import { AbacService } from '../../core/auth/abac/abac.service';
 import { SalesReportFilterDto } from './dto/sales-report.dto';
 import { FinancialReportFilterDto } from './dto/financial-report.dto';
 import { CashFlowReportFilterDto } from './dto/cash-flow-report.dto';
@@ -13,7 +14,26 @@ const RESOURCE = 'report';
 @UseGuards(JwtAuthGuard)
 @Controller(RESOURCE)
 export class ReportController {
-  constructor(private readonly reportService: ReportService) {}
+  constructor(
+    private readonly reportService: ReportService,
+    private readonly abacService: AbacService,
+  ) {}
+
+  // Helper: enforce seller permission on sales endpoints
+  private async enforceSalesPermission(
+    req: any,
+    filters: SalesReportFilterDto,
+  ) {
+    const canSeeOtherSellers = await this.abacService.hasPermission(
+      { userId: req.user.userId, username: req.user.username },
+      'view',
+      'sale:other_quotation',
+    );
+
+    if (!canSeeOtherSellers && !req.user.isAdmin && req.user.employeeId) {
+      filters.sellerId = req.user.employeeId;
+    }
+  }
 
   @Get('menu')
   findAll() {
@@ -51,12 +71,24 @@ export class ReportController {
 
   // ============== SALES REPORT ENDPOINTS ==============
 
+  @Get('sales/permissions')
+  async getSalesPermissions(@Req() req: Request) {
+    const user = (req as any).user;
+    const canSeeOtherSellers = await this.abacService.hasPermission(
+      { userId: user.userId, username: user.username },
+      'view',
+      'sale:other_quotation',
+    );
+    return { canSeeOtherSellers };
+  }
+
   @Get('sales/summary')
   async getSalesSummary(
     @Query() filters: SalesReportFilterDto,
     @Req() req: Request,
   ) {
     const companyId = (req as any).user?.companyId;
+    await this.enforceSalesPermission(req, filters);
     return this.reportService.getSalesReportSummary(companyId, filters);
   }
 
@@ -66,6 +98,7 @@ export class ReportController {
     @Req() req: Request,
   ) {
     const companyId = (req as any).user?.companyId;
+    await this.enforceSalesPermission(req, filters);
     return this.reportService.getSalesEvolution(companyId, filters);
   }
 
@@ -75,6 +108,7 @@ export class ReportController {
     @Req() req: Request,
   ) {
     const companyId = (req as any).user?.companyId;
+    await this.enforceSalesPermission(req, filters);
     return this.reportService.getApprovedRejected(companyId, filters);
   }
 
@@ -84,6 +118,7 @@ export class ReportController {
     @Req() req: Request,
   ) {
     const companyId = (req as any).user?.companyId;
+    await this.enforceSalesPermission(req, filters);
     return this.reportService.getQuotationsOrigin(companyId, filters);
   }
 
@@ -93,6 +128,7 @@ export class ReportController {
     @Req() req: Request,
   ) {
     const companyId = (req as any).user?.companyId;
+    await this.enforceSalesPermission(req, filters);
     return this.reportService.getOrdersOrigin(companyId, filters);
   }
 
@@ -102,6 +138,7 @@ export class ReportController {
     @Req() req: Request,
   ) {
     const companyId = (req as any).user?.companyId;
+    await this.enforceSalesPermission(req, filters);
     return this.reportService.getTopProducts(companyId, filters);
   }
 
@@ -111,6 +148,7 @@ export class ReportController {
     @Req() req: Request,
   ) {
     const companyId = (req as any).user?.companyId;
+    await this.enforceSalesPermission(req, filters);
     return this.reportService.getTopClients(companyId, filters);
   }
 
@@ -120,6 +158,7 @@ export class ReportController {
     @Req() req: Request,
   ) {
     const companyId = (req as any).user?.companyId;
+    await this.enforceSalesPermission(req, filters);
     return this.reportService.getSalesTableData(companyId, filters);
   }
 
@@ -129,6 +168,7 @@ export class ReportController {
     @Req() req: Request,
   ) {
     const companyId = (req as any).user?.companyId;
+    await this.enforceSalesPermission(req, filters);
     return this.reportService.getSalesReportPdfData(companyId, filters);
   }
 

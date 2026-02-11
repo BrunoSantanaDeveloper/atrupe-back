@@ -12,6 +12,7 @@ import {
   SalesTableDataResponse,
   SaleRecordItem,
   SalesClientGroup,
+  SalesSellerGroup,
   SalePhase,
 } from './dto/sales-report.dto';
 import { FinancialReportFilterDto } from './dto/financial-report.dto';
@@ -551,6 +552,7 @@ export class ReportService {
         quotation: {
           include: {
             client: { select: { id: true, name: true } },
+            seller: { select: { id: true, name: true } },
             series: { select: { code: true } },
           },
         },
@@ -613,6 +615,36 @@ export class ReportService {
         (g) => ({
           clientId: g.clientId,
           clientName: g.clientName,
+          count: g.records.length,
+          total: g.records.reduce((sum, r) => sum + r.value, 0),
+          records: g.records,
+        }),
+      );
+
+      return { grouped: true, groups, totalCount, pagination };
+    } else if (groupBy === 'seller') {
+      // Group records by seller
+      const recordsBySeller: Record<
+        string,
+        { sellerId: string; sellerName: string; records: SaleRecordItem[] }
+      > = {};
+
+      orders.forEach((order) => {
+        const record = mapToRecord(order);
+        const sellerId = order.quotation.sellerId || 'no-seller';
+        const seller = order.quotation.seller;
+        const sellerName = seller?.name || 'Vendedor não informado';
+
+        if (!recordsBySeller[sellerId]) {
+          recordsBySeller[sellerId] = { sellerId, sellerName, records: [] };
+        }
+        recordsBySeller[sellerId].records.push(record);
+      });
+
+      const groups: SalesSellerGroup[] = Object.values(recordsBySeller).map(
+        (g) => ({
+          sellerId: g.sellerId,
+          sellerName: g.sellerName,
           count: g.records.length,
           total: g.records.reduce((sum, r) => sum + r.value, 0),
           records: g.records,

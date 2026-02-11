@@ -23,8 +23,8 @@ export class SalesReportFilterDto {
   endDate?: string;
 
   @IsOptional()
-  @IsEnum(['none', 'client'])
-  groupBy?: 'none' | 'client';
+  @IsEnum(['none', 'client', 'seller'])
+  groupBy?: 'none' | 'client' | 'seller';
 
   @IsOptional()
   @IsEnum(['approvedDate', 'valueDesc', 'valueAsc'])
@@ -101,9 +101,18 @@ export interface SalesClientGroup {
   records: SaleRecordItem[];
 }
 
+export interface SalesSellerGroup {
+  sellerId: string;
+  sellerName: string;
+  count: number;
+  total: number;
+  records: SaleRecordItem[];
+}
+
 export type SalesTableDataResponse =
   | { grouped: false; records: SaleRecordItem[]; totalCount: number }
-  | { grouped: true; groups: SalesClientGroup[]; totalCount: number };
+  | { grouped: true; groups: SalesClientGroup[]; totalCount: number }
+  | { grouped: true; groups: SalesSellerGroup[]; totalCount: number };
 
 export interface SalesReportFullResponse {
   summary: SalesReportSummaryResponse;
