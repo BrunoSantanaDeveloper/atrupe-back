@@ -806,6 +806,13 @@ export class ReportService {
   }> {
     const { startDate, endDate } = this.getDateRange(filters);
 
+    // Fetch all active sectors for the company
+    const activeSectors = await this.prisma.companySector.findMany({
+      where: { companyId, isActive: true },
+      select: { id: true, name: true, icon: true },
+      orderBy: { name: 'asc' },
+    });
+
     const orderProducts = await this.prisma.quotationProduct.findMany({
       where: {
         quotation: {
@@ -820,42 +827,37 @@ export class ReportService {
         product: {
           select: {
             sectorId: true,
-            sector: {
-              select: {
-                id: true,
-                name: true,
-                icon: true,
-              },
-            },
           },
         },
       },
     });
 
-    // Aggregate by sector
+    // Initialize all active sectors with value 0
     const sectorTotals: Record<
       string,
       { id: string; name: string; icon: string; value: number }
     > = {};
 
+    activeSectors.forEach((sector) => {
+      sectorTotals[sector.id] = {
+        id: sector.id,
+        name: sector.name,
+        icon: sector.icon || '',
+        value: 0,
+      };
+    });
+
+    // Aggregate sales by sector
     let generalTotal = 0;
 
     orderProducts.forEach((qp) => {
       const value = qp.finalValue ?? qp.totalValue ?? 0;
       generalTotal += value;
 
-      const sector = qp.product?.sector;
-      if (!sector) return;
+      const sectorId = qp.product?.sectorId;
+      if (!sectorId || !sectorTotals[sectorId]) return;
 
-      if (!sectorTotals[sector.id]) {
-        sectorTotals[sector.id] = {
-          id: sector.id,
-          name: sector.name,
-          icon: sector.icon || '',
-          value: 0,
-        };
-      }
-      sectorTotals[sector.id].value += value;
+      sectorTotals[sectorId].value += value;
     });
 
     const sectors = Object.values(sectorTotals).sort((a, b) =>
