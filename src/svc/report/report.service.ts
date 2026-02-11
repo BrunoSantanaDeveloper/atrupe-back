@@ -108,9 +108,10 @@ export class ReportService {
   ): Promise<SalesReportSummaryResponse> {
     const { startDate, endDate } = this.getDateRange(filters);
 
-    // Approved orders (approved quotations)
+    // Approved orders (approved quotations, excluding canceled)
     const approvedOrders = await this.prisma.order.findMany({
       where: {
+        status: { not: 'CANCELED' },
         quotation: {
           companyId,
           approvedAt: { gte: startDate, lte: endDate },
@@ -179,18 +180,24 @@ export class ReportService {
     );
     const rejectedCount = rejectedQuotations.length;
 
-    // No response (overdue/expired quotations)
-    const noResponseQuotations = await this.prisma.quotation.count({
+    // Awaiting response (DONE quotations - sent to client, waiting for response)
+    const noResponseQuotations = await this.prisma.quotation.findMany({
       where: {
         companyId,
         status: 'DONE',
-        dueDate: { lt: new Date() },
         approvedAt: null,
         createdAt: { gte: startDate, lte: endDate },
         ...(filters.sellerId && { sellerId: filters.sellerId }),
         ...(filters.originId && { contactSourceId: filters.originId }),
       },
+      select: { totalValue: true },
     });
+
+    const noResponseTotal = noResponseQuotations.reduce(
+      (sum, q) => sum + (q.totalValue || 0),
+      0,
+    );
+    const noResponseCount = noResponseQuotations.length;
 
     // Average ticket
     const averageTicket = approvedCount > 0 ? approvedTotal / approvedCount : 0;
@@ -200,7 +207,8 @@ export class ReportService {
       approvedCount,
       rejectedTotal,
       rejectedCount,
-      noResponseTotal: noResponseQuotations,
+      noResponseTotal,
+      noResponseCount,
       averageTicket,
       commission,
       approvalTime,
@@ -215,6 +223,7 @@ export class ReportService {
 
     const orders = await this.prisma.order.findMany({
       where: {
+        status: { not: 'CANCELED' },
         quotation: {
           companyId,
           approvedAt: { gte: startDate, lte: endDate },
@@ -382,6 +391,7 @@ export class ReportService {
 
     const ordersWithOrigin = await this.prisma.order.findMany({
       where: {
+        status: { not: 'CANCELED' },
         quotation: {
           companyId,
           approvedAt: { gte: startDate, lte: endDate },
@@ -436,7 +446,7 @@ export class ReportService {
         quotation: {
           companyId,
           approvedAt: { gte: startDate, lte: endDate },
-          order: { isNot: null },
+          order: { status: { not: 'CANCELED' } },
           ...(filters.sellerId && { sellerId: filters.sellerId }),
           ...(filters.originId && { contactSourceId: filters.originId }),
         },
@@ -475,6 +485,7 @@ export class ReportService {
 
     const orders = await this.prisma.order.findMany({
       where: {
+        status: { not: 'CANCELED' },
         quotation: {
           companyId,
           approvedAt: { gte: startDate, lte: endDate },
@@ -527,6 +538,7 @@ export class ReportService {
 
     // Base where clause
     const whereClause = {
+      status: { not: 'CANCELED' as const },
       quotation: {
         companyId,
         approvedAt: { gte: startDate, lte: endDate },
@@ -675,6 +687,7 @@ export class ReportService {
     // Get all orders for the period (no pagination for PDF)
     const orders = await this.prisma.order.findMany({
       where: {
+        status: { not: 'CANCELED' },
         quotation: {
           companyId,
           approvedAt: { gte: startDate, lte: endDate },

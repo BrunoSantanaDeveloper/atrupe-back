@@ -307,7 +307,7 @@ export class OrderService {
     }
   }
 
-  private async verifySellerPermission(sellerId) {
+  private async verifySellerPermission(sellerId: string) {
     const seller = await this.prisma.sellerProfile.findFirst({
       where: {
         employees: {
@@ -324,8 +324,9 @@ export class OrderService {
       },
     });
 
+    // If no seller profile found (deleted, admin user, etc.), allow the operation
     if (!seller) {
-      throw new NotFoundException('Seller not found');
+      return;
     }
 
     if (!seller.canCancelSale) {

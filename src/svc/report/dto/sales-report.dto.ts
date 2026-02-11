@@ -46,6 +46,7 @@ export interface SalesReportSummaryResponse {
   rejectedTotal: number;
   rejectedCount: number;
   noResponseTotal: number;
+  noResponseCount: number;
   averageTicket: number;
   commission: number;
   approvalTime: string;
