@@ -1671,6 +1671,158 @@ export class ReportService {
     }
   }
 
+  // ============== CASH FLOW PDF/EXPORT ==============
+
+  async getCashFlowPdfData(
+    companyId: string,
+    filters: CashFlowReportFilterDto,
+  ) {
+    const { startDate, endDate } = this.getCashFlowDateRange(filters);
+    const movement = filters.movement || 'all';
+
+    // Get company info
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      include: { address: true },
+    });
+
+    const allRecords: Array<{
+      id: string;
+      clientName: string;
+      description: string;
+      dueDate: string;
+      value: number;
+      type: 'revenue' | 'expense';
+    }> = [];
+
+    if (movement !== 'expense') {
+      const receivables = await this.prisma.receivableInstallment.findMany({
+        where: {
+          receivable: { companyId, status: { not: 'CANCELED' } },
+          dueDate: { gte: startDate, lte: endDate },
+        },
+        include: {
+          receivable: {
+            include: { client: { select: { id: true, name: true } } },
+          },
+        },
+        orderBy: { dueDate: 'asc' },
+      });
+
+      allRecords.push(
+        ...receivables.map((inst) => ({
+          id: inst.id,
+          clientName: inst.receivable.client?.name || 'Não informado',
+          description: inst.receivable.description || 'Sem descrição',
+          dueDate: format(inst.dueDate, 'dd/MM/yyyy'),
+          value: inst.paidAmount || inst.amount,
+          type: 'revenue' as const,
+        })),
+      );
+    }
+
+    if (movement !== 'revenue') {
+      const payables = await this.prisma.payableInstallment.findMany({
+        where: {
+          payable: { companyId, status: { not: 'CANCELED' } },
+          dueDate: { gte: startDate, lte: endDate },
+        },
+        include: {
+          payable: {
+            include: {
+              supplier: { select: { id: true, name: true } },
+              client: { select: { id: true, name: true } },
+            },
+          },
+        },
+        orderBy: { dueDate: 'asc' },
+      });
+
+      allRecords.push(
+        ...payables.map((inst) => ({
+          id: inst.id,
+          clientName:
+            inst.payable.supplier?.name ||
+            inst.payable.client?.name ||
+            'Não informado',
+          description: inst.payable.description || 'Sem descrição',
+          dueDate: format(inst.dueDate, 'dd/MM/yyyy'),
+          value: -(inst.paidAmount || inst.amount),
+          type: 'expense' as const,
+        })),
+      );
+    }
+
+    const totalAbsValue = allRecords.reduce(
+      (sum, r) => sum + Math.abs(r.value),
+      0,
+    );
+    const totalRevenue = allRecords
+      .filter((r) => r.type === 'revenue')
+      .reduce((sum, r) => sum + r.value, 0);
+    const totalExpenses = allRecords
+      .filter((r) => r.type === 'expense')
+      .reduce((sum, r) => sum + Math.abs(r.value), 0);
+
+    const records = allRecords.map((r) => ({
+      ...r,
+      percentage:
+        totalAbsValue > 0
+          ? parseFloat(((Math.abs(r.value) / totalAbsValue) * 100).toFixed(1))
+          : 0,
+    }));
+
+    // Group by date
+    const groupsMap: Record<string, { date: string; records: typeof records }> =
+      {};
+
+    records.forEach((r) => {
+      if (!groupsMap[r.dueDate]) {
+        groupsMap[r.dueDate] = { date: r.dueDate, records: [] };
+      }
+      groupsMap[r.dueDate].records.push(r);
+    });
+
+    const groups = Object.values(groupsMap).map((g) => ({
+      date: g.date,
+      count: g.records.length,
+      total: g.records.reduce((sum, r) => sum + r.value, 0),
+      records: g.records,
+    }));
+
+    const companyAddress = company?.address?.[0];
+
+    return {
+      company: {
+        name: company?.name,
+        cnpj: company?.cnpj,
+        logoUrl: company?.logoUrl,
+        email: company?.email,
+        siteUrl: company?.siteUrl,
+        phone: company?.phone,
+        address: companyAddress
+          ? {
+              street: companyAddress.street,
+              number: companyAddress.number,
+              neighborhood: companyAddress.neighborhood,
+              city: companyAddress.city,
+              state: companyAddress.state,
+            }
+          : undefined,
+        socialNetworks: {
+          instagram: company?.instagram,
+          facebook: company?.facebook,
+          linkedin: company?.linkedin,
+        },
+      },
+      totalRevenue,
+      totalExpenses,
+      totalBalance: totalRevenue - totalExpenses,
+      totalCount: records.length,
+      groups,
+    };
+  }
+
   // ============== CASH FLOW REPORT METHODS ==============
 
   private getCashFlowDateRange(filters: CashFlowReportFilterDto) {

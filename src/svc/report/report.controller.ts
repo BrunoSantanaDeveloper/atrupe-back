@@ -210,6 +210,15 @@ export class ReportController {
     return this.reportService.getCashFlowTable(companyId, filters);
   }
 
+  @Get('cash-flow/pdf-data')
+  async getCashFlowPdfData(
+    @Query() filters: CashFlowReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.getCashFlowPdfData(companyId, filters);
+  }
+
   // ============== SECTOR REPORT ==============
 
   @Get('sector-results')
