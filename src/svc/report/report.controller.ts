@@ -69,6 +69,15 @@ export class ReportController {
     return this.reportService.getFinancialTable(companyId, filters);
   }
 
+  @Get('financial/pdf-data')
+  async getFinancialPdfData(
+    @Query() filters: FinancialReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.getFinancialPdfData(companyId, filters);
+  }
+
   // ============== SALES REPORT ENDPOINTS ==============
 
   @Get('sales/permissions')

@@ -1119,6 +1119,281 @@ export class ReportService {
     return result;
   }
 
+  async getFinancialPdfData(
+    companyId: string,
+    filters: FinancialReportFilterDto,
+  ) {
+    const { startDate, endDate } = this.getFinancialDateRange(filters);
+    const isReceitas = filters.tab !== 'despesas';
+    const statusFilter = filters.status || 'all';
+
+    // Get company info
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      include: { address: true },
+    });
+
+    if (isReceitas) {
+      const where: any = {
+        receivable: {
+          companyId,
+          status: { not: 'CANCELED' },
+        },
+        dueDate: { gte: startDate, lte: endDate },
+      };
+
+      if (statusFilter === 'received') where.status = 'PAID';
+      else if (statusFilter === 'confirmed') where.status = 'PROVISIONED';
+      else if (statusFilter === 'overdue') where.status = 'OVERDUE';
+
+      const allInstallments = await this.prisma.receivableInstallment.findMany({
+        where,
+        include: {
+          receivable: {
+            include: {
+              client: { select: { id: true, name: true } },
+            },
+          },
+        },
+        orderBy: this.getFinancialOrderBy(filters.orderBy),
+      });
+
+      let records = allInstallments.map((inst) => {
+        const computedStatus = this.getInstallmentStatus(inst);
+        return {
+          id: inst.id,
+          clientId: inst.receivable.clientId || '',
+          clientName: inst.receivable.client?.name || 'Não informado',
+          description: inst.receivable.description || 'Sem descrição',
+          dueDate: inst.dueDate ? format(inst.dueDate, 'dd/MM/yyyy') : null,
+          receivedDate: inst.paidDate
+            ? format(inst.paidDate, 'dd/MM/yyyy')
+            : null,
+          value: inst.paidAmount || inst.amount,
+          status: computedStatus,
+        };
+      });
+
+      if (statusFilter === 'to_receive') {
+        records = records.filter((r) => r.status === 'to_receive');
+      }
+
+      const totalValue = records.reduce((sum, r) => sum + r.value, 0);
+
+      // Group by client
+      const groupsMap: Record<
+        string,
+        {
+          clientId: string;
+          clientName: string;
+          records: typeof records;
+          total: number;
+        }
+      > = {};
+
+      records.forEach((r) => {
+        if (!groupsMap[r.clientId]) {
+          groupsMap[r.clientId] = {
+            clientId: r.clientId,
+            clientName: r.clientName,
+            records: [],
+            total: 0,
+          };
+        }
+        groupsMap[r.clientId].records.push({
+          ...r,
+          percentage: 0,
+        } as any);
+        groupsMap[r.clientId].total += r.value;
+      });
+
+      const groups = Object.values(groupsMap).map((g) => {
+        const groupPct =
+          totalValue > 0
+            ? parseFloat(((g.total / totalValue) * 100).toFixed(1))
+            : 0;
+        return {
+          clientId: g.clientId,
+          clientName: g.clientName,
+          count: g.records.length,
+          total: g.total,
+          percentage: groupPct,
+          records: g.records.map((r) => ({
+            ...r,
+            percentage:
+              totalValue > 0
+                ? parseFloat(((r.value / totalValue) * 100).toFixed(1))
+                : 0,
+          })),
+        };
+      });
+
+      const companyAddress = company?.address?.[0];
+
+      return {
+        company: {
+          name: company?.name,
+          cnpj: company?.cnpj,
+          logoUrl: company?.logoUrl,
+          email: company?.email,
+          siteUrl: company?.siteUrl,
+          phone: company?.phone,
+          address: companyAddress
+            ? {
+                street: companyAddress.street,
+                number: companyAddress.number,
+                neighborhood: companyAddress.neighborhood,
+                city: companyAddress.city,
+                state: companyAddress.state,
+              }
+            : undefined,
+          socialNetworks: {
+            instagram: company?.instagram,
+            facebook: company?.facebook,
+            linkedin: company?.linkedin,
+          },
+        },
+        tab: filters.tab || 'receitas',
+        status: statusFilter !== 'all' ? statusFilter : '',
+        totalValue,
+        totalPercentage: 100,
+        groups,
+      };
+    } else {
+      // Despesas
+      const where: any = {
+        payable: {
+          companyId,
+          status: { not: 'CANCELED' },
+        },
+        dueDate: { gte: startDate, lte: endDate },
+      };
+
+      if (statusFilter === 'received') where.status = 'PAID';
+      else if (statusFilter === 'confirmed') where.status = 'PROVISIONED';
+      else if (statusFilter === 'overdue') where.status = 'OVERDUE';
+
+      const allInstallments = await this.prisma.payableInstallment.findMany({
+        where,
+        include: {
+          payable: {
+            include: {
+              supplier: { select: { id: true, name: true } },
+              client: { select: { id: true, name: true } },
+            },
+          },
+        },
+        orderBy: this.getFinancialOrderBy(filters.orderBy),
+      });
+
+      let records = allInstallments.map((inst) => {
+        const computedStatus = this.getInstallmentStatus(inst);
+        const entityName =
+          inst.payable.supplier?.name ||
+          inst.payable.client?.name ||
+          'Não informado';
+        const entityId = inst.payable.supplierId || inst.payable.clientId || '';
+        return {
+          id: inst.id,
+          clientId: entityId,
+          clientName: entityName,
+          description: inst.payable.description || 'Sem descrição',
+          dueDate: inst.dueDate ? format(inst.dueDate, 'dd/MM/yyyy') : null,
+          receivedDate: inst.paidDate
+            ? format(inst.paidDate, 'dd/MM/yyyy')
+            : null,
+          value: inst.paidAmount || inst.amount,
+          status: computedStatus,
+        };
+      });
+
+      if (statusFilter === 'to_receive') {
+        records = records.filter((r) => r.status === 'to_receive');
+      }
+
+      const totalValue = records.reduce((sum, r) => sum + r.value, 0);
+
+      const groupsMap: Record<
+        string,
+        {
+          clientId: string;
+          clientName: string;
+          records: typeof records;
+          total: number;
+        }
+      > = {};
+
+      records.forEach((r) => {
+        if (!groupsMap[r.clientId]) {
+          groupsMap[r.clientId] = {
+            clientId: r.clientId,
+            clientName: r.clientName,
+            records: [],
+            total: 0,
+          };
+        }
+        groupsMap[r.clientId].records.push({
+          ...r,
+          percentage: 0,
+        } as any);
+        groupsMap[r.clientId].total += r.value;
+      });
+
+      const groups = Object.values(groupsMap).map((g) => {
+        const groupPct =
+          totalValue > 0
+            ? parseFloat(((g.total / totalValue) * 100).toFixed(1))
+            : 0;
+        return {
+          clientId: g.clientId,
+          clientName: g.clientName,
+          count: g.records.length,
+          total: g.total,
+          percentage: groupPct,
+          records: g.records.map((r) => ({
+            ...r,
+            percentage:
+              totalValue > 0
+                ? parseFloat(((r.value / totalValue) * 100).toFixed(1))
+                : 0,
+          })),
+        };
+      });
+
+      const companyAddress = company?.address?.[0];
+
+      return {
+        company: {
+          name: company?.name,
+          cnpj: company?.cnpj,
+          logoUrl: company?.logoUrl,
+          email: company?.email,
+          siteUrl: company?.siteUrl,
+          phone: company?.phone,
+          address: companyAddress
+            ? {
+                street: companyAddress.street,
+                number: companyAddress.number,
+                neighborhood: companyAddress.neighborhood,
+                city: companyAddress.city,
+                state: companyAddress.state,
+              }
+            : undefined,
+          socialNetworks: {
+            instagram: company?.instagram,
+            facebook: company?.facebook,
+            linkedin: company?.linkedin,
+          },
+        },
+        tab: filters.tab || 'despesas',
+        status: statusFilter !== 'all' ? statusFilter : '',
+        totalValue,
+        totalPercentage: 100,
+        groups,
+      };
+    }
+  }
+
   async getFinancialTable(
     companyId: string,
     filters: FinancialReportFilterDto,
