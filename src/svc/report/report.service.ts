@@ -2691,6 +2691,46 @@ export class ReportService {
     return { headers, rows };
   }
 
+  async getDfcPdfData(companyId: string, filters: DfcReportFilterDto) {
+    const [summary, tableData, company] = await Promise.all([
+      this.getDfcSummary(companyId, filters),
+      this.getDfcTable(companyId, filters),
+      this.prisma.company.findUnique({
+        where: { id: companyId },
+        include: { address: true },
+      }),
+    ]);
+
+    const companyAddress = company?.address?.[0];
+
+    return {
+      company: {
+        name: company?.name,
+        cnpj: company?.cnpj,
+        logoUrl: company?.logoUrl,
+        email: company?.email,
+        siteUrl: company?.siteUrl,
+        phone: company?.phone,
+        address: companyAddress
+          ? {
+              street: companyAddress.street,
+              number: companyAddress.number,
+              neighborhood: companyAddress.neighborhood,
+              city: companyAddress.city,
+              state: companyAddress.state,
+            }
+          : undefined,
+        socialNetworks: {
+          instagram: company?.instagram,
+          facebook: company?.facebook,
+          linkedin: company?.linkedin,
+        },
+      },
+      summary,
+      table: tableData,
+    };
+  }
+
   // ============== COMMISSION REPORT METHODS ==============
 
   private getCommissionDateRange(filters: CommissionReportFilterDto) {

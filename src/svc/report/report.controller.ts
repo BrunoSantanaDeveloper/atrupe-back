@@ -274,6 +274,15 @@ export class ReportController {
     return this.reportService.getDfcTable(companyId, filters);
   }
 
+  @Get('dfc/pdf-data')
+  async getDfcPdfData(
+    @Query() filters: DfcReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.getDfcPdfData(companyId, filters);
+  }
+
   // ============== COMMISSION REPORT ENDPOINTS ==============
 
   @Get('commission/summary')
