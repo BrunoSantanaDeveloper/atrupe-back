@@ -1144,7 +1144,6 @@ export class ReportService {
 
       if (statusFilter === 'received') where.status = 'PAID';
       else if (statusFilter === 'confirmed') where.status = 'PROVISIONED';
-      else if (statusFilter === 'overdue') where.status = 'OVERDUE';
 
       const allInstallments = await this.prisma.receivableInstallment.findMany({
         where,
@@ -1176,6 +1175,8 @@ export class ReportService {
 
       if (statusFilter === 'to_receive') {
         records = records.filter((r) => r.status === 'to_receive');
+      } else if (statusFilter === 'overdue') {
+        records = records.filter((r) => r.status === 'overdue');
       }
 
       const totalValue = records.reduce((sum, r) => sum + r.value, 0);
@@ -1271,7 +1272,6 @@ export class ReportService {
 
       if (statusFilter === 'received') where.status = 'PAID';
       else if (statusFilter === 'confirmed') where.status = 'PROVISIONED';
-      else if (statusFilter === 'overdue') where.status = 'OVERDUE';
 
       const allInstallments = await this.prisma.payableInstallment.findMany({
         where,
@@ -1309,6 +1309,8 @@ export class ReportService {
 
       if (statusFilter === 'to_receive') {
         records = records.filter((r) => r.status === 'to_receive');
+      } else if (statusFilter === 'overdue') {
+        records = records.filter((r) => r.status === 'overdue');
       }
 
       const totalValue = records.reduce((sum, r) => sum + r.value, 0);
@@ -1404,6 +1406,7 @@ export class ReportService {
     const limit = filters.limit || 10;
     const groupBy = filters.groupBy || 'none';
     const statusFilter = filters.status || 'all';
+    const isGrouped = groupBy === 'client';
 
     if (isReceitas) {
       // Build where clause
@@ -1416,12 +1419,12 @@ export class ReportService {
       };
 
       // Apply status filter at DB level where possible
+      // Note: 'overdue' and 'to_receive' use runtime check (getInstallmentStatus)
+      // because DB status may still be PENDING for overdue installments
       if (statusFilter === 'received') {
         where.status = 'PAID';
       } else if (statusFilter === 'confirmed') {
         where.status = 'PROVISIONED';
-      } else if (statusFilter === 'overdue') {
-        where.status = 'OVERDUE';
       }
 
       const allInstallments = await this.prisma.receivableInstallment.findMany({
@@ -1436,13 +1439,9 @@ export class ReportService {
         orderBy: this.getFinancialOrderBy(filters.orderBy),
       });
 
-      // Compute status and filter post-query for statuses that require runtime check
+      // Map records WITHOUT percentage (calculated after filtering)
       let records = allInstallments.map((inst) => {
         const computedStatus = this.getInstallmentStatus(inst);
-        const totalValue = allInstallments.reduce(
-          (sum, i) => sum + (i.paidAmount || i.amount),
-          0,
-        );
         return {
           id: inst.id,
           clientId: inst.receivable.clientId || '',
@@ -1452,32 +1451,30 @@ export class ReportService {
             ? format(inst.paidDate, 'dd/MM/yyyy')
             : null,
           value: inst.paidAmount || inst.amount,
-          percentage:
-            totalValue > 0
-              ? Math.round(
-                  ((inst.paidAmount || inst.amount) / totalValue) * 100,
-                )
-              : 0,
+          percentage: 0,
           status: computedStatus,
         };
       });
 
-      // Post-filter for to_receive (PENDING status but not overdue)
+      // Post-filter for statuses that require runtime check
       if (statusFilter === 'to_receive') {
         records = records.filter((r) => r.status === 'to_receive');
+      } else if (statusFilter === 'overdue') {
+        records = records.filter((r) => r.status === 'overdue');
       } else if (
         statusFilter !== 'all' &&
         statusFilter !== 'received' &&
-        statusFilter !== 'confirmed' &&
-        statusFilter !== 'overdue'
+        statusFilter !== 'confirmed'
       ) {
         records = records.filter((r) => r.status === statusFilter);
       }
 
+      // Calculate totalValue ONCE from filtered records
+      const totalValue = records.reduce((sum, r) => sum + r.value, 0);
       const totalCount = records.length;
 
-      // Paginate if not grouped
-      if (groupBy === 'client') {
+      if (isGrouped) {
+        // Group by client
         const groupsMap: Record<
           string,
           { clientId: string; clientName: string; records: typeof records }
@@ -1494,7 +1491,7 @@ export class ReportService {
           groupsMap[r.clientId].records.push(r);
         });
 
-        const groups = Object.values(groupsMap).map((g) => ({
+        const allGroups = Object.values(groupsMap).map((g) => ({
           clientId: g.clientId,
           clientName: g.clientName,
           count: g.records.length,
@@ -1502,15 +1499,20 @@ export class ReportService {
           records: g.records,
         }));
 
+        // Paginate at GROUP level (like sales report)
+        const totalGroups = allGroups.length;
+        const groups = allGroups.slice((page - 1) * limit, page * limit);
+
         return {
           grouped: true,
           records: [],
           groups,
           totalCount,
+          totalValue,
           pagination: {
             page,
-            totalPages: Math.ceil(totalCount / limit),
-            totalRecords: totalCount,
+            totalPages: Math.ceil(totalGroups / limit),
+            totalRecords: totalGroups,
           },
         };
       } else {
@@ -1522,6 +1524,7 @@ export class ReportService {
           grouped: false,
           records: paginatedRecords,
           totalCount,
+          totalValue,
           pagination: {
             page,
             totalPages: Math.ceil(totalCount / limit),
@@ -1539,12 +1542,11 @@ export class ReportService {
         dueDate: { gte: startDate, lte: endDate },
       };
 
+      // Note: 'overdue' and 'to_receive' use runtime check
       if (statusFilter === 'received') {
         where.status = 'PAID';
       } else if (statusFilter === 'confirmed') {
         where.status = 'PROVISIONED';
-      } else if (statusFilter === 'overdue') {
-        where.status = 'OVERDUE';
       }
 
       const allInstallments = await this.prisma.payableInstallment.findMany({
@@ -1560,12 +1562,9 @@ export class ReportService {
         orderBy: this.getFinancialOrderBy(filters.orderBy),
       });
 
+      // Map records WITHOUT percentage
       let records = allInstallments.map((inst) => {
         const computedStatus = this.getInstallmentStatus(inst);
-        const totalValue = allInstallments.reduce(
-          (sum, i) => sum + (i.paidAmount || i.amount),
-          0,
-        );
         const entityName =
           inst.payable.supplier?.name ||
           inst.payable.client?.name ||
@@ -1581,23 +1580,22 @@ export class ReportService {
             ? format(inst.paidDate, 'dd/MM/yyyy')
             : null,
           value: inst.paidAmount || inst.amount,
-          percentage:
-            totalValue > 0
-              ? Math.round(
-                  ((inst.paidAmount || inst.amount) / totalValue) * 100,
-                )
-              : 0,
+          percentage: 0,
           status: computedStatus,
         };
       });
 
       if (statusFilter === 'to_receive') {
         records = records.filter((r) => r.status === 'to_receive');
+      } else if (statusFilter === 'overdue') {
+        records = records.filter((r) => r.status === 'overdue');
       }
 
+      // Calculate totalValue ONCE from filtered records
+      const totalValue = records.reduce((sum, r) => sum + r.value, 0);
       const totalCount = records.length;
 
-      if (groupBy === 'client') {
+      if (isGrouped) {
         const groupsMap: Record<
           string,
           { clientId: string; clientName: string; records: typeof records }
@@ -1614,7 +1612,7 @@ export class ReportService {
           groupsMap[r.clientId].records.push(r);
         });
 
-        const groups = Object.values(groupsMap).map((g) => ({
+        const allGroups = Object.values(groupsMap).map((g) => ({
           clientId: g.clientId,
           clientName: g.clientName,
           count: g.records.length,
@@ -1622,15 +1620,20 @@ export class ReportService {
           records: g.records,
         }));
 
+        // Paginate at GROUP level
+        const totalGroups = allGroups.length;
+        const groups = allGroups.slice((page - 1) * limit, page * limit);
+
         return {
           grouped: true,
           records: [],
           groups,
           totalCount,
+          totalValue,
           pagination: {
             page,
-            totalPages: Math.ceil(totalCount / limit),
-            totalRecords: totalCount,
+            totalPages: Math.ceil(totalGroups / limit),
+            totalRecords: totalGroups,
           },
         };
       } else {
@@ -1642,6 +1645,7 @@ export class ReportService {
           grouped: false,
           records: paginatedRecords,
           totalCount,
+          totalValue,
           pagination: {
             page,
             totalPages: Math.ceil(totalCount / limit),
