@@ -782,7 +782,9 @@ export class ReportService {
 
       const value = q.totalValue || 0;
       const percentage =
-        totalValue > 0 ? Math.round((value / totalValue) * 100) : 0;
+        totalValue > 0
+          ? parseFloat(((value / totalValue) * 100).toFixed(1))
+          : 0;
 
       groupsMap[clientId].records.push({
         id: order.id,
@@ -801,7 +803,10 @@ export class ReportService {
     const groups = Object.values(groupsMap).map((g) => ({
       ...g,
       count: g.records.length,
-      percentage: totalValue > 0 ? Math.round((g.total / totalValue) * 100) : 0,
+      percentage:
+        totalValue > 0
+          ? parseFloat(((g.total / totalValue) * 100).toFixed(1))
+          : 0,
     }));
 
     // Get first address from array
