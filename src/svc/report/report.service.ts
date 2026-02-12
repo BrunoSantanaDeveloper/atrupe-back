@@ -570,6 +570,11 @@ export class ReportService {
       orderByClause = { quotation: { totalValue: 'asc' } };
     }
 
+    // When grouped, we need ALL records to build complete groups,
+    // then paginate at the group level.
+    // When ungrouped, paginate at the record level.
+    const isGrouped = groupBy === 'client' || groupBy === 'seller';
+
     const orders = await this.prisma.order.findMany({
       where: whereClause,
       include: {
@@ -582,8 +587,8 @@ export class ReportService {
         },
       },
       orderBy: orderByClause,
-      take: limit,
-      skip: (page - 1) * limit,
+      // Only paginate at query level when NOT grouped
+      ...(!isGrouped && { take: limit, skip: (page - 1) * limit }),
     });
 
     // Map to SaleRecordItem
@@ -611,14 +616,8 @@ export class ReportService {
       };
     };
 
-    const pagination = {
-      page,
-      totalPages: Math.ceil(totalCount / limit),
-      totalRecords: totalCount,
-    };
-
     if (groupBy === 'client') {
-      // Group records by client
+      // Group ALL records by client
       const recordsByClient: Record<
         string,
         { clientId: string; clientName: string; records: SaleRecordItem[] }
@@ -635,7 +634,7 @@ export class ReportService {
         recordsByClient[clientId].records.push(record);
       });
 
-      const groups: SalesClientGroup[] = Object.values(recordsByClient).map(
+      const allGroups: SalesClientGroup[] = Object.values(recordsByClient).map(
         (g) => ({
           clientId: g.clientId,
           clientName: g.clientName,
@@ -645,9 +644,18 @@ export class ReportService {
         }),
       );
 
+      // Paginate at the group level
+      const totalGroups = allGroups.length;
+      const groups = allGroups.slice((page - 1) * limit, page * limit);
+      const pagination = {
+        page,
+        totalPages: Math.ceil(totalGroups / limit),
+        totalRecords: totalGroups,
+      };
+
       return { grouped: true, groups, totalCount, pagination };
     } else if (groupBy === 'seller') {
-      // Group records by seller
+      // Group ALL records by seller
       const recordsBySeller: Record<
         string,
         { sellerId: string; sellerName: string; records: SaleRecordItem[] }
@@ -665,7 +673,7 @@ export class ReportService {
         recordsBySeller[sellerId].records.push(record);
       });
 
-      const groups: SalesSellerGroup[] = Object.values(recordsBySeller).map(
+      const allGroups: SalesSellerGroup[] = Object.values(recordsBySeller).map(
         (g) => ({
           sellerId: g.sellerId,
           sellerName: g.sellerName,
@@ -675,9 +683,23 @@ export class ReportService {
         }),
       );
 
+      // Paginate at the group level
+      const totalGroups = allGroups.length;
+      const groups = allGroups.slice((page - 1) * limit, page * limit);
+      const pagination = {
+        page,
+        totalPages: Math.ceil(totalGroups / limit),
+        totalRecords: totalGroups,
+      };
+
       return { grouped: true, groups, totalCount, pagination };
     } else {
       const records = orders.map(mapToRecord);
+      const pagination = {
+        page,
+        totalPages: Math.ceil(totalCount / limit),
+        totalRecords: totalCount,
+      };
       return { grouped: false, records, totalCount, pagination };
     }
   }
