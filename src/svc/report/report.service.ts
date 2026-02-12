@@ -919,6 +919,47 @@ export class ReportService {
     return { sectors, generalTotal };
   }
 
+  async getSectorResultsPdfData(
+    companyId: string,
+    filters: SalesReportFilterDto,
+  ) {
+    const sectorData = await this.getSectorResults(companyId, filters);
+
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      include: { address: true },
+    });
+
+    const companyAddress = company?.address?.[0];
+
+    return {
+      company: {
+        name: company?.name,
+        cnpj: company?.cnpj,
+        logoUrl: company?.logoUrl,
+        email: company?.email,
+        siteUrl: company?.siteUrl,
+        phone: company?.phone,
+        address: companyAddress
+          ? {
+              street: companyAddress.street,
+              number: companyAddress.number,
+              neighborhood: companyAddress.neighborhood,
+              city: companyAddress.city,
+              state: companyAddress.state,
+            }
+          : undefined,
+        socialNetworks: {
+          instagram: company?.instagram,
+          facebook: company?.facebook,
+          linkedin: company?.linkedin,
+        },
+      },
+      sectors: sectorData.sectors,
+      generalTotal: sectorData.generalTotal,
+    };
+  }
+
   // ============== FINANCIAL REPORT METHODS ==============
 
   private getFinancialDateRange(filters: FinancialReportFilterDto) {

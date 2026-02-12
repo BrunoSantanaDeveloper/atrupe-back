@@ -230,6 +230,15 @@ export class ReportController {
     return this.reportService.getSectorResults(companyId, filters);
   }
 
+  @Get('sector-results/pdf-data')
+  async getSectorResultsPdfData(
+    @Query() filters: SalesReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.getSectorResultsPdfData(companyId, filters);
+  }
+
   // ============== DFC REPORT ENDPOINTS ==============
 
   @Get('dfc/summary')
