@@ -1675,12 +1675,10 @@ export class ReportService {
 
   private getCashFlowDateRange(filters: CashFlowReportFilterDto) {
     const now = new Date();
-    const startDate = filters.startDate
-      ? new Date(filters.startDate)
-      : startOfMonth(now);
-    const endDate = filters.endDate
-      ? new Date(filters.endDate)
-      : endOfMonth(now);
+    const startDate = filters.startDate ? new Date(filters.startDate) : now;
+    const defaultEnd = new Date(now);
+    defaultEnd.setDate(defaultEnd.getDate() + 7);
+    const endDate = filters.endDate ? new Date(filters.endDate) : defaultEnd;
     return { startDate, endDate };
   }
 
@@ -1884,7 +1882,7 @@ export class ReportService {
       ...r,
       percentage:
         totalAbsValue > 0
-          ? Math.round((Math.abs(r.value) / totalAbsValue) * 100)
+          ? parseFloat(((Math.abs(r.value) / totalAbsValue) * 100).toFixed(1))
           : 0,
     }));
 
@@ -1903,12 +1901,15 @@ export class ReportService {
         groupsMap[r.dueDate].records.push(r);
       });
 
-      const groups = Object.values(groupsMap).map((g) => ({
+      const allGroups = Object.values(groupsMap).map((g) => ({
         date: g.date,
         count: g.records.length,
         total: g.records.reduce((sum, r) => sum + r.value, 0),
         records: g.records,
       }));
+
+      const totalGroups = allGroups.length;
+      const groups = allGroups.slice((page - 1) * limit, page * limit);
 
       return {
         grouped: true,
@@ -1917,8 +1918,8 @@ export class ReportService {
         totalCount,
         pagination: {
           page,
-          totalPages: Math.ceil(totalCount / limit),
-          totalRecords: totalCount,
+          totalPages: Math.ceil(totalGroups / limit),
+          totalRecords: totalGroups,
         },
       };
     } else if (groupBy === 'client') {
@@ -1938,7 +1939,7 @@ export class ReportService {
         groupsMap[r.clientId].records.push(r);
       });
 
-      const groups = Object.values(groupsMap).map((g) => ({
+      const allGroups = Object.values(groupsMap).map((g) => ({
         date: '',
         clientId: g.clientId,
         clientName: g.clientName,
@@ -1947,6 +1948,9 @@ export class ReportService {
         records: g.records,
       }));
 
+      const totalGroups = allGroups.length;
+      const groups = allGroups.slice((page - 1) * limit, page * limit);
+
       return {
         grouped: true,
         records: [],
@@ -1954,8 +1958,8 @@ export class ReportService {
         totalCount,
         pagination: {
           page,
-          totalPages: Math.ceil(totalCount / limit),
-          totalRecords: totalCount,
+          totalPages: Math.ceil(totalGroups / limit),
+          totalRecords: totalGroups,
         },
       };
     } else {
