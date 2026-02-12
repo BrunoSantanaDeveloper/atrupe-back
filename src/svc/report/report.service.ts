@@ -1078,32 +1078,45 @@ export class ReportService {
         confirmed: number;
         toReceive: number;
         overdue: number;
+        receivedCount: number;
+        confirmedCount: number;
+        toReceiveCount: number;
+        overdueCount: number;
       }
     > = {};
 
     installments.forEach((inst: any) => {
       const dayKey = format(inst.dueDate, 'yyyy-MM-dd');
-      const label = format(inst.dueDate, 'dd MMM yy', { locale: ptBR });
+      const label = format(inst.dueDate, 'd/MMM', { locale: ptBR });
 
       if (!dailyData[dayKey]) {
         dailyData[dayKey] = {
           date: dayKey,
-          label: label.charAt(0).toUpperCase() + label.slice(1),
+          label,
           received: 0,
           confirmed: 0,
           toReceive: 0,
           overdue: 0,
+          receivedCount: 0,
+          confirmedCount: 0,
+          toReceiveCount: 0,
+          overdueCount: 0,
         };
       }
 
       const status = this.getInstallmentStatus(inst);
+      const key = status === 'to_receive' ? 'toReceive' : status;
       const amount = inst.paidAmount || inst.amount;
-      dailyData[dayKey][status] += amount;
+      dailyData[dayKey][key] += amount;
+      const countKey = `${key}Count` as keyof (typeof dailyData)[string];
+      (dailyData[dayKey][countKey] as number) += 1;
     });
 
-    return Object.values(dailyData).sort((a, b) =>
+    const result = Object.values(dailyData).sort((a, b) =>
       a.date.localeCompare(b.date),
     );
+
+    return result;
   }
 
   async getFinancialTable(
