@@ -102,6 +102,66 @@ export class ReportService {
     return { startDate, endDate };
   }
 
+  /**
+   * Calcula o valor composto de um orçamento, incluindo entrega, comissão e taxas.
+   * Fórmula igual ao frontend (QuotationsData.tsx).
+   */
+  private computeQuotationCompositeValue(q: {
+    totalValue: number;
+    deliveryInfo?: { value: number | null } | null;
+    quotationPayment?: {
+      discountTotal?: number | null;
+      downPaymentAdditionalFee?: number | null;
+      commission?: {
+        type: string | null;
+        totalCommission: number | null;
+      } | null;
+      quotationInstallment?: { additionalFee: number | null }[];
+    } | null;
+  }): number {
+    const itemsValue = q.totalValue || 0;
+    const deliveryValue = q.deliveryInfo?.value ?? 0;
+    const payment = q.quotationPayment;
+    const commissionValue =
+      payment?.commission?.type === 'ADD'
+        ? (payment?.commission?.totalCommission ?? 0)
+        : 0;
+    const installmentsAdditionalFee =
+      payment?.quotationInstallment?.reduce(
+        (acc, inst) => acc + (inst?.additionalFee ?? 0),
+        0,
+      ) ?? 0;
+    const downPaymentAdditionalFee = payment?.downPaymentAdditionalFee ?? 0;
+    const totalAdditionalFee =
+      installmentsAdditionalFee + downPaymentAdditionalFee;
+    const discountTotal = payment?.discountTotal ?? 0;
+
+    return (
+      itemsValue +
+      deliveryValue +
+      commissionValue +
+      totalAdditionalFee -
+      discountTotal
+    );
+  }
+
+  private readonly quotationValueSelect = {
+    totalValue: true,
+    deliveryInfo: { select: { value: true } },
+    quotationPayment: {
+      select: {
+        discountTotal: true,
+        downPaymentAdditionalFee: true,
+        commission: {
+          select: { type: true, totalCommission: true },
+        },
+        quotationInstallment: {
+          select: { additionalFee: true },
+        },
+      },
+    },
+  };
+
   async getSalesReportSummary(
     companyId: string,
     filters: SalesReportFilterDto,
@@ -122,7 +182,7 @@ export class ReportService {
       include: {
         quotation: {
           select: {
-            totalValue: true,
+            ...this.quotationValueSelect,
             approvedAt: true,
             createdAt: true,
             seller: {
@@ -138,16 +198,16 @@ export class ReportService {
     });
 
     const approvedTotal = approvedOrders.reduce(
-      (sum, o) => sum + (o.quotation.totalValue || 0),
+      (sum, o) => sum + this.computeQuotationCompositeValue(o.quotation),
       0,
     );
     const approvedCount = approvedOrders.length;
 
-    // Commission total (seller profile percentage * totalValue)
+    // Commission total (seller profile percentage * compositeValue)
     const commission = approvedOrders.reduce((sum, o) => {
       const sellerCommission =
         o.quotation.seller?.sellerProfile?.commission || 0;
-      const value = o.quotation.totalValue || 0;
+      const value = this.computeQuotationCompositeValue(o.quotation);
       return sum + (value * sellerCommission) / 100;
     }, 0);
 
@@ -176,11 +236,11 @@ export class ReportService {
         ...(filters.sellerId && { sellerId: filters.sellerId }),
         ...(filters.originId && { contactSourceId: filters.originId }),
       },
-      select: { totalValue: true },
+      select: this.quotationValueSelect,
     });
 
     const rejectedTotal = rejectedQuotations.reduce(
-      (sum, q) => sum + (q.totalValue || 0),
+      (sum, q) => sum + this.computeQuotationCompositeValue(q),
       0,
     );
     const rejectedCount = rejectedQuotations.length;
@@ -195,11 +255,11 @@ export class ReportService {
         ...(filters.sellerId && { sellerId: filters.sellerId }),
         ...(filters.originId && { contactSourceId: filters.originId }),
       },
-      select: { totalValue: true },
+      select: this.quotationValueSelect,
     });
 
     const noResponseTotal = noResponseQuotations.reduce(
-      (sum, q) => sum + (q.totalValue || 0),
+      (sum, q) => sum + this.computeQuotationCompositeValue(q),
       0,
     );
     const noResponseCount = noResponseQuotations.length;
@@ -238,7 +298,10 @@ export class ReportService {
       },
       include: {
         quotation: {
-          select: { totalValue: true, approvedAt: true },
+          select: {
+            ...this.quotationValueSelect,
+            approvedAt: true,
+          },
         },
       },
     });
@@ -258,13 +321,16 @@ export class ReportService {
         if (!dailyData[day]) {
           dailyData[day] = { sortKey, approved: 0, count: 0 };
         }
-        dailyData[day].approved += order.quotation.totalValue || 0;
+        dailyData[day].approved += this.computeQuotationCompositeValue(
+          order.quotation,
+        );
         dailyData[day].count += 1;
       }
     });
 
     // Convert to array - only include days with sales
     const result: SalesEvolutionDataPoint[] = Object.entries(dailyData)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       .filter(([_, data]) => data.approved > 0)
       .sort(([, a], [, b]) => a.sortKey.localeCompare(b.sortKey))
       .map(([day, data]) => ({
