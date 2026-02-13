@@ -38,7 +38,7 @@ ssh atrupe-aws << 'EOF'
     cp .env.prod .env || { echo "❌ Erro: arquivo .env.prod não encontrado"; exit 1; }
 
     echo "🐳 Construindo imagem Docker..."
-    docker build . -t atrupe-image:latest || { echo "❌ Erro ao construir imagem"; exit 1; }
+    docker build --cpu-quota=50000 --memory=512m . -t atrupe-image:latest || { echo "❌ Erro ao construir imagem"; exit 1; }
     
     echo "✅ Deploy concluído! Agora atualize a stack no Portainer."
 EOF
