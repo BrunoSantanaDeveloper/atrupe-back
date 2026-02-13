@@ -9,7 +9,6 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Função para log colorido
 log() {
     echo -e "${BLUE}[DEPLOY PROD]${NC} $1"
 }
@@ -27,33 +26,67 @@ warn() {
     echo -e "${YELLOW}⚠️  $1${NC}"
 }
 
-# Executar comandos no servidor AWS
-log "Conectando ao servidor AWS..."
+# ============================================================
+# ETAPA 1: Atualizar código no servidor
+# ============================================================
+log "Conectando ao servidor para atualizar código..."
 ssh atrupe-aws << 'EOF'
-    echo "📁 Entrando na pasta do projeto..."
-    cd atrupe-back || { echo "❌ Erro: pasta atrupe-back não encontrada"; exit 1; }
-
-    echo "🔀 Mudando para branch main..."
-    git checkout main || { echo "❌ Erro ao fazer checkout da branch main"; exit 1; }
-
-    echo "📥 Fazendo git pull..."
+    cd atrupe-back || { echo "❌ pasta atrupe-back não encontrada"; exit 1; }
+    git checkout main || { echo "❌ Erro ao checkout main"; exit 1; }
     git pull || { echo "❌ Erro no git pull"; exit 1; }
-
-    echo "📋 Copiando arquivo .env de produção..."
-    cp .env.prod .env || { echo "❌ Erro: arquivo .env.prod não encontrado"; exit 1; }
-
-    echo "🐳 Construindo imagem Docker (prioridade baixa para não afetar produção)..."
-    echo "⏳ O build será mais lento, mas não derruba o servidor."
-    nice -n 19 ionice -c2 -n7 docker build . -t atrupe-image:latest || { echo "❌ Erro ao construir imagem"; exit 1; }
-    
-    echo "✅ Deploy concluído! Agora atualize a stack no Portainer."
+    cp .env.prod .env || { echo "❌ .env.prod não encontrado"; exit 1; }
+    echo "✅ Código atualizado no servidor!"
 EOF
 
-if [ $? -eq 0 ]; then
-    success "Deploy PROD executado com sucesso!"
-    echo ""
-    echo "🔗 Próximo passo: Acesse o Portainer e atualize a stack de PRODUÇÃO"
-    echo "   https://portainer.atrupe.com.br"
-else
-    error "Falha no deploy"
+if [ $? -ne 0 ]; then
+    error "Falha ao atualizar código no servidor"
 fi
+success "Código atualizado no servidor"
+
+# ============================================================
+# ETAPA 2: Build LOCAL (cross-compile ARM64)
+# ============================================================
+log "Construindo imagem Docker LOCALMENTE (cross-compile linux/arm64)..."
+warn "O build roda na sua máquina. Zero impacto no servidor."
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/.." || error "Erro ao navegar para pasta do projeto"
+
+# Copiar .env do servidor se não existir localmente
+if [ ! -f .env ]; then
+    warn ".env não encontrado localmente. Copiando do servidor..."
+    scp atrupe-aws:~/atrupe-back/.env .env || {
+        warn "Não foi possível copiar .env. Criando placeholder..."
+        echo "DATABASE_URL=placeholder" > .env
+    }
+    CLEANUP_ENV=true
+fi
+
+# Build cross-platform com buildx
+docker buildx build \
+    --platform linux/arm64 \
+    --builder arm-builder \
+    --load \
+    -t atrupe-image:latest \
+    . || {
+    [ "$CLEANUP_ENV" = true ] && rm -f .env
+    error "Erro ao construir imagem"
+}
+
+[ "$CLEANUP_ENV" = true ] && rm -f .env
+success "Imagem ARM64 construída localmente!"
+
+# ============================================================
+# ETAPA 3: Transferir imagem para o servidor
+# ============================================================
+log "Transferindo imagem para o servidor AWS..."
+warn "Pode levar alguns minutos dependendo da conexão."
+
+docker save atrupe-image:latest | gzip | ssh atrupe-aws "gunzip | docker load" || {
+    error "Erro ao transferir imagem"
+}
+
+success "Deploy PROD executado com sucesso!"
+echo ""
+echo "🔗 Próximo passo: Acesse o Portainer e atualize a stack de PRODUÇÃO"
+echo "   https://portainer.atrupe.com.br"
