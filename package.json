@@ -23,7 +23,7 @@
     "seed": "prisma db seed",
     "migrate": "prisma migrate dev",
     "update:permissions": "ts-node src/scripts/update-roles-permissions.ts",
-    "cleanup:duplicates": "ts-node scripts/cleanup-duplicate-subscriptions.ts",
+    "cleanup:duplicates": "ts-node src/scripts/cleanup-duplicate-subscriptions.ts",
     "deploy:prod": "./scripts/deploy-prod.sh",
     "deploy:dev": "./scripts/deploy-dev.sh",
     "seed:fiscal": "node prisma/apply-fiscal-seeds.js"
