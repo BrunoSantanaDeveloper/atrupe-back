@@ -6,6 +6,7 @@ echo "🚀 Iniciando deploy no ambiente DEV..."
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
+YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Função para log colorido
@@ -20,6 +21,10 @@ success() {
 error() {
     echo -e "${RED}❌ $1${NC}"
     exit 1
+}
+
+warn() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
 }
 
 # Executar comandos no servidor AWS (ambiente dev)
@@ -37,8 +42,9 @@ ssh atrupe-aws << 'EOF'
     echo "📋 Copiando arquivo .env de desenvolvimento..."
     cp .env.dev .env || { echo "❌ Erro: arquivo .env.dev não encontrado"; exit 1; }
 
-    echo "🐳 Construindo imagem Docker..."
-    docker build --cpu-quota=50000 --memory=512m . -t atrupe-image-dev:latest || { echo "❌ Erro ao construir imagem"; exit 1; }
+    echo "🐳 Construindo imagem Docker (prioridade baixa para não afetar produção)..."
+    echo "⏳ O build será mais lento, mas não derruba o servidor."
+    nice -n 19 ionice -c2 -n7 docker build . -t atrupe-image-dev:latest || { echo "❌ Erro ao construir imagem"; exit 1; }
 
     echo "✅ Deploy concluído! Agora atualize a stack no Portainer."
 EOF
