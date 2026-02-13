@@ -1,4 +1,4 @@
-import { IsOptional, IsEnum, IsDateString } from 'class-validator';
+import { IsOptional, IsEnum, IsDateString, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class FinancialReportFilterDto {
@@ -33,6 +33,56 @@ export class FinancialReportFilterDto {
   @IsOptional()
   @Type(() => Number)
   limit?: number = 10;
+}
+
+export class AdvancedFinancialReportFilterDto {
+  @IsOptional()
+  @IsEnum(['receitas', 'despesas'])
+  tab?: 'receitas' | 'despesas';
+
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  natureId?: string;
+
+  @IsOptional()
+  @IsString()
+  bankAccountId?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentConditionId?: string;
+
+  @IsOptional()
+  @IsString()
+  clientId?: string;
+
+  @IsOptional()
+  @IsEnum(['yes', 'no'])
+  includeTransfers?: 'yes' | 'no';
+
+  @IsOptional()
+  @IsEnum(['emission', 'dueDate', 'payment', 'cancel'])
+  periodType?: 'emission' | 'dueDate' | 'payment' | 'cancel';
+
+  @IsOptional()
+  @IsEnum(['none', 'client'])
+  groupBy?: 'none' | 'client';
+
+  @IsOptional()
+  @IsEnum(['saleDate', 'dueDate', 'receivedDate', 'valueDesc', 'valueAsc'])
+  orderBy?: 'saleDate' | 'dueDate' | 'receivedDate' | 'valueDesc' | 'valueAsc';
 }
 
 // Response DTOs

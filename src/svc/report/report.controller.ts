@@ -3,7 +3,10 @@ import { ReportService } from './report.service';
 import { JwtAuthGuard } from '../../core/auth/guards/jwt.guard';
 import { AbacService } from '../../core/auth/abac/abac.service';
 import { SalesReportFilterDto } from './dto/sales-report.dto';
-import { FinancialReportFilterDto } from './dto/financial-report.dto';
+import {
+  FinancialReportFilterDto,
+  AdvancedFinancialReportFilterDto,
+} from './dto/financial-report.dto';
 import { CashFlowReportFilterDto } from './dto/cash-flow-report.dto';
 import { DfcReportFilterDto } from './dto/dfc-report.dto';
 import { CommissionReportFilterDto } from './dto/commission-report.dto';
@@ -76,6 +79,15 @@ export class ReportController {
   ) {
     const companyId = (req as any).user?.companyId;
     return this.reportService.getFinancialPdfData(companyId, filters);
+  }
+
+  @Get('financial/advanced-pdf-data')
+  async getAdvancedFinancialPdfData(
+    @Query() filters: AdvancedFinancialReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.getAdvancedFinancialPdfData(companyId, filters);
   }
 
   // ============== SALES REPORT ENDPOINTS ==============
