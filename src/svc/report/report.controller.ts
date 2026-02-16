@@ -1,6 +1,10 @@
 import { Controller, Get, Query, UseGuards, Req } from '@nestjs/common';
 import { ReportService } from './report.service';
 import { JwtAuthGuard } from '../../core/auth/guards/jwt.guard';
+import {
+  BlockLevelGuard,
+  RequireUnblocked,
+} from '../../core/auth/guards/block-level.guard';
 import { AbacService } from '../../core/auth/abac/abac.service';
 import { SalesReportFilterDto } from './dto/sales-report.dto';
 import {
@@ -14,7 +18,7 @@ import { Request } from 'express';
 
 const RESOURCE = 'report';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, BlockLevelGuard)
 @Controller(RESOURCE)
 export class ReportController {
   constructor(
@@ -73,6 +77,7 @@ export class ReportController {
   }
 
   @Get('financial/pdf-data')
+  @RequireUnblocked()
   async getFinancialPdfData(
     @Query() filters: FinancialReportFilterDto,
     @Req() req: Request,
@@ -82,6 +87,7 @@ export class ReportController {
   }
 
   @Get('financial/advanced-pdf-data')
+  @RequireUnblocked()
   async getAdvancedFinancialPdfData(
     @Query() filters: AdvancedFinancialReportFilterDto,
     @Req() req: Request,
@@ -184,6 +190,7 @@ export class ReportController {
   }
 
   @Get('sales/pdf-data')
+  @RequireUnblocked()
   async getSalesPdfData(
     @Query() filters: SalesReportFilterDto,
     @Req() req: Request,
@@ -223,6 +230,7 @@ export class ReportController {
   }
 
   @Get('cash-flow/pdf-data')
+  @RequireUnblocked()
   async getCashFlowPdfData(
     @Query() filters: CashFlowReportFilterDto,
     @Req() req: Request,
@@ -243,6 +251,7 @@ export class ReportController {
   }
 
   @Get('sector-results/pdf-data')
+  @RequireUnblocked()
   async getSectorResultsPdfData(
     @Query() filters: SalesReportFilterDto,
     @Req() req: Request,
@@ -287,6 +296,7 @@ export class ReportController {
   }
 
   @Get('dfc/pdf-data')
+  @RequireUnblocked()
   async getDfcPdfData(
     @Query() filters: DfcReportFilterDto,
     @Req() req: Request,

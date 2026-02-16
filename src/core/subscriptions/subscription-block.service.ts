@@ -18,7 +18,7 @@ export class SubscriptionBlockService {
 
   // Regras de bloqueio (dias de atraso)
   private readonly DAYS_FOR_PARTIAL_BLOCK = 3;
-  private readonly DAYS_FOR_FULL_BLOCK = 10;
+  private readonly DAYS_FOR_FULL_BLOCK = 7;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -137,6 +137,8 @@ export class SubscriptionBlockService {
             blockLevel: newBlockLevel,
             blockedAt: new Date(),
             blockReason: `Assinatura com ${daysOverdue} dias de atraso`,
+            // Quando bloqueio total, marcar empresa como inativa
+            ...(newBlockLevel === 'FULL' && { isActive: false }),
           },
         });
 
@@ -173,6 +175,7 @@ export class SubscriptionBlockService {
         blockLevel: 'NONE',
         blockedAt: null,
         blockReason: null,
+        isActive: true,
       },
     });
 
@@ -198,6 +201,7 @@ export class SubscriptionBlockService {
         blockLevel: 'NONE',
         blockedAt: null,
         blockReason: null,
+        isActive: true,
       },
     });
 
