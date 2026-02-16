@@ -248,24 +248,69 @@ export class ReportService {
     );
     const rejectedCount = rejectedQuotations.length;
 
-    // Awaiting response (DONE quotations - sent to client, waiting for response)
-    const noResponseQuotations = await this.prisma.quotation.findMany({
+    // Awaiting response (DONE quotations created in the period, still within due date)
+    const now = new Date();
+    const awaitingQuotations = await this.prisma.quotation.findMany({
       where: {
         companyId,
         status: 'DONE',
         approvedAt: null,
         createdAt: { gte: startDate, lte: endDate },
+        OR: [{ dueDate: null }, { dueDate: { gte: now } }],
         ...(filters.sellerId && { sellerId: filters.sellerId }),
         ...(filters.originId && { contactSourceId: filters.originId }),
       },
       select: this.quotationValueSelect,
     });
 
-    const noResponseTotal = noResponseQuotations.reduce(
+    const noResponseTotal = awaitingQuotations.reduce(
       (sum, q) => sum + this.computeQuotationCompositeValue(q),
       0,
     );
-    const noResponseCount = noResponseQuotations.length;
+    const noResponseCount = awaitingQuotations.length;
+
+    // Expired quotations (DONE, dueDate already passed, filtered by dueDate in period)
+    const expiredQuotations = await this.prisma.quotation.findMany({
+      where: {
+        companyId,
+        status: 'DONE',
+        approvedAt: null,
+        dueDate: { lt: now, gte: startDate, lte: endDate },
+        ...(filters.sellerId && { sellerId: filters.sellerId }),
+        ...(filters.originId && { contactSourceId: filters.originId }),
+      },
+      select: this.quotationValueSelect,
+    });
+
+    const expiredTotal = expiredQuotations.reduce(
+      (sum, q) => sum + this.computeQuotationCompositeValue(q),
+      0,
+    );
+    const expiredCount = expiredQuotations.length;
+
+    // Canceled orders
+    const canceledOrders = await this.prisma.order.findMany({
+      where: {
+        status: 'CANCELED',
+        quotation: {
+          companyId,
+          approvedAt: { gte: startDate, lte: endDate },
+          ...(filters.sellerId && { sellerId: filters.sellerId }),
+          ...(filters.originId && { contactSourceId: filters.originId }),
+        },
+      },
+      include: {
+        quotation: {
+          select: this.quotationValueSelect,
+        },
+      },
+    });
+
+    const canceledTotal = canceledOrders.reduce(
+      (sum, o) => sum + this.computeQuotationCompositeValue(o.quotation),
+      0,
+    );
+    const canceledCount = canceledOrders.length;
 
     // Average ticket
     const averageTicket = approvedCount > 0 ? approvedTotal / approvedCount : 0;
@@ -277,6 +322,10 @@ export class ReportService {
       rejectedCount,
       noResponseTotal,
       noResponseCount,
+      expiredTotal,
+      expiredCount,
+      canceledTotal,
+      canceledCount,
       averageTicket,
       commission,
       approvalTime,
@@ -362,7 +411,7 @@ export class ReportService {
         ...(filters.originId && { contactSourceId: filters.originId }),
       },
       include: {
-        order: { select: { id: true } },
+        order: { select: { id: true, status: true } },
       },
     });
 
@@ -376,6 +425,7 @@ export class ReportService {
       {
         monthIndex: number;
         approved: number;
+        canceled: number;
         expired: number;
         rejected: number;
       }
@@ -388,6 +438,7 @@ export class ReportService {
       monthlyData[monthKey] = {
         monthIndex,
         approved: 0,
+        canceled: 0,
         expired: 0,
         rejected: 0,
       };
@@ -398,7 +449,11 @@ export class ReportService {
       if (!monthlyData[month]) return;
 
       if (q.order) {
-        monthlyData[month].approved++;
+        if (q.order.status === 'CANCELED') {
+          monthlyData[month].canceled++;
+        } else {
+          monthlyData[month].approved++;
+        }
       } else if (q.status === 'REJECTED') {
         // Check if rejection is within filter period
         if (
@@ -421,6 +476,7 @@ export class ReportService {
       .map(([label, data]) => ({
         label: label.charAt(0).toUpperCase() + label.slice(1),
         approved: data.approved,
+        canceled: data.canceled,
         expired: data.expired,
         rejected: data.rejected,
       }));
@@ -617,9 +673,8 @@ export class ReportService {
     const groupBy = filters.groupBy || 'client';
     const orderBy = filters.orderBy || 'approvedDate';
 
-    // Base where clause
+    // Base where clause — include canceled orders
     const whereClause = {
-      status: { not: 'CANCELED' as const },
       quotation: {
         companyId,
         approvedAt: { gte: startDate, lte: endDate },
@@ -664,18 +719,20 @@ export class ReportService {
     const mapToRecord = (order: any): SaleRecordItem => {
       const q = order.quotation;
       const phase: SalePhase =
-        order.status === 'FINISHED'
-          ? 'entregue'
-          : order.status === 'IN_PRODUCTION' ||
-              order.status === 'COMPLETED' ||
-              order.status === 'DELIVERY'
-            ? 'em-producao'
-            : 'aguardando';
+        order.status === 'CANCELED'
+          ? 'cancelada'
+          : order.status === 'FINISHED'
+            ? 'entregue'
+            : order.status === 'IN_PRODUCTION' ||
+                order.status === 'COMPLETED' ||
+                order.status === 'DELIVERY'
+              ? 'em-producao'
+              : 'aguardando';
 
       return {
         id: order.id,
         clientName: q.client?.name || 'Cliente não informado',
-        serviceDescription: `${q.series?.code || ''}-${q.quotationNumber || ''} - ${q.description || ''}`,
+        serviceDescription: `${q.quotationNumber || ''}-${q.series?.code || ''} - ${q.description || ''}`,
         approvedDate: q.approvedAt ? format(q.approvedAt, 'dd/MM/yyyy') : null,
         dueDate: q.dueDate ? format(q.dueDate, 'dd/MM/yyyy') : '-',
         value: q.totalValue || 0,
