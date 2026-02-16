@@ -5,6 +5,7 @@ import {
   SalesReportFilterDto,
   SalesReportSummaryResponse,
   SalesEvolutionDataPoint,
+  SalesEvolutionResponse,
   ApprovedRejectedDataPoint,
   OriginChartDataPoint,
   TopProductItem,
@@ -30,8 +31,10 @@ import {
   startOfMonth,
   endOfMonth,
   subMonths,
+  addMonths,
   format,
   differenceInHours,
+  differenceInCalendarMonths,
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -335,30 +338,48 @@ export class ReportService {
   async getSalesEvolution(
     companyId: string,
     filters: SalesReportFilterDto,
-  ): Promise<SalesEvolutionDataPoint[]> {
+  ): Promise<SalesEvolutionResponse> {
     const { startDate, endDate } = this.getDateRange(filters);
+    const monthsDiff = differenceInCalendarMonths(endDate, startDate);
 
-    const orders = await this.prisma.order.findMany({
-      where: {
-        status: { not: 'CANCELED' },
-        quotation: {
-          companyId,
-          approvedAt: { gte: startDate, lte: endDate },
-          ...(filters.sellerId && { sellerId: filters.sellerId }),
-          ...(filters.originId && { contactSourceId: filters.originId }),
-        },
-      },
-      include: {
-        quotation: {
-          select: {
-            ...this.quotationValueSelect,
-            approvedAt: true,
-          },
-        },
-      },
-    });
+    // Determine mode
+    if (monthsDiff <= 1) {
+      return this.getSalesEvolutionDaily(
+        companyId,
+        filters,
+        startDate,
+        endDate,
+      );
+    } else if (monthsDiff <= 12) {
+      return this.getSalesEvolutionMonthly(
+        companyId,
+        filters,
+        startDate,
+        endDate,
+      );
+    } else {
+      return this.getSalesEvolutionYearly(
+        companyId,
+        filters,
+        startDate,
+        endDate,
+      );
+    }
+  }
 
-    // Group by day
+  private async getSalesEvolutionDaily(
+    companyId: string,
+    filters: SalesReportFilterDto,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<SalesEvolutionResponse> {
+    const orders = await this.fetchEvolutionOrders(
+      companyId,
+      filters,
+      startDate,
+      endDate,
+    );
+
     const dailyData: Record<
       string,
       { sortKey: string; approved: number; count: number }
@@ -380,18 +401,164 @@ export class ReportService {
       }
     });
 
-    // Convert to array - only include days with sales
-    const result: SalesEvolutionDataPoint[] = Object.entries(dailyData)
+    const data: SalesEvolutionDataPoint[] = Object.entries(dailyData)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      .filter(([_, data]) => data.approved > 0)
+      .filter(([_, d]) => d.approved > 0)
       .sort(([, a], [, b]) => a.sortKey.localeCompare(b.sortKey))
-      .map(([day, data]) => ({
-        day,
-        approved: data.approved,
-        count: data.count,
-      }));
+      .map(([day, d]) => ({ day, approved: d.approved, count: d.count }));
 
-    return result;
+    return { mode: 'daily', data, yearlyData: [] };
+  }
+
+  private async getSalesEvolutionMonthly(
+    companyId: string,
+    filters: SalesReportFilterDto,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<SalesEvolutionResponse> {
+    // Expand to full months
+    const adjustedStart = startOfMonth(startDate);
+    const adjustedEnd = endOfMonth(endDate);
+
+    const orders = await this.fetchEvolutionOrders(
+      companyId,
+      filters,
+      adjustedStart,
+      adjustedEnd,
+    );
+
+    // Pre-populate all months in range
+    const monthlyData: Record<
+      string,
+      { sortKey: string; approved: number; count: number }
+    > = {};
+    let cursor = adjustedStart;
+    while (cursor <= adjustedEnd) {
+      const label = format(cursor, 'MMM/yy', { locale: ptBR });
+      const sortKey = format(cursor, 'yyyy-MM');
+      monthlyData[label] = { sortKey, approved: 0, count: 0 };
+      cursor = addMonths(cursor, 1);
+    }
+
+    orders.forEach((order) => {
+      if (order.quotation.approvedAt) {
+        const label = format(order.quotation.approvedAt, 'MMM/yy', {
+          locale: ptBR,
+        });
+        if (monthlyData[label]) {
+          monthlyData[label].approved += this.computeQuotationCompositeValue(
+            order.quotation,
+          );
+          monthlyData[label].count += 1;
+        }
+      }
+    });
+
+    const data: SalesEvolutionDataPoint[] = Object.entries(monthlyData)
+      .sort(([, a], [, b]) => a.sortKey.localeCompare(b.sortKey))
+      .map(([day, d]) => ({ day, approved: d.approved, count: d.count }));
+
+    return { mode: 'monthly', data, yearlyData: [] };
+  }
+
+  private async getSalesEvolutionYearly(
+    companyId: string,
+    filters: SalesReportFilterDto,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<SalesEvolutionResponse> {
+    // Expand each year to full months (rule 2)
+    const adjustedStart = startOfMonth(startDate);
+    const adjustedEnd = endOfMonth(endDate);
+
+    const orders = await this.fetchEvolutionOrders(
+      companyId,
+      filters,
+      adjustedStart,
+      adjustedEnd,
+    );
+
+    const startYear = adjustedStart.getFullYear();
+    const endYear = adjustedEnd.getFullYear();
+
+    // Month labels (Jan-Dec)
+    const monthLabels = Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(2024, i, 1);
+      return format(d, 'MMM', { locale: ptBR }).replace(/^./, (c) =>
+        c.toUpperCase(),
+      );
+    });
+
+    // Build per-year data
+    const yearlyData = [];
+    for (let year = startYear; year <= endYear; year++) {
+      const yearStartMonth = year === startYear ? adjustedStart.getMonth() : 0;
+      const yearEndMonth = year === endYear ? adjustedEnd.getMonth() : 11;
+
+      const months = monthLabels
+        .map((label, monthIdx) => {
+          if (monthIdx < yearStartMonth || monthIdx > yearEndMonth) {
+            return null;
+          }
+          return { month: label, approved: 0, count: 0 };
+        })
+        .filter(Boolean) as {
+        month: string;
+        approved: number;
+        count: number;
+      }[];
+
+      yearlyData.push({ year, data: months });
+    }
+
+    // Aggregate orders into yearly buckets
+    orders.forEach((order) => {
+      if (order.quotation.approvedAt) {
+        const year = order.quotation.approvedAt.getFullYear();
+        const monthIdx = order.quotation.approvedAt.getMonth();
+        const monthLabel = monthLabels[monthIdx];
+
+        const yearEntry = yearlyData.find((y) => y.year === year);
+        if (yearEntry) {
+          const monthEntry = yearEntry.data.find((m) => m.month === monthLabel);
+          if (monthEntry) {
+            monthEntry.approved += this.computeQuotationCompositeValue(
+              order.quotation,
+            );
+            monthEntry.count += 1;
+          }
+        }
+      }
+    });
+
+    return { mode: 'yearly', data: [], yearlyData };
+  }
+
+  private async fetchEvolutionOrders(
+    companyId: string,
+    filters: SalesReportFilterDto,
+    startDate: Date,
+    endDate: Date,
+  ) {
+    return this.prisma.order.findMany({
+      where: {
+        status: { not: 'CANCELED' },
+        quotation: {
+          companyId,
+          approvedAt: { gte: startDate, lte: endDate },
+          ...(filters.sellerId && { sellerId: filters.sellerId }),
+          ...(filters.originId && { contactSourceId: filters.originId }),
+        },
+      },
+      include: {
+        quotation: {
+          select: {
+            ...this.quotationValueSelect,
+            approvedAt: true,
+          },
+        },
+      },
+    });
   }
 
   async getApprovedRejected(

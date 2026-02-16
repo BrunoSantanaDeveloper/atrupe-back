@@ -62,6 +62,17 @@ export interface SalesEvolutionDataPoint {
   count: number;
 }
 
+export interface SalesEvolutionYearSeries {
+  year: number;
+  data: { month: string; approved: number; count: number }[];
+}
+
+export interface SalesEvolutionResponse {
+  mode: 'daily' | 'monthly' | 'yearly';
+  data: SalesEvolutionDataPoint[];
+  yearlyData: SalesEvolutionYearSeries[];
+}
+
 export interface ApprovedRejectedDataPoint {
   label: string;
   approved: number;
