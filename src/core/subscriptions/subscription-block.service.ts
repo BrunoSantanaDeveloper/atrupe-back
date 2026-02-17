@@ -20,16 +20,26 @@ export class SubscriptionBlockService {
   private readonly DAYS_FOR_PARTIAL_BLOCK = 3;
   private readonly DAYS_FOR_FULL_BLOCK = 7;
 
+  // Flag para ativar/desativar o cron de bloqueio
+  private readonly isCronActive = false;
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Cron job executado diariamente às 6h para verificar atrasos
+   * Cron job executado diariamente às 3h para verificar atrasos
    */
-  @Cron('0 6 * * *', {
+  @Cron('0 3 * * *', {
     name: 'subscription-block-check',
     timeZone: 'America/Sao_Paulo',
   })
   async handleCron(): Promise<void> {
+    if (!this.isCronActive) {
+      this.logger.log(
+        'Cron de bloqueio desativado (isCronActive = false). Pulando execução.',
+      );
+      return;
+    }
+
     this.logger.log('Iniciando verificação de bloqueios de assinatura...');
 
     try {
