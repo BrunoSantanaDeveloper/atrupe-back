@@ -52,15 +52,12 @@ warn "O build roda na sua máquina. Zero impacto no servidor."
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/.." || error "Erro ao navegar para pasta do projeto"
 
-# Copiar .env do servidor se não existir localmente
-if [ ! -f .env ]; then
-    warn ".env não encontrado localmente. Copiando do servidor..."
-    scp atrupe-aws:~/atrupe-back/.env .env || {
-        warn "Não foi possível copiar .env. Criando placeholder..."
-        echo "DATABASE_URL=placeholder" > .env
-    }
-    CLEANUP_ENV=true
+# Backup do .env local (se existir) e copiar .env.dev do servidor
+if [ -f .env ]; then
+    cp .env .env.local.bak
 fi
+log "Copiando .env de DEV do servidor..."
+scp atrupe-aws:~/atrupe-back/.env .env || error "Não foi possível copiar .env do servidor"
 
 # Build cross-platform com buildx
 docker buildx build \
@@ -69,11 +66,13 @@ docker buildx build \
     --load \
     -t atrupe-image-dev:latest \
     . || {
-    [ "$CLEANUP_ENV" = true ] && rm -f .env
     error "Erro ao construir imagem"
 }
 
-[ "$CLEANUP_ENV" = true ] && rm -f .env
+# Restaurar .env local original
+if [ -f .env.local.bak ]; then
+    mv .env.local.bak .env
+fi
 success "Imagem ARM64 construída localmente!"
 
 # ============================================================
