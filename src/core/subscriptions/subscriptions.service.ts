@@ -1842,7 +1842,7 @@ export class SubscriptionsService {
       // Determinar mensagem apropriada baseada nos status
       let message: string;
       if (hasOverduePayment) {
-        message = '⚠️ Cliente inadimplente! Há pagamento vencido ou em atraso.';
+        message = 'Cliente inadimplente! Há pagamento vencido ou em atraso.';
       } else if (hasPendingSync) {
         message =
           'Pagamento confirmado no Asaas! A subscription local pode ser ativada.';
