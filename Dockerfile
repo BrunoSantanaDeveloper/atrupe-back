@@ -32,6 +32,8 @@ COPY --from=builder /usr/src/app/node_modules ./node_modules
 
 # Copiar o build e arquivos necessários
 COPY --from=builder /usr/src/app/dist ./dist
+# Garantir que templates de e-mail estejam presentes (assets do nest build)
+COPY --from=builder /usr/src/app/src/core/mail/templates ./dist/core/mail/templates
 COPY --from=builder /usr/src/app/prisma ./prisma
 COPY --from=builder /usr/src/app/src/seeds ./src/seeds
 COPY --from=builder /usr/src/app/package*.json ./

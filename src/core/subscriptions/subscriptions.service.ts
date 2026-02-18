@@ -602,7 +602,16 @@ export class SubscriptionsService {
             createdAt: subscription.createdAt,
             plan: subscription.plan.name,
             planType: subscription.plan.planType,
-            status: subscription.status,
+            status:
+              company.blockLevel === 'PARTIAL'
+                ? 'BLOCKED'
+                : company.blockLevel === 'FULL'
+                  ? 'INACTIVE'
+                  : subscription.status === 'CANCELED'
+                    ? 'CANCELED'
+                    : subscription.status === 'INACTIVE'
+                      ? 'INACTIVE'
+                      : 'ACTIVE',
             state: address?.state
               ? { id: address.state, name: address.state }
               : { id: '', name: '' },
@@ -2107,6 +2116,47 @@ export class SubscriptionsService {
           },
         });
 
+        // Desbloquear a empresa (limpar blockLevel/isActive)
+        const company = await this.prisma.company.findUnique({
+          where: { id: companyId },
+          select: { blockLevel: true, isActive: true, blockedAt: true },
+        });
+
+        if (
+          company &&
+          (company.blockLevel !== 'NONE' || company.isActive === false)
+        ) {
+          await this.prisma.company.update({
+            where: { id: companyId },
+            data: {
+              blockLevel: 'NONE',
+              isActive: true,
+              blockedAt: null,
+            },
+          });
+
+          this.logger.log(
+            `Company ${companyId} desbloqueada: blockLevel → NONE, isActive → true`,
+          );
+
+          // Registrar no histórico da empresa
+          await this.prisma.companyHistory.create({
+            data: {
+              companyId,
+              action: 'UNBLOCKED',
+              description:
+                'Empresa desbloqueada automaticamente após confirmação de pagamento',
+              changes: {
+                before: {
+                  blockLevel: company.blockLevel,
+                  isActive: company.isActive,
+                },
+                after: { blockLevel: 'NONE', isActive: true },
+              },
+              createdByName: 'Sistema - Sincronização',
+            },
+          });
+        }
         // Registrar no histórico
         await this.prisma.subscriptionHistory.create({
           data: {

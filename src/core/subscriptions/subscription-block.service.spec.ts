@@ -410,8 +410,9 @@ describe('SubscriptionBlockService', () => {
       expect(result.paymentUrl).toBe('https://asaas.com/boleto/123');
     });
 
-    it('should construct URL from asaasPaymentId when no URLs available', async () => {
+    it('should fetch URL from Asaas API when no local URLs available', async () => {
       (mockPrismaService as any).payment.findFirst.mockResolvedValue({
+        id: 'payment-1',
         invoiceUrl: null,
         bankSlipUrl: null,
         asaasPaymentId: 'pay_abc123',
@@ -419,9 +420,27 @@ describe('SubscriptionBlockService', () => {
         subscription: { asaasSubscriptionId: 'sub_123' },
       });
 
+      mockSubscriptionsService.getAsaasSubscriptionPayments.mockResolvedValue([
+        {
+          id: 'pay_abc123',
+          invoiceUrl: 'https://www.asaas.com/i/live_invoice_url',
+          bankSlipUrl: null,
+          status: 'OVERDUE',
+        },
+      ]);
+
+      (mockPrismaService as any).payment.update = jest
+        .fn()
+        .mockResolvedValue({});
+
       const result = await service.getPendingPaymentUrl('company-1');
 
-      expect(result.paymentUrl).toBe('https://www.asaas.com/i/pay_abc123');
+      expect(result.paymentUrl).toBe(
+        'https://www.asaas.com/i/live_invoice_url',
+      );
+      expect(
+        mockSubscriptionsService.getAsaasSubscriptionPayments,
+      ).toHaveBeenCalledWith('sub_123');
     });
 
     it('should return null when no payments found', async () => {
