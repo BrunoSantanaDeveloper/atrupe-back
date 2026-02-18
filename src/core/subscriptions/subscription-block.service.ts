@@ -1,7 +1,14 @@
-import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ForbiddenException,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { BlockLevel } from '@prisma/client';
+import { SubscriptionsService } from './subscriptions.service';
 
 export interface BlockCheckResult {
   companyId: string;
@@ -9,7 +16,7 @@ export interface BlockCheckResult {
   daysOverdue: number;
   previousBlockLevel: BlockLevel;
   newBlockLevel: BlockLevel;
-  action: 'blocked' | 'upgraded' | 'unchanged';
+  action: 'blocked' | 'upgraded' | 'unchanged' | 'skipped';
 }
 
 @Injectable()
@@ -21,9 +28,13 @@ export class SubscriptionBlockService {
   private readonly DAYS_FOR_FULL_BLOCK = 7;
 
   // Flag para ativar/desativar o cron de bloqueio
-  private readonly isCronActive = false;
+  private readonly isCronActive = true;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => SubscriptionsService))
+    private readonly subscriptionsService: SubscriptionsService,
+  ) {}
 
   /**
    * Cron job executado diariamente às 3h para verificar atrasos
@@ -45,7 +56,9 @@ export class SubscriptionBlockService {
     try {
       const results = await this.checkAndApplyBlocks();
 
-      const blocked = results.filter((r) => r.action !== 'unchanged');
+      const blocked = results.filter(
+        (r) => r.action !== 'unchanged' && r.action !== 'skipped',
+      );
       if (blocked.length > 0) {
         this.logger.log(`Bloqueios aplicados: ${blocked.length} empresas`);
         blocked.forEach((r) => {
@@ -62,14 +75,16 @@ export class SubscriptionBlockService {
   }
 
   /**
-   * Verifica todas as empresas com assinaturas ativas e aplica bloqueios conforme atraso
+   * Verifica todas as empresas com assinaturas ativas e aplica bloqueios conforme atraso.
+   * Consulta o Asaas diretamente para confirmar inadimplência real,
+   * evitando bloqueios incorretos quando webhooks falham.
    */
   async checkAndApplyBlocks(): Promise<BlockCheckResult[]> {
     const results: BlockCheckResult[] = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Buscar empresas com assinaturas ativas e pagamentos pendentes/atrasados
+    // Buscar empresas com assinaturas ativas
     const companiesWithSubscriptions = await this.prisma.company.findMany({
       where: {
         isActive: true,
@@ -86,18 +101,8 @@ export class SubscriptionBlockService {
         Subscription: {
           where: { status: 'ACTIVE' },
           select: {
+            asaasSubscriptionId: true,
             nextDueDate: true,
-            payments: {
-              where: {
-                status: { in: ['PENDING', 'OVERDUE'] },
-              },
-              orderBy: { dueDate: 'asc' },
-              take: 1,
-              select: {
-                dueDate: true,
-                status: true,
-              },
-            },
           },
         },
       },
@@ -107,25 +112,87 @@ export class SubscriptionBlockService {
       const subscription = company.Subscription[0];
       if (!subscription) continue;
 
-      // Calcular dias de atraso
-      const oldestPendingPayment = subscription.payments[0];
-      let daysOverdue = 0;
+      // Pular subscriptions manuais (sem vínculo Asaas)
+      if (
+        !subscription.asaasSubscriptionId ||
+        subscription.asaasSubscriptionId.startsWith('manual_')
+      ) {
+        results.push({
+          companyId: company.id,
+          companyName: company.name,
+          daysOverdue: 0,
+          previousBlockLevel: company.blockLevel,
+          newBlockLevel: company.blockLevel,
+          action: 'skipped',
+        });
+        continue;
+      }
 
-      if (oldestPendingPayment) {
-        const dueDate = new Date(oldestPendingPayment.dueDate);
-        dueDate.setHours(0, 0, 0, 0);
-        daysOverdue = Math.floor(
-          (today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
+      // Consultar pagamentos diretamente no Asaas
+      let daysOverdue = 0;
+      try {
+        const asaasPayments =
+          await this.subscriptionsService.getAsaasSubscriptionPayments(
+            subscription.asaasSubscriptionId,
+          );
+
+        if (!asaasPayments || asaasPayments.length === 0) {
+          this.logger.warn(
+            `Nenhum pagamento encontrado no Asaas para ${company.name} (${subscription.asaasSubscriptionId})`,
+          );
+          results.push({
+            companyId: company.id,
+            companyName: company.name,
+            daysOverdue: 0,
+            previousBlockLevel: company.blockLevel,
+            newBlockLevel: company.blockLevel,
+            action: 'skipped',
+          });
+          continue;
+        }
+
+        // Encontrar pagamento OVERDUE ou PENDING vencido no Asaas
+        const todayStr = today.toISOString().split('T')[0];
+        const overduePayment = asaasPayments.find(
+          (p) =>
+            p.status === 'OVERDUE' ||
+            (p.status === 'PENDING' && p.dueDate < todayStr),
         );
-      } else {
-        // Verificar nextDueDate da subscription
-        const nextDue = new Date(subscription.nextDueDate);
-        nextDue.setHours(0, 0, 0, 0);
-        if (today > nextDue) {
+
+        if (overduePayment) {
+          const dueDate = new Date(overduePayment.dueDate);
+          dueDate.setHours(0, 0, 0, 0);
           daysOverdue = Math.floor(
-            (today.getTime() - nextDue.getTime()) / (1000 * 60 * 60 * 24),
+            (today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
           );
         }
+
+        // Se não há inadimplência no Asaas, empresa NÃO deve ser bloqueada
+        if (daysOverdue <= 0) {
+          results.push({
+            companyId: company.id,
+            companyName: company.name,
+            daysOverdue: 0,
+            previousBlockLevel: company.blockLevel,
+            newBlockLevel: company.blockLevel,
+            action: 'unchanged',
+          });
+          continue;
+        }
+      } catch (error) {
+        // Se falhar ao consultar Asaas, NÃO bloquear — logar e pular
+        this.logger.error(
+          `Erro ao consultar Asaas para ${company.name}: ${error.message}. Pulando empresa.`,
+        );
+        results.push({
+          companyId: company.id,
+          companyName: company.name,
+          daysOverdue: 0,
+          previousBlockLevel: company.blockLevel,
+          newBlockLevel: company.blockLevel,
+          action: 'skipped',
+        });
+        continue;
       }
 
       // Determinar nível de bloqueio apropriado
@@ -146,7 +213,7 @@ export class SubscriptionBlockService {
           data: {
             blockLevel: newBlockLevel,
             blockedAt: new Date(),
-            blockReason: `Assinatura com ${daysOverdue} dias de atraso`,
+            blockReason: `Assinatura com ${daysOverdue} dias de atraso (verificado no Asaas)`,
             // Quando bloqueio total, marcar empresa como inativa
             ...(newBlockLevel === 'FULL' && { isActive: false }),
           },

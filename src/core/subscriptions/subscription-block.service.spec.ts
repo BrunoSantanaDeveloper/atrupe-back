@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException } from '@nestjs/common';
 import { SubscriptionBlockService } from './subscription-block.service';
+import { SubscriptionsService } from './subscriptions.service';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { BlockLevel } from '@prisma/client';
 
@@ -19,6 +20,10 @@ describe('SubscriptionBlockService', () => {
     },
   };
 
+  const mockSubscriptionsService = {
+    getAsaasSubscriptionPayments: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -26,6 +31,10 @@ describe('SubscriptionBlockService', () => {
         {
           provide: PrismaService,
           useValue: mockPrismaService,
+        },
+        {
+          provide: SubscriptionsService,
+          useValue: mockSubscriptionsService,
         },
       ],
     }).compile();
@@ -45,22 +54,25 @@ describe('SubscriptionBlockService', () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    it('should apply PARTIAL block for company with 3+ days overdue', async () => {
-      const threeeDaysAgo = new Date(today);
-      threeeDaysAgo.setDate(threeeDaysAgo.getDate() - 3);
+    const makeDueDate = (daysAgo: number) => {
+      const date = new Date(today);
+      date.setDate(date.getDate() - daysAgo);
+      return date.toISOString().split('T')[0];
+    };
 
+    it('should apply PARTIAL block for company with 3+ days overdue in Asaas', async () => {
       mockPrismaService.company.findMany.mockResolvedValue([
         {
           id: 'company-1',
           name: 'Test Company',
           blockLevel: 'NONE',
           Subscription: [
-            {
-              nextDueDate: threeeDaysAgo,
-              payments: [{ dueDate: threeeDaysAgo, status: 'OVERDUE' }],
-            },
+            { asaasSubscriptionId: 'sub_123', nextDueDate: new Date() },
           ],
         },
+      ]);
+      mockSubscriptionsService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { status: 'OVERDUE', dueDate: makeDueDate(3) },
       ]);
       mockPrismaService.company.update.mockResolvedValue({});
 
@@ -77,22 +89,19 @@ describe('SubscriptionBlockService', () => {
       });
     });
 
-    it('should apply FULL block for company with 10+ days overdue', async () => {
-      const tenDaysAgo = new Date(today);
-      tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
-
+    it('should apply FULL block for company with 7+ days overdue in Asaas', async () => {
       mockPrismaService.company.findMany.mockResolvedValue([
         {
           id: 'company-2',
           name: 'Test Company 2',
           blockLevel: 'NONE',
           Subscription: [
-            {
-              nextDueDate: tenDaysAgo,
-              payments: [{ dueDate: tenDaysAgo, status: 'OVERDUE' }],
-            },
+            { asaasSubscriptionId: 'sub_456', nextDueDate: new Date() },
           ],
         },
+      ]);
+      mockSubscriptionsService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { status: 'OVERDUE', dueDate: makeDueDate(7) },
       ]);
       mockPrismaService.company.update.mockResolvedValue({});
 
@@ -101,24 +110,28 @@ describe('SubscriptionBlockService', () => {
       expect(results).toHaveLength(1);
       expect(results[0].newBlockLevel).toBe('FULL');
       expect(results[0].action).toBe('blocked');
+      expect(mockPrismaService.company.update).toHaveBeenCalledWith({
+        where: { id: 'company-2' },
+        data: expect.objectContaining({
+          blockLevel: 'FULL',
+          isActive: false,
+        }),
+      });
     });
 
     it('should upgrade from PARTIAL to FULL when days increase', async () => {
-      const tenDaysAgo = new Date(today);
-      tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
-
       mockPrismaService.company.findMany.mockResolvedValue([
         {
           id: 'company-3',
           name: 'Test Company 3',
           blockLevel: 'PARTIAL',
           Subscription: [
-            {
-              nextDueDate: tenDaysAgo,
-              payments: [{ dueDate: tenDaysAgo, status: 'OVERDUE' }],
-            },
+            { asaasSubscriptionId: 'sub_789', nextDueDate: new Date() },
           ],
         },
+      ]);
+      mockSubscriptionsService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { status: 'OVERDUE', dueDate: makeDueDate(10) },
       ]);
       mockPrismaService.company.update.mockResolvedValue({});
 
@@ -130,21 +143,19 @@ describe('SubscriptionBlockService', () => {
     });
 
     it('should NOT downgrade block level automatically', async () => {
-      const oneDayAgo = new Date(today);
-      oneDayAgo.setDate(oneDayAgo.getDate() - 1);
-
       mockPrismaService.company.findMany.mockResolvedValue([
         {
           id: 'company-4',
           name: 'Test Company 4',
           blockLevel: 'PARTIAL',
           Subscription: [
-            {
-              nextDueDate: oneDayAgo,
-              payments: [{ dueDate: oneDayAgo, status: 'PENDING' }],
-            },
+            { asaasSubscriptionId: 'sub_abc', nextDueDate: new Date() },
           ],
         },
+      ]);
+      // Only 1 day overdue — would be NONE, but PARTIAL should remain
+      mockSubscriptionsService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { status: 'PENDING', dueDate: makeDueDate(1) },
       ]);
 
       const results = await service.checkAndApplyBlocks();
@@ -155,22 +166,21 @@ describe('SubscriptionBlockService', () => {
       expect(mockPrismaService.company.update).not.toHaveBeenCalled();
     });
 
-    it('should not block company with no overdue payments', async () => {
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
+    it('should not block company when Asaas shows no overdue payments', async () => {
       mockPrismaService.company.findMany.mockResolvedValue([
         {
           id: 'company-5',
           name: 'Test Company 5',
           blockLevel: 'NONE',
           Subscription: [
-            {
-              nextDueDate: tomorrow,
-              payments: [],
-            },
+            { asaasSubscriptionId: 'sub_def', nextDueDate: new Date() },
           ],
         },
+      ]);
+      // All payments are confirmed — no overdue
+      mockSubscriptionsService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { status: 'CONFIRMED', dueDate: makeDueDate(0) },
+        { status: 'RECEIVED', dueDate: makeDueDate(30) },
       ]);
 
       const results = await service.checkAndApplyBlocks();
@@ -178,6 +188,72 @@ describe('SubscriptionBlockService', () => {
       expect(results).toHaveLength(1);
       expect(results[0].action).toBe('unchanged');
       expect(results[0].newBlockLevel).toBe('NONE');
+      expect(mockPrismaService.company.update).not.toHaveBeenCalled();
+    });
+
+    it('should skip manual subscriptions (no asaasSubscriptionId)', async () => {
+      mockPrismaService.company.findMany.mockResolvedValue([
+        {
+          id: 'company-6',
+          name: 'Manual Company',
+          blockLevel: 'NONE',
+          Subscription: [
+            { asaasSubscriptionId: 'manual_123', nextDueDate: new Date() },
+          ],
+        },
+      ]);
+
+      const results = await service.checkAndApplyBlocks();
+
+      expect(results).toHaveLength(1);
+      expect(results[0].action).toBe('skipped');
+      expect(
+        mockSubscriptionsService.getAsaasSubscriptionPayments,
+      ).not.toHaveBeenCalled();
+      expect(mockPrismaService.company.update).not.toHaveBeenCalled();
+    });
+
+    it('should skip company when Asaas API fails (not block)', async () => {
+      mockPrismaService.company.findMany.mockResolvedValue([
+        {
+          id: 'company-7',
+          name: 'API Error Company',
+          blockLevel: 'NONE',
+          Subscription: [
+            { asaasSubscriptionId: 'sub_fail', nextDueDate: new Date() },
+          ],
+        },
+      ]);
+      mockSubscriptionsService.getAsaasSubscriptionPayments.mockRejectedValue(
+        new Error('Asaas API timeout'),
+      );
+
+      const results = await service.checkAndApplyBlocks();
+
+      expect(results).toHaveLength(1);
+      expect(results[0].action).toBe('skipped');
+      expect(mockPrismaService.company.update).not.toHaveBeenCalled();
+    });
+
+    it('should skip company when Asaas returns no payments', async () => {
+      mockPrismaService.company.findMany.mockResolvedValue([
+        {
+          id: 'company-8',
+          name: 'No Payments Company',
+          blockLevel: 'NONE',
+          Subscription: [
+            { asaasSubscriptionId: 'sub_empty', nextDueDate: new Date() },
+          ],
+        },
+      ]);
+      mockSubscriptionsService.getAsaasSubscriptionPayments.mockResolvedValue(
+        [],
+      );
+
+      const results = await service.checkAndApplyBlocks();
+
+      expect(results).toHaveLength(1);
+      expect(results[0].action).toBe('skipped');
       expect(mockPrismaService.company.update).not.toHaveBeenCalled();
     });
   });
@@ -194,6 +270,7 @@ describe('SubscriptionBlockService', () => {
           blockLevel: 'NONE',
           blockedAt: null,
           blockReason: null,
+          isActive: true,
         },
       });
     });
@@ -216,6 +293,7 @@ describe('SubscriptionBlockService', () => {
           blockLevel: 'NONE',
           blockedAt: null,
           blockReason: null,
+          isActive: true,
         },
       });
       expect(mockPrismaService.companyHistory.create).toHaveBeenCalledWith({
@@ -298,22 +376,18 @@ describe('SubscriptionBlockService', () => {
 
   describe('getPendingPaymentUrl', () => {
     beforeEach(() => {
-      // Add subscription mock to prisma
-      (mockPrismaService as any).subscription = {
+      (mockPrismaService as any).payment = {
         findFirst: jest.fn(),
       };
     });
 
     it('should return invoiceUrl when available', async () => {
-      (mockPrismaService as any).subscription.findFirst.mockResolvedValue({
-        payments: [
-          {
-            invoiceUrl: 'https://asaas.com/invoice/123',
-            bankSlipUrl: 'https://asaas.com/boleto/123',
-            asaasPaymentId: 'pay_123',
-            dueDate: new Date('2024-01-15'),
-          },
-        ],
+      (mockPrismaService as any).payment.findFirst.mockResolvedValue({
+        invoiceUrl: 'https://asaas.com/invoice/123',
+        bankSlipUrl: 'https://asaas.com/boleto/123',
+        asaasPaymentId: 'pay_123',
+        dueDate: new Date('2024-01-15'),
+        subscription: { asaasSubscriptionId: 'sub_123' },
       });
 
       const result = await service.getPendingPaymentUrl('company-1');
@@ -323,15 +397,12 @@ describe('SubscriptionBlockService', () => {
     });
 
     it('should fallback to bankSlipUrl when invoiceUrl is null', async () => {
-      (mockPrismaService as any).subscription.findFirst.mockResolvedValue({
-        payments: [
-          {
-            invoiceUrl: null,
-            bankSlipUrl: 'https://asaas.com/boleto/123',
-            asaasPaymentId: 'pay_123',
-            dueDate: new Date('2024-01-15'),
-          },
-        ],
+      (mockPrismaService as any).payment.findFirst.mockResolvedValue({
+        invoiceUrl: null,
+        bankSlipUrl: 'https://asaas.com/boleto/123',
+        asaasPaymentId: 'pay_123',
+        dueDate: new Date('2024-01-15'),
+        subscription: { asaasSubscriptionId: 'sub_123' },
       });
 
       const result = await service.getPendingPaymentUrl('company-1');
@@ -340,15 +411,12 @@ describe('SubscriptionBlockService', () => {
     });
 
     it('should construct URL from asaasPaymentId when no URLs available', async () => {
-      (mockPrismaService as any).subscription.findFirst.mockResolvedValue({
-        payments: [
-          {
-            invoiceUrl: null,
-            bankSlipUrl: null,
-            asaasPaymentId: 'pay_abc123',
-            dueDate: new Date('2024-01-15'),
-          },
-        ],
+      (mockPrismaService as any).payment.findFirst.mockResolvedValue({
+        invoiceUrl: null,
+        bankSlipUrl: null,
+        asaasPaymentId: 'pay_abc123',
+        dueDate: new Date('2024-01-15'),
+        subscription: { asaasSubscriptionId: 'sub_123' },
       });
 
       const result = await service.getPendingPaymentUrl('company-1');
@@ -357,9 +425,10 @@ describe('SubscriptionBlockService', () => {
     });
 
     it('should return null when no payments found', async () => {
-      (mockPrismaService as any).subscription.findFirst.mockResolvedValue({
-        payments: [],
-      });
+      (mockPrismaService as any).payment.findFirst.mockResolvedValue(null);
+      (mockPrismaService as any).subscription = {
+        findFirst: jest.fn().mockResolvedValue(null),
+      };
 
       const result = await service.getPendingPaymentUrl('company-1');
 
@@ -367,13 +436,18 @@ describe('SubscriptionBlockService', () => {
       expect(result.dueDate).toBeNull();
     });
 
-    it('should return null when no subscription found', async () => {
-      (mockPrismaService as any).subscription.findFirst.mockResolvedValue(null);
+    it('should fallback to subscription portal URL when no payment URLs', async () => {
+      (mockPrismaService as any).payment.findFirst.mockResolvedValue({
+        invoiceUrl: null,
+        bankSlipUrl: null,
+        asaasPaymentId: null,
+        dueDate: new Date('2024-01-15'),
+        subscription: { asaasSubscriptionId: 'sub_xyz' },
+      });
 
       const result = await service.getPendingPaymentUrl('company-1');
 
-      expect(result.paymentUrl).toBeNull();
-      expect(result.dueDate).toBeNull();
+      expect(result.paymentUrl).toBe('https://www.asaas.com/c/sub_xyz');
     });
   });
 });

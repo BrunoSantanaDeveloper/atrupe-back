@@ -256,86 +256,61 @@ export class SubscriptionsService {
   }
 
   async getActiveTotals() {
-    // Buscar todas as subscriptions que NÃO são TRIAL agrupadas por status
-    // Incluir também o blockLevel da empresa
-    const subscriptions = await this.prisma.subscription.findMany({
-      where: {
-        plan: {
-          planType: {
-            not: 'TRIAL',
+    const nonTrialSub = { plan: { planType: { not: 'TRIAL' as const } } };
+
+    const [active, blocked, inactive, canceled] = await Promise.all([
+      // Ativas: blockLevel = NONE + tem sub ACTIVE não-TRIAL
+      this.prisma.company.count({
+        where: {
+          blockLevel: 'NONE',
+          Subscription: { some: { status: 'ACTIVE', ...nonTrialSub } },
+        },
+      }),
+      // Bloqueadas: blockLevel = PARTIAL + tem sub não-TRIAL
+      this.prisma.company.count({
+        where: {
+          blockLevel: 'PARTIAL',
+          Subscription: { some: nonTrialSub },
+        },
+      }),
+      // Inativas: blockLevel = FULL OU (NONE + sub INACTIVE sem sub ACTIVE)
+      this.prisma.company.count({
+        where: {
+          OR: [
+            {
+              blockLevel: 'FULL',
+              Subscription: { some: nonTrialSub },
+            },
+            {
+              blockLevel: 'NONE',
+              Subscription: {
+                some: { status: 'INACTIVE', ...nonTrialSub },
+                none: { status: 'ACTIVE', ...nonTrialSub },
+              },
+            },
+          ],
+        },
+      }),
+      // Canceladas: blockLevel = NONE + sub CANCELED sem ACTIVE
+      this.prisma.company.count({
+        where: {
+          blockLevel: 'NONE',
+          Subscription: {
+            some: { status: 'CANCELED', ...nonTrialSub },
+            none: { status: 'ACTIVE', ...nonTrialSub },
           },
         },
-      },
-      select: {
-        companyId: true,
-        status: true,
-        Company: {
-          select: {
-            blockLevel: true,
-          },
-        },
-      },
-    });
-
-    // Agrupar por empresa
-    const companyData: Record<
-      string,
-      { statuses: string[]; blockLevel: string }
-    > = {};
-
-    for (const sub of subscriptions) {
-      if (!companyData[sub.companyId]) {
-        companyData[sub.companyId] = {
-          statuses: [],
-          blockLevel: sub.Company?.blockLevel || 'NONE',
-        };
-      }
-      companyData[sub.companyId].statuses.push(sub.status);
-    }
-
-    // Calcular totais baseados no status prioritário da empresa
-    const totals = {
-      ACTIVE: 0,
-      BLOCKED: 0,
-      INACTIVE: 0,
-      CANCELED: 0,
-      TOTAL: 0,
-    };
-
-    for (const companyId in companyData) {
-      const { statuses, blockLevel } = companyData[companyId];
-      let finalStatus = 'INACTIVE'; // Default fallback
-
-      // Verificar primeiro o blockLevel da empresa
-      // PARTIAL = Bloqueadas (ainda pode usar, mas com restrições)
-      // FULL = Inativas (não pode usar o sistema)
-      if (blockLevel === 'PARTIAL') {
-        finalStatus = 'BLOCKED';
-      } else if (blockLevel === 'FULL') {
-        finalStatus = 'INACTIVE';
-      }
-      // Lógica de prioridade para empresas sem bloqueio: ACTIVE > BLOCKED > INACTIVE > CANCELED
-      else if (statuses.includes('ACTIVE')) {
-        finalStatus = 'ACTIVE';
-      } else if (statuses.includes('BLOCKED')) {
-        finalStatus = 'BLOCKED';
-      } else if (statuses.includes('INACTIVE')) {
-        finalStatus = 'INACTIVE';
-      } else if (statuses.includes('CANCELED')) {
-        finalStatus = 'CANCELED';
-      }
-
-      // Incrementa o contador do status determinado
-      if (totals[finalStatus] !== undefined) {
-        totals[finalStatus]++;
-      }
-
-      // Incrementa o total de empresas únicas
-      totals.TOTAL++;
-    }
+      }),
+    ]);
 
     return {
-      data: totals,
+      data: {
+        ACTIVE: active,
+        BLOCKED: blocked,
+        INACTIVE: inactive,
+        CANCELED: canceled,
+        TOTAL: active + blocked + inactive + canceled,
+      },
     };
   }
 
@@ -465,207 +440,120 @@ export class SubscriptionsService {
     sort: 'name' | 'updated_at' | 'created_at' = 'name',
   ) {
     const skip = (page - 1) * limit;
+    const nonTrialSub = { plan: { planType: { not: 'TRIAL' as const } } };
 
-    // Mapear o campo de ordenação para o campo do Prisma
-    let orderByConfig: any;
-    if (sort === 'name') {
-      orderByConfig = {
-        Company: {
-          name: 'asc',
+    // Construir where baseado em Company (não mais Subscription)
+    const companyWhere: any = {};
+
+    if (statusFilter === 'bloqueadas') {
+      companyWhere.blockLevel = 'PARTIAL';
+      companyWhere.Subscription = { some: nonTrialSub };
+    } else if (statusFilter === 'inativas') {
+      companyWhere.OR = [
+        {
+          blockLevel: 'FULL',
+          Subscription: { some: nonTrialSub },
         },
-      };
-    } else if (sort === 'updated_at') {
-      orderByConfig = {
-        updatedAt: 'desc',
-      };
-    } else {
-      orderByConfig = {
-        createdAt: 'desc',
-      };
-    }
-
-    // Mapear o status em português para o enum do banco
-    const statusMap: Record<string, string> = {
-      ativas: 'ACTIVE',
-      bloqueadas: 'BLOCKED',
-      inativas: 'INACTIVE',
-      canceladas: 'CANCELED',
-    };
-
-    const mappedStatus = statusFilter ? statusMap[statusFilter] : undefined;
-
-    // Construir o where com filtro opcional de status (clientes que NÃO são TRIAL)
-    const whereCondition: any = {
-      plan: {
-        planType: {
-          not: 'TRIAL',
-        },
-      },
-    };
-
-    if (mappedStatus) {
-      // Para "bloqueadas", filtrar pelo blockLevel PARTIAL (ainda pode usar com restrições)
-      if (statusFilter === 'bloqueadas') {
-        whereCondition.Company = {
-          blockLevel: 'PARTIAL',
-        };
-      }
-      // Para "inativas", incluir empresas com blockLevel FULL ou subscription inativa
-      else if (statusFilter === 'inativas') {
-        whereCondition.OR = [
-          {
-            Company: {
-              blockLevel: 'FULL',
-            },
-          },
-          {
-            status: 'INACTIVE',
-            Company: {
-              blockLevel: 'NONE',
-              Subscription: {
-                none: {
-                  status: 'ACTIVE',
-                  plan: {
-                    planType: {
-                      not: 'TRIAL',
-                    },
-                  },
-                },
-              },
-            },
-          },
-        ];
-      }
-      // Para "ativas", garantir que empresa não está bloqueada e subscription ativa
-      else if (mappedStatus === 'ACTIVE') {
-        whereCondition.status = 'ACTIVE';
-        whereCondition.Company = {
-          blockLevel: 'NONE',
-        };
-      }
-      // Para outros status (canceladas)
-      else {
-        whereCondition.status = mappedStatus;
-        whereCondition.Company = {
+        {
           blockLevel: 'NONE',
           Subscription: {
-            none: {
-              status: 'ACTIVE',
-              plan: {
-                planType: {
-                  not: 'TRIAL',
-                },
-              },
-            },
-          },
-        };
-      }
-    }
-
-    // Adicionar filtro de busca se fornecido
-    if (search) {
-      const searchLower = search.toLowerCase();
-      whereCondition.OR = [
-        {
-          Company: {
-            name: {
-              contains: searchLower,
-              mode: 'insensitive',
-            },
-          },
-        },
-        {
-          Company: {
-            legalName: {
-              contains: searchLower,
-              mode: 'insensitive',
-            },
-          },
-        },
-        {
-          Company: {
-            email: {
-              contains: searchLower,
-              mode: 'insensitive',
-            },
-          },
-        },
-        {
-          Company: {
-            phone: {
-              contains: search,
-            },
-          },
-        },
-        {
-          Company: {
-            mobile: {
-              contains: search,
-            },
-          },
-        },
-        {
-          Company: {
-            cnpj: {
-              contains: search,
-            },
+            some: { status: 'INACTIVE', ...nonTrialSub },
+            none: { status: 'ACTIVE', ...nonTrialSub },
           },
         },
       ];
+    } else if (statusFilter === 'ativas') {
+      companyWhere.blockLevel = 'NONE';
+      companyWhere.Subscription = {
+        some: { status: 'ACTIVE', ...nonTrialSub },
+      };
+    } else if (statusFilter === 'canceladas') {
+      companyWhere.blockLevel = 'NONE';
+      companyWhere.Subscription = {
+        some: { status: 'CANCELED', ...nonTrialSub },
+        none: { status: 'ACTIVE', ...nonTrialSub },
+      };
+    } else {
+      // Sem filtro: todas as empresas com subscription não-TRIAL
+      companyWhere.Subscription = { some: nonTrialSub };
     }
 
-    // Buscar subscriptions que não são TRIAL
-    const [subscriptions, total] = await Promise.all([
-      this.prisma.subscription.findMany({
-        where: whereCondition,
+    // Adicionar filtro de busca em campos da Company
+    if (search) {
+      const searchLower = search.toLowerCase();
+      const searchConditions = [
+        { name: { contains: searchLower, mode: 'insensitive' as const } },
+        { legalName: { contains: searchLower, mode: 'insensitive' as const } },
+        { email: { contains: searchLower, mode: 'insensitive' as const } },
+        { phone: { contains: search } },
+        { mobile: { contains: search } },
+        { cnpj: { contains: search } },
+      ];
+
+      // Combinar busca com os filtros de status existentes
+      if (companyWhere.OR) {
+        // Se já tem OR (inativas), wrappear tudo em AND
+        const existingOr = companyWhere.OR;
+        delete companyWhere.OR;
+        companyWhere.AND = [{ OR: existingOr }, { OR: searchConditions }];
+      } else {
+        companyWhere.OR = searchConditions;
+      }
+    }
+
+    // Mapear ordenação para campo do Company
+    let orderByConfig: any;
+    if (sort === 'name') {
+      orderByConfig = { name: 'asc' };
+    } else if (sort === 'updated_at') {
+      orderByConfig = { updatedAt: 'desc' };
+    } else {
+      orderByConfig = { createdAt: 'desc' };
+    }
+
+    // Query por Company com a subscription mais recente não-TRIAL
+    const [companies, total] = await Promise.all([
+      this.prisma.company.findMany({
+        where: companyWhere,
         include: {
-          plan: true,
-          Company: {
-            include: {
-              address: {
-                where: {
-                  type: 'Principal',
-                },
-                take: 1,
-              },
-            },
+          Subscription: {
+            where: nonTrialSub,
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            include: { plan: true },
           },
-          customer: true,
+          address: {
+            where: { type: 'Principal' },
+            take: 1,
+          },
         },
         orderBy: orderByConfig,
         skip,
         take: limit,
       }),
-      this.prisma.subscription.count({
-        where: whereCondition,
-      }),
+      this.prisma.company.count({ where: companyWhere }),
     ]);
 
-    // Buscar informações dos usuários (primeiro employee da empresa que tem user)
+    // Buscar informações dos usuários (primeiro employee com user)
     const companiesWithUsers = await Promise.all(
-      subscriptions.map(async (sub) => {
-        if (!sub.Company) return null;
+      companies.map(async (company) => {
+        const subscription = company.Subscription[0];
+        if (!subscription) return null;
 
         const employee = await this.prisma.employee.findFirst({
           where: {
-            companyId: sub.Company.id,
-            userId: {
-              not: null,
-            },
+            companyId: company.id,
+            userId: { not: null },
           },
-          include: {
-            user: true,
-          },
-          orderBy: {
-            createdAt: 'asc',
-          },
+          include: { user: true },
+          orderBy: { createdAt: 'asc' },
         });
 
-        const address = sub.Company.address[0];
+        const address = company.address[0];
 
-        // Período de assinatura: data de criação até nextDueDate
-        const subscriptionStart = new Date(sub.createdAt);
-        const nextDue = new Date(sub.nextDueDate);
+        // Período de assinatura
+        const subscriptionStart = new Date(subscription.createdAt);
+        const nextDue = new Date(subscription.nextDueDate);
 
         const formatDate = (date: Date) => {
           return date.toLocaleDateString('pt-BR', {
@@ -676,8 +564,8 @@ export class SubscriptionsService {
         };
 
         return {
-          subscription: sub,
-          company: sub.Company,
+          company,
+          subscription,
           employee,
           address,
           subscriptionPeriod: `${formatDate(subscriptionStart)} - ${formatDate(nextDue)}`,
@@ -685,8 +573,7 @@ export class SubscriptionsService {
       }),
     );
 
-    // Agrupar por data de criação
-    const addedCompanyIds = new Set<string>(); // Track globally added companies
+    // Agrupar por data de criação (da subscription)
     const groupedByDate = companiesWithUsers
       .filter((item) => item !== null)
       .reduce(
@@ -699,15 +586,8 @@ export class SubscriptionsService {
             acc[dateKey] = [];
           }
 
-          const company = item.company;
-          const user = item.employee?.user;
-          const employee = item.employee;
-          const address = item.address;
-
-          // Skip if company was already added in any date group
-          if (addedCompanyIds.has(company.id)) {
-            return acc;
-          }
+          const { company, subscription, employee, address } = item;
+          const user = employee?.user;
 
           const companyData = {
             id: company.id,
@@ -719,10 +599,10 @@ export class SubscriptionsService {
             userDocument: employee?.cpf || '',
             phone: user?.phone || company.phone || company.mobile || '',
             email: user?.email || company.email || '',
-            createdAt: item.subscription.createdAt,
-            plan: item.subscription.plan.name,
-            planType: item.subscription.plan.planType,
-            status: item.subscription.status,
+            createdAt: subscription.createdAt,
+            plan: subscription.plan.name,
+            planType: subscription.plan.planType,
+            status: subscription.status,
             state: address?.state
               ? { id: address.state, name: address.state }
               : { id: '', name: '' },
@@ -731,18 +611,15 @@ export class SubscriptionsService {
               : { id: '', name: '' },
           };
 
-          // Add company to this date group and mark as added
           acc[dateKey].push(companyData);
-          addedCompanyIds.add(company.id);
-
           return acc;
         },
         {} as Record<string, any[]>,
       );
 
-    // Formatar resposta - filter out empty date groups
+    // Formatar resposta
     const data = Object.entries(groupedByDate)
-      .filter(([, items]) => items.length > 0) // Remove empty date groups
+      .filter(([, items]) => items.length > 0)
       .map(([date, items]) => ({
         date,
         data: items,
@@ -1800,7 +1677,7 @@ export class SubscriptionsService {
   /**
    * Busca os pagamentos de uma subscription no Asaas
    */
-  private async getAsaasSubscriptionPayments(
+  async getAsaasSubscriptionPayments(
     asaasSubscriptionId: string,
   ): Promise<any[]> {
     const route = `/subscriptions/${asaasSubscriptionId}/payments`;
@@ -2087,16 +1964,22 @@ export class SubscriptionsService {
         return { status: 'no_payments', subscription };
       }
 
-      // Encontrar o pagamento mais relevante:
-      // PRIORIDADE: pagamento confirmado/recebido > outros
+      // Encontrar o pagamento mais relevante do período atual:
+      // Apenas pagamentos com dueDate no mês atual ou posterior são considerados válidos
+      const currentMonthStart = new Date();
+      currentMonthStart.setDate(1);
+      currentMonthStart.setHours(0, 0, 0, 0);
+      const currentMonthStr = currentMonthStart.toISOString().split('T')[0];
+
       const confirmedPayment = asaasPayments.find(
         (p) =>
-          p.status === 'CONFIRMED' ||
-          p.status === 'RECEIVED' ||
-          p.status === 'RECEIVED_IN_CASH',
+          (p.status === 'CONFIRMED' ||
+            p.status === 'RECEIVED' ||
+            p.status === 'RECEIVED_IN_CASH') &&
+          p.dueDate >= currentMonthStr,
       );
 
-      // Priorizar pagamento confirmado, senão pegar o primeiro
+      // Priorizar pagamento confirmado do período atual, senão pegar o primeiro
       const latestPayment = confirmedPayment || asaasPayments[0];
 
       this.logger.log(
@@ -2531,6 +2414,38 @@ export class SubscriptionsService {
             createdByName: adminUser.name,
           },
         });
+
+        // Sincronizar blockLevel e isActive na empresa conforme novo status
+        if (updateDto.status === 'BLOCKED') {
+          await this.prisma.company.update({
+            where: { id: companyId },
+            data: {
+              blockLevel: 'PARTIAL',
+              blockedAt: new Date(),
+              blockReason: `Bloqueio manual por ${adminUser.name}`,
+            },
+          });
+        } else if (updateDto.status === 'INACTIVE') {
+          await this.prisma.company.update({
+            where: { id: companyId },
+            data: {
+              blockLevel: 'FULL',
+              isActive: false,
+              blockedAt: new Date(),
+              blockReason: `Inativação manual por ${adminUser.name}`,
+            },
+          });
+        } else if (updateDto.status === 'ACTIVE') {
+          await this.prisma.company.update({
+            where: { id: companyId },
+            data: {
+              blockLevel: 'NONE',
+              blockedAt: null,
+              blockReason: null,
+              isActive: true,
+            },
+          });
+        }
       }
     }
 
