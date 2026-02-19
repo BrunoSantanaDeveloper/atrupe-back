@@ -7,22 +7,30 @@ import {
   Post,
   Patch,
   Query,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { PlanService } from './plan.service';
 import { CreatePlanDTO, UpdatePlanDTO } from './dtos/plan';
+import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 
 const RESOURCE = 'plan';
 
 @ApiTags('Planos')
-// @UseGuards(JwtAuthGuard)
-// @ApiBearerAuth()
 @Controller(RESOURCE)
 export class PlanController {
   constructor(private readonly planService: PlanService) {}
 
   // Plan endpoints
   @Post()
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Cria um novo plano' })
   @ApiResponse({
     status: 201,
@@ -33,6 +41,8 @@ export class PlanController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Lista todos os planos' })
   @ApiResponse({
     status: 200,
@@ -63,6 +73,8 @@ export class PlanController {
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Busca um plano pelo ID' })
   @ApiResponse({
     status: 200,
@@ -73,6 +85,8 @@ export class PlanController {
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Atualiza um plano' })
   @ApiResponse({
     status: 200,
@@ -83,6 +97,8 @@ export class PlanController {
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Remove um plano' })
   @ApiResponse({
     status: 200,
@@ -93,6 +109,8 @@ export class PlanController {
   }
 
   @Post('seed')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Cria os planos padrão do sistema' })
   @ApiResponse({
     status: 201,

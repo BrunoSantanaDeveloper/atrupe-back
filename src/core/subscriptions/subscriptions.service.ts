@@ -1191,14 +1191,18 @@ export class SubscriptionsService {
       throw new NotFoundException('New plan not found');
     }
 
-    const featuresValue = 0; // Features extras via subscriptionFeatures
+    // Calcular valor dos módulos extras da subscription atual
+    const featuresValue = (currentSubscription.subscriptionFeatures || [])
+      .filter((sf) => sf.isActive !== false)
+      .reduce((sum, sf) => sum + (sf.price || 0), 0);
 
-    // Calcular novo valor da subscription
+    // Calcular novo valor da subscription (converter centavos para reais)
     const newValue =
-      newPlan.basePrice +
-      featuresValue +
-      (newPlan.additionalUserPrice || 0) *
-        (currentSubscription.additionalUsers || 0);
+      (newPlan.basePrice +
+        featuresValue +
+        (newPlan.additionalUserPrice || 0) *
+          (currentSubscription.additionalUsers || 0)) /
+      100;
 
     // Cancelar subscription atual no Asaas (se necessário)
     try {
@@ -1306,11 +1310,19 @@ export class SubscriptionsService {
       where: { id: subscription.planId },
     });
 
-    const modulesValue = 0; // Features extras via subscriptionFeatures
+    // Calcular valor dos módulos extras (incluindo o recém-adicionado)
+    const updatedFeatures = await this.prisma.subscriptionFeature.findMany({
+      where: { subscriptionId, isActive: true },
+    });
+    const modulesValue = updatedFeatures.reduce(
+      (sum, sf) => sum + (sf.price || 0),
+      0,
+    );
     const newValue =
-      plan.basePrice +
-      modulesValue +
-      (plan.additionalUserPrice || 0) * (subscription.additionalUsers || 0);
+      (plan.basePrice +
+        modulesValue +
+        (plan.additionalUserPrice || 0) * (subscription.additionalUsers || 0)) /
+      100;
 
     // Atualizar subscription no Asaas
     try {
@@ -1384,12 +1396,20 @@ export class SubscriptionsService {
     }
 
     // Calcular valor sem features extras
-    const modulesValue = 0; // Features extras via subscriptionFeatures
+    // Calcular valor dos módulos extras (após remoção)
+    const remainingFeatures = await this.prisma.subscriptionFeature.findMany({
+      where: { subscriptionId, isActive: true },
+    });
+    const modulesValue = remainingFeatures.reduce(
+      (sum, sf) => sum + (sf.price || 0),
+      0,
+    );
     const newValue =
-      subscription.plan.basePrice +
-      modulesValue +
-      (subscription.plan.additionalUserPrice || 0) *
-        (subscription.additionalUsers || 0);
+      (subscription.plan.basePrice +
+        modulesValue +
+        (subscription.plan.additionalUserPrice || 0) *
+          (subscription.additionalUsers || 0)) /
+      100;
 
     // Atualizar subscription no Asaas
     try {
