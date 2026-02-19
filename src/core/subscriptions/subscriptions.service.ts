@@ -1357,35 +1357,23 @@ export class SubscriptionsService {
       throw new BadRequestException('Module already included in subscription');
     }
 
-    // Criar a nova subscription feature
-    await this.prisma.subscriptionFeature.create({
-      data: {
-        subscriptionId,
-        featureId: feature.id,
-        price: feature.price,
-      },
-    });
-
     // Calcular valor sem features extras
     const plan = await this.prisma.plan.findUnique({
       where: { id: subscription.planId },
     });
 
-    // Calcular valor dos módulos extras (incluindo o recém-adicionado)
-    const updatedFeatures = await this.prisma.subscriptionFeature.findMany({
-      where: { subscriptionId, isActive: true },
-    });
-    const modulesValue = updatedFeatures.reduce(
-      (sum, sf) => sum + (sf.price || 0),
-      0,
-    );
+    // Atualizar subscription no Asaas primeiro (fora da transaction — chamada externa)
+    const modulesValue =
+      subscription.subscriptionFeatures.reduce(
+        (sum, sf) => sum + (sf.price || 0),
+        0,
+      ) + (feature.price || 0);
     const newValue =
       (plan.basePrice +
         modulesValue +
         (plan.additionalUserPrice || 0) * (subscription.additionalUsers || 0)) /
       100;
 
-    // Atualizar subscription no Asaas
     try {
       await this.updateAsaasSubscription(subscription.asaasSubscriptionId, {
         value: newValue,
@@ -1396,36 +1384,46 @@ export class SubscriptionsService {
       );
     }
 
-    // Atualizar subscription local
-    const updated = await this.prisma.subscription.update({
-      where: { id: subscriptionId },
-      data: {
-        // modules array foi removido - agora usar subscriptionFeatures
-        value: newValue,
-      },
-      include: {
-        plan: true,
-        customer: true,
-      },
-    });
-
-    // Registrar no histórico
-    await this.prisma.subscriptionHistory.create({
-      data: {
-        subscriptionId,
-        action: 'MODULE_ADDED',
-        description: `Módulo ${feature.name || moduleId} adicionado`,
-        changes: {
-          before: { value: subscription.value },
-          after: { value: newValue, moduleKey: moduleId },
-        },
-        metadata: {
+    // Mutações atômicas — criar feature, atualizar subscription, registrar histórico
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.subscriptionFeature.create({
+        data: {
+          subscriptionId,
           featureId: feature.id,
-          featureKey: moduleId,
-          featurePrice: feature.price,
+          price: feature.price,
         },
-        createdByName: request.user?.name || 'Sistema',
-      },
+      });
+
+      const result = await tx.subscription.update({
+        where: { id: subscriptionId },
+        data: {
+          value: newValue,
+        },
+        include: {
+          plan: true,
+          customer: true,
+        },
+      });
+
+      await tx.subscriptionHistory.create({
+        data: {
+          subscriptionId,
+          action: 'MODULE_ADDED',
+          description: `Módulo ${feature.name || moduleId} adicionado`,
+          changes: {
+            before: { value: subscription.value },
+            after: { value: newValue, moduleKey: moduleId },
+          },
+          metadata: {
+            featureId: feature.id,
+            featureKey: moduleId,
+            featurePrice: feature.price,
+          },
+          createdByName: request.user?.name || 'Sistema',
+        },
+      });
+
+      return result;
     });
 
     return updated;
@@ -2463,96 +2461,97 @@ export class SubscriptionsService {
       changes.after.document = updateDto.document;
     }
 
-    // Atualizar empresa se houver alterações
-    if (Object.keys(companyUpdateData).length > 0) {
-      await this.prisma.company.update({
-        where: { id: companyId },
-        data: companyUpdateData,
-      });
-    }
-
-    // Atualizar endereço
-    if (updateDto.stateId || updateDto.cityId) {
-      const address = company.address[0];
-      if (address) {
-        await this.prisma.address.update({
-          where: { id: address.id },
-          data: {
-            state: updateDto.stateId || address.state,
-            city: updateDto.cityId || address.city,
-          },
-        });
-        if (updateDto.stateId) changes.after.state = updateDto.stateId;
-        if (updateDto.cityId) changes.after.city = updateDto.cityId;
-      }
-    }
-
-    // Atualizar usuário
-    if (employee?.user) {
-      const userUpdateData: any = {};
-      if (updateDto.userName) {
-        userUpdateData.name = updateDto.userName;
-        changes.after.userName = updateDto.userName;
-      }
-      if (updateDto.email) {
-        userUpdateData.email = updateDto.email;
-        changes.after.email = updateDto.email;
-      }
-      if (updateDto.phone) {
-        userUpdateData.phone = updateDto.phone;
-        changes.after.phone = updateDto.phone;
-      }
-
-      if (Object.keys(userUpdateData).length > 0) {
-        await this.prisma.user.update({
-          where: { id: employee.user.id },
-          data: userUpdateData,
+    // Todas as mutações dentro de uma transaction para atomicidade
+    await this.prisma.$transaction(async (tx) => {
+      // Atualizar empresa se houver alterações
+      if (Object.keys(companyUpdateData).length > 0) {
+        await tx.company.update({
+          where: { id: companyId },
+          data: companyUpdateData,
         });
       }
 
-      // Atualizar employee (CPF)
-      if (updateDto.userDocument) {
-        await this.prisma.employee.update({
-          where: { id: employee.id },
-          data: { cpf: updateDto.userDocument },
+      // Atualizar endereço
+      if (updateDto.stateId || updateDto.cityId) {
+        const address = company.address[0];
+        if (address) {
+          await tx.address.update({
+            where: { id: address.id },
+            data: {
+              state: updateDto.stateId || address.state,
+              city: updateDto.cityId || address.city,
+            },
+          });
+          if (updateDto.stateId) changes.after.state = updateDto.stateId;
+          if (updateDto.cityId) changes.after.city = updateDto.cityId;
+        }
+      }
+
+      // Atualizar usuário
+      if (employee?.user) {
+        const userUpdateData: any = {};
+        if (updateDto.userName) {
+          userUpdateData.name = updateDto.userName;
+          changes.after.userName = updateDto.userName;
+        }
+        if (updateDto.email) {
+          userUpdateData.email = updateDto.email;
+          changes.after.email = updateDto.email;
+        }
+        if (updateDto.phone) {
+          userUpdateData.phone = updateDto.phone;
+          changes.after.phone = updateDto.phone;
+        }
+
+        if (Object.keys(userUpdateData).length > 0) {
+          await tx.user.update({
+            where: { id: employee.user.id },
+            data: userUpdateData,
+          });
+        }
+
+        // Atualizar employee (CPF)
+        if (updateDto.userDocument) {
+          await tx.employee.update({
+            where: { id: employee.id },
+            data: { cpf: updateDto.userDocument },
+          });
+          changes.after.userDocument = updateDto.userDocument;
+        }
+      }
+
+      // Atualizar customer (se existir)
+      if (company.customer && company.customer.length > 0) {
+        const customerUpdateData: any = {};
+        if (updateDto.userName) {
+          customerUpdateData.name = updateDto.userName;
+        }
+        if (updateDto.email) {
+          customerUpdateData.email = updateDto.email;
+        }
+        if (updateDto.userDocument) {
+          customerUpdateData.document = updateDto.userDocument;
+        }
+
+        if (Object.keys(customerUpdateData).length > 0) {
+          await tx.customer.update({
+            where: { id: company.customer[0].id },
+            data: customerUpdateData,
+          });
+        }
+      }
+
+      // Atualizar status da subscription (se fornecido)
+      if (updateDto.status) {
+        const subscription = await tx.subscription.findFirst({
+          where: { companyId: company.id },
+          orderBy: { createdAt: 'desc' },
         });
-        changes.after.userDocument = updateDto.userDocument;
-      }
-    }
 
-    // Atualizar customer (se existir)
-    if (company.customer && company.customer.length > 0) {
-      const customerUpdateData: any = {};
-      if (updateDto.userName) {
-        customerUpdateData.name = updateDto.userName;
-      }
-      if (updateDto.email) {
-        customerUpdateData.email = updateDto.email;
-      }
-      if (updateDto.userDocument) {
-        customerUpdateData.document = updateDto.userDocument;
-      }
-
-      if (Object.keys(customerUpdateData).length > 0) {
-        await this.prisma.customer.update({
-          where: { id: company.customer[0].id },
-          data: customerUpdateData,
-        });
-      }
-    }
-
-    // Atualizar status da subscription (se fornecido)
-    if (updateDto.status) {
-      const subscription = await this.prisma.subscription.findFirst({
-        where: { companyId: company.id },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      if (subscription) {
-        // Se está ativando uma subscription, desativar todas as outras ativas da mesma empresa
-        if (updateDto.status === 'ACTIVE') {
-          const otherActiveSubscriptions =
-            await this.prisma.subscription.findMany({
+        if (subscription) {
+          // Se está ativando uma subscription, desativar todas as outras ativas da mesma empresa
+          if (updateDto.status === 'ACTIVE') {
+            const otherActiveSubscriptions = await tx.subscription.findMany({
               where: {
                 companyId: company.id,
                 status: 'ACTIVE',
@@ -2560,111 +2559,112 @@ export class SubscriptionsService {
               },
             });
 
-          for (const otherSubscription of otherActiveSubscriptions) {
-            await this.prisma.subscription.update({
-              where: { id: otherSubscription.id },
-              data: { status: 'INACTIVE' },
-            });
+            for (const otherSubscription of otherActiveSubscriptions) {
+              await tx.subscription.update({
+                where: { id: otherSubscription.id },
+                data: { status: 'INACTIVE' },
+              });
 
-            // Criar histórico para cada subscription desativada
-            await this.prisma.subscriptionHistory.create({
+              // Criar histórico para cada subscription desativada
+              await tx.subscriptionHistory.create({
+                data: {
+                  subscriptionId: otherSubscription.id,
+                  action: 'DEACTIVATED',
+                  description:
+                    'Subscription desativada automaticamente ao ativar outra',
+                  changes: {
+                    before: { status: 'ACTIVE' },
+                    after: { status: 'INACTIVE' },
+                  },
+                  metadata: {
+                    reason: 'Nova subscription ativada manualmente',
+                    newSubscriptionId: subscription.id,
+                    changedBy: adminUser.name,
+                    changedAt: new Date().toISOString(),
+                  },
+                  createdBy: userId,
+                  createdByName: adminUser.name,
+                },
+              });
+
+              this.logger.log(
+                `Subscription ${otherSubscription.id} desativada automaticamente ao ativar ${subscription.id}`,
+              );
+            }
+          }
+
+          await tx.subscription.update({
+            where: { id: subscription.id },
+            data: { status: updateDto.status },
+          });
+          changes.after.status = updateDto.status;
+
+          // Criar histórico da subscription
+          await tx.subscriptionHistory.create({
+            data: {
+              subscriptionId: subscription.id,
+              action: 'STATUS_CHANGE',
+              description: `Status alterado para ${updateDto.status}`,
+              metadata: {
+                previousStatus: subscription.status,
+                newStatus: updateDto.status,
+                changedBy: adminUser.name,
+                changedAt: new Date().toISOString(),
+              },
+              createdBy: userId,
+              createdByName: adminUser.name,
+            },
+          });
+
+          // Sincronizar blockLevel e isActive na empresa conforme novo status
+          if (updateDto.status === 'BLOCKED') {
+            await tx.company.update({
+              where: { id: companyId },
               data: {
-                subscriptionId: otherSubscription.id,
-                action: 'DEACTIVATED',
-                description:
-                  'Subscription desativada automaticamente ao ativar outra',
-                changes: {
-                  before: { status: 'ACTIVE' },
-                  after: { status: 'INACTIVE' },
-                },
-                metadata: {
-                  reason: 'Nova subscription ativada manualmente',
-                  newSubscriptionId: subscription.id,
-                  changedBy: adminUser.name,
-                  changedAt: new Date().toISOString(),
-                },
-                createdBy: userId,
-                createdByName: adminUser.name,
+                blockLevel: 'PARTIAL',
+                blockedAt: new Date(),
+                blockReason: `Bloqueio manual por ${adminUser.name}`,
               },
             });
-
-            this.logger.log(
-              `Subscription ${otherSubscription.id} desativada automaticamente ao ativar ${subscription.id}`,
-            );
+          } else if (updateDto.status === 'INACTIVE') {
+            await tx.company.update({
+              where: { id: companyId },
+              data: {
+                blockLevel: 'FULL',
+                isActive: false,
+                blockedAt: new Date(),
+                blockReason: `Inativação manual por ${adminUser.name}`,
+              },
+            });
+          } else if (updateDto.status === 'ACTIVE') {
+            await tx.company.update({
+              where: { id: companyId },
+              data: {
+                blockLevel: 'NONE',
+                blockedAt: null,
+                blockReason: null,
+                isActive: true,
+              },
+            });
           }
         }
-
-        await this.prisma.subscription.update({
-          where: { id: subscription.id },
-          data: { status: updateDto.status },
-        });
-        changes.after.status = updateDto.status;
-
-        // Criar histórico da subscription
-        await this.prisma.subscriptionHistory.create({
-          data: {
-            subscriptionId: subscription.id,
-            action: 'STATUS_CHANGE',
-            description: `Status alterado para ${updateDto.status}`,
-            metadata: {
-              previousStatus: subscription.status,
-              newStatus: updateDto.status,
-              changedBy: adminUser.name,
-              changedAt: new Date().toISOString(),
-            },
-            createdBy: userId,
-            createdByName: adminUser.name,
-          },
-        });
-
-        // Sincronizar blockLevel e isActive na empresa conforme novo status
-        if (updateDto.status === 'BLOCKED') {
-          await this.prisma.company.update({
-            where: { id: companyId },
-            data: {
-              blockLevel: 'PARTIAL',
-              blockedAt: new Date(),
-              blockReason: `Bloqueio manual por ${adminUser.name}`,
-            },
-          });
-        } else if (updateDto.status === 'INACTIVE') {
-          await this.prisma.company.update({
-            where: { id: companyId },
-            data: {
-              blockLevel: 'FULL',
-              isActive: false,
-              blockedAt: new Date(),
-              blockReason: `Inativação manual por ${adminUser.name}`,
-            },
-          });
-        } else if (updateDto.status === 'ACTIVE') {
-          await this.prisma.company.update({
-            where: { id: companyId },
-            data: {
-              blockLevel: 'NONE',
-              blockedAt: null,
-              blockReason: null,
-              isActive: true,
-            },
-          });
-        }
       }
-    }
 
-    // Criar histórico da empresa
-    await this.prisma.companyHistory.create({
-      data: {
-        companyId: company.id,
-        action: 'UPDATE',
-        description: 'Dados da empresa atualizados via painel administrativo',
-        changes,
-        metadata: {
-          updatedBy: adminUser.name,
-          updatedAt: new Date().toISOString(),
+      // Criar histórico da empresa
+      await tx.companyHistory.create({
+        data: {
+          companyId: company.id,
+          action: 'UPDATE',
+          description: 'Dados da empresa atualizados via painel administrativo',
+          changes,
+          metadata: {
+            updatedBy: adminUser.name,
+            updatedAt: new Date().toISOString(),
+          },
+          createdBy: userId,
+          createdByName: adminUser.name,
         },
-        createdBy: userId,
-        createdByName: adminUser.name,
-      },
+      });
     });
 
     return {
@@ -2810,234 +2810,245 @@ export class SubscriptionsService {
     );
 
     // Executar exclusão em cascata dentro de uma transação
-    await this.prisma.$transaction(
-      async (tx) => {
-        // 1. Fiscal - NF-e, NFS-e, NFC-e
-        await tx.nfce.deleteMany({ where: { companyId } });
-        await tx.nfse.deleteMany({ where: { companyId } });
-        await tx.nfe.deleteMany({ where: { companyId } });
-        await tx.invoicyConfig.deleteMany({ where: { companyId } });
-        await tx.cfopConfig.deleteMany({ where: { companyId } });
-        await tx.operationNature.deleteMany({ where: { companyId } });
-        await tx.digitalCertificate.deleteMany({ where: { companyId } });
+    // IMPORTANTE: A ordem das operações respeita constraints de FK.
+    // NÃO reordenar sem verificar dependências no schema.prisma.
+    // TODO (#28): Avaliar remoção de Payment.externalReference (campo redundante — armazena o próprio ID)
+    try {
+      await this.prisma.$transaction(
+        async (tx) => {
+          // 1. Fiscal - NF-e, NFS-e, NFC-e
+          await tx.nfce.deleteMany({ where: { companyId } });
+          await tx.nfse.deleteMany({ where: { companyId } });
+          await tx.nfe.deleteMany({ where: { companyId } });
+          await tx.invoicyConfig.deleteMany({ where: { companyId } });
+          await tx.cfopConfig.deleteMany({ where: { companyId } });
+          await tx.operationNature.deleteMany({ where: { companyId } });
+          await tx.digitalCertificate.deleteMany({ where: { companyId } });
 
-        // 2. Produção e Entregas
-        await tx.productionStage.deleteMany({
-          where: { schedule: { companyId } },
-        });
-        await tx.deliverySchedule.deleteMany({ where: { companyId } });
-        await tx.orderHistory.deleteMany({
-          where: { order: { quotation: { companyId } } },
-        });
-        await tx.order.deleteMany({
-          where: { quotation: { companyId } },
-        });
-        await tx.deliveryInfo.deleteMany({
-          where: { quotation: { companyId } },
-        });
-
-        // 3. Orçamentos
-        await tx.quotationHistory.deleteMany({
-          where: { quotation: { companyId } },
-        });
-        await tx.quotationInstallment.deleteMany({
-          where: { quotationPayment: { quotation: { companyId } } },
-        });
-        await tx.quotationPayment.deleteMany({
-          where: { quotation: { companyId } },
-        });
-        await tx.quotationProductItem.deleteMany({
-          where: { quotationProduct: { quotation: { companyId } } },
-        });
-        await tx.quotationProduct.deleteMany({
-          where: { quotation: { companyId } },
-        });
-        await tx.quotation.deleteMany({ where: { companyId } });
-
-        // 4. Financeiro - Transactions, Payables, Receivables
-        await tx.transaction.deleteMany({
-          where: { cashRegister: { companyId } },
-        });
-        await tx.receivableHistory.deleteMany({
-          where: { receivable: { companyId } },
-        });
-        await tx.receivableInstallment.deleteMany({
-          where: { receivable: { companyId } },
-        });
-        await tx.receivable.deleteMany({ where: { companyId } });
-        await tx.payableHistory.deleteMany({
-          where: { payable: { companyId } },
-        });
-        await tx.payableInstallment.deleteMany({
-          where: { payable: { companyId } },
-        });
-        await tx.commission.deleteMany({
-          where: { supplier: { companyId } },
-        });
-        await tx.payable.deleteMany({ where: { companyId } });
-
-        // 5. Cash Register
-        await tx.bankAccountCashControl.deleteMany({
-          where: { bankAccount: { companyId } },
-        });
-        await tx.cashRegister.deleteMany({ where: { companyId } });
-
-        // 6. Clientes e Fornecedores
-        await tx.clientPaymentCondition.deleteMany({
-          where: { client: { companyId } },
-        });
-        await tx.supplierPaymentCondition.deleteMany({
-          where: { supplier: { companyId } },
-        });
-        await tx.contact.deleteMany({
-          where: {
-            OR: [{ client: { companyId } }, { supplier: { companyId } }],
-          },
-        });
-        await tx.address.deleteMany({
-          where: {
-            OR: [
-              { companyId },
-              { client: { companyId } },
-              { supplier: { companyId } },
-              { employee: { companyId } },
-            ],
-          },
-        });
-        await tx.client.deleteMany({ where: { companyId } });
-        await tx.supplier.deleteMany({ where: { companyId } });
-
-        // 7. Produtos
-        await tx.productFiscalData.deleteMany({
-          where: { product: { companyId } },
-        });
-        await tx.productItem.deleteMany({
-          where: { product: { companyId } },
-        });
-        await tx.product.deleteMany({ where: { companyId } });
-
-        // 8. Categorias e Naturezas
-        await tx.subCategory.deleteMany({ where: { companyId } });
-        await tx.nature.deleteMany({ where: { companyId } });
-        await tx.category.deleteMany({ where: { companyId } });
-
-        // 9. Despesas Agendadas
-        await tx.scheduledExpense.deleteMany({ where: { companyId } });
-
-        // 10. Financeiro extra
-        await tx.financialFlow.deleteMany({ where: { companyId } });
-        await tx.invoice.deleteMany({ where: { companyId } });
-        await tx.creditLimitPaymentCondition.deleteMany({
-          where: { creditLimitDefault: { companyId } },
-        });
-        await tx.creditLimitDefault.deleteMany({ where: { companyId } });
-
-        // 11. Folha de Pagamento
-        await tx.payrollItem.deleteMany({
-          where: { payroll: { companyId } },
-        });
-        await tx.payroll.deleteMany({ where: { companyId } });
-        await tx.payrollSetup.deleteMany({ where: { companyId } });
-        await tx.payrollTemplate.deleteMany({ where: { companyId } });
-
-        // 12. Funcionários
-        await tx.employeeHistory.deleteMany({
-          where: { employee: { companyId } },
-        });
-        await tx.employee.deleteMany({ where: { companyId } });
-
-        // 13. Ativos
-        await tx.asset.deleteMany({ where: { companyId } });
-        await tx.assetType.deleteMany({ where: { companyId } });
-
-        // 14. Configurações Bancárias
-        await tx.installment.deleteMany({
-          where: { paymentCondition: { companyId } },
-        });
-        await tx.paymentCondition.deleteMany({ where: { companyId } });
-        await tx.bankAccount.deleteMany({ where: { companyId } });
-
-        // 15. Séries e Tags
-        await tx.saleSeries.deleteMany({ where: { companyId } });
-        await tx.quotationTag.deleteMany({ where: { companyId } });
-
-        // 16. Perfis e Cargos
-        await tx.sellerProfile.deleteMany({ where: { companyId } });
-        await tx.userRole.deleteMany({
-          where: { role: { companyId } },
-        });
-        await tx.role.deleteMany({ where: { companyId } });
-        await tx.companySector.deleteMany({ where: { companyId } });
-
-        // 17. Academy
-        await tx.academyProgress.deleteMany({ where: { companyId } });
-
-        // 18. Motivos
-        await tx.reasons.deleteMany({ where: { companyId } });
-
-        // 19. Idiomas
-        await tx.language.deleteMany({ where: { companyId } });
-
-        // 20. Import Logs
-        await tx.importLog.deleteMany({ where: { companyId } });
-
-        // 21. Subscription relacionados
-        await tx.subscriptionFeature.deleteMany({
-          where: { subscriptionId: { in: subscriptionIds } },
-        });
-        await tx.subscriptionHistory.deleteMany({
-          where: { subscriptionId: { in: subscriptionIds } },
-        });
-        await tx.payment.deleteMany({
-          where: { subscriptionId: { in: subscriptionIds } },
-        });
-        await tx.subscription.deleteMany({ where: { companyId } });
-
-        // 22. Company History
-        await tx.companyHistory.deleteMany({ where: { companyId } });
-
-        // 22.1 User Activity (para esta empresa especificamente, mesmo que o usuário permaneça)
-        await tx.userActivity.deleteMany({ where: { companyId } });
-
-        // 23. Company
-        await tx.company.delete({ where: { id: companyId } });
-
-        // 24. Customer (se não tiver outras subscriptions)
-        for (const customerId of customerIds) {
-          const otherSubscriptions = await tx.subscription.count({
-            where: { customerId },
+          // 2. Produção e Entregas
+          await tx.productionStage.deleteMany({
+            where: { schedule: { companyId } },
           });
-          if (otherSubscriptions === 0) {
-            await tx.customer.delete({ where: { id: customerId } });
-          }
-        }
-
-        // 25. Usuários (se não tiverem vínculo com outras empresas)
-        for (const userId of userIds) {
-          const otherEmployees = await tx.employee.count({
-            where: { userId },
+          await tx.deliverySchedule.deleteMany({ where: { companyId } });
+          await tx.orderHistory.deleteMany({
+            where: { order: { quotation: { companyId } } },
           });
-          if (otherEmployees === 0) {
-            await tx.userActivity.deleteMany({ where: { userId } });
-            await tx.userContract.deleteMany({ where: { userId } });
-            await tx.userRole.deleteMany({ where: { userId } });
-            await tx.user.delete({ where: { id: userId } });
+          await tx.order.deleteMany({
+            where: { quotation: { companyId } },
+          });
+          await tx.deliveryInfo.deleteMany({
+            where: { quotation: { companyId } },
+          });
+
+          // 3. Orçamentos
+          await tx.quotationHistory.deleteMany({
+            where: { quotation: { companyId } },
+          });
+          await tx.quotationInstallment.deleteMany({
+            where: { quotationPayment: { quotation: { companyId } } },
+          });
+          await tx.quotationPayment.deleteMany({
+            where: { quotation: { companyId } },
+          });
+          await tx.quotationProductItem.deleteMany({
+            where: { quotationProduct: { quotation: { companyId } } },
+          });
+          await tx.quotationProduct.deleteMany({
+            where: { quotation: { companyId } },
+          });
+          await tx.quotation.deleteMany({ where: { companyId } });
+
+          // 4. Financeiro - Transactions, Payables, Receivables
+          await tx.transaction.deleteMany({
+            where: { cashRegister: { companyId } },
+          });
+          await tx.receivableHistory.deleteMany({
+            where: { receivable: { companyId } },
+          });
+          await tx.receivableInstallment.deleteMany({
+            where: { receivable: { companyId } },
+          });
+          await tx.receivable.deleteMany({ where: { companyId } });
+          await tx.payableHistory.deleteMany({
+            where: { payable: { companyId } },
+          });
+          await tx.payableInstallment.deleteMany({
+            where: { payable: { companyId } },
+          });
+          await tx.commission.deleteMany({
+            where: { supplier: { companyId } },
+          });
+          await tx.payable.deleteMany({ where: { companyId } });
+
+          // 5. Cash Register
+          await tx.bankAccountCashControl.deleteMany({
+            where: { bankAccount: { companyId } },
+          });
+          await tx.cashRegister.deleteMany({ where: { companyId } });
+
+          // 6. Clientes e Fornecedores
+          await tx.clientPaymentCondition.deleteMany({
+            where: { client: { companyId } },
+          });
+          await tx.supplierPaymentCondition.deleteMany({
+            where: { supplier: { companyId } },
+          });
+          await tx.contact.deleteMany({
+            where: {
+              OR: [{ client: { companyId } }, { supplier: { companyId } }],
+            },
+          });
+          await tx.address.deleteMany({
+            where: {
+              OR: [
+                { companyId },
+                { client: { companyId } },
+                { supplier: { companyId } },
+                { employee: { companyId } },
+              ],
+            },
+          });
+          await tx.client.deleteMany({ where: { companyId } });
+          await tx.supplier.deleteMany({ where: { companyId } });
+
+          // 7. Produtos
+          await tx.productFiscalData.deleteMany({
+            where: { product: { companyId } },
+          });
+          await tx.productItem.deleteMany({
+            where: { product: { companyId } },
+          });
+          await tx.product.deleteMany({ where: { companyId } });
+
+          // 8. Categorias e Naturezas
+          await tx.subCategory.deleteMany({ where: { companyId } });
+          await tx.nature.deleteMany({ where: { companyId } });
+          await tx.category.deleteMany({ where: { companyId } });
+
+          // 9. Despesas Agendadas
+          await tx.scheduledExpense.deleteMany({ where: { companyId } });
+
+          // 10. Financeiro extra
+          await tx.financialFlow.deleteMany({ where: { companyId } });
+          await tx.invoice.deleteMany({ where: { companyId } });
+          await tx.creditLimitPaymentCondition.deleteMany({
+            where: { creditLimitDefault: { companyId } },
+          });
+          await tx.creditLimitDefault.deleteMany({ where: { companyId } });
+
+          // 11. Folha de Pagamento
+          await tx.payrollItem.deleteMany({
+            where: { payroll: { companyId } },
+          });
+          await tx.payroll.deleteMany({ where: { companyId } });
+          await tx.payrollSetup.deleteMany({ where: { companyId } });
+          await tx.payrollTemplate.deleteMany({ where: { companyId } });
+
+          // 12. Funcionários
+          await tx.employeeHistory.deleteMany({
+            where: { employee: { companyId } },
+          });
+          await tx.employee.deleteMany({ where: { companyId } });
+
+          // 13. Ativos
+          await tx.asset.deleteMany({ where: { companyId } });
+          await tx.assetType.deleteMany({ where: { companyId } });
+
+          // 14. Configurações Bancárias
+          await tx.installment.deleteMany({
+            where: { paymentCondition: { companyId } },
+          });
+          await tx.paymentCondition.deleteMany({ where: { companyId } });
+          await tx.bankAccount.deleteMany({ where: { companyId } });
+
+          // 15. Séries e Tags
+          await tx.saleSeries.deleteMany({ where: { companyId } });
+          await tx.quotationTag.deleteMany({ where: { companyId } });
+
+          // 16. Perfis e Cargos
+          await tx.sellerProfile.deleteMany({ where: { companyId } });
+          await tx.userRole.deleteMany({
+            where: { role: { companyId } },
+          });
+          await tx.role.deleteMany({ where: { companyId } });
+          await tx.companySector.deleteMany({ where: { companyId } });
+
+          // 17. Academy
+          await tx.academyProgress.deleteMany({ where: { companyId } });
+
+          // 18. Motivos
+          await tx.reasons.deleteMany({ where: { companyId } });
+
+          // 19. Idiomas
+          await tx.language.deleteMany({ where: { companyId } });
+
+          // 20. Import Logs
+          await tx.importLog.deleteMany({ where: { companyId } });
+
+          // 21. Subscription relacionados
+          await tx.subscriptionFeature.deleteMany({
+            where: { subscriptionId: { in: subscriptionIds } },
+          });
+          await tx.subscriptionHistory.deleteMany({
+            where: { subscriptionId: { in: subscriptionIds } },
+          });
+          await tx.payment.deleteMany({
+            where: { subscriptionId: { in: subscriptionIds } },
+          });
+          await tx.subscription.deleteMany({ where: { companyId } });
+
+          // 22. Company History
+          await tx.companyHistory.deleteMany({ where: { companyId } });
+
+          // 22.1 User Activity (para esta empresa especificamente, mesmo que o usuário permaneça)
+          await tx.userActivity.deleteMany({ where: { companyId } });
+
+          // 23. Company
+          await tx.company.delete({ where: { id: companyId } });
+
+          // 24. Customer (se não tiver outras subscriptions)
+          for (const customerId of customerIds) {
+            const otherSubscriptions = await tx.subscription.count({
+              where: { customerId },
+            });
+            if (otherSubscriptions === 0) {
+              await tx.customer.delete({ where: { id: customerId } });
+            }
           }
-        }
-      },
-      {
-        timeout: 60000, // 60 segundos para operações complexas
-      },
-    );
 
-    this.logger.log(
-      `Empresa ${companyName} (${companyId}) excluída com sucesso pelo admin ${adminUser.name}`,
-    );
+          // 25. Usuários (se não tiverem vínculo com outras empresas)
+          for (const userId of userIds) {
+            const otherEmployees = await tx.employee.count({
+              where: { userId },
+            });
+            if (otherEmployees === 0) {
+              await tx.userActivity.deleteMany({ where: { userId } });
+              await tx.userContract.deleteMany({ where: { userId } });
+              await tx.userRole.deleteMany({ where: { userId } });
+              await tx.user.delete({ where: { id: userId } });
+            }
+          }
+        },
+        {
+          timeout: 60000, // 60 segundos para operações complexas
+        },
+      );
 
-    return {
-      message: `Conta "${companyName}" excluída permanentemente com sucesso.`,
-      deletedCompanyId: companyId,
-      deletedCompanyName: companyName,
-    };
+      this.logger.log(
+        `Empresa ${companyName} (${companyId}) excluída com sucesso pelo admin ${adminUser.name}`,
+      );
+
+      return {
+        message: `Conta "${companyName}" excluída permanentemente com sucesso.`,
+        deletedCompanyId: companyId,
+        deletedCompanyName: companyName,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Falha ao excluir empresa ${companyName} (${companyId}): ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
   }
 }
