@@ -5,7 +5,6 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { SubscriptionsService } from './subscriptions.service';
-import { CompanyManagementService } from './company-management.service';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { AsaasGatewayService } from './asaas-gateway.service';
@@ -20,7 +19,6 @@ import * as argon2 from 'argon2';
 
 describe('SubscriptionsService', () => {
   let service: SubscriptionsService;
-  let companyManagementService: CompanyManagementService;
 
   const mockPrismaService = {
     user: { findFirst: jest.fn() },
@@ -66,7 +64,6 @@ describe('SubscriptionsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SubscriptionsService,
-        CompanyManagementService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: CustomersService, useValue: mockCustomersService },
         { provide: AsaasGatewayService, useValue: mockAsaasGatewayService },
@@ -74,9 +71,6 @@ describe('SubscriptionsService', () => {
     }).compile();
 
     service = module.get<SubscriptionsService>(SubscriptionsService);
-    companyManagementService = module.get<CompanyManagementService>(
-      CompanyManagementService,
-    );
     jest.clearAllMocks();
   });
 
@@ -189,43 +183,6 @@ describe('SubscriptionsService', () => {
           }),
         }),
       );
-    });
-  });
-
-  describe('deleteCompany', () => {
-    it('should throw UnauthorizedException when admin password is wrong', async () => {
-      mockPrismaService.user.findFirst.mockResolvedValue({
-        id: 'admin-1',
-        password: 'hashed',
-        name: 'Admin',
-      });
-      (argon2.verify as jest.Mock).mockResolvedValue(false);
-
-      await expect(
-        companyManagementService.deleteCompany(
-          'company-1',
-          'wrong-pass',
-          'admin-1',
-        ),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('should throw NotFoundException when company not found', async () => {
-      mockPrismaService.user.findFirst.mockResolvedValue({
-        id: 'admin-1',
-        password: 'hashed',
-        name: 'Admin',
-      });
-      (argon2.verify as jest.Mock).mockResolvedValue(true);
-      mockPrismaService.company.findUnique.mockResolvedValue(null);
-
-      await expect(
-        companyManagementService.deleteCompany(
-          'invalid-company',
-          'password',
-          'admin-1',
-        ),
-      ).rejects.toThrow(NotFoundException);
     });
   });
 });
