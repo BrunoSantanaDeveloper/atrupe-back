@@ -22,6 +22,7 @@ import {
 } from '@nestjs/swagger';
 import { SubscriptionsService } from './subscriptions.service';
 import { AdminDashboardService } from './admin-dashboard.service';
+import { CompanyManagementService } from './company-management.service';
 import { SubscriptionBlockService } from './subscription-block.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { AssignSubscriptionDto } from './dto/assign-subscription.dto';
@@ -45,6 +46,7 @@ export class SubscriptionsController {
   constructor(
     private readonly subscriptionsService: SubscriptionsService,
     private readonly adminDashboardService: AdminDashboardService,
+    private readonly companyManagementService: CompanyManagementService,
     private readonly subscriptionBlockService: SubscriptionBlockService,
   ) {}
 
@@ -211,7 +213,7 @@ export class SubscriptionsController {
     @Body() updateDto: UpdateActiveClientDto,
     @Req() req,
   ) {
-    return await this.subscriptionsService.updateActiveClient(
+    return await this.companyManagementService.updateActiveClient(
       companyId,
       updateDto,
       req.user.userId,
@@ -294,7 +296,7 @@ export class SubscriptionsController {
     description: 'Empresa não encontrada ou plano START não existe no sistema.',
   })
   async assignManual(@Body() assignDto: AssignSubscriptionDto, @Req() req) {
-    return await this.subscriptionsService.assignManual(
+    return await this.companyManagementService.assignManual(
       assignDto,
       req.user.userId,
     );
@@ -459,7 +461,7 @@ export class SubscriptionsController {
     @Body() deleteDto: DeleteAccountDto,
     @Req() req,
   ) {
-    return await this.subscriptionsService.deleteCompany(
+    return await this.companyManagementService.deleteCompany(
       companyId,
       deleteDto.password,
       req.user.userId,
