@@ -1,14 +1,8 @@
-import {
-  Injectable,
-  Logger,
-  ForbiddenException,
-  Inject,
-  forwardRef,
-} from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { BlockLevel } from '@prisma/client';
-import { SubscriptionsService } from './subscriptions.service';
+import { AsaasGatewayService } from './asaas-gateway.service';
 
 export interface BlockCheckResult {
   companyId: string;
@@ -32,8 +26,7 @@ export class SubscriptionBlockService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(forwardRef(() => SubscriptionsService))
-    private readonly subscriptionsService: SubscriptionsService,
+    private readonly asaasGateway: AsaasGatewayService,
   ) {}
 
   /**
@@ -132,7 +125,7 @@ export class SubscriptionBlockService {
       let daysOverdue = 0;
       try {
         const asaasPayments =
-          await this.subscriptionsService.getAsaasSubscriptionPayments(
+          await this.asaasGateway.getAsaasSubscriptionPayments(
             subscription.asaasSubscriptionId,
           );
 
@@ -398,7 +391,7 @@ export class SubscriptionBlockService {
 
         try {
           const asaasPayments =
-            await this.subscriptionsService.getAsaasSubscriptionPayments(
+            await this.asaasGateway.getAsaasSubscriptionPayments(
               payment.subscription.asaasSubscriptionId,
             );
 

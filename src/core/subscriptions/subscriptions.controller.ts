@@ -21,6 +21,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { SubscriptionsService } from './subscriptions.service';
+import { AdminDashboardService } from './admin-dashboard.service';
 import { SubscriptionBlockService } from './subscription-block.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { AssignSubscriptionDto } from './dto/assign-subscription.dto';
@@ -43,6 +44,7 @@ import { BlockLevel } from '@prisma/client';
 export class SubscriptionsController {
   constructor(
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly adminDashboardService: AdminDashboardService,
     private readonly subscriptionBlockService: SubscriptionBlockService,
   ) {}
 
@@ -57,7 +59,7 @@ export class SubscriptionsController {
   async listIncompleteRegistrations(
     @Query() query: ListIncompleteRegistrationsDto,
   ) {
-    return await this.subscriptionsService.listIncompleteRegistrations(
+    return await this.adminDashboardService.listIncompleteRegistrations(
       query.page,
       query.limit,
       query.sort,
@@ -72,7 +74,7 @@ export class SubscriptionsController {
     description: 'Trial subscriptions totals',
   })
   async getTrialTotals() {
-    return await this.subscriptionsService.getTrialTotals();
+    return await this.adminDashboardService.getTrialTotals();
   }
 
   @Get('trial-companies')
@@ -82,7 +84,7 @@ export class SubscriptionsController {
     description: 'List of companies with trial subscriptions',
   })
   async listTrialCompanies(@Query() query: ListTrialCompaniesDto) {
-    return await this.subscriptionsService.listTrialCompanies(
+    return await this.adminDashboardService.listTrialCompanies(
       query.page,
       query.limit,
       query.status,
@@ -98,7 +100,7 @@ export class SubscriptionsController {
     description: 'Active clients totals',
   })
   async getActiveTotals() {
-    return await this.subscriptionsService.getActiveTotals();
+    return await this.adminDashboardService.getActiveTotals();
   }
 
   @Get('active-clients')
@@ -110,7 +112,7 @@ export class SubscriptionsController {
     description: 'List of companies with active subscriptions',
   })
   async listActiveClients(@Query() query: ListActiveClientsDto) {
-    return await this.subscriptionsService.listActiveClients(
+    return await this.adminDashboardService.listActiveClients(
       query.page,
       query.limit,
       query.status,
@@ -175,7 +177,7 @@ export class SubscriptionsController {
     description: 'Company or subscription not found',
   })
   async getCompanyHistory(@Param('companyId') companyId: string) {
-    return await this.subscriptionsService.getCompanyHistory(companyId);
+    return await this.adminDashboardService.getCompanyHistory(companyId);
   }
 
   @Patch('active-clients/:companyId')
