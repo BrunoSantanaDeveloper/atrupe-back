@@ -1920,7 +1920,7 @@ enum SubscriptionStatus {
 enum BlockLevel {
   NONE // Sem bloqueio
   PARTIAL // 3+ dias de atraso - funcionalidades restritas
-  FULL // 10+ dias de atraso - sistema bloqueado
+  FULL // 7+ dias de atraso - sistema bloqueado (sincronizado com DAYS_FOR_FULL_BLOCK)
 }
 
 enum AsaasPaymentStatus {

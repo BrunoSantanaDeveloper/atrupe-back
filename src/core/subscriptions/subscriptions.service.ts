@@ -8,12 +8,21 @@ import {
 } from '@nestjs/common';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { AssignSubscriptionDto } from './dto/assign-subscription.dto';
+import { UpdateActiveClientDto } from './dto/update-active-client.dto';
+import {
+  AsaasCreateSubscriptionPayload,
+  AsaasSubscriptionResponse,
+  AsaasUpdateSubscriptionPayload,
+} from './interfaces/asaas.interfaces';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import axios from 'axios';
 import { CustomersService } from '../customers/customers.service';
 import { asaasConfig } from 'src/config/configuration';
 import { v4 as uuidv4 } from 'uuid';
 import * as argon2 from 'argon2';
+
+const TRIAL_DAYS_DEFAULT = 7;
+const NEXT_DUE_DATE_DAYS_DEFAULT = 30;
 
 @Injectable()
 export class SubscriptionsService {
@@ -228,19 +237,26 @@ export class SubscriptionsService {
     }
 
     // Processar subscriptions INACTIVE (descartadas)
-    for (const sub of inactiveTrialSubscriptions) {
-      // Verificar se a empresa tem outra subscription ativa
-      const hasActiveSubscription = await this.prisma.subscription.findFirst({
-        where: {
-          companyId: sub.companyId,
-          status: 'ACTIVE',
-          id: {
-            not: sub.id,
-          },
-        },
-      });
+    // Batch: buscar empresas com outra subscription ativa (evita N+1)
+    const inactiveCompanyIds = inactiveTrialSubscriptions.map(
+      (s) => s.companyId,
+    );
+    const inactiveSubIds = inactiveTrialSubscriptions.map((s) => s.id);
+    const companiesWithActiveSub = await this.prisma.subscription.findMany({
+      where: {
+        companyId: { in: inactiveCompanyIds },
+        status: 'ACTIVE',
+        id: { notIn: inactiveSubIds },
+      },
+      select: { companyId: true },
+      distinct: ['companyId'],
+    });
+    const companiesWithActiveSet = new Set(
+      companiesWithActiveSub.map((s) => s.companyId),
+    );
 
-      if (!hasActiveSubscription) {
+    for (const sub of inactiveTrialSubscriptions) {
+      if (!companiesWithActiveSet.has(sub.companyId)) {
         descartadas++;
       }
     }
@@ -753,6 +769,28 @@ export class SubscriptionsService {
     const now = new Date();
     const filteredSubscriptions = [];
 
+    // Batch: buscar empresas INACTIVE que têm outra subscription ativa (evita N+1)
+    const inactiveTrialSubs = allTrialSubscriptions.filter(
+      (s) => s.status === 'INACTIVE',
+    );
+    const trialInactiveCompanyIds = inactiveTrialSubs.map((s) => s.companyId);
+    const trialInactiveSubIds = inactiveTrialSubs.map((s) => s.id);
+    const trialCompaniesWithActive =
+      trialInactiveCompanyIds.length > 0
+        ? await this.prisma.subscription.findMany({
+            where: {
+              companyId: { in: trialInactiveCompanyIds },
+              status: 'ACTIVE',
+              id: { notIn: trialInactiveSubIds },
+            },
+            select: { companyId: true },
+            distinct: ['companyId'],
+          })
+        : [];
+    const trialActiveSet = new Set(
+      trialCompaniesWithActive.map((s) => s.companyId),
+    );
+
     for (const sub of allTrialSubscriptions) {
       const daysAfterDueDate = Math.floor(
         (now.getTime() - sub.nextDueDate.getTime()) / (1000 * 60 * 60 * 24),
@@ -767,18 +805,7 @@ export class SubscriptionsService {
         // Venceu ou está vencendo hoje - move para inativas imediatamente
         subscriptionCategory = 'inativas';
       } else if (sub.status === 'INACTIVE') {
-        // Verificar se tem outra subscription ativa
-        const hasActiveSubscription = await this.prisma.subscription.findFirst({
-          where: {
-            companyId: sub.companyId,
-            status: 'ACTIVE',
-            id: {
-              not: sub.id,
-            },
-          },
-        });
-
-        if (!hasActiveSubscription) {
+        if (!trialActiveSet.has(sub.companyId)) {
           subscriptionCategory = 'descartadas';
         }
       }
@@ -1005,30 +1032,38 @@ export class SubscriptionsService {
       (acc, feature) => acc + (feature.price || 0),
       0,
     );
-    console.log('Valor total dos módulos adicionais:', additionalFeaturesValue);
+    this.logger.debug(
+      `Valor total dos módulos adicionais: ${additionalFeaturesValue}`,
+    );
 
     // Soma o preço da quantidade de usuários adicionais
     const additionalUsersValue =
       (plan.additionalUserPrice || 0) *
       (createSubscriptionDto.additionalUsers || 0);
-    console.log('Valor total de usuários adicionais:', additionalUsersValue);
+    this.logger.debug(
+      `Valor total de usuários adicionais: ${additionalUsersValue}`,
+    );
 
     const planPrice = plan.basePrice;
-    console.log('Preço base do plano:', planPrice);
+    this.logger.debug(`Preço base do plano: ${planPrice}`);
 
     // Soma o valor total a ser cobrado em centavos e divide por 100
     const value =
       (planPrice + additionalFeaturesValue + additionalUsersValue) / 100;
-    console.log('Valor final:', value);
+    this.logger.debug(`Valor final: ${value}`);
 
     try {
       // Primeiro criar a subscription no banco para obter o ID
+      // Serializable isolation previne que dois checkouts concorrentes
+      // ambos leiam "sem subscription ativa" e criem duplicatas
       const subscription = await this.prisma.$transaction(async (tx) => {
-        // Verificar dentro da transação se já existe uma subscription ativa não-TRIAL (proteção contra race condition)
-        const existingActiveSubscription = await tx.subscription.findFirst({
+        // Verificar dentro da transação se já existe uma subscription não-TRIAL
+        // que esteja ACTIVE ou INACTIVE (aguardando pagamento)
+        // Ambos os status indicam que já há um checkout em andamento ou concluído
+        const existingSubscription = await tx.subscription.findFirst({
           where: {
             companyId: request.user.companyId,
-            status: 'ACTIVE',
+            status: { in: ['ACTIVE', 'INACTIVE'] },
             plan: {
               planType: {
                 not: 'TRIAL',
@@ -1037,10 +1072,12 @@ export class SubscriptionsService {
           },
         });
 
-        // Se existe uma subscription ativa que não é TRIAL, impede a criação
-        if (existingActiveSubscription) {
+        // Se existe uma subscription não-TRIAL (ativa ou aguardando pagamento), impede a criação
+        if (existingSubscription) {
           throw new BadRequestException(
-            'Uma assinatura ativa já existe para esta empresa.',
+            existingSubscription.status === 'ACTIVE'
+              ? 'Uma assinatura ativa já existe para esta empresa.'
+              : 'Um checkout já está em andamento para esta empresa. Aguarde a confirmação do pagamento.',
           );
         }
 
@@ -1054,7 +1091,9 @@ export class SubscriptionsService {
             companyId: request.user.companyId,
             additionalUsers: createSubscriptionDto.additionalUsers || 0,
             asaasSubscriptionId: `temp_${uuidv4()}`, // Temporário único, será atualizado após criação no Asaas
-            nextDueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30),
+            nextDueDate: new Date(
+              Date.now() + 1000 * 60 * 60 * 24 * NEXT_DUE_DATE_DAYS_DEFAULT,
+            ),
             cycle: 'MONTHLY',
             billingType: createSubscriptionDto.billingType,
             value,
@@ -1210,9 +1249,8 @@ export class SubscriptionsService {
         currentSubscription.asaasSubscriptionId,
       );
     } catch (error) {
-      console.warn(
-        'Failed to cancel old subscription in Asaas:',
-        error.message,
+      this.logger.warn(
+        `Failed to cancel old subscription in Asaas: ${error.message}`,
       );
     }
 
@@ -1222,7 +1260,9 @@ export class SubscriptionsService {
       cycle: currentSubscription.cycle,
       customer: currentSubscription.customer.asaasCustomerId,
       value: newValue,
-      nextDueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30),
+      nextDueDate: new Date(
+        Date.now() + 1000 * 60 * 60 * 24 * NEXT_DUE_DATE_DAYS_DEFAULT,
+      ),
       description: `Upgrade para ${newPlan.name}`,
       callback: {
         successUrl: 'https://homolog.atrupe.com.br',
@@ -1257,6 +1297,27 @@ export class SubscriptionsService {
         customer: true,
       },
     });
+    // Copiar subscriptionFeatures da subscription antiga para a nova
+    const activeFeatures = (
+      currentSubscription.subscriptionFeatures || []
+    ).filter((sf) => sf.isActive !== false);
+
+    if (activeFeatures.length > 0) {
+      for (const sf of activeFeatures) {
+        await this.prisma.subscriptionFeature.create({
+          data: {
+            subscriptionId: newSubscription.id,
+            featureId: sf.featureId,
+            price: sf.price,
+            isActive: true,
+          },
+        });
+      }
+
+      this.logger.log(
+        `Copiadas ${activeFeatures.length} features para nova subscription ${newSubscription.id}`,
+      );
+    }
 
     return newSubscription;
   }
@@ -1330,11 +1391,13 @@ export class SubscriptionsService {
         value: newValue,
       });
     } catch (error) {
-      console.warn('Failed to update subscription in Asaas:', error.message);
+      this.logger.warn(
+        `Failed to update subscription in Asaas: ${error.message}`,
+      );
     }
 
     // Atualizar subscription local
-    return this.prisma.subscription.update({
+    const updated = await this.prisma.subscription.update({
       where: { id: subscriptionId },
       data: {
         // modules array foi removido - agora usar subscriptionFeatures
@@ -1345,6 +1408,27 @@ export class SubscriptionsService {
         customer: true,
       },
     });
+
+    // Registrar no histórico
+    await this.prisma.subscriptionHistory.create({
+      data: {
+        subscriptionId,
+        action: 'MODULE_ADDED',
+        description: `Módulo ${feature.name || moduleId} adicionado`,
+        changes: {
+          before: { value: subscription.value },
+          after: { value: newValue, moduleKey: moduleId },
+        },
+        metadata: {
+          featureId: feature.id,
+          featureKey: moduleId,
+          featurePrice: feature.price,
+        },
+        createdByName: request.user?.name || 'Sistema',
+      },
+    });
+
+    return updated;
   }
 
   async removeModule(subscriptionId: string, moduleId: string, request) {
@@ -1417,11 +1501,13 @@ export class SubscriptionsService {
         value: newValue,
       });
     } catch (error) {
-      console.warn('Failed to update subscription in Asaas:', error.message);
+      this.logger.warn(
+        `Failed to update subscription in Asaas: ${error.message}`,
+      );
     }
 
     // Atualizar subscription local
-    return this.prisma.subscription.update({
+    const updated = await this.prisma.subscription.update({
       where: { id: subscriptionId },
       data: {
         // modules array foi removido - agora usar subscriptionFeatures
@@ -1432,6 +1518,26 @@ export class SubscriptionsService {
         customer: true,
       },
     });
+
+    // Registrar no histórico
+    await this.prisma.subscriptionHistory.create({
+      data: {
+        subscriptionId,
+        action: 'MODULE_REMOVED',
+        description: `Módulo ${subscriptionFeature?.feature?.name || moduleId} removido`,
+        changes: {
+          before: { value: subscription.value, moduleKey: moduleId },
+          after: { value: newValue },
+        },
+        metadata: {
+          featureId: subscriptionFeature?.featureId,
+          featureKey: moduleId,
+        },
+        createdByName: request.user?.name || 'Sistema',
+      },
+    });
+
+    return updated;
   }
 
   async extendTrialPeriod(
@@ -1477,7 +1583,7 @@ export class SubscriptionsService {
     // Calcular nova data: hoje + 7 dias
     const now = new Date();
     const newDueDate = new Date(now);
-    newDueDate.setDate(newDueDate.getDate() + 7); // + 7 dias de teste trial
+    newDueDate.setDate(newDueDate.getDate() + TRIAL_DAYS_DEFAULT);
 
     // Atualizar a subscription
     const updatedSubscription = await this.prisma.subscription.update({
@@ -1495,6 +1601,25 @@ export class SubscriptionsService {
     this.logger.log(
       `Período trial estendido para ${subscription.Company?.name} pelo admin ${adminUser.name}. Novo vencimento: ${newDueDate.toISOString()}`,
     );
+
+    // Registrar no histórico
+    await this.prisma.subscriptionHistory.create({
+      data: {
+        subscriptionId,
+        action: 'TRIAL_EXTENDED',
+        description: `Período trial estendido pelo admin ${adminUser.name}`,
+        changes: {
+          before: { nextDueDate: subscription.nextDueDate },
+          after: { nextDueDate: newDueDate },
+        },
+        metadata: {
+          adminUserId,
+          adminName: adminUser.name,
+          companyName: subscription.Company?.name,
+        },
+        createdByName: adminUser.name,
+      },
+    });
 
     return {
       message: 'Período trial estendido com sucesso.',
@@ -1597,7 +1722,7 @@ export class SubscriptionsService {
 
     // Criar subscription manualmente (sem passar pelo Asaas)
     const nextDueDate = new Date();
-    nextDueDate.setDate(nextDueDate.getDate() + 7); // 7 dias de teste trial
+    nextDueDate.setDate(nextDueDate.getDate() + TRIAL_DAYS_DEFAULT);
 
     const subscription = await this.prisma.subscription.create({
       data: {
@@ -1638,9 +1763,8 @@ export class SubscriptionsService {
     try {
       await this.asaasApi().delete(route);
     } catch (error) {
-      console.error(
-        'Error canceling Asaas subscription:',
-        error.response?.data || error.message,
+      this.logger.error(
+        `Error canceling Asaas subscription: ${JSON.stringify(error.response?.data || error.message)}`,
       );
       throw new Error('Failed to cancel subscription in Asaas');
     }
@@ -1648,8 +1772,8 @@ export class SubscriptionsService {
 
   private async updateAsaasSubscription(
     asaasSubscriptionId: string,
-    data: any,
-  ): Promise<any> {
+    data: AsaasUpdateSubscriptionPayload,
+  ): Promise<AsaasSubscriptionResponse> {
     const route = `/subscriptions/${asaasSubscriptionId}`;
 
     try {
@@ -1661,13 +1785,16 @@ export class SubscriptionsService {
         ?.map((err) => err.description)
         .join(', ');
 
-      console.error('Error updating Asaas subscription:', {
-        message: error.message,
-        response: errorResponse,
-        status: error.response?.status,
-        route,
-        data,
-      });
+      this.logger.error(
+        'Error updating Asaas subscription:',
+        JSON.stringify({
+          message: error.message,
+          response: errorResponse,
+          status: error.response?.status,
+          route,
+          data,
+        }),
+      );
       throw new Error(
         errorDescription ||
           error.message ||
@@ -1676,9 +1803,11 @@ export class SubscriptionsService {
     }
   }
 
-  private async createSubscription(subscriptionData: any): Promise<any> {
+  private async createSubscription(
+    subscriptionData: AsaasCreateSubscriptionPayload,
+  ): Promise<AsaasSubscriptionResponse> {
     const route = '/subscriptions';
-    console.log('payload asaas:', subscriptionData);
+    this.logger.debug(`payload asaas: ${JSON.stringify(subscriptionData)}`);
     try {
       const response = await this.asaasApi().post(route, subscriptionData);
       return response.data;
@@ -1688,13 +1817,16 @@ export class SubscriptionsService {
         ?.map((err) => err.description)
         .join(', ');
 
-      console.error('Erro ao criar assinatura no Asaas:', {
-        message: error.message,
-        response: errorResponse,
-        status: error.response?.status,
-        route,
-        data: subscriptionData,
-      });
+      this.logger.error(
+        'Erro ao criar assinatura no Asaas:',
+        JSON.stringify({
+          message: error.message,
+          response: errorResponse,
+          status: error.response?.status,
+          route,
+          data: subscriptionData,
+        }),
+      );
       throw new Error(
         errorDescription ||
           error.message ||
@@ -2226,9 +2358,9 @@ export class SubscriptionsService {
    */
   async updateActiveClient(
     companyId: string,
-    updateDto: any,
+    updateDto: UpdateActiveClientDto,
     userId: string,
-  ): Promise<any> {
+  ) {
     // Buscar a empresa
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
@@ -2543,7 +2675,7 @@ export class SubscriptionsService {
   /**
    * Mapeia status do payment do Asaas para nosso enum
    */
-  private mapAsaasPaymentStatus(asaasStatus: string): any {
+  private mapAsaasPaymentStatus(asaasStatus: string): string {
     const statusMap: Record<string, string> = {
       PENDING: 'PENDING',
       CONFIRMED: 'CONFIRMED',
@@ -2625,6 +2757,56 @@ export class SubscriptionsService {
 
     this.logger.log(
       `Iniciando exclusão da empresa ${companyName} (${companyId}) pelo admin ${adminUser.name}`,
+    );
+
+    // Cancelar subscriptions no Asaas ANTES de deletar do banco
+    for (const sub of subscriptions) {
+      if (sub.asaasSubscriptionId) {
+        try {
+          await this.cancelAsaasSubscription(sub.asaasSubscriptionId);
+          this.logger.log(
+            `Subscription Asaas ${sub.asaasSubscriptionId} cancelada para empresa ${companyId}`,
+          );
+        } catch (error) {
+          this.logger.warn(
+            `Falha ao cancelar subscription Asaas ${sub.asaasSubscriptionId}: ${error.message}`,
+          );
+          // Continuar com a exclusão mesmo se falhar no Asaas
+        }
+      }
+    }
+
+    // Audit trail: registrar snapshot da empresa antes da exclusão
+    const deletionSnapshot = {
+      companyName,
+      companyId,
+      subscriptionCount: subscriptions.length,
+      planNames: company.Subscription?.map((s) => s.plan?.name).filter(Boolean),
+      userCount: userIds.length,
+      deletedBy: adminUser.name,
+      deletedAt: new Date().toISOString(),
+    };
+
+    // Registrar histórico de exclusão para cada subscription
+    for (const sub of subscriptions) {
+      try {
+        await this.prisma.subscriptionHistory.create({
+          data: {
+            subscriptionId: sub.id,
+            action: 'COMPANY_DELETED',
+            description: `Empresa ${companyName} excluída pelo admin ${adminUser.name}`,
+            changes: { snapshot: deletionSnapshot },
+            metadata: { adminUserId, adminName: adminUser.name },
+            createdByName: adminUser.name,
+          },
+        });
+      } catch {
+        // Continuar mesmo se falhar o registro de histórico
+      }
+    }
+
+    this.logger.log(
+      `Audit trail registrado. Iniciando cascade delete para empresa ${companyName} (${companyId})`,
     );
 
     // Executar exclusão em cascata dentro de uma transação

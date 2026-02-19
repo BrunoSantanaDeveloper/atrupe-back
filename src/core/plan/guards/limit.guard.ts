@@ -34,23 +34,11 @@ export class LimitGuard implements CanActivate {
     }
 
     try {
-      let currentUsage = 0;
-
-      // Obter uso atual baseado no tipo de limite
-      switch (limitConfig.key) {
-        case 'max_users':
-          currentUsage = await this.planControlService.getCurrentUserCount(
-            user.companyId,
-          );
-          break;
-        case 'max_companies':
-          currentUsage = await this.planControlService.getCurrentCompanyCount(
-            user.companyId,
-          );
-          break;
-        default:
-          return true; // Limite não conhecido = permitido
-      }
+      // Obter uso atual baseado no tipo de limite (SISTEMA DINÂMICO)
+      let currentUsage = await this.planControlService.getCurrentUsage(
+        user.companyId,
+        limitConfig.key,
+      );
 
       // Se é uma ação de criação, simular +1 no uso atual
       if (limitConfig.action === 'create') {

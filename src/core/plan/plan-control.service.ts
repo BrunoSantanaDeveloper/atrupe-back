@@ -242,6 +242,92 @@ export class PlanControlService {
   }
 
   /**
+   * Obter uso atual de produtos da empresa
+   */
+  async getCurrentProductCount(companyId: string): Promise<number> {
+    return this.prisma.product.count({
+      where: {
+        companyId,
+        status: 'ACTIVE',
+      },
+    });
+  }
+
+  /**
+   * Obter uso atual de orçamentos do mês
+   */
+  async getCurrentQuotationMonthCount(companyId: string): Promise<number> {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999,
+    );
+
+    return this.prisma.quotation.count({
+      where: {
+        companyId,
+        createdAt: {
+          gte: startOfMonth,
+          lte: endOfMonth,
+        },
+      },
+    });
+  }
+
+  /**
+   * Obter uso atual de clientes da empresa
+   */
+  async getCurrentClientCount(companyId: string): Promise<number> {
+    return this.prisma.client.count({
+      where: {
+        companyId,
+        status: 'ACTIVE',
+      },
+    });
+  }
+
+  /**
+   * Obter uso atual de fornecedores da empresa
+   */
+  async getCurrentSupplierCount(companyId: string): Promise<number> {
+    return this.prisma.supplier.count({
+      where: {
+        companyId,
+        status: 'ACTIVE',
+      },
+    });
+  }
+
+  /**
+   * Obter uso atual de qualquer recurso pelo limit key (SISTEMA DINÂMICO)
+   */
+  async getCurrentUsage(companyId: string, limitKey: string): Promise<number> {
+    switch (limitKey) {
+      case 'max_users':
+        return this.getCurrentUserCount(companyId);
+      case 'max_companies':
+        return this.getCurrentCompanyCount(companyId);
+      case 'max_products':
+        return this.getCurrentProductCount(companyId);
+      case 'max_quotations_month':
+        return this.getCurrentQuotationMonthCount(companyId);
+      case 'max_clients':
+        return this.getCurrentClientCount(companyId);
+      case 'max_suppliers':
+        return this.getCurrentSupplierCount(companyId);
+      default:
+        // Limite sem contagem implementada — não bloquear
+        return 0;
+    }
+  }
+
+  /**
    * Verificar se trial expirou
    */
   async isTrialExpired(companyId: string): Promise<boolean> {

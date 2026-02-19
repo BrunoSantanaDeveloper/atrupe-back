@@ -1,12 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { AsaasWebhookDto, AsaasWebhookEvent } from './dto/asaas-webhook.dto';
+import { SubscriptionBlockService } from '../subscriptions/subscription-block.service';
 
 @Injectable()
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Inject(forwardRef(() => SubscriptionBlockService))
+    private readonly subscriptionBlockService: SubscriptionBlockService,
+  ) {}
 
   async handleAsaasWebhook(payload: AsaasWebhookDto) {
     this.logger.log(`Recebido webhook: ${payload.event}`);
@@ -144,10 +149,14 @@ export class WebhooksService {
       }
     }
 
-    if (subscriptionId) {
+    if (subscriptionId || payment?.subscription?.asaasSubscriptionId) {
+      // Fallback: se o payload não trouxer subscriptionId, usar do payment local
+      const effectiveSubscriptionId =
+        subscriptionId || payment?.subscription?.asaasSubscriptionId;
+
       // Atualizar status da subscription
       const subscription = await this.prisma.subscription.findFirst({
-        where: { asaasSubscriptionId: subscriptionId },
+        where: { asaasSubscriptionId: effectiveSubscriptionId },
       });
 
       if (subscription) {
@@ -228,6 +237,37 @@ export class WebhooksService {
             },
           });
         }
+
+        // Auto-desbloqueio: se a empresa estava bloqueada, desbloquear
+        if (subscription.companyId) {
+          const company = await this.prisma.company.findUnique({
+            where: { id: subscription.companyId },
+            select: { blockLevel: true },
+          });
+
+          if (company && company.blockLevel !== 'NONE') {
+            await this.subscriptionBlockService.unblockCompany(
+              subscription.companyId,
+            );
+            this.logger.log(
+              `Empresa ${subscription.companyId} desbloqueada automaticamente após pagamento confirmado`,
+            );
+
+            // Registrar no histórico
+            await this.prisma.subscriptionHistory.create({
+              data: {
+                subscriptionId: subscription.id,
+                action: 'COMPANY_UNBLOCKED',
+                description: `Empresa desbloqueada automaticamente (era ${company.blockLevel})`,
+                metadata: {
+                  previousBlockLevel: company.blockLevel,
+                  paymentId: asaasPaymentId,
+                },
+                createdByName: 'Sistema Asaas',
+              },
+            });
+          }
+        }
       }
     }
   }
@@ -275,9 +315,13 @@ export class WebhooksService {
       }
     }
 
-    if (subscriptionId) {
+    if (subscriptionId || payment?.subscription?.asaasSubscriptionId) {
+      // Fallback: se o payload não trouxer subscriptionId, usar do payment local
+      const effectiveSubscriptionId =
+        subscriptionId || payment?.subscription?.asaasSubscriptionId;
+
       const subscription = await this.prisma.subscription.findFirst({
-        where: { asaasSubscriptionId: subscriptionId },
+        where: { asaasSubscriptionId: effectiveSubscriptionId },
       });
 
       if (subscription && subscription.status === 'ACTIVE') {
