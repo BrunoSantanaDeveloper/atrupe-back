@@ -23,17 +23,10 @@ export class PermissionsGuard implements CanActivate {
 
     if (!requiredPermission) return true;
 
-    const userPermissions = await this.abacService.getPermissionsByRole(
-      user.role,
+    return this.abacService.hasPermission(
+      { userId: user.userId, username: user.username },
+      requiredPermission.action,
+      requiredPermission.resource,
     );
-    if (userPermissions.isAdmin) {
-      return true;
-    }
-    if (!userPermissions || userPermissions.permissions.length === 0)
-      return false;
-
-    const permissionString = `${requiredPermission.resource}:${requiredPermission.action}`;
-
-    return userPermissions.permissions.includes(permissionString);
   }
 }

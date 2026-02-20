@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PermissionsGuard } from './permissions.guard';
 import { AbacService } from './abac.service';
@@ -14,6 +14,7 @@ describe('PermissionsGuard', () => {
       getRequest: () => ({
         user: {
           userId: 'user-123',
+          username: 'testuser',
           role: 'role-123',
         },
       }),
@@ -34,7 +35,7 @@ describe('PermissionsGuard', () => {
         {
           provide: AbacService,
           useValue: {
-            getPermissionsByRole: jest.fn(),
+            hasPermission: jest.fn(),
           },
         },
       ],
@@ -56,42 +57,35 @@ describe('PermissionsGuard', () => {
       const result = await guard.canActivate(mockExecutionContext);
 
       expect(result).toBe(true);
+      expect(abacService.hasPermission).not.toHaveBeenCalled();
     });
 
-    it('should return true when user is admin', async () => {
+    it('should delegate to abacService.hasPermission when permission required', async () => {
       reflector.get.mockReturnValue({ action: 'create', resource: 'client' });
-      abacService.getPermissionsByRole.mockResolvedValue({
-        isAdmin: true,
-        permissions: [],
-      });
+      abacService.hasPermission.mockResolvedValue(true);
 
       const result = await guard.canActivate(mockExecutionContext);
 
       expect(result).toBe(true);
+      expect(abacService.hasPermission).toHaveBeenCalledWith(
+        { userId: 'user-123', username: 'testuser' },
+        'create',
+        'client',
+      );
     });
 
-    it('should return true when user has permission', async () => {
-      reflector.get.mockReturnValue({ action: 'create', resource: 'client' });
-      abacService.getPermissionsByRole.mockResolvedValue({
-        isAdmin: false,
-        permissions: ['client:create', 'client:view'],
-      });
-
-      const result = await guard.canActivate(mockExecutionContext);
-
-      expect(result).toBe(true);
-    });
-
-    it('should return false when user lacks permission', async () => {
+    it('should return false when abacService denies permission', async () => {
       reflector.get.mockReturnValue({ action: 'delete', resource: 'client' });
-      abacService.getPermissionsByRole.mockResolvedValue({
-        isAdmin: false,
-        permissions: ['client:create', 'client:view'],
-      });
+      abacService.hasPermission.mockResolvedValue(false);
 
       const result = await guard.canActivate(mockExecutionContext);
 
       expect(result).toBe(false);
+      expect(abacService.hasPermission).toHaveBeenCalledWith(
+        { userId: 'user-123', username: 'testuser' },
+        'delete',
+        'client',
+      );
     });
 
     it('should return false when user has no role', async () => {
@@ -109,6 +103,7 @@ describe('PermissionsGuard', () => {
       const result = await guard.canActivate(contextWithoutRole);
 
       expect(result).toBe(false);
+      expect(abacService.hasPermission).not.toHaveBeenCalled();
     });
 
     it('should return false when no user in request', async () => {
@@ -124,6 +119,7 @@ describe('PermissionsGuard', () => {
       const result = await guard.canActivate(contextWithoutUser);
 
       expect(result).toBe(false);
+      expect(abacService.hasPermission).not.toHaveBeenCalled();
     });
   });
 });

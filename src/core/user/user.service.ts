@@ -1,13 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { PrismaService } from 'nestjs-prisma';
-import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { Injectable } from '@nestjs/common';
 import {
   CreateMailVerificationDto,
   CreateUserByEmployeeDto,
@@ -15,1024 +6,116 @@ import {
 } from './dto/create.dto';
 import { CompleteRegistrationDto } from './dto/complete-registration.dto';
 import { EditClientDto } from './dto/edit-client.dto';
-import * as argon2 from 'argon2';
-import { UserResponseDto } from './dto/response.dto';
-import { CacheService } from 'src/svc/cache/cache.service';
-import { PlugService } from 'src/svc/plug/plug.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { randomBytes, randomInt } from 'crypto';
-import { MailerService } from '@nestjs-modules/mailer';
-import { CompanyService } from '../company/company.service';
-import { CreateCompanyDto } from '../company/dto/create-company.dto';
-import { Logger } from '@nestjs/common';
-import { EmployeeHistoryService } from '../employee/history/history.service';
+import { UserCrudService } from './user-crud.service';
+import { UserPasswordService } from './user-password.service';
+import { UserRegistrationService } from './user-registration.service';
+import { UserOnboardingService } from './user-onboarding.service';
 
+/**
+ * Facade that delegates to specialized sub-services.
+ * Kept for backward compatibility with AuthService and module exports.
+ */
 @Injectable()
 export class UserService {
-  private readonly logger = new Logger(UserService.name);
-
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly cache: CacheService,
-    private readonly plug: PlugService,
-    private readonly companyService: CompanyService,
-    private readonly mailerService: MailerService,
-    private readonly employeeHistoryService: EmployeeHistoryService,
+    private readonly crud: UserCrudService,
+    private readonly password: UserPasswordService,
+    private readonly registration: UserRegistrationService,
+    private readonly onboarding: UserOnboardingService,
   ) {}
 
-  async sendEmailValidation(
+  // --- Registration ---
+
+  sendEmailValidation(
     email: string,
     name?: string,
     companyName?: string,
     phone?: string,
   ) {
-    const existToken = await this.prisma.mailVerification.findFirst({
-      where: {
-        email,
-        expiresAt: {
-          gte: new Date(),
-        },
-      },
-    });
-    if (existToken) {
-      const now = new Date();
-      const timeUntilExpiry = Math.ceil(
-        (existToken.expiresAt.getTime() - now.getTime()) / 1000,
-      );
-      return {
-        message: 'Email já possui um token de validação.',
-        canResendIn: timeUntilExpiry,
-      };
-    }
-    let token: string;
-    let isUnique: any;
-    // Gera um código numérico de 6 dígitos
-    do {
-      token = randomInt(100000, 999999).toString();
-      isUnique = await this.prisma.mailVerification.findFirst({
-        where: { token },
-      });
-    } while (isUnique);
-
-    // Define a expiração para 2 minutos a partir de agora
-    const resetPasswordExpires = new Date();
-    resetPasswordExpires.setMinutes(resetPasswordExpires.getMinutes() + 2);
-
-    // Atualiza o usuário com o token e data de expiração
-    await this.prisma.mailVerification.upsert({
-      where: { email },
-      create: {
-        email,
-        token,
-        expiresAt: resetPasswordExpires,
-        verified: false,
-        name,
-        companyName,
-        phone,
-      },
-      update: {
-        token,
-        expiresAt: resetPasswordExpires,
-        verified: false,
-        name,
-        companyName,
-        phone,
-      },
-    });
-
-    // Envia o e-mail com o código
-    await this.mailerService
-      .sendMail({
-        to: email,
-        subject: 'Validação de E-mail',
-        template: 'email-validation',
-        context: { token },
-      })
-      .catch((err) => {
-        this.logger.error('Falha ao enviar email de validação:', err);
-      });
-
-    return { message: 'Email de validação enviado com sucesso.' };
+    return this.registration.sendEmailValidation(
+      email,
+      name,
+      companyName,
+      phone,
+    );
   }
 
-  async verifyEmail(body: { email: string; token: string }) {
-    const user = await this.prisma.mailVerification.findFirst({
-      where: {
-        email: body.email,
-        token: body.token,
-        expiresAt: {
-          gte: new Date(),
-        },
-      },
-    });
-
-    if (!user) {
-      throw new BadRequestException('Token inválido ou expirado.');
-    }
-
-    await this.prisma.mailVerification.update({
-      where: { email: user.email },
-      data: {
-        verified: true,
-        token: null,
-        expiresAt: null,
-      },
-    });
-
-    return { message: 'Email verificado com sucesso.' };
+  verifyEmail(body: { email: string; token: string }) {
+    return this.registration.verifyEmail(body);
   }
 
-  async createPassword(createUserDto: CreateUserDto) {
-    const isVerified = await this.prisma.mailVerification.findFirst({
-      where: { email: createUserDto.email, verified: true },
-    });
-    if (!isVerified) {
-      throw new BadRequestException('Email não verificado.');
-    }
-
-    let createdCompanyId: string | null = null;
-
-    try {
-      // Etapa 1: Criar usuário + plano TRIAL em transação atômica
-      const hashedPassword = await argon2.hash(createUserDto.password);
-
-      const { customer } = await this.prisma.$transaction(async (tx) => {
-        const newUser = await tx.user.create({
-          data: {
-            name: createUserDto.name,
-            email: createUserDto.email,
-            password: hashedPassword,
-            phone: createUserDto.mobile,
-          },
-        });
-
-        const trialPlan = await tx.plan.findFirst({
-          where: { planType: 'TRIAL' },
-          include: {
-            planLimits: {
-              include: { limit: true },
-            },
-          },
-        });
-
-        let newCustomer = null;
-
-        if (trialPlan) {
-          const trialDaysLimit = trialPlan.planLimits.find(
-            (pl) => pl.limit.key === 'trial_days',
-          );
-          const trialDays = trialDaysLimit?.value || 7;
-
-          newCustomer = await tx.customer.create({
-            data: {
-              name: createUserDto.name,
-              email: createUserDto.email,
-              document: `temp_${newUser.id}`,
-              asaasCustomerId: `trial_${newUser.id}`,
-              companyId: null,
-            },
-          });
-
-          await tx.user.update({
-            where: { id: newUser.id },
-            data: { customerId: newCustomer.id },
-          });
-
-          const trialEndDate = new Date();
-          trialEndDate.setDate(trialEndDate.getDate() + trialDays);
-
-          await tx.subscription.create({
-            data: {
-              customerId: newCustomer.id,
-              planId: trialPlan.id,
-              companyId: null,
-              asaasSubscriptionId: `trial_sub_${newUser.id}`,
-              nextDueDate: trialEndDate,
-              value: 0,
-            },
-          });
-
-          this.logger.log(
-            `Plano TRIAL criado para usuário ${newUser.email} - válido até ${trialEndDate.toISOString()} (${trialDays} dias)`,
-          );
-        } else {
-          this.logger.warn(
-            'Plano TRIAL não encontrado - subscription não criada',
-          );
-        }
-
-        return { user: newUser, customer: newCustomer };
-      });
-
-      // Etapa 2: Criar empresa (cross-service, fora da transação)
-      const createCompany: CreateCompanyDto = {
-        general: {
-          phone: createUserDto.mobile,
-          name: createUserDto.company,
-          legalName: createUserDto.company,
-          cnpj: '',
-          email: createUserDto.email,
-          siteUrl: '',
-          municipalRegistration: '',
-          mobile: createUserDto.mobile,
-        },
-        address: {
-          street: '',
-          number: '',
-          neighborhood: '',
-          city: '',
-          state: '',
-          zipcode: '',
-        },
-      };
-
-      const company = await this.companyService.createMainCompany(
-        createUserDto.email,
-        createCompany,
-      );
-      createdCompanyId = company.id;
-      this.logger.log('Company created successfully');
-
-      // Vincular company ao customer e subscription
-      if (customer) {
-        await this.prisma.customer.update({
-          where: { id: customer.id },
-          data: { companyId: company.id },
-        });
-        await this.prisma.subscription.updateMany({
-          where: { customerId: customer.id, companyId: null },
-          data: { companyId: company.id },
-        });
-      }
-
-      // Etapa 3: Configurar primeiro acesso (role admin)
-      await this.companyService.createFirstAccess(
-        createUserDto.email,
-        company.id,
-      );
-      this.logger.log('First access configured successfully');
-
-      // Etapa 4: Limpar verificação de email
-      await this.prisma.mailVerification.deleteMany({
-        where: { email: createUserDto.email },
-      });
-
-      return { message: 'Usuário criado com sucesso com plano TRIAL.' };
-    } catch (error) {
-      this.logger.error('Erro ao criar usuário:', error);
-
-      // Rollback manual apenas para empresa (user/customer/subscription são atômicos via $transaction)
-      if (createdCompanyId) {
-        await this.prisma.company
-          .delete({ where: { id: createdCompanyId } })
-          .catch(() => {});
-      }
-
-      if (error instanceof PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') {
-          throw new ConflictException('E-mail já cadastrado.');
-        }
-      }
-      throw error;
-    }
+  createPassword(createUserDto: CreateUserDto) {
+    return this.registration.createPassword(createUserDto);
   }
 
-  async create(createUserDto: CreateMailVerificationDto): Promise<any> {
-    try {
-      // Verificar se já existe um User com este email
-      const user = await this.prisma.user.findFirst({
-        where: { email: createUserDto.email },
-      });
-      if (user) {
-        throw new ConflictException('E-mail já cadastrado.');
-      }
-
-      // Verificar se já existe um Customer com este email
-      const customer = await this.prisma.customer.findFirst({
-        where: { email: createUserDto.email },
-      });
-      if (customer) {
-        throw new ConflictException('E-mail já cadastrado.');
-      }
-
-      return await this.sendEmailValidation(
-        createUserDto.email,
-        createUserDto.name,
-        createUserDto.companyName,
-        createUserDto.phone,
-      );
-    } catch (error) {
-      console.error(error);
-      if (error instanceof PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') {
-          throw new ConflictException('E-mail já cadastrado.');
-        }
-      }
-      throw error;
-    }
+  create(createUserDto: CreateMailVerificationDto): Promise<any> {
+    return this.registration.create(createUserDto);
   }
 
-  async createUserForEmployee(
+  createUserForEmployee(
     createUserDto: CreateUserByEmployeeDto,
     createdByUserId?: string,
     createdByUserName?: string,
   ): Promise<any> {
-    try {
-      const hashedPassword = await argon2.hash(createUserDto.password);
-      const data: Prisma.UserCreateInput = {
-        name: createUserDto.name,
-        email: createUserDto.email,
-        password: hashedPassword,
-      };
-
-      if (createUserDto.employeeId) {
-        const employee = await this.prisma.employee.findFirst({
-          where: { id: createUserDto.employeeId },
-          select: { id: true },
-        });
-
-        if (!employee) {
-          throw new NotFoundException('Employee not found');
-        }
-
-        data.employee = {
-          connect: { id: employee.id },
-        };
-      }
-
-      const user = await this.prisma.user.create({
-        data: data,
-      });
-
-      // Registrar no histórico do colaborador se foi vinculado
-      if (createUserDto.employeeId && createdByUserId) {
-        await this.employeeHistoryService.createEmployeeHistory({
-          employeeId: createUserDto.employeeId,
-          action: 'CREATE_USER',
-          description: `Usuário criado: ${user.email} (${user.name})`,
-          metadata: {
-            userId: user.id,
-            userEmail: user.email,
-            userName: user.name,
-          },
-          createdBy: createdByUserId,
-          createdByName: createdByUserName,
-        });
-      }
-
-      return user;
-    } catch (error) {
-      console.error(error);
-      if (error instanceof PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') {
-          throw new ConflictException(
-            'O endereço de e-mail informado já está atribuído a outro usuário',
-          );
-        }
-      }
-      throw error;
-    }
+    return this.registration.createUserForEmployee(
+      createUserDto,
+      createdByUserId,
+      createdByUserName,
+    );
   }
+
+  // --- CRUD ---
 
   findAll() {
-    return this.prisma.user.findMany({
-      select: {
-        id: true,
-        name: true,
-        email: true,
-      },
-    });
+    return this.crud.findAll();
   }
 
-  async findOneRoles(id: string) {
-    return this.prisma.user.findFirst({
-      where: { id: id },
-      include: {
-        userRole: {
-          include: {
-            role: true,
-          },
-        },
-      },
-    });
+  findOneRoles(id: string) {
+    return this.crud.findOneRoles(id);
   }
 
-  async findOne(id: string) {
-    const user = await this.prisma.user.findFirst({
-      where: { id: id },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        avatar: true,
-        employee: {
-          select: {
-            name: true,
-            company: true,
-            role: true,
-          },
-          take: 1,
-        },
-        userRole: {
-          select: {
-            isSystemAdmin: true,
-            role: {
-              select: {
-                permissions: true,
-                isAdmin: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!user) {
-      return null;
-    }
-
-    const response: UserResponseDto = {
-      id: user.id,
-      name: user.employee[0]?.name ?? user.name,
-      email: user.email,
-      avatar: user.avatar,
-      employee: user.employee?.[0]
-        ? {
-            company: user.employee[0].company,
-            role: user.employee[0]?.role?.name,
-            isAdmin: user.employee[0]?.role?.isAdmin,
-          }
-        : null,
-      policies: user.employee[0]?.role?.permissions,
-    };
-
-    await this.cache.set(`user:${id}`, response);
-
-    return response;
+  findOne(id: string) {
+    return this.crud.findOne(id);
   }
 
   check(doc: string) {
-    return this.plug.people(doc);
+    return this.crud.check(doc);
   }
 
   findByEmail(email: string) {
-    return this.prisma.user.findFirst({
-      where: { email: email, isActive: true },
-      include: {
-        customer: {
-          include: {
-            subscriptions: {
-              where: {},
-              include: {
-                plan: { select: { planType: true } },
-              },
-            },
-          },
-        },
-        employee: {
-          select: {
-            id: true,
-            name: true,
-            role: true,
-            avatarUrl: true,
-            company: true,
-          },
-        },
-        userRole: {
-          include: {
-            role: true,
-          },
-        },
-      },
-    });
+    return this.crud.findByEmail(email);
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto) {
-    const { isActive, password, ...rest } = updateUserDto;
-
-    const updatedUser = await this.prisma.$transaction(async (tx) => {
-      try {
-        let updatedData: any = { ...rest };
-
-        // Verifica se a senha foi enviada para ser atualizada
-        if (password) {
-          // Criptografa a nova senha
-          const hashedPassword = await argon2.hash(password);
-          updatedData = { ...updatedData, password: hashedPassword };
-        }
-
-        // Atualiza os dados do usuário
-        const userUpdate = await tx.user.update({
-          where: { id },
-          data: {
-            ...updatedData,
-            isActive,
-          },
-        });
-
-        // Caso o usuário seja ativado, ativa o colaborador vinculado (se existir)
-        if (isActive) {
-          const user = await tx.user.findUnique({
-            where: { id },
-            select: { employee: { select: { id: true } } },
-          });
-
-          if (user?.employee) {
-            await tx.employee.update({
-              where: { id: user.employee[0].id },
-              data: { isActive: true },
-            });
-          }
-        }
-
-        return userUpdate;
-      } catch (error) {
-        console.error(error);
-        throw error;
-      }
-    });
-
-    if (updatedUser.password) {
-      delete updatedUser.password;
-    }
-    return updatedUser;
+  update(id: string, updateUserDto: UpdateUserDto) {
+    return this.crud.update(id, updateUserDto);
   }
 
-  async forgotPassword(forgotPasswordDto: ForgotPasswordDto): Promise<string> {
-    const user = await this.prisma.user.findUnique({
-      where: { email: forgotPasswordDto.email },
-    });
-    if (!user) {
-      // Não revelamos se o email existe ou não por questões de segurança
-      return;
-    }
+  // --- Password ---
 
-    // Gera um token aleatório
-    const resetToken = randomBytes(32).toString('hex');
-
-    // Define a data de expiração para 1 hora a partir de agora
-    const resetPasswordExpires = new Date();
-    resetPasswordExpires.setHours(resetPasswordExpires.getHours() + 1);
-
-    // Salva o token e a data de expiração no banco de dados
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        resetPasswordToken: resetToken,
-        resetPasswordExpires,
-      },
-    });
-
-    // Envia o email com o token
-    await this.mailerService
-      .sendMail({
-        to: user.email,
-        subject: 'Redefinição de Senha',
-        template: 'reset-password',
-        context: {
-          name: user.name,
-          resetLink: `${process.env.FRONTEND_URL}/redefinir-senha?token=${resetToken}`,
-        },
-      })
-      .catch((err) => {
-        this.logger.error(
-          'Falha ao enviar email de redefinição de senha:',
-          err,
-        );
-      });
+  forgotPassword(forgotPasswordDto: ForgotPasswordDto): Promise<string> {
+    return this.password.forgotPassword(forgotPasswordDto);
   }
 
-  async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<void> {
-    // Encontra o usuário pelo token
-    const user = await this.prisma.user.findFirst({
-      where: {
-        resetPasswordToken: resetPasswordDto.token,
-        resetPasswordExpires: {
-          gt: new Date(), // Verifica se o token não expirou
-        },
-      },
-    });
-
-    if (!user) {
-      throw new UnauthorizedException('Token inválido ou expirado');
-    }
-
-    // Criptografa a nova senha
-    const hashedPassword = await argon2.hash(resetPasswordDto.password);
-
-    // Atualiza a senha e limpa o token
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        password: hashedPassword,
-        resetPasswordToken: null,
-        resetPasswordExpires: null,
-      },
-    });
+  resetPassword(resetPasswordDto: ResetPasswordDto): Promise<void> {
+    return this.password.resetPassword(resetPasswordDto);
   }
 
-  async completeRegistration(
+  // --- Onboarding ---
+
+  completeRegistration(
     completeRegistrationDto: CompleteRegistrationDto,
     adminUserId: string,
   ) {
-    // Verifica se o cadastro incompleto existe usando apenas o ID
-    const mailVerification = await this.prisma.mailVerification.findUnique({
-      where: {
-        id: completeRegistrationDto.id,
-      },
-    });
-
-    if (!mailVerification) {
-      throw new NotFoundException('Cadastro incompleto não encontrado.');
-    }
-
-    // Busca o usuário admin para validar a senha
-    const adminUser = await this.prisma.user.findFirst({
-      where: { id: adminUserId },
-    });
-
-    if (!adminUser) {
-      throw new UnauthorizedException('Usuário administrador não encontrado.');
-    }
-
-    // Valida a senha do administrador
-    const isPasswordValid = await argon2.verify(
-      adminUser.password,
-      completeRegistrationDto.password,
+    return this.onboarding.completeRegistration(
+      completeRegistrationDto,
+      adminUserId,
     );
-
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Senha do administrador incorreta.');
-    }
-
-    // Verifica se já existe um User com este email
-    const existingUser = await this.prisma.user.findFirst({
-      where: { email: completeRegistrationDto.email },
-    });
-    if (existingUser) {
-      throw new ConflictException('E-mail já cadastrado.');
-    }
-
-    // Verifica se já existe um Customer com este email
-    const existingCustomer = await this.prisma.customer.findFirst({
-      where: { email: completeRegistrationDto.email },
-    });
-    if (existingCustomer) {
-      throw new ConflictException('E-mail já cadastrado.');
-    }
-
-    // Verifica se já existe uma Company com este CNPJ/CPF
-    if (completeRegistrationDto.document) {
-      const existingCompany = await this.prisma.company.findFirst({
-        where: { cnpj: completeRegistrationDto.document },
-      });
-      if (existingCompany) {
-        throw new ConflictException('CNPJ/CPF já cadastrado.');
-      }
-    }
-
-    let createdUserId: string | null = null;
-    let createdCompanyId: string | null = null;
-    let createdCustomerId: string | null = null;
-
-    try {
-      // Gera uma senha temporária
-      const temporaryPassword = Math.random().toString(36).slice(-8);
-      const hashedPassword = await argon2.hash(temporaryPassword);
-
-      // Criar usuário
-      const userData: Prisma.UserCreateInput = {
-        name: completeRegistrationDto.userName,
-        email: completeRegistrationDto.email,
-        password: hashedPassword,
-        phone: completeRegistrationDto.phone,
-      };
-      const user = await this.prisma.user.create({
-        data: userData,
-      });
-      createdUserId = user.id;
-
-      // Criar empresa
-      const createCompany: CreateCompanyDto = {
-        general: {
-          phone: completeRegistrationDto.phone,
-          name: completeRegistrationDto.companyName,
-          legalName: completeRegistrationDto.legalName,
-          cnpj: completeRegistrationDto.document,
-          email: completeRegistrationDto.email,
-          siteUrl: '',
-          municipalRegistration: '',
-          mobile: completeRegistrationDto.phone,
-        },
-        address: {
-          street: '',
-          number: '',
-          neighborhood: '',
-          city: completeRegistrationDto.cityId || '',
-          state: completeRegistrationDto.stateId || '',
-          zipcode: '',
-        },
-      };
-
-      const company = await this.companyService.createMainCompany(
-        completeRegistrationDto.email,
-        createCompany,
-      );
-      createdCompanyId = company.id;
-      this.logger.log('Company created successfully');
-
-      // Configurar primeiro acesso
-      await this.companyService.createFirstAccess(
-        completeRegistrationDto.email,
-        company.id,
-      );
-      this.logger.log('First access configured successfully');
-
-      // Configurar plano TRIAL
-      await this.prisma.$transaction(async (tx) => {
-        this.logger.log('Attempting to create trial plan...');
-
-        const trialPlan = await tx.plan.findFirst({
-          where: { planType: 'TRIAL' },
-          include: {
-            planLimits: {
-              include: {
-                limit: true,
-              },
-            },
-          },
-        });
-
-        if (trialPlan) {
-          const trialDaysLimit = trialPlan.planLimits.find(
-            (pl) => pl.limit.key === 'trial_days',
-          );
-          const trialDays = trialDaysLimit?.value || 7; // 7 dias de teste trial como fallback
-
-          // Criar customer
-          const customer = await tx.customer.create({
-            data: {
-              name: completeRegistrationDto.userName,
-              email: completeRegistrationDto.email,
-              document: completeRegistrationDto.document,
-              asaasCustomerId: `trial_${user.id}`,
-              companyId: company.id,
-            },
-          });
-          createdCustomerId = customer.id;
-
-          // Conectar user ao customer
-          await tx.user.update({
-            where: { id: user.id },
-            data: { customerId: customer.id },
-          });
-
-          // Criar subscription com plano TRIAL
-          const trialEndDate = new Date();
-          trialEndDate.setDate(trialEndDate.getDate() + trialDays);
-
-          await tx.subscription.create({
-            data: {
-              customerId: customer.id,
-              planId: trialPlan.id,
-              companyId: company.id,
-              asaasSubscriptionId: `trial_sub_${user.id}`,
-              nextDueDate: trialEndDate,
-              value: 0,
-            },
-          });
-
-          this.logger.log(
-            `Plano TRIAL criado para usuário ${user.email} - válido até ${trialEndDate.toISOString()} (${trialDays} dias)`,
-          );
-        } else {
-          this.logger.warn(
-            'Plano TRIAL não encontrado - subscription não criada',
-          );
-        }
-      });
-
-      // Enviar email com a senha temporária
-      await this.mailerService
-        .sendMail({
-          to: completeRegistrationDto.email,
-          subject: 'Cadastro Efetuado - Atrupe',
-          template: 'registration-complete',
-          context: {
-            name: completeRegistrationDto.userName,
-            email: completeRegistrationDto.email,
-            temporaryPassword,
-            loginUrl: `${process.env.FRONTEND_URL}/login`,
-          },
-        })
-        .catch((err) => {
-          this.logger.error('Erro ao enviar email:', err);
-        });
-
-      // Limpar verificação de email
-      await this.prisma.mailVerification.delete({
-        where: { id: completeRegistrationDto.id },
-      });
-
-      return {
-        message: 'Cadastro efetuado com sucesso. Email enviado ao cliente.',
-      };
-    } catch (error) {
-      this.logger.error('Erro ao completar cadastro:', error);
-
-      // Rollback manual
-      try {
-        if (createdCustomerId) {
-          await this.prisma.customer
-            .delete({ where: { id: createdCustomerId } })
-            .catch(() => {});
-        }
-
-        if (createdCompanyId) {
-          await this.prisma.company
-            .delete({ where: { id: createdCompanyId } })
-            .catch(() => {});
-        }
-
-        if (createdUserId) {
-          await this.prisma.user
-            .delete({ where: { id: createdUserId } })
-            .catch(() => {});
-        }
-      } catch (rollbackError) {
-        this.logger.error('Erro durante rollback:', rollbackError);
-      }
-
-      if (error instanceof PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') {
-          throw new ConflictException('E-mail ou CNPJ já cadastrado.');
-        }
-      }
-      throw error;
-    }
   }
 
-  async editClient(editClientDto: EditClientDto, adminUserId: string) {
-    // Busca o usuário admin para validar a senha
-    const adminUser = await this.prisma.user.findFirst({
-      where: { id: adminUserId },
-    });
-
-    if (!adminUser) {
-      throw new UnauthorizedException('Usuário administrador não encontrado.');
-    }
-
-    // Valida a senha do administrador
-    const isPasswordValid = await argon2.verify(
-      adminUser.password,
-      editClientDto.password,
-    );
-
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Senha do administrador incorreta.');
-    }
-
-    // Busca a empresa pelo ID
-    const company = await this.prisma.company.findUnique({
-      where: { id: editClientDto.id },
-      include: {
-        customer: {
-          include: {
-            user: true,
-          },
-        },
-        address: true,
-      },
-    });
-
-    if (!company) {
-      throw new NotFoundException('Empresa não encontrada.');
-    }
-
-    // Verifica se o email está sendo alterado e se já existe outro registro com esse email
-    if (company.customer.length > 0) {
-      const currentEmail = company.customer[0].email;
-      if (currentEmail !== editClientDto.email) {
-        // Email está sendo alterado, verifica duplicação
-        const userToExclude =
-          company.customer[0].user && company.customer[0].user.length > 0
-            ? company.customer[0].user[0].id
-            : undefined;
-
-        if (userToExclude) {
-          const existingUser = await this.prisma.user.findFirst({
-            where: {
-              email: editClientDto.email,
-              id: { not: userToExclude },
-            },
-          });
-          if (existingUser) {
-            throw new ConflictException('E-mail já cadastrado.');
-          }
-        }
-
-        const existingCustomer = await this.prisma.customer.findFirst({
-          where: {
-            email: editClientDto.email,
-            id: { not: company.customer[0].id },
-          },
-        });
-        if (existingCustomer) {
-          throw new ConflictException('E-mail já cadastrado.');
-        }
-      }
-    }
-
-    // Verifica se o CNPJ está sendo alterado e se já existe outro registro
-    if (company.cnpj !== editClientDto.document) {
-      const existingCompany = await this.prisma.company.findFirst({
-        where: {
-          cnpj: editClientDto.document,
-          id: { not: editClientDto.id },
-        },
-      });
-      if (existingCompany) {
-        throw new ConflictException('CNPJ/CPF já cadastrado.');
-      }
-    }
-
-    try {
-      // Atualiza a empresa
-      await this.prisma.company.update({
-        where: { id: editClientDto.id },
-        data: {
-          name: editClientDto.companyName,
-          legalName: editClientDto.legalName,
-          cnpj: editClientDto.document,
-          email: editClientDto.email,
-          phone: editClientDto.phone,
-          mobile: editClientDto.phone,
-        },
-      });
-
-      // Atualiza o endereço da empresa (se existir)
-      if (company.address.length > 0) {
-        await this.prisma.address.update({
-          where: { id: company.address[0].id },
-          data: {
-            city: editClientDto.cityId || company.address[0].city,
-            state: editClientDto.stateId || company.address[0].state,
-          },
-        });
-      } else if (editClientDto.cityId || editClientDto.stateId) {
-        // Cria endereço se não existir e ao menos um campo foi fornecido
-        await this.prisma.address.create({
-          data: {
-            companyId: editClientDto.id,
-            city: editClientDto.cityId || '',
-            state: editClientDto.stateId || '',
-            street: '',
-            number: '',
-            neighborhood: '',
-            zipcode: '',
-          },
-        });
-      }
-
-      // Atualiza o customer (se existir)
-      if (company.customer.length > 0) {
-        const customer = company.customer[0];
-        await this.prisma.customer.update({
-          where: { id: customer.id },
-          data: {
-            name: editClientDto.userName,
-            email: editClientDto.email,
-            document: editClientDto.document,
-          },
-        });
-
-        // Atualiza o user (se existir)
-        if (customer.user && customer.user.length > 0) {
-          await this.prisma.user.update({
-            where: { id: customer.user[0].id },
-            data: {
-              name: editClientDto.userName,
-              email: editClientDto.email,
-              phone: editClientDto.phone,
-            },
-          });
-        }
-      }
-
-      return {
-        message: 'Cliente atualizado com sucesso.',
-      };
-    } catch (error) {
-      this.logger.error('Erro ao editar cliente:', error);
-
-      if (error instanceof PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') {
-          throw new ConflictException('E-mail ou CNPJ já cadastrado.');
-        }
-      }
-      throw error;
-    }
+  editClient(editClientDto: EditClientDto, adminUserId: string) {
+    return this.onboarding.editClient(editClientDto, adminUserId);
   }
 }

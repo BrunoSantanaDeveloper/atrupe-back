@@ -1,6 +1,10 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { UserService } from './user.service';
+import { UserCrudService } from './user-crud.service';
+import { UserPasswordService } from './user-password.service';
+import { UserRegistrationService } from './user-registration.service';
+import { UserOnboardingService } from './user-onboarding.service';
 import { UserController } from './user.controller';
 import { PrismaModule } from 'nestjs-prisma';
 import { CacheModule } from 'src/svc/cache/cache.module';
@@ -25,7 +29,14 @@ import { EmployeeHistoryModule } from '../employee/history/history.module';
     EmployeeHistoryModule,
   ],
   controllers: [UserController],
-  providers: [UserService, AbacService],
+  providers: [
+    UserService,
+    UserCrudService,
+    UserPasswordService,
+    UserRegistrationService,
+    UserOnboardingService,
+    AbacService,
+  ],
   exports: [UserService],
 })
 export class UserModule {}
