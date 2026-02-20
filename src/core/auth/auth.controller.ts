@@ -1,4 +1,5 @@
 import { Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './guards/local.guard';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
@@ -16,10 +17,12 @@ class LoginDto {
 
 @Controller('auth')
 @ApiTags('Autenticação')
+@UseGuards(ThrottlerGuard)
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
+  @Throttle({ auth: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Realiza o login do usuário' })
   @ApiBody({
     description: 'Payload para login',
@@ -83,6 +86,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Throttle({ auth: { limit: 10, ttl: 60000 } })
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Renova o access token usando o refresh token' })
   @ApiResponse({

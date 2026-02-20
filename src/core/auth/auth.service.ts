@@ -6,6 +6,13 @@ import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import * as argon2 from 'argon2';
 import { v4 as uuidv4 } from 'uuid';
 import { jwtConstants } from './constants';
+import {
+  JwtPayload,
+  AuthUser,
+  AuthUserRole,
+  LoginResponse,
+  TokenResponse,
+} from './interfaces/auth.interfaces';
 
 @Injectable()
 export class AuthService {
@@ -22,7 +29,7 @@ export class AuthService {
   /**
    * Gerar refresh token
    */
-  private generateRefreshToken(payload: any): string {
+  private generateRefreshToken(payload: JwtPayload): string {
     return this.jwtService.sign(payload, {
       secret: jwtConstants.refreshSecret,
       expiresIn: '30d',
@@ -48,11 +55,14 @@ export class AuthService {
   /**
    * Verificar se o usuário é administrador do sistema
    */
-  private checkIsSystemAdmin(user: any): boolean {
-    return user.userRole?.some((ur: any) => ur.isSystemAdmin === true) ?? false;
+  private checkIsSystemAdmin(user: Pick<AuthUser, 'userRole'>): boolean {
+    return (
+      user.userRole?.some((ur: AuthUserRole) => ur.isSystemAdmin === true) ??
+      false
+    );
   }
 
-  async validateUser(email: string, pass: string): Promise<any> {
+  async validateUser(email: string, pass: string): Promise<AuthUser | null> {
     const user = await this.usersService.findByEmail(email);
 
     if (user && (await argon2.verify(user.password, pass))) {
@@ -63,7 +73,7 @@ export class AuthService {
     return null;
   }
 
-  async login(user: any) {
+  async login(user: AuthUser): Promise<LoginResponse> {
     try {
       // Gerar sessionId único para rastreamento de atividade
       const sessionId = uuidv4();
@@ -192,7 +202,7 @@ export class AuthService {
     }
   }
 
-  async refreshToken(userId: string) {
+  async refreshToken(userId: string): Promise<TokenResponse> {
     try {
       // Buscar usuário atualizado
       const user = await this.usersService.findOne(userId);
