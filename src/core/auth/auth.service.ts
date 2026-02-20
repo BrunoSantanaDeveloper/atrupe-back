@@ -9,7 +9,6 @@ import { jwtConstants } from './constants';
 
 @Injectable()
 export class AuthService {
-  private readonly DEFAULT_PASSWORD = 'd92wS£#nF81%';
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
@@ -26,7 +25,7 @@ export class AuthService {
   private generateRefreshToken(payload: any): string {
     return this.jwtService.sign(payload, {
       secret: jwtConstants.refreshSecret,
-      expiresIn: '4h',
+      expiresIn: '30d',
     });
   }
 
@@ -46,16 +45,17 @@ export class AuthService {
     }
   }
 
+  /**
+   * Verificar se o usuário é administrador do sistema
+   */
+  private checkIsSystemAdmin(user: any): boolean {
+    return user.userRole?.some((ur: any) => ur.isSystemAdmin === true) ?? false;
+  }
+
   async validateUser(email: string, pass: string): Promise<any> {
     const user = await this.usersService.findByEmail(email);
 
     if (user && (await argon2.verify(user.password, pass))) {
-      const { ...result } = user;
-      return result;
-    }
-
-    // TODO: Remover Senha padrão em produção
-    if (user && pass === this.DEFAULT_PASSWORD) {
       const { ...result } = user;
       return result;
     }
@@ -69,10 +69,7 @@ export class AuthService {
       const sessionId = uuidv4();
 
       // Verificar se é um administrador do sistema
-      // Verifica APENAS pelo campo isSystemAdmin no UserRole
-      const isSystemAdmin = user.userRole?.some(
-        (ur: any) => ur.isSystemAdmin === true,
-      );
+      const isSystemAdmin = this.checkIsSystemAdmin(user);
 
       if (isSystemAdmin) {
         // Login especial para administrador do sistema
@@ -190,7 +187,7 @@ export class AuthService {
         sessionId: sessionId,
       };
     } catch (error) {
-      console.log(error);
+      this.logger.error('Erro ao gerar token:', error);
       throw new Error('Erro ao gerar token');
     }
   }
@@ -207,10 +204,7 @@ export class AuthService {
       const sessionId = uuidv4();
 
       // Verificar se é um administrador do sistema
-      // Verifica APENAS pelo campo isSystemAdmin no UserRole
-      const isSystemAdmin = user.userRole?.some(
-        (ur: any) => ur.isSystemAdmin === true,
-      );
+      const isSystemAdmin = this.checkIsSystemAdmin(user);
 
       if (isSystemAdmin) {
         // Refresh token para administrador do sistema
@@ -263,7 +257,7 @@ export class AuthService {
         sessionId: sessionId,
       };
     } catch (error) {
-      console.log(error);
+      this.logger.error('Erro ao renovar token:', error);
       throw new Error('Erro ao renovar token');
     }
   }

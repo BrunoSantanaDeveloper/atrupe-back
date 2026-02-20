@@ -20,7 +20,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     JwtModule.register({
       global: true,
       secret: jwtConstants.secret,
-      signOptions: { expiresIn: '30d' }, // 30 dias TODO: Alterar para 4h (4 horas)
+      signOptions: { expiresIn: '4h' },
     }),
     forwardRef(() => UserModule),
     PlanControlModule,
