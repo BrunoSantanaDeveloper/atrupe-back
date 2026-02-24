@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { Prisma } from '@prisma/client';
 import { add } from 'date-fns';
@@ -9,6 +9,8 @@ import { add } from 'date-fns';
  */
 @Injectable()
 export class QuotationFinancialService {
+  private readonly logger = new Logger(QuotationFinancialService.name);
+
   constructor(private prisma: PrismaService) {}
 
   /**
@@ -142,7 +144,7 @@ export class QuotationFinancialService {
 
       return receivable;
     } catch (error) {
-      console.error('Erro ao gerar contas a receber:', error);
+      this.logger.error('Erro ao gerar contas a receber:', error.stack);
       throw new Error(
         'Erro ao gerar contas a receber. Detalhes: ' + error.message,
       );
@@ -195,18 +197,18 @@ export class QuotationFinancialService {
 
     // Validar valor da comissão
     if (!commission.commissionValue || commission.commissionValue <= 0) {
-      console.log('Commission validation failed: commissionValue <= 0');
+      this.logger.debug('Commission validation failed: commissionValue <= 0');
       return false;
     }
 
     if (!commission.totalCommission || commission.totalCommission <= 0) {
-      console.log('Commission validation failed: totalCommission <= 0');
+      this.logger.debug('Commission validation failed: totalCommission <= 0');
       return false;
     }
 
     // Validar fornecedor
     if (!commission.supplierId) {
-      console.log('Commission validation failed: no supplierId');
+      this.logger.debug('Commission validation failed: no supplierId');
       return false;
     }
 
@@ -216,7 +218,7 @@ export class QuotationFinancialService {
     });
 
     if (!supplier) {
-      console.log('Commission validation failed: supplier not found');
+      this.logger.debug('Commission validation failed: supplier not found');
       return false;
     }
 
@@ -231,7 +233,7 @@ export class QuotationFinancialService {
 
     // Regra simplificada: se tem custo, sempre gera despesa
     if (!delivery.cost || delivery.cost <= 0) {
-      console.log('Delivery validation failed: cost <= 0');
+      this.logger.debug('Delivery validation failed: cost <= 0');
       return false;
     }
 
@@ -705,7 +707,10 @@ export class QuotationFinancialService {
       // Se não tem cliente específico, retorna array vazio
       return [];
     } catch (error) {
-      console.error('Error getting available payment methods:', error);
+      this.logger.error(
+        'Error getting available payment methods:',
+        error.stack,
+      );
       return [];
     }
   }

@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { QUOTATION_PDF_DATA_INCLUDE } from './quotation-pdf.includes';
@@ -14,6 +15,8 @@ import { QuotationFinancialService } from './quotation-financial.service';
  */
 @Injectable()
 export class QuotationPdfService {
+  private readonly logger = new Logger(QuotationPdfService.name);
+
   constructor(
     private prisma: PrismaService,
     private financialService: QuotationFinancialService,
@@ -45,7 +48,7 @@ export class QuotationPdfService {
         availablePaymentMethods,
       );
     } catch (error) {
-      console.error('Error generating quotation PDF data:', error);
+      this.logger.error('Error generating quotation PDF data:', error.stack);
       throw new InternalServerErrorException(
         'Failed to generate quotation PDF data',
       );

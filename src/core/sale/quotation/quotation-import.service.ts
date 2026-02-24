@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { QuotationStatus } from '@prisma/client';
 import { add } from 'date-fns';
@@ -19,6 +19,7 @@ export interface QuotationApprover {
  */
 @Injectable()
 export class QuotationImportService {
+  private readonly logger = new Logger(QuotationImportService.name);
   private approver: QuotationApprover | null = null;
 
   constructor(private prisma: PrismaService) {}
@@ -142,7 +143,7 @@ export class QuotationImportService {
         deleted: deletedCount,
       };
     } catch (error) {
-      console.error('Error deleting imported quotations:', error);
+      this.logger.error('Error deleting imported quotations:', error.stack);
       throw new BadRequestException(
         `Failed to delete imported quotations: ${error.message}`,
       );
@@ -453,7 +454,10 @@ export class QuotationImportService {
 
           importedCount++;
         } catch (error) {
-          console.error(`Error processing row: ${JSON.stringify(row)}`, error);
+          this.logger.error(
+            `Error processing row: ${JSON.stringify(row)}`,
+            error.stack,
+          );
         }
       }
 
@@ -463,7 +467,10 @@ export class QuotationImportService {
           try {
             await this.approver.approve(quotationId);
           } catch (error) {
-            console.error(`Error approving quotation ${quotationId}:`, error);
+            this.logger.error(
+              `Error approving quotation ${quotationId}:`,
+              error.stack,
+            );
           }
         }
       }
@@ -474,7 +481,7 @@ export class QuotationImportService {
         imported: importedCount,
       };
     } catch (error) {
-      console.error('Error importing quotations from CSV:', error);
+      this.logger.error('Error importing quotations from CSV:', error.stack);
       throw new BadRequestException(
         `Failed to import quotations: ${error.message}`,
       );

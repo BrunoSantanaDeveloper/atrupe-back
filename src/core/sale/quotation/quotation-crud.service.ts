@@ -2,12 +2,20 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  HttpException,
+  HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { Prisma, Quotation, QuotationStatus } from '@prisma/client';
 import { add, endOfDay } from 'date-fns';
 import { CreateQuotationDto } from './dto/create-quotation.dto';
 import { UpdateQuotationDto } from './dto/update-quotation.dto';
+import {
+  DuplicateQuotationDto,
+  DuplicateQuotationProductDto,
+  DuplicateQuotationProductItemDto,
+} from './dto/duplicate-quotation.dto';
 import { FilterQuotationDto } from './dto/filter.dto';
 
 /**
@@ -16,6 +24,8 @@ import { FilterQuotationDto } from './dto/filter.dto';
  */
 @Injectable()
 export class QuotationCrudService {
+  private readonly logger = new Logger(QuotationCrudService.name);
+
   constructor(private prisma: PrismaService) {}
 
   /**
@@ -156,10 +166,13 @@ export class QuotationCrudService {
 
       return newQuotation;
     } catch (error) {
-      console.log(error);
-      if (error instanceof NotFoundException) {
+      if (error instanceof HttpException) {
         throw error;
       }
+      this.logger.error(
+        `Erro ao criar orçamento: ${error.message}`,
+        error.stack,
+      );
       throw new BadRequestException(
         `Erro ao criar orçamento: ${error.message}`,
       );
@@ -379,7 +392,7 @@ export class QuotationCrudService {
         },
       };
     } catch (error) {
-      console.error('Error in findAll:', error);
+      this.logger.error('Error in findAll:', error.stack);
       throw error;
     }
   }
@@ -459,8 +472,313 @@ export class QuotationCrudService {
         orderBy: { name: 'asc' },
       });
     } catch (error) {
-      console.error('Error finding all contact sources:', error);
+      this.logger.error('Error finding all contact sources:', error.stack);
       throw error;
     }
+  }
+
+  /**
+   * Duplica um orçamento completo
+   */
+  async duplicate(
+    quotationId: string,
+    duplicateDto: DuplicateQuotationDto,
+    userId?: string,
+  ): Promise<Quotation> {
+    const quotation = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      include: {
+        quotationProduct: {
+          include: {
+            items: true,
+          },
+        },
+        deliveryInfo: true,
+        quotationPayment: true,
+      },
+    });
+
+    if (!quotation) {
+      throw new NotFoundException(
+        `Quotation with ID '${quotationId}' not found.`,
+      );
+    }
+
+    const serie = await this.prisma.saleSeries.findUnique({
+      where: { id: quotation.seriesId },
+      select: {
+        id: true,
+        currentBudgetNumber: true,
+      },
+    });
+
+    const createDto: CreateQuotationDto = {
+      description:
+        duplicateDto.description || `${quotation.description} (Cópia)`,
+      clientId: duplicateDto.clientId || quotation.clientId,
+      contactId: duplicateDto.contactId || quotation.contactId,
+      contactSourceId: quotation.contactSourceId,
+      totalValue: quotation.totalValue,
+      sellerId: quotation.sellerId,
+      seriesId: quotation.seriesId,
+      companyId: quotation.companyId,
+      subCompanyId: quotation.subCompanyId,
+      quotationNumber: serie.currentBudgetNumber + 1,
+    };
+
+    const newQuotation = await this.prisma.quotation.create({
+      data: createDto,
+    });
+
+    await this.prisma.saleSeries.update({
+      where: {
+        id: serie.id,
+      },
+      data: {
+        currentBudgetNumber: { increment: 1 },
+      },
+    });
+
+    try {
+      await this.prisma.deliveryInfo.create({
+        data: {
+          quotationId: newQuotation.id,
+          deliveryType: quotation.deliveryInfo.deliveryType,
+          daysAfterApproval: quotation.deliveryInfo.daysAfterApproval,
+          modality: quotation.deliveryInfo.modality,
+          supplierId: quotation.deliveryInfo.supplierId,
+        },
+      });
+
+      await this.prisma.quotationPayment.create({
+        data: {
+          quotationId: newQuotation.id,
+          paymentConditionId: quotation.quotationPayment.paymentConditionId,
+          totalValue: quotation.quotationPayment.totalValue,
+          finalValue: quotation.quotationPayment.finalValue,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        'Error creating deliveryInfo/payment for duplicate:',
+        error.stack,
+      );
+    }
+
+    let productsWithCurrentPrices = null;
+    if (duplicateDto.updatePrices) {
+      const productIds = quotation.quotationProduct.map((p) => p.productId);
+      productsWithCurrentPrices = await this.prisma.product.findMany({
+        where: {
+          id: { in: productIds },
+        },
+        include: {
+          items: true,
+        },
+      });
+    }
+
+    for (const product of quotation.quotationProduct) {
+      const currentProduct = duplicateDto.updatePrices
+        ? productsWithCurrentPrices.find((p) => p.id === product.productId)
+        : null;
+
+      const calculatedItems: {
+        item: any;
+        currentItem: any;
+        calculatedSalePrice: number;
+      }[] = [];
+
+      for (const item of product.items) {
+        const currentItem = currentProduct?.items.find(
+          (i) => i.id === item.productItemId,
+        );
+
+        let calculatedSalePrice: number;
+
+        if (duplicateDto.updatePrices) {
+          const baseSalePrice = currentItem?.salePrice;
+
+          if (!baseSalePrice) {
+            calculatedSalePrice = item.salePrice ?? 0;
+          } else {
+            if (item.unitKind === 'DURATION' && item.duration) {
+              const durationInHours = item.duration / 3600;
+              calculatedSalePrice =
+                baseSalePrice * durationInHours * item.quantity;
+            } else if (item.unitKind === 'AREA' && item.width && item.height) {
+              calculatedSalePrice =
+                baseSalePrice * item.width * item.height * item.quantity;
+            } else if (item.unitKind === 'DISTANCE' && item.distance) {
+              calculatedSalePrice =
+                baseSalePrice * item.distance * item.quantity;
+            } else if (item.unitKind === 'LENGTH' && item.length) {
+              calculatedSalePrice = baseSalePrice * item.length * item.quantity;
+            } else if (item.unitKind === 'WEIGHT' && item.weight) {
+              calculatedSalePrice = baseSalePrice * item.weight * item.quantity;
+            } else if (item.unitKind === 'CAPACITY' && item.volume) {
+              calculatedSalePrice = baseSalePrice * item.volume * item.quantity;
+            } else {
+              calculatedSalePrice = baseSalePrice * item.quantity;
+            }
+          }
+        } else {
+          calculatedSalePrice = item.salePrice ?? 0;
+        }
+
+        calculatedItems.push({ item, currentItem, calculatedSalePrice });
+      }
+
+      let newProductTotalValue = product.totalValue;
+      let newProductFinalValue = product.finalValue;
+
+      if (duplicateDto.updatePrices) {
+        newProductTotalValue = calculatedItems.reduce(
+          (total, { calculatedSalePrice }) => total + calculatedSalePrice,
+          0,
+        );
+
+        if (product.discount && product.discountType === 'PERCENT') {
+          newProductFinalValue =
+            newProductTotalValue -
+            (newProductTotalValue * product.discount) / 100;
+        } else if (product.discount && product.discountType === 'VALUE') {
+          newProductFinalValue = newProductTotalValue - product.discount;
+        } else {
+          newProductFinalValue = newProductTotalValue;
+        }
+      }
+
+      const productDto: DuplicateQuotationProductDto = {
+        description: product.description,
+        quantity: product.quantity,
+        technicalDescription: product.technicalDescription,
+        imageUrl: product.imageUrl,
+        notes: product.notes,
+        totalValue: newProductTotalValue,
+        finalValue: newProductFinalValue,
+        discount: product.discount,
+        discountType: product.discountType,
+        allowEditDescription: product.allowEditDescription,
+        allowEditValues: product.allowEditValues,
+        quotationId: newQuotation.id,
+        productId: product.productId,
+      };
+
+      const newProduct = await this.prisma.quotationProduct.create({
+        data: productDto,
+      });
+
+      for (const {
+        item,
+        currentItem,
+        calculatedSalePrice,
+      } of calculatedItems) {
+        const baseUnitCost = duplicateDto.updatePrices
+          ? (currentItem?.unitCost ?? item.unitCost)
+          : item.unitCost;
+
+        const itemDto: DuplicateQuotationProductItemDto = {
+          quotationId: newQuotation.id,
+          productId: newProduct.productId,
+          productItemId: item.productItemId,
+          quotationProductId: newProduct.id,
+          name: item.name,
+          quantity: item.quantity,
+          originalQuantity: item.originalQuantity,
+          unitKind: item.unitKind as any,
+          width: item.width,
+          height: item.height,
+          length: item.length,
+          weight: item.weight,
+          volume: item.volume,
+          distance: item.distance,
+          duration: item.duration,
+          unitCost: baseUnitCost,
+          salePrice: calculatedSalePrice,
+          totalValue: calculatedSalePrice,
+        };
+
+        try {
+          await this.prisma.quotationProductItem.create({
+            data: itemDto as any,
+          });
+        } catch (error) {
+          this.logger.error(
+            'Error creating quotation product item:',
+            error.message,
+          );
+          throw new HttpException(
+            'Internal server error',
+            HttpStatus.INTERNAL_SERVER_ERROR,
+          );
+        }
+      }
+    }
+
+    await this.recalculateQuotationTotalValue(newQuotation.id);
+
+    if (userId) {
+      try {
+        await this.prisma.quotationHistory.create({
+          data: {
+            quotationId: newQuotation.id,
+            action: 'DUPLICATED',
+            description: `Orçamento duplicado a partir do orçamento #${quotation.quotationNumber}`,
+            changes: null,
+            metadata: {
+              originalQuotationId: quotation.id,
+              originalQuotationNumber: quotation.quotationNumber,
+              updatedPrices: duplicateDto.updatePrices || false,
+              clientChanged: duplicateDto.clientId
+                ? duplicateDto.clientId !== quotation.clientId
+                : false,
+              contactChanged: duplicateDto.contactId
+                ? duplicateDto.contactId !== quotation.contactId
+                : false,
+              descriptionChanged: duplicateDto.description
+                ? duplicateDto.description !== quotation.description
+                : false,
+            },
+            createdBy: userId,
+            createdByName: null,
+          },
+        });
+      } catch (error) {
+        this.logger.error(
+          'Error creating quotation duplication history:',
+          error.stack,
+        );
+      }
+    }
+
+    return newQuotation;
+  }
+
+  /**
+   * Recalcula o valor total do orçamento somando finalValues dos produtos
+   */
+  async recalculateQuotationTotalValue(quotationId: string) {
+    const quotationProducts = await this.prisma.quotationProduct.findMany({
+      where: { quotationId },
+      include: {
+        items: true,
+      },
+    });
+
+    const totalValue = quotationProducts.reduce((total, product) => {
+      return total + product.finalValue;
+    }, 0);
+
+    await this.prisma.quotation.update({
+      where: { id: quotationId },
+      data: { totalValue },
+    });
+    await this.prisma.quotationPayment.update({
+      where: {
+        quotationId: quotationId,
+      },
+      data: { totalValue },
+    });
   }
 }

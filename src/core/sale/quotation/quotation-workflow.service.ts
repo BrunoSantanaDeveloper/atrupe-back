@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import {
@@ -25,6 +26,8 @@ import { QuotationApprover } from './quotation-import.service';
  */
 @Injectable()
 export class QuotationWorkflowService implements QuotationApprover {
+  private readonly logger = new Logger(QuotationWorkflowService.name);
+
   constructor(
     private prisma: PrismaService,
     private financialService: QuotationFinancialService,
@@ -69,7 +72,7 @@ export class QuotationWorkflowService implements QuotationApprover {
 
       return false;
     } catch (error) {
-      console.error('Error checking trial status:', error);
+      this.logger.error('Error checking trial status:', error.stack);
       return false;
     }
   }
@@ -327,7 +330,7 @@ export class QuotationWorkflowService implements QuotationApprover {
         return order;
       })
       .catch((error) => {
-        console.error('Error creating order:', error);
+        this.logger.error('Error creating order:', error.stack);
         throw error;
       });
   }
@@ -356,7 +359,7 @@ export class QuotationWorkflowService implements QuotationApprover {
       existingFinancials.receivables.length > 0 ||
       existingFinancials.payables.length > 0
     ) {
-      console.log(
+      this.logger.log(
         `Financials already exist for quotation ${quotationId}. Skipping bill creation.`,
       );
       return {
@@ -454,7 +457,7 @@ export class QuotationWorkflowService implements QuotationApprover {
         },
       });
       if (!quotation) {
-        console.error('Orçamento não encontrado.');
+        this.logger.error('Orçamento não encontrado.');
         return;
       }
 
@@ -546,10 +549,10 @@ export class QuotationWorkflowService implements QuotationApprover {
         await this.prisma.productionStage.createMany({
           data: productionStages,
         });
-        console.log('Etapas de produção criadas com sucesso!');
+        this.logger.log('Etapas de produção criadas com sucesso!');
       }
     } catch (error) {
-      console.error('Erro ao criar etapas de produção:', error);
+      this.logger.error('Erro ao criar etapas de produção:', error.stack);
     }
   }
 
@@ -613,7 +616,7 @@ export class QuotationWorkflowService implements QuotationApprover {
           'Erro na base de dados ao cancelar a ordem.',
         );
       }
-      console.error(error);
+      this.logger.error('Error rejecting quotation:', error.stack);
       throw new BadRequestException('Erro interno ao cancelar a ordem.');
     }
   }
@@ -759,7 +762,7 @@ export class QuotationWorkflowService implements QuotationApprover {
 
       return updatedQuotation;
     } catch (error) {
-      console.error(error);
+      this.logger.error('Error finishing quotation:', error.stack);
       throw new BadRequestException('Erro ao atualizar o status do orçamento.');
     }
   }
@@ -800,7 +803,10 @@ export class QuotationWorkflowService implements QuotationApprover {
 
       return updatedQuotation;
     } catch (error) {
-      console.error('Error updating quotation status to OPEN:', error);
+      this.logger.error(
+        'Error updating quotation status to OPEN:',
+        error.stack,
+      );
       throw new BadRequestException('Erro ao reabrir o orçamento.');
     }
   }

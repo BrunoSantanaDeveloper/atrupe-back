@@ -2,11 +2,13 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { Prisma } from '@prisma/client';
 import { AddItemDto } from './dto/create-quotation.dto';
 import { UpdateItemDto } from './dto/update-quotation.dto';
+import { calculateFinalValue } from './quotation.utils';
 
 /**
  * QuotationItemsService
@@ -14,6 +16,8 @@ import { UpdateItemDto } from './dto/update-quotation.dto';
  */
 @Injectable()
 export class QuotationItemsService {
+  private readonly logger = new Logger(QuotationItemsService.name);
+
   constructor(private prisma: PrismaService) {}
 
   /**
@@ -116,7 +120,7 @@ export class QuotationItemsService {
         },
       });
     } catch (error) {
-      console.error(error);
+      this.logger.error('Error adding product to quotation:', error.stack);
       throw error;
     }
   }
@@ -138,24 +142,6 @@ export class QuotationItemsService {
       if (!product) {
         throw new NotFoundException(`Produto não encontrado`);
       }
-
-      // Capturar valores originais para o histórico
-      // const originalValues = {
-      //   productName:
-      //     data.description || product.description || product.product.name,
-      //   totalValue: product.totalValue,
-      //   finalValue: product.finalValue,
-      //   discount: product.discount,
-      //   discountType: product.discountType,
-      //   quantity: product.quantity,
-      //   items: product.items.map((item) => ({
-      //     id: item.id,
-      //     name: item.name,
-      //     quantity: item.quantity,
-      //     unitCost: item.unitCost,
-      //     totalValue: item.totalValue,
-      //   })),
-      // };
 
       // Atualiza o produto dentro do orçamento com valores do frontend
       const updatedQuotationProduct = await this.prisma.quotationProduct.update(
@@ -198,15 +184,11 @@ export class QuotationItemsService {
 
         if (currentProduct) {
           const currentTotalValue = currentProduct.totalValue || 0;
-          let newFinalValue = currentTotalValue;
-
-          if (currentProduct.discountType === 'VALUE') {
-            newFinalValue = currentTotalValue - (currentProduct.discount || 0);
-          } else if (currentProduct.discountType === 'PERCENT') {
-            newFinalValue =
-              currentTotalValue -
-              currentTotalValue * ((currentProduct.discount || 0) / 100);
-          }
+          const newFinalValue = calculateFinalValue(
+            currentTotalValue,
+            currentProduct.discount,
+            currentProduct.discountType,
+          );
 
           await this.prisma.quotationProduct.update({
             where: { id: productId },
@@ -269,13 +251,11 @@ export class QuotationItemsService {
           0,
         );
 
-        const productFinalValue =
-          product.discountType === 'VALUE'
-            ? productTotalValue - (product.discount || 0)
-            : product.discountType === 'PERCENT'
-              ? productTotalValue -
-                productTotalValue * ((product.discount || 0) / 100)
-              : productTotalValue;
+        const productFinalValue = calculateFinalValue(
+          productTotalValue,
+          product.discount,
+          product.discountType,
+        );
 
         await this.prisma.quotationProduct.update({
           where: { id: productId },
@@ -316,13 +296,11 @@ export class QuotationItemsService {
           0,
         );
 
-        const productFinalValue =
-          product.discountType === 'VALUE'
-            ? productTotalValue - (product.discount || 0)
-            : product.discountType === 'PERCENT'
-              ? productTotalValue -
-                productTotalValue * ((product.discount || 0) / 100)
-              : productTotalValue;
+        const productFinalValue = calculateFinalValue(
+          productTotalValue,
+          product.discount,
+          product.discountType,
+        );
 
         await this.prisma.quotationProduct.update({
           where: { id: productId },
@@ -338,7 +316,7 @@ export class QuotationItemsService {
 
       return updatedQuotationProduct;
     } catch (error) {
-      console.error(error);
+      this.logger.error('Error updating product in quotation:', error.stack);
       throw new BadRequestException(
         'Failed to update product in quotation',
         error.message,
@@ -491,12 +469,11 @@ export class QuotationItemsService {
       0,
     );
 
-    const finalValue =
-      quotationProduct.discountType === 'VALUE'
-        ? totalValue - (quotationProduct.discount || 0)
-        : quotationProduct.discountType === 'PERCENT'
-          ? totalValue - totalValue * ((quotationProduct.discount || 0) / 100)
-          : totalValue;
+    const finalValue = calculateFinalValue(
+      totalValue,
+      quotationProduct.discount,
+      quotationProduct.discountType,
+    );
 
     await this.prisma.quotationProduct.update({
       where: { id: quotationId },

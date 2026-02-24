@@ -3,6 +3,12 @@ import { QuotationService } from './quotation.service';
 import { PrismaService } from 'nestjs-prisma';
 import { OrderService } from '../order/order.service';
 import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.service';
+import { QuotationCrudService } from './quotation-crud.service';
+import { QuotationItemsService } from './quotation-items.service';
+import { QuotationWorkflowService } from './quotation-workflow.service';
+import { QuotationFinancialService } from './quotation-financial.service';
+import { QuotationPdfService } from './quotation-pdf.service';
+import { QuotationImportService } from './quotation-import.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { QuotationStatus, OrderStatus } from '@prisma/client';
 
@@ -36,7 +42,7 @@ const mockDeliveryInfo = {
 };
 
 const mockQuotationPayment = {
-  billing: 'ON_DELIVERY', // Changed to skip financial generation in most tests
+  billing: 'ON_DELIVERY',
   quotationInstallment: [],
   commission: 0,
   downPayment: 0,
@@ -71,104 +77,94 @@ const mockOrder = {
   status: OrderStatus.IN_PRODUCTION,
 };
 
-const mockAdminUser = {
-  id: mockUserId,
-  employee: [
-    {
-      role: { name: 'Admin' },
-    },
-  ],
-};
+// Mock sub-services
+const createMockWorkflowService = () => ({
+  approve: jest.fn(),
+  billQuotation: jest.fn(),
+  createProductionStages: jest.fn(),
+  reject: jest.fn(),
+  finish: jest.fn(),
+  open: jest.fn(),
+  checkTrialStatus: jest.fn(),
+  validateClientForApproval: jest.fn(),
+  createOrUpdateOrder: jest.fn(),
+  createDeliveryScheduleForApproval: jest.fn(),
+  handleApprovalFinancials: jest.fn(),
+});
 
-const mockRegularUser = {
-  id: mockUserId,
-  employee: [
-    {
-      role: { name: 'Vendedor' },
-    },
-  ],
-};
-
-const mockSellerWithPermission = {
-  canApprovePreRegistration: true,
-};
-
-const mockActiveSubscription = {
-  plan: { planType: 'STANDARD' },
-  nextDueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-};
-
-const mockTrialSubscription = {
-  plan: { planType: 'TRIAL' },
-  nextDueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-};
-
-// Mock Prisma with transaction support
-const createMockPrismaService = () => {
-  const mockTransaction = jest.fn();
-
-  const prismaBase = {
-    quotation: {
-      findUnique: jest.fn(),
-      update: jest.fn(),
-    },
-    company: {
-      findUnique: jest.fn(),
-    },
-    order: {
-      findUnique: jest.fn(),
-      create: jest.fn(),
-    },
-    user: {
-      findUnique: jest.fn(),
-    },
-    sellerProfile: {
-      findFirst: jest.fn(),
-    },
-    deliveryInfo: {
-      update: jest.fn(),
-    },
-    deliverySchedule: {
-      create: jest.fn(),
-    },
-    receivable: {
-      findMany: jest.fn(),
-    },
-    payable: {
-      findMany: jest.fn(),
-    },
-    $transaction: mockTransaction,
-  };
-
-  return prismaBase;
-};
-
-const mockOrderService = {
+const createMockCrudService = () => ({
   create: jest.fn(),
+  findAll: jest.fn(),
+  findAllQuantity: jest.fn(),
   findOne: jest.fn(),
-};
+  count: jest.fn(),
+  update: jest.fn(),
+  remove: jest.fn(),
+  duplicate: jest.fn(),
+  findAllContactSources: jest.fn(),
+  getUserIdFromEmployee: jest.fn(),
+  recalculateQuotationTotalValue: jest.fn(),
+});
 
-const mockDeliveryScheduleService = {
-  create: jest.fn(),
-};
+const createMockItemsService = () => ({
+  addProductToQuotation: jest.fn(),
+  updateProductInQuotation: jest.fn(),
+  duplicateProductInQuotation: jest.fn(),
+  removeProductFromQuotation: jest.fn(),
+  recalculateQuotationProductsTotalValue: jest.fn(),
+  recalculateQuotationTotalValue: jest.fn(),
+});
+
+const createMockFinancialService = () => ({
+  generateReceivableFromQuotation: jest.fn(),
+  generatePayableFromQuotation: jest.fn(),
+  shouldCreateCommissionPayable: jest.fn(),
+  shouldCreateDeliveryPayable: jest.fn(),
+  createCommissionPayable: jest.fn(),
+  createDeliveryPayable: jest.fn(),
+  findSalesCategories: jest.fn(),
+  findCommissionCategories: jest.fn(),
+  findDeliveryCategories: jest.fn(),
+  getAvailablePaymentMethods: jest.fn(),
+});
+
+const createMockPdfService = () => ({
+  getQuotationPdfData: jest.fn(),
+});
+
+const createMockImportService = () => ({
+  setApprover: jest.fn(),
+  deleteImportedQuotations: jest.fn(),
+  importQuotationsFromCsv: jest.fn(),
+});
 
 describe('QuotationService', () => {
   let service: QuotationService;
-  let prisma: ReturnType<typeof createMockPrismaService>;
+  let workflowService: ReturnType<typeof createMockWorkflowService>;
+  let crudService: ReturnType<typeof createMockCrudService>;
+  let itemsService: ReturnType<typeof createMockItemsService>;
+  let financialService: ReturnType<typeof createMockFinancialService>;
+  let pdfService: ReturnType<typeof createMockPdfService>;
+  let importService: ReturnType<typeof createMockImportService>;
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    prisma = createMockPrismaService();
+    workflowService = createMockWorkflowService();
+    crudService = createMockCrudService();
+    itemsService = createMockItemsService();
+    financialService = createMockFinancialService();
+    pdfService = createMockPdfService();
+    importService = createMockImportService();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         QuotationService,
-        { provide: PrismaService, useValue: prisma },
-        { provide: OrderService, useValue: mockOrderService },
-        {
-          provide: DeliveryScheduleService,
-          useValue: mockDeliveryScheduleService,
-        },
+        { provide: QuotationCrudService, useValue: crudService },
+        { provide: QuotationItemsService, useValue: itemsService },
+        { provide: QuotationWorkflowService, useValue: workflowService },
+        { provide: QuotationFinancialService, useValue: financialService },
+        { provide: QuotationPdfService, useValue: pdfService },
+        { provide: QuotationImportService, useValue: importService },
       ],
     }).compile();
 
@@ -179,346 +175,185 @@ describe('QuotationService', () => {
     expect(service).toBeDefined();
   });
 
+  it('should configure approver on import service', () => {
+    expect(importService.setApprover).toHaveBeenCalledWith(workflowService);
+  });
+
   describe('approve', () => {
-    beforeEach(() => {
-      // Default mock setup for successful approval
-      prisma.quotation.findUnique.mockResolvedValue({
-        id: mockQuotationId,
-        companyId: mockCompanyId,
-      });
+    it('should delegate to workflowService.approve', async () => {
+      workflowService.approve.mockResolvedValue(mockOrder);
 
-      prisma.company.findUnique.mockResolvedValue({
-        id: mockCompanyId,
-        Subscription: [mockActiveSubscription],
-      });
-
-      // Mock transaction to execute the callback and return order
-      prisma.$transaction.mockImplementation(async (callback) => {
-        // Create a mock transaction client with same methods
-        const transactionClient = {
-          quotation: {
-            update: jest.fn().mockResolvedValue({
-              ...mockQuotation,
-              status: QuotationStatus.APPROVED,
-              approvedAt: new Date(),
-            }),
-          },
-          user: {
-            findUnique: jest.fn().mockResolvedValue(mockAdminUser),
-          },
-          sellerProfile: {
-            findFirst: jest.fn().mockResolvedValue(null),
-          },
-          order: {
-            findUnique: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockResolvedValue(mockOrder),
-          },
-          deliveryInfo: {
-            update: jest.fn().mockResolvedValue(mockDeliveryInfo),
-          },
-          deliverySchedule: {
-            create: jest.fn().mockResolvedValue({}),
-          },
-          receivable: {
-            findMany: jest.fn().mockResolvedValue([]),
-          },
-          payable: {
-            findMany: jest.fn().mockResolvedValue([]),
-          },
-        };
-
-        const result = await callback(transactionClient);
-        return result;
-      });
-    });
-
-    it('should approve quotation and create order', async () => {
       const result = await service.approve(mockQuotationId, mockUserId);
 
-      expect(result).toBeDefined();
-      expect(result.id).toBe(mockOrderId);
-      expect(result.quotationId).toBe(mockQuotationId);
-      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(result).toBe(mockOrder);
+      expect(workflowService.approve).toHaveBeenCalledWith(
+        mockQuotationId,
+        mockUserId,
+      );
     });
 
-    it('should throw NotFoundException if quotation not found', async () => {
-      prisma.quotation.findUnique.mockResolvedValue(null);
+    it('should propagate NotFoundException from workflowService', async () => {
+      workflowService.approve.mockRejectedValue(
+        new NotFoundException('Quotation not found'),
+      );
 
       await expect(service.approve('invalid-id', mockUserId)).rejects.toThrow(
         NotFoundException,
       );
     });
 
-    it('should throw BadRequestException if client inactive without permission', async () => {
-      prisma.$transaction.mockImplementation(async (callback) => {
-        const transactionClient = {
-          quotation: {
-            update: jest.fn().mockResolvedValue({
-              ...mockQuotation,
-              client: mockClientInactive,
-              status: QuotationStatus.APPROVED,
-              approvedAt: new Date(),
-            }),
-          },
-          user: {
-            findUnique: jest.fn().mockResolvedValue(mockRegularUser),
-          },
-          sellerProfile: {
-            findFirst: jest.fn().mockResolvedValue(null),
-          },
-          order: {
-            findUnique: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockResolvedValue(mockOrder),
-          },
-          deliveryInfo: {
-            update: jest.fn().mockResolvedValue(mockDeliveryInfo),
-          },
-          deliverySchedule: {
-            create: jest.fn().mockResolvedValue({}),
-          },
-          receivable: {
-            findMany: jest.fn().mockResolvedValue([]),
-          },
-          payable: {
-            findMany: jest.fn().mockResolvedValue([]),
-          },
-        };
-
-        return callback(transactionClient);
-      });
+    it('should propagate BadRequestException from workflowService', async () => {
+      workflowService.approve.mockRejectedValue(
+        new BadRequestException('Client inactive'),
+      );
 
       await expect(
         service.approve(mockQuotationId, mockUserId),
       ).rejects.toThrow(BadRequestException);
     });
+  });
 
-    it('should allow approval if user is Admin even with inactive client', async () => {
-      prisma.$transaction.mockImplementation(async (callback) => {
-        const transactionClient = {
-          quotation: {
-            update: jest.fn().mockResolvedValue({
-              ...mockQuotation,
-              client: mockClientInactive,
-              status: QuotationStatus.APPROVED,
-              approvedAt: new Date(),
-            }),
-          },
-          user: {
-            findUnique: jest.fn().mockResolvedValue(mockAdminUser),
-          },
-          sellerProfile: {
-            findFirst: jest.fn().mockResolvedValue(null),
-          },
-          order: {
-            findUnique: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockResolvedValue(mockOrder),
-          },
-          deliveryInfo: {
-            update: jest.fn().mockResolvedValue(mockDeliveryInfo),
-          },
-          deliverySchedule: {
-            create: jest.fn().mockResolvedValue({}),
-          },
-          receivable: {
-            findMany: jest.fn().mockResolvedValue([]),
-          },
-          payable: {
-            findMany: jest.fn().mockResolvedValue([]),
-          },
-        };
+  describe('CRUD delegations', () => {
+    it('should delegate create to crudService', async () => {
+      const dto = { companyId: mockCompanyId } as any;
+      crudService.create.mockResolvedValue(mockQuotation);
 
-        return callback(transactionClient);
-      });
+      const result = await service.create(dto);
 
-      const result = await service.approve(mockQuotationId, mockUserId);
-
-      expect(result).toBeDefined();
-      expect(result.id).toBe(mockOrderId);
+      expect(result).toBe(mockQuotation);
+      expect(crudService.create).toHaveBeenCalledWith(dto);
     });
 
-    it('should throw Error if deliveryInfo is missing', async () => {
-      prisma.$transaction.mockImplementation(async (callback) => {
-        const transactionClient = {
-          quotation: {
-            update: jest.fn().mockResolvedValue({
-              ...mockQuotation,
-              deliveryInfo: null, // Missing delivery info
-              status: QuotationStatus.APPROVED,
-              approvedAt: new Date(),
-            }),
-          },
-          user: {
-            findUnique: jest.fn().mockResolvedValue(mockAdminUser),
-          },
-          sellerProfile: {
-            findFirst: jest.fn().mockResolvedValue(null),
-          },
-          order: {
-            findUnique: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockResolvedValue(mockOrder),
-          },
-          deliveryInfo: {
-            update: jest.fn().mockResolvedValue(mockDeliveryInfo),
-          },
-          deliverySchedule: {
-            create: jest.fn().mockResolvedValue({}),
-          },
-          receivable: {
-            findMany: jest.fn().mockResolvedValue([]),
-          },
-          payable: {
-            findMany: jest.fn().mockResolvedValue([]),
-          },
-        };
+    it('should delegate findOne to crudService', async () => {
+      crudService.findOne.mockResolvedValue(mockQuotation);
 
-        return callback(transactionClient);
-      });
+      const result = await service.findOne(mockQuotationId);
 
-      await expect(
-        service.approve(mockQuotationId, mockUserId),
-      ).rejects.toThrow('Informações de entrega ausentes na venda.');
+      expect(result).toBe(mockQuotation);
+      expect(crudService.findOne).toHaveBeenCalledWith(mockQuotationId);
     });
 
-    it('should return existing order if already exists', async () => {
-      const existingOrder = { ...mockOrder, status: OrderStatus.FINISHED };
+    it('should delegate count to crudService', async () => {
+      crudService.count.mockResolvedValue(42);
 
-      prisma.$transaction.mockImplementation(async (callback) => {
-        const transactionClient = {
-          quotation: {
-            update: jest.fn().mockResolvedValue({
-              ...mockQuotation,
-              status: QuotationStatus.APPROVED,
-              approvedAt: new Date(),
-            }),
-          },
-          user: {
-            findUnique: jest.fn().mockResolvedValue(mockAdminUser),
-          },
-          sellerProfile: {
-            findFirst: jest.fn().mockResolvedValue(null),
-          },
-          order: {
-            findUnique: jest.fn().mockResolvedValue(existingOrder), // Order already exists
-            create: jest.fn(),
-          },
-          deliveryInfo: {
-            update: jest.fn().mockResolvedValue(mockDeliveryInfo),
-          },
-          deliverySchedule: {
-            create: jest.fn().mockResolvedValue({}),
-          },
-          receivable: {
-            findMany: jest.fn().mockResolvedValue([]),
-          },
-          payable: {
-            findMany: jest.fn().mockResolvedValue([]),
-          },
-        };
+      const result = await service.count();
 
-        return callback(transactionClient);
-      });
-
-      const result = await service.approve(mockQuotationId, mockUserId);
-
-      expect(result).toBeDefined();
-      expect(result.id).toBe(mockOrderId);
+      expect(result).toBe(42);
+      expect(crudService.count).toHaveBeenCalled();
     });
 
-    it('should set delivery status to DELIVERING for trial companies', async () => {
-      let deliveryScheduleData: any = null;
+    it('should delegate duplicate to crudService', async () => {
+      const dto = { description: 'Copy' } as any;
+      crudService.duplicate.mockResolvedValue(mockQuotation);
 
-      prisma.company.findUnique.mockResolvedValue({
-        id: mockCompanyId,
-        Subscription: [mockTrialSubscription],
-      });
+      const result = await service.duplicate(mockQuotationId, dto, mockUserId);
 
-      prisma.$transaction.mockImplementation(async (callback) => {
-        const transactionClient = {
-          quotation: {
-            update: jest.fn().mockResolvedValue({
-              ...mockQuotation,
-              status: QuotationStatus.APPROVED,
-              approvedAt: new Date(),
-            }),
-          },
-          user: {
-            findUnique: jest.fn().mockResolvedValue(mockAdminUser),
-          },
-          sellerProfile: {
-            findFirst: jest.fn().mockResolvedValue(null),
-          },
-          order: {
-            findUnique: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockResolvedValue(mockOrder),
-          },
-          deliveryInfo: {
-            update: jest.fn().mockResolvedValue(mockDeliveryInfo),
-          },
-          deliverySchedule: {
-            create: jest.fn().mockImplementation((data) => {
-              deliveryScheduleData = data;
-              return Promise.resolve({});
-            }),
-          },
-          receivable: {
-            findMany: jest.fn().mockResolvedValue([]),
-          },
-          payable: {
-            findMany: jest.fn().mockResolvedValue([]),
-          },
-        };
+      expect(result).toBe(mockQuotation);
+      expect(crudService.duplicate).toHaveBeenCalledWith(
+        mockQuotationId,
+        dto,
+        mockUserId,
+      );
+    });
+  });
 
-        return callback(transactionClient);
-      });
+  describe('Item delegations', () => {
+    it('should delegate addProductToQuotation to itemsService', async () => {
+      const data = { productId: 'p1' } as any;
+      itemsService.addProductToQuotation.mockResolvedValue({});
 
-      await service.approve(mockQuotationId, mockUserId);
+      await service.addProductToQuotation(mockQuotationId, data);
 
-      expect(deliveryScheduleData).not.toBeNull();
-      expect(deliveryScheduleData.data.status).toBe('DELIVERING');
+      expect(itemsService.addProductToQuotation).toHaveBeenCalledWith(
+        mockQuotationId,
+        data,
+      );
     });
 
-    it('should allow seller with canApprovePreRegistration to approve inactive client', async () => {
-      prisma.$transaction.mockImplementation(async (callback) => {
-        const transactionClient = {
-          quotation: {
-            update: jest.fn().mockResolvedValue({
-              ...mockQuotation,
-              client: mockClientInactive,
-              status: QuotationStatus.APPROVED,
-              approvedAt: new Date(),
-            }),
-          },
-          user: {
-            findUnique: jest.fn().mockResolvedValue(mockRegularUser),
-          },
-          sellerProfile: {
-            findFirst: jest.fn().mockResolvedValue(mockSellerWithPermission),
-          },
-          order: {
-            findUnique: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockResolvedValue(mockOrder),
-          },
-          deliveryInfo: {
-            update: jest.fn().mockResolvedValue(mockDeliveryInfo),
-          },
-          deliverySchedule: {
-            create: jest.fn().mockResolvedValue({}),
-          },
-          receivable: {
-            findMany: jest.fn().mockResolvedValue([]),
-          },
-          payable: {
-            findMany: jest.fn().mockResolvedValue([]),
-          },
-        };
-
-        return callback(transactionClient);
+    it('should delegate removeProductFromQuotation to itemsService', async () => {
+      itemsService.removeProductFromQuotation.mockResolvedValue({
+        message: 'ok',
       });
 
-      const result = await service.approve(mockQuotationId, mockUserId);
+      await service.removeProductFromQuotation('product-id');
 
-      expect(result).toBeDefined();
-      expect(result.id).toBe(mockOrderId);
+      expect(itemsService.removeProductFromQuotation).toHaveBeenCalledWith(
+        'product-id',
+      );
+    });
+  });
+
+  describe('Workflow delegations', () => {
+    it('should delegate billQuotation to workflowService', async () => {
+      workflowService.billQuotation.mockResolvedValue({});
+
+      await service.billQuotation(mockQuotationId);
+
+      expect(workflowService.billQuotation).toHaveBeenCalledWith(
+        mockQuotationId,
+      );
+    });
+
+    it('should delegate reject to workflowService', async () => {
+      const dto = { reason: 'test' } as any;
+      workflowService.reject.mockResolvedValue(mockQuotation);
+
+      await service.reject(mockQuotationId, dto, mockUserId);
+
+      expect(workflowService.reject).toHaveBeenCalledWith(
+        mockQuotationId,
+        dto,
+        mockUserId,
+      );
+    });
+
+    it('should delegate finish to workflowService', async () => {
+      workflowService.finish.mockResolvedValue(mockQuotation);
+
+      await service.finish(mockQuotationId, mockUserId);
+
+      expect(workflowService.finish).toHaveBeenCalledWith(
+        mockQuotationId,
+        mockUserId,
+      );
+    });
+
+    it('should delegate open to workflowService', async () => {
+      workflowService.open.mockResolvedValue(mockQuotation);
+
+      await service.open(mockQuotationId, mockUserId);
+
+      expect(workflowService.open).toHaveBeenCalledWith(
+        mockQuotationId,
+        mockUserId,
+      );
+    });
+  });
+
+  describe('PDF and Import delegations', () => {
+    it('should delegate getQuotationPdfData to pdfService', async () => {
+      pdfService.getQuotationPdfData.mockResolvedValue({ data: 'pdf' });
+
+      await service.getQuotationPdfData(mockQuotationId);
+
+      expect(pdfService.getQuotationPdfData).toHaveBeenCalledWith(
+        mockQuotationId,
+      );
+    });
+
+    it('should delegate importQuotationsFromCsv to importService', async () => {
+      importService.importQuotationsFromCsv.mockResolvedValue({
+        success: true,
+        message: 'ok',
+        imported: 5,
+      });
+
+      await service.importQuotationsFromCsv('/path/to/file.csv', mockCompanyId);
+
+      expect(importService.importQuotationsFromCsv).toHaveBeenCalledWith(
+        '/path/to/file.csv',
+        mockCompanyId,
+      );
     });
   });
 });
