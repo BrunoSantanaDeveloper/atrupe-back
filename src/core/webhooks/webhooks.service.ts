@@ -62,6 +62,7 @@ export class WebhooksService {
       switch (payload.event) {
         case AsaasWebhookEvent.PAYMENT_CONFIRMED:
         case AsaasWebhookEvent.PAYMENT_RECEIVED:
+        case AsaasWebhookEvent.PAYMENT_RECEIVED_IN_CASH:
           await this.handlePaymentConfirmed(payload);
           break;
 

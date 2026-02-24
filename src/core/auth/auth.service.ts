@@ -121,15 +121,18 @@ export class AuthService {
         : null;
 
       // Verificar pagamentos pendentes no Asaas e sincronizar subscriptions
-      // Verifica se a empresa está no plano TRIAL (pode ter subscription paga aguardando ativação)
+      // Verifica se a empresa está no plano TRIAL ou bloqueada (pode ter pagamento pendente)
       const isTrialPlan = planInfo?.planType === 'TRIAL';
+      const isBlocked =
+        user.employee[0]?.company?.blockLevel &&
+        user.employee[0].company.blockLevel !== 'NONE';
 
-      // Sempre verificar para empresas com TRIAL ativo, pois pode ter comprado um plano
-      // pago que ainda não foi ativado (pagamento confirmado mas subscription INACTIVE)
-      if (companyId && isTrialPlan) {
+      // Verificar para empresas com TRIAL ativo (pode ter comprado plano pago)
+      // OU empresas bloqueadas (pode ter pago e sistema não sincronizou)
+      if (companyId && (isTrialPlan || isBlocked)) {
         try {
           this.logger.log(
-            `Empresa ${companyId} em plano TRIAL, verificando se há subscription paga pendente...`,
+            `Empresa ${companyId} ${isTrialPlan ? 'em TRIAL' : 'bloqueada'}, verificando sync com Asaas...`,
           );
           const syncResult =
             await this.subscriptionsService.checkAndSyncSubscriptionStatus(
@@ -139,7 +142,7 @@ export class AuthService {
           // Se a assinatura foi ativada, buscar novamente as informações do plano
           if (syncResult.status === 'activated') {
             this.logger.log(
-              `Assinatura paga ativada durante login para empresa ${companyId}`,
+              `Assinatura ativada/desbloqueada durante login para empresa ${companyId}`,
             );
             planInfo =
               await this.planControlService.getCompanyPlanInfo(companyId);

@@ -1,7 +1,7 @@
 import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from 'src/config/prisma/prisma.service';
-import { BlockLevel } from '@prisma/client';
+import { BlockLevel, AsaasPaymentStatus } from '@prisma/client';
 import { AsaasGatewayService } from './asaas-gateway.service';
 
 export interface BlockCheckResult {
@@ -10,7 +10,7 @@ export interface BlockCheckResult {
   daysOverdue: number;
   previousBlockLevel: BlockLevel;
   newBlockLevel: BlockLevel;
-  action: 'blocked' | 'upgraded' | 'unchanged' | 'skipped';
+  action: 'blocked' | 'upgraded' | 'unchanged' | 'skipped' | 'unblocked';
 }
 
 @Injectable()
@@ -47,9 +47,10 @@ export class SubscriptionBlockService {
     this.logger.log('Iniciando verificação de bloqueios de assinatura...');
 
     try {
-      const results = await this.checkAndApplyBlocks();
+      // 1. Verificar e aplicar novos bloqueios
+      const blockResults = await this.checkAndApplyBlocks();
 
-      const blocked = results.filter(
+      const blocked = blockResults.filter(
         (r) => r.action !== 'unchanged' && r.action !== 'skipped',
       );
       if (blocked.length > 0) {
@@ -61,6 +62,21 @@ export class SubscriptionBlockService {
         });
       } else {
         this.logger.log('Nenhum novo bloqueio aplicado.');
+      }
+
+      // 2. Verificar empresas bloqueadas e desbloquear se pagaram
+      const unblockResults = await this.checkAndUnblockCompanies();
+
+      const unblocked = unblockResults.filter((r) => r.action === 'unblocked');
+      if (unblocked.length > 0) {
+        this.logger.log(`Empresas desbloqueadas: ${unblocked.length}`);
+        unblocked.forEach((r) => {
+          this.logger.log(
+            `  - ${r.companyName}: ${r.previousBlockLevel} -> NONE (pagamento confirmado no Asaas)`,
+          );
+        });
+      } else {
+        this.logger.log('Nenhuma empresa desbloqueada.');
       }
     } catch (error) {
       this.logger.error('Erro ao verificar bloqueios:', error);
@@ -233,6 +249,269 @@ export class SubscriptionBlockService {
     }
 
     return results;
+  }
+
+  /**
+   * Verifica empresas bloqueadas e desbloqueia automaticamente se pagaram no Asaas.
+   * Também sincroniza payments faltantes do Asaas para o DB local.
+   */
+  async checkAndUnblockCompanies(): Promise<BlockCheckResult[]> {
+    const results: BlockCheckResult[] = [];
+
+    // Buscar empresas bloqueadas (PARTIAL ou FULL)
+    const blockedCompanies = await this.prisma.company.findMany({
+      where: {
+        blockLevel: { in: ['PARTIAL', 'FULL'] },
+      },
+      select: {
+        id: true,
+        name: true,
+        blockLevel: true,
+        Subscription: {
+          where: {
+            plan: { planType: { not: 'TRIAL' } },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            asaasSubscriptionId: true,
+            nextDueDate: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    for (const company of blockedCompanies) {
+      const subscription = company.Subscription[0];
+      if (!subscription) {
+        results.push({
+          companyId: company.id,
+          companyName: company.name,
+          daysOverdue: 0,
+          previousBlockLevel: company.blockLevel,
+          newBlockLevel: company.blockLevel,
+          action: 'skipped',
+        });
+        continue;
+      }
+
+      // Pular subscriptions manuais
+      if (
+        !subscription.asaasSubscriptionId ||
+        subscription.asaasSubscriptionId.startsWith('manual_') ||
+        subscription.asaasSubscriptionId.startsWith('trial_')
+      ) {
+        results.push({
+          companyId: company.id,
+          companyName: company.name,
+          daysOverdue: 0,
+          previousBlockLevel: company.blockLevel,
+          newBlockLevel: company.blockLevel,
+          action: 'skipped',
+        });
+        continue;
+      }
+
+      try {
+        const asaasPayments =
+          await this.asaasGateway.getAsaasSubscriptionPayments(
+            subscription.asaasSubscriptionId,
+          );
+
+        if (!asaasPayments || asaasPayments.length === 0) {
+          results.push({
+            companyId: company.id,
+            companyName: company.name,
+            daysOverdue: 0,
+            previousBlockLevel: company.blockLevel,
+            newBlockLevel: company.blockLevel,
+            action: 'skipped',
+          });
+          continue;
+        }
+
+        // Verificar se ainda há inadimplência
+        const todayStr = new Date().toISOString().split('T')[0];
+        const hasOverdue = asaasPayments.some(
+          (p) =>
+            p.status === 'OVERDUE' ||
+            (p.status === 'PENDING' && p.dueDate < todayStr),
+        );
+
+        if (hasOverdue) {
+          // Ainda inadimplente — manter bloqueio
+          results.push({
+            companyId: company.id,
+            companyName: company.name,
+            daysOverdue: 0,
+            previousBlockLevel: company.blockLevel,
+            newBlockLevel: company.blockLevel,
+            action: 'unchanged',
+          });
+          continue;
+        }
+
+        // Não tem mais inadimplência — desbloquear!
+        this.logger.log(
+          `Empresa ${company.name} (${company.id}) não tem mais inadimplência no Asaas. Desbloqueando...`,
+        );
+
+        // Sincronizar payments faltantes do Asaas para o DB local
+        await this.syncMissingPayments(
+          subscription.id,
+          subscription.asaasSubscriptionId,
+          asaasPayments,
+        );
+
+        // Atualizar nextDueDate com o próximo pagamento PENDING
+        const nextPending = asaasPayments.find(
+          (p) => p.status === 'PENDING' && p.dueDate >= todayStr,
+        );
+        if (nextPending) {
+          await this.prisma.subscription.update({
+            where: { id: subscription.id },
+            data: {
+              status: 'ACTIVE',
+              nextDueDate: new Date(nextPending.dueDate),
+            },
+          });
+        } else {
+          // Se não tem pending futuro, ao menos ativar
+          await this.prisma.subscription.update({
+            where: { id: subscription.id },
+            data: { status: 'ACTIVE' },
+          });
+        }
+
+        // Desbloquear empresa
+        await this.unblockCompany(company.id);
+
+        // Registrar no histórico
+        await this.prisma.companyHistory.create({
+          data: {
+            companyId: company.id,
+            action: 'UNBLOCKED',
+            description: `Empresa desbloqueada automaticamente pelo cron (era ${company.blockLevel}). Pagamento confirmado no Asaas.`,
+            changes: {
+              before: {
+                blockLevel: company.blockLevel,
+                isActive: false,
+              },
+              after: { blockLevel: 'NONE', isActive: true },
+            },
+            createdByName: 'Sistema - Cron',
+          },
+        });
+
+        results.push({
+          companyId: company.id,
+          companyName: company.name,
+          daysOverdue: 0,
+          previousBlockLevel: company.blockLevel,
+          newBlockLevel: 'NONE',
+          action: 'unblocked',
+        });
+      } catch (error) {
+        this.logger.error(
+          `Erro ao verificar desbloqueio de ${company.name}: ${error.message}. Pulando.`,
+        );
+        results.push({
+          companyId: company.id,
+          companyName: company.name,
+          daysOverdue: 0,
+          previousBlockLevel: company.blockLevel,
+          newBlockLevel: company.blockLevel,
+          action: 'skipped',
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Sincroniza payments do Asaas que não existem no DB local.
+   */
+  private async syncMissingPayments(
+    localSubscriptionId: string,
+    asaasSubscriptionId: string,
+    asaasPayments: any[],
+  ): Promise<void> {
+    for (const asaasPayment of asaasPayments) {
+      // Verificar se já existe no DB local
+      const exists = await this.prisma.payment.findFirst({
+        where: { asaasPaymentId: asaasPayment.id },
+      });
+
+      if (exists) {
+        // Atualizar status se mudou
+        const mappedStatus = this.mapAsaasStatus(asaasPayment.status);
+        if (exists.status !== mappedStatus) {
+          await this.prisma.payment.update({
+            where: { id: exists.id },
+            data: {
+              status: mappedStatus,
+              confirmedDate: asaasPayment.confirmedDate
+                ? new Date(asaasPayment.confirmedDate)
+                : exists.confirmedDate,
+              paymentDate: asaasPayment.paymentDate
+                ? new Date(asaasPayment.paymentDate)
+                : exists.paymentDate,
+              invoiceUrl: asaasPayment.invoiceUrl || exists.invoiceUrl,
+              bankSlipUrl: asaasPayment.bankSlipUrl || exists.bankSlipUrl,
+            },
+          });
+          this.logger.log(
+            `Payment ${exists.id} atualizado: ${exists.status} -> ${mappedStatus}`,
+          );
+        }
+        continue;
+      }
+
+      // Criar payment que não existe
+      const mappedStatus = this.mapAsaasStatus(asaasPayment.status);
+      await this.prisma.payment.create({
+        data: {
+          subscriptionId: localSubscriptionId,
+          asaasPaymentId: asaasPayment.id,
+          asaasCustomerId: asaasPayment.customer,
+          value: asaasPayment.value,
+          dueDate: new Date(asaasPayment.dueDate),
+          billingType: asaasPayment.billingType || 'PIX',
+          status: mappedStatus,
+          description: asaasPayment.description || 'Assinatura',
+          invoiceUrl: asaasPayment.invoiceUrl,
+          bankSlipUrl: asaasPayment.bankSlipUrl,
+          confirmedDate: asaasPayment.confirmedDate
+            ? new Date(asaasPayment.confirmedDate)
+            : null,
+          paymentDate: asaasPayment.paymentDate
+            ? new Date(asaasPayment.paymentDate)
+            : null,
+        },
+      });
+
+      this.logger.log(
+        `Payment criado localmente: ${asaasPayment.id} (${mappedStatus}, due: ${asaasPayment.dueDate})`,
+      );
+    }
+  }
+
+  /**
+   * Mapeia status do Asaas para status local
+   */
+  private mapAsaasStatus(asaasStatus: string): AsaasPaymentStatus {
+    const statusMap: Record<string, AsaasPaymentStatus> = {
+      PENDING: 'PENDING',
+      CONFIRMED: 'CONFIRMED',
+      RECEIVED: 'CONFIRMED',
+      RECEIVED_IN_CASH: 'CONFIRMED',
+      OVERDUE: 'OVERDUE',
+      REFUNDED: 'REFUNDED',
+    };
+    return statusMap[asaasStatus] || 'PENDING';
   }
 
   /**
