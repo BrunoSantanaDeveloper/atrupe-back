@@ -235,4 +235,127 @@ describe('DeliveryScheduleService', () => {
       ).rejects.toThrow(InternalServerErrorException);
     });
   });
+
+  describe('getFinancialDataById', () => {
+    it('should return null when no receivables found', async () => {
+      prisma.receivable.findMany.mockResolvedValue([]);
+
+      const result = await service.getFinancialDataById(mockQuotationId);
+
+      expect(result).toBeNull();
+      expect(prisma.receivable.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { quotationId: mockQuotationId },
+        }),
+      );
+    });
+
+    it('should aggregate amounts from multiple receivables', async () => {
+      prisma.receivable.findMany.mockResolvedValue([
+        {
+          id: 'recv-1',
+          totalAmount: 10000,
+          description: 'Produto principal',
+          notes: 'Nota A',
+          status: 'ACTIVE',
+          referenceDate: new Date('2026-03-01'),
+          client: { id: 'c1', name: 'Cliente Teste' },
+          nature: { id: 'n1', description: 'Vendas' },
+          subCategory: { id: 'sc1', description: 'Produtos' },
+          installments: [
+            {
+              id: 'inst-1',
+              status: 'PAID',
+              amount: 5000,
+              paidAmount: 5000,
+              additionalFee: 0,
+              dueDate: new Date('2026-03-01'),
+              paidDate: new Date('2026-03-01'),
+              installmentNumber: 1,
+            },
+            {
+              id: 'inst-2',
+              status: 'PENDING',
+              amount: 5000,
+              paidAmount: 0,
+              additionalFee: 100,
+              dueDate: new Date('2026-04-01'),
+              paidDate: null,
+              installmentNumber: 2,
+            },
+          ],
+        },
+        {
+          id: 'recv-2',
+          totalAmount: 3000,
+          description: 'Entrada',
+          notes: null,
+          status: 'PAID',
+          referenceDate: new Date('2026-03-01'),
+          client: { id: 'c1', name: 'Cliente Teste' },
+          nature: { id: 'n1', description: 'Vendas' },
+          subCategory: { id: 'sc1', description: 'Produtos' },
+          installments: [
+            {
+              id: 'inst-3',
+              status: 'PAID',
+              amount: 3000,
+              paidAmount: 3000,
+              additionalFee: 0,
+              dueDate: new Date('2026-02-15'),
+              paidDate: new Date('2026-02-15'),
+              installmentNumber: 1,
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getFinancialDataById(mockQuotationId);
+
+      expect(result).not.toBeNull();
+      expect(result.totalValue).toBe(13000); // 10000 + 3000
+      expect(result.totalPaid).toBe(8000); // 5000 + 3000
+      expect(result.installmentsQuantity).toBe(3);
+      expect(result.id).toBe('recv-1');
+      // Description should prefer non-"Entrada" receivable
+      expect(result.description).toBe('Produto principal');
+      // Installments sorted by dueDate
+      expect(result.installments[0].id).toBe('inst-3'); // earliest dueDate
+      expect(result.installments[2].id).toBe('inst-2'); // latest dueDate
+    });
+
+    it('should handle receivables with null amounts', async () => {
+      prisma.receivable.findMany.mockResolvedValue([
+        {
+          id: 'recv-1',
+          totalAmount: null,
+          description: 'Test',
+          notes: null,
+          status: 'ACTIVE',
+          referenceDate: new Date(),
+          client: { id: 'c1', name: 'Test' },
+          nature: { id: 'n1', description: 'N' },
+          subCategory: { id: 'sc1', description: 'SC' },
+          installments: [
+            {
+              id: 'inst-1',
+              status: 'PENDING',
+              amount: null,
+              paidAmount: null,
+              additionalFee: null,
+              dueDate: new Date(),
+              paidDate: null,
+              installmentNumber: 1,
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getFinancialDataById(mockQuotationId);
+
+      expect(result.totalValue).toBe(0);
+      expect(result.totalPaid).toBe(0);
+      expect(result.installments[0].value).toBe(0);
+    });
+  });
 });
