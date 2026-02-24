@@ -17,15 +17,18 @@ import { add } from 'date-fns';
 import { CancelOrderDto } from '../order/dto/create-order.dto';
 import { QuotationFinancialService } from './quotation-financial.service';
 import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.service';
-import { QuotationApprover } from './quotation-import.service';
+import {
+  QuotationForFinancial,
+  ProductionStageJson,
+} from './quotation-financial.types';
+import { calculateFinalValue } from './quotation.utils';
 
 /**
  * QuotationWorkflowService
  * Responsável por mudanças de status e workflow do orçamento.
- * Implementa QuotationApprover para ser usado pelo ImportService.
  */
 @Injectable()
-export class QuotationWorkflowService implements QuotationApprover {
+export class QuotationWorkflowService {
   private readonly logger = new Logger(QuotationWorkflowService.name);
 
   constructor(
@@ -199,7 +202,7 @@ export class QuotationWorkflowService implements QuotationApprover {
    */
   private async handleApprovalFinancials(
     quotationId: string,
-    quotation: any,
+    quotation: QuotationForFinancial,
     prisma: Prisma.TransactionClient,
   ): Promise<void> {
     const [existingReceivables, existingPayables] = await Promise.all([
@@ -250,68 +253,73 @@ export class QuotationWorkflowService implements QuotationApprover {
 
     const isTrial = await this.checkTrialStatus(quotationBase.companyId);
 
-    return await this.prisma
-      .$transaction(
+    // Core TX: status update + order creation (fast, critical)
+    const { quotation, order } = await this.prisma.$transaction(
+      async (prisma) => {
+        const quotation = await prisma.quotation.update({
+          where: { id: quotationId },
+          data: {
+            status: QuotationStatus.APPROVED,
+            approvedAt: new Date(),
+          },
+          include: {
+            deliveryInfo: {
+              select: {
+                id: true,
+                estimatedDate: true,
+                daysAfterApproval: true,
+                cost: true,
+                supplierId: true,
+                deliveryType: true,
+              },
+            },
+            quotationPayment: {
+              select: {
+                billing: true,
+                quotationInstallment: true,
+                commission: true,
+                downPayment: true,
+                downPaymentDueDate: true,
+                downPaymentAdditionalFee: true,
+                description: true,
+                downPaymentConditionId: true,
+              },
+            },
+            quotationProduct: {
+              include: {
+                product: true,
+                items: true,
+              },
+            },
+            client: true,
+            series: {
+              select: {
+                id: true,
+                title: true,
+                code: true,
+                productionStatus: true,
+              },
+            },
+          },
+        });
+
+        await this.validateClientForApproval(quotation.client, userId, prisma);
+
+        if (!quotation.deliveryInfo) {
+          throw new Error('Informações de entrega ausentes na venda.');
+        }
+
+        const order = await this.createOrUpdateOrder(quotation, prisma);
+
+        return { quotation, order };
+      },
+      { timeout: 5000 },
+    );
+
+    try {
+      // Side-effects TX: delivery schedule + financials (separate, longer timeout)
+      await this.prisma.$transaction(
         async (prisma) => {
-          const quotation = await prisma.quotation.update({
-            where: { id: quotationId },
-            data: {
-              status: QuotationStatus.APPROVED,
-              approvedAt: new Date(),
-            },
-            include: {
-              deliveryInfo: {
-                select: {
-                  id: true,
-                  estimatedDate: true,
-                  daysAfterApproval: true,
-                  cost: true,
-                  supplierId: true,
-                  deliveryType: true,
-                },
-              },
-              quotationPayment: {
-                select: {
-                  billing: true,
-                  quotationInstallment: true,
-                  commission: true,
-                  downPayment: true,
-                  downPaymentDueDate: true,
-                  downPaymentAdditionalFee: true,
-                  description: true,
-                  downPaymentConditionId: true,
-                },
-              },
-              quotationProduct: {
-                include: {
-                  product: true,
-                  items: true,
-                },
-              },
-              client: true,
-              series: {
-                select: {
-                  id: true,
-                  title: true,
-                  code: true,
-                  productionStatus: true,
-                },
-              },
-            },
-          });
-
-          await this.validateClientForApproval(
-            quotation.client,
-            userId,
-            prisma,
-          );
-
-          if (!quotation.deliveryInfo) {
-            throw new Error('Informações de entrega ausentes na venda.');
-          }
-
-          const order = await this.createOrUpdateOrder(quotation, prisma);
-
           await this.createDeliveryScheduleForApproval(
             quotation as any,
             order,
@@ -320,19 +328,22 @@ export class QuotationWorkflowService implements QuotationApprover {
           );
 
           await this.handleApprovalFinancials(quotationId, quotation, prisma);
-
-          return order;
         },
-        { timeout: 20000 },
-      )
-      .then(async (order) => {
-        await this.createProductionStages(order.quotationId, isTrial);
-        return order;
-      })
-      .catch((error) => {
-        this.logger.error('Error creating order:', error.stack);
-        throw error;
-      });
+        { timeout: 15000 },
+      );
+    } catch (error) {
+      this.logger.error(
+        'Error in approval side-effects (delivery/financials):',
+        error.stack,
+      );
+      // Side-effects failed but core approval succeeded — log and rethrow
+      throw error;
+    }
+
+    // Post-TX: production stages (non-transactional, idempotent)
+    await this.createProductionStages(order.quotationId, isTrial);
+
+    return order;
   }
 
   /**
@@ -486,7 +497,7 @@ export class QuotationWorkflowService implements QuotationApprover {
             ? JSON.parse(product.productionStages)
             : product.productionStages;
 
-        return stages.filter((stage: any) => stage.isActive);
+        return stages.filter((stage: ProductionStageJson) => stage.isActive);
       });
 
       const uniqueStages = Array.from(
@@ -717,20 +728,12 @@ export class QuotationWorkflowService implements QuotationApprover {
           quotation.totalValue - quotation.quotationPayment.discountTotal;
       }
 
-      if (!finalValue && quotation.quotationPayment?.discountValue) {
-        if (quotation.quotationPayment.discountType === 'PERCENT') {
-          finalValue =
-            quotation.totalValue -
-            quotation.totalValue *
-              (quotation.quotationPayment.discountValue / 100);
-        } else {
-          finalValue =
-            quotation.totalValue - quotation.quotationPayment.discountValue;
-        }
-      }
-
       if (!finalValue) {
-        finalValue = quotation.totalValue;
+        finalValue = calculateFinalValue(
+          quotation.totalValue,
+          quotation.quotationPayment?.discountValue ?? null,
+          quotation.quotationPayment?.discountType ?? null,
+        );
       }
 
       const totalDiscount = originalValue - finalValue;

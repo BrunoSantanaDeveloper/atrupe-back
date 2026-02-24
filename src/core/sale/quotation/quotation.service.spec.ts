@@ -133,7 +133,6 @@ const createMockPdfService = () => ({
 });
 
 const createMockImportService = () => ({
-  setApprover: jest.fn(),
   deleteImportedQuotations: jest.fn(),
   importQuotationsFromCsv: jest.fn(),
 });
@@ -173,10 +172,6 @@ describe('QuotationService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
-  });
-
-  it('should configure approver on import service', () => {
-    expect(importService.setApprover).toHaveBeenCalledWith(workflowService);
   });
 
   describe('approve', () => {

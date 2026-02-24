@@ -1,17 +1,16 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  Logger,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { QuotationStatus } from '@prisma/client';
 import { add } from 'date-fns';
 import * as fs from 'fs';
 import * as fastCsv from 'fast-csv';
-
-/**
- * Interface para callback de aprovação de orçamento.
- * Usado para evitar dependência circular com QuotationWorkflowService.
- */
-export interface QuotationApprover {
-  approve(quotationId: string): Promise<any>;
-}
+import { QuotationWorkflowService } from './quotation-workflow.service';
 
 /**
  * QuotationImportService
@@ -20,16 +19,12 @@ export interface QuotationApprover {
 @Injectable()
 export class QuotationImportService {
   private readonly logger = new Logger(QuotationImportService.name);
-  private approver: QuotationApprover | null = null;
 
-  constructor(private prisma: PrismaService) {}
-
-  /**
-   * Registra callback de aprovação (injetado pelo módulo)
-   */
-  setApprover(approver: QuotationApprover) {
-    this.approver = approver;
-  }
+  constructor(
+    private prisma: PrismaService,
+    @Inject(forwardRef(() => QuotationWorkflowService))
+    private workflowService: QuotationWorkflowService,
+  ) {}
 
   /**
    * Deleta todos os orçamentos importados de uma empresa
@@ -462,10 +457,10 @@ export class QuotationImportService {
       }
 
       // Aprovar orçamentos que precisam
-      if (this.approver) {
+      if (this.workflowService) {
         for (const quotationId of quotationsToApprove) {
           try {
-            await this.approver.approve(quotationId);
+            await this.workflowService.approve(quotationId);
           } catch (error) {
             this.logger.error(
               `Error approving quotation ${quotationId}:`,

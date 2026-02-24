@@ -1,7 +1,13 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
-import { Prisma } from '@prisma/client';
+import { Prisma, PaymentStatus } from '@prisma/client';
 import { add } from 'date-fns';
+import {
+  QuotationForFinancial,
+  QuotationCommission,
+  QuotationDeliveryInfo,
+  QuotationInstallment,
+} from './quotation-financial.types';
 
 /**
  * QuotationFinancialService
@@ -17,7 +23,7 @@ export class QuotationFinancialService {
    * Gera contas a receber a partir do orçamento
    */
   async generateReceivableFromQuotation(
-    quotation: any,
+    quotation: QuotationForFinancial,
     prisma: Prisma.TransactionClient,
   ) {
     const quotationInstallments =
@@ -36,16 +42,18 @@ export class QuotationFinancialService {
 
     // Calcular o valor total das parcelas
     const totalAmount = quotationInstallments.reduce(
-      (sum: number, installment: any) =>
+      (sum: number, installment: QuotationInstallment) =>
         sum + installment.value + (installment.additionalFee || 0),
       0,
     );
     const totalValue = quotationInstallments.reduce(
-      (sum: number, installment: any) => sum + installment.value,
+      (sum: number, installment: QuotationInstallment) =>
+        sum + installment.value,
       0,
     );
     const mainAdditionalFee = quotationInstallments.reduce(
-      (sum: number, installment: any) => sum + (installment.additionalFee || 0),
+      (sum: number, installment: QuotationInstallment) =>
+        sum + (installment.additionalFee || 0),
       0,
     );
 
@@ -79,7 +87,7 @@ export class QuotationFinancialService {
             totalValue: downPayment,
             mainAdditionalFee: downPaymentadditionalFee || 0,
             installmentQty: 1,
-            status: 'PENDING',
+            status: PaymentStatus.PENDING as PaymentStatus,
             clientId: quotation.clientId,
             companyId: quotation.companyId,
             natureId: natureId,
@@ -97,7 +105,7 @@ export class QuotationFinancialService {
             additionalFee: downPaymentadditionalFee || 0,
             paymentConditionId: paymentCondition,
             bankAccountId: defaultBankAccountId,
-            status: 'PENDING',
+            status: PaymentStatus.PENDING as PaymentStatus,
             paidDate: null,
           },
         });
@@ -113,7 +121,7 @@ export class QuotationFinancialService {
           totalValue,
           mainAdditionalFee,
           installmentQty: quotationInstallments.length,
-          status: 'PENDING',
+          status: PaymentStatus.PENDING as PaymentStatus,
           clientId: quotation.clientId,
           companyId: quotation.companyId,
           natureId: natureId,
@@ -125,7 +133,7 @@ export class QuotationFinancialService {
 
       // Preparar e criar as parcelas
       const installments = quotationInstallments.map(
-        (installment: any, index: number) => ({
+        (installment: QuotationInstallment, index: number) => ({
           receivableId: receivable.id,
           installmentNumber: index + 1,
           dueDate: installment.dueDate,
@@ -133,7 +141,7 @@ export class QuotationFinancialService {
           additionalFee: installment.additionalFee || 0,
           paymentConditionId: installment.paymentConditionId,
           bankAccountId: defaultBankAccountId,
-          status: 'PENDING',
+          status: PaymentStatus.PENDING as PaymentStatus,
           paidDate: null,
         }),
       );
@@ -155,7 +163,7 @@ export class QuotationFinancialService {
    * Gera contas a pagar (comissão e entrega) a partir do orçamento
    */
   async generatePayableFromQuotation(
-    quotation: any,
+    quotation: QuotationForFinancial,
     prisma: Prisma.TransactionClient,
   ) {
     const results = {
@@ -190,7 +198,7 @@ export class QuotationFinancialService {
    * Valida se deve criar conta a pagar de comissão
    */
   async shouldCreateCommissionPayable(
-    commission: any,
+    commission: QuotationCommission | null,
     prisma: Prisma.TransactionClient,
   ): Promise<boolean> {
     if (!commission) return false;
@@ -228,7 +236,7 @@ export class QuotationFinancialService {
   /**
    * Valida se deve criar conta a pagar de entrega
    */
-  shouldCreateDeliveryPayable(delivery: any): boolean {
+  shouldCreateDeliveryPayable(delivery: QuotationDeliveryInfo | null): boolean {
     if (!delivery) return false;
 
     // Regra simplificada: se tem custo, sempre gera despesa
@@ -244,8 +252,8 @@ export class QuotationFinancialService {
    * Cria conta a pagar de comissão
    */
   async createCommissionPayable(
-    quotation: any,
-    commission: any,
+    quotation: QuotationForFinancial,
+    commission: QuotationCommission,
     prisma: Prisma.TransactionClient,
   ) {
     // Buscar natureza e categoria para comissão
@@ -279,7 +287,7 @@ export class QuotationFinancialService {
           commission.transferMethod === 'PAYMENT_BASED'
             ? quotation.quotationPayment.quotationInstallment.length
             : 1,
-        status: 'PENDING',
+        status: PaymentStatus.PENDING as PaymentStatus,
         supplierId: commission.supplierId,
         companyId: quotation.companyId,
         natureId: natureId,
@@ -306,14 +314,14 @@ export class QuotationFinancialService {
             additionalFee: 0,
             paymentConditionId: null,
             bankAccountId: defaultBankAccountId,
-            status: 'PENDING',
+            status: PaymentStatus.PENDING as PaymentStatus,
             paidDate: null,
           },
         });
       } else if (commission.transferMethod === 'PAYMENT_BASED') {
         const installments =
           quotation.quotationPayment.quotationInstallment.map(
-            (installment: any, index: number) => ({
+            (installment: QuotationInstallment, index: number) => ({
               payableId: payableCommission.id,
               installmentNumber: index + 1,
               dueDate: installment.dueDate,
@@ -323,7 +331,7 @@ export class QuotationFinancialService {
               additionalFee: 0,
               paymentConditionId: null,
               bankAccountId: defaultBankAccountId,
-              status: 'PENDING',
+              status: PaymentStatus.PENDING as PaymentStatus,
               paidDate: null,
             }),
           );
@@ -341,8 +349,8 @@ export class QuotationFinancialService {
    * Cria conta a pagar de entrega
    */
   async createDeliveryPayable(
-    quotation: any,
-    delivery: any,
+    quotation: QuotationForFinancial,
+    delivery: QuotationDeliveryInfo,
     prisma: Prisma.TransactionClient,
   ) {
     const deliveryCost = delivery.cost || 0;
@@ -375,7 +383,7 @@ export class QuotationFinancialService {
         totalValue: deliveryCost,
         mainAdditionalFee: 0,
         installmentQty: 1,
-        status: 'PENDING',
+        status: PaymentStatus.PENDING as PaymentStatus,
         supplierId: delivery.supplierId,
         companyId: quotation.companyId,
         natureId: natureId,
@@ -396,7 +404,7 @@ export class QuotationFinancialService {
           additionalFee: 0,
           paymentConditionId: null,
           bankAccountId: defaultBankAccountId,
-          status: 'PENDING',
+          status: PaymentStatus.PENDING as PaymentStatus,
           paidDate: null,
         },
       });

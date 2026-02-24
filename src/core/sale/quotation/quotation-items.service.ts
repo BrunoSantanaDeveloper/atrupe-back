@@ -452,11 +452,11 @@ export class QuotationItemsService {
   }
 
   /**
-   * Recalcula o valor total dos produtos de um orçamento
+   * Recalcula o valor total de um produto do orçamento
    */
-  async recalculateQuotationProductsTotalValue(quotationId: string) {
+  async recalculateQuotationProductsTotalValue(quotationProductId: string) {
     const quotationProduct = await this.prisma.quotationProduct.findFirst({
-      where: { id: quotationId },
+      where: { id: quotationProductId },
       include: {
         items: true,
       },
@@ -476,7 +476,7 @@ export class QuotationItemsService {
     );
 
     await this.prisma.quotationProduct.update({
-      where: { id: quotationId },
+      where: { id: quotationProductId },
       data: {
         totalValue,
         finalValue,

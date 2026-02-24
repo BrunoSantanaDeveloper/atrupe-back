@@ -46,6 +46,28 @@ export class QuotationController {
     private readonly quotationService: QuotationService,
     private readonly abacService: AbacService,
   ) {}
+
+  /**
+   * Resolves the effective seller filter based on ABAC permissions.
+   * Returns the employeeId if the user can only see their own quotations, or undefined if they can see all.
+   */
+  private async resolveSellerFilter(user: {
+    userId: string;
+    username: string;
+    isAdmin: boolean;
+    employeeId?: string;
+  }): Promise<string | undefined> {
+    const canSeeOtherQuotations = await this.abacService.hasPermission(
+      { userId: user.userId, username: user.username },
+      'view',
+      'sale:other_quotation',
+    );
+
+    if (!canSeeOtherQuotations && !user.isAdmin && user.employeeId) {
+      return user.employeeId;
+    }
+    return undefined;
+  }
   @Post()
   @RequireUnblocked()
   @ApiOperation({ summary: 'Cria um novo orçamento' })
@@ -160,16 +182,9 @@ export class QuotationController {
   async findAll(@Req() req, @Query() query: FilterQuotationDto) {
     query.companyId = req.user.companyId;
 
-    // Verificar se o usuário tem permissão para ver orçamentos de outros vendedores
-    // Se não tiver, filtra apenas os orçamentos do próprio vendedor
-    const canSeeOtherQuotations = await this.abacService.hasPermission(
-      { userId: req.user.userId, username: req.user.username },
-      'view',
-      'sale:other_quotation',
-    );
-
-    if (!canSeeOtherQuotations && !req.user.isAdmin && req.user.employeeId) {
-      query.sellerId = req.user.employeeId;
+    const sellerFilter = await this.resolveSellerFilter(req.user);
+    if (sellerFilter) {
+      query.sellerId = sellerFilter;
     }
 
     return await this.quotationService.findAll(query);
@@ -196,19 +211,7 @@ export class QuotationController {
   })
   async findAllQuantity(@Req() req) {
     const companyId = req.user.companyId;
-
-    // Verificar se o usuário tem permissão para ver orçamentos de outros vendedores
-    const canSeeOtherQuotations = await this.abacService.hasPermission(
-      { userId: req.user.userId, username: req.user.username },
-      'view',
-      'sale:other_quotation',
-    );
-
-    let sellerId: string | undefined;
-    if (!canSeeOtherQuotations && !req.user.isAdmin && req.user.employeeId) {
-      sellerId = req.user.employeeId;
-    }
-
+    const sellerId = await this.resolveSellerFilter(req.user);
     return this.quotationService.findAllQuantity(companyId, sellerId);
   }
 
@@ -368,23 +371,13 @@ export class QuotationController {
       throw new NotFoundException('Orçamento não encontrado');
     }
 
-    // Verificar se o orçamento pertence à empresa do usuário
     if (quotation.companyId !== req.user.companyId) {
       throw new NotFoundException('Orçamento não encontrado');
     }
 
-    // Verificar se o usuário pode ver orçamentos de outros vendedores
-    const canSeeOtherQuotations = await this.abacService.hasPermission(
-      { userId: req.user.userId, username: req.user.username },
-      'view',
-      'sale:other_quotation',
-    );
-
-    // Se não pode ver orçamentos de outros, verificar se é o dono do orçamento
-    if (!canSeeOtherQuotations && !req.user.isAdmin && req.user.employeeId) {
-      if (quotation.sellerId !== req.user.employeeId) {
-        throw new NotFoundException('Orçamento não encontrado');
-      }
+    const sellerFilter = await this.resolveSellerFilter(req.user);
+    if (sellerFilter && quotation.sellerId !== sellerFilter) {
+      throw new NotFoundException('Orçamento não encontrado');
     }
 
     return quotation;

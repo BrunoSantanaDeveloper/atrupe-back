@@ -22,41 +22,46 @@ const mockCompanyId = 'company-uuid-123';
 const mockSellerId = 'seller-uuid-101';
 const mockReasonId = 'reason-uuid-202';
 
-const createMockPrismaService = () => ({
-  order: {
-    create: jest.fn(),
-    findUnique: jest.fn(),
-    findMany: jest.fn(),
-    update: jest.fn(),
-    count: jest.fn(),
-    groupBy: jest.fn(),
-  },
-  sellerProfile: {
-    findFirst: jest.fn(),
-  },
-  reasons: {
-    findFirst: jest.fn(),
-  },
-  receivableInstallment: {
-    count: jest.fn(),
-    updateMany: jest.fn(),
-  },
-  payableInstallment: {
-    count: jest.fn(),
-    updateMany: jest.fn(),
-  },
-  receivable: {
-    findMany: jest.fn(),
-    update: jest.fn(),
-  },
-  payable: {
-    findMany: jest.fn(),
-    update: jest.fn(),
-  },
-  deliverySchedule: {
-    update: jest.fn(),
-  },
-});
+const createMockPrismaService = () => {
+  const mock: any = {
+    order: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn(),
+      count: jest.fn(),
+      groupBy: jest.fn(),
+    },
+    sellerProfile: {
+      findFirst: jest.fn(),
+    },
+    reasons: {
+      findFirst: jest.fn(),
+    },
+    receivableInstallment: {
+      count: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    payableInstallment: {
+      count: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    receivable: {
+      findMany: jest.fn(),
+      update: jest.fn(),
+    },
+    payable: {
+      findMany: jest.fn(),
+      update: jest.fn(),
+    },
+    deliverySchedule: {
+      updateMany: jest.fn(),
+    },
+  };
+  // $transaction executes callback with the same mock (pass-through)
+  mock.$transaction = jest.fn((cb: (prisma: any) => Promise<any>) => cb(mock));
+  return mock;
+};
 
 describe('OrderService', () => {
   let service: OrderService;
@@ -199,7 +204,7 @@ describe('OrderService', () => {
       prisma.payableInstallment.count.mockResolvedValue(0);
       prisma.receivable.findMany.mockResolvedValue([]);
       prisma.payable.findMany.mockResolvedValue([]);
-      prisma.deliverySchedule.update.mockResolvedValue({});
+      prisma.deliverySchedule.updateMany.mockResolvedValue({ count: 0 });
       prisma.order.update.mockResolvedValue({
         id: mockOrderId,
         status: OrderStatus.CANCELED,
@@ -244,7 +249,7 @@ describe('OrderService', () => {
       prisma.payableInstallment.updateMany.mockResolvedValue({ count: 1 });
       prisma.receivable.update.mockResolvedValue({});
       prisma.payable.update.mockResolvedValue({});
-      prisma.deliverySchedule.update.mockResolvedValue({});
+      prisma.deliverySchedule.updateMany.mockResolvedValue({ count: 1 });
       prisma.order.update.mockResolvedValue({
         id: mockOrderId,
         status: OrderStatus.CANCELED,
@@ -264,7 +269,7 @@ describe('OrderService', () => {
       prisma.payableInstallment.count.mockResolvedValue(0);
       prisma.receivable.findMany.mockResolvedValue([]);
       prisma.payable.findMany.mockResolvedValue([]);
-      prisma.deliverySchedule.update.mockResolvedValue({});
+      prisma.deliverySchedule.updateMany.mockResolvedValue({ count: 0 });
       prisma.order.update.mockResolvedValue({
         id: mockOrderId,
         status: OrderStatus.CANCELED,
@@ -281,7 +286,7 @@ describe('OrderService', () => {
       prisma.payableInstallment.count.mockResolvedValue(0);
       prisma.receivable.findMany.mockResolvedValue([]);
       prisma.payable.findMany.mockResolvedValue([]);
-      prisma.deliverySchedule.update.mockRejectedValue(new Error('Not found'));
+      prisma.deliverySchedule.updateMany.mockResolvedValue({ count: 0 });
       prisma.order.update.mockResolvedValue({
         id: mockOrderId,
         status: OrderStatus.CANCELED,

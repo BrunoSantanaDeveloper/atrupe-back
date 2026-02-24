@@ -33,10 +33,7 @@ export class QuotationService {
     private financialService: QuotationFinancialService,
     private pdfService: QuotationPdfService,
     private importService: QuotationImportService,
-  ) {
-    // Configura o approver para o ImportService evitar dependência circular
-    this.importService.setApprover(this.workflowService);
-  }
+  ) {}
 
   // =====================================================
   // CRUD Operations → QuotationCrudService
@@ -106,9 +103,9 @@ export class QuotationService {
     return this.itemsService.removeProductFromQuotation(productId);
   }
 
-  recalculateQuotationProductsTotalValue(quotationId: string) {
+  recalculateQuotationProductsTotalValue(quotationProductId: string) {
     return this.itemsService.recalculateQuotationProductsTotalValue(
-      quotationId,
+      quotationProductId,
     );
   }
 
