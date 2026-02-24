@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { asaasConfig } from 'src/config/configuration';
+import { AsaasPaymentStatus } from '@prisma/client';
 import {
   AsaasCreateSubscriptionPayload,
   AsaasSubscriptionResponse,
@@ -132,8 +133,8 @@ export class AsaasGatewayService {
   /**
    * Mapeia status do payment do Asaas para nosso enum
    */
-  mapAsaasPaymentStatus(asaasStatus: string): string {
-    const statusMap: Record<string, string> = {
+  mapAsaasPaymentStatus(asaasStatus: string): AsaasPaymentStatus {
+    const statusMap: Record<string, AsaasPaymentStatus> = {
       PENDING: 'PENDING',
       CONFIRMED: 'CONFIRMED',
       RECEIVED: 'RECEIVED',

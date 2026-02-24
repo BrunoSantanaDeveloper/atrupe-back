@@ -4,15 +4,13 @@ import {
   BadRequestException,
   Logger,
   UnauthorizedException,
-  ConflictException,
 } from '@nestjs/common';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
-import { AssignSubscriptionDto } from './dto/assign-subscription.dto';
-import { UpdateActiveClientDto } from './dto/update-active-client.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { AsaasGatewayService } from './asaas-gateway.service';
 import { v4 as uuidv4 } from 'uuid';
+import { SubscriptionStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 
 const TRIAL_DAYS_DEFAULT = 7;
@@ -57,8 +55,6 @@ export class SubscriptionsService {
       },
     });
   }
-
-
 
   async create(createSubscriptionDto: CreateSubscriptionDto, request) {
     createSubscriptionDto.customer.userId = request.user.userId;
@@ -425,7 +421,7 @@ export class SubscriptionsService {
         cycle: currentSubscription.cycle,
         billingType: currentSubscription.billingType,
         value: newValue,
-        status: asaasSubscription.status,
+        status: asaasSubscription.status as SubscriptionStatus,
       },
       include: {
         plan: true,
@@ -767,7 +763,6 @@ export class SubscriptionsService {
       newDueDate,
     };
   }
-
 
   /**
    * Verifica o status da subscription no Asaas sem fazer alterações
@@ -1265,6 +1260,4 @@ export class SubscriptionsService {
       );
     }
   }
-
-
 }
