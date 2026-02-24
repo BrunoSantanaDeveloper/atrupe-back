@@ -33,7 +33,7 @@ export class QuotationPdfService {
       });
 
       if (!quotation) {
-        throw new NotFoundException('Quotation not found');
+        throw new NotFoundException('Orçamento não encontrado');
       }
 
       // Buscar métodos de pagamento disponíveis (operação async separada)
@@ -50,7 +50,7 @@ export class QuotationPdfService {
     } catch (error) {
       this.logger.error('Error generating quotation PDF data:', error.stack);
       throw new InternalServerErrorException(
-        'Failed to generate quotation PDF data',
+        'Falha ao gerar dados do PDF do orçamento',
       );
     }
   }

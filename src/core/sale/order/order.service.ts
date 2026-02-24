@@ -287,7 +287,7 @@ export class OrderService {
       });
 
       if (!order) {
-        throw new NotFoundException('Order not found');
+        throw new NotFoundException('Pedido não encontrado');
       }
 
       const quotation = order.quotation;

@@ -350,5 +350,315 @@ describe('QuotationService', () => {
         mockCompanyId,
       );
     });
+
+    it('should delegate deleteImportedQuotations to importService', async () => {
+      importService.deleteImportedQuotations.mockResolvedValue({
+        success: true,
+        message: 'ok',
+        deleted: 3,
+      });
+
+      const result = await service.deleteImportedQuotations(mockCompanyId);
+
+      expect(result).toEqual({
+        success: true,
+        message: 'ok',
+        deleted: 3,
+      });
+      expect(importService.deleteImportedQuotations).toHaveBeenCalledWith(
+        mockCompanyId,
+      );
+    });
+  });
+
+  describe('Additional CRUD delegations', () => {
+    it('should delegate findAll to crudService', async () => {
+      const dto = { companyId: mockCompanyId, page: 1, limit: 10 } as any;
+      const expected = { data: [], meta: { total: 0 } };
+      crudService.findAll.mockResolvedValue(expected);
+
+      const result = await service.findAll(dto);
+
+      expect(result).toBe(expected);
+      expect(crudService.findAll).toHaveBeenCalledWith(dto);
+    });
+
+    it('should delegate findAllQuantity to crudService', async () => {
+      const expected = { OPEN: 5, DONE: 3, TOTAL: 8 };
+      crudService.findAllQuantity.mockResolvedValue(expected);
+
+      const result = await service.findAllQuantity(mockCompanyId, 'seller-id');
+
+      expect(result).toBe(expected);
+      expect(crudService.findAllQuantity).toHaveBeenCalledWith(
+        mockCompanyId,
+        'seller-id',
+      );
+    });
+
+    it('should delegate findAllQuantity without sellerId', async () => {
+      crudService.findAllQuantity.mockResolvedValue({ TOTAL: 0 });
+
+      await service.findAllQuantity(mockCompanyId);
+
+      expect(crudService.findAllQuantity).toHaveBeenCalledWith(
+        mockCompanyId,
+        undefined,
+      );
+    });
+
+    it('should delegate update to crudService', async () => {
+      const dto = { description: 'Updated' } as any;
+      crudService.update.mockResolvedValue({ ...mockQuotation, ...dto });
+
+      const result = await service.update(mockQuotationId, dto);
+
+      expect(result.description).toBe('Updated');
+      expect(crudService.update).toHaveBeenCalledWith(mockQuotationId, dto);
+    });
+
+    it('should delegate remove to crudService', async () => {
+      crudService.remove.mockResolvedValue({ id: mockQuotationId });
+
+      const result = await service.remove(mockQuotationId);
+
+      expect(result).toEqual({ id: mockQuotationId });
+      expect(crudService.remove).toHaveBeenCalledWith(mockQuotationId);
+    });
+
+    it('should delegate findAllContactSources to crudService', async () => {
+      const sources = [{ id: 's1', name: 'Google' }];
+      crudService.findAllContactSources.mockResolvedValue(sources);
+
+      const result = await service.findAllContactSources();
+
+      expect(result).toBe(sources);
+      expect(crudService.findAllContactSources).toHaveBeenCalled();
+    });
+  });
+
+  describe('Additional Item delegations', () => {
+    it('should delegate updateProductInQuotation to itemsService', async () => {
+      const data = { quantity: 5 } as any;
+      itemsService.updateProductInQuotation.mockResolvedValue({});
+
+      await service.updateProductInQuotation('prod-id', data, mockUserId);
+
+      expect(itemsService.updateProductInQuotation).toHaveBeenCalledWith(
+        'prod-id',
+        data,
+      );
+    });
+
+    it('should delegate duplicateProductInQuotation to itemsService', async () => {
+      itemsService.duplicateProductInQuotation.mockResolvedValue({
+        id: 'new-prod',
+      });
+
+      const result = await service.duplicateProductInQuotation('prod-id');
+
+      expect(result).toEqual({ id: 'new-prod' });
+      expect(itemsService.duplicateProductInQuotation).toHaveBeenCalledWith(
+        'prod-id',
+      );
+    });
+
+    it('should delegate recalculateQuotationProductsTotalValue', async () => {
+      itemsService.recalculateQuotationProductsTotalValue.mockResolvedValue(
+        undefined,
+      );
+
+      await service.recalculateQuotationProductsTotalValue('qp-id');
+
+      expect(
+        itemsService.recalculateQuotationProductsTotalValue,
+      ).toHaveBeenCalledWith('qp-id');
+    });
+
+    it('should delegate recalculateQuotationTotalValue', async () => {
+      itemsService.recalculateQuotationTotalValue.mockResolvedValue(undefined);
+
+      await service.recalculateQuotationTotalValue(mockQuotationId);
+
+      expect(itemsService.recalculateQuotationTotalValue).toHaveBeenCalledWith(
+        mockQuotationId,
+      );
+    });
+  });
+
+  describe('Additional Workflow delegations', () => {
+    it('should delegate createProductionStages', async () => {
+      workflowService.createProductionStages.mockResolvedValue(undefined);
+
+      await service.createProductionStages(mockQuotationId, false);
+
+      expect(workflowService.createProductionStages).toHaveBeenCalledWith(
+        mockQuotationId,
+        false,
+      );
+    });
+
+    it('should delegate createProductionStages with isTrial=true', async () => {
+      workflowService.createProductionStages.mockResolvedValue(undefined);
+
+      await service.createProductionStages(mockQuotationId, true);
+
+      expect(workflowService.createProductionStages).toHaveBeenCalledWith(
+        mockQuotationId,
+        true,
+      );
+    });
+  });
+
+  describe('Financial delegations', () => {
+    const mockPrisma = {} as any;
+    const mockQuotationData = { id: 'q1' } as any;
+
+    it('should delegate generateReceivableFromQuotation', async () => {
+      financialService.generateReceivableFromQuotation.mockResolvedValue({});
+
+      await service.generateReceivableFromQuotation(
+        mockQuotationData,
+        mockPrisma,
+      );
+
+      expect(
+        financialService.generateReceivableFromQuotation,
+      ).toHaveBeenCalledWith(mockQuotationData, mockPrisma);
+    });
+
+    it('should delegate generatePayableFromQuotation', async () => {
+      financialService.generatePayableFromQuotation.mockResolvedValue({});
+
+      await service.generatePayableFromQuotation(mockQuotationData, mockPrisma);
+
+      expect(
+        financialService.generatePayableFromQuotation,
+      ).toHaveBeenCalledWith(mockQuotationData, mockPrisma);
+    });
+
+    it('should delegate shouldCreateCommissionPayable', async () => {
+      const commission = { value: 100 };
+      financialService.shouldCreateCommissionPayable.mockResolvedValue(true);
+
+      const result = await service.shouldCreateCommissionPayable(
+        commission,
+        mockPrisma,
+      );
+
+      expect(result).toBe(true);
+      expect(
+        financialService.shouldCreateCommissionPayable,
+      ).toHaveBeenCalledWith(commission, mockPrisma);
+    });
+
+    it('should delegate shouldCreateDeliveryPayable', () => {
+      const delivery = { cost: 50 };
+      financialService.shouldCreateDeliveryPayable.mockReturnValue(true);
+
+      const result = service.shouldCreateDeliveryPayable(delivery);
+
+      expect(result).toBe(true);
+      expect(financialService.shouldCreateDeliveryPayable).toHaveBeenCalledWith(
+        delivery,
+      );
+    });
+
+    it('should delegate createCommissionPayable', async () => {
+      const commission = { value: 100 };
+      financialService.createCommissionPayable.mockResolvedValue({});
+
+      await service.createCommissionPayable(
+        mockQuotationData,
+        commission,
+        mockPrisma,
+      );
+
+      expect(financialService.createCommissionPayable).toHaveBeenCalledWith(
+        mockQuotationData,
+        commission,
+        mockPrisma,
+      );
+    });
+
+    it('should delegate createDeliveryPayable', async () => {
+      const delivery = { cost: 50 };
+      financialService.createDeliveryPayable.mockResolvedValue({});
+
+      await service.createDeliveryPayable(
+        mockQuotationData,
+        delivery,
+        mockPrisma,
+      );
+
+      expect(financialService.createDeliveryPayable).toHaveBeenCalledWith(
+        mockQuotationData,
+        delivery,
+        mockPrisma,
+      );
+    });
+
+    it('should delegate findSalesCategories', async () => {
+      financialService.findSalesCategories.mockResolvedValue([]);
+
+      await service.findSalesCategories(mockCompanyId, mockPrisma);
+
+      expect(financialService.findSalesCategories).toHaveBeenCalledWith(
+        mockCompanyId,
+        mockPrisma,
+      );
+    });
+
+    it('should delegate findCommissionCategories', async () => {
+      financialService.findCommissionCategories.mockResolvedValue([]);
+
+      await service.findCommissionCategories(mockCompanyId, mockPrisma);
+
+      expect(financialService.findCommissionCategories).toHaveBeenCalledWith(
+        mockCompanyId,
+        mockPrisma,
+      );
+    });
+
+    it('should delegate findDeliveryCategories', async () => {
+      financialService.findDeliveryCategories.mockResolvedValue([]);
+
+      await service.findDeliveryCategories(mockCompanyId, mockPrisma);
+
+      expect(financialService.findDeliveryCategories).toHaveBeenCalledWith(
+        mockCompanyId,
+        mockPrisma,
+      );
+    });
+
+    it('should delegate getAvailablePaymentMethods', async () => {
+      financialService.getAvailablePaymentMethods.mockResolvedValue([
+        'PIX',
+        'BOLETO',
+      ]);
+
+      const result = await service.getAvailablePaymentMethods(
+        mockCompanyId,
+        mockClientId,
+      );
+
+      expect(result).toEqual(['PIX', 'BOLETO']);
+      expect(financialService.getAvailablePaymentMethods).toHaveBeenCalledWith(
+        mockCompanyId,
+        mockClientId,
+      );
+    });
+
+    it('should delegate getAvailablePaymentMethods without clientId', async () => {
+      financialService.getAvailablePaymentMethods.mockResolvedValue([]);
+
+      const result = await service.getAvailablePaymentMethods(mockCompanyId);
+
+      expect(result).toEqual([]);
+      expect(financialService.getAvailablePaymentMethods).toHaveBeenCalledWith(
+        mockCompanyId,
+        undefined,
+      );
+    });
   });
 });

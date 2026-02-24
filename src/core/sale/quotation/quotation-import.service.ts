@@ -140,7 +140,7 @@ export class QuotationImportService {
     } catch (error) {
       this.logger.error('Error deleting imported quotations:', error.stack);
       throw new BadRequestException(
-        `Failed to delete imported quotations: ${error.message}`,
+        `Falha ao excluir orçamentos importados: ${error.message}`,
       );
     }
   }
@@ -164,7 +164,9 @@ export class QuotationImportService {
       });
 
       if (!adminSeller) {
-        throw new BadRequestException('Admin seller not found for the company');
+        throw new BadRequestException(
+          'Vendedor administrador não encontrado para a empresa',
+        );
       }
 
       // Get all payment methods available for the company through payment conditions
@@ -478,7 +480,7 @@ export class QuotationImportService {
     } catch (error) {
       this.logger.error('Error importing quotations from CSV:', error.stack);
       throw new BadRequestException(
-        `Failed to import quotations: ${error.message}`,
+        `Falha ao importar orçamentos: ${error.message}`,
       );
     }
   }

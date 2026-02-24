@@ -148,7 +148,9 @@ export class QuotationCrudService {
         });
 
       if (!defaultPaymentCondition) {
-        throw new Error('No payment condition found for company');
+        throw new Error(
+          'Nenhuma condição de pagamento encontrada para a empresa',
+        );
       }
 
       await this.prisma.quotationPayment.create({
@@ -418,7 +420,7 @@ export class QuotationCrudService {
     });
 
     if (!quotation) {
-      throw new NotFoundException(`Quotation with ID '${id}' not found.`);
+      throw new NotFoundException(`Orçamento com ID '${id}' não encontrado.`);
     }
 
     return quotation;
@@ -441,7 +443,7 @@ export class QuotationCrudService {
       });
 
       if (!existingQuotation) {
-        throw new NotFoundException(`Quotation with ID '${id}' not found.`);
+        throw new NotFoundException(`Orçamento com ID '${id}' não encontrado.`);
       }
 
       return await this.prisma.quotation.update({
@@ -500,7 +502,7 @@ export class QuotationCrudService {
 
     if (!quotation) {
       throw new NotFoundException(
-        `Quotation with ID '${quotationId}' not found.`,
+        `Orçamento com ID '${quotationId}' não encontrado.`,
       );
     }
 
@@ -709,7 +711,7 @@ export class QuotationCrudService {
             error.message,
           );
           throw new HttpException(
-            'Internal server error',
+            'Erro interno do servidor',
             HttpStatus.INTERNAL_SERVER_ERROR,
           );
         }

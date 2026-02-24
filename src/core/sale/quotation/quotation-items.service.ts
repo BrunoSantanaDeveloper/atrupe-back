@@ -8,7 +8,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { Prisma } from '@prisma/client';
 import { AddItemDto } from './dto/create-quotation.dto';
 import { UpdateItemDto } from './dto/update-quotation.dto';
-import { calculateFinalValue } from './quotation.utils';
+import { calculateFinalValue, DEFAULT_IMAGE_SIZE } from './quotation.utils';
 
 /**
  * QuotationItemsService
@@ -59,7 +59,7 @@ export class QuotationItemsService {
           technicalDescription:
             data.technicalDescription || product.technicalDescription,
           imageUrl: data.imageUrl || product.imageUrl,
-          imageSize: data.imageSize || 'small',
+          imageSize: data.imageSize || DEFAULT_IMAGE_SIZE,
           totalValue: data.totalValue || totalValue,
           finalValue: data.finalValue || data.totalValue || totalValue,
           discount: data.discount || 0,
@@ -235,9 +235,38 @@ export class QuotationItemsService {
               },
             });
           } else {
-            throw new BadRequestException(
-              `Criação de novos itens ainda não implementada`,
+            // Criação de novo item no produto do orçamento
+            // Busca o productItem original pelo índice ou cria com dados fornecidos
+            const existingItemIds = product.items.map((i) => i.productItemId);
+            const originalProductItems = (product as any).product?.items || [];
+            // Encontra um item original que ainda não está vinculado
+            const availableItem = originalProductItems.find(
+              (oi: any) => !existingItemIds.includes(oi.id),
             );
+
+            await this.prisma.quotationProductItem.create({
+              data: {
+                quotationProductId: productId,
+                quotationId: product.quotationId,
+                productId: product.productId,
+                productItemId:
+                  availableItem?.id || product.items[0]?.productItemId,
+                name: availableItem?.name || '',
+                unitKind: (item.unitKind || null) as any,
+                width: item.width || 0,
+                height: item.height || 0,
+                length: item.length || 0,
+                weight: item.weight || 0,
+                volume: item.volume || 0,
+                distance: item.distance || 0,
+                duration: item.duration || 0,
+                unitCost: item.unitCost || 0,
+                salePrice: item.salePrice || 0,
+                quantity: item.quantity || 1,
+                originalQuantity: item.originalQuantity || item.quantity || 1,
+                totalValue: item.totalValue || item.salePrice || 0,
+              },
+            });
           }
         }
 
@@ -318,7 +347,7 @@ export class QuotationItemsService {
     } catch (error) {
       this.logger.error('Error updating product in quotation:', error.stack);
       throw new BadRequestException(
-        'Failed to update product in quotation',
+        'Falha ao atualizar produto no orçamento',
         error.message,
       );
     }

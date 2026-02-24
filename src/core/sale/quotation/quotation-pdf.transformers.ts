@@ -2,6 +2,7 @@
  * Transformadores para dados de PDF de Quotation
  * Extraídos do método getQuotationPdfData() para melhor testabilidade
  */
+import { DEFAULT_IMAGE_SIZE, FALLBACK_IMAGE_SIZE } from './quotation.utils';
 
 type QuotationPdfRaw = {
   id: string;
@@ -194,12 +195,17 @@ export function transformPdfQuotationItem(qp: any) {
       ? qp.imageUrl === qp.product.imageUrl
       : true;
     // Usar imageSize do banco ou fallback para lógica legada
-    const size = qp.imageSize ?? (isOriginal ? 'small' : 'large');
+    const size =
+      qp.imageSize ?? (isOriginal ? DEFAULT_IMAGE_SIZE : FALLBACK_IMAGE_SIZE);
 
     if (hasCustomImage) {
       return { url: qp.imageUrl, original: isOriginal, size };
     }
-    return { url: qp.product.imageUrl, original: true, size: 'small' };
+    return {
+      url: qp.product.imageUrl,
+      original: true,
+      size: DEFAULT_IMAGE_SIZE,
+    };
   };
 
   return {

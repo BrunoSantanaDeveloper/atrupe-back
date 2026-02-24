@@ -214,7 +214,7 @@ export class PaymentService {
       });
     } catch (error) {
       console.error(error);
-      throw new Error('Error updating payment: ' + error.message);
+      throw new Error('Erro ao atualizar pagamento: ' + error.message);
     }
   }
 
@@ -285,7 +285,7 @@ export class PaymentService {
       });
 
       if (!quotationPayment) {
-        throw new Error('Quotation payment not found.');
+        throw new Error('Pagamento do orçamento não encontrado.');
       }
 
       if (
@@ -294,7 +294,7 @@ export class PaymentService {
         commissionData.commissionValue === null
       ) {
         if (!quotationPayment.commission) {
-          return 'Commission not created';
+          return 'Comissão não criada';
         }
         const deletedCommission = await this.prisma.commission.delete({
           where: { id: quotationPayment.commission.id },
@@ -328,7 +328,7 @@ export class PaymentService {
     } catch (error) {
       console.error(error);
       throw new BadRequestException(
-        'Error updating commission: ' + error.message,
+        'Erro ao atualizar comissão: ' + error.message,
       );
     }
   }

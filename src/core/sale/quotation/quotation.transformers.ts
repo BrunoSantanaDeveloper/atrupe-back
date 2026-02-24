@@ -2,6 +2,7 @@
  * Transformadores para dados de Quotation
  * Extraídos do método findOne() para melhor testabilidade
  */
+import { DEFAULT_IMAGE_SIZE, FALLBACK_IMAGE_SIZE } from './quotation.utils';
 
 type QuotationWithRelations = {
   id: string;
@@ -216,12 +217,17 @@ export function transformQuotationItem(qp: any) {
   const getImage = () => {
     // Determina o tamanho da imagem: usa imageSize se disponível, senão fallback para lógica legada
     const isOriginal = qp.imageUrl ? qp.imageUrl === qp.product.imageUrl : true;
-    const size = qp.imageSize || (isOriginal ? 'small' : 'large');
+    const size =
+      qp.imageSize || (isOriginal ? DEFAULT_IMAGE_SIZE : FALLBACK_IMAGE_SIZE);
 
     if (qp.imageUrl) {
       return { url: qp.imageUrl, original: isOriginal, size };
     }
-    return { url: qp.product.imageUrl, original: true, size: 'small' };
+    return {
+      url: qp.product.imageUrl,
+      original: true,
+      size: DEFAULT_IMAGE_SIZE,
+    };
   };
 
   return {

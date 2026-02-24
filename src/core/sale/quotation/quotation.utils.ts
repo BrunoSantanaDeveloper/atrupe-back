@@ -17,3 +17,12 @@ export function calculateFinalValue(
   }
   return totalValue;
 }
+
+/** Tamanhos de imagem disponíveis para produtos do orçamento */
+export type ImageSize = 'small' | 'large';
+
+/** Tamanho padrão para novas imagens de produto */
+export const DEFAULT_IMAGE_SIZE: ImageSize = 'small';
+
+/** Tamanho fallback para imagens sem imageSize definido (imagens não-originais) */
+export const FALLBACK_IMAGE_SIZE: ImageSize = 'large';
