@@ -523,16 +523,16 @@ export class SubscriptionsController {
   @UseGuards(JwtAuthGuard, SystemAdminGuard)
   @ApiOperation({
     summary:
-      'Executa verificação de bloqueios manualmente (apenas SystemAdmin)',
+      'Executa verificação completa (bloqueio + desbloqueio) manualmente (apenas SystemAdmin)',
     description:
-      'Útil para testar ou forçar verificação fora do horário do cron.',
+      'Executa o mesmo fluxo do cron: bloqueia inadimplentes e desbloqueia quem já pagou.',
   })
   @ApiResponse({
     status: 200,
     description: 'Verificação executada com sucesso',
   })
   async runBlockCheck() {
-    return await this.subscriptionBlockService.checkAndApplyBlocks();
+    return await this.subscriptionBlockService.handleCron();
   }
 
   @Get('my-pending-payment')
