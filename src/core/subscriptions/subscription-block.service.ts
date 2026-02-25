@@ -47,6 +47,9 @@ export class SubscriptionBlockService {
     this.logger.log('Iniciando verificação de bloqueios de assinatura...');
 
     try {
+      // 0. Sincronizar TODOS os payments do Asaas antes de avaliar bloqueios
+      await this.syncAllCompanyPayments();
+
       // 1. Verificar e aplicar novos bloqueios
       const blockResults = await this.checkAndApplyBlocks();
 
@@ -81,6 +84,68 @@ export class SubscriptionBlockService {
     } catch (error) {
       this.logger.error('Erro ao verificar bloqueios:', error);
     }
+  }
+
+  /**
+   * Sincroniza TODOS os payments do Asaas para TODAS as empresas com subscription ativa.
+   * Funciona como substituto do webhook: puxa cobranças novas e atualiza status/URLs.
+   */
+  private async syncAllCompanyPayments(): Promise<void> {
+    this.logger.log('Iniciando sync de TODOS os payments do Asaas...');
+
+    const subscriptions = await this.prisma.subscription.findMany({
+      where: {
+        asaasSubscriptionId: { not: null },
+        status: { in: ['ACTIVE', 'EXPIRED'] },
+      },
+      select: {
+        id: true,
+        asaasSubscriptionId: true,
+        Company: { select: { name: true } },
+      },
+    });
+
+    // Filtrar subscriptions com ID real do Asaas (não manual_ ou trial_)
+    const validSubscriptions = subscriptions.filter(
+      (s) =>
+        s.asaasSubscriptionId &&
+        !s.asaasSubscriptionId.startsWith('manual_') &&
+        !s.asaasSubscriptionId.startsWith('trial_'),
+    );
+
+    this.logger.log(
+      `Encontradas ${validSubscriptions.length} subscriptions Asaas para sincronizar`,
+    );
+
+    let totalSynced = 0;
+    let totalErrors = 0;
+
+    for (const sub of validSubscriptions) {
+      try {
+        const asaasPayments =
+          await this.asaasGateway.getAsaasSubscriptionPayments(
+            sub.asaasSubscriptionId!,
+          );
+
+        if (asaasPayments.length > 0) {
+          await this.syncMissingPayments(
+            sub.id,
+            sub.asaasSubscriptionId!,
+            asaasPayments,
+          );
+          totalSynced++;
+        }
+      } catch (error) {
+        totalErrors++;
+        this.logger.warn(
+          `Falha ao sincronizar payments de ${sub.Company?.name || sub.id}: ${error.message}`,
+        );
+      }
+    }
+
+    this.logger.log(
+      `Sync completo: ${totalSynced} subscriptions sincronizadas, ${totalErrors} erros`,
+    );
   }
 
   /**
