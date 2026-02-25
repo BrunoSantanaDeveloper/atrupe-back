@@ -95,7 +95,7 @@ export class SubscriptionBlockService {
 
     const subscriptions = await this.prisma.subscription.findMany({
       where: {
-        asaasSubscriptionId: { not: null },
+        asaasSubscriptionId: { startsWith: 'sub_' },
         status: { in: ['ACTIVE', 'EXPIRED'] },
       },
       select: {
@@ -105,22 +105,14 @@ export class SubscriptionBlockService {
       },
     });
 
-    // Filtrar subscriptions com ID real do Asaas (não manual_ ou trial_)
-    const validSubscriptions = subscriptions.filter(
-      (s) =>
-        s.asaasSubscriptionId &&
-        !s.asaasSubscriptionId.startsWith('manual_') &&
-        !s.asaasSubscriptionId.startsWith('trial_'),
-    );
-
     this.logger.log(
-      `Encontradas ${validSubscriptions.length} subscriptions Asaas para sincronizar`,
+      `Encontradas ${subscriptions.length} subscriptions Asaas para sincronizar`,
     );
 
     let totalSynced = 0;
     let totalErrors = 0;
 
-    for (const sub of validSubscriptions) {
+    for (const sub of subscriptions) {
       try {
         const asaasPayments =
           await this.asaasGateway.getAsaasSubscriptionPayments(
