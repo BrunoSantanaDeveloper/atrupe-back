@@ -85,6 +85,19 @@ docker save atrupe-image-dev:latest | gzip | ssh atrupe-aws "gunzip | docker loa
     error "Erro ao transferir imagem"
 }
 
+# ============================================================
+# ETAPA 4: Limpeza local (liberar espaço em disco)
+# ============================================================
+log "Limpando imagem e cache de build local..."
+
+docker rmi atrupe-image-dev:latest 2>/dev/null && \
+    success "Imagem local removida" || \
+    warn "Imagem local não encontrada (já removida?)"
+
+docker buildx prune --builder arm-builder --force 2>/dev/null && \
+    success "Cache do builder limpo" || \
+    warn "Não foi possível limpar cache do builder"
+
 success "Deploy DEV executado com sucesso!"
 echo ""
 echo "🔗 Próximo passo: Acesse o Portainer e atualize a stack de DEV"
