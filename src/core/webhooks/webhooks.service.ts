@@ -66,6 +66,10 @@ export class WebhooksService {
           await this.handlePaymentConfirmed(payload);
           break;
 
+        case AsaasWebhookEvent.PAYMENT_CREATED:
+          await this.handlePaymentCreated(payload);
+          break;
+
         case AsaasWebhookEvent.PAYMENT_OVERDUE:
           await this.handlePaymentOverdue(payload);
           break;
@@ -101,6 +105,72 @@ export class WebhooksService {
       throw error;
     }
   }
+  /**
+   * Handles PAYMENT_CREATED webhook — creates new payment record for monthly renewals
+   */
+  private async handlePaymentCreated(payload: AsaasWebhookDto) {
+    const paymentData = payload.payment || payload.data;
+    const asaasPaymentId = paymentData?.id;
+    const subscriptionAsaasId = paymentData?.subscription;
+
+    this.logger.log(`Payment criado no Asaas: ${asaasPaymentId}`);
+
+    if (!asaasPaymentId || !subscriptionAsaasId) {
+      this.logger.warn('PAYMENT_CREATED sem paymentId ou subscriptionId');
+      return;
+    }
+
+    // Verificar se já existe
+    const existing = await this.prisma.payment.findFirst({
+      where: { asaasPaymentId },
+    });
+    if (existing) {
+      // Atualizar invoiceUrl se faltava
+      if (!existing.invoiceUrl && paymentData.invoiceUrl) {
+        await this.prisma.payment.update({
+          where: { id: existing.id },
+          data: {
+            invoiceUrl: paymentData.invoiceUrl,
+            bankSlipUrl: paymentData.bankSlipUrl || existing.bankSlipUrl,
+          },
+        });
+        this.logger.log(`Payment ${existing.id} atualizado com invoiceUrl`);
+      }
+      return;
+    }
+
+    // Buscar subscription local
+    const subscription = await this.prisma.subscription.findFirst({
+      where: { asaasSubscriptionId: subscriptionAsaasId },
+    });
+
+    if (!subscription) {
+      this.logger.warn(
+        `Subscription ${subscriptionAsaasId} não encontrada localmente para PAYMENT_CREATED`,
+      );
+      return;
+    }
+
+    // Criar payment
+    await this.prisma.payment.create({
+      data: {
+        subscriptionId: subscription.id,
+        asaasPaymentId: paymentData.id,
+        asaasCustomerId: paymentData.customer,
+        value: paymentData.value,
+        dueDate: new Date(paymentData.dueDate),
+        billingType: paymentData.billingType || 'PIX',
+        status: 'PENDING',
+        description: paymentData.description || 'Assinatura',
+        invoiceUrl: paymentData.invoiceUrl,
+        bankSlipUrl: paymentData.bankSlipUrl,
+      },
+    });
+
+    this.logger.log(
+      `Payment ${asaasPaymentId} criado localmente via webhook PAYMENT_CREATED`,
+    );
+  }
 
   private async handlePaymentConfirmed(payload: AsaasWebhookDto) {
     this.logger.log(
@@ -126,6 +196,14 @@ export class WebhooksService {
           paymentDate: payload.payment?.paymentDate
             ? new Date(payload.payment.paymentDate)
             : new Date(),
+          invoiceUrl:
+            payload.payment?.invoiceUrl ||
+            payload.data?.invoiceUrl ||
+            payment.invoiceUrl,
+          bankSlipUrl:
+            payload.payment?.bankSlipUrl ||
+            payload.data?.bankSlipUrl ||
+            payment.bankSlipUrl,
         },
       });
 
@@ -293,6 +371,14 @@ export class WebhooksService {
         where: { id: payment.id },
         data: {
           status: 'OVERDUE',
+          invoiceUrl:
+            payload.payment?.invoiceUrl ||
+            payload.data?.invoiceUrl ||
+            payment.invoiceUrl,
+          bankSlipUrl:
+            payload.payment?.bankSlipUrl ||
+            payload.data?.bankSlipUrl ||
+            payment.bankSlipUrl,
         },
       });
 

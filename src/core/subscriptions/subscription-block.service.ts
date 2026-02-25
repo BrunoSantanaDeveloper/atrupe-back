@@ -446,9 +446,14 @@ export class SubscriptionBlockService {
       });
 
       if (exists) {
-        // Atualizar status se mudou
+        // Sempre atualizar: status, invoiceUrl, bankSlipUrl
         const mappedStatus = this.mapAsaasStatus(asaasPayment.status);
-        if (exists.status !== mappedStatus) {
+        const needsUpdate =
+          exists.status !== mappedStatus ||
+          (!exists.invoiceUrl && asaasPayment.invoiceUrl) ||
+          (!exists.bankSlipUrl && asaasPayment.bankSlipUrl);
+
+        if (needsUpdate) {
           await this.prisma.payment.update({
             where: { id: exists.id },
             data: {
@@ -464,7 +469,7 @@ export class SubscriptionBlockService {
             },
           });
           this.logger.log(
-            `Payment ${exists.id} atualizado: ${exists.status} -> ${mappedStatus}`,
+            `Payment ${exists.id} atualizado: status=${mappedStatus}, invoiceUrl=${asaasPayment.invoiceUrl ? 'YES' : 'kept'}`,
           );
         }
         continue;
@@ -625,120 +630,116 @@ export class SubscriptionBlockService {
   }
 
   /**
-   * Obtém a URL de pagamento pendente para uma empresa bloqueada
-   * Utiliza invoiceUrl, bankSlipUrl, ou constrói URL a partir do asaasPaymentId
+   * Obtém a URL de pagamento (invoiceUrl) para uma empresa bloqueada.
+   * Sempre busca do Asaas API para garantir URL atualizada.
+   * Retorna APENAS URLs no padrão /i/ (invoice). Nunca /c/ (portal).
    */
   async getPendingPaymentUrl(
     companyId: string,
   ): Promise<{ paymentUrl: string | null; dueDate: Date | null }> {
     this.logger.log(`Getting pending payment URL for company: ${companyId}`);
 
-    // 1. Find the oldest pending/overdue payment for this company
-    const payment = await this.prisma.payment.findFirst({
+    // Buscar subscription ativa com asaasSubscriptionId
+    const subscription = await this.prisma.subscription.findFirst({
+      where: {
+        companyId,
+        asaasSubscriptionId: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, asaasSubscriptionId: true },
+    });
+
+    if (
+      !subscription?.asaasSubscriptionId ||
+      subscription.asaasSubscriptionId.startsWith('manual_') ||
+      subscription.asaasSubscriptionId.startsWith('trial_')
+    ) {
+      this.logger.warn(
+        `Nenhuma subscription Asaas encontrada para empresa ${companyId}`,
+      );
+      return { paymentUrl: null, dueDate: null };
+    }
+
+    // Buscar payments DIRETAMENTE do Asaas (source of truth)
+    try {
+      const asaasPayments =
+        await this.asaasGateway.getAsaasSubscriptionPayments(
+          subscription.asaasSubscriptionId,
+        );
+
+      // Encontrar o payment pendente/overdue mais antigo
+      const pendingPayment = asaasPayments
+        .filter((p) => p.status === 'PENDING' || p.status === 'OVERDUE')
+        .sort(
+          (a, b) =>
+            new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+        )[0];
+
+      if (pendingPayment?.invoiceUrl) {
+        this.logger.log(
+          `invoiceUrl encontrada no Asaas: ${pendingPayment.invoiceUrl}`,
+        );
+
+        // Cachear no DB local para consultas futuras
+        const localPayment = await this.prisma.payment.findFirst({
+          where: { asaasPaymentId: pendingPayment.id },
+        });
+
+        if (localPayment && !localPayment.invoiceUrl) {
+          await this.prisma.payment.update({
+            where: { id: localPayment.id },
+            data: {
+              invoiceUrl: pendingPayment.invoiceUrl,
+              bankSlipUrl: pendingPayment.bankSlipUrl || undefined,
+            },
+          });
+          this.logger.log(
+            `invoiceUrl cacheada no DB para payment ${localPayment.id}`,
+          );
+        }
+
+        return {
+          paymentUrl: pendingPayment.invoiceUrl,
+          dueDate: new Date(pendingPayment.dueDate),
+        };
+      }
+
+      // Se Asaas retornou o payment mas sem invoiceUrl, logar erro
+      if (pendingPayment) {
+        this.logger.error(
+          `Payment ${pendingPayment.id} existe no Asaas mas NÃO tem invoiceUrl. Status: ${pendingPayment.status}`,
+        );
+      } else {
+        this.logger.log(`Nenhum payment pendente/overdue encontrado no Asaas`);
+      }
+    } catch (error) {
+      this.logger.error(`Falha ao buscar payments do Asaas: ${error.message}`);
+    }
+
+    // Fallback: checar DB local (pode ter sido cacheado anteriormente)
+    const localPayment = await this.prisma.payment.findFirst({
       where: {
         status: { in: ['PENDING', 'OVERDUE'] },
-        subscription: {
-          companyId,
-        },
+        subscription: { companyId },
+        invoiceUrl: { not: null },
       },
       orderBy: { dueDate: 'asc' },
-      select: {
-        id: true,
-        invoiceUrl: true,
-        bankSlipUrl: true,
-        asaasPaymentId: true,
-        dueDate: true,
-        subscription: {
-          select: {
-            asaasSubscriptionId: true,
-          },
-        },
-      },
+      select: { invoiceUrl: true, dueDate: true },
     });
 
-    if (payment) {
-      this.logger.log(`Pending payment found: ${payment.asaasPaymentId}`);
-
-      // Priority: local invoiceUrl > local bankSlipUrl
-      let paymentUrl = payment.invoiceUrl || payment.bankSlipUrl;
-
-      // If no local URLs, fetch live from Asaas API and cache
-      if (!paymentUrl && payment.subscription?.asaasSubscriptionId) {
-        this.logger.log(
-          `No local URL. Fetching from Asaas API for subscription: ${payment.subscription.asaasSubscriptionId}`,
-        );
-
-        try {
-          const asaasPayments =
-            await this.asaasGateway.getAsaasSubscriptionPayments(
-              payment.subscription.asaasSubscriptionId,
-            );
-
-          // Find the matching payment by asaasPaymentId
-          const asaasPayment = asaasPayments.find(
-            (p) => p.id === payment.asaasPaymentId,
-          );
-
-          if (asaasPayment) {
-            paymentUrl = asaasPayment.invoiceUrl || asaasPayment.bankSlipUrl;
-
-            // Cache the URLs in the DB for next time
-            if (asaasPayment.invoiceUrl || asaasPayment.bankSlipUrl) {
-              await this.prisma.payment.update({
-                where: { id: payment.id },
-                data: {
-                  invoiceUrl: asaasPayment.invoiceUrl || undefined,
-                  bankSlipUrl: asaasPayment.bankSlipUrl || undefined,
-                },
-              });
-              this.logger.log(
-                `Cached Asaas URLs in DB: invoiceUrl=${asaasPayment.invoiceUrl || 'N/A'}, bankSlipUrl=${asaasPayment.bankSlipUrl || 'N/A'}`,
-              );
-            }
-          }
-        } catch (error) {
-          this.logger.warn(`Failed to fetch from Asaas API: ${error.message}`);
-        }
-      }
-
-      // Final fallback: subscription portal URL
-      if (!paymentUrl && payment.subscription?.asaasSubscriptionId) {
-        paymentUrl = `https://www.asaas.com/c/${payment.subscription.asaasSubscriptionId}`;
-        this.logger.log(
-          `Using subscription portal URL as fallback: ${paymentUrl}`,
-        );
-      }
-
-      this.logger.log(`Final paymentUrl: ${paymentUrl || 'NULL'}`);
-
+    if (localPayment?.invoiceUrl) {
+      this.logger.log(
+        `Usando invoiceUrl do cache local: ${localPayment.invoiceUrl}`,
+      );
       return {
-        paymentUrl: paymentUrl || null,
-        dueDate: payment.dueDate || null,
+        paymentUrl: localPayment.invoiceUrl,
+        dueDate: localPayment.dueDate,
       };
     }
 
-    // 2. No pending payment - fallback to latest subscription portal
-    this.logger.log(`No pending payment found. Checking fallback portal.`);
-
-    const latestSubscription = await this.prisma.subscription.findFirst({
-      where: { companyId },
-      orderBy: { createdAt: 'desc' },
-      select: { asaasSubscriptionId: true },
-    });
-
-    if (latestSubscription?.asaasSubscriptionId) {
-      const fallbackUrl = `https://www.asaas.com/c/${latestSubscription.asaasSubscriptionId}`;
-      this.logger.log(`Using fallback portal URL: ${fallbackUrl}`);
-      return {
-        paymentUrl: fallbackUrl,
-        dueDate: null,
-      };
-    }
-
-    this.logger.log(`No subscription found at all. Returning null.`);
-    return {
-      paymentUrl: null,
-      dueDate: null,
-    };
+    this.logger.error(
+      `FALHA: Nenhuma invoiceUrl disponível para empresa ${companyId}. Possível falha de sincronização.`,
+    );
+    return { paymentUrl: null, dueDate: null };
   }
 }
