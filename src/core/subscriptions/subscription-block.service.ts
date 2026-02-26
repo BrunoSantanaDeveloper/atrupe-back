@@ -1,7 +1,7 @@
 import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from 'src/config/prisma/prisma.service';
-import { BlockLevel, AsaasPaymentStatus } from '@prisma/client';
+import { BlockLevel, AsaasPaymentStatus, BillingType } from '@prisma/client';
 import { AsaasGatewayService } from './asaas-gateway.service';
 
 export interface BlockCheckResult {
@@ -496,6 +496,17 @@ export class SubscriptionBlockService {
     asaasSubscriptionId: string,
     asaasPayments: any[],
   ): Promise<void> {
+    const validBillingTypes = [
+      'CREDIT_CARD',
+      'BOLETO',
+      'PIX',
+      'DEBIT_CARD',
+      'TRANSFER',
+      'DEPOSIT',
+    ];
+    const mapBillingType = (type: string): BillingType =>
+      (validBillingTypes.includes(type) ? type : 'PIX') as BillingType;
+
     for (const asaasPayment of asaasPayments) {
       // Verificar se já existe no DB local
       const exists = await this.prisma.payment.findFirst({
@@ -541,7 +552,7 @@ export class SubscriptionBlockService {
           asaasCustomerId: asaasPayment.customer,
           value: asaasPayment.value,
           dueDate: new Date(asaasPayment.dueDate),
-          billingType: asaasPayment.billingType || 'PIX',
+          billingType: mapBillingType(asaasPayment.billingType),
           status: mappedStatus,
           description: asaasPayment.description || 'Assinatura',
           invoiceUrl: asaasPayment.invoiceUrl,
