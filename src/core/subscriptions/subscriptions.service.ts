@@ -907,10 +907,25 @@ export class SubscriptionsService {
         !hasOverduePayment &&
         subscription.status !== 'ACTIVE';
 
+      // Calcular dias de atraso
+      let daysOverdue = 0;
+      const overdueTarget = overduePayment || pendingOverduePayment;
+      if (overdueTarget?.dueDate) {
+        const dueDate = new Date(overdueTarget.dueDate);
+        const now = new Date();
+        daysOverdue = Math.floor(
+          (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
+        );
+        if (daysOverdue < 0) daysOverdue = 0;
+      }
+
       // Determinar mensagem apropriada baseada nos status
       let message: string;
       if (hasOverduePayment) {
-        message = 'Cliente inadimplente! Há pagamento vencido ou em atraso.';
+        message =
+          daysOverdue > 0
+            ? `Cliente inadimplente! Pagamento vencido há ${daysOverdue} dia${daysOverdue !== 1 ? 's' : ''}.`
+            : 'Cliente inadimplente! Há pagamento vencido ou em atraso.';
       } else if (hasPendingSync) {
         message =
           'Pagamento confirmado no Asaas! A subscription local pode ser ativada.';
@@ -930,6 +945,8 @@ export class SubscriptionsService {
         localStatus: subscription.status,
         asaasPaymentStatus: relevantPayment.status,
         asaasPaymentId: relevantPayment.id,
+        daysOverdue: hasOverduePayment ? daysOverdue : undefined,
+        overdueDueDate: overdueTarget?.dueDate || undefined,
         subscription: {
           id: subscription.id,
           plan: subscription.plan?.name,
