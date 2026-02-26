@@ -62,7 +62,7 @@ export class UserRegistrationService {
     let token: string;
     let isUnique: any;
     do {
-      token = randomInt(100000, 999999).toString();
+      token = randomInt(1000, 9999).toString();
       isUnique = await this.prisma.mailVerification.findFirst({
         where: { token },
       });
