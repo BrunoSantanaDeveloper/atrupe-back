@@ -178,10 +178,10 @@ export class SubscriptionBlockService {
       const subscription = company.Subscription[0];
       if (!subscription) continue;
 
-      // Pular subscriptions manuais (sem vínculo Asaas)
+      // Pular subscriptions sem vínculo real com Asaas (manual, trial, test)
       if (
         !subscription.asaasSubscriptionId ||
-        subscription.asaasSubscriptionId.startsWith('manual_')
+        !subscription.asaasSubscriptionId.startsWith('sub_')
       ) {
         results.push({
           companyId: company.id,
@@ -354,11 +354,10 @@ export class SubscriptionBlockService {
         continue;
       }
 
-      // Pular subscriptions manuais
+      // Pular subscriptions sem vínculo real com Asaas
       if (
         !subscription.asaasSubscriptionId ||
-        subscription.asaasSubscriptionId.startsWith('manual_') ||
-        subscription.asaasSubscriptionId.startsWith('trial_')
+        !subscription.asaasSubscriptionId.startsWith('sub_')
       ) {
         results.push({
           companyId: company.id,
@@ -707,21 +706,17 @@ export class SubscriptionBlockService {
   ): Promise<{ paymentUrl: string | null; dueDate: Date | null }> {
     this.logger.log(`Getting pending payment URL for company: ${companyId}`);
 
-    // Buscar subscription ativa com asaasSubscriptionId
+    // Buscar subscription ativa com asaasSubscriptionId real
     const subscription = await this.prisma.subscription.findFirst({
       where: {
         companyId,
-        asaasSubscriptionId: { not: null },
+        asaasSubscriptionId: { startsWith: 'sub_' },
       },
       orderBy: { createdAt: 'desc' },
       select: { id: true, asaasSubscriptionId: true },
     });
 
-    if (
-      !subscription?.asaasSubscriptionId ||
-      subscription.asaasSubscriptionId.startsWith('manual_') ||
-      subscription.asaasSubscriptionId.startsWith('trial_')
-    ) {
+    if (!subscription?.asaasSubscriptionId) {
       this.logger.warn(
         `Nenhuma subscription Asaas encontrada para empresa ${companyId}`,
       );
