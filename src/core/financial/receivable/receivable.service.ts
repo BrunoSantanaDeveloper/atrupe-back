@@ -1199,44 +1199,51 @@ export class ReceivableService {
         });
 
         if (installmentData.status === 'PAID') {
-          // Busca o caixa aberto relacionado ao pagamento original
-          const relatedTransaction = await tx.transaction.findFirst({
-            where: {
-              receivableInstallment: {
-                every: {
-                  id: installmentId,
+          // Busca a transação usando o transactionId da parcela (direto via FK)
+          // ou fallback via relação reversa com `some`
+          let relatedTransaction = null;
+          if (installmentData.transactionId) {
+            relatedTransaction = await tx.transaction.findUnique({
+              where: { id: installmentData.transactionId },
+            });
+          }
+          if (!relatedTransaction) {
+            relatedTransaction = await tx.transaction.findFirst({
+              where: {
+                receivableInstallment: {
+                  some: {
+                    id: installmentId,
+                  },
                 },
               },
-            },
-          });
-
-          if (!relatedTransaction) {
-            throw new BadRequestException(
-              'Nenhuma transação relacionada encontrada para desfazer o pagamento.',
-            );
+            });
           }
 
-          // Remove a transação de pagamento
-          await tx.transaction.delete({ where: { id: relatedTransaction.id } });
-
-          // Atualiza o valor total do caixa se houver um caixa aberto
-          if (relatedTransaction.cashRegisterId) {
-            const cashRegister = await tx.cashRegister.findUnique({
-              where: { id: relatedTransaction.cashRegisterId },
+          if (relatedTransaction) {
+            // Remove a transação de pagamento
+            await tx.transaction.delete({
+              where: { id: relatedTransaction.id },
             });
-            if (cashRegister.status !== 'OPEN') {
-              throw new BadRequestException(
-                'Caixa não está aberto para desfazer o pagamento.',
-              );
-            }
 
-            if (cashRegister) {
-              await tx.cashRegister.update({
-                where: { id: cashRegister.id },
-                data: {
-                  totalIncomes: { decrement: paymentAmount },
-                },
+            // Atualiza o valor total do caixa se houver um caixa aberto
+            if (relatedTransaction.cashRegisterId) {
+              const cashRegister = await tx.cashRegister.findUnique({
+                where: { id: relatedTransaction.cashRegisterId },
               });
+              if (cashRegister.status !== 'OPEN') {
+                throw new BadRequestException(
+                  'Caixa não está aberto para desfazer o pagamento.',
+                );
+              }
+
+              if (cashRegister) {
+                await tx.cashRegister.update({
+                  where: { id: cashRegister.id },
+                  data: {
+                    totalIncomes: { decrement: paymentAmount },
+                  },
+                });
+              }
             }
           }
         }
