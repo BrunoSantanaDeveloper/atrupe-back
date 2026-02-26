@@ -17,6 +17,7 @@ export class AsaasGatewayService {
   private asaasApi() {
     const api = axios.create({
       baseURL: this.asaasApiUrl,
+      timeout: 15000, // 15s timeout para evitar requests pendurados
       headers: {
         common: {
           'Content-Type': 'application/json',

@@ -96,7 +96,7 @@ export class SubscriptionBlockService {
     const subscriptions = await this.prisma.subscription.findMany({
       where: {
         asaasSubscriptionId: { startsWith: 'sub_' },
-        status: { in: ['ACTIVE', 'EXPIRED', 'BLOCKED'] },
+        status: { in: ['ACTIVE', 'EXPIRED', 'BLOCKED', 'INACTIVE'] },
       },
       select: {
         id: true,
