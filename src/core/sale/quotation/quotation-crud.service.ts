@@ -17,6 +17,9 @@ import {
   DuplicateQuotationProductItemDto,
 } from './dto/duplicate-quotation.dto';
 import { FilterQuotationDto } from './dto/filter.dto';
+import { QUOTATION_FIND_ONE_INCLUDE } from './quotation.includes';
+import { transformQuotationToResponse } from './quotation.transformers';
+import { QuotationGroup } from './quotation.service';
 
 /**
  * QuotationCrudService
@@ -381,17 +384,65 @@ export class QuotationCrudService {
         this.prisma.quotation.count({ where }),
       ]);
 
-      return {
-        data: quotations.map((quotation) => ({
-          ...quotation,
-          finalValue: quotation.quotationPayment?.finalValue || 0,
-        })),
-        meta: {
-          total,
-          page: Number(dto.page),
-          limit: Number(dto.limit),
-          totalPages: Math.ceil(total / Number(dto.limit)),
+      // Group quotations by date (createdAt) for frontend display
+      const grouped: Record<string, QuotationGroup> = quotations.reduce(
+        (acc, quotation) => {
+          const date = quotation.createdAt.toISOString().split('T')[0];
+          if (!acc[date]) {
+            acc[date] = {
+              date: date,
+              quotations: [],
+            };
+          }
+          // Check if quotation is overdue
+          const isOverdue =
+            quotation.dueDate &&
+            quotation.dueDate < new Date() &&
+            quotation.status === 'DONE';
+
+          acc[date].quotations.push({
+            id: quotation.id,
+            description: quotation.description,
+            status: isOverdue ? 'OVERDUE' : quotation.status,
+            dueDate: quotation.dueDate,
+            finishedAt: quotation.finishedAt,
+            totalValue: quotation.totalValue,
+            deliveryInfo: quotation.deliveryInfo,
+            quotationPayment: quotation.quotationPayment,
+            tag: quotation.tag
+              ? {
+                  id: quotation.tag.id,
+                  text: (quotation.tag as any).title,
+                  color: quotation.tag.color,
+                }
+              : null,
+            quickSale: quotation.quickSale || false,
+            serie: quotation.series
+              ? {
+                  id: quotation.series.id,
+                  name: (quotation.series as any).title,
+                  code: quotation.series.code,
+                  quotation: quotation.quotationNumber,
+                }
+              : null,
+            client: quotation.client
+              ? {
+                  id: quotation.client.id,
+                  name: quotation.client.name,
+                  email: quotation.client.email,
+                }
+              : null,
+          } as any);
+          return acc;
         },
+        {} as Record<string, QuotationGroup>,
+      );
+
+      return {
+        total,
+        data: Object.values(grouped).sort((a, b) =>
+          b.date.localeCompare(a.date),
+        ),
       };
     } catch (error) {
       this.logger.error('Error in findAll:', error.stack);
@@ -405,25 +456,14 @@ export class QuotationCrudService {
   async findOne(id: string) {
     const quotation = await this.prisma.quotation.findUnique({
       where: { id },
-      include: {
-        seller: {
-          include: { user: true, sellerProfile: true },
-        },
-        client: true,
-        series: true,
-        quotationPayment: true,
-        quotationProduct: {
-          include: { product: true, items: true },
-        },
-        deliveryInfo: true,
-      },
+      include: QUOTATION_FIND_ONE_INCLUDE,
     });
 
     if (!quotation) {
       throw new NotFoundException(`Orçamento com ID '${id}' não encontrado.`);
     }
 
-    return quotation;
+    return transformQuotationToResponse(quotation as any);
   }
 
   /**
