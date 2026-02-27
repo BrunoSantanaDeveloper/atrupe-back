@@ -24,11 +24,11 @@ export class ListIncompleteRegistrationsDto {
   @ApiPropertyOptional({
     description: 'Campo de ordenação',
     enum: ['name', 'updated_at', 'created_at'],
-    default: 'name',
+    default: 'created_at',
   })
   @IsOptional()
   @IsIn(['name', 'updated_at', 'created_at'])
-  sort?: 'name' | 'updated_at' | 'created_at' = 'name';
+  sort?: 'name' | 'updated_at' | 'created_at' = 'created_at';
 
   @ApiPropertyOptional({
     description: 'Busca por nome, email ou telefone',

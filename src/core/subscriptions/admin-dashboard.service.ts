@@ -8,7 +8,7 @@ export class AdminDashboardService {
   async listIncompleteRegistrations(
     page: number = 1,
     limit: number = 10,
-    sort: 'name' | 'updated_at' | 'created_at' = 'name',
+    sort: 'name' | 'updated_at' | 'created_at' = 'created_at',
     search?: string,
   ) {
     const skip = (page - 1) * limit;
@@ -66,12 +66,14 @@ export class AdminDashboardService {
       }),
     ]);
 
-    // Agrupar por data de criação
+    // Agrupar por data (updatedAt quando ordenado por últimas alterações, senão createdAt)
     const groupedByDate = mailVerifications.reduce(
       (acc, verification) => {
-        const dateKey = new Date(verification.createdAt)
-          .toISOString()
-          .split('T')[0];
+        const groupDate =
+          sort === 'updated_at'
+            ? verification.updatedAt
+            : verification.createdAt;
+        const dateKey = new Date(groupDate).toISOString().split('T')[0];
 
         if (!acc[dateKey]) {
           acc[dateKey] = [];
@@ -96,7 +98,7 @@ export class AdminDashboardService {
       {} as Record<string, any[]>,
     );
 
-    // Formatar resposta
+    // Formatar resposta — ordenar grupos conforme critério selecionado
     const data = Object.entries(groupedByDate)
       .map(([date, items]) => ({
         date,
