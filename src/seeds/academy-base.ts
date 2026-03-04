@@ -150,7 +150,7 @@ export const ACADEMY_ITEMS: AcademyItem[] = [
         name: 'Clientes',
       },
     ],
-    videoUrl: 'https://vimeo.com/1145238902',
+    videoUrl: 'https://vimeo.com/1145334454',
     page: '/cadastros/clientes',
     modal: null,
     buttonTitle: 'Clientes',
