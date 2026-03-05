@@ -97,7 +97,7 @@ export class UserCrudService {
 
   findByEmail(email: string) {
     return this.prisma.user.findFirst({
-      where: { email: email, isActive: true },
+      where: { email: { equals: email, mode: 'insensitive' }, isActive: true },
       include: {
         customer: {
           include: {

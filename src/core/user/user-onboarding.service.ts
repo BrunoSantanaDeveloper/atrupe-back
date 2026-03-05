@@ -56,15 +56,17 @@ export class UserOnboardingService {
       throw new UnauthorizedException('Senha do administrador incorreta.');
     }
 
+    const normalizedEmail = completeRegistrationDto.email.toLowerCase().trim();
+
     const existingUser = await this.prisma.user.findFirst({
-      where: { email: completeRegistrationDto.email },
+      where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
     });
     if (existingUser) {
       throw new ConflictException('E-mail já cadastrado.');
     }
 
     const existingCustomer = await this.prisma.customer.findFirst({
-      where: { email: completeRegistrationDto.email },
+      where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
     });
     if (existingCustomer) {
       throw new ConflictException('E-mail já cadastrado.');
@@ -89,7 +91,7 @@ export class UserOnboardingService {
 
       const userData: Prisma.UserCreateInput = {
         name: completeRegistrationDto.userName,
-        email: completeRegistrationDto.email,
+        email: normalizedEmail,
         password: hashedPassword,
         phone: completeRegistrationDto.phone,
       };
