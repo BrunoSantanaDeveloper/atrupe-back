@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import {
   CreatePayableHistoryDto,
@@ -7,6 +7,7 @@ import {
 
 @Injectable()
 export class FinancialHistoryService {
+  private readonly logger = new Logger(FinancialHistoryService.name);
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -26,7 +27,7 @@ export class FinancialHistoryService {
         },
       });
     } catch (error) {
-      console.error('Error creating receivable history:', error);
+      this.logger.error('Erro ao criar histórico de conta a receber', error.stack);
       // Não lançar erro para não quebrar a operação principal
       return null;
     }
@@ -49,7 +50,7 @@ export class FinancialHistoryService {
         },
       });
     } catch (error) {
-      console.error('Error creating payable history:', error);
+      this.logger.error('Erro ao criar histórico de conta a pagar', error.stack);
       // Não lançar erro para não quebrar a operação principal
       return null;
     }

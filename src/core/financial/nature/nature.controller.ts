@@ -71,10 +71,6 @@ export class NatureController {
   findAllSubCategory(@Param('natureId') natureId: string) {
     return this.natureService.findAllSubCategoryByNature(natureId);
   }
-  // @Get('sub-category/:id')
-  // findOneSubCategory(@Param('id') id: string) {
-  //   return this.natureService.findOneSubCategory(id);
-  // }
 
   @Get('quantity')
   @ApiOperation({
@@ -92,7 +88,6 @@ export class NatureController {
   @Get()
   async findAll(@Query() filterDto: NatureFilterDto, @Req() req) {
     filterDto.companyId = req.user.companyId;
-    console.log(req.user.companyId);
     return await this.natureService.findAll(filterDto);
   }
   @Get(':id')

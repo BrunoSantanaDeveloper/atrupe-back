@@ -654,7 +654,7 @@ export class SalarySheetsService {
 
       return payrollItem;
     } catch (error) {
-      console.error('Error creating payment movement:', error.message);
+      this.logger.error('Erro ao criar movimento de pagamento', error.stack);
       // Se for BadRequestException ou NotFoundException, propagar a mensagem original
       if (
         error instanceof BadRequestException ||

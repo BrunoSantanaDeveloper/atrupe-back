@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
@@ -11,6 +12,7 @@ import { PrismaService } from 'src/config/prisma/prisma.service';
 
 @Injectable()
 export class SalariesService {
+  private readonly logger = new Logger(SalariesService.name);
   constructor(private prisma: PrismaService) {}
 
   async findAll(filters: FilterPayrollSetupDto) {
@@ -144,7 +146,7 @@ export class SalariesService {
         data,
       };
     } catch (error) {
-      console.error('Error in findAll:', error);
+      this.logger.error('Erro ao listar salários', error.stack);
       throw new BadRequestException(
         'Error fetching employees with payroll setups: ' + error.message,
       );
@@ -235,7 +237,7 @@ export class SalariesService {
         };
       });
     } catch (error) {
-      console.error(error);
+      this.logger.error('Erro ao criar configuração salarial', error.stack);
       if (error instanceof BadRequestException) {
         throw error;
       }

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { CreateNatureDto, CreateSubCategoryDto } from './dto/create-nature.dto';
@@ -11,6 +12,7 @@ import { Nature, SubCategory } from '@prisma/client';
 
 @Injectable()
 export class NatureService {
+  private readonly logger = new Logger(NatureService.name);
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createNatureDto: CreateNatureDto) {
@@ -243,7 +245,7 @@ export class NatureService {
         lastPage: Math.ceil(filteredNatures.length / take),
       };
     } catch (error) {
-      console.error('Error in findAll:', error);
+      this.logger.error('Erro ao listar naturezas', error.stack);
       throw new Error('Failed to fetch nature data: ' + error.message);
     }
   }
@@ -340,7 +342,7 @@ export class NatureService {
         data: data,
       });
     } catch (error) {
-      console.error('error: ', error);
+      this.logger.error('Erro ao atualizar natureza', error.stack);
     }
   }
 
@@ -395,7 +397,7 @@ export class NatureService {
         data,
       });
     } catch (error) {
-      console.error(error);
+      this.logger.error('Erro ao criar subcategoria', error.stack);
     }
   }
 
@@ -510,7 +512,7 @@ export class NatureService {
       }
 
       // Log the error for debugging
-      console.error('Error in updateSubCategory:', error);
+      this.logger.error('Erro ao atualizar subcategoria', error.stack);
 
       // Throw a generic error for unexpected cases
       throw new Error('Failed to update subcategory: ' + error.message);

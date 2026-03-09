@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
@@ -9,6 +10,7 @@ import { FinancialFlowFilterDTO } from './dto/filter.dto';
 
 @Injectable()
 export class FlowService {
+  private readonly logger = new Logger(FlowService.name);
   constructor(private readonly prisma: PrismaService) {}
 
   private getActualStatus(installment: any): string {
@@ -644,7 +646,7 @@ export class FlowService {
         data: groupedData.slice((+page - 1) * +limit, +page * +limit),
       };
     } catch (error) {
-      console.error(error);
+      this.logger.error('Erro ao buscar dados do fluxo financeiro', error.stack);
       throw new InternalServerErrorException(
         'Error fetching financial flow data',
       );

@@ -38,24 +38,4 @@ export class InvoiceController {
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).send('Error generating PDF');
     }
   }
-
-  // @Get()
-  // findAll() {
-  //   return this.invoiceService.findAll();
-  // }
-
-  // @Get(':id')
-  // findOne(@Param('id') id: string) {
-  //   return this.invoiceService.findOne(id);
-  // }
-
-  // @Patch(':id')
-  // update(@Param('id') id: string, @Body() updateInvoiceDto: UpdateInvoiceDto) {
-  //   return this.invoiceService.update(id, updateInvoiceDto);
-  // }
-
-  // @Delete(':id')
-  // remove(@Param('id') id: string) {
-  //   return this.invoiceService.remove(id);
-  // }
 }

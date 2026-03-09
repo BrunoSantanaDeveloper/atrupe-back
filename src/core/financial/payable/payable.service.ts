@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -23,6 +24,7 @@ import { FinancialNotesUtil } from '../utils/financial-notes.util';
 
 @Injectable()
 export class PayableService {
+  private readonly logger = new Logger(PayableService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly historyService: FinancialHistoryService,
@@ -212,7 +214,7 @@ export class PayableService {
 
       return payable;
     } catch (error) {
-      console.error(error);
+      this.logger.error('Erro ao criar conta a pagar', error.stack);
       throw new Error('Error creating payable' + error.message);
     }
   }
@@ -261,12 +263,6 @@ export class PayableService {
         _count: true,
       });
 
-      // // 2. Calcular o total e as últimas páginas
-      // const totalGroups = await this.prisma.payableInstallment.groupBy({
-      //   by: ['dueDate'],
-      //   where: filters,
-      //   _count: true,
-      // });
       const totalInstallments = await this.prisma.payableInstallment.count();
 
       const total = totalInstallments;
@@ -417,7 +413,7 @@ export class PayableService {
         data: groupedByDate,
       };
     } catch (error) {
-      console.error(error);
+      this.logger.error('Erro ao listar contas a pagar', error.stack);
     }
   }
 
@@ -534,7 +530,7 @@ export class PayableService {
 
       return updatedPayable;
     } catch (error) {
-      console.error('Error updating payable title:', error);
+      this.logger.error('Erro ao atualizar título da conta a pagar', error.stack);
       throw new Error('Failed to update payable title.');
     }
   }
@@ -1005,17 +1001,6 @@ export class PayableService {
           }
         }
 
-        // // Atualiza o valor total do título
-        // const updatedTotal = await tx.payableInstallment.aggregate({
-        //   where: { payableId: installment.payableId },
-        //   _sum: { amount: true },
-        // });
-
-        // await tx.payable.update({
-        //   where: { id: installment.payableId },
-        //   data: { totalAmount: updatedTotal._sum.amount },
-        // });
-
         return installment;
       });
 
@@ -1116,7 +1101,7 @@ export class PayableService {
         },
       };
     } catch (error) {
-      console.error(error);
+      this.logger.error('Erro ao pagar parcela', error.stack);
     }
   }
 
@@ -1360,7 +1345,7 @@ export class PayableService {
         },
       };
     } catch (error) {
-      console.error(error);
+      this.logger.error('Erro ao desfazer pagamento de parcela', error.stack);
       throw new BadRequestException(error.message);
     }
   }
@@ -1442,7 +1427,7 @@ export class PayableService {
               );
               updatedInstallments.push(updatedInstallment);
             } catch (error) {
-              console.error('Error updating installment:', error);
+              this.logger.error('Erro ao atualizar parcela', error.stack);
             }
           } else {
             const newInstallment = await prisma.payableInstallment.create({
@@ -1508,24 +1493,6 @@ export class PayableService {
             data: updateData,
           });
         }
-
-        // // Recalcula o totalAmount, incluindo taxas
-        // totalAmount = allInstallments.reduce(
-        //   (sum, installment) =>
-        //     sum + installment.amount + (installment.additionalFee || 0),
-        //   0,
-        // );
-
-        // // Atualiza o totalAmount no título principal
-        // try {
-        //   const updatedPayable = await prisma.payable.update({
-        //     where: { id: payableId },
-        //     data: { totalAmount },
-        //   });
-        //   return updatedPayable;
-        // } catch (error) {
-        //   console.error(error.message);
-        // }
       });
 
       await this.updatePayableStatus(payableId);
@@ -1668,7 +1635,7 @@ export class PayableService {
 
       return updatedPayable;
     } catch (error) {
-      console.error(error);
+      this.logger.error('Erro ao compensar parcela', error.stack);
     }
   }
 
@@ -1683,7 +1650,7 @@ export class PayableService {
     });
 
     if (!installments || installments.length === 0) {
-      console.warn(
+      this.logger.warn(
         `Nenhuma parcela encontrada para a movimentação ${payableId}`,
       );
       return;
@@ -1711,7 +1678,7 @@ export class PayableService {
     } else if (allPaid) {
       newStatus = PaymentStatus.PAID;
     } else {
-      console.error(
+      this.logger.error(
         `Não foi possível determinar o status para a movimentação ${payableId}`,
       );
       return;
@@ -1796,11 +1763,11 @@ export class PayableService {
         canceledCount++;
       }
 
-      console.log(
+      this.logger.log(
         `${canceledCount} títulos relacionados cancelados para a venda ${quotationId}`,
       );
     } catch (error) {
-      console.error('Erro ao cancelar títulos relacionados:', error);
+      this.logger.error('Erro ao cancelar títulos relacionados', error.stack);
     }
   }
 
@@ -1881,11 +1848,11 @@ export class PayableService {
         reactivatedCount++;
       }
 
-      console.log(
+      this.logger.log(
         `${reactivatedCount} títulos relacionados reativados para a venda ${quotationId}`,
       );
     } catch (error) {
-      console.error('Erro ao reativar títulos relacionados:', error);
+      this.logger.error('Erro ao reativar títulos relacionados', error.stack);
     }
   }
 

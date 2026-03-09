@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
@@ -25,6 +26,7 @@ import { FinancialNotesUtil } from '../utils/financial-notes.util';
 
 @Injectable()
 export class ReceivableService {
+  private readonly logger = new Logger(ReceivableService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly historyService: FinancialHistoryService,
@@ -195,7 +197,7 @@ export class ReceivableService {
 
       return receivable;
     } catch (error) {
-      console.error(error);
+      this.logger.error('Erro ao criar conta a receber', error.stack);
       throw new Error('Error creating receivable' + error.message);
     }
   }
@@ -243,12 +245,6 @@ export class ReceivableService {
       _count: true,
     });
 
-    // // 2. Calcular o total e as últimas páginas
-    // const totalGroups = await this.prisma.receivableInstallment.groupBy({
-    //   by: ['dueDate'],
-    //   where: filters,
-    //   _count: true,
-    // });
     const totalInstallments = await this.prisma.receivableInstallment.count();
 
     const total = totalInstallments;
@@ -497,7 +493,7 @@ export class ReceivableService {
 
       return updatedReceivable;
     } catch (error) {
-      console.error('Error updating receivable title:', error);
+      this.logger.error('Erro ao atualizar título da conta a receber', error.stack);
       throw new Error('Failed to update receivable title.');
     }
   }
@@ -562,7 +558,7 @@ export class ReceivableService {
 
       return { message: 'Conta a receber cancelada com sucesso.' };
     } catch (error) {
-      console.error('Error canceling receivable:', error);
+      this.logger.error('Erro ao cancelar conta a receber', error.stack);
     }
   }
 
@@ -629,7 +625,7 @@ export class ReceivableService {
         message: 'Cancelamento da conta a receber desfeito com sucesso.',
       };
     } catch (error) {
-      console.error('Error undoing cancel receivable:', error);
+      this.logger.error('Erro ao desfazer cancelamento da conta a receber', error.stack);
       throw error;
     }
   }
@@ -778,9 +774,6 @@ export class ReceivableService {
       );
     }
 
-    // const handleNegativeBalance = async (tx, finalValue) => {};
-
-    // const handlePositiveBalance = async (tx, finalValue) => {};
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         // Atualiza o status da parcela para "PAGO" e adiciona a data do pagamento
@@ -983,16 +976,6 @@ export class ReceivableService {
           }
         }
 
-        // FIM DA COMPENSSAÇÃO
-
-        // const updatedTotal = await tx.receivableInstallment.aggregate({
-        //   where: { receivableId: installment.receivableId },
-        //   _sum: { amount: true },
-        // });
-        // const receivable = await tx.receivable.update({
-        //   where: { id: installment.receivableId },
-        //   data: { totalAmount: updatedTotal._sum.amount },
-        // });
         return installment;
       });
 
@@ -1052,7 +1035,7 @@ export class ReceivableService {
         },
       };
     } catch (error) {
-      console.error(error);
+      this.logger.error('Erro ao pagar parcela', error.stack);
       throw new BadRequestException(error.message);
     }
   }
@@ -1304,7 +1287,7 @@ export class ReceivableService {
         },
       };
     } catch (error) {
-      console.error(error);
+      this.logger.error('Erro ao desfazer pagamento de parcela', error.stack);
       throw new BadRequestException(error.message);
     }
   }
@@ -1388,7 +1371,7 @@ export class ReceivableService {
                   });
                 updatedInstallments.push(updatedInstallment);
               } catch (error) {
-                console.error('Error updating installment:', error);
+                this.logger.error('Erro ao atualizar parcela', error.stack);
               }
             } else {
               const newInstallment = await prisma.receivableInstallment.create({
@@ -1460,24 +1443,6 @@ export class ReceivableService {
               data: updateData,
             });
           }
-
-          // // Recalcula o totalAmount, incluindo taxas
-          // totalAmount = allInstallments.reduce(
-          //   (sum, installment) =>
-          //     sum + installment.amount + (installment.additionalFee || 0),
-          //   0,
-          // );
-
-          // // Atualiza o totalAmount no título principal
-          // try {
-          //   const updatedReceivable = await prisma.receivable.update({
-          //     where: { id: receivableId },
-          //     data: { totalAmount },
-          //   });
-          //   return updatedReceivable;
-          // } catch (error) {
-          //   console.error(error.message);
-          // }
         },
       );
 
@@ -1622,7 +1587,7 @@ export class ReceivableService {
 
       return updatedReceivable;
     } catch (error) {
-      console.error(error);
+      this.logger.error('Erro ao compensar parcela', error.stack);
     }
   }
 
@@ -1637,7 +1602,7 @@ export class ReceivableService {
     });
 
     if (!installments || installments.length === 0) {
-      console.warn(
+      this.logger.warn(
         `Nenhuma parcela encontrada para a movimentação ${receivableId}`,
       );
       return;
@@ -1665,7 +1630,7 @@ export class ReceivableService {
     } else if (allPaid) {
       newStatus = PaymentStatus.PAID;
     } else {
-      console.error(
+      this.logger.error(
         `Não foi possível determinar o status para a movimentação ${receivableId}`,
       );
       return;
@@ -1750,11 +1715,11 @@ export class ReceivableService {
         canceledCount++;
       }
 
-      console.log(
+      this.logger.log(
         `${canceledCount} títulos relacionados cancelados para a venda ${quotationId}`,
       );
     } catch (error) {
-      console.error('Erro ao cancelar títulos relacionados:', error);
+      this.logger.error('Erro ao cancelar títulos relacionados', error.stack);
     }
   }
 
@@ -1835,11 +1800,11 @@ export class ReceivableService {
         reactivatedCount++;
       }
 
-      console.log(
+      this.logger.log(
         `${reactivatedCount} títulos relacionados reativados para a venda ${quotationId}`,
       );
     } catch (error) {
-      console.error('Erro ao reativar títulos relacionados:', error);
+      this.logger.error('Erro ao reativar títulos relacionados', error.stack);
     }
   }
 
