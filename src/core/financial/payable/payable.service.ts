@@ -723,58 +723,12 @@ export class PayableService {
 
     // Validação dos campos de diferença
     if (difference && difference !== 0) {
-      if (!differenceNatureId || !differenceCategoryId) {
-        throw new BadRequestException(
-          'Natureza e categoria são obrigatórias quando há diferença no pagamento.',
-        );
-      }
-
-      // Validar se a natureza existe e está ativa
-      const nature = await this.prisma.nature.findFirst({
-        where: {
-          id: differenceNatureId,
-          isActive: true,
-        },
-      });
-
-      if (!nature) {
-        throw new BadRequestException('Natureza não encontrada ou inativa.');
-      }
-
-      // CORREÇÃO: Para PAYABLES - diferença positiva = despesa adicional, diferença negativa = receita (economia)
-      const expectedType = difference > 0 ? 'payable' : 'receivable';
-      const expectedLevel1 = difference > 0 ? '02' : '01'; // positivo = payable (despesa), negativo = receivable (receita)
-
-      if (nature.level1 !== expectedLevel1) {
-        throw new BadRequestException(
-          `Para diferença ${difference < 0 ? 'negativa' : 'positiva'}, selecione uma natureza do tipo '${expectedType}'.`,
-        );
-      }
-
-      // NOVO: Validar se subcategoria existe, está ativa e pertence à natureza
-      const subCategory = await this.prisma.subCategory.findFirst({
-        where: {
-          id: differenceCategoryId,
-          isActive: true,
-        },
-      });
-
-      if (!subCategory) {
-        throw new BadRequestException('Categoria não encontrada ou inativa.');
-      }
-
-      if (subCategory.natureId !== differenceNatureId) {
-        throw new BadRequestException(
-          'A categoria selecionada não pertence à natureza escolhida.',
-        );
-      }
-
-      // Validar se natureza e subcategoria pertencem à mesma empresa
-      if (nature.companyId !== subCategory.companyId) {
-        throw new BadRequestException(
-          'Natureza e categoria devem pertencer à mesma empresa.',
-        );
-      }
+      await this.baseService.validatePaymentDifference(
+        difference,
+        differenceNatureId,
+        differenceCategoryId,
+        'payable',
+      );
     }
 
     const bankAccountData = await this.prisma.bankAccountCashControl.findFirst({

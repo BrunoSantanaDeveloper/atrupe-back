@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import {
   ReceivableWithInstallments,
@@ -11,6 +15,76 @@ export class BaseTransactionService {
   private readonly logger = new Logger(BaseTransactionService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Validates difference fields (nature, subcategory, company) for payment operations.
+   * @param entityType 'receivable' or 'payable' — determines expected nature direction
+   */
+  async validatePaymentDifference(
+    difference: number,
+    differenceNatureId: string,
+    differenceCategoryId: string,
+    entityType: 'receivable' | 'payable',
+  ) {
+    if (!differenceNatureId || !differenceCategoryId) {
+      throw new BadRequestException(
+        'Natureza e categoria são obrigatórias quando há diferença no pagamento.',
+      );
+    }
+
+    const nature = await this.prisma.nature.findFirst({
+      where: { id: differenceNatureId, isActive: true },
+    });
+
+    if (!nature) {
+      throw new BadRequestException('Natureza não encontrada ou inativa.');
+    }
+
+    // Receivable: positive = revenue (01), negative = expense (02)
+    // Payable: positive = expense (02), negative = revenue (01)
+    const expectedLevel1 =
+      entityType === 'receivable'
+        ? difference > 0
+          ? '01'
+          : '02'
+        : difference > 0
+          ? '02'
+          : '01';
+    const expectedType =
+      entityType === 'receivable'
+        ? difference > 0
+          ? 'receivable'
+          : 'payable'
+        : difference > 0
+          ? 'payable'
+          : 'receivable';
+
+    if (nature.level1 !== expectedLevel1) {
+      throw new BadRequestException(
+        `Para diferença ${difference < 0 ? 'negativa' : 'positiva'}, selecione uma natureza do tipo '${expectedType}'.`,
+      );
+    }
+
+    const subCategory = await this.prisma.subCategory.findFirst({
+      where: { id: differenceCategoryId, isActive: true },
+    });
+
+    if (!subCategory) {
+      throw new BadRequestException('Categoria não encontrada ou inativa.');
+    }
+
+    if (subCategory.natureId !== differenceNatureId) {
+      throw new BadRequestException(
+        'A categoria selecionada não pertence à natureza escolhida.',
+      );
+    }
+
+    if (nature.companyId !== subCategory.companyId) {
+      throw new BadRequestException(
+        'Natureza e categoria devem pertencer à mesma empresa.',
+      );
+    }
+  }
 
   /**
    * Retorna o status real da parcela considerando atraso.

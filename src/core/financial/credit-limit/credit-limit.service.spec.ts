@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CreditLimitService } from './credit-limit.service';
-import { PrismaService } from 'src/config/prisma/prisma.service';
+import { PrismaService } from 'nestjs-prisma';
 import { NotFoundException } from '@nestjs/common';
 
 const mockCompanyId = 'company-uuid-123';

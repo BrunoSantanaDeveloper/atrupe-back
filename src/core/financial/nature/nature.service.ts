@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { CreateNatureDto, CreateSubCategoryDto } from './dto/create-nature.dto';
 import { UpdateNatureDto, UpdateSubCategoryDto } from './dto/update-nature.dto';
-import { PrismaService } from 'src/config/prisma/prisma.service';
+import { PrismaService } from 'nestjs-prisma';
 import { NatureFilterDto } from './dto/nature-filter.dto';
 import { Nature, SubCategory } from '@prisma/client';
 

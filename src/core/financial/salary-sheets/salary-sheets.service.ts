@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from 'src/config/prisma/prisma.service';
+import { PrismaService } from 'nestjs-prisma';
 import { GetSalarySheetsDto } from './dto/salaries-filters.dto';
 import { AddSalaryItemDto } from './dto/create-salary.dto';
 import {

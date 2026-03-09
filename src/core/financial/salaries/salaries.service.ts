@@ -8,7 +8,7 @@ import { CreatePayrollSetupDto } from './dto/create-payroll-setup.dto';
 import { FilterPayrollSetupDto } from './dto/filter-payroll-setup.dto';
 import { UpdatePayrollSetupDto } from './dto/update-payroll-setup.dto';
 import { Prisma } from '@prisma/client';
-import { PrismaService } from 'src/config/prisma/prisma.service';
+import { PrismaService } from 'nestjs-prisma';
 
 @Injectable()
 export class SalariesService {
