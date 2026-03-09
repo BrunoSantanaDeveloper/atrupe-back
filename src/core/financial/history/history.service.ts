@@ -133,7 +133,7 @@ export class FinancialHistoryService {
     return 'Título criado';
   }
 
-  getUpdateTitleDescription(changes: any): string {
+  getUpdateTitleDescription(changes: { after?: Record<string, unknown> | object }): string {
     const changedFields = Object.keys(changes.after || {});
     return `Título atualizado: ${changedFields.join(', ')}`;
   }

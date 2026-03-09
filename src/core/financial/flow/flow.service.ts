@@ -7,13 +7,14 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { FinancialFlowFilterDTO } from './dto/filter.dto';
+import { InstallmentStatusCheck } from '../utils/financial.types';
 
 @Injectable()
 export class FlowService {
   private readonly logger = new Logger(FlowService.name);
   constructor(private readonly prisma: PrismaService) {}
 
-  private getActualStatus(installment: any): string {
+  private getActualStatus(installment: InstallmentStatusCheck): string {
     if (
       installment.status === 'PENDING' &&
       new Date(installment.dueDate) < new Date()
@@ -42,7 +43,7 @@ export class FlowService {
         status: { not: 'CANCELED' },
       },
     };
-    const filtersPayables: any = {
+    const filtersPayables: Record<string, unknown> = {
       payable: {
         companyId: filter.companyId,
         status: { not: 'CANCELED' },
@@ -379,263 +380,13 @@ export class FlowService {
         },
       });
 
-      const groupedData = dueDates.map((date) => {
-        const receivables = receivableDetails
-          .filter((inst) => {
-            if (!inst[dateType]) return false;
-            const instDate = new Date(inst[dateType]);
-            instDate.setUTCHours(0, 0, 0, 0);
-            return instDate.toISOString() === date;
-          })
-          .map((inst) => {
-            // Filtrar apenas as parcelas com a mesma data do grupo
-            const relevantInstallments = inst.receivable.installments.filter(
-              (i) => {
-                if (!i[dateType]) return false;
-                const iDate = new Date(i[dateType]);
-                iDate.setUTCHours(0, 0, 0, 0);
-                return iDate.toISOString() === date;
-              },
-            );
-
-            return {
-              type: 'receivable',
-              id: inst.receivable.id,
-              totalValue: inst.receivable?.totalAmount || 0,
-              totalPaid: (inst.receivable?.installments || []).reduce(
-                (sum, item) => {
-                  return sum + (item.paidAmount ?? 0);
-                },
-                0,
-              ),
-              description: inst.receivable.description || '',
-              client: inst.receivable.client
-                ? {
-                    id: inst.receivable.client.id,
-                    name: inst.receivable.client.name,
-                  }
-                : null,
-              subCategory: inst.receivable.subCategory
-                ? {
-                    id: inst.receivable.subCategory.id,
-                    name: inst.receivable.subCategory.description,
-                  }
-                : null,
-              nature: inst.receivable.nature
-                ? {
-                    id: inst.receivable.nature.id,
-                    name: inst.receivable.nature.description,
-                  }
-                : null,
-              installmentsQuantity: inst.receivable.installmentQty || 0,
-              period: inst.receivable?.referenceDate || null,
-              notes: inst.receivable.notes || '',
-              status: inst.receivable.status,
-
-              // Na listagem, retornamos apenas a parcela atual (correspondente à data da linha)
-              currentInstallment: (() => {
-                const currentInst = inst.receivable?.installments?.find(
-                  (i) => i.id === inst.id,
-                );
-                return currentInst
-                  ? {
-                      id: currentInst.id,
-                      installmentNumber: currentInst.installmentNumber || 1,
-                      status: this.getActualStatus(currentInst),
-                      paymentCondition: currentInst.paymentCondition
-                        ? {
-                            id: currentInst.paymentCondition.id,
-                            name: currentInst.paymentCondition.name,
-                          }
-                        : null,
-                      bankAccount: currentInst.bankAccount
-                        ? {
-                            id: currentInst.bankAccount.id,
-                            name: currentInst.bankAccount.name,
-                          }
-                        : null,
-                      bank: currentInst.bankAccount
-                        ? {
-                            id: currentInst.bankAccount?.bank?.id,
-                            name: currentInst.bankAccount?.bank?.name,
-                          }
-                        : null,
-                      value: currentInst.amount || 0,
-                      additionalFee: currentInst.additionalFee || 0,
-                      dueDate: currentInst.dueDate,
-                      paidValue: currentInst.paidAmount || 0,
-                      paymentDate: currentInst.provisionDate
-                        ? new Date(currentInst.provisionDate)
-                        : currentInst.paidDate
-                          ? new Date(currentInst.paidDate)
-                          : null,
-                      compensateDate: currentInst.paidDate
-                        ? new Date(currentInst.paidDate)
-                        : null,
-                      current: true,
-                    }
-                  : null;
-              })(),
-              ...(showValues === 'on' && {
-                expectedRevenue: relevantInstallments.reduce(
-                  (sum, i) =>
-                    sum +
-                    (i.status !== 'CANCELED'
-                      ? (i.amount || 0) + (i.additionalFee || 0)
-                      : 0),
-                  0,
-                ),
-                realizedRevenue: relevantInstallments.reduce(
-                  (sum, i) => sum + (i.paidAmount || 0),
-                  0,
-                ),
-              }),
-            };
-          });
-
-        const payables = payableDetails
-          .filter((inst) => {
-            if (!inst[dateType]) return false;
-            const instDate = new Date(inst[dateType]);
-            instDate.setUTCHours(0, 0, 0, 0);
-            return instDate.toISOString() === date;
-          })
-          .map((inst) => {
-            // Filtrar apenas as parcelas com a mesma data do grupo
-            const relevantInstallments = inst.payable.installments.filter(
-              (i) => {
-                if (!i[dateType]) return false;
-                const iDate = new Date(i[dateType]);
-                iDate.setUTCHours(0, 0, 0, 0);
-                return iDate.toISOString() === date;
-              },
-            );
-
-            return {
-              type: 'payable',
-              id: inst.payable.id,
-              totalValue: inst.payable?.totalAmount || 0,
-              totalPaid: (inst.payable?.installments || []).reduce(
-                (sum, item) => {
-                  return sum + (item.paidAmount ?? 0);
-                },
-                0,
-              ),
-              description: inst.payable.description || '',
-              supplier: inst.payable.supplier
-                ? {
-                    id: inst.payable.supplier.id,
-                    name: inst.payable.supplier.name,
-                  }
-                : null,
-              employee: inst.payable.employee
-                ? {
-                    id: inst.payable.employee.id,
-                    name: inst.payable.employee.name,
-                  }
-                : null,
-              subCategory: inst.payable.subCategory
-                ? {
-                    id: inst.payable.subCategory.id,
-                    name: inst.payable.subCategory.description,
-                  }
-                : null,
-              nature: inst.payable.nature
-                ? {
-                    id: inst.payable.nature.id,
-                    name: inst.payable.nature.description,
-                  }
-                : null,
-              expenseSource: inst.payable.expenseSource || null,
-              installmentsQuantity: inst.payable.installmentQty || 0,
-              period: inst.payable?.referenceDate || null,
-              notes: inst.payable.notes || '',
-              status: inst.payable.status,
-
-              // Na listagem, retornamos apenas a parcela atual (correspondente à data da linha)
-              currentInstallment: (() => {
-                const currentInst = inst.payable?.installments?.find(
-                  (i) => i.id === inst.id,
-                );
-                return currentInst
-                  ? {
-                      id: currentInst.id,
-                      installmentNumber: currentInst.installmentNumber || 1,
-                      status: this.getActualStatus(currentInst),
-                      paymentCondition: currentInst.paymentCondition
-                        ? {
-                            id: currentInst.paymentCondition.id,
-                            name: currentInst.paymentCondition.name,
-                          }
-                        : null,
-                      bankAccount: currentInst.bankAccount
-                        ? {
-                            id: currentInst.bankAccount.id,
-                            name: currentInst.bankAccount.name,
-                          }
-                        : null,
-                      bank: currentInst.bankAccount
-                        ? {
-                            id: currentInst.bankAccount?.bank?.id,
-                            name: currentInst.bankAccount?.bank?.name,
-                          }
-                        : null,
-                      value: currentInst.amount || 0,
-                      additionalFee: currentInst.additionalFee || 0,
-                      dueDate: currentInst.dueDate,
-                      paidValue: currentInst.paidAmount || 0,
-                      paymentDate: currentInst.provisionDate
-                        ? new Date(currentInst.provisionDate)
-                        : currentInst.paidDate
-                          ? new Date(currentInst.paidDate)
-                          : null,
-                      compensateDate: currentInst.paidDate
-                        ? new Date(currentInst.paidDate)
-                        : null,
-                      current: true,
-                    }
-                  : null;
-              })(),
-              ...(showValues === 'on' && {
-                expectedExpense: relevantInstallments.reduce(
-                  (sum, i) =>
-                    sum +
-                    (i.status !== 'CANCELED'
-                      ? (i.amount || 0) + (i.additionalFee || 0)
-                      : 0),
-                  0,
-                ),
-                realizedExpense: relevantInstallments.reduce(
-                  (sum, i) => sum + (i.paidAmount || 0),
-                  0,
-                ),
-              }),
-            };
-          });
-
-        return {
-          date: new Date(date),
-          ...(showValues === 'on' && {
-            expectedRevenue: receivables.reduce(
-              (acc, rec) => acc + rec.expectedRevenue,
-              0,
-            ),
-            expectedExpense: payables.reduce(
-              (acc, pay) => acc + pay.expectedExpense,
-              0,
-            ),
-            realizedRevenue: receivables.reduce(
-              (acc, rec) => acc + rec.realizedRevenue,
-              0,
-            ),
-            realizedExpense: payables.reduce(
-              (acc, pay) => acc + pay.realizedExpense,
-              0,
-            ),
-          }),
-          transactions: [...receivables, ...payables],
-        };
-      });
+      const groupedData = this.buildFlowGroupedData(
+        dueDates,
+        receivableDetails,
+        payableDetails,
+        dateType,
+        showValues,
+      );
 
       const total = groupedData.length;
       const lastPage = Math.ceil(total / +limit);
@@ -651,6 +402,236 @@ export class FlowService {
         'Error fetching financial flow data',
       );
     }
+  }
+
+  private buildFlowGroupedData(
+    dueDates: string[],
+    receivableDetails: any[],
+    payableDetails: any[],
+    dateType: string,
+    showValues: string,
+  ) {
+    return dueDates.map((date) => {
+      const receivables = receivableDetails
+        .filter((inst) => {
+          if (!inst[dateType]) return false;
+          const instDate = new Date(inst[dateType]);
+          instDate.setUTCHours(0, 0, 0, 0);
+          return instDate.toISOString() === date;
+        })
+        .map((inst) =>
+          this.mapReceivableInstallment(inst, date, dateType, showValues),
+        );
+
+      const payables = payableDetails
+        .filter((inst) => {
+          if (!inst[dateType]) return false;
+          const instDate = new Date(inst[dateType]);
+          instDate.setUTCHours(0, 0, 0, 0);
+          return instDate.toISOString() === date;
+        })
+        .map((inst) =>
+          this.mapPayableInstallment(inst, date, dateType, showValues),
+        );
+
+      return {
+        date: new Date(date),
+        ...(showValues === 'on' && {
+          expectedRevenue: receivables.reduce(
+            (acc, rec) => acc + rec.expectedRevenue,
+            0,
+          ),
+          expectedExpense: payables.reduce(
+            (acc, pay) => acc + pay.expectedExpense,
+            0,
+          ),
+          realizedRevenue: receivables.reduce(
+            (acc, rec) => acc + rec.realizedRevenue,
+            0,
+          ),
+          realizedExpense: payables.reduce(
+            (acc, pay) => acc + pay.realizedExpense,
+            0,
+          ),
+        }),
+        transactions: [...receivables, ...payables],
+      };
+    });
+  }
+
+  private mapReceivableInstallment(
+    inst: any,
+    date: string,
+    dateType: string,
+    showValues: string,
+  ) {
+    const relevantInstallments = inst.receivable.installments.filter((i) => {
+      if (!i[dateType]) return false;
+      const iDate = new Date(i[dateType]);
+      iDate.setUTCHours(0, 0, 0, 0);
+      return iDate.toISOString() === date;
+    });
+
+    return {
+      type: 'receivable',
+      id: inst.receivable.id,
+      totalValue: inst.receivable?.totalAmount || 0,
+      totalPaid: (inst.receivable?.installments || []).reduce(
+        (sum, item) => sum + (item.paidAmount ?? 0),
+        0,
+      ),
+      description: inst.receivable.description || '',
+      client: inst.receivable.client
+        ? {
+            id: inst.receivable.client.id,
+            name: inst.receivable.client.name,
+          }
+        : null,
+      subCategory: inst.receivable.subCategory
+        ? {
+            id: inst.receivable.subCategory.id,
+            name: inst.receivable.subCategory.description,
+          }
+        : null,
+      nature: inst.receivable.nature
+        ? {
+            id: inst.receivable.nature.id,
+            name: inst.receivable.nature.description,
+          }
+        : null,
+      installmentsQuantity: inst.receivable.installmentQty || 0,
+      period: inst.receivable?.referenceDate || null,
+      notes: inst.receivable.notes || '',
+      status: inst.receivable.status,
+      currentInstallment: this.mapCurrentInstallment(inst.receivable, inst.id),
+      ...(showValues === 'on' && {
+        expectedRevenue: relevantInstallments.reduce(
+          (sum, i) =>
+            sum +
+            (i.status !== 'CANCELED'
+              ? (i.amount || 0) + (i.additionalFee || 0)
+              : 0),
+          0,
+        ),
+        realizedRevenue: relevantInstallments.reduce(
+          (sum, i) => sum + (i.paidAmount || 0),
+          0,
+        ),
+      }),
+    };
+  }
+
+  private mapPayableInstallment(
+    inst: any,
+    date: string,
+    dateType: string,
+    showValues: string,
+  ) {
+    const relevantInstallments = inst.payable.installments.filter((i) => {
+      if (!i[dateType]) return false;
+      const iDate = new Date(i[dateType]);
+      iDate.setUTCHours(0, 0, 0, 0);
+      return iDate.toISOString() === date;
+    });
+
+    return {
+      type: 'payable',
+      id: inst.payable.id,
+      totalValue: inst.payable?.totalAmount || 0,
+      totalPaid: (inst.payable?.installments || []).reduce(
+        (sum, item) => sum + (item.paidAmount ?? 0),
+        0,
+      ),
+      description: inst.payable.description || '',
+      supplier: inst.payable.supplier
+        ? {
+            id: inst.payable.supplier.id,
+            name: inst.payable.supplier.name,
+          }
+        : null,
+      employee: inst.payable.employee
+        ? {
+            id: inst.payable.employee.id,
+            name: inst.payable.employee.name,
+          }
+        : null,
+      subCategory: inst.payable.subCategory
+        ? {
+            id: inst.payable.subCategory.id,
+            name: inst.payable.subCategory.description,
+          }
+        : null,
+      nature: inst.payable.nature
+        ? {
+            id: inst.payable.nature.id,
+            name: inst.payable.nature.description,
+          }
+        : null,
+      expenseSource: inst.payable.expenseSource || null,
+      installmentsQuantity: inst.payable.installmentQty || 0,
+      period: inst.payable?.referenceDate || null,
+      notes: inst.payable.notes || '',
+      status: inst.payable.status,
+      currentInstallment: this.mapCurrentInstallment(inst.payable, inst.id),
+      ...(showValues === 'on' && {
+        expectedExpense: relevantInstallments.reduce(
+          (sum, i) =>
+            sum +
+            (i.status !== 'CANCELED'
+              ? (i.amount || 0) + (i.additionalFee || 0)
+              : 0),
+          0,
+        ),
+        realizedExpense: relevantInstallments.reduce(
+          (sum, i) => sum + (i.paidAmount || 0),
+          0,
+        ),
+      }),
+    };
+  }
+
+  private mapCurrentInstallment(entity: any, installmentId: string) {
+    const currentInst = entity?.installments?.find(
+      (i) => i.id === installmentId,
+    );
+    if (!currentInst) return null;
+
+    return {
+      id: currentInst.id,
+      installmentNumber: currentInst.installmentNumber || 1,
+      status: this.getActualStatus(currentInst),
+      paymentCondition: currentInst.paymentCondition
+        ? {
+            id: currentInst.paymentCondition.id,
+            name: currentInst.paymentCondition.name,
+          }
+        : null,
+      bankAccount: currentInst.bankAccount
+        ? {
+            id: currentInst.bankAccount.id,
+            name: currentInst.bankAccount.name,
+          }
+        : null,
+      bank: currentInst.bankAccount
+        ? {
+            id: currentInst.bankAccount?.bank?.id,
+            name: currentInst.bankAccount?.bank?.name,
+          }
+        : null,
+      value: currentInst.amount || 0,
+      additionalFee: currentInst.additionalFee || 0,
+      dueDate: currentInst.dueDate,
+      paidValue: currentInst.paidAmount || 0,
+      paymentDate: currentInst.provisionDate
+        ? new Date(currentInst.provisionDate)
+        : currentInst.paidDate
+          ? new Date(currentInst.paidDate)
+          : null,
+      compensateDate: currentInst.paidDate
+        ? new Date(currentInst.paidDate)
+        : null,
+      current: true,
+    };
   }
 
   private async fetchDataDueDate(

@@ -15,13 +15,14 @@ import {
   UndoCancelPayableDto,
 } from './dto/update-payable.dto';
 import { PrismaService } from 'nestjs-prisma';
-import { PaymentStatus, TransactionType } from '@prisma/client';
+import { PaymentStatus, Prisma, TransactionType } from '@prisma/client';
 import { ReceivableFilterDto } from '../receivable/dto/receivable-filter.dto';
 import { add, endOfDay } from 'date-fns';
 import { CompensateDto } from '../receivable/dto/create-receivable.dto';
 import { FinancialHistoryService } from '../history/history.service';
 import { FinancialNotesUtil } from '../utils/financial-notes.util';
 import { BaseTransactionService } from '../utils/base-transaction.service';
+import { InstallmentStatusCheck } from '../utils/financial.types';
 
 @Injectable()
 export class PayableService {
@@ -32,11 +33,11 @@ export class PayableService {
     private readonly baseService: BaseTransactionService,
   ) {}
 
-  private getActualStatus(installment: any): string {
+  private getActualStatus(installment: InstallmentStatusCheck): string {
     return this.baseService.getActualStatus(installment);
   }
 
-  private applyDynamicStatus(installment: any): any {
+  private applyDynamicStatus<T extends InstallmentStatusCheck>(installment: T): T & { status: string } {
     return this.baseService.applyDynamicStatus(installment);
   }
 
@@ -220,10 +221,10 @@ export class PayableService {
 
       const { page = 1, limit = 10, search, dueDate } = paginationDto;
 
-      const filters: any = {
+      const filters: Prisma.PayableInstallmentWhereInput = {
         payable: {
           companyId: paginationDto.companyId,
-        },
+        } as Prisma.PayableWhereInput,
       };
 
       // Filtro de data baseado em dueDate
@@ -235,11 +236,11 @@ export class PayableService {
 
       // Filtro de pesquisa para cliente, categoria ou subcategoria
       if (search) {
-        filters.payable.OR = [
+        (filters.payable as Prisma.PayableWhereInput).OR = [
           { client: { name: { contains: search, mode: 'insensitive' } } },
-          { category: { name: { contains: search, mode: 'insensitive' } } },
+          { nature: { name: { contains: search, mode: 'insensitive' } } },
           { subCategory: { name: { contains: search, mode: 'insensitive' } } },
-        ];
+        ] as Prisma.PayableWhereInput[];
       }
 
       // 1. Agrupamento no banco de dados com somatório e paginação
@@ -793,7 +794,7 @@ export class PayableService {
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
-        const data: any = {
+        const data: Prisma.PayableInstallmentUncheckedUpdateInput = {
           status:
             bankAccountData.paymentType === 'PROVISION'
               ? 'PROVISIONED'

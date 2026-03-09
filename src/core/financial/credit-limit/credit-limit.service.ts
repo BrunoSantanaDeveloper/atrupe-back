@@ -98,7 +98,7 @@ export class CreditLimitService {
   async update(dto: UpdateCreditLimitDefaultDto) {
     const { person, company, companyId } = dto;
 
-    const result: any = {};
+    const result: Record<string, unknown> = {};
 
     if (person) {
       result.person = await this.updateCreditLimitByType(
@@ -190,7 +190,7 @@ export class CreditLimitService {
       throw new NotFoundException(`CreditLimitDefault for ${type} not found`);
     }
 
-    const updateData: any = {};
+    const updateData: { minValue?: number | null; maxValue?: number | null } = {};
     if (data.minValue !== undefined) updateData.minValue = data.minValue;
     if (data.maxValue !== undefined) updateData.maxValue = data.maxValue;
 

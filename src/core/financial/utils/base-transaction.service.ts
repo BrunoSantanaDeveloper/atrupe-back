@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
+import {
+  ReceivableWithInstallments,
+  PayableWithInstallments,
+  InstallmentStatusCheck,
+} from './financial.types';
 
 @Injectable()
 export class BaseTransactionService {
@@ -10,7 +15,7 @@ export class BaseTransactionService {
   /**
    * Retorna o status real da parcela considerando atraso.
    */
-  getActualStatus(installment: any): string {
+  getActualStatus(installment: InstallmentStatusCheck): string {
     if (
       installment.status === 'PENDING' &&
       new Date(installment.dueDate) < new Date()
@@ -23,7 +28,9 @@ export class BaseTransactionService {
   /**
    * Aplica o status dinâmico na parcela.
    */
-  applyDynamicStatus(installment: any): any {
+  applyDynamicStatus<T extends InstallmentStatusCheck>(
+    installment: T,
+  ): T & { status: string } {
     return {
       ...installment,
       status: this.getActualStatus(installment),
@@ -34,12 +41,12 @@ export class BaseTransactionService {
    * Cancela um receivable e suas parcelas PENDING em transação.
    */
   async cancelReceivableWithInstallments(
-    receivable: any,
+    receivable: ReceivableWithInstallments,
     reason: string,
   ): Promise<void> {
     const installmentUpdates = receivable.installments
-      .filter((installment: any) => installment.status === 'PENDING')
-      .map((installment: any) =>
+      .filter((installment) => installment.status === 'PENDING')
+      .map((installment) =>
         this.prisma.receivableInstallment.update({
           where: { id: installment.id },
           data: { status: 'CANCELED' },
@@ -63,12 +70,12 @@ export class BaseTransactionService {
    * Cancela um payable e suas parcelas PENDING em transação.
    */
   async cancelPayableWithInstallments(
-    payable: any,
+    payable: PayableWithInstallments,
     reason: string,
   ): Promise<void> {
     const installmentUpdates = payable.installments
-      .filter((installment: any) => installment.status === 'PENDING')
-      .map((installment: any) =>
+      .filter((installment) => installment.status === 'PENDING')
+      .map((installment) =>
         this.prisma.payableInstallment.update({
           where: { id: installment.id },
           data: { status: 'CANCELED' },
@@ -92,12 +99,12 @@ export class BaseTransactionService {
    * Reativa um receivable cancelado e suas parcelas CANCELED.
    */
   async reactivateReceivableWithInstallments(
-    receivable: any,
+    receivable: ReceivableWithInstallments,
     reason: string,
   ): Promise<void> {
     const installmentUpdates = receivable.installments
-      .filter((installment: any) => installment.status === 'CANCELED')
-      .map((installment: any) =>
+      .filter((installment) => installment.status === 'CANCELED')
+      .map((installment) =>
         this.prisma.receivableInstallment.update({
           where: { id: installment.id },
           data: { status: 'PENDING' },
@@ -123,12 +130,12 @@ export class BaseTransactionService {
    * Reativa um payable cancelado e suas parcelas CANCELED.
    */
   async reactivatePayableWithInstallments(
-    payable: any,
+    payable: PayableWithInstallments,
     reason: string,
   ): Promise<void> {
     const installmentUpdates = payable.installments
-      .filter((installment: any) => installment.status === 'CANCELED')
-      .map((installment: any) =>
+      .filter((installment) => installment.status === 'CANCELED')
+      .map((installment) =>
         this.prisma.payableInstallment.update({
           where: { id: installment.id },
           data: { status: 'PENDING' },

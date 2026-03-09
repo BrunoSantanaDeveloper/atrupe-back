@@ -18,12 +18,13 @@ import {
 } from './dto/update-receivable.dto';
 import { ReceivableFilterDto } from './dto/receivable-filter.dto';
 import { ReceiptDataResponseDto } from './dto/receipt-data.dto';
-import { PaymentStatus, TransactionType } from '@prisma/client';
+import { PaymentStatus, Prisma, TransactionType } from '@prisma/client';
 import { endOfDay, add, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { FinancialHistoryService } from '../history/history.service';
 import { FinancialNotesUtil } from '../utils/financial-notes.util';
 import { BaseTransactionService } from '../utils/base-transaction.service';
+import { InstallmentStatusCheck } from '../utils/financial.types';
 
 @Injectable()
 export class ReceivableService {
@@ -34,11 +35,11 @@ export class ReceivableService {
     private readonly baseService: BaseTransactionService,
   ) {}
 
-  private getActualStatus(installment: any): string {
+  private getActualStatus(installment: InstallmentStatusCheck): string {
     return this.baseService.getActualStatus(installment);
   }
 
-  private applyDynamicStatus(installment: any): any {
+  private applyDynamicStatus<T extends InstallmentStatusCheck>(installment: T): T & { status: string } {
     return this.baseService.applyDynamicStatus(installment);
   }
 
@@ -202,10 +203,10 @@ export class ReceivableService {
 
     const { page = 1, limit = 10, search, dueDate } = paginationDto;
 
-    const filters: any = {
+    const filters: Prisma.ReceivableInstallmentWhereInput = {
       receivable: {
         companyId: paginationDto.companyId,
-      },
+      } as Prisma.ReceivableWhereInput,
     };
 
     // Filtro de data baseado em dueDate
@@ -217,11 +218,11 @@ export class ReceivableService {
 
     // Filtro de pesquisa para cliente, categoria ou subcategoria
     if (search) {
-      filters.receivable.OR = [
+      (filters.receivable as Prisma.ReceivableWhereInput).OR = [
         { client: { name: { contains: search, mode: 'insensitive' } } },
         { nature: { name: { contains: search, mode: 'insensitive' } } },
         { subCategory: { name: { contains: search, mode: 'insensitive' } } },
-      ];
+      ] as Prisma.ReceivableWhereInput[];
     }
 
     // 1. Agrupamento no banco de dados com somatório e paginação
@@ -770,7 +771,7 @@ export class ReceivableService {
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         // Atualiza o status da parcela para "PAGO" e adiciona a data do pagamento
-        const data: any = {
+        const data: Prisma.ReceivableInstallmentUncheckedUpdateInput = {
           status:
             bankAccountData.incomeType === 'PROVISION' ? 'PROVISIONED' : 'PAID',
           paidAmount: amount,

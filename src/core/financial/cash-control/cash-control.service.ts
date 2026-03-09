@@ -14,7 +14,7 @@ import {
 } from './dto/update-cash-control.dto';
 import { ListCashRegistersDto } from './dto/cash-control-filters.dto';
 import { startOfDay, endOfDay } from 'date-fns';
-import { CashRegisterStatus } from '@prisma/client';
+import { CashRegisterStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class CashControlService {
@@ -298,7 +298,7 @@ export class CashControlService {
     const offset = (+page - 1) * +limit;
 
     // Construir os filtros dinamicamente
-    const whereFilters: any = { companyId };
+    const whereFilters: Prisma.CashRegisterWhereInput = { companyId };
     if (!companyId) throw new BadRequestException('Empresa não encontrada.');
     whereFilters.status = status;
     if (status) {
@@ -306,17 +306,20 @@ export class CashControlService {
     }
     if (bankAccountName) {
       whereFilters.bankAccount = {
-        name: { contains: bankAccountName, mode: 'insensitive' },
+        is: { name: { contains: bankAccountName, mode: 'insensitive' } },
       };
     }
 
     if (bankName) {
       whereFilters.bankAccount = {
         ...whereFilters.bankAccount,
-        bank: {
-          name: { contains: bankName, mode: 'insensitive' },
+        is: {
+          ...(whereFilters.bankAccount as Prisma.BankAccountRelationFilter)?.is,
+          bank: {
+            name: { contains: bankName, mode: 'insensitive' },
+          },
         },
-      };
+      } as Prisma.BankAccountRelationFilter;
     }
 
     // Consultar caixas abertos e agrupar por dia
