@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
 import { SalarySheetsController } from './salary-sheets.controller';
 import { SalarySheetsService } from './salary-sheets.service';
+import { SalaryExpenseService } from './salary-expense.service';
+import { SalaryPdfService } from './salary-pdf.service';
 
 @Module({
   controllers: [SalarySheetsController],
-  providers: [SalarySheetsService],
+  providers: [SalarySheetsService, SalaryExpenseService, SalaryPdfService],
 })
 export class SalarySheetsModule {}
