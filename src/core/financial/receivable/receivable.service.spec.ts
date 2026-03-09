@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ReceivableService } from './receivable.service';
 import { PrismaService } from 'nestjs-prisma';
 import { FinancialHistoryService } from '../history/history.service';
+import { BaseTransactionService } from '../utils/base-transaction.service';
 import {
   BadRequestException,
   NotFoundException,
@@ -109,6 +110,7 @@ describe('ReceivableService', () => {
         ReceivableService,
         { provide: PrismaService, useValue: prisma },
         { provide: FinancialHistoryService, useValue: historyService },
+        { provide: BaseTransactionService, useValue: new BaseTransactionService(prisma as any) },
       ],
     }).compile();
 
