@@ -16,7 +16,7 @@ import {
 } from './dto/update-payable.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { PaymentStatus, Prisma, TransactionType } from '@prisma/client';
-import { ReceivableFilterDto } from '../receivable/dto/receivable-filter.dto';
+import { PayableFilterDto } from './dto/payable-filter.dto';
 import { add, endOfDay } from 'date-fns';
 import { CompensateDto } from '../receivable/dto/create-receivable.dto';
 import { FinancialHistoryService } from '../history/history.service';
@@ -213,7 +213,7 @@ export class PayableService {
     }
   }
 
-  async findAll(paginationDto: ReceivableFilterDto) {
+  async findAll(paginationDto: PayableFilterDto) {
     try {
       if (!paginationDto.companyId) {
         throw new BadRequestException('companyId is required');

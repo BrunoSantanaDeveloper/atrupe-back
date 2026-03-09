@@ -31,7 +31,7 @@ import {
   PayInstallmentDto,
   UndoCancelPayableDto,
 } from './dto/update-payable.dto';
-import { ReceivableFilterDto } from '../receivable/dto/receivable-filter.dto';
+import { PayableFilterDto } from './dto/payable-filter.dto';
 import { CompensateDto } from '../receivable/dto/create-receivable.dto';
 
 const RESOURCE = 'payable';
@@ -70,7 +70,7 @@ export class PayableController {
     description: 'Lista de contas a pagar retornada com sucesso.',
     isArray: true,
   })
-  async findAll(@Req() req, @Query() paginationDto: ReceivableFilterDto) {
+  async findAll(@Req() req, @Query() paginationDto: PayableFilterDto) {
     paginationDto.companyId = req.user.companyId;
     return await this.payableService.findAll(paginationDto);
   }
