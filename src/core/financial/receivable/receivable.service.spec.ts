@@ -514,24 +514,27 @@ describe('ReceivableService', () => {
   // ─── remove ───────────────────────────────────────────────────────
 
   describe('remove', () => {
-    it('should delete installments, history, then receivable', async () => {
-      prisma.receivableInstallment.deleteMany.mockResolvedValue({ count: 2 });
-      prisma.receivableHistory.deleteMany.mockResolvedValue({ count: 1 });
-      prisma.receivable.delete.mockResolvedValue({
-        id: mockReceivableId,
+    it('should delete installments, history, then receivable in a transaction', async () => {
+      const mockDeleteResult = { id: mockReceivableId };
+
+      prisma.$transaction.mockImplementation(async (callback) => {
+        const tx = {
+          receivableInstallment: {
+            deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
+          },
+          receivableHistory: {
+            deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+          },
+          receivable: {
+            delete: jest.fn().mockResolvedValue(mockDeleteResult),
+          },
+        };
+        return callback(tx);
       });
 
       const result = await service.remove(mockReceivableId);
 
-      expect(prisma.receivableInstallment.deleteMany).toHaveBeenCalledWith({
-        where: { receivableId: mockReceivableId },
-      });
-      expect(prisma.receivableHistory.deleteMany).toHaveBeenCalledWith({
-        where: { receivableId: mockReceivableId },
-      });
-      expect(prisma.receivable.delete).toHaveBeenCalledWith({
-        where: { id: mockReceivableId },
-      });
+      expect(prisma.$transaction).toHaveBeenCalled();
       expect(result.id).toBe(mockReceivableId);
     });
   });

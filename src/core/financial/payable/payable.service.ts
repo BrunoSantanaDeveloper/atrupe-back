@@ -494,37 +494,46 @@ export class PayableService {
         dataToUpdate = { ...dataToUpdate, notes: updatedNotes };
       }
 
-      const updatedPayable = await this.prisma.payable.update({
-        where: { id },
-        data: dataToUpdate,
-      });
+      const updatedPayable = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.payable.update({
+          where: { id },
+          data: dataToUpdate,
+        });
 
-      // Registrar no histórico
-      if (userId) {
-        const changedFields = Object.keys(sanitizedDto).filter(
-          (key) => sanitizedDto[key] !== before[key],
-        );
+        // Registrar no histórico
+        if (userId) {
+          const changedFields = Object.keys(sanitizedDto).filter(
+            (key) => sanitizedDto[key] !== before[key],
+          );
 
-        if (changedFields.length > 0) {
-          await this.historyService.createPayableHistory({
-            payableId: id,
-            action: 'UPDATE_TITLE',
-            description: this.historyService.getUpdateTitleDescription({
-              after: sanitizedDto,
-            }),
-            changes: {
-              before,
-              after: sanitizedDto,
-            },
-            createdBy: userId,
-            createdByName: userName,
-          });
+          if (changedFields.length > 0) {
+            await tx.payableHistory.create({
+              data: {
+                payableId: id,
+                action: 'UPDATE_TITLE',
+                description: this.historyService.getUpdateTitleDescription({
+                  after: sanitizedDto,
+                }),
+                changes: {
+                  before,
+                  after: sanitizedDto,
+                },
+                createdBy: userId,
+                createdByName: userName,
+              },
+            });
+          }
         }
-      }
+
+        return updated;
+      });
 
       return updatedPayable;
     } catch (error) {
-      this.logger.error('Erro ao atualizar título da conta a pagar', error.stack);
+      this.logger.error(
+        'Erro ao atualizar título da conta a pagar',
+        error.stack,
+      );
       throw new Error('Failed to update payable title.');
     }
   }
@@ -649,13 +658,15 @@ export class PayableService {
   }
 
   async remove(id: string) {
-    await this.prisma.payableInstallment.deleteMany({
-      where: { payableId: id },
+    return await this.prisma.$transaction(async (tx) => {
+      await tx.payableInstallment.deleteMany({
+        where: { payableId: id },
+      });
+      await tx.payableHistory.deleteMany({
+        where: { payableId: id },
+      });
+      return await tx.payable.delete({ where: { id } });
     });
-    await this.prisma.payableHistory.deleteMany({
-      where: { payableId: id },
-    });
-    return await this.prisma.payable.delete({ where: { id } });
   }
 
   async count() {

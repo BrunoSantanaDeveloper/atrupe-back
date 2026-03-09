@@ -457,37 +457,46 @@ export class ReceivableService {
         dataToUpdate = { ...dataToUpdate, notes: updatedNotes };
       }
 
-      const updatedReceivable = await this.prisma.receivable.update({
-        where: { id },
-        data: dataToUpdate,
-      });
+      const updatedReceivable = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.receivable.update({
+          where: { id },
+          data: dataToUpdate,
+        });
 
-      // Registrar no histórico
-      if (userId) {
-        const changedFields = Object.keys(dto).filter(
-          (key) => dto[key] !== before[key],
-        );
+        // Registrar no histórico
+        if (userId) {
+          const changedFields = Object.keys(dto).filter(
+            (key) => dto[key] !== before[key],
+          );
 
-        if (changedFields.length > 0) {
-          await this.historyService.createReceivableHistory({
-            receivableId: id,
-            action: 'UPDATE_TITLE',
-            description: this.historyService.getUpdateTitleDescription({
-              after: dto,
-            }),
-            changes: {
-              before,
-              after: dto,
-            },
-            createdBy: userId,
-            createdByName: userName,
-          });
+          if (changedFields.length > 0) {
+            await tx.receivableHistory.create({
+              data: {
+                receivableId: id,
+                action: 'UPDATE_TITLE',
+                description: this.historyService.getUpdateTitleDescription({
+                  after: dto,
+                }),
+                changes: {
+                  before,
+                  after: dto,
+                } as any,
+                createdBy: userId,
+                createdByName: userName,
+              },
+            });
+          }
         }
-      }
+
+        return updated;
+      });
 
       return updatedReceivable;
     } catch (error) {
-      this.logger.error('Erro ao atualizar título da conta a receber', error.stack);
+      this.logger.error(
+        'Erro ao atualizar título da conta a receber',
+        error.stack,
+      );
       throw new Error('Failed to update receivable title.');
     }
   }
@@ -625,13 +634,15 @@ export class ReceivableService {
   }
 
   async remove(id: string) {
-    await this.prisma.receivableInstallment.deleteMany({
-      where: { receivableId: id },
+    return await this.prisma.$transaction(async (tx) => {
+      await tx.receivableInstallment.deleteMany({
+        where: { receivableId: id },
+      });
+      await tx.receivableHistory.deleteMany({
+        where: { receivableId: id },
+      });
+      return await tx.receivable.delete({ where: { id } });
     });
-    await this.prisma.receivableHistory.deleteMany({
-      where: { receivableId: id },
-    });
-    return await this.prisma.receivable.delete({ where: { id } });
   }
 
   async count() {
