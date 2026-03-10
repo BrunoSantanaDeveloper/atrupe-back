@@ -1,12 +1,13 @@
 import { Module } from '@nestjs/common';
+import { PrismaModule } from 'nestjs-prisma';
 import { ActivityMonitorService } from './activity-monitor.service';
 import { ActivityMonitorController } from './activity-monitor.controller';
 import { ActivityCleanupTask } from './tasks/activity-cleanup.task';
-import { PrismaService } from '../../config/prisma/prisma.service';
 
 @Module({
+  imports: [PrismaModule],
   controllers: [ActivityMonitorController],
-  providers: [ActivityMonitorService, ActivityCleanupTask, PrismaService],
+  providers: [ActivityMonitorService, ActivityCleanupTask],
   exports: [ActivityMonitorService],
 })
 export class ActivityMonitorModule {}

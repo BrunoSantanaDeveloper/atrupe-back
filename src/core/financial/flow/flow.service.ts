@@ -43,7 +43,7 @@ export class FlowService {
         status: { not: 'CANCELED' },
       },
     };
-    const filtersPayables: Record<string, unknown> = {
+    const filtersPayables: any = {
       payable: {
         companyId: filter.companyId,
         status: { not: 'CANCELED' },
