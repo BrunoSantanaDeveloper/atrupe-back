@@ -365,7 +365,10 @@ export class ClientService {
       return {
         total,
         lastPage,
-        data: clients,
+        data: clients.map(({ category, ...rest }) => ({
+          ...rest,
+          categoryRelation: category,
+        })),
       };
     } catch (e) {
       console.error(e);

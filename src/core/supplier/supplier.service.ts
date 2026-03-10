@@ -227,7 +227,10 @@ export class SupplierService {
       return {
         total,
         lastPage,
-        data: suppliers,
+        data: suppliers.map(({ category, ...rest }) => ({
+          ...rest,
+          categoryRelation: category,
+        })),
       };
     } catch (e) {
       console.error(e);
