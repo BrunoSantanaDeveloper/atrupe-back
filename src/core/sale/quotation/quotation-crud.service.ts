@@ -59,7 +59,10 @@ export class QuotationCrudService {
   /**
    * Cria um novo orçamento
    */
-  async create(createQuotationDto: CreateQuotationDto): Promise<Quotation> {
+  async create(
+    createQuotationDto: CreateQuotationDto,
+    userId?: string,
+  ): Promise<Quotation> {
     const {
       description,
       contactSourceId,
@@ -168,6 +171,30 @@ export class QuotationCrudService {
           },
         },
       });
+
+      // History: register creation
+      if (userId) {
+        try {
+          const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { name: true },
+          });
+          await this.prisma.quotationHistory.create({
+            data: {
+              quotationId: newQuotation.id,
+              action: 'CREATED',
+              description: `Orçamento criado por ${user?.name || 'Usuário'}`,
+              createdBy: userId,
+              createdByName: user?.name || null,
+            } as any,
+          });
+        } catch (historyError) {
+          this.logger.error(
+            'Error creating quotation creation history:',
+            historyError.stack,
+          );
+        }
+      }
 
       return newQuotation;
     } catch (error) {
@@ -476,7 +503,11 @@ export class QuotationCrudService {
   /**
    * Atualiza um orçamento
    */
-  async update(id: string, updateQuotationDto: UpdateQuotationDto) {
+  async update(
+    id: string,
+    updateQuotationDto: UpdateQuotationDto,
+    userId?: string,
+  ) {
     try {
       const existingQuotation = await this.prisma.quotation.findUnique({
         where: { id },
@@ -486,10 +517,51 @@ export class QuotationCrudService {
         throw new NotFoundException(`Orçamento com ID '${id}' não encontrado.`);
       }
 
-      return await this.prisma.quotation.update({
+      const updatedQuotation = await this.prisma.quotation.update({
         where: { id },
         data: updateQuotationDto,
       });
+
+      // History: register edit with before/after changes
+      if (userId) {
+        try {
+          const changedFields = Object.keys(updateQuotationDto).filter(
+            (key) => updateQuotationDto[key] !== existingQuotation[key],
+          );
+
+          if (changedFields.length > 0) {
+            const user = await this.prisma.user.findUnique({
+              where: { id: userId },
+              select: { name: true },
+            });
+
+            const before = {};
+            const after = {};
+            for (const field of changedFields) {
+              before[field] = existingQuotation[field];
+              after[field] = updateQuotationDto[field];
+            }
+
+            await this.prisma.quotationHistory.create({
+              data: {
+                quotationId: id,
+                action: 'EDITED',
+                description: `Orçamento editado por ${user?.name || 'Usuário'} — campos: ${changedFields.join(', ')}`,
+                changes: { before, after },
+                createdBy: userId,
+                createdByName: user?.name || null,
+              } as any,
+            });
+          }
+        } catch (historyError) {
+          this.logger.error(
+            'Error creating quotation edit history:',
+            historyError.stack,
+          );
+        }
+      }
+
+      return updatedQuotation;
     } catch (error) {
       throw error;
     }

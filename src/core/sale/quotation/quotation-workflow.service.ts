@@ -37,6 +37,60 @@ export class QuotationWorkflowService {
     private deliveryScheduleService: DeliveryScheduleService,
   ) {}
 
+  /**
+   * Resolve o nome do usuário a partir do userId
+   */
+  private async resolveUserName(userId?: string): Promise<string | null> {
+    if (!userId) return null;
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true },
+      });
+      return user?.name || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Cria um registro de histórico do orçamento (side-effect, non-blocking)
+   */
+  private async createQuotationHistoryEntry(data: {
+    quotationId: string;
+    action: string;
+    description: string;
+    changes?: any;
+    metadata?: any;
+    createdBy?: string;
+    createdByName?: string;
+  }): Promise<void> {
+    try {
+      await this.prisma.quotationHistory.create({ data: data as any });
+    } catch (error) {
+      this.logger.error('Error creating quotation history:', error.stack);
+    }
+  }
+
+  /**
+   * Cria um registro de histórico da ordem de serviço (side-effect, non-blocking)
+   */
+  private async createOrderHistoryEntry(data: {
+    orderId: string;
+    action: string;
+    description: string;
+    changes?: any;
+    metadata?: any;
+    createdBy?: string;
+    createdByName?: string;
+  }): Promise<void> {
+    try {
+      await this.prisma.orderHistory.create({ data: data as any });
+    } catch (error) {
+      this.logger.error('Error creating order history:', error.stack);
+    }
+  }
+
   // =====================================================
   // APPROVE HELPER METHODS
   // =====================================================
@@ -343,6 +397,26 @@ export class QuotationWorkflowService {
     // Post-TX: production stages (non-transactional, idempotent)
     await this.createProductionStages(order.quotationId, isTrial);
 
+    // History: register approval
+    if (userId) {
+      const userName = await this.resolveUserName(userId);
+      await this.createQuotationHistoryEntry({
+        quotationId,
+        action: 'APPROVED',
+        description: `Orçamento aprovado por ${userName || 'Usuário'}`,
+        createdBy: userId,
+        createdByName: userName,
+      });
+      await this.createOrderHistoryEntry({
+        orderId: order.id,
+        action: 'CREATED',
+        description: `Ordem de serviço criada via aprovação do orçamento`,
+        metadata: { quotationId },
+        createdBy: userId,
+        createdByName: userName,
+      });
+    }
+
     return order;
   }
 
@@ -600,6 +674,18 @@ export class QuotationWorkflowService {
         },
       });
 
+      // History: register rejection
+      if (userId) {
+        const userName = await this.resolveUserName(userId);
+        await this.createQuotationHistoryEntry({
+          quotationId,
+          action: 'REJECTED',
+          description: `Orçamento rejeitado por ${userName || 'Usuário'}`,
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
+
       return updatedQuotation;
     }
 
@@ -619,6 +705,22 @@ export class QuotationWorkflowService {
           reasonId: dto.reasonId,
         },
       });
+
+      // History: register rejection with reason
+      if (userId) {
+        const userName = await this.resolveUserName(userId);
+        await this.createQuotationHistoryEntry({
+          quotationId,
+          action: 'REJECTED',
+          description: `Orçamento rejeitado por ${userName || 'Usuário'}`,
+          metadata: {
+            reasonId: dto.reasonId,
+            reasonDescription: reason.reason,
+          },
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
 
       return updatedQuotation;
     } catch (error) {
@@ -763,6 +865,22 @@ export class QuotationWorkflowService {
         },
       });
 
+      // History: register finish
+      if (userId) {
+        const userName = await this.resolveUserName(userId);
+        await this.createQuotationHistoryEntry({
+          quotationId,
+          action: 'FINISHED',
+          description: `Orçamento concluído por ${userName || 'Usuário'}`,
+          metadata: {
+            finishedAt: finishedAt.toISOString(),
+            dueDate: newDueDate?.toISOString(),
+          },
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
+
       return updatedQuotation;
     } catch (error) {
       this.logger.error('Error finishing quotation:', error.stack);
@@ -803,6 +921,18 @@ export class QuotationWorkflowService {
           },
         },
       });
+
+      // History: register reopen
+      if (userId) {
+        const userName = await this.resolveUserName(userId);
+        await this.createQuotationHistoryEntry({
+          quotationId,
+          action: 'REOPENED',
+          description: `Orçamento reaberto por ${userName || 'Usuário'}`,
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
 
       return updatedQuotation;
     } catch (error) {

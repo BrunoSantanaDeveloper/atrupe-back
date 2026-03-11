@@ -39,8 +39,8 @@ export class QuotationService {
   // CRUD Operations → QuotationCrudService
   // =====================================================
 
-  create(dto: CreateQuotationDto): Promise<Quotation> {
-    return this.crudService.create(dto);
+  create(dto: CreateQuotationDto, userId?: string): Promise<Quotation> {
+    return this.crudService.create(dto, userId);
   }
 
   findAll(dto: FilterQuotationDto) {
@@ -59,8 +59,8 @@ export class QuotationService {
     return this.crudService.count();
   }
 
-  update(id: string, dto: UpdateQuotationDto) {
-    return this.crudService.update(id, dto);
+  update(id: string, dto: UpdateQuotationDto, userId?: string) {
+    return this.crudService.update(id, dto, userId);
   }
 
   remove(id: string) {

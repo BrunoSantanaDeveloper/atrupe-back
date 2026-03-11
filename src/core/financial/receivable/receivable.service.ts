@@ -959,12 +959,17 @@ export class ReceivableService {
 
       // Registrar no histórico
       if (userId) {
+        const hasDifference = difference && difference !== 0;
         await this.historyService.createReceivableHistory({
           receivableId: result.receivableId,
-          action: 'PAY_INSTALLMENT',
-          description: this.historyService.getPayInstallmentDescription(
-            updatedInstallment.installmentNumber,
-          ),
+          action: hasDifference ? 'PAID_WITH_DIFFERENCE' : 'PAY_INSTALLMENT',
+          description: hasDifference
+            ? this.historyService.getPayInstallmentDescription(
+                updatedInstallment.installmentNumber,
+              ) + ` (com diferença de ${(difference / 100).toFixed(2)})`
+            : this.historyService.getPayInstallmentDescription(
+                updatedInstallment.installmentNumber,
+              ),
           metadata: {
             installmentNumber: updatedInstallment.installmentNumber,
             amount: updatedInstallment.amount,
@@ -974,6 +979,13 @@ export class ReceivableService {
             paymentConditionName: updatedInstallment.paymentCondition?.name,
             bankAccountId: updatedInstallment.bankAccountId,
             bankAccountName: updatedInstallment.bankAccount?.name,
+            hasDifference: !!hasDifference,
+            differenceAmount: hasDifference ? difference : undefined,
+            differenceType: hasDifference
+              ? difference < 0
+                ? 'expense'
+                : 'income'
+              : undefined,
           },
           createdBy: userId,
           createdByName: userName,

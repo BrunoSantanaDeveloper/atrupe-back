@@ -75,8 +75,8 @@ export class QuotationController {
     status: 201,
     description: 'Orçamento criado com sucesso.',
   })
-  create(@Body() createQuotationDto: CreateQuotationDto) {
-    return this.quotationService.create(createQuotationDto);
+  create(@Body() createQuotationDto: CreateQuotationDto, @Req() req) {
+    return this.quotationService.create(createQuotationDto, req.user?.userId);
   }
   @Post(':id/add-product')
   @ApiOperation({ summary: 'Adiciona um produto a um orçamento' })
@@ -401,8 +401,13 @@ export class QuotationController {
   async update(
     @Param('id') id: string,
     @Body() updateQuotationDto: UpdateQuotationDto,
+    @Req() req,
   ) {
-    return await this.quotationService.update(id, updateQuotationDto);
+    return await this.quotationService.update(
+      id,
+      updateQuotationDto,
+      req.user?.userId,
+    );
   }
   @Delete('delete-imported')
   @ApiOperation({
