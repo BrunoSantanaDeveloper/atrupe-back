@@ -10,18 +10,20 @@ export class CreateContactDto {
   })
   name: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @ApiProperty({
     description: 'Email do contato',
     example: 'john.doe@example.com',
+    required: false,
   })
   email: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
   @ApiProperty({
     description: 'Telefone do contato',
     example: '+55 11 91234-5678',
+    required: false,
   })
   phone: string;
 
