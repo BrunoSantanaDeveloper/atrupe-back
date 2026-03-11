@@ -52,6 +52,7 @@ export class ProfileService {
           canApprovePreRegistration: true,
           canCancelSale: true,
           employees: {
+            where: { isActive: true },
             select: {
               id: true,
               name: true,
@@ -154,6 +155,7 @@ export class ProfileService {
       where: {
         sellerProfileId: null,
         companyId: companyId,
+        isActive: true,
       },
       select: {
         id: true,
