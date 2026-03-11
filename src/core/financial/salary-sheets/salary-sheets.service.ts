@@ -759,6 +759,82 @@ export class SalarySheetsService {
     return updatedSalaryItem;
   }
 
+  async deleteSalaryItem(itemId: string) {
+    const payrollItem = await this.prisma.payrollItem.findUnique({
+      where: { id: itemId },
+    });
+
+    if (!payrollItem) {
+      throw new NotFoundException('Item de folha de pagamento não encontrado.');
+    }
+
+    const payroll = await this.prisma.payroll.findUnique({
+      where: { id: payrollItem.payrollId },
+    });
+
+    if (!payroll || payroll.status !== 'OPEN') {
+      throw new BadRequestException(
+        'Folha de pagamento não encontrada ou não está aberta.',
+      );
+    }
+
+    // Para adiantamentos, verificar se o payable associado já foi pago
+    if (payrollItem.type === 'ADVANCE') {
+      const advanceDescription = `Folha ${String(payroll.month + 1).padStart(2, '0')}/${payroll.year} - ${payrollItem.description}`;
+
+      const advancePayable = await this.prisma.payable.findFirst({
+        where: {
+          companyId: payroll.companyId,
+          employeeId: payroll.employeeId,
+          expenseSource: 'EMPLOYEE',
+          description: advanceDescription,
+        },
+        include: {
+          installments: true,
+        },
+      });
+
+      if (advancePayable) {
+        const hasPaidInstallment = advancePayable.installments.some(
+          (installment) => installment.status === 'PAID',
+        );
+
+        if (hasPaidInstallment) {
+          throw new BadRequestException(
+            'Não é possível excluir este adiantamento. O pagamento já foi realizado. Estorne o pagamento antes de excluir.',
+          );
+        }
+      }
+    }
+
+    // Excluir o item
+    await this.prisma.payrollItem.delete({
+      where: { id: itemId },
+    });
+
+    // Sincronizar despesas
+    if (payrollItem.type === 'ADVANCE') {
+      // Excluir a despesa do adiantamento
+      await this.expenseService.deleteAdvanceExpense(
+        payroll,
+        payrollItem.description,
+      );
+      // Atualizar a despesa principal do salário (que inclui o desconto do adiantamento)
+      await this.expenseService.updateSalaryExpense(payroll);
+      this.logger.log(
+        `Adiantamento ${itemId} excluído da folha ${payroll.id} - Despesas sincronizadas`,
+      );
+    } else {
+      // Para INCREASE e DISCOUNT, apenas recalcular a despesa principal
+      await this.expenseService.updateSalaryExpense(payroll);
+      this.logger.log(
+        `Item ${payrollItem.type} ${itemId} excluído da folha ${payroll.id} - Despesa de salário sincronizada`,
+      );
+    }
+
+    return { success: true, message: 'Item excluído com sucesso.' };
+  }
+
   async toggleSalarySheetStatus(dto: ToggleSalarySheetStatusDto) {
     const { payrollId, status } = dto;
 

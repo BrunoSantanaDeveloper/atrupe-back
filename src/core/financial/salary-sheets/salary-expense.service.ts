@@ -355,4 +355,62 @@ export class SalaryExpenseService {
       );
     }
   }
+
+  async deleteAdvanceExpense(payroll: any, description: string) {
+    try {
+      const advanceDescription = `Folha ${String(payroll.month + 1).padStart(2, '0')}/${payroll.year} - ${description}`;
+
+      const existingAdvancePayable = await this.prisma.payable.findFirst({
+        where: {
+          companyId: payroll.companyId,
+          employeeId: payroll.employeeId,
+          expenseSource: 'EMPLOYEE',
+          description: advanceDescription,
+        },
+        include: {
+          installments: true,
+        },
+      });
+
+      if (!existingAdvancePayable) {
+        this.logger.warn(
+          `Despesa de adiantamento não encontrada para exclusão: ${advanceDescription}`,
+        );
+        return;
+      }
+
+      // Verificar se alguma parcela já foi paga
+      const hasPaidInstallment = existingAdvancePayable.installments.some(
+        (installment) => installment.status === 'PAID',
+      );
+
+      if (hasPaidInstallment) {
+        this.logger.warn(
+          `Despesa de adiantamento ${existingAdvancePayable.id} possui parcelas pagas, não será excluída`,
+        );
+        return;
+      }
+
+      await this.prisma.$transaction(async (prisma) => {
+        // Excluir installments primeiro
+        await prisma.payableInstallment.deleteMany({
+          where: { payableId: existingAdvancePayable.id },
+        });
+
+        // Excluir payable
+        await prisma.payable.delete({
+          where: { id: existingAdvancePayable.id },
+        });
+      });
+
+      this.logger.log(
+        `Despesa de adiantamento excluída: ${existingAdvancePayable.id}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Erro ao excluir despesa de adiantamento: ${error.message}`,
+      );
+      throw error;
+    }
+  }
 }

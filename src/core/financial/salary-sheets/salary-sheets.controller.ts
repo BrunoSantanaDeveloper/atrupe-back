@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -460,6 +461,33 @@ export class SalarySheetsController {
       itemId,
       updateSalaryItemDto,
     );
+  }
+
+  @Delete('item/:itemId')
+  @ApiOperation({
+    summary: 'Excluir item da folha de pagamento',
+    description:
+      'Remove um item (acréscimo, desconto ou adiantamento) da folha de pagamento. Para adiantamentos, exclui também a despesa financeira associada.',
+  })
+  @ApiParam({
+    name: 'itemId',
+    required: true,
+    description: 'ID do item a ser excluído',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Item excluído com sucesso',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Item não pode ser excluído (adiantamento já pago ou folha não está aberta)',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Item não encontrado',
+  })
+  async deleteSalaryItem(@Param('itemId') itemId: string) {
+    return await this.salaryService.deleteSalaryItem(itemId);
   }
 
   @Patch('toggle')
