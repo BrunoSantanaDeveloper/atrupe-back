@@ -129,6 +129,32 @@ export class AcademyService {
     }
   }
 
+  async toggleAcademyProgress(data: CreateAcademyProgressDto) {
+    const existing = await this.prisma.academyProgress.findFirst({
+      where: {
+        academySystemId: data.itemId,
+        companyId: data.companyId,
+      },
+    });
+
+    if (existing) {
+      await this.prisma.academyProgress.delete({
+        where: { id: existing.id },
+      });
+      return { checked: false };
+    }
+
+    await this.prisma.academyProgress.create({
+      data: {
+        academySystemId: data.itemId,
+        companyId: data.companyId,
+        checked: true,
+        completedAt: new Date(),
+      },
+    });
+    return { checked: true };
+  }
+
   async extractData() {
     const companyBase = '2a190fe8-e7af-4d75-8673-494dbae0372b';
     const products = await this.prisma.product.findMany({

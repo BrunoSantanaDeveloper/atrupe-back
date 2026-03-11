@@ -60,6 +60,17 @@ export class AcademyController {
     );
   }
 
+  @Post('progress/toggle')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  async toggleAcademyProgress(
+    @Req() req,
+    @Body() data: CreateAcademyProgressDto,
+  ) {
+    data.companyId = req.user.companyId;
+    return await this.academyService.toggleAcademyProgress(data);
+  }
+
   @Post('progress')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
