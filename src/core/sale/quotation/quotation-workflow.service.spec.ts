@@ -10,6 +10,7 @@ const mockCompanyId = 'company-uuid-123';
 const mockQuotationId = 'quotation-uuid-456';
 const mockOrderId = 'order-uuid-789';
 const mockUserId = 'user-uuid-101';
+const mockUserName = 'Test User';
 
 const mockOrder = {
   id: mockOrderId,
@@ -65,6 +66,15 @@ const createMockPrismaService = () => ({
   },
   companySector: {
     findFirst: jest.fn(),
+  },
+  user: {
+    findUnique: jest.fn().mockResolvedValue({ name: mockUserName }),
+  },
+  quotationHistory: {
+    create: jest.fn(),
+  },
+  orderHistory: {
+    create: jest.fn(),
   },
   $transaction: jest.fn(),
 });
@@ -167,6 +177,22 @@ describe('QuotationWorkflowService', () => {
 
       expect(result).toBeDefined();
       expect(result.id).toBe(mockOrderId);
+
+      // Verify history was created
+      expect(prisma.quotationHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          quotationId: mockQuotationId,
+          action: 'APPROVED',
+          createdBy: mockUserId,
+        }),
+      });
+      expect(prisma.orderHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          orderId: mockOrderId,
+          action: 'CREATED',
+          createdBy: mockUserId,
+        }),
+      });
     });
 
     it('should throw NotFoundException if quotation not found', async () => {
@@ -192,6 +218,15 @@ describe('QuotationWorkflowService', () => {
       const result = await service.reject(mockQuotationId, {}, mockUserId);
 
       expect(result.status).toBe(QuotationStatus.REJECTED);
+
+      // Verify history was created
+      expect(prisma.quotationHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          quotationId: mockQuotationId,
+          action: 'REJECTED',
+          createdBy: mockUserId,
+        }),
+      });
     });
 
     it('should throw BadRequestException if quotation is approved', async () => {
@@ -228,6 +263,15 @@ describe('QuotationWorkflowService', () => {
       const result = await service.open(mockQuotationId, mockUserId);
 
       expect(result.status).toBe(QuotationStatus.OPEN);
+
+      // Verify history was created
+      expect(prisma.quotationHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          quotationId: mockQuotationId,
+          action: 'REOPENED',
+          createdBy: mockUserId,
+        }),
+      });
     });
 
     it('should throw BadRequestException if quotation is approved', async () => {
@@ -267,6 +311,15 @@ describe('QuotationWorkflowService', () => {
       const result = await service.finish(mockQuotationId, mockUserId);
 
       expect(result.status).toBe(QuotationStatus.DONE);
+
+      // Verify history was created
+      expect(prisma.quotationHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          quotationId: mockQuotationId,
+          action: 'FINISHED',
+          createdBy: mockUserId,
+        }),
+      });
     });
 
     it('should throw BadRequestException if approved', async () => {
