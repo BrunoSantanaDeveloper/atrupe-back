@@ -397,7 +397,10 @@ export class FlowService {
         data: groupedData.slice((+page - 1) * +limit, +page * +limit),
       };
     } catch (error) {
-      this.logger.error('Erro ao buscar dados do fluxo financeiro', error.stack);
+      this.logger.error(
+        'Erro ao buscar dados do fluxo financeiro',
+        error.stack,
+      );
       throw new InternalServerErrorException(
         'Error fetching financial flow data',
       );

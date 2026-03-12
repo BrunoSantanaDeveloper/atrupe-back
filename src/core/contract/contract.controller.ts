@@ -53,4 +53,10 @@ export class ContractController {
   async getTerms(@Res() res: Response) {
     return this.contractService.findContract(res);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('accepted')
+  async getAcceptedContract(@Req() req: RequestWithUser) {
+    return this.contractService.getAcceptedContract(req.user.userId);
+  }
 }

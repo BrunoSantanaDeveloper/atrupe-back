@@ -37,7 +37,9 @@ export class PayableService {
     return this.baseService.getActualStatus(installment);
   }
 
-  private applyDynamicStatus<T extends InstallmentStatusCheck>(installment: T): T & { status: string } {
+  private applyDynamicStatus<T extends InstallmentStatusCheck>(
+    installment: T,
+  ): T & { status: string } {
     return this.baseService.applyDynamicStatus(installment);
   }
 
@@ -1650,4 +1652,3 @@ export class PayableService {
     });
   }
 }
-

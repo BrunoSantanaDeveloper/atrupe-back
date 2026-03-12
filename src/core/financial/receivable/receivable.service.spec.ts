@@ -3,10 +3,7 @@ import { ReceivableService } from './receivable.service';
 import { PrismaService } from 'nestjs-prisma';
 import { FinancialHistoryService } from '../history/history.service';
 import { BaseTransactionService } from '../utils/base-transaction.service';
-import {
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 const mockCompanyId = 'company-uuid-123';
 const mockReceivableId = 'receivable-uuid-456';
@@ -84,9 +81,7 @@ const createMockHistoryService = () => ({
   getUndoCancelDescription: jest
     .fn()
     .mockReturnValue('Cancelamento desfeito - título reativado'),
-  getPayInstallmentDescription: jest
-    .fn()
-    .mockReturnValue('Parcela 1 paga'),
+  getPayInstallmentDescription: jest.fn().mockReturnValue('Parcela 1 paga'),
   getUndoPaymentDescription: jest
     .fn()
     .mockReturnValue('Pagamento da parcela 1 desfeito'),
@@ -110,7 +105,10 @@ describe('ReceivableService', () => {
         ReceivableService,
         { provide: PrismaService, useValue: prisma },
         { provide: FinancialHistoryService, useValue: historyService },
-        { provide: BaseTransactionService, useValue: new BaseTransactionService(prisma as any) },
+        {
+          provide: BaseTransactionService,
+          useValue: new BaseTransactionService(prisma as any),
+        },
       ],
     }).compile();
 
@@ -285,8 +283,18 @@ describe('ReceivableService', () => {
           receivableInstallment: {
             createMany: jest.fn().mockResolvedValue({ count: 2 }),
             findMany: jest.fn().mockResolvedValue([
-              { id: 'inst-1', installmentNumber: 1, status: 'PENDING', bankAccountId: mockBankAccountId },
-              { id: 'inst-2', installmentNumber: 2, status: 'PENDING', bankAccountId: mockBankAccountId },
+              {
+                id: 'inst-1',
+                installmentNumber: 1,
+                status: 'PENDING',
+                bankAccountId: mockBankAccountId,
+              },
+              {
+                id: 'inst-2',
+                installmentNumber: 2,
+                status: 'PENDING',
+                bankAccountId: mockBankAccountId,
+              },
             ]),
           },
           bankAccount: {
@@ -332,11 +340,18 @@ describe('ReceivableService', () => {
 
       prisma.$transaction.mockImplementation(async (callback) => {
         const tx = {
-          receivable: { create: jest.fn().mockResolvedValue(mockCreatedReceivable) },
+          receivable: {
+            create: jest.fn().mockResolvedValue(mockCreatedReceivable),
+          },
           receivableInstallment: {
             createMany: jest.fn().mockResolvedValue({ count: 1 }),
             findMany: jest.fn().mockResolvedValue([
-              { id: 'inst-1', installmentNumber: 1, status: 'PENDING', bankAccountId: mockBankAccountId },
+              {
+                id: 'inst-1',
+                installmentNumber: 1,
+                status: 'PENDING',
+                bankAccountId: mockBankAccountId,
+              },
             ]),
           },
           bankAccount: { findFirst: jest.fn() },

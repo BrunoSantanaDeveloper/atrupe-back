@@ -42,5 +42,4 @@ export type ReceivableInstallmentWhereInput =
 /**
  * Filtro dinâmico para queries de payable installments.
  */
-export type PayableInstallmentWhereInput =
-  Prisma.PayableInstallmentWhereInput;
+export type PayableInstallmentWhereInput = Prisma.PayableInstallmentWhereInput;

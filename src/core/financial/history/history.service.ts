@@ -27,7 +27,10 @@ export class FinancialHistoryService {
         },
       });
     } catch (error) {
-      this.logger.error('Erro ao criar histórico de conta a receber', error.stack);
+      this.logger.error(
+        'Erro ao criar histórico de conta a receber',
+        error.stack,
+      );
       // Não lançar erro para não quebrar a operação principal
       return null;
     }
@@ -50,7 +53,10 @@ export class FinancialHistoryService {
         },
       });
     } catch (error) {
-      this.logger.error('Erro ao criar histórico de conta a pagar', error.stack);
+      this.logger.error(
+        'Erro ao criar histórico de conta a pagar',
+        error.stack,
+      );
       // Não lançar erro para não quebrar a operação principal
       return null;
     }
@@ -133,7 +139,9 @@ export class FinancialHistoryService {
     return 'Título criado';
   }
 
-  getUpdateTitleDescription(changes: { after?: Record<string, unknown> | object }): string {
+  getUpdateTitleDescription(changes: {
+    after?: Record<string, unknown> | object;
+  }): string {
     const changedFields = Object.keys(changes.after || {});
     return `Título atualizado: ${changedFields.join(', ')}`;
   }

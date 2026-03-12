@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import {
   ReceivableWithInstallments,
@@ -310,10 +306,7 @@ export class BaseTransactionService {
         `${canceledCount} títulos relacionados cancelados para a venda ${quotationId}`,
       );
     } catch (error) {
-      this.logger.error(
-        'Erro ao cancelar títulos relacionados',
-        error.stack,
-      );
+      this.logger.error('Erro ao cancelar títulos relacionados', error.stack);
     }
   }
 
@@ -332,8 +325,7 @@ export class BaseTransactionService {
           },
           payable: {
             status: 'CANCELED',
-            cancelReason:
-              'Cancelamento automático - título da venda cancelado',
+            cancelReason: 'Cancelamento automático - título da venda cancelado',
           },
         },
         include: {
@@ -359,8 +351,7 @@ export class BaseTransactionService {
         where: {
           quotationId,
           status: 'CANCELED',
-          cancelReason:
-            'Cancelamento automático - título da venda cancelado',
+          cancelReason: 'Cancelamento automático - título da venda cancelado',
           financialType: 'DOWN_PAYMENT',
         },
         include: {
@@ -381,8 +372,7 @@ export class BaseTransactionService {
         where: {
           quotationId,
           status: 'CANCELED',
-          cancelReason:
-            'Cancelamento automático - título da venda cancelado',
+          cancelReason: 'Cancelamento automático - título da venda cancelado',
           financialType: 'DELIVERY',
         },
         include: {
@@ -402,10 +392,7 @@ export class BaseTransactionService {
         `${reactivatedCount} títulos relacionados reativados para a venda ${quotationId}`,
       );
     } catch (error) {
-      this.logger.error(
-        'Erro ao reativar títulos relacionados',
-        error.stack,
-      );
+      this.logger.error('Erro ao reativar títulos relacionados', error.stack);
     }
   }
 }

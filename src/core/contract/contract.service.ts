@@ -117,4 +117,48 @@ export class ContractService {
 
     return contract;
   }
+
+  async getAcceptedContract(userId: string) {
+    try {
+      const userContract = await this.prisma.userContract.findFirst({
+        where: { userId },
+        orderBy: { acceptedAt: 'desc' },
+        include: { contract: true },
+      });
+
+      if (!userContract) {
+        throw new NotFoundException('No accepted contract found for this user');
+      }
+
+      let html = userContract.contract.contentUrl;
+
+      if (!html && userContract.contract.version === 1) {
+        const filePath = path.join(
+          process.cwd(),
+          'src',
+          'assets',
+          'terms.docx',
+        );
+        const fileBuffer = await fs.promises.readFile(filePath);
+        const result = await mammoth.convertToHtml({ buffer: fileBuffer });
+        html = result.value;
+      }
+
+      return {
+        html,
+        contractId: userContract.contractId,
+        version: userContract.contract.version,
+        acceptedAt: userContract.acceptedAt,
+        ipAddress: userContract.ipAddress,
+      };
+    } catch (error) {
+      console.error('Error fetching accepted contract:', error);
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Error fetching accepted contract',
+      );
+    }
+  }
 }

@@ -190,7 +190,8 @@ export class CreditLimitService {
       throw new NotFoundException(`CreditLimitDefault for ${type} not found`);
     }
 
-    const updateData: { minValue?: number | null; maxValue?: number | null } = {};
+    const updateData: { minValue?: number | null; maxValue?: number | null } =
+      {};
     if (data.minValue !== undefined) updateData.minValue = data.minValue;
     if (data.maxValue !== undefined) updateData.maxValue = data.maxValue;
 

@@ -39,7 +39,9 @@ export class ReceivableService {
     return this.baseService.getActualStatus(installment);
   }
 
-  private applyDynamicStatus<T extends InstallmentStatusCheck>(installment: T): T & { status: string } {
+  private applyDynamicStatus<T extends InstallmentStatusCheck>(
+    installment: T,
+  ): T & { status: string } {
     return this.baseService.applyDynamicStatus(installment);
   }
 
@@ -621,14 +623,19 @@ export class ReceivableService {
 
       // Reativa títulos relacionados se for um título principal da venda
       if (receivable.quotationId && receivable.financialType === 'MAIN') {
-        await this.baseService.reactivateRelatedFinancials(receivable.quotationId);
+        await this.baseService.reactivateRelatedFinancials(
+          receivable.quotationId,
+        );
       }
 
       return {
         message: 'Cancelamento da conta a receber desfeito com sucesso.',
       };
     } catch (error) {
-      this.logger.error('Erro ao desfazer cancelamento da conta a receber', error.stack);
+      this.logger.error(
+        'Erro ao desfazer cancelamento da conta a receber',
+        error.stack,
+      );
       throw error;
     }
   }

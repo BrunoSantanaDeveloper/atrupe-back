@@ -480,7 +480,8 @@ export class SalarySheetsController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Item não pode ser excluído (adiantamento já pago ou folha não está aberta)',
+    description:
+      'Item não pode ser excluído (adiantamento já pago ou folha não está aberta)',
   })
   @ApiResponse({
     status: 404,

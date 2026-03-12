@@ -645,7 +645,11 @@ export class SalarySheetsService {
       });
       if (type === 'ADVANCE') {
         // Para adiantamentos, criar despesa específica E atualizar despesa principal de salário
-        await this.expenseService.createAdvanceExpense(payroll, amount, description);
+        await this.expenseService.createAdvanceExpense(
+          payroll,
+          amount,
+          description,
+        );
         await this.expenseService.updateSalaryExpense(payroll); // Reduz o salário principal
         this.logger.log(
           `Adiantamento criado para folha ${payrollId}, valor: ${amount} - Despesas sincronizadas`,
@@ -746,7 +750,10 @@ export class SalarySheetsService {
 
     if (oldType === 'ADVANCE' || newType === 'ADVANCE') {
       // Se era ou virou adiantamento, atualizar despesa de adiantamento
-      await this.expenseService.updateAdvanceExpense(updatedSalaryItem, oldAmount);
+      await this.expenseService.updateAdvanceExpense(
+        updatedSalaryItem,
+        oldAmount,
+      );
     }
 
     // SEMPRE atualizar a despesa principal quando houver alterações

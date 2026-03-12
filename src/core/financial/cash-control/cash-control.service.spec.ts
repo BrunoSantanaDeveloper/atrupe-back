@@ -1,10 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CashControlService } from './cash-control.service';
 import { PrismaService } from 'nestjs-prisma';
-import {
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 const mockCompanyId = 'company-uuid-123';
 const mockCashRegisterId = 'cash-uuid-456';
@@ -92,9 +89,9 @@ describe('CashControlService', () => {
         id: 'existing-register',
       });
 
-      await expect(
-        service.openCashRegister(openDto as any),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.openCashRegister(openDto as any)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw when no payment method config exists', async () => {
@@ -103,9 +100,9 @@ describe('CashControlService', () => {
         .mockResolvedValueOnce(null); // no last closed
       prisma.bankAccountCashControl.findMany.mockResolvedValue([]);
 
-      await expect(
-        service.openCashRegister(openDto as any),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.openCashRegister(openDto as any)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should create register with opening balance from last closed', async () => {
@@ -274,9 +271,9 @@ describe('CashControlService', () => {
     it('should throw NotFoundException when not found', async () => {
       prisma.cashRegister.findUnique.mockResolvedValue(null);
 
-      await expect(
-        service.findOneCashRegister('invalid-id'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.findOneCashRegister('invalid-id')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should return formatted register with transactions', async () => {
@@ -320,9 +317,9 @@ describe('CashControlService', () => {
     it('should throw NotFoundException when not found', async () => {
       prisma.cashRegister.findUnique.mockResolvedValue(null);
 
-      await expect(
-        service.reopenCashRegister('invalid-id'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.reopenCashRegister('invalid-id')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should update status to OPEN', async () => {
