@@ -118,16 +118,63 @@ export class ContractService {
     return contract;
   }
 
-  async getAcceptedContract(userId: string) {
+  async getAcceptedContract(userId: string, req?: any) {
     try {
-      const userContract = await this.prisma.userContract.findFirst({
+      let userContract = await this.prisma.userContract.findFirst({
         where: { userId },
         orderBy: { acceptedAt: 'desc' },
         include: { contract: true },
       });
 
       if (!userContract) {
-        throw new NotFoundException('No accepted contract found for this user');
+        // JIT Fallback para usuários antigos que já assinaram mas não tem registro de aceite
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          include: {
+            customer: true,
+            userRole: { include: { role: true } },
+          },
+        });
+
+        const companyId = user?.customer?.companyId;
+        const isAdmin = user?.userRole?.some(
+          (ur) => ur.role.name === 'Admin' || ur.isSystemAdmin,
+        );
+
+        if (companyId) {
+          const activeSubscription = await this.prisma.subscription.findFirst({
+            where: {
+              companyId: companyId,
+              plan: { planType: { not: 'TRIAL' } },
+            },
+            orderBy: { createdAt: 'desc' },
+          });
+
+          if (activeSubscription && isAdmin) {
+            const latestContract = await this.prisma.contract.findFirst({
+              orderBy: { version: 'desc' },
+            });
+
+            if (latestContract) {
+              userContract = await this.prisma.userContract.create({
+                data: {
+                  userId,
+                  contractId: latestContract.id,
+                  acceptedAt: activeSubscription.createdAt,
+                  ipAddress: req?.ip || '0.0.0.0',
+                  userAgent: `${req?.headers?.['user-agent'] || 'Unknown'} (JIT Fallback)`,
+                },
+                include: { contract: true },
+              });
+            }
+          }
+        }
+
+        if (!userContract) {
+          throw new NotFoundException(
+            'No accepted contract found for this user',
+          );
+        }
       }
 
       let html = userContract.contract.contentUrl;

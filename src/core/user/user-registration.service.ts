@@ -95,6 +95,7 @@ export class UserRegistrationService {
     await this.mailerService
       .sendMail({
         to: email,
+        bcc: 'danilo.santana@tribodev.com.br',
         subject: 'Validação de E-mail',
         template: 'email-validation',
         context: { token },

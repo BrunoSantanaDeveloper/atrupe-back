@@ -31,6 +31,9 @@ export class SubscriptionsService {
       where: {
         companyId,
       },
+      orderBy: {
+        createdAt: 'desc',
+      },
       include: {
         plan: {
           include: {
@@ -60,6 +63,7 @@ export class SubscriptionsService {
     const subscription = await this.prisma.subscription.findFirst({
       where: { companyId },
       select: { id: true, plan: { select: { name: true } } },
+      orderBy: { createdAt: 'desc' },
     });
 
     if (!subscription) {
@@ -278,6 +282,33 @@ export class SubscriptionsService {
           }
         }
 
+        // Registrar o aceite do contrato
+        const latestContract = await tx.contract.findFirst({
+          orderBy: { version: 'desc' },
+        });
+
+        if (latestContract) {
+          const existingAcceptance = await tx.userContract.findUnique({
+            where: {
+              userId_contractId: {
+                userId: request.user.userId,
+                contractId: latestContract.id,
+              },
+            },
+          });
+
+          if (!existingAcceptance) {
+            await tx.userContract.create({
+              data: {
+                userId: request.user.userId,
+                contractId: latestContract.id,
+                ipAddress: request.ip || '0.0.0.0',
+                userAgent: request.headers['user-agent'] || '',
+              },
+            });
+          }
+        }
+
         return newSubscription;
       });
 
@@ -485,6 +516,33 @@ export class SubscriptionsService {
       this.logger.log(
         `Copiadas ${activeFeatures.length} features para nova subscription ${newSubscription.id}`,
       );
+    }
+
+    // Registrar o aceite do contrato
+    const latestContract = await this.prisma.contract.findFirst({
+      orderBy: { version: 'desc' },
+    });
+
+    if (latestContract) {
+      const existingAcceptance = await this.prisma.userContract.findUnique({
+        where: {
+          userId_contractId: {
+            userId: request.user.userId,
+            contractId: latestContract.id,
+          },
+        },
+      });
+
+      if (!existingAcceptance) {
+        await this.prisma.userContract.create({
+          data: {
+            userId: request.user.userId,
+            contractId: latestContract.id,
+            ipAddress: request.ip || '0.0.0.0',
+            userAgent: request.headers['user-agent'] || '',
+          },
+        });
+      }
     }
 
     return newSubscription;

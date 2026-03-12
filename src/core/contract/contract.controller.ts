@@ -57,6 +57,6 @@ export class ContractController {
   @UseGuards(JwtAuthGuard)
   @Get('accepted')
   async getAcceptedContract(@Req() req: RequestWithUser) {
-    return this.contractService.getAcceptedContract(req.user.userId);
+    return this.contractService.getAcceptedContract(req.user.userId, req);
   }
 }
