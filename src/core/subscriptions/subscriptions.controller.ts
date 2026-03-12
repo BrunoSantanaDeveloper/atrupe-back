@@ -535,6 +535,30 @@ export class SubscriptionsController {
     return await this.subscriptionBlockService.handleCron();
   }
 
+  @Get('my-payments')
+  @ApiOperation({
+    summary: 'Lista pagamentos da assinatura do usuário logado',
+    description:
+      'Retorna lista paginada de pagamentos vinculados à subscription ativa da empresa do usuário.',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de pagamentos',
+  })
+  async getMyPayments(
+    @Req() req,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return await this.subscriptionsService.listPaymentsByCompanyId(
+      req.user.companyId,
+      Number(page) || 1,
+      Number(limit) || 10,
+    );
+  }
+
   @Get('my-pending-payment')
   @ApiOperation({
     summary: 'Obtém URL de pagamento pendente para a empresa do usuário logado',

@@ -56,6 +56,43 @@ export class SubscriptionsService {
     });
   }
 
+  async listPaymentsByCompanyId(companyId: string, page = 1, limit = 10) {
+    const subscription = await this.prisma.subscription.findFirst({
+      where: { companyId },
+      select: { id: true, plan: { select: { name: true } } },
+    });
+
+    if (!subscription) {
+      return { data: [], total: 0, page, lastPage: 1 };
+    }
+
+    const where = { subscriptionId: subscription.id };
+    const [data, total] = await Promise.all([
+      this.prisma.payment.findMany({
+        where,
+        orderBy: { dueDate: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          subscription: {
+            select: {
+              additionalUsers: true,
+              plan: { select: { name: true, basePrice: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.payment.count({ where }),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      lastPage: Math.ceil(total / limit) || 1,
+    };
+  }
+
   async create(createSubscriptionDto: CreateSubscriptionDto, request) {
     createSubscriptionDto.customer.userId = request.user.userId;
     createSubscriptionDto.customer.companyId = request.user.companyId;
