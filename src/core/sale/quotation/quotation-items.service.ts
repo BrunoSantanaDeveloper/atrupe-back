@@ -156,7 +156,7 @@ export class QuotationItemsService {
             ...(data.notes !== undefined && { notes: data.notes }),
             ...(data.discount !== undefined && { discount: data.discount }),
             ...(data.discountType && { discountType: data.discountType }),
-            ...(data.technicalDescription && {
+            ...(data.technicalDescription !== undefined && {
               technicalDescription: data.technicalDescription,
             }),
             ...(data.quantity && {
