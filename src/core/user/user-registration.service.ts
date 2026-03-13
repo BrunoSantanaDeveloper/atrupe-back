@@ -69,7 +69,7 @@ export class UserRegistrationService {
     } while (isUnique);
 
     const resetPasswordExpires = new Date();
-    resetPasswordExpires.setMinutes(resetPasswordExpires.getMinutes() + 2);
+    resetPasswordExpires.setMinutes(resetPasswordExpires.getMinutes() + 10);
 
     await this.prisma.mailVerification.upsert({
       where: { email },
@@ -95,7 +95,6 @@ export class UserRegistrationService {
     await this.mailerService
       .sendMail({
         to: email,
-        bcc: 'danilo.santana@tribodev.com.br',
         subject: 'Validação de E-mail',
         template: 'email-validation',
         context: { token },

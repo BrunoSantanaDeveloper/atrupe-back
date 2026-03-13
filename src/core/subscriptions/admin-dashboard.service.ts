@@ -91,6 +91,8 @@ export class AdminDashboardService {
           email: verification.email,
           createdAt: verification.createdAt,
           emailVerified: verification.verified,
+          token: verification.token,
+          expiresAt: verification.expiresAt,
         });
 
         return acc;
