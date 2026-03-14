@@ -331,7 +331,12 @@ export class ReceivableController {
   getReceiptData(
     @Param('installmentId') installmentId: string,
     @Query('paidDate') paidDate?: string,
+    @Query('paidAmount') paidAmount?: string,
   ): Promise<ReceiptDataResponseDto> {
-    return this.receivableService.getReceiptData(installmentId, paidDate);
+    return this.receivableService.getReceiptData(
+      installmentId,
+      paidDate,
+      paidAmount,
+    );
   }
 }

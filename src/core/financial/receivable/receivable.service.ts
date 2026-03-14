@@ -1624,6 +1624,7 @@ export class ReceivableService {
   async getReceiptData(
     installmentId: string,
     paidDate?: string,
+    paidAmount?: string,
   ): Promise<ReceiptDataResponseDto> {
     // Buscar a parcela com todas as informações necessárias
     const installment = await this.prisma.receivableInstallment.findUnique({
@@ -1676,9 +1677,20 @@ export class ReceivableService {
       throw new NotFoundException('Empresa não encontrada.');
     }
 
-    // Calcular o valor total da parcela
-    const totalValue =
-      (installment.amount || 0) + (installment.additionalFee || 0);
+    // Calcular o valor base do recibo (usar paidAmount do frontend, ou do DB se estiver paga/parcialmente paga, senão usar valor original)
+    let baseAmount = installment.amount || 0;
+    if (paidAmount && !isNaN(Number(paidAmount))) {
+      baseAmount = Number(paidAmount);
+    } else if (installment.status === 'PAID') {
+      if (
+        installment.paidAmount !== null &&
+        installment.paidAmount !== undefined
+      ) {
+        baseAmount = installment.paidAmount;
+      }
+    }
+
+    const totalValue = baseAmount + (installment.additionalFee || 0);
 
     // Formatar data do recibo (usar data de pagamento se existir, senão data de vencimento)
     let receiptDate = installment.paidDate || installment.dueDate || new Date();
