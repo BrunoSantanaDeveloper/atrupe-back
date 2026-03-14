@@ -330,7 +330,8 @@ export class ReceivableController {
   @ApiResponse({ status: 404, description: 'Parcela não encontrada.' })
   getReceiptData(
     @Param('installmentId') installmentId: string,
+    @Query('paidDate') paidDate?: string,
   ): Promise<ReceiptDataResponseDto> {
-    return this.receivableService.getReceiptData(installmentId);
+    return this.receivableService.getReceiptData(installmentId, paidDate);
   }
 }

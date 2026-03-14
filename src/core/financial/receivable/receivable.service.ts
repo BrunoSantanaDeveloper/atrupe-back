@@ -1621,7 +1621,10 @@ export class ReceivableService {
     });
   }
 
-  async getReceiptData(installmentId: string): Promise<ReceiptDataResponseDto> {
+  async getReceiptData(
+    installmentId: string,
+    paidDate?: string,
+  ): Promise<ReceiptDataResponseDto> {
     // Buscar a parcela com todas as informações necessárias
     const installment = await this.prisma.receivableInstallment.findUnique({
       where: { id: installmentId },
@@ -1678,8 +1681,11 @@ export class ReceivableService {
       (installment.amount || 0) + (installment.additionalFee || 0);
 
     // Formatar data do recibo (usar data de pagamento se existir, senão data de vencimento)
-    const receiptDate =
-      installment.paidDate || installment.dueDate || new Date();
+    let receiptDate = installment.paidDate || installment.dueDate || new Date();
+
+    if (paidDate) {
+      receiptDate = new Date(paidDate);
+    }
 
     const day = format(receiptDate, 'dd', { locale: ptBR });
     const month = format(receiptDate, 'MMMM', { locale: ptBR });
