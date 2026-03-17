@@ -883,8 +883,19 @@ export class ClientService {
     });
 
     return new Promise<void>((resolve, reject) => {
+      const fd = fs.openSync(filePath, 'r');
+      const buffer = Buffer.alloc(1024);
+      const bytesRead = fs.readSync(fd, buffer, 0, 1024, 0);
+      fs.closeSync(fd);
+
+      const firstChunk = buffer.toString('utf-8', 0, bytesRead);
+      const headLine = firstChunk.split('\n')[0] || '';
+      const commaCount = (headLine.match(/,/g) || []).length;
+      const semicolonCount = (headLine.match(/;/g) || []).length;
+      const delimiter = semicolonCount > commaCount ? ';' : ',';
+
       fs.createReadStream(filePath)
-        .pipe(fastCsv.parse({ headers: true, skipRows: 1 })) // skip header and expect dynamic columns
+        .pipe(fastCsv.parse({ headers: true, skipRows: 1, delimiter })) // skip header and expect dynamic columns
         .on('data', (row) => {
           const clientDto: CreateClientDto = {
             status: row.status || null,
@@ -1061,8 +1072,19 @@ export class ClientService {
     });
 
     return new Promise<void>((resolve, reject) => {
+      const fd = fs.openSync(filePath, 'r');
+      const buffer = Buffer.alloc(1024);
+      const bytesRead = fs.readSync(fd, buffer, 0, 1024, 0);
+      fs.closeSync(fd);
+
+      const firstChunk = buffer.toString('utf-8', 0, bytesRead);
+      const headLine = firstChunk.split('\n')[0] || '';
+      const commaCount = (headLine.match(/,/g) || []).length;
+      const semicolonCount = (headLine.match(/;/g) || []).length;
+      const delimiter = semicolonCount > commaCount ? ';' : ',';
+
       fs.createReadStream(filePath)
-        .pipe(fastCsv.parse({ headers: true, delimiter: ';' }))
+        .pipe(fastCsv.parse({ headers: true, delimiter }))
         .on('data', (row) => {
           // Mapear o tipo do cliente (J = COMPANY, F = PERSON)
           const clientType = row.Tipo === 'J' ? 'COMPANY' : 'PERSON';

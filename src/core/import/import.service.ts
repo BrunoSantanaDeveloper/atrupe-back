@@ -175,6 +175,17 @@ export class ImportService {
    */
   parseCsv(buffer: Buffer): Promise<any[]> {
     return new Promise((resolve, reject) => {
+      // Auto detect delimiter based on the first line
+      const firstChunk = buffer.toString(
+        'utf-8',
+        0,
+        Math.min(buffer.length, 1024),
+      );
+      const headLine = firstChunk.split('\n')[0] || '';
+      const commaCount = (headLine.match(/,/g) || []).length;
+      const semicolonCount = (headLine.match(/;/g) || []).length;
+      const delimiter = semicolonCount > commaCount ? ';' : ',';
+
       const rows: any[] = [];
       const stream = Readable.from(buffer);
 
@@ -183,6 +194,7 @@ export class ImportService {
           csv.parse({
             headers: true,
             trim: true,
+            delimiter,
             discardUnmappedColumns: true, // Ignore extra columns that don't have a header
             // strictColumnHandling: false, // Don't throw on column count mismatch
           }),

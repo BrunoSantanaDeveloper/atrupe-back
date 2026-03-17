@@ -581,6 +581,17 @@ export class ProductService {
     };
 
     return new Promise<void>((resolve, reject) => {
+      const fd = fs.openSync(filePath, 'r');
+      const buffer = Buffer.alloc(1024);
+      const bytesRead = fs.readSync(fd, buffer, 0, 1024, 0);
+      fs.closeSync(fd);
+
+      const firstChunk = buffer.toString('utf-8', 0, bytesRead);
+      const headLine = firstChunk.split('\n')[0] || '';
+      const commaCount = (headLine.match(/,/g) || []).length;
+      const semicolonCount = (headLine.match(/;/g) || []).length;
+      const delimiter = semicolonCount > commaCount ? ';' : ',';
+
       fs.createReadStream(filePath)
         .pipe(
           fastCsv.parse({
@@ -654,7 +665,7 @@ export class ProductService {
               'input_icon',
               'input_mask',
             ],
-            delimiter: ',',
+            delimiter,
             trim: true,
             skipRows: 1,
           }),

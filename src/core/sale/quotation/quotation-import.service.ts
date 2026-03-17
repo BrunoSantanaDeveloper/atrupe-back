@@ -221,11 +221,23 @@ export class QuotationImportService {
       let importedCount = 0;
       const quotationsToApprove: string[] = [];
 
+      // Auto detect delimiter based on the first line
+      const fd = fs.openSync(filePath, 'r');
+      const buffer = Buffer.alloc(1024);
+      const bytesRead = fs.readSync(fd, buffer, 0, 1024, 0);
+      fs.closeSync(fd);
+
+      const firstChunk = buffer.toString('utf-8', 0, bytesRead);
+      const headLine = firstChunk.split('\n')[0] || '';
+      const commaCount = (headLine.match(/,/g) || []).length;
+      const semicolonCount = (headLine.match(/;/g) || []).length;
+      const delimiter = semicolonCount > commaCount ? ';' : ',';
+
       // Read and process the CSV file
       const rows: any[] = [];
       await new Promise((resolve, reject) => {
         fs.createReadStream(filePath)
-          .pipe(fastCsv.parse({ headers: true }))
+          .pipe(fastCsv.parse({ headers: true, delimiter }))
           .on('data', (row) => rows.push(row))
           .on('end', resolve)
           .on('error', reject);
