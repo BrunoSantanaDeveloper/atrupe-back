@@ -175,19 +175,26 @@ export class ImportService {
    */
   parseCsv(buffer: Buffer): Promise<any[]> {
     return new Promise((resolve, reject) => {
+      // Detectar encoding: tentar UTF-8, se contiver caracteres inválidos, usar Latin-1
+      let content = buffer.toString('utf-8');
+      if (content.includes('\uFFFD')) {
+        // Buffer contém bytes inválidos em UTF-8 — provavelmente Latin-1/Windows-1252
+        content = buffer.toString('latin1');
+      }
+
+      // Remover BOM se presente
+      if (content.charCodeAt(0) === 0xfeff) {
+        content = content.slice(1);
+      }
+
       // Auto detect delimiter based on the first line
-      const firstChunk = buffer.toString(
-        'utf-8',
-        0,
-        Math.min(buffer.length, 1024),
-      );
-      const headLine = firstChunk.split('\n')[0] || '';
+      const headLine = content.split('\n')[0] || '';
       const commaCount = (headLine.match(/,/g) || []).length;
       const semicolonCount = (headLine.match(/;/g) || []).length;
       const delimiter = semicolonCount > commaCount ? ';' : ',';
 
       const rows: any[] = [];
-      const stream = Readable.from(buffer);
+      const stream = Readable.from(content);
 
       stream
         .pipe(
@@ -196,7 +203,6 @@ export class ImportService {
             trim: true,
             delimiter,
             discardUnmappedColumns: true, // Ignore extra columns that don't have a header
-            // strictColumnHandling: false, // Don't throw on column count mismatch
           }),
         )
         .on('data', (row) => rows.push(row))
@@ -759,13 +765,27 @@ export class ImportService {
       });
     }
 
-    // Buscar setor por nome (já validado, então deve existir)
-    const sector = await this.prisma.companySector.findFirst({
+    // Buscar setor por nome case-insensitive (já validado, então deve existir)
+    let sector = await this.prisma.companySector.findFirst({
       where: {
-        name: row.setor,
+        name: { equals: row.setor, mode: 'insensitive' },
         companyId,
       },
     });
+    // Fallback: busca sem acentos (ex: "Impressao" → "Impressão")
+    if (!sector) {
+      const normalize = (s: string) =>
+        s
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase();
+      const sectors = await this.prisma.companySector.findMany({
+        where: { companyId },
+      });
+      sector =
+        sectors.find((s: any) => normalize(s.name) === normalize(row.setor)) ||
+        null;
+    }
 
     // Converter campos de permissão
     const allowEditValues = row.permitirEditarValor
@@ -778,6 +798,18 @@ export class ImportService {
           row.permitirEditarDescricao.toUpperCase(),
         )
       : true;
+
+    // Verificar se produto já existe (case-insensitive) — pular se existir
+    const existingProduct = await this.prisma.product.findFirst({
+      where: {
+        code: { equals: row.codigo, mode: 'insensitive' },
+        companyId,
+      },
+    });
+
+    if (existingProduct) {
+      return; // Produto já existe, pular
+    }
 
     // Criar produto
     const product = await this.prisma.product.create({
@@ -796,7 +828,7 @@ export class ImportService {
       },
     });
 
-    // Se houver dados do serviço, criar ProductItem
+    // Se houver dados do serviço, criar ou atualizar ProductItem
     if (row.servico && row.servico.trim() !== '') {
       // Buscar unidade de medida
       let unitOfMeasureId = null;
@@ -809,17 +841,38 @@ export class ImportService {
         unitOfMeasureId = unitOfMeasure?.id || null;
       }
 
-      await this.prisma.productItem.create({
-        data: {
+      // Buscar item existente do produto (para evitar duplicação em re-importação)
+      const existingItem = await this.prisma.productItem.findFirst({
+        where: {
           productId: product.id,
           name: row.servico,
-          width: row.largura ? parseFloat(row.largura) : null,
-          height: row.altura ? parseFloat(row.altura) : null,
-          unitCost: this.toCents(row.custo),
-          salePrice: this.toCents(row.preco),
-          defaultUnitOfMeasureId: unitOfMeasureId,
         },
       });
+
+      if (existingItem) {
+        await this.prisma.productItem.update({
+          where: { id: existingItem.id },
+          data: {
+            width: row.largura ? parseFloat(row.largura) : null,
+            height: row.altura ? parseFloat(row.altura) : null,
+            unitCost: this.toCents(row.custo),
+            salePrice: this.toCents(row.preco),
+            defaultUnitOfMeasureId: unitOfMeasureId,
+          },
+        });
+      } else {
+        await this.prisma.productItem.create({
+          data: {
+            productId: product.id,
+            name: row.servico,
+            width: row.largura ? parseFloat(row.largura) : null,
+            height: row.altura ? parseFloat(row.altura) : null,
+            unitCost: this.toCents(row.custo),
+            salePrice: this.toCents(row.preco),
+            defaultUnitOfMeasureId: unitOfMeasureId,
+          },
+        });
+      }
     }
   }
 

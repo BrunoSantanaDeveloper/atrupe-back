@@ -8,16 +8,14 @@ export const PRODUCT_IMPORT_SCHEMA = {
       description: 'Código único do produto',
       example: 'PROD-001',
       validate: async (value: string, companyId: string, prisma: any) => {
-        const existing = await prisma.product.findUnique({
+        const existing = await prisma.product.findFirst({
           where: {
-            code_companyId: {
-              code: value,
-              companyId,
-            },
+            code: { equals: value, mode: 'insensitive' },
+            companyId,
           },
         });
         if (existing) {
-          return 'Código já existe para outro produto';
+          return `Já existe um produto com este código: "${existing.name}"`;
         }
         return null;
       },
@@ -53,12 +51,27 @@ export const PRODUCT_IMPORT_SCHEMA = {
       description: 'Nome do setor',
       example: 'IMPRESSAO',
       validate: async (value: string, companyId: string, prisma: any) => {
-        const sector = await prisma.companySector.findFirst({
+        // Busca case-insensitive direta
+        let sector = await prisma.companySector.findFirst({
           where: {
-            name: value,
+            name: { equals: value, mode: 'insensitive' },
             companyId,
           },
         });
+        // Fallback: busca sem acentos (ex: "Impressao" → "Impressão")
+        if (!sector) {
+          const normalize = (s: string) =>
+            s
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .toLowerCase();
+          const sectors = await prisma.companySector.findMany({
+            where: { companyId },
+          });
+          sector = sectors.find(
+            (s: any) => normalize(s.name) === normalize(value),
+          );
+        }
         if (!sector) {
           return 'Setor não encontrado. Cadastre o setor antes de importar';
         }
