@@ -842,7 +842,7 @@ export class ImportService {
         )
       : true;
 
-    // Verificar se produto já existe (case-insensitive) — pular se existir
+    // Verificar se produto já existe (case-insensitive)
     const existingProduct = await this.prisma.product.findFirst({
       where: {
         code: { equals: row.codigo, mode: 'insensitive' },
@@ -850,72 +850,97 @@ export class ImportService {
       },
     });
 
-    if (existingProduct) {
-      return; // Produto já existe, pular
+    let product = existingProduct;
+    if (!product) {
+      // Criar produto se não existir
+      product = await this.prisma.product.create({
+        data: {
+          companyId,
+          code: row.codigo,
+          name: row.nome,
+          technicalDescription: row.descricao || null,
+          categoryId: category.id,
+          sectorId: sector.id,
+          isActive: true,
+          status: 'ACTIVE',
+          isImported: true,
+          allowEditValues,
+          allowEditDescription,
+        },
+      });
     }
 
-    // Criar produto
-    const product = await this.prisma.product.create({
-      data: {
-        companyId,
-        code: row.codigo,
-        name: row.nome,
-        technicalDescription: row.descricao || null,
-        categoryId: category.id,
-        sectorId: sector.id,
-        isActive: true,
-        status: 'ACTIVE',
-        isImported: true,
-        allowEditValues,
-        allowEditDescription,
+    // Criar item do produto (sempre criamos pelo menos 1 item para o produto importado)
+    const itemName =
+      row.servico && row.servico.trim() !== '' ? row.servico : row.nome;
+
+    // Buscar unidade de medida
+    let unitOfMeasureId = null;
+    let unitKind = null;
+    if (row.unidadeMedida) {
+      const uomCode = row.unidadeMedida.toUpperCase().trim();
+      const unitOfMeasure = await this.prisma.defaultUnitOfMeasure.findFirst({
+        where: {
+          code: uomCode,
+        },
+      });
+      unitOfMeasureId = unitOfMeasure?.id || null;
+      unitKind = unitOfMeasure?.kind || null;
+
+      // Se a unidade de medida não foi encontrada no banco ou não tem kind, inferimos pelo código
+      if (!unitKind) {
+        if (['M2', 'M²', 'MT2', 'METRO QUADRADO'].includes(uomCode)) {
+          unitKind = 'AREA';
+        } else if (['M', 'ML', 'METRO', 'METRO LINEAR'].includes(uomCode)) {
+          unitKind = 'LENGTH';
+        } else if (['KG', 'QUILO', 'KILO', 'QUILOGRAMA'].includes(uomCode)) {
+          unitKind = 'WEIGHT';
+        } else if (['L', 'LT', 'LITRO', 'LITROS'].includes(uomCode)) {
+          unitKind = 'CAPACITY';
+        } else if (['KM', 'QUILOMETRO'].includes(uomCode)) {
+          unitKind = 'DISTANCE';
+        } else if (['H', 'HR', 'HORA', 'HORAS'].includes(uomCode)) {
+          unitKind = 'DURATION';
+        } else {
+          // Fallback comum: UN, PC, PECA, etc.
+          unitKind = 'UNITY';
+        }
+      }
+    }
+
+    // Buscar item existente do produto (para evitar duplicação em re-importação)
+    const existingItem = await this.prisma.productItem.findFirst({
+      where: {
+        productId: product.id,
+        name: itemName,
       },
     });
 
-    // Se houver dados do serviço, criar ou atualizar ProductItem
-    if (row.servico && row.servico.trim() !== '') {
-      // Buscar unidade de medida
-      let unitOfMeasureId = null;
-      if (row.unidadeMedida) {
-        const unitOfMeasure = await this.prisma.defaultUnitOfMeasure.findFirst({
-          where: {
-            code: row.unidadeMedida.toUpperCase(),
-          },
-        });
-        unitOfMeasureId = unitOfMeasure?.id || null;
-      }
-
-      // Buscar item existente do produto (para evitar duplicação em re-importação)
-      const existingItem = await this.prisma.productItem.findFirst({
-        where: {
-          productId: product.id,
-          name: row.servico,
+    if (existingItem) {
+      await this.prisma.productItem.update({
+        where: { id: existingItem.id },
+        data: {
+          width: row.largura ? parseFloat(row.largura) : null,
+          height: row.altura ? parseFloat(row.altura) : null,
+          unitCost: this.toCents(row.custo),
+          salePrice: this.toCents(row.preco),
+          defaultUnitOfMeasureId: unitOfMeasureId,
+          unitKind: unitKind,
         },
       });
-
-      if (existingItem) {
-        await this.prisma.productItem.update({
-          where: { id: existingItem.id },
-          data: {
-            width: row.largura ? parseFloat(row.largura) : null,
-            height: row.altura ? parseFloat(row.altura) : null,
-            unitCost: this.toCents(row.custo),
-            salePrice: this.toCents(row.preco),
-            defaultUnitOfMeasureId: unitOfMeasureId,
-          },
-        });
-      } else {
-        await this.prisma.productItem.create({
-          data: {
-            productId: product.id,
-            name: row.servico,
-            width: row.largura ? parseFloat(row.largura) : null,
-            height: row.altura ? parseFloat(row.altura) : null,
-            unitCost: this.toCents(row.custo),
-            salePrice: this.toCents(row.preco),
-            defaultUnitOfMeasureId: unitOfMeasureId,
-          },
-        });
-      }
+    } else {
+      await this.prisma.productItem.create({
+        data: {
+          productId: product.id,
+          name: itemName,
+          width: row.largura ? parseFloat(row.largura) : null,
+          height: row.altura ? parseFloat(row.altura) : null,
+          unitCost: this.toCents(row.custo),
+          salePrice: this.toCents(row.preco),
+          defaultUnitOfMeasureId: unitOfMeasureId,
+          unitKind: unitKind,
+        },
+      });
     }
   }
 
