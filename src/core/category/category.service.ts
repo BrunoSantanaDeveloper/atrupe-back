@@ -69,7 +69,7 @@ export class CategoryService {
     if (filter.companyId) {
       where = {
         ...where,
-        company: { id: filter.companyId },
+        OR: [{ company: { id: filter.companyId } }, { isStandard: true }],
       };
     } else {
       where = {
@@ -109,7 +109,7 @@ export class CategoryService {
     const groupedData = categories.reduce((acc, category) => {
       const sectorName = category.sector?.name || 'Sem Setor Definido';
       const sectorId = category.sector?.id || null;
-      let sectorGroup = acc.find((group) => group.sector === sectorName);
+      let sectorGroup = acc.find((group) => group.sectorId === sectorId);
       if (!sectorGroup) {
         sectorGroup = {
           sector: sectorName,
@@ -138,7 +138,7 @@ export class CategoryService {
     if (filter.companyId) {
       where = {
         ...where,
-        company: { id: filter.companyId },
+        OR: [{ company: { id: filter.companyId } }, { isStandard: true }],
       };
     } else {
       where = {

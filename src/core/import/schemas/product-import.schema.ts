@@ -37,10 +37,11 @@ export const PRODUCT_IMPORT_SCHEMA = {
     },
     {
       name: 'grupo',
-      required: true,
+      required: false,
       type: 'string',
       maxLength: 255,
-      description: 'Nome do grupo de produtos (será criado se não existir)',
+      description:
+        'Nome do grupo de produtos (será criado se não existir). Se vazio, usa o primeiro grupo do setor.',
       example: 'Impressos Comerciais',
     },
     {

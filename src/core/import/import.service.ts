@@ -755,16 +755,6 @@ export class ImportService {
    * Importar um produto do CSV
    */
   private async importProduct(row: any, companyId: string): Promise<void> {
-    // Buscar ou criar categoria por nome
-    let category = await this.prisma.category.findFirst({
-      where: { name: row.categoria, companyId, kind: 'PRODUCT' },
-    });
-    if (!category) {
-      category = await this.prisma.category.create({
-        data: { name: row.categoria, companyId, kind: 'PRODUCT' },
-      });
-    }
-
     // Buscar setor por nome case-insensitive (já validado, então deve existir)
     let sector = await this.prisma.companySector.findFirst({
       where: {
@@ -785,6 +775,59 @@ export class ImportService {
       sector =
         sectors.find((s: any) => normalize(s.name) === normalize(row.setor)) ||
         null;
+    }
+
+    // Buscar ou criar categoria por nome (campo "grupo" do CSV) vinculado ao setor
+    let category = null;
+    if (row.grupo && row.grupo.trim() !== '') {
+      category = await this.prisma.category.findFirst({
+        where: { name: row.grupo, companyId, kind: 'PRODUCT' },
+      });
+
+      if (!category) {
+        category = await this.prisma.category.create({
+          data: {
+            name: row.grupo,
+            companyId,
+            kind: 'PRODUCT',
+            sectorId: sector ? sector.id : null,
+          },
+        });
+      } else if (!category.sectorId && sector) {
+        // Atualiza a categoria com o setor se ela já existir, mas sem setor
+        category = await this.prisma.category.update({
+          where: { id: category.id },
+          data: { sectorId: sector.id },
+        });
+      }
+    }
+
+    // Se grupo não foi informado, usar o primeiro grupo do setor
+    if (!category && sector) {
+      category = await this.prisma.category.findFirst({
+        where: { companyId, kind: 'PRODUCT', sectorId: sector.id },
+        orderBy: { name: 'asc' },
+      });
+
+      // Fallback: usar primeiro grupo da empresa caso o setor não tenha
+      if (!category) {
+        category = await this.prisma.category.findFirst({
+          where: { companyId, kind: 'PRODUCT' },
+          orderBy: { name: 'asc' },
+        });
+      }
+
+      // Se não existe nenhum grupo, criar um padrão
+      if (!category) {
+        category = await this.prisma.category.create({
+          data: {
+            name: 'Geral',
+            companyId,
+            kind: 'PRODUCT',
+            sectorId: sector.id,
+          },
+        });
+      }
     }
 
     // Converter campos de permissão
