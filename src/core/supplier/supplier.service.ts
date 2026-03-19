@@ -657,4 +657,112 @@ export class SupplierService {
       where: { id: id },
     });
   }
+
+  async convertToClient(supplierId: string, companyId: string) {
+    // 1. Buscar o fornecedor com todos os dados
+    const supplier = await this.prisma.supplier.findUnique({
+      where: { id: supplierId },
+      include: {
+        contacts: true,
+        address: {
+          where: { ownerType: 'SUPPLIER' },
+        },
+      },
+    });
+
+    if (!supplier) {
+      throw new NotFoundException('Fornecedor não encontrado');
+    }
+
+    if (supplier.companyId !== companyId) {
+      throw new BadRequestException('Fornecedor não pertence a esta empresa');
+    }
+
+    // 2. Verificar se já existe cliente com mesmo CPF ou CNPJ
+    if (supplier.cpf) {
+      const existing = await this.prisma.client.findFirst({
+        where: { cpf: supplier.cpf, companyId, isBranch: false },
+      });
+      if (existing) {
+        throw new BadRequestException(
+          `Já existe um cliente cadastrado com o CPF ${supplier.cpf}`,
+        );
+      }
+    }
+
+    if (supplier.cnpj) {
+      const existing = await this.prisma.client.findFirst({
+        where: { cnpj: supplier.cnpj, companyId, isBranch: false },
+      });
+      if (existing) {
+        throw new BadRequestException(
+          `Já existe um cliente cadastrado com o CNPJ ${supplier.cnpj}`,
+        );
+      }
+    }
+
+    // 3. Criar cliente com os mesmos dados em uma transação
+    const client = await this.prisma.$transaction(
+      async (prisma) => {
+        const client = await prisma.client.create({
+          data: {
+            type: supplier.type,
+            name: supplier.name,
+            corporateName: supplier.corporateName,
+            email: supplier.email,
+            phone: supplier.phone,
+            mobile: supplier.mobile,
+            companyId: supplier.companyId,
+            categoryId: supplier.categoryId,
+            cpf: supplier.cpf,
+            rg: supplier.rg,
+            cnpj: supplier.cnpj,
+            activity: supplier.activity,
+            notes: supplier.notes,
+            isBranch: supplier.isBranch || false,
+          },
+        });
+
+        // Copiar endereços
+        if (supplier.address?.length > 0) {
+          await prisma.address.createMany({
+            data: supplier.address.map((addr) => ({
+              type: addr.type,
+              zipcode: addr.zipcode,
+              state: addr.state,
+              city: addr.city,
+              neighborhood: addr.neighborhood,
+              street: addr.street,
+              number: addr.number,
+              complement: addr.complement,
+              ownerId: client.id,
+              ownerType: 'CLIENT' as const,
+            })),
+          });
+        }
+
+        // Copiar contatos
+        if (supplier.contacts?.length > 0) {
+          await prisma.contact.createMany({
+            data: supplier.contacts.map((contact) => ({
+              name: contact.name,
+              email: contact.email,
+              phone: contact.phone,
+              mobile: contact.mobile,
+              notes: contact.notes,
+              clientId: client.id,
+            })),
+          });
+        }
+
+        return client;
+      },
+      { timeout: 10000 },
+    );
+
+    return {
+      message: 'Cliente criado com sucesso a partir do fornecedor',
+      clientId: client.id,
+    };
+  }
 }

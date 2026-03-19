@@ -129,6 +129,29 @@ export class SupplierController {
     return this.supplierService.update(id, updateSupplierDto);
   }
 
+  @Post(':id/convert-to-client')
+  @ApiOperation({
+    summary: 'Converte um fornecedor em cliente',
+    description:
+      'Cria um novo cliente com os mesmos dados do fornecedor, se não existir um cliente com o mesmo CPF/CNPJ.',
+  })
+  @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })
+  @ApiResponse({
+    status: 201,
+    description: 'Cliente criado com sucesso a partir do fornecedor.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Já existe um cliente com o mesmo CPF/CNPJ.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Fornecedor não encontrado.',
+  })
+  convertToClient(@Req() req, @Param('id') id: string) {
+    return this.supplierService.convertToClient(id, req.user.companyId);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Remove um fornecedor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })
