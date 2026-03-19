@@ -226,7 +226,6 @@ export class SubscriptionsService {
       const subscription = await this.prisma.$transaction(async (tx) => {
         // Verificar dentro da transação se já existe uma subscription não-TRIAL
         // que esteja ACTIVE ou INACTIVE (aguardando pagamento)
-        // Ambos os status indicam que já há um checkout em andamento ou concluído
         const existingSubscription = await tx.subscription.findFirst({
           where: {
             companyId: request.user.companyId,
@@ -239,13 +238,55 @@ export class SubscriptionsService {
           },
         });
 
-        // Se existe uma subscription não-TRIAL (ativa ou aguardando pagamento), impede a criação
         if (existingSubscription) {
-          throw new BadRequestException(
-            existingSubscription.status === 'ACTIVE'
-              ? 'Uma assinatura ativa já existe para esta empresa.'
-              : 'Um checkout já está em andamento para esta empresa. Aguarde a confirmação do pagamento.',
-          );
+          if (existingSubscription.status === 'ACTIVE') {
+            throw new BadRequestException(
+              'Uma assinatura ativa já existe para esta empresa.',
+            );
+          }
+
+          // Subscription INACTIVE: verificar se todos os pagamentos estão vencidos (OVERDUE)
+          // Se sim, cancelar automaticamente para liberar novo checkout
+          const payments = await tx.payment.findMany({
+            where: { subscriptionId: existingSubscription.id },
+          });
+
+          const allOverdue =
+            payments.length > 0 &&
+            payments.every((p) => p.status === 'OVERDUE');
+
+          if (allOverdue) {
+            this.logger.log(
+              `Auto-cancelando subscription ${existingSubscription.id} — todos os pagamentos estão OVERDUE`,
+            );
+
+            // Cancelar no Asaas (se não for temporária)
+            if (!existingSubscription.asaasSubscriptionId.startsWith('temp_')) {
+              try {
+                await this.asaasGateway.cancelAsaasSubscription(
+                  existingSubscription.asaasSubscriptionId,
+                );
+              } catch (err) {
+                this.logger.warn(
+                  `Falha ao cancelar subscription no Asaas: ${err.message}`,
+                );
+              }
+            }
+
+            // Cancelar no banco
+            await tx.subscription.update({
+              where: { id: existingSubscription.id },
+              data: { status: 'CANCELED' },
+            });
+
+            this.logger.log(
+              `Subscription ${existingSubscription.id} cancelada automaticamente`,
+            );
+          } else {
+            throw new BadRequestException(
+              'Um checkout já está em andamento para esta empresa. Aguarde a confirmação do pagamento.',
+            );
+          }
         }
 
         // Criar nova subscription com status INACTIVE
