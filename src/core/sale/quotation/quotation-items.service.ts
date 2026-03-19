@@ -59,7 +59,7 @@ export class QuotationItemsService {
           technicalDescription:
             data.technicalDescription || product.technicalDescription,
           imageUrl: data.imageUrl || product.imageUrl,
-          imageSize: data.imageSize || DEFAULT_IMAGE_SIZE,
+          imageSize: data.imageSize || product.imageSize || DEFAULT_IMAGE_SIZE,
           totalValue: data.totalValue || totalValue,
           finalValue: data.finalValue || data.totalValue || totalValue,
           discount: data.discount || 0,
