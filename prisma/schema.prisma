@@ -1230,6 +1230,7 @@ model Product {
   allowEditDescription Boolean            @default(true)
   allowEditValues      Boolean            @default(true)
   imageUrl             String?
+  imageSize            String?
   technicalDescription String?
   productionStages     Json?
   status               ProductStatus      @default(ACTIVE)

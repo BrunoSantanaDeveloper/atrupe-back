@@ -68,6 +68,7 @@ export class ProductService {
           allowEditDescription: createProductDto.allowEditDescription,
           allowEditValues: createProductDto.allowEditValues,
           imageUrl: createProductDto.imageUrl || undefined,
+          imageSize: createProductDto.imageSize || undefined,
           items: {
             create: items,
           },
@@ -447,6 +448,9 @@ export class ProductService {
           }),
           ...(updateProductDto.imageUrl !== undefined && {
             imageUrl: updateProductDto.imageUrl,
+          }),
+          ...(updateProductDto.imageSize !== undefined && {
+            imageSize: updateProductDto.imageSize,
           }),
           ...(updateProductDto.isStandard !== undefined && {
             isStandard: updateProductDto.isStandard,

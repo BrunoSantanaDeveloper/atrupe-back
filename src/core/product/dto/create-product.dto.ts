@@ -224,9 +224,18 @@ export class CreateProductDto {
   @ApiProperty({
     description: 'url da imagem do produto',
     example: 'imageUrl.com',
-    required: true,
+    required: false,
   })
   imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Tamanho da imagem do produto (small ou large)',
+    example: 'small',
+    required: false,
+  })
+  imageSize?: string;
 
   @IsUUID()
   @IsNotEmpty()
