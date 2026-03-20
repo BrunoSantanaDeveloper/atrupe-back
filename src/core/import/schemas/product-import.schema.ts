@@ -7,7 +7,14 @@ export const PRODUCT_IMPORT_SCHEMA = {
       maxLength: 100,
       description: 'Código único do produto',
       example: 'PROD-001',
-      validate: async (value: string, companyId: string, prisma: any) => {
+      validate: async (
+        value: string,
+        companyId: string,
+        prisma: any,
+        row: any,
+        allowOverride: boolean = false,
+      ) => {
+        if (allowOverride) return null; // Ignora bloqueio de duplicadas
         const existing = await prisma.product.findFirst({
           where: {
             code: { equals: value, mode: 'insensitive' },

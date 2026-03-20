@@ -75,8 +75,12 @@ export class ImportController {
 
   @Post(':id/validate')
   @ApiOperation({ summary: 'Validate CSV data before importing' })
-  async validateImport(@Param('id') importId: string) {
-    const result = await this.importService.validateCsv(importId);
+  async validateImport(
+    @Param('id') importId: string,
+    @Query('allowOverride') allowOverride?: string,
+  ) {
+    const override = allowOverride === 'true';
+    const result = await this.importService.validateCsv(importId, override);
     return result;
   }
 

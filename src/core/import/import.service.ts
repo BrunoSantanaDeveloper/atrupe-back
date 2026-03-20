@@ -95,7 +95,10 @@ export class ImportService {
   /**
    * Validar CSV antes de importar
    */
-  async validateCsv(importId: string): Promise<any> {
+  async validateCsv(
+    importId: string,
+    allowOverride: boolean = false,
+  ): Promise<any> {
     const importLog = await this.prisma.importLog.findUnique({
       where: { id: importId },
     });
@@ -129,6 +132,7 @@ export class ImportService {
         rows,
         schema,
         importLog.companyId,
+        allowOverride,
       );
 
       // Atualizar registro
@@ -232,8 +236,9 @@ export class ImportService {
    */
   private async validateRows(
     rows: any[],
-    schema: any,
+    schema: Record<string, any>,
     companyId: string,
+    allowOverride: boolean = false,
   ): Promise<any> {
     const errors: any[] = [];
     let validRows = 0;
@@ -247,6 +252,7 @@ export class ImportService {
         schema,
         companyId,
         rowNumber,
+        allowOverride,
       );
 
       if (rowErrors.length > 0) {
@@ -267,6 +273,7 @@ export class ImportService {
     schema: any,
     companyId: string,
     rowNumber: number,
+    allowOverride: boolean = false,
   ): Promise<any[]> {
     const errors: any[] = [];
 
@@ -326,6 +333,7 @@ export class ImportService {
           companyId,
           this.prisma,
           row,
+          allowOverride,
         );
         if (customError) {
           errors.push({
@@ -857,8 +865,8 @@ export class ImportService {
           code: row.codigo,
           name: row.nome,
           technicalDescription: row.descricao || null,
-          categoryId: category.id,
-          sectorId: sector.id,
+          categoryId: category?.id,
+          sectorId: sector?.id,
           isActive: true,
           status: 'ACTIVE',
           isImported: true,
@@ -867,13 +875,24 @@ export class ImportService {
           isService,
         },
       });
+    } else {
+      // Atualizar dados principais do produto existente
+      product = await this.prisma.product.update({
+        where: { id: product.id },
+        data: {
+          name: row.nome,
+          technicalDescription: row.descricao || null,
+          categoryId: category?.id || product.categoryId,
+          sectorId: sector?.id || product.sectorId,
+          allowEditValues,
+          allowEditDescription,
+          isService,
+        },
+      });
     }
 
     // Criar item do produto (sempre criamos pelo menos 1 item para o produto importado)
-    const itemName =
-      row.nomeVariacao && row.nomeVariacao.trim() !== ''
-        ? row.nomeVariacao
-        : row.nome;
+    const itemName = row.nome;
 
     // Buscar unidade de medida
     let unitOfMeasureId = null;
