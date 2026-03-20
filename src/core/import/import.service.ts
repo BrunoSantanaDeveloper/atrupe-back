@@ -908,6 +908,64 @@ export class ImportService {
       }
     }
 
+    // Converter valor de unidade de exibição (ex: R$/m²) para unidade bruta (ex: R$/mm²)
+    // O frontend faz a conversão inversa (raw → display) ao exibir
+    const convertDisplayToRaw = (
+      valueInCents: number | null,
+      kind: string | null,
+    ): number | null => {
+      if (valueInCents === null || valueInCents === 0) return valueInCents;
+      switch (kind) {
+        case 'AREA':
+          return valueInCents / 1_000_000; // R$/m² → R$/mm²
+        case 'LENGTH':
+          return valueInCents / 1_000; // R$/metro → R$/mm
+        case 'CAPACITY':
+          return valueInCents / 1_000; // R$/litro → R$/ml
+        case 'WEIGHT':
+          return valueInCents / 1_000_000; // R$/kg → R$/mg
+        case 'DISTANCE':
+          return valueInCents / 1_000; // R$/km → R$/metro
+        case 'DURATION':
+          return valueInCents / 3_600; // R$/hora → R$/segundo
+        case 'UNITY':
+        default:
+          return valueInCents;
+      }
+    };
+
+    // O CSV traz valores em unidade de exibição (ex: R$ 390,00 por m²)
+    // "preco" = preço de venda por unidade de exibição → mapeia para unitCost (valor que o frontend mostra como "Valor de venda m²")
+    // "custo" = custo interno por unidade → armazenado como unitCost se preco não for informado
+    const precoInCents = this.toCents(row.preco);
+    const custoInCents = this.toCents(row.custo);
+
+    // Usar preco como unitCost principal; se vazio/zero, usar custo como fallback
+    const displayUnitCost =
+      precoInCents && precoInCents > 0
+        ? precoInCents
+        : custoInCents && custoInCents > 0
+          ? custoInCents
+          : null;
+
+    const rawUnitCost = convertDisplayToRaw(displayUnitCost, unitKind);
+
+    // salePrice = total (unitCost × totalQuantity). Sem dimensões, será recalculado pelo frontend.
+    // Se houver dimensões (largura × altura para AREA), calculamos aqui
+    let salePrice: number | null = null;
+    if (rawUnitCost && rawUnitCost > 0) {
+      const w = row.largura ? parseFloat(row.largura) : 0;
+      const h = row.altura ? parseFloat(row.altura) : 0;
+      if (unitKind === 'AREA' && w > 0 && h > 0) {
+        // Dimensões no CSV são em metros, converter para mm (1m = 1000mm)
+        const widthMm = w * 1000;
+        const heightMm = h * 1000;
+        salePrice = rawUnitCost * widthMm * heightMm;
+      } else if (unitKind === 'UNITY') {
+        salePrice = rawUnitCost;
+      }
+    }
+
     // Buscar item existente do produto (para evitar duplicação em re-importação)
     const existingItem = await this.prisma.productItem.findFirst({
       where: {
@@ -922,8 +980,8 @@ export class ImportService {
         data: {
           width: row.largura ? parseFloat(row.largura) : null,
           height: row.altura ? parseFloat(row.altura) : null,
-          unitCost: this.toCents(row.custo),
-          salePrice: this.toCents(row.preco),
+          unitCost: rawUnitCost,
+          salePrice: salePrice,
           defaultUnitOfMeasureId: unitOfMeasureId,
           unitKind: unitKind,
         },
@@ -935,8 +993,8 @@ export class ImportService {
           name: itemName,
           width: row.largura ? parseFloat(row.largura) : null,
           height: row.altura ? parseFloat(row.altura) : null,
-          unitCost: this.toCents(row.custo),
-          salePrice: this.toCents(row.preco),
+          unitCost: rawUnitCost,
+          salePrice: salePrice,
           defaultUnitOfMeasureId: unitOfMeasureId,
           unitKind: unitKind,
         },
