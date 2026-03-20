@@ -953,13 +953,19 @@ export class ImportService {
     // salePrice = total (unitCost × totalQuantity). Sem dimensões, será recalculado pelo frontend.
     // Se houver dimensões (largura × altura para AREA), calculamos aqui
     let salePrice: number | null = null;
+
+    // O banco salva dimensões em milímetros. O CSV geralmente traz em metros (ex: 1,40).
+    const parseDimension = (val: string | undefined): number | null => {
+      if (!val) return null;
+      const parsed = parseFloat(val.replace(',', '.'));
+      return isNaN(parsed) ? null : parsed * 1000;
+    };
+
+    const widthMm = parseDimension(row.largura);
+    const heightMm = parseDimension(row.altura);
+
     if (rawUnitCost && rawUnitCost > 0) {
-      const w = row.largura ? parseFloat(row.largura) : 0;
-      const h = row.altura ? parseFloat(row.altura) : 0;
-      if (unitKind === 'AREA' && w > 0 && h > 0) {
-        // Dimensões no CSV são em metros, converter para mm (1m = 1000mm)
-        const widthMm = w * 1000;
-        const heightMm = h * 1000;
+      if (unitKind === 'AREA' && widthMm && heightMm) {
         salePrice = rawUnitCost * widthMm * heightMm;
       } else if (unitKind === 'UNITY') {
         salePrice = rawUnitCost;
@@ -978,8 +984,8 @@ export class ImportService {
       await this.prisma.productItem.update({
         where: { id: existingItem.id },
         data: {
-          width: row.largura ? parseFloat(row.largura) : null,
-          height: row.altura ? parseFloat(row.altura) : null,
+          width: widthMm,
+          height: heightMm,
           unitCost: rawUnitCost,
           salePrice: salePrice,
           defaultUnitOfMeasureId: unitOfMeasureId,
@@ -991,8 +997,9 @@ export class ImportService {
         data: {
           productId: product.id,
           name: itemName,
-          width: row.largura ? parseFloat(row.largura) : null,
-          height: row.altura ? parseFloat(row.altura) : null,
+
+          width: widthMm,
+          height: heightMm,
           unitCost: rawUnitCost,
           salePrice: salePrice,
           defaultUnitOfMeasureId: unitOfMeasureId,
