@@ -830,17 +830,15 @@ export class ImportService {
       }
     }
 
-    // Converter campos de permissão
-    const allowEditValues = row.permitirEditarValor
+    // Converter campos booleanos / flags
+    const allowEditValues = row.permitirEdicao
       ? ['SIM', 'S', 'TRUE', '1', 'YES'].includes(
-          row.permitirEditarValor.toUpperCase(),
+          row.permitirEdicao.toUpperCase(),
         )
       : true;
-    const allowEditDescription = row.permitirEditarDescricao
-      ? ['SIM', 'S', 'TRUE', '1', 'YES'].includes(
-          row.permitirEditarDescricao.toUpperCase(),
-        )
-      : true;
+    const allowEditDescription = allowEditValues;
+
+    const isService = false;
 
     // Verificar se produto já existe (case-insensitive)
     const existingProduct = await this.prisma.product.findFirst({
@@ -866,13 +864,16 @@ export class ImportService {
           isImported: true,
           allowEditValues,
           allowEditDescription,
+          isService,
         },
       });
     }
 
     // Criar item do produto (sempre criamos pelo menos 1 item para o produto importado)
     const itemName =
-      row.servico && row.servico.trim() !== '' ? row.servico : row.nome;
+      row.nomeVariacao && row.nomeVariacao.trim() !== ''
+        ? row.nomeVariacao
+        : row.nome;
 
     // Buscar unidade de medida
     let unitOfMeasureId = null;
@@ -934,19 +935,8 @@ export class ImportService {
       }
     };
 
-    // O CSV traz valores em unidade de exibição (ex: R$ 390,00 por m²)
-    // "preco" = preço de venda por unidade de exibição → mapeia para unitCost (valor que o frontend mostra como "Valor de venda m²")
-    // "custo" = custo interno por unidade → armazenado como unitCost se preco não for informado
-    const precoInCents = this.toCents(row.preco);
-    const custoInCents = this.toCents(row.custo);
-
-    // Usar preco como unitCost principal; se vazio/zero, usar custo como fallback
-    const displayUnitCost =
-      precoInCents && precoInCents > 0
-        ? precoInCents
-        : custoInCents && custoInCents > 0
-          ? custoInCents
-          : null;
+    // "valorUnitario" = preço de venda por unidade de exibição → unitCost bruto (ex: R$/mm²)
+    const displayUnitCost = this.toCents(row.valorUnitario);
 
     const rawUnitCost = convertDisplayToRaw(displayUnitCost, unitKind);
 
@@ -961,13 +951,24 @@ export class ImportService {
       return isNaN(parsed) ? null : parsed * 1000;
     };
 
+    // Duração do CSV (horas) para o Banco (segundos)
+    const parseDuration = (val: string | undefined): number | null => {
+      if (!val) return null;
+      const parsed = parseFloat(val.replace(',', '.'));
+      return isNaN(parsed) ? null : parsed * 3600;
+    };
+
     const widthMm = parseDimension(row.largura);
     const heightMm = parseDimension(row.altura);
+    const durationSeconds = parseDuration(row.duracao);
 
     if (rawUnitCost && rawUnitCost > 0) {
       if (unitKind === 'AREA' && widthMm && heightMm) {
         salePrice = rawUnitCost * widthMm * heightMm;
-      } else if (unitKind === 'UNITY') {
+      } else if (unitKind === 'DURATION' && durationSeconds) {
+        salePrice = rawUnitCost * durationSeconds;
+      } else {
+        // Base de venda para outras métricas não dimensionais ou unidades isoladas
         salePrice = rawUnitCost;
       }
     }
@@ -986,6 +987,7 @@ export class ImportService {
         data: {
           width: widthMm,
           height: heightMm,
+          duration: durationSeconds,
           unitCost: rawUnitCost,
           salePrice: salePrice,
           defaultUnitOfMeasureId: unitOfMeasureId,
@@ -997,9 +999,9 @@ export class ImportService {
         data: {
           productId: product.id,
           name: itemName,
-
           width: widthMm,
           height: heightMm,
+          duration: durationSeconds,
           unitCost: rawUnitCost,
           salePrice: salePrice,
           defaultUnitOfMeasureId: unitOfMeasureId,
