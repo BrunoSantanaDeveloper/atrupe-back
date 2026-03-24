@@ -10,6 +10,7 @@ import {
   BadRequestException,
   Patch,
   NotFoundException,
+  ForbiddenException,
   Req,
 } from '@nestjs/common';
 import { QuotationService } from './quotation.service';
@@ -33,6 +34,7 @@ import {
 } from '@nestjs/swagger';
 import { QuotationProduct } from '@prisma/client';
 import { CancelOrderDto } from '../order/dto/create-order.dto';
+import { PrismaService } from 'nestjs-prisma';
 import { AbacService } from '../../auth/abac/abac.service';
 
 const RESOURCE = 'quotation';
@@ -45,28 +47,68 @@ export class QuotationController {
   constructor(
     private readonly quotationService: QuotationService,
     private readonly abacService: AbacService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
    * Resolves the effective seller filter based on ABAC permissions.
    * Returns the employeeId if the user can only see their own quotations, or undefined if they can see all.
    */
-  private async resolveSellerFilter(user: {
-    userId: string;
-    username: string;
-    isAdmin: boolean;
-    employeeId?: string;
-  }): Promise<string | undefined> {
-    const canSeeOtherQuotations = await this.abacService.hasPermission(
+  private async resolveSellerFilter(
+    user: {
+      userId: string;
+      username: string;
+      isAdmin: boolean;
+      employeeId?: string;
+    },
+    action: 'view' | 'edit' = 'view',
+  ): Promise<string | undefined> {
+    const canAccessOtherQuotations = await this.abacService.hasPermission(
       { userId: user.userId, username: user.username },
-      'view',
+      action,
       'sale:other_quotation',
     );
 
-    if (!canSeeOtherQuotations && !user.isAdmin && user.employeeId) {
+    if (!canAccessOtherQuotations && !user.isAdmin && user.employeeId) {
       return user.employeeId;
     }
     return undefined;
+  }
+
+  /**
+   * Validates that the current user has access to the quotation for the given action.
+   * Throws NotFoundException if ownership check fails.
+   */
+  private async validateOwnership(
+    quotationId: string,
+    user: {
+      userId: string;
+      username: string;
+      isAdmin: boolean;
+      employeeId?: string;
+      companyId: string;
+    },
+    action: 'view' | 'edit' = 'edit',
+  ): Promise<void> {
+    const quotation = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      select: { companyId: true, sellerId: true },
+    });
+
+    const sellerFilter = await this.resolveSellerFilter(user, action);
+
+    if (!quotation) {
+      throw new NotFoundException('Orçamento não encontrado');
+    }
+    if (quotation.companyId !== user.companyId) {
+      throw new ForbiddenException('Orçamento pertence a outra empresa');
+    }
+
+    if (sellerFilter && quotation.sellerId !== sellerFilter) {
+      throw new ForbiddenException(
+        'Você não tem permissão para editar orçamentos de outros vendedores',
+      );
+    }
   }
   @Post()
   @RequireUnblocked()
@@ -78,13 +120,16 @@ export class QuotationController {
   create(@Body() createQuotationDto: CreateQuotationDto, @Req() req) {
     return this.quotationService.create(createQuotationDto, req.user?.userId);
   }
+
   @Post(':id/add-product')
   @ApiOperation({ summary: 'Adiciona um produto a um orçamento' })
   @ApiParam({ name: 'id', description: 'ID do orçamento' })
   async addProductToQuotation(
     @Param('id') id: string,
     @Body() addItemDto: AddItemDto,
+    @Req() req,
   ) {
+    await this.validateOwnership(id, req.user, 'edit');
     return this.quotationService.addProductToQuotation(id, addItemDto);
   }
 
@@ -111,6 +156,13 @@ export class QuotationController {
     @Body() updateQuotationProductDto: UpdateItemDto,
     @Req() req,
   ): Promise<QuotationProduct> {
+    const quotationId =
+      await this.quotationService.getQuotationIdByProductId(productId);
+    if (!quotationId) {
+      throw new NotFoundException('Produto ou orçamento não encontrados.');
+    }
+    await this.validateOwnership(quotationId, req.user, 'edit');
+
     const updatedProduct = await this.quotationService.updateProductInQuotation(
       productId,
       updateQuotationProductDto,
@@ -142,7 +194,15 @@ export class QuotationController {
   })
   async duplicateProduct(
     @Param('productId') productId: string,
+    @Req() req,
   ): Promise<QuotationProduct> {
+    const quotationId =
+      await this.quotationService.getQuotationIdByProductId(productId);
+    if (!quotationId) {
+      throw new NotFoundException('Produto ou orçamento não encontrados.');
+    }
+    await this.validateOwnership(quotationId, req.user, 'edit');
+
     const updatedProduct =
       await this.quotationService.duplicateProductInQuotation(productId);
     if (!updatedProduct) {
@@ -164,7 +224,17 @@ export class QuotationController {
     status: 404,
     description: 'Orçamento ou produto não encontrados.',
   })
-  async deleteProduct(@Param('productId') productId: string): Promise<void> {
+  async deleteProduct(
+    @Param('productId') productId: string,
+    @Req() req,
+  ): Promise<void> {
+    const quotationId =
+      await this.quotationService.getQuotationIdByProductId(productId);
+    if (!quotationId) {
+      throw new NotFoundException('Produto ou orçamento não encontrados.');
+    }
+    await this.validateOwnership(quotationId, req.user, 'edit');
+
     const isDeleted =
       await this.quotationService.removeProductFromQuotation(productId);
     if (!isDeleted) {
@@ -258,6 +328,7 @@ export class QuotationController {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
+    await this.validateOwnership(id, req.user, 'edit');
     return this.quotationService.approve(id, req.user?.userId);
   }
 
@@ -302,6 +373,7 @@ export class QuotationController {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
+    await this.validateOwnership(id, req.user, 'edit');
     return this.quotationService.reject(id, dto, req.user?.userId);
   }
 
@@ -320,6 +392,7 @@ export class QuotationController {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
+    await this.validateOwnership(id, req.user, 'edit');
     return await this.quotationService.finish(id, req.user?.userId);
   }
 
@@ -338,6 +411,7 @@ export class QuotationController {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
+    await this.validateOwnership(id, req.user, 'edit');
     return this.quotationService.open(id, req.user?.userId);
   }
 
@@ -403,6 +477,7 @@ export class QuotationController {
     @Body() updateQuotationDto: UpdateQuotationDto,
     @Req() req,
   ) {
+    await this.validateOwnership(id, req.user, 'edit');
     return await this.quotationService.update(
       id,
       updateQuotationDto,

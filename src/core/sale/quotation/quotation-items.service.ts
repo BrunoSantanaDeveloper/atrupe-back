@@ -21,6 +21,17 @@ export class QuotationItemsService {
   constructor(private prisma: PrismaService) {}
 
   /**
+   * Returns the quotationId for a given quotation product ID.
+   */
+  async getQuotationIdByProductId(productId: string): Promise<string | null> {
+    const product = await this.prisma.quotationProduct.findUnique({
+      where: { id: productId },
+      select: { quotationId: true },
+    });
+    return product?.quotationId || null;
+  }
+
+  /**
    * Adiciona um produto ao orçamento
    */
   async addProductToQuotation(quotationId: string, data: AddItemDto) {

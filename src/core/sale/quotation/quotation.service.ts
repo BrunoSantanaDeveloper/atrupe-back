@@ -103,6 +103,10 @@ export class QuotationService {
     return this.itemsService.removeProductFromQuotation(productId);
   }
 
+  getQuotationIdByProductId(productId: string) {
+    return this.itemsService.getQuotationIdByProductId(productId);
+  }
+
   recalculateQuotationProductsTotalValue(quotationProductId: string) {
     return this.itemsService.recalculateQuotationProductsTotalValue(
       quotationProductId,
