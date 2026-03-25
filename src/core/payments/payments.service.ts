@@ -6,17 +6,17 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
-import { asaasConfig } from 'src/config/configuration';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
-  private asaasToken = asaasConfig.token;
-  private asaasApiUrl = asaasConfig.apiUrl;
-
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly settingsService: SystemSettingsService,
+  ) {}
 
   /**
    * Cria a primeira cobrança ao contratar uma subscription
@@ -73,7 +73,8 @@ export class PaymentsService {
    * Cria payment no Asaas
    */
   private async createPaymentAsaas(data: CreatePaymentDto) {
-    const route = `${this.asaasApiUrl}/payments`;
+    const config = await this.settingsService.getActiveAsaasConfig();
+    const route = `${config.url}/payments`;
 
     const payload = {
       customer: data.asaasCustomerId,
@@ -92,7 +93,7 @@ export class PaymentsService {
       const response = await axios.post(route, payload, {
         headers: {
           'Content-Type': 'application/json',
-          access_token: this.asaasToken,
+          access_token: config.token,
           'User-Agent': 'Atrupe',
         },
       });
@@ -182,10 +183,11 @@ export class PaymentsService {
     const payment = await this.findOne(id);
 
     try {
-      const route = `${this.asaasApiUrl}/payments/${payment.asaasPaymentId}`;
+      const config = await this.settingsService.getActiveAsaasConfig();
+      const route = `${config.url}/payments/${payment.asaasPaymentId}`;
       const response = await axios.get(route, {
         headers: {
-          access_token: this.asaasToken,
+          access_token: config.token,
           'User-Agent': 'Atrupe',
         },
       });
@@ -237,10 +239,11 @@ export class PaymentsService {
     }
 
     try {
-      const route = `${this.asaasApiUrl}/payments/${payment.asaasPaymentId}`;
+      const config = await this.settingsService.getActiveAsaasConfig();
+      const route = `${config.url}/payments/${payment.asaasPaymentId}`;
       await axios.delete(route, {
         headers: {
-          access_token: this.asaasToken,
+          access_token: config.token,
           'User-Agent': 'Atrupe',
         },
       });
@@ -271,13 +274,14 @@ export class PaymentsService {
     }
 
     try {
-      const route = `${this.asaasApiUrl}/payments/${payment.asaasPaymentId}/refund`;
+      const config = await this.settingsService.getActiveAsaasConfig();
+      const route = `${config.url}/payments/${payment.asaasPaymentId}/refund`;
       await axios.post(
         route,
         {},
         {
           headers: {
-            access_token: this.asaasToken,
+            access_token: config.token,
             'User-Agent': 'Atrupe',
           },
         },

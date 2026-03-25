@@ -33,6 +33,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ImportModule } from './import/import.module';
 import { FiscalModule } from './fiscal/fiscal.module';
+import { SystemSettingsModule } from './system-settings/system-settings.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { FiscalModule } from './fiscal/fiscal.module';
     PaymentsModule,
     ImportModule,
     FiscalModule,
+    SystemSettingsModule,
   ],
 })
 export class CoreModule {}

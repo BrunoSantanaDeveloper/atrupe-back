@@ -3,22 +3,24 @@ import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import axios from 'axios';
-import { asaasConfig } from 'src/config/configuration';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class CustomersService {
-  constructor(private prisma: PrismaService) {}
-  private asaasToken = asaasConfig.token;
-  private asaasApiUrl = asaasConfig.apiUrl;
+  constructor(
+    private prisma: PrismaService,
+    private readonly settingsService: SystemSettingsService,
+  ) {}
 
-  private asaasApi() {
+  private async asaasApi() {
+    const config = await this.settingsService.getActiveAsaasConfig();
     const api = axios.create({
-      baseURL: this.asaasApiUrl,
+      baseURL: config.url,
       headers: {
         common: {
           'Content-Type': 'application/json',
-          access_token: this.asaasToken,
+          access_token: config.token,
           'User-Agent': 'Atrupe',
         },
       },
@@ -140,7 +142,8 @@ export class CustomersService {
     console.log('criar cliente asaas:', data);
 
     try {
-      const response = await this.asaasApi().post(route, data);
+      const api = await this.asaasApi();
+      const response = await api.post(route, data);
       console.log('response', response.data);
       return response.data;
     } catch (error) {
@@ -182,7 +185,8 @@ export class CustomersService {
     if (updateCustomerDto.province) data.province = updateCustomerDto.province;
 
     try {
-      const response = await this.asaasApi().put(route, data);
+      const api = await this.asaasApi();
+      const response = await api.put(route, data);
       return response.data;
     } catch (error) {
       console.error('Error updating customer in Asaas:', {
@@ -202,7 +206,8 @@ export class CustomersService {
     const route = `/customers/${asaasCustomerId}`;
 
     try {
-      await this.asaasApi().delete(route);
+      const api = await this.asaasApi();
+      await api.delete(route);
     } catch (error) {
       console.error('Error deleting customer in Asaas:', {
         message: error.message,

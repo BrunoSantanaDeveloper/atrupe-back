@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
-import { asaasConfig } from 'src/config/configuration';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { AsaasPaymentStatus } from '@prisma/client';
 import {
   AsaasCreateSubscriptionPayload,
@@ -11,17 +11,18 @@ import {
 @Injectable()
 export class AsaasGatewayService {
   private readonly logger = new Logger(AsaasGatewayService.name);
-  private asaasToken = asaasConfig.token;
-  private asaasApiUrl = asaasConfig.apiUrl;
 
-  private asaasApi() {
+  constructor(private readonly settingsService: SystemSettingsService) {}
+
+  private async asaasApi() {
+    const config = await this.settingsService.getActiveAsaasConfig();
     const api = axios.create({
-      baseURL: this.asaasApiUrl,
+      baseURL: config.url,
       timeout: 15000, // 15s timeout para evitar requests pendurados
       headers: {
         common: {
           'Content-Type': 'application/json',
-          access_token: this.asaasToken,
+          access_token: config.token,
           'User-Agent': 'Atrupe',
         },
       },
@@ -34,7 +35,8 @@ export class AsaasGatewayService {
     const route = `/subscriptions/${asaasSubscriptionId}`;
 
     try {
-      await this.asaasApi().delete(route);
+      const api = await this.asaasApi();
+      await api.delete(route);
     } catch (error) {
       this.logger.error(
         `Error canceling Asaas subscription: ${JSON.stringify(error.response?.data || error.message)}`,
@@ -50,7 +52,8 @@ export class AsaasGatewayService {
     const route = `/subscriptions/${asaasSubscriptionId}`;
 
     try {
-      const response = await this.asaasApi().post(route, data);
+      const api = await this.asaasApi();
+      const response = await api.post(route, data);
       return response.data;
     } catch (error) {
       const errorResponse = error.response?.data.errors;
@@ -82,7 +85,8 @@ export class AsaasGatewayService {
     const route = '/subscriptions';
     this.logger.debug(`payload asaas: ${JSON.stringify(subscriptionData)}`);
     try {
-      const response = await this.asaasApi().post(route, subscriptionData);
+      const api = await this.asaasApi();
+      const response = await api.post(route, subscriptionData);
       return response.data;
     } catch (error) {
       const errorResponse = error.response?.data.errors;
@@ -117,7 +121,8 @@ export class AsaasGatewayService {
     const route = `/subscriptions/${asaasSubscriptionId}/payments`;
 
     try {
-      const response = await this.asaasApi().get(route);
+      const api = await this.asaasApi();
+      const response = await api.get(route);
       return response.data.data || [];
     } catch (error) {
       this.logger.error('Erro ao buscar payments da subscription no Asaas:', {
@@ -158,7 +163,8 @@ export class AsaasGatewayService {
    */
   async createAsaasCustomer(customerData: Record<string, any>): Promise<any> {
     try {
-      const response = await this.asaasApi().post('/customers', customerData);
+      const api = await this.asaasApi();
+      const response = await api.post('/customers', customerData);
       return response.data;
     } catch (error) {
       this.logger.error(
