@@ -220,6 +220,11 @@ export const QUOTATION_PRODUCT_SELECT = {
       length: true,
       distance: true,
       volume: true,
+      productItem: {
+        select: {
+          salePrice: true,
+        },
+      },
     },
     orderBy: {
       createdAt: 'asc' as const,

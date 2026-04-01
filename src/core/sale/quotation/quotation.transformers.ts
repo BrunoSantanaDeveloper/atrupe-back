@@ -214,6 +214,12 @@ export function transformQuotationItem(qp: any) {
     0,
   );
 
+  // Valor original do produto no catálogo (imutável, nunca alterado por edições no orçamento)
+  const originalValue = qp.items.reduce((total: number, item: any) => {
+    const catalogPrice = item.productItem?.salePrice ?? item.salePrice ?? 0;
+    return total + catalogPrice;
+  }, 0);
+
   const getImage = () => {
     // Determina o tamanho da imagem: usa imageSize se disponível, senão fallback para lógica legada
     const isOriginal = qp.imageUrl ? qp.imageUrl === qp.product.imageUrl : true;
@@ -241,6 +247,7 @@ export function transformQuotationItem(qp: any) {
     discount: qp.discount,
     unitValue,
     totalValue,
+    originalValue,
     finalValue: qp.finalValue,
     image: getImage(),
     product: {
