@@ -652,8 +652,10 @@ export class ReceivableService {
     });
   }
 
-  async count() {
-    return this.prisma.receivable.count();
+  async count(companyId?: string) {
+    return this.prisma.receivable.count({
+      where: companyId ? { companyId } : undefined,
+    });
   }
 
   async getHistory(id: string) {

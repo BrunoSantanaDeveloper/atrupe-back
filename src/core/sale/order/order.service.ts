@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { CancelOrderDto, CreateOrderDto } from './dto/create-order.dto';
@@ -20,6 +21,7 @@ export interface OrderGroup {
 
 @Injectable()
 export class OrderService {
+  private readonly logger = new Logger(OrderService.name);
   constructor(private prisma: PrismaService) {}
 
   async create(createOrderDto: CreateOrderDto) {
@@ -214,7 +216,7 @@ export class OrderService {
         data,
       };
     } catch (error) {
-      console.error(error);
+      this.logger.error('Error fetching orders', error.stack);
       throw new Error('Erro ao buscar os pedidos.');
     }
   }
@@ -275,8 +277,12 @@ export class OrderService {
     };
   }
 
-  async count() {
-    return this.prisma.order.count();
+  async count(companyId?: string) {
+    return this.prisma.order.count({
+      where: companyId
+        ? { quotation: { companyId } }
+        : undefined,
+    });
   }
 
   async findOne(id: string) {
@@ -300,7 +306,7 @@ export class OrderService {
 
       return transformOrderToResponse(order as any, financialTableData);
     } catch (error) {
-      console.error(error);
+      this.logger.error('Error fetching order', error.stack);
       throw new InternalServerErrorException(
         'Erro ao buscar a ordem de serviço.',
       );
@@ -448,7 +454,7 @@ export class OrderService {
 
         // Cancel delivery schedule (updateMany won't fail if not found)
         await prisma.deliverySchedule.updateMany({
-          where: { id: quotationId },
+          where: { quotationId },
           data: { status: 'CANCELED' },
         });
 
@@ -490,7 +496,7 @@ export class OrderService {
           });
         } catch (historyError) {
           // Non-blocking: don't fail cancellation if history fails
-          console.error('Error creating order cancel history:', historyError);
+          this.logger.error('Error creating order cancel history', historyError.stack);
         }
 
         // Calculate summary
@@ -530,7 +536,7 @@ export class OrderService {
           'Erro na base de dados ao cancelar a ordem.',
         );
       }
-      console.error(error);
+      this.logger.error('Error canceling order', error.stack);
       throw new InternalServerErrorException(
         'Erro interno ao cancelar a ordem.',
       );

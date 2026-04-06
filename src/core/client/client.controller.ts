@@ -15,6 +15,8 @@ import { ClientService } from './client.service';
 import { CreateClientDto, PreRegisterClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { PermissionsGuard } from '../auth/abac/permissions.guard';
+import { HasPermission } from '../auth/abac/has-permission.decorator';
 import { ClientFilterDTO } from './dto/filter.dto';
 import {
   ApiTags,
@@ -28,14 +30,14 @@ import {
 const RESOURCE = 'client';
 
 @ApiTags('Clientes')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 @Controller(RESOURCE)
 export class ClientController {
   constructor(private readonly clientService: ClientService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Cria um novo cliente' })
+  @HasPermission('create', 'entity:client')  @ApiOperation({ summary: 'Cria um novo cliente' })
   @ApiBody({
     description: 'Dados do novo cliente',
     type: CreateClientDto,
@@ -122,7 +124,7 @@ export class ClientController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Obtém a lista de todos os clientes' })
+  @HasPermission('view', 'entity:client')  @ApiOperation({ summary: 'Obtém a lista de todos os clientes' })
   @ApiResponse({
     status: 200,
     description: 'Lista de clientes retornada com sucesso.',
@@ -165,7 +167,7 @@ export class ClientController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Atualiza um cliente pelo ID' })
+  @HasPermission('edit', 'entity:client')  @ApiOperation({ summary: 'Atualiza um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
   @ApiBody({
     description: 'Dados para atualização do cliente',
@@ -226,7 +228,7 @@ export class ClientController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Remove um cliente pelo ID' })
+  @HasPermission('delete', 'entity:client')  @ApiOperation({ summary: 'Remove um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
   @ApiResponse({
     status: 200,

@@ -19,6 +19,8 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
 import { GetSalarySheetsDto } from './dto/salaries-filters.dto';
 import { SalarySheetsService } from './salary-sheets.service';
 import { AddSalaryItemDto } from './dto/create-salary.dto';
@@ -32,7 +34,7 @@ const RESOURCE = 'payroll';
 const GROUP = 'financial';
 
 @ApiTags('Folhas de pagamento')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class SalarySheetsController {
@@ -489,6 +491,29 @@ export class SalarySheetsController {
   })
   async deleteSalaryItem(@Param('itemId') itemId: string) {
     return await this.salaryService.deleteSalaryItem(itemId);
+  }
+
+  @Post('item/:itemId/cancel-advance')
+  @ApiOperation({
+    summary: 'Cancelar adiantamento pago',
+    description:
+      'Estorna o pagamento de um adiantamento já pago, cancela a despesa e remove o item da folha.',
+  })
+  @ApiParam({
+    name: 'itemId',
+    required: true,
+    description: 'ID do item de adiantamento a ser cancelado',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Adiantamento cancelado com sucesso',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Item não é um adiantamento ou erro no cancelamento',
+  })
+  async cancelAdvance(@Param('itemId') itemId: string) {
+    return await this.salaryService.cancelAdvance(itemId);
   }
 
   @Patch('toggle')

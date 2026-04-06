@@ -5,8 +5,10 @@ import { SalarySheetsService } from './salary-sheets.service';
 import { SalaryExpenseService } from './salary-expense.service';
 import { SalaryPdfService } from './salary-pdf.service';
 
+import { AuthModule } from 'src/core/auth/auth.module';
+
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AuthModule],
   controllers: [SalarySheetsController],
   providers: [SalarySheetsService, SalaryExpenseService, SalaryPdfService],
 })

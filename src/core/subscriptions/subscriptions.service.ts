@@ -504,7 +504,7 @@ export class SubscriptionsService {
       ),
       description: `Upgrade para ${newPlan.name}`,
       callback: {
-        successUrl: 'https://homolog.atrupe.com.br',
+        successUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
       },
     };
 

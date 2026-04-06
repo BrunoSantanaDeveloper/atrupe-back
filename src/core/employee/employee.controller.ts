@@ -14,6 +14,8 @@ import { EmployeeService } from './employee.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { PermissionsGuard } from '../auth/abac/permissions.guard';
+import { HasPermission } from '../auth/abac/has-permission.decorator';
 import {
   ApiTags,
   ApiOperation,
@@ -26,14 +28,14 @@ import {
 import { FilterEmployeeDto } from './dto/filter-employee.dto';
 
 @ApiTags('Employees')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 @Controller('employee')
 export class EmployeeController {
   constructor(private readonly employeeService: EmployeeService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Cria um novo colaborador' })
+  @HasPermission('create', 'entity:employee')  @ApiOperation({ summary: 'Cria um novo colaborador' })
   @ApiBody({
     description: 'Dados do novo colaborador',
     type: CreateEmployeeDto,
@@ -80,7 +82,7 @@ export class EmployeeController {
   }
 
   @Get()
-  @ApiQuery({ type: FilterEmployeeDto })
+  @HasPermission('view', 'entity:employee')  @ApiQuery({ type: FilterEmployeeDto })
   @ApiOperation({ summary: 'Obtém a lista de todos os empregados' })
   @ApiResponse({
     status: 200,
@@ -108,7 +110,7 @@ export class EmployeeController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Atualiza um colaborador pelo ID' })
+  @HasPermission('edit', 'entity:employee')  @ApiOperation({ summary: 'Atualiza um colaborador pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do colaborador' })
   @ApiBody({
     description: 'Dados para atualização do colaborador',
@@ -136,7 +138,7 @@ export class EmployeeController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Remove um colaborador pelo ID' })
+  @HasPermission('delete', 'entity:employee')  @ApiOperation({ summary: 'Remove um colaborador pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do colaborador' })
   @ApiResponse({
     status: 200,

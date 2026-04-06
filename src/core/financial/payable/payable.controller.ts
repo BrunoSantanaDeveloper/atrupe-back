@@ -13,6 +13,8 @@ import {
 import { PayableService } from './payable.service';
 
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
 import {
   ApiTags,
   ApiOperation,
@@ -38,14 +40,14 @@ const RESOURCE = 'payable';
 const GROUP = 'financial';
 
 @ApiTags('Contas a Pagar')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class PayableController {
   constructor(private readonly payableService: PayableService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Cria uma nova conta a pagar com parcelas' })
+  @HasPermission('create', 'financial:payable')  @ApiOperation({ summary: 'Cria uma nova conta a pagar com parcelas' })
   @ApiBody({
     description: 'Dados da nova conta a pagar',
     type: CreatePayableDto,
@@ -64,7 +66,7 @@ export class PayableController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Obtém a lista de todas as contas a pagar' })
+  @HasPermission('view', 'financial:payable')  @ApiOperation({ summary: 'Obtém a lista de todas as contas a pagar' })
   @ApiResponse({
     status: 200,
     description: 'Lista de contas a pagar retornada com sucesso.',
@@ -128,7 +130,7 @@ export class PayableController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Atualizar dados do título' })
+  @HasPermission('edit', 'financial:payable')  @ApiOperation({ summary: 'Atualizar dados do título' })
   @ApiParam({
     name: 'id',
     description: 'ID do título',
@@ -177,7 +179,7 @@ export class PayableController {
     );
   }
   @Patch(':id/cancel')
-  @ApiOperation({
+  @HasPermission('delete', 'financial:payable')  @ApiOperation({
     summary: 'Cancela uma conta a pagar e suas parcelas pendentes',
   })
   @ApiParam({
@@ -297,7 +299,7 @@ export class PayableController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Remove uma conta a pagar pelo ID' })
+  @HasPermission('delete', 'financial:payable')  @ApiOperation({ summary: 'Remove uma conta a pagar pelo ID' })
   @ApiParam({
     name: 'id',
     required: true,

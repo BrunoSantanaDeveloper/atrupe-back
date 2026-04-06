@@ -106,7 +106,6 @@ export class AcademyService {
 
   async createAcademyProgress(data: CreateAcademyProgressDto) {
     try {
-      // Verificar se o academySystem existe
       const academySystem = await this.prisma.academySystem.findUnique({
         where: { id: data.itemId },
       });
@@ -115,8 +114,18 @@ export class AcademyService {
         throw new Error(`Academy system with id ${data.itemId} not found`);
       }
 
-      return await this.prisma.academyProgress.create({
-        data: {
+      return await this.prisma.academyProgress.upsert({
+        where: {
+          companyId_academySystemId: {
+            companyId: data.companyId,
+            academySystemId: data.itemId,
+          },
+        },
+        update: {
+          checked: true,
+          completedAt: new Date(),
+        },
+        create: {
           academySystemId: data.itemId,
           companyId: data.companyId,
           checked: true,
@@ -130,18 +139,25 @@ export class AcademyService {
   }
 
   async toggleAcademyProgress(data: CreateAcademyProgressDto) {
-    const existing = await this.prisma.academyProgress.findFirst({
+    const existing = await this.prisma.academyProgress.findUnique({
       where: {
-        academySystemId: data.itemId,
-        companyId: data.companyId,
+        companyId_academySystemId: {
+          companyId: data.companyId,
+          academySystemId: data.itemId,
+        },
       },
     });
 
     if (existing) {
-      await this.prisma.academyProgress.delete({
+      const newChecked = !existing.checked;
+      await this.prisma.academyProgress.update({
         where: { id: existing.id },
+        data: {
+          checked: newChecked,
+          completedAt: newChecked ? new Date() : null,
+        },
       });
-      return { checked: false };
+      return { checked: newChecked };
     }
 
     await this.prisma.academyProgress.create({

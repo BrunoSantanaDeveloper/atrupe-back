@@ -496,8 +496,10 @@ export class QuotationCrudService {
   /**
    * Conta total de orçamentos
    */
-  async count() {
-    return this.prisma.quotation.count();
+  async count(companyId?: string) {
+    return this.prisma.quotation.count({
+      where: companyId ? { companyId } : undefined,
+    });
   }
 
   /**

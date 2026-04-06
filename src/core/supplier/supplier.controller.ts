@@ -14,6 +14,8 @@ import { SupplierService } from './supplier.service';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { PermissionsGuard } from '../auth/abac/permissions.guard';
+import { HasPermission } from '../auth/abac/has-permission.decorator';
 import { SupplierFilterDTO } from './dto/filter.dto';
 import {
   ApiTags,
@@ -29,14 +31,14 @@ import { UpdateClientDto } from '../client/dto/update-client.dto';
 const RESOURCE = 'supplier';
 
 @ApiTags('Fornecedores')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 @Controller(RESOURCE)
 export class SupplierController {
   constructor(private readonly supplierService: SupplierService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Cria um novo fornecedor' })
+  @HasPermission('create', 'entity:supplier')  @ApiOperation({ summary: 'Cria um novo fornecedor' })
   @ApiBody({
     description: 'Dados do novo fornecedor',
     type: CreateClientDto,
@@ -64,7 +66,7 @@ export class SupplierController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Obtém a lista de todos os fornecedores' })
+  @HasPermission('view', 'entity:supplier')  @ApiOperation({ summary: 'Obtém a lista de todos os fornecedores' })
   @ApiResponse({
     status: 200,
     description: 'Lista de fornecedores retornada com sucesso.',
@@ -108,7 +110,7 @@ export class SupplierController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Atualiza um fornecedor pelo ID' })
+  @HasPermission('edit', 'entity:supplier')  @ApiOperation({ summary: 'Atualiza um fornecedor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })
   @ApiBody({
     description: 'Dados para atualização do fornecedor',
@@ -153,7 +155,7 @@ export class SupplierController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Remove um fornecedor pelo ID' })
+  @HasPermission('delete', 'entity:supplier')  @ApiOperation({ summary: 'Remove um fornecedor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })
   @ApiResponse({
     status: 200,

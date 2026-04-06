@@ -842,6 +842,86 @@ export class SalarySheetsService {
     return { success: true, message: 'Item excluído com sucesso.' };
   }
 
+  async cancelAdvance(itemId: string) {
+    const payrollItem = await this.prisma.payrollItem.findUnique({
+      where: { id: itemId },
+    });
+
+    if (!payrollItem) {
+      throw new NotFoundException('Item de folha de pagamento não encontrado.');
+    }
+
+    if (payrollItem.type !== 'ADVANCE') {
+      throw new BadRequestException('Este item não é um adiantamento.');
+    }
+
+    const payroll = await this.prisma.payroll.findUnique({
+      where: { id: payrollItem.payrollId },
+    });
+
+    if (!payroll) {
+      throw new NotFoundException('Folha de pagamento não encontrada.');
+    }
+
+    const advanceDescription = `Folha ${String(payroll.month + 1).padStart(2, '0')}/${payroll.year} - ${payrollItem.description}`;
+
+    const advancePayable = await this.prisma.payable.findFirst({
+      where: {
+        companyId: payroll.companyId,
+        employeeId: payroll.employeeId,
+        expenseSource: 'EMPLOYEE',
+        description: advanceDescription,
+      },
+      include: {
+        installments: {
+          include: {
+            transactions: true,
+          },
+        },
+      },
+    });
+
+    await this.prisma.$transaction(async (prisma) => {
+      if (advancePayable) {
+        // Reverse cash register transactions for paid installments
+        for (const installment of advancePayable.installments) {
+          if (installment.transactions) {
+            await prisma.transaction.delete({
+              where: { id: installment.transactions.id },
+            });
+          }
+        }
+
+        // Delete installments
+        await prisma.payableInstallment.deleteMany({
+          where: { payableId: advancePayable.id },
+        });
+
+        // Delete payable
+        await prisma.payable.delete({
+          where: { id: advancePayable.id },
+        });
+      }
+
+      // Delete the payroll item
+      await prisma.payrollItem.delete({
+        where: { id: itemId },
+      });
+    });
+
+    // Recalculate salary expense
+    await this.expenseService.updateSalaryExpense(payroll);
+
+    this.logger.log(
+      `Adiantamento ${itemId} cancelado e estornado da folha ${payroll.id}`,
+    );
+
+    return {
+      success: true,
+      message: 'Adiantamento cancelado e estornado com sucesso.',
+    };
+  }
+
   async toggleSalarySheetStatus(dto: ToggleSalarySheetStatusDto) {
     const { payrollId, status } = dto;
 

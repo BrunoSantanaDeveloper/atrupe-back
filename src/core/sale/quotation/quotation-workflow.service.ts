@@ -493,6 +493,12 @@ export class QuotationWorkflowService {
       );
     }
 
+    if (quotation.status !== QuotationStatus.APPROVED) {
+      throw new BadRequestException(
+        'Somente orçamentos com status APROVADO podem ser faturados.',
+      );
+    }
+
     return await this.prisma.$transaction(
       async (prisma) => {
         if (quotation.deliveryInfo?.deliverySchedule) {

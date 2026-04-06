@@ -10,8 +10,19 @@ import {
   ApiBody,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { IsEmail, IsString, MinLength, MaxLength } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
 class LoginDto {
+  @ApiProperty({ example: 'user@email.com' })
+  @IsEmail({}, { message: 'E-mail inválido' })
+  @MaxLength(255)
   username: string;
+
+  @ApiProperty({ example: '1234abc@' })
+  @IsString()
+  @MinLength(4, { message: 'Senha deve ter no mínimo 4 caracteres' })
+  @MaxLength(128)
   password: string;
 }
 

@@ -671,8 +671,10 @@ export class PayableService {
     });
   }
 
-  async count() {
-    return this.prisma.payable.count();
+  async count(companyId?: string) {
+    return this.prisma.payable.count({
+      where: companyId ? { companyId } : undefined,
+    });
   }
 
   async getHistory(id: string) {

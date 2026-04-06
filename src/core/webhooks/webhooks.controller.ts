@@ -17,6 +17,8 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
+import { WebhookTokenGuard } from '../auth/guards/webhook-token.guard';
 
 @Controller('webhooks')
 @ApiTags('Webhooks')
@@ -25,6 +27,7 @@ export class WebhooksController {
 
   @Post('asaas')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(WebhookTokenGuard)
   @ApiOperation({
     summary: 'Receber webhook do Asaas',
     description:
@@ -43,7 +46,7 @@ export class WebhooksController {
   }
 
   @Get('events/unprocessed')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Listar eventos não processados',
@@ -59,7 +62,7 @@ export class WebhooksController {
   }
 
   @Post('events/:id/reprocess')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Reprocessar evento',

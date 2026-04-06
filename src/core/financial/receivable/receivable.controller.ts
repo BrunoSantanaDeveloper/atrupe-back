@@ -23,6 +23,8 @@ import {
   UndoCancelReceivableDto,
 } from './dto/update-receivable.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
 import {
   ApiTags,
   ApiOperation,
@@ -38,14 +40,14 @@ const RESOURCE = 'receivable';
 const GROUP = 'financial';
 
 @ApiTags('Contas a Receber')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class ReceivableController {
   constructor(private readonly receivableService: ReceivableService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Cria uma nova conta a receber com parcelas' })
+  @HasPermission('create', 'financial:receivable')  @ApiOperation({ summary: 'Cria uma nova conta a receber com parcelas' })
   @ApiBody({
     description: 'Dados da nova conta a receber',
     type: CreateReceivableDto,
@@ -64,7 +66,7 @@ export class ReceivableController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Obtém a lista de todas as contas a receber' })
+  @HasPermission('view', 'financial:receivable')  @ApiOperation({ summary: 'Obtém a lista de todas as contas a receber' })
   @ApiResponse({
     status: 200,
     description: 'Lista de contas a receber retornada com sucesso.',
@@ -128,7 +130,7 @@ export class ReceivableController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Atualizar dados do título' })
+  @HasPermission('edit', 'financial:receivable')  @ApiOperation({ summary: 'Atualizar dados do título' })
   @ApiParam({
     name: 'id',
     description: 'ID do título',
@@ -177,7 +179,7 @@ export class ReceivableController {
     );
   }
   @Patch(':id/cancel')
-  @ApiOperation({
+  @HasPermission('delete', 'financial:receivable')  @ApiOperation({
     summary: 'Cancela uma conta a receber e suas parcelas pendentes',
   })
   @ApiParam({
@@ -297,7 +299,7 @@ export class ReceivableController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Remove uma conta a receber pelo ID' })
+  @HasPermission('delete', 'financial:receivable')  @ApiOperation({ summary: 'Remove uma conta a receber pelo ID' })
   @ApiParam({
     name: 'id',
     required: true,

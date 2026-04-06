@@ -84,7 +84,7 @@ export class PaymentsService {
       description: data.description || 'Cobrança Atrupe',
       externalReference: data.externalReference,
       callback: {
-        successUrl: data.successUrl || 'https://atrupe.com.br/payment/success',
+        successUrl: data.successUrl || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success`,
         autoRedirect: true,
       },
     };
