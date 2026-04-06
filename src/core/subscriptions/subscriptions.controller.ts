@@ -51,7 +51,7 @@ export class SubscriptionsController {
   ) {}
 
   @Get('incomplete-registrations')
-  @ApiOperation({
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)  @ApiOperation({
     summary: 'List incomplete registrations (unverified emails)',
   })
   @ApiResponse({
@@ -70,7 +70,7 @@ export class SubscriptionsController {
   }
 
   @Get('trial-companies/totals')
-  @ApiOperation({ summary: 'Get trial subscriptions totals by status' })
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)  @ApiOperation({ summary: 'Get trial subscriptions totals by status' })
   @ApiResponse({
     status: 200,
     description: 'Trial subscriptions totals',
@@ -80,7 +80,7 @@ export class SubscriptionsController {
   }
 
   @Get('trial-companies')
-  @ApiOperation({ summary: 'List all companies with trial subscriptions' })
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)  @ApiOperation({ summary: 'List all companies with trial subscriptions' })
   @ApiResponse({
     status: 200,
     description: 'List of companies with trial subscriptions',
@@ -96,7 +96,7 @@ export class SubscriptionsController {
   }
 
   @Get('active-clients/totals')
-  @ApiOperation({ summary: 'Get active clients totals by status' })
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)  @ApiOperation({ summary: 'Get active clients totals by status' })
   @ApiResponse({
     status: 200,
     description: 'Active clients totals',
@@ -106,7 +106,7 @@ export class SubscriptionsController {
   }
 
   @Get('active-clients')
-  @ApiOperation({
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)  @ApiOperation({
     summary: 'List all companies with active subscriptions (non-trial)',
   })
   @ApiResponse({
@@ -166,7 +166,7 @@ export class SubscriptionsController {
   }
 
   @Get('active-clients/:companyId/history')
-  @ApiOperation({
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)  @ApiOperation({
     summary: 'Get subscription history for a company',
   })
   @ApiParam({ name: 'companyId', description: 'Company ID' })

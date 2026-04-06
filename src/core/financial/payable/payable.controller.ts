@@ -15,6 +15,8 @@ import { PayableService } from './payable.service';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
+import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 import {
   ApiTags,
   ApiOperation,
@@ -40,7 +42,7 @@ const RESOURCE = 'payable';
 const GROUP = 'financial';
 
 @ApiTags('Contas a Pagar')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class PayableController {
@@ -78,7 +80,7 @@ export class PayableController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Obtém uma conta a pagar pelo ID' })
+  @TenantResource('payable')  @ApiOperation({ summary: 'Obtém uma conta a pagar pelo ID' })
   @ApiParam({
     name: 'id',
     required: true,
@@ -130,7 +132,7 @@ export class PayableController {
   }
 
   @Patch(':id')
-  @HasPermission('edit', 'financial:payable')  @ApiOperation({ summary: 'Atualizar dados do título' })
+  @TenantResource('payable')  @HasPermission('edit', 'financial:payable')  @ApiOperation({ summary: 'Atualizar dados do título' })
   @ApiParam({
     name: 'id',
     description: 'ID do título',
@@ -179,7 +181,7 @@ export class PayableController {
     );
   }
   @Patch(':id/cancel')
-  @HasPermission('delete', 'financial:payable')  @ApiOperation({
+  @TenantResource('payable')  @HasPermission('delete', 'financial:payable')  @ApiOperation({
     summary: 'Cancela uma conta a pagar e suas parcelas pendentes',
   })
   @ApiParam({
@@ -299,7 +301,7 @@ export class PayableController {
   }
 
   @Delete(':id')
-  @HasPermission('delete', 'financial:payable')  @ApiOperation({ summary: 'Remove uma conta a pagar pelo ID' })
+  @TenantResource('payable')  @HasPermission('delete', 'financial:payable')  @ApiOperation({ summary: 'Remove uma conta a pagar pelo ID' })
   @ApiParam({
     name: 'id',
     required: true,

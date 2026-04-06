@@ -25,6 +25,8 @@ import {
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
+import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 import {
   ApiTags,
   ApiOperation,
@@ -40,7 +42,7 @@ const RESOURCE = 'receivable';
 const GROUP = 'financial';
 
 @ApiTags('Contas a Receber')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class ReceivableController {
@@ -78,7 +80,7 @@ export class ReceivableController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Obtém uma conta a receber pelo ID' })
+  @TenantResource('receivable')  @ApiOperation({ summary: 'Obtém uma conta a receber pelo ID' })
   @ApiParam({
     name: 'id',
     required: true,
@@ -130,7 +132,7 @@ export class ReceivableController {
   }
 
   @Patch(':id')
-  @HasPermission('edit', 'financial:receivable')  @ApiOperation({ summary: 'Atualizar dados do título' })
+  @TenantResource('receivable')  @HasPermission('edit', 'financial:receivable')  @ApiOperation({ summary: 'Atualizar dados do título' })
   @ApiParam({
     name: 'id',
     description: 'ID do título',
@@ -179,7 +181,7 @@ export class ReceivableController {
     );
   }
   @Patch(':id/cancel')
-  @HasPermission('delete', 'financial:receivable')  @ApiOperation({
+  @TenantResource('receivable')  @HasPermission('delete', 'financial:receivable')  @ApiOperation({
     summary: 'Cancela uma conta a receber e suas parcelas pendentes',
   })
   @ApiParam({
@@ -299,7 +301,7 @@ export class ReceivableController {
   }
 
   @Delete(':id')
-  @HasPermission('delete', 'financial:receivable')  @ApiOperation({ summary: 'Remove uma conta a receber pelo ID' })
+  @TenantResource('receivable')  @HasPermission('delete', 'financial:receivable')  @ApiOperation({ summary: 'Remove uma conta a receber pelo ID' })
   @ApiParam({
     name: 'id',
     required: true,

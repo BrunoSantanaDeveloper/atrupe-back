@@ -294,10 +294,8 @@ export class NfseService {
       );
     }
 
-    // Obter próximo número do RPS
-    const rpsNumero = await this.invoicyService.incrementNfseRpsNumber(
-      config.id,
-    );
+    // Read current RPS number (will only increment after successful emission)
+    const rpsNumero = config.proximoRpsNfse || 1;
     const rpsSerie = config.serieNfse || 'A1';
 
     // Calcular valores
@@ -548,6 +546,9 @@ export class NfseService {
           `NFS-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}`,
         );
       }
+
+      // Increment RPS number only after successful emission
+      await this.invoicyService.incrementNfseRpsNumber(config.id);
 
       return updatedNfse;
     } catch (error) {

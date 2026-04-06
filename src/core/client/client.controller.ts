@@ -17,6 +17,8 @@ import { UpdateClientDto } from './dto/update-client.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
+import { TenantGuard } from '../auth/guards/tenant.guard';
+import { TenantResource } from '../auth/guards/tenant-resource.decorator';
 import { ClientFilterDTO } from './dto/filter.dto';
 import {
   ApiTags,
@@ -30,7 +32,7 @@ import {
 const RESOURCE = 'client';
 
 @ApiTags('Clientes')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
 @ApiBearerAuth()
 @Controller(RESOURCE)
 export class ClientController {
@@ -136,7 +138,7 @@ export class ClientController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Obtém um cliente pelo ID' })
+  @TenantResource('client')  @ApiOperation({ summary: 'Obtém um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
   @ApiResponse({
     status: 200,
@@ -167,7 +169,7 @@ export class ClientController {
   }
 
   @Patch(':id')
-  @HasPermission('edit', 'entity:client')  @ApiOperation({ summary: 'Atualiza um cliente pelo ID' })
+  @TenantResource('client')  @HasPermission('edit', 'entity:client')  @ApiOperation({ summary: 'Atualiza um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
   @ApiBody({
     description: 'Dados para atualização do cliente',
@@ -228,7 +230,7 @@ export class ClientController {
   }
 
   @Delete(':id')
-  @HasPermission('delete', 'entity:client')  @ApiOperation({ summary: 'Remove um cliente pelo ID' })
+  @TenantResource('client')  @HasPermission('delete', 'entity:client')  @ApiOperation({ summary: 'Remove um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
   @ApiResponse({
     status: 200,

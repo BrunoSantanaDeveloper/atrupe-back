@@ -16,6 +16,8 @@ import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
+import { TenantGuard } from '../auth/guards/tenant.guard';
+import { TenantResource } from '../auth/guards/tenant-resource.decorator';
 import { SupplierFilterDTO } from './dto/filter.dto';
 import {
   ApiTags,
@@ -31,7 +33,7 @@ import { UpdateClientDto } from '../client/dto/update-client.dto';
 const RESOURCE = 'supplier';
 
 @ApiTags('Fornecedores')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
 @ApiBearerAuth()
 @Controller(RESOURCE)
 export class SupplierController {
@@ -78,7 +80,7 @@ export class SupplierController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Obtém um fornecedor pelo ID' })
+  @TenantResource('supplier')  @ApiOperation({ summary: 'Obtém um fornecedor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })
   @ApiResponse({
     status: 200,
@@ -110,7 +112,7 @@ export class SupplierController {
   }
 
   @Patch(':id')
-  @HasPermission('edit', 'entity:supplier')  @ApiOperation({ summary: 'Atualiza um fornecedor pelo ID' })
+  @TenantResource('supplier')  @HasPermission('edit', 'entity:supplier')  @ApiOperation({ summary: 'Atualiza um fornecedor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })
   @ApiBody({
     description: 'Dados para atualização do fornecedor',
@@ -155,7 +157,7 @@ export class SupplierController {
   }
 
   @Delete(':id')
-  @HasPermission('delete', 'entity:supplier')  @ApiOperation({ summary: 'Remove um fornecedor pelo ID' })
+  @TenantResource('supplier')  @HasPermission('delete', 'entity:supplier')  @ApiOperation({ summary: 'Remove um fornecedor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })
   @ApiResponse({
     status: 200,

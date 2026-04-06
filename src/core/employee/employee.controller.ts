@@ -16,6 +16,8 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
+import { TenantGuard } from '../auth/guards/tenant.guard';
+import { TenantResource } from '../auth/guards/tenant-resource.decorator';
 import {
   ApiTags,
   ApiOperation,
@@ -28,7 +30,7 @@ import {
 import { FilterEmployeeDto } from './dto/filter-employee.dto';
 
 @ApiTags('Employees')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
 @ApiBearerAuth()
 @Controller('employee')
 export class EmployeeController {
@@ -95,7 +97,7 @@ export class EmployeeController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Obtém um colaborador pelo ID' })
+  @TenantResource('employee')  @ApiOperation({ summary: 'Obtém um colaborador pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do colaborador' })
   @ApiResponse({
     status: 200,
@@ -110,7 +112,7 @@ export class EmployeeController {
   }
 
   @Patch(':id')
-  @HasPermission('edit', 'entity:employee')  @ApiOperation({ summary: 'Atualiza um colaborador pelo ID' })
+  @TenantResource('employee')  @HasPermission('edit', 'entity:employee')  @ApiOperation({ summary: 'Atualiza um colaborador pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do colaborador' })
   @ApiBody({
     description: 'Dados para atualização do colaborador',
@@ -138,7 +140,7 @@ export class EmployeeController {
   }
 
   @Delete(':id')
-  @HasPermission('delete', 'entity:employee')  @ApiOperation({ summary: 'Remove um colaborador pelo ID' })
+  @TenantResource('employee')  @HasPermission('delete', 'entity:employee')  @ApiOperation({ summary: 'Remove um colaborador pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do colaborador' })
   @ApiResponse({
     status: 200,

@@ -575,15 +575,7 @@ export class SubscriptionBlockService {
    * Mapeia status do Asaas para status local
    */
   private mapAsaasStatus(asaasStatus: string): AsaasPaymentStatus {
-    const statusMap: Record<string, AsaasPaymentStatus> = {
-      PENDING: 'PENDING',
-      CONFIRMED: 'CONFIRMED',
-      RECEIVED: 'CONFIRMED',
-      RECEIVED_IN_CASH: 'CONFIRMED',
-      OVERDUE: 'OVERDUE',
-      REFUNDED: 'REFUNDED',
-    };
-    return statusMap[asaasStatus] || 'PENDING';
+    return this.asaasGateway.mapAsaasPaymentStatus(asaasStatus);
   }
 
   /**

@@ -55,8 +55,8 @@ export class QuotationService {
     return this.crudService.findOne(id);
   }
 
-  count() {
-    return this.crudService.count();
+  count(companyId: string) {
+    return this.crudService.count(companyId);
   }
 
   update(id: string, dto: UpdateQuotationDto, userId?: string) {

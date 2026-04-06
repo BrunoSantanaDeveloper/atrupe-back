@@ -10,6 +10,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { AbacService } from './abac/abac.service';
+import { TenantGuard } from './guards/tenant.guard';
 import { PrismaModule } from 'nestjs-prisma';
 import { PlanControlModule } from '../plan/plan-control.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
@@ -38,10 +39,11 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
   providers: [
     AuthService,
     AbacService,
+    TenantGuard,
     JwtStrategy,
     JwtRefreshStrategy,
     LocalStrategy,
   ],
-  exports: [AuthService, AbacService],
+  exports: [AuthService, AbacService, TenantGuard],
 })
 export class AuthModule {}

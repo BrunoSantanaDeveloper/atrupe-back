@@ -416,72 +416,51 @@ export class InvoicyService {
    * Incrementar número da NF-e para um emissor específico
    */
   async incrementNfeNumber(emissoreId: string): Promise<number> {
-    const config = await this.prisma.invoicyConfig.findUnique({
+    const updated = await this.prisma.invoicyConfig.update({
       where: { id: emissoreId },
+      data: { proximoNumeroNfe: { increment: 1 } },
+      select: { proximoNumeroNfe: true },
     });
 
-    if (!config) {
+    if (!updated) {
       throw new NotFoundException('Emissor não encontrado');
     }
 
-    const currentNumber = config.proximoNumeroNfe;
-
-    await this.prisma.invoicyConfig.update({
-      where: { id: emissoreId },
-      data: {
-        proximoNumeroNfe: currentNumber + 1,
-      },
-    });
-
-    return currentNumber;
+    return updated.proximoNumeroNfe - 1;
   }
 
   /**
    * Incrementar número do RPS (NFS-e) para um emissor específico
    */
   async incrementNfseRpsNumber(emissoreId: string): Promise<number> {
-    const config = await this.prisma.invoicyConfig.findUnique({
+    const updated = await this.prisma.invoicyConfig.update({
       where: { id: emissoreId },
+      data: { proximoRpsNfse: { increment: 1 } },
+      select: { proximoRpsNfse: true },
     });
 
-    if (!config) {
+    if (!updated) {
       throw new NotFoundException('Emissor não encontrado');
     }
 
-    const currentNumber = config.proximoRpsNfse;
-
-    await this.prisma.invoicyConfig.update({
-      where: { id: emissoreId },
-      data: {
-        proximoRpsNfse: currentNumber + 1,
-      },
-    });
-
-    return currentNumber;
+    return updated.proximoRpsNfse - 1;
   }
 
   /**
    * Incrementar número da NFC-e para um emissor específico
    */
   async incrementNfceNumber(emissoreId: string): Promise<number> {
-    const config = await this.prisma.invoicyConfig.findUnique({
+    const updated = await this.prisma.invoicyConfig.update({
       where: { id: emissoreId },
+      data: { proximoNumeroNfce: { increment: 1 } },
+      select: { proximoNumeroNfce: true },
     });
 
-    if (!config) {
+    if (!updated) {
       throw new NotFoundException('Emissor não encontrado');
     }
 
-    const currentNumber = config.proximoNumeroNfce;
-
-    await this.prisma.invoicyConfig.update({
-      where: { id: emissoreId },
-      data: {
-        proximoNumeroNfce: currentNumber + 1,
-      },
-    });
-
-    return currentNumber;
+    return updated.proximoNumeroNfce - 1;
   }
 
   /**

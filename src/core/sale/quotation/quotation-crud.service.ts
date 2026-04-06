@@ -108,7 +108,13 @@ export class QuotationCrudService {
         }
       }
 
-      // Criação do orçamento no banco
+      // Atomic increment: increment first, then use the returned value
+      const updatedSeries = await this.prisma.saleSeries.update({
+        where: { id: seriesId },
+        data: { currentBudgetNumber: { increment: 1 } },
+        select: { currentBudgetNumber: true },
+      });
+
       const newQuotation = await this.prisma.quotation.create({
         data: {
           description,
@@ -121,16 +127,7 @@ export class QuotationCrudService {
           clientId,
           contactId,
           seriesId: seriesId || undefined,
-          quotationNumber: series.currentBudgetNumber + 1,
-        },
-      });
-
-      await this.prisma.saleSeries.update({
-        where: {
-          id: seriesId,
-        },
-        data: {
-          currentBudgetNumber: { increment: 1 },
+          quotationNumber: updatedSeries.currentBudgetNumber,
         },
       });
 
@@ -496,9 +493,9 @@ export class QuotationCrudService {
   /**
    * Conta total de orçamentos
    */
-  async count(companyId?: string) {
+  async count(companyId: string) {
     return this.prisma.quotation.count({
-      where: companyId ? { companyId } : undefined,
+      where: { companyId },
     });
   }
 
@@ -620,12 +617,11 @@ export class QuotationCrudService {
       );
     }
 
-    const serie = await this.prisma.saleSeries.findUnique({
+    // Atomic increment: increment first, then use the returned value
+    const updatedSerie = await this.prisma.saleSeries.update({
       where: { id: quotation.seriesId },
-      select: {
-        id: true,
-        currentBudgetNumber: true,
-      },
+      data: { currentBudgetNumber: { increment: 1 } },
+      select: { currentBudgetNumber: true },
     });
 
     const createDto: CreateQuotationDto = {
@@ -639,20 +635,11 @@ export class QuotationCrudService {
       seriesId: quotation.seriesId,
       companyId: quotation.companyId,
       subCompanyId: quotation.subCompanyId,
-      quotationNumber: serie.currentBudgetNumber + 1,
+      quotationNumber: updatedSerie.currentBudgetNumber,
     };
 
     const newQuotation = await this.prisma.quotation.create({
       data: createDto,
-    });
-
-    await this.prisma.saleSeries.update({
-      where: {
-        id: serie.id,
-      },
-      data: {
-        currentBudgetNumber: { increment: 1 },
-      },
     });
 
     try {

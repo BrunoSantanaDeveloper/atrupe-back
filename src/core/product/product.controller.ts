@@ -17,6 +17,8 @@ import { ProductFilterDTO } from './dto/filter.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
+import { TenantGuard } from '../auth/guards/tenant.guard';
+import { TenantResource } from '../auth/guards/tenant-resource.decorator';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ToggleStatusDto } from './dto/toggle-status.dto';
 import {
@@ -31,7 +33,7 @@ import {
 const RESOURCE = 'product';
 
 @ApiTags('Produtos')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
 @ApiBearerAuth()
 @Controller(RESOURCE)
 export class ProductController {
@@ -74,7 +76,7 @@ export class ProductController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Obtém um produto pelo ID' })
+  @TenantResource('product')  @ApiOperation({ summary: 'Obtém um produto pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do produto' })
   @ApiResponse({
     status: 200,
@@ -89,7 +91,7 @@ export class ProductController {
   }
 
   @Patch(':id')
-  @HasPermission('edit', 'product_settings:products')  @ApiOperation({ summary: 'Atualiza um produto pelo ID' })
+  @TenantResource('product')  @HasPermission('edit', 'product_settings:products')  @ApiOperation({ summary: 'Atualiza um produto pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do produto' })
   @ApiBody({
     description: 'Dados para atualização do produto',
@@ -111,7 +113,7 @@ export class ProductController {
   }
 
   @Delete(':id')
-  @HasPermission('delete', 'product_settings:products')  @ApiOperation({ summary: 'Remove um produto pelo ID' })
+  @TenantResource('product')  @HasPermission('delete', 'product_settings:products')  @ApiOperation({ summary: 'Remove um produto pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do produto' })
   @ApiResponse({
     status: 200,
