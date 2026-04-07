@@ -224,9 +224,18 @@ describe('AuthService', () => {
 
   describe('generateRefreshToken', () => {
     it('should generate a refresh token with extended expiration', () => {
-      const payload = { sub: 'user-123', username: 'test@example.com' };
+      const payload = {
+        sub: 'user-123',
+        username: 'test@example.com',
+        companyId: 'company-123',
+        role: 'Admin',
+        isAdmin: true,
+        isSystemAdmin: false,
+        employeeId: 'emp-123',
+        blockLevel: null,
+      };
 
-      const result = service.generateRefreshToken(payload);
+      const result = (service as any).generateRefreshToken(payload);
 
       expect(result).toBeDefined();
       expect(typeof result).toBe('string');
@@ -235,8 +244,7 @@ describe('AuthService', () => {
 
   describe('getPlanFeatures', () => {
     it('should return features for company', async () => {
-      // This method calls planControlService internally
-      const result = await service.getPlanFeatures('company-123');
+      const result = await (service as any).getPlanFeatures('company-123');
 
       expect(Array.isArray(result)).toBe(true);
     });

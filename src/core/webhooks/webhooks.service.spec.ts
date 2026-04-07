@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { WebhooksService } from './webhooks.service';
 import { PrismaService } from 'src/config/prisma/prisma.service';
+import { SubscriptionBlockService } from '../subscriptions/subscription-block.service';
 import { AsaasWebhookEvent } from './dto/asaas-webhook.dto';
 
 describe('WebhooksService', () => {
@@ -33,6 +34,13 @@ describe('WebhooksService', () => {
         {
           provide: PrismaService,
           useValue: mockPrismaService,
+        },
+        {
+          provide: SubscriptionBlockService,
+          useValue: {
+            checkAndApplyBlocks: jest.fn(),
+            unblockCompany: jest.fn(),
+          },
         },
       ],
     }).compile();

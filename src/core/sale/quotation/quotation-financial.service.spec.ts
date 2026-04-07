@@ -241,7 +241,7 @@ describe('QuotationFinancialService', () => {
 
     it('should return false if commission is 0', async () => {
       const result = await service.shouldCreateCommissionPayable(
-        0,
+        0 as any,
         prisma as any,
       );
       expect(result).toBe(false);
@@ -258,7 +258,7 @@ describe('QuotationFinancialService', () => {
       const result = service.shouldCreateDeliveryPayable({
         cost: 0,
         supplierId: 'supplier-uuid',
-      });
+      } as any);
       expect(result).toBe(false);
     });
 
@@ -266,7 +266,7 @@ describe('QuotationFinancialService', () => {
       const result = service.shouldCreateDeliveryPayable({
         cost: 5000,
         supplierId: 'supplier-uuid',
-      });
+      } as any);
       expect(result).toBe(true);
     });
   });

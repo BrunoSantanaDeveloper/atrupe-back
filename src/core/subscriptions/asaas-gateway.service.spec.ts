@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AsaasGatewayService } from './asaas-gateway.service';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 import axios from 'axios';
 
 jest.mock('axios');
@@ -18,7 +19,18 @@ describe('AsaasGatewayService', () => {
     mockedAxios.create.mockReturnValue(mockApi as any);
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [AsaasGatewayService],
+      providers: [
+        AsaasGatewayService,
+        {
+          provide: SystemSettingsService,
+          useValue: {
+            getActiveAsaasConfig: jest.fn().mockResolvedValue({
+              url: 'https://sandbox.asaas.com/api/v3',
+              apiKey: 'test_key',
+            }),
+          },
+        },
+      ],
     }).compile();
 
     service = module.get<AsaasGatewayService>(AsaasGatewayService);

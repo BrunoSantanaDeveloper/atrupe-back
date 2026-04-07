@@ -231,10 +231,10 @@ describe('QuotationService', () => {
     it('should delegate count to crudService', async () => {
       crudService.count.mockResolvedValue(42);
 
-      const result = await service.count();
+      const result = await service.count(mockCompanyId);
 
       expect(result).toBe(42);
-      expect(crudService.count).toHaveBeenCalled();
+      expect(crudService.count).toHaveBeenCalledWith(mockCompanyId);
     });
 
     it('should delegate duplicate to crudService', async () => {

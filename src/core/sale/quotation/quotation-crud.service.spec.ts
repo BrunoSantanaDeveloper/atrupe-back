@@ -183,8 +183,7 @@ describe('QuotationCrudService', () => {
       });
 
       expect(result.data).toHaveLength(1);
-      expect(result.meta.total).toBe(1);
-      expect(result.meta.page).toBe(1);
+      expect(result.total).toBe(1);
     });
 
     it('should filter by status', async () => {
@@ -259,12 +258,15 @@ describe('QuotationCrudService', () => {
   });
 
   describe('count', () => {
-    it('should return total count', async () => {
+    it('should return total count with companyId', async () => {
       prisma.quotation.count.mockResolvedValue(42);
 
-      const result = await service.count();
+      const result = await service.count(mockCompanyId);
 
       expect(result).toBe(42);
+      expect(prisma.quotation.count).toHaveBeenCalledWith({
+        where: { companyId: mockCompanyId },
+      });
     });
   });
 

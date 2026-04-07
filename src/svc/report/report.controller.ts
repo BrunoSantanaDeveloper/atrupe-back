@@ -43,8 +43,9 @@ export class ReportController {
   }
 
   @Get('menu')
-  findAll() {
-    return this.reportService.menu();
+  findAll(@Req() req: Request) {
+    const companyId = (req as any).user?.companyId;
+    return this.reportService.menu(companyId);
   }
 
   // ============== FINANCIAL REPORT ENDPOINTS ==============

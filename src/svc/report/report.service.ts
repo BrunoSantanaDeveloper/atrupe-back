@@ -83,11 +83,11 @@ export class ReportService {
     private readonly receivableService: ReceivableService,
   ) {}
 
-  async menu(): Promise<ReportMenuDto> {
-    const quotations = await this.quotationService.count();
-    const orders = await this.orderService.count();
-    const payable = await this.payableService.count();
-    const receivable = await this.receivableService.count();
+  async menu(companyId: string): Promise<ReportMenuDto> {
+    const quotations = await this.quotationService.count(companyId);
+    const orders = await this.orderService.count(companyId);
+    const payable = await this.payableService.count(companyId);
+    const receivable = await this.receivableService.count(companyId);
     return {
       sales: { quotations, orders },
       financial: { receivable, payable },
