@@ -4,15 +4,15 @@
 -- CNPJ: 13.130.399/0001-77
 -- ============================================================
 
--- Step 1: Find company ID
+-- Step 1: Find company ID (try both formatted and unformatted CNPJ)
 \echo '=== Finding company ==='
 SELECT id, name, cnpj, "legalName", email, "createdAt"
 FROM companies
-WHERE cnpj = '13.130.399/0001-77';
+WHERE cnpj IN ('13.130.399/0001-77', '13130399000177');
 
 -- Use a temp table to hold the company ID for reuse
 CREATE TEMP TABLE _export_company AS
-SELECT id FROM companies WHERE cnpj = '13.130.399/0001-77';
+SELECT id FROM companies WHERE cnpj IN ('13.130.399/0001-77', '13130399000177');
 
 -- ============================================================
 -- CLIENTES
@@ -46,11 +46,11 @@ SELECT id FROM companies WHERE cnpj = '13.130.399/0001-77';
 -- PRODUTOS
 -- ============================================================
 \echo '=== Exporting: Products ==='
-\copy (SELECT p.name, p.code, p.description, p."salePrice", p."unitCost", p.status::text, p."productType"::text, p."imageUrl", p."createdAt" FROM products p WHERE p."companyId" IN (SELECT id FROM _export_company)) TO '/tmp/export_produtos.csv' WITH CSV HEADER ENCODING 'UTF8'
+\copy (SELECT p.name, p.code, p."technicalDescription", p."salePrice", p."unitCost", p.status::text, p."imageUrl", p."isService", p."createdAt" FROM products p WHERE p."companyId" IN (SELECT id FROM _export_company)) TO '/tmp/export_produtos.csv' WITH CSV HEADER ENCODING 'UTF8'
 
 -- Itens dos produtos
 \echo '=== Exporting: Product Items ==='
-\copy (SELECT p.name AS produto, pi.name AS item, pi."unitCost", pi."salePrice", pi.quantity, pi."unitKind"::text, pi.height, pi.width, pi.length, pi.weight, pi.volume, pi.duration, pi.distance FROM product_items pi JOIN products p ON pi."productId" = p.id WHERE p."companyId" IN (SELECT id FROM _export_company)) TO '/tmp/export_produtos_itens.csv' WITH CSV HEADER ENCODING 'UTF8'
+\copy (SELECT p.name AS produto, pi.name AS item, pi."unitCost", pi."salePrice", pi."unitKind"::text, pi.height, pi.width, pi.length, pi.weight, pi.volume, pi.duration, pi.distance FROM product_items pi JOIN products p ON pi."productId" = p.id WHERE p."companyId" IN (SELECT id FROM _export_company)) TO '/tmp/export_produtos_itens.csv' WITH CSV HEADER ENCODING 'UTF8'
 
 -- ============================================================
 -- ORÇAMENTOS
@@ -98,13 +98,13 @@ SELECT id FROM companies WHERE cnpj = '13.130.399/0001-77';
 -- NOTAS FISCAIS (NF-e)
 -- ============================================================
 \echo '=== Exporting: NF-e ==='
-\copy (SELECT n.number, n.series, n.status::text, n."accessKey", n."totalValue", n."issuedAt", n."canceledAt", n."createdAt" FROM nfes n WHERE n."companyId" IN (SELECT id FROM _export_company)) TO '/tmp/export_nfe.csv' WITH CSV HEADER ENCODING 'UTF8'
+\copy (SELECT n.numero, n.serie, n.status::text, n."chaveAcesso", n."valorTotal", n."dataEmissao", n."dataCancelamento", n."createdAt" FROM nfes n WHERE n."companyId" IN (SELECT id FROM _export_company)) TO '/tmp/export_nfe.csv' WITH CSV HEADER ENCODING 'UTF8'
 
 -- ============================================================
--- NOTAS FISCAIS DE SERVIÇO (NFS-e)  
+-- NOTAS FISCAIS DE SERVIÇO (NFS-e)
 -- ============================================================
 \echo '=== Exporting: NFS-e ==='
-\copy (SELECT n."rpsNumber", n."rpsSeries", n."nfseNumber", n.status::text, n."totalValue", n."issuedAt", n."canceledAt", n."createdAt" FROM nfses n WHERE n."companyId" IN (SELECT id FROM _export_company)) TO '/tmp/export_nfse.csv' WITH CSV HEADER ENCODING 'UTF8'
+\copy (SELECT n."rpsNumero", n."rpsSerie", n.numero AS nfse_numero, n.status::text, n."valorServicos", n."dataEmissao", n."dataCancelamento", n."createdAt" FROM nfses n WHERE n."companyId" IN (SELECT id FROM _export_company)) TO '/tmp/export_nfse.csv' WITH CSV HEADER ENCODING 'UTF8'
 
 -- ============================================================
 -- CAIXA
