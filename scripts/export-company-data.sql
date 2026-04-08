@@ -4,15 +4,15 @@
 -- CNPJ: 13.130.399/0001-77
 -- ============================================================
 
--- Step 1: Find company ID (try both formatted and unformatted CNPJ)
+-- Step 1: Find company by ID (confirmed)
 \echo '=== Finding company ==='
 SELECT id, name, cnpj, "legalName", email, "createdAt"
 FROM companies
-WHERE cnpj IN ('13.130.399/0001-77', '13130399000177');
+WHERE id = 'c534333c-8a43-411d-af39-9cce98c78444';
 
 -- Use a temp table to hold the company ID for reuse
 CREATE TEMP TABLE _export_company AS
-SELECT id FROM companies WHERE cnpj IN ('13.130.399/0001-77', '13130399000177');
+SELECT id FROM companies WHERE id = 'c534333c-8a43-411d-af39-9cce98c78444';
 
 -- ============================================================
 -- CLIENTES
