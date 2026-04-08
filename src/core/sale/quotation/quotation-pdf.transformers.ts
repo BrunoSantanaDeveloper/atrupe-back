@@ -322,11 +322,21 @@ export function transformPdfPayment(quotationPayment: any) {
 }
 
 export function transformPdfTotal(quotation: QuotationPdfRaw) {
+  const commission = (quotation.quotationPayment as any)?.commission;
+  const commissionTotal = commission?.totalCommission || 0;
+  const commissionType = commission?.type || null;
+  const discountTotal = quotation.quotationPayment?.discountTotal || 0;
+
+  let finalTotal = quotation.totalValue - discountTotal;
+  if (commissionType === 'ADD' && commissionTotal > 0) {
+    finalTotal += commissionTotal;
+  }
+
   return {
     subtotal: quotation.totalValue,
-    totalDiscount: quotation.quotationPayment?.discountTotal || 0,
-    finalTotal:
-      quotation.totalValue - (quotation.quotationPayment?.discountTotal || 0),
+    totalDiscount: discountTotal,
+    commissionTotal: commissionType === 'ADD' ? commissionTotal : 0,
+    finalTotal,
   };
 }
 

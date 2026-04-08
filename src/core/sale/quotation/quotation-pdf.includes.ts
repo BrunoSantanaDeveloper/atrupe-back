@@ -151,6 +151,14 @@ export const PDF_QUOTATION_PAYMENT_SELECT = {
       },
     },
   },
+  commission: {
+    select: {
+      type: true,
+      commissionValue: true,
+      totalCommission: true,
+      commissionType: true,
+    },
+  },
   downPaymentCondition: {
     select: PDF_PAYMENT_CONDITION_SELECT,
   },
