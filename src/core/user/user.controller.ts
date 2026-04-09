@@ -320,8 +320,7 @@ export class UserController {
     description: 'Email de verificação reenviado com sucesso.',
   })
   async resendVerification(@Body('email') email: string) {
-    await this.userService.sendEmailValidation(email);
-    return { message: 'Email de verificação reenviado com sucesso.' };
+    return await this.userService.sendEmailValidation(email);
   }
 
   @Post('create-password')

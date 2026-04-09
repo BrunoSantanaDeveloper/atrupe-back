@@ -103,7 +103,15 @@ export class UserRegistrationService {
         this.logger.error('Falha ao enviar email de validação:', err);
       });
 
-    return { message: 'Email de validação enviado com sucesso.' };
+    const response: Record<string, any> = {
+      message: 'Email de validação enviado com sucesso.',
+    };
+
+    if (process.env.NODE_ENV !== 'production') {
+      response.devToken = token;
+    }
+
+    return response;
   }
 
   async verifyEmail(body: { email: string; token: string }) {
