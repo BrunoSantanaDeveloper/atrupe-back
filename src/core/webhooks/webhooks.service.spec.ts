@@ -25,6 +25,10 @@ describe('WebhooksService', () => {
     subscriptionHistory: {
       create: jest.fn(),
     },
+    company: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      update: jest.fn(),
+    },
   };
 
   beforeEach(async () => {

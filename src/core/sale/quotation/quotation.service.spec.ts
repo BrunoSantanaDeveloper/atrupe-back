@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { QuotationService } from './quotation.service';
-import { PrismaService } from 'nestjs-prisma';
+import { PrismaService } from 'src/config/prisma/prisma.service';
 import { OrderService } from '../order/order.service';
 import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.service';
 import { QuotationCrudService } from './quotation-crud.service';
@@ -216,7 +216,7 @@ describe('QuotationService', () => {
       const result = await service.create(dto);
 
       expect(result).toBe(mockQuotation);
-      expect(crudService.create).toHaveBeenCalledWith(dto);
+      expect(crudService.create).toHaveBeenCalledWith(dto, undefined);
     });
 
     it('should delegate findOne to crudService', async () => {
@@ -414,7 +414,7 @@ describe('QuotationService', () => {
       const result = await service.update(mockQuotationId, dto);
 
       expect(result.description).toBe('Updated');
-      expect(crudService.update).toHaveBeenCalledWith(mockQuotationId, dto);
+      expect(crudService.update).toHaveBeenCalledWith(mockQuotationId, dto, undefined);
     });
 
     it('should delegate remove to crudService', async () => {

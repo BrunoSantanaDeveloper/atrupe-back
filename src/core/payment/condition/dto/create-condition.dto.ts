@@ -1,4 +1,4 @@
-import { PaymentConditionCostType } from '@prisma/client';
+import { PaymentConditionCostType, InvoiceType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsArray,
@@ -122,4 +122,22 @@ export class CreateConditionDto {
     required: false,
   })
   installments: InstallmentDto[];
+
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({
+    description: 'Auto-generate invoice (NF) on order approval',
+    example: false,
+    required: false,
+  })
+  generateInvoice?: boolean;
+
+  @ValidateIf((o) => o.generateInvoice === true)
+  @IsEnum(InvoiceType)
+  @ApiProperty({
+    description: 'Invoice type to generate (NFE, NFSE, NFCE)',
+    enum: InvoiceType,
+    required: false,
+  })
+  invoiceType?: InvoiceType;
 }

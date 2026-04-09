@@ -17,6 +17,8 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
+import { PermissionsGuard } from '../../auth/abac/permissions.guard';
+import { HasPermission } from '../../auth/abac/has-permission.decorator';
 import { InvoicyService } from './invoicy.service';
 import {
   CreateInvoicyConfigDto,
@@ -25,18 +27,20 @@ import {
 
 @ApiTags('Fiscal - Emissores')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('fiscal/emissores')
 export class EmissoresController {
   constructor(private readonly invoicyService: InvoicyService) {}
 
   @Get()
+  @HasPermission('view', 'nota_fiscal:config')
   @ApiOperation({ summary: 'Listar todos os emissores da empresa' })
   async getAll(@Req() req) {
     return this.invoicyService.getAllByCompany(req.user.companyId);
   }
 
   @Get('default')
+  @HasPermission('view', 'nota_fiscal:config')
   @ApiOperation({ summary: 'Obter emissor padrão da empresa' })
   async getDefault(@Req() req) {
     return this.invoicyService.getDefault(req.user.companyId);
@@ -50,12 +54,14 @@ export class EmissoresController {
   }
 
   @Post()
+  @HasPermission('create', 'nota_fiscal:config')
   @ApiOperation({ summary: 'Criar novo emissor' })
   async create(@Req() req, @Body() dto: CreateInvoicyConfigDto) {
     return this.invoicyService.create(req.user.companyId, dto);
   }
 
   @Patch(':id')
+  @HasPermission('edit', 'nota_fiscal:config')
   @ApiOperation({ summary: 'Atualizar emissor' })
   @ApiParam({ name: 'id', description: 'ID do emissor' })
   async update(@Param('id') id: string, @Body() dto: UpdateInvoicyConfigDto) {
@@ -63,6 +69,7 @@ export class EmissoresController {
   }
 
   @Delete(':id')
+  @HasPermission('delete', 'nota_fiscal:config')
   @ApiOperation({ summary: 'Excluir emissor' })
   @ApiParam({ name: 'id', description: 'ID do emissor' })
   async delete(@Param('id') id: string) {
@@ -70,6 +77,7 @@ export class EmissoresController {
   }
 
   @Post(':id/set-default')
+  @HasPermission('edit', 'nota_fiscal:config')
   @ApiOperation({ summary: 'Definir emissor como padrão' })
   @ApiParam({ name: 'id', description: 'ID do emissor' })
   async setDefault(@Req() req, @Param('id') id: string) {
@@ -88,7 +96,7 @@ export class EmissoresController {
 // Mantém o controller legado para compatibilidade
 @ApiTags('Fiscal - Invoicy (Legado)')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('fiscal/invoicy')
 export class InvoicyController {
   constructor(private readonly invoicyService: InvoicyService) {}

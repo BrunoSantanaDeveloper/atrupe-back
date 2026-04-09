@@ -37,6 +37,20 @@ const mockQuotation = {
   totalValue: 10000,
   createdAt: new Date(),
   updatedAt: new Date(),
+  dueDate: null,
+  finishedAt: null,
+  quickSale: false,
+  quotationNumber: 101,
+  order: null,
+  series: null,
+  seller: null,
+  contact: null,
+  contactSource: null,
+  subCompany: null,
+  client: null,
+  deliveryInfo: null,
+  quotationPayment: null,
+  quotationProduct: [],
 };
 
 const createMockPrismaService = () => ({

@@ -48,7 +48,7 @@ export class NfeBuilderService {
         dest: this.buildDestinatario(dto, destResult, config),
         det: this.buildProdutos(dto.items, destResult.uf, config),
         total: this.buildTotais(valorTotal, dto.items),
-        pag: this.buildPagamento(valorTotal),
+        pag: this.buildPagamento(valorTotal, dto.pagamento?.forma),
         transp: { modFrete: '9' },
         ...this.buildCobranca(dto, numero, valorTotal),
         ...this.buildAutXml(dto),
@@ -197,6 +197,7 @@ export class NfeBuilderService {
     const cleanDoc = dto.destCnpjCpf?.replace(/\D/g, '') || '';
     const isHomologacao =
       config.ambiente === 'HOMOLOGACAO' || config.ambiente !== 1;
+    const indIEDest = dto.destIndIEDest ?? 9;
 
     return {
       ...(cleanDoc.length === 14 ? { CNPJ_dest: cleanDoc } : {}),
@@ -204,7 +205,10 @@ export class NfeBuilderService {
       xNome_dest: isHomologacao
         ? 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
         : dto.destNome || '',
-      indIEDest: 9,
+      indIEDest,
+      ...(indIEDest === 1 && dto.destIe
+        ? { IE_dest: dto.destIe.replace(/\D/g, '') }
+        : {}),
       enderDest: {
         xLgr_dest: dto.destEndereco || '',
         nro_dest: dto.destNumero || 'S/N',
@@ -279,8 +283,8 @@ export class NfeBuilderService {
   /**
    * Constrói bloco de pagamento
    */
-  private buildPagamento(valorTotal: number): any[] {
-    return [{ tPag: '01', vPag: valorTotal.toFixed(2) }];
+  private buildPagamento(valorTotal: number, tPag?: string): any[] {
+    return [{ tPag: tPag || '99', vPag: valorTotal.toFixed(2) }];
   }
 
   /**

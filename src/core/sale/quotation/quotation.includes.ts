@@ -134,6 +134,8 @@ export const QUOTATION_PAYMENT_SELECT = {
     select: {
       id: true,
       name: true,
+      generateInvoice: true,
+      invoiceType: true,
     },
   },
   totalValue: true,

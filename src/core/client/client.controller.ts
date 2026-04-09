@@ -125,6 +125,25 @@ export class ClientController {
     return this.clientService.findAllQuantity(companyId);
   }
 
+  @Get('lookup/:document')
+  @HasPermission('view', 'entity:client')
+  @ApiOperation({
+    summary: 'Busca dados de pessoa/empresa por CPF ou CNPJ',
+    description:
+      'Consulta APIs externas para auto-preenchimento de cadastro. Também verifica se o documento já existe no sistema.',
+  })
+  @ApiParam({
+    name: 'document',
+    required: true,
+    description: 'CPF (11 dígitos) ou CNPJ (14 dígitos)',
+  })
+  @ApiResponse({ status: 200, description: 'Dados encontrados.' })
+  @ApiResponse({ status: 400, description: 'Documento inválido.' })
+  @ApiResponse({ status: 404, description: 'Dados não encontrados.' })
+  lookupDocument(@Req() req, @Param('document') document: string) {
+    return this.clientService.lookupDocument(document, req.user.companyId);
+  }
+
   @Get()
   @HasPermission('view', 'entity:client')  @ApiOperation({ summary: 'Obtém a lista de todos os clientes' })
   @ApiResponse({

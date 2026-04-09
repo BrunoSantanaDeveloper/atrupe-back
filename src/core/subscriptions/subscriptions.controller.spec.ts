@@ -4,6 +4,7 @@ import { SubscriptionsService } from './subscriptions.service';
 import { AdminDashboardService } from './admin-dashboard.service';
 import { CompanyManagementService } from './company-management.service';
 import { SubscriptionBlockService } from './subscription-block.service';
+import { PrismaService } from 'src/config/prisma/prisma.service';
 
 describe('SubscriptionsController', () => {
   let controller: SubscriptionsController;
@@ -41,6 +42,12 @@ describe('SubscriptionsController', () => {
             getBlockStatus: jest.fn(),
             listBlockedCompanies: jest.fn(),
             getPendingPaymentUrl: jest.fn(),
+          },
+        },
+        {
+          provide: PrismaService,
+          useValue: {
+            idempotencyKey: { findUnique: jest.fn(), create: jest.fn() },
           },
         },
       ],

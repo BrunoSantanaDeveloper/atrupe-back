@@ -16,30 +16,35 @@ import {
   BlockLevelGuard,
   RequireUnblocked,
 } from '../../auth/guards/block-level.guard';
+import { PermissionsGuard } from '../../auth/abac/permissions.guard';
+import { HasPermission } from '../../auth/abac/has-permission.decorator';
 import { NfeService } from './nfe.service';
 import {
   EmitNfeDto,
   EmitNfeFromOrderDto,
   CancelNfeDto,
   CorrectionLetterDto,
+  InutilizarNfeDto,
   NfeFilterDto,
   UpdateNfeDraftDto,
 } from './dtos/nfe.dto';
 
 @ApiTags('Fiscal - NF-e')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, BlockLevelGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, BlockLevelGuard)
 @Controller('fiscal/nfe')
 export class NfeController {
   constructor(private readonly nfeService: NfeService) {}
 
   @Get()
+  @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Listar NF-e' })
   async findAll(@Req() req, @Query() filters: NfeFilterDto) {
     return this.nfeService.findAll(req.user.companyId, filters);
   }
 
   @Get('prepare/:orderId')
+  @HasPermission('view', 'nota_fiscal:emitir')
   @ApiOperation({
     summary: 'Preparar dados para emissão de NF-e a partir de uma ordem',
   })
@@ -50,6 +55,7 @@ export class NfeController {
   // ==================== Draft Endpoints ====================
 
   @Post('draft/:orderId')
+  @HasPermission('create', 'nota_fiscal:emitir')
   @ApiOperation({
     summary: 'Criar ou obter rascunho de NF-e para uma ordem',
   })
@@ -58,6 +64,7 @@ export class NfeController {
   }
 
   @Patch('draft/:id')
+  @HasPermission('edit', 'nota_fiscal:emitir')
   @ApiOperation({ summary: 'Atualizar rascunho de NF-e' })
   async updateDraft(
     @Req() req,
@@ -68,20 +75,31 @@ export class NfeController {
   }
 
   @Delete('draft/:id')
+  @HasPermission('delete', 'nota_fiscal:emitir')
   @ApiOperation({ summary: 'Deletar rascunho de NF-e (cancelar digitação)' })
   async deleteDraft(@Req() req, @Param('id') id: string) {
     return this.nfeService.deleteDraft(req.user.companyId, id);
   }
 
+  @Post('inutilizar')
+  @HasPermission('create', 'nota_fiscal:emitir')
+  @RequireUnblocked()
+  @ApiOperation({ summary: 'Inutilizar faixa de numeração de NF-e' })
+  async inutilizar(@Req() req, @Body() dto: InutilizarNfeDto) {
+    return this.nfeService.inutilizar(req.user.companyId, dto);
+  }
+
   // ==================== NF-e Endpoints ====================
 
   @Get(':id')
+  @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Obter NF-e por ID' })
   async findById(@Req() req, @Param('id') id: string) {
     return this.nfeService.findById(id, req.user.companyId);
   }
 
   @Post('emit')
+  @HasPermission('create', 'nota_fiscal:emitir')
   @RequireUnblocked()
   @ApiOperation({ summary: 'Emitir NF-e a partir de uma ordem de serviço' })
   async emit(@Req() req, @Body() dto: EmitNfeFromOrderDto) {
@@ -89,6 +107,7 @@ export class NfeController {
   }
 
   @Post('emit-full')
+  @HasPermission('create', 'nota_fiscal:emitir')
   @RequireUnblocked()
   @ApiOperation({ summary: 'Emitir NF-e com todos os dados (manual)' })
   async emitFull(@Req() req, @Body() dto: EmitNfeDto) {
@@ -96,12 +115,14 @@ export class NfeController {
   }
 
   @Post(':id/cancel')
+  @HasPermission('delete', 'nota_fiscal:cancelar')
   @ApiOperation({ summary: 'Cancelar NF-e' })
   async cancel(@Req() req, @Param('id') id: string, @Body() dto: CancelNfeDto) {
     return this.nfeService.cancel(id, req.user.companyId, dto);
   }
 
   @Post(':id/correction-letter')
+  @HasPermission('edit', 'nota_fiscal:emitir')
   @ApiOperation({ summary: 'Enviar carta de correção' })
   async sendCorrectionLetter(
     @Req() req,
@@ -112,18 +133,21 @@ export class NfeController {
   }
 
   @Get(':id/status')
+  @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Consultar status da NF-e' })
   async consultStatus(@Req() req, @Param('id') id: string) {
     return this.nfeService.consultStatus(id, req.user.companyId);
   }
 
   @Get(':id/danfe')
+  @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Obter URL do DANFE' })
   async getDanfeUrl(@Req() req, @Param('id') id: string) {
     return this.nfeService.getDanfeUrl(id, req.user.companyId);
   }
 
   @Get(':id/xml')
+  @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Obter XML da NF-e' })
   async getXml(@Req() req, @Param('id') id: string) {
     return this.nfeService.getXml(id, req.user.companyId);

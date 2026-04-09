@@ -20,6 +20,7 @@ describe('AuthService', () => {
     password: 'hashed-password',
     avatar: 'avatar-url',
     userRole: [],
+    customer: null,
     employee: [
       {
         id: 'emp-123',
@@ -49,6 +50,7 @@ describe('AuthService', () => {
     password: 'hashed-password',
     avatar: 'avatar-url',
     userRole: [{ isSystemAdmin: true }],
+    customer: null,
     employee: [],
   };
 
@@ -72,9 +74,14 @@ describe('AuthService', () => {
           provide: PlanControlService,
           useValue: {
             getCompanyPlanInfo: jest.fn().mockResolvedValue({
+              planId: 'plan-1',
               planType: 'LITE',
-              trialEndsAt: null,
+              planName: 'Lite',
+              features: {},
               limits: {},
+              additionalUsers: 0,
+              isTrialActive: false,
+              trialEndsAt: null,
             }),
           },
         },
@@ -106,7 +113,7 @@ describe('AuthService', () => {
       userService.findByEmail.mockResolvedValue({
         ...mockUser,
         password: hashedPassword,
-      });
+      } as any);
 
       const result = await service.validateUser(
         'test@example.com',
@@ -122,7 +129,7 @@ describe('AuthService', () => {
       userService.findByEmail.mockResolvedValue({
         ...mockUser,
         password: hashedPassword,
-      });
+      } as any);
 
       const result = await service.validateUser(
         'test@example.com',
@@ -168,9 +175,14 @@ describe('AuthService', () => {
 
     it('should check and sync subscription for trial users', async () => {
       planControlService.getCompanyPlanInfo.mockResolvedValue({
+        planId: 'plan-trial',
         planType: 'TRIAL',
-        trialEndsAt: new Date(),
+        planName: 'Trial',
+        features: {},
         limits: {},
+        additionalUsers: 0,
+        isTrialActive: true,
+        trialEndsAt: new Date(),
       });
 
       await service.login(mockUser);
@@ -182,9 +194,14 @@ describe('AuthService', () => {
 
     it('should not check subscription for non-trial users', async () => {
       planControlService.getCompanyPlanInfo.mockResolvedValue({
+        planId: 'plan-1',
         planType: 'LITE',
-        trialEndsAt: null,
+        planName: 'Lite',
+        features: {},
         limits: {},
+        additionalUsers: 0,
+        isTrialActive: false,
+        trialEndsAt: null,
       });
 
       await service.login(mockUser);

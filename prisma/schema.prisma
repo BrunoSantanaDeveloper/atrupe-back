@@ -289,6 +289,8 @@ model Client {
   planId            String?
   isBranch          Boolean                  @default(false)
   isImported        Boolean                  @default(false)
+  stateRegistration String?                  // IE (Inscrição Estadual) — required for ICMS taxpayers on NF-e
+  indicadorIE       Int?                     @default(9) // 1=Contribuinte ICMS, 2=Isento, 9=Não contribuinte
   address           Address[]
   paymentConditions ClientPaymentCondition[]
   company           Company                  @relation(fields: [companyId], references: [id])
@@ -331,6 +333,8 @@ model Supplier {
   minValue          Float?
   isBranch          Boolean                    @default(false)
   isImported        Boolean                    @default(false)
+  stateRegistration String?                    // IE (Inscrição Estadual)
+  indicadorIE       Int?                       @default(9) // 1=Contribuinte ICMS, 2=Isento, 9=Não contribuinte
   address           Address[]
   client            Client[]
   commission        Commission[]
@@ -904,6 +908,10 @@ model PaymentCondition {
   payableInstallments         PayableInstallment[]
   receivableInstallments      ReceivableInstallment[]
   quotationInstallments       QuotationInstallment[]
+
+  // Fiscal: generate invoice on approval
+  generateInvoice Boolean      @default(false) // Auto-generate NF on order approval?
+  invoiceType     InvoiceType? // NFE, NFSE, NFCE, or null
 
   @@map("payment_conditions")
 }
@@ -2064,6 +2072,13 @@ model InvoicyConfig {
   serieNfse      String? @default("A1")
   proximoRpsNfse Int?    @default(1)
 
+  // IBGE code (cached from CEP lookup to avoid external API calls on every emission)
+  emitCmun String? // Código IBGE do município do emitente
+
+  // NFC-e CSC (Código de Segurança do Contribuinte)
+  cscId    String? // ID do CSC
+  cscToken String? // Token CSC
+
   @@index([companyId])
   @@map("invoicy_configs")
 }
@@ -2344,6 +2359,9 @@ model DigitalCertificate {
   password    String?
   certificate String?                @db.Text
   lastUpload  DateTime?
+  expiresAt   DateTime?              // Certificate expiration date (parsed from PFX)
+  issuer      String?                // Certificate issuer (e.g. "AC SERASA")
+  serialNumber String?               // Certificate serial number
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
 

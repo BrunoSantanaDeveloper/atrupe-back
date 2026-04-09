@@ -337,6 +337,13 @@ export class QuotationWorkflowService {
                 downPaymentAdditionalFee: true,
                 description: true,
                 downPaymentConditionId: true,
+                paymentCondition: {
+                  select: {
+                    id: true,
+                    generateInvoice: true,
+                    invoiceType: true,
+                  },
+                },
               },
             },
             quotationProduct: {
@@ -414,6 +421,25 @@ export class QuotationWorkflowService {
         metadata: { quotationId },
         createdBy: userId,
         createdByName: userName,
+      });
+    }
+
+    // Signal: generate invoice if payment condition demands it
+    const paymentCondition = (quotation as any).quotationPayment?.paymentCondition;
+    if (paymentCondition?.generateInvoice && paymentCondition?.invoiceType) {
+      this.logger.log(
+        `Quotation ${quotationId} approved with generateInvoice=${paymentCondition.invoiceType}. ` +
+          `NF emission pending for order ${order.id}.`,
+      );
+      await this.createOrderHistoryEntry({
+        orderId: order.id,
+        action: 'NF_PENDING',
+        description: `Nota fiscal ${paymentCondition.invoiceType} pendente de emissão (condição de pagamento)`,
+        metadata: {
+          invoiceType: paymentCondition.invoiceType,
+          paymentConditionId: paymentCondition.id,
+        },
+        createdBy: userId,
       });
     }
 

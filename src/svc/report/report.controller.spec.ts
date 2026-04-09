@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ReportController } from './report.controller';
 import { ReportService } from './report.service';
 import { AbacService } from '../../core/auth/abac/abac.service';
+import { PrismaService } from 'src/config/prisma/prisma.service';
 
 describe('ReportController', () => {
   let controller: ReportController;
@@ -24,6 +25,12 @@ describe('ReportController', () => {
           provide: AbacService,
           useValue: {
             hasPermission: jest.fn().mockResolvedValue(true),
+          },
+        },
+        {
+          provide: PrismaService,
+          useValue: {
+            company: { findUnique: jest.fn() },
           },
         },
       ],

@@ -28,6 +28,7 @@ import { CreatePayrollSetupDto } from '../financial/salaries/dto/create-payroll-
 import { Logger } from '@nestjs/common';
 import { CompanySeedsService } from './company-seeds.service';
 import { CompanyHistoryService } from './company-history.service';
+import { parsePfxCertificate } from '../fiscal/utils/certificate-parser';
 
 @Injectable()
 export class CompanyService {
@@ -780,6 +781,26 @@ export class CompanyService {
 
         if (isFileChanged) {
           updateData['lastUpload'] = new Date();
+
+          // Parse PFX to extract certificate metadata
+          if (fiscal.certificate && fiscal.certificatePassword) {
+            const certInfo = parsePfxCertificate(
+              fiscal.certificate,
+              fiscal.certificatePassword,
+            );
+            if (certInfo) {
+              updateData['expiresAt'] = certInfo.expiresAt;
+              updateData['issuer'] = certInfo.issuer;
+              updateData['serialNumber'] = certInfo.serialNumber;
+              this.logger.log(
+                `Certificate parsed: expires ${certInfo.expiresAt?.toISOString()}, issuer: ${certInfo.issuer}`,
+              );
+            } else {
+              this.logger.warn(
+                'Failed to parse PFX certificate — metadata not extracted',
+              );
+            }
+          }
         }
 
         await this.prisma.digitalCertificate.upsert({
