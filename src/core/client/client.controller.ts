@@ -171,6 +171,25 @@ export class ClientController {
     return this.clientService.findOne(id);
   }
 
+  @Get(':id/fiscal-completeness')
+  @TenantResource('client')
+  @HasPermission('view', 'entity:client')
+  @ApiOperation({
+    summary: 'Retorna o status de completude fiscal do cliente',
+    description:
+      'Verifica se o cliente tem todos os dados obrigatórios para emissão de NF-e/NFS-e.',
+  })
+  @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Status de completude fiscal: APPROVED, PARTIAL ou INCOMPLETE.',
+  })
+  @ApiResponse({ status: 404, description: 'Cliente não encontrado.' })
+  getFiscalCompleteness(@Req() req, @Param('id') id: string) {
+    return this.clientService.getFiscalCompleteness(id, req.user.companyId);
+  }
+
   @Get(':id/contacts')
   @ApiOperation({ summary: 'Obtém os contatos/responsáveis de um cliente' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
