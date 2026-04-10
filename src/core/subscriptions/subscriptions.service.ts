@@ -27,35 +27,59 @@ export class SubscriptionsService {
   ) {}
 
   async findActiveByCompanyId(companyId: string) {
-    return this.prisma.subscription.findFirst({
+    const includeRelations = {
+      plan: {
+        include: {
+          planFeatures: {
+            include: {
+              feature: true,
+            },
+          },
+          planLimits: {
+            include: {
+              limit: true,
+            },
+          },
+        },
+      },
+      customer: true,
+      subscriptionFeatures: {
+        include: {
+          feature: true,
+        },
+      },
+    };
+
+    // 1. Priorizar subscription ACTIVE não-TRIAL (plano pago ativo)
+    const activePaid = await this.prisma.subscription.findFirst({
       where: {
         companyId,
+        status: 'ACTIVE',
+        plan: { planType: { not: 'TRIAL' } },
       },
-      orderBy: {
-        createdAt: 'desc',
+      orderBy: { createdAt: 'desc' },
+      include: includeRelations,
+    });
+
+    if (activePaid) return activePaid;
+
+    // 2. Fallback: qualquer subscription ACTIVE (incluindo TRIAL)
+    const activeAny = await this.prisma.subscription.findFirst({
+      where: {
+        companyId,
+        status: 'ACTIVE',
       },
-      include: {
-        plan: {
-          include: {
-            planFeatures: {
-              include: {
-                feature: true,
-              },
-            },
-            planLimits: {
-              include: {
-                limit: true,
-              },
-            },
-          },
-        },
-        customer: true,
-        subscriptionFeatures: {
-          include: {
-            feature: true,
-          },
-        },
-      },
+      orderBy: { createdAt: 'desc' },
+      include: includeRelations,
+    });
+
+    if (activeAny) return activeAny;
+
+    // 3. Último fallback: subscription mais recente (qualquer status)
+    return this.prisma.subscription.findFirst({
+      where: { companyId },
+      orderBy: { createdAt: 'desc' },
+      include: includeRelations,
     });
   }
 
@@ -1336,6 +1360,11 @@ export class SubscriptionsService {
                     limit: true,
                   },
                 },
+              },
+            },
+            subscriptionFeatures: {
+              include: {
+                feature: true,
               },
             },
           },
