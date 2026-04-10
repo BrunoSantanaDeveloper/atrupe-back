@@ -137,17 +137,21 @@ export class SubscriptionsService {
         this.logger.log('Cliente trial detectado, criando no Asaas...');
 
         // Criar o customer no Asaas com os dados recebidos
-        const customerDataForAsaas = {
+        const customerDataForAsaas: Record<string, any> = {
           name: customer.name,
           cpfCnpj: customer.document,
           email: customer.email,
-          phone: customer.phone,
-          mobilePhone: customer.phone,
+          mobilePhone: customer.mobilePhone || customer.phone,
           postalCode: customer.postalCode,
           addressNumber: customer.addressNumber,
           complement: customer.complement,
           externalReference: existingCustomer.id,
         };
+
+        // Only send phone (landline) if provided and different from mobile
+        if (customer.phone && customer.phone !== customer.mobilePhone) {
+          customerDataForAsaas.phone = customer.phone;
+        }
 
         try {
           const asaasCustomer =

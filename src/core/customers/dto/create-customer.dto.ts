@@ -24,12 +24,20 @@ export class CreateCustomerDto {
   document: string;
 
   @ApiPropertyOptional({
-    description: 'Telefone do cliente',
-    example: '(11) 99999-9999',
+    description: 'Telefone fixo do cliente',
+    example: '1133334444',
   })
   @IsString()
   @IsOptional()
   phone?: string;
+
+  @ApiPropertyOptional({
+    description: 'Celular do cliente',
+    example: '11999999999',
+  })
+  @IsString()
+  @IsOptional()
+  mobilePhone?: string;
 
   @ApiPropertyOptional({
     description: 'Endereço do cliente',
