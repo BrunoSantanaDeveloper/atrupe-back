@@ -255,9 +255,17 @@ export class SubscriptionsService {
             where: { subscriptionId: existingSubscription.id },
           });
 
+          // Considerar OVERDUE tanto pelo status local quanto pela data de vencimento.
+          // Sem webhook/cron, o status local pode ficar PENDING eternamente
+          // mesmo após a cobrança vencer no Asaas.
+          const now = new Date();
           const allOverdue =
             payments.length > 0 &&
-            payments.every((p) => p.status === 'OVERDUE');
+            payments.every(
+              (p) =>
+                p.status === 'OVERDUE' ||
+                (p.status === 'PENDING' && p.dueDate && p.dueDate < now),
+            );
 
           if (allOverdue) {
             this.logger.log(
