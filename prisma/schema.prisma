@@ -80,6 +80,7 @@ model Company {
   history               CompanyHistory[]
   importLogs            ImportLog[]
   invoicyConfigs        InvoicyConfig[]
+  fiscalOnboarding      FiscalOnboardingRequest[]
   nfes                  Nfe[]
   nfses                 Nfse[]
   nfces                 Nfce[]
@@ -2368,6 +2369,55 @@ model DigitalCertificate {
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("digital_certificates")
+}
+
+model FiscalOnboardingRequest {
+  id          String                  @id @default(uuid())
+  companyId   String
+  status      FiscalOnboardingStatus  @default(PENDING)
+
+  // Dados fiscais coletados do cliente
+  cnpj        String
+  razaoSocial String
+  nomeFantasia String?
+  ie          String?
+  im          String?
+  cnae        String?
+  uf          String
+  codigoIbge  String?
+
+  // Endereço
+  cep         String?
+  logradouro  String?
+  numero      String?
+  bairro      String?
+  cidade      String?
+  complemento String?
+
+  // Resultado do auto-provisioning
+  invoicyAccessKey    String?
+  invoicyCryptoKey    String?
+  errorMessage        String?   @db.Text
+
+  // Metadados
+  resolvedBy  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime? @updatedAt
+
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([status])
+  @@map("fiscal_onboarding_requests")
+}
+
+enum FiscalOnboardingStatus {
+  PENDING
+  PROVISIONING
+  ACTIVE
+  PENDING_REVIEW
+  REJECTED
 }
 
 model SystemSetting {

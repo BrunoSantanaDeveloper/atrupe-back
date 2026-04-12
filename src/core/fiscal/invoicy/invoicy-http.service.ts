@@ -557,4 +557,233 @@ export class InvoicyHttpService {
       return false;
     }
   }
+
+  // ============================================
+  // Partner-Level Operations (Company Registration)
+  // ============================================
+
+  /**
+   * Authenticate as partner (Atrupe) to manage companies.
+   * Different from company auth: JWT sub = partnerKey (not CNPJ).
+   */
+  async authenticateAsPartner(
+    environment: InvoicyEnvironment = 'HOMOLOGACAO',
+  ): Promise<string> {
+    const cacheKey = `partner_${environment}`;
+    const cached = this.tokenCache.get(cacheKey);
+    const now = Math.floor(Date.now() / 1000);
+
+    if (cached && cached.expiresAt > now + 300) {
+      return cached.token;
+    }
+
+    const partnerKey = this.getPartnerKey();
+    const accessKey = this.configService.get<string>('INVOICY_ACCESS_KEY');
+
+    if (!partnerKey || !accessKey) {
+      throw new Error(
+        'INVOICY_PARTNER_KEY ou INVOICY_ACCESS_KEY não configuradas',
+      );
+    }
+
+    // For partner auth, sub = partnerKey (not CNPJ)
+    const jwtPayload = {
+      iat: now,
+      exp: now + 120,
+      sub: partnerKey,
+      partnerKey: partnerKey,
+    };
+
+    const jwtToken = jwt.sign(jwtPayload, accessKey, { algorithm: 'HS256' });
+    const baseUrl = this.getBaseUrl(environment);
+
+    try {
+      const response = await this.httpClient.post<InvoicyAuthResponse>(
+        `${baseUrl}/oauth2/invoicy/auth`,
+        { token: jwtToken },
+      );
+
+      const { accessToken, accessTokenExpireAt } = response.data;
+
+      this.tokenCache.set(cacheKey, {
+        token: accessToken,
+        expiresAt: accessTokenExpireAt,
+        companyId: cacheKey,
+      });
+
+      this.logger.log('Successfully authenticated as partner with Invoicy');
+      return accessToken;
+    } catch (error) {
+      this.logger.error(
+        `Partner authentication failed: ${error.message}`,
+      );
+      if (error.response?.data) {
+        this.logger.error(
+          `Invoicy error: ${JSON.stringify(error.response.data)}`,
+        );
+      }
+      throw new Error(`Falha na autenticação de parceiro: ${error.message}`);
+    }
+  }
+
+  /**
+   * Register a new company in Invoicy via partner API.
+   * Returns the EmpAK (Access Key) needed for future operations.
+   */
+  async registerCompany(data: {
+    cnpj: string;
+    razaoSocial: string;
+    nomeFantasia?: string;
+    ie?: string;
+    im?: string;
+    uf?: string;
+    codigoIbge?: string;
+    cep?: string;
+    logradouro?: string;
+    numero?: string;
+    bairro?: string;
+    cidade?: string;
+    complemento?: string;
+    certificate?: string;
+    certificatePassword?: string;
+    certificateType?: string;
+  }): Promise<{ accessKey: string; cryptoKey?: string }> {
+    this.logger.log(
+      `Registering company ${this.maskCnpj(data.cnpj)} in Invoicy`,
+    );
+
+    // First check if company already exists
+    try {
+      const existing = await this.consultCompany(data.cnpj);
+      if (existing?.EmpAK) {
+        this.logger.log('Company already registered in Invoicy, returning existing key');
+        return {
+          accessKey: existing.EmpAK,
+          cryptoKey: existing.ChaveCriptografia,
+        };
+      }
+    } catch {
+      // Company not found — proceed with registration
+    }
+
+    const token = await this.authenticateAsPartner();
+    const baseUrl = this.getBaseUrl('HOMOLOGACAO');
+
+    const payload = [
+      {
+        EmpCNPJ: data.cnpj.replace(/\D/g, ''),
+        EmpRazSocial: data.razaoSocial,
+        EmpNomFantasia: data.nomeFantasia || data.razaoSocial,
+        EmpIE: data.ie || 'ISENTO',
+        EmpIM: data.im || '',
+        MunCodigo: data.codigoIbge || '',
+        EmpEndereco: data.logradouro || '',
+        EmpNumero: data.numero || 'S/N',
+        EmpBairro: data.bairro || '',
+        EmpCEP: data.cep?.replace(/\D/g, '') || '',
+        EmpComplemento: data.complemento || '',
+        ...(data.certificate
+          ? {
+              Certificado: {
+                ArquivoPFX: data.certificate,
+                Senha: data.certificatePassword || '',
+                TipoCertificado: data.certificateType || 'A1',
+              },
+            }
+          : {}),
+      },
+    ];
+
+    try {
+      const response = await this.httpClient.post(
+        `${baseUrl}/companies`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      const result = response.data;
+      this.logger.log(
+        `Invoicy company registration response: ${JSON.stringify(result).substring(0, 200)}`,
+      );
+
+      // Extract EmpAK from response
+      // Response structure: { Codigo, Mensagem, RetornoCadastro: [{ EmpAK, ChaveCriptografia }] }
+      if (result?.RetornoCadastro?.length > 0) {
+        const cadastro = result.RetornoCadastro[0];
+        if (cadastro.EmpAK) {
+          return {
+            accessKey: cadastro.EmpAK,
+            cryptoKey: cadastro.ChaveCriptografia,
+          };
+        }
+      }
+
+      // Handle array response format
+      if (Array.isArray(result) && result.length > 0) {
+        const first = result[0];
+        if (first.RetornoCadastro?.length > 0) {
+          const cadastro = first.RetornoCadastro[0];
+          if (cadastro.EmpAK) {
+            return {
+              accessKey: cadastro.EmpAK,
+              cryptoKey: cadastro.ChaveCriptografia,
+            };
+          }
+        }
+        // Check for success code 100
+        if (first.Codigo === 100 || first.Codigo === '100') {
+          // Try to get company data via GET
+          const companyData = await this.consultCompany(data.cnpj);
+          if (companyData?.EmpAK) {
+            return {
+              accessKey: companyData.EmpAK,
+              cryptoKey: companyData.ChaveCriptografia,
+            };
+          }
+        }
+      }
+
+      throw new Error(
+        `Resposta inesperada do Invoicy: ${JSON.stringify(result).substring(0, 300)}`,
+      );
+    } catch (error) {
+      if (error.response?.data) {
+        this.logger.error(
+          `Invoicy registration error: ${JSON.stringify(error.response.data)}`,
+        );
+        const msg =
+          error.response.data?.Mensagem ||
+          error.response.data?.message ||
+          JSON.stringify(error.response.data);
+        throw new Error(`Erro ao cadastrar empresa no Invoicy: ${msg}`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Consult company by CNPJ in Invoicy.
+   */
+  async consultCompany(cnpj: string): Promise<any> {
+    const token = await this.authenticateAsPartner();
+    const baseUrl = this.getBaseUrl('HOMOLOGACAO');
+    const cleanCnpj = cnpj.replace(/\D/g, '');
+
+    const response = await this.httpClient.get(
+      `${baseUrl}/companies?CNPJ=${cleanCnpj}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    return response.data;
+  }
 }
