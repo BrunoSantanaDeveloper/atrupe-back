@@ -157,9 +157,11 @@ export class SubscriptionsService {
     if (existingCustomer) {
       this.logger.log('Cliente encontrado:', existingCustomer.name);
 
-      // Verificar se o customer existente é um trial (não criado no Asaas ainda)
-      if (existingCustomer.asaasCustomerId?.startsWith('trial_')) {
-        this.logger.log('Cliente trial detectado, criando no Asaas...');
+      // Verificar se o customer existente precisa ser criado no Asaas (ex: trial_, temp_, null)
+      if (!existingCustomer.asaasCustomerId?.startsWith('cus_')) {
+        this.logger.log(
+          'Cliente sem ID válido no Asaas detectado, provisionando...',
+        );
 
         // Criar o customer no Asaas com os dados recebidos
         const customerDataForAsaas: Record<string, any> = {
