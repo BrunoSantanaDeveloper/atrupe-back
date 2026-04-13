@@ -678,6 +678,7 @@ export class InvoicyHttpService {
         EmpCNPJ: data.cnpj.replace(/\D/g, ''),
         EmpRazSocial: data.razaoSocial,
         EmpNomFantasia: data.nomeFantasia || data.razaoSocial,
+        EmpApelido: data.nomeFantasia || data.razaoSocial.substring(0, 50),
         EmpIE: data.ie || 'ISENTO',
         EmpIM: data.im || '',
         MunCodigo: data.codigoIbge || '',
@@ -737,6 +738,12 @@ export class InvoicyHttpService {
               accessKey: cadastro.EmpAK,
               cryptoKey: cadastro.ChaveCriptografia,
             };
+          }
+          // Se não tem EmpAK e tem Descricao de erro (ex: 101)
+          if (cadastro.Descricao) {
+            throw new Error(
+              `Invoicy rejeitou o cadastro. Código ${cadastro.Codigo}: ${cadastro.Descricao}`,
+            );
           }
         }
         // Check for success code 100
