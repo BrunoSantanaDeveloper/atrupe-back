@@ -564,7 +564,8 @@ export class InvoicyHttpService {
 
   /**
    * Authenticate as partner (Atrupe) to manage companies.
-   * Different from company auth: JWT sub = partnerKey (not CNPJ).
+   * Uses the same JWT format as company auth (sub = CNPJ),
+   * but with Atrupe's own CNPJ and accessKey.
    */
   async authenticateAsPartner(
     environment: InvoicyEnvironment = 'HOMOLOGACAO',
@@ -579,6 +580,10 @@ export class InvoicyHttpService {
 
     const partnerKey = this.getPartnerKey();
     const accessKey = this.configService.get<string>('INVOICY_ACCESS_KEY');
+    // Atrupe's own CNPJ — used as JWT sub for partner-level auth
+    const partnerCnpj =
+      this.configService.get<string>('INVOICY_PARTNER_CNPJ') ||
+      '13205998000102';
 
     if (!partnerKey || !accessKey) {
       throw new Error(
@@ -586,11 +591,11 @@ export class InvoicyHttpService {
       );
     }
 
-    // For partner auth, sub = partnerKey (not CNPJ)
+    // Invoicy always expects sub = CNPJ (not partnerKey)
     const jwtPayload = {
       iat: now,
       exp: now + 120,
-      sub: partnerKey,
+      sub: partnerCnpj,
       partnerKey: partnerKey,
     };
 
