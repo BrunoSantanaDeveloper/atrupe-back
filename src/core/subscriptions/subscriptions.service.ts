@@ -1251,9 +1251,13 @@ export class SubscriptionsService {
     );
 
     // Buscar a subscription mais recente da empresa que não seja TRIAL
+    // Excluir CANCELED para não pegar subscriptions órfãs dos testes/auto-cancel
     const subscription = await this.prisma.subscription.findFirst({
       where: {
         companyId,
+        status: {
+          in: ['ACTIVE', 'INACTIVE'],
+        },
         plan: {
           planType: {
             not: 'TRIAL',
@@ -1282,6 +1286,11 @@ export class SubscriptionsService {
                 limit: true,
               },
             },
+          },
+        },
+        subscriptionFeatures: {
+          include: {
+            feature: true,
           },
         },
       },

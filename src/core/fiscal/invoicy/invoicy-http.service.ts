@@ -580,10 +580,6 @@ export class InvoicyHttpService {
 
     const partnerKey = this.getPartnerKey();
     const accessKey = this.configService.get<string>('INVOICY_ACCESS_KEY');
-    // Atrupe's own CNPJ — used as JWT sub for partner-level auth
-    const partnerCnpj =
-      this.configService.get<string>('INVOICY_PARTNER_CNPJ') ||
-      '13205998000102';
 
     if (!partnerKey || !accessKey) {
       throw new Error(
@@ -591,12 +587,12 @@ export class InvoicyHttpService {
       );
     }
 
-    // Invoicy always expects sub = CNPJ (not partnerKey)
+    // Invoicy Docs: Para Autenticação como Parceiro Mestre, o 'sub' DEVE ser a
+    // Chave de Parceiro, e não devemos enviar a prop 'partnerKey'.
     const jwtPayload = {
       iat: now,
       exp: now + 120,
-      sub: partnerCnpj,
-      partnerKey: partnerKey,
+      sub: partnerKey,
     };
 
     const jwtToken = jwt.sign(jwtPayload, accessKey, { algorithm: 'HS256' });
@@ -620,12 +616,15 @@ export class InvoicyHttpService {
       return accessToken;
     } catch (error) {
       this.logger.error(`Partner authentication failed: ${error.message}`);
+      let detalhe = '';
       if (error.response?.data) {
-        this.logger.error(
-          `Invoicy error: ${JSON.stringify(error.response.data)}`,
-        );
+        detalhe =
+          typeof error.response.data === 'string'
+            ? error.response.data
+            : JSON.stringify(error.response.data);
+        this.logger.error(`Invoicy error: ${detalhe}`);
       }
-      throw new Error(`Falha na autenticação de parceiro: ${error.message}`);
+      throw new Error(`Falha na autenticação de parceiro (400): ${detalhe}`);
     }
   }
 
