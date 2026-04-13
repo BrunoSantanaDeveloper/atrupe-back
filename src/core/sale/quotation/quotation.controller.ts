@@ -166,7 +166,6 @@ export class QuotationController {
     const updatedProduct = await this.quotationService.updateProductInQuotation(
       productId,
       updateQuotationProductDto,
-      req.user?.userId,
     );
     if (!updatedProduct) {
       throw new NotFoundException('Produto ou orçamento não encontrados.');
