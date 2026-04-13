@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
+import { CancelSubscriptionDto } from './dto/cancel-subscription.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { AsaasGatewayService } from './asaas-gateway.service';
@@ -845,6 +846,89 @@ export class SubscriptionsService {
     });
 
     return updated;
+  }
+
+  async cancelSubscription(
+    subscriptionId: string,
+    cancelDto: CancelSubscriptionDto,
+    companyId: string,
+  ) {
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+      include: { plan: true },
+    });
+
+    if (!subscription) {
+      throw new NotFoundException('Assinatura não encontrada.');
+    }
+
+    if (subscription.companyId !== companyId) {
+      throw new BadRequestException('Acesso não autorizado a esta assinatura.');
+    }
+
+    if (subscription.status !== 'ACTIVE') {
+      throw new BadRequestException(
+        'Apenas assinaturas ativas podem ser canceladas.',
+      );
+    }
+
+    if (subscription.plan.planType === 'TRIAL') {
+      throw new BadRequestException(
+        'Assinaturas trial não podem ser canceladas por este fluxo.',
+      );
+    }
+
+    // Cancelar no Asaas
+    if (!subscription.asaasSubscriptionId.startsWith('temp_')) {
+      try {
+        await this.asaasGateway.cancelAsaasSubscription(
+          subscription.asaasSubscriptionId,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Falha ao cancelar subscription no Asaas: ${error.message}`,
+        );
+      }
+    }
+
+    // Atualizar status no banco e registrar histórico atomicamente
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.subscription.update({
+        where: { id: subscriptionId },
+        data: { status: 'CANCELED' },
+        include: { plan: true },
+      });
+
+      await tx.subscriptionHistory.create({
+        data: {
+          subscriptionId,
+          action: 'CANCELED',
+          description: `Assinatura cancelada pelo usuário. Motivo: ${cancelDto.reason}`,
+          changes: {
+            before: { status: 'ACTIVE' },
+            after: { status: 'CANCELED' },
+          },
+          metadata: {
+            reason: cancelDto.reason,
+            feedback: cancelDto.feedback || null,
+            canceledAt: new Date().toISOString(),
+          },
+          createdByName: 'Usuário',
+        },
+      });
+
+      return result;
+    });
+
+    this.logger.log(
+      `Subscription ${subscriptionId} cancelada. Motivo: ${cancelDto.reason}`,
+    );
+
+    return {
+      success: true,
+      message: 'Assinatura cancelada com sucesso.',
+      subscription: updated,
+    };
   }
 
   async extendTrialPeriod(

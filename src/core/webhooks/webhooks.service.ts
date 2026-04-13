@@ -501,13 +501,34 @@ export class WebhooksService {
       });
 
       if (subscription) {
+        const previousStatus = subscription.status;
+
         await this.prisma.subscription.update({
           where: { id: subscription.id },
-          data: { status: 'INACTIVE' },
+          data: { status: 'CANCELED' },
+        });
+
+        await this.prisma.subscriptionHistory.create({
+          data: {
+            subscriptionId: subscription.id,
+            action: 'CANCELED',
+            description:
+              'Assinatura cancelada via Asaas (webhook SUBSCRIPTION_DELETED)',
+            changes: {
+              before: { status: previousStatus },
+              after: { status: 'CANCELED' },
+            },
+            metadata: {
+              source: 'asaas_webhook',
+              event: 'SUBSCRIPTION_DELETED',
+              asaasSubscriptionId,
+            },
+            createdByName: 'Sistema Asaas',
+          },
         });
 
         this.logger.log(
-          `Subscription ${subscription.id} marcada como INACTIVE`,
+          `Subscription ${subscription.id} marcada como CANCELED`,
         );
       }
     }
