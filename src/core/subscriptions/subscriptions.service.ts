@@ -416,7 +416,7 @@ export class SubscriptionsService {
           );
           await this.prisma.customer.update({
             where: { id: finalCustomer.id },
-            data: { asaasCustomerId: null },
+            data: { asaasCustomerId: `invalid_${uuidv4()}` },
           });
         }
         throw error;
