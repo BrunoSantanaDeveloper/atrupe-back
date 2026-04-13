@@ -157,7 +157,8 @@ export class ClientService {
               blockClient: createClientDto.creditLimit?.blockClient || false,
               status: autoStatus,
               isBranch: createClientDto.general.isBranch || false,
-              stateRegistration: createClientDto.general.stateRegistration || null,
+              stateRegistration:
+                createClientDto.general.stateRegistration || null,
               indicadorIE: createClientDto.general.indicadorIE ?? 9,
             },
           });
@@ -661,7 +662,8 @@ export class ClientService {
                 blockClient: updateClientDto.creditLimit?.blockClient,
                 status: finalStatus,
                 isBranch: updateClientDto.general?.isBranch,
-                stateRegistration: updateClientDto.general?.stateRegistration ?? undefined,
+                stateRegistration:
+                  updateClientDto.general?.stateRegistration ?? undefined,
                 indicadorIE: updateClientDto.general?.indicadorIE ?? undefined,
               },
             });
@@ -778,7 +780,14 @@ export class ClientService {
   }
 
   private buildDetailsObject(dto: UpdateClientDto): Prisma.JsonValue {
-    const fieldsToUpdate = ['ie', 'cnpj', 'stateRegistration', 'cpf', 'rg', 'indicadorIE'];
+    const fieldsToUpdate = [
+      'ie',
+      'cnpj',
+      'stateRegistration',
+      'cpf',
+      'rg',
+      'indicadorIE',
+    ];
 
     const updatedDetails = fieldsToUpdate.reduce(
       (acc, field) => {

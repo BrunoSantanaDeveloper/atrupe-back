@@ -29,7 +29,7 @@ export class NfeBuilderService {
     numero: number,
   ): Promise<InvoicyNfeRequest> {
     // Buscar código IBGE do destinatário via CEP
-    const destResult = await this.getDestinatarioData(dto, config);
+    const destResult = await this.getDestinatarioData(dto);
 
     // Buscar código IBGE do emitente se necessário
     const emitCmun = await this.getEmitenteCmun(config);
@@ -59,10 +59,7 @@ export class NfeBuilderService {
   /**
    * Obtém dados do destinatário incluindo código IBGE via CEP
    */
-  private async getDestinatarioData(
-    dto: EmitNfeDto,
-    config: any,
-  ): Promise<{
+  private async getDestinatarioData(dto: EmitNfeDto): Promise<{
     cmun: number;
     uf: string;
     municipio: string;

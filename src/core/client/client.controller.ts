@@ -39,7 +39,8 @@ export class ClientController {
   constructor(private readonly clientService: ClientService) {}
 
   @Post()
-  @HasPermission('create', 'entity:client')  @ApiOperation({ summary: 'Cria um novo cliente' })
+  @HasPermission('create', 'entity:client')
+  @ApiOperation({ summary: 'Cria um novo cliente' })
   @ApiBody({
     description: 'Dados do novo cliente',
     type: CreateClientDto,
@@ -145,7 +146,8 @@ export class ClientController {
   }
 
   @Get()
-  @HasPermission('view', 'entity:client')  @ApiOperation({ summary: 'Obtém a lista de todos os clientes' })
+  @HasPermission('view', 'entity:client')
+  @ApiOperation({ summary: 'Obtém a lista de todos os clientes' })
   @ApiResponse({
     status: 200,
     description: 'Lista de clientes retornada com sucesso.',
@@ -157,7 +159,8 @@ export class ClientController {
   }
 
   @Get(':id')
-  @TenantResource('client')  @ApiOperation({ summary: 'Obtém um cliente pelo ID' })
+  @TenantResource('client')
+  @ApiOperation({ summary: 'Obtém um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
   @ApiResponse({
     status: 200,
@@ -207,7 +210,9 @@ export class ClientController {
   }
 
   @Patch(':id')
-  @TenantResource('client')  @HasPermission('edit', 'entity:client')  @ApiOperation({ summary: 'Atualiza um cliente pelo ID' })
+  @TenantResource('client')
+  @HasPermission('edit', 'entity:client')
+  @ApiOperation({ summary: 'Atualiza um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
   @ApiBody({
     description: 'Dados para atualização do cliente',
@@ -268,7 +273,9 @@ export class ClientController {
   }
 
   @Delete(':id')
-  @TenantResource('client')  @HasPermission('delete', 'entity:client')  @ApiOperation({ summary: 'Remove um cliente pelo ID' })
+  @TenantResource('client')
+  @HasPermission('delete', 'entity:client')
+  @ApiOperation({ summary: 'Remove um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
   @ApiResponse({
     status: 200,

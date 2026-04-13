@@ -40,7 +40,8 @@ export class SupplierController {
   constructor(private readonly supplierService: SupplierService) {}
 
   @Post()
-  @HasPermission('create', 'entity:supplier')  @ApiOperation({ summary: 'Cria um novo fornecedor' })
+  @HasPermission('create', 'entity:supplier')
+  @ApiOperation({ summary: 'Cria um novo fornecedor' })
   @ApiBody({
     description: 'Dados do novo fornecedor',
     type: CreateClientDto,
@@ -68,7 +69,8 @@ export class SupplierController {
   }
 
   @Get()
-  @HasPermission('view', 'entity:supplier')  @ApiOperation({ summary: 'Obtém a lista de todos os fornecedores' })
+  @HasPermission('view', 'entity:supplier')
+  @ApiOperation({ summary: 'Obtém a lista de todos os fornecedores' })
   @ApiResponse({
     status: 200,
     description: 'Lista de fornecedores retornada com sucesso.',
@@ -80,7 +82,8 @@ export class SupplierController {
   }
 
   @Get(':id')
-  @TenantResource('supplier')  @ApiOperation({ summary: 'Obtém um fornecedor pelo ID' })
+  @TenantResource('supplier')
+  @ApiOperation({ summary: 'Obtém um fornecedor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })
   @ApiResponse({
     status: 200,
@@ -112,7 +115,9 @@ export class SupplierController {
   }
 
   @Patch(':id')
-  @TenantResource('supplier')  @HasPermission('edit', 'entity:supplier')  @ApiOperation({ summary: 'Atualiza um fornecedor pelo ID' })
+  @TenantResource('supplier')
+  @HasPermission('edit', 'entity:supplier')
+  @ApiOperation({ summary: 'Atualiza um fornecedor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })
   @ApiBody({
     description: 'Dados para atualização do fornecedor',
@@ -157,7 +162,9 @@ export class SupplierController {
   }
 
   @Delete(':id')
-  @TenantResource('supplier')  @HasPermission('delete', 'entity:supplier')  @ApiOperation({ summary: 'Remove um fornecedor pelo ID' })
+  @TenantResource('supplier')
+  @HasPermission('delete', 'entity:supplier')
+  @ApiOperation({ summary: 'Remove um fornecedor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })
   @ApiResponse({
     status: 200,

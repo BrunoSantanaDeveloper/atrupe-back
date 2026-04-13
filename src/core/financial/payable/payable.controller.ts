@@ -49,7 +49,8 @@ export class PayableController {
   constructor(private readonly payableService: PayableService) {}
 
   @Post()
-  @HasPermission('create', 'financial:payable')  @ApiOperation({ summary: 'Cria uma nova conta a pagar com parcelas' })
+  @HasPermission('create', 'financial:payable')
+  @ApiOperation({ summary: 'Cria uma nova conta a pagar com parcelas' })
   @ApiBody({
     description: 'Dados da nova conta a pagar',
     type: CreatePayableDto,
@@ -68,7 +69,8 @@ export class PayableController {
   }
 
   @Get()
-  @HasPermission('view', 'financial:payable')  @ApiOperation({ summary: 'Obtém a lista de todas as contas a pagar' })
+  @HasPermission('view', 'financial:payable')
+  @ApiOperation({ summary: 'Obtém a lista de todas as contas a pagar' })
   @ApiResponse({
     status: 200,
     description: 'Lista de contas a pagar retornada com sucesso.',
@@ -80,7 +82,8 @@ export class PayableController {
   }
 
   @Get(':id')
-  @TenantResource('payable')  @ApiOperation({ summary: 'Obtém uma conta a pagar pelo ID' })
+  @TenantResource('payable')
+  @ApiOperation({ summary: 'Obtém uma conta a pagar pelo ID' })
   @ApiParam({
     name: 'id',
     required: true,
@@ -132,7 +135,9 @@ export class PayableController {
   }
 
   @Patch(':id')
-  @TenantResource('payable')  @HasPermission('edit', 'financial:payable')  @ApiOperation({ summary: 'Atualizar dados do título' })
+  @TenantResource('payable')
+  @HasPermission('edit', 'financial:payable')
+  @ApiOperation({ summary: 'Atualizar dados do título' })
   @ApiParam({
     name: 'id',
     description: 'ID do título',
@@ -181,7 +186,9 @@ export class PayableController {
     );
   }
   @Patch(':id/cancel')
-  @TenantResource('payable')  @HasPermission('delete', 'financial:payable')  @ApiOperation({
+  @TenantResource('payable')
+  @HasPermission('delete', 'financial:payable')
+  @ApiOperation({
     summary: 'Cancela uma conta a pagar e suas parcelas pendentes',
   })
   @ApiParam({
@@ -301,7 +308,9 @@ export class PayableController {
   }
 
   @Delete(':id')
-  @TenantResource('payable')  @HasPermission('delete', 'financial:payable')  @ApiOperation({ summary: 'Remove uma conta a pagar pelo ID' })
+  @TenantResource('payable')
+  @HasPermission('delete', 'financial:payable')
+  @ApiOperation({ summary: 'Remove uma conta a pagar pelo ID' })
   @ApiParam({
     name: 'id',
     required: true,

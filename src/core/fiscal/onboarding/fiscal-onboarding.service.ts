@@ -8,7 +8,6 @@ import { PrismaService } from 'nestjs-prisma';
 import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { FiscalOnboardingDto } from './fiscal-onboarding.dto';
-import { FiscalOnboardingStatus } from '@prisma/client';
 
 @Injectable()
 export class FiscalOnboardingService {
@@ -34,9 +33,7 @@ export class FiscalOnboardingService {
     }
 
     if (existing?.status === 'PROVISIONING') {
-      throw new BadRequestException(
-        'Configuração fiscal já está em andamento',
-      );
+      throw new BadRequestException('Configuração fiscal já está em andamento');
     }
 
     // Create the onboarding request
@@ -63,7 +60,7 @@ export class FiscalOnboardingService {
 
     // Try auto-provisioning
     try {
-      const result = await this.autoProvision(request, dto);
+      await this.autoProvision(request, dto);
       return {
         status: 'ACTIVE',
         message: 'Módulo fiscal ativado com sucesso!',
@@ -83,30 +80,26 @@ export class FiscalOnboardingService {
     }
   }
 
-  private async autoProvision(
-    request: any,
-    dto: FiscalOnboardingDto,
-  ) {
+  private async autoProvision(request: any, dto: FiscalOnboardingDto) {
     // 1. Register company in Invoicy via partner API
-    const registrationResult =
-      await this.invoicyHttpService.registerCompany({
-        cnpj: request.cnpj,
-        razaoSocial: request.razaoSocial,
-        nomeFantasia: request.nomeFantasia || request.razaoSocial,
-        ie: request.ie,
-        im: request.im,
-        uf: request.uf,
-        codigoIbge: request.codigoIbge,
-        cep: request.cep,
-        logradouro: request.logradouro,
-        numero: request.numero,
-        bairro: request.bairro,
-        cidade: request.cidade,
-        complemento: request.complemento,
-        certificate: dto.certificate,
-        certificatePassword: dto.certificatePassword,
-        certificateType: dto.certificateType,
-      });
+    const registrationResult = await this.invoicyHttpService.registerCompany({
+      cnpj: request.cnpj,
+      razaoSocial: request.razaoSocial,
+      nomeFantasia: request.nomeFantasia || request.razaoSocial,
+      ie: request.ie,
+      im: request.im,
+      uf: request.uf,
+      codigoIbge: request.codigoIbge,
+      cep: request.cep,
+      logradouro: request.logradouro,
+      numero: request.numero,
+      bairro: request.bairro,
+      cidade: request.cidade,
+      complemento: request.complemento,
+      certificate: dto.certificate,
+      certificatePassword: dto.certificatePassword,
+      certificateType: dto.certificateType,
+    });
 
     // 2. Save accessKey on the Company record + create InvoicyConfig
     await this.activateModule(

@@ -7,7 +7,6 @@ import { BlockLevel } from '@prisma/client';
 
 describe('SubscriptionBlockService', () => {
   let service: SubscriptionBlockService;
-  let prisma: jest.Mocked<PrismaService>;
 
   const mockPrismaService = {
     company: {
@@ -48,7 +47,6 @@ describe('SubscriptionBlockService', () => {
     }).compile();
 
     service = module.get<SubscriptionBlockService>(SubscriptionBlockService);
-    prisma = module.get(PrismaService);
 
     // Reset mocks
     jest.clearAllMocks();
@@ -429,7 +427,9 @@ describe('SubscriptionBlockService', () => {
 
       const result = await service.getPendingPaymentUrl('company-1');
 
-      expect(result.paymentUrl).toBe('https://www.asaas.com/i/live_invoice_url');
+      expect(result.paymentUrl).toBe(
+        'https://www.asaas.com/i/live_invoice_url',
+      );
       expect(mockPrismaService.payment.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'payment-1' },
@@ -473,7 +473,12 @@ describe('SubscriptionBlockService', () => {
         asaasSubscriptionId: 'sub_noinvoice',
       });
       mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
-        { id: 'pay_x', invoiceUrl: null, status: 'OVERDUE', dueDate: '2024-01-15' },
+        {
+          id: 'pay_x',
+          invoiceUrl: null,
+          status: 'OVERDUE',
+          dueDate: '2024-01-15',
+        },
       ]);
       mockPrismaService.payment.findFirst.mockResolvedValue(null);
 

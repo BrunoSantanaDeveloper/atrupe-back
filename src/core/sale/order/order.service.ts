@@ -279,9 +279,7 @@ export class OrderService {
 
   async count(companyId?: string) {
     return this.prisma.order.count({
-      where: companyId
-        ? { quotation: { companyId } }
-        : undefined,
+      where: companyId ? { quotation: { companyId } } : undefined,
     });
   }
 
@@ -496,7 +494,10 @@ export class OrderService {
           });
         } catch (historyError) {
           // Non-blocking: don't fail cancellation if history fails
-          this.logger.error('Error creating order cancel history', historyError.stack);
+          this.logger.error(
+            'Error creating order cancel history',
+            historyError.stack,
+          );
         }
 
         // Calculate summary

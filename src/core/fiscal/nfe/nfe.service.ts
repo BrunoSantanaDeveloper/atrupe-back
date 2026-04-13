@@ -218,8 +218,11 @@ export class NfeService {
 
       // Pagamento
       pagamento: {
-        forma: getTPag(quotation.quotationPayment?.paymentCondition?.paymentMethod?.code),
-        formaDescricao: quotation.quotationPayment?.paymentCondition?.name || 'Dinheiro',
+        forma: getTPag(
+          quotation.quotationPayment?.paymentCondition?.paymentMethod?.code,
+        ),
+        formaDescricao:
+          quotation.quotationPayment?.paymentCondition?.name || 'Dinheiro',
         valor: valorNota,
       },
 
@@ -366,7 +369,8 @@ export class NfeService {
       destIndIEDest: client.indicadorIE ?? 9,
       pagamento: {
         forma: getTPag(
-          (quotation as any).quotationPayment?.paymentCondition?.paymentMethod?.code,
+          (quotation as any).quotationPayment?.paymentCondition?.paymentMethod
+            ?.code,
         ),
         valor: 0, // recalculated from items
       },

@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import * as readline from 'readline';
 
 const prisma = new PrismaClient();
 
@@ -38,7 +39,7 @@ async function cleanupDuplicateSubscriptions() {
   const toDelete: string[] = [];
   const duplicateGroups: any[] = [];
 
-  for (const [key, subscriptions] of grouped.entries()) {
+  for (const [_, subscriptions] of grouped.entries()) {
     if (subscriptions.length > 1) {
       const [keep, ...remove] = subscriptions; // Primeira é a mais recente (desc)
       toDelete.push(...remove.map((s) => s.id));
@@ -86,12 +87,12 @@ async function cleanupDuplicateSubscriptions() {
   );
 
   // Em produção, você pode adicionar uma confirmação aqui
-  const readline = require('readline').createInterface({
+  const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
 
-  readline.question('Confirmar deleção? (yes/no): ', async (answer: string) => {
+  rl.question('Confirmar deleção? (yes/no): ', async (answer: string) => {
     if (answer.toLowerCase() === 'yes') {
       console.log('\n🗑️  Deletando duplicatas...');
 
@@ -108,7 +109,7 @@ async function cleanupDuplicateSubscriptions() {
       console.log('❌ Operação cancelada.');
     }
 
-    readline.close();
+    rl.close();
     await prisma.$disconnect();
   });
 }

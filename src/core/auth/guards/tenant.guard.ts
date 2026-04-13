@@ -48,7 +48,9 @@ export class TenantGuard implements CanActivate {
     if (!resourceId) return true;
 
     try {
-      const resource = await (this.prisma[tenantConfig.model] as any).findUnique({
+      const resource = await (
+        this.prisma[tenantConfig.model] as any
+      ).findUnique({
         where: { id: resourceId },
         select: { companyId: true },
       });

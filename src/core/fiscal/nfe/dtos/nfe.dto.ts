@@ -251,7 +251,8 @@ export class EmitNfeDto {
   destIe?: string;
 
   @ApiPropertyOptional({
-    description: 'Indicador IE destinatário: 1=Contribuinte ICMS, 2=Isento, 9=Não contribuinte',
+    description:
+      'Indicador IE destinatário: 1=Contribuinte ICMS, 2=Isento, 9=Não contribuinte',
     default: 9,
   })
   @IsInt()

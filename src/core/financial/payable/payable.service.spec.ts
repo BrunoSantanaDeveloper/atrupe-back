@@ -270,7 +270,12 @@ describe('PayableService', () => {
           payableInstallment: {
             createMany: jest.fn().mockResolvedValue({ count: 1 }),
             findMany: jest.fn().mockResolvedValue([
-              { id: 'inst-1', installmentNumber: 1, status: 'PENDING', bankAccountId: mockBankAccountId },
+              {
+                id: 'inst-1',
+                installmentNumber: 1,
+                status: 'PENDING',
+                bankAccountId: mockBankAccountId,
+              },
             ]),
           },
           bankAccount: { findFirst: jest.fn() },
@@ -280,9 +285,15 @@ describe('PayableService', () => {
         return callback(tx);
       });
 
-      prisma.payableInstallment.findMany.mockResolvedValue([{ status: 'PENDING' }]);
+      prisma.payableInstallment.findMany.mockResolvedValue([
+        { status: 'PENDING' },
+      ]);
 
-      await service.create(dtoWithEmptySupplier as any, mockUserId, mockUserName);
+      await service.create(
+        dtoWithEmptySupplier as any,
+        mockUserId,
+        mockUserName,
+      );
 
       expect(capturedData.supplierId).toBeNull();
     });
@@ -387,9 +398,16 @@ describe('PayableService', () => {
       });
       prisma.$transaction.mockResolvedValue(undefined);
 
-      await service.cancel(mockPayableId, cancelDto as any, mockUserId, mockUserName);
+      await service.cancel(
+        mockPayableId,
+        cancelDto as any,
+        mockUserId,
+        mockUserName,
+      );
 
-      expect(baseService.cancelRelatedFinancials).toHaveBeenCalledWith('quot-123');
+      expect(baseService.cancelRelatedFinancials).toHaveBeenCalledWith(
+        'quot-123',
+      );
     });
 
     it('should record history when userId provided', async () => {
@@ -405,7 +423,12 @@ describe('PayableService', () => {
       });
       prisma.$transaction.mockResolvedValue(undefined);
 
-      await service.cancel(mockPayableId, cancelDto as any, mockUserId, mockUserName);
+      await service.cancel(
+        mockPayableId,
+        cancelDto as any,
+        mockUserId,
+        mockUserName,
+      );
 
       expect(historyService.createPayableHistory).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -482,9 +505,16 @@ describe('PayableService', () => {
       });
       prisma.$transaction.mockResolvedValue(undefined);
 
-      await service.undoCancel(mockPayableId, undoDto as any, mockUserId, mockUserName);
+      await service.undoCancel(
+        mockPayableId,
+        undoDto as any,
+        mockUserId,
+        mockUserName,
+      );
 
-      expect(baseService.reactivateRelatedFinancials).toHaveBeenCalledWith('quot-123');
+      expect(baseService.reactivateRelatedFinancials).toHaveBeenCalledWith(
+        'quot-123',
+      );
     });
   });
 
@@ -634,7 +664,24 @@ describe('PayableService', () => {
               paidAmount: 450,
             }),
           },
-          payable: { findUnique: jest.fn() },
+          payable: {
+            findUnique: jest.fn().mockResolvedValue({
+              companyId: 'comp-1',
+              clientId: 'client-1',
+              supplierId: 'supp-1',
+              referenceDate: new Date(),
+              description: 'Original Payable',
+            }),
+            create: jest.fn().mockResolvedValue({ id: 'new-pay-1' }),
+          },
+          receivable: {
+            create: jest.fn().mockResolvedValue({ id: 'new-rec-1' }),
+          },
+          receivableInstallment: {
+            create: jest
+              .fn()
+              .mockResolvedValue({ id: 'new-rec-inst-1', paidAmount: 50 }),
+          },
           cashRegister: {
             findFirst: jest.fn().mockResolvedValue({ id: 'cash-1' }),
             update: jest.fn(),
@@ -644,7 +691,9 @@ describe('PayableService', () => {
         return callback(tx);
       });
 
-      prisma.payableInstallment.findMany.mockResolvedValue([{ status: 'PAID' }]);
+      prisma.payableInstallment.findMany.mockResolvedValue([
+        { status: 'PAID' },
+      ]);
       prisma.payable.update.mockResolvedValue({});
       prisma.payableInstallment.findUnique.mockResolvedValue({
         id: mockInstallmentId,

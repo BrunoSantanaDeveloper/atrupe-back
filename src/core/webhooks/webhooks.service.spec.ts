@@ -214,7 +214,7 @@ describe('WebhooksService', () => {
   });
 
   describe('handleSubscriptionDeleted (via handleAsaasWebhook)', () => {
-    it('should mark subscription as INACTIVE', async () => {
+    it('should mark subscription as CANCELED', async () => {
       mockPrismaService.webhookEvent.findUnique.mockResolvedValue(null);
       mockPrismaService.webhookEvent.create.mockResolvedValue({ id: 'evt-4' });
       mockPrismaService.webhookEvent.update.mockResolvedValue({});
@@ -232,7 +232,7 @@ describe('WebhooksService', () => {
 
       expect(mockPrismaService.subscription.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: { status: 'INACTIVE' },
+          data: { status: 'CANCELED' },
         }),
       );
     });

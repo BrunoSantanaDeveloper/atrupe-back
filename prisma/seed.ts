@@ -512,7 +512,6 @@ async function createCommonUser() {
         console.log('Assinatura Full criada com sucesso');
       }
     }
-
   } catch (error) {
     console.error('Erro ao criar usuário comum:', error);
   }

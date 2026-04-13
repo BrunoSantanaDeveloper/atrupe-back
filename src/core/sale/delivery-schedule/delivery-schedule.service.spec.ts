@@ -109,7 +109,7 @@ describe('DeliveryScheduleService', () => {
         isActive: false,
       });
 
-      const result = await service.remove(mockDeliveryId);
+      await service.remove(mockDeliveryId);
 
       expect(prisma.deliverySchedule.update).toHaveBeenCalledWith({
         where: { id: mockDeliveryId },

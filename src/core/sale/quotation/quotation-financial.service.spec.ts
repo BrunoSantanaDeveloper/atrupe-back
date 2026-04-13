@@ -3,31 +3,6 @@ import { QuotationFinancialService } from './quotation-financial.service';
 import { PrismaService } from 'nestjs-prisma';
 
 const mockCompanyId = 'company-uuid-123';
-const mockQuotationId = 'quotation-uuid-456';
-
-const mockQuotation = {
-  id: mockQuotationId,
-  companyId: mockCompanyId,
-  totalValue: 100000,
-  quotationPayment: {
-    billing: 'ON_ORDER',
-    totalValue: 100000,
-    finalValue: 100000,
-    downPayment: 10000,
-    downPaymentDueDate: new Date(),
-    commission: 5,
-    quotationInstallment: [
-      { id: '1', dueDate: new Date(), value: 45000 },
-      { id: '2', dueDate: new Date(), value: 45000 },
-    ],
-  },
-  deliveryInfo: {
-    cost: 5000,
-    supplierId: 'supplier-uuid',
-    deliveryType: 'CARRIER',
-  },
-  client: { id: 'client-uuid', name: 'Test Client' },
-};
 
 const mockNature = {
   id: 'nature-uuid',
@@ -37,11 +12,6 @@ const mockNature = {
 const mockSubCategory = {
   id: 'subcategory-uuid',
   name: 'Prestação de Serviços',
-};
-
-const mockBankAccount = {
-  id: 'bank-account-uuid',
-  name: 'Conta Principal',
 };
 
 const createMockPrismaService = () => ({

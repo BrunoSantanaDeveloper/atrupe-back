@@ -123,7 +123,7 @@ export class NfceContingencySyncService {
 
       // Processar cada NFC-e
       for (const nfce of nfces) {
-        await this.syncSingleNfce(companyId, nfce, config);
+        await this.syncSingleNfce(companyId, nfce);
       }
     } catch (error) {
       this.logger.error(
@@ -135,11 +135,7 @@ export class NfceContingencySyncService {
   /**
    * Sincroniza uma única NFC-e
    */
-  private async syncSingleNfce(
-    companyId: string,
-    nfce: any,
-    config: any,
-  ): Promise<void> {
+  private async syncSingleNfce(companyId: string, nfce: any): Promise<void> {
     try {
       this.logger.log(`Sincronizando NFC-e ${nfce.numero} (${nfce.id})`);
 
@@ -327,7 +323,7 @@ export class NfceContingencySyncService {
     }
 
     try {
-      await this.syncSingleNfce(companyId, nfce, config);
+      await this.syncSingleNfce(companyId, nfce);
 
       // Buscar status atualizado
       const updated = await this.prisma.nfce.findUnique({

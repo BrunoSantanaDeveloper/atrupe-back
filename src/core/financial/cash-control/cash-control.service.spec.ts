@@ -140,7 +140,7 @@ describe('CashControlService', () => {
         openingBalance: 0,
       });
 
-      const result = await service.openCashRegister(openDto as any);
+      await service.openCashRegister(openDto as any);
 
       expect(prisma.cashRegister.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -195,7 +195,7 @@ describe('CashControlService', () => {
         closingBalance: 1650,
       });
 
-      const result = await service.closeCashRegister({
+      await service.closeCashRegister({
         cashRegisterId: mockCashRegisterId,
         notes: 'End of day',
       } as any);

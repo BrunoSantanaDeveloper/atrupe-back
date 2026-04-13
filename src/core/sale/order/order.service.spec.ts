@@ -20,7 +20,6 @@ const mockOrderId = 'order-uuid-789';
 const mockQuotationId = 'quotation-uuid-456';
 const mockCompanyId = 'company-uuid-123';
 const mockSellerId = 'seller-uuid-101';
-const mockReasonId = 'reason-uuid-202';
 
 const createMockPrismaService = () => {
   const mock: any = {

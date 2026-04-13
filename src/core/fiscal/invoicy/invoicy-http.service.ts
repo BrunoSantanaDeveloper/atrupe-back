@@ -619,9 +619,7 @@ export class InvoicyHttpService {
       this.logger.log('Successfully authenticated as partner with Invoicy');
       return accessToken;
     } catch (error) {
-      this.logger.error(
-        `Partner authentication failed: ${error.message}`,
-      );
+      this.logger.error(`Partner authentication failed: ${error.message}`);
       if (error.response?.data) {
         this.logger.error(
           `Invoicy error: ${JSON.stringify(error.response.data)}`,
@@ -661,7 +659,9 @@ export class InvoicyHttpService {
     try {
       const existing = await this.consultCompany(data.cnpj);
       if (existing?.EmpAK) {
-        this.logger.log('Company already registered in Invoicy, returning existing key');
+        this.logger.log(
+          'Company already registered in Invoicy, returning existing key',
+        );
         return {
           accessKey: existing.EmpAK,
           cryptoKey: existing.ChaveCriptografia,

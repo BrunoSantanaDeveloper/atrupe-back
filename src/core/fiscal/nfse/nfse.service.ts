@@ -263,7 +263,8 @@ export class NfseService {
       naturezaOperacao: 1, // Tributação no município
       codigoServico:
         dto.codigoServico ||
-        (quotation.quotationProduct[0]?.product as any)?.fiscalData?.codigoServico ||
+        (quotation.quotationProduct[0]?.product as any)?.fiscalData
+          ?.codigoServico ||
         config.codigoServico ||
         '',
       discriminacao: dto.discriminacao,
@@ -271,7 +272,8 @@ export class NfseService {
       valorServicos,
       aliquotaIss:
         dto.aliquotaIss ||
-        (quotation.quotationProduct[0]?.product as any)?.fiscalData?.aliquotaIss ||
+        (quotation.quotationProduct[0]?.product as any)?.fiscalData
+          ?.aliquotaIss ||
         config.aliquotaIss ||
         0,
       issRetido: dto.issRetido || false,

@@ -7,7 +7,7 @@ export class InvoiceService {
   private readonly logger = new Logger(InvoiceService.name);
   constructor(private readonly pdfService: PdfService) {}
 
-  async create(dto: CreateInvoiceDto) {
+  async create(_dto: CreateInvoiceDto) {
     this.logger.debug('Criando invoice');
     const invoice: PdfStructure = {
       header: 'Recibo',

@@ -40,7 +40,8 @@ export class ProductController {
   constructor(private readonly productService: ProductService) {}
 
   @Post()
-  @HasPermission('create', 'product_settings:products')  @ApiOperation({ summary: 'Cria um novo produto' })
+  @HasPermission('create', 'product_settings:products')
+  @ApiOperation({ summary: 'Cria um novo produto' })
   @ApiResponse({
     status: 201,
     description: 'Produto criado com sucesso.',
@@ -51,7 +52,8 @@ export class ProductController {
   }
 
   @Get()
-  @HasPermission('view', 'product_settings:products')  @ApiOperation({ summary: 'Obtém a lista de todos os produtos' })
+  @HasPermission('view', 'product_settings:products')
+  @ApiOperation({ summary: 'Obtém a lista de todos os produtos' })
   @ApiResponse({
     status: 200,
     description: 'Lista de produtos retornada com sucesso.',
@@ -76,7 +78,8 @@ export class ProductController {
   }
 
   @Get(':id')
-  @TenantResource('product')  @ApiOperation({ summary: 'Obtém um produto pelo ID' })
+  @TenantResource('product')
+  @ApiOperation({ summary: 'Obtém um produto pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do produto' })
   @ApiResponse({
     status: 200,
@@ -91,7 +94,9 @@ export class ProductController {
   }
 
   @Patch(':id')
-  @TenantResource('product')  @HasPermission('edit', 'product_settings:products')  @ApiOperation({ summary: 'Atualiza um produto pelo ID' })
+  @TenantResource('product')
+  @HasPermission('edit', 'product_settings:products')
+  @ApiOperation({ summary: 'Atualiza um produto pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do produto' })
   @ApiBody({
     description: 'Dados para atualização do produto',
@@ -113,7 +118,9 @@ export class ProductController {
   }
 
   @Delete(':id')
-  @TenantResource('product')  @HasPermission('delete', 'product_settings:products')  @ApiOperation({ summary: 'Remove um produto pelo ID' })
+  @TenantResource('product')
+  @HasPermission('delete', 'product_settings:products')
+  @ApiOperation({ summary: 'Remove um produto pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do produto' })
   @ApiResponse({
     status: 200,

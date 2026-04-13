@@ -230,7 +230,7 @@ describe('AsaasGatewayService', () => {
       });
 
       await expect(service.createAsaasCustomer(customerData)).rejects.toThrow(
-        'Falha ao criar customer no Asaas',
+        'Duplicate customer',
       );
     });
   });

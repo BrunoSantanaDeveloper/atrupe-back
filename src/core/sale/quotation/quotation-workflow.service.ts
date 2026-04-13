@@ -402,7 +402,7 @@ export class QuotationWorkflowService {
     }
 
     // Post-TX: production stages (non-transactional, idempotent)
-    await this.createProductionStages(order.quotationId, isTrial);
+    await this.createProductionStages(order.quotationId);
 
     // History: register approval
     if (userId) {
@@ -425,7 +425,8 @@ export class QuotationWorkflowService {
     }
 
     // Signal: generate invoice if payment condition demands it
-    const paymentCondition = (quotation as any).quotationPayment?.paymentCondition;
+    const paymentCondition = (quotation as any).quotationPayment
+      ?.paymentCondition;
     if (paymentCondition?.generateInvoice && paymentCondition?.invoiceType) {
       this.logger.log(
         `Quotation ${quotationId} approved with generateInvoice=${paymentCondition.invoiceType}. ` +
@@ -560,7 +561,7 @@ export class QuotationWorkflowService {
   /**
    * Cria etapas de produção para o orçamento
    */
-  async createProductionStages(quotationId: string, isTrial: boolean) {
+  async createProductionStages(quotationId: string) {
     try {
       const quotation = await this.prisma.quotation.findUnique({
         where: { id: quotationId },
