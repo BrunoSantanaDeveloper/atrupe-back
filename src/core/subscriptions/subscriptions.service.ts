@@ -401,8 +401,26 @@ export class SubscriptionsService {
         },
       };
 
-      const asaasSubscription =
-        await this.asaasGateway.createSubscription(data);
+      let asaasSubscription;
+      try {
+        asaasSubscription = await this.asaasGateway.createSubscription(data);
+      } catch (error) {
+        const errorMsg = error.message.toLowerCase();
+        if (
+          errorMsg.includes('cliente inválido') ||
+          errorMsg.includes('cliente não') ||
+          errorMsg.includes('customer')
+        ) {
+          this.logger.warn(
+            `Asaas ID do cliente parece obsoleto/inválido. Limpando do banco local para re-provisionamento. ID Local: ${finalCustomer.id}`,
+          );
+          await this.prisma.customer.update({
+            where: { id: finalCustomer.id },
+            data: { asaasCustomerId: null },
+          });
+        }
+        throw error;
+      }
 
       // Atualizar a subscription local com o ID do Asaas
       await this.prisma.subscription.update({
