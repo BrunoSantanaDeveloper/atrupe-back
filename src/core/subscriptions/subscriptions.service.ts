@@ -85,17 +85,8 @@ export class SubscriptionsService {
   }
 
   async listPaymentsByCompanyId(companyId: string, page = 1, limit = 10) {
-    const subscription = await this.prisma.subscription.findFirst({
-      where: { companyId },
-      select: { id: true, plan: { select: { name: true } } },
-      orderBy: { createdAt: 'desc' },
-    });
+    const where = { subscription: { companyId: companyId } };
 
-    if (!subscription) {
-      return { data: [], total: 0, page, lastPage: 1 };
-    }
-
-    const where = { subscriptionId: subscription.id };
     const [data, total] = await Promise.all([
       this.prisma.payment.findMany({
         where,
@@ -294,9 +285,13 @@ export class SubscriptionsService {
                 (p.status === 'PENDING' && p.dueDate && p.dueDate < now),
             );
 
-          if (allOverdue) {
+          const isTempOrAborted =
+            existingSubscription.asaasSubscriptionId.startsWith('temp_') ||
+            payments.length === 0;
+
+          if (allOverdue || isTempOrAborted) {
             this.logger.log(
-              `Auto-cancelando subscription ${existingSubscription.id} — todos os pagamentos estão OVERDUE`,
+              `Auto-cancelando subscription ${existingSubscription.id} — pagamentos OVERDUE ou checkout abortado`,
             );
 
             // Cancelar no Asaas (se não for temporária)
