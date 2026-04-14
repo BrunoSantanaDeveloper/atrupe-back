@@ -40,7 +40,7 @@ export class SupplierController {
   constructor(private readonly supplierService: SupplierService) {}
 
   @Post()
-  @HasPermission('create', 'entity:supplier')
+  @HasPermission('create', 'register:supplier')
   @ApiOperation({ summary: 'Cria um novo fornecedor' })
   @ApiBody({
     description: 'Dados do novo fornecedor',
@@ -69,7 +69,7 @@ export class SupplierController {
   }
 
   @Get()
-  @HasPermission('view', 'entity:supplier')
+  @HasPermission('view', 'register:supplier')
   @ApiOperation({ summary: 'Obtém a lista de todos os fornecedores' })
   @ApiResponse({
     status: 200,
@@ -116,7 +116,7 @@ export class SupplierController {
 
   @Patch(':id')
   @TenantResource('supplier')
-  @HasPermission('edit', 'entity:supplier')
+  @HasPermission('edit', 'register:supplier')
   @ApiOperation({ summary: 'Atualiza um fornecedor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })
   @ApiBody({
@@ -163,7 +163,7 @@ export class SupplierController {
 
   @Delete(':id')
   @TenantResource('supplier')
-  @HasPermission('delete', 'entity:supplier')
+  @HasPermission('delete', 'register:supplier')
   @ApiOperation({ summary: 'Remove um fornecedor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })
   @ApiResponse({

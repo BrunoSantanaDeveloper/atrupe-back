@@ -37,7 +37,7 @@ export class EmployeeController {
   constructor(private readonly employeeService: EmployeeService) {}
 
   @Post()
-  @HasPermission('create', 'entity:employee')
+  @HasPermission('create', 'company_settings:users')
   @ApiOperation({ summary: 'Cria um novo colaborador' })
   @ApiBody({
     description: 'Dados do novo colaborador',
@@ -85,7 +85,7 @@ export class EmployeeController {
   }
 
   @Get()
-  @HasPermission('view', 'entity:employee')
+  @HasPermission('view', 'company_settings:users')
   @ApiQuery({ type: FilterEmployeeDto })
   @ApiOperation({ summary: 'Obtém a lista de todos os empregados' })
   @ApiResponse({
@@ -116,7 +116,7 @@ export class EmployeeController {
 
   @Patch(':id')
   @TenantResource('employee')
-  @HasPermission('edit', 'entity:employee')
+  @HasPermission('edit', 'company_settings:users')
   @ApiOperation({ summary: 'Atualiza um colaborador pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do colaborador' })
   @ApiBody({
@@ -146,7 +146,7 @@ export class EmployeeController {
 
   @Delete(':id')
   @TenantResource('employee')
-  @HasPermission('delete', 'entity:employee')
+  @HasPermission('delete', 'company_settings:users')
   @ApiOperation({ summary: 'Remove um colaborador pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do colaborador' })
   @ApiResponse({

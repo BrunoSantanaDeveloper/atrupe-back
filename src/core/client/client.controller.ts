@@ -39,7 +39,7 @@ export class ClientController {
   constructor(private readonly clientService: ClientService) {}
 
   @Post()
-  @HasPermission('create', 'entity:client')
+  @HasPermission('create', 'register:client')
   @ApiOperation({ summary: 'Cria um novo cliente' })
   @ApiBody({
     description: 'Dados do novo cliente',
@@ -127,7 +127,7 @@ export class ClientController {
   }
 
   @Get('lookup/:document')
-  @HasPermission('view', 'entity:client')
+  @HasPermission('view', 'register:client')
   @ApiOperation({
     summary: 'Busca dados de pessoa/empresa por CPF ou CNPJ',
     description:
@@ -146,7 +146,7 @@ export class ClientController {
   }
 
   @Get()
-  @HasPermission('view', 'entity:client')
+  @HasPermission('view', 'register:client')
   @ApiOperation({ summary: 'Obtém a lista de todos os clientes' })
   @ApiResponse({
     status: 200,
@@ -176,7 +176,7 @@ export class ClientController {
 
   @Get(':id/fiscal-completeness')
   @TenantResource('client')
-  @HasPermission('view', 'entity:client')
+  @HasPermission('view', 'register:client')
   @ApiOperation({
     summary: 'Retorna o status de completude fiscal do cliente',
     description:
@@ -211,7 +211,7 @@ export class ClientController {
 
   @Patch(':id')
   @TenantResource('client')
-  @HasPermission('edit', 'entity:client')
+  @HasPermission('edit', 'register:client')
   @ApiOperation({ summary: 'Atualiza um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
   @ApiBody({
@@ -274,7 +274,7 @@ export class ClientController {
 
   @Delete(':id')
   @TenantResource('client')
-  @HasPermission('delete', 'entity:client')
+  @HasPermission('delete', 'register:client')
   @ApiOperation({ summary: 'Remove um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
   @ApiResponse({
