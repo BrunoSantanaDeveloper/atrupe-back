@@ -41,7 +41,7 @@ export class PlanControlService {
   /**
    * Obter informações completas do plano da empresa
    */
-  async getCompanyPlanInfo(companyId: string): Promise<PlanInfo> {
+  async getCompanyPlanInfo(companyId: string): Promise<PlanInfo | null> {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
       select: {
@@ -86,7 +86,7 @@ export class PlanControlService {
 
     const subscription = company.Subscription[0];
     if (!subscription) {
-      throw new BadRequestException('Empresa não possui subscription ativa');
+      return null;
     }
 
     const plan = subscription.plan;
@@ -145,6 +145,7 @@ export class PlanControlService {
    */
   async hasFeature(companyId: string, featureKey: string): Promise<boolean> {
     const planInfo = await this.getCompanyPlanInfo(companyId);
+    if (!planInfo) return false;
     return !!planInfo.features[featureKey];
   }
 
@@ -157,6 +158,7 @@ export class PlanControlService {
     currentUsage: number,
   ): Promise<boolean> {
     const planInfo = await this.getCompanyPlanInfo(companyId);
+    if (!planInfo) return false;
 
     // Sistema dinâmico - buscar limite pelo key
     const limit = planInfo.limits[limitKey];

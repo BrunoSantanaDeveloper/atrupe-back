@@ -250,6 +250,15 @@ export class EmitNfeDto {
   @IsOptional()
   destIe?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Indicador IE destinatário: 1=Contribuinte ICMS, 2=Isento, 9=Não contribuinte',
+    default: 9,
+  })
+  @IsInt()
+  @IsOptional()
+  destIndIEDest?: number;
+
   @ApiPropertyOptional({ description: 'Email do destinatário' })
   @IsString()
   @IsOptional()
@@ -374,6 +383,30 @@ export class CorrectionLetterDto {
   @IsInt()
   @IsOptional()
   sequenciaEvento?: number;
+}
+
+export class InutilizarNfeDto {
+  @ApiPropertyOptional({ description: 'Série da NF-e', default: 1 })
+  @IsInt()
+  @IsOptional()
+  serie?: number;
+
+  @ApiProperty({ description: 'Número inicial da faixa' })
+  @IsInt()
+  @Min(1)
+  numeroInicial: number;
+
+  @ApiProperty({ description: 'Número final da faixa' })
+  @IsInt()
+  @Min(1)
+  numeroFinal: number;
+
+  @ApiProperty({
+    description: 'Justificativa da inutilização (mín 15 caracteres)',
+  })
+  @IsString()
+  @IsNotEmpty()
+  justificativa: string;
 }
 
 export class NfeFilterDto {

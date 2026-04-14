@@ -1,13 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { BlockLevelGuard, REQUIRE_UNBLOCKED_KEY } from './block-level.guard';
+import { BlockLevelGuard } from './block-level.guard';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 
 describe('BlockLevelGuard', () => {
   let guard: BlockLevelGuard;
-  let reflector: jest.Mocked<Reflector>;
-  let prisma: jest.Mocked<PrismaService>;
 
   const mockPrismaService = {
     company: {
@@ -39,8 +37,6 @@ describe('BlockLevelGuard', () => {
     }).compile();
 
     guard = module.get<BlockLevelGuard>(BlockLevelGuard);
-    reflector = module.get(Reflector);
-    prisma = module.get(PrismaService);
 
     jest.clearAllMocks();
   });

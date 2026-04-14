@@ -6,9 +6,11 @@ import {
   IsArray,
   IsBoolean,
   IsNumber,
+  IsInt,
   ValidateNested,
   IsUUID,
   IsDateString,
+  MaxLength,
 } from 'class-validator';
 import { ClientKind, ClientStatus } from '@prisma/client';
 import { IsCpf } from '../../../helpers/validators/cpf';
@@ -75,6 +77,28 @@ class GeneralInfoDto {
     default: false,
   })
   isBranch?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(14)
+  @ApiProperty({
+    description:
+      'Inscrição Estadual (IE) — obrigatório para contribuinte ICMS na NF-e',
+    example: '123456789',
+    required: false,
+  })
+  stateRegistration?: string;
+
+  @IsOptional()
+  @IsInt()
+  @ApiProperty({
+    description:
+      'Indicador da IE do destinatário: 1=Contribuinte ICMS, 2=Isento, 9=Não contribuinte',
+    example: 9,
+    required: false,
+    default: 9,
+  })
+  indicadorIE?: number;
 }
 
 class AddressDto {

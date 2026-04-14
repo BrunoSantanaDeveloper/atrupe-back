@@ -43,6 +43,7 @@ export class AuthService {
     try {
       const planInfo =
         await this.planControlService.getCompanyPlanInfo(companyId);
+      if (!planInfo) return [];
       return Object.keys(planInfo.features).filter(
         (key) => planInfo.features[key],
       );

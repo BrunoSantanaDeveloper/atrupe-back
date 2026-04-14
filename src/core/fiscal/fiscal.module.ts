@@ -6,6 +6,7 @@ import { NfceModule } from './nfce/nfce.module';
 import { ProductFiscalModule } from './product-fiscal/product-fiscal.module';
 import { CfopModule } from './cfop/cfop.module';
 import { OperationNatureModule } from './operation-nature/operation-nature.module';
+import { FiscalOnboardingModule } from './onboarding/fiscal-onboarding.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { OperationNatureModule } from './operation-nature/operation-nature.modul
     ProductFiscalModule,
     CfopModule,
     OperationNatureModule,
+    FiscalOnboardingModule,
   ],
   exports: [
     InvoicyModule,
@@ -25,6 +27,7 @@ import { OperationNatureModule } from './operation-nature/operation-nature.modul
     ProductFiscalModule,
     CfopModule,
     OperationNatureModule,
+    FiscalOnboardingModule,
   ],
 })
 export class FiscalModule {}

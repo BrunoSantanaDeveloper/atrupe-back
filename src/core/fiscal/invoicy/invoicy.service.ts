@@ -113,7 +113,10 @@ export class InvoicyService {
           state: address.state,
           country: address.country || '1058',
         },
-        hasCertificate: !!digitalCertificate.id, // Or check certificate content/password presence
+        hasCertificate: !!digitalCertificate.id,
+        certificateExpiresAt: digitalCertificate.expiresAt || null,
+        certificateIssuer: digitalCertificate.issuer || null,
+        certificateSerialNumber: digitalCertificate.serialNumber || null,
       },
 
       // Fiscal specific config

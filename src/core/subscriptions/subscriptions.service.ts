@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
+import { CancelSubscriptionDto } from './dto/cancel-subscription.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { AsaasGatewayService } from './asaas-gateway.service';
@@ -27,50 +28,65 @@ export class SubscriptionsService {
   ) {}
 
   async findActiveByCompanyId(companyId: string) {
-    return this.prisma.subscription.findFirst({
+    const includeRelations = {
+      plan: {
+        include: {
+          planFeatures: {
+            include: {
+              feature: true,
+            },
+          },
+          planLimits: {
+            include: {
+              limit: true,
+            },
+          },
+        },
+      },
+      customer: true,
+      subscriptionFeatures: {
+        include: {
+          feature: true,
+        },
+      },
+    };
+
+    // 1. Priorizar subscription ACTIVE não-TRIAL (plano pago ativo)
+    const activePaid = await this.prisma.subscription.findFirst({
       where: {
         companyId,
+        status: 'ACTIVE',
+        plan: { planType: { not: 'TRIAL' } },
       },
-      orderBy: {
-        createdAt: 'desc',
+      orderBy: { createdAt: 'desc' },
+      include: includeRelations,
+    });
+
+    if (activePaid) return activePaid;
+
+    // 2. Fallback: qualquer subscription ACTIVE (incluindo TRIAL)
+    const activeAny = await this.prisma.subscription.findFirst({
+      where: {
+        companyId,
+        status: 'ACTIVE',
       },
-      include: {
-        plan: {
-          include: {
-            planFeatures: {
-              include: {
-                feature: true,
-              },
-            },
-            planLimits: {
-              include: {
-                limit: true,
-              },
-            },
-          },
-        },
-        customer: true,
-        subscriptionFeatures: {
-          include: {
-            feature: true,
-          },
-        },
-      },
+      orderBy: { createdAt: 'desc' },
+      include: includeRelations,
+    });
+
+    if (activeAny) return activeAny;
+
+    // 3. Último fallback: subscription mais recente (qualquer status)
+    return this.prisma.subscription.findFirst({
+      where: { companyId },
+      orderBy: { createdAt: 'desc' },
+      include: includeRelations,
     });
   }
 
   async listPaymentsByCompanyId(companyId: string, page = 1, limit = 10) {
-    const subscription = await this.prisma.subscription.findFirst({
-      where: { companyId },
-      select: { id: true, plan: { select: { name: true } } },
-      orderBy: { createdAt: 'desc' },
-    });
+    const where = { subscription: { companyId: companyId } };
 
-    if (!subscription) {
-      return { data: [], total: 0, page, lastPage: 1 };
-    }
-
-    const where = { subscriptionId: subscription.id };
     const [data, total] = await Promise.all([
       this.prisma.payment.findMany({
         where,
@@ -132,22 +148,28 @@ export class SubscriptionsService {
     if (existingCustomer) {
       this.logger.log('Cliente encontrado:', existingCustomer.name);
 
-      // Verificar se o customer existente é um trial (não criado no Asaas ainda)
-      if (existingCustomer.asaasCustomerId?.startsWith('trial_')) {
-        this.logger.log('Cliente trial detectado, criando no Asaas...');
+      // Verificar se o customer existente precisa ser criado no Asaas (ex: trial_, temp_, null)
+      if (!existingCustomer.asaasCustomerId?.startsWith('cus_')) {
+        this.logger.log(
+          'Cliente sem ID válido no Asaas detectado, provisionando...',
+        );
 
         // Criar o customer no Asaas com os dados recebidos
-        const customerDataForAsaas = {
+        const customerDataForAsaas: Record<string, any> = {
           name: customer.name,
           cpfCnpj: customer.document,
           email: customer.email,
-          phone: customer.phone,
-          mobilePhone: customer.phone,
+          mobilePhone: customer.mobilePhone || customer.phone,
           postalCode: customer.postalCode,
           addressNumber: customer.addressNumber,
           complement: customer.complement,
           externalReference: existingCustomer.id,
         };
+
+        // Only send phone (landline) if provided and different from mobile
+        if (customer.phone && customer.phone !== customer.mobilePhone) {
+          customerDataForAsaas.phone = customer.phone;
+        }
 
         try {
           const asaasCustomer =
@@ -251,13 +273,25 @@ export class SubscriptionsService {
             where: { subscriptionId: existingSubscription.id },
           });
 
+          // Considerar OVERDUE tanto pelo status local quanto pela data de vencimento.
+          // Sem webhook/cron, o status local pode ficar PENDING eternamente
+          // mesmo após a cobrança vencer no Asaas.
+          const now = new Date();
           const allOverdue =
             payments.length > 0 &&
-            payments.every((p) => p.status === 'OVERDUE');
+            payments.every(
+              (p) =>
+                p.status === 'OVERDUE' ||
+                (p.status === 'PENDING' && p.dueDate && p.dueDate < now),
+            );
 
-          if (allOverdue) {
+          const isTempOrAborted =
+            existingSubscription.asaasSubscriptionId.startsWith('temp_') ||
+            payments.length === 0;
+
+          if (allOverdue || isTempOrAborted) {
             this.logger.log(
-              `Auto-cancelando subscription ${existingSubscription.id} — todos os pagamentos estão OVERDUE`,
+              `Auto-cancelando subscription ${existingSubscription.id} — pagamentos OVERDUE ou checkout abortado`,
             );
 
             // Cancelar no Asaas (se não for temporária)
@@ -367,8 +401,26 @@ export class SubscriptionsService {
         },
       };
 
-      const asaasSubscription =
-        await this.asaasGateway.createSubscription(data);
+      let asaasSubscription;
+      try {
+        asaasSubscription = await this.asaasGateway.createSubscription(data);
+      } catch (error) {
+        const errorMsg = error.message.toLowerCase();
+        if (
+          errorMsg.includes('cliente inválido') ||
+          errorMsg.includes('cliente não') ||
+          errorMsg.includes('customer')
+        ) {
+          this.logger.warn(
+            `Asaas ID do cliente parece obsoleto/inválido. Limpando do banco local para re-provisionamento. ID Local: ${finalCustomer.id}`,
+          );
+          await this.prisma.customer.update({
+            where: { id: finalCustomer.id },
+            data: { asaasCustomerId: `invalid_${uuidv4()}` },
+          });
+        }
+        throw error;
+      }
 
       // Atualizar a subscription local com o ID do Asaas
       await this.prisma.subscription.update({
@@ -811,6 +863,89 @@ export class SubscriptionsService {
     return updated;
   }
 
+  async cancelSubscription(
+    subscriptionId: string,
+    cancelDto: CancelSubscriptionDto,
+    companyId: string,
+  ) {
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+      include: { plan: true },
+    });
+
+    if (!subscription) {
+      throw new NotFoundException('Assinatura não encontrada.');
+    }
+
+    if (subscription.companyId !== companyId) {
+      throw new BadRequestException('Acesso não autorizado a esta assinatura.');
+    }
+
+    if (subscription.status !== 'ACTIVE') {
+      throw new BadRequestException(
+        'Apenas assinaturas ativas podem ser canceladas.',
+      );
+    }
+
+    if (subscription.plan.planType === 'TRIAL') {
+      throw new BadRequestException(
+        'Assinaturas trial não podem ser canceladas por este fluxo.',
+      );
+    }
+
+    // Cancelar no Asaas
+    if (!subscription.asaasSubscriptionId.startsWith('temp_')) {
+      try {
+        await this.asaasGateway.cancelAsaasSubscription(
+          subscription.asaasSubscriptionId,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Falha ao cancelar subscription no Asaas: ${error.message}`,
+        );
+      }
+    }
+
+    // Atualizar status no banco e registrar histórico atomicamente
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.subscription.update({
+        where: { id: subscriptionId },
+        data: { status: 'CANCELED' },
+        include: { plan: true },
+      });
+
+      await tx.subscriptionHistory.create({
+        data: {
+          subscriptionId,
+          action: 'CANCELED',
+          description: `Assinatura cancelada pelo usuário. Motivo: ${cancelDto.reason}`,
+          changes: {
+            before: { status: 'ACTIVE' },
+            after: { status: 'CANCELED' },
+          },
+          metadata: {
+            reason: cancelDto.reason,
+            feedback: cancelDto.feedback || null,
+            canceledAt: new Date().toISOString(),
+          },
+          createdByName: 'Usuário',
+        },
+      });
+
+      return result;
+    });
+
+    this.logger.log(
+      `Subscription ${subscriptionId} cancelada. Motivo: ${cancelDto.reason}`,
+    );
+
+    return {
+      success: true,
+      message: 'Assinatura cancelada com sucesso.',
+      subscription: updated,
+    };
+  }
+
   async extendTrialPeriod(
     subscriptionId: string,
     password: string,
@@ -1116,9 +1251,13 @@ export class SubscriptionsService {
     );
 
     // Buscar a subscription mais recente da empresa que não seja TRIAL
+    // Excluir CANCELED para não pegar subscriptions órfãs dos testes/auto-cancel
     const subscription = await this.prisma.subscription.findFirst({
       where: {
         companyId,
+        status: {
+          in: ['ACTIVE', 'INACTIVE'],
+        },
         plan: {
           planType: {
             not: 'TRIAL',
@@ -1147,6 +1286,11 @@ export class SubscriptionsService {
                 limit: true,
               },
             },
+          },
+        },
+        subscriptionFeatures: {
+          include: {
+            feature: true,
           },
         },
       },
@@ -1324,6 +1468,11 @@ export class SubscriptionsService {
                     limit: true,
                   },
                 },
+              },
+            },
+            subscriptionFeatures: {
+              include: {
+                feature: true,
               },
             },
           },

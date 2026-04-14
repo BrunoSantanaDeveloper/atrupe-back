@@ -54,10 +54,14 @@ export class UserRegistrationService {
       const timeUntilExpiry = Math.ceil(
         (existToken.expiresAt.getTime() - now.getTime()) / 1000,
       );
-      return {
+      const response: Record<string, any> = {
         message: 'Email já possui um token de validação.',
         canResendIn: timeUntilExpiry,
       };
+      if (process.env.APP_ENV !== 'production') {
+        response.devToken = existToken.token;
+      }
+      return response;
     }
     let token: string;
     let isUnique: any;
@@ -103,7 +107,15 @@ export class UserRegistrationService {
         this.logger.error('Falha ao enviar email de validação:', err);
       });
 
-    return { message: 'Email de validação enviado com sucesso.' };
+    const response: Record<string, any> = {
+      message: 'Email de validação enviado com sucesso.',
+    };
+
+    if (process.env.APP_ENV !== 'production') {
+      response.devToken = token;
+    }
+
+    return response;
   }
 
   async verifyEmail(body: { email: string; token: string }) {

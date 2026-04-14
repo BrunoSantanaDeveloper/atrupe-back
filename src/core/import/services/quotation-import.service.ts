@@ -20,8 +20,8 @@ export class QuotationImportService {
    * POST /sale/quotation/import-csv
    */
   async processImport(
-    importLog: any,
-    options: any,
+    _importLog: any,
+    _options: any,
   ): Promise<{
     successRows: number;
     failedRows: number;

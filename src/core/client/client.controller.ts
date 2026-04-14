@@ -39,7 +39,8 @@ export class ClientController {
   constructor(private readonly clientService: ClientService) {}
 
   @Post()
-  @HasPermission('create', 'entity:client')  @ApiOperation({ summary: 'Cria um novo cliente' })
+  @HasPermission('create', 'register:client')
+  @ApiOperation({ summary: 'Cria um novo cliente' })
   @ApiBody({
     description: 'Dados do novo cliente',
     type: CreateClientDto,
@@ -125,8 +126,28 @@ export class ClientController {
     return this.clientService.findAllQuantity(companyId);
   }
 
+  @Get('lookup/:document')
+  @HasPermission('view', 'register:client')
+  @ApiOperation({
+    summary: 'Busca dados de pessoa/empresa por CPF ou CNPJ',
+    description:
+      'Consulta APIs externas para auto-preenchimento de cadastro. Também verifica se o documento já existe no sistema.',
+  })
+  @ApiParam({
+    name: 'document',
+    required: true,
+    description: 'CPF (11 dígitos) ou CNPJ (14 dígitos)',
+  })
+  @ApiResponse({ status: 200, description: 'Dados encontrados.' })
+  @ApiResponse({ status: 400, description: 'Documento inválido.' })
+  @ApiResponse({ status: 404, description: 'Dados não encontrados.' })
+  lookupDocument(@Req() req, @Param('document') document: string) {
+    return this.clientService.lookupDocument(document, req.user.companyId);
+  }
+
   @Get()
-  @HasPermission('view', 'entity:client')  @ApiOperation({ summary: 'Obtém a lista de todos os clientes' })
+  @HasPermission('view', 'register:client')
+  @ApiOperation({ summary: 'Obtém a lista de todos os clientes' })
   @ApiResponse({
     status: 200,
     description: 'Lista de clientes retornada com sucesso.',
@@ -138,7 +159,8 @@ export class ClientController {
   }
 
   @Get(':id')
-  @TenantResource('client')  @ApiOperation({ summary: 'Obtém um cliente pelo ID' })
+  @TenantResource('client')
+  @ApiOperation({ summary: 'Obtém um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
   @ApiResponse({
     status: 200,
@@ -150,6 +172,25 @@ export class ClientController {
   })
   findOne(@Param('id') id: string) {
     return this.clientService.findOne(id);
+  }
+
+  @Get(':id/fiscal-completeness')
+  @TenantResource('client')
+  @HasPermission('view', 'register:client')
+  @ApiOperation({
+    summary: 'Retorna o status de completude fiscal do cliente',
+    description:
+      'Verifica se o cliente tem todos os dados obrigatórios para emissão de NF-e/NFS-e.',
+  })
+  @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Status de completude fiscal: APPROVED, PARTIAL ou INCOMPLETE.',
+  })
+  @ApiResponse({ status: 404, description: 'Cliente não encontrado.' })
+  getFiscalCompleteness(@Req() req, @Param('id') id: string) {
+    return this.clientService.getFiscalCompleteness(id, req.user.companyId);
   }
 
   @Get(':id/contacts')
@@ -169,7 +210,9 @@ export class ClientController {
   }
 
   @Patch(':id')
-  @TenantResource('client')  @HasPermission('edit', 'entity:client')  @ApiOperation({ summary: 'Atualiza um cliente pelo ID' })
+  @TenantResource('client')
+  @HasPermission('edit', 'register:client')
+  @ApiOperation({ summary: 'Atualiza um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
   @ApiBody({
     description: 'Dados para atualização do cliente',
@@ -230,7 +273,9 @@ export class ClientController {
   }
 
   @Delete(':id')
-  @TenantResource('client')  @HasPermission('delete', 'entity:client')  @ApiOperation({ summary: 'Remove um cliente pelo ID' })
+  @TenantResource('client')
+  @HasPermission('delete', 'register:client')
+  @ApiOperation({ summary: 'Remove um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
   @ApiResponse({
     status: 200,

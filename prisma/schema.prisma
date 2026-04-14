@@ -80,6 +80,7 @@ model Company {
   history               CompanyHistory[]
   importLogs            ImportLog[]
   invoicyConfigs        InvoicyConfig[]
+  fiscalOnboarding      FiscalOnboardingRequest[]
   nfes                  Nfe[]
   nfses                 Nfse[]
   nfces                 Nfce[]
@@ -289,6 +290,8 @@ model Client {
   planId            String?
   isBranch          Boolean                  @default(false)
   isImported        Boolean                  @default(false)
+  stateRegistration String?                  // IE (Inscrição Estadual) — required for ICMS taxpayers on NF-e
+  indicadorIE       Int?                     @default(9) // 1=Contribuinte ICMS, 2=Isento, 9=Não contribuinte
   address           Address[]
   paymentConditions ClientPaymentCondition[]
   company           Company                  @relation(fields: [companyId], references: [id])
@@ -331,6 +334,8 @@ model Supplier {
   minValue          Float?
   isBranch          Boolean                    @default(false)
   isImported        Boolean                    @default(false)
+  stateRegistration String?                    // IE (Inscrição Estadual)
+  indicadorIE       Int?                       @default(9) // 1=Contribuinte ICMS, 2=Isento, 9=Não contribuinte
   address           Address[]
   client            Client[]
   commission        Commission[]
@@ -904,6 +909,10 @@ model PaymentCondition {
   payableInstallments         PayableInstallment[]
   receivableInstallments      ReceivableInstallment[]
   quotationInstallments       QuotationInstallment[]
+
+  // Fiscal: generate invoice on approval
+  generateInvoice Boolean      @default(false) // Auto-generate NF on order approval?
+  invoiceType     InvoiceType? // NFE, NFSE, NFCE, or null
 
   @@map("payment_conditions")
 }
@@ -2064,6 +2073,13 @@ model InvoicyConfig {
   serieNfse      String? @default("A1")
   proximoRpsNfse Int?    @default(1)
 
+  // IBGE code (cached from CEP lookup to avoid external API calls on every emission)
+  emitCmun String? // Código IBGE do município do emitente
+
+  // NFC-e CSC (Código de Segurança do Contribuinte)
+  cscId    String? // ID do CSC
+  cscToken String? // Token CSC
+
   @@index([companyId])
   @@map("invoicy_configs")
 }
@@ -2344,12 +2360,64 @@ model DigitalCertificate {
   password    String?
   certificate String?                @db.Text
   lastUpload  DateTime?
+  expiresAt   DateTime?              // Certificate expiration date (parsed from PFX)
+  issuer      String?                // Certificate issuer (e.g. "AC SERASA")
+  serialNumber String?               // Certificate serial number
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("digital_certificates")
+}
+
+model FiscalOnboardingRequest {
+  id          String                  @id @default(uuid())
+  companyId   String
+  status      FiscalOnboardingStatus  @default(PENDING)
+
+  // Dados fiscais coletados do cliente
+  cnpj        String
+  razaoSocial String
+  nomeFantasia String?
+  ie          String?
+  im          String?
+  cnae        String?
+  uf          String
+  codigoIbge  String?
+
+  // Endereço
+  cep         String?
+  logradouro  String?
+  numero      String?
+  bairro      String?
+  cidade      String?
+  complemento String?
+
+  // Resultado do auto-provisioning
+  invoicyAccessKey    String?
+  invoicyCryptoKey    String?
+  errorMessage        String?   @db.Text
+
+  // Metadados
+  resolvedBy  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime? @updatedAt
+
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([status])
+  @@map("fiscal_onboarding_requests")
+}
+
+enum FiscalOnboardingStatus {
+  PENDING
+  PROVISIONING
+  ACTIVE
+  PENDING_REVIEW
+  REJECTED
 }
 
 model SystemSetting {

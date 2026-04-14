@@ -87,11 +87,7 @@ export class QuotationService {
     return this.itemsService.addProductToQuotation(quotationId, data);
   }
 
-  updateProductInQuotation(
-    productId: string,
-    data: UpdateItemDto,
-    userId?: string,
-  ) {
+  updateProductInQuotation(productId: string, data: UpdateItemDto) {
     return this.itemsService.updateProductInQuotation(productId, data);
   }
 
@@ -129,8 +125,8 @@ export class QuotationService {
     return this.workflowService.billQuotation(quotationId);
   }
 
-  createProductionStages(quotationId: string, isTrial: boolean) {
-    return this.workflowService.createProductionStages(quotationId, isTrial);
+  createProductionStages(quotationId: string) {
+    return this.workflowService.createProductionStages(quotationId);
   }
 
   reject(

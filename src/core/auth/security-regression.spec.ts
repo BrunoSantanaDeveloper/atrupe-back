@@ -3,6 +3,15 @@ import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SystemAdminGuard } from './guards/system-admin.guard';
 import { WebhookTokenGuard } from './guards/webhook-token.guard';
+import {
+  IsEmail,
+  MaxLength,
+  IsString,
+  MinLength,
+  validate,
+} from 'class-validator';
+import { plainToInstance } from 'class-transformer';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 
 /**
  * T-019: Security Regression Tests
@@ -29,8 +38,8 @@ function createMockExecutionContext(
     getHandler: () => jest.fn(),
     getArgs: () => [request],
     getArgByIndex: (index: number) => [request][index],
-    switchToRpc: () => ({} as any),
-    switchToWs: () => ({} as any),
+    switchToRpc: () => ({}) as any,
+    switchToWs: () => ({}) as any,
     getType: () => 'http' as const,
   } as ExecutionContext;
 }
@@ -157,7 +166,7 @@ describe('Security Regression Tests (T-019)', () => {
     it('should have @IsEmail on username field', () => {
       // LoginDto uses: @IsEmail, @MaxLength(255)
       // This test ensures the DTO class has proper validation rules
-      const { IsEmail, MaxLength, IsString, MinLength } = require('class-validator');
+
       expect(IsEmail).toBeDefined();
       expect(MaxLength).toBeDefined();
       expect(IsString).toBeDefined();
@@ -165,11 +174,7 @@ describe('Security Regression Tests (T-019)', () => {
     });
 
     it('should validate email format constraint', async () => {
-      const { validate } = require('class-validator');
-      const { plainToInstance } = require('class-transformer');
-
       // Dynamically import LoginDto by creating equivalent class
-      const { IsEmail, IsString, MinLength, MaxLength } = require('class-validator');
 
       class TestLoginDto {
         @IsEmail({}, { message: 'E-mail inválido' })
@@ -193,10 +198,6 @@ describe('Security Regression Tests (T-019)', () => {
     });
 
     it('should reject password shorter than 4 characters', async () => {
-      const { validate } = require('class-validator');
-      const { plainToInstance } = require('class-transformer');
-      const { IsEmail, IsString, MinLength, MaxLength } = require('class-validator');
-
       class TestLoginDto {
         @IsEmail({}, { message: 'E-mail inválido' })
         @MaxLength(255)
@@ -218,10 +219,6 @@ describe('Security Regression Tests (T-019)', () => {
     });
 
     it('should accept valid login payload', async () => {
-      const { validate } = require('class-validator');
-      const { plainToInstance } = require('class-transformer');
-      const { IsEmail, IsString, MinLength, MaxLength } = require('class-validator');
-
       class TestLoginDto {
         @IsEmail({}, { message: 'E-mail inválido' })
         @MaxLength(255)
@@ -242,10 +239,6 @@ describe('Security Regression Tests (T-019)', () => {
     });
 
     it('should reject password longer than 128 characters', async () => {
-      const { validate } = require('class-validator');
-      const { plainToInstance } = require('class-transformer');
-      const { IsEmail, IsString, MinLength, MaxLength } = require('class-validator');
-
       class TestLoginDto {
         @IsEmail({}, { message: 'E-mail inválido' })
         @MaxLength(255)
@@ -270,13 +263,13 @@ describe('Security Regression Tests (T-019)', () => {
   describe('Rate Limiting (T-001 related)', () => {
     it('should have ThrottlerGuard applied to AuthController', () => {
       // Verify ThrottlerGuard decorator exists
-      const { ThrottlerGuard } = require('@nestjs/throttler');
+
       expect(ThrottlerGuard).toBeDefined();
     });
 
     it('should have rate limit of 5 requests per minute on login', () => {
       // AuthController uses @Throttle({ auth: { limit: 5, ttl: 60000 } })
-      const { Throttle } = require('@nestjs/throttler');
+
       expect(Throttle).toBeDefined();
     });
   });

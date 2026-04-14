@@ -6,7 +6,6 @@ import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('NfseDraftService', () => {
   let service: NfseDraftService;
-  let prisma: PrismaService;
 
   const mockPrisma = {
     nfse: {
@@ -27,7 +26,6 @@ describe('NfseDraftService', () => {
     }).compile();
 
     service = module.get<NfseDraftService>(NfseDraftService);
-    prisma = module.get<PrismaService>(PrismaService);
 
     jest.clearAllMocks();
   });

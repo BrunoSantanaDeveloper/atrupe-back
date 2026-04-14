@@ -49,7 +49,8 @@ export class ReceivableController {
   constructor(private readonly receivableService: ReceivableService) {}
 
   @Post()
-  @HasPermission('create', 'financial:receivable')  @ApiOperation({ summary: 'Cria uma nova conta a receber com parcelas' })
+  @HasPermission('create', 'financial:receivable')
+  @ApiOperation({ summary: 'Cria uma nova conta a receber com parcelas' })
   @ApiBody({
     description: 'Dados da nova conta a receber',
     type: CreateReceivableDto,
@@ -68,7 +69,8 @@ export class ReceivableController {
   }
 
   @Get()
-  @HasPermission('view', 'financial:receivable')  @ApiOperation({ summary: 'Obtém a lista de todas as contas a receber' })
+  @HasPermission('view', 'financial:receivable')
+  @ApiOperation({ summary: 'Obtém a lista de todas as contas a receber' })
   @ApiResponse({
     status: 200,
     description: 'Lista de contas a receber retornada com sucesso.',
@@ -80,7 +82,8 @@ export class ReceivableController {
   }
 
   @Get(':id')
-  @TenantResource('receivable')  @ApiOperation({ summary: 'Obtém uma conta a receber pelo ID' })
+  @TenantResource('receivable')
+  @ApiOperation({ summary: 'Obtém uma conta a receber pelo ID' })
   @ApiParam({
     name: 'id',
     required: true,
@@ -132,7 +135,9 @@ export class ReceivableController {
   }
 
   @Patch(':id')
-  @TenantResource('receivable')  @HasPermission('edit', 'financial:receivable')  @ApiOperation({ summary: 'Atualizar dados do título' })
+  @TenantResource('receivable')
+  @HasPermission('edit', 'financial:receivable')
+  @ApiOperation({ summary: 'Atualizar dados do título' })
   @ApiParam({
     name: 'id',
     description: 'ID do título',
@@ -181,7 +186,9 @@ export class ReceivableController {
     );
   }
   @Patch(':id/cancel')
-  @TenantResource('receivable')  @HasPermission('delete', 'financial:receivable')  @ApiOperation({
+  @TenantResource('receivable')
+  @HasPermission('delete', 'financial:receivable')
+  @ApiOperation({
     summary: 'Cancela uma conta a receber e suas parcelas pendentes',
   })
   @ApiParam({
@@ -301,7 +308,9 @@ export class ReceivableController {
   }
 
   @Delete(':id')
-  @TenantResource('receivable')  @HasPermission('delete', 'financial:receivable')  @ApiOperation({ summary: 'Remove uma conta a receber pelo ID' })
+  @TenantResource('receivable')
+  @HasPermission('delete', 'financial:receivable')
+  @ApiOperation({ summary: 'Remove uma conta a receber pelo ID' })
   @ApiParam({
     name: 'id',
     required: true,

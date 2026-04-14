@@ -5,6 +5,8 @@ export interface CompanyResponse {
   phone: string;
   address: {
     street: string;
+    number?: string;
+    complement?: string;
     city: string;
     state: string;
     zipcode: string;

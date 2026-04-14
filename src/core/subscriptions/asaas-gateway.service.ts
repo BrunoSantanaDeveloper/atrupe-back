@@ -175,7 +175,13 @@ export class AsaasGatewayService {
           status: error.response?.status,
         }),
       );
-      throw new Error(`Falha ao criar customer no Asaas: ${error.message}`);
+      throw new Error(
+        error.response?.data?.errors
+          ?.map((err) => err.description)
+          .join('. ') ||
+          error.message ||
+          'Falha ao criar cliente no gateway de pagamento',
+      );
     }
   }
 }

@@ -172,6 +172,52 @@ export class InvoicyApiService {
     );
   }
 
+  /**
+   * Inutilize NF-e number range (model 55)
+   */
+  async inutilizarNfe(
+    companyId: string,
+    serie: number,
+    numeroInicial: number,
+    numeroFinal: number,
+    justificativa: string,
+  ): Promise<InvoicyResponse[]> {
+    this.logger.log(
+      `Inutilizing NF-e range ${numeroInicial}-${numeroFinal} for company ${companyId}`,
+    );
+
+    const credentials =
+      await this.invoicyHttpService.getCompanyCredentials(companyId);
+    const config = await this.prisma.invoicyConfig.findFirst({
+      where: { companyId, isDefault: true },
+    });
+
+    const inutRequest = [
+      {
+        Documento: {
+          ModeloDocumento: 'NFe',
+          Versao: 4,
+          Inutilizacao: {
+            Ano: new Date().getFullYear(),
+            CNPJ: credentials.cnpj.replace(/\D/g, ''),
+            Serie: serie,
+            NumeroInicial: numeroInicial,
+            NumeroFinal: numeroFinal,
+            Justificativa: justificativa,
+            tpAmb: config?.ambiente || 2,
+          },
+        },
+      },
+    ];
+
+    return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
+      companyId,
+      'POST',
+      '/nfe',
+      inutRequest,
+    );
+  }
+
   // ============================================
   // NFS-e Operations
   // ============================================

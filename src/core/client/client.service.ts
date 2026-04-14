@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { CreateClientDto, PreRegisterClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
@@ -10,10 +11,16 @@ import { ClientFilterDTO } from './dto/filter.dto';
 import { ClientKind, ClientStatus, OwnerType, Prisma } from '@prisma/client';
 import * as fs from 'fs';
 import * as fastCsv from 'fast-csv';
+import { PlugService } from '../../svc/plug/plug.service';
 
 @Injectable()
 export class ClientService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ClientService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly plugService: PlugService,
+  ) {}
 
   /**
    * Remove pontuação de CPF/CNPJ para normalização
@@ -150,6 +157,9 @@ export class ClientService {
               blockClient: createClientDto.creditLimit?.blockClient || false,
               status: autoStatus,
               isBranch: createClientDto.general.isBranch || false,
+              stateRegistration:
+                createClientDto.general.stateRegistration || null,
+              indicadorIE: createClientDto.general.indicadorIE ?? 9,
             },
           });
 
@@ -476,6 +486,8 @@ export class ClientService {
         notes: client.notes,
         birthdate: client.birthdate?.toISOString().split('T')[0] || null,
         isBranch: client.isBranch || false,
+        stateRegistration: client.stateRegistration || '',
+        indicadorIE: client.indicadorIE ?? 9,
       },
       addresses: client.address.map((address) => ({
         type: address.type,
@@ -650,6 +662,9 @@ export class ClientService {
                 blockClient: updateClientDto.creditLimit?.blockClient,
                 status: finalStatus,
                 isBranch: updateClientDto.general?.isBranch,
+                stateRegistration:
+                  updateClientDto.general?.stateRegistration ?? undefined,
+                indicadorIE: updateClientDto.general?.indicadorIE ?? undefined,
               },
             });
 
@@ -765,7 +780,14 @@ export class ClientService {
   }
 
   private buildDetailsObject(dto: UpdateClientDto): Prisma.JsonValue {
-    const fieldsToUpdate = ['ie', 'cnpj', 'stateRegistration', 'cpf', 'rg'];
+    const fieldsToUpdate = [
+      'ie',
+      'cnpj',
+      'stateRegistration',
+      'cpf',
+      'rg',
+      'indicadorIE',
+    ];
 
     const updatedDetails = fieldsToUpdate.reduce(
       (acc, field) => {
@@ -1325,5 +1347,158 @@ export class ClientService {
           reject(error);
         });
     });
+  }
+
+  /**
+   * Evaluates fiscal data completeness for NF-e/NFS-e emission.
+   * Returns status and list of missing fields.
+   */
+  async getFiscalCompleteness(
+    clientId: string,
+    companyId: string,
+  ): Promise<{
+    status: 'APPROVED' | 'PARTIAL' | 'INCOMPLETE';
+    missingFields: string[];
+  }> {
+    const client = await this.prisma.client.findFirst({
+      where: { id: clientId, companyId },
+      include: { address: { where: { ownerType: 'CLIENT' }, take: 1 } },
+    });
+
+    if (!client) {
+      throw new NotFoundException('Cliente não encontrado');
+    }
+
+    const missingFields: string[] = [];
+
+    // Document check (CPF or CNPJ required)
+    const hasDocument = !!(client.cpf || client.cnpj);
+    if (!hasDocument) {
+      missingFields.push('CPF ou CNPJ');
+    }
+
+    // Name check
+    if (!client.name && !client.corporateName) {
+      missingFields.push('Nome ou Razão Social');
+    }
+
+    // Address check
+    const addr = client.address?.[0];
+    if (!addr) {
+      missingFields.push('Endereço completo');
+    } else {
+      if (!addr.street) missingFields.push('Logradouro');
+      if (!addr.number) missingFields.push('Número');
+      if (!addr.neighborhood) missingFields.push('Bairro');
+      if (!addr.city) missingFields.push('Cidade');
+      if (!addr.state) missingFields.push('UF');
+      if (!addr.zipcode) missingFields.push('CEP');
+    }
+
+    // IE check for PJ contribuinte (indicadorIE = 1 requires stateRegistration)
+    if (client.indicadorIE === 1 && !client.stateRegistration) {
+      missingFields.push('Inscrição Estadual (IE)');
+    }
+
+    // Determine status
+    let status: 'APPROVED' | 'PARTIAL' | 'INCOMPLETE';
+    if (missingFields.length === 0) {
+      status = 'APPROVED';
+    } else if (!hasDocument) {
+      status = 'INCOMPLETE';
+    } else {
+      status = 'PARTIAL';
+    }
+
+    return { status, missingFields };
+  }
+
+  /**
+   * Looks up a CPF/CNPJ via external APIs and checks if it exists in the system.
+   * Returns auto-fill data for client registration forms.
+   */
+  async lookupDocument(document: string, companyId: string) {
+    const sanitized = document.replace(/\D/g, '');
+
+    if (sanitized.length !== 11 && sanitized.length !== 14) {
+      throw new BadRequestException(
+        'Documento inválido. Informe um CPF (11 dígitos) ou CNPJ (14 dígitos).',
+      );
+    }
+
+    const isCnpj = sanitized.length === 14;
+
+    // Check if document already exists in the system
+    const existing = await this.prisma.client.findFirst({
+      where: {
+        companyId,
+        ...(isCnpj ? { cnpj: sanitized } : { cpf: sanitized }),
+      },
+      select: { id: true, name: true, status: true },
+    });
+
+    try {
+      if (isCnpj) {
+        const data = await this.plugService.company(sanitized);
+        return {
+          type: 'CNPJ',
+          document: sanitized,
+          existsInSystem: !!existing,
+          existingClient: existing || null,
+          autoFill: {
+            name: data.name || '',
+            corporateName: data.legalName || '',
+            cnpj: data.cnpj || sanitized,
+            phone: data.phone || '',
+            address: data.address
+              ? {
+                  street: data.address.street || '',
+                  number: data.address.number || '',
+                  complement: data.address.complement || '',
+                  neighborhood: data.address.neighborhood || '',
+                  city: data.address.city || '',
+                  state: data.address.state || '',
+                  zipcode: data.address.zipcode || '',
+                }
+              : null,
+          },
+        };
+      } else {
+        const data = await this.plugService.people(sanitized);
+        return {
+          type: 'CPF',
+          document: sanitized,
+          existsInSystem: !!existing,
+          existingClient: existing || null,
+          autoFill: {
+            name: data.name || '',
+            cpf: data.cpf || sanitized,
+            address: data.address
+              ? {
+                  street: data.address.street || '',
+                  neighborhood: data.address.neighborhood || '',
+                  city: data.address.city || '',
+                  state: data.address.state || '',
+                  zipcode: data.address.zipcode || '',
+                }
+              : null,
+          },
+        };
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Document lookup failed for ${isCnpj ? 'CNPJ' : 'CPF'} ${sanitized}: ${error.message}`,
+      );
+
+      // Return partial response even if external API fails
+      return {
+        type: isCnpj ? 'CNPJ' : 'CPF',
+        document: sanitized,
+        existsInSystem: !!existing,
+        existingClient: existing || null,
+        autoFill: null,
+        error: 'Não foi possível consultar os dados. Tente novamente.',
+      };
+    }
   }
 }

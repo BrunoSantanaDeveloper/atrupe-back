@@ -102,10 +102,18 @@ export class NfseService {
           include: {
             quotation: {
               include: {
-                client: true,
+                client: {
+                  include: {
+                    address: true,
+                  },
+                },
                 quotationProduct: {
                   include: {
-                    product: true,
+                    product: {
+                      include: {
+                        fiscalData: true,
+                      },
+                    },
                   },
                 },
               },
@@ -114,10 +122,18 @@ export class NfseService {
         },
         quotation: {
           include: {
-            client: true,
+            client: {
+              include: {
+                address: true,
+              },
+            },
             quotationProduct: {
               include: {
-                product: true,
+                product: {
+                  include: {
+                    fiscalData: true,
+                  },
+                },
               },
             },
           },
@@ -149,7 +165,11 @@ export class NfseService {
         order: true,
         quotationProduct: {
           include: {
-            product: true,
+            product: {
+              include: {
+                fiscalData: true,
+              },
+            },
           },
         },
       },
@@ -184,6 +204,13 @@ export class NfseService {
       if (cepData) {
         prestadorCmun = cepData.codigoIbge;
         this.logger.log(`IBGE do prestador encontrado: ${prestadorCmun}`);
+
+        // Cache IBGE code to avoid external API calls on subsequent emissions
+        await this.prisma.invoicyConfig.updateMany({
+          where: { companyId },
+          data: { emitCmun: prestadorCmun },
+        });
+        this.logger.log(`IBGE do prestador persistido no InvoicyConfig`);
       } else {
         this.logger.warn(
           `Não foi possível encontrar IBGE para CEP do prestador: ${emitCep}`,
@@ -234,11 +261,21 @@ export class NfseService {
       quotationId: quotation.id,
       dataCompetencia: new Date().toISOString().split('T')[0],
       naturezaOperacao: 1, // Tributação no município
-      codigoServico: dto.codigoServico,
+      codigoServico:
+        dto.codigoServico ||
+        (quotation.quotationProduct[0]?.product as any)?.fiscalData
+          ?.codigoServico ||
+        config.codigoServico ||
+        '',
       discriminacao: dto.discriminacao,
-      codigoMunicipio: prestadorCmun, // Código IBGE do PRESTADOR (via CEP se não configurado)
+      codigoMunicipio: prestadorCmun,
       valorServicos,
-      aliquotaIss: dto.aliquotaIss || config.aliquotaIss || 0,
+      aliquotaIss:
+        dto.aliquotaIss ||
+        (quotation.quotationProduct[0]?.product as any)?.fiscalData
+          ?.aliquotaIss ||
+        config.aliquotaIss ||
+        0,
       issRetido: dto.issRetido || false,
       tomador: {
         cnpj: client.cnpj || undefined,

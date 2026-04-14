@@ -13,11 +13,13 @@ import {
   INVOICY_SUCCESS_CODES,
 } from '../invoicy/invoicy.types';
 import { fetchCepData } from '../utils/cep.util';
+import { getTPag } from '../utils/payment-method-map';
 import {
   EmitNfeDto,
   EmitNfeFromOrderDto,
   CancelNfeDto,
   CorrectionLetterDto,
+  InutilizarNfeDto,
   NfeFilterDto,
   UpdateNfeDraftDto,
 } from './dtos/nfe.dto';
@@ -66,7 +68,11 @@ export class NfeService {
         series: true,
         quotationPayment: {
           include: {
-            paymentCondition: true,
+            paymentCondition: {
+              include: {
+                paymentMethod: true,
+              },
+            },
           },
         },
       },
@@ -180,7 +186,8 @@ export class NfeService {
       destinatario: {
         razaoSocial: client.corporateName || client.name || '',
         cnpjCpf: client.cnpj || client.cpf || '',
-        ie: client.ie || '',
+        ie: client.stateRegistration || '',
+        indIEDest: client.indicadorIE ?? 9,
         email: client.email || '',
         telefone: client.phone || '',
         cep: clientAddress?.zipcode || '',
@@ -211,7 +218,11 @@ export class NfeService {
 
       // Pagamento
       pagamento: {
-        forma: quotation.quotationPayment?.paymentCondition?.name || 'Dinheiro',
+        forma: getTPag(
+          quotation.quotationPayment?.paymentCondition?.paymentMethod?.code,
+        ),
+        formaDescricao:
+          quotation.quotationPayment?.paymentCondition?.name || 'Dinheiro',
         valor: valorNota,
       },
 
@@ -260,6 +271,15 @@ export class NfeService {
           },
         },
         order: true,
+        quotationPayment: {
+          include: {
+            paymentCondition: {
+              include: {
+                paymentMethod: true,
+              },
+            },
+          },
+        },
         quotationProduct: {
           include: {
             product: {
@@ -345,6 +365,15 @@ export class NfeService {
       destMunicipio: clientAddress?.city || '',
       destUf: clientAddress?.state || '',
       destPais: '1058',
+      destIe: client.stateRegistration || '',
+      destIndIEDest: client.indicadorIE ?? 9,
+      pagamento: {
+        forma: getTPag(
+          (quotation as any).quotationPayment?.paymentCondition?.paymentMethod
+            ?.code,
+        ),
+        valor: 0, // recalculated from items
+      },
       items,
     };
 
@@ -574,6 +603,13 @@ export class NfeService {
         if (cepData) {
           emitCmun = cepData.codigoIbge;
           this.logger.log(`IBGE do emitente encontrado: ${emitCmun}`);
+
+          // Cache IBGE code to avoid external API calls on subsequent emissions
+          await this.prisma.invoicyConfig.updateMany({
+            where: { companyId },
+            data: { emitCmun },
+          });
+          this.logger.log(`IBGE do emitente persistido no InvoicyConfig`);
         } else {
           this.logger.warn(
             `Não foi possível encontrar IBGE para CEP do emitente: ${emitCep}`,
@@ -644,7 +680,10 @@ export class NfeService {
               config.ambiente === 'HOMOLOGACAO' || config.ambiente !== 1
                 ? 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
                 : dto.destNome || '',
-            indIEDest: 9, // 9 = Não contribuinte
+            indIEDest: dto.destIndIEDest ?? 9,
+            ...(dto.destIndIEDest === 1 && dto.destIe
+              ? { IE_dest: dto.destIe.replace(/\D/g, '') }
+              : {}),
             enderDest: {
               xLgr_dest: dto.destEndereco || '',
               nro_dest: dto.destNumero || 'S/N',
@@ -741,7 +780,7 @@ export class NfeService {
           },
           pag: [
             {
-              tPag: '01', // Dinheiro
+              tPag: dto.pagamento?.forma || '99',
               vPag: valorTotal.toFixed(2),
             },
           ],
@@ -1288,5 +1327,81 @@ export class NfeService {
       success: true,
       message: 'Rascunho deletado com sucesso',
     };
+  }
+
+  /**
+   * Inutiliza uma faixa de numeração de NF-e na SEFAZ.
+   */
+  async inutilizar(companyId: string, dto: InutilizarNfeDto) {
+    const config = await this.invoicyService.getConfig(companyId);
+    if (!config) {
+      throw new BadRequestException('Configuração do Invoicy não encontrada.');
+    }
+
+    if (dto.justificativa.length < 15) {
+      throw new BadRequestException(
+        'A justificativa deve ter no mínimo 15 caracteres',
+      );
+    }
+
+    if (dto.numeroInicial > dto.numeroFinal) {
+      throw new BadRequestException(
+        'Número inicial deve ser menor ou igual ao número final',
+      );
+    }
+
+    const serie = dto.serie ?? config.serieNfe ?? 1;
+
+    try {
+      this.logger.log(
+        `Inutilizando NF-e ${dto.numeroInicial} a ${dto.numeroFinal} (série ${serie}) para empresa ${companyId}`,
+      );
+
+      const invoicyResponses = await this.invoicyApiService.inutilizarNfe(
+        companyId,
+        serie,
+        dto.numeroInicial,
+        dto.numeroFinal,
+        dto.justificativa,
+      );
+
+      const response = invoicyResponses[0];
+      if (!response) {
+        throw new Error('Nenhuma resposta recebida do Invoicy');
+      }
+
+      if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
+        throw new Error(
+          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+        );
+      }
+
+      const doc = response.Documentos?.[0];
+      const situacao = doc?.Situacao;
+      const isInutilized = situacao?.SitCodigo === 102;
+
+      if (!isInutilized) {
+        throw new Error(
+          situacao?.SitDescricao || 'Inutilização não autorizada pela SEFAZ',
+        );
+      }
+
+      return {
+        success: true,
+        message: `Numeração ${dto.numeroInicial} a ${dto.numeroFinal} inutilizada com sucesso`,
+        serie,
+        numeroInicial: dto.numeroInicial,
+        numeroFinal: dto.numeroFinal,
+        protocolo: doc?.DocProtocolo || null,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Erro ao inutilizar NF-e: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Erro ao inutilizar NF-e: ${error.message}`,
+      );
+    }
   }
 }

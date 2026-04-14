@@ -1,3 +1,4 @@
+/* eslint-disable */
 /**
  * Script para aplicar CFOPs e Naturezas de Operação para todas as empresas existentes
  *

@@ -31,9 +31,7 @@ export class WebhookTokenGuard implements CanActivate {
     const receivedToken = request.headers['asaas-access-token'] as string;
 
     if (!receivedToken || receivedToken !== expectedToken) {
-      this.logger.warn(
-        `Webhook rejected: invalid token from ${request.ip}`,
-      );
+      this.logger.warn(`Webhook rejected: invalid token from ${request.ip}`);
       throw new ForbiddenException('Invalid webhook token');
     }
 

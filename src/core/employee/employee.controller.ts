@@ -37,7 +37,8 @@ export class EmployeeController {
   constructor(private readonly employeeService: EmployeeService) {}
 
   @Post()
-  @HasPermission('create', 'entity:employee')  @ApiOperation({ summary: 'Cria um novo colaborador' })
+  @HasPermission('create', 'company_settings:users')
+  @ApiOperation({ summary: 'Cria um novo colaborador' })
   @ApiBody({
     description: 'Dados do novo colaborador',
     type: CreateEmployeeDto,
@@ -84,7 +85,8 @@ export class EmployeeController {
   }
 
   @Get()
-  @HasPermission('view', 'entity:employee')  @ApiQuery({ type: FilterEmployeeDto })
+  @HasPermission('view', 'company_settings:users')
+  @ApiQuery({ type: FilterEmployeeDto })
   @ApiOperation({ summary: 'Obtém a lista de todos os empregados' })
   @ApiResponse({
     status: 200,
@@ -97,7 +99,8 @@ export class EmployeeController {
   }
 
   @Get(':id')
-  @TenantResource('employee')  @ApiOperation({ summary: 'Obtém um colaborador pelo ID' })
+  @TenantResource('employee')
+  @ApiOperation({ summary: 'Obtém um colaborador pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do colaborador' })
   @ApiResponse({
     status: 200,
@@ -112,7 +115,9 @@ export class EmployeeController {
   }
 
   @Patch(':id')
-  @TenantResource('employee')  @HasPermission('edit', 'entity:employee')  @ApiOperation({ summary: 'Atualiza um colaborador pelo ID' })
+  @TenantResource('employee')
+  @HasPermission('edit', 'company_settings:users')
+  @ApiOperation({ summary: 'Atualiza um colaborador pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do colaborador' })
   @ApiBody({
     description: 'Dados para atualização do colaborador',
@@ -140,7 +145,9 @@ export class EmployeeController {
   }
 
   @Delete(':id')
-  @TenantResource('employee')  @HasPermission('delete', 'entity:employee')  @ApiOperation({ summary: 'Remove um colaborador pelo ID' })
+  @TenantResource('employee')
+  @HasPermission('delete', 'company_settings:users')
+  @ApiOperation({ summary: 'Remove um colaborador pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do colaborador' })
   @ApiResponse({
     status: 200,

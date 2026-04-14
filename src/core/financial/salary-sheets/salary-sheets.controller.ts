@@ -20,7 +20,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
-import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+
 import { GetSalarySheetsDto } from './dto/salaries-filters.dto';
 import { SalarySheetsService } from './salary-sheets.service';
 import { AddSalaryItemDto } from './dto/create-salary.dto';

@@ -1,8 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { QuotationService } from './quotation.service';
-import { PrismaService } from 'nestjs-prisma';
-import { OrderService } from '../order/order.service';
-import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.service';
+
 import { QuotationCrudService } from './quotation-crud.service';
 import { QuotationItemsService } from './quotation-items.service';
 import { QuotationWorkflowService } from './quotation-workflow.service';
@@ -25,11 +23,6 @@ const mockClient = {
   name: 'Cliente Teste',
   status: 'ACTIVE',
   document: '12345678901',
-};
-
-const mockClientInactive = {
-  ...mockClient,
-  status: 'INACTIVE',
 };
 
 const mockDeliveryInfo = {
@@ -216,7 +209,7 @@ describe('QuotationService', () => {
       const result = await service.create(dto);
 
       expect(result).toBe(mockQuotation);
-      expect(crudService.create).toHaveBeenCalledWith(dto);
+      expect(crudService.create).toHaveBeenCalledWith(dto, undefined);
     });
 
     it('should delegate findOne to crudService', async () => {
@@ -414,7 +407,11 @@ describe('QuotationService', () => {
       const result = await service.update(mockQuotationId, dto);
 
       expect(result.description).toBe('Updated');
-      expect(crudService.update).toHaveBeenCalledWith(mockQuotationId, dto);
+      expect(crudService.update).toHaveBeenCalledWith(
+        mockQuotationId,
+        dto,
+        undefined,
+      );
     });
 
     it('should delegate remove to crudService', async () => {
@@ -442,7 +439,7 @@ describe('QuotationService', () => {
       const data = { quantity: 5 } as any;
       itemsService.updateProductInQuotation.mockResolvedValue({});
 
-      await service.updateProductInQuotation('prod-id', data, mockUserId);
+      await service.updateProductInQuotation('prod-id', data);
 
       expect(itemsService.updateProductInQuotation).toHaveBeenCalledWith(
         'prod-id',
@@ -490,22 +487,10 @@ describe('QuotationService', () => {
     it('should delegate createProductionStages', async () => {
       workflowService.createProductionStages.mockResolvedValue(undefined);
 
-      await service.createProductionStages(mockQuotationId, false);
+      await service.createProductionStages(mockQuotationId);
 
       expect(workflowService.createProductionStages).toHaveBeenCalledWith(
         mockQuotationId,
-        false,
-      );
-    });
-
-    it('should delegate createProductionStages with isTrial=true', async () => {
-      workflowService.createProductionStages.mockResolvedValue(undefined);
-
-      await service.createProductionStages(mockQuotationId, true);
-
-      expect(workflowService.createProductionStages).toHaveBeenCalledWith(
-        mockQuotationId,
-        true,
       );
     });
   });

@@ -150,6 +150,8 @@ export class BrasilApiService {
       address: {
         street:
           response.descricao_tipo_de_logradouro + ' ' + response.logradouro,
+        number: response.numero || '',
+        complement: response.complemento || '',
         city: response.municipio,
         state: response.uf,
         zipcode: String(response.cep),

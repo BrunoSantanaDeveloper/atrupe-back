@@ -33,6 +33,7 @@ import { ListIncompleteRegistrationsDto } from './dto/list-incomplete-registrati
 import { ListActiveClientsDto } from './dto/list-active-clients.dto';
 import { UpdateActiveClientDto } from './dto/update-active-client.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
+import { CancelSubscriptionDto } from './dto/cancel-subscription.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
@@ -51,7 +52,8 @@ export class SubscriptionsController {
   ) {}
 
   @Get('incomplete-registrations')
-  @UseGuards(JwtAuthGuard, SystemAdminGuard)  @ApiOperation({
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
     summary: 'List incomplete registrations (unverified emails)',
   })
   @ApiResponse({
@@ -70,7 +72,8 @@ export class SubscriptionsController {
   }
 
   @Get('trial-companies/totals')
-  @UseGuards(JwtAuthGuard, SystemAdminGuard)  @ApiOperation({ summary: 'Get trial subscriptions totals by status' })
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({ summary: 'Get trial subscriptions totals by status' })
   @ApiResponse({
     status: 200,
     description: 'Trial subscriptions totals',
@@ -80,7 +83,8 @@ export class SubscriptionsController {
   }
 
   @Get('trial-companies')
-  @UseGuards(JwtAuthGuard, SystemAdminGuard)  @ApiOperation({ summary: 'List all companies with trial subscriptions' })
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({ summary: 'List all companies with trial subscriptions' })
   @ApiResponse({
     status: 200,
     description: 'List of companies with trial subscriptions',
@@ -96,7 +100,8 @@ export class SubscriptionsController {
   }
 
   @Get('active-clients/totals')
-  @UseGuards(JwtAuthGuard, SystemAdminGuard)  @ApiOperation({ summary: 'Get active clients totals by status' })
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({ summary: 'Get active clients totals by status' })
   @ApiResponse({
     status: 200,
     description: 'Active clients totals',
@@ -106,7 +111,8 @@ export class SubscriptionsController {
   }
 
   @Get('active-clients')
-  @UseGuards(JwtAuthGuard, SystemAdminGuard)  @ApiOperation({
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
     summary: 'List all companies with active subscriptions (non-trial)',
   })
   @ApiResponse({
@@ -166,7 +172,8 @@ export class SubscriptionsController {
   }
 
   @Get('active-clients/:companyId/history')
-  @UseGuards(JwtAuthGuard, SystemAdminGuard)  @ApiOperation({
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
     summary: 'Get subscription history for a company',
   })
   @ApiParam({ name: 'companyId', description: 'Company ID' })
@@ -425,6 +432,41 @@ export class SubscriptionsController {
       subscriptionId,
       moduleId,
       req,
+    );
+  }
+
+  @Delete(':id/cancel')
+  @ApiOperation({
+    summary: 'Cancela a assinatura do usuário',
+    description:
+      'Cancela a subscription no Asaas e marca como CANCELED no banco. Registra motivo e feedback no histórico.',
+  })
+  @ApiParam({ name: 'id', description: 'Subscription ID' })
+  @ApiBody({
+    description: 'Motivo e feedback do cancelamento',
+    type: CancelSubscriptionDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Assinatura cancelada com sucesso',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Subscription não pode ser cancelada (status inválido)',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Subscription não encontrada',
+  })
+  async cancelSubscription(
+    @Param('id') subscriptionId: string,
+    @Body() cancelDto: CancelSubscriptionDto,
+    @Req() req,
+  ) {
+    return await this.subscriptionsService.cancelSubscription(
+      subscriptionId,
+      cancelDto,
+      req.user.companyId,
     );
   }
 

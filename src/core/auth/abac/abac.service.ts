@@ -59,12 +59,19 @@ export class AbacService {
     );
     if (isSystemAdmin) return true;
 
+    // Check if user's employee role is admin (has full access)
+    const employeeRole = userWithEmployee.employee?.[0]?.role;
+    if (employeeRole?.isAdmin) return true;
+
     // Get permissions from employee role
-    const permissions = userWithEmployee.employee?.[0]?.role?.permissions || [];
+    const permissions = employeeRole?.permissions || [];
 
     if (permissions.length === 0) return false;
 
     return permissions.some((rolePolicy) => {
+      // Wildcard: '*' grants all permissions
+      if (rolePolicy === '*') return true;
+
       // Handle both 2-part (resource:action) and 3-part (category:resource:action) permissions
       const parts = rolePolicy.split(':');
       if (parts.length === 2) {
