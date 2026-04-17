@@ -49,6 +49,10 @@ export class SubscriptionsService {
           feature: true,
         },
       },
+      payments: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      },
     };
 
     // 1. Priorizar subscription ACTIVE não-TRIAL (plano pago ativo)

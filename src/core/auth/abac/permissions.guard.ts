@@ -24,7 +24,7 @@ export class PermissionsGuard implements CanActivate {
     if (!requiredPermission) return true;
 
     return this.abacService.hasPermission(
-      { userId: user.userId, username: user.username },
+      user,
       requiredPermission.action,
       requiredPermission.resource,
     );
