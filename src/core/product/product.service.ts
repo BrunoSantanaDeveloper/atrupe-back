@@ -11,10 +11,14 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { JsonArray } from '@prisma/client/runtime/library';
 import * as fs from 'fs';
 import * as fastCsv from 'fast-csv';
+import { ProductFiscalService } from '../fiscal/product-fiscal/product-fiscal.service';
 
 @Injectable()
 export class ProductService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly productFiscalService: ProductFiscalService,
+  ) {}
 
   async create(createProductDto: CreateProductDto) {
     try {
@@ -75,6 +79,22 @@ export class ProductService {
           productionStages: JSON.parse(JSON.stringify(productionStages)),
         },
       });
+
+      // Auto-populate fiscal data with defaults for new products
+      if (createProductDto.companyId) {
+        try {
+          await this.productFiscalService.getOrCreateWithDefaults(
+            created.id,
+            createProductDto.companyId,
+          );
+        } catch (error) {
+          console.error(
+            'Failed to auto-populate fiscal data for product:',
+            error.message,
+          );
+          // Don't fail product creation if fiscal data auto-population fails
+        }
+      }
 
       return created;
     } catch (error) {

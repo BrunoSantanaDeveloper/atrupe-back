@@ -187,6 +187,14 @@ export class CreateInvoicyConfigDto {
   aliquotaIss?: number;
 
   // Defaults
+  @ApiPropertyOptional({
+    description: 'NCM padrão para novos produtos (ex: 49119900)',
+  })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  defaultNcm?: string;
+
   @ApiPropertyOptional({ description: 'CFOP padrão' })
   @IsString()
   @IsOptional()
@@ -348,6 +356,14 @@ export class UpdateInvoicyConfigDto {
   aliquotaIss?: number;
 
   // Defaults
+  @ApiPropertyOptional({
+    description: 'NCM padrão para novos produtos (ex: 49119900)',
+  })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  defaultNcm?: string;
+
   @ApiPropertyOptional({ description: 'CFOP padrão' })
   @IsString()
   @IsOptional()

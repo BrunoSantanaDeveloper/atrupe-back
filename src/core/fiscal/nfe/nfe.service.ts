@@ -8,6 +8,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { NfeStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
+import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
 import {
   InvoicyNfeRequest,
   INVOICY_SUCCESS_CODES,
@@ -32,6 +33,7 @@ export class NfeService {
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
     private readonly invoicyApiService: InvoicyApiService,
+    private readonly productFiscalService: ProductFiscalService,
   ) {}
 
   /**
@@ -98,44 +100,73 @@ export class NfeService {
     // Obter endereço principal do cliente
     const clientAddress = client.address?.[0];
 
+    // Ensure fiscal data exists for all products (auto-populate defaults if missing)
+    const productIds = quotation.quotationProduct.map((qp) => qp.productId);
+    await Promise.all(
+      productIds.map((productId) =>
+        this.productFiscalService.getOrCreateWithDefaults(productId, companyId),
+      ),
+    );
+
+    // Re-fetch quotation with updated fiscal data after auto-population
+    const updatedQuotation = (await this.prisma.quotation.findFirst({
+      where: {
+        companyId,
+        order: { id: orderId },
+      },
+      include: {
+        quotationProduct: {
+          include: {
+            product: {
+              include: {
+                fiscalData: true,
+              },
+            },
+          },
+        },
+      },
+    })) as any;
+
     // Preparar itens da NF-e com dados fiscais completos
-    const items = quotation.quotationProduct.map((qp, index) => {
-      const totalValueCents = qp.finalValue || qp.totalValue || 0;
-      const totalValueReais = totalValueCents / 100;
-      const unitValue = qp.quantity > 0 ? totalValueReais / qp.quantity : 0;
-      const discountReais = (qp.discount || 0) / 100;
-      const fiscalData = qp.product?.fiscalData;
+    const items = (updatedQuotation || quotation).quotationProduct.map(
+      (qp, index) => {
+        const totalValueCents = qp.finalValue || qp.totalValue || 0;
+        const totalValueReais = totalValueCents / 100;
+        const unitValue = qp.quantity > 0 ? totalValueReais / qp.quantity : 0;
+        const discountReais = (qp.discount || 0) / 100;
+        const fiscalData = qp.product?.fiscalData;
 
-      const selectedCfop =
-        (clientAddress?.state === config.emitUf
-          ? fiscalData?.cfopInState
-          : fiscalData?.cfopOutState) ||
-        config.defaultCfop ||
-        '';
+        const selectedCfop =
+          (clientAddress?.state === config.emitUf
+            ? fiscalData?.cfopInState
+            : fiscalData?.cfopOutState) ||
+          config.defaultCfop ||
+          '';
 
-      return {
-        itemNumber: index + 1,
-        productId: qp.productId,
-        productCode: qp.product?.code || '',
-        description: qp.product?.name || 'Produto/Serviço',
-        ncm: fiscalData?.ncm || '',
-        cfop: selectedCfop,
-        cstIcms: fiscalData?.icmsCst || '102',
-        cstIpi: fiscalData?.ipiCst || '',
-        cstPis: fiscalData?.pisCst || '',
-        cstCofins: fiscalData?.cofinsCst || '',
-        unit: qp.product?.unit || 'UN',
-        quantity: qp.quantity,
-        unitValue: Number(unitValue.toFixed(2)),
-        discount: Number(discountReais.toFixed(2)),
-        freight: 0,
-        insurance: 0,
-        totalValue: Number(totalValueReais.toFixed(2)),
-        isService: qp.product?.isService || !!fiscalData?.isService,
-        needsConfiguration:
-          !fiscalData?.ncm || fiscalData.ncm.length !== 8 || !selectedCfop,
-      };
-    });
+        return {
+          itemNumber: index + 1,
+          productId: qp.productId,
+          productCode: qp.product?.code || '',
+          description: qp.product?.name || 'Produto/Serviço',
+          ncm: fiscalData?.ncm || '',
+          cfop: selectedCfop,
+          cstIcms: fiscalData?.icmsCst || '102',
+          cstIpi: fiscalData?.ipiCst || '',
+          cstPis: fiscalData?.pisCst || '',
+          cstCofins: fiscalData?.cofinsCst || '',
+          unit: qp.product?.unit || 'UN',
+          quantity: qp.quantity,
+          unitValue: Number(unitValue.toFixed(2)),
+          discount: Number(discountReais.toFixed(2)),
+          freight: 0,
+          insurance: 0,
+          totalValue: Number(totalValueReais.toFixed(2)),
+          isService: qp.product?.isService || !!fiscalData?.isService,
+          needsConfiguration:
+            !fiscalData?.ncm || fiscalData.ncm.length !== 8 || !selectedCfop,
+        };
+      },
+    );
 
     // Calcular totais
     const valorProdutos = items.reduce((acc, item) => acc + item.totalValue, 0);
