@@ -164,32 +164,62 @@ export class ReceivableService {
           }
         }
 
-        return receivable;
-      });
-
-      // Atualizar status do receivable após criação
-      await this.updateReceivableStatus(receivable.id);
-
-      // Registrar no histórico
-      if (userId) {
-        const client = await this.prisma.client.findUnique({
+        // Buscar dados do cliente para o histórico
+        const client = await tx.client.findUnique({
           where: { id: receivableData.clientId },
           select: { name: true },
         });
 
-        await this.historyService.createReceivableHistory({
-          receivableId: receivable.id,
-          action: 'CREATE',
-          description: this.historyService.getCreateDescription(),
-          metadata: {
-            totalAmount: receivable.totalAmount,
-            installmentQty: installments.length,
-            clientName: client?.name || null,
-          },
-          createdBy: userId,
-          createdByName: userName,
+        // Registrar no histórico dentro da transação
+        if (userId) {
+          await tx.receivableHistory.create({
+            data: {
+              receivableId: receivable.id,
+              action: 'CREATE',
+              description: this.historyService.getCreateDescription(),
+              metadata: {
+                totalAmount: receivable.totalAmount,
+                installmentQty: installments.length,
+                clientName: client?.name || null,
+              } as any,
+              createdBy: userId,
+              createdByName: userName,
+            },
+          });
+        }
+
+        // Atualizar status do receivable dentro da transação
+        const allInstallments = await tx.receivableInstallment.findMany({
+          where: { receivableId: receivable.id },
+          select: { status: true },
         });
-      }
+
+        const hasCancelled = allInstallments.some(
+          (inst) => inst.status === 'CANCELED',
+        );
+        const hasPending = allInstallments.some(
+          (inst) => inst.status === 'PENDING',
+        );
+        const allPaid = allInstallments.every((inst) => inst.status === 'PAID');
+
+        let newStatus: PaymentStatus;
+        if (hasCancelled) {
+          newStatus = PaymentStatus.CANCELED;
+        } else if (hasPending) {
+          newStatus = PaymentStatus.PENDING;
+        } else if (allPaid) {
+          newStatus = PaymentStatus.PAID;
+        } else {
+          newStatus = PaymentStatus.PENDING;
+        }
+
+        await tx.receivable.update({
+          where: { id: receivable.id },
+          data: { status: newStatus },
+        });
+
+        return { ...receivable, status: newStatus };
+      });
 
       return receivable;
     } catch (error) {
@@ -1418,11 +1448,13 @@ export class ReceivableService {
           updateData.installmentQty = allInstallments.length;
 
           if (Object.keys(updateData).length > 0) {
-            await this.prisma.receivable.update({
+            await prisma.receivable.update({
               where: { id: receivableId },
               data: updateData,
             });
           }
+
+          return receivable;
         },
       );
 

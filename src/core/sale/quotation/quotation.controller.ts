@@ -11,6 +11,7 @@ import {
   Patch,
   NotFoundException,
   ForbiddenException,
+  Logger,
   Req,
 } from '@nestjs/common';
 import { QuotationService } from './quotation.service';
@@ -44,6 +45,8 @@ const RESOURCE = 'quotation';
 @ApiBearerAuth()
 @Controller(`sale/${RESOURCE}`)
 export class QuotationController {
+  private readonly logger = new Logger(QuotationController.name);
+
   constructor(
     private readonly quotationService: QuotationService,
     private readonly abacService: AbacService,
@@ -302,7 +305,7 @@ export class QuotationController {
   async duplicate(
     @Param('id') id: string,
     @Body() dto: DuplicateQuotationDto,
-    @Req() req: any,
+    @Req() req,
   ) {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
@@ -498,10 +501,10 @@ export class QuotationController {
   async deleteImportedQuotations(@Req() req) {
     const companyId = req.user.companyId;
     try {
-      console.log(companyId);
+      this.logger.log(`Deleting imported quotations for company ${companyId}`);
       return await this.quotationService.deleteImportedQuotations(companyId);
     } catch (error) {
-      console.error('Erro ao deletar orçamentos importados:', error);
+      this.logger.error('Failed to delete imported quotations', error?.stack);
       throw error;
     }
   }
@@ -705,30 +708,5 @@ export class QuotationController {
       throw new BadRequestException('Invalid id');
     }
     return await this.quotationService.getQuotationPdfData(id);
-  }
-
-  @Post('import-csv')
-  @ApiOperation({ summary: 'Importa orçamentos do CSV' })
-  @ApiResponse({
-    status: 201,
-    description: 'Orçamentos importados com sucesso.',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Erro ao processar o arquivo CSV.',
-  })
-  async importCsv(@Req() req) {
-    const companyId = req.user.companyId;
-    const filePath =
-      '/home/tribodev/atrupe-back/src/helpers/payload/join vendas com itens.csv';
-    try {
-      return await this.quotationService.importQuotationsFromCsv(
-        filePath,
-        companyId,
-      );
-    } catch (error) {
-      console.error('Erro ao importar orçamentos do CSV:', error);
-      throw error;
-    }
   }
 }
