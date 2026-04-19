@@ -286,6 +286,150 @@ export class NfeService {
     };
   }
 
+  /**
+   * Prepara os dados para emissão de NF-e avulsa (sem ordem de serviço).
+   * Retorna dados padrão do emitente e, opcionalmente, dados do destinatário se clientId informado.
+   */
+  async prepareStandalone(companyId: string, clientId?: string) {
+    // Buscar configuração do Invoicy
+    const config = await this.invoicyService.getConfig(companyId);
+    if (!config) {
+      throw new BadRequestException(
+        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
+      );
+    }
+
+    // Buscar dados do cliente, se informado
+    let destinatario: Record<string, any> = {
+      razaoSocial: '',
+      cnpjCpf: '',
+      ie: '',
+      indIEDest: 9,
+      email: '',
+      telefone: '',
+      cep: '',
+      estado: '',
+      cidade: '',
+      bairro: '',
+      endereco: '',
+      numero: 'S/N',
+      complemento: '',
+      pais: '1058',
+    };
+
+    if (clientId) {
+      const client = await this.prisma.client.findFirst({
+        where: { id: clientId, companyId },
+        include: { address: true },
+      });
+
+      if (!client) {
+        throw new NotFoundException('Cliente não encontrado');
+      }
+
+      const clientAddress = (client as any).address?.[0];
+      destinatario = {
+        razaoSocial: (client as any).corporateName || client.name || '',
+        cnpjCpf: (client as any).cnpj || (client as any).cpf || '',
+        ie: (client as any).stateRegistration || '',
+        indIEDest: (client as any).indicadorIE ?? 9,
+        email: client.email || '',
+        telefone: (client as any).phone || (client as any).mobile || '',
+        cep: clientAddress?.zipcode || '',
+        estado: clientAddress?.state || '',
+        cidade: clientAddress?.city || '',
+        bairro: clientAddress?.neighborhood || '',
+        endereco: clientAddress?.street || '',
+        numero: clientAddress?.number || 'S/N',
+        complemento: clientAddress?.complement || '',
+        pais: '1058',
+      };
+    }
+
+    return {
+      // Metadados
+      orderId: null,
+      quotationId: null,
+      orderCode: null,
+      hasExistingNfe: false,
+      existingNfe: null,
+
+      // Configuração de emissão
+      emissao: {
+        emissor: config.company.legalName || config.company.name || '',
+        emissorCnpj: config.company.cnpj || '',
+        proximoDocumento: `${config.proximoNumeroNfe || 1} - ${config.serieNfe || 1}`,
+        serie: config.serieNfe || 1,
+        tipo: 1,
+        finalidade: 1,
+        operationNature: config.defaultOperationNature || 'Venda de mercadoria',
+        consumidorFinal: 1,
+        presencaConsumidor: 1,
+        nfeReferenciada: null,
+        dataSaida: new Date().toISOString(),
+        destinoOperacao: 1,
+        modalidadeFrete: 9,
+        ambiente: config.ambiente || 'HOMOLOGACAO',
+      },
+
+      // Destinatário
+      destinatario,
+
+      // Itens (vazio para nota avulsa)
+      items: [],
+
+      // Transportadora (vazio por padrão)
+      transportadora: {
+        cnpjCpf: '',
+        razaoSocial: '',
+        ie: '',
+        endereco: '',
+        cidade: '',
+        uf: '',
+      },
+
+      // Volumes
+      volumes: [],
+
+      // Pagamento padrão
+      pagamento: {
+        forma: '01',
+        formaDescricao: 'Dinheiro',
+        valor: 0,
+      },
+
+      // Duplicatas
+      duplicatas: [],
+
+      // Informações complementares
+      informacoesComplementares: config.taxInfoText || '',
+
+      // Totais zerados
+      totais: {
+        valorProdutos: 0,
+        baseCalculoIcms: 0,
+        valorIcms: 0,
+        baseCalculoIcmsSt: 0,
+        valorIcmsSt: 0,
+        valorPis: 0,
+        valorCofins: 0,
+        valorIpi: 0,
+        valorFrete: 0,
+        valorSeguro: 0,
+        outrasDesepesas: 0,
+        valorDesconto: 0,
+        valorTotalTributos: 0,
+        valorNota: 0,
+      },
+
+      // Autorização para download (XML)
+      autXml: [],
+
+      // Defaults de CFOP
+      defaultCfop: config.defaultCfop || '',
+    };
+  }
+
   // Emitir NF-e a partir de uma ordem de serviço (busca dados automaticamente)
 
   async emitFromOrder(companyId: string, dto: EmitNfeFromOrderDto) {

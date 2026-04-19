@@ -43,6 +43,16 @@ export class NfeController {
     return this.nfeService.findAll(req.user.companyId, filters);
   }
 
+  @Get('prepare-standalone')
+  @HasPermission('view', 'nota_fiscal:emitir')
+  @ApiOperation({
+    summary:
+      'Preparar dados para emissão de NF-e avulsa (sem ordem de serviço)',
+  })
+  async prepareStandalone(@Req() req, @Query('clientId') clientId?: string) {
+    return this.nfeService.prepareStandalone(req.user.companyId, clientId);
+  }
+
   @Get('prepare/:orderId')
   @HasPermission('view', 'nota_fiscal:emitir')
   @ApiOperation({

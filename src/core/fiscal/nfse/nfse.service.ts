@@ -148,6 +148,94 @@ export class NfseService {
     return nfse;
   }
 
+  // Preparar dados para emissão de NFS-e avulsa (sem ordem de serviço)
+  async prepareStandalone(companyId: string, clientId?: string) {
+    // Buscar configuração do Invoicy
+    const config = await this.invoicyService.getConfig(companyId);
+    if (!config) {
+      throw new BadRequestException(
+        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
+      );
+    }
+
+    // Dados do tomador (vazio por padrão)
+    let tomador: Record<string, any> = {
+      cnpj: undefined,
+      cpf: undefined,
+      razaoSocial: '',
+      endereco: '',
+      numero: 'S/N',
+      complemento: '',
+      bairro: '',
+      cep: '',
+      codigoMunicipio: '',
+      municipio: '',
+      uf: '',
+      email: '',
+      telefone: '',
+    };
+
+    if (clientId) {
+      const client = await this.prisma.client.findFirst({
+        where: { id: clientId, companyId },
+        include: { address: true },
+      });
+
+      if (!client) {
+        throw new NotFoundException('Cliente não encontrado');
+      }
+
+      const clientAddress = (client as any).address?.[0];
+      tomador = {
+        cnpj: (client as any).cnpj || undefined,
+        cpf: (client as any).cpf || undefined,
+        razaoSocial: (client as any).corporateName || client.name || '',
+        endereco: clientAddress?.street || '',
+        numero: clientAddress?.number || 'S/N',
+        complemento: clientAddress?.complement || '',
+        bairro: clientAddress?.neighborhood || '',
+        cep: clientAddress?.zipcode || '',
+        codigoMunicipio: '', // Será preenchido pelo usuário ou na emissão
+        municipio: clientAddress?.city || '',
+        uf: clientAddress?.state || '',
+        email: client.email || '',
+        telefone: (client as any).phone || (client as any).mobile || '',
+      };
+    }
+
+    return {
+      // Metadados
+      orderId: null,
+      quotationId: null,
+
+      // Prestador
+      prestador: {
+        cnpj: config.company.cnpj || '',
+        razaoSocial: config.company.legalName || config.company.name || '',
+        inscricaoMunicipal: config.company.municipalRegistration || '',
+        ambiente: config.ambiente || 'HOMOLOGACAO',
+      },
+
+      // RPS
+      rpsNumero: config.proximoRpsNfse || 1,
+      rpsSerie: config.serieNfse || 'A1',
+
+      // Tomador
+      tomador,
+
+      // Dados fiscais
+      dataCompetencia: new Date().toISOString().split('T')[0],
+      naturezaOperacao: 1,
+      codigoServico: config.codigoServico || '',
+      codigoMunicipio: config.ibgeCode || config.emitCmun || '',
+      discriminacao: '',
+      valorServicos: 0,
+      valorDeducoes: 0,
+      aliquotaIss: config.aliquotaIss || 0,
+      issRetido: false,
+    };
+  }
+
   // Emitir NFS-e a partir de uma ordem de serviço (busca dados automaticamente)
   async emitFromOrder(companyId: string, dto: EmitNfseFromOrderDto) {
     // Buscar a ordem via quotation para garantir o filtro por companyId
