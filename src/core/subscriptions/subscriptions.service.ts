@@ -50,7 +50,7 @@ export class SubscriptionsService {
         },
       },
       payments: {
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: 'desc' as const },
         take: 1,
       },
     };
