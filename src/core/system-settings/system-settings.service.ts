@@ -25,15 +25,22 @@ export class SystemSettingsService {
     }
 
     // Default or Fallback from .env
+    const isProdToken = (asaasConfig.token || '').includes('_prod_');
+    const defaultEnv = isProdToken ? 'production' : 'sandbox';
+
     return {
-      environment: 'sandbox',
+      environment: defaultEnv,
       sandbox: {
-        url: asaasConfig.apiUrl || 'https://api-sandbox.asaas.com/v3',
-        token: asaasConfig.token || '',
+        url: isProdToken
+          ? 'https://api-sandbox.asaas.com/v3'
+          : asaasConfig.apiUrl || 'https://api-sandbox.asaas.com/v3',
+        token: isProdToken ? '' : asaasConfig.token || '',
       },
       production: {
-        url: 'https://api.asaas.com/v3',
-        token: '',
+        url: isProdToken
+          ? asaasConfig.apiUrl || 'https://api.asaas.com/v3'
+          : 'https://api.asaas.com/v3',
+        token: isProdToken ? asaasConfig.token || '' : '',
       },
     };
   }

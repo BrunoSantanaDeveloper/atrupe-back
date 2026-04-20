@@ -8,6 +8,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { NfeStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
+import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
 import {
   InvoicyNfeRequest,
   INVOICY_SUCCESS_CODES,
@@ -32,6 +33,7 @@ export class NfeService {
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
     private readonly invoicyApiService: InvoicyApiService,
+    private readonly productFiscalService: ProductFiscalService,
   ) {}
 
   /**
@@ -98,44 +100,73 @@ export class NfeService {
     // Obter endereço principal do cliente
     const clientAddress = client.address?.[0];
 
+    // Ensure fiscal data exists for all products (auto-populate defaults if missing)
+    const productIds = quotation.quotationProduct.map((qp) => qp.productId);
+    await Promise.all(
+      productIds.map((productId) =>
+        this.productFiscalService.getOrCreateWithDefaults(productId, companyId),
+      ),
+    );
+
+    // Re-fetch quotation with updated fiscal data after auto-population
+    const updatedQuotation = (await this.prisma.quotation.findFirst({
+      where: {
+        companyId,
+        order: { id: orderId },
+      },
+      include: {
+        quotationProduct: {
+          include: {
+            product: {
+              include: {
+                fiscalData: true,
+              },
+            },
+          },
+        },
+      },
+    })) as any;
+
     // Preparar itens da NF-e com dados fiscais completos
-    const items = quotation.quotationProduct.map((qp, index) => {
-      const totalValueCents = qp.finalValue || qp.totalValue || 0;
-      const totalValueReais = totalValueCents / 100;
-      const unitValue = qp.quantity > 0 ? totalValueReais / qp.quantity : 0;
-      const discountReais = (qp.discount || 0) / 100;
-      const fiscalData = qp.product?.fiscalData;
+    const items = (updatedQuotation || quotation).quotationProduct.map(
+      (qp, index) => {
+        const totalValueCents = qp.finalValue || qp.totalValue || 0;
+        const totalValueReais = totalValueCents / 100;
+        const unitValue = qp.quantity > 0 ? totalValueReais / qp.quantity : 0;
+        const discountReais = (qp.discount || 0) / 100;
+        const fiscalData = qp.product?.fiscalData;
 
-      const selectedCfop =
-        (clientAddress?.state === config.emitUf
-          ? fiscalData?.cfopInState
-          : fiscalData?.cfopOutState) ||
-        config.defaultCfop ||
-        '';
+        const selectedCfop =
+          (clientAddress?.state === config.emitUf
+            ? fiscalData?.cfopInState
+            : fiscalData?.cfopOutState) ||
+          config.defaultCfop ||
+          '';
 
-      return {
-        itemNumber: index + 1,
-        productId: qp.productId,
-        productCode: qp.product?.code || '',
-        description: qp.product?.name || 'Produto/Serviço',
-        ncm: fiscalData?.ncm || '',
-        cfop: selectedCfop,
-        cstIcms: fiscalData?.icmsCst || '102',
-        cstIpi: fiscalData?.ipiCst || '',
-        cstPis: fiscalData?.pisCst || '',
-        cstCofins: fiscalData?.cofinsCst || '',
-        unit: qp.product?.unit || 'UN',
-        quantity: qp.quantity,
-        unitValue: Number(unitValue.toFixed(2)),
-        discount: Number(discountReais.toFixed(2)),
-        freight: 0,
-        insurance: 0,
-        totalValue: Number(totalValueReais.toFixed(2)),
-        isService: qp.product?.isService || !!fiscalData?.isService,
-        needsConfiguration:
-          !fiscalData?.ncm || fiscalData.ncm.length !== 8 || !selectedCfop,
-      };
-    });
+        return {
+          itemNumber: index + 1,
+          productId: qp.productId,
+          productCode: qp.product?.code || '',
+          description: qp.product?.name || 'Produto/Serviço',
+          ncm: fiscalData?.ncm || '',
+          cfop: selectedCfop,
+          cstIcms: fiscalData?.icmsCst || '102',
+          cstIpi: fiscalData?.ipiCst || '',
+          cstPis: fiscalData?.pisCst || '',
+          cstCofins: fiscalData?.cofinsCst || '',
+          unit: qp.product?.unit || 'UN',
+          quantity: qp.quantity,
+          unitValue: Number(unitValue.toFixed(2)),
+          discount: Number(discountReais.toFixed(2)),
+          freight: 0,
+          insurance: 0,
+          totalValue: Number(totalValueReais.toFixed(2)),
+          isService: qp.product?.isService || !!fiscalData?.isService,
+          needsConfiguration:
+            !fiscalData?.ncm || fiscalData.ncm.length !== 8 || !selectedCfop,
+        };
+      },
+    );
 
     // Calcular totais
     const valorProdutos = items.reduce((acc, item) => acc + item.totalValue, 0);
@@ -252,6 +283,150 @@ export class NfeService {
 
       // Autorização para download (XML)
       autXml: [],
+    };
+  }
+
+  /**
+   * Prepara os dados para emissão de NF-e avulsa (sem ordem de serviço).
+   * Retorna dados padrão do emitente e, opcionalmente, dados do destinatário se clientId informado.
+   */
+  async prepareStandalone(companyId: string, clientId?: string) {
+    // Buscar configuração do Invoicy
+    const config = await this.invoicyService.getConfig(companyId);
+    if (!config) {
+      throw new BadRequestException(
+        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
+      );
+    }
+
+    // Buscar dados do cliente, se informado
+    let destinatario: Record<string, any> = {
+      razaoSocial: '',
+      cnpjCpf: '',
+      ie: '',
+      indIEDest: 9,
+      email: '',
+      telefone: '',
+      cep: '',
+      estado: '',
+      cidade: '',
+      bairro: '',
+      endereco: '',
+      numero: 'S/N',
+      complemento: '',
+      pais: '1058',
+    };
+
+    if (clientId) {
+      const client = await this.prisma.client.findFirst({
+        where: { id: clientId, companyId },
+        include: { address: true },
+      });
+
+      if (!client) {
+        throw new NotFoundException('Cliente não encontrado');
+      }
+
+      const clientAddress = (client as any).address?.[0];
+      destinatario = {
+        razaoSocial: (client as any).corporateName || client.name || '',
+        cnpjCpf: (client as any).cnpj || (client as any).cpf || '',
+        ie: (client as any).stateRegistration || '',
+        indIEDest: (client as any).indicadorIE ?? 9,
+        email: client.email || '',
+        telefone: (client as any).phone || (client as any).mobile || '',
+        cep: clientAddress?.zipcode || '',
+        estado: clientAddress?.state || '',
+        cidade: clientAddress?.city || '',
+        bairro: clientAddress?.neighborhood || '',
+        endereco: clientAddress?.street || '',
+        numero: clientAddress?.number || 'S/N',
+        complemento: clientAddress?.complement || '',
+        pais: '1058',
+      };
+    }
+
+    return {
+      // Metadados
+      orderId: null,
+      quotationId: null,
+      orderCode: null,
+      hasExistingNfe: false,
+      existingNfe: null,
+
+      // Configuração de emissão
+      emissao: {
+        emissor: config.company.legalName || config.company.name || '',
+        emissorCnpj: config.company.cnpj || '',
+        proximoDocumento: `${config.proximoNumeroNfe || 1} - ${config.serieNfe || 1}`,
+        serie: config.serieNfe || 1,
+        tipo: 1,
+        finalidade: 1,
+        operationNature: config.defaultOperationNature || 'Venda de mercadoria',
+        consumidorFinal: 1,
+        presencaConsumidor: 1,
+        nfeReferenciada: null,
+        dataSaida: new Date().toISOString(),
+        destinoOperacao: 1,
+        modalidadeFrete: 9,
+        ambiente: config.ambiente || 'HOMOLOGACAO',
+      },
+
+      // Destinatário
+      destinatario,
+
+      // Itens (vazio para nota avulsa)
+      items: [],
+
+      // Transportadora (vazio por padrão)
+      transportadora: {
+        cnpjCpf: '',
+        razaoSocial: '',
+        ie: '',
+        endereco: '',
+        cidade: '',
+        uf: '',
+      },
+
+      // Volumes
+      volumes: [],
+
+      // Pagamento padrão
+      pagamento: {
+        forma: '01',
+        formaDescricao: 'Dinheiro',
+        valor: 0,
+      },
+
+      // Duplicatas
+      duplicatas: [],
+
+      // Informações complementares
+      informacoesComplementares: config.taxInfoText || '',
+
+      // Totais zerados
+      totais: {
+        valorProdutos: 0,
+        baseCalculoIcms: 0,
+        valorIcms: 0,
+        baseCalculoIcmsSt: 0,
+        valorIcmsSt: 0,
+        valorPis: 0,
+        valorCofins: 0,
+        valorIpi: 0,
+        valorFrete: 0,
+        valorSeguro: 0,
+        outrasDesepesas: 0,
+        valorDesconto: 0,
+        valorTotalTributos: 0,
+        valorNota: 0,
+      },
+
+      // Autorização para download (XML)
+      autXml: [],
+
+      // Defaults de CFOP
+      defaultCfop: config.defaultCfop || '',
     };
   }
 

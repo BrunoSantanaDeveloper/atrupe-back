@@ -1298,7 +1298,10 @@ export class ReportService {
             companyId,
             status: { not: 'CANCELED' },
           },
-          dueDate: { gte: startDate, lte: endDate },
+          OR: [
+            { dueDate: { gte: startDate, lte: endDate } },
+            { paidDate: { gte: startDate, lte: endDate } },
+          ],
         },
       });
 
@@ -1316,22 +1319,29 @@ export class ReportService {
       installments.forEach((inst) => {
         const status = this.getInstallmentStatus(inst);
         const amount = inst.paidAmount || inst.amount;
-        switch (status) {
-          case 'received':
+        const isPaidInPeriod =
+          inst.paidDate &&
+          inst.paidDate >= startDate &&
+          inst.paidDate <= endDate;
+        const isDueInPeriod =
+          inst.dueDate >= startDate && inst.dueDate <= endDate;
+
+        if (status === 'received') {
+          if (isPaidInPeriod) {
             result.received += amount;
             result.receivedCount++;
-            break;
-          case 'confirmed':
+          }
+        } else if (isDueInPeriod) {
+          if (status === 'confirmed') {
             result.confirmed += amount;
             result.confirmedCount++;
-            break;
-          case 'overdue':
+          } else if (status === 'overdue') {
             result.overdue += amount;
             result.overdueCount++;
-            break;
-          default:
+          } else {
             result.toReceive += amount;
             result.toReceiveCount++;
+          }
         }
       });
 
@@ -1343,7 +1353,10 @@ export class ReportService {
             companyId,
             status: { not: 'CANCELED' },
           },
-          dueDate: { gte: startDate, lte: endDate },
+          OR: [
+            { dueDate: { gte: startDate, lte: endDate } },
+            { paidDate: { gte: startDate, lte: endDate } },
+          ],
         },
       });
 
@@ -1361,22 +1374,29 @@ export class ReportService {
       installments.forEach((inst) => {
         const status = this.getInstallmentStatus(inst);
         const amount = inst.paidAmount || inst.amount;
-        switch (status) {
-          case 'received':
+        const isPaidInPeriod =
+          inst.paidDate &&
+          inst.paidDate >= startDate &&
+          inst.paidDate <= endDate;
+        const isDueInPeriod =
+          inst.dueDate >= startDate && inst.dueDate <= endDate;
+
+        if (status === 'received') {
+          if (isPaidInPeriod) {
             result.received += amount;
             result.receivedCount++;
-            break;
-          case 'confirmed':
+          }
+        } else if (isDueInPeriod) {
+          if (status === 'confirmed') {
             result.confirmed += amount;
             result.confirmedCount++;
-            break;
-          case 'overdue':
+          } else if (status === 'overdue') {
             result.overdue += amount;
             result.overdueCount++;
-            break;
-          default:
+          } else {
             result.toReceive += amount;
             result.toReceiveCount++;
+          }
         }
       });
 
@@ -1395,13 +1415,19 @@ export class ReportService {
       ? await this.prisma.receivableInstallment.findMany({
           where: {
             receivable: { companyId, status: { not: 'CANCELED' } },
-            dueDate: { gte: startDate, lte: endDate },
+            OR: [
+              { dueDate: { gte: startDate, lte: endDate } },
+              { paidDate: { gte: startDate, lte: endDate } },
+            ],
           },
         })
       : await this.prisma.payableInstallment.findMany({
           where: {
             payable: { companyId, status: { not: 'CANCELED' } },
-            dueDate: { gte: startDate, lte: endDate },
+            OR: [
+              { dueDate: { gte: startDate, lte: endDate } },
+              { paidDate: { gte: startDate, lte: endDate } },
+            ],
           },
         });
 
@@ -1423,8 +1449,31 @@ export class ReportService {
     > = {};
 
     installments.forEach((inst: any) => {
-      const dayKey = format(inst.dueDate, 'yyyy-MM-dd');
-      const label = format(inst.dueDate, 'd/MMM', { locale: ptBR });
+      const status = this.getInstallmentStatus(inst);
+      const isPaidInPeriod =
+        inst.paidDate && inst.paidDate >= startDate && inst.paidDate <= endDate;
+      const isDueInPeriod =
+        inst.dueDate >= startDate && inst.dueDate <= endDate;
+
+      // Se for recebido, plotamos no dia do recebimento (se caiu dentro do período)
+      // Se não, plotamos no dia do vencimento (se caiu dentro do período)
+      let targetDate: Date | null = null;
+      let validAction = false;
+
+      if (status === 'received') {
+        if (isPaidInPeriod) {
+          targetDate = inst.paidDate;
+          validAction = true;
+        }
+      } else if (isDueInPeriod) {
+        targetDate = inst.dueDate;
+        validAction = true;
+      }
+
+      if (!validAction || !targetDate) return;
+
+      const dayKey = format(targetDate, 'yyyy-MM-dd');
+      const label = format(targetDate, 'd/MMM', { locale: ptBR });
 
       if (!dailyData[dayKey]) {
         dailyData[dayKey] = {
@@ -1441,7 +1490,6 @@ export class ReportService {
         };
       }
 
-      const status = this.getInstallmentStatus(inst);
       const key = status === 'to_receive' ? 'toReceive' : status;
       const amount = inst.paidAmount || inst.amount;
       dailyData[dayKey][key] += amount;
@@ -1476,7 +1524,10 @@ export class ReportService {
           companyId,
           status: { not: 'CANCELED' },
         },
-        dueDate: { gte: startDate, lte: endDate },
+        OR: [
+          { dueDate: { gte: startDate, lte: endDate } },
+          { paidDate: { gte: startDate, lte: endDate } },
+        ],
       };
 
       if (statusFilter === 'received') where.status = 'PAID';
@@ -1494,21 +1545,41 @@ export class ReportService {
         orderBy: this.getFinancialOrderBy(filters.orderBy),
       });
 
-      let records = allInstallments.map((inst) => {
-        const computedStatus = this.getInstallmentStatus(inst);
-        return {
-          id: inst.id,
-          clientId: inst.receivable.clientId || '',
-          clientName: inst.receivable.client?.name || 'Não informado',
-          description: inst.receivable.description || 'Sem descrição',
-          dueDate: inst.dueDate ? format(inst.dueDate, 'dd/MM/yyyy') : null,
-          receivedDate: inst.paidDate
-            ? format(inst.paidDate, 'dd/MM/yyyy')
-            : null,
-          value: inst.paidAmount || inst.amount,
-          status: computedStatus,
-        };
-      });
+      let records = allInstallments
+        .map((inst) => {
+          const computedStatus = this.getInstallmentStatus(inst);
+          const isPaidInPeriod =
+            inst.paidDate &&
+            inst.paidDate >= startDate &&
+            inst.paidDate <= endDate;
+          const isDueInPeriod =
+            inst.dueDate &&
+            inst.dueDate >= startDate &&
+            inst.dueDate <= endDate;
+
+          let validAction = false;
+          if (computedStatus === 'received') {
+            if (isPaidInPeriod) validAction = true;
+          } else if (isDueInPeriod) {
+            validAction = true;
+          }
+
+          if (!validAction) return null;
+
+          return {
+            id: inst.id,
+            clientId: inst.receivable.clientId || '',
+            clientName: inst.receivable.client?.name || 'Não informado',
+            description: inst.receivable.description || 'Sem descrição',
+            dueDate: inst.dueDate ? format(inst.dueDate, 'dd/MM/yyyy') : null,
+            receivedDate: inst.paidDate
+              ? format(inst.paidDate, 'dd/MM/yyyy')
+              : null,
+            value: inst.paidAmount || inst.amount,
+            status: computedStatus,
+          };
+        })
+        .filter(Boolean) as any[];
 
       if (statusFilter === 'to_receive') {
         records = records.filter((r) => r.status === 'to_receive');
@@ -1604,7 +1675,10 @@ export class ReportService {
           companyId,
           status: { not: 'CANCELED' },
         },
-        dueDate: { gte: startDate, lte: endDate },
+        OR: [
+          { dueDate: { gte: startDate, lte: endDate } },
+          { paidDate: { gte: startDate, lte: endDate } },
+        ],
       };
 
       if (statusFilter === 'received') where.status = 'PAID';
@@ -1623,26 +1697,47 @@ export class ReportService {
         orderBy: this.getFinancialOrderBy(filters.orderBy),
       });
 
-      let records = allInstallments.map((inst) => {
-        const computedStatus = this.getInstallmentStatus(inst);
-        const entityName =
-          inst.payable.supplier?.name ||
-          inst.payable.client?.name ||
-          'Não informado';
-        const entityId = inst.payable.supplierId || inst.payable.clientId || '';
-        return {
-          id: inst.id,
-          clientId: entityId,
-          clientName: entityName,
-          description: inst.payable.description || 'Sem descrição',
-          dueDate: inst.dueDate ? format(inst.dueDate, 'dd/MM/yyyy') : null,
-          receivedDate: inst.paidDate
-            ? format(inst.paidDate, 'dd/MM/yyyy')
-            : null,
-          value: inst.paidAmount || inst.amount,
-          status: computedStatus,
-        };
-      });
+      let records = allInstallments
+        .map((inst) => {
+          const computedStatus = this.getInstallmentStatus(inst);
+          const isPaidInPeriod =
+            inst.paidDate &&
+            inst.paidDate >= startDate &&
+            inst.paidDate <= endDate;
+          const isDueInPeriod =
+            inst.dueDate &&
+            inst.dueDate >= startDate &&
+            inst.dueDate <= endDate;
+
+          let validAction = false;
+          if (computedStatus === 'received') {
+            if (isPaidInPeriod) validAction = true;
+          } else if (isDueInPeriod) {
+            validAction = true;
+          }
+
+          if (!validAction) return null;
+
+          const entityName =
+            inst.payable.supplier?.name ||
+            inst.payable.client?.name ||
+            'Não informado';
+          const entityId =
+            inst.payable.supplierId || inst.payable.clientId || '';
+          return {
+            id: inst.id,
+            clientId: entityId,
+            clientName: entityName,
+            description: inst.payable.description || 'Sem descrição',
+            dueDate: inst.dueDate ? format(inst.dueDate, 'dd/MM/yyyy') : null,
+            receivedDate: inst.paidDate
+              ? format(inst.paidDate, 'dd/MM/yyyy')
+              : null,
+            value: inst.paidAmount || inst.amount,
+            status: computedStatus,
+          };
+        })
+        .filter(Boolean) as any[];
 
       if (statusFilter === 'to_receive') {
         records = records.filter((r) => r.status === 'to_receive');
@@ -2103,7 +2198,10 @@ export class ReportService {
           companyId,
           status: { not: 'CANCELED' },
         },
-        dueDate: { gte: startDate, lte: endDate },
+        OR: [
+          { dueDate: { gte: startDate, lte: endDate } },
+          { paidDate: { gte: startDate, lte: endDate } },
+        ],
       };
 
       // Apply status filter at DB level where possible
@@ -2128,21 +2226,42 @@ export class ReportService {
       });
 
       // Map records WITHOUT percentage (calculated after filtering)
-      let records = allInstallments.map((inst) => {
-        const computedStatus = this.getInstallmentStatus(inst);
-        return {
-          id: inst.id,
-          clientId: inst.receivable.clientId || '',
-          clientName: inst.receivable.client?.name || 'Não informado',
-          description: inst.receivable.description || 'Sem descrição',
-          receivedDate: inst.paidDate
-            ? format(inst.paidDate, 'dd/MM/yyyy')
-            : null,
-          value: inst.paidAmount || inst.amount,
-          percentage: 0,
-          status: computedStatus,
-        };
-      });
+      let records = allInstallments
+        .map((inst) => {
+          const computedStatus = this.getInstallmentStatus(inst);
+          const isPaidInPeriod =
+            inst.paidDate &&
+            inst.paidDate >= startDate &&
+            inst.paidDate <= endDate;
+          const isDueInPeriod =
+            inst.dueDate &&
+            inst.dueDate >= startDate &&
+            inst.dueDate <= endDate;
+
+          let validAction = false;
+          if (computedStatus === 'received') {
+            if (isPaidInPeriod) validAction = true;
+          } else if (isDueInPeriod) {
+            validAction = true;
+          }
+
+          if (!validAction) return null;
+
+          return {
+            id: inst.id,
+            clientId: inst.receivable.clientId || '',
+            clientName: inst.receivable.client?.name || 'Não informado',
+            description: inst.receivable.description || 'Sem descrição',
+            dueDate: inst.dueDate ? format(inst.dueDate, 'dd/MM/yyyy') : null,
+            receivedDate: inst.paidDate
+              ? format(inst.paidDate, 'dd/MM/yyyy')
+              : null,
+            value: inst.paidAmount || inst.amount,
+            percentage: 0,
+            status: computedStatus,
+          };
+        })
+        .filter(Boolean) as any[];
 
       // Post-filter for statuses that require runtime check
       if (statusFilter === 'to_receive') {
@@ -2227,7 +2346,10 @@ export class ReportService {
           companyId,
           status: { not: 'CANCELED' },
         },
-        dueDate: { gte: startDate, lte: endDate },
+        OR: [
+          { dueDate: { gte: startDate, lte: endDate } },
+          { paidDate: { gte: startDate, lte: endDate } },
+        ],
       };
 
       // Note: 'overdue' and 'to_receive' use runtime check
@@ -2251,27 +2373,49 @@ export class ReportService {
       });
 
       // Map records WITHOUT percentage
-      let records = allInstallments.map((inst) => {
-        const computedStatus = this.getInstallmentStatus(inst);
-        const entityName =
-          inst.payable.supplier?.name ||
-          inst.payable.client?.name ||
-          'Não informado';
-        const entityId = inst.payable.supplierId || inst.payable.clientId || '';
+      let records = allInstallments
+        .map((inst) => {
+          const computedStatus = this.getInstallmentStatus(inst);
+          const isPaidInPeriod =
+            inst.paidDate &&
+            inst.paidDate >= startDate &&
+            inst.paidDate <= endDate;
+          const isDueInPeriod =
+            inst.dueDate &&
+            inst.dueDate >= startDate &&
+            inst.dueDate <= endDate;
 
-        return {
-          id: inst.id,
-          clientId: entityId,
-          clientName: entityName,
-          description: inst.payable.description || 'Sem descrição',
-          receivedDate: inst.paidDate
-            ? format(inst.paidDate, 'dd/MM/yyyy')
-            : null,
-          value: inst.paidAmount || inst.amount,
-          percentage: 0,
-          status: computedStatus,
-        };
-      });
+          let validAction = false;
+          if (computedStatus === 'received') {
+            if (isPaidInPeriod) validAction = true;
+          } else if (isDueInPeriod) {
+            validAction = true;
+          }
+
+          if (!validAction) return null;
+
+          const entityName =
+            inst.payable.supplier?.name ||
+            inst.payable.client?.name ||
+            'Não informado';
+          const entityId =
+            inst.payable.supplierId || inst.payable.clientId || '';
+
+          return {
+            id: inst.id,
+            clientId: entityId,
+            clientName: entityName,
+            description: inst.payable.description || 'Sem descrição',
+            dueDate: inst.dueDate ? format(inst.dueDate, 'dd/MM/yyyy') : null,
+            receivedDate: inst.paidDate
+              ? format(inst.paidDate, 'dd/MM/yyyy')
+              : null,
+            value: inst.paidAmount || inst.amount,
+            percentage: 0,
+            status: computedStatus,
+          };
+        })
+        .filter(Boolean) as any[];
 
       if (statusFilter === 'to_receive') {
         records = records.filter((r) => r.status === 'to_receive');

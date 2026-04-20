@@ -49,6 +49,7 @@ export class InvoicyService {
     if (dto.codigoServico !== undefined) data.codigoServico = dto.codigoServico;
     if (dto.aliquotaIss !== undefined) data.aliquotaIss = dto.aliquotaIss;
     if (dto.defaultCfop !== undefined) data.defaultCfop = dto.defaultCfop;
+    if (dto.defaultNcm !== undefined) data.defaultNcm = dto.defaultNcm;
     if (dto.defaultOperationNature !== undefined)
       data.defaultOperationNature = dto.defaultOperationNature;
     if (dto.taxInfoText !== undefined) data.taxInfoText = dto.taxInfoText;
@@ -130,6 +131,9 @@ export class InvoicyService {
       // IBGE Code (Configuration specific if we want to override, or just null)
       // Keeping it on root as it might be relevant for the configuration specifically
       ibgeCode: config.emitCmun || null,
+
+      // Default NCM for new products
+      defaultNcm: config.defaultNcm || null,
     };
   }
 

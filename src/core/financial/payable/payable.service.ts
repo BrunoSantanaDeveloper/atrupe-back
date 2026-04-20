@@ -170,43 +170,73 @@ export class PayableService {
           }
         }
 
-        return payable;
-      });
-
-      // Atualizar status do payable após criação
-      await this.updatePayableStatus(payable.id);
-
-      // Registrar no histórico
-      if (userId) {
+        // Buscar dados do fornecedor e funcionário para o histórico
         const supplier = payableData.supplierId
-          ? await this.prisma.supplier.findUnique({
+          ? await tx.supplier.findUnique({
               where: { id: payableData.supplierId },
               select: { name: true },
             })
           : null;
 
         const employee = payableData.employeeId
-          ? await this.prisma.employee.findUnique({
+          ? await tx.employee.findUnique({
               where: { id: payableData.employeeId },
               select: { name: true },
             })
           : null;
 
-        await this.historyService.createPayableHistory({
-          payableId: payable.id,
-          action: 'CREATE',
-          description: this.historyService.getCreateDescription(),
-          metadata: {
-            totalAmount: payable.totalAmount,
-            installmentQty: installments.length,
-            supplierName: supplier?.name || null,
-            employeeName: employee?.name || null,
-            expenseSource: payableData.expenseSource,
-          },
-          createdBy: userId,
-          createdByName: userName,
+        // Registrar no histórico dentro da transação
+        if (userId) {
+          await tx.payableHistory.create({
+            data: {
+              payableId: payable.id,
+              action: 'CREATE',
+              description: this.historyService.getCreateDescription(),
+              metadata: {
+                totalAmount: payable.totalAmount,
+                installmentQty: installments.length,
+                supplierName: supplier?.name || null,
+                employeeName: employee?.name || null,
+                expenseSource: payableData.expenseSource,
+              } as any,
+              createdBy: userId,
+              createdByName: userName,
+            },
+          });
+        }
+
+        // Atualizar status do payable dentro da transação
+        const allInstallments = await tx.payableInstallment.findMany({
+          where: { payableId: payable.id },
+          select: { status: true },
         });
-      }
+
+        const hasCancelled = allInstallments.some(
+          (inst) => inst.status === 'CANCELED',
+        );
+        const hasPending = allInstallments.some(
+          (inst) => inst.status === 'PENDING',
+        );
+        const allPaid = allInstallments.every((inst) => inst.status === 'PAID');
+
+        let newStatus: PaymentStatus;
+        if (hasCancelled) {
+          newStatus = PaymentStatus.CANCELED;
+        } else if (hasPending) {
+          newStatus = PaymentStatus.PENDING;
+        } else if (allPaid) {
+          newStatus = PaymentStatus.PAID;
+        } else {
+          newStatus = PaymentStatus.PENDING;
+        }
+
+        await tx.payable.update({
+          where: { id: payable.id },
+          data: { status: newStatus },
+        });
+
+        return { ...payable, status: newStatus };
+      });
 
       return payable;
     } catch (error) {
@@ -1451,11 +1481,13 @@ export class PayableService {
         updateData.installmentQty = allInstallments.length;
 
         if (Object.keys(updateData).length > 0) {
-          await this.prisma.payable.update({
+          await prisma.payable.update({
             where: { id: payableId },
             data: updateData,
           });
         }
+
+        return payable;
       });
 
       await this.updatePayableStatus(payableId);

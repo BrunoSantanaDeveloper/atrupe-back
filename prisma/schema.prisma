@@ -2054,6 +2054,7 @@ model InvoicyConfig {
   emitCrt Int? @default(1) // 1=Simples Nacional, 2=SN Excesso, 3=Regime Normal
 
   // Configurações fiscais padrão
+  defaultNcm              String? // NCM padrão para novos produtos (ex: 49119900)
   codigoServico          String?
   aliquotaIss            Float?
   defaultCfop            String?
