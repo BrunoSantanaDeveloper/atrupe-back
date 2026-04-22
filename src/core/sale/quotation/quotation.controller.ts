@@ -62,12 +62,19 @@ export class QuotationController {
       userId: string;
       username: string;
       isAdmin: boolean;
+      isSystemAdmin?: boolean;
+      role?: string;
       employeeId?: string;
     },
     action: 'view' | 'edit' = 'view',
   ): Promise<string | undefined> {
+    // Passa o objeto user completo (incluindo 'role') para que o AbacService
+    // consiga consultar as permissões do cargo no banco.
+    // Anteriormente passava apenas { userId, username }, o que causava
+    // user.role === undefined → hasPermission retornava false imediatamente
+    // → não-admins eram sempre filtrados pelos próprios orçamentos.
     const canAccessOtherQuotations = await this.abacService.hasPermission(
-      { userId: user.userId, username: user.username },
+      user,
       action,
       'sale:other_quotation',
     );
@@ -88,6 +95,8 @@ export class QuotationController {
       userId: string;
       username: string;
       isAdmin: boolean;
+      isSystemAdmin?: boolean;
+      role?: string;
       employeeId?: string;
       companyId: string;
     },
