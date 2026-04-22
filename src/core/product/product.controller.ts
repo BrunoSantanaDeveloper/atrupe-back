@@ -52,7 +52,10 @@ export class ProductController {
   }
 
   @Get()
-  @HasPermission('view', 'product_settings:products')
+  // Listagem de produtos é uma operação OPERACIONAL necessária para qualquer usuário
+  // autenticado da empresa (ex: vendedores criando orçamentos). A permissão
+  // product_settings:products aplica-se apenas a operações de escrita (create/edit/delete).
+  // O acesso multi-tenant já é garantido pelo JwtAuthGuard + TenantGuard (companyId do token).
   @ApiOperation({ summary: 'Obtém a lista de todos os produtos' })
   @ApiResponse({
     status: 200,

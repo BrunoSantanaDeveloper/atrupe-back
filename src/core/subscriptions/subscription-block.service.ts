@@ -324,6 +324,7 @@ export class SubscriptionBlockService {
         id: true,
         name: true,
         blockLevel: true,
+        blockReason: true,
         Subscription: {
           where: {
             plan: { planType: { not: 'TRIAL' } },
@@ -343,6 +344,28 @@ export class SubscriptionBlockService {
     for (const company of blockedCompanies) {
       const subscription = company.Subscription[0];
       if (!subscription) {
+        results.push({
+          companyId: company.id,
+          companyName: company.name,
+          daysOverdue: 0,
+          previousBlockLevel: company.blockLevel,
+          newBlockLevel: company.blockLevel,
+          action: 'skipped',
+        });
+        continue;
+      }
+
+      // Pular empresas bloqueadas MANUALMENTE por admin.
+      // Bloqueio manual é identificado pelo blockReason — não deve ser
+      // desfeito automaticamente pelo cron, apenas via ação do admin no painel.
+      if (
+        company.blockReason &&
+        (company.blockReason.startsWith('Inativação manual') ||
+          company.blockReason.startsWith('Bloqueio manual'))
+      ) {
+        this.logger.log(
+          `Empresa ${company.name} ignorada pelo cron: bloqueio/inativação manual (${company.blockReason})`,
+        );
         results.push({
           companyId: company.id,
           companyName: company.name,

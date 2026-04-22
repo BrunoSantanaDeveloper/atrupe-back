@@ -1312,13 +1312,28 @@ export class SubscriptionsService {
       return { status: 'already_active', subscription };
     }
 
-    // TODO: Cenário de risco identificado - Se um admin desativar manualmente uma conta
-    // (por fraude, abuso, etc.) e o cliente tiver pagamento confirmado no Asaas,
-    // essa função irá reativar a conta no próximo login.
-    // Possíveis soluções:
-    // 1. Criar campo `blockedFromAutoActivation` na subscription
-    // 2. Verificar histórico se última ação foi desativação manual
-    // 3. Só ativar subscriptions criadas recentemente (últimos 30 dias)
+    // Verificar se a subscription foi manualmente inativada por um admin.
+    // Nesse caso, NÃO deve ser reativada automaticamente via sync com Asaas.
+    // A reativação só deve ocorrer via ação explícita do admin no painel.
+    const lastHistory = await this.prisma.subscriptionHistory.findFirst({
+      where: { subscriptionId: subscription.id },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const wasManuallyDeactivated =
+      lastHistory?.action === 'STATUS_CHANGE' &&
+      lastHistory?.metadata !== null &&
+      typeof lastHistory.metadata === 'object' &&
+      !Array.isArray(lastHistory.metadata) &&
+      (lastHistory.metadata as Record<string, unknown>)['newStatus'] ===
+        'INACTIVE';
+
+    if (wasManuallyDeactivated) {
+      this.logger.warn(
+        `Subscription ${subscription.id} foi manualmente inativada por admin. Auto-ativação bloqueada.`,
+      );
+      return { status: 'manually_deactivated', subscription };
+    }
 
     try {
       // Buscar os pagamentos da subscription no Asaas
