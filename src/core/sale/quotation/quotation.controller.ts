@@ -67,7 +67,7 @@ export class QuotationController {
     action: 'view' | 'edit' = 'view',
   ): Promise<string | undefined> {
     const canAccessOtherQuotations = await this.abacService.hasPermission(
-      { userId: user.userId, username: user.username },
+      user,
       action,
       'sale:other_quotation',
     );
