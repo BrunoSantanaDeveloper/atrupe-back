@@ -68,21 +68,20 @@ export class QuotationController {
     },
     action: 'view' | 'edit' = 'view',
   ): Promise<string | undefined> {
-    // DIAGNÓSTICO: logar estado do user para depurar permissão de orçamentos
-    this.logger.debug(
-      `[resolveSellerFilter] user.role=${user.role} | user.isAdmin=${user.isAdmin} | user.employeeId=${user.employeeId} | action=${action}`,
+    // DIAGNÓSTICO TEMPORÁRIO — remover após confirmar fix
+    this.logger.log(
+      `[PERM-DEBUG] user.role=${user.role} | isAdmin=${user.isAdmin} | employeeId=${user.employeeId} | action=${action}`,
     );
 
     // Chave 'sale:other_sellers' é o que está salvo no banco para todos os clientes.
-    // Não usar 'sale:other_quotation' — essa chave nunca existiu nos dados reais.
     const canAccessOtherQuotations = await this.abacService.hasPermission(
       user,
       action,
       'sale:other_sellers',
     );
 
-    this.logger.debug(
-      `[resolveSellerFilter] canAccessOtherQuotations=${canAccessOtherQuotations} → sellerFilter=${!canAccessOtherQuotations && !user.isAdmin && user.employeeId ? user.employeeId : 'none (unrestricted)'}`,
+    this.logger.warn(
+      `[PERM-DEBUG] canAccess=${canAccessOtherQuotations} | sellerFilter=${!canAccessOtherQuotations && !user.isAdmin && user.employeeId ? user.employeeId : 'NONE'}`,
     );
 
     if (!canAccessOtherQuotations && !user.isAdmin && user.employeeId) {
