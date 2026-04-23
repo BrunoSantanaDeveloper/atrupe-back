@@ -62,7 +62,7 @@ export class OrderController {
 
     // Verificar se o usuário pode ver ordens de outros vendedores
     const canSeeOtherOrders = await this.abacService.hasPermission(
-      { userId: req.user.userId, username: req.user.username },
+      req.user,
       'view',
       'sale:other_quotation',
     );
@@ -87,7 +87,7 @@ export class OrderController {
 
     // Verificar se o usuário pode ver ordens de outros vendedores
     const canSeeOtherOrders = await this.abacService.hasPermission(
-      { userId: req.user.userId, username: req.user.username },
+      req.user,
       'view',
       'sale:other_quotation',
     );
@@ -129,7 +129,7 @@ export class OrderController {
 
     // Verificar se o usuário pode ver ordens de outros vendedores
     const canSeeOtherOrders = await this.abacService.hasPermission(
-      { userId: req.user.userId, username: req.user.username },
+      req.user,
       'view',
       'sale:other_quotation',
     );
