@@ -69,8 +69,8 @@ export class QuotationController {
     action: 'view' | 'edit' = 'view',
   ): Promise<string | undefined> {
     // DIAGNÓSTICO TEMPORÁRIO — remover após confirmar fix
-    this.logger.log(
-      `[PERM-DEBUG] user.role=${user.role} | isAdmin=${user.isAdmin} | employeeId=${user.employeeId} | action=${action}`,
+    console.log(
+      `[PERM-DEBUG] role=${user.role} | isAdmin=${user.isAdmin} | employeeId=${user.employeeId} | action=${action}`,
     );
 
     // Chave 'sale:other_sellers' é o que está salvo no banco para todos os clientes.
@@ -80,7 +80,7 @@ export class QuotationController {
       'sale:other_sellers',
     );
 
-    this.logger.warn(
+    console.warn(
       `[PERM-DEBUG] canAccess=${canAccessOtherQuotations} | sellerFilter=${!canAccessOtherQuotations && !user.isAdmin && user.employeeId ? user.employeeId : 'NONE'}`,
     );
 
