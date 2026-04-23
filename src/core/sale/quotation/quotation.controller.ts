@@ -68,15 +68,21 @@ export class QuotationController {
     },
     action: 'view' | 'edit' = 'view',
   ): Promise<string | undefined> {
-    // Passa o objeto user completo (incluindo 'role') para que o AbacService
-    // consiga consultar as permissões do cargo no banco.
-    // Anteriormente passava apenas { userId, username }, o que causava
-    // user.role === undefined → hasPermission retornava false imediatamente
-    // → não-admins eram sempre filtrados pelos próprios orçamentos.
+    // DIAGNÓSTICO: logar estado do user para depurar permissão de orçamentos
+    this.logger.debug(
+      `[resolveSellerFilter] user.role=${user.role} | user.isAdmin=${user.isAdmin} | user.employeeId=${user.employeeId} | action=${action}`,
+    );
+
+    // Chave 'sale:other_sellers' é o que está salvo no banco para todos os clientes.
+    // Não usar 'sale:other_quotation' — essa chave nunca existiu nos dados reais.
     const canAccessOtherQuotations = await this.abacService.hasPermission(
       user,
       action,
-      'sale:other_quotation',
+      'sale:other_sellers',
+    );
+
+    this.logger.debug(
+      `[resolveSellerFilter] canAccessOtherQuotations=${canAccessOtherQuotations} → sellerFilter=${!canAccessOtherQuotations && !user.isAdmin && user.employeeId ? user.employeeId : 'none (unrestricted)'}`,
     );
 
     if (!canAccessOtherQuotations && !user.isAdmin && user.employeeId) {
