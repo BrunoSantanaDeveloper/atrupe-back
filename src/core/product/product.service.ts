@@ -616,6 +616,12 @@ export class ProductService {
       const semicolonCount = (headLine.match(/;/g) || []).length;
       const delimiter = semicolonCount > commaCount ? ';' : ',';
 
+      // Coleta todas as linhas antes de processar para evitar race condition.
+      // O handler .on('data', async ...) do fast-csv NÃO aguarda a Promise de
+      // cada linha, processando tudo em paralelo e causando itens de produtos
+      // diferentes serem associados ao mesmo produto.
+      const rows: any[] = [];
+
       fs.createReadStream(filePath)
         .pipe(
           fastCsv.parse({
@@ -694,185 +700,182 @@ export class ProductService {
             skipRows: 1,
           }),
         )
-        .on('data', async (row) => {
-          try {
-            let categoryId = null;
-            console.log('Processando linha com categoria:', row.categoria);
-
-            // Verificar se a categoria já foi processada
-            if (row.categoria) {
-              console.log(
-                'Categoria existe, verificando se já foi processada:',
-                processedCategories.has(row.categoria),
-              );
-
-              if (!processedCategories.has(row.categoria)) {
-                processedCategories.add(row.categoria);
-                console.log('Categoria adicionada ao Set:', row.categoria);
-
-                // Buscar ou criar categoria
-                const category = await this.prisma.$transaction(
-                  async (prisma) => {
-                    let existingCategory = await prisma.category.findFirst({
-                      where: {
-                        name: row.categoria,
-                        companyId,
-                        kind: 'PRODUCT',
-                      },
-                    });
-
-                    if (!existingCategory) {
-                      console.log('Criando nova categoria:', row.categoria);
-                      existingCategory = await prisma.category.create({
-                        data: {
-                          name: row.categoria,
-                          companyId,
-                          kind: 'PRODUCT',
-                          isActive: true,
-                        },
-                      });
-                    } else {
-                      console.log('Categoria já existe:', row.categoria);
-                    }
-                    return existingCategory;
-                  },
-                );
-                categoryId = category.id;
-              } else {
-                console.log(
-                  'Categoria já processada anteriormente:',
-                  row.categoria,
-                );
-                // Buscar a categoria existente
-                const existingCategory = await this.prisma.category.findFirst({
-                  where: {
-                    name: row.categoria,
-                    companyId,
-                    kind: 'PRODUCT',
-                  },
-                });
-                if (existingCategory) {
-                  categoryId = existingCategory.id;
-                }
-              }
-            } else {
-              console.log('Linha sem categoria definida');
-            }
-
-            console.log('categoryId final:', categoryId);
-
-            // Verificar código duplicado
-            let productCode = row.cod;
-            if (productCodes.has(productCode)) {
-              const count = productCodes.get(productCode) + 1;
-              productCodes.set(productCode, count);
-              productCode = `${productCode}${count}`;
-            } else {
-              productCodes.set(productCode, 0);
-            }
-
-            // Buscar setor
-            let sectorId = null;
-            if (row.setor) {
-              const sector = await this.prisma.companySector.findFirst({
-                where: {
-                  name: row.setor,
-                  companyId,
-                },
-              });
-              if (sector) {
-                sectorId = sector.id;
-              }
-            }
-
-            // Criar produto
-            const product = await this.prisma.product.create({
-              data: {
-                name: row.nome,
-                code: productCode,
-                status: 'ACTIVE',
-                isActive: true,
-                companyId,
-                categoryId,
-                sectorId,
-              },
-            });
-
-            // Criar item do produto
-            if (row.servico) {
-              // Mapear código da unidade de medida
-              const unitCode = unitMapping[row.uncom] || row.uncom;
-
-              // TODO: Verificar possibilidade de csv ter o tipo direto em vez do código
-              // Mapear código da unidade para UnitKind
-              let unitKind = null;
-              const measures: any = {};
-
-              switch (unitCode) {
-                case 'M²':
-                  unitKind = 'AREA';
-                  measures.width = 1;
-                  measures.length = 1;
-                  break;
-                case 'MT':
-                case 'CM':
-                case 'MM':
-                  unitKind = 'LENGTH';
-                  measures.height = 1;
-                  break;
-                case 'UN':
-                  unitKind = 'UNITY';
-                  break;
-                case 'KG':
-                case 'GR':
-                case 'MG':
-                  unitKind = 'WEIGHT';
-                  measures.weight = 1;
-                  break;
-                case 'KM':
-                  unitKind = 'DISTANCE';
-                  measures.distance = 1;
-                  break;
-                case 'HH':
-                  unitKind = 'DURATION';
-                  measures.duration = 1;
-                  break;
-                case 'LT':
-                case 'ML':
-                  unitKind = 'CAPACITY';
-                  measures.volume = 1;
-                  break;
-              }
-
-              if (unitKind) {
-                await this.prisma.productItem.create({
-                  data: {
-                    name: row.servico,
-                    productId: product.id,
-                    unitKind: unitKind,
-                    unitCost: parseFloat(row.custo) || 0,
-                    salePrice: parseFloat(row.valor) || 0,
-                    ...measures,
-                  },
-                });
-              }
-            }
-
-            products.push(product);
-          } catch (error) {
-            console.error('Erro ao processar linha do CSV:', error);
-            reject(error);
-          }
-        })
-        .on('end', () => {
-          console.log(
-            `Importação concluída. ${products.length} produtos importados.`,
-          );
-          resolve();
+        // Coleta linhas de forma síncrona — sem async aqui para evitar race condition
+        .on('data', (row) => {
+          rows.push(row);
         })
         .on('error', (error) => {
           console.error('Erro ao processar CSV:', error);
           reject(error);
+        })
+        .on('end', () => {
+          // Processa cada linha SEQUENCIALMENTE após coletar todas
+          (async () => {
+            try {
+              for (const row of rows) {
+                let categoryId = null;
+                console.log('Processando linha com categoria:', row.categoria);
+
+                if (row.categoria) {
+                  console.log(
+                    'Categoria existe, verificando se já foi processada:',
+                    processedCategories.has(row.categoria),
+                  );
+
+                  if (!processedCategories.has(row.categoria)) {
+                    processedCategories.add(row.categoria);
+                    console.log('Categoria adicionada ao Set:', row.categoria);
+
+                    const category = await this.prisma.$transaction(
+                      async (prisma) => {
+                        let existingCategory = await prisma.category.findFirst({
+                          where: {
+                            name: row.categoria,
+                            companyId,
+                            kind: 'PRODUCT',
+                          },
+                        });
+
+                        if (!existingCategory) {
+                          console.log('Criando nova categoria:', row.categoria);
+                          existingCategory = await prisma.category.create({
+                            data: {
+                              name: row.categoria,
+                              companyId,
+                              kind: 'PRODUCT',
+                              isActive: true,
+                            },
+                          });
+                        } else {
+                          console.log('Categoria já existe:', row.categoria);
+                        }
+                        return existingCategory;
+                      },
+                    );
+                    categoryId = category.id;
+                  } else {
+                    console.log(
+                      'Categoria já processada anteriormente:',
+                      row.categoria,
+                    );
+                    const existingCategory =
+                      await this.prisma.category.findFirst({
+                        where: {
+                          name: row.categoria,
+                          companyId,
+                          kind: 'PRODUCT',
+                        },
+                      });
+                    if (existingCategory) {
+                      categoryId = existingCategory.id;
+                    }
+                  }
+                } else {
+                  console.log('Linha sem categoria definida');
+                }
+
+                console.log('categoryId final:', categoryId);
+
+                // Verificar código duplicado (seguro pois é sequencial)
+                let productCode = row.cod;
+                if (productCodes.has(productCode)) {
+                  const count = productCodes.get(productCode) + 1;
+                  productCodes.set(productCode, count);
+                  productCode = `${productCode}${count}`;
+                } else {
+                  productCodes.set(productCode, 0);
+                }
+
+                // Buscar setor
+                let sectorId = null;
+                if (row.setor) {
+                  const sector = await this.prisma.companySector.findFirst({
+                    where: { name: row.setor, companyId },
+                  });
+                  if (sector) sectorId = sector.id;
+                }
+
+                // Criar produto
+                const product = await this.prisma.product.create({
+                  data: {
+                    name: row.nome,
+                    code: productCode,
+                    status: 'ACTIVE',
+                    isActive: true,
+                    companyId,
+                    categoryId,
+                    sectorId,
+                  },
+                });
+
+                // Criar item do produto
+                if (row.servico) {
+                  const unitCode = unitMapping[row.uncom] || row.uncom;
+                  let unitKind = null;
+                  const measures: any = {};
+
+                  switch (unitCode) {
+                    case 'M²':
+                      unitKind = 'AREA';
+                      measures.width = 1;
+                      measures.length = 1;
+                      break;
+                    case 'MT':
+                    case 'CM':
+                    case 'MM':
+                      unitKind = 'LENGTH';
+                      measures.height = 1;
+                      break;
+                    case 'UN':
+                      unitKind = 'UNITY';
+                      break;
+                    case 'KG':
+                    case 'GR':
+                    case 'MG':
+                      unitKind = 'WEIGHT';
+                      measures.weight = 1;
+                      break;
+                    case 'KM':
+                      unitKind = 'DISTANCE';
+                      measures.distance = 1;
+                      break;
+                    case 'HH':
+                      unitKind = 'DURATION';
+                      measures.duration = 1;
+                      break;
+                    case 'LT':
+                    case 'ML':
+                      unitKind = 'CAPACITY';
+                      measures.volume = 1;
+                      break;
+                  }
+
+                  if (unitKind) {
+                    await this.prisma.productItem.create({
+                      data: {
+                        name: row.servico,
+                        productId: product.id,
+                        unitKind: unitKind,
+                        unitCost: parseFloat(row.custo) || 0,
+                        salePrice: parseFloat(row.valor) || 0,
+                        ...measures,
+                      },
+                    });
+                  }
+                }
+
+                products.push(product);
+              }
+
+              console.log(
+                `Importação concluída. ${products.length} produtos importados.`,
+              );
+              resolve();
+            } catch (error) {
+              console.error('Erro ao processar linha do CSV:', error);
+              reject(error);
+            }
+          })();
         });
     });
   }

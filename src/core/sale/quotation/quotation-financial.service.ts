@@ -40,18 +40,56 @@ export class QuotationFinancialService {
       );
     }
 
-    // Calcular o valor total das parcelas
-    const totalAmount = quotationInstallments.reduce(
+    // -----------------------------------------------------------------------
+    // Validação: verificar se as parcelas estão sincronizadas com o totalValue
+    // atual do orçamento. Caso contrário, recalcular proporcionalmente.
+    // Isso previne inconsistências quando itens são alterados antes do
+    // faturamento sem que as condições de pagamento sejam reabertas/salvas.
+    // -----------------------------------------------------------------------
+    const expectedTotal =
+      quotation.totalValue - (quotation.quotationPayment.downPayment || 0);
+    const installmentsBaseSum = quotationInstallments.reduce(
+      (sum: number, inst: QuotationInstallment) => sum + inst.value,
+      0,
+    );
+    const installmentsFeeSum = quotationInstallments.reduce(
+      (sum: number, inst: QuotationInstallment) =>
+        sum + (inst.additionalFee || 0),
+      0,
+    );
+
+    let effectiveInstallments = quotationInstallments;
+    if (
+      expectedTotal > 0 &&
+      installmentsFeeSum === 0 &&
+      Math.abs(installmentsBaseSum - expectedTotal) > 1
+    ) {
+      this.logger.warn(
+        `[FINANCIAL] Parcelas desatualizadas no orçamento ${quotation.id}: ` +
+          `soma=${installmentsBaseSum}, esperado=${expectedTotal}. ` +
+          `Recalculando proporcionalmente antes de gerar o receivable.`,
+      );
+      const ratio = expectedTotal / installmentsBaseSum;
+      effectiveInstallments = quotationInstallments.map(
+        (inst: QuotationInstallment) => ({
+          ...inst,
+          value: inst.value * ratio,
+        }),
+      );
+    }
+
+    // Calcular o valor total das parcelas (usando efetiveInstallments)
+    const totalAmount = effectiveInstallments.reduce(
       (sum: number, installment: QuotationInstallment) =>
         sum + installment.value + (installment.additionalFee || 0),
       0,
     );
-    const totalValue = quotationInstallments.reduce(
+    const totalValue = effectiveInstallments.reduce(
       (sum: number, installment: QuotationInstallment) =>
         sum + installment.value,
       0,
     );
-    const mainAdditionalFee = quotationInstallments.reduce(
+    const mainAdditionalFee = effectiveInstallments.reduce(
       (sum: number, installment: QuotationInstallment) =>
         sum + (installment.additionalFee || 0),
       0,
@@ -131,8 +169,9 @@ export class QuotationFinancialService {
         },
       });
 
-      // Preparar e criar as parcelas
-      const installments = quotationInstallments.map(
+      // Preparar e criar as parcelas (usar effectiveInstallments para garantir
+      // que valores recalculados sejam persistidos, não valores stale do DB)
+      const installments = effectiveInstallments.map(
         (installment: QuotationInstallment, index: number) => ({
           receivableId: receivable.id,
           installmentNumber: index + 1,

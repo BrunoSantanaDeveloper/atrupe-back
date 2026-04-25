@@ -14,14 +14,18 @@ export class PermissionsGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
-    if (!user || !user.role) return false;
+    if (!user) return false;
 
     const requiredPermission = this.reflector.get<{
       action: string;
       resource: string;
     }>(HAS_PERMISSION_KEY, context.getHandler());
 
+    // Se a rota não exige permissão específica, libera qualquer usuário autenticado
     if (!requiredPermission) return true;
+
+    // A partir daqui, a rota exige permissão — usuário precisa ter um role atribuído
+    if (!user.role) return false;
 
     return this.abacService.hasPermission(
       user,
