@@ -231,6 +231,7 @@ export class ClientController {
   }
 
   @Patch(':id/status')
+  @HasPermission('edit', 'register:client')
   @ApiOperation({
     summary: 'Ativa ou desativa um cliente',
     description:
@@ -250,6 +251,7 @@ export class ClientController {
   }
 
   @Post(':id/convert-to-supplier')
+  @HasPermission('edit', 'register:client')
   @ApiOperation({
     summary: 'Converte um cliente em fornecedor',
     description:

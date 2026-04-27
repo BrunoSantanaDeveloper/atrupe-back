@@ -9,12 +9,14 @@ import {
   UseGuards,
   Query,
   Req,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PayableService } from './payable.service';
 
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { AbacService } from 'src/core/auth/abac/abac.service';
 import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
 import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 import {
@@ -46,7 +48,10 @@ const GROUP = 'financial';
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class PayableController {
-  constructor(private readonly payableService: PayableService) {}
+  constructor(
+    private readonly payableService: PayableService,
+    private readonly abacService: AbacService,
+  ) {}
 
   @Post()
   @HasPermission('create', 'financial:payable')
@@ -159,6 +164,7 @@ export class PayableController {
   }
 
   @Patch(':id/upsert-installments')
+  @HasPermission('edit', 'financial:payable')
   @ApiResponse({
     status: 200,
     description: 'Parcelas adicionadas, editadas ou removidas com sucesso',
@@ -214,6 +220,7 @@ export class PayableController {
   }
 
   @Post(':id/undo-cancel')
+  @HasPermission('edit', 'financial:payable')
   @ApiOperation({
     summary: 'Desfaz o cancelamento de uma conta a pagar',
   })
@@ -323,5 +330,47 @@ export class PayableController {
   @ApiResponse({ status: 404, description: 'Conta a pagar não encontrada.' })
   remove(@Param('id') id: string) {
     return this.payableService.remove(id);
+  }
+
+  /**
+   * Endpoint dedicado para atualizar apenas a observação de uma conta a pagar.
+   * Aceita tanto `financial:flow:edit` (visão do fluxo) quanto `financial:payable:edit`.
+   */
+  @Patch(':id/notes')
+  @TenantResource('payable')
+  @ApiOperation({ summary: 'Atualiza a observação de uma conta a pagar' })
+  @ApiParam({ name: 'id', required: true, description: 'ID da conta a pagar' })
+  @ApiResponse({
+    status: 200,
+    description: 'Observação atualizada com sucesso.',
+  })
+  @ApiResponse({ status: 403, description: 'Sem permissão.' })
+  async updateNotes(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() body: { notes?: string | null },
+  ) {
+    const user = req.user;
+    const canEditFlow = await this.abacService.hasPermission(
+      user,
+      'edit',
+      'financial:flow',
+    );
+    const canEditPayable = await this.abacService.hasPermission(
+      user,
+      'edit',
+      'financial:payable',
+    );
+    if (!canEditFlow && !canEditPayable) {
+      throw new ForbiddenException(
+        'Sem permissão para editar observações desta conta a pagar.',
+      );
+    }
+    return this.payableService.updateTitle(
+      id,
+      { notes: body.notes } as any,
+      user.userId,
+      user.name,
+    );
   }
 }

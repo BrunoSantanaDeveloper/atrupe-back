@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Req,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ReceivableService } from './receivable.service';
 import {
@@ -25,6 +26,7 @@ import {
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { AbacService } from 'src/core/auth/abac/abac.service';
 import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
 import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 import {
@@ -46,7 +48,10 @@ const GROUP = 'financial';
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class ReceivableController {
-  constructor(private readonly receivableService: ReceivableService) {}
+  constructor(
+    private readonly receivableService: ReceivableService,
+    private readonly abacService: AbacService,
+  ) {}
 
   @Post()
   @HasPermission('create', 'financial:receivable')
@@ -159,6 +164,7 @@ export class ReceivableController {
   }
 
   @Patch(':id/upsert-installments')
+  @HasPermission('edit', 'financial:receivable')
   @ApiResponse({
     status: 200,
     description: 'Parcelas adicionadas, editadas ou removidas com sucesso',
@@ -214,6 +220,7 @@ export class ReceivableController {
   }
 
   @Post(':id/undo-cancel')
+  @HasPermission('edit', 'financial:receivable')
   @ApiOperation({
     summary: 'Desfaz o cancelamento de uma conta a receber',
   })
@@ -350,6 +357,52 @@ export class ReceivableController {
       installmentId,
       paidDate,
       paidAmount,
+    );
+  }
+
+  /**
+   * Endpoint dedicado para atualizar apenas a observação de uma conta a receber.
+   * Aceita tanto `financial:flow:edit` (visão do fluxo) quanto `financial:receivable:edit`.
+   */
+  @Patch(':id/notes')
+  @TenantResource('receivable')
+  @ApiOperation({ summary: 'Atualiza a observação de uma conta a receber' })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    description: 'ID da conta a receber',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Observação atualizada com sucesso.',
+  })
+  @ApiResponse({ status: 403, description: 'Sem permissão.' })
+  async updateNotes(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() body: { notes?: string | null },
+  ) {
+    const user = req.user;
+    const canEditFlow = await this.abacService.hasPermission(
+      user,
+      'edit',
+      'financial:flow',
+    );
+    const canEditReceivable = await this.abacService.hasPermission(
+      user,
+      'edit',
+      'financial:receivable',
+    );
+    if (!canEditFlow && !canEditReceivable) {
+      throw new ForbiddenException(
+        'Sem permissão para editar observações desta conta a receber.',
+      );
+    }
+    return this.receivableService.updateTitle(
+      id,
+      { notes: body.notes } as any,
+      user.userId,
+      user.name,
     );
   }
 }

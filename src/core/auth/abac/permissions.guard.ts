@@ -24,9 +24,7 @@ export class PermissionsGuard implements CanActivate {
     // Se a rota não exige permissão específica, libera qualquer usuário autenticado
     if (!requiredPermission) return true;
 
-    // A partir daqui, a rota exige permissão — usuário precisa ter um role atribuído
-    if (!user.role) return false;
-
+    // Delega ao abacService que já trata isAdmin, isSystemAdmin e falta de role
     return this.abacService.hasPermission(
       user,
       requiredPermission.action,

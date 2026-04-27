@@ -322,18 +322,44 @@ export function transformPdfPayment(quotationPayment: any) {
 }
 
 export function transformPdfTotal(quotation: QuotationPdfRaw) {
-  const commission = (quotation.quotationPayment as any)?.commission;
-  const commissionTotal = commission?.totalCommission || 0;
-  const commissionType = commission?.type || null;
-  const discountTotal = quotation.quotationPayment?.discountTotal || 0;
+  const payment = quotation.quotationPayment as any;
+  const commission = payment?.commission;
 
-  let finalTotal = quotation.totalValue - discountTotal;
-  if (commissionType === 'ADD' && commissionTotal > 0) {
-    finalTotal += commissionTotal;
+  // Valores da comissão
+  const commissionTotal = commission?.totalCommission || 0;
+  const commissionType = commission?.type || null; // 'ADD' | 'SUB' | null
+
+  // Desconto geral aplicado pelo usuário nas condições de pagamento
+  const discountTotal = payment?.discountTotal || 0;
+
+  // Subtotal = soma dos quotationProduct.finalValue (já com desconto por item)
+  // Este é o valor base sem desconto geral, sem frete e sem comissão
+  const subtotal = quotation.totalValue;
+
+  // Frete: o PDF exibe o frete separado e o soma no display final (finalTotalWithFreight),
+  // portanto o finalTotal retornado aqui NÃO deve incluir o frete.
+  const freightPrice = (quotation.deliveryInfo as any)?.value || 0;
+
+  // Se o backend salvou um finalValue no quotationPayment, ele representa o total
+  // calculado pelo frontend (inclui: subtotal + frete + comissão + acréscimos - desconto).
+  // Como o PDF soma o frete separado, precisamos subtrair o frete do savedFinalValue.
+  const savedFinalValue = payment?.finalValue;
+
+  let finalTotal: number;
+
+  if (savedFinalValue != null && savedFinalValue > 0) {
+    // Remover o frete do valor salvo pois o PDF o soma separado
+    finalTotal = savedFinalValue - freightPrice;
+  } else {
+    // Fallback: recalcular manualmente (para orçamentos antigos sem finalValue salvo)
+    finalTotal = subtotal - discountTotal;
+    if (commissionType === 'ADD' && commissionTotal > 0) {
+      finalTotal += commissionTotal;
+    }
   }
 
   return {
-    subtotal: quotation.totalValue,
+    subtotal,
     totalDiscount: discountTotal,
     commissionTotal: commissionType === 'ADD' ? commissionTotal : 0,
     finalTotal,

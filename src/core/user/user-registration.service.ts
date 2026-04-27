@@ -41,6 +41,8 @@ export class UserRegistrationService {
     companyName?: string,
     phone?: string,
   ) {
+    // Normalizar email para evitar problemas de case e espaços
+    email = email.toLowerCase().trim();
     const existToken = await this.prisma.mailVerification.findFirst({
       where: {
         email,
@@ -66,9 +68,14 @@ export class UserRegistrationService {
     let token: string;
     let isUnique: any;
     do {
-      token = randomInt(1000, 9999).toString();
+      // randomInt(min, max) é exclusivo no limite superior, então 10000 para incluir 9999
+      token = randomInt(1000, 10000).toString();
+      // Verificar unicidade apenas entre tokens ativos (não expirados) para evitar loop infinito
       isUnique = await this.prisma.mailVerification.findFirst({
-        where: { token },
+        where: {
+          token,
+          expiresAt: { gte: new Date() },
+        },
       });
     } while (isUnique);
 
@@ -119,9 +126,11 @@ export class UserRegistrationService {
   }
 
   async verifyEmail(body: { email: string; token: string }) {
+    // Normalizar email para evitar falhas por diferença de case ou espaços
+    const normalizedEmail = body.email.toLowerCase().trim();
     const user = await this.prisma.mailVerification.findFirst({
       where: {
-        email: body.email,
+        email: normalizedEmail,
         token: body.token,
         expiresAt: {
           gte: new Date(),
@@ -146,6 +155,8 @@ export class UserRegistrationService {
   }
 
   async createPassword(createUserDto: CreateUserDto) {
+    // Normalizar email
+    createUserDto.email = createUserDto.email.toLowerCase().trim();
     const isVerified = await this.prisma.mailVerification.findFirst({
       where: { email: createUserDto.email, verified: true },
     });
@@ -295,6 +306,8 @@ export class UserRegistrationService {
   }
 
   async create(createUserDto: CreateMailVerificationDto): Promise<any> {
+    // Normalizar email para garantir consistência
+    createUserDto.email = createUserDto.email.toLowerCase().trim();
     try {
       const user = await this.prisma.user.findFirst({
         where: { email: createUserDto.email },

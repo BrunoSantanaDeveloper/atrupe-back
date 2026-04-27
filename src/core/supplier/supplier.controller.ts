@@ -98,6 +98,7 @@ export class SupplierController {
   }
 
   @Patch(':id/toggle-status')
+  @HasPermission('edit', 'register:supplier')
   @ApiOperation({
     summary: 'Alterna o status (ativo/inativo) de um fornecedor',
   })
@@ -139,6 +140,7 @@ export class SupplierController {
   }
 
   @Post(':id/convert-to-client')
+  @HasPermission('edit', 'register:supplier')
   @ApiOperation({
     summary: 'Converte um fornecedor em cliente',
     description:
