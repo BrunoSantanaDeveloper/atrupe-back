@@ -164,7 +164,6 @@ export class PayableController {
   }
 
   @Patch(':id/upsert-installments')
-  @HasPermission('edit', 'financial:payable')
   @ApiResponse({
     status: 200,
     description: 'Parcelas adicionadas, editadas ou removidas com sucesso',
@@ -184,11 +183,27 @@ export class PayableController {
     @Body()
     updatePayableInstallmentsDto: UpdatePayableInstallmentsDto,
   ) {
+    const user = req.user;
+    const canEditFlow = await this.abacService.hasPermission(
+      user,
+      'edit',
+      'financial:flow',
+    );
+    const canEditPayable = await this.abacService.hasPermission(
+      user,
+      'edit',
+      'financial:payable',
+    );
+    if (!canEditFlow && !canEditPayable) {
+      throw new ForbiddenException(
+        'Sem permissão para editar parcelas desta conta a pagar.',
+      );
+    }
     return this.payableService.updateInstallments(
       id,
       updatePayableInstallmentsDto,
-      req.user.userId,
-      req.user.name,
+      user.userId,
+      user.name,
     );
   }
   @Patch(':id/cancel')
@@ -220,7 +235,6 @@ export class PayableController {
   }
 
   @Post(':id/undo-cancel')
-  @HasPermission('edit', 'financial:payable')
   @ApiOperation({
     summary: 'Desfaz o cancelamento de uma conta a pagar',
   })
@@ -242,11 +256,27 @@ export class PayableController {
     @Param('id') id: string,
     @Body() undoCancelPayableDto: UndoCancelPayableDto,
   ) {
+    const user = req.user;
+    const canEditFlow = await this.abacService.hasPermission(
+      user,
+      'edit',
+      'financial:flow',
+    );
+    const canEditPayable = await this.abacService.hasPermission(
+      user,
+      'edit',
+      'financial:payable',
+    );
+    if (!canEditFlow && !canEditPayable) {
+      throw new ForbiddenException(
+        'Sem permissão para desfazer cancelamento desta conta a pagar.',
+      );
+    }
     return await this.payableService.undoCancel(
       id,
       undoCancelPayableDto,
-      req.user.userId,
-      req.user.name,
+      user.userId,
+      user.name,
     );
   }
 

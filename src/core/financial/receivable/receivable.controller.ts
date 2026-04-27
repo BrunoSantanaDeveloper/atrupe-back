@@ -164,7 +164,6 @@ export class ReceivableController {
   }
 
   @Patch(':id/upsert-installments')
-  @HasPermission('edit', 'financial:receivable')
   @ApiResponse({
     status: 200,
     description: 'Parcelas adicionadas, editadas ou removidas com sucesso',
@@ -184,11 +183,27 @@ export class ReceivableController {
     @Body()
     updateReceivableInstallmentsDto: UpdateReceivableInstallmentsDto,
   ) {
+    const user = req.user;
+    const canEditFlow = await this.abacService.hasPermission(
+      user,
+      'edit',
+      'financial:flow',
+    );
+    const canEditReceivable = await this.abacService.hasPermission(
+      user,
+      'edit',
+      'financial:receivable',
+    );
+    if (!canEditFlow && !canEditReceivable) {
+      throw new ForbiddenException(
+        'Sem permissão para editar parcelas desta conta a receber.',
+      );
+    }
     return this.receivableService.updateInstallments(
       id,
       updateReceivableInstallmentsDto,
-      req.user.userId,
-      req.user.name,
+      user.userId,
+      user.name,
     );
   }
   @Patch(':id/cancel')
@@ -220,7 +235,6 @@ export class ReceivableController {
   }
 
   @Post(':id/undo-cancel')
-  @HasPermission('edit', 'financial:receivable')
   @ApiOperation({
     summary: 'Desfaz o cancelamento de uma conta a receber',
   })
@@ -242,11 +256,27 @@ export class ReceivableController {
     @Param('id') id: string,
     @Body() undoCancelReceivableDto: UndoCancelReceivableDto,
   ) {
+    const user = req.user;
+    const canEditFlow = await this.abacService.hasPermission(
+      user,
+      'edit',
+      'financial:flow',
+    );
+    const canEditReceivable = await this.abacService.hasPermission(
+      user,
+      'edit',
+      'financial:receivable',
+    );
+    if (!canEditFlow && !canEditReceivable) {
+      throw new ForbiddenException(
+        'Sem permissão para desfazer cancelamento desta conta a receber.',
+      );
+    }
     return await this.receivableService.undoCancel(
       id,
       undoCancelReceivableDto,
-      req.user.userId,
-      req.user.name,
+      user.userId,
+      user.name,
     );
   }
 
