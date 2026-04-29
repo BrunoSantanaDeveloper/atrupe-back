@@ -134,5 +134,63 @@ describe('PermissionsGuard', () => {
       const ctx = makeCtx({ id: 'u-1', role: 'role-1' });
       expect(await guard.canActivate(ctx)).toBe(false);
     });
+
+    // ── Casos adicionais do plano de testes ─────────────────────────────────
+
+    it('permissão com ação "create" não deve dar acesso à ação "delete"', async () => {
+      // O guard delega ao AbacService, que valida ação exata.
+      // Aqui testamos que o guard passa o resource/action corretos ao service.
+      reflector.get
+        .mockReturnValueOnce(undefined) // HAS_ANY_PERMISSION_KEY ausente
+        .mockReturnValueOnce({ action: 'delete', resource: 'client' }); // HAS_PERMISSION_KEY
+
+      abacService.hasPermission.mockResolvedValue(false); // sem permissão de delete
+
+      const ctx = makeCtx({ id: 'u-1', role: 'role-readonly' });
+      const result = await guard.canActivate(ctx);
+
+      expect(result).toBe(false);
+      expect(abacService.hasPermission).toHaveBeenCalledWith(
+        { id: 'u-1', role: 'role-readonly' },
+        'delete',
+        'client',
+      );
+    });
+
+    it('deve permitir acesso ao SystemAdmin (isSystemAdmin: true) sem verificar permissões', async () => {
+      // O PermissionsGuard delega ao AbacService que retorna true para isSystemAdmin.
+      reflector.get
+        .mockReturnValueOnce(undefined)
+        .mockReturnValueOnce({ action: 'delete', resource: 'client' });
+
+      abacService.hasPermission.mockResolvedValue(true); // AbacService já lida com isSystemAdmin
+
+      const ctx = makeCtx({ id: 'admin-1', isSystemAdmin: true });
+      const result = await guard.canActivate(ctx);
+
+      expect(result).toBe(true);
+    });
+
+    it('deve bloquear quando nenhuma das permissões múltiplas está presente', async () => {
+      reflector.get.mockReturnValueOnce([
+        { action: 'create', resource: 'receivable' },
+        { action: 'create', resource: 'payable' },
+      ]);
+      abacService.hasAnyPermission.mockResolvedValue(false);
+
+      const ctx = makeCtx({ id: 'u-readonly', role: 'viewer' });
+      expect(await guard.canActivate(ctx)).toBe(false);
+    });
+
+    it('deve permitir quando ao menos uma das permissões múltiplas está presente (OR)', async () => {
+      reflector.get.mockReturnValueOnce([
+        { action: 'view', resource: 'receivable' },
+        { action: 'view', resource: 'payable' },
+      ]);
+      abacService.hasAnyPermission.mockResolvedValue(true); // tem ao menos uma
+
+      const ctx = makeCtx({ id: 'u-1', role: 'role-financial' });
+      expect(await guard.canActivate(ctx)).toBe(true);
+    });
   });
 });

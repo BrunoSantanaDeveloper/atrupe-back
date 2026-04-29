@@ -919,3 +919,81 @@ export function validateFiscalItem(
 
   return results;
 }
+
+// ==================== CEP ====================
+
+export function validateCep(cep: string): ValidationResult {
+  if (!cep) {
+    return { valid: false, message: 'CEP é obrigatório' };
+  }
+  const cleanCep = cep.replace(/\D/g, '');
+  if (cleanCep.length !== 8) {
+    return { valid: false, message: 'CEP deve ter 8 dígitos numéricos' };
+  }
+  return { valid: true };
+}
+
+// ==================== CPF e CNPJ ====================
+
+export function validateCpf(cpf: string): ValidationResult {
+  if (!cpf) return { valid: false, message: 'CPF é obrigatório' };
+  const cleanCpf = cpf.replace(/\D/g, '');
+  if (cleanCpf.length !== 11)
+    return { valid: false, message: 'CPF deve ter 11 dígitos numéricos' };
+  if (/^(\d)\1+$/.test(cleanCpf))
+    return { valid: false, message: 'CPF inválido (dígitos repetidos)' };
+
+  let sum = 0;
+  for (let i = 1; i <= 9; i++)
+    sum += parseInt(cleanCpf.substring(i - 1, i)) * (11 - i);
+  let rest = (sum * 10) % 11;
+  if (rest === 10 || rest === 11) rest = 0;
+  if (rest !== parseInt(cleanCpf.substring(9, 10)))
+    return { valid: false, message: 'CPF inválido (1º dígito)' };
+
+  sum = 0;
+  for (let i = 1; i <= 10; i++)
+    sum += parseInt(cleanCpf.substring(i - 1, i)) * (12 - i);
+  rest = (sum * 10) % 11;
+  if (rest === 10 || rest === 11) rest = 0;
+  if (rest !== parseInt(cleanCpf.substring(10, 11)))
+    return { valid: false, message: 'CPF inválido (2º dígito)' };
+
+  return { valid: true };
+}
+
+export function validateCnpj(cnpj: string): ValidationResult {
+  if (!cnpj) return { valid: false, message: 'CNPJ é obrigatório' };
+  const cleanCnpj = cnpj.replace(/\D/g, '');
+  if (cleanCnpj.length !== 14)
+    return { valid: false, message: 'CNPJ deve ter 14 dígitos numéricos' };
+  if (/^(\d)\1+$/.test(cleanCnpj))
+    return { valid: false, message: 'CNPJ inválido (dígitos repetidos)' };
+
+  let size = cleanCnpj.length - 2;
+  let numbers = cleanCnpj.substring(0, size);
+  const digits = cleanCnpj.substring(size);
+  let sum = 0;
+  let pos = size - 7;
+  for (let i = size; i >= 1; i--) {
+    sum += parseInt(numbers.charAt(size - i)) * pos--;
+    if (pos < 2) pos = 9;
+  }
+  let result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+  if (result !== parseInt(digits.charAt(0)))
+    return { valid: false, message: 'CNPJ inválido (1º dígito)' };
+
+  size += 1;
+  numbers = cleanCnpj.substring(0, size);
+  sum = 0;
+  pos = size - 7;
+  for (let i = size; i >= 1; i--) {
+    sum += parseInt(numbers.charAt(size - i)) * pos--;
+    if (pos < 2) pos = 9;
+  }
+  result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+  if (result !== parseInt(digits.charAt(1)))
+    return { valid: false, message: 'CNPJ inválido (2º dígito)' };
+
+  return { valid: true };
+}

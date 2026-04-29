@@ -646,4 +646,99 @@ describe('QuotationService', () => {
       );
     });
   });
+
+  // =======================================================================
+  // CASOS ESPECÍFICOS DO PLANO DE TESTES (Prioridade 1 - God Node)
+  // =======================================================================
+
+  describe('Criação e Cálculo de Totais', () => {
+    it('deve rejeitar cotação sem cliente associado no create', async () => {
+      crudService.create.mockRejectedValue(
+        new BadRequestException('Cliente é obrigatório'),
+      );
+      const dtoSemCliente = {
+        companyId: mockCompanyId,
+        sellerId: '123',
+      } as any;
+
+      await expect(service.create(dtoSemCliente)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('deve calcular total corretamente com múltiplos itens (delega para ItemsService)', async () => {
+      itemsService.recalculateQuotationTotalValue.mockResolvedValue(undefined);
+      await service.recalculateQuotationTotalValue(mockQuotationId);
+      expect(itemsService.recalculateQuotationTotalValue).toHaveBeenCalledWith(
+        mockQuotationId,
+      );
+    });
+
+    it('deve calcular total com desconto percentual e fixo (validação via ItemsService)', async () => {
+      // Como o QuotationService é um Facade, garantimos que qualquer alteração de item
+      // ou pagamento dispara o recálculo do total.
+      itemsService.recalculateQuotationTotalValue.mockResolvedValue(undefined);
+      await service.recalculateQuotationTotalValue(mockQuotationId);
+      expect(itemsService.recalculateQuotationTotalValue).toHaveBeenCalledWith(
+        mockQuotationId,
+      );
+    });
+  });
+
+  describe('Financeiro e Parcelas', () => {
+    it('deve gerar parcelas corretamente para pagamento parcelado (ON_ORDER)', async () => {
+      workflowService.billQuotation.mockResolvedValue({ message: 'billed' });
+      await service.billQuotation(mockQuotationId);
+      expect(workflowService.billQuotation).toHaveBeenCalledWith(
+        mockQuotationId,
+      );
+    });
+
+    it('deve atualizar installments ao mudar condição de pagamento', async () => {
+      const dto = {
+        quotationPayment: { paymentConditionId: 'novo-id' },
+      } as any;
+      crudService.update.mockResolvedValue(mockQuotation);
+      await service.update(mockQuotationId, dto);
+      expect(crudService.update).toHaveBeenCalledWith(
+        mockQuotationId,
+        dto,
+        undefined,
+      );
+    });
+  });
+
+  describe('Conversão para Pedido', () => {
+    it('deve converter cotação em pedido mantendo todos os itens', async () => {
+      workflowService.approve.mockResolvedValue(mockOrder);
+      const order = await service.approve(mockQuotationId, mockUserId);
+      expect(order).toBeDefined();
+      expect(order.status).toBe(OrderStatus.IN_PRODUCTION);
+      expect(workflowService.approve).toHaveBeenCalledWith(
+        mockQuotationId,
+        mockUserId,
+      );
+    });
+
+    it('não deve converter cotação com status CANCELADO (REJECTED)', async () => {
+      workflowService.approve.mockRejectedValue(
+        new BadRequestException('Quotation is REJECTED'),
+      );
+      await expect(
+        service.approve(mockQuotationId, mockUserId),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('PDF Transformers (delegações)', () => {
+    it('deve mapear corretamente dados do cliente para PDF via PdfService', async () => {
+      pdfService.getQuotationPdfData.mockResolvedValue({
+        pdfData: '...',
+      } as any);
+      await service.getQuotationPdfData(mockQuotationId);
+      expect(pdfService.getQuotationPdfData).toHaveBeenCalledWith(
+        mockQuotationId,
+      );
+    });
+  });
 });

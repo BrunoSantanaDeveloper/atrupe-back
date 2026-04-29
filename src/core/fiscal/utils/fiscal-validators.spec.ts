@@ -9,6 +9,9 @@ import {
   validateUf,
   getUfCode,
   validateFiscalItem,
+  validateCep,
+  validateCpf,
+  validateCnpj,
 } from './fiscal-validators';
 
 describe('Fiscal Validators', () => {
@@ -237,6 +240,37 @@ describe('Fiscal Validators', () => {
         true, // isSimples
       );
       expect(results.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('CEP', () => {
+    it('deve validar formato correto de CEP', () => {
+      expect(validateCep('12345-678').valid).toBe(true);
+      expect(validateCep('12345678').valid).toBe(true);
+    });
+
+    it('deve rejeitar CEP incompleto ou com letras', () => {
+      expect(validateCep('12345-67').valid).toBe(false);
+      expect(validateCep('12345-ABC').valid).toBe(false);
+      expect(validateCep('').valid).toBe(false);
+    });
+  });
+
+  describe('CPF e CNPJ', () => {
+    it('deve validar cálculo de dígito verificador do CNPJ', () => {
+      expect(validateCnpj('11.222.333/0001-81').valid).toBe(true); // Um CNPJ válido para teste (exemplo gerado aleatoriamente) - Wait, let's use a widely known valid mock like "00.000.000/0001-91"
+      expect(validateCnpj('00.000.000/0001-91').valid).toBe(true); // Banco do Brasil
+      expect(validateCnpj('11.222.333/0001-00').valid).toBe(false); // Invalido
+    });
+
+    it('deve bloquear CPFs notoriamente inválidos (ex: 111.111.111-11)', () => {
+      expect(validateCpf('111.111.111-11').valid).toBe(false);
+      expect(validateCpf('000.000.000-00').valid).toBe(false);
+    });
+
+    it('deve validar cálculo de dígito verificador do CPF', () => {
+      expect(validateCpf('52998224725').valid).toBe(true); // Gerador valido
+      expect(validateCpf('123.456.789-10').valid).toBe(false); // Invalido
     });
   });
 });

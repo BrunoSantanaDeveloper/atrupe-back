@@ -29,6 +29,13 @@ pipelines:
                   docker build --no-cache --cpu-quota=50000 --memory=512m . -t atrupe-image-dev:latest
                   docker service update --image atrupe-image-dev:latest atrupe-dev_atrupe --force
 
+      - step:
+          name: Smoke Test (Homologação)
+          image: mcr.microsoft.com/powershell:latest
+          script:
+            - sleep 15
+            - pwsh ./smoke-test-homolog.ps1
+
     main:
       - step:
           name: Build and Test Backend
