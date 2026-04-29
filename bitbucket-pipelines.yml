@@ -1,0 +1,57 @@
+image: node:18
+
+pipelines:
+  branches:
+    dev:
+      - step:
+          name: Build and Test Backend
+          caches:
+            - node
+          script:
+            - npm ci
+            - npm run build
+            - npm run test
+      - step:
+          name: Deploy to VPS (Homologação)
+          deployment: test
+          script:
+            - pipe: atlassian/ssh-run:0.6.0
+              variables:
+                SSH_USER: $VPS_USERNAME
+                SERVER: $VPS_HOST
+                SSH_KEY: $VPS_SSH_KEY
+                COMMAND: |
+                  cd /home/ubuntu/atrupe-back
+                  git config --global --add safe.directory /home/ubuntu/atrupe-back
+                  git stash
+                  git checkout dev
+                  git pull origin dev
+                  docker build --no-cache --cpu-quota=50000 --memory=512m . -t atrupe-image-dev:latest
+                  docker service update --image atrupe-image-dev:latest atrupe-dev_atrupe --force
+
+    main:
+      - step:
+          name: Build and Test Backend
+          caches:
+            - node
+          script:
+            - npm ci
+            - npm run build
+            - npm run test
+      - step:
+          name: Deploy to VPS (Produção)
+          deployment: production
+          script:
+            - pipe: atlassian/ssh-run:0.6.0
+              variables:
+                SSH_USER: $VPS_USERNAME
+                SERVER: $VPS_HOST
+                SSH_KEY: $VPS_SSH_KEY
+                COMMAND: |
+                  cd /home/ubuntu/atrupe-back
+                  git config --global --add safe.directory /home/ubuntu/atrupe-back
+                  git stash
+                  git checkout main
+                  git pull origin main
+                  docker build --no-cache --cpu-quota=50000 --memory=512m . -t atrupe-image:latest
+                  docker service update --image atrupe-image:latest atrupe-api_atrupe --force
