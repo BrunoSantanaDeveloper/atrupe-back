@@ -35,6 +35,8 @@ pipelines:
           script:
             - sleep 15
             - pwsh ./smoke-test-homolog.ps1
+          after-script:
+            - pwsh -Command "if (`$env:BITBUCKET_EXIT_CODE -eq 0) { `$status = '✅ SUCESSO' } else { `$status = '❌ FALHA' }; if (`$env:NOTIFICATION_WEBHOOK) { Invoke-RestMethod -Uri `$env:NOTIFICATION_WEBHOOK -Method Post -Body (@{content='Pipeline Homologação (Atrupe): `$status'} | ConvertTo-Json) -ContentType 'application/json' }"
 
     main:
       - step:
