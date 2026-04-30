@@ -116,9 +116,9 @@ if ($smokeEmail -and $smokePassword) {
         Write-Host "    PASS - Login de smoke test OK" -ForegroundColor Green
 
         # --- Teste 7: Listar cotações ---
-        Write-Host "[7] Verificando GET /quotation (listagem autenticada)..." -ForegroundColor Yellow
-        $quotations = Invoke-RestMethod -Uri "$API_BASE/quotation?page=1&limit=1" -Headers $headers -TimeoutSec 10
-        Write-Host "    PASS - Rota /quotation respondeu OK" -ForegroundColor Green
+        Write-Host "[7] Verificando GET /sale/quotation (listagem autenticada)..." -ForegroundColor Yellow
+        $quotations = Invoke-RestMethod -Uri "$API_BASE/sale/quotation?page=1&limit=1" -Headers $headers -TimeoutSec 10
+        Write-Host "    PASS - Rota /sale/quotation respondeu OK" -ForegroundColor Green
 
         # --- Teste 8: Listar contas a receber ---
         Write-Host "[8] Verificando GET /financial/receivable..." -ForegroundColor Yellow
