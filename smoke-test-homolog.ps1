@@ -102,6 +102,42 @@ try {
     }
 }
 
+# --- Autenticação com conta de smoke test ---
+$smokeEmail = $env:SMOKE_USER_EMAIL
+$smokePassword = $env:SMOKE_USER_PASSWORD
+
+if ($smokeEmail -and $smokePassword) {
+    Write-Host "[6] Autenticando com conta de smoke test..." -ForegroundColor Yellow
+    try {
+        $loginBody = "{`"username`":`"$smokeEmail`",`"password`":`"$smokePassword`"}"
+        $loginResult = Invoke-RestMethod -Uri "$API_BASE/auth/login" -Method Post -Body $loginBody -ContentType "application/json" -TimeoutSec 15
+        $token = $loginResult.access_token
+        $headers = @{ Authorization = "Bearer $token" }
+        Write-Host "    PASS - Login de smoke test OK" -ForegroundColor Green
+
+        # --- Teste 7: Listar cotações ---
+        Write-Host "[7] Verificando GET /quotation (listagem autenticada)..." -ForegroundColor Yellow
+        $quotations = Invoke-RestMethod -Uri "$API_BASE/quotation?page=1&limit=1" -Headers $headers -TimeoutSec 10
+        Write-Host "    PASS - Rota /quotation respondeu OK" -ForegroundColor Green
+
+        # --- Teste 8: Listar contas a receber ---
+        Write-Host "[8] Verificando GET /financial/receivable..." -ForegroundColor Yellow
+        $receivables = Invoke-RestMethod -Uri "$API_BASE/financial/receivable?page=1&limit=1" -Headers $headers -TimeoutSec 10
+        Write-Host "    PASS - Rota /financial/receivable respondeu OK" -ForegroundColor Green
+
+        # --- Teste 9: Listar contas a pagar ---
+        Write-Host "[9] Verificando GET /financial/payable..." -ForegroundColor Yellow
+        $payables = Invoke-RestMethod -Uri "$API_BASE/financial/payable?page=1&limit=1" -Headers $headers -TimeoutSec 10
+        Write-Host "    PASS - Rota /financial/payable respondeu OK" -ForegroundColor Green
+
+    } catch {
+        Write-Host "    FAIL - Smoke autenticado falhou: $($_.Exception.Message)" -ForegroundColor Red
+        $hasErrors = $true
+    }
+} else {
+    Write-Host "[6-9] SKIP - Variáveis SMOKE_USER_EMAIL/PASSWORD não configuradas" -ForegroundColor Yellow
+}
+
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "  Smoke tests concluidos" -ForegroundColor Cyan

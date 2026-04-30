@@ -15,7 +15,7 @@ import { PayableService } from './payable.service';
 
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
-import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
 import { AbacService } from 'src/core/auth/abac/abac.service';
 import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
 import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
@@ -54,7 +54,10 @@ export class PayableController {
   ) {}
 
   @Post()
-  @HasPermission('create', 'financial:payable')
+  @HasAnyPermission(
+    { action: 'create', resource: 'financial:payable' },
+    { action: 'create', resource: 'financial:flow' },
+  )
   @ApiOperation({ summary: 'Cria uma nova conta a pagar com parcelas' })
   @ApiBody({
     description: 'Dados da nova conta a pagar',
@@ -74,7 +77,10 @@ export class PayableController {
   }
 
   @Get()
-  @HasPermission('view', 'financial:payable')
+  @HasAnyPermission(
+    { action: 'view', resource: 'financial:payable' },
+    { action: 'view', resource: 'financial:flow' },
+  )
   @ApiOperation({ summary: 'Obtém a lista de todas as contas a pagar' })
   @ApiResponse({
     status: 200,
@@ -141,7 +147,10 @@ export class PayableController {
 
   @Patch(':id')
   @TenantResource('payable')
-  @HasPermission('edit', 'financial:payable')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:payable' },
+    { action: 'edit', resource: 'financial:flow' },
+  )
   @ApiOperation({ summary: 'Atualizar dados do título' })
   @ApiParam({
     name: 'id',
@@ -208,7 +217,10 @@ export class PayableController {
   }
   @Patch(':id/cancel')
   @TenantResource('payable')
-  @HasPermission('delete', 'financial:payable')
+  @HasAnyPermission(
+    { action: 'delete', resource: 'financial:payable' },
+    { action: 'delete', resource: 'financial:flow' },
+  )
   @ApiOperation({
     summary: 'Cancela uma conta a pagar e suas parcelas pendentes',
   })
@@ -346,7 +358,10 @@ export class PayableController {
 
   @Delete(':id')
   @TenantResource('payable')
-  @HasPermission('delete', 'financial:payable')
+  @HasAnyPermission(
+    { action: 'delete', resource: 'financial:payable' },
+    { action: 'delete', resource: 'financial:flow' },
+  )
   @ApiOperation({ summary: 'Remove uma conta a pagar pelo ID' })
   @ApiParam({
     name: 'id',
