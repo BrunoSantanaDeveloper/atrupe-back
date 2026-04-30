@@ -93,14 +93,13 @@ describe('PlanControlService', () => {
       );
     });
 
-    it('should throw BadRequestException when company has no active subscription', async () => {
+    it('should return null when company has no active subscription', async () => {
       mockPrismaService.company.findUnique.mockResolvedValue({
         Subscription: [],
       });
 
-      await expect(service.getCompanyPlanInfo('company-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      const result = await service.getCompanyPlanInfo('company-1');
+      expect(result).toBeNull();
     });
 
     it('should return plan info with merged features (plan + subscription)', async () => {

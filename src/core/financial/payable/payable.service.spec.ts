@@ -162,6 +162,9 @@ describe('PayableService', () => {
         const tx = {
           payable: {
             create: jest.fn().mockResolvedValue(mockCreatedPayable),
+            update: jest
+              .fn()
+              .mockResolvedValue({ ...mockCreatedPayable, status: 'PENDING' }),
           },
           payableInstallment: {
             createMany: jest.fn().mockResolvedValue({ count: 2 }),
@@ -180,9 +183,14 @@ describe('PayableService', () => {
               },
             ]),
           },
+          payableHistory: { create: jest.fn() },
           bankAccount: { findFirst: jest.fn() },
           cashRegister: { findFirst: jest.fn() },
           transaction: { create: jest.fn() },
+          supplier: {
+            findUnique: jest.fn().mockResolvedValue({ name: 'Test Supplier' }),
+          },
+          employee: { findUnique: jest.fn().mockResolvedValue(null) },
         };
         return callback(tx);
       });
@@ -209,10 +217,14 @@ describe('PayableService', () => {
         totalAmount: 1000,
       };
 
+      let capturedHistory: any;
       prisma.$transaction.mockImplementation(async (callback) => {
         const tx = {
           payable: {
             create: jest.fn().mockResolvedValue(mockCreatedPayable),
+            update: jest
+              .fn()
+              .mockResolvedValue({ ...mockCreatedPayable, status: 'PENDING' }),
           },
           payableInstallment: {
             createMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -225,9 +237,19 @@ describe('PayableService', () => {
               },
             ]),
           },
+          payableHistory: {
+            create: jest.fn().mockImplementation((args) => {
+              capturedHistory = args.data;
+              return { id: 'history-1' };
+            }),
+          },
           bankAccount: { findFirst: jest.fn() },
           cashRegister: { findFirst: jest.fn() },
           transaction: { create: jest.fn() },
+          supplier: {
+            findUnique: jest.fn().mockResolvedValue({ name: 'Test Supplier' }),
+          },
+          employee: { findUnique: jest.fn().mockResolvedValue(null) },
         };
         return callback(tx);
       });
@@ -243,10 +265,12 @@ describe('PayableService', () => {
         mockUserName,
       );
 
-      expect(historyService.createPayableHistory).toHaveBeenCalledWith(
+      expect(capturedHistory).toBeDefined();
+      expect(capturedHistory).toEqual(
         expect.objectContaining({
           payableId: mockPayableId,
           action: 'CREATE',
+          createdBy: mockUserId,
         }),
       );
     });
@@ -266,6 +290,9 @@ describe('PayableService', () => {
               capturedData = args.data;
               return { id: mockPayableId, totalAmount: 500 };
             }),
+            update: jest
+              .fn()
+              .mockResolvedValue({ id: mockPayableId, status: 'PENDING' }),
           },
           payableInstallment: {
             createMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -278,9 +305,12 @@ describe('PayableService', () => {
               },
             ]),
           },
+          payableHistory: { create: jest.fn() },
           bankAccount: { findFirst: jest.fn() },
           cashRegister: { findFirst: jest.fn() },
           transaction: { create: jest.fn() },
+          supplier: { findUnique: jest.fn().mockResolvedValue(null) },
+          employee: { findUnique: jest.fn().mockResolvedValue(null) },
         };
         return callback(tx);
       });
@@ -662,6 +692,11 @@ describe('PayableService', () => {
               id: mockInstallmentId,
               status: 'PAID',
               paidAmount: 450,
+            }),
+            findFirst: jest.fn().mockResolvedValue({
+              id: mockInstallmentId,
+              paidAmount: 450,
+              bankAccountId: mockBankAccountId,
             }),
           },
           payable: {
