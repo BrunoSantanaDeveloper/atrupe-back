@@ -62,4 +62,17 @@ export class AbacService {
       return false;
     });
   }
+  /**
+   * Verifica se o usuário tem PELO MENOS UMA das permissões listadas (lógica OR).
+   * Usado por @HasAnyPermission para suportar recursos com alias (ex: flow ↔ receivable/payable).
+   */
+  async hasAnyPermission(
+    user: any,
+    permissions: { action: string; resource: string }[],
+  ): Promise<boolean> {
+    for (const { action, resource } of permissions) {
+      if (await this.hasPermission(user, action, resource)) return true;
+    }
+    return false;
+  }
 }

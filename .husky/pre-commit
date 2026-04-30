@@ -1,4 +1,26 @@
 #!/bin/sh
 . "$(dirname "$0")/_/husky.sh"
 
+# 1. Lint apenas os arquivos staged
 npx lint-staged
+
+# 2. Detecta specs afetados pelo commit atual:
+#    a) .spec.ts alterados diretamente
+#    b) .service.ts alterados → roda o .service.spec.ts correspondente (se existir)
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+
+SPEC_FILES=$(echo "$STAGED" | grep '\.spec\.ts$' || true)
+
+SERVICE_SPECS=$(echo "$STAGED" | grep '\.service\.ts$' | sed 's/\.service\.ts$/.service.spec.ts/' | while read f; do
+  [ -f "$f" ] && echo "$f"
+done || true)
+
+ALL_SPECS=$(printf '%s\n%s\n' "$SPEC_FILES" "$SERVICE_SPECS" | sort -u | grep -v '^$' || true)
+
+if [ -n "$ALL_SPECS" ]; then
+  echo "🏃 Rodando testes afetados pelo commit..."
+  echo "$ALL_SPECS" | tr '\n' '\n'
+  # Passa cada spec como argumento separado para o Jest
+  echo "$ALL_SPECS" | xargs npx jest --passWithNoTests --no-coverage
+fi
+
