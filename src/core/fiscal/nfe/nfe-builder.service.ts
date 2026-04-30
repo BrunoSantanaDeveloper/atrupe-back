@@ -193,7 +193,7 @@ export class NfeBuilderService {
   ): any {
     const cleanDoc = dto.destCnpjCpf?.replace(/\D/g, '') || '';
     const isHomologacao =
-      config.ambiente === 'HOMOLOGACAO' || config.ambiente !== 1;
+      config.ambiente === 'HOMOLOGACAO' || config.ambiente === 2;
     const indIEDest = dto.destIndIEDest ?? 9;
 
     return {
