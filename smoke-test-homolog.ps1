@@ -11,11 +11,11 @@ public class TrustAll : ICertificatePolicy {
 [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAll
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$API_BASE = "https://dev.atrupe.com.br"
+$API_BASE = if ($env:API_URL) { $env:API_URL } else { "https://dev.atrupe.com.br" }
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "  SMOKE TEST - Homolog API (dev.atrupe.com.br)" -ForegroundColor Cyan
+Write-Host "  SMOKE TEST - API ($API_BASE)" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 $hasErrors = $false

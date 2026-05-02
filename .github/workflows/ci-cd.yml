@@ -93,8 +93,7 @@ jobs:
         shell: pwsh
         env:
           NOTIFICATION_WEBHOOK: ${{ secrets.NOTIFICATION_WEBHOOK }}
-          SMOKE_USER_EMAIL: ${{ secrets.SMOKE_USER_EMAIL }}
-          SMOKE_USER_PASSWORD: ${{ secrets.SMOKE_USER_PASSWORD }}
+          API_URL: ${{ secrets.PROD_API_URL || 'https://api.atrupe.com.br' }}
         run: |
           Start-Sleep -Seconds 30
           pwsh ./smoke-test-homolog.ps1
