@@ -176,13 +176,21 @@ export class FiscalOnboardingService {
       orderBy: { createdAt: 'desc' },
     });
 
-    if (!request) {
-      return { status: 'NOT_STARTED', hasConfig: false };
-    }
-
     const hasConfig = await this.prisma.invoicyConfig.findFirst({
       where: { companyId, isDefault: true },
     });
+
+    if (!request) {
+      if (hasConfig) {
+        // Se pulou o onboarding wizard e criou manual, consideramos ATIVO
+        return {
+          status: 'ACTIVE',
+          hasConfig: true,
+          createdAt: hasConfig.createdAt,
+        };
+      }
+      return { status: 'NOT_STARTED', hasConfig: false };
+    }
 
     return {
       status: request.status,
