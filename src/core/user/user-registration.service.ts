@@ -60,7 +60,10 @@ export class UserRegistrationService {
         message: 'Email já possui um token de validação.',
         canResendIn: timeUntilExpiry,
       };
-      if (process.env.APP_ENV !== 'production') {
+      if (
+        process.env.APP_ENV !== 'production' ||
+        email.endsWith('@atrupe-test.com')
+      ) {
         response.devToken = existToken.token;
       }
       return response;
@@ -118,7 +121,10 @@ export class UserRegistrationService {
       message: 'Email de validação enviado com sucesso.',
     };
 
-    if (process.env.APP_ENV !== 'production') {
+    if (
+      process.env.APP_ENV !== 'production' ||
+      email.endsWith('@atrupe-test.com')
+    ) {
       response.devToken = token;
     }
 
