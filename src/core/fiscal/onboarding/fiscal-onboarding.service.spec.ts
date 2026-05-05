@@ -24,6 +24,16 @@ describe('FiscalOnboardingService', () => {
       findFirst: jest.fn(),
       create: jest.fn(),
     },
+    cfopConfig: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({}),
+    },
+    product: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    productFiscalData: {
+      create: jest.fn().mockResolvedValue({}),
+    },
     $transaction: jest.fn((callback) => callback(mockPrisma)),
   };
 

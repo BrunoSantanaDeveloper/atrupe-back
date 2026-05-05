@@ -157,7 +157,79 @@ export class FiscalOnboardingService {
           resolvedAt: new Date(),
         },
       });
+
+      // Execute auto-seeding
+      await this.seedDefaultFiscalData(tx, companyId);
     });
+  }
+
+  private async seedDefaultFiscalData(tx: any, companyId: string) {
+    // 1. Seed default CFOPs
+    const defaultCfops = [
+      {
+        code: '5101',
+        description: 'Venda de produção do estabelecimento',
+        type: 'SAIDA',
+      },
+      {
+        code: '5102',
+        description: 'Venda de mercadoria adquirida ou recebida de terceiros',
+        type: 'SAIDA',
+      },
+      {
+        code: '6101',
+        description: 'Venda de produção do estabelecimento (fora do estado)',
+        type: 'SAIDA',
+      },
+      {
+        code: '6102',
+        description:
+          'Venda de mercadoria adquirida ou recebida de terceiros (fora do estado)',
+        type: 'SAIDA',
+      },
+    ];
+
+    for (const cfop of defaultCfops) {
+      const exists = await tx.cfopConfig.findFirst({
+        where: { companyId, code: cfop.code },
+      });
+      if (!exists) {
+        await tx.cfopConfig.create({
+          data: {
+            companyId,
+            code: cfop.code,
+            description: cfop.description,
+            type: cfop.type,
+            isActive: true,
+          },
+        });
+      }
+    }
+
+    // 2. Seed default ProductFiscalData for all existing products of the company
+    const products = await tx.product.findMany({
+      where: { companyId },
+      include: { fiscalData: true },
+    });
+
+    for (const product of products) {
+      if (!product.fiscalData) {
+        await tx.productFiscalData.create({
+          data: {
+            productId: product.id,
+            ncm: '00000000',
+            cfopInState: '5102',
+            cfopOutState: '6102',
+            icmsOrigin: '0',
+            icmsCst: '102',
+            pisCst: '99',
+            cofinsCst: '99',
+            ipiCst: '99',
+            codClassificacao: '000001',
+          },
+        });
+      }
+    }
   }
 
   private async markForReview(requestId: string, errorMessage: string) {
