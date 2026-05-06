@@ -797,4 +797,53 @@ export class InvoicyHttpService {
 
     return response.data;
   }
+
+  /**
+   * Update digital certificate for an already-registered company in Invoicy.
+   * Uses the partner PUT /companies endpoint to update company data including certificate.
+   */
+  async updateCompanyCertificate(data: {
+    cnpj: string;
+    certificate: string;
+    certificatePassword: string;
+    certificateType?: string;
+  }): Promise<void> {
+    this.logger.log(
+      `Updating certificate for company ${this.maskCnpj(data.cnpj)} in Invoicy`,
+    );
+
+    const token = await this.authenticateAsPartner();
+    const baseUrl = this.getBaseUrl('HOMOLOGACAO');
+
+    const payload = [
+      {
+        EmpCNPJ: data.cnpj.replace(/\D/g, ''),
+        Certificado: {
+          ArquivoPFX: data.certificate,
+          Senha: data.certificatePassword,
+          TipoCertificado: data.certificateType || 'A1',
+        },
+      },
+    ];
+
+    try {
+      await this.httpClient.put(`${baseUrl}/companies`, payload, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      this.logger.log(
+        `Certificate updated successfully for ${this.maskCnpj(data.cnpj)}`,
+      );
+    } catch (error) {
+      const msg =
+        error.response?.data?.Mensagem ||
+        error.response?.data?.message ||
+        error.message;
+      this.logger.error(`Failed to update certificate: ${msg}`);
+      throw new Error(`Erro ao atualizar certificado no Invoicy: ${msg}`);
+    }
+  }
 }

@@ -382,7 +382,42 @@ export class InvoicyService {
     return { success: true };
   }
 
-  // deleteConfig - alias removido, usar delete() com id diretamente
+  /**
+   * Atualizar certificado digital do emissor.
+   * Envia o novo certificado para o Invoicy via API de parceiro.
+   */
+  async updateCertificate(
+    id: string,
+    certificate: string,
+    certificatePassword: string,
+    certificateType = 'A1',
+  ) {
+    const config = await this.prisma.invoicyConfig.findUnique({
+      where: { id },
+      include: { company: true },
+    });
+
+    if (!config) {
+      throw new NotFoundException('Emissor não encontrado');
+    }
+
+    const cnpj = config.company?.cnpj;
+    if (!cnpj) {
+      throw new NotFoundException('CNPJ da empresa não encontrado');
+    }
+
+    await this.invoicyHttpService.updateCompanyCertificate({
+      cnpj,
+      certificate,
+      certificatePassword,
+      certificateType,
+    });
+
+    // Limpar cache de token pois credenciais podem ter mudado
+    this.invoicyHttpService.clearTokenCache(config.companyId);
+
+    return { success: true, message: 'Certificado atualizado com sucesso' };
+  }
 
   /**
    * Definir emissor como padrão

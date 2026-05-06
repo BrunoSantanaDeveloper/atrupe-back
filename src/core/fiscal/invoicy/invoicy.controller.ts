@@ -91,6 +91,27 @@ export class EmissoresController {
     const success = await this.invoicyService.testConnection(id);
     return { success };
   }
+
+  @Patch(':id/certificate')
+  @HasPermission('edit', 'nota_fiscal:config')
+  @ApiOperation({ summary: 'Atualizar certificado digital do emissor' })
+  @ApiParam({ name: 'id', description: 'ID do emissor' })
+  async updateCertificate(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      certificate: string;
+      certificatePassword: string;
+      certificateType?: string;
+    },
+  ) {
+    return this.invoicyService.updateCertificate(
+      id,
+      body.certificate,
+      body.certificatePassword,
+      body.certificateType,
+    );
+  }
 }
 
 // Mantém o controller legado para compatibilidade
