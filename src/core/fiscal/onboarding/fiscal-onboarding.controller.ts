@@ -97,4 +97,18 @@ export class FiscalOnboardingController {
   async retry(@Param('id') id: string) {
     return this.fiscalOnboardingService.adminRetry(id);
   }
+
+  @Post('company/:companyId/seed-defaults')
+  @UseGuards(SystemAdminGuard)
+  @ApiOperation({
+    summary:
+      'Aplicar CFOPs e dados fiscais padrão a empresa já ativa (SystemAdmin)',
+    description:
+      'Útil para empresas que foram ativadas antes do seed automático existir. Idempotente — não sobrescreve dados já existentes.',
+  })
+  @ApiParam({ name: 'companyId', description: 'Company ID' })
+  @ApiResponse({ status: 200, description: 'Seed applied' })
+  async seedDefaults(@Param('companyId') companyId: string) {
+    return this.fiscalOnboardingService.seedFiscalDataForCompany(companyId);
+  }
 }

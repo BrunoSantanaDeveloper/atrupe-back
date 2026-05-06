@@ -204,8 +204,9 @@ export class FiscalOnboardingService {
   }
 
   private async seedDefaultFiscalData(tx: any, companyId: string) {
-    // 1. Seed default CFOPs
+    // 1. Seed default CFOPs (essenciais para Simples Nacional)
     const defaultCfops = [
+      // Saídas — Mercadorias
       {
         code: '5101',
         description: 'Venda de produção do estabelecimento',
@@ -216,6 +217,7 @@ export class FiscalOnboardingService {
         description: 'Venda de mercadoria adquirida ou recebida de terceiros',
         type: 'SAIDA',
       },
+      // Saídas — Fora do estado
       {
         code: '6101',
         description: 'Venda de produção do estabelecimento (fora do estado)',
@@ -226,6 +228,25 @@ export class FiscalOnboardingService {
         description:
           'Venda de mercadoria adquirida ou recebida de terceiros (fora do estado)',
         type: 'SAIDA',
+      },
+      // Saídas — Serviços (NFS-e)
+      {
+        code: '5933',
+        description:
+          'Prestação de serviços compreendidos em mais de uma tributação municipal',
+        type: 'SAIDA',
+      },
+      // Entradas — Compras
+      {
+        code: '1102',
+        description:
+          'Compra para comercialização (entrada de mercadoria adquirida de terceiro)',
+        type: 'ENTRADA',
+      },
+      {
+        code: '1403',
+        description: 'Compra para uso ou consumo',
+        type: 'ENTRADA',
       },
     ];
 
@@ -243,33 +264,56 @@ export class FiscalOnboardingService {
             isActive: true,
           },
         });
+        this.logger.log(`Seeded CFOP ${cfop.code} for company ${companyId}`);
       }
     }
 
-    // 2. Seed default ProductFiscalData for all existing products of the company
+    // 2. Seed ProductFiscalData for ALL existing products without fiscal data
     const products = await tx.product.findMany({
       where: { companyId },
       include: { fiscalData: true },
     });
 
+    let seededCount = 0;
     for (const product of products) {
       if (!product.fiscalData) {
         await tx.productFiscalData.create({
           data: {
             productId: product.id,
-            ncm: '00000000',
-            cfopInState: '5102',
-            cfopOutState: '6102',
-            icmsOrigin: '0',
-            icmsCst: '102',
-            pisCst: '99',
-            cofinsCst: '99',
-            ipiCst: '99',
-            codClassificacao: '000001',
+            ncm: '00000000', // Placeholder — usuário deve atualizar por produto
+            cfopInState: '5102', // Padrão: venda de mercadoria terceiros (dentro do estado)
+            cfopOutState: '6102', // Padrão: venda de mercadoria terceiros (fora do estado)
+            commercialUnit: 'UN',
+            icmsOrigin: '0', // Nacional
+            icmsCst: '102', // Simples Nacional sem permissão de crédito
+            pisCst: '99', // Outras operações
+            cofinsCst: '99', // Outras operações
+            ipiCst: '99', // Outras saídas
           },
         });
+        seededCount++;
       }
     }
+
+    if (seededCount > 0) {
+      this.logger.log(
+        `Seeded fiscal data for ${seededCount} products of company ${companyId}`,
+      );
+    }
+  }
+
+  /**
+   * Trigger seed of default CFOPs and product fiscal data for a company.
+   * Used by the admin endpoint to apply defaults to already-active companies.
+   */
+  async seedFiscalDataForCompany(companyId: string) {
+    await this.prisma.$transaction(async (tx) => {
+      await this.seedDefaultFiscalData(tx, companyId);
+    });
+    return {
+      success: true,
+      message: 'CFOPs e dados fiscais de produtos aplicados com sucesso',
+    };
   }
 
   private async markForReview(requestId: string, errorMessage: string) {
