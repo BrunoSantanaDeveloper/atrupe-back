@@ -121,7 +121,7 @@ export class FiscalOnboardingController {
   })
   @ApiParam({ name: 'companyId', description: 'Company ID' })
   @ApiResponse({ status: 200, description: 'Seed applied' })
-  async seedDefaults(@Param('companyId') companyId: string) {
+  async adminSeedDefaults(@Param('companyId') companyId: string) {
     return this.fiscalOnboardingService.seedFiscalDataForCompany(companyId);
   }
 }
