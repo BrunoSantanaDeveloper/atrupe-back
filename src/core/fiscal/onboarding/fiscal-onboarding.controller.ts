@@ -54,6 +54,19 @@ export class FiscalOnboardingController {
     return this.fiscalOnboardingService.getStatus(req.user.companyId);
   }
 
+  @Post('seed-defaults')
+  @ApiOperation({
+    summary: 'Aplicar CFOPs e dados fiscais padrão (self-service)',
+    description:
+      'Aplica CFOPs padrão e dados fiscais básicos em todos os produtos da empresa autenticada. Idempotente — não sobrescreve dados já existentes.',
+  })
+  @ApiResponse({ status: 200, description: 'Seed applied' })
+  async seedDefaults(@Req() req) {
+    return this.fiscalOnboardingService.seedFiscalDataForCompany(
+      req.user.companyId,
+    );
+  }
+
   // ============== Admin Endpoints ==============
 
   @Get('pending')
