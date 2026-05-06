@@ -119,11 +119,51 @@ export class FiscalOnboardingService {
     cryptoKey?: string,
   ) {
     await this.prisma.$transaction(async (tx) => {
-      // Update company with the Invoicy accessKey
+      // Fetch the onboarding request to get the submitted data
+      const request = await tx.fiscalOnboardingRequest.findUnique({
+        where: { id: requestId },
+      });
+
+      // Update company with Invoicy accessKey + sync onboarding data
       await tx.company.update({
         where: { id: companyId },
-        data: { accessKey },
+        data: {
+          accessKey,
+          ...(request?.razaoSocial && { legalName: request.razaoSocial }),
+          ...(request?.cnpj && { cnpj: request.cnpj }),
+          ...(request?.cnae && { cnae: request.cnae }),
+          ...(request?.ie && { stateRegistration: request.ie }),
+          ...(request?.im && { municipalRegistration: request.im }),
+        },
       });
+
+      // Upsert primary address from onboarding data
+      if (request?.logradouro || request?.cep) {
+        const existingAddress = await tx.address.findFirst({
+          where: { companyId, type: 'Principal' },
+        });
+
+        const addressData = {
+          street: request.logradouro || '',
+          number: request.numero || '',
+          neighborhood: request.bairro || '',
+          zipcode: request.cep || '',
+          city: request.cidade || '',
+          state: request.uf || '',
+          country: '1058',
+          type: 'Principal',
+          companyId,
+        };
+
+        if (existingAddress) {
+          await tx.address.update({
+            where: { id: existingAddress.id },
+            data: addressData,
+          });
+        } else {
+          await tx.address.create({ data: addressData });
+        }
+      }
 
       // Create default InvoicyConfig (emissor)
       const existingConfig = await tx.invoicyConfig.findFirst({
