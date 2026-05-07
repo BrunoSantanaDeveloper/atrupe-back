@@ -219,7 +219,11 @@ export class QuotationCrudService {
       'OVERDUE' as any,
     ];
 
-    const where: any = { companyId, status: { in: allStatuses } };
+    const where: any = {
+      companyId,
+      status: { in: allStatuses },
+      isActive: true,
+    };
     if (sellerId) {
       where.sellerId = sellerId;
     }
@@ -265,6 +269,7 @@ export class QuotationCrudService {
     try {
       let where: Prisma.QuotationWhereInput = {
         status: { not: QuotationStatus.APPROVED },
+        isActive: true,
       };
 
       if (dto.companyId) {
