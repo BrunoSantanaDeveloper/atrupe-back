@@ -51,4 +51,13 @@ export class FilterOrderDto extends BaseFilterDTO {
     required: false,
   })
   clientId?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Filtro por fase fiscal: NAO_EMITIDA | EM_DIGITACAO | EMITIDA | TODAS',
+    example: 'NAO_EMITIDA',
+    required: false,
+  })
+  nfeStatus?: string;
 }

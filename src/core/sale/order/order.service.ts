@@ -61,6 +61,21 @@ export class OrderService {
         quotationFilters.clientId = dto.clientId;
       }
 
+      // Filtro por fase de emissão fiscal
+      if (dto.nfeStatus === 'EMITIDA') {
+        where.nfes = { some: { status: 'AUTHORIZED' } };
+      } else if (dto.nfeStatus === 'EM_DIGITACAO') {
+        where.nfes = {
+          some: { status: 'DRAFT' },
+          none: { status: 'AUTHORIZED' },
+        };
+      } else if (dto.nfeStatus === 'TODAS') {
+        // Sem filtro — exibe todas independente do status
+      } else {
+        // Padrão (NAO_EMITIDA): ordens sem nenhuma NF registrada
+        where.nfes = { none: {} };
+      }
+
       // Busca por texto - combinando com os filtros existentes
       if (dto.search) {
         quotationFilters.OR = [
