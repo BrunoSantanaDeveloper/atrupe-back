@@ -38,6 +38,7 @@ jobs:
             git stash
             git checkout dev
             git pull origin dev
+            docker system prune -af --volumes
             docker build --no-cache --cpu-quota=50000 --memory=512m . -t atrupe-image-dev:latest
             docker service update --image atrupe-image-dev:latest atrupe-dev_atrupe --force
 
@@ -80,6 +81,7 @@ jobs:
             git stash
             git checkout main
             git pull origin main
+            docker system prune -af --volumes
             docker build --no-cache --cpu-quota=50000 --memory=512m . -t atrupe-image:latest
             docker service update --image atrupe-image:latest atrupe-api_atrupe --force
 
