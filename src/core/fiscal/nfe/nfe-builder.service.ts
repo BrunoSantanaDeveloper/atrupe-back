@@ -149,7 +149,12 @@ export class NfeBuilderService {
       tpImp: 1,
       tpEmis: 1,
       cDV: 0,
-      tpAmb: config.ambiente === 1 || config.environment === 'PRODUCAO' ? 1 : 2,
+      tpAmb:
+        config.ambiente === 1 ||
+        config.ambiente === 'PRODUCAO' ||
+        config.environment === 'PRODUCAO'
+          ? 1
+          : 2,
       finNFe: 1,
       indFinal: dto.destCnpjCpf?.replace(/\D/g, '').length === 11 ? 1 : 0,
       indPres: 1,
