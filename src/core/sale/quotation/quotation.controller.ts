@@ -523,7 +523,7 @@ export class QuotationController {
     }
   }
 
-  @Delete('asasss/:id')
+  @Delete(':id')
   @ApiOperation({ summary: 'Remove um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
   @ApiResponse({
