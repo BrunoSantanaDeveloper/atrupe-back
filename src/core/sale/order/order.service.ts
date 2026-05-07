@@ -70,10 +70,15 @@ export class OrderService {
           none: { status: 'AUTHORIZED' },
         };
       } else if (dto.nfeStatus === 'TODAS') {
-        // Sem filtro — exibe todas independente do status
-      } else {
-        // Padrão (NAO_EMITIDA): ordens sem nenhuma NF registrada
+        // Sem filtro de NFE, mas se for tela de NFE, esconder canceladas sem NF
+        where.OR = [
+          { status: { not: OrderStatus.CANCELED } },
+          { nfes: { some: {} } },
+        ];
+      } else if (dto.nfeStatus) {
+        // Padrão (NAO_EMITIDA): ordens sem nenhuma NF registrada e que NÃO estão canceladas
         where.nfes = { none: {} };
+        where.status = { not: OrderStatus.CANCELED };
       }
 
       // Busca por texto - combinando com os filtros existentes
