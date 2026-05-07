@@ -33,14 +33,7 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd /home/ubuntu/atrupe-back
-            git config --global --add safe.directory /home/ubuntu/atrupe-back
-            git stash
-            git checkout dev
-            git pull origin dev
-            docker system prune -af --volumes
-            docker build --no-cache --cpu-quota=50000 --memory=512m . -t atrupe-image-dev:latest
-            docker service update --image atrupe-image-dev:latest atrupe-dev_atrupe --force
+            cd /home/ubuntu/atrupe-back && git config --global --add safe.directory /home/ubuntu/atrupe-back && git stash && git checkout dev && git pull origin dev && docker system prune -af --volumes && docker build --no-cache --cpu-quota=50000 --memory=512m . -t atrupe-image-dev:latest && docker service update --image atrupe-image-dev:latest atrupe-dev_atrupe --force
 
   smoke-test-homolog:
     needs: deploy-homolog
@@ -76,14 +69,7 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd /home/ubuntu/atrupe-back
-            git config --global --add safe.directory /home/ubuntu/atrupe-back
-            git stash
-            git checkout main
-            git pull origin main
-            docker system prune -af --volumes
-            docker build --no-cache --cpu-quota=50000 --memory=512m . -t atrupe-image:latest
-            docker service update --image atrupe-image:latest atrupe-api_atrupe --force
+            cd /home/ubuntu/atrupe-back && git config --global --add safe.directory /home/ubuntu/atrupe-back && git stash && git checkout main && git pull origin main && docker system prune -af --volumes && docker build --no-cache --cpu-quota=50000 --memory=512m . -t atrupe-image:latest && docker service update --image atrupe-image:latest atrupe-api_atrupe --force
 
   smoke-test-prod:
     needs: deploy-prod
