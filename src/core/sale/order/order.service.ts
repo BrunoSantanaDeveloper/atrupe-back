@@ -134,9 +134,9 @@ export class OrderService {
             },
           },
           nfes: {
-            where: { status: 'AUTHORIZED' },
+            where: { status: { in: ['AUTHORIZED', 'DRAFT'] } },
             orderBy: { createdAt: 'desc' },
-            take: 1,
+            take: 2,
             select: {
               id: true,
               numero: true,
