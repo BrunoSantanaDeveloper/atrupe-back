@@ -815,7 +815,10 @@ export class NfeService {
             tpImp: 1, // DANFE retrato
             tpEmis: 1, // Emissão normal
             cDV: 0, // Será calculado pelo Invoicy
-            tpAmb: config.ambiente === 'PRODUCAO' ? 1 : 2,
+            tpAmb:
+              config.ambiente === 1 || config.environment === 'PRODUCAO'
+                ? 1
+                : 2,
             finNFe: 1, // NF-e normal
             indFinal: dto.destCnpjCpf?.length === 11 ? 1 : 0, // 1 = Consumidor final (CPF)
             indPres: 1, // Operação presencial
