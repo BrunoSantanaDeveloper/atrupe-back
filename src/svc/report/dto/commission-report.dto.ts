@@ -1,4 +1,4 @@
-import { IsOptional, IsEnum, IsDateString } from 'class-validator';
+import { IsOptional, IsEnum, IsDateString, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CommissionReportFilterDto {
@@ -13,6 +13,18 @@ export class CommissionReportFilterDto {
   @IsOptional()
   @IsDateString()
   endDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  receivedStartDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  receivedEndDate?: string;
+
+  @IsOptional()
+  @IsString()
+  sellerId?: string;
 
   @IsOptional()
   @IsEnum(['vendedor', 'saleDate', 'receivedDate', 'none'])
