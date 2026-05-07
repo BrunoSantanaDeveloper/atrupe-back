@@ -119,11 +119,51 @@ export class FiscalOnboardingService {
     cryptoKey?: string,
   ) {
     await this.prisma.$transaction(async (tx) => {
-      // Update company with the Invoicy accessKey
+      // Fetch the onboarding request to get the submitted data
+      const request = await tx.fiscalOnboardingRequest.findUnique({
+        where: { id: requestId },
+      });
+
+      // Update company with Invoicy accessKey + sync onboarding data
       await tx.company.update({
         where: { id: companyId },
-        data: { accessKey },
+        data: {
+          accessKey,
+          ...(request?.razaoSocial && { legalName: request.razaoSocial }),
+          ...(request?.cnpj && { cnpj: request.cnpj }),
+          ...(request?.cnae && { cnae: request.cnae }),
+          ...(request?.ie && { stateRegistration: request.ie }),
+          ...(request?.im && { municipalRegistration: request.im }),
+        },
       });
+
+      // Upsert primary address from onboarding data
+      if (request?.logradouro || request?.cep) {
+        const existingAddress = await tx.address.findFirst({
+          where: { companyId, type: 'Principal' },
+        });
+
+        const addressData = {
+          street: request.logradouro || '',
+          number: request.numero || '',
+          neighborhood: request.bairro || '',
+          zipcode: request.cep || '',
+          city: request.cidade || '',
+          state: request.uf || '',
+          country: '1058',
+          type: 'Principal',
+          companyId,
+        };
+
+        if (existingAddress) {
+          await tx.address.update({
+            where: { id: existingAddress.id },
+            data: addressData,
+          });
+        } else {
+          await tx.address.create({ data: addressData });
+        }
+      }
 
       // Create default InvoicyConfig (emissor)
       const existingConfig = await tx.invoicyConfig.findFirst({
@@ -157,7 +197,123 @@ export class FiscalOnboardingService {
           resolvedAt: new Date(),
         },
       });
+
+      // Execute auto-seeding
+      await this.seedDefaultFiscalData(tx, companyId);
     });
+  }
+
+  private async seedDefaultFiscalData(tx: any, companyId: string) {
+    // 1. Seed default CFOPs (essenciais para Simples Nacional)
+    const defaultCfops = [
+      // Saídas — Mercadorias
+      {
+        code: '5101',
+        description: 'Venda de produção do estabelecimento',
+        type: 'SAIDA',
+      },
+      {
+        code: '5102',
+        description: 'Venda de mercadoria adquirida ou recebida de terceiros',
+        type: 'SAIDA',
+      },
+      // Saídas — Fora do estado
+      {
+        code: '6101',
+        description: 'Venda de produção do estabelecimento (fora do estado)',
+        type: 'SAIDA',
+      },
+      {
+        code: '6102',
+        description:
+          'Venda de mercadoria adquirida ou recebida de terceiros (fora do estado)',
+        type: 'SAIDA',
+      },
+      // Saídas — Serviços (NFS-e)
+      {
+        code: '5933',
+        description:
+          'Prestação de serviços compreendidos em mais de uma tributação municipal',
+        type: 'SAIDA',
+      },
+      // Entradas — Compras
+      {
+        code: '1102',
+        description:
+          'Compra para comercialização (entrada de mercadoria adquirida de terceiro)',
+        type: 'ENTRADA',
+      },
+      {
+        code: '1403',
+        description: 'Compra para uso ou consumo',
+        type: 'ENTRADA',
+      },
+    ];
+
+    for (const cfop of defaultCfops) {
+      const exists = await tx.cfopConfig.findFirst({
+        where: { companyId, code: cfop.code },
+      });
+      if (!exists) {
+        await tx.cfopConfig.create({
+          data: {
+            companyId,
+            code: cfop.code,
+            description: cfop.description,
+            type: cfop.type,
+            isActive: true,
+          },
+        });
+        this.logger.log(`Seeded CFOP ${cfop.code} for company ${companyId}`);
+      }
+    }
+
+    // 2. Seed ProductFiscalData for ALL existing products without fiscal data
+    const products = await tx.product.findMany({
+      where: { companyId },
+      include: { fiscalData: true },
+    });
+
+    let seededCount = 0;
+    for (const product of products) {
+      if (!product.fiscalData) {
+        await tx.productFiscalData.create({
+          data: {
+            productId: product.id,
+            ncm: '00000000', // Placeholder — usuário deve atualizar por produto
+            cfopInState: '5102', // Padrão: venda de mercadoria terceiros (dentro do estado)
+            cfopOutState: '6102', // Padrão: venda de mercadoria terceiros (fora do estado)
+            commercialUnit: 'UN',
+            icmsOrigin: '0', // Nacional
+            icmsCst: '102', // Simples Nacional sem permissão de crédito
+            pisCst: '99', // Outras operações
+            cofinsCst: '99', // Outras operações
+            ipiCst: '99', // Outras saídas
+          },
+        });
+        seededCount++;
+      }
+    }
+
+    if (seededCount > 0) {
+      this.logger.log(
+        `Seeded fiscal data for ${seededCount} products of company ${companyId}`,
+      );
+    }
+  }
+
+  /**
+   * Trigger seed of default CFOPs and product fiscal data for a company.
+   * Used by the admin endpoint to apply defaults to already-active companies.
+   */
+  async seedFiscalDataForCompany(companyId: string) {
+    await this.prisma.$transaction(async (tx) => {
+      await this.seedDefaultFiscalData(tx, companyId);
+    });
+    return {
+      success: true,
+      message: 'CFOPs e dados fiscais de produtos aplicados com sucesso',
+    };
   }
 
   private async markForReview(requestId: string, errorMessage: string) {
@@ -176,13 +332,21 @@ export class FiscalOnboardingService {
       orderBy: { createdAt: 'desc' },
     });
 
-    if (!request) {
-      return { status: 'NOT_STARTED', hasConfig: false };
-    }
-
     const hasConfig = await this.prisma.invoicyConfig.findFirst({
       where: { companyId, isDefault: true },
     });
+
+    if (!request) {
+      if (hasConfig) {
+        // Se pulou o onboarding wizard e criou manual, consideramos ATIVO
+        return {
+          status: 'ACTIVE',
+          hasConfig: true,
+          createdAt: hasConfig.createdAt,
+        };
+      }
+      return { status: 'NOT_STARTED', hasConfig: false };
+    }
 
     return {
       status: request.status,

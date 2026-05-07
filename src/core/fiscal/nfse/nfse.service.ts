@@ -548,7 +548,10 @@ export class NfseService {
               OptSN: config.emitCrt === 1 ? 1 : 2, // 1 = Sim, 2 = Não
               IncCult: 2, // 2 = Não
               Status: 1, // 1 = Normal
-              tpAmb: config.ambiente === 'PRODUCAO' ? 1 : 2,
+              tpAmb:
+                config.ambiente === 1 || config.environment === 'PRODUCAO'
+                  ? 1
+                  : 2,
               Prestador: {
                 CNPJ_prest: (config.company.cnpj || '').replace(/\D/g, ''),
                 xNome: config.company.legalName || '',

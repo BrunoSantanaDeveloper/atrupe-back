@@ -149,7 +149,12 @@ export class NfeBuilderService {
       tpImp: 1,
       tpEmis: 1,
       cDV: 0,
-      tpAmb: config.ambiente === 'PRODUCAO' ? 1 : 2,
+      tpAmb:
+        config.ambiente === 1 ||
+        config.ambiente === 'PRODUCAO' ||
+        config.environment === 'PRODUCAO'
+          ? 1
+          : 2,
       finNFe: 1,
       indFinal: dto.destCnpjCpf?.replace(/\D/g, '').length === 11 ? 1 : 0,
       indPres: 1,
@@ -193,7 +198,10 @@ export class NfeBuilderService {
   ): any {
     const cleanDoc = dto.destCnpjCpf?.replace(/\D/g, '') || '';
     const isHomologacao =
-      config.ambiente === 'HOMOLOGACAO' || config.ambiente === 2;
+      config.ambiente === 2 ||
+      config.ambiente === 'HOMOLOGACAO' ||
+      config.environment === 'HOMOLOGACAO' ||
+      (!config.ambiente && config.environment !== 'PRODUCAO');
     const indIEDest = dto.destIndIEDest ?? 9;
 
     return {

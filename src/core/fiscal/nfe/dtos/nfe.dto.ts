@@ -188,6 +188,11 @@ export class NfePaymentDto {
   @IsNumber()
   @IsOptional()
   valor?: number;
+
+  @ApiPropertyOptional({ description: 'Descrição da forma de pagamento' })
+  @IsString()
+  @IsOptional()
+  formaDescricao?: string;
 }
 
 export class NfeDuplicateDto {

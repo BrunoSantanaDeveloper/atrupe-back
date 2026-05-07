@@ -34,7 +34,6 @@ export class InvoicyService {
     };
   }
 
-  // Map frontend fields to database fields
   private mapDtoToDb(dto: CreateInvoicyConfigDto | UpdateInvoicyConfigDto) {
     const data: any = {};
 
@@ -42,9 +41,27 @@ export class InvoicyService {
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.isDefault !== undefined) data.isDefault = dto.isDefault;
 
-    // Direct mappings (fields that exist in both)
-    if (dto.environment !== undefined) data.environment = dto.environment;
-    if (dto.ambiente !== undefined) data.ambiente = dto.ambiente;
+    // Sincroniza ambiente (int) e environment (string) sempre juntos
+    // O form pode enviar 'ambiente' como string ('PRODUCAO'/'HOMOLOGACAO')
+    // ou como número (1/2). O campo 'environment' é sempre string.
+    if (dto.environment !== undefined) {
+      data.environment = dto.environment;
+      data.ambiente = dto.environment === 'PRODUCAO' ? 1 : 2;
+    }
+    if (dto.ambiente !== undefined) {
+      // Se chegou como número (correto)
+      if (typeof dto.ambiente === 'number') {
+        data.ambiente = dto.ambiente;
+        data.environment = dto.ambiente === 1 ? 'PRODUCAO' : 'HOMOLOGACAO';
+      } else {
+        // Se chegou como string (via form select) — normaliza
+        const ambStr = String(dto.ambiente);
+        const isProd = ambStr === 'PRODUCAO' || ambStr === '1';
+        data.ambiente = isProd ? 1 : 2;
+        data.environment = isProd ? 'PRODUCAO' : 'HOMOLOGACAO';
+      }
+    }
+
     if (dto.emitCrt !== undefined) data.emitCrt = dto.emitCrt;
     if (dto.codigoServico !== undefined) data.codigoServico = dto.codigoServico;
     if (dto.aliquotaIss !== undefined) data.aliquotaIss = dto.aliquotaIss;
@@ -382,7 +399,42 @@ export class InvoicyService {
     return { success: true };
   }
 
-  // deleteConfig - alias removido, usar delete() com id diretamente
+  /**
+   * Atualizar certificado digital do emissor.
+   * Envia o novo certificado para o Invoicy via API de parceiro.
+   */
+  async updateCertificate(
+    id: string,
+    certificate: string,
+    certificatePassword: string,
+    certificateType = 'A1',
+  ) {
+    const config = await this.prisma.invoicyConfig.findUnique({
+      where: { id },
+      include: { company: true },
+    });
+
+    if (!config) {
+      throw new NotFoundException('Emissor não encontrado');
+    }
+
+    const cnpj = config.company?.cnpj;
+    if (!cnpj) {
+      throw new NotFoundException('CNPJ da empresa não encontrado');
+    }
+
+    await this.invoicyHttpService.updateCompanyCertificate({
+      cnpj,
+      certificate,
+      certificatePassword,
+      certificateType,
+    });
+
+    // Limpar cache de token pois credenciais podem ter mudado
+    this.invoicyHttpService.clearTokenCache(config.companyId);
+
+    return { success: true, message: 'Certificado atualizado com sucesso' };
+  }
 
   /**
    * Definir emissor como padrão

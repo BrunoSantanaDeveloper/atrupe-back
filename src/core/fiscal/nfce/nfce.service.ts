@@ -242,7 +242,10 @@ export class NfceService {
             tpImp: 4, // DANFE NFC-e
             tpEmis: 1, // Emissão normal
             cDV: 0,
-            tpAmb: config.ambiente === 'PRODUCAO' ? 1 : 2,
+            tpAmb:
+              config.ambiente === 1 || config.environment === 'PRODUCAO'
+                ? 1
+                : 2,
             finNFe: 1,
             indFinal: 1, // Consumidor final
             indPres: 1, // Presença do comprador

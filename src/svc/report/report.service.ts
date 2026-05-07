@@ -3539,11 +3539,19 @@ export class ReportService {
   ) {
     const { startDate, endDate } = this.getCommissionDateRange(filters);
 
+    const receivedStart = filters.receivedStartDate
+      ? new Date(filters.receivedStartDate)
+      : undefined;
+    const receivedEnd = filters.receivedEndDate
+      ? new Date(filters.receivedEndDate)
+      : undefined;
+
     const orders = await this.prisma.order.findMany({
       where: {
         quotation: {
           companyId,
           approvedAt: { gte: startDate, lte: endDate },
+          ...(filters.sellerId && { sellerId: filters.sellerId }),
         },
       },
       include: {
@@ -3560,7 +3568,10 @@ export class ReportService {
                 installments: {
                   where: {
                     status: 'PAID',
-                    paidDate: { gte: startDate, lte: endDate },
+                    paidDate: {
+                      ...(receivedStart && { gte: receivedStart }),
+                      ...(receivedEnd && { lte: receivedEnd }),
+                    },
                   },
                   select: { paidAmount: true },
                 },
@@ -3620,11 +3631,19 @@ export class ReportService {
     const limit = filters.limit || 10;
     const groupBy = filters.groupBy || 'none';
 
+    const receivedStart = filters.receivedStartDate
+      ? new Date(filters.receivedStartDate)
+      : undefined;
+    const receivedEnd = filters.receivedEndDate
+      ? new Date(filters.receivedEndDate)
+      : undefined;
+
     const orders = await this.prisma.order.findMany({
       where: {
         quotation: {
           companyId,
           approvedAt: { gte: startDate, lte: endDate },
+          ...(filters.sellerId && { sellerId: filters.sellerId }),
         },
       },
       include: {
@@ -3648,7 +3667,10 @@ export class ReportService {
                 installments: {
                   where: {
                     status: 'PAID',
-                    paidDate: { gte: startDate, lte: endDate },
+                    paidDate: {
+                      ...(receivedStart && { gte: receivedStart }),
+                      ...(receivedEnd && { lte: receivedEnd }),
+                    },
                   },
                   select: { paidAmount: true, paidDate: true },
                 },
