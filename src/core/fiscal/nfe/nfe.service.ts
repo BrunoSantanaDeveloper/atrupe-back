@@ -749,19 +749,50 @@ export class NfeService {
       0,
     );
 
-    // Criar registro da NF-e
-    const nfe = await this.prisma.nfe.create({
-      data: {
-        companyId,
-        orderId: dto.orderId,
-        quotationId: dto.quotationId,
-        numero,
-        serie: config.serieNfe,
-        status: NfeStatus.PROCESSING,
-        ambiente: config.ambiente,
-        valorTotal,
-      },
-    });
+    // Criar ou atualizar registro da NF-e
+    let nfe;
+
+    // Se for vinculada a uma ordem, buscar rascunho existente
+    if (dto.orderId) {
+      const draftNfe = await this.prisma.nfe.findFirst({
+        where: {
+          companyId,
+          orderId: dto.orderId,
+          status: NfeStatus.DRAFT,
+        },
+      });
+
+      if (draftNfe) {
+        nfe = await this.prisma.nfe.update({
+          where: { id: draftNfe.id },
+          data: {
+            numero,
+            serie: config.serieNfe,
+            status: NfeStatus.PROCESSING,
+            ambiente: config.ambiente,
+            valorTotal,
+            // Limpar possível mensagem de erro anterior ao tentar emitir novamente
+            motivoRejeicao: null,
+          },
+        });
+      }
+    }
+
+    // Se não encontrou rascunho (ou é avulsa sem ordem), cria nova
+    if (!nfe) {
+      nfe = await this.prisma.nfe.create({
+        data: {
+          companyId,
+          orderId: dto.orderId,
+          quotationId: dto.quotationId,
+          numero,
+          serie: config.serieNfe,
+          status: NfeStatus.PROCESSING,
+          ambiente: config.ambiente,
+          valorTotal,
+        },
+      });
+    }
 
     try {
       this.logger.log(`Emitindo NF-e ${numero} para empresa ${companyId}`);
