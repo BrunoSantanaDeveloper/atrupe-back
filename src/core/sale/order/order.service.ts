@@ -76,8 +76,9 @@ export class OrderService {
           { nfes: { some: {} } },
         ];
       } else if (dto.nfeStatus) {
-        // Padrão (NAO_EMITIDA): ordens sem nenhuma NF registrada e que NÃO estão canceladas
-        where.nfes = { none: {} };
+        // Padrão (NAO_EMITIDA): ordens sem nenhuma NF AUTHORIZED ou DRAFT e que NÃO estão canceladas
+        // Isso permite que ordens com NF rejeitadas ou com erro ainda apareçam para serem reemitidas
+        where.nfes = { none: { status: { in: ['AUTHORIZED', 'DRAFT'] } } };
         where.status = { not: OrderStatus.CANCELED };
       }
 
