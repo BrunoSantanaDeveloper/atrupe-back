@@ -2,13 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma/prisma.service';
 import { v4 as uuidv4 } from 'uuid';
 
+type AccessStatus = 'active' | 'inactive';
+
 @Injectable()
 export class ActivityMonitorService {
   constructor(private prisma: PrismaService) {}
 
-  /**
-   * Registra ou atualiza a atividade do usuário
-   */
   async trackActivity(data: {
     userId: string;
     companyId?: string;
@@ -20,30 +19,20 @@ export class ActivityMonitorService {
     userAgent?: string;
   }): Promise<void> {
     const { userId, sessionId, ...activityData } = data;
+    const resolvedSessionId = sessionId || uuidv4();
 
-    if (!sessionId) {
-      // Se não houver sessionId, criar nova sessão
-      await this.prisma.userActivity.create({
-        data: {
-          userId,
-          sessionId: uuidv4(),
-          ...activityData,
-        },
-      });
-      return;
-    }
-
-    // Atualizar a atividade existente ou criar nova
     const existingActivity = await this.prisma.userActivity.findFirst({
       where: {
-        sessionId,
+        sessionId: resolvedSessionId,
         userId,
         isActive: true,
       },
     });
 
+    let activityId: string;
+
     if (existingActivity) {
-      await this.prisma.userActivity.update({
+      const updatedActivity = await this.prisma.userActivity.update({
         where: { id: existingActivity.id },
         data: {
           lastActive: new Date(),
@@ -53,20 +42,31 @@ export class ActivityMonitorService {
           userAgent: activityData.userAgent,
         },
       });
+      activityId = updatedActivity.id;
     } else {
-      await this.prisma.userActivity.create({
+      const createdActivity = await this.prisma.userActivity.create({
         data: {
           userId,
-          sessionId,
+          sessionId: resolvedSessionId,
+          ...activityData,
+        },
+      });
+      activityId = createdActivity.id;
+    }
+
+    const userActivityEvent = (this.prisma as any).userActivityEvent;
+    if (userActivityEvent) {
+      await userActivityEvent.create({
+        data: {
+          activityId,
+          userId,
+          sessionId: resolvedSessionId,
           ...activityData,
         },
       });
     }
   }
 
-  /**
-   * Registra o logout do usuário
-   */
   async logout(sessionId: string): Promise<void> {
     await this.prisma.userActivity.updateMany({
       where: {
@@ -80,9 +80,6 @@ export class ActivityMonitorService {
     });
   }
 
-  /**
-   * Obtém usuários atualmente online (ativos nos últimos X minutos)
-   */
   async getOnlineUsers(companyId?: string, minutesThreshold = 5) {
     const thresholdDate = new Date(Date.now() - minutesThreshold * 60 * 1000);
 
@@ -127,7 +124,6 @@ export class ActivityMonitorService {
       },
     });
 
-    // Agrupar por usuário (pode ter múltiplas sessões)
     const userMap = new Map();
 
     activities.forEach((activity) => {
@@ -152,7 +148,6 @@ export class ActivityMonitorService {
         endpoint: activity.endpoint,
       });
 
-      // Atualizar lastActive com a mais recente
       if (activity.lastActive > userData.lastActive) {
         userData.lastActive = activity.lastActive;
       }
@@ -161,11 +156,8 @@ export class ActivityMonitorService {
     return Array.from(userMap.values());
   }
 
-  /**
-   * Obtém última atividade de um usuário específico
-   */
   async getUserLastActivity(userId: string) {
-    const lastActivity = await this.prisma.userActivity.findFirst({
+    return this.prisma.userActivity.findFirst({
       where: { userId },
       orderBy: { lastActive: 'desc' },
       include: {
@@ -188,19 +180,20 @@ export class ActivityMonitorService {
         },
       },
     });
-
-    return lastActivity;
   }
 
-  /**
-   * Obtém histórico de atividades de um usuário
-   */
   async getUserActivityHistory(userId: string, limit = 50, offset = 0) {
     const activities = await this.prisma.userActivity.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
       take: limit,
       skip: offset,
+      include: {
+        events: {
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+        },
+      },
     });
 
     const total = await this.prisma.userActivity.count({
@@ -215,9 +208,218 @@ export class ActivityMonitorService {
     };
   }
 
-  /**
-   * Obtém estatísticas de uso por empresa
-   */
+  async listAccessSessions(filters: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    companyId?: string;
+    userId?: string;
+    method?: string;
+    status?: AccessStatus;
+    startDate?: Date;
+    endDate?: Date;
+  }) {
+    const page = filters.page || 1;
+    const limit = filters.limit || 10;
+    const skip = (page - 1) * limit;
+    const where: any = {};
+
+    if (filters.companyId) where.companyId = filters.companyId;
+    if (filters.userId) where.userId = filters.userId;
+    if (filters.method) where.method = filters.method;
+    if (filters.status) where.isActive = filters.status === 'active';
+    if (filters.startDate || filters.endDate) {
+      where.createdAt = {};
+      if (filters.startDate) where.createdAt.gte = filters.startDate;
+      if (filters.endDate) where.createdAt.lte = filters.endDate;
+    }
+    if (filters.search) {
+      where.OR = [
+        { sessionId: { contains: filters.search, mode: 'insensitive' } },
+        { endpoint: { contains: filters.search, mode: 'insensitive' } },
+        { user: { name: { contains: filters.search, mode: 'insensitive' } } },
+        { user: { email: { contains: filters.search, mode: 'insensitive' } } },
+        {
+          user: {
+            employee: {
+              some: {
+                company: {
+                  name: { contains: filters.search, mode: 'insensitive' },
+                },
+              },
+            },
+          },
+        },
+      ];
+    }
+
+    const [sessions, total] = await Promise.all([
+      this.prisma.userActivity.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatar: true,
+              employee: {
+                select: {
+                  id: true,
+                  name: true,
+                  avatarUrl: true,
+                  company: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          _count: {
+            select: { events: true },
+          },
+        },
+        orderBy: { lastActive: 'desc' },
+        take: limit,
+        skip,
+      }),
+      this.prisma.userActivity.count({ where }),
+    ]);
+
+    return {
+      data: sessions.map((activity) => ({
+        id: activity.id,
+        userId: activity.userId,
+        userName: activity.user.employee[0]?.name || activity.user.name,
+        email: activity.user.email,
+        avatar: activity.user.employee[0]?.avatarUrl || activity.user.avatar,
+        companyId: activity.companyId,
+        companyName: activity.user.employee[0]?.company?.name,
+        employeeId: activity.employeeId,
+        sessionId: activity.sessionId,
+        endpoint: activity.endpoint,
+        method: activity.method,
+        ipAddress: activity.ipAddress,
+        userAgent: activity.userAgent,
+        createdAt: activity.createdAt,
+        lastActive: activity.lastActive,
+        isActive: activity.isActive,
+        logoutAt: activity.logoutAt,
+        eventsCount: (activity as any)._count?.events || 0,
+      })),
+      total,
+      page,
+      limit,
+      lastPage: Math.ceil(total / limit) || 1,
+    };
+  }
+
+  async getAccessSummary(companyId?: string, days = 30) {
+    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const where: any = { createdAt: { gte: startDate } };
+    if (companyId) where.companyId = companyId;
+
+    const userActivityEvent = (this.prisma as any).userActivityEvent;
+    const [totalSessions, activeSessions, users, companies, totalEvents] =
+      await Promise.all([
+        this.prisma.userActivity.count({ where }),
+        this.prisma.userActivity.count({
+          where: { ...where, isActive: true },
+        }),
+        this.prisma.userActivity.findMany({
+          where,
+          select: { userId: true },
+          distinct: ['userId'],
+        }),
+        this.prisma.userActivity.findMany({
+          where: { ...where, companyId: { not: null } },
+          select: { companyId: true },
+          distinct: ['companyId'],
+        }),
+        userActivityEvent ? userActivityEvent.count({ where }) : 0,
+      ]);
+
+    return {
+      totalSessions,
+      activeSessions,
+      uniqueUsers: users.length,
+      uniqueCompanies: companies.length,
+      totalEvents,
+      periodDays: days,
+    };
+  }
+
+  async getSessionDetails(sessionId: string, limit = 50, offset = 0) {
+    const activity = await this.prisma.userActivity.findFirst({
+      where: { sessionId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar: true,
+            employee: {
+              select: {
+                id: true,
+                name: true,
+                avatarUrl: true,
+                company: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { lastActive: 'desc' },
+    });
+
+    if (!activity) return null;
+
+    const userActivityEvent = (this.prisma as any).userActivityEvent;
+    const [events, total] = userActivityEvent
+      ? await Promise.all([
+          userActivityEvent.findMany({
+            where: { sessionId },
+            orderBy: { createdAt: 'desc' },
+            take: limit,
+            skip: offset,
+          }),
+          userActivityEvent.count({ where: { sessionId } }),
+        ])
+      : [[], 0];
+
+    return {
+      session: {
+        id: activity.id,
+        userId: activity.userId,
+        userName: activity.user.employee[0]?.name || activity.user.name,
+        email: activity.user.email,
+        avatar: activity.user.employee[0]?.avatarUrl || activity.user.avatar,
+        companyId: activity.companyId,
+        companyName: activity.user.employee[0]?.company?.name,
+        employeeId: activity.employeeId,
+        sessionId: activity.sessionId,
+        endpoint: activity.endpoint,
+        method: activity.method,
+        ipAddress: activity.ipAddress,
+        userAgent: activity.userAgent,
+        createdAt: activity.createdAt,
+        lastActive: activity.lastActive,
+        isActive: activity.isActive,
+        logoutAt: activity.logoutAt,
+      },
+      events: {
+        data: events,
+        total,
+        limit,
+        offset,
+      },
+    };
+  }
+
   async getCompanyStatistics(companyId: string, days = 30) {
     const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
@@ -238,7 +440,6 @@ export class ActivityMonitorService {
     const uniqueUsers = new Set(activities.map((a) => a.userId));
     const totalSessions = activities.length;
 
-    // Usuários ativos hoje
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const activeToday = new Set(
@@ -253,9 +454,6 @@ export class ActivityMonitorService {
     };
   }
 
-  /**
-   * Limpa sessões inativas (mais de X dias sem atividade)
-   */
   async cleanInactiveSessions(daysInactive = 30): Promise<number> {
     const thresholdDate = new Date(
       Date.now() - daysInactive * 24 * 60 * 60 * 1000,
@@ -277,13 +475,21 @@ export class ActivityMonitorService {
     return result.count;
   }
 
-  /**
-   * Deleta registros antigos de atividades (limpeza de dados)
-   */
   async deleteOldActivities(daysToKeep = 90): Promise<number> {
     const thresholdDate = new Date(
       Date.now() - daysToKeep * 24 * 60 * 60 * 1000,
     );
+
+    const userActivityEvent = (this.prisma as any).userActivityEvent;
+    if (userActivityEvent) {
+      await userActivityEvent.deleteMany({
+        where: {
+          createdAt: {
+            lt: thresholdDate,
+          },
+        },
+      });
+    }
 
     const result = await this.prisma.userActivity.deleteMany({
       where: {
@@ -297,9 +503,6 @@ export class ActivityMonitorService {
     return result.count;
   }
 
-  /**
-   * Gera um novo sessionId
-   */
   generateSessionId(): string {
     return uuidv4();
   }

@@ -223,6 +223,15 @@ export class EmitNfeDto {
   @IsOptional()
   orderId?: string;
 
+  @ApiPropertyOptional({
+    description: 'IDs das ordens de servico consolidadas',
+    type: [String],
+  })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  orderIds?: string[];
+
   @ApiPropertyOptional({ description: 'Natureza da operação' })
   @IsString()
   @IsOptional()
@@ -364,6 +373,13 @@ export class EmitNfeDto {
   @IsOptional()
   @IsString({ each: true })
   autXml?: string[];
+}
+
+export class CreateConsolidatedNfeDraftDto {
+  @ApiProperty({ description: 'IDs das ordens de servico', type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  orderIds: string[];
 }
 
 export class CancelNfeDto {

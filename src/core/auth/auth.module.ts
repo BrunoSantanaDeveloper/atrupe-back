@@ -14,6 +14,7 @@ import { TenantGuard } from './guards/tenant.guard';
 import { PrismaModule } from 'nestjs-prisma';
 import { PlanControlModule } from '../plan/plan-control.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
+import { ActivityMonitorModule } from '../activity-monitor/activity-monitor.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     forwardRef(() => UserModule),
     PlanControlModule,
     forwardRef(() => SubscriptionsModule),
+    ActivityMonitorModule,
   ],
   controllers: [AuthController],
   providers: [

@@ -1,6 +1,7 @@
 import { Controller, Post, Req, UseGuards } from '@nestjs/common';
 import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
+import { ActivityMonitorService } from '../activity-monitor/activity-monitor.service';
 import { LocalAuthGuard } from './guards/local.guard';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import {
@@ -30,7 +31,10 @@ class LoginDto {
 @ApiTags('Autenticação')
 @UseGuards(ThrottlerGuard)
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly activityMonitorService: ActivityMonitorService,
+  ) {}
 
   @Post('login')
   @Throttle({ auth: { limit: 5, ttl: 60000 } })
@@ -93,7 +97,23 @@ export class AuthController {
   })
   @UseGuards(LocalAuthGuard)
   async login(@Req() req) {
-    return this.authService.login(req.user);
+    const response = await this.authService.login(req.user);
+    this.activityMonitorService
+      .trackActivity({
+        userId: response.id,
+        companyId: response.company?.id,
+        employeeId: response.employeeId || undefined,
+        sessionId: response.sessionId,
+        endpoint: '/auth/login',
+        method: 'POST',
+        ipAddress:
+          req.headers['x-forwarded-for'] || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'],
+      })
+      .catch((error) => {
+        console.error('Erro ao rastrear login:', error);
+      });
+    return response;
   }
 
   @Post('refresh')
@@ -117,6 +137,22 @@ export class AuthController {
   })
   @UseGuards(JwtRefreshGuard)
   async refresh(@Req() req) {
-    return this.authService.refreshToken(req.user.userId);
+    const response = await this.authService.refreshToken(req.user.userId);
+    this.activityMonitorService
+      .trackActivity({
+        userId: req.user.userId,
+        companyId: req.user.companyId,
+        employeeId: req.user.employeeId,
+        sessionId: response.sessionId,
+        endpoint: '/auth/refresh',
+        method: 'POST',
+        ipAddress:
+          req.headers['x-forwarded-for'] || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'],
+      })
+      .catch((error) => {
+        console.error('Erro ao rastrear refresh:', error);
+      });
+    return response;
   }
 }

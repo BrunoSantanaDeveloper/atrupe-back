@@ -102,6 +102,76 @@ describe('OrderService', () => {
     });
   });
 
+  describe('findAll', () => {
+    it('should load only phase-defining NF-e statuses for the invoice list', async () => {
+      prisma.order.count.mockResolvedValue(1);
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: mockOrderId,
+          status: OrderStatus.FINISHED,
+          createdAt: new Date('2026-01-13T12:00:00.000Z'),
+          nfes: [],
+          nfeOrders: [
+            {
+              nfe: {
+                id: 'draft-nfe-1',
+                numero: 1,
+                serie: 1,
+                status: 'DRAFT',
+                danfeUrl: null,
+              },
+            },
+          ],
+          quotation: {
+            id: mockQuotationId,
+            description: null,
+            status: 'APPROVED',
+            dueDate: null,
+            totalValue: 16000,
+            approvedAt: null,
+            quickSale: false,
+            tag: null,
+            series: { id: 'series-1', title: 'Vendas', code: 'V1' },
+            quotationNumber: 34,
+            client: {
+              id: 'client-1',
+              name: 'Corpori',
+              email: 'contato@corpori.com',
+            },
+            seller: null,
+            deliveryInfo: null,
+            quotationPayment: null,
+          },
+        },
+      ]);
+
+      const result = await service.findAll({
+        page: '1',
+        limit: '20',
+        nfeStatus: 'EM_DIGITACAO',
+      } as any);
+
+      const findManyArgs = prisma.order.findMany.mock.calls[0][0];
+      expect(findManyArgs.include.nfes.where).toEqual({
+        status: { in: ['AUTHORIZED', 'DRAFT'] },
+      });
+      expect(findManyArgs.include.nfes.take).toBeUndefined();
+      expect(findManyArgs.include.nfeOrders.where).toEqual({
+        nfe: { status: { in: ['AUTHORIZED', 'DRAFT'] } },
+      });
+      expect(findManyArgs.include.nfeOrders.take).toBeUndefined();
+      expect((result.data as any[])[0].orders[0].nfes).toEqual([
+        {
+          id: 'draft-nfe-1',
+          numero: 1,
+          serie: 1,
+          status: 'DRAFT',
+          danfeUrl: null,
+        },
+      ]);
+    });
+  });
+
   describe('count', () => {
     it('should return total order count', async () => {
       prisma.order.count.mockResolvedValue(42);

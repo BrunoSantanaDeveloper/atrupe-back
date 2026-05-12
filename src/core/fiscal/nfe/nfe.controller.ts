@@ -22,6 +22,7 @@ import { NfeService } from './nfe.service';
 import {
   EmitNfeDto,
   EmitNfeFromOrderDto,
+  CreateConsolidatedNfeDraftDto,
   CancelNfeDto,
   CorrectionLetterDto,
   InutilizarNfeDto,
@@ -63,6 +64,21 @@ export class NfeController {
   }
 
   // ==================== Draft Endpoints ====================
+
+  @Post('draft/consolidated')
+  @HasPermission('create', 'nota_fiscal:emitir')
+  @ApiOperation({
+    summary: 'Criar ou obter rascunho consolidado de NF-e para varias ordens',
+  })
+  async createOrGetConsolidatedDraft(
+    @Req() req,
+    @Body() dto: CreateConsolidatedNfeDraftDto,
+  ) {
+    return this.nfeService.createOrGetConsolidatedDraft(
+      req.user.companyId,
+      dto.orderIds,
+    );
+  }
 
   @Post('draft/:orderId')
   @HasPermission('create', 'nota_fiscal:emitir')
@@ -122,6 +138,14 @@ export class NfeController {
   @ApiOperation({ summary: 'Emitir NF-e com todos os dados (manual)' })
   async emitFull(@Req() req, @Body() dto: EmitNfeDto) {
     return this.nfeService.emit(req.user.companyId, dto);
+  }
+
+  @Post('emit-consolidated')
+  @HasPermission('create', 'nota_fiscal:emitir')
+  @RequireUnblocked()
+  @ApiOperation({ summary: 'Emitir NF-e consolidada para varias ordens' })
+  async emitConsolidated(@Req() req, @Body() dto: EmitNfeDto) {
+    return this.nfeService.emitConsolidated(req.user.companyId, dto);
   }
 
   @Post(':id/cancel')

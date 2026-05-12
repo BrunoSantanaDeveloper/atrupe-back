@@ -19,6 +19,10 @@ export class FinancialReportFilterDto {
   status?: 'received' | 'confirmed' | 'to_receive' | 'overdue';
 
   @IsOptional()
+  @IsString()
+  clientId?: string;
+
+  @IsOptional()
   @IsEnum(['none', 'client'])
   groupBy?: 'none' | 'client';
 

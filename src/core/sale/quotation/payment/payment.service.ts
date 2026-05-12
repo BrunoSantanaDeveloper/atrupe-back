@@ -151,21 +151,34 @@ export class PaymentService {
               data: paymentData,
             });
 
-            // Get payment condition configuration if needed for installments
-            let conditionConfig;
-            if (paymentConditionId && installments.length > 0) {
-              conditionConfig = await prisma.paymentCondition.findUnique({
-                where: {
-                  id: paymentConditionId,
-                },
-              });
-            }
-
             // Delete all existing installments if we have new ones
             if (installments.length > 0) {
               await prisma.quotationInstallment.deleteMany({
                 where: { quotationPaymentId: updatedPayment.id },
               });
+
+              const installmentPaymentConditionIds = [
+                ...new Set(
+                  installments
+                    .map(
+                      (installmentData) =>
+                        installmentData.paymentConditionId ||
+                        paymentConditionId,
+                    )
+                    .filter((id): id is string => Boolean(id)),
+                ),
+              ];
+
+              const conditionConfigs =
+                installmentPaymentConditionIds.length > 0
+                  ? await prisma.paymentCondition.findMany({
+                      where: { id: { in: installmentPaymentConditionIds } },
+                    })
+                  : [];
+
+              const conditionConfigById = new Map(
+                conditionConfigs.map((condition) => [condition.id, condition]),
+              );
 
               // Prepare installments data for batch insert
               const installmentsData = installments
@@ -174,6 +187,11 @@ export class PaymentService {
                     installmentData.dueDate && installmentData.amount,
                 )
                 .map((installmentData) => {
+                  const installmentPaymentConditionId =
+                    installmentData.paymentConditionId || paymentConditionId;
+                  const conditionConfig = installmentPaymentConditionId
+                    ? conditionConfigById.get(installmentPaymentConditionId)
+                    : null;
                   const additionalFee =
                     conditionConfig?.costType === 'VALUE'
                       ? installmentData.additionalFee || 0
@@ -185,7 +203,7 @@ export class PaymentService {
                     dueDate: new Date(installmentData.dueDate),
                     additionalFee,
                     value: installmentData.amount,
-                    paymentConditionId: paymentConditionId,
+                    paymentConditionId: installmentPaymentConditionId,
                   };
                 });
 

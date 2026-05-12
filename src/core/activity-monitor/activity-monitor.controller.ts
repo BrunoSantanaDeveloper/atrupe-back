@@ -6,9 +6,12 @@ import {
   Param,
   UseGuards,
   Req,
+  NotFoundException,
 } from '@nestjs/common';
 import { ActivityMonitorService } from './activity-monitor.service';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
+import { ListAccessSessionsDto } from './dto/list-access-sessions.dto';
 
 @Controller('activity-monitor')
 @UseGuards(JwtAuthGuard)
@@ -17,10 +20,6 @@ export class ActivityMonitorController {
     private readonly activityMonitorService: ActivityMonitorService,
   ) {}
 
-  /**
-   * GET /activity-monitor/online
-   * Retorna usuários atualmente online
-   */
   @Get('online')
   async getOnlineUsers(
     @Query('companyId') companyId?: string,
@@ -30,19 +29,57 @@ export class ActivityMonitorController {
     return this.activityMonitorService.getOnlineUsers(companyId, threshold);
   }
 
-  /**
-   * GET /activity-monitor/last-activity/:userId
-   * Retorna última atividade de um usuário específico
-   */
+  @Get('access-sessions')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  async listAccessSessions(@Query() query: ListAccessSessionsDto) {
+    return this.activityMonitorService.listAccessSessions({
+      page: query.page,
+      limit: query.limit,
+      search: query.search,
+      companyId: query.companyId,
+      userId: query.userId,
+      method: query.method,
+      status: query.status,
+      startDate: query.startDate ? new Date(query.startDate) : undefined,
+      endDate: query.endDate ? new Date(query.endDate) : undefined,
+    });
+  }
+
+  @Get('access-summary')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  async getAccessSummary(
+    @Query('companyId') companyId?: string,
+    @Query('days') days?: string,
+  ) {
+    return this.activityMonitorService.getAccessSummary(
+      companyId,
+      days ? parseInt(days) : 30,
+    );
+  }
+
+  @Get('sessions/:sessionId')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  async getSessionDetails(
+    @Param('sessionId') sessionId: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const details = await this.activityMonitorService.getSessionDetails(
+      sessionId,
+      limit ? parseInt(limit) : 50,
+      offset ? parseInt(offset) : 0,
+    );
+    if (!details) {
+      throw new NotFoundException('Sessao nao encontrada');
+    }
+    return details;
+  }
+
   @Get('last-activity/:userId')
   async getUserLastActivity(@Param('userId') userId: string) {
     return this.activityMonitorService.getUserLastActivity(userId);
   }
 
-  /**
-   * GET /activity-monitor/history/:userId
-   * Retorna histórico de atividades de um usuário
-   */
   @Get('history/:userId')
   async getUserActivityHistory(
     @Param('userId') userId: string,
@@ -58,10 +95,6 @@ export class ActivityMonitorController {
     );
   }
 
-  /**
-   * GET /activity-monitor/statistics/:companyId
-   * Retorna estatísticas de uso da empresa
-   */
   @Get('statistics/:companyId')
   async getCompanyStatistics(
     @Param('companyId') companyId: string,
@@ -71,10 +104,6 @@ export class ActivityMonitorController {
     return this.activityMonitorService.getCompanyStatistics(companyId, daysNum);
   }
 
-  /**
-   * POST /activity-monitor/logout
-   * Registra logout do usuário
-   */
   @Post('logout')
   async logout(@Req() req: any) {
     const sessionId = req.headers['x-session-id'];

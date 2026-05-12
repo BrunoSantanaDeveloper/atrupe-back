@@ -65,22 +65,37 @@ export class OrderService {
       // Quando há busca ativa, não aplica o filtro de fase para que o resultado apareça independente da fase
       if (!dto.search) {
         if (dto.nfeStatus === 'EMITIDA') {
-          where.nfes = { some: { status: 'AUTHORIZED' } };
+          where.OR = [
+            { nfes: { some: { status: 'AUTHORIZED' } } },
+            { nfeOrders: { some: { nfe: { status: 'AUTHORIZED' } } } },
+          ];
         } else if (dto.nfeStatus === 'EM_DIGITACAO') {
-          where.nfes = {
-            some: { status: 'DRAFT' },
-            none: { status: 'AUTHORIZED' },
-          };
+          where.OR = [
+            { nfes: { some: { status: 'DRAFT' } } },
+            { nfeOrders: { some: { nfe: { status: 'DRAFT' } } } },
+          ];
+          where.AND = [
+            { nfes: { none: { status: 'AUTHORIZED' } } },
+            { nfeOrders: { none: { nfe: { status: 'AUTHORIZED' } } } },
+          ];
         } else if (dto.nfeStatus === 'TODAS') {
           // Sem filtro de NFE, mas se for tela de NFE, esconder canceladas sem NF
           where.OR = [
             { status: { not: OrderStatus.CANCELED } },
             { nfes: { some: {} } },
+            { nfeOrders: { some: {} } },
           ];
         } else if (dto.nfeStatus) {
           // Padrão (NAO_EMITIDA): ordens sem nenhuma NF AUTHORIZED ou DRAFT e que NÃO estão canceladas
           // Isso permite que ordens com NF rejeitadas ou com erro ainda apareçam para serem reemitidas
-          where.nfes = { none: { status: { in: ['AUTHORIZED', 'DRAFT'] } } };
+          where.AND = [
+            { nfes: { none: { status: { in: ['AUTHORIZED', 'DRAFT'] } } } },
+            {
+              nfeOrders: {
+                none: { nfe: { status: { in: ['AUTHORIZED', 'DRAFT'] } } },
+              },
+            },
+          ];
           where.status = { not: OrderStatus.CANCELED };
         }
       }
@@ -168,10 +183,9 @@ export class OrderService {
           },
           nfes: {
             where: {
-              status: { in: ['AUTHORIZED', 'DRAFT', 'REJECTED'] },
+              status: { in: ['AUTHORIZED', 'DRAFT'] },
             },
             orderBy: { createdAt: 'desc' },
-            take: 2,
             select: {
               id: true,
               numero: true,
@@ -180,66 +194,96 @@ export class OrderService {
               danfeUrl: true,
             },
           },
+          nfeOrders: {
+            where: {
+              nfe: {
+                status: { in: ['AUTHORIZED', 'DRAFT'] },
+              },
+            },
+            orderBy: { createdAt: 'desc' },
+            include: {
+              nfe: {
+                select: {
+                  id: true,
+                  numero: true,
+                  serie: true,
+                  status: true,
+                  danfeUrl: true,
+                },
+              },
+            },
+          },
         },
         take: Number(dto.limit),
         skip: (Number(dto.page) - 1) * Number(dto.limit),
         orderBy: { createdAt: 'desc' },
       });
 
-      const grouped = orders.reduce((acc: any, order: any) => {
-        const date = order.createdAt.toISOString().split('T')[0];
-        if (!acc[date]) {
-          acc[date] = { date, orders: [] };
-        }
+      const ordersWithConsolidatedNfes = orders.map((order: any) => ({
+        ...order,
+        nfes: [
+          ...(order.nfes || []),
+          ...(order.nfeOrders || []).map((item) => item.nfe).filter(Boolean),
+        ],
+      }));
 
-        const quotation = order.quotation;
-        acc[date].orders.push({
-          id: order.id,
-          status: order.status,
-          quotation: {
-            id: quotation.id,
-            description: quotation.description,
-            status: quotation.status,
-            dueDate: quotation.dueDate,
-            totalValue: quotation.totalValue,
-            approvedAt: quotation.approvedAt,
-            tag: quotation.tag
-              ? {
-                  id: quotation.tag.id,
-                  text: quotation.tag.title,
-                  color: quotation.tag.color,
-                }
-              : null,
-            quickSale: quotation.quickSale || false,
-            serie: quotation.series
-              ? {
-                  id: quotation.series.id,
-                  name: quotation.series.title,
-                  code: quotation.series.code,
-                  quotation: quotation.quotationNumber,
-                }
-              : null,
-            client: quotation.client
-              ? {
-                  id: quotation.client.id,
-                  name: quotation.client.name,
-                  email: quotation.client.email,
-                }
-              : null,
-            seller: quotation.seller
-              ? {
-                  id: quotation.seller.id,
-                  name: quotation.seller.name ?? quotation.seller.user.name,
-                }
-              : null,
-            deliveryInfo: quotation.deliveryInfo,
-            quotationPayment: quotation.quotationPayment,
-          },
-          nfes: order.nfes || [],
-        });
+      const grouped = ordersWithConsolidatedNfes.reduce(
+        (acc: any, order: any) => {
+          const date = order.createdAt.toISOString().split('T')[0];
+          if (!acc[date]) {
+            acc[date] = { date, orders: [] };
+          }
 
-        return acc;
-      }, {});
+          const quotation = order.quotation;
+          acc[date].orders.push({
+            id: order.id,
+            status: order.status,
+            quotation: {
+              id: quotation.id,
+              description: quotation.description,
+              status: quotation.status,
+              dueDate: quotation.dueDate,
+              totalValue: quotation.totalValue,
+              approvedAt: quotation.approvedAt,
+              tag: quotation.tag
+                ? {
+                    id: quotation.tag.id,
+                    text: quotation.tag.title,
+                    color: quotation.tag.color,
+                  }
+                : null,
+              quickSale: quotation.quickSale || false,
+              serie: quotation.series
+                ? {
+                    id: quotation.series.id,
+                    name: quotation.series.title,
+                    code: quotation.series.code,
+                    quotation: quotation.quotationNumber,
+                  }
+                : null,
+              client: quotation.client
+                ? {
+                    id: quotation.client.id,
+                    name: quotation.client.name,
+                    email: quotation.client.email,
+                  }
+                : null,
+              seller: quotation.seller
+                ? {
+                    id: quotation.seller.id,
+                    name: quotation.seller.name ?? quotation.seller.user.name,
+                  }
+                : null,
+              deliveryInfo: quotation.deliveryInfo,
+              quotationPayment: quotation.quotationPayment,
+            },
+            nfes: order.nfes || [],
+          });
+
+          return acc;
+        },
+        {},
+      );
       // Transformar o agrupamento em um array de objetos
       const data = Object.values(grouped);
 

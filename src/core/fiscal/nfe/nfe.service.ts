@@ -56,6 +56,11 @@ export class NfeService {
         order: {
           include: {
             nfes: true, // Incluir NF-e já emitidas
+            nfeOrders: {
+              include: {
+                nfe: true,
+              },
+            },
           },
         },
         quotationProduct: {
@@ -174,7 +179,9 @@ export class NfeService {
     const valorNota = valorProdutos - valorDescontos;
 
     // Verificar se já existe NF-e emitida para esta ordem
-    const existingNfe = quotation.order.nfes?.[0];
+    const existingNfe =
+      quotation.order.nfes?.[0] ||
+      quotation.order.nfeOrders?.map((item) => item.nfe).find(Boolean);
 
     return {
       // Metadados
@@ -283,6 +290,133 @@ export class NfeService {
 
       // Autorização para download (XML)
       autXml: [],
+    };
+  }
+
+  async prepareConsolidatedFromOrders(
+    companyId: string,
+    orderIds: string[],
+    ignoredNfeId?: string,
+  ) {
+    const uniqueOrderIds = [...new Set(orderIds.filter(Boolean))];
+
+    if (uniqueOrderIds.length < 2) {
+      throw new BadRequestException(
+        'Selecione ao menos duas ordens para consolidar a NF-e',
+      );
+    }
+
+    const quotations = (await this.prisma.quotation.findMany({
+      where: {
+        companyId,
+        order: { id: { in: uniqueOrderIds } },
+      },
+      include: {
+        client: true,
+        series: true,
+        order: {
+          include: {
+            nfes: true,
+            nfeOrders: {
+              include: {
+                nfe: true,
+              },
+            },
+          },
+        },
+      },
+    })) as any[];
+
+    if (quotations.length !== uniqueOrderIds.length) {
+      throw new NotFoundException('Uma ou mais ordens nao foram encontradas');
+    }
+
+    const clientIds = new Set(
+      quotations.map((q) => q.clientId).filter(Boolean),
+    );
+    if (clientIds.size !== 1) {
+      throw new BadRequestException(
+        'Todas as ordens selecionadas precisam pertencer ao mesmo cliente',
+      );
+    }
+
+    for (const quotation of quotations) {
+      const directNfes = quotation.order?.nfes || [];
+      const pivotNfes =
+        quotation.order?.nfeOrders?.map((item) => item.nfe).filter(Boolean) ||
+        [];
+      const blockingNfe = [...directNfes, ...pivotNfes].find(
+        (nfe) =>
+          nfe.id !== ignoredNfeId &&
+          [NfeStatus.AUTHORIZED, NfeStatus.DRAFT].includes(nfe.status),
+      );
+
+      if (blockingNfe) {
+        const orderCode = `${quotation.series?.code || ''}-${quotation.series?.quotation || ''}`;
+        throw new BadRequestException(
+          `A OS ${orderCode} ja possui NF-e ${blockingNfe.status === NfeStatus.DRAFT ? 'em digitacao' : 'autorizada'}`,
+        );
+      }
+    }
+
+    const preparedOrders = await Promise.all(
+      uniqueOrderIds.map((orderId) =>
+        this.prepareFromOrder(companyId, orderId),
+      ),
+    );
+
+    const items = preparedOrders.flatMap((preparedOrder) =>
+      preparedOrder.items.map((item) => ({
+        ...item,
+        itemNumber: 0,
+        sourceOrderId: preparedOrder.orderId,
+        sourceOrderCode: preparedOrder.orderCode,
+        description: `${item.description} (OS ${preparedOrder.orderCode})`,
+      })),
+    );
+
+    items.forEach((item, index) => {
+      item.itemNumber = index + 1;
+    });
+
+    const valorProdutos = items.reduce(
+      (acc, item) => acc + item.unitValue * item.quantity,
+      0,
+    );
+    const valorDesconto = items.reduce((acc, item) => acc + item.discount, 0);
+    const valorFrete = items.reduce((acc, item) => acc + item.freight, 0);
+    const valorSeguro = items.reduce((acc, item) => acc + item.insurance, 0);
+    const valorNota = valorProdutos - valorDesconto + valorFrete + valorSeguro;
+    const orderCodes = preparedOrders.map((order) => order.orderCode);
+
+    return {
+      ...preparedOrders[0],
+      orderId: preparedOrders[0].orderId,
+      orderIds: uniqueOrderIds,
+      quotationId: preparedOrders[0].quotationId,
+      orderCode: orderCodes.join(', '),
+      orderCodes,
+      hasExistingNfe: false,
+      existingNfe: null,
+      items,
+      pagamento: {
+        ...preparedOrders[0].pagamento,
+        valor: Number(valorNota.toFixed(2)),
+      },
+      informacoesComplementares: [
+        preparedOrders[0].informacoesComplementares,
+        `NF-e consolidada das OSs: ${orderCodes.join(', ')}`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      totais: {
+        ...preparedOrders[0].totais,
+        valorProdutos: Number(valorProdutos.toFixed(2)),
+        valorDesconto: Number(valorDesconto.toFixed(2)),
+        valorFrete: Number(valorFrete.toFixed(2)),
+        valorSeguro: Number(valorSeguro.toFixed(2)),
+        valorNota: Number(valorNota.toFixed(2)),
+      },
     };
   }
 
@@ -680,6 +814,52 @@ export class NfeService {
     return nfe;
   }
 
+  async emitConsolidated(companyId: string, dto: EmitNfeDto) {
+    const uniqueOrderIds = [...new Set((dto.orderIds || []).filter(Boolean))];
+
+    if (uniqueOrderIds.length < 2) {
+      throw new BadRequestException(
+        'Selecione ao menos duas ordens para emitir uma NF-e consolidada',
+      );
+    }
+
+    const candidateDrafts = (await this.prisma.nfe.findMany({
+      where: {
+        companyId,
+        status: NfeStatus.DRAFT,
+        orders: {
+          some: {
+            orderId: { in: uniqueOrderIds },
+          },
+        },
+      },
+      include: {
+        orders: true,
+      },
+    })) as any[];
+
+    const existingDraft = candidateDrafts.find((draft) => {
+      const draftOrderIds = draft.orders.map((item) => item.orderId).sort();
+      return (
+        draftOrderIds.length === uniqueOrderIds.length &&
+        draftOrderIds.join('|') === [...uniqueOrderIds].sort().join('|')
+      );
+    });
+
+    const preparedData = await this.prepareConsolidatedFromOrders(
+      companyId,
+      uniqueOrderIds,
+      existingDraft?.id,
+    );
+
+    return this.emit(companyId, {
+      ...dto,
+      orderId: uniqueOrderIds[0],
+      orderIds: uniqueOrderIds,
+      quotationId: dto.quotationId || preparedData.quotationId,
+    });
+  }
+
   async emit(companyId: string, dto: EmitNfeDto) {
     // Buscar configuração do Invoicy
     const config = await this.invoicyService.getConfig(companyId);
@@ -751,9 +931,49 @@ export class NfeService {
 
     // Criar ou atualizar registro da NF-e
     let nfe;
+    const consolidatedOrderIds = [
+      ...new Set((dto.orderIds || []).filter(Boolean)),
+    ];
 
-    // Se for vinculada a uma ordem, buscar rascunho existente
-    if (dto.orderId) {
+    // Se for vinculada a ordens consolidadas, buscar rascunho pela pivot
+    if (consolidatedOrderIds.length > 1) {
+      const draftNfes = (await this.prisma.nfe.findMany({
+        where: {
+          companyId,
+          status: NfeStatus.DRAFT,
+          orders: {
+            some: {
+              orderId: { in: consolidatedOrderIds },
+            },
+          },
+        },
+        include: {
+          orders: true,
+        },
+      })) as any[];
+
+      const draftNfe = draftNfes.find((draft) => {
+        const draftOrderIds = draft.orders.map((item) => item.orderId).sort();
+        return (
+          draftOrderIds.length === consolidatedOrderIds.length &&
+          draftOrderIds.join('|') === [...consolidatedOrderIds].sort().join('|')
+        );
+      });
+
+      if (draftNfe) {
+        nfe = await this.prisma.nfe.update({
+          where: { id: draftNfe.id },
+          data: {
+            numero,
+            serie: config.serieNfe,
+            status: NfeStatus.PROCESSING,
+            ambiente: config.ambiente,
+            valorTotal,
+            motivoRejeicao: null,
+          },
+        });
+      }
+    } else if (dto.orderId) {
       const draftNfe = await this.prisma.nfe.findFirst({
         where: {
           companyId,
@@ -791,6 +1011,21 @@ export class NfeService {
           ambiente: config.ambiente,
           valorTotal,
         },
+      });
+    }
+
+    if (consolidatedOrderIds.length > 1) {
+      await this.prisma.nfeOrder.createMany({
+        data: consolidatedOrderIds.map((orderId) => ({
+          nfeId: nfe.id,
+          orderId,
+        })),
+        skipDuplicates: true,
+      });
+    } else if (dto.orderId) {
+      await this.prisma.nfeOrder.createMany({
+        data: [{ nfeId: nfe.id, orderId: dto.orderId }],
+        skipDuplicates: true,
       });
     }
 
@@ -1371,6 +1606,29 @@ export class NfeService {
    * Se não existe, cria um novo com os dados do prepareFromOrder.
    */
   async createOrGetDraft(companyId: string, orderId: string) {
+    const existingLinkedNfe = await this.prisma.nfe.findFirst({
+      where: {
+        companyId,
+        status: { in: [NfeStatus.AUTHORIZED, NfeStatus.DRAFT] },
+        orders: {
+          some: { orderId },
+        },
+      },
+      include: {
+        orders: true,
+      },
+    });
+
+    if (
+      existingLinkedNfe &&
+      ((existingLinkedNfe as any).orders?.length > 1 ||
+        existingLinkedNfe.status === NfeStatus.AUTHORIZED)
+    ) {
+      throw new BadRequestException(
+        'Esta ordem ja esta vinculada a uma NF-e consolidada',
+      );
+    }
+
     // Verificar se já existe rascunho para esta ordem
     const existingDraft = await this.prisma.nfe.findFirst({
       where: {
@@ -1443,11 +1701,124 @@ export class NfeService {
             informacoesComplementares: preparedData.informacoesComplementares,
           }),
         ),
+        orders: {
+          create: [{ orderId }],
+        },
       },
     });
 
     this.logger.log(
       `Rascunho de NF-e criado: ${draft.id} para ordem ${orderId}`,
+    );
+
+    return {
+      ...preparedData,
+      draftId: draft.id,
+      isDraft: true,
+    };
+  }
+
+  async createOrGetConsolidatedDraft(companyId: string, orderIds: string[]) {
+    const uniqueOrderIds = [...new Set((orderIds || []).filter(Boolean))];
+
+    if (uniqueOrderIds.length < 2) {
+      throw new BadRequestException(
+        'Selecione ao menos duas ordens para consolidar a NF-e',
+      );
+    }
+
+    const candidateDrafts = (await this.prisma.nfe.findMany({
+      where: {
+        companyId,
+        status: NfeStatus.DRAFT,
+        orders: {
+          some: {
+            orderId: { in: uniqueOrderIds },
+          },
+        },
+      },
+      include: {
+        orders: true,
+      },
+    })) as any[];
+
+    const existingDraft = candidateDrafts.find((draft) => {
+      const draftOrderIds = draft.orders.map((item) => item.orderId).sort();
+      return (
+        draftOrderIds.length === uniqueOrderIds.length &&
+        draftOrderIds.join('|') === [...uniqueOrderIds].sort().join('|')
+      );
+    });
+
+    if (existingDraft) {
+      const preparedData = await this.prepareConsolidatedFromOrders(
+        companyId,
+        uniqueOrderIds,
+        existingDraft.id,
+      );
+      const draftData = (existingDraft.draftData as Record<string, any>) || {};
+
+      return {
+        ...preparedData,
+        draftId: existingDraft.id,
+        isDraft: true,
+        destinatario: draftData.destinatario || preparedData.destinatario,
+        items: draftData.items || preparedData.items,
+        transportadora: draftData.transportadora || preparedData.transportadora,
+        volumes: draftData.volumes || preparedData.volumes,
+        pagamento: draftData.pagamento || preparedData.pagamento,
+        duplicatas: draftData.duplicatas || preparedData.duplicatas,
+        autXml: draftData.autXml || preparedData.autXml,
+        informacoesComplementares:
+          draftData.informacoesComplementares ||
+          preparedData.informacoesComplementares,
+      };
+    }
+
+    const preparedData = await this.prepareConsolidatedFromOrders(
+      companyId,
+      uniqueOrderIds,
+    );
+
+    const config = await this.invoicyService.getConfig(companyId);
+    if (!config) {
+      throw new BadRequestException('Configuracao do Invoicy nao encontrada.');
+    }
+
+    const draft = await this.prisma.nfe.create({
+      data: {
+        companyId,
+        orderId: preparedData.orderId,
+        quotationId: preparedData.quotationId,
+        numero: config.proximoNumeroNfe || 1,
+        serie: config.serieNfe || 1,
+        status: NfeStatus.DRAFT,
+        ambiente: config.ambiente || 2,
+        valorTotal: preparedData.totais.valorNota,
+        draftData: JSON.parse(
+          JSON.stringify({
+            orderIds: uniqueOrderIds,
+            orderCodes: preparedData.orderCodes,
+            destinatario: preparedData.destinatario,
+            items: preparedData.items,
+            transportadora: preparedData.transportadora,
+            volumes: preparedData.volumes,
+            pagamento: preparedData.pagamento,
+            duplicatas: preparedData.duplicatas,
+            autXml: preparedData.autXml,
+            informacoesComplementares: preparedData.informacoesComplementares,
+          }),
+        ),
+        orders: {
+          create: uniqueOrderIds.map((relatedOrderId) => ({
+            orderId: relatedOrderId,
+          })),
+        },
+      },
+    });
+
+    this.logger.log(
+      `Rascunho consolidado de NF-e criado: ${draft.id} para ordens ${uniqueOrderIds.join(', ')}`,
     );
 
     return {

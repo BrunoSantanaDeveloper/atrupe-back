@@ -428,6 +428,7 @@ model User {
   orderHistory         OrderHistory[]      @relation("OrderHistoryUser")
   companyHistory       CompanyHistory[]    @relation("CompanyHistoryUser")
   userActivities       UserActivity[]
+  userActivityEvents   UserActivityEvent[]
   importLogs           ImportLog[]
   customer             Customer?           @relation(fields: [customerId], references: [id])
 
@@ -1181,6 +1182,7 @@ model Order {
   cancelReason     Reasons?          @relation(fields: [reasonId], references: [id])
   history          OrderHistory[]
   nfes             Nfe[]
+  nfeOrders        NfeOrder[]
   nfses            Nfse[]
   nfces            Nfce[]
 
@@ -1690,6 +1692,7 @@ model UserActivity {
   isActive   Boolean   @default(true) // Se a sessão está ativa
   logoutAt   DateTime? // Quando o usuário fez logout
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events     UserActivityEvent[]
 
   @@index([userId])
   @@index([sessionId])
@@ -1697,6 +1700,30 @@ model UserActivity {
   @@index([lastActive])
   @@index([isActive])
   @@map("user_activities")
+}
+
+model UserActivityEvent {
+  id         String        @id @default(uuid())
+  activityId String?
+  userId     String
+  companyId  String?
+  employeeId String?
+  sessionId  String
+  endpoint   String?
+  method     String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime      @default(now())
+  activity   UserActivity? @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([activityId])
+  @@index([userId])
+  @@index([sessionId])
+  @@index([companyId])
+  @@index([createdAt])
+  @@index([method])
+  @@map("user_activity_events")
 }
 
 enum OwnerType {
@@ -2181,12 +2208,26 @@ model Nfe {
   company               Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   order                 Order?     @relation(fields: [orderId], references: [id])
   quotation             Quotation? @relation(fields: [quotationId], references: [id])
+  orders                NfeOrder[]
 
   @@index([companyId])
   @@index([orderId])
   @@index([status])
   @@index([numero, serie, companyId])
   @@map("nfes")
+}
+
+model NfeOrder {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  nfeId     String
+  orderId   String
+  nfe       Nfe      @relation(fields: [nfeId], references: [id], onDelete: Cascade)
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([nfeId, orderId])
+  @@index([orderId])
+  @@map("nfe_orders")
 }
 
 model ProductFiscalData {

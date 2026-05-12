@@ -84,6 +84,11 @@ export class InstallmentDto {
   @IsOptional()
   dueDate?: string;
 
+  @ApiProperty({ description: 'ID da condição de pagamento da parcela' })
+  @IsUUID()
+  @IsOptional()
+  paymentConditionId?: string;
+
   @ApiProperty({ description: 'Taxa de acréscimo na parcela' })
   @IsNumber()
   @IsOptional()

@@ -208,6 +208,9 @@ const mockPrismaService = {
     delete: jest.fn(),
     count: jest.fn(),
   },
+  nfeOrder: {
+    createMany: jest.fn(),
+  },
   quotation: {
     findFirst: jest.fn(),
     findUnique: jest.fn(),

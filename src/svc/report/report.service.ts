@@ -108,6 +108,25 @@ export class ReportService {
     return { startDate, endDate };
   }
 
+  private getSalesQuotationFilters(
+    companyId: string,
+    filters: SalesReportFilterDto,
+  ) {
+    return {
+      companyId,
+      ...(filters.sellerId && { sellerId: filters.sellerId }),
+      ...(filters.originId && { contactSourceId: filters.originId }),
+      ...(filters.clientId && { clientId: filters.clientId }),
+      ...(filters.serieId && { seriesId: filters.serieId }),
+    };
+  }
+
+  private getSalesOrderBy(orderBy?: SalesReportFilterDto['orderBy']): any {
+    if (orderBy === 'valueDesc') return { quotation: { totalValue: 'desc' } };
+    if (orderBy === 'valueAsc') return { quotation: { totalValue: 'asc' } };
+    return { quotation: { approvedAt: 'desc' } };
+  }
+
   /**
    * Calcula o valor composto de um orçamento, incluindo entrega, comissão e taxas.
    * Fórmula igual ao frontend (QuotationsData.tsx).
@@ -179,10 +198,8 @@ export class ReportService {
       where: {
         status: { not: 'CANCELED' },
         quotation: {
-          companyId,
+          ...this.getSalesQuotationFilters(companyId, filters),
           approvedAt: { gte: startDate, lte: endDate },
-          ...(filters.sellerId && { sellerId: filters.sellerId }),
-          ...(filters.originId && { contactSourceId: filters.originId }),
         },
       },
       include: {
@@ -236,11 +253,9 @@ export class ReportService {
     // Rejected quotations
     const rejectedQuotations = await this.prisma.quotation.findMany({
       where: {
-        companyId,
+        ...this.getSalesQuotationFilters(companyId, filters),
         status: 'REJECTED',
         updatedAt: { gte: startDate, lte: endDate },
-        ...(filters.sellerId && { sellerId: filters.sellerId }),
-        ...(filters.originId && { contactSourceId: filters.originId }),
       },
       select: this.quotationValueSelect,
     });
@@ -255,13 +270,11 @@ export class ReportService {
     const now = new Date();
     const awaitingQuotations = await this.prisma.quotation.findMany({
       where: {
-        companyId,
+        ...this.getSalesQuotationFilters(companyId, filters),
         status: 'DONE',
         approvedAt: null,
         createdAt: { gte: startDate, lte: endDate },
         OR: [{ dueDate: null }, { dueDate: { gte: now } }],
-        ...(filters.sellerId && { sellerId: filters.sellerId }),
-        ...(filters.originId && { contactSourceId: filters.originId }),
       },
       select: this.quotationValueSelect,
     });
@@ -275,12 +288,10 @@ export class ReportService {
     // Expired quotations (DONE, dueDate already passed, filtered by dueDate in period)
     const expiredQuotations = await this.prisma.quotation.findMany({
       where: {
-        companyId,
+        ...this.getSalesQuotationFilters(companyId, filters),
         status: 'DONE',
         approvedAt: null,
         dueDate: { lt: now, gte: startDate, lte: endDate },
-        ...(filters.sellerId && { sellerId: filters.sellerId }),
-        ...(filters.originId && { contactSourceId: filters.originId }),
       },
       select: this.quotationValueSelect,
     });
@@ -296,10 +307,8 @@ export class ReportService {
       where: {
         status: 'CANCELED',
         quotation: {
-          companyId,
+          ...this.getSalesQuotationFilters(companyId, filters),
           approvedAt: { gte: startDate, lte: endDate },
-          ...(filters.sellerId && { sellerId: filters.sellerId }),
-          ...(filters.originId && { contactSourceId: filters.originId }),
         },
       },
       include: {
@@ -544,10 +553,8 @@ export class ReportService {
       where: {
         status: { not: 'CANCELED' },
         quotation: {
-          companyId,
+          ...this.getSalesQuotationFilters(companyId, filters),
           approvedAt: { gte: startDate, lte: endDate },
-          ...(filters.sellerId && { sellerId: filters.sellerId }),
-          ...(filters.originId && { contactSourceId: filters.originId }),
         },
       },
       include: {
@@ -572,10 +579,8 @@ export class ReportService {
 
     const quotations = await this.prisma.quotation.findMany({
       where: {
-        companyId,
+        ...this.getSalesQuotationFilters(companyId, filters),
         createdAt: { gte: sixMonthsAgo, lte: currentMonthEnd },
-        ...(filters.sellerId && { sellerId: filters.sellerId }),
-        ...(filters.originId && { contactSourceId: filters.originId }),
       },
       include: {
         order: { select: { id: true, status: true } },
@@ -658,11 +663,9 @@ export class ReportService {
     const quotationsWithOrigin = await this.prisma.quotation.groupBy({
       by: ['contactSourceId'],
       where: {
-        companyId,
+        ...this.getSalesQuotationFilters(companyId, filters),
         createdAt: { gte: startDate, lte: endDate },
-        contactSourceId: { not: null },
-        ...(filters.sellerId && { sellerId: filters.sellerId }),
-        ...(filters.originId && { contactSourceId: filters.originId }),
+        ...(filters.originId ? {} : { contactSourceId: { not: null } }),
       },
       _count: true,
     });
@@ -697,11 +700,9 @@ export class ReportService {
       where: {
         status: { not: 'CANCELED' },
         quotation: {
-          companyId,
+          ...this.getSalesQuotationFilters(companyId, filters),
           approvedAt: { gte: startDate, lte: endDate },
-          contactSourceId: { not: null },
-          ...(filters.sellerId && { sellerId: filters.sellerId }),
-          ...(filters.originId && { contactSourceId: filters.originId }),
+          ...(filters.originId ? {} : { contactSourceId: { not: null } }),
         },
       },
       include: {
@@ -748,11 +749,9 @@ export class ReportService {
     const orderProducts = await this.prisma.quotationProduct.findMany({
       where: {
         quotation: {
-          companyId,
+          ...this.getSalesQuotationFilters(companyId, filters),
           approvedAt: { gte: startDate, lte: endDate },
           order: { status: { not: 'CANCELED' } },
-          ...(filters.sellerId && { sellerId: filters.sellerId }),
-          ...(filters.originId && { contactSourceId: filters.originId }),
         },
       },
       include: {
@@ -791,11 +790,9 @@ export class ReportService {
       where: {
         status: { not: 'CANCELED' },
         quotation: {
-          companyId,
+          ...this.getSalesQuotationFilters(companyId, filters),
           approvedAt: { gte: startDate, lte: endDate },
-          clientId: { not: null },
-          ...(filters.sellerId && { sellerId: filters.sellerId }),
-          ...(filters.originId && { contactSourceId: filters.originId }),
+          ...(filters.clientId ? {} : { clientId: { not: null } }),
         },
       },
       include: {
@@ -843,10 +840,8 @@ export class ReportService {
     // Base where clause — include canceled orders
     const whereClause = {
       quotation: {
-        companyId,
+        ...this.getSalesQuotationFilters(companyId, filters),
         approvedAt: { gte: startDate, lte: endDate },
-        ...(filters.sellerId && { sellerId: filters.sellerId }),
-        ...(filters.originId && { contactSourceId: filters.originId }),
       },
     };
 
@@ -854,12 +849,7 @@ export class ReportService {
     const totalCount = await this.prisma.order.count({ where: whereClause });
 
     // Determine order
-    let orderByClause: any = { quotation: { approvedAt: 'desc' } };
-    if (orderBy === 'valueDesc') {
-      orderByClause = { quotation: { totalValue: 'desc' } };
-    } else if (orderBy === 'valueAsc') {
-      orderByClause = { quotation: { totalValue: 'asc' } };
-    }
+    const orderByClause = this.getSalesOrderBy(orderBy);
 
     // When grouped, we need ALL records to build complete groups,
     // then paginate at the group level.
@@ -1016,21 +1006,20 @@ export class ReportService {
       where: {
         status: { not: 'CANCELED' },
         quotation: {
-          companyId,
+          ...this.getSalesQuotationFilters(companyId, filters),
           approvedAt: { gte: startDate, lte: endDate },
-          ...(filters.sellerId && { sellerId: filters.sellerId }),
-          ...(filters.originId && { contactSourceId: filters.originId }),
         },
       },
       include: {
         quotation: {
           include: {
             client: { select: { id: true, name: true } },
+            seller: { select: { id: true, name: true } },
             series: { select: { code: true } },
           },
         },
       },
-      orderBy: { quotation: { approvedAt: 'desc' } },
+      orderBy: this.getSalesOrderBy(filters.orderBy),
     });
 
     // Calculate total value
@@ -1039,7 +1028,7 @@ export class ReportService {
       0,
     );
 
-    // Group by client
+    // Group by selected dimension
     const groupsMap: Record<
       string,
       {
@@ -1052,13 +1041,24 @@ export class ReportService {
 
     orders.forEach((order) => {
       const q = order.quotation;
-      const clientId = q.clientId || 'no-client';
+      const groupId =
+        filters.groupBy === 'seller'
+          ? q.sellerId || 'no-seller'
+          : filters.groupBy === 'none'
+            ? 'all-sales'
+            : q.clientId || 'no-client';
+      const groupName =
+        filters.groupBy === 'seller'
+          ? q.seller?.name || 'Vendedor não informado'
+          : filters.groupBy === 'none'
+            ? 'Vendas'
+            : q.client?.name || 'Cliente não informado';
       const clientName = q.client?.name || 'Cliente não informado';
 
-      if (!groupsMap[clientId]) {
-        groupsMap[clientId] = {
-          clientId,
-          clientName,
+      if (!groupsMap[groupId]) {
+        groupsMap[groupId] = {
+          clientId: groupId,
+          clientName: groupName,
           records: [],
           total: 0,
         };
@@ -1079,7 +1079,7 @@ export class ReportService {
           ? parseFloat(((value / totalValue) * 100).toFixed(1))
           : 0;
 
-      groupsMap[clientId].records.push({
+      groupsMap[groupId].records.push({
         id: order.id,
         clientName,
         serviceCode: `${q.series?.code || ''}-${q.quotationNumber || ''}`,
@@ -1090,7 +1090,7 @@ export class ReportService {
         percentage,
       });
 
-      groupsMap[clientId].total += value;
+      groupsMap[groupId].total += value;
     });
 
     const groups = Object.values(groupsMap).map((g) => ({
@@ -1297,6 +1297,7 @@ export class ReportService {
           receivable: {
             companyId,
             status: { not: 'CANCELED' },
+            ...(filters.clientId && { clientId: filters.clientId }),
           },
           OR: [
             { dueDate: { gte: startDate, lte: endDate } },
@@ -1352,6 +1353,7 @@ export class ReportService {
           payable: {
             companyId,
             status: { not: 'CANCELED' },
+            ...(filters.clientId && { supplierId: filters.clientId }),
           },
           OR: [
             { dueDate: { gte: startDate, lte: endDate } },
@@ -1414,7 +1416,11 @@ export class ReportService {
     const installments = isReceitas
       ? await this.prisma.receivableInstallment.findMany({
           where: {
-            receivable: { companyId, status: { not: 'CANCELED' } },
+            receivable: {
+              companyId,
+              status: { not: 'CANCELED' },
+              ...(filters.clientId && { clientId: filters.clientId }),
+            },
             OR: [
               { dueDate: { gte: startDate, lte: endDate } },
               { paidDate: { gte: startDate, lte: endDate } },
@@ -1423,7 +1429,11 @@ export class ReportService {
         })
       : await this.prisma.payableInstallment.findMany({
           where: {
-            payable: { companyId, status: { not: 'CANCELED' } },
+            payable: {
+              companyId,
+              status: { not: 'CANCELED' },
+              ...(filters.clientId && { supplierId: filters.clientId }),
+            },
             OR: [
               { dueDate: { gte: startDate, lte: endDate } },
               { paidDate: { gte: startDate, lte: endDate } },
@@ -1523,6 +1533,7 @@ export class ReportService {
         receivable: {
           companyId,
           status: { not: 'CANCELED' },
+          ...(filters.clientId && { clientId: filters.clientId }),
         },
         OR: [
           { dueDate: { gte: startDate, lte: endDate } },
@@ -1674,6 +1685,7 @@ export class ReportService {
         payable: {
           companyId,
           status: { not: 'CANCELED' },
+          ...(filters.clientId && { supplierId: filters.clientId }),
         },
         OR: [
           { dueDate: { gte: startDate, lte: endDate } },
@@ -2197,6 +2209,7 @@ export class ReportService {
         receivable: {
           companyId,
           status: { not: 'CANCELED' },
+          ...(filters.clientId && { clientId: filters.clientId }),
         },
         OR: [
           { dueDate: { gte: startDate, lte: endDate } },
@@ -2345,6 +2358,7 @@ export class ReportService {
         payable: {
           companyId,
           status: { not: 'CANCELED' },
+          ...(filters.clientId && { supplierId: filters.clientId }),
         },
         OR: [
           { dueDate: { gte: startDate, lte: endDate } },

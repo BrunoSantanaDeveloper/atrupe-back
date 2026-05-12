@@ -15,6 +15,14 @@ export class SalesReportFilterDto {
   originId?: string;
 
   @IsOptional()
+  @IsString()
+  clientId?: string;
+
+  @IsOptional()
+  @IsString()
+  serieId?: string;
+
+  @IsOptional()
   @IsDateString()
   startDate?: string;
 
