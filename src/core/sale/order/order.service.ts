@@ -62,24 +62,27 @@ export class OrderService {
       }
 
       // Filtro por fase de emissão fiscal
-      if (dto.nfeStatus === 'EMITIDA') {
-        where.nfes = { some: { status: 'AUTHORIZED' } };
-      } else if (dto.nfeStatus === 'EM_DIGITACAO') {
-        where.nfes = {
-          some: { status: 'DRAFT' },
-          none: { status: 'AUTHORIZED' },
-        };
-      } else if (dto.nfeStatus === 'TODAS') {
-        // Sem filtro de NFE, mas se for tela de NFE, esconder canceladas sem NF
-        where.OR = [
-          { status: { not: OrderStatus.CANCELED } },
-          { nfes: { some: {} } },
-        ];
-      } else if (dto.nfeStatus) {
-        // Padrão (NAO_EMITIDA): ordens sem nenhuma NF AUTHORIZED ou DRAFT e que NÃO estão canceladas
-        // Isso permite que ordens com NF rejeitadas ou com erro ainda apareçam para serem reemitidas
-        where.nfes = { none: { status: { in: ['AUTHORIZED', 'DRAFT'] } } };
-        where.status = { not: OrderStatus.CANCELED };
+      // Quando há busca ativa, não aplica o filtro de fase para que o resultado apareça independente da fase
+      if (!dto.search) {
+        if (dto.nfeStatus === 'EMITIDA') {
+          where.nfes = { some: { status: 'AUTHORIZED' } };
+        } else if (dto.nfeStatus === 'EM_DIGITACAO') {
+          where.nfes = {
+            some: { status: 'DRAFT' },
+            none: { status: 'AUTHORIZED' },
+          };
+        } else if (dto.nfeStatus === 'TODAS') {
+          // Sem filtro de NFE, mas se for tela de NFE, esconder canceladas sem NF
+          where.OR = [
+            { status: { not: OrderStatus.CANCELED } },
+            { nfes: { some: {} } },
+          ];
+        } else if (dto.nfeStatus) {
+          // Padrão (NAO_EMITIDA): ordens sem nenhuma NF AUTHORIZED ou DRAFT e que NÃO estão canceladas
+          // Isso permite que ordens com NF rejeitadas ou com erro ainda apareçam para serem reemitidas
+          where.nfes = { none: { status: { in: ['AUTHORIZED', 'DRAFT'] } } };
+          where.status = { not: OrderStatus.CANCELED };
+        }
       }
 
       // Busca por texto - combinando com os filtros existentes
