@@ -95,6 +95,15 @@ export class OrderService {
             },
           },
         ];
+
+        // Se o usuário buscar por algo como "V1-34", extrai apenas o número "34"
+        const parts = dto.search.split('-');
+        const numStr = parts.length > 1 ? parts[parts.length - 1] : dto.search;
+        const searchAsNumber = Number(numStr.trim());
+
+        if (!isNaN(searchAsNumber) && numStr.trim() !== '') {
+          quotationFilters.OR.push({ quotationNumber: searchAsNumber });
+        }
       }
 
       // Aplicar filtros de quotation se houver algum
@@ -155,7 +164,9 @@ export class OrderService {
             },
           },
           nfes: {
-            where: { status: { in: ['AUTHORIZED', 'DRAFT'] } },
+            where: {
+              status: { in: ['AUTHORIZED', 'DRAFT', 'REJECTED'] },
+            },
             orderBy: { createdAt: 'desc' },
             take: 2,
             select: {
@@ -172,7 +183,7 @@ export class OrderService {
         orderBy: { createdAt: 'desc' },
       });
 
-      const grouped = orders.reduce((acc, order) => {
+      const grouped = orders.reduce((acc: any, order: any) => {
         const date = order.createdAt.toISOString().split('T')[0];
         if (!acc[date]) {
           acc[date] = { date, orders: [] };
