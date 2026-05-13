@@ -82,6 +82,15 @@ export class NfeService {
             },
           },
         },
+        deliveryInfo: {
+          include: {
+            supplier: {
+              include: {
+                address: true,
+              },
+            },
+          },
+        },
       },
     })) as any;
 
@@ -216,8 +225,10 @@ export class NfeService {
         dataSaida: new Date().toISOString(),
         destinoOperacao:
           clientAddress?.state === config.company.address.state ? 1 : 2, // 1 = Interna, 2 = Interestadual
-        modalidadeFrete: 9, // 9 = Sem ocorrência de transporte
-        ambiente: config.ambiente || 'HOMOLOGACAO',
+        // Se a OS tem entrega por transportadora, usar modalidade CIF (0); senão, Sem ocorrência (9)
+        modalidadeFrete:
+          quotation.deliveryInfo?.deliveryType === 'CARRIER' ? 0 : 9,
+        ambiente: config.environment || 'HOMOLOGACAO',
       },
 
       // Destinatário
@@ -241,18 +252,69 @@ export class NfeService {
       // Itens
       items,
 
-      // Transportadora (vazio por padrão)
-      transportadora: {
-        cnpjCpf: '',
-        razaoSocial: '',
-        ie: '',
-        endereco: '',
-        cidade: '',
-        uf: '',
-      },
+      // Transportadora: pré-preencher com dados do supplier da OS quando deliveryType = CARRIER
+      transportadora: (() => {
+        const delivery = quotation.deliveryInfo;
+        if (delivery?.deliveryType === 'CARRIER' && delivery.supplier) {
+          const s = delivery.supplier;
+          const sAddr = s.address?.[0];
+          return {
+            cnpjCpf: s.cnpj || s.cpf || '',
+            razaoSocial: s.corporateName || s.name || '',
+            ie: s.stateRegistration || '',
+            endereco: sAddr
+              ? `${sAddr.street || ''}, ${sAddr.number || 'S/N'}`
+              : '',
+            cidade: sAddr?.city || '',
+            uf: sAddr?.state || '',
+          };
+        }
+        return {
+          cnpjCpf: '',
+          razaoSocial: '',
+          ie: '',
+          endereco: '',
+          cidade: '',
+          uf: '',
+        };
+      })(),
 
-      // Volumes
-      volumes: [],
+      // Volumes: pré-preencher volume consolidado quando deliveryType = CARRIER
+      volumes: (() => {
+        const isCarrier = quotation.deliveryInfo?.deliveryType === 'CARRIER';
+        if (!isCarrier) return [];
+
+        const productItems = (
+          updatedQuotation || quotation
+        ).quotationProduct.filter((qp: any) => !qp.product?.isService);
+
+        if (productItems.length === 0) return [];
+
+        // Somar pesos dos QuotationProductItems (peso em kg, valor direto)
+        const pesoTotal = productItems.reduce((acc: number, qp: any) => {
+          const itemWeight = (qp.items || []).reduce(
+            (s: number, i: any) => s + (i.weight || 0) * (i.quantity || 1),
+            0,
+          );
+          return acc + itemWeight;
+        }, 0);
+
+        const quantidadeTotal = productItems.reduce(
+          (acc: number, qp: any) => acc + (qp.quantity || 1),
+          0,
+        );
+
+        return [
+          {
+            quantidade: quantidadeTotal,
+            especie: 'CX',
+            marca: '',
+            numeracao: '',
+            pesoLiquido: Number(pesoTotal.toFixed(3)),
+            pesoBruto: Number(pesoTotal.toFixed(3)),
+          },
+        ];
+      })(),
 
       // Pagamento
       pagamento: {
@@ -503,7 +565,7 @@ export class NfeService {
         dataSaida: new Date().toISOString(),
         destinoOperacao: 1,
         modalidadeFrete: 9,
-        ambiente: config.ambiente || 'HOMOLOGACAO',
+        ambiente: config.environment || 'HOMOLOGACAO',
       },
 
       // Destinatário
