@@ -133,8 +133,19 @@ export class NfeEventsService {
     try {
       this.logger.log(`Enviando carta de correção para NF-e ${nfe.numero}`);
 
-      // Obter sequência do evento (max 20 cartas de correção por NF-e)
-      const sequenciaEvento = dto.sequenciaEvento || 1;
+      // Calcular próxima sequência automaticamente com base nos eventos já registrados
+      const lastEvent = await this.prisma.nfeCorrectionEvent.findFirst({
+        where: { nfeId: nfe.id },
+        orderBy: { sequenciaEvento: 'desc' },
+      });
+      const sequenciaEvento =
+        dto.sequenciaEvento ?? (lastEvent ? lastEvent.sequenciaEvento + 1 : 1);
+
+      if (sequenciaEvento > 20) {
+        throw new BadRequestException(
+          'Limite máximo de 20 cartas de correção por NF-e atingido',
+        );
+      }
 
       // Chamar API do Invoicy para carta de correção
       const invoicyResponses =
@@ -176,6 +187,17 @@ export class NfeEventsService {
           dataCorrecao: new Date(),
           protocoloCorrecao: doc?.DocProtocolo || null,
           sequenciaCorrecao: sequenciaEvento,
+        },
+      });
+
+      // Persistir evento no histórico de correções
+      await this.prisma.nfeCorrectionEvent.create({
+        data: {
+          nfeId: nfe.id,
+          sequenciaEvento,
+          correcao: dto.correcao,
+          protocolo: doc?.DocProtocolo || null,
+          dataEvento: new Date(),
         },
       });
 

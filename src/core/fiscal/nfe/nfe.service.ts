@@ -2084,4 +2084,22 @@ export class NfeService {
       );
     }
   }
+
+  /**
+   * Lista o histórico de cartas de correção de uma NF-e
+   */
+  async listCorrectionEvents(nfeId: string, companyId: string) {
+    const nfe = await this.prisma.nfe.findFirst({
+      where: { id: nfeId, companyId },
+    });
+
+    if (!nfe) {
+      throw new NotFoundException('NF-e não encontrada');
+    }
+
+    return this.prisma.nfeCorrectionEvent.findMany({
+      where: { nfeId },
+      orderBy: { sequenciaEvento: 'asc' },
+    });
+  }
 }

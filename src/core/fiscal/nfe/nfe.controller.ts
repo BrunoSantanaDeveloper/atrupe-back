@@ -166,6 +166,13 @@ export class NfeController {
     return this.nfeService.sendCorrectionLetter(id, req.user.companyId, dto);
   }
 
+  @Get(':id/corrections')
+  @HasPermission('view', 'nota_fiscal:emitidas')
+  @ApiOperation({ summary: 'Listar histórico de cartas de correção' })
+  async listCorrections(@Req() req, @Param('id') id: string) {
+    return this.nfeService.listCorrectionEvents(id, req.user.companyId);
+  }
+
   @Get(':id/status')
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Consultar status da NF-e' })

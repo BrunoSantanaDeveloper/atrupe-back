@@ -16,6 +16,10 @@ describe('NfeEventsService', () => {
       nfe: {
         update: jest.fn(),
       },
+      nfeCorrectionEvent: {
+        findFirst: jest.fn(),
+        create: jest.fn(),
+      },
     };
 
     invoicyApiMock = {

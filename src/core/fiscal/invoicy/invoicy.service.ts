@@ -110,8 +110,15 @@ export class InvoicyService {
     const address = company.address?.[0] || {}; // Assume first address is principal
     const digitalCertificate = company.DigitalCertificate || {};
 
+    // Normalizar environment a partir de ambiente (int) se estiver nulo
+    // Garante consistência mesmo em registros antigos com campos dessincronizados
+    const normalizedEnvironment =
+      config.environment ||
+      (config.ambiente === 1 ? 'PRODUCAO' : 'HOMOLOGACAO');
+
     return {
       ...config,
+      environment: normalizedEnvironment,
       // Nested company structure
       company: {
         id: company.id,

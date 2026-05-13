@@ -2210,6 +2210,8 @@ model Nfe {
   quotation             Quotation? @relation(fields: [quotationId], references: [id])
   orders                NfeOrder[]
 
+  correctionEvents      NfeCorrectionEvent[]
+
   @@index([companyId])
   @@index([orderId])
   @@index([status])
@@ -2228,6 +2230,20 @@ model NfeOrder {
   @@unique([nfeId, orderId])
   @@index([orderId])
   @@map("nfe_orders")
+}
+
+model NfeCorrectionEvent {
+  id              String    @id @default(uuid())
+  createdAt       DateTime  @default(now())
+  nfeId           String
+  sequenciaEvento Int
+  correcao        String    @db.Text
+  protocolo       String?
+  dataEvento      DateTime?
+  nfe             Nfe       @relation(fields: [nfeId], references: [id], onDelete: Cascade)
+
+  @@index([nfeId])
+  @@map("nfe_correction_events")
 }
 
 model ProductFiscalData {
