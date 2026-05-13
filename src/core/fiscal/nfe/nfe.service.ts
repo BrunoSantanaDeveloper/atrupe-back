@@ -662,6 +662,12 @@ export class NfeService {
         dto.operationNature ||
         config.defaultOperationNature ||
         'Venda de mercadoria',
+      tipo: dto.tipo,
+      finalidade: dto.finalidade,
+      consumidorFinal: dto.consumidorFinal,
+      presencaConsumidor: dto.presencaConsumidor,
+      dataSaida: dto.dataSaida,
+      nfeReferenciada: dto.nfeReferenciada,
       additionalInfo: dto.additionalInfo || config.taxInfoText || '',
       destCnpjCpf: client.cnpj || client.cpf || '',
       destNome: client.corporateName || client.name || '',
@@ -889,6 +895,19 @@ export class NfeService {
       );
     }
 
+    const cleanReferencedNfe = (dto.nfeReferenciada || '').replace(/\D/g, '');
+    if (cleanReferencedNfe && cleanReferencedNfe.length !== 44) {
+      throw new BadRequestException(
+        'NF-e referenciada deve conter uma chave de acesso com 44 digitos',
+      );
+    }
+
+    const now = new Date();
+    const dataSaida = dto.dataSaida ? new Date(dto.dataSaida) : now;
+    if (Number.isNaN(dataSaida.getTime())) {
+      throw new BadRequestException('Data de saida/entrada invalida');
+    }
+
     // Buscar código IBGE do município do destinatário via CEP
     let destCmun = 0;
     let destUfFromCep = dto.destUf || '';
@@ -1059,7 +1078,6 @@ export class NfeService {
       }
 
       // Construir payload para o Invoicy
-      const now = new Date();
       const invoicyRequest: InvoicyNfeRequest = {
         Documento: {
           ModeloDocumento: 'NFe',
@@ -1074,8 +1092,9 @@ export class NfeService {
             serie: config.serieNfe?.toString() || '1',
             nNF: numero,
             dhEmi: now.toISOString(),
+            dhSaiEnt: dataSaida.toISOString(),
             fusoHorario: '-03:00',
-            tpNf: 1, // 1 = Saída
+            tpNf: dto.tipo ?? 1, // 0 = Entrada, 1 = Saida
             idDest: destUfFromCep === config.company.address.state ? 1 : 2, // 1 = Interna, 2 = Interestadual
             cMunFg: parseInt(emitCmun || '0', 10),
             tpImp: 1, // DANFE retrato
@@ -1085,11 +1104,16 @@ export class NfeService {
               config.ambiente === 1 || config.environment === 'PRODUCAO'
                 ? 1
                 : 2,
-            finNFe: 1, // NF-e normal
-            indFinal: dto.destCnpjCpf?.length === 11 ? 1 : 0, // 1 = Consumidor final (CPF)
-            indPres: 1, // Operação presencial
+            finNFe: dto.finalidade ?? 1, // NF-e normal
+            indFinal:
+              dto.consumidorFinal ??
+              (dto.destCnpjCpf?.replace(/\D/g, '').length === 11 ? 1 : 0),
+            indPres: dto.presencaConsumidor ?? 1,
             procEmi: 0, // Aplicativo do contribuinte
             verProc: 'Atrupe 1.0',
+            ...(cleanReferencedNfe
+              ? { NFref: [{ refNFe: cleanReferencedNfe }] }
+              : {}),
           },
           emit: {
             CNPJ_emit: (config.company.cnpj || '').replace(/\D/g, ''),
@@ -1229,7 +1253,7 @@ export class NfeService {
             },
           ],
           transp: {
-            modFrete: '9', // Sem frete
+            modFrete: String(dto.modalidadeFrete ?? 9),
           },
           // Duplicatas/Cobrança
           ...(dto.duplicatas && dto.duplicatas.length > 0
@@ -1648,6 +1672,9 @@ export class NfeService {
         draftId: existingDraft.id,
         isDraft: true,
         // Sobrescrever com dados do rascunho
+        emissao: draftData.emissao
+          ? { ...preparedData.emissao, ...draftData.emissao }
+          : preparedData.emissao,
         destinatario: draftData.destinatario || preparedData.destinatario,
         items: (draftData.items || preparedData.items).map((item: any) => {
           const preparedItem = preparedData.items.find(
@@ -1692,6 +1719,7 @@ export class NfeService {
         draftData: JSON.parse(
           JSON.stringify({
             destinatario: preparedData.destinatario,
+            emissao: preparedData.emissao,
             items: preparedData.items,
             transportadora: preparedData.transportadora,
             volumes: preparedData.volumes,
@@ -1762,6 +1790,9 @@ export class NfeService {
         ...preparedData,
         draftId: existingDraft.id,
         isDraft: true,
+        emissao: draftData.emissao
+          ? { ...preparedData.emissao, ...draftData.emissao }
+          : preparedData.emissao,
         destinatario: draftData.destinatario || preparedData.destinatario,
         items: draftData.items || preparedData.items,
         transportadora: draftData.transportadora || preparedData.transportadora,
@@ -1799,6 +1830,7 @@ export class NfeService {
           JSON.stringify({
             orderIds: uniqueOrderIds,
             orderCodes: preparedData.orderCodes,
+            emissao: preparedData.emissao,
             destinatario: preparedData.destinatario,
             items: preparedData.items,
             transportadora: preparedData.transportadora,
@@ -1853,6 +1885,12 @@ export class NfeService {
     // Mesclar dados existentes com novos dados
     const updatedDraftData = {
       ...existingDraftData,
+      ...(dto.emissao && {
+        emissao: {
+          ...(existingDraftData.emissao || {}),
+          ...dto.emissao,
+        },
+      }),
       ...(dto.destinatario && { destinatario: dto.destinatario }),
       ...(dto.items && { items: dto.items }),
       ...(dto.transportadora && { transportadora: dto.transportadora }),

@@ -49,7 +49,7 @@ export class NfeBuilderService {
         det: this.buildProdutos(dto.items, destResult.uf, config),
         total: this.buildTotais(valorTotal, dto.items),
         pag: this.buildPagamento(valorTotal, dto.pagamento?.forma),
-        transp: { modFrete: '9' },
+        transp: { modFrete: String(dto.modalidadeFrete ?? 9) },
         ...this.buildCobranca(dto, numero, valorTotal),
         ...this.buildAutXml(dto),
       },
@@ -142,8 +142,11 @@ export class NfeBuilderService {
       serie: config.serieNfe?.toString() || '1',
       nNF: numero,
       dhEmi: now.toISOString(),
+      dhSaiEnt: dto.dataSaida
+        ? new Date(dto.dataSaida).toISOString()
+        : now.toISOString(),
       fusoHorario: '-03:00',
-      tpNf: 1,
+      tpNf: dto.tipo ?? 1,
       idDest: dest.uf === config.company?.address?.state ? 1 : 2,
       cMunFg: parseInt(config.ibgeCode || '0', 10),
       tpImp: 1,
@@ -155,11 +158,18 @@ export class NfeBuilderService {
         config.environment === 'PRODUCAO'
           ? 1
           : 2,
-      finNFe: 1,
-      indFinal: dto.destCnpjCpf?.replace(/\D/g, '').length === 11 ? 1 : 0,
-      indPres: 1,
+      finNFe: dto.finalidade ?? 1,
+      indFinal:
+        dto.consumidorFinal ??
+        (dto.destCnpjCpf?.replace(/\D/g, '').length === 11 ? 1 : 0),
+      indPres: dto.presencaConsumidor ?? 1,
       procEmi: 0,
       verProc: 'Atrupe 1.0',
+      ...((dto.nfeReferenciada || '').replace(/\D/g, '')
+        ? {
+            NFref: [{ refNFe: (dto.nfeReferenciada || '').replace(/\D/g, '') }],
+          }
+        : {}),
     };
   }
 

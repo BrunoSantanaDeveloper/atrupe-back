@@ -107,6 +107,36 @@ export class EmitNfeFromOrderDto {
   @IsOptional()
   operationNature?: string;
 
+  @ApiPropertyOptional({ description: 'Tipo NF-e: 0=Entrada, 1=Saida' })
+  @IsInt()
+  @IsOptional()
+  tipo?: number;
+
+  @ApiPropertyOptional({ description: 'Finalidade da emissao da NF-e' })
+  @IsInt()
+  @IsOptional()
+  finalidade?: number;
+
+  @ApiPropertyOptional({ description: 'Consumidor final: 0=Nao, 1=Sim' })
+  @IsInt()
+  @IsOptional()
+  consumidorFinal?: number;
+
+  @ApiPropertyOptional({ description: 'Indicador de presenca do consumidor' })
+  @IsInt()
+  @IsOptional()
+  presencaConsumidor?: number;
+
+  @ApiPropertyOptional({ description: 'Data de saida/entrada em ISO string' })
+  @IsString()
+  @IsOptional()
+  dataSaida?: string;
+
+  @ApiPropertyOptional({ description: 'Chave de acesso da NF-e referenciada' })
+  @IsString()
+  @IsOptional()
+  nfeReferenciada?: string | null;
+
   @ApiPropertyOptional({ description: 'Informações complementares' })
   @IsString()
   @IsOptional()
@@ -236,6 +266,36 @@ export class EmitNfeDto {
   @IsString()
   @IsOptional()
   operationNature?: string;
+
+  @ApiPropertyOptional({ description: 'Tipo NF-e: 0=Entrada, 1=Saida' })
+  @IsInt()
+  @IsOptional()
+  tipo?: number;
+
+  @ApiPropertyOptional({ description: 'Finalidade da emissao da NF-e' })
+  @IsInt()
+  @IsOptional()
+  finalidade?: number;
+
+  @ApiPropertyOptional({ description: 'Consumidor final: 0=Nao, 1=Sim' })
+  @IsInt()
+  @IsOptional()
+  consumidorFinal?: number;
+
+  @ApiPropertyOptional({ description: 'Indicador de presenca do consumidor' })
+  @IsInt()
+  @IsOptional()
+  presencaConsumidor?: number;
+
+  @ApiPropertyOptional({ description: 'Data de saida/entrada em ISO string' })
+  @IsString()
+  @IsOptional()
+  dataSaida?: string;
+
+  @ApiPropertyOptional({ description: 'Chave de acesso da NF-e referenciada' })
+  @IsString()
+  @IsOptional()
+  nfeReferenciada?: string | null;
 
   @ApiPropertyOptional({ description: 'Informações complementares' })
   @IsString()
@@ -539,8 +599,93 @@ export class DraftDestinatarioDto {
   pais?: string;
 }
 
+export class DraftEmissaoDto {
+  @ApiPropertyOptional({ description: 'Nome do emissor' })
+  @IsString()
+  @IsOptional()
+  emissor?: string;
+
+  @ApiPropertyOptional({ description: 'CNPJ do emissor' })
+  @IsString()
+  @IsOptional()
+  emissorCnpj?: string;
+
+  @ApiPropertyOptional({ description: 'Proximo documento' })
+  @IsString()
+  @IsOptional()
+  proximoDocumento?: string;
+
+  @ApiPropertyOptional({ description: 'Serie da NF-e' })
+  @IsInt()
+  @IsOptional()
+  serie?: number;
+
+  @ApiPropertyOptional({ description: 'Tipo NF-e: 0=Entrada, 1=Saida' })
+  @IsInt()
+  @IsOptional()
+  tipo?: number;
+
+  @ApiPropertyOptional({ description: 'Finalidade da emissao da NF-e' })
+  @IsInt()
+  @IsOptional()
+  finalidade?: number;
+
+  @ApiPropertyOptional({ description: 'Natureza da operacao' })
+  @IsString()
+  @IsOptional()
+  operationNature?: string;
+
+  @ApiPropertyOptional({ description: 'Consumidor final: 0=Nao, 1=Sim' })
+  @IsInt()
+  @IsOptional()
+  consumidorFinal?: number;
+
+  @ApiPropertyOptional({ description: 'Indicador de presenca do consumidor' })
+  @IsInt()
+  @IsOptional()
+  presencaConsumidor?: number;
+
+  @ApiPropertyOptional({ description: 'Chave de acesso da NF-e referenciada' })
+  @IsString()
+  @IsOptional()
+  nfeReferenciada?: string | null;
+
+  @ApiPropertyOptional({ description: 'Data de saida/entrada em ISO string' })
+  @IsString()
+  @IsOptional()
+  dataSaida?: string;
+
+  @ApiPropertyOptional({
+    description: 'Destino da operacao: 1=Interna, 2=Interestadual',
+  })
+  @IsInt()
+  @IsOptional()
+  destinoOperacao?: number;
+
+  @ApiPropertyOptional({
+    description: 'Modalidade de frete: 0=CIF, 1=FOB, 9=Sem Frete, etc',
+  })
+  @IsInt()
+  @IsOptional()
+  modalidadeFrete?: number;
+
+  @ApiPropertyOptional({ description: 'Ambiente da emissao' })
+  @IsString()
+  @IsOptional()
+  ambiente?: string;
+}
+
 // DTO para atualizar rascunho
 export class UpdateNfeDraftDto {
+  @ApiPropertyOptional({
+    description: 'Dados de emissao',
+    type: DraftEmissaoDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DraftEmissaoDto)
+  emissao?: DraftEmissaoDto;
+
   @ApiPropertyOptional({
     description: 'Dados do destinatário',
     type: DraftDestinatarioDto,

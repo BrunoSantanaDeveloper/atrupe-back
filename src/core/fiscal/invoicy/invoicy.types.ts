@@ -98,6 +98,7 @@ export interface InvoicyNfeIde {
   serie: string;
   nNF: number;
   dhEmi: string; // Data/hora emissão ISO 8601
+  dhSaiEnt?: string; // Data/hora saida ou entrada
   fusoHorario: string;
   tpNf: number; // 0 = Entrada, 1 = Saída
   idDest: number; // 1 = Operação interna
@@ -111,6 +112,7 @@ export interface InvoicyNfeIde {
   indPres: number; // Indicador presença
   procEmi: number;
   verProc: string;
+  NFref?: Array<{ refNFe: string }>;
 }
 
 export interface InvoicyNfeEnderEmit {
