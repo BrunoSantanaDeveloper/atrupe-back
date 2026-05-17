@@ -70,6 +70,13 @@ export class NfeController {
     return this.nfeService.prepareDevolution(req.user.companyId, id);
   }
 
+  @Get(':id/prepare-complementary')
+  @HasPermission('create', 'nota_fiscal:emitir')
+  @ApiOperation({ summary: 'Preparar dados para emissão de NF-e complementar' })
+  async prepareComplementary(@Req() req, @Param('id') id: string) {
+    return this.nfeService.prepareComplementary(req.user.companyId, id);
+  }
+
   // ==================== Draft Endpoints ====================
 
   @Post('draft/consolidated')

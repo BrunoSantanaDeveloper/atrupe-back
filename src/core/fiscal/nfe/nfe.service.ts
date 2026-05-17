@@ -694,6 +694,57 @@ export class NfeService {
     };
   }
 
+  async prepareComplementary(companyId: string, originalNfeId: string) {
+    const originalNfe = await this.prisma.nfe.findFirst({
+      where: { id: originalNfeId, companyId },
+      include: {
+        order: true,
+        quotation: true,
+      },
+    });
+
+    if (!originalNfe) {
+      throw new NotFoundException('NF-e não encontrada');
+    }
+
+    if (originalNfe.status !== NfeStatus.AUTHORIZED) {
+      throw new BadRequestException(
+        'Apenas NF-e autorizadas podem ser complementadas',
+      );
+    }
+
+    let clientId: string | undefined;
+    if (originalNfe.orderId) {
+      const quotation = await this.prisma.quotation.findFirst({
+        where: { order: { id: originalNfe.orderId } },
+      });
+      if (quotation) clientId = quotation.clientId;
+    } else if (originalNfe.quotationId) {
+      const quotation = await this.prisma.quotation.findUnique({
+        where: { id: originalNfe.quotationId },
+      });
+      if (quotation) clientId = quotation.clientId;
+    }
+
+    const baseData = await this.prepareStandalone(companyId, clientId);
+
+    return {
+      ...baseData,
+      emissao: {
+        ...baseData.emissao,
+        tipo: 1,
+        finalidade: 2,
+        operationNature: 'Complemento de NF-e',
+        consumidorFinal: 0,
+        nfeReferenciada: originalNfe.chaveAcesso,
+      },
+      items: [],
+      originalNfeId: originalNfe.id,
+      originalNfeNumero: originalNfe.numero,
+      originalNfeChave: originalNfe.chaveAcesso,
+    };
+  }
+
   // Emitir NF-e a partir de uma ordem de serviço (busca dados automaticamente)
 
   async emitFromOrder(companyId: string, dto: EmitNfeFromOrderDto) {
