@@ -46,7 +46,12 @@ export class NfeBuilderService {
         ide: this.buildIdentificacao(dto, config, numero, destResult, now),
         emit: this.buildEmitente(config, emitCmun),
         dest: this.buildDestinatario(dto, destResult, config),
-        det: this.buildProdutos(dto.items, destResult.uf, config),
+        det: this.buildProdutos(
+          dto.items,
+          destResult.uf,
+          config,
+          dto.finalidade,
+        ),
         total: this.buildTotais(valorTotal, dto.items),
         pag: this.buildPagamento(valorTotal, dto.pagamento?.forma),
         transp: { modFrete: String(dto.modalidadeFrete ?? 9) },
@@ -132,6 +137,13 @@ export class NfeBuilderService {
     dest: { uf: string },
     now: Date,
   ): any {
+    const cleanRef = (dto.nfeReferenciada || '').replace(/\D/g, '');
+    if (cleanRef && cleanRef.length !== 44) {
+      throw new BadRequestException(
+        'NF-e referenciada deve conter uma chave de acesso com exatamente 44 digitos',
+      );
+    }
+
     return {
       cUF: this.getUfCode(config.company?.address?.state),
       natOp:
@@ -165,9 +177,9 @@ export class NfeBuilderService {
       indPres: dto.presencaConsumidor ?? 1,
       procEmi: 0,
       verProc: 'Atrupe 1.0',
-      ...((dto.nfeReferenciada || '').replace(/\D/g, '')
+      ...(cleanRef
         ? {
-            NFref: [{ refNFe: (dto.nfeReferenciada || '').replace(/\D/g, '') }],
+            NFref: [{ refNFe: cleanRef }],
           }
         : {}),
     };
@@ -240,7 +252,12 @@ export class NfeBuilderService {
   /**
    * Constrói array de produtos (det)
    */
-  private buildProdutos(items: any[], destUf: string, config: any): any[] {
+  private buildProdutos(
+    items: any[],
+    destUf: string,
+    config: any,
+    finalidade?: number,
+  ): any[] {
     const emitUf = config.company?.address?.state;
 
     return items.map((item, index) => ({
@@ -250,7 +267,13 @@ export class NfeBuilderService {
         cEANTrib: this.getEan(item.ceantrib),
         xProd: item.description || `Produto ${index + 1}`,
         NCM: (item.ncm || '00000000').replace(/\D/g, ''),
-        CFOP: this.getCfop(item.cfop, destUf, emitUf, config.defaultCfop),
+        CFOP: this.getCfop(
+          item.cfop,
+          destUf,
+          emitUf,
+          config.defaultCfop,
+          finalidade,
+        ),
         uCOM: item.uCom || 'UN',
         qCOM: item.quantity.toFixed(4),
         vUnCom: item.unitValue.toFixed(10),
@@ -365,9 +388,19 @@ export class NfeBuilderService {
     destUf: string,
     emitUf: string,
     defaultCfop: string,
+    finalidade?: number,
   ): number {
     const baseCfop = cfop || parseInt(defaultCfop || '5102', 10);
     const isInterestadual = destUf !== emitUf;
+
+    if (finalidade === 4) {
+      const prefix = Math.floor(baseCfop / 1000);
+      if (prefix === 5)
+        return isInterestadual ? baseCfop - 5000 + 2000 : baseCfop - 4000;
+      if (prefix === 6)
+        return isInterestadual ? baseCfop - 4000 : baseCfop - 5000 + 1000;
+      return baseCfop;
+    }
 
     // 5xxx -> 6xxx para interestadual
     if (isInterestadual && Math.floor(baseCfop / 1000) === 5) {

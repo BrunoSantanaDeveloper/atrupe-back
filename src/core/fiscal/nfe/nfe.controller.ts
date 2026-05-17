@@ -63,6 +63,13 @@ export class NfeController {
     return this.nfeService.prepareFromOrder(req.user.companyId, orderId);
   }
 
+  @Get(':id/prepare-devolution')
+  @HasPermission('create', 'nota_fiscal:emitir')
+  @ApiOperation({ summary: 'Preparar dados para emissão de NF-e de devolução' })
+  async prepareDevolution(@Req() req, @Param('id') id: string) {
+    return this.nfeService.prepareDevolution(req.user.companyId, id);
+  }
+
   // ==================== Draft Endpoints ====================
 
   @Post('draft/consolidated')

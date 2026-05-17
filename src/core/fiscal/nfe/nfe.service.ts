@@ -626,6 +626,74 @@ export class NfeService {
     };
   }
 
+  async prepareDevolution(companyId: string, originalNfeId: string) {
+    const originalNfe = await this.prisma.nfe.findFirst({
+      where: { id: originalNfeId, companyId },
+      include: {
+        order: true,
+        quotation: true,
+      },
+    });
+
+    if (!originalNfe) {
+      throw new NotFoundException('NF-e não encontrada');
+    }
+
+    if (originalNfe.status !== NfeStatus.AUTHORIZED) {
+      throw new BadRequestException(
+        'Apenas NF-e autorizadas podem ser devolvidas',
+      );
+    }
+
+    let clientId;
+
+    if (originalNfe.orderId) {
+      const quotation = await this.prisma.quotation.findFirst({
+        where: { order: { id: originalNfe.orderId } },
+      });
+      if (quotation) clientId = quotation.clientId;
+    } else if (originalNfe.quotationId) {
+      const quotation = await this.prisma.quotation.findUnique({
+        where: { id: originalNfe.quotationId },
+      });
+      if (quotation) clientId = quotation.clientId;
+    }
+
+    const baseData = await this.prepareStandalone(
+      companyId,
+      clientId || undefined,
+    );
+
+    if (originalNfe.orderId) {
+      try {
+        const orderData = await this.prepareFromOrder(
+          companyId,
+          originalNfe.orderId,
+        );
+        baseData.items = orderData.items;
+      } catch (e) {
+        this.logger.warn(
+          `Could not load items for devolution from order: ${e.message}`,
+        );
+      }
+    }
+
+    return {
+      ...baseData,
+      emissao: {
+        ...baseData.emissao,
+        tipo: 0,
+        finalidade: 4,
+        operationNature: 'Devolução de mercadoria',
+        consumidorFinal: 0,
+        nfeReferenciada: originalNfe.chaveAcesso,
+      },
+      originalNfeId: originalNfe.id,
+      originalNfeNumero: originalNfe.numero,
+      originalNfeChave: originalNfe.chaveAcesso,
+    };
+  }
+
   // Emitir NF-e a partir de uma ordem de serviço (busca dados automaticamente)
 
   async emitFromOrder(companyId: string, dto: EmitNfeFromOrderDto) {
