@@ -9,8 +9,10 @@ import {
   Query,
   UseGuards,
   Req,
+  Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import {
   BlockLevelGuard,
@@ -75,6 +77,13 @@ export class NfeController {
   @ApiOperation({ summary: 'Preparar dados para emissão de NF-e complementar' })
   async prepareComplementary(@Req() req, @Param('id') id: string) {
     return this.nfeService.prepareComplementary(req.user.companyId, id);
+  }
+
+  @Get(':id/prepare-reissue')
+  @HasPermission('create', 'nota_fiscal:emitir')
+  @ApiOperation({ summary: 'Preparar dados para reemissão de NF-e rejeitada' })
+  async prepareReissue(@Req() req, @Param('id') id: string) {
+    return this.nfeService.prepareReissue(req.user.companyId, id);
   }
 
   // ==================== Draft Endpoints ====================
@@ -206,5 +215,29 @@ export class NfeController {
   @ApiOperation({ summary: 'Obter XML da NF-e' })
   async getXml(@Req() req, @Param('id') id: string) {
     return this.nfeService.getXml(id, req.user.companyId);
+  }
+
+  @Get('export-xml/zip')
+  @HasPermission('view', 'nota_fiscal:emitidas')
+  @ApiOperation({ summary: 'Exportar XMLs de NF-e em ZIP por período' })
+  async exportXml(
+    @Req() req,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Res() res: Response,
+  ) {
+    const zipBuffer = await this.nfeService.exportXml(
+      req.user.companyId,
+      startDate,
+      endDate,
+    );
+
+    const filename = `NFe_XMLs_${startDate}_${endDate}.zip`;
+    res.set({
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': zipBuffer.length.toString(),
+    });
+    res.end(zipBuffer);
   }
 }

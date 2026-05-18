@@ -745,6 +745,63 @@ export class NfeService {
     };
   }
 
+  async prepareReissue(companyId: string, rejectedNfeId: string) {
+    const originalNfe = await this.prisma.nfe.findFirst({
+      where: { id: rejectedNfeId, companyId },
+    });
+
+    if (!originalNfe) {
+      throw new NotFoundException('NF-e não encontrada');
+    }
+
+    if (originalNfe.status !== NfeStatus.REJECTED) {
+      throw new BadRequestException(
+        'Apenas NF-e rejeitadas podem ser reemitidas por este fluxo',
+      );
+    }
+
+    let clientId: string | undefined;
+    if (originalNfe.orderId) {
+      const quotation = await this.prisma.quotation.findFirst({
+        where: { order: { id: originalNfe.orderId } },
+      });
+      if (quotation) clientId = quotation.clientId;
+    } else if (originalNfe.quotationId) {
+      const quotation = await this.prisma.quotation.findUnique({
+        where: { id: originalNfe.quotationId },
+      });
+      if (quotation) clientId = quotation.clientId;
+    }
+
+    const baseData = await this.prepareStandalone(companyId, clientId);
+
+    // Resgatar dados do rascunho salvo (draftData) se existir, para pré-preencher
+    const draftData =
+      originalNfe.draftData && typeof originalNfe.draftData === 'object'
+        ? (originalNfe.draftData as any)
+        : null;
+
+    const emissaoOverride = draftData?.emissao || {};
+    const destinatarioOverride = draftData?.destinatario || {};
+    const itemsOverride = draftData?.items || [];
+
+    return {
+      ...baseData,
+      emissao: {
+        ...baseData.emissao,
+        ...emissaoOverride,
+      },
+      destinatario: {
+        ...baseData.destinatario,
+        ...destinatarioOverride,
+      },
+      items: itemsOverride.length ? itemsOverride : baseData.items,
+      originalNfeId: originalNfe.id,
+      originalNfeNumero: originalNfe.numero,
+      motivoRejeicao: originalNfe.motivoRejeicao,
+    };
+  }
+
   // Emitir NF-e a partir de uma ordem de serviço (busca dados automaticamente)
 
   async emitFromOrder(companyId: string, dto: EmitNfeFromOrderDto) {
@@ -904,6 +961,12 @@ export class NfeService {
 
     if (filters.orderId) {
       where.orderId = filters.orderId;
+    }
+
+    if (filters.avulsa !== undefined) {
+      if (filters.avulsa === true || String(filters.avulsa) === 'true') {
+        where.orderId = null;
+      }
     }
 
     if (filters.startDate || filters.endDate) {
@@ -1756,29 +1819,87 @@ export class NfeService {
   async consultStatus(id: string, companyId: string) {
     const nfe = await this.findById(id, companyId);
 
-    try {
-      // TODO: Implementar consulta real ao status da NF-e na SEFAZ via Invoicy
-      this.logger.log(`Consultando status da NF-e ${nfe.numero}`);
-
+    if (!nfe.chaveAcesso) {
       return {
         id: nfe.id,
         numero: nfe.numero,
         serie: nfe.serie,
         status: nfe.status,
+        statusDescription: 'Chave de acesso não disponível para consulta',
+        checkedAt: new Date().toISOString(),
+      };
+    }
+
+    try {
+      this.logger.log(`Consultando status real NF-e ${nfe.numero} na SEFAZ`);
+
+      const invoicyResponses = await this.invoicyApiService.consultNfeSefaz(
+        companyId,
+        nfe.chaveAcesso,
+      );
+
+      const response = invoicyResponses[0];
+      const doc = response?.Documentos?.[0];
+      const situacao = doc?.Situacao;
+
+      const newStatus = this.mapSefazCodToStatus(situacao?.SitCodigo);
+
+      let currentStatus = nfe.status;
+      if (newStatus && newStatus !== nfe.status) {
+        this.logger.log(
+          `Status NF-e ${nfe.numero} mudou: ${nfe.status} → ${newStatus}`,
+        );
+
+        await this.prisma.nfe.update({
+          where: { id: nfe.id },
+          data: { status: newStatus as any },
+        });
+        currentStatus = newStatus as any;
+      }
+
+      return {
+        id: nfe.id,
+        numero: nfe.numero,
+        serie: nfe.serie,
+        status: currentStatus,
+        statusChanged: newStatus !== nfe.status,
+        sefazCode: situacao?.SitCodigo,
+        sefazDescription: situacao?.SitDescricao,
         chaveAcesso: nfe.chaveAcesso,
         protocolo: nfe.protocolo,
         dataEmissao: nfe.dataEmissao,
         dataAutorizacao: nfe.dataAutorizacao,
+        checkedAt: new Date().toISOString(),
       };
     } catch (error) {
       this.logger.error(
-        `Erro ao consultar status da NF-e: ${error.message}`,
+        `Erro ao consultar status NF-e ${nfe.numero}: ${error.message}`,
         error.stack,
       );
-      throw new BadRequestException(
-        `Erro ao consultar status da NF-e: ${error.message}`,
-      );
+      return {
+        id: nfe.id,
+        numero: nfe.numero,
+        serie: nfe.serie,
+        status: nfe.status,
+        sefazError: error.message,
+        checkedAt: new Date().toISOString(),
+      };
     }
+  }
+
+  private mapSefazCodToStatus(sitCodigo?: number): string | null {
+    if (!sitCodigo) return null;
+
+    const map: Record<number, string> = {
+      100: 'AUTHORIZED',
+      101: 'CANCELLED',
+      102: 'CANCELLED',
+      135: 'CORRECTION_SENT',
+      204: 'AUTHORIZED',
+      217: 'REJECTED',
+    };
+
+    return map[sitCodigo] || null;
   }
 
   async getDanfeUrl(id: string, companyId: string) {
@@ -2220,5 +2341,59 @@ export class NfeService {
       where: { nfeId },
       orderBy: { sequenciaEvento: 'asc' },
     });
+  }
+
+  async exportXml(
+    companyId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<Buffer> {
+    if (!startDate || !endDate) {
+      throw new BadRequestException('startDate e endDate são obrigatórios');
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    const nfes = await this.prisma.nfe.findMany({
+      where: {
+        companyId,
+        status: 'AUTHORIZED',
+        dataEmissao: { gte: start, lte: end },
+        xmlAutorizado: { not: null },
+      },
+      select: {
+        id: true,
+        numero: true,
+        serie: true,
+        chaveAcesso: true,
+        xmlAutorizado: true,
+        dataEmissao: true,
+      },
+      orderBy: { numero: 'asc' },
+    });
+
+    if (nfes.length === 0) {
+      throw new NotFoundException(
+        'Nenhuma NF-e autorizada com XML encontrada no período',
+      );
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const JSZip = require('jszip');
+    const zip = new JSZip();
+
+    for (const nfe of nfes) {
+      const filename = `NFe_${nfe.numero}_${nfe.chaveAcesso || nfe.id}.xml`;
+      zip.file(filename, nfe.xmlAutorizado);
+    }
+
+    const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+    this.logger.log(
+      `Exportados ${nfes.length} XMLs de NF-e para ZIP — empresa ${companyId}`,
+    );
+
+    return buffer;
   }
 }

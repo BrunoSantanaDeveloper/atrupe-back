@@ -216,30 +216,87 @@ export class NfeEventsService {
   /**
    * Consulta status de uma NF-e
    */
-  async consultStatus(nfe: any): Promise<any> {
-    try {
-      // TODO: Implementar consulta real ao status da NF-e na SEFAZ via Invoicy
-      this.logger.log(`Consultando status da NF-e ${nfe.numero}`);
-
+  async consultStatus(nfe: any, companyId: string): Promise<any> {
+    if (!nfe.chaveAcesso) {
       return {
         id: nfe.id,
         numero: nfe.numero,
         serie: nfe.serie,
         status: nfe.status,
+        statusDescription: 'Chave de acesso não disponível para consulta',
+        checkedAt: new Date().toISOString(),
+      };
+    }
+
+    try {
+      this.logger.log(`Consultando status real NF-e ${nfe.numero} na SEFAZ`);
+
+      const invoicyResponses = await this.invoicyApiService.consultNfeSefaz(
+        companyId,
+        nfe.chaveAcesso,
+      );
+
+      const response = invoicyResponses[0];
+      const doc = response?.Documentos?.[0];
+      const situacao = doc?.Situacao;
+
+      const newStatus = this.mapSefazCodToStatus(situacao?.SitCodigo);
+
+      let updatedNfe = nfe;
+      if (newStatus && newStatus !== nfe.status) {
+        this.logger.log(
+          `Status NF-e ${nfe.numero} mudou: ${nfe.status} → ${newStatus}`,
+        );
+
+        updatedNfe = await this.prisma.nfe.update({
+          where: { id: nfe.id },
+          data: { status: newStatus as any },
+        });
+      }
+
+      return {
+        id: updatedNfe.id,
+        numero: updatedNfe.numero,
+        serie: updatedNfe.serie,
+        status: updatedNfe.status,
+        statusChanged: newStatus !== nfe.status,
+        sefazCode: situacao?.SitCodigo,
+        sefazDescription: situacao?.SitDescricao,
         chaveAcesso: nfe.chaveAcesso,
         protocolo: nfe.protocolo,
         dataEmissao: nfe.dataEmissao,
         dataAutorizacao: nfe.dataAutorizacao,
+        checkedAt: new Date().toISOString(),
       };
     } catch (error) {
       this.logger.error(
-        `Erro ao consultar status da NF-e: ${error.message}`,
+        `Erro ao consultar status NF-e ${nfe.numero}: ${error.message}`,
         error.stack,
       );
-      throw new BadRequestException(
-        `Erro ao consultar status da NF-e: ${error.message}`,
-      );
+      return {
+        id: nfe.id,
+        numero: nfe.numero,
+        serie: nfe.serie,
+        status: nfe.status,
+        sefazError: error.message,
+        checkedAt: new Date().toISOString(),
+      };
     }
+  }
+
+  private mapSefazCodToStatus(sitCodigo?: number): string | null {
+    if (!sitCodigo) return null;
+
+    const map: Record<number, string> = {
+      100: 'AUTHORIZED',
+      101: 'CANCELLED',
+      102: 'CANCELLED',
+      135: 'CORRECTION_SENT',
+      204: 'AUTHORIZED',
+      217: 'REJECTED',
+    };
+
+    return map[sitCodigo] || null;
   }
 
   /**

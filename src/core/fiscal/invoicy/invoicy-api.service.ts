@@ -329,6 +329,38 @@ export class InvoicyApiService {
   }
 
   /**
+   * Consulta o status real de uma NF-e específica na SEFAZ via Invoicy
+   */
+  async consultNfeSefaz(
+    companyId: string,
+    chaveAcesso: string,
+  ): Promise<InvoicyResponse[]> {
+    this.logger.log(
+      `Consultando status NF-e ${chaveAcesso} para empresa ${companyId}`,
+    );
+
+    const consultRequest = [
+      {
+        Documento: {
+          ModeloDocumento: 'NFe',
+          Versao: 4,
+          Consulta: {
+            Chave: chaveAcesso,
+            TipoConsulta: 'ConsultaChave',
+          },
+        },
+      },
+    ];
+
+    return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
+      companyId,
+      'POST',
+      '/senddocuments/nfe?type=ConsultaSincronizacao',
+      consultRequest,
+    );
+  }
+
+  /**
    * Check SEFAZ availability status
    * Returns true if SEFAZ is responding, false otherwise
    */

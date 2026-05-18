@@ -523,6 +523,13 @@ export class NfeFilterDto {
   @Type(() => Number)
   page?: number;
 
+  @ApiPropertyOptional({
+    description: 'Apenas notas avulsas (sem ordem de serviço)',
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  avulsa?: boolean;
+
   @ApiPropertyOptional({ description: 'Itens por página', default: 20 })
   @IsInt()
   @IsOptional()
