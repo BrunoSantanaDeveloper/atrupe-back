@@ -15,4 +15,12 @@ export class ReceivableFilterDto extends BaseFilterDTO {
     required: false,
   })
   search?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentConditionId?: string;
 }

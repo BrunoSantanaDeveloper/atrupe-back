@@ -2409,7 +2409,7 @@ export class NfeService {
     let ordersPromise = Promise.resolve([]);
     let nfeAvulsasPromise = Promise.resolve([]);
     let nfseAvulsasPromise = Promise.resolve([]);
-    
+
     let ordersCountPromise = Promise.resolve(0);
     let nfeCountPromise = Promise.resolve(0);
     let nfseCountPromise = Promise.resolve(0);
@@ -2436,7 +2436,11 @@ export class NfeService {
       } else if (status === 'NAO_EMITIDA') {
         orderWhere.AND = [
           { nfes: { none: { status: { in: ['AUTHORIZED', 'DRAFT'] } } } },
-          { nfeOrders: { none: { nfe: { status: { in: ['AUTHORIZED', 'DRAFT'] } } } } },
+          {
+            nfeOrders: {
+              none: { nfe: { status: { in: ['AUTHORIZED', 'DRAFT'] } } },
+            },
+          },
         ];
         orderWhere.status = { not: 'CANCELED' };
       } else if (status === 'CANCELADA') {
@@ -2449,7 +2453,7 @@ export class NfeService {
           OR: [
             { description: { contains: search, mode: 'insensitive' } },
             { client: { name: { contains: search, mode: 'insensitive' } } },
-          ]
+          ],
         };
         if (!isNaN(searchAsNumber) && searchAsNumber > 0) {
           orderWhere.quotation.OR.push({ quotationNumber: searchAsNumber });
@@ -2462,11 +2466,15 @@ export class NfeService {
         orderBy: { createdAt: 'desc' },
         include: {
           quotation: {
-            include: { client: true, series: true, seller: { include: { user: true } } }
+            include: {
+              client: true,
+              series: true,
+              seller: { include: { user: true } },
+            },
           },
           nfes: true,
-          nfeOrders: { include: { nfe: true } }
-        }
+          nfeOrders: { include: { nfe: true } },
+        },
       });
       ordersCountPromise = this.prisma.order.count({ where: orderWhere });
     }
@@ -2476,7 +2484,7 @@ export class NfeService {
       else if (status === 'EM_DIGITACAO') nfeWhere.status = 'DRAFT';
       else if (status === 'CANCELADA') nfeWhere.status = 'CANCELLED';
       else if (status === 'REJEITADA') nfeWhere.status = 'REJECTED';
-      else if (status === 'NAO_EMITIDA') nfeWhere.id = 'not-possible'; 
+      else if (status === 'NAO_EMITIDA') nfeWhere.id = 'not-possible';
 
       if (search) {
         const searchAsNumber = Number(search.replace(/\D/g, ''));
@@ -2517,33 +2525,39 @@ export class NfeService {
       nfseCountPromise = this.prisma.nfse.count({ where: nfseWhere });
     }
 
-    const [orders, nfeAvulsas, nfseAvulsas, ordersCount, nfeCount, nfseCount] = await Promise.all([
-      ordersPromise,
-      nfeAvulsasPromise,
-      nfseAvulsasPromise,
-      ordersCountPromise,
-      nfeCountPromise,
-      nfseCountPromise
-    ]);
+    const [orders, nfeAvulsas, nfseAvulsas, ordersCount, nfeCount, nfseCount] =
+      await Promise.all([
+        ordersPromise,
+        nfeAvulsasPromise,
+        nfseAvulsasPromise,
+        ordersCountPromise,
+        nfeCountPromise,
+        nfseCountPromise,
+      ]);
 
     const unifiedItems = [];
 
-    for (const o of (orders as any[])) {
+    for (const o of orders as any[]) {
       unifiedItems.push({
         type: 'ORDER',
         id: o.id,
         createdAt: o.createdAt,
         status: o.status,
         clientName: o.quotation?.client?.name || 'Cliente não identificado',
-        reference: o.quotation?.series?.code ? `${o.quotation.series.code}-${o.quotation.quotationNumber}` : `OS ${o.quotation?.quotationNumber || ''}`,
+        reference: o.quotation?.series?.code
+          ? `${o.quotation.series.code}-${o.quotation.quotationNumber}`
+          : `OS ${o.quotation?.quotationNumber || ''}`,
         totalValue: o.quotation?.totalValue || 0,
-        nfes: [...(o.nfes || []), ...(o.nfeOrders?.map(no => no.nfe) || [])],
-        originalData: o
+        nfes: [...(o.nfes || []), ...(o.nfeOrders?.map((no) => no.nfe) || [])],
+        originalData: o,
       });
     }
 
-    for (const n of (nfeAvulsas as any[])) {
-      const draftData = typeof n.draftData === 'string' ? JSON.parse(n.draftData) : (n.draftData || {});
+    for (const n of nfeAvulsas as any[]) {
+      const draftData =
+        typeof n.draftData === 'string'
+          ? JSON.parse(n.draftData)
+          : n.draftData || {};
       unifiedItems.push({
         type: 'NFE_AVULSA',
         id: n.id,
@@ -2553,12 +2567,15 @@ export class NfeService {
         reference: `NF-e ${n.numero}`,
         totalValue: n.valorTotal || 0,
         nfes: [n],
-        originalData: n
+        originalData: n,
       });
     }
 
-    for (const s of (nfseAvulsas as any[])) {
-      const draftData = typeof s.draftData === 'string' ? JSON.parse(s.draftData) : (s.draftData || {});
+    for (const s of nfseAvulsas as any[]) {
+      const draftData =
+        typeof s.draftData === 'string'
+          ? JSON.parse(s.draftData)
+          : s.draftData || {};
       unifiedItems.push({
         type: 'NFSE_AVULSA',
         id: s.id,
@@ -2567,9 +2584,9 @@ export class NfeService {
         clientName: draftData?.tomador?.razaoSocial || 'Avulsa s/ Tomador',
         reference: `NFS-e ${s.numero}`,
         totalValue: s.valorServicos || 0,
-        nfes: [], 
+        nfes: [],
         nfse: s,
-        originalData: s
+        originalData: s,
       });
     }
 
@@ -2593,14 +2610,15 @@ export class NfeService {
     }
     if (currentGroup) groupedItems.push(currentGroup);
 
-    const totalCount = (ordersCount as number) + (nfeCount as number) + (nfseCount as number);
+    const totalCount =
+      (ordersCount as number) + (nfeCount as number) + (nfseCount as number);
 
     return {
       data: groupedItems,
       page,
       limit,
       lastPage: Math.ceil(totalCount / limit) || 1,
-      total: totalCount
+      total: totalCount,
     };
   }
 }

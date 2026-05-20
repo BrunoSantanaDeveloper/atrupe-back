@@ -233,7 +233,14 @@ export class ReceivableService {
       throw new BadRequestException('companyId is required');
     }
 
-    const { page = 1, limit = 10, search, dueDate } = paginationDto;
+    const {
+      page = 1,
+      limit = 10,
+      search,
+      dueDate,
+      status,
+      paymentConditionId,
+    } = paginationDto;
 
     const filters: Prisma.ReceivableInstallmentWhereInput = {
       receivable: {
@@ -246,6 +253,26 @@ export class ReceivableService {
       filters.dueDate = {
         gt: new Date(dueDate),
       };
+    }
+
+    if (paymentConditionId) {
+      filters.paymentConditionId = paymentConditionId;
+    }
+
+    if (status) {
+      if (status === 'OVERDUE') {
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+
+        filters.status = 'PENDING';
+        filters.dueDate = {
+          ...((filters.dueDate as Prisma.DateTimeFilter<'ReceivableInstallment'>) ||
+            {}),
+          lt: today,
+        };
+      } else {
+        filters.status = status as any;
+      }
     }
 
     // Filtro de pesquisa para cliente, categoria ou subcategoria

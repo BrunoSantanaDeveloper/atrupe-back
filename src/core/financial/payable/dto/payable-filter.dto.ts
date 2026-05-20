@@ -33,4 +33,12 @@ export class PayableFilterDto extends BaseFilterDTO {
     required: false,
   })
   employeeId?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentConditionId?: string;
 }

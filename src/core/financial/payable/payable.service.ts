@@ -251,7 +251,14 @@ export class PayableService {
         throw new BadRequestException('companyId is required');
       }
 
-      const { page = 1, limit = 10, search, dueDate } = paginationDto;
+      const {
+        page = 1,
+        limit = 10,
+        search,
+        dueDate,
+        status,
+        paymentConditionId,
+      } = paginationDto;
 
       const filters: Prisma.PayableInstallmentWhereInput = {
         payable: {
@@ -264,6 +271,26 @@ export class PayableService {
         filters.dueDate = {
           gt: new Date(dueDate),
         };
+      }
+
+      if (paymentConditionId) {
+        filters.paymentConditionId = paymentConditionId;
+      }
+
+      if (status) {
+        if (status === 'OVERDUE') {
+          const today = new Date();
+          today.setUTCHours(0, 0, 0, 0);
+
+          filters.status = 'PENDING';
+          filters.dueDate = {
+            ...((filters.dueDate as Prisma.DateTimeFilter<'PayableInstallment'>) ||
+              {}),
+            lt: today,
+          };
+        } else {
+          filters.status = status as any;
+        }
       }
 
       // Filtro de pesquisa para cliente, categoria ou subcategoria
