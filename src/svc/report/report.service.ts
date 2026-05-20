@@ -572,24 +572,25 @@ export class ReportService {
     companyId: string,
     filters: SalesReportFilterDto,
   ): Promise<ApprovedRejectedDataPoint[]> {
-    // Always show current month + last 5 months (6 months total)
     const now = new Date();
-    const sixMonthsAgo = startOfMonth(subMonths(now, 5));
-    const currentMonthEnd = endOfMonth(now);
+
+    // Get filter period for due date/rejection checks
+    const { startDate: filterStart, endDate: filterEnd } =
+      this.getDateRange(filters);
 
     const quotations = await this.prisma.quotation.findMany({
       where: {
         ...this.getSalesQuotationFilters(companyId, filters),
-        createdAt: { gte: sixMonthsAgo, lte: currentMonthEnd },
+        OR: [
+          { approvedAt: { gte: filterStart, lte: filterEnd } },
+          { updatedAt: { gte: filterStart, lte: filterEnd } },
+          { dueDate: { gte: filterStart, lte: filterEnd } },
+        ],
       },
       include: {
         order: { select: { id: true, status: true } },
       },
     });
-
-    // Get filter period for due date/rejection checks
-    const { startDate: filterStart, endDate: filterEnd } =
-      this.getDateRange(filters);
 
     // Pre-populate all 6 months to ensure they all appear
     const monthlyData: Record<
@@ -617,14 +618,25 @@ export class ReportService {
     }
 
     quotations.forEach((q) => {
-      const month = format(q.createdAt, 'MMM', { locale: ptBR });
-      if (!monthlyData[month]) return;
-
       if (q.order) {
         if (q.order.status === 'CANCELED') {
-          monthlyData[month].canceled++;
+          if (
+            q.approvedAt &&
+            q.approvedAt >= filterStart &&
+            q.approvedAt <= filterEnd
+          ) {
+            const month = format(q.approvedAt, 'MMM', { locale: ptBR });
+            if (monthlyData[month]) monthlyData[month].canceled++;
+          }
         } else {
-          monthlyData[month].approved++;
+          if (
+            q.approvedAt &&
+            q.approvedAt >= filterStart &&
+            q.approvedAt <= filterEnd
+          ) {
+            const month = format(q.approvedAt, 'MMM', { locale: ptBR });
+            if (monthlyData[month]) monthlyData[month].approved++;
+          }
         }
       } else if (q.status === 'REJECTED') {
         // Check if rejection is within filter period
@@ -633,12 +645,14 @@ export class ReportService {
           q.updatedAt >= filterStart &&
           q.updatedAt <= filterEnd
         ) {
-          monthlyData[month].rejected++;
+          const month = format(q.updatedAt, 'MMM', { locale: ptBR });
+          if (monthlyData[month]) monthlyData[month].rejected++;
         }
       } else if (q.dueDate && q.dueDate < new Date() && !q.approvedAt) {
         // Check if due date is within filter period
         if (q.dueDate >= filterStart && q.dueDate <= filterEnd) {
-          monthlyData[month].expired++;
+          const month = format(q.dueDate, 'MMM', { locale: ptBR });
+          if (monthlyData[month]) monthlyData[month].expired++;
         }
       }
     });
