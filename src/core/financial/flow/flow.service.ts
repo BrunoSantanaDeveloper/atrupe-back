@@ -105,8 +105,25 @@ export class FlowService {
 
     // Filtro de status
     if (status) {
-      filtersReceivables.status = status;
-      filtersPayables.status = status;
+      if (status === 'OVERDUE') {
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+
+        filtersReceivables.status = 'PENDING';
+        filtersReceivables.dueDate = {
+          ...filtersReceivables.dueDate,
+          lt: today,
+        };
+
+        filtersPayables.status = 'PENDING';
+        filtersPayables.dueDate = {
+          ...filtersPayables.dueDate,
+          lt: today,
+        };
+      } else {
+        filtersReceivables.status = status;
+        filtersPayables.status = status;
+      }
     }
 
     // Filtro de condição de pagamento
@@ -262,8 +279,25 @@ export class FlowService {
 
     // Filtro de status
     if (status) {
-      filtersReceivables.status = status;
-      filtersPayables.status = status;
+      if (status === 'OVERDUE') {
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+
+        filtersReceivables.status = 'PENDING';
+        filtersReceivables.dueDate = {
+          ...filtersReceivables.dueDate,
+          lt: today,
+        };
+
+        filtersPayables.status = 'PENDING';
+        filtersPayables.dueDate = {
+          ...filtersPayables.dueDate,
+          lt: today,
+        };
+      } else {
+        filtersReceivables.status = status;
+        filtersPayables.status = status;
+      }
     }
 
     // Filtro de condição de pagamento
