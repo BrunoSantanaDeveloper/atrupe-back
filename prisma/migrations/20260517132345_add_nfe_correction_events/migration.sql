@@ -1,27 +1,23 @@
--- CreateEnum
-CREATE TYPE "FiscalOnboardingStatus" AS ENUM ('PENDING', 'PROVISIONING', 'ACTIVE', 'PENDING_REVIEW', 'REJECTED');
+-- CreateEnum (idempotent)
+DO $$ BEGIN
+    CREATE TYPE "FiscalOnboardingStatus" AS ENUM ('PENDING', 'PROVISIONING', 'ACTIVE', 'PENDING_REVIEW', 'REJECTED');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
--- AlterTable
-ALTER TABLE "payment_conditions" DROP COLUMN "invoiceType",
-ADD COLUMN     "invoiceType" "InvoiceType";
+-- AlterTable (idempotent: drop if exists, add if not exists)
+ALTER TABLE "payment_conditions" DROP COLUMN IF EXISTS "invoiceType";
+ALTER TABLE "payment_conditions" ADD COLUMN IF NOT EXISTS "invoiceType" "InvoiceType";
 
--- DropTable
+-- DropTable (idempotent)
 DROP TABLE IF EXISTS "_backup_items_corrompidos_ml";
-
--- DropTable
 DROP TABLE IF EXISTS "_backup_product_items_ml";
-
--- DropTable
 DROP TABLE IF EXISTS "_backup_products_corrompidos_ml";
-
--- DropTable
 DROP TABLE IF EXISTS "_backup_products_vinil_ml";
-
--- DropTable
 DROP TABLE IF EXISTS "_backup_quotation_product_items_ml";
 
--- CreateTable
-CREATE TABLE "nfe_correction_events" (
+-- CreateTable (idempotent)
+CREATE TABLE IF NOT EXISTS "nfe_correction_events" (
     "id" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "nfeId" TEXT NOT NULL,
@@ -33,8 +29,8 @@ CREATE TABLE "nfe_correction_events" (
     CONSTRAINT "nfe_correction_events_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "fiscal_onboarding_requests" (
+-- CreateTable (idempotent)
+CREATE TABLE IF NOT EXISTS "fiscal_onboarding_requests" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "status" "FiscalOnboardingStatus" NOT NULL DEFAULT 'PENDING',
@@ -63,21 +59,24 @@ CREATE TABLE "fiscal_onboarding_requests" (
     CONSTRAINT "fiscal_onboarding_requests_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE INDEX "nfe_correction_events_nfeId_idx" ON "nfe_correction_events"("nfeId");
+-- CreateIndex (idempotent)
+CREATE INDEX IF NOT EXISTS "nfe_correction_events_nfeId_idx" ON "nfe_correction_events"("nfeId");
+CREATE INDEX IF NOT EXISTS "fiscal_onboarding_requests_companyId_idx" ON "fiscal_onboarding_requests"("companyId");
+CREATE INDEX IF NOT EXISTS "fiscal_onboarding_requests_status_idx" ON "fiscal_onboarding_requests"("status");
+CREATE UNIQUE INDEX IF NOT EXISTS "academy_progress_companyId_academySystemId_key" ON "academy_progress"("companyId", "academySystemId");
 
--- CreateIndex
-CREATE INDEX "fiscal_onboarding_requests_companyId_idx" ON "fiscal_onboarding_requests"("companyId");
+-- AddForeignKey (idempotent via DO block)
+DO $$ BEGIN
+    ALTER TABLE "nfe_correction_events" ADD CONSTRAINT "nfe_correction_events_nfeId_fkey"
+        FOREIGN KEY ("nfeId") REFERENCES "nfes"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
--- CreateIndex
-CREATE INDEX "fiscal_onboarding_requests_status_idx" ON "fiscal_onboarding_requests"("status");
-
--- CreateIndex
-CREATE UNIQUE INDEX "academy_progress_companyId_academySystemId_key" ON "academy_progress"("companyId", "academySystemId");
-
--- AddForeignKey
-ALTER TABLE "nfe_correction_events" ADD CONSTRAINT "nfe_correction_events_nfeId_fkey" FOREIGN KEY ("nfeId") REFERENCES "nfes"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "fiscal_onboarding_requests" ADD CONSTRAINT "fiscal_onboarding_requests_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "fiscal_onboarding_requests" ADD CONSTRAINT "fiscal_onboarding_requests_companyId_fkey"
+        FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
