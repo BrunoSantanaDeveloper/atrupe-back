@@ -1,4 +1,4 @@
-﻿-- CreateEnum
+-- CreateEnum
 CREATE TYPE "FiscalOnboardingStatus" AS ENUM ('PENDING', 'PROVISIONING', 'ACTIVE', 'PENDING_REVIEW', 'REJECTED');
 
 -- AlterTable
@@ -6,19 +6,19 @@ ALTER TABLE "payment_conditions" DROP COLUMN "invoiceType",
 ADD COLUMN     "invoiceType" "InvoiceType";
 
 -- DropTable
-DROP TABLE "_backup_items_corrompidos_ml";
+DROP TABLE IF EXISTS "_backup_items_corrompidos_ml";
 
 -- DropTable
-DROP TABLE "_backup_product_items_ml";
+DROP TABLE IF EXISTS "_backup_product_items_ml";
 
 -- DropTable
-DROP TABLE "_backup_products_corrompidos_ml";
+DROP TABLE IF EXISTS "_backup_products_corrompidos_ml";
 
 -- DropTable
-DROP TABLE "_backup_products_vinil_ml";
+DROP TABLE IF EXISTS "_backup_products_vinil_ml";
 
 -- DropTable
-DROP TABLE "_backup_quotation_product_items_ml";
+DROP TABLE IF EXISTS "_backup_quotation_product_items_ml";
 
 -- CreateTable
 CREATE TABLE "nfe_correction_events" (
