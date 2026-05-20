@@ -268,11 +268,27 @@ export class PayableService {
 
       // Filtro de pesquisa para cliente, categoria ou subcategoria
       if (search) {
-        (filters.payable as Prisma.PayableWhereInput).OR = [
+        const searchConditions: Prisma.PayableWhereInput[] = [
           { client: { name: { contains: search, mode: 'insensitive' } } },
-          { nature: { name: { contains: search, mode: 'insensitive' } } },
-          { subCategory: { name: { contains: search, mode: 'insensitive' } } },
-        ] as Prisma.PayableWhereInput[];
+          {
+            nature: { description: { contains: search, mode: 'insensitive' } },
+          },
+          {
+            subCategory: {
+              description: { contains: search, mode: 'insensitive' },
+            },
+          },
+          { description: { contains: search, mode: 'insensitive' } },
+        ];
+
+        const searchNumber = parseInt(search, 10);
+        if (!isNaN(searchNumber)) {
+          searchConditions.push({
+            quotation: { quotationNumber: searchNumber },
+          });
+        }
+
+        (filters.payable as Prisma.PayableWhereInput).OR = searchConditions;
       }
 
       // 1. Agrupamento no banco de dados com somatório e paginação

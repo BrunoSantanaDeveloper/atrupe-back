@@ -250,11 +250,23 @@ export class ReceivableService {
 
     // Filtro de pesquisa para cliente, categoria ou subcategoria
     if (search) {
-      (filters.receivable as Prisma.ReceivableWhereInput).OR = [
+      const searchConditions: Prisma.ReceivableWhereInput[] = [
         { client: { name: { contains: search, mode: 'insensitive' } } },
-        { nature: { name: { contains: search, mode: 'insensitive' } } },
-        { subCategory: { name: { contains: search, mode: 'insensitive' } } },
-      ] as Prisma.ReceivableWhereInput[];
+        { nature: { description: { contains: search, mode: 'insensitive' } } },
+        {
+          subCategory: {
+            description: { contains: search, mode: 'insensitive' },
+          },
+        },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
+
+      const searchNumber = parseInt(search, 10);
+      if (!isNaN(searchNumber)) {
+        searchConditions.push({ quotation: { quotationNumber: searchNumber } });
+      }
+
+      (filters.receivable as Prisma.ReceivableWhereInput).OR = searchConditions;
     }
 
     // 1. Agrupamento no banco de dados com somatório e paginação
