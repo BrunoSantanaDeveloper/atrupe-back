@@ -10,6 +10,10 @@ error() {
     exit 1
 }
 
+warn() {
+    echo "⚠️  AVISO: $1"
+}
+
 success() {
     echo "✅ $1"
 }
@@ -35,9 +39,10 @@ success "Prisma Client gerado com sucesso"
 
 log "Executando seed do banco..."
 if ! npm run seed; then
-    error "Falha ao executar seed. Verifique os dados padrão."
+    warn "Seed falhou (pode já ter sido executado ou dados já existirem). Continuando..."
+else
+    success "Seed executado com sucesso"
 fi
-success "Seed executado com sucesso"
 
 log "Iniciando servidor..."
 exec npm run start:prod
