@@ -46,6 +46,13 @@ export class NfeController {
     return this.nfeService.findAll(req.user.companyId, filters);
   }
 
+  @Get('unified')
+  @HasPermission('view', 'nota_fiscal:emitidas')
+  @ApiOperation({ summary: 'Listagem unificada de Notas Fiscais e Pedidos' })
+  async findUnified(@Req() req, @Query() filters: any) {
+    return this.nfeService.findUnified(req.user.companyId, filters);
+  }
+
   @Get('prepare-standalone')
   @HasPermission('view', 'nota_fiscal:emitir')
   @ApiOperation({

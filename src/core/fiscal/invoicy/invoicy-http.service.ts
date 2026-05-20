@@ -399,7 +399,7 @@ export class InvoicyHttpService {
     return this.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
-      '/nfe',
+      '/senddocuments/nfe?type=Evento',
       cancelRequest,
     );
   }
@@ -435,7 +435,7 @@ export class InvoicyHttpService {
     return this.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
-      '/nfe',
+      '/senddocuments/nfe?type=Evento',
       correctionRequest,
     );
   }
@@ -480,7 +480,7 @@ export class InvoicyHttpService {
     return this.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
-      '/nfe',
+      '/senddocuments/nfe?type=Inutilizacao',
       inutRequest,
     );
   }
@@ -534,7 +534,7 @@ export class InvoicyHttpService {
     return this.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
-      '/nfse',
+      '/senddocuments/nfse?type=Evento',
       cancelRequest,
     );
   }

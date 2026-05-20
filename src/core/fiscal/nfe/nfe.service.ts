@@ -2396,4 +2396,211 @@ export class NfeService {
 
     return buffer;
   }
+
+  async findUnified(companyId: string, filters: any) {
+    const page = parseInt(filters.page || '1', 10);
+    const limit = parseInt(filters.limit || '20', 10);
+    const itemsToFetch = page * limit;
+
+    const recordType = filters.recordType || 'TODOS'; // 'TODOS', 'PEDIDOS', 'NOTAS_AVULSAS'
+    const status = filters.status || 'TODOS';
+    const search = filters.search || '';
+
+    let ordersPromise = Promise.resolve([]);
+    let nfeAvulsasPromise = Promise.resolve([]);
+    let nfseAvulsasPromise = Promise.resolve([]);
+    
+    let ordersCountPromise = Promise.resolve(0);
+    let nfeCountPromise = Promise.resolve(0);
+    let nfseCountPromise = Promise.resolve(0);
+
+    const orderWhere: any = { companyId };
+    const nfeWhere: any = { companyId, orderId: null, quotationId: null };
+    const nfseWhere: any = { companyId, orderId: null, quotationId: null };
+
+    if (recordType === 'TODOS' || recordType === 'PEDIDOS') {
+      if (status === 'EMITIDA') {
+        orderWhere.OR = [
+          { nfes: { some: { status: 'AUTHORIZED' } } },
+          { nfeOrders: { some: { nfe: { status: 'AUTHORIZED' } } } },
+        ];
+      } else if (status === 'EM_DIGITACAO') {
+        orderWhere.OR = [
+          { nfes: { some: { status: 'DRAFT' } } },
+          { nfeOrders: { some: { nfe: { status: 'DRAFT' } } } },
+        ];
+        orderWhere.AND = [
+          { nfes: { none: { status: 'AUTHORIZED' } } },
+          { nfeOrders: { none: { nfe: { status: 'AUTHORIZED' } } } },
+        ];
+      } else if (status === 'NAO_EMITIDA') {
+        orderWhere.AND = [
+          { nfes: { none: { status: { in: ['AUTHORIZED', 'DRAFT'] } } } },
+          { nfeOrders: { none: { nfe: { status: { in: ['AUTHORIZED', 'DRAFT'] } } } } },
+        ];
+        orderWhere.status = { not: 'CANCELED' };
+      } else if (status === 'CANCELADA') {
+        orderWhere.status = 'CANCELED';
+      }
+
+      if (search) {
+        const searchAsNumber = Number(search.replace(/\D/g, ''));
+        orderWhere.quotation = {
+          OR: [
+            { description: { contains: search, mode: 'insensitive' } },
+            { client: { name: { contains: search, mode: 'insensitive' } } },
+          ]
+        };
+        if (!isNaN(searchAsNumber) && searchAsNumber > 0) {
+          orderWhere.quotation.OR.push({ quotationNumber: searchAsNumber });
+        }
+      }
+
+      ordersPromise = this.prisma.order.findMany({
+        where: orderWhere,
+        take: itemsToFetch,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          quotation: {
+            include: { client: true, series: true, seller: { include: { user: true } } }
+          },
+          nfes: true,
+          nfeOrders: { include: { nfe: true } }
+        }
+      });
+      ordersCountPromise = this.prisma.order.count({ where: orderWhere });
+    }
+
+    if (recordType === 'TODOS' || recordType === 'NOTAS_AVULSAS') {
+      if (status === 'EMITIDA') nfeWhere.status = 'AUTHORIZED';
+      else if (status === 'EM_DIGITACAO') nfeWhere.status = 'DRAFT';
+      else if (status === 'CANCELADA') nfeWhere.status = 'CANCELLED';
+      else if (status === 'REJEITADA') nfeWhere.status = 'REJECTED';
+      else if (status === 'NAO_EMITIDA') nfeWhere.id = 'not-possible'; 
+
+      if (search) {
+        const searchAsNumber = Number(search.replace(/\D/g, ''));
+        if (!isNaN(searchAsNumber) && searchAsNumber > 0) {
+          nfeWhere.numero = searchAsNumber;
+        } else {
+          nfeWhere.chaveAcesso = { contains: search };
+        }
+      }
+
+      nfeAvulsasPromise = this.prisma.nfe.findMany({
+        where: nfeWhere,
+        take: itemsToFetch,
+        orderBy: { createdAt: 'desc' },
+      });
+      nfeCountPromise = this.prisma.nfe.count({ where: nfeWhere });
+
+      if (status === 'EMITIDA') nfseWhere.status = 'AUTHORIZED';
+      else if (status === 'EM_DIGITACAO') nfseWhere.status = 'DRAFT';
+      else if (status === 'CANCELADA') nfseWhere.status = 'CANCELLED';
+      else if (status === 'REJEITADA') nfseWhere.status = 'REJECTED';
+      else if (status === 'NAO_EMITIDA') nfseWhere.id = 'not-possible';
+
+      if (search) {
+        const searchAsNumber = Number(search.replace(/\D/g, ''));
+        if (!isNaN(searchAsNumber) && searchAsNumber > 0) {
+          nfseWhere.numero = searchAsNumber;
+        } else {
+          nfseWhere.codigoVerificacao = { contains: search };
+        }
+      }
+
+      nfseAvulsasPromise = this.prisma.nfse.findMany({
+        where: nfseWhere,
+        take: itemsToFetch,
+        orderBy: { createdAt: 'desc' },
+      });
+      nfseCountPromise = this.prisma.nfse.count({ where: nfseWhere });
+    }
+
+    const [orders, nfeAvulsas, nfseAvulsas, ordersCount, nfeCount, nfseCount] = await Promise.all([
+      ordersPromise,
+      nfeAvulsasPromise,
+      nfseAvulsasPromise,
+      ordersCountPromise,
+      nfeCountPromise,
+      nfseCountPromise
+    ]);
+
+    const unifiedItems = [];
+
+    for (const o of (orders as any[])) {
+      unifiedItems.push({
+        type: 'ORDER',
+        id: o.id,
+        createdAt: o.createdAt,
+        status: o.status,
+        clientName: o.quotation?.client?.name || 'Cliente não identificado',
+        reference: o.quotation?.series?.code ? `${o.quotation.series.code}-${o.quotation.quotationNumber}` : `OS ${o.quotation?.quotationNumber || ''}`,
+        totalValue: o.quotation?.totalValue || 0,
+        nfes: [...(o.nfes || []), ...(o.nfeOrders?.map(no => no.nfe) || [])],
+        originalData: o
+      });
+    }
+
+    for (const n of (nfeAvulsas as any[])) {
+      const draftData = typeof n.draftData === 'string' ? JSON.parse(n.draftData) : (n.draftData || {});
+      unifiedItems.push({
+        type: 'NFE_AVULSA',
+        id: n.id,
+        createdAt: n.createdAt,
+        status: n.status,
+        clientName: draftData?.destinatario?.nome || 'Avulsa s/ Destinatário',
+        reference: `NF-e ${n.numero}`,
+        totalValue: n.valorTotal || 0,
+        nfes: [n],
+        originalData: n
+      });
+    }
+
+    for (const s of (nfseAvulsas as any[])) {
+      const draftData = typeof s.draftData === 'string' ? JSON.parse(s.draftData) : (s.draftData || {});
+      unifiedItems.push({
+        type: 'NFSE_AVULSA',
+        id: s.id,
+        createdAt: s.createdAt,
+        status: s.status,
+        clientName: draftData?.tomador?.razaoSocial || 'Avulsa s/ Tomador',
+        reference: `NFS-e ${s.numero}`,
+        totalValue: s.valorServicos || 0,
+        nfes: [], 
+        nfse: s,
+        originalData: s
+      });
+    }
+
+    unifiedItems.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const startIndex = (page - 1) * limit;
+    const paginatedItems = unifiedItems.slice(startIndex, startIndex + limit);
+
+    const groupedItems = [];
+    let currentDate = null;
+    let currentGroup = null;
+
+    for (const item of paginatedItems) {
+      const dateStr = item.createdAt.toISOString().split('T')[0];
+      if (dateStr !== currentDate) {
+        if (currentGroup) groupedItems.push(currentGroup);
+        currentDate = dateStr;
+        currentGroup = { date: dateStr, items: [] };
+      }
+      currentGroup.items.push(item);
+    }
+    if (currentGroup) groupedItems.push(currentGroup);
+
+    const totalCount = (ordersCount as number) + (nfeCount as number) + (nfseCount as number);
+
+    return {
+      data: groupedItems,
+      page,
+      limit,
+      lastPage: Math.ceil(totalCount / limit) || 1,
+      total: totalCount
+    };
+  }
 }

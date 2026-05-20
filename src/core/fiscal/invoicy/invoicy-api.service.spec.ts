@@ -89,7 +89,7 @@ describe('InvoicyApiService', () => {
       expect(httpServiceMock.makeRequest).toHaveBeenCalledWith(
         'company-123',
         'POST',
-        '/nfe',
+        '/senddocuments/nfe?type=Evento',
         expectedPayload,
       );
     });
@@ -124,7 +124,7 @@ describe('InvoicyApiService', () => {
       expect(httpServiceMock.makeRequest).toHaveBeenCalledWith(
         'company-123',
         'POST',
-        '/nfe',
+        '/senddocuments/nfe?type=Evento',
         expectedPayload,
       );
     });
@@ -173,7 +173,7 @@ describe('InvoicyApiService', () => {
       expect(httpServiceMock.makeRequest).toHaveBeenCalledWith(
         'company-123',
         'POST',
-        '/nfe',
+        '/senddocuments/nfe?type=Inutilizacao',
         expectedPayload,
       );
     });

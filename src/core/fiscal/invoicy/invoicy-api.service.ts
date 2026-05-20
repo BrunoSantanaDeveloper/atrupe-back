@@ -85,7 +85,7 @@ export class InvoicyApiService {
     return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
-      '/nfe',
+      '/senddocuments/nfe?type=Evento',
       cancelRequest,
     );
   }
@@ -121,7 +121,7 @@ export class InvoicyApiService {
     return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
-      '/nfe',
+      '/senddocuments/nfe?type=Evento',
       correctionRequest,
     );
   }
@@ -167,7 +167,7 @@ export class InvoicyApiService {
     return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
-      '/nfe',
+      '/senddocuments/nfe?type=Inutilizacao',
       inutRequest,
     );
   }
@@ -213,7 +213,7 @@ export class InvoicyApiService {
     return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
-      '/nfe',
+      '/senddocuments/nfe?type=Inutilizacao',
       inutRequest,
     );
   }
@@ -267,7 +267,7 @@ export class InvoicyApiService {
     return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
-      '/nfse',
+      '/senddocuments/nfse?type=Evento',
       cancelRequest,
     );
   }
