@@ -31,12 +31,6 @@ if ! npx prisma migrate deploy; then
 fi
 success "Migrations executadas com sucesso"
 
-log "Gerando Prisma Client..."
-if ! npx prisma generate; then
-    error "Falha ao gerar Prisma Client. Verifique o schema.prisma."
-fi
-success "Prisma Client gerado com sucesso"
-
 log "Executando seed do banco..."
 if ! npm run seed; then
     warn "Seed falhou (pode já ter sido executado ou dados já existirem). Continuando..."
