@@ -621,9 +621,66 @@ export class NfeService {
       // Autorização para download (XML)
       autXml: [],
 
-      // Defaults de CFOP
       defaultCfop: config.defaultCfop || '',
     };
+  }
+
+  private parseXmlDataFallback(xml?: string | null) {
+    if (!xml) return null;
+
+    const extractTag = (x: string, t: string) => {
+      const match = x.match(new RegExp(`<${t}[^>]*>(.*?)</${t}>`, 's'));
+      return match ? match[1] : '';
+    };
+
+    const destXml = extractTag(xml, 'dest');
+    let destinatario = null;
+    if (destXml) {
+      const enderDestXml = extractTag(destXml, 'enderDest');
+      destinatario = {
+        razaoSocial: extractTag(destXml, 'xNome'),
+        cnpjCpf: extractTag(destXml, 'CNPJ') || extractTag(destXml, 'CPF'),
+        ie: extractTag(destXml, 'IE'),
+        email: extractTag(destXml, 'email'),
+        endereco: extractTag(enderDestXml, 'xLgr'),
+        numero: extractTag(enderDestXml, 'nro'),
+        bairro: extractTag(enderDestXml, 'xBairro'),
+        cidade: extractTag(enderDestXml, 'xMun'),
+        estado: extractTag(enderDestXml, 'UF'),
+        cep: extractTag(enderDestXml, 'CEP'),
+        pais: 'Brasil',
+        complemento: extractTag(enderDestXml, 'xCpl'),
+        telefone: extractTag(enderDestXml, 'fone'),
+      };
+    }
+
+    const items = [];
+    const detRegex = /<det[^>]*>(.*?)<\/det>/gs;
+    let match;
+    while ((match = detRegex.exec(xml)) !== null) {
+      const detXml = match[1];
+      const prodXml = extractTag(detXml, 'prod');
+      if (prodXml) {
+        items.push({
+          itemNumber: items.length + 1,
+          productId: extractTag(prodXml, 'cProd'),
+          description: extractTag(prodXml, 'xProd'),
+          quantity: parseFloat(extractTag(prodXml, 'qCOM') || '0'),
+          unitValue: parseFloat(extractTag(prodXml, 'vUnCom') || '0'),
+          ncm: extractTag(prodXml, 'NCM'),
+          cfop: extractTag(prodXml, 'CFOP'),
+          uCom: extractTag(prodXml, 'uCOM'),
+          ean: extractTag(prodXml, 'cEAN'),
+          ceantrib: extractTag(prodXml, 'cEANTrib'),
+          discount: parseFloat(extractTag(prodXml, 'vDesc') || '0'),
+          freight: parseFloat(extractTag(prodXml, 'vFrete') || '0'),
+          insurance: parseFloat(extractTag(prodXml, 'vSeg') || '0'),
+          needsConfiguration: false,
+        });
+      }
+    }
+
+    return { destinatario, items };
   }
 
   async prepareDevolution(companyId: string, originalNfeId: string) {
@@ -664,13 +721,28 @@ export class NfeService {
       clientId || undefined,
     );
 
-    if (originalNfe.orderId) {
+    const draftData =
+      originalNfe.draftData && typeof originalNfe.draftData === 'object'
+        ? (originalNfe.draftData as any)
+        : null;
+
+    const xmlData = !draftData
+      ? this.parseXmlDataFallback(
+          originalNfe.xmlAutorizado || originalNfe.xmlEnvio,
+        )
+      : null;
+
+    const destinatarioOverride =
+      draftData?.destinatario || xmlData?.destinatario || {};
+    let itemsOverride = draftData?.items || xmlData?.items || [];
+
+    if (originalNfe.orderId && !itemsOverride.length) {
       try {
         const orderData = await this.prepareFromOrder(
           companyId,
           originalNfe.orderId,
         );
-        baseData.items = orderData.items;
+        itemsOverride = orderData.items;
       } catch (e) {
         this.logger.warn(
           `Could not load items for devolution from order: ${e.message}`,
@@ -688,6 +760,11 @@ export class NfeService {
         consumidorFinal: 0,
         nfeReferenciada: originalNfe.chaveAcesso,
       },
+      destinatario: {
+        ...baseData.destinatario,
+        ...destinatarioOverride,
+      },
+      items: itemsOverride.length ? itemsOverride : baseData.items,
       originalNfeId: originalNfe.id,
       originalNfeNumero: originalNfe.numero,
       originalNfeChave: originalNfe.chaveAcesso,
@@ -728,6 +805,20 @@ export class NfeService {
 
     const baseData = await this.prepareStandalone(companyId, clientId);
 
+    const draftData =
+      originalNfe.draftData && typeof originalNfe.draftData === 'object'
+        ? (originalNfe.draftData as any)
+        : null;
+
+    const xmlData = !draftData
+      ? this.parseXmlDataFallback(
+          originalNfe.xmlAutorizado || originalNfe.xmlEnvio,
+        )
+      : null;
+
+    const destinatarioOverride =
+      draftData?.destinatario || xmlData?.destinatario || {};
+
     return {
       ...baseData,
       emissao: {
@@ -737,6 +828,10 @@ export class NfeService {
         operationNature: 'Complemento de NF-e',
         consumidorFinal: 0,
         nfeReferenciada: originalNfe.chaveAcesso,
+      },
+      destinatario: {
+        ...baseData.destinatario,
+        ...destinatarioOverride,
       },
       items: [],
       originalNfeId: originalNfe.id,
@@ -781,9 +876,16 @@ export class NfeService {
         ? (originalNfe.draftData as any)
         : null;
 
+    const xmlData = !draftData
+      ? this.parseXmlDataFallback(
+          originalNfe.xmlAutorizado || originalNfe.xmlEnvio,
+        )
+      : null;
+
     const emissaoOverride = draftData?.emissao || {};
-    const destinatarioOverride = draftData?.destinatario || {};
-    const itemsOverride = draftData?.items || [];
+    const destinatarioOverride =
+      draftData?.destinatario || xmlData?.destinatario || {};
+    const itemsOverride = draftData?.items || xmlData?.items || [];
 
     return {
       ...baseData,
@@ -1256,6 +1358,7 @@ export class NfeService {
             valorTotal,
             // Limpar possível mensagem de erro anterior ao tentar emitir novamente
             motivoRejeicao: null,
+            draftData: dto as any,
           },
         });
       }
@@ -1273,6 +1376,7 @@ export class NfeService {
           status: NfeStatus.PROCESSING,
           ambiente: config.ambiente,
           valorTotal,
+          draftData: dto as any,
         },
       });
     }
