@@ -43,6 +43,11 @@ COPY scripts/start.sh ./
 # Dar permissão de execução ao script
 RUN chmod +x start.sh
 
+# Health check — o Swarm usa isso para saber quando o container está saudável.
+# start-period=90s dá tempo para as migrations rodarem antes de monitorar.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+  CMD wget -qO- http://localhost:5000 > /dev/null || exit 1
+
 # Expor a porta usada pelo app
 EXPOSE 5000
 

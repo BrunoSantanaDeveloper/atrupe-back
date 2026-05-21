@@ -15,9 +15,11 @@ export class FlowService {
   constructor(private readonly prisma: PrismaService) {}
 
   private getActualStatus(installment: InstallmentStatusCheck): string {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
     if (
       installment.status === 'PENDING' &&
-      new Date(installment.dueDate) < new Date()
+      new Date(installment.dueDate) < today
     ) {
       return 'OVERDUE';
     }

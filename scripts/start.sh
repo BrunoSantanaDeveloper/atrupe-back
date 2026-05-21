@@ -25,10 +25,21 @@ if [ -z "$DATABASE_URL" ]; then
     error "DATABASE_URL não está definida no ambiente"
 fi
 
-log "Executando migrations do banco..."
-if ! npx prisma migrate deploy; then
-    error "Falha ao executar migrations. Verifique conexão com banco e migrations."
-fi
+# Aguardar banco de dados ficar pronto antes de rodar migrations.
+# Evita crash loop quando o container do postgres ainda está subindo.
+log "Aguardando banco de dados ficar disponível..."
+MAX_RETRIES=10
+RETRY_COUNT=0
+RETRY_DELAY=5
+
+until npx prisma migrate deploy 2>/dev/null; do
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
+        error "Banco de dados não ficou disponível após $MAX_RETRIES tentativas. Verifique conexão e migrations."
+    fi
+    warn "Banco não disponível ou migrations falharam. Tentativa $RETRY_COUNT/$MAX_RETRIES. Aguardando ${RETRY_DELAY}s..."
+    sleep "$RETRY_DELAY"
+done
 success "Migrations executadas com sucesso"
 
 log "Executando seed do banco..."

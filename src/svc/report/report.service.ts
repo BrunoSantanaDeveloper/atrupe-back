@@ -1293,8 +1293,9 @@ export class ReportService {
       return 'received';
     if (installment.status === 'PROVISIONED' || installment.provisionDate)
       return 'confirmed';
-    if (installment.status === 'OVERDUE' || installment.dueDate < new Date())
-      return 'overdue';
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    if (installment.dueDate < today) return 'overdue';
     return 'to_receive';
   }
 
@@ -1521,9 +1522,19 @@ export class ReportService {
       (dailyData[dayKey][countKey] as number) += 1;
     });
 
-    const result = Object.values(dailyData).sort((a, b) =>
-      a.date.localeCompare(b.date),
-    );
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const result = Object.values(dailyData)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((item) => {
+        if (item.date >= todayStr) {
+          return {
+            ...item,
+            overdue: null,
+            overdueCount: null,
+          };
+        }
+        return item;
+      });
 
     return result;
   }
