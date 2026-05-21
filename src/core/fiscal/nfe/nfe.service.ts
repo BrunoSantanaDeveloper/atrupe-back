@@ -665,6 +665,7 @@ export class NfeService {
           itemNumber: items.length + 1,
           productId: extractTag(prodXml, 'cProd'),
           description: extractTag(prodXml, 'xProd'),
+          productCode: extractTag(prodXml, 'cProd'),
           quantity: parseFloat(extractTag(prodXml, 'qCOM') || '0'),
           unitValue: parseFloat(extractTag(prodXml, 'vUnCom') || '0'),
           ncm: extractTag(prodXml, 'NCM'),
@@ -675,6 +676,12 @@ export class NfeService {
           discount: parseFloat(extractTag(prodXml, 'vDesc') || '0'),
           freight: parseFloat(extractTag(prodXml, 'vFrete') || '0'),
           insurance: parseFloat(extractTag(prodXml, 'vSeg') || '0'),
+          totalValue: parseFloat(extractTag(prodXml, 'vProd') || '0'),
+          cstIcms: extractTag(detXml, 'CST') || extractTag(detXml, 'CSOSN'),
+          cstIpi: extractTag(detXml, 'CST') /* from IPI tag, ideally */,
+          cstPis: extractTag(detXml, 'CST') /* from PIS tag, ideally */,
+          cstCofins: extractTag(detXml, 'CST') /* from COFINS tag, ideally */,
+          isService: false,
           needsConfiguration: false,
         });
       }

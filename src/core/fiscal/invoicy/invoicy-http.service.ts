@@ -210,6 +210,11 @@ export class InvoicyHttpService {
 
         // Don't retry client errors (4xx) except 401 (handled in executeRequest)
         if (this.isClientError(error) && error.response?.status !== 401) {
+          if (error.response?.data) {
+            this.logger.error(
+              `Invoicy API Error: ${JSON.stringify(error.response.data)}`,
+            );
+          }
           throw error;
         }
 
