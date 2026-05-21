@@ -2414,9 +2414,22 @@ export class NfeService {
     let nfeCountPromise = Promise.resolve(0);
     let nfseCountPromise = Promise.resolve(0);
 
-    const orderWhere: any = { companyId };
+    const orderWhere: any = { quotation: { companyId } };
     const nfeWhere: any = { companyId, orderId: null, quotationId: null };
     const nfseWhere: any = { companyId, orderId: null, quotationId: null };
+
+    if (filters.startDate || filters.endDate) {
+      const createdAtFilter: any = {};
+      if (filters.startDate) {
+        createdAtFilter.gte = new Date(`${filters.startDate}T00:00:00.000Z`);
+      }
+      if (filters.endDate) {
+        createdAtFilter.lte = new Date(`${filters.endDate}T23:59:59.999Z`);
+      }
+      orderWhere.createdAt = createdAtFilter;
+      nfeWhere.createdAt = createdAtFilter;
+      nfseWhere.createdAt = createdAtFilter;
+    }
 
     if (recordType === 'TODOS' || recordType === 'PEDIDOS') {
       if (status === 'EMITIDA') {
@@ -2449,12 +2462,10 @@ export class NfeService {
 
       if (search) {
         const searchAsNumber = Number(search.replace(/\D/g, ''));
-        orderWhere.quotation = {
-          OR: [
-            { description: { contains: search, mode: 'insensitive' } },
-            { client: { name: { contains: search, mode: 'insensitive' } } },
-          ],
-        };
+        orderWhere.quotation.OR = [
+          { description: { contains: search, mode: 'insensitive' } },
+          { client: { name: { contains: search, mode: 'insensitive' } } },
+        ];
         if (!isNaN(searchAsNumber) && searchAsNumber > 0) {
           orderWhere.quotation.OR.push({ quotationNumber: searchAsNumber });
         }
