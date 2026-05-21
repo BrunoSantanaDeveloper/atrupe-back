@@ -58,7 +58,7 @@ jobs:
             docker build --no-cache --cpu-quota=50000 --memory=1g . -t atrupe-image-dev:latest && \
             (docker service ls --format '{{.Name}}' | grep -q "^atrupe-dev_atrupe$" && \
               docker service update --image atrupe-image-dev:latest atrupe-dev_atrupe --force || \
-              docker service create --name atrupe-dev_atrupe --network atrupe-dev_default -p 5000:5000 --limit-memory 512m --env-file /home/ubuntu/atrupe-back/.env --restart-condition on-failure atrupe-image-dev:latest) && \
+              docker service create --name atrupe-dev_atrupe --network atrupe_network -p 5000:5000 --limit-memory 512m --env-file /home/ubuntu/atrupe-back/.env.dev --restart-condition on-failure atrupe-image-dev:latest) && \
             docker image prune -f
 
   smoke-test-homolog:
@@ -120,7 +120,7 @@ jobs:
             docker build --no-cache --cpu-quota=50000 --memory=1g . -t atrupe-image:latest && \
             (docker service ls --format '{{.Name}}' | grep -q "^atrupe-api_atrupe$" && \
               docker service update --image atrupe-image:latest atrupe-api_atrupe --force || \
-              docker service create --name atrupe-api_atrupe --network atrupe-api_default -p 5000:5000 --limit-memory 512m --env-file /home/ubuntu/atrupe-back/.env --restart-condition on-failure atrupe-image:latest) && \
+              docker service create --name atrupe-api_atrupe --network atrupe_network -p 5000:5000 --limit-memory 512m --env-file /home/ubuntu/atrupe-back/.env.prod --restart-condition on-failure atrupe-image:latest) && \
             docker image prune -f
 
   smoke-test-prod:
