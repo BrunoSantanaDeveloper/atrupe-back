@@ -32,7 +32,7 @@ MAX_RETRIES=10
 RETRY_COUNT=0
 RETRY_DELAY=5
 
-until npx prisma migrate deploy 2>/dev/null; do
+until npx prisma migrate deploy; do
     RETRY_COUNT=$((RETRY_COUNT + 1))
     if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
         error "Banco de dados não ficou disponível após $MAX_RETRIES tentativas. Verifique conexão e migrations."
