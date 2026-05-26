@@ -690,6 +690,44 @@ export class NfeService {
     return { destinatario, items };
   }
 
+  private getDestinatarioFromDraftOrXml(draftData: any, xmlData: any) {
+    let destinatario: any = {};
+
+    // 1. Tentar pegar do draftData (suportando tanto o formato de rascunho com .destinatario quanto o formato de envio plano com destX)
+    if (draftData) {
+      if (draftData.destinatario) {
+        destinatario = { ...draftData.destinatario };
+      } else if (draftData.destNome || draftData.destCnpjCpf) {
+        destinatario = {
+          razaoSocial: draftData.destNome || '',
+          cnpjCpf: draftData.destCnpjCpf || '',
+          ie: draftData.destIe || '',
+          indIEDest: draftData.destIndIEDest ?? 9,
+          email: draftData.destEmail || '',
+          telefone: draftData.destTelefone || '',
+          cep: draftData.destCep || '',
+          estado: draftData.destUf || '',
+          cidade: draftData.destMunicipio || '',
+          bairro: draftData.destBairro || '',
+          endereco: draftData.destEndereco || '',
+          numero: draftData.destNumero || 'S/N',
+          complemento: draftData.destComplemento || '',
+          pais: draftData.destPais || '1058',
+        };
+      }
+    }
+
+    // 2. Tentar mesclar/sobrepor com dados reais do XML (xmlData), pois o XML é a fonte da verdade da NF emitida
+    if (xmlData?.destinatario) {
+      destinatario = {
+        ...destinatario,
+        ...xmlData.destinatario,
+      };
+    }
+
+    return destinatario;
+  }
+
   async prepareDevolution(companyId: string, originalNfeId: string) {
     const originalNfe = await this.prisma.nfe.findFirst({
       where: { id: originalNfeId, companyId },
@@ -709,6 +747,20 @@ export class NfeService {
       );
     }
 
+    const draftData =
+      originalNfe.draftData && typeof originalNfe.draftData === 'object'
+        ? (originalNfe.draftData as any)
+        : null;
+
+    const xmlData = this.parseXmlDataFallback(
+      originalNfe.xmlAutorizado || originalNfe.xmlEnvio,
+    );
+
+    const destinatarioOverride = this.getDestinatarioFromDraftOrXml(
+      draftData,
+      xmlData,
+    );
+
     let clientId;
 
     if (originalNfe.orderId) {
@@ -723,24 +775,24 @@ export class NfeService {
       if (quotation) clientId = quotation.clientId;
     }
 
+    if (!clientId && destinatarioOverride.cnpjCpf) {
+      const client = await this.prisma.client.findFirst({
+        where: {
+          OR: [
+            { cnpj: destinatarioOverride.cnpjCpf },
+            { cpf: destinatarioOverride.cnpjCpf },
+          ],
+          companyId,
+        },
+      });
+      if (client) clientId = client.id;
+    }
+
     const baseData = await this.prepareStandalone(
       companyId,
       clientId || undefined,
     );
 
-    const draftData =
-      originalNfe.draftData && typeof originalNfe.draftData === 'object'
-        ? (originalNfe.draftData as any)
-        : null;
-
-    const xmlData = !draftData
-      ? this.parseXmlDataFallback(
-          originalNfe.xmlAutorizado || originalNfe.xmlEnvio,
-        )
-      : null;
-
-    const destinatarioOverride =
-      draftData?.destinatario || xmlData?.destinatario || {};
     let itemsOverride = draftData?.items || xmlData?.items || [];
 
     if (originalNfe.orderId && !itemsOverride.length) {
@@ -774,6 +826,7 @@ export class NfeService {
 
     return {
       ...baseData,
+      clientId: clientId || null,
       emissao: {
         ...baseData.emissao,
         tipo: 0,
@@ -812,6 +865,20 @@ export class NfeService {
       );
     }
 
+    const draftData =
+      originalNfe.draftData && typeof originalNfe.draftData === 'object'
+        ? (originalNfe.draftData as any)
+        : null;
+
+    const xmlData = this.parseXmlDataFallback(
+      originalNfe.xmlAutorizado || originalNfe.xmlEnvio,
+    );
+
+    const destinatarioOverride = this.getDestinatarioFromDraftOrXml(
+      draftData,
+      xmlData,
+    );
+
     let clientId: string | undefined;
     if (originalNfe.orderId) {
       const quotation = await this.prisma.quotation.findFirst({
@@ -825,24 +892,24 @@ export class NfeService {
       if (quotation) clientId = quotation.clientId;
     }
 
+    if (!clientId && destinatarioOverride.cnpjCpf) {
+      const client = await this.prisma.client.findFirst({
+        where: {
+          OR: [
+            { cnpj: destinatarioOverride.cnpjCpf },
+            { cpf: destinatarioOverride.cnpjCpf },
+          ],
+          companyId,
+        },
+      });
+      if (client) clientId = client.id;
+    }
+
     const baseData = await this.prepareStandalone(companyId, clientId);
-
-    const draftData =
-      originalNfe.draftData && typeof originalNfe.draftData === 'object'
-        ? (originalNfe.draftData as any)
-        : null;
-
-    const xmlData = !draftData
-      ? this.parseXmlDataFallback(
-          originalNfe.xmlAutorizado || originalNfe.xmlEnvio,
-        )
-      : null;
-
-    const destinatarioOverride =
-      draftData?.destinatario || xmlData?.destinatario || {};
 
     return {
       ...baseData,
+      clientId: clientId || null,
       emissao: {
         ...baseData.emissao,
         tipo: 1,
@@ -877,6 +944,20 @@ export class NfeService {
       );
     }
 
+    const draftData =
+      originalNfe.draftData && typeof originalNfe.draftData === 'object'
+        ? (originalNfe.draftData as any)
+        : null;
+
+    const xmlData = this.parseXmlDataFallback(
+      originalNfe.xmlAutorizado || originalNfe.xmlEnvio,
+    );
+
+    const destinatarioOverride = this.getDestinatarioFromDraftOrXml(
+      draftData,
+      xmlData,
+    );
+
     let clientId: string | undefined;
     if (originalNfe.orderId) {
       const quotation = await this.prisma.quotation.findFirst({
@@ -890,23 +971,22 @@ export class NfeService {
       if (quotation) clientId = quotation.clientId;
     }
 
+    if (!clientId && destinatarioOverride.cnpjCpf) {
+      const client = await this.prisma.client.findFirst({
+        where: {
+          OR: [
+            { cnpj: destinatarioOverride.cnpjCpf },
+            { cpf: destinatarioOverride.cnpjCpf },
+          ],
+          companyId,
+        },
+      });
+      if (client) clientId = client.id;
+    }
+
     const baseData = await this.prepareStandalone(companyId, clientId);
 
-    // Resgatar dados do rascunho salvo (draftData) se existir, para pré-preencher
-    const draftData =
-      originalNfe.draftData && typeof originalNfe.draftData === 'object'
-        ? (originalNfe.draftData as any)
-        : null;
-
-    const xmlData = !draftData
-      ? this.parseXmlDataFallback(
-          originalNfe.xmlAutorizado || originalNfe.xmlEnvio,
-        )
-      : null;
-
     const emissaoOverride = draftData?.emissao || {};
-    const destinatarioOverride =
-      draftData?.destinatario || xmlData?.destinatario || {};
     const itemsOverride = draftData?.items || xmlData?.items || [];
 
     const mappedItems = itemsOverride.map((item: any) => {
@@ -926,6 +1006,7 @@ export class NfeService {
 
     return {
       ...baseData,
+      clientId: clientId || null,
       emissao: {
         ...baseData.emissao,
         ...emissaoOverride,
