@@ -141,13 +141,14 @@ export interface InvoicyNfeEnderDest {
   cMun_dest: number;
   xMun_dest: string;
   UF_dest: string;
-  CEP_dest: number;
+  CEP_dest?: number;
   cPais_dest: number;
 }
 
 export interface InvoicyNfeDest {
   CNPJ_dest?: string;
   CPF_dest?: string;
+  idEstrangeiro?: string;
   xNome_dest: string;
   indIEDest: number;
   enderDest: InvoicyNfeEnderDest;
@@ -282,6 +283,7 @@ export interface InvoicyNfsePrestador {
 export interface InvoicyNfseTomador {
   TomaCNPJ?: string;
   TomaCPF?: string;
+  TomaIdEstrangeiro?: string;
   TomaRazaoSocial: string;
   TomatpLgr?: string;
   TomaEndereco: string;
@@ -291,6 +293,7 @@ export interface InvoicyNfseTomador {
   TomaxMun: string;
   TomaUF: string;
   TomaCEP: number;
+  TomacPais?: number;
 }
 
 export interface InvoicyNfseListaItem {

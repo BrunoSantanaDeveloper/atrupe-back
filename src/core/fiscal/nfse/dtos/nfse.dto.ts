@@ -9,6 +9,7 @@ import {
   IsEnum,
   IsBoolean,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -108,26 +109,31 @@ export class TomadorDto {
   complemento?: string;
 
   @ApiProperty({ description: 'Bairro' })
+  @ValidateIf((o) => !o.codigoPais || o.codigoPais === '1058')
   @IsString()
   @IsNotEmpty()
   bairro: string;
 
   @ApiProperty({ description: 'CEP' })
+  @ValidateIf((o) => !o.codigoPais || o.codigoPais === '1058')
   @IsString()
   @IsNotEmpty()
   cep: string;
 
   @ApiProperty({ description: 'Código do município IBGE' })
+  @ValidateIf((o) => !o.codigoPais || o.codigoPais === '1058')
   @IsString()
   @IsNotEmpty()
   codigoMunicipio: string;
 
   @ApiProperty({ description: 'Nome do município' })
+  @ValidateIf((o) => !o.codigoPais || o.codigoPais === '1058')
   @IsString()
   @IsNotEmpty()
   municipio: string;
 
   @ApiProperty({ description: 'UF' })
+  @ValidateIf((o) => !o.codigoPais || o.codigoPais === '1058')
   @IsString()
   @IsNotEmpty()
   uf: string;
@@ -141,6 +147,16 @@ export class TomadorDto {
   @IsString()
   @IsOptional()
   telefone?: string;
+
+  @ApiPropertyOptional({ description: 'Código do país (padrão: 1058)' })
+  @IsString()
+  @IsOptional()
+  codigoPais?: string;
+
+  @ApiPropertyOptional({ description: 'Identificação estrangeiro' })
+  @IsString()
+  @IsOptional()
+  idEstrangeiro?: string;
 }
 
 // DTO simplificado para emissão a partir de uma ordem

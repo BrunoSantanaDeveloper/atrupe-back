@@ -69,6 +69,16 @@ export class NfeBuilderService {
     uf: string;
     municipio: string;
   }> {
+    const isForeign = dto.destPais && dto.destPais !== '1058';
+
+    if (isForeign) {
+      return {
+        cmun: 9999999,
+        uf: 'EX',
+        municipio: dto.destMunicipio || 'EXTERIOR',
+      };
+    }
+
     let destCmun = 0;
     let destUf = dto.destUf || '';
     let destMun = dto.destMunicipio || '';
@@ -159,7 +169,12 @@ export class NfeBuilderService {
         : now.toISOString(),
       fusoHorario: '-03:00',
       tpNf: dto.tipo ?? 1,
-      idDest: dest.uf === config.company?.address?.state ? 1 : 2,
+      idDest:
+        dest.uf === 'EX'
+          ? 3
+          : dest.uf === config.company?.address?.state
+            ? 1
+            : 2,
       cMunFg: parseInt(config.ibgeCode || '0', 10),
       tpImp: 1,
       tpEmis: 1,
@@ -225,15 +240,20 @@ export class NfeBuilderService {
       config.environment === 'HOMOLOGACAO' ||
       (!config.ambiente && config.environment !== 'PRODUCAO');
     const indIEDest = dto.destIndIEDest ?? 9;
+    const isForeign = dto.destPais && dto.destPais !== '1058';
 
     return {
-      ...(cleanDoc.length === 14 ? { CNPJ_dest: cleanDoc } : {}),
-      ...(cleanDoc.length === 11 ? { CPF_dest: cleanDoc } : {}),
+      ...(isForeign
+        ? { idEstrangeiro: dto.destIdEstrangeiro || 'ESTRANGEIRO' }
+        : {
+            ...(cleanDoc.length === 14 ? { CNPJ_dest: cleanDoc } : {}),
+            ...(cleanDoc.length === 11 ? { CPF_dest: cleanDoc } : {}),
+          }),
       xNome_dest: isHomologacao
         ? 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
         : dto.destNome || '',
-      indIEDest,
-      ...(indIEDest === 1 && dto.destIe
+      indIEDest: isForeign ? 9 : indIEDest,
+      ...(!isForeign && indIEDest === 1 && dto.destIe
         ? { IE_dest: dto.destIe.replace(/\D/g, '') }
         : {}),
       enderDest: {
@@ -243,7 +263,12 @@ export class NfeBuilderService {
         cMun_dest: dest.cmun,
         xMun_dest: dest.municipio,
         UF_dest: dest.uf,
-        CEP_dest: parseInt((dto.destCep || '').replace(/\D/g, ''), 10) || 0,
+        ...(!isForeign
+          ? {
+              CEP_dest:
+                parseInt((dto.destCep || '').replace(/\D/g, ''), 10) || 0,
+            }
+          : {}),
         cPais_dest: parseInt(dto.destPais || '1058', 10),
       },
     };
@@ -391,6 +416,15 @@ export class NfeBuilderService {
     finalidade?: number,
   ): number {
     const baseCfop = cfop || parseInt(defaultCfop || '5102', 10);
+
+    if (destUf === 'EX') {
+      const prefix = Math.floor(baseCfop / 1000);
+      if (prefix === 5 || prefix === 6) {
+        return baseCfop - prefix * 1000 + 7000;
+      }
+      return baseCfop;
+    }
+
     const isInterestadual = destUf !== emitUf;
 
     if (finalidade === 4) {

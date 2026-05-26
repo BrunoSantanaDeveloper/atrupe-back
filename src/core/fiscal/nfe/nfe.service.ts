@@ -1364,14 +1364,27 @@ export class NfeService {
     }
 
     // Validar destinatário
+    const isForeign = dto.destPais && dto.destPais !== '1058';
     const cleanCnpjCpf = dto.destCnpjCpf?.replace(/\D/g, '') || '';
-    if (
-      !cleanCnpjCpf ||
-      (cleanCnpjCpf.length !== 11 && cleanCnpjCpf.length !== 14)
-    ) {
-      throw new BadRequestException(
-        'CPF/CNPJ do destinatário é obrigatório e deve ser válido (11 dígitos para CPF ou 14 para CNPJ)',
-      );
+    if (!isForeign) {
+      if (
+        !cleanCnpjCpf ||
+        (cleanCnpjCpf.length !== 11 && cleanCnpjCpf.length !== 14)
+      ) {
+        throw new BadRequestException(
+          'CPF/CNPJ do destinatário é obrigatório e deve ser válido (11 dígitos para CPF ou 14 para CNPJ)',
+        );
+      }
+    } else {
+      if (
+        !dto.destIdEstrangeiro ||
+        dto.destIdEstrangeiro.length < 5 ||
+        dto.destIdEstrangeiro.length > 20
+      ) {
+        throw new BadRequestException(
+          'Para destinatários estrangeiros, a Identificação do Estrangeiro (idEstrangeiro) é obrigatória e deve ter entre 5 e 20 caracteres',
+        );
+      }
     }
 
     const cleanReferencedNfe = (dto.nfeReferenciada || '').replace(/\D/g, '');
@@ -1388,10 +1401,12 @@ export class NfeService {
     }
 
     // Buscar código IBGE do município do destinatário via CEP
-    let destCmun = 0;
-    let destUfFromCep = dto.destUf || '';
-    let destMunFromCep = dto.destMunicipio || '';
-    if (dto.destCep) {
+    let destCmun = isForeign ? 9999999 : 0;
+    let destUfFromCep = isForeign ? 'EX' : dto.destUf || '';
+    let destMunFromCep = isForeign
+      ? dto.destMunicipio || 'EXTERIOR'
+      : dto.destMunicipio || '';
+    if (!isForeign && dto.destCep) {
       this.logger.log(
         `Buscando código IBGE para CEP do destinatário: ${dto.destCep}`,
       );
@@ -1406,7 +1421,7 @@ export class NfeService {
       } else {
         this.logger.warn(`CEP do destinatário não encontrado: ${dto.destCep}`);
       }
-    } else {
+    } else if (!isForeign) {
       this.logger.warn('Destinatário sem CEP cadastrado');
     }
 
@@ -1576,7 +1591,11 @@ export class NfeService {
             dhSaiEnt: dataSaida.toISOString(),
             fusoHorario: '-03:00',
             tpNf: dto.tipo ?? 1, // 0 = Entrada, 1 = Saida
-            idDest: destUfFromCep === config.company.address.state ? 1 : 2, // 1 = Interna, 2 = Interestadual
+            idDest: isForeign
+              ? 3
+              : destUfFromCep === config.company.address.state
+                ? 1
+                : 2, // 1 = Interna, 2 = Interestadual, 3 = Exterior
             cMunFg: parseInt(emitCmun || '0', 10),
             tpImp: 1, // DANFE retrato
             tpEmis: 1, // Emissão normal
@@ -1617,20 +1636,23 @@ export class NfeService {
             },
           },
           dest: {
-            // CNPJ ou CPF devem vir ANTES de xNome no schema da SEFAZ
-            ...(dto.destCnpjCpf?.replace(/\D/g, '').length === 14
-              ? { CNPJ_dest: dto.destCnpjCpf.replace(/\D/g, '') }
-              : {}),
-            ...(dto.destCnpjCpf?.replace(/\D/g, '').length === 11
-              ? { CPF_dest: dto.destCnpjCpf.replace(/\D/g, '') }
-              : {}),
+            ...(isForeign
+              ? { idEstrangeiro: dto.destIdEstrangeiro || 'ESTRANGEIRO' }
+              : {
+                  ...(dto.destCnpjCpf?.replace(/\D/g, '').length === 14
+                    ? { CNPJ_dest: dto.destCnpjCpf.replace(/\D/g, '') }
+                    : {}),
+                  ...(dto.destCnpjCpf?.replace(/\D/g, '').length === 11
+                    ? { CPF_dest: dto.destCnpjCpf.replace(/\D/g, '') }
+                    : {}),
+                }),
             // Em homologação, SEFAZ exige este nome exato para o destinatário
             xNome_dest:
               config.ambiente === 'HOMOLOGACAO' || config.ambiente !== 1
                 ? 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
                 : dto.destNome || '',
-            indIEDest: dto.destIndIEDest ?? 9,
-            ...(dto.destIndIEDest === 1 && dto.destIe
+            indIEDest: isForeign ? 9 : (dto.destIndIEDest ?? 9),
+            ...(!isForeign && dto.destIndIEDest === 1 && dto.destIe
               ? { IE_dest: dto.destIe.replace(/\D/g, '') }
               : {}),
             enderDest: {
@@ -1640,8 +1662,12 @@ export class NfeService {
               cMun_dest: destCmun, // Código IBGE do município do destinatário
               xMun_dest: destMunFromCep, // Nome do município (do CEP)
               UF_dest: destUfFromCep, // UF do destinatário (do CEP para garantir consistência)
-              CEP_dest:
-                parseInt((dto.destCep || '').replace(/\D/g, ''), 10) || 0,
+              ...(!isForeign
+                ? {
+                    CEP_dest:
+                      parseInt((dto.destCep || '').replace(/\D/g, ''), 10) || 0,
+                  }
+                : {}),
               cPais_dest: parseInt(dto.destPais || '1058', 10),
             },
           },
@@ -1666,6 +1692,14 @@ export class NfeService {
               CFOP: (() => {
                 const baseCfop =
                   item.cfop || parseInt(config.defaultCfop || '5102', 10);
+
+                if (isForeign) {
+                  const prefix = Math.floor(baseCfop / 1000);
+                  if (prefix === 5 || prefix === 6) {
+                    return baseCfop - prefix * 1000 + 7000;
+                  }
+                  return baseCfop;
+                }
 
                 const isInterestadual =
                   destUfFromCep !== config.company.address.state;

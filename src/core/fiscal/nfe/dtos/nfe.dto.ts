@@ -386,6 +386,13 @@ export class EmitNfeDto {
   @IsOptional()
   destPais?: string;
 
+  @ApiPropertyOptional({
+    description: 'Identificação do estrangeiro (passaporte/outro documento)',
+  })
+  @IsString()
+  @IsOptional()
+  destIdEstrangeiro?: string;
+
   @ApiPropertyOptional({ description: 'Itens da NF-e', type: [NfeItemDto] })
   @IsArray()
   @IsOptional()
@@ -604,6 +611,11 @@ export class DraftDestinatarioDto {
   @IsString()
   @IsOptional()
   pais?: string;
+
+  @ApiPropertyOptional({ description: 'Identificação estrangeiro' })
+  @IsString()
+  @IsOptional()
+  idEstrangeiro?: string;
 }
 
 export class DraftEmissaoDto {

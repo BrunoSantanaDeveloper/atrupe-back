@@ -224,19 +224,35 @@ export class NfseBuilderService {
    * Constrói dados do tomador (cliente)
    */
   private buildTomador(dto: EmitNfseDto): any {
+    const isForeign =
+      dto.tomador.codigoPais && dto.tomador.codigoPais !== '1058';
+
     return {
-      TomaCNPJ: dto.tomador.cnpj
-        ? dto.tomador.cnpj.replace(/\D/g, '')
-        : undefined,
-      TomaCPF: dto.tomador.cpf ? dto.tomador.cpf.replace(/\D/g, '') : undefined,
+      ...(isForeign
+        ? { TomaIdEstrangeiro: dto.tomador.idEstrangeiro || 'ESTRANGEIRO' }
+        : {
+            TomaCNPJ: dto.tomador.cnpj
+              ? dto.tomador.cnpj.replace(/\D/g, '')
+              : undefined,
+            TomaCPF: dto.tomador.cpf
+              ? dto.tomador.cpf.replace(/\D/g, '')
+              : undefined,
+          }),
       TomaRazaoSocial: dto.tomador.razaoSocial,
       TomaEndereco: dto.tomador.endereco,
       TomaNumero: dto.tomador.numero,
-      TomaBairro: dto.tomador.bairro,
-      TomacMun: parseInt(dto.tomador.codigoMunicipio || '0', 10),
-      TomaxMun: dto.tomador.municipio,
-      TomaUF: dto.tomador.uf,
-      TomaCEP: parseInt((dto.tomador.cep || '').replace(/\D/g, ''), 10) || 0,
+      TomaBairro: isForeign ? undefined : dto.tomador.bairro,
+      TomacMun: isForeign
+        ? 9999999
+        : parseInt(dto.tomador.codigoMunicipio || '0', 10),
+      TomaxMun: isForeign
+        ? dto.tomador.municipio || 'EXTERIOR'
+        : dto.tomador.municipio,
+      TomaUF: isForeign ? 'EX' : dto.tomador.uf,
+      TomaCEP: isForeign
+        ? 0
+        : parseInt((dto.tomador.cep || '').replace(/\D/g, ''), 10) || 0,
+      ...(isForeign ? { TomacPais: parseInt(dto.tomador.codigoPais, 10) } : {}),
     };
   }
 }
