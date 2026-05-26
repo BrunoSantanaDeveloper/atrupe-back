@@ -277,7 +277,14 @@ describe('NfeService', () => {
         limit: 20,
       });
 
-      expect(result.items).toEqual(mockNfes);
+      expect(result.items).toEqual([
+        {
+          ...mockNfe,
+          destinatario: {
+            nome: null,
+          },
+        },
+      ]);
       expect(result.total).toBe(1);
       expect(prisma.nfe.findMany).toHaveBeenCalledWith(
         expect.objectContaining({

@@ -757,6 +757,21 @@ export class NfeService {
       }
     }
 
+    const mappedItems = itemsOverride.map((item: any) => {
+      const quantity = item.quantity ?? 0;
+      const unitValue = item.unitValue ?? 0;
+      const discount = item.discount ?? 0;
+      const freight = item.freight ?? 0;
+      const insurance = item.insurance ?? 0;
+      const totalValue = Number(
+        (quantity * unitValue - discount + freight + insurance).toFixed(2),
+      );
+      return {
+        ...item,
+        totalValue: item.totalValue ?? totalValue,
+      };
+    });
+
     return {
       ...baseData,
       emissao: {
@@ -771,7 +786,7 @@ export class NfeService {
         ...baseData.destinatario,
         ...destinatarioOverride,
       },
-      items: itemsOverride.length ? itemsOverride : baseData.items,
+      items: mappedItems.length ? mappedItems : baseData.items,
       originalNfeId: originalNfe.id,
       originalNfeNumero: originalNfe.numero,
       originalNfeChave: originalNfe.chaveAcesso,
@@ -894,6 +909,21 @@ export class NfeService {
       draftData?.destinatario || xmlData?.destinatario || {};
     const itemsOverride = draftData?.items || xmlData?.items || [];
 
+    const mappedItems = itemsOverride.map((item: any) => {
+      const quantity = item.quantity ?? 0;
+      const unitValue = item.unitValue ?? 0;
+      const discount = item.discount ?? 0;
+      const freight = item.freight ?? 0;
+      const insurance = item.insurance ?? 0;
+      const totalValue = Number(
+        (quantity * unitValue - discount + freight + insurance).toFixed(2),
+      );
+      return {
+        ...item,
+        totalValue: item.totalValue ?? totalValue,
+      };
+    });
+
     return {
       ...baseData,
       emissao: {
@@ -904,7 +934,7 @@ export class NfeService {
         ...baseData.destinatario,
         ...destinatarioOverride,
       },
-      items: itemsOverride.length ? itemsOverride : baseData.items,
+      items: mappedItems.length ? mappedItems : baseData.items,
       originalNfeId: originalNfe.id,
       originalNfeNumero: originalNfe.numero,
       motivoRejeicao: originalNfe.motivoRejeicao,
@@ -1114,8 +1144,23 @@ export class NfeService {
       this.prisma.nfe.count({ where }),
     ]);
 
+    const mappedItems = items.map((nfe: any) => {
+      const draftData =
+        typeof nfe.draftData === 'string'
+          ? JSON.parse(nfe.draftData)
+          : nfe.draftData || {};
+      const destNome =
+        draftData?.destinatario?.razaoSocial || draftData?.destNome || null;
+      return {
+        ...nfe,
+        destinatario: {
+          nome: destNome,
+        },
+      };
+    });
+
     return {
-      items,
+      items: mappedItems,
       total,
       page,
       limit,
@@ -2093,8 +2138,17 @@ export class NfeService {
           const preparedItem = preparedData.items.find(
             (pi) => pi.productId === item.productId,
           );
+          const quantity = item.quantity ?? 0;
+          const unitValue = item.unitValue ?? 0;
+          const discount = item.discount ?? 0;
+          const freight = item.freight ?? 0;
+          const insurance = item.insurance ?? 0;
+          const totalValue = Number(
+            (quantity * unitValue - discount + freight + insurance).toFixed(2),
+          );
           return {
             ...item,
+            totalValue: item.totalValue ?? totalValue,
             isService: preparedItem?.isService || false,
           };
         }),
@@ -2207,7 +2261,20 @@ export class NfeService {
           ? { ...preparedData.emissao, ...draftData.emissao }
           : preparedData.emissao,
         destinatario: draftData.destinatario || preparedData.destinatario,
-        items: draftData.items || preparedData.items,
+        items: (draftData.items || preparedData.items).map((item: any) => {
+          const quantity = item.quantity ?? 0;
+          const unitValue = item.unitValue ?? 0;
+          const discount = item.discount ?? 0;
+          const freight = item.freight ?? 0;
+          const insurance = item.insurance ?? 0;
+          const totalValue = Number(
+            (quantity * unitValue - discount + freight + insurance).toFixed(2),
+          );
+          return {
+            ...item,
+            totalValue: item.totalValue ?? totalValue,
+          };
+        }),
         transportadora: draftData.transportadora || preparedData.transportadora,
         volumes: draftData.volumes || preparedData.volumes,
         pagamento: draftData.pagamento || preparedData.pagamento,
@@ -2685,7 +2752,10 @@ export class NfeService {
         id: n.id,
         createdAt: n.createdAt,
         status: n.status,
-        clientName: draftData?.destinatario?.nome || 'Avulsa s/ Destinatário',
+        clientName:
+          draftData?.destinatario?.razaoSocial ||
+          draftData?.destNome ||
+          'Avulsa s/ Destinatário',
         reference: `NF-e ${n.numero}`,
         totalValue: n.valorTotal || 0,
         nfes: [n],
