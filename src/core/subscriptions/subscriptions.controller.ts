@@ -395,6 +395,11 @@ export class SubscriptionsController {
   @ApiOperation({ summary: 'Add module to subscription' })
   @ApiParam({ name: 'id', description: 'Subscription ID' })
   @ApiParam({ name: 'moduleId', description: 'Module ID to add' })
+  @ApiQuery({
+    name: 'couponCode',
+    required: false,
+    description: 'Código do cupom de desconto',
+  })
   @ApiResponse({
     status: 200,
     description: 'Module added successfully',
@@ -404,12 +409,14 @@ export class SubscriptionsController {
   async addModule(
     @Param('id') subscriptionId: string,
     @Param('moduleId') moduleId: string,
+    @Query('couponCode') couponCode: string,
     @Req() req,
   ) {
     return await this.subscriptionsService.addModule(
       subscriptionId,
       moduleId,
       req,
+      couponCode,
     );
   }
 

@@ -64,5 +64,14 @@ export class CreateSubscriptionDto {
   @IsString()
   failureUrl?: string;
 
+  @ApiProperty({
+    required: false,
+    description: 'Código do cupom de desconto a ser aplicado',
+    example: 'BEMVINDO20',
+  })
+  @IsOptional()
+  @IsString()
+  couponCode?: string;
+
   companyId?: string;
 }

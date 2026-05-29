@@ -10,6 +10,7 @@ import { CancelSubscriptionDto } from './dto/cancel-subscription.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { AsaasGatewayService } from './asaas-gateway.service';
+import { CouponsService } from '../coupons/coupons.service';
 import { v4 as uuidv4 } from 'uuid';
 import { SubscriptionStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
@@ -25,6 +26,7 @@ export class SubscriptionsService {
     private prisma: PrismaService,
     private customerService: CustomersService,
     private asaasGateway: AsaasGatewayService,
+    private couponsService: CouponsService,
   ) {}
 
   async findActiveByCompanyId(companyId: string) {
@@ -240,9 +242,33 @@ export class SubscriptionsService {
     const planPrice = plan.basePrice;
     this.logger.debug(`Preço base do plano: ${planPrice}`);
 
+    const totalBaseValueCentavos =
+      planPrice + additionalFeaturesValue + additionalUsersValue;
+    let finalValueCentavos = totalBaseValueCentavos;
+    let coupon = null;
+    let discountAmount = 0;
+
+    if (createSubscriptionDto.couponCode) {
+      coupon = await this.couponsService.validateCoupon(
+        createSubscriptionDto.couponCode,
+        request.user.companyId,
+        plan.id,
+        false,
+      );
+
+      const discountCalculation = this.couponsService.calculateDiscount(
+        coupon,
+        totalBaseValueCentavos,
+      );
+      discountAmount = discountCalculation.discountAmount;
+      finalValueCentavos = discountCalculation.finalValue;
+      this.logger.debug(
+        `Cupom aplicado: ${coupon.code}. Desconto: ${discountAmount} centavos.`,
+      );
+    }
+
     // Soma o valor total a ser cobrado em centavos e divide por 100
-    const value =
-      (planPrice + additionalFeaturesValue + additionalUsersValue) / 100;
+    const value = finalValueCentavos / 100;
     this.logger.debug(`Valor final: ${value}`);
 
     try {
@@ -344,6 +370,10 @@ export class SubscriptionsService {
             billingType: createSubscriptionDto.billingType,
             value,
             status: 'INACTIVE', // Inativo até pagamento ser confirmado
+            couponId: coupon ? coupon.id : null,
+            couponCode: coupon ? coupon.code : null,
+            discountValue: coupon ? discountAmount : null,
+            discountType: coupon ? coupon.discountType : null,
           },
         });
 
@@ -386,6 +416,27 @@ export class SubscriptionsService {
               },
             });
           }
+        }
+
+        if (coupon) {
+          const discountApplied = totalBaseValueCentavos - finalValueCentavos;
+          await tx.couponUsage.create({
+            data: {
+              couponId: coupon.id,
+              companyId: request.user.companyId,
+              subscriptionId: newSubscription.id,
+              discountApplied,
+              originalValue: totalBaseValueCentavos,
+              finalValue: finalValueCentavos,
+            },
+          });
+
+          await tx.coupon.update({
+            where: { id: coupon.id },
+            data: {
+              currentUses: { increment: 1 },
+            },
+          });
         }
 
         return newSubscription;
@@ -645,7 +696,12 @@ export class SubscriptionsService {
     return newSubscription;
   }
 
-  async addModule(subscriptionId: string, moduleId: string, request) {
+  async addModule(
+    subscriptionId: string,
+    moduleId: string,
+    request,
+    couponCode?: string,
+  ) {
     const subscription = await this.prisma.subscription.findUnique({
       where: { id: subscriptionId },
       include: {
@@ -685,17 +741,38 @@ export class SubscriptionsService {
       where: { id: subscription.planId },
     });
 
-    // Atualizar subscription no Asaas primeiro (fora da transaction — chamada externa)
     const modulesValue =
       subscription.subscriptionFeatures.reduce(
         (sum, sf) => sum + (sf.price || 0),
         0,
       ) + (feature.price || 0);
-    const newValue =
-      (plan.basePrice +
-        modulesValue +
-        (plan.additionalUserPrice || 0) * (subscription.additionalUsers || 0)) /
-      100;
+
+    const newValueBase =
+      plan.basePrice +
+      modulesValue +
+      (plan.additionalUserPrice || 0) * (subscription.additionalUsers || 0);
+
+    let finalValueCentavos = newValueBase;
+    let coupon = null;
+    let discountAmount = 0;
+
+    if (couponCode) {
+      coupon = await this.couponsService.validateCoupon(
+        couponCode,
+        request.user.companyId,
+        undefined,
+        true,
+      );
+
+      const discountCalculation = this.couponsService.calculateDiscount(
+        coupon,
+        newValueBase,
+      );
+      discountAmount = discountCalculation.discountAmount;
+      finalValueCentavos = discountCalculation.finalValue;
+    }
+
+    const newValue = finalValueCentavos / 100;
 
     try {
       await this.asaasGateway.updateAsaasSubscription(
@@ -724,6 +801,10 @@ export class SubscriptionsService {
         where: { id: subscriptionId },
         data: {
           value: newValue,
+          couponId: coupon ? coupon.id : undefined,
+          couponCode: coupon ? coupon.code : undefined,
+          discountValue: coupon ? discountAmount : undefined,
+          discountType: coupon ? coupon.discountType : undefined,
         },
         include: {
           plan: true,
@@ -735,7 +816,9 @@ export class SubscriptionsService {
         data: {
           subscriptionId,
           action: 'MODULE_ADDED',
-          description: `Módulo ${feature.name || moduleId} adicionado`,
+          description: coupon
+            ? `Módulo ${feature.name || moduleId} adicionado com cupom ${coupon.code}`
+            : `Módulo ${feature.name || moduleId} adicionado`,
           changes: {
             before: { value: subscription.value },
             after: { value: newValue, moduleKey: moduleId },
@@ -744,10 +827,33 @@ export class SubscriptionsService {
             featureId: feature.id,
             featureKey: moduleId,
             featurePrice: feature.price,
+            couponCode: coupon ? coupon.code : undefined,
+            discountApplied: coupon ? discountAmount : undefined,
           },
           createdByName: request.user?.name || 'Sistema',
         },
       });
+
+      if (coupon) {
+        const discountApplied = newValueBase - finalValueCentavos;
+        await tx.couponUsage.create({
+          data: {
+            couponId: coupon.id,
+            companyId: request.user.companyId,
+            subscriptionId,
+            discountApplied,
+            originalValue: newValueBase,
+            finalValue: finalValueCentavos,
+          },
+        });
+
+        await tx.coupon.update({
+          where: { id: coupon.id },
+          data: {
+            currentUses: { increment: 1 },
+          },
+        });
+      }
 
       return result;
     });

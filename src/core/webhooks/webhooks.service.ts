@@ -2,6 +2,7 @@ import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { AsaasWebhookDto, AsaasWebhookEvent } from './dto/asaas-webhook.dto';
 import { SubscriptionBlockService } from '../subscriptions/subscription-block.service';
+import { AsaasGatewayService } from '../subscriptions/asaas-gateway.service';
 
 @Injectable()
 export class WebhooksService {
@@ -11,6 +12,7 @@ export class WebhooksService {
     private prisma: PrismaService,
     @Inject(forwardRef(() => SubscriptionBlockService))
     private readonly subscriptionBlockService: SubscriptionBlockService,
+    private readonly asaasGateway: AsaasGatewayService,
   ) {}
 
   async handleAsaasWebhook(payload: AsaasWebhookDto) {
@@ -296,6 +298,88 @@ export class WebhooksService {
         this.logger.log(
           `Subscription ${subscription.id} atualizada para ACTIVE`,
         );
+
+        // Verificar se há cupom e gerenciar expiração do desconto (ONCE ou MONTHS)
+        if (subscription.couponId) {
+          try {
+            const coupon = await this.prisma.coupon.findUnique({
+              where: { id: subscription.couponId },
+            });
+
+            if (coupon) {
+              let shouldRestorePrice = false;
+
+              if (coupon.durationType === 'ONCE') {
+                shouldRestorePrice = true;
+              } else if (coupon.durationType === 'MONTHS') {
+                const confirmedCount = await this.prisma.payment.count({
+                  where: {
+                    subscriptionId: subscription.id,
+                    status: 'CONFIRMED',
+                  },
+                });
+
+                if (confirmedCount >= (coupon.durationMonths || 1)) {
+                  shouldRestorePrice = true;
+                }
+              }
+
+              if (shouldRestorePrice) {
+                const plan = await this.prisma.plan.findUnique({
+                  where: { id: subscription.planId },
+                });
+                const activeFeatures =
+                  await this.prisma.subscriptionFeature.findMany({
+                    where: { subscriptionId: subscription.id, isActive: true },
+                  });
+                const featuresSum = activeFeatures.reduce(
+                  (sum, f) => sum + (f.price || 0),
+                  0,
+                );
+                const usersSum =
+                  (plan.additionalUserPrice || 0) *
+                  (subscription.additionalUsers || 0);
+                const fullPrice =
+                  (plan.basePrice + featuresSum + usersSum) / 100;
+
+                this.logger.log(
+                  `Expirando cupom ${coupon.code} da Subscription ${subscription.id}. Restaurando preço cheio: R$ ${fullPrice}`,
+                );
+
+                await this.asaasGateway.updateAsaasSubscription(
+                  subscription.asaasSubscriptionId,
+                  { value: fullPrice },
+                );
+
+                await this.prisma.subscription.update({
+                  where: { id: subscription.id },
+                  data: {
+                    value: fullPrice,
+                    couponId: null,
+                  },
+                });
+
+                await this.prisma.subscriptionHistory.create({
+                  data: {
+                    subscriptionId: subscription.id,
+                    action: 'COUPON_EXPIRED',
+                    description: `Cupom ${coupon.code} expirado. Valor restaurado para R$ ${fullPrice}.`,
+                    metadata: {
+                      couponCode: coupon.code,
+                      originalValue: subscription.value,
+                      newValue: fullPrice,
+                    },
+                    createdByName: 'Sistema Asaas',
+                  },
+                });
+              }
+            }
+          } catch (couponError) {
+            this.logger.error(
+              `Erro ao gerenciar expiração do cupom para a subscription ${subscription.id}: ${couponError.message}`,
+            );
+          }
+        }
 
         // Registrar ativação no histórico se o status mudou
         if (previousStatus !== 'ACTIVE') {

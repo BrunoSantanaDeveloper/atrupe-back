@@ -34,6 +34,8 @@ import { PaymentsModule } from './payments/payments.module';
 import { ImportModule } from './import/import.module';
 import { FiscalModule } from './fiscal/fiscal.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
+import { CouponsModule } from './coupons/coupons.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -66,12 +68,14 @@ import { SystemSettingsModule } from './system-settings/system-settings.module';
     AcademyModule,
     CustomersModule,
     SubscriptionsModule,
+    CouponsModule,
     ActivityMonitorModule,
     WebhooksModule,
     PaymentsModule,
     ImportModule,
     FiscalModule,
     SystemSettingsModule,
+    AiModule,
   ],
 })
 export class CoreModule {}

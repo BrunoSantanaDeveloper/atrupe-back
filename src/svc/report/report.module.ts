@@ -10,5 +10,6 @@ import { PrismaModule } from 'nestjs-prisma';
   imports: [SaleModule, FinancialModule, AuthModule, PrismaModule],
   controllers: [ReportController],
   providers: [ReportService],
+  exports: [ReportService],
 })
 export class ReportModule {}
