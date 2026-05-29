@@ -4,6 +4,14 @@ import { ApiProperty } from '@nestjs/swagger';
 export class CreateAddressDto {
   @IsOptional()
   @IsString()
+  @ApiProperty({
+    description: 'Tipo/Título do endereço (Ex: Sede, Fábrica)',
+    required: false,
+  })
+  type?: string;
+
+  @IsOptional()
+  @IsString()
   @ApiProperty({ description: 'Rua', required: false })
   street?: string;
 

@@ -175,6 +175,9 @@ export class NfseService {
       telefone: '',
     };
 
+    let clientAddresses: any[] = [];
+    let selectedAddressId: string | null = null;
+
     if (clientId) {
       const client = await this.prisma.client.findFirst({
         where: { id: clientId, companyId },
@@ -186,6 +189,21 @@ export class NfseService {
       }
 
       const clientAddress = (client as any).address?.[0];
+      selectedAddressId = clientAddress?.id || null;
+      clientAddresses = Array.isArray((client as any).address)
+        ? (client as any).address.map((addr: any) => ({
+            id: addr.id,
+            label: addr.type || 'Principal',
+            street: addr.street,
+            number: addr.number,
+            neighborhood: addr.neighborhood,
+            city: addr.city,
+            state: addr.state,
+            zipcode: addr.zipcode,
+            complement: addr.complement,
+          }))
+        : [];
+
       tomador = {
         cnpj: (client as any).cnpj || undefined,
         cpf: (client as any).cpf || undefined,
@@ -207,6 +225,9 @@ export class NfseService {
       // Metadados
       orderId: null,
       quotationId: null,
+      clientId: clientId || null,
+      selectedAddressId,
+      clientAddresses,
 
       // Prestador
       prestador: {
@@ -251,6 +272,11 @@ export class NfseService {
           },
         },
         order: true,
+        deliveryInfo: {
+          include: {
+            clientAddress: true,
+          },
+        },
         quotationProduct: {
           include: {
             product: {
@@ -314,8 +340,13 @@ export class NfseService {
         0,
       ) / 100;
 
-    // Obter endereço principal do cliente
-    const clientAddress = client.address?.[0];
+    // Priorizar endereço selecionado via DTO, senão endereço de entrega da OS, senão o primeiro cadastrado
+    const selectedAddress = dto.addressId
+      ? client.address?.find((a: any) => a.id === dto.addressId)
+      : null;
+    const deliveryAddress = (quotation as any).deliveryInfo?.clientAddress;
+    const clientAddress =
+      selectedAddress || deliveryAddress || client.address?.[0];
 
     // Buscar código IBGE do município do tomador via CEP
     let tomadorCmun = '';

@@ -89,6 +89,7 @@ export class NfeService {
                 address: true,
               },
             },
+            clientAddress: true,
           },
         },
       },
@@ -111,8 +112,9 @@ export class NfeService {
       );
     }
 
-    // Obter endereço principal do cliente
-    const clientAddress = client.address?.[0];
+    // Priorizar endereço de entrega da OS; fallback para endereço principal do cliente
+    const deliveryAddress = quotation.deliveryInfo?.clientAddress;
+    const clientAddress = deliveryAddress || client.address?.[0];
 
     // Ensure fiscal data exists for all products (auto-populate defaults if missing)
     const productIds = quotation.quotationProduct.map((qp) => qp.productId);
@@ -209,6 +211,21 @@ export class NfeService {
             dataEmissao: existingNfe.dataEmissao,
           }
         : null,
+      clientId: client.id,
+      selectedAddressId: deliveryAddress?.id || client.address?.[0]?.id || null,
+      clientAddresses: Array.isArray(client.address)
+        ? client.address.map((addr: any) => ({
+            id: addr.id,
+            label: addr.type || 'Principal',
+            street: addr.street,
+            number: addr.number,
+            neighborhood: addr.neighborhood,
+            city: addr.city,
+            state: addr.state,
+            zipcode: addr.zipcode,
+            complement: addr.complement,
+          }))
+        : [],
 
       // Configuração de emissão
       emissao: {
@@ -513,6 +530,9 @@ export class NfeService {
       pais: '1058',
     };
 
+    let clientAddresses: any[] = [];
+    let selectedAddressId: string | null = null;
+
     if (clientId) {
       const client = await this.prisma.client.findFirst({
         where: { id: clientId, companyId },
@@ -524,6 +544,21 @@ export class NfeService {
       }
 
       const clientAddress = (client as any).address?.[0];
+      selectedAddressId = clientAddress?.id || null;
+      clientAddresses = Array.isArray((client as any).address)
+        ? (client as any).address.map((addr: any) => ({
+            id: addr.id,
+            label: addr.type || 'Principal',
+            street: addr.street,
+            number: addr.number,
+            neighborhood: addr.neighborhood,
+            city: addr.city,
+            state: addr.state,
+            zipcode: addr.zipcode,
+            complement: addr.complement,
+          }))
+        : [];
+
       destinatario = {
         razaoSocial: (client as any).corporateName || client.name || '',
         cnpjCpf: (client as any).cnpj || (client as any).cpf || '',
@@ -549,6 +584,9 @@ export class NfeService {
       orderCode: null,
       hasExistingNfe: false,
       existingNfe: null,
+      clientId: clientId || null,
+      selectedAddressId,
+      clientAddresses,
 
       // Configuração de emissão
       emissao: {

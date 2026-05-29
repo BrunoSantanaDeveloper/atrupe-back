@@ -185,6 +185,11 @@ export class EmitNfseFromOrderDto {
   @IsBoolean()
   @IsOptional()
   issRetido?: boolean;
+
+  @ApiPropertyOptional({ description: 'ID do endereço selecionado' })
+  @IsString()
+  @IsOptional()
+  addressId?: string;
 }
 
 // DTO completo para emissão manual

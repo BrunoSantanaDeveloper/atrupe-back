@@ -1,7 +1,18 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  UseGuards,
+} from '@nestjs/common';
 import { AddressService } from './address.service';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { OwnerType } from '@prisma/client';
+import { CreateAddressDto } from './dto/create-address.dto';
+import { UpdateAddressDto } from './dto/update-address.dto';
 import {
   ApiTags,
   ApiOperation,
@@ -45,23 +56,43 @@ export class AddressController {
     return this.addressService.findByOwner(clientId, OwnerType.CLIENT);
   }
 
-  // @MessagePattern('findAllAddress')
-  // findAll() {
-  //   return this.addressService.findAll();
-  // }
+  @Post('/client/:clientId')
+  @ApiOperation({ summary: 'Cria um novo endereço para o cliente' })
+  @ApiParam({ name: 'clientId', required: true, description: 'ID do cliente' })
+  @ApiResponse({
+    status: 201,
+    description: 'Endereço criado com sucesso.',
+  })
+  createClientAddress(
+    @Param('clientId') clientId: string,
+    @Body() createAddressDto: CreateAddressDto,
+  ) {
+    return this.addressService.create(
+      createAddressDto,
+      OwnerType.CLIENT,
+      clientId,
+    );
+  }
 
-  // @MessagePattern('findOneAddress')
-  // findOne(@Payload() id: number) {
-  //   return this.addressService.findOne(id);
-  // }
+  @Patch('/:id')
+  @ApiOperation({ summary: 'Atualiza um endereço existente' })
+  @ApiParam({ name: 'id', required: true, description: 'ID do endereço' })
+  @ApiResponse({
+    status: 200,
+    description: 'Endereço atualizado com sucesso.',
+  })
+  update(@Param('id') id: string, @Body() updateAddressDto: UpdateAddressDto) {
+    return this.addressService.update(id, updateAddressDto);
+  }
 
-  // @MessagePattern('updateAddress')
-  // update(@Payload() updateAddressDto: UpdateAddressDto) {
-  //   return this.addressService.update(updateAddressDto.id, updateAddressDto);
-  // }
-
-  // @MessagePattern('removeAddress')
-  // remove(@Payload() id: number) {
-  //   return this.addressService.remove(id);
-  // }
+  @Delete('/:id')
+  @ApiOperation({ summary: 'Exclui um endereço existente' })
+  @ApiParam({ name: 'id', required: true, description: 'ID do endereço' })
+  @ApiResponse({
+    status: 200,
+    description: 'Endereço excluído com sucesso.',
+  })
+  delete(@Param('id') id: string) {
+    return this.addressService.delete(id);
+  }
 }
