@@ -2740,14 +2740,17 @@ export class NfeService {
     let ordersPromise = Promise.resolve([]);
     let nfeAvulsasPromise = Promise.resolve([]);
     let nfseAvulsasPromise = Promise.resolve([]);
+    let nfceAvulsasPromise = Promise.resolve([]);
 
     let ordersCountPromise = Promise.resolve(0);
     let nfeCountPromise = Promise.resolve(0);
     let nfseCountPromise = Promise.resolve(0);
+    let nfceCountPromise = Promise.resolve(0);
 
     const orderWhere: any = { quotation: { companyId } };
     const nfeWhere: any = { companyId, orderId: null, quotationId: null };
     const nfseWhere: any = { companyId, orderId: null, quotationId: null };
+    const nfceWhere: any = { companyId, orderId: null, quotationId: null };
 
     if (filters.startDate || filters.endDate) {
       const createdAtFilter: any = {};
@@ -2760,6 +2763,7 @@ export class NfeService {
       orderWhere.createdAt = createdAtFilter;
       nfeWhere.createdAt = createdAtFilter;
       nfseWhere.createdAt = createdAtFilter;
+      nfceWhere.createdAt = createdAtFilter;
     }
 
     if (recordType === 'TODOS' || recordType === 'PEDIDOS') {
@@ -2865,17 +2869,49 @@ export class NfeService {
         orderBy: { createdAt: 'desc' },
       });
       nfseCountPromise = this.prisma.nfse.count({ where: nfseWhere });
+
+      if (status === 'EMITIDA') nfceWhere.status = 'AUTHORIZED';
+      else if (status === 'EM_DIGITACAO') nfceWhere.status = 'PROCESSING';
+      else if (status === 'CANCELADA') nfceWhere.status = 'CANCELLED';
+      else if (status === 'REJEITADA') nfceWhere.status = 'REJECTED';
+      else if (status === 'NAO_EMITIDA') nfceWhere.id = 'not-possible';
+
+      if (search) {
+        const searchAsNumber = Number(search.replace(/\D/g, ''));
+        if (!isNaN(searchAsNumber) && searchAsNumber > 0) {
+          nfceWhere.numero = searchAsNumber;
+        } else {
+          nfceWhere.chaveAcesso = { contains: search };
+        }
+      }
+
+      nfceAvulsasPromise = this.prisma.nfce.findMany({
+        where: nfceWhere,
+        take: itemsToFetch,
+        orderBy: { createdAt: 'desc' },
+      });
+      nfceCountPromise = this.prisma.nfce.count({ where: nfceWhere });
     }
 
-    const [orders, nfeAvulsas, nfseAvulsas, ordersCount, nfeCount, nfseCount] =
-      await Promise.all([
-        ordersPromise,
-        nfeAvulsasPromise,
-        nfseAvulsasPromise,
-        ordersCountPromise,
-        nfeCountPromise,
-        nfseCountPromise,
-      ]);
+    const [
+      orders,
+      nfeAvulsas,
+      nfseAvulsas,
+      nfceAvulsas,
+      ordersCount,
+      nfeCount,
+      nfseCount,
+      nfceCount,
+    ] = await Promise.all([
+      ordersPromise,
+      nfeAvulsasPromise,
+      nfseAvulsasPromise,
+      nfceAvulsasPromise,
+      ordersCountPromise,
+      nfeCountPromise,
+      nfseCountPromise,
+      nfceCountPromise,
+    ]);
 
     const unifiedItems = [];
 
@@ -2935,6 +2971,22 @@ export class NfeService {
       });
     }
 
+    for (const nf of nfceAvulsas as any[]) {
+      const clientName = nf.consumidorNome || 'Consumidor não identificado';
+      unifiedItems.push({
+        type: 'NFCE_AVULSA',
+        id: nf.id,
+        createdAt: nf.createdAt,
+        status: nf.status,
+        clientName,
+        reference: `NFC-e ${nf.numero}`,
+        totalValue: nf.valorTotal || 0,
+        nfes: [],
+        nfce: nf,
+        originalData: nf,
+      });
+    }
+
     unifiedItems.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
     const startIndex = (page - 1) * limit;
@@ -2956,7 +3008,10 @@ export class NfeService {
     if (currentGroup) groupedItems.push(currentGroup);
 
     const totalCount =
-      (ordersCount as number) + (nfeCount as number) + (nfseCount as number);
+      (ordersCount as number) +
+      (nfeCount as number) +
+      (nfseCount as number) +
+      (nfceCount as number);
 
     return {
       data: groupedItems,

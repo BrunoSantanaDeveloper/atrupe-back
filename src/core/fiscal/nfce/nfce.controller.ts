@@ -36,6 +36,13 @@ export class NfceController {
     return this.nfceService.findAll(req.user.companyId, filters);
   }
 
+  @Get('prepare-standalone')
+  @HasPermission('create', 'nota_fiscal:emitir')
+  @ApiOperation({ summary: 'Preparar dados para NFC-e avulsa' })
+  async prepareStandalone(@Req() req) {
+    return this.nfceService.prepareStandalone(req.user.companyId);
+  }
+
   @Get(':id')
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Obter NFC-e por ID' })

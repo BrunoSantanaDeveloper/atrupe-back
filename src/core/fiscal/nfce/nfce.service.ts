@@ -31,6 +31,23 @@ export class NfceService {
     private readonly invoicyApiService: InvoicyApiService,
   ) {}
 
+  async prepareStandalone(companyId: string) {
+    const config = await this.invoicyService.getConfig(companyId);
+    if (!config) {
+      throw new BadRequestException(
+        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
+      );
+    }
+    return {
+      numero: config.proximoNumeroNfce || 1,
+      serie: config.serieNfce || 1,
+      ambiente: config.environment, // 'HOMOLOGACAO' ou 'PRODUCAO'
+      emitCrt: config.emitCrt || 1,
+      naturezaOperacao: 'Venda de mercadoria',
+      prazoCancelamentoMinutos: config.prazoCancelamentoNfce ?? 30,
+    };
+  }
+
   async findAll(companyId: string, filters: NfceFilterDto) {
     const page = filters.page || 1;
     const limit = filters.limit || 20;
@@ -180,6 +197,8 @@ export class NfceService {
       );
     }
 
+    const isContingency = !!config.contingenciaNfceAtiva;
+
     // Criar registro da NFC-e
     const nfce = await this.prisma.nfce.create({
       data: {
@@ -188,7 +207,7 @@ export class NfceService {
         quotationId: dto.quotationId,
         numero,
         serie: config.serieNfce || 1,
-        status: NfceStatus.PROCESSING,
+        status: isContingency ? NfceStatus.CONTINGENCY : NfceStatus.PROCESSING,
         ambiente: config.ambiente,
         valorTotal,
         valorDesconto: dto.itens.reduce(
@@ -222,6 +241,17 @@ export class NfceService {
         }
       }
 
+      // Buscar dados fiscais dos produtos
+      const productIds = dto.itens
+        .map((item) => item.productId)
+        .filter(Boolean);
+      const fiscalDataList = await this.prisma.productFiscalData.findMany({
+        where: { productId: { in: productIds } },
+      });
+      const fiscalDataMap = new Map(
+        fiscalDataList.map((fd) => [fd.productId, fd]),
+      );
+
       // Construir payload para o Invoicy (NFC-e usa modelo 65)
       const now = new Date();
       const invoicyRequest: InvoicyNfeRequest = {
@@ -230,7 +260,7 @@ export class NfceService {
           Versao: 4,
           ide: {
             cUF: this.getUfCode(config.company.address.state),
-            natOp: 'Venda de mercadoria',
+            natOp: dto.naturezaOperacao || 'Venda de mercadoria',
             mod: '65',
             serie: (config.serieNfce || 1).toString(),
             nNF: numero,
@@ -240,7 +270,7 @@ export class NfceService {
             idDest: 1, // Operação interna
             cMunFg: parseInt(emitCmun || '0', 10),
             tpImp: 4, // DANFE NFC-e
-            tpEmis: 1, // Emissão normal
+            tpEmis: config.contingenciaNfceAtiva ? 9 : 1, // 1=Normal, 9=Contingência Off-line
             cDV: 0,
             tpAmb:
               config.ambiente === 1 || config.environment === 'PRODUCAO'
@@ -251,6 +281,18 @@ export class NfceService {
             indPres: 1, // Presença do comprador
             procEmi: 0,
             verProc: 'Atrupe 1.0',
+            idCSC: config.cscId ? parseInt(config.cscId, 10) : undefined,
+            CSC: config.cscToken || undefined,
+            ...(config.contingenciaNfceAtiva
+              ? {
+                  dhCont: (
+                    config.contingenciaNfceDataHora || now
+                  ).toISOString(),
+                  xJust:
+                    config.contingenciaNfceMotivo ||
+                    'Problemas tecnicos de conexao',
+                }
+              : {}),
           },
           emit: {
             CNPJ_emit: (config.company.cnpj || '').replace(/\D/g, ''),
@@ -262,7 +304,7 @@ export class NfceService {
               nro: config.company.address.number || 'S/N',
               xBairro: config.company.address.neighborhood || '',
               cMun: parseInt(emitCmun || '0', 10),
-              xMun: '', // Empty for NFC-e sometimes? Or use emitXMun?
+              xMun: config.company.address.city || '',
               UF: config.company.address.state || '',
               CEP:
                 parseInt(
@@ -285,36 +327,61 @@ export class NfceService {
               cPais_dest: 1058,
             },
           },
-          det: dto.itens.map((item, index) => ({
-            prod: {
-              cProd: item.codigo || `ITEM${index + 1}`,
-              cEAN: 'SEM GTIN',
-              cEANTrib: 'SEM GTIN',
-              xProd: item.descricao || `Produto ${index + 1}`,
-              NCM: item.ncm || '00000000',
-              CFOP: item.cfop ? Number(item.cfop) : 5102,
-              uCOM: item.unidade || 'UN',
-              qCOM: item.quantidade.toFixed(4),
-              vUnCom: item.valorUnitario.toFixed(10),
-              vProd: (item.quantidade * item.valorUnitario).toFixed(2),
-              uTrib: item.unidade || 'UN',
-              qTrib: item.quantidade.toFixed(4),
-              vUnTrib: item.valorUnitario.toFixed(10),
-              indTot: 1,
-            },
-            imposto: {
-              ICMS: {
-                orig: 0,
-                CST: '102',
+          det: dto.itens.map((item, index) => {
+            const fiscalData = item.productId
+              ? fiscalDataMap.get(item.productId)
+              : null;
+
+            const orig =
+              item.icmsOrigem !== undefined && item.icmsOrigem !== null
+                ? parseInt(item.icmsOrigem, 10)
+                : fiscalData?.icmsOrigin
+                  ? parseInt(fiscalData.icmsOrigin, 10)
+                  : 0;
+
+            const icmsCst = item.icmsCst || fiscalData?.icmsCst || '102';
+            const pisCst = item.pisCst || fiscalData?.pisCst || '49';
+            const cofinsCst = item.cofinsCst || fiscalData?.cofinsCst || '49';
+
+            return {
+              prod: {
+                cProd: item.codigo || `ITEM${index + 1}`,
+                cEAN: item.cean || fiscalData?.cean || 'SEM GTIN',
+                cEANTrib: item.cean || fiscalData?.cean || 'SEM GTIN',
+                xProd: item.descricao || `Produto ${index + 1}`,
+                NCM: (item.ncm || fiscalData?.ncm || '00000000').replace(
+                  /\D/g,
+                  '',
+                ),
+                CEST: item.cest || fiscalData?.cest || undefined,
+                CFOP: item.cfop
+                  ? Number(item.cfop)
+                  : fiscalData?.cfopInState
+                    ? Number(fiscalData.cfopInState)
+                    : 5102,
+                uCOM: item.unidade || fiscalData?.commercialUnit || 'UN',
+                qCOM: item.quantidade.toFixed(4),
+                vUnCom: item.valorUnitario.toFixed(10),
+                vProd: (item.quantidade * item.valorUnitario).toFixed(2),
+                uTrib: item.unidade || fiscalData?.commercialUnit || 'UN',
+                qTrib: item.quantidade.toFixed(4),
+                vUnTrib: item.valorUnitario.toFixed(10),
+                indTot: 1,
               },
-              PIS: {
-                CST_pis: '49',
+              imposto: {
+                ICMS: {
+                  orig,
+                  CST: icmsCst,
+                },
+                PIS: {
+                  CST_pis: pisCst,
+                },
+                COFINS: {
+                  CST_cofins: cofinsCst,
+                },
               },
-              COFINS: {
-                CST_cofins: '49',
-              },
-            },
-          })),
+            };
+          }),
           total: {
             ICMStot: {
               vBC_ttlnfe: '0.00',
@@ -371,11 +438,17 @@ export class NfceService {
       const isAuthorized =
         situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150;
 
+      const targetStatus = config.contingenciaNfceAtiva
+        ? NfceStatus.CONTINGENCY
+        : isAuthorized
+          ? NfceStatus.AUTHORIZED
+          : NfceStatus.REJECTED;
+
       // Atualizar NFC-e com resposta
       const updatedNfce = await this.prisma.nfce.update({
         where: { id: nfce.id },
         data: {
-          status: isAuthorized ? NfceStatus.AUTHORIZED : NfceStatus.REJECTED,
+          status: targetStatus,
           chaveAcesso: doc.DocChaAcesso || null,
           protocolo: doc.DocProtocolo || null,
           invoicyId: doc.DocIDUnico || null,
@@ -468,12 +541,15 @@ export class NfceService {
       );
     }
 
-    // Verificar se está dentro do prazo (30 minutos para NFC-e em alguns estados)
+    // Verificar se está dentro do prazo (configurável por estado/emissor)
+    const config = await this.invoicyService.getConfig(companyId);
+    const prazoMinutos = config?.prazoCancelamentoNfce ?? 30;
+
     const minutosDaEmissao =
       (Date.now() - new Date(nfce.dataEmissao).getTime()) / (1000 * 60);
-    if (minutosDaEmissao > 30) {
+    if (minutosDaEmissao > prazoMinutos) {
       throw new BadRequestException(
-        'O prazo para cancelamento de NFC-e foi excedido (30 minutos)',
+        `O prazo para cancelamento de NFC-e foi excedido (${prazoMinutos} minutos)`,
       );
     }
 
@@ -610,45 +686,106 @@ export class NfceService {
       throw new BadRequestException('Configuração do Invoicy não encontrada.');
     }
 
-    // TODO: Implementar lógica de contingência
+    const updatedConfig = await this.prisma.invoicyConfig.update({
+      where: { id: config.id },
+      data: {
+        contingenciaNfceAtiva: dto.ativar ?? false,
+        contingenciaNfceMotivo: dto.ativar ? dto.motivo : null,
+        contingenciaNfceDataHora: dto.ativar ? new Date() : null,
+      },
+    });
+
     this.logger.log(
       `${dto.ativar ? 'Ativando' : 'Desativando'} contingência para empresa ${companyId}`,
     );
 
     return {
       success: true,
-      contingenciaAtiva: dto.ativar,
-      motivo: dto.motivo,
-      dataHora: new Date(),
+      contingenciaAtiva: updatedConfig.contingenciaNfceAtiva,
+      motivo: updatedConfig.contingenciaNfceMotivo,
+      dataHora: updatedConfig.contingenciaNfceDataHora,
     };
   }
 
   async consultStatus(id: string, companyId: string) {
     const nfce = await this.findById(id, companyId);
 
-    try {
-      // TODO: Implementar consulta real ao status da NFC-e na SEFAZ via Invoicy
-      this.logger.log(`Consultando status da NFC-e ${nfce.numero}`);
-
+    if (!nfce.chaveAcesso) {
       return {
         id: nfce.id,
         numero: nfce.numero,
         serie: nfce.serie,
         status: nfce.status,
+        statusDescription: 'Chave de acesso não disponível para consulta',
+        checkedAt: new Date().toISOString(),
+      };
+    }
+
+    try {
+      this.logger.log(`Consultando status real NFC-e ${nfce.numero} na SEFAZ`);
+
+      const invoicyResponses = await this.invoicyApiService.consultNfeSefaz(
+        companyId,
+        nfce.chaveAcesso,
+      );
+
+      const response = invoicyResponses[0];
+      const doc = response?.Documentos?.[0];
+      const situacao = doc?.Situacao;
+
+      let newStatus = null;
+      if (situacao?.SitCodigo) {
+        const map: Record<number, string> = {
+          100: 'AUTHORIZED',
+          101: 'CANCELLED',
+          102: 'CANCELLED',
+          135: 'CANCELLED',
+          204: 'AUTHORIZED',
+          217: 'REJECTED',
+        };
+        newStatus = map[situacao.SitCodigo];
+      }
+
+      let currentStatus = nfce.status;
+      if (newStatus && newStatus !== nfce.status) {
+        this.logger.log(
+          `Status NFC-e ${nfce.numero} mudou: ${nfce.status} → ${newStatus}`,
+        );
+
+        await this.prisma.nfce.update({
+          where: { id: nfce.id },
+          data: { status: newStatus as any },
+        });
+        currentStatus = newStatus as any;
+      }
+
+      return {
+        id: nfce.id,
+        numero: nfce.numero,
+        serie: nfce.serie,
+        status: currentStatus,
+        statusChanged: newStatus !== nfce.status,
+        sefazCode: situacao?.SitCodigo,
+        sefazDescription: situacao?.SitDescricao,
         chaveAcesso: nfce.chaveAcesso,
         protocolo: nfce.protocolo,
         dataEmissao: nfce.dataEmissao,
         dataAutorizacao: nfce.dataAutorizacao,
-        valorTotal: nfce.valorTotal,
+        checkedAt: new Date().toISOString(),
       };
     } catch (error) {
       this.logger.error(
-        `Erro ao consultar status da NFC-e: ${error.message}`,
+        `Erro ao consultar status NFC-e ${nfce.numero}: ${error.message}`,
         error.stack,
       );
-      throw new BadRequestException(
-        `Erro ao consultar status da NFC-e: ${error.message}`,
-      );
+      return {
+        id: nfce.id,
+        numero: nfce.numero,
+        serie: nfce.serie,
+        status: nfce.status,
+        sefazError: error.message,
+        checkedAt: new Date().toISOString(),
+      };
     }
   }
 

@@ -113,6 +113,10 @@ export interface InvoicyNfeIde {
   procEmi: number;
   verProc: string;
   NFref?: Array<{ refNFe: string }>;
+  idCSC?: number;
+  CSC?: string;
+  dhCont?: string;
+  xJust?: string;
 }
 
 export interface InvoicyNfeEnderEmit {

@@ -42,6 +42,7 @@ const mockPrismaService = {
     count: jest.fn(),
   },
   invoicyConfig: { findFirst: jest.fn(), update: jest.fn() },
+  productFiscalData: { findMany: jest.fn() },
 };
 
 const mockInvoicyService = {
@@ -134,6 +135,7 @@ describe('NfceService', () => {
 
   describe('emit', () => {
     beforeEach(() => {
+      prisma.productFiscalData.findMany.mockResolvedValue([]);
       prisma.company.findUnique.mockResolvedValue({
         id: mockCompanyId,
         name: 'Empresa',
@@ -339,15 +341,17 @@ describe('NfceService', () => {
     beforeEach(() => {
       invoicyService.getConfig.mockResolvedValue({
         id: 'config-1',
-        contingencia: false,
+        contingenciaNfceAtiva: false,
       });
       prisma.invoicyConfig.findFirst.mockResolvedValue({
         id: 'config-1',
-        contingencia: false,
+        contingenciaNfceAtiva: false,
       });
       prisma.invoicyConfig.update.mockResolvedValue({
         id: 'config-1',
-        contingencia: true,
+        contingenciaNfceAtiva: true,
+        contingenciaNfceMotivo: 'SEFAZ offline',
+        contingenciaNfceDataHora: new Date(),
       });
     });
 

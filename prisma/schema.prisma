@@ -2148,6 +2148,14 @@ model InvoicyConfig {
   cscId    String? // ID do CSC
   cscToken String? // Token CSC
 
+  // NFC-e Contingência
+  contingenciaNfceAtiva    Boolean   @default(false)
+  contingenciaNfceMotivo   String?
+  contingenciaNfceDataHora DateTime?
+
+  // NFC-e prazo de cancelamento (configurável por estado)
+  prazoCancelamentoNfce    Int       @default(30) // minutos
+
   @@index([companyId])
   @@map("invoicy_configs")
 }
