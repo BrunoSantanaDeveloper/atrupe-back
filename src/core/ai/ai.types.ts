@@ -28,6 +28,13 @@ export interface AiToolDefinition {
 export interface AiProviderResponse {
   content: string;
   toolCalls: AiToolCall[];
+  model?: string;
+  modelAttempts?: {
+    model: string;
+    status: 'success' | 'error';
+    reason?: string;
+    statusCode?: number;
+  }[];
 }
 
 export interface AiToolExecutionResult {

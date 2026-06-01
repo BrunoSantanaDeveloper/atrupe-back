@@ -33,12 +33,25 @@ describe('AiToolRegistry', () => {
       getCommissionSummary: jest.fn(),
       ...(overrides?.reportService || {}),
     };
+    const safety = {
+      sanitizeToolArguments: jest.fn((args, allowedKeys) => {
+        const clean = {};
+        const removedKeys = [];
+        Object.entries(args || {}).forEach(([key, value]) => {
+          if (allowedKeys.includes(key)) clean[key] = value;
+          else removedKeys.push(key);
+        });
+        return { clean, removedKeys };
+      }),
+      sanitizeText: jest.fn((value) => value),
+    };
 
     return {
       registry: new AiToolRegistry(
         prisma as any,
         abacService as any,
         reportService as any,
+        safety as any,
       ),
       reportService,
     };
@@ -84,6 +97,23 @@ describe('AiToolRegistry', () => {
 
     expect(getSalesReportSummary).toHaveBeenCalledWith(companyId, {
       sellerId: 'employee-1',
+    });
+  });
+
+  it('descarta companyId enviado em tool call e usa empresa do JWT', async () => {
+    const getFinancialSummary = jest.fn().mockResolvedValue({ received: 10 });
+    const { registry } = makeRegistry({
+      reportService: { getFinancialSummary },
+    });
+
+    await registry.execute(
+      'get_financial_summary',
+      { companyId: 'evil-company', tab: 'receitas' },
+      { ...user, isAdmin: true },
+    );
+
+    expect(getFinancialSummary).toHaveBeenCalledWith(companyId, {
+      tab: 'receitas',
     });
   });
 });

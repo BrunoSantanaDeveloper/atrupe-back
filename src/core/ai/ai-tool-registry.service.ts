@@ -2,13 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { AbacService } from '../auth/abac/abac.service';
 import { ReportService } from '../../svc/report/report.service';
+import { AiSafetyService } from './ai-safety.service';
 import {
   AiRequestUser,
   AiToolDefinition,
   AiToolExecutionResult,
 } from './ai.types';
 
-type ToolArgs = Record<string, any>;
+type ToolArgs = Record<string, unknown>;
 
 @Injectable()
 export class AiToolRegistry {
@@ -16,6 +17,7 @@ export class AiToolRegistry {
     private readonly prisma: PrismaService,
     private readonly abacService: AbacService,
     private readonly reportService: ReportService,
+    private readonly safety: AiSafetyService,
   ) {}
 
   getDefinitions(): AiToolDefinition[] {
@@ -95,7 +97,17 @@ export class AiToolRegistry {
             name,
             await this.reportService.getFinancialSummary(
               user.companyId,
-              this.cleanFilters(args),
+              this.cleanFilters(args, [
+                'tab',
+                'startDate',
+                'endDate',
+                'status',
+                'clientId',
+                'groupBy',
+                'orderBy',
+                'page',
+                'limit',
+              ]),
             ),
           );
         case 'get_financial_table':
@@ -104,7 +116,17 @@ export class AiToolRegistry {
             name,
             await this.reportService.getFinancialTable(
               user.companyId,
-              this.cleanFilters({ limit: 10, ...args }),
+              this.cleanFilters({ limit: 10, ...args }, [
+                'tab',
+                'startDate',
+                'endDate',
+                'status',
+                'clientId',
+                'groupBy',
+                'orderBy',
+                'page',
+                'limit',
+              ]),
             ),
           );
         case 'get_cash_flow_summary':
@@ -113,7 +135,15 @@ export class AiToolRegistry {
             name,
             await this.reportService.getCashFlowSummary(
               user.companyId,
-              this.cleanFilters(args),
+              this.cleanFilters(args, [
+                'startDate',
+                'endDate',
+                'movement',
+                'groupBy',
+                'orderBy',
+                'page',
+                'limit',
+              ]),
             ),
           );
         case 'get_sales_summary':
@@ -146,7 +176,18 @@ export class AiToolRegistry {
             name,
             await this.reportService.getCommissionSummary(
               user.companyId,
-              this.cleanFilters(args),
+              this.cleanFilters(args, [
+                'commissionType',
+                'startDate',
+                'endDate',
+                'receivedStartDate',
+                'receivedEndDate',
+                'sellerId',
+                'groupBy',
+                'orderBy',
+                'page',
+                'limit',
+              ]),
             ),
           );
         case 'search_help_content':
@@ -258,7 +299,18 @@ export class AiToolRegistry {
       };
     }
 
-    const filters = this.cleanFilters(args);
+    const filters = this.cleanFilters(args, [
+      'sellerId',
+      'originId',
+      'clientId',
+      'serieId',
+      'startDate',
+      'endDate',
+      'groupBy',
+      'orderBy',
+      'page',
+      'limit',
+    ]);
     const canSeeOtherSellers = await this.abacService.hasPermission(
       user,
       'view',
@@ -272,18 +324,17 @@ export class AiToolRegistry {
     return filters;
   }
 
-  private cleanFilters(args: ToolArgs) {
-    const clean: ToolArgs = {};
-    for (const [key, value] of Object.entries(args || {})) {
-      if (value !== undefined && value !== null && value !== '')
-        clean[key] = value;
-    }
-    return clean;
+  private cleanFilters(args: ToolArgs, allowedKeys: string[]) {
+    return this.safety.sanitizeToolArguments(args, allowedKeys).clean;
   }
 
   private async searchHelp(args: ToolArgs, companyId: string) {
-    const query = String(args?.query || '').trim();
-    const currentPath = String(args?.currentPath || '').trim();
+    const { clean } = this.safety.sanitizeToolArguments(args, [
+      'query',
+      'currentPath',
+    ]);
+    const query = String(clean?.query || '').trim();
+    const currentPath = String(clean?.currentPath || '').trim();
     const terms = [query, currentPath].filter(Boolean);
 
     const items = await this.prisma.academySystem.findMany({
@@ -308,12 +359,12 @@ export class AiToolRegistry {
     });
 
     return items.map((item) => ({
-      title: item.title,
-      description: item.description,
-      section: item.section,
-      page: item.page,
+      title: this.safety.sanitizeText(item.title, 160),
+      description: this.safety.sanitizeText(item.description, 500),
+      section: this.safety.sanitizeText(item.section, 120),
+      page: this.safety.sanitizeText(item.page, 200),
       videoUrl: item.videoUrl,
-      files: item.files,
+      fileCount: Array.isArray(item.files) ? item.files.length : 0,
       completed: item.AcademyProgress?.[0]?.checked || false,
     }));
   }

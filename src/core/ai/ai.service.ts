@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'nestjs-prisma';
 import { AiChatRequestDto } from './dto/ai-chat.dto';
+import { AiSafetyService } from './ai-safety.service';
 import { AiToolRegistry } from './ai-tool-registry.service';
 import { AiMessage, AiRequestUser, AiToolExecutionResult } from './ai.types';
 import { AI_PROVIDER, AiProvider } from './providers/ai-provider.interface';
@@ -16,6 +17,7 @@ export class AiService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly safety: AiSafetyService,
     private readonly tools: AiToolRegistry,
     @Inject(AI_PROVIDER) private readonly provider: AiProvider,
   ) {}
@@ -26,15 +28,46 @@ export class AiService {
     }
 
     const conversation = await this.getOrCreateConversation(dto, user);
+    const safetyResult = this.safety.inspectUserMessage(dto.message);
 
     await this.prisma.aiMessage.create({
       data: {
         conversationId: conversation.id,
         role: 'user',
         content: dto.message,
-        metadata: (dto.context || {}) as any,
+        metadata: {
+          context: dto.context || {},
+          safety: safetyResult,
+        } as any,
       },
     });
+
+    if (safetyResult.blocked) {
+      const blockedMessage =
+        safetyResult.reason ||
+        'Posso ajudar com dúvidas sobre operação, relatórios e uso do Atrupe.';
+
+      await this.prisma.aiMessage.create({
+        data: {
+          conversationId: conversation.id,
+          role: 'assistant',
+          content: blockedMessage,
+          metadata: {
+            safety: safetyResult,
+            blocked: true,
+            provider: null,
+            model: null,
+          } as any,
+        },
+      });
+
+      return {
+        conversationId: conversation.id,
+        message: blockedMessage,
+        sources: [],
+        toolCalls: [],
+      };
+    }
 
     const historyLimit = this.config.get<number>('ai.maxHistoryMessages') || 20;
     const maxToolCalls = this.config.get<number>('ai.maxToolCalls') || 5;
@@ -46,7 +79,10 @@ export class AiService {
     });
 
     const messages: AiMessage[] = [
-      { role: 'system', content: this.systemPrompt(dto.context?.currentPath) },
+      {
+        role: 'system',
+        content: this.safety.buildSystemPrompt(dto.context?.currentPath),
+      },
       ...history
         .reverse()
         .filter((message) => ['user', 'assistant'].includes(message.role))
@@ -57,6 +93,7 @@ export class AiService {
     ];
 
     const executedTools: AiToolExecutionResult[] = [];
+    const suspiciousToolCalls: string[] = [];
     let response = await this.provider.complete({
       conversationId: conversation.id,
       messages,
@@ -77,6 +114,9 @@ export class AiService {
           user,
         );
         executedTools.push(result);
+        if (result.status === 'denied' || result.status === 'error') {
+          suspiciousToolCalls.push(toolCall.function.name);
+        }
         messages.push({
           role: 'tool',
           tool_call_id: toolCall.id,
@@ -106,8 +146,13 @@ export class AiService {
         })) as any,
         metadata: {
           provider: this.config.get<string>('ai.provider'),
-          model: this.config.get<string>('ai.model'),
-        },
+          model: response.model || this.config.get<string>('ai.model'),
+          modelAttempts: response.modelAttempts || [],
+          safety: {
+            input: safetyResult,
+            suspiciousToolCalls,
+          },
+        } as any,
       },
     });
 
