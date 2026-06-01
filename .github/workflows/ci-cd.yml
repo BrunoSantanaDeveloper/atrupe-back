@@ -109,12 +109,17 @@ jobs:
             else
               echo "⚠️  Container postgres (dev) não encontrado — backup pulado..."
             fi
-            # === DEPLOY — pull da imagem pre-construída no GitHub Actions ===
+            # === ATUALIZAR REPOSITÓRIO LOCAL NA VPS ===
+            cd /home/ubuntu/atrupe-back || exit 1
+            git fetch origin
+            git checkout dev
+            git pull
+
+            # === DEPLOY VIA DOCKER STACK ===
             echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            docker pull "$GHCR_IMAGE":dev && \
-            (docker service ls --format '{{.Name}}' | grep -q "^atrupe-dev_atrupe$" && \
-              docker service update --image "$GHCR_IMAGE":dev atrupe-dev_atrupe --force || \
-              docker service create --name atrupe-dev_atrupe --network atrupe_network -p 5000:5000 --limit-memory 512m --env-file /home/ubuntu/atrupe-back/.env.dev --restart-condition on-failure "$GHCR_IMAGE":dev) && \
+            docker pull "$GHCR_IMAGE":dev
+            export GHCR_IMAGE="$GHCR_IMAGE"
+            docker stack deploy -c docker-stack.dev.yml atrupe-dev --with-registry-auth
             docker image prune -f
         env:
           GHCR_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -133,7 +138,7 @@ jobs:
           NOTIFICATION_WEBHOOK: ${{ secrets.NOTIFICATION_WEBHOOK }}
           SMOKE_USER_EMAIL: ${{ secrets.SMOKE_USER_EMAIL }}
           SMOKE_USER_PASSWORD: ${{ secrets.SMOKE_USER_PASSWORD }}
-          API_URL: https://api-homolog.atrupe.com.br
+          API_URL: https://dev.atrupe.com.br
         run: |
           Start-Sleep -Seconds 60
           pwsh ./smoke-test-homolog.ps1
@@ -216,12 +221,17 @@ jobs:
             else
               echo "⚠️  Container postgres (prod) não encontrado — backup pulado..."
             fi
-            # === DEPLOY — pull da imagem pre-construída no GitHub Actions ===
+            # === ATUALIZAR REPOSITÓRIO LOCAL NA VPS ===
+            cd /home/ubuntu/atrupe-back || exit 1
+            git fetch origin
+            git checkout main
+            git pull
+
+            # === DEPLOY VIA DOCKER STACK ===
             echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            docker pull "$GHCR_IMAGE":latest && \
-            (docker service ls --format '{{.Name}}' | grep -q "^atrupe-api_atrupe$" && \
-              docker service update --image "$GHCR_IMAGE":latest atrupe-api_atrupe --force || \
-              docker service create --name atrupe-api_atrupe --network atrupe_network -p 5000:5000 --limit-memory 512m --env-file /home/ubuntu/atrupe-back/.env.prod --restart-condition on-failure "$GHCR_IMAGE":latest) && \
+            docker pull "$GHCR_IMAGE":latest
+            export GHCR_IMAGE="$GHCR_IMAGE"
+            docker stack deploy -c docker-stack.prod.yml atrupe-api --with-registry-auth
             docker image prune -f
         env:
           GHCR_PAT: ${{ secrets.GITHUB_TOKEN }}

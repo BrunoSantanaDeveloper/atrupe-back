@@ -4,7 +4,7 @@
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$API_BASE = if ($env:API_URL) { $env:API_URL } else { "https://api-homolog.atrupe.com.br" }
+$API_BASE = if ($env:API_URL) { $env:API_URL } else { "https://dev.atrupe.com.br" }
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan

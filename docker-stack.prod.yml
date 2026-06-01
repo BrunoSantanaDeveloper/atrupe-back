@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  atrupe:
+    image: ${GHCR_IMAGE:-ghcr.io/brunosantanadeveloper/atrupe-back}:latest
+    env_file:
+      - /home/ubuntu/atrupe-back/.env.prod
+    networks:
+      - atrupe_network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.atrupe-api.rule=Host(`api.atrupe.com.br`)"
+        - "traefik.http.routers.atrupe-api.entrypoints=websecure"
+        - "traefik.http.routers.atrupe-api.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.atrupe-api.priority=1"
+        - "traefik.http.routers.atrupe-api.service=atrupe-api"
+        - "traefik.http.services.atrupe-api.loadbalancer.server.port=5000"
+        - "traefik.http.services.atrupe-api.loadbalancer.passhostheader=true"
+        - "traefik.http.middlewares.sslheader-api.headers.customrequestheaders.X-Forwarded-Proto=https"
+        - "traefik.http.routers.atrupe-api.middlewares=sslheader-api@docker"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5000 > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+networks:
+  atrupe_network:
+    external: true
