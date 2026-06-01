@@ -96,12 +96,14 @@ export class PlanControlService {
 
     // Features do plano
     plan.planFeatures.forEach((pf) => {
-      features[pf.feature.key] = true;
+      if (pf.feature?.key) {
+        features[pf.feature.key] = true;
+      }
     });
 
     // Features adicionais da subscription
     subscription.subscriptionFeatures.forEach((sf) => {
-      if (sf.isActive) {
+      if (sf.isActive && sf.feature?.key) {
         features[sf.feature.key] = true;
       }
     });
@@ -110,16 +112,18 @@ export class PlanControlService {
     const limits: CompanyLimits = {};
 
     plan.planLimits.forEach((pl) => {
-      const limitKey = pl.limit.key;
-      let value = pl.value;
+      if (pl.limit?.key) {
+        const limitKey = pl.limit.key;
+        let value = pl.value;
 
-      // Adicionar usuários extras para o limite de usuários
-      if (limitKey === 'max_users' && subscription.additionalUsers > 0) {
-        value += subscription.additionalUsers;
+        // Adicionar usuários extras para o limite de usuários
+        if (limitKey === 'max_users' && subscription.additionalUsers > 0) {
+          value += subscription.additionalUsers;
+        }
+
+        // Adicionar limite dinamicamente (sem switch/case hardcoded)
+        limits[limitKey] = value;
       }
-
-      // Adicionar limite dinamicamente (sem switch/case hardcoded)
-      limits[limitKey] = value;
     });
 
     // Verificar se trial está ativo através da subscription
