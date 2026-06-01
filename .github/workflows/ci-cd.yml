@@ -113,7 +113,7 @@ jobs:
               docker service create --name atrupe-dev_atrupe --network atrupe_network -p 5000:5000 --limit-memory 512m --env-file /home/ubuntu/atrupe-back/.env.dev --restart-condition on-failure "$GHCR_IMAGE":dev) && \
             docker image prune -f
         env:
-          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          GHCR_PAT: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
           GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
 
@@ -216,7 +216,7 @@ jobs:
               docker service create --name atrupe-api_atrupe --network atrupe_network -p 5000:5000 --limit-memory 512m --env-file /home/ubuntu/atrupe-back/.env.prod --restart-condition on-failure "$GHCR_IMAGE":latest) && \
             docker image prune -f
         env:
-          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          GHCR_PAT: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
           GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
 
