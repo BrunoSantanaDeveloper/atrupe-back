@@ -37,7 +37,6 @@ COPY --from=builder /usr/src/app/src/core/mail/templates ./dist/core/mail/templa
 COPY --from=builder /usr/src/app/prisma ./prisma
 COPY --from=builder /usr/src/app/src/seeds ./src/seeds
 COPY --from=builder /usr/src/app/package*.json ./
-COPY .env .env
 COPY scripts/start.sh ./
 
 # Dar permissão de execução ao script

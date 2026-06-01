@@ -6,6 +6,10 @@ on:
       - dev
       - main
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -20,8 +24,48 @@ jobs:
       - run: npm run build
       - run: npm run test
 
-  deploy-homolog:
+  build-image-homolog:
     needs: build-and-test
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=dev-
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image (homolog)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev
+          cache-to: type=inline
+
+  deploy-homolog:
+    needs: build-image-homolog
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     environment: Test
@@ -32,6 +76,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: GHCR_PAT,GHCR_USER,GHCR_IMAGE
           script: |
             # === BACKUP DO BANCO ANTES DO DEPLOY ===
             BACKUP_DIR=/home/ubuntu/db-backups/dev
@@ -48,18 +93,17 @@ jobs:
             else
               echo "⚠️  Container postgres (dev) não encontrado — backup pulado..."
             fi
-            # === DEPLOY ===
-            cd /home/ubuntu/atrupe-back && \
-            git config --global --add safe.directory /home/ubuntu/atrupe-back && \
-            git stash && \
-            git checkout dev && \
-            git fetch origin dev && \
-            git reset --hard origin/dev && \
-            docker build --no-cache --cpu-quota=50000 --memory=1g . -t atrupe-image-dev:latest && \
+            # === DEPLOY — pull da imagem pre-construída no GitHub Actions ===
+            echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            docker pull "$GHCR_IMAGE":dev && \
             (docker service ls --format '{{.Name}}' | grep -q "^atrupe-dev_atrupe$" && \
-              docker service update --image atrupe-image-dev:latest atrupe-dev_atrupe --force || \
-              docker service create --name atrupe-dev_atrupe --network atrupe_network -p 5000:5000 --limit-memory 512m --env-file /home/ubuntu/atrupe-back/.env.dev --restart-condition on-failure atrupe-image-dev:latest) && \
+              docker service update --image "$GHCR_IMAGE":dev atrupe-dev_atrupe --force || \
+              docker service create --name atrupe-dev_atrupe --network atrupe_network -p 5000:5000 --limit-memory 512m --env-file /home/ubuntu/atrupe-back/.env.dev --restart-condition on-failure "$GHCR_IMAGE":dev) && \
             docker image prune -f
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}
 
   smoke-test-homolog:
     needs: deploy-homolog
@@ -82,8 +126,37 @@ jobs:
           if ($env:NOTIFICATION_WEBHOOK) { Invoke-RestMethod -Uri $env:NOTIFICATION_WEBHOOK -Method Post -Body (@{content="Pipeline Homologação (Atrupe): $status"} | ConvertTo-Json) -ContentType "application/json" }
           if ($exitCode -ne 0) { exit $exitCode }
 
-  deploy-prod:
+  build-image-prod:
     needs: build-and-test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image (prod)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-to: type=inline
+
+  deploy-prod:
+    needs: build-image-prod
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
@@ -94,6 +167,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: GHCR_PAT,GHCR_USER,GHCR_IMAGE
           script: |
             # === BACKUP DO BANCO ANTES DO DEPLOY ===
             BACKUP_DIR=/home/ubuntu/db-backups/prod
@@ -110,18 +184,17 @@ jobs:
             else
               echo "⚠️  Container postgres (prod) não encontrado — backup pulado..."
             fi
-            # === DEPLOY ===
-            cd /home/ubuntu/atrupe-back && \
-            git config --global --add safe.directory /home/ubuntu/atrupe-back && \
-            git stash && \
-            git checkout main && \
-            git fetch origin main && \
-            git reset --hard origin/main && \
-            docker build --no-cache --cpu-quota=50000 --memory=1g . -t atrupe-image:latest && \
+            # === DEPLOY — pull da imagem pre-construída no GitHub Actions ===
+            echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            docker pull "$GHCR_IMAGE":latest && \
             (docker service ls --format '{{.Name}}' | grep -q "^atrupe-api_atrupe$" && \
-              docker service update --image atrupe-image:latest atrupe-api_atrupe --force || \
-              docker service create --name atrupe-api_atrupe --network atrupe_network -p 5000:5000 --limit-memory 512m --env-file /home/ubuntu/atrupe-back/.env.prod --restart-condition on-failure atrupe-image:latest) && \
+              docker service update --image "$GHCR_IMAGE":latest atrupe-api_atrupe --force || \
+              docker service create --name atrupe-api_atrupe --network atrupe_network -p 5000:5000 --limit-memory 512m --env-file /home/ubuntu/atrupe-back/.env.prod --restart-condition on-failure "$GHCR_IMAGE":latest) && \
             docker image prune -f
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}
 
   smoke-test-prod:
     needs: deploy-prod

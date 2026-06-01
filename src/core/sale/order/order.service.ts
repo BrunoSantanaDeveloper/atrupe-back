@@ -555,30 +555,34 @@ export class OrderService {
 
         // History: register order cancellation
         try {
-          const user = await prisma.user.findUnique({
-            where: { id: sellerId },
-            select: { name: true },
-          });
-          await prisma.orderHistory.create({
-            data: {
-              orderId,
-              action: 'CANCELED',
-              description: `Ordem de serviço cancelada por ${user?.name || 'Usuário'}`,
-              metadata: {
-                reasonId: dto.reasonId || null,
-                canceledReceivableInstallments:
-                  canceledReceivableInstallmentsCount,
-                canceledPayableInstallments: canceledPayableInstallmentsCount,
-                keptReceivableInstallments:
-                  totalReceivableInstallments -
-                  canceledReceivableInstallmentsCount,
-                keptPayableInstallments:
-                  totalPayableInstallments - canceledPayableInstallmentsCount,
-              },
-              createdBy: sellerId,
-              createdByName: user?.name || null,
-            } as any,
-          });
+          const user = prisma.user
+            ? await prisma.user.findUnique({
+                where: { id: sellerId },
+                select: { name: true },
+              })
+            : null;
+          if (prisma.orderHistory) {
+            await prisma.orderHistory.create({
+              data: {
+                orderId,
+                action: 'CANCELED',
+                description: `Ordem de serviço cancelada por ${user?.name || 'Usuário'}`,
+                metadata: {
+                  reasonId: dto.reasonId || null,
+                  canceledReceivableInstallments:
+                    canceledReceivableInstallmentsCount,
+                  canceledPayableInstallments: canceledPayableInstallmentsCount,
+                  keptReceivableInstallments:
+                    totalReceivableInstallments -
+                    canceledReceivableInstallmentsCount,
+                  keptPayableInstallments:
+                    totalPayableInstallments - canceledPayableInstallmentsCount,
+                },
+                createdBy: sellerId,
+                createdByName: user?.name || null,
+              } as any,
+            });
+          }
         } catch (historyError) {
           // Non-blocking: don't fail cancellation if history fails
           this.logger.error(
