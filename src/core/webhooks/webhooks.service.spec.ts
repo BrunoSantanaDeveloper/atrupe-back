@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { WebhooksService } from './webhooks.service';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { SubscriptionBlockService } from '../subscriptions/subscription-block.service';
+import { AsaasGatewayService } from '../subscriptions/asaas-gateway.service';
 import { AsaasWebhookEvent } from './dto/asaas-webhook.dto';
 
 describe('WebhooksService', () => {
@@ -17,6 +18,9 @@ describe('WebhooksService', () => {
     payment: {
       findFirst: jest.fn(),
       update: jest.fn(),
+      create: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     subscription: {
       findFirst: jest.fn(),
@@ -28,6 +32,15 @@ describe('WebhooksService', () => {
     company: {
       findUnique: jest.fn().mockResolvedValue(null),
       update: jest.fn(),
+    },
+    coupon: {
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    plan: {
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    subscriptionFeature: {
+      findMany: jest.fn().mockResolvedValue([]),
     },
   };
 
@@ -44,6 +57,12 @@ describe('WebhooksService', () => {
           useValue: {
             checkAndApplyBlocks: jest.fn(),
             unblockCompany: jest.fn(),
+          },
+        },
+        {
+          provide: AsaasGatewayService,
+          useValue: {
+            updateAsaasSubscription: jest.fn(),
           },
         },
       ],
