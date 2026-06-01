@@ -1,4 +1,10 @@
-import { Injectable, Inject, forwardRef, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Inject,
+  forwardRef,
+  Logger,
+  HttpException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import { PlanControlService } from '../plan/plan-control.service';
@@ -118,7 +124,8 @@ export class AuthService {
       }
 
       // Login normal para usuários de empresa
-      const companyId = user.employee[0]?.company.id;
+      const employee = user.employee?.[0];
+      const companyId = employee?.company?.id;
       let planInfo = companyId
         ? await this.planControlService.getCompanyPlanInfo(companyId)
         : null;
@@ -127,8 +134,7 @@ export class AuthService {
       // Verifica se a empresa está no plano TRIAL ou bloqueada (pode ter pagamento pendente)
       const isTrialPlan = planInfo?.planType === 'TRIAL';
       const isBlocked =
-        user.employee[0]?.company?.blockLevel &&
-        user.employee[0].company.blockLevel !== 'NONE';
+        employee?.company?.blockLevel && employee.company.blockLevel !== 'NONE';
 
       // Verificar para empresas com TRIAL ativo (pode ter comprado plano pago)
       // OU empresas bloqueadas (pode ter pago e sistema não sincronizou)
@@ -163,11 +169,11 @@ export class AuthService {
       const payload = {
         username: user.email,
         sub: user.id,
-        companyId: companyId,
-        role: user.employee[0]?.role?.id,
-        isAdmin: user.employee[0]?.role?.isAdmin,
+        companyId: companyId || null,
+        role: employee?.role?.id || null,
+        isAdmin: employee?.role?.isAdmin ?? false,
         isSystemAdmin: false,
-        employeeId: user.employee[0]?.id,
+        employeeId: employee?.id || null,
         subscription: subscription,
       };
 
@@ -176,25 +182,25 @@ export class AuthService {
 
       return {
         id: user.id,
-        name: user.employee[0]?.name ?? user.name,
+        name: employee?.name ?? user.name,
         email: user.email,
-        avatar: user.employee[0]?.avatarUrl,
-        role: user.employee[0] ? user.employee[0].role?.name : null,
-        employeeId: user.employee[0]?.id,
-        isAdmin: user.employee[0]?.role?.isAdmin,
+        avatar: employee?.avatarUrl || null,
+        role: employee?.role?.name || null,
+        employeeId: employee?.id || null,
+        isAdmin: employee?.role?.isAdmin ?? false,
         isSystemAdmin: false,
-        permissions: user.employee[0]?.role?.permissions,
-        company: user.employee[0]?.company
+        permissions: employee?.role?.permissions || [],
+        company: employee?.company
           ? {
-              id: user.employee[0].company.id,
-              name: user.employee[0].company.name,
-              legalName: user.employee[0].company.legalName,
-              logo: user.employee[0].company.logoUrl,
-              favicon: user.employee[0].company.favIconUrl,
+              id: employee.company.id,
+              name: employee.company.name,
+              legalName: employee.company.legalName,
+              logo: employee.company.logoUrl,
+              favicon: employee.company.favIconUrl,
               subscription: subscription,
               trialEndsAt: planInfo?.trialEndsAt ?? null,
-              blockLevel: user.employee[0].company.blockLevel ?? 'NONE',
-              features: await this.getPlanFeatures(user.employee[0].company.id),
+              blockLevel: employee.company.blockLevel ?? 'NONE',
+              features: await this.getPlanFeatures(employee.company.id),
               limits: planInfo?.limits || null, // Sistema dinâmico - todos os limites automaticamente
             }
           : null,
@@ -204,7 +210,7 @@ export class AuthService {
       };
     } catch (error) {
       this.logger.error('Erro ao gerar token:', error);
-      throw new Error('Erro ao gerar token');
+      throw new HttpException('Erro ao gerar token: ' + error.message, 500);
     }
   }
 
@@ -246,7 +252,8 @@ export class AuthService {
       }
 
       // Refresh token normal para usuários de empresa
-      const companyId = user.employee[0]?.company.id;
+      const employee = user.employee?.[0];
+      const companyId = employee?.company?.id;
       const planInfo = companyId
         ? await this.planControlService.getCompanyPlanInfo(companyId)
         : null;
@@ -256,11 +263,11 @@ export class AuthService {
       const payload = {
         username: user.email,
         sub: user.id,
-        companyId: companyId,
-        role: user.employee[0]?.role?.id,
-        isAdmin: user.employee[0]?.role?.isAdmin,
+        companyId: companyId || null,
+        role: employee?.role?.id || null,
+        isAdmin: employee?.role?.isAdmin ?? false,
         isSystemAdmin: false,
-        employeeId: user.employee[0]?.id,
+        employeeId: employee?.id || null,
         subscription: subscription,
       };
 
@@ -274,7 +281,7 @@ export class AuthService {
       };
     } catch (error) {
       this.logger.error('Erro ao renovar token:', error);
-      throw new Error('Erro ao renovar token');
+      throw new HttpException('Erro ao renovar token: ' + error.message, 500);
     }
   }
 }

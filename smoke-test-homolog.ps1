@@ -131,7 +131,15 @@ if ($smokeEmail -and $smokePassword) {
         Write-Host "    PASS - Rota /financial/payable respondeu OK" -ForegroundColor Green
 
     } catch {
-        Write-Host "    FAIL - Smoke autenticado falhou: $($_.Exception.Message)" -ForegroundColor Red
+        $msg = $_.Exception.Message
+        if ($_.Exception.Response) {
+            try {
+                $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+                $body = $reader.ReadToEnd()
+                $msg = "$msg - Response: $body"
+            } catch {}
+        }
+        Write-Host "    FAIL - Smoke autenticado falhou: $msg" -ForegroundColor Red
         $hasErrors = $true
     }
 } else {
