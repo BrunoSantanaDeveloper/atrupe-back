@@ -13,10 +13,20 @@ describe('AiToolRegistry', () => {
   function makeRegistry(overrides?: {
     hasPermission?: jest.Mock;
     reportService?: Record<string, jest.Mock>;
+    operationalQuery?: {
+      query?: jest.Mock;
+      search?: jest.Mock;
+      details?: jest.Mock;
+      getToolSchema?: jest.Mock;
+      getSearchToolSchema?: jest.Mock;
+      getDetailsToolSchema?: jest.Mock;
+    };
   }) {
     const prisma = {
       academySystem: { findMany: jest.fn() },
       company: { findUnique: jest.fn() },
+      order: { groupBy: jest.fn() },
+      quotation: { groupBy: jest.fn() },
     };
     const abacService = {
       hasPermission:
@@ -45,6 +55,15 @@ describe('AiToolRegistry', () => {
       }),
       sanitizeText: jest.fn((value) => value),
     };
+    const operationalQuery = {
+      query: jest.fn().mockResolvedValue({ total: 0 }),
+      search: jest.fn().mockResolvedValue({ records: [] }),
+      details: jest.fn().mockResolvedValue({ record: null }),
+      getToolSchema: jest.fn().mockReturnValue({ type: 'object' }),
+      getSearchToolSchema: jest.fn().mockReturnValue({ type: 'object' }),
+      getDetailsToolSchema: jest.fn().mockReturnValue({ type: 'object' }),
+      ...(overrides?.operationalQuery || {}),
+    };
 
     return {
       registry: new AiToolRegistry(
@@ -52,8 +71,11 @@ describe('AiToolRegistry', () => {
         abacService as any,
         reportService as any,
         safety as any,
+        operationalQuery as any,
       ),
+      prisma,
       reportService,
+      operationalQuery,
     };
   }
 
@@ -115,5 +137,34 @@ describe('AiToolRegistry', () => {
     expect(getFinancialSummary).toHaveBeenCalledWith(companyId, {
       tab: 'receitas',
     });
+  });
+
+  it('encaminha consulta operacional para a camada semantica', async () => {
+    const query = jest.fn().mockResolvedValue({ total: 3 });
+    const { registry } = makeRegistry({ operationalQuery: { query } });
+
+    const result = await registry.execute(
+      'query_operational_metrics',
+      {
+        entity: 'orders',
+        metric: 'count',
+        filters: { companyId: 'evil-company', status: 'CANCELED' },
+      },
+      { ...user, isAdmin: true },
+    );
+
+    expect(result).toEqual({
+      name: 'query_operational_metrics',
+      status: 'success',
+      content: { total: 3 },
+    });
+    expect(query).toHaveBeenCalledWith(
+      {
+        entity: 'orders',
+        metric: 'count',
+        filters: { companyId: 'evil-company', status: 'CANCELED' },
+      },
+      { ...user, isAdmin: true },
+    );
   });
 });

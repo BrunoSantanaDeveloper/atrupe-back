@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { AbacService } from '../auth/abac/abac.service';
 import { ReportService } from '../../svc/report/report.service';
+import {
+  AiOperationalQueryDeniedError,
+  AiOperationalQueryService,
+} from './ai-operational-query.service';
 import { AiSafetyService } from './ai-safety.service';
 import {
   AiRequestUser,
@@ -18,6 +22,7 @@ export class AiToolRegistry {
     private readonly abacService: AbacService,
     private readonly reportService: ReportService,
     private readonly safety: AiSafetyService,
+    private readonly operationalQuery: AiOperationalQueryService,
   ) {}
 
   getDefinitions(): AiToolDefinition[] {
@@ -45,6 +50,21 @@ export class AiToolRegistry {
         'get_sales_summary',
         'Resumo de vendas, aprovações, rejeições, ticket médio e comissão.',
         this.salesFilterSchema(),
+      ),
+      this.tool(
+        'query_operational_metrics',
+        'Consulta metricas operacionais autorizadas da empresa logada. Use para perguntas quantitativas sobre ordens de servico, pedidos e orcamentos, incluindo totais e contagens por status.',
+        this.operationalQuery.getToolSchema(),
+      ),
+      this.tool(
+        'search_operational_records',
+        'Busca uma lista resumida de registros operacionais autorizados. Use quando o usuario pedir quais ordens de servico, pedidos ou orcamentos atendem a um criterio.',
+        this.operationalQuery.getSearchToolSchema(),
+      ),
+      this.tool(
+        'get_operational_record_details',
+        'Consulta detalhes resumidos de um registro operacional autorizado pelo ID retornado em uma busca.',
+        this.operationalQuery.getDetailsToolSchema(),
       ),
       this.tool(
         'get_sales_top_clients',
@@ -154,6 +174,21 @@ export class AiToolRegistry {
               await this.salesFilters(user, args, name),
             ),
           );
+        case 'query_operational_metrics':
+          return this.success(
+            name,
+            await this.operationalQuery.query(args, user),
+          );
+        case 'search_operational_records':
+          return this.success(
+            name,
+            await this.operationalQuery.search(args, user),
+          );
+        case 'get_operational_record_details':
+          return this.success(
+            name,
+            await this.operationalQuery.details(args, user),
+          );
         case 'get_sales_top_clients':
           return this.success(
             name,
@@ -204,6 +239,9 @@ export class AiToolRegistry {
           return this.error(name, `Ferramenta desconhecida: ${name}`);
       }
     } catch (error) {
+      if (error instanceof AiOperationalQueryDeniedError) {
+        return this.denied(name, error.reason);
+      }
       if (error?.status === 'denied') return error.result;
       return this.error(
         name,
@@ -304,8 +342,10 @@ export class AiToolRegistry {
       'originId',
       'clientId',
       'serieId',
+      'status',
       'startDate',
       'endDate',
+      'dateField',
       'groupBy',
       'orderBy',
       'page',

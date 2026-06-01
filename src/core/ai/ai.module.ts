@@ -6,6 +6,7 @@ import { AuthModule } from '../auth/auth.module';
 import { ReportModule } from '../../svc/report/report.module';
 import { AiController } from './ai.controller';
 import { AiModelSelectionService } from './ai-model-selection.service';
+import { AiOperationalQueryService } from './ai-operational-query.service';
 import { AiSafetyService } from './ai-safety.service';
 import { AiService } from './ai.service';
 import { AiToolRegistry } from './ai-tool-registry.service';
@@ -24,6 +25,7 @@ import { OpenRouterAiProvider } from './providers/openrouter-ai.provider';
   providers: [
     AiService,
     AiModelSelectionService,
+    AiOperationalQueryService,
     AiSafetyService,
     AiToolRegistry,
     OpenRouterAiProvider,
