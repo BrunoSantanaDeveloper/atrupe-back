@@ -1,17 +1,10 @@
 # Testa se a API de Homolog (dev.atrupe.com.br) está respondendo
 # e simula o fluxo de recuperacao de senha
 
-Add-Type @"
-using System.Net;
-using System.Security.Cryptography.X509Certificates;
-public class TrustAll : ICertificatePolicy {
-    public bool CheckValidationResult(ServicePoint srvPoint, X509Certificate certificate, WebRequest request, int certificateProblem) { return true; }
-}
-"@
-[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAll
+[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$API_BASE = if ($env:API_URL) { $env:API_URL } else { "https://dev.atrupe.com.br" }
+$API_BASE = if ($env:API_URL) { $env:API_URL } else { "https://api-homolog.atrupe.com.br" }
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan

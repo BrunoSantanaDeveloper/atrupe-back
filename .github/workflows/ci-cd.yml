@@ -133,7 +133,7 @@ jobs:
           NOTIFICATION_WEBHOOK: ${{ secrets.NOTIFICATION_WEBHOOK }}
           SMOKE_USER_EMAIL: ${{ secrets.SMOKE_USER_EMAIL }}
           SMOKE_USER_PASSWORD: ${{ secrets.SMOKE_USER_PASSWORD }}
-          # Pode adicionar API_URL aqui caso não use o default no script
+          API_URL: https://api-homolog.atrupe.com.br
         run: |
           Start-Sleep -Seconds 60
           pwsh ./smoke-test-homolog.ps1
