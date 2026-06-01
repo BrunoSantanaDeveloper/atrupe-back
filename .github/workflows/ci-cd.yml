@@ -75,7 +75,7 @@ jobs:
           SMOKE_USER_PASSWORD: ${{ secrets.SMOKE_USER_PASSWORD }}
           # Pode adicionar API_URL aqui caso não use o default no script
         run: |
-          Start-Sleep -Seconds 15
+          Start-Sleep -Seconds 60
           pwsh ./smoke-test-homolog.ps1
           $exitCode = $LASTEXITCODE
           if ($exitCode -eq 0) { $status = "✅ SUCESSO" } else { $status = "❌ FALHA" }
