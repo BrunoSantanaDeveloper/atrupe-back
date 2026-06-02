@@ -202,4 +202,42 @@ export class AcademyService {
       files: (item.files as any[])?.map((f) => f.url) || [],
     };
   }
+
+  async searchHelpContent(
+    query: string,
+    currentPath: string,
+    companyId: string,
+  ) {
+    const terms = [query, currentPath].filter(Boolean);
+    const items = await this.prisma.academySystem.findMany({
+      where: terms.length
+        ? {
+            OR: terms.flatMap((term) => [
+              { title: { contains: term, mode: 'insensitive' } },
+              { description: { contains: term, mode: 'insensitive' } },
+              { page: { contains: term, mode: 'insensitive' } },
+              { section: { contains: term, mode: 'insensitive' } },
+            ]),
+          }
+        : undefined,
+      include: {
+        AcademyProgress: {
+          where: { companyId },
+          select: { checked: true, completedAt: true },
+        },
+      },
+      orderBy: { order: 'asc' },
+      take: 6,
+    });
+
+    return items.map((item) => ({
+      title: item.title,
+      description: item.description,
+      section: item.section,
+      page: item.page,
+      videoUrl: item.videoUrl,
+      fileCount: Array.isArray(item.files) ? item.files.length : 0,
+      completed: item.AcademyProgress?.[0]?.checked || false,
+    }));
+  }
 }

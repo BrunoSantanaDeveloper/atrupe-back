@@ -3,10 +3,15 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from 'nestjs-prisma';
 import { AuthModule } from '../auth/auth.module';
+import { AcademyModule } from '../academy/academy.module';
+import { FiscalOnboardingModule } from '../fiscal/onboarding/fiscal-onboarding.module';
+import { PlanControlModule } from '../plan/plan-control.module';
 import { ReportModule } from '../../svc/report/report.module';
 import { AiController } from './ai.controller';
+import { AiHelpContentService } from './ai-help-content.service';
 import { AiModelSelectionService } from './ai-model-selection.service';
 import { AiOperationalQueryService } from './ai-operational-query.service';
+import { AiRegistrationQueryService } from './ai-registration-query.service';
 import { AiSafetyService } from './ai-safety.service';
 import { AiService } from './ai.service';
 import { AiToolRegistry } from './ai-tool-registry.service';
@@ -19,13 +24,18 @@ import { OpenRouterAiProvider } from './providers/openrouter-ai.provider';
     ScheduleModule,
     PrismaModule,
     AuthModule,
+    AcademyModule,
+    FiscalOnboardingModule,
+    PlanControlModule,
     ReportModule,
   ],
   controllers: [AiController],
   providers: [
     AiService,
     AiModelSelectionService,
+    AiHelpContentService,
     AiOperationalQueryService,
+    AiRegistrationQueryService,
     AiSafetyService,
     AiToolRegistry,
     OpenRouterAiProvider,

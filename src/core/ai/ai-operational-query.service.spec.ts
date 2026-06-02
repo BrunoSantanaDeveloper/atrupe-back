@@ -24,6 +24,29 @@ describe('AiOperationalQueryService', () => {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
       },
+      receivableInstallment: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      payableInstallment: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      nfe: {
+        groupBy: jest.fn().mockResolvedValue([]),
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      nfse: {
+        groupBy: jest.fn().mockResolvedValue([]),
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      nfce: {
+        groupBy: jest.fn().mockResolvedValue([]),
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
     };
     const abacService = { hasPermission };
 
@@ -254,5 +277,271 @@ describe('AiOperationalQueryService', () => {
         }),
       }),
     );
+  });
+
+  it('soma recebiveis por vencimento usando empresa do JWT e permissao de valores', async () => {
+    const { service, prisma, hasPermission } = makeService();
+    prisma.receivableInstallment.findMany.mockResolvedValue([
+      {
+        id: 'receivable-installment-1',
+        installmentNumber: 1,
+        status: 'PENDING',
+        dueDate: new Date('2099-06-15T12:00:00.000Z'),
+        paidDate: null,
+        provisionDate: null,
+        amount: 150,
+        paidAmount: null,
+        additionalFee: null,
+      },
+      {
+        id: 'receivable-installment-2',
+        installmentNumber: 2,
+        status: 'PAID',
+        dueDate: new Date('2099-06-20T12:00:00.000Z'),
+        paidDate: new Date('2099-06-20T12:00:00.000Z'),
+        provisionDate: null,
+        amount: 100,
+        paidAmount: 90,
+        additionalFee: null,
+      },
+    ]);
+
+    const result = await service.query(
+      {
+        entity: 'receivables',
+        metric: 'sum',
+        filters: {
+          companyId: 'evil-company',
+          startDate: '2099-06-01',
+          endDate: '2099-06-30',
+        },
+      },
+      user,
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        entity: 'receivables',
+        metric: 'sum',
+        dateField: 'dueDate',
+        totalCount: 2,
+        totalValue: 240,
+        total: 240,
+      }),
+    );
+    expect(hasPermission).toHaveBeenCalledWith(user, 'view', 'financial:flow');
+    expect(hasPermission).toHaveBeenCalledWith(user, 'view', 'values:values');
+    expect(prisma.receivableInstallment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          receivable: {
+            companyId: 'company-1',
+            status: { not: 'CANCELED' },
+          },
+          status: { not: 'CANCELED' },
+          dueDate: {
+            gte: new Date('2099-06-01T00:00:00.000-03:00'),
+            lte: new Date('2099-06-30T23:59:59.999-03:00'),
+          },
+        },
+      }),
+    );
+  });
+
+  it('nega consulta financeira quando faltar permissao para visualizar valores', async () => {
+    const hasPermission = jest
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const { service, prisma } = makeService(hasPermission);
+
+    await expect(
+      service.query({ entity: 'receivables', metric: 'sum' }, user),
+    ).rejects.toBeInstanceOf(AiOperationalQueryDeniedError);
+    expect(prisma.receivableInstallment.findMany).not.toHaveBeenCalled();
+  });
+
+  it('usa mes atual no timezone do projeto como periodo financeiro padrao', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-06-15T12:00:00.000Z'));
+    const { service, prisma } = makeService();
+
+    try {
+      const result = await service.query(
+        { entity: 'payables', metric: 'count' },
+        user,
+      );
+
+      expect(result.period).toEqual({
+        startDate: '2026-06-01',
+        endDate: '2026-06-30',
+      });
+      expect(prisma.payableInstallment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            dueDate: {
+              gte: new Date('2026-06-01T00:00:00.000-03:00'),
+              lte: new Date('2026-06-30T23:59:59.999-03:00'),
+            },
+          }),
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('busca despesas resumidas com fornecedor e empresa autenticada', async () => {
+    const { service, prisma } = makeService();
+    prisma.payableInstallment.findMany.mockResolvedValue([
+      {
+        id: 'payable-installment-1',
+        installmentNumber: 1,
+        status: 'PENDING',
+        dueDate: new Date('2099-06-15T12:00:00.000Z'),
+        paidDate: null,
+        provisionDate: null,
+        amount: 80,
+        paidAmount: null,
+        additionalFee: null,
+        payable: {
+          id: 'payable-1',
+          description: 'Energia eletrica',
+          reference: 'JUN-2099',
+          supplier: { id: 'supplier-1', name: 'Fornecedor teste' },
+        },
+      },
+    ]);
+
+    const result = await service.search(
+      {
+        entity: 'payables',
+        filters: {
+          search: 'Energia',
+          supplierId: 'supplier-1',
+          companyId: 'evil-company',
+        },
+      },
+      user,
+    );
+
+    expect(result.records[0]).toEqual(
+      expect.objectContaining({
+        id: 'payable-installment-1',
+        titleId: 'payable-1',
+        amount: 80,
+        party: { id: 'supplier-1', name: 'Fornecedor teste' },
+      }),
+    );
+    expect(prisma.payableInstallment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          payable: expect.objectContaining({
+            companyId: 'company-1',
+            supplierId: 'supplier-1',
+            OR: expect.any(Array),
+          }),
+          status: { not: 'CANCELED' },
+        }),
+      }),
+    );
+  });
+
+  it('conta nfes autorizadas usando tenant autenticado e permissao fiscal', async () => {
+    const { service, prisma, hasPermission } = makeService();
+    prisma.nfe.groupBy.mockResolvedValue([{ status: 'AUTHORIZED', _count: 4 }]);
+
+    const result = await service.query(
+      {
+        entity: 'nfes',
+        metric: 'count',
+        filters: {
+          companyId: 'evil-company',
+          status: 'AUTHORIZED',
+          startDate: '2026-06-01',
+          endDate: '2026-06-30',
+          dateField: 'dataEmissao',
+        },
+      },
+      user,
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        entity: 'nfes',
+        metric: 'count',
+        total: 4,
+      }),
+    );
+    expect(hasPermission).toHaveBeenCalledWith(
+      user,
+      'view',
+      'nota_fiscal:emitidas',
+    );
+    expect(prisma.nfe.groupBy).toHaveBeenCalledWith({
+      by: ['status'],
+      where: {
+        companyId: 'company-1',
+        status: 'AUTHORIZED',
+        dataEmissao: {
+          gte: new Date('2026-06-01T00:00:00.000-03:00'),
+          lte: new Date('2026-06-30T23:59:59.999-03:00'),
+        },
+      },
+      _count: true,
+    });
+  });
+
+  it('busca nfces sem selecionar xml, chave, protocolo ou links', async () => {
+    const { service, prisma } = makeService();
+    prisma.nfce.findMany.mockResolvedValue([
+      {
+        id: 'nfce-1',
+        numero: 15,
+        serie: 1,
+        status: 'REJECTED',
+        ambiente: 2,
+        createdAt: new Date('2026-06-01T12:00:00.000Z'),
+        dataEmissao: new Date('2026-06-01T12:00:00.000Z'),
+        dataAutorizacao: null,
+        dataCancelamento: null,
+        motivoRejeicao: 'Dados fiscais invalidos',
+        motivoCancelamento: null,
+        orderId: null,
+        quotationId: null,
+        contingencia: false,
+      },
+    ]);
+
+    const result = await service.search(
+      {
+        entity: 'nfces',
+        filters: { search: '15', companyId: 'evil-company' },
+      },
+      user,
+    );
+
+    expect(result.records).toEqual([
+      expect.objectContaining({
+        id: 'nfce-1',
+        numero: 15,
+        status: 'REJECTED',
+        ambiente: 'homologacao',
+      }),
+    ]);
+    const select = prisma.nfce.findMany.mock.calls[0][0].select;
+    expect(select).not.toHaveProperty('xmlAutorizado');
+    expect(select).not.toHaveProperty('chaveAcesso');
+    expect(select).not.toHaveProperty('protocolo');
+    expect(select).not.toHaveProperty('danfeUrl');
+    expect(select).not.toHaveProperty('qrCodeUrl');
+  });
+
+  it('nega consulta fiscal quando faltar permissao para visualizar emitidas', async () => {
+    const { service, prisma } = makeService(jest.fn().mockResolvedValue(false));
+
+    await expect(
+      service.query({ entity: 'nfses', metric: 'count' }, user),
+    ).rejects.toBeInstanceOf(AiOperationalQueryDeniedError);
+    expect(prisma.nfse.groupBy).not.toHaveBeenCalled();
   });
 });

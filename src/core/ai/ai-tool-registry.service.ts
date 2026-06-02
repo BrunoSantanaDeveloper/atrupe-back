@@ -6,6 +6,11 @@ import {
   AiOperationalQueryDeniedError,
   AiOperationalQueryService,
 } from './ai-operational-query.service';
+import { AiHelpContentService } from './ai-help-content.service';
+import {
+  AiRegistrationQueryDeniedError,
+  AiRegistrationQueryService,
+} from './ai-registration-query.service';
 import { AiSafetyService } from './ai-safety.service';
 import {
   AiRequestUser,
@@ -23,6 +28,8 @@ export class AiToolRegistry {
     private readonly reportService: ReportService,
     private readonly safety: AiSafetyService,
     private readonly operationalQuery: AiOperationalQueryService,
+    private readonly helpContent: AiHelpContentService,
+    private readonly registrationQuery: AiRegistrationQueryService,
   ) {}
 
   getDefinitions(): AiToolDefinition[] {
@@ -53,18 +60,33 @@ export class AiToolRegistry {
       ),
       this.tool(
         'query_operational_metrics',
-        'Consulta metricas operacionais autorizadas da empresa logada. Use para perguntas quantitativas sobre ordens de servico, pedidos e orcamentos, incluindo totais e contagens por status.',
+        'Consulta metricas autorizadas da empresa logada. Use para perguntas quantitativas sobre ordens de servico, pedidos, orcamentos, contas a receber, contas a pagar e documentos fiscais, incluindo contagens e somas permitidas por status.',
         this.operationalQuery.getToolSchema(),
       ),
       this.tool(
         'search_operational_records',
-        'Busca uma lista resumida de registros operacionais autorizados. Use quando o usuario pedir quais ordens de servico, pedidos ou orcamentos atendem a um criterio.',
+        'Busca uma lista resumida de registros autorizados. Use quando o usuario pedir quais ordens de servico, pedidos, orcamentos, recebiveis, despesas ou documentos fiscais atendem a um criterio.',
         this.operationalQuery.getSearchToolSchema(),
       ),
       this.tool(
         'get_operational_record_details',
-        'Consulta detalhes resumidos de um registro operacional autorizado pelo ID retornado em uma busca.',
+        'Consulta detalhes resumidos de um registro autorizado pelo ID retornado em uma busca.',
         this.operationalQuery.getDetailsToolSchema(),
+      ),
+      this.tool(
+        'query_registration_metrics',
+        'Consulta metricas cadastrais autorizadas para clientes, fornecedores e produtos. Use para contagens e pendencias fiscais.',
+        this.registrationQuery.getMetricsToolSchema(),
+      ),
+      this.tool(
+        'search_registration_records',
+        'Busca cadastros resumidos e pendencias fiscais autorizadas de clientes, fornecedores e produtos.',
+        this.registrationQuery.getSearchToolSchema(),
+      ),
+      this.tool(
+        'get_registration_record_details',
+        'Consulta detalhes resumidos e pendencias fiscais de um cadastro autorizado pelo ID retornado em uma busca.',
+        this.registrationQuery.getDetailsToolSchema(),
       ),
       this.tool(
         'get_sales_top_clients',
@@ -81,14 +103,22 @@ export class AiToolRegistry {
         'Resumo de comissões por período de venda ou recebimento.',
         this.salesFilterSchema(),
       ),
-      this.tool('search_help_content', 'Busca ajuda e materiais da academia.', {
-        type: 'object',
-        properties: {
-          query: { type: 'string' },
-          currentPath: { type: 'string' },
+      this.tool(
+        'search_help_content',
+        'Busca orientacoes sobre processos e materiais da academia. Use para responder como realizar uma operacao ou utilizar uma funcionalidade do Atrupe.',
+        {
+          type: 'object',
+          properties: {
+            query: { type: 'string' },
+            currentPath: { type: 'string' },
+          },
+          required: ['query'],
         },
-        required: ['query'],
-      }),
+      ),
+      this.tool(
+        'get_fiscal_setup_context',
+        'Consulta somente a disponibilidade e o estagio de configuracao do modulo fiscal da empresa logada. Use para personalizar orientacoes sobre ativacao ou emissao fiscal.',
+      ),
       this.tool(
         'get_company_basic_context',
         'Contexto básico da empresa logada, sem dados sensíveis.',
@@ -189,6 +219,21 @@ export class AiToolRegistry {
             name,
             await this.operationalQuery.details(args, user),
           );
+        case 'query_registration_metrics':
+          return this.success(
+            name,
+            await this.registrationQuery.query(args, user),
+          );
+        case 'search_registration_records':
+          return this.success(
+            name,
+            await this.registrationQuery.search(args, user),
+          );
+        case 'get_registration_record_details':
+          return this.success(
+            name,
+            await this.registrationQuery.details(args, user),
+          );
         case 'get_sales_top_clients':
           return this.success(
             name,
@@ -228,7 +273,15 @@ export class AiToolRegistry {
         case 'search_help_content':
           return this.success(
             name,
-            await this.searchHelp(args, user.companyId),
+            await this.helpContent.search(
+              this.cleanFilters(args, ['query', 'currentPath']),
+              user,
+            ),
+          );
+        case 'get_fiscal_setup_context':
+          return this.success(
+            name,
+            await this.helpContent.getFiscalSetupContext(user),
           );
         case 'get_company_basic_context':
           return this.success(
@@ -240,6 +293,9 @@ export class AiToolRegistry {
       }
     } catch (error) {
       if (error instanceof AiOperationalQueryDeniedError) {
+        return this.denied(name, error.reason);
+      }
+      if (error instanceof AiRegistrationQueryDeniedError) {
         return this.denied(name, error.reason);
       }
       if (error?.status === 'denied') return error.result;
@@ -366,47 +422,6 @@ export class AiToolRegistry {
 
   private cleanFilters(args: ToolArgs, allowedKeys: string[]) {
     return this.safety.sanitizeToolArguments(args, allowedKeys).clean;
-  }
-
-  private async searchHelp(args: ToolArgs, companyId: string) {
-    const { clean } = this.safety.sanitizeToolArguments(args, [
-      'query',
-      'currentPath',
-    ]);
-    const query = String(clean?.query || '').trim();
-    const currentPath = String(clean?.currentPath || '').trim();
-    const terms = [query, currentPath].filter(Boolean);
-
-    const items = await this.prisma.academySystem.findMany({
-      where: terms.length
-        ? {
-            OR: terms.flatMap((term) => [
-              { title: { contains: term, mode: 'insensitive' } },
-              { description: { contains: term, mode: 'insensitive' } },
-              { page: { contains: term, mode: 'insensitive' } },
-              { section: { contains: term, mode: 'insensitive' } },
-            ]),
-          }
-        : undefined,
-      include: {
-        AcademyProgress: {
-          where: { companyId },
-          select: { checked: true, completedAt: true },
-        },
-      },
-      orderBy: { order: 'asc' },
-      take: 6,
-    });
-
-    return items.map((item) => ({
-      title: this.safety.sanitizeText(item.title, 160),
-      description: this.safety.sanitizeText(item.description, 500),
-      section: this.safety.sanitizeText(item.section, 120),
-      page: this.safety.sanitizeText(item.page, 200),
-      videoUrl: item.videoUrl,
-      fileCount: Array.isArray(item.files) ? item.files.length : 0,
-      completed: item.AcademyProgress?.[0]?.checked || false,
-    }));
   }
 
   private getCompanyContext(companyId: string) {
