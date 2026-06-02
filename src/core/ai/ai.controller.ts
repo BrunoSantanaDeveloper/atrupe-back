@@ -16,6 +16,7 @@ import { AiModelSelectionService } from './ai-model-selection.service';
 import { AiService } from './ai.service';
 import { AiChatRequestDto } from './dto/ai-chat.dto';
 import { UpdateAiModelConfigDto } from './dto/ai-model-config.dto';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 
 @Controller('ai')
 @UseGuards(JwtAuthGuard)
@@ -23,7 +24,13 @@ export class AiController {
   constructor(
     private readonly aiService: AiService,
     private readonly modelSelection: AiModelSelectionService,
+    private readonly settings: SystemSettingsService,
   ) {}
+
+  @Get('access-status')
+  async getAccessStatus() {
+    return { enabled: await this.settings.isAiAccessEnabled() };
+  }
 
   @Post('chat')
   chat(@Body() dto: AiChatRequestDto, @Req() req: Request) {

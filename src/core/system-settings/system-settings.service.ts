@@ -9,6 +9,10 @@ export interface AsaasConfigState {
   production: { url: string; token: string };
 }
 
+export interface AiAccessConfigState {
+  enabled: boolean;
+}
+
 @Injectable()
 export class SystemSettingsService {
   private readonly logger = new Logger(SystemSettingsService.name);
@@ -48,6 +52,40 @@ export class SystemSettingsService {
   async getActiveAsaasConfig(): Promise<{ url: string; token: string }> {
     const config = await this.getAsaasConfig();
     return config[config.environment];
+  }
+
+  async getAiAccessConfig(): Promise<AiAccessConfigState> {
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'ai_access_enabled' },
+    });
+
+    if (!setting?.value || typeof setting.value !== 'object') {
+      return { enabled: true };
+    }
+
+    const value = setting.value as unknown as Partial<AiAccessConfigState>;
+    return { enabled: value.enabled !== false };
+  }
+
+  async isAiAccessEnabled() {
+    const config = await this.getAiAccessConfig();
+    return config.enabled;
+  }
+
+  async updateAiAccessConfig(enabled: boolean) {
+    const setting = await this.prisma.systemSetting.upsert({
+      where: { key: 'ai_access_enabled' },
+      update: { value: { enabled } },
+      create: {
+        key: 'ai_access_enabled',
+        value: { enabled },
+      },
+    });
+
+    this.logger.log(
+      `Acesso global ao Assistente IA ${enabled ? 'ativado' : 'desativado'}.`,
+    );
+    return setting.value as unknown as AiAccessConfigState;
   }
 
   async updateAsaasConfig(

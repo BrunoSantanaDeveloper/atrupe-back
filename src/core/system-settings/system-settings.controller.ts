@@ -5,6 +5,7 @@ import {
 } from './system-settings.service';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
+import { UpdateAiAccessConfigDto } from './dto/update-ai-access-config.dto';
 
 @Controller('system-settings')
 @UseGuards(JwtAuthGuard, SystemAdminGuard)
@@ -37,5 +38,15 @@ export class SystemSettingsController {
       payload.password,
       req.user.userId,
     );
+  }
+
+  @Get('ai-access')
+  getAiAccessConfig() {
+    return this.settingsService.getAiAccessConfig();
+  }
+
+  @Put('ai-access')
+  updateAiAccessConfig(@Body() payload: UpdateAiAccessConfigDto) {
+    return this.settingsService.updateAiAccessConfig(payload.enabled);
   }
 }

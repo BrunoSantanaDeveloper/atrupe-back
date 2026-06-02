@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'nestjs-prisma';
@@ -11,6 +12,7 @@ import { AiSafetyService } from './ai-safety.service';
 import { AiToolRegistry } from './ai-tool-registry.service';
 import { AiMessage, AiRequestUser, AiToolExecutionResult } from './ai.types';
 import { AI_PROVIDER, AiProvider } from './providers/ai-provider.interface';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 
 @Injectable()
 export class AiService {
@@ -19,10 +21,13 @@ export class AiService {
     private readonly config: ConfigService,
     private readonly safety: AiSafetyService,
     private readonly tools: AiToolRegistry,
+    private readonly settings: SystemSettingsService,
     @Inject(AI_PROVIDER) private readonly provider: AiProvider,
   ) {}
 
   async chat(dto: AiChatRequestDto, user: AiRequestUser) {
+    await this.ensureAiAccessEnabled();
+
     if (!user.companyId) {
       throw new ForbiddenException('Usuário sem empresa ativa.');
     }
@@ -168,6 +173,8 @@ export class AiService {
   }
 
   async listConversations(user: AiRequestUser) {
+    await this.ensureAiAccessEnabled();
+
     return this.prisma.aiConversation.findMany({
       where: {
         companyId: user.companyId,
@@ -185,6 +192,8 @@ export class AiService {
   }
 
   async listMessages(conversationId: string, user: AiRequestUser) {
+    await this.ensureAiAccessEnabled();
+
     await this.ensureConversationAccess(conversationId, user);
     return this.prisma.aiMessage.findMany({
       where: { conversationId },
@@ -201,6 +210,8 @@ export class AiService {
   }
 
   async deleteConversation(conversationId: string, user: AiRequestUser) {
+    await this.ensureAiAccessEnabled();
+
     await this.ensureConversationAccess(conversationId, user);
     await this.prisma.aiConversation.update({
       where: { id: conversationId },
@@ -267,6 +278,15 @@ export class AiService {
           .map((tool) => tool.name),
       ),
     );
+  }
+
+  private async ensureAiAccessEnabled() {
+    const enabled = await this.settings.isAiAccessEnabled();
+    if (!enabled) {
+      throw new ServiceUnavailableException(
+        'O Assistente IA esta temporariamente indisponivel.',
+      );
+    }
   }
 
   private systemPrompt(currentPath?: string) {
