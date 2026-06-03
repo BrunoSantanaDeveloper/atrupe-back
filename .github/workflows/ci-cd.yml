@@ -119,7 +119,7 @@ jobs:
             echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             docker pull "$GHCR_IMAGE":dev
             export GHCR_IMAGE="$GHCR_IMAGE"
-            docker stack deploy -c docker-stack.dev.yml atrupe-dev --with-registry-auth
+            node scripts/prepare-stack.js docker-stack.dev.yml /home/ubuntu/atrupe-back/.env.dev | docker stack deploy -c - atrupe-dev --with-registry-auth
             docker image prune -f
         env:
           GHCR_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -231,7 +231,7 @@ jobs:
             echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             docker pull "$GHCR_IMAGE":latest
             export GHCR_IMAGE="$GHCR_IMAGE"
-            docker stack deploy -c docker-stack.prod.yml atrupe-api --with-registry-auth
+            node scripts/prepare-stack.js docker-stack.prod.yml /home/ubuntu/atrupe-back/.env.prod | docker stack deploy -c - atrupe-api --with-registry-auth
             docker image prune -f
         env:
           GHCR_PAT: ${{ secrets.GITHUB_TOKEN }}

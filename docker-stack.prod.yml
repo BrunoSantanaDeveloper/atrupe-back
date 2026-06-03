@@ -3,8 +3,7 @@ version: '3.8'
 services:
   atrupe:
     image: ${GHCR_IMAGE:-ghcr.io/brunosantanadeveloper/atrupe-back}:latest
-    env_file:
-      - /home/ubuntu/atrupe-back/.env.prod
+    env_file: /home/ubuntu/atrupe-back/.env.prod
     networks:
       - atrupe_network
     deploy:
