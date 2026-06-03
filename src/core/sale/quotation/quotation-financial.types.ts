@@ -15,6 +15,7 @@ export interface QuotationInstallment {
 /** Commission shape from quotationPayment.commission */
 export interface QuotationCommission {
   id: string;
+  type?: string | null;
   commissionValue: number | null;
   totalCommission: number | null;
   supplierId: string | null;
@@ -35,6 +36,9 @@ export interface QuotationDeliveryInfo {
 /** QuotationPayment shape used in financial operations */
 export interface QuotationPaymentForFinancial {
   billing: string | null;
+  totalValue: number | null;
+  finalValue: number | null;
+  discountTotal: number | null;
   quotationInstallment: QuotationInstallment[];
   commission: QuotationCommission | null;
   downPayment: number | null;

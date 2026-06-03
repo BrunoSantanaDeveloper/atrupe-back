@@ -200,6 +200,69 @@ describe('QuotationFinancialService', () => {
     });
   });
 
+  describe('generateReceivableFromQuotation', () => {
+    beforeEach(() => {
+      prisma.nature.findFirst.mockResolvedValue(mockNature);
+      prisma.subCategory.findFirst.mockResolvedValue(mockSubCategory);
+      prisma.bankAccount.findFirst.mockResolvedValue({ id: 'bank-account-id' });
+      prisma.receivable.create.mockResolvedValue({ id: 'receivable-id' });
+      prisma.receivableInstallment.createMany.mockResolvedValue({ count: 1 });
+    });
+
+    it('should preserve quotation payment discount when syncing stale installments', async () => {
+      const quotation = {
+        id: 'quotation-id',
+        companyId: mockCompanyId,
+        clientId: 'client-id',
+        quotationNumber: 28,
+        description: null,
+        totalValue: 12000,
+        series: { code: 'T1' },
+        deliveryInfo: { value: 0 },
+        quotationPayment: {
+          billing: 'ON_ORDER',
+          totalValue: 11000,
+          finalValue: 11000,
+          discountTotal: 1000,
+          quotationInstallment: [
+            {
+              id: 'installment-id',
+              value: 12000,
+              additionalFee: 0,
+              dueDate: new Date('2026-07-03'),
+              paymentConditionId: 'payment-condition-id',
+            },
+          ],
+          commission: null,
+          downPayment: 0,
+          downPaymentDueDate: null,
+          downPaymentAdditionalFee: 0,
+          description: '',
+          downPaymentConditionId: null,
+        },
+      };
+
+      await service.generateReceivableFromQuotation(
+        quotation as any,
+        prisma as any,
+      );
+
+      expect(prisma.receivable.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          totalAmount: 11000,
+          totalValue: 11000,
+        }),
+      });
+      expect(prisma.receivableInstallment.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            amount: 11000,
+          }),
+        ],
+      });
+    });
+  });
+
   describe('shouldCreateCommissionPayable', () => {
     it('should return false if no commission', async () => {
       const result = await service.shouldCreateCommissionPayable(

@@ -331,6 +331,9 @@ export class QuotationWorkflowService {
             quotationPayment: {
               select: {
                 billing: true,
+                totalValue: true,
+                finalValue: true,
+                discountTotal: true,
                 quotationInstallment: true,
                 commission: true,
                 downPayment: true,
@@ -500,6 +503,9 @@ export class QuotationWorkflowService {
         quotationPayment: {
           select: {
             billing: true,
+            totalValue: true,
+            finalValue: true,
+            discountTotal: true,
             quotationInstallment: true,
             commission: true,
             downPayment: true,

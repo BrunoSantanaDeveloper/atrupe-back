@@ -47,9 +47,16 @@ export class QuotationFinancialService {
     // faturamento sem que as condições de pagamento sejam reabertas/salvas.
     // -----------------------------------------------------------------------
     const deliveryValue = quotation.deliveryInfo?.value || 0;
+    const discountTotal = quotation.quotationPayment.discountTotal || 0;
+    const commissionTotal =
+      quotation.quotationPayment.commission?.type === 'ADD'
+        ? quotation.quotationPayment.commission.totalCommission || 0
+        : 0;
     const expectedTotal =
       quotation.totalValue +
       deliveryValue -
+      discountTotal +
+      commissionTotal -
       (quotation.quotationPayment.downPayment || 0);
     const installmentsBaseSum = quotationInstallments.reduce(
       (sum: number, inst: QuotationInstallment) => sum + inst.value,
