@@ -126,6 +126,10 @@ class AddressDto {
   @IsOptional()
   @IsString()
   complement?: string;
+
+  @IsOptional()
+  @IsString()
+  country?: string;
 }
 
 class ContactDto {

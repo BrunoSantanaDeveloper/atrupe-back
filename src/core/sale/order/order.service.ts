@@ -866,7 +866,8 @@ export class OrderService {
     }
 
     // Processar Frete (Delivery)
-    if (deliveryInfo && deliveryInfo.cost > 0) {
+    const deliveryDisplayValue = deliveryInfo?.value || deliveryInfo?.cost;
+    if (deliveryInfo && deliveryDisplayValue > 0) {
       deliveryInstallments.push({
         id: installmentId++,
         company: deliveryInfo.supplier?.name || 'Transportadora',
@@ -874,7 +875,7 @@ export class OrderService {
         installmentNumber: 1,
         installmentTotal: 1,
         status: 'PENDING',
-        dueAmount: deliveryInfo.cost,
+        dueAmount: deliveryDisplayValue,
         dueDate: deliveryInfo.estimatedDate
           ? new Date(deliveryInfo.estimatedDate).toLocaleDateString('pt-BR')
           : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString(

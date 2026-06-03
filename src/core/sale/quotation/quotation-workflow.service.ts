@@ -323,6 +323,7 @@ export class QuotationWorkflowService {
                 estimatedDate: true,
                 daysAfterApproval: true,
                 cost: true,
+                value: true,
                 supplierId: true,
                 deliveryType: true,
               },

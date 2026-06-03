@@ -46,8 +46,11 @@ export class QuotationFinancialService {
     // Isso previne inconsistências quando itens são alterados antes do
     // faturamento sem que as condições de pagamento sejam reabertas/salvas.
     // -----------------------------------------------------------------------
+    const deliveryValue = quotation.deliveryInfo?.value || 0;
     const expectedTotal =
-      quotation.totalValue - (quotation.quotationPayment.downPayment || 0);
+      quotation.totalValue +
+      deliveryValue -
+      (quotation.quotationPayment.downPayment || 0);
     const installmentsBaseSum = quotationInstallments.reduce(
       (sum: number, inst: QuotationInstallment) => sum + inst.value,
       0,

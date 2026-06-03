@@ -25,6 +25,7 @@ export interface QuotationCommission {
 export interface QuotationDeliveryInfo {
   id: string;
   cost: number | null;
+  value: number | null;
   supplierId: string | null;
   estimatedDate: Date | null;
   daysAfterApproval: number | null;
