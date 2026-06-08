@@ -841,6 +841,60 @@ export class ReportService {
       .slice(0, limit);
   }
 
+  async getSalesBySeller(
+    companyId: string,
+    filters: SalesReportFilterDto,
+    limit = 8,
+  ): Promise<{ name: string; value: number; count: number }[]> {
+    const { startDate, endDate } = this.getDateRange(filters);
+
+    const orders = await this.prisma.order.findMany({
+      where: {
+        status: { not: 'CANCELED' },
+        quotation: {
+          ...this.getSalesQuotationFilters(companyId, filters),
+          approvedAt: { gte: startDate, lte: endDate },
+          ...(filters.sellerId ? {} : { sellerId: { not: null } }),
+        },
+      },
+      include: {
+        quotation: {
+          select: {
+            sellerId: true,
+            seller: { select: { name: true } },
+            ...this.quotationValueSelect,
+          },
+        },
+      },
+    });
+
+    const sellerTotals: Record<
+      string,
+      { name: string; value: number; count: number }
+    > = {};
+
+    orders.forEach((order) => {
+      const sellerId = order.quotation.sellerId || 'unknown';
+
+      if (!sellerTotals[sellerId]) {
+        sellerTotals[sellerId] = {
+          name: order.quotation.seller?.name || 'Nao informado',
+          value: 0,
+          count: 0,
+        };
+      }
+
+      sellerTotals[sellerId].value += this.computeQuotationCompositeValue(
+        order.quotation,
+      );
+      sellerTotals[sellerId].count += 1;
+    });
+
+    return Object.values(sellerTotals)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, limit);
+  }
+
   async getSalesTableData(
     companyId: string,
     filters: SalesReportFilterDto,

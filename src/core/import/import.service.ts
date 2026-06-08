@@ -29,9 +29,55 @@ export class ImportService {
    */
   private toCents(value: string | number | null | undefined): number | null {
     if (value === null || value === undefined || value === '') return null;
-    const numValue = typeof value === 'string' ? parseFloat(value) : value;
+    const numValue = this.parseDecimal(value);
     if (isNaN(numValue)) return null;
     return Math.round(numValue * 100);
+  }
+
+  private parseDecimal(value: string | number | null | undefined): number {
+    if (value === null || value === undefined || value === '') return NaN;
+    if (typeof value === 'number') return value;
+
+    const normalized = value
+      .trim()
+      .replace(/\s/g, '')
+      .replace(/\.(?=\d{3}(?:\D|$))/g, '')
+      .replace(',', '.');
+
+    return parseFloat(normalized);
+  }
+
+  private async findSeller(companyId: string, email?: string | null) {
+    const sellerEmail = email?.trim();
+
+    if (sellerEmail) {
+      return this.prisma.employee.findFirst({
+        where: {
+          user: {
+            email: sellerEmail,
+          },
+          companyId,
+          isActive: true,
+        },
+        include: {
+          user: true,
+        },
+      });
+    }
+
+    return this.prisma.employee.findFirst({
+      where: {
+        companyId,
+        isActive: true,
+        sellerProfileId: { not: null },
+      },
+      include: {
+        user: true,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
   }
 
   /**
@@ -57,7 +103,7 @@ export class ImportService {
     }
 
     // Validar formato do arquivo
-    if (!file.originalname.endsWith('.csv')) {
+    if (!file.originalname.toLowerCase().endsWith('.csv')) {
       throw new BadRequestException('Only CSV files are allowed');
     }
 
@@ -191,11 +237,19 @@ export class ImportService {
         content = content.slice(1);
       }
 
-      // Auto detect delimiter based on the first line
-      const headLine = content.split('\n')[0] || '';
+      const lines = content.split(/\r?\n/);
+      const separatorDirective = lines[0]?.trim().match(/^sep=(.)$/i);
+      if (separatorDirective) {
+        lines.shift();
+        content = lines.join('\n');
+      }
+
+      // Auto detect delimiter based on the first real header line
+      const headLine = lines.find((line) => line.trim() !== '') || '';
       const commaCount = (headLine.match(/,/g) || []).length;
       const semicolonCount = (headLine.match(/;/g) || []).length;
-      const delimiter = semicolonCount > commaCount ? ';' : ',';
+      const delimiter =
+        separatorDirective?.[1] || (semicolonCount > commaCount ? ';' : ',');
 
       const rows: any[] = [];
       const stream = Readable.from(content);
@@ -966,14 +1020,14 @@ export class ImportService {
     // O banco salva dimensões em milímetros. O CSV geralmente traz em metros (ex: 1,40).
     const parseDimension = (val: string | undefined): number | null => {
       if (!val) return null;
-      const parsed = parseFloat(val.replace(',', '.'));
+      const parsed = this.parseDecimal(val);
       return isNaN(parsed) ? null : parsed * 1000;
     };
 
     // Duração do CSV (horas) para o Banco (segundos)
     const parseDuration = (val: string | undefined): number | null => {
       if (!val) return null;
-      const parsed = parseFloat(val.replace(',', '.'));
+      const parsed = this.parseDecimal(val);
       return isNaN(parsed) ? null : parsed * 3600;
     };
 
@@ -1106,17 +1160,15 @@ export class ImportService {
         }
 
         // Buscar vendedor
-        const seller = await this.prisma.employee.findFirst({
-          where: {
-            user: {
-              email: firstItem.VendedorEmail,
-            },
-            companyId,
-            isActive: true,
-          },
-        });
+        const seller = await this.findSeller(
+          companyId,
+          firstItem.VendedorEmail,
+        );
 
         if (!seller) {
+          if (!firstItem.VendedorEmail) {
+            throw new Error('Nenhum vendedor ativo encontrado para a empresa');
+          }
           throw new Error(
             `Vendedor '${firstItem.VendedorEmail}' não encontrado`,
           );
@@ -1469,20 +1521,15 @@ export class ImportService {
         }
 
         // Buscar vendedor
-        const employee = await this.prisma.employee.findFirst({
-          where: {
-            user: {
-              email: firstItem.VendedorEmail,
-            },
-            companyId,
-            isActive: true,
-          },
-          include: {
-            user: true,
-          },
-        });
+        const employee = await this.findSeller(
+          companyId,
+          firstItem.VendedorEmail,
+        );
 
         if (!employee) {
+          if (!firstItem.VendedorEmail) {
+            throw new Error('Nenhum vendedor ativo encontrado para a empresa');
+          }
           throw new Error(
             `Vendedor com email '${firstItem.VendedorEmail}' não encontrado`,
           );
@@ -1578,9 +1625,9 @@ export class ImportService {
             );
           }
 
-          const quantity = parseFloat(item.Quantidade) || 0;
+          const quantity = this.parseDecimal(item.Quantidade) || 0;
           const itemTotalValue = this.toCents(item.ValorTotal) || 0;
-          const discount = parseFloat(item.Desconto) || 0;
+          const discount = this.parseDecimal(item.Desconto) || 0;
 
           quotationTotalValue += itemTotalValue;
 

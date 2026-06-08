@@ -1,6 +1,8 @@
 import { Controller, Get, UseGuards, Query, Req, Param } from '@nestjs/common';
 import { FlowService } from './flow.service';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
 import { FinancialFlowFilterDTO } from './dto/filter.dto';
 import {
   ApiTags,
@@ -14,13 +16,14 @@ const RESOURCE = 'flow';
 const GROUP = 'financial';
 
 @ApiTags('Fluxo Financeiro')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class FlowController {
   constructor(private readonly flowService: FlowService) {}
 
   @Get()
+  @HasAnyPermission({ action: 'view', resource: 'financial:flow' })
   @ApiOperation({ summary: 'Obtém a lista de todos os fluxos financeiros' })
   @ApiResponse({
     status: 200,
@@ -33,6 +36,10 @@ export class FlowController {
   }
 
   @Get('totals')
+  @HasAnyPermission(
+    { action: 'view', resource: 'financial:flow' },
+    { action: 'view', resource: 'dashboard:financial' },
+  )
   @ApiOperation({ summary: 'Obtém os totais de todos os fluxos financeiros' })
   @ApiResponse({
     status: 200,
@@ -45,6 +52,7 @@ export class FlowController {
   }
 
   @Get('receivable/:id/details')
+  @HasAnyPermission({ action: 'view', resource: 'financial:flow' })
   @ApiOperation({
     summary:
       'Obtém detalhes completos de uma conta a receber com todas as parcelas',
@@ -65,6 +73,7 @@ export class FlowController {
   }
 
   @Get('payable/:id/details')
+  @HasAnyPermission({ action: 'view', resource: 'financial:flow' })
   @ApiOperation({
     summary:
       'Obtém detalhes completos de uma conta a pagar com todas as parcelas',
@@ -85,6 +94,7 @@ export class FlowController {
   }
 
   @Get('overdue/last-7-days')
+  @HasAnyPermission({ action: 'view', resource: 'financial:flow' })
   @ApiOperation({
     summary:
       'Verifica se existem contas atrasadas nos últimos 7 dias e retorna a data da mais antiga',

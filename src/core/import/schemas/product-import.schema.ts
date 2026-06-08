@@ -145,5 +145,26 @@ export const PRODUCT_IMPORT_SCHEMA = {
       description: 'Preço de venda',
       example: '120.00',
     },
+    {
+      name: 'permitirEdicao',
+      required: false,
+      type: 'string',
+      description: 'Permitir editar valor e descricao (SIM/NAO)',
+      example: 'SIM',
+    },
+    {
+      name: 'duracao',
+      required: false,
+      type: 'decimal',
+      description: 'Duracao em horas',
+      example: '1.5',
+    },
+    {
+      name: 'valorUnitario',
+      required: false,
+      type: 'decimal',
+      description: 'Valor unitario de venda',
+      example: '120.00',
+    },
   ],
 };

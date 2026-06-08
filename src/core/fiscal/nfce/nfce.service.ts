@@ -44,6 +44,7 @@ export class NfceService {
       ambiente: config.environment, // 'HOMOLOGACAO' ou 'PRODUCAO'
       emitCrt: config.emitCrt || 1,
       naturezaOperacao: 'Venda de mercadoria',
+      informacoesComplementares: config.taxInfoText || '',
       prazoCancelamentoMinutos: config.prazoCancelamentoNfce ?? 30,
     };
   }
@@ -218,7 +219,8 @@ export class NfceService {
         formaPagamento: dto.pagamentos[0]?.tipo || '01',
         cpfConsumidor: dto.cpfConsumidor || null,
         consumidorNome: dto.consumidorNome || null,
-        informacoesComplementares: dto.informacoesComplementares || null,
+        informacoesComplementares:
+          dto.informacoesComplementares || config.taxInfoText || null,
         itensSnapshot: dto.itens as any,
         pagamentosSnapshot: dto.pagamentos as any,
       },
