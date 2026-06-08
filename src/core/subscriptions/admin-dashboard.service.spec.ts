@@ -259,13 +259,19 @@ describe('AdminDashboardService', () => {
       mockPrismaService.company.count.mockResolvedValue(1);
       mockPrismaService.employee.findFirst.mockResolvedValue({
         cpf: '12345678901',
-        user: { name: 'John', phone: '11999999999', email: 'john@test.com' },
+        user: {
+          id: 'user-1',
+          name: 'John',
+          phone: '11999999999',
+          email: 'john@test.com',
+        },
       });
 
       const result = await service.listActiveClients(1, 10);
 
       expect(result.total).toBe(1);
       expect(result.data).toHaveLength(1);
+      expect(result.data[0].data[0].userId).toBe('user-1');
       expect(result.data[0].data[0].status).toBe('ACTIVE');
       expect(result.data[0].data[0].plan).toBe('START');
     });

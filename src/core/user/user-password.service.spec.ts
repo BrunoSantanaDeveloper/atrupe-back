@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException } from '@nestjs/common';
+import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { UserPasswordService } from './user-password.service';
 import { PrismaService } from 'nestjs-prisma';
 import { MailerService } from '@nestjs-modules/mailer';
@@ -101,6 +101,80 @@ describe('UserPasswordService', () => {
   });
 
   // ─── resetPassword ─────────────────────────────────────────────────────────
+
+  describe('adminPasswordReset', () => {
+    it('deve validar senha gerencial e enviar email para o usuario alvo', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce({
+          id: 'admin-1',
+          name: 'Admin',
+          password: 'hashed-admin-password',
+        })
+        .mockResolvedValueOnce({
+          id: 'user-1',
+          email: 'user@example.com',
+          name: 'Usuario',
+        });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      prisma.user.update.mockResolvedValue({});
+
+      await service.adminPasswordReset('user-1', 'admin-1', 'senha-admin');
+
+      expect(argon2.verify).toHaveBeenCalledWith(
+        'hashed-admin-password',
+        'senha-admin',
+      );
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'user-1' },
+          data: expect.objectContaining({
+            resetPasswordToken: expect.any(String),
+            resetPasswordExpires: expect.any(Date),
+          }),
+        }),
+      );
+      expect(mailer.sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'user@example.com',
+          template: 'reset-password',
+        }),
+      );
+    });
+
+    it('deve lancar UnauthorizedException quando a senha gerencial esta incorreta', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'admin-1',
+        name: 'Admin',
+        password: 'hashed-admin-password',
+      });
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        service.adminPasswordReset('user-1', 'admin-1', 'senha-errada'),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(mailer.sendMail).not.toHaveBeenCalled();
+    });
+
+    it('deve lancar NotFoundException quando o usuario alvo nao existe', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce({
+          id: 'admin-1',
+          name: 'Admin',
+          password: 'hashed-admin-password',
+        })
+        .mockResolvedValueOnce(null);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      await expect(
+        service.adminPasswordReset('user-1', 'admin-1', 'senha-admin'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(mailer.sendMail).not.toHaveBeenCalled();
+    });
+  });
 
   describe('resetPassword', () => {
     it('deve lançar UnauthorizedException quando o token é inválido ou já expirou', async () => {

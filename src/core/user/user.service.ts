@@ -89,8 +89,8 @@ export class UserService {
     return this.crud.findByEmail(email);
   }
 
-  update(id: string, updateUserDto: UpdateUserDto) {
-    return this.crud.update(id, updateUserDto);
+  update(id: string, updateUserDto: UpdateUserDto, actor?: any) {
+    return this.crud.update(id, updateUserDto, actor);
   }
 
   // --- Password ---
@@ -101,6 +101,18 @@ export class UserService {
 
   resetPassword(resetPasswordDto: ResetPasswordDto): Promise<void> {
     return this.password.resetPassword(resetPasswordDto);
+  }
+
+  adminPasswordReset(
+    targetUserId: string,
+    adminUserId: string,
+    adminPassword: string,
+  ): Promise<void> {
+    return this.password.adminPasswordReset(
+      targetUserId,
+      adminUserId,
+      adminPassword,
+    );
   }
 
   // --- Onboarding ---

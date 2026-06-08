@@ -35,6 +35,21 @@ export class FlowController {
     return this.flowService.findAll(filter);
   }
 
+  @Get('export')
+  @HasAnyPermission({ action: 'export', resource: 'financial:flow' })
+  @ApiOperation({
+    summary: 'ObtÃ©m os fluxos financeiros filtrados para exportaÃ§Ã£o',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Lista de fluxos financeiros para exportaÃ§Ã£o retornada com sucesso.',
+  })
+  export(@Req() req, @Query() filter: FinancialFlowFilterDTO) {
+    filter.companyId = req.user.companyId;
+    return this.flowService.findAllForExport(filter);
+  }
+
   @Get('totals')
   @HasAnyPermission(
     { action: 'view', resource: 'financial:flow' },

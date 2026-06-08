@@ -276,6 +276,36 @@ export class QuotationController {
     return await this.quotationService.findAll(query);
   }
 
+  @Get('export')
+  @ApiOperation({
+    summary: 'ObtÃ©m os orÃ§amentos filtrados para exportaÃ§Ã£o',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Lista de orÃ§amentos para exportaÃ§Ã£o retornada com sucesso.',
+  })
+  async export(@Req() req, @Query() query: FilterQuotationDto) {
+    const canExport = await this.abacService.hasPermission(
+      req.user,
+      'export',
+      'sale:quotation',
+    );
+
+    if (!canExport) {
+      throw new ForbiddenException('Sem permissÃ£o para exportar orÃ§amentos');
+    }
+
+    query.companyId = req.user.companyId;
+
+    const sellerFilter = await this.resolveSellerFilter(req.user);
+    if (sellerFilter) {
+      query.sellerId = sellerFilter;
+    }
+
+    return await this.quotationService.findAllForExport(query);
+  }
+
   @Get('contact-sources')
   @ApiOperation({ summary: 'Obtém a lista de todas as fontes de contato' })
   @ApiResponse({

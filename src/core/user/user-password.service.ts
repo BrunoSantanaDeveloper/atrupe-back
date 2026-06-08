@@ -1,4 +1,9 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -15,15 +20,11 @@ export class UserPasswordService {
     private readonly mailerService: MailerService,
   ) {}
 
-  async forgotPassword(forgotPasswordDto: ForgotPasswordDto): Promise<string> {
-    const user = await this.prisma.user.findUnique({
-      where: { email: forgotPasswordDto.email },
-    });
-    if (!user) {
-      // Não revelamos se o email existe ou não por questões de segurança
-      return;
-    }
-
+  private async sendPasswordResetEmail(user: {
+    id: string;
+    email: string;
+    name: string;
+  }): Promise<void> {
     const resetToken = randomBytes(32).toString('hex');
 
     const resetPasswordExpires = new Date();
@@ -40,7 +41,7 @@ export class UserPasswordService {
     await this.mailerService
       .sendMail({
         to: user.email,
-        subject: 'Redefinição de Senha',
+        subject: 'Redefinicao de Senha',
         template: 'reset-password',
         context: {
           name: user.name,
@@ -49,10 +50,61 @@ export class UserPasswordService {
       })
       .catch((err) => {
         this.logger.error(
-          'Falha ao enviar email de redefinição de senha:',
+          'Falha ao enviar email de redefinicao de senha:',
           err,
         );
       });
+  }
+
+  async forgotPassword(forgotPasswordDto: ForgotPasswordDto): Promise<string> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: forgotPasswordDto.email },
+    });
+    if (!user) {
+      // Nao revelamos se o email existe ou nao por questoes de seguranca.
+      return;
+    }
+
+    await this.sendPasswordResetEmail(user);
+  }
+
+  async adminPasswordReset(
+    targetUserId: string,
+    adminUserId: string,
+    adminPassword: string,
+  ): Promise<void> {
+    const adminUser = await this.prisma.user.findUnique({
+      where: { id: adminUserId },
+      select: { id: true, name: true, password: true },
+    });
+
+    if (!adminUser) {
+      throw new UnauthorizedException('Administrador nao encontrado.');
+    }
+
+    const isPasswordValid = await argon2.verify(
+      adminUser.password,
+      adminPassword,
+    );
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Senha do administrador incorreta.');
+    }
+
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, name: true, email: true },
+    });
+
+    if (!targetUser) {
+      throw new NotFoundException('Usuario nao encontrado.');
+    }
+
+    await this.sendPasswordResetEmail(targetUser);
+
+    this.logger.log(
+      `Reset de senha solicitado pelo admin ${adminUser.id} para o usuario ${targetUser.id}`,
+    );
   }
 
   async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<void> {
@@ -66,7 +118,7 @@ export class UserPasswordService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('Token inválido ou expirado');
+      throw new UnauthorizedException('Token invalido ou expirado');
     }
 
     const hashedPassword = await argon2.hash(resetPasswordDto.password);

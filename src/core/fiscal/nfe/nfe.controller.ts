@@ -224,6 +224,13 @@ export class NfeController {
     return this.nfeService.getXml(id, req.user.companyId);
   }
 
+  @Post(':id/send-email')
+  @HasPermission('view', 'nota_fiscal:emitidas')
+  @ApiOperation({ summary: 'Enviar DANFE/XML da NF-e por e-mail' })
+  async sendEmail(@Req() req, @Param('id') id: string) {
+    return this.nfeService.sendAuthorizedEmail(id, req.user.companyId);
+  }
+
   @Get('export-xml/zip')
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Exportar XMLs de NF-e em ZIP por período' })

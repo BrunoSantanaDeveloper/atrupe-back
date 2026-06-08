@@ -32,9 +32,11 @@ import {
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
+import { HasAnyPermission } from '../auth/abac/has-any-permission.decorator';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { AdminPasswordResetDto } from './dto/admin-password-reset.dto';
 
 @ApiTags('Usuário')
 @Controller('user')
@@ -182,8 +184,53 @@ export class UserController {
     return await this.userService.editClient(editClientDto, req.user.userId);
   }
 
+  @Post(':id/admin-password-reset')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiBearerAuth()
+  @ApiParam({ name: 'id', required: true, description: 'ID do usuario' })
+  @ApiOperation({
+    summary: 'Envia redefinicao de senha para um usuario (apenas SystemAdmin)',
+  })
+  @ApiBody({
+    description: 'Senha gerencial do administrador',
+    type: AdminPasswordResetDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Email de redefinicao de senha enviado com sucesso.',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Senha do administrador incorreta.',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado. Apenas administradores do sistema.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Usuario nao encontrado.',
+  })
+  async adminPasswordReset(
+    @Param('id') id: string,
+    @Req() req,
+    @Body() adminPasswordResetDto: AdminPasswordResetDto,
+  ): Promise<{ message: string }> {
+    await this.userService.adminPasswordReset(
+      id,
+      req.user.userId,
+      adminPasswordResetDto.password,
+    );
+
+    return { message: 'Email de redefinicao de senha enviado com sucesso.' };
+  }
+
   @Patch(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @HasAnyPermission(
+    { action: 'edit', resource: 'company_settings:users' },
+    { action: 'delete', resource: 'company_settings:users' },
+  )
   @ApiParam({ name: 'id', required: true, description: 'ID do usuário' })
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Atualiza os dados do usuário' })
@@ -195,8 +242,8 @@ export class UserController {
     status: 400,
     description: 'Dados inválidos.',
   })
-  update(@Param('id') id: string, @Body() body: UpdateUserDto) {
-    return this.userService.update(id, body);
+  update(@Param('id') id: string, @Req() req, @Body() body: UpdateUserDto) {
+    return this.userService.update(id, body, req.user);
   }
 
   @Get()

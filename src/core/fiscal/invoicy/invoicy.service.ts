@@ -70,6 +70,14 @@ export class InvoicyService {
     if (dto.defaultOperationNature !== undefined)
       data.defaultOperationNature = dto.defaultOperationNature;
     if (dto.taxInfoText !== undefined) data.taxInfoText = dto.taxInfoText;
+    if (dto.sendDanfeXmlAutomatically !== undefined)
+      data.sendDanfeXmlAutomatically = dto.sendDanfeXmlAutomatically;
+    if (dto.sendDanfeAutomatically !== undefined)
+      data.sendDanfeAutomatically = dto.sendDanfeAutomatically;
+    if (dto.sendXmlAutomatically !== undefined)
+      data.sendXmlAutomatically = dto.sendXmlAutomatically;
+    if (dto.sendFiscalEmailCopyTo !== undefined)
+      data.sendFiscalEmailCopyTo = dto.sendFiscalEmailCopyTo;
 
     // NF-e field mappings (frontend -> database)
     if (dto.nfeSeries !== undefined) {

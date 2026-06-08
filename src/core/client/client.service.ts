@@ -13,6 +13,8 @@ import * as fs from 'fs';
 import * as fastCsv from 'fast-csv';
 import { PlugService } from '../../svc/plug/plug.service';
 
+const EXPORT_LIMIT = '10000';
+
 @Injectable()
 export class ClientService {
   private readonly logger = new Logger(ClientService.name);
@@ -384,6 +386,20 @@ export class ClientService {
       console.error(e);
       throw e;
     }
+  }
+
+  async findAllForExport(filter: ClientFilterDTO) {
+    const result = await this.findAll({
+      ...filter,
+      page: '1',
+      limit: EXPORT_LIMIT,
+    });
+
+    return {
+      total: result.total,
+      exportLimit: Number(EXPORT_LIMIT),
+      data: result.data,
+    };
   }
 
   async findOne(id: string) {

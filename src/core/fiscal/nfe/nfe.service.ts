@@ -9,6 +9,7 @@ import { NfeStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
+import { NfeEmailService } from './nfe-email.service';
 import {
   InvoicyNfeRequest,
   INVOICY_SUCCESS_CODES,
@@ -34,6 +35,7 @@ export class NfeService {
     private readonly invoicyService: InvoicyService,
     private readonly invoicyApiService: InvoicyApiService,
     private readonly productFiscalService: ProductFiscalService,
+    private readonly nfeEmailService: NfeEmailService,
   ) {}
 
   /**
@@ -1931,6 +1933,20 @@ export class NfeService {
       // Incrementar número da NF-e somente após emissão bem-sucedida
       await this.invoicyService.incrementNfeNumber(config.id);
 
+      await this.nfeEmailService
+        .sendAuthorizedNfeEmail({
+          nfe: updatedNfe,
+          config,
+          recipientEmail: dto.destEmail,
+          recipientName: dto.destNome,
+          automatic: true,
+        })
+        .catch((emailError) => {
+          this.logger.warn(
+            `Envio automatico de e-mail da NF-e ${updatedNfe.id} falhou: ${emailError.message}`,
+          );
+        });
+
       return updatedNfe;
     } catch (error) {
       // Atualizar status para rejeitado em caso de erro
@@ -2296,6 +2312,21 @@ export class NfeService {
     }
 
     return { xml: nfe.xmlAutorizado };
+  }
+
+  async sendAuthorizedEmail(id: string, companyId: string) {
+    const nfe = await this.findById(id, companyId);
+    const config = await this.invoicyService.getConfig(companyId);
+
+    if (!config) {
+      throw new BadRequestException('Configuracao do Invoicy nao encontrada.');
+    }
+
+    return this.nfeEmailService.sendAuthorizedNfeEmail({
+      nfe,
+      config,
+      automatic: false,
+    });
   }
 
   // ==================== Draft Methods ====================

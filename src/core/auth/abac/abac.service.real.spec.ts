@@ -120,6 +120,30 @@ describe('AbacService — cenários reais de hasPermission', () => {
       ).toBe(false);
     });
 
+    it('deve negar export quando usuario so tem view no recurso', async () => {
+      prisma.role.findUnique.mockResolvedValue({
+        permissions: ['sale:quotation:view'],
+        isAdmin: false,
+      });
+      const user = { isSystemAdmin: false, isAdmin: false, role: 'role-1' };
+
+      expect(
+        await service.hasPermission(user, 'export', 'sale:quotation'),
+      ).toBe(false);
+    });
+
+    it('deve permitir export quando usuario tem permissao export explicita', async () => {
+      prisma.role.findUnique.mockResolvedValue({
+        permissions: ['sale:quotation:export'],
+        isAdmin: false,
+      });
+      const user = { isSystemAdmin: false, isAdmin: false, role: 'role-1' };
+
+      expect(
+        await service.hasPermission(user, 'export', 'sale:quotation'),
+      ).toBe(true);
+    });
+
     it('deve permitir quando role.isAdmin=true mesmo sem listar permissões', async () => {
       prisma.role.findUnique.mockResolvedValue({
         permissions: [],

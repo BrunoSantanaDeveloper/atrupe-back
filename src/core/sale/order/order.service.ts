@@ -14,6 +14,8 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { ORDER_FIND_ONE_INCLUDE } from './order.includes';
 import { transformOrderToResponse } from './order.transformers';
 
+const EXPORT_LIMIT = '10000';
+
 export interface OrderGroup {
   date: string;
   orders: Order[];
@@ -306,6 +308,25 @@ export class OrderService {
       this.logger.error('Error fetching orders', error.stack);
       throw new Error('Erro ao buscar os pedidos.');
     }
+  }
+
+  async findAllForExport(dto: FilterOrderDto) {
+    const result = await this.findAll({
+      ...dto,
+      page: '1',
+      limit: EXPORT_LIMIT,
+    });
+
+    return {
+      total: result.total,
+      exportLimit: Number(EXPORT_LIMIT),
+      data: result.data.flatMap((group: any) =>
+        group.orders.map((order) => ({
+          ...order,
+          groupDate: group.date,
+        })),
+      ),
+    };
   }
 
   async findAllQuantity(companyId: string, sellerId?: string) {

@@ -2156,6 +2156,12 @@ model InvoicyConfig {
   // NFC-e prazo de cancelamento (configurável por estado)
   prazoCancelamentoNfce    Int       @default(30) // minutos
 
+  // Envio fiscal por e-mail
+  sendDanfeXmlAutomatically Boolean @default(false)
+  sendDanfeAutomatically    Boolean @default(true)
+  sendXmlAutomatically      Boolean @default(true)
+  sendFiscalEmailCopyTo     String?
+
   @@index([companyId])
   @@map("invoicy_configs")
 }
@@ -2252,6 +2258,9 @@ model Nfe {
   sequenciaCorrecao     Int?
   invoicyId             String? // ID retornado pelo Invoicy
   invoicyProtocol       String?
+  emailSentAt           DateTime?
+  emailSentTo           String?
+  emailSendError        String?    @db.Text
   draftData             Json? // Dados do rascunho (destinatário, itens, etc.)
   company               Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   order                 Order?     @relation(fields: [orderId], references: [id])

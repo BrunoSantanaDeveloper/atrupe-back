@@ -32,6 +32,7 @@ describe('UserService (Facade)', () => {
           useValue: {
             forgotPassword: jest.fn(),
             resetPassword: jest.fn(),
+            adminPasswordReset: jest.fn(),
           },
         },
         {
@@ -234,7 +235,7 @@ describe('UserService (Facade)', () => {
       const result = await service.update('u-1', dto);
 
       expect(result).toEqual({ id: 'u-1', name: 'Updated' });
-      expect(crud.update).toHaveBeenCalledWith('u-1', dto);
+      expect(crud.update).toHaveBeenCalledWith('u-1', dto, undefined);
     });
   });
 
@@ -262,6 +263,20 @@ describe('UserService (Facade)', () => {
         token: 'tok',
         password: 'new',
       });
+    });
+  });
+
+  describe('adminPasswordReset', () => {
+    it('should delegate to password service', async () => {
+      password.adminPasswordReset.mockResolvedValue(undefined);
+
+      await service.adminPasswordReset('user-1', 'admin-1', 'secret');
+
+      expect(password.adminPasswordReset).toHaveBeenCalledWith(
+        'user-1',
+        'admin-1',
+        'secret',
+      );
     });
   });
 

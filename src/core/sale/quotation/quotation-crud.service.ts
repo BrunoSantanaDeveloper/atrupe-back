@@ -21,6 +21,8 @@ import { QUOTATION_FIND_ONE_INCLUDE } from './quotation.includes';
 import { transformQuotationToResponse } from './quotation.transformers';
 import { QuotationGroup } from './quotation.service';
 
+const EXPORT_LIMIT = '10000';
+
 /**
  * QuotationCrudService
  * Responsável por operações CRUD básicas do orçamento.
@@ -482,6 +484,25 @@ export class QuotationCrudService {
   /**
    * Busca um orçamento por ID
    */
+  async findAllForExport(dto: FilterQuotationDto) {
+    const result = await this.findAll({
+      ...dto,
+      page: '1',
+      limit: EXPORT_LIMIT,
+    });
+
+    return {
+      total: result.total,
+      exportLimit: Number(EXPORT_LIMIT),
+      data: result.data.flatMap((group) =>
+        group.quotations.map((quotation) => ({
+          ...quotation,
+          groupDate: group.date,
+        })),
+      ),
+    };
+  }
+
   async findOne(id: string) {
     const quotation = await this.prisma.quotation.findUnique({
       where: { id },
