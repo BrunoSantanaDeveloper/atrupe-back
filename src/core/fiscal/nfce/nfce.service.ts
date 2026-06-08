@@ -216,6 +216,11 @@ export class NfceService {
         ),
         valorTroco: dto.valorTroco || 0,
         formaPagamento: dto.pagamentos[0]?.tipo || '01',
+        cpfConsumidor: dto.cpfConsumidor || null,
+        consumidorNome: dto.consumidorNome || null,
+        informacoesComplementares: dto.informacoesComplementares || null,
+        itensSnapshot: dto.itens as any,
+        pagamentosSnapshot: dto.pagamentos as any,
       },
     });
 

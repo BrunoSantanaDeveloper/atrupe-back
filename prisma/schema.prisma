@@ -2425,6 +2425,11 @@ model Nfce {
   valorTotal            Float
   valorDesconto         Float?     @default(0)
   valorTroco            Float?     @default(0)
+  cpfConsumidor         String?
+  consumidorNome        String?
+  informacoesComplementares String?    @db.Text
+  itensSnapshot             Json?
+  pagamentosSnapshot        Json?
   formaPagamento        String? // Código da forma de pagamento
   xmlEnvio              String?    @db.Text
   xmlRetorno            String?    @db.Text
