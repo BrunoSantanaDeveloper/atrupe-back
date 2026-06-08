@@ -190,6 +190,46 @@ export class EmitNfseFromOrderDto {
   @IsString()
   @IsOptional()
   addressId?: string;
+
+  @ApiPropertyOptional({ description: 'Endereço do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaEndereco?: string;
+
+  @ApiPropertyOptional({ description: 'Número do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaNumero?: string;
+
+  @ApiPropertyOptional({ description: 'Complemento do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaComplemento?: string;
+
+  @ApiPropertyOptional({ description: 'Bairro do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaBairro?: string;
+
+  @ApiPropertyOptional({ description: 'CEP do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaCep?: string;
+
+  @ApiPropertyOptional({ description: 'Município do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaMunicipio?: string;
+
+  @ApiPropertyOptional({ description: 'UF do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaUf?: string;
+
+  @ApiPropertyOptional({ description: 'Código IBGE do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaCodigoMunicipio?: string;
 }
 
 // DTO completo para emissão manual
@@ -330,6 +370,46 @@ export class EmitNfseDto {
   @Type(() => NfseItemDto)
   @IsOptional()
   itens?: NfseItemDto[];
+
+  @ApiPropertyOptional({ description: 'Endereço do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaEndereco?: string;
+
+  @ApiPropertyOptional({ description: 'Número do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaNumero?: string;
+
+  @ApiPropertyOptional({ description: 'Complemento do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaComplemento?: string;
+
+  @ApiPropertyOptional({ description: 'Bairro do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaBairro?: string;
+
+  @ApiPropertyOptional({ description: 'CEP do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaCep?: string;
+
+  @ApiPropertyOptional({ description: 'Município do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaMunicipio?: string;
+
+  @ApiPropertyOptional({ description: 'UF do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaUf?: string;
+
+  @ApiPropertyOptional({ description: 'Código IBGE do local de prestação' })
+  @IsString()
+  @IsOptional()
+  entregaCodigoMunicipio?: string;
 }
 
 export class CancelNfseDto {
