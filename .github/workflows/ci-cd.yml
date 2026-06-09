@@ -166,12 +166,8 @@ jobs:
             free_disk_if_needed
             docker pull "$GHCR_IMAGE":dev
             export GHCR_IMAGE="$GHCR_IMAGE"
-<<<<<<< HEAD
-            node scripts/prepare-stack.js docker-stack.dev.yml /home/ubuntu/atrupe-back/.env.dev | docker stack deploy -c - atrupe-dev --with-registry-auth
-=======
             python3 scripts/prepare-stack.py docker-stack.dev.yml /home/ubuntu/atrupe-back/.env.dev | docker stack deploy -c - atrupe-dev --with-registry-auth
             wait_for_service atrupe-dev_atrupe 240
->>>>>>> dev
             docker image prune -f
         env:
           GHCR_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -330,12 +326,8 @@ jobs:
             free_disk_if_needed
             docker pull "$GHCR_IMAGE":latest
             export GHCR_IMAGE="$GHCR_IMAGE"
-<<<<<<< HEAD
-            node scripts/prepare-stack.js docker-stack.prod.yml /home/ubuntu/atrupe-back/.env.prod | docker stack deploy -c - atrupe-api --with-registry-auth
-=======
             python3 scripts/prepare-stack.py docker-stack.prod.yml /home/ubuntu/atrupe-back/.env.prod | docker stack deploy -c - atrupe-api --with-registry-auth
             wait_for_service atrupe-api_atrupe 240
->>>>>>> dev
             docker image prune -f
         env:
           GHCR_PAT: ${{ secrets.GITHUB_TOKEN }}
