@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  HttpException,
 } from '@nestjs/common';
 import { CancelOrderDto, CreateOrderDto } from './dto/create-order.dto';
 import { PrismaService } from 'nestjs-prisma';
@@ -412,6 +413,10 @@ export class OrderService {
 
       return transformOrderToResponse(order as any, financialTableData);
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       this.logger.error('Error fetching order', error.stack);
       throw new InternalServerErrorException(
         'Erro ao buscar a ordem de serviço.',

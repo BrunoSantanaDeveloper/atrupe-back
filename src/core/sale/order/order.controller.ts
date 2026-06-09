@@ -10,6 +10,7 @@ import {
   Req,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { CancelOrderDto, CreateOrderDto } from './dto/create-order.dto';
@@ -24,6 +25,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AbacService } from '../../auth/abac/abac.service';
+import { isUUID } from 'class-validator';
 
 const RESOURCE = 'order';
 
@@ -154,6 +156,10 @@ export class OrderController {
     description: 'Ordem de serviço não encontrada.',
   })
   async findOne(@Param('id') id: string, @Req() req) {
+    if (!isUUID(id, '4')) {
+      throw new BadRequestException('Invalid id');
+    }
+
     const order = await this.orderService.findOne(id);
 
     if (!order) {
