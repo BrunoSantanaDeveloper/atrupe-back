@@ -176,6 +176,76 @@ describe('UserPasswordService', () => {
     });
   });
 
+  describe('adminGeneratePassword', () => {
+    it('deve gerar senha temporaria, salvar hash e limpar token de reset', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce({
+          id: 'admin-1',
+          name: 'Admin',
+          password: 'hashed-admin-password',
+        })
+        .mockResolvedValueOnce({
+          id: 'user-1',
+        });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      (argon2.hash as jest.Mock).mockResolvedValue('hashed-temp-password');
+      prisma.user.update.mockResolvedValue({});
+
+      const result = await service.adminGeneratePassword(
+        'user-1',
+        'admin-1',
+        'senha-admin',
+      );
+
+      expect(result.temporaryPassword).toEqual(expect.any(String));
+      expect(result.temporaryPassword).toMatch(/^[a-f0-9]{8}A![a-f0-9]{8}1$/);
+      expect(argon2.hash).toHaveBeenCalledWith(result.temporaryPassword);
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: {
+          password: 'hashed-temp-password',
+          resetPasswordToken: null,
+          resetPasswordExpires: null,
+        },
+      });
+      expect(mailer.sendMail).not.toHaveBeenCalled();
+    });
+
+    it('deve lancar UnauthorizedException quando a senha gerencial esta incorreta ao gerar senha', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'admin-1',
+        name: 'Admin',
+        password: 'hashed-admin-password',
+      });
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        service.adminGeneratePassword('user-1', 'admin-1', 'senha-errada'),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(argon2.hash).not.toHaveBeenCalled();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('deve lancar NotFoundException quando o usuario alvo nao existe ao gerar senha', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce({
+          id: 'admin-1',
+          name: 'Admin',
+          password: 'hashed-admin-password',
+        })
+        .mockResolvedValueOnce(null);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      await expect(
+        service.adminGeneratePassword('user-1', 'admin-1', 'senha-admin'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(argon2.hash).not.toHaveBeenCalled();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('resetPassword', () => {
     it('deve lançar UnauthorizedException quando o token é inválido ou já expirou', async () => {
       prisma.user.findFirst.mockResolvedValue(null);

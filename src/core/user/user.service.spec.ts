@@ -33,6 +33,7 @@ describe('UserService (Facade)', () => {
             forgotPassword: jest.fn(),
             resetPassword: jest.fn(),
             adminPasswordReset: jest.fn(),
+            adminGeneratePassword: jest.fn(),
           },
         },
         {
@@ -273,6 +274,26 @@ describe('UserService (Facade)', () => {
       await service.adminPasswordReset('user-1', 'admin-1', 'secret');
 
       expect(password.adminPasswordReset).toHaveBeenCalledWith(
+        'user-1',
+        'admin-1',
+        'secret',
+      );
+    });
+  });
+
+  describe('adminGeneratePassword', () => {
+    it('should delegate to password service', async () => {
+      const expected = { temporaryPassword: 'abcdA!12341' };
+      password.adminGeneratePassword.mockResolvedValue(expected);
+
+      const result = await service.adminGeneratePassword(
+        'user-1',
+        'admin-1',
+        'secret',
+      );
+
+      expect(result).toEqual(expected);
+      expect(password.adminGeneratePassword).toHaveBeenCalledWith(
         'user-1',
         'admin-1',
         'secret',

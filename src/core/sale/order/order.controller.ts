@@ -28,6 +28,7 @@ import { AbacService } from '../../auth/abac/abac.service';
 import { isUUID } from 'class-validator';
 
 const RESOURCE = 'order';
+const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
 
 @ApiTags('Ordem de serviço')
 @UseGuards(JwtAuthGuard)
@@ -140,7 +141,7 @@ export class OrderController {
     return this.orderService.findAllQuantity(companyId, sellerId);
   }
 
-  @Get(':id')
+  @Get(UUID_ROUTE)
   @ApiOperation({ summary: 'Obtém uma ordem de serviço pelo ID' })
   @ApiParam({
     name: 'id',

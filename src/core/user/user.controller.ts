@@ -225,6 +225,45 @@ export class UserController {
     return { message: 'Email de redefinicao de senha enviado com sucesso.' };
   }
 
+  @Post(':id/admin-generate-password')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiBearerAuth()
+  @ApiParam({ name: 'id', required: true, description: 'ID do usuario' })
+  @ApiOperation({
+    summary: 'Gera senha temporaria para um usuario (apenas SystemAdmin)',
+  })
+  @ApiBody({
+    description: 'Senha gerencial do administrador',
+    type: AdminPasswordResetDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Senha temporaria gerada com sucesso.',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Senha do administrador incorreta.',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado. Apenas administradores do sistema.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Usuario nao encontrado.',
+  })
+  async adminGeneratePassword(
+    @Param('id') id: string,
+    @Req() req,
+    @Body() adminPasswordResetDto: AdminPasswordResetDto,
+  ): Promise<{ temporaryPassword: string }> {
+    return await this.userService.adminGeneratePassword(
+      id,
+      req.user.userId,
+      adminPasswordResetDto.password,
+    );
+  }
+
   @Patch(':id')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @HasAnyPermission(

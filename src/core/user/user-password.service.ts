@@ -20,6 +20,35 @@ export class UserPasswordService {
     private readonly mailerService: MailerService,
   ) {}
 
+  private generateTemporaryPassword(): string {
+    return `${randomBytes(4).toString('hex')}A!${randomBytes(4).toString('hex')}1`;
+  }
+
+  private async validateAdminPassword(
+    adminUserId: string,
+    adminPassword: string,
+  ) {
+    const adminUser = await this.prisma.user.findUnique({
+      where: { id: adminUserId },
+      select: { id: true, name: true, password: true },
+    });
+
+    if (!adminUser) {
+      throw new UnauthorizedException('Administrador nao encontrado.');
+    }
+
+    const isPasswordValid = await argon2.verify(
+      adminUser.password,
+      adminPassword,
+    );
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Senha do administrador incorreta.');
+    }
+
+    return adminUser;
+  }
+
   private async sendPasswordResetEmail(user: {
     id: string;
     email: string;
@@ -73,23 +102,10 @@ export class UserPasswordService {
     adminUserId: string,
     adminPassword: string,
   ): Promise<void> {
-    const adminUser = await this.prisma.user.findUnique({
-      where: { id: adminUserId },
-      select: { id: true, name: true, password: true },
-    });
-
-    if (!adminUser) {
-      throw new UnauthorizedException('Administrador nao encontrado.');
-    }
-
-    const isPasswordValid = await argon2.verify(
-      adminUser.password,
+    const adminUser = await this.validateAdminPassword(
+      adminUserId,
       adminPassword,
     );
-
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Senha do administrador incorreta.');
-    }
 
     const targetUser = await this.prisma.user.findUnique({
       where: { id: targetUserId },
@@ -105,6 +121,44 @@ export class UserPasswordService {
     this.logger.log(
       `Reset de senha solicitado pelo admin ${adminUser.id} para o usuario ${targetUser.id}`,
     );
+  }
+
+  async adminGeneratePassword(
+    targetUserId: string,
+    adminUserId: string,
+    adminPassword: string,
+  ): Promise<{ temporaryPassword: string }> {
+    const adminUser = await this.validateAdminPassword(
+      adminUserId,
+      adminPassword,
+    );
+
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true },
+    });
+
+    if (!targetUser) {
+      throw new NotFoundException('Usuario nao encontrado.');
+    }
+
+    const temporaryPassword = this.generateTemporaryPassword();
+    const hashedPassword = await argon2.hash(temporaryPassword);
+
+    await this.prisma.user.update({
+      where: { id: targetUser.id },
+      data: {
+        password: hashedPassword,
+        resetPasswordToken: null,
+        resetPasswordExpires: null,
+      },
+    });
+
+    this.logger.log(
+      `Senha temporaria gerada pelo admin ${adminUser.id} para o usuario ${targetUser.id}`,
+    );
+
+    return { temporaryPassword };
   }
 
   async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<void> {

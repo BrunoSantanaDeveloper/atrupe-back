@@ -115,6 +115,18 @@ export class UserService {
     );
   }
 
+  adminGeneratePassword(
+    targetUserId: string,
+    adminUserId: string,
+    adminPassword: string,
+  ): Promise<{ temporaryPassword: string }> {
+    return this.password.adminGeneratePassword(
+      targetUserId,
+      adminUserId,
+      adminPassword,
+    );
+  }
+
   // --- Onboarding ---
 
   completeRegistration(

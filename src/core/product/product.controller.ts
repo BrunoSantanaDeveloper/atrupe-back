@@ -31,6 +31,7 @@ import {
 } from '@nestjs/swagger';
 
 const RESOURCE = 'product';
+const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
 
 @ApiTags('Produtos')
 @UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
@@ -92,7 +93,7 @@ export class ProductController {
     return this.productService.findAllQuantity(companyId);
   }
 
-  @Get(':id')
+  @Get(UUID_ROUTE)
   @TenantResource('product')
   @ApiOperation({ summary: 'Obtém um produto pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do produto' })

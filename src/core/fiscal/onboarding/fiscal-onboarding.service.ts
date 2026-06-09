@@ -99,6 +99,7 @@ export class FiscalOnboardingService {
       certificate: dto.certificate,
       certificatePassword: dto.certificatePassword,
       certificateType: dto.certificateType,
+      environment: 'HOMOLOGACAO',
     });
 
     // 2. Save accessKey on the Company record + create InvoicyConfig
@@ -107,6 +108,12 @@ export class FiscalOnboardingService {
       request.companyId,
       registrationResult.accessKey,
       registrationResult.cryptoKey,
+      registrationResult.environment,
+      {
+        certificate: dto.certificate,
+        certificatePassword: dto.certificatePassword,
+        certificateType: dto.certificateType,
+      },
     );
 
     return registrationResult;
@@ -117,6 +124,12 @@ export class FiscalOnboardingService {
     companyId: string,
     accessKey: string,
     cryptoKey?: string,
+    environment: 'PRODUCAO' | 'HOMOLOGACAO' = 'HOMOLOGACAO',
+    certificateData?: {
+      certificate?: string;
+      certificatePassword?: string;
+      certificateType?: string;
+    },
   ) {
     await this.prisma.$transaction(async (tx) => {
       // Fetch the onboarding request to get the submitted data
@@ -165,6 +178,25 @@ export class FiscalOnboardingService {
         }
       }
 
+      if (certificateData?.certificate) {
+        await tx.digitalCertificate.upsert({
+          where: { companyId },
+          create: {
+            companyId,
+            type: (certificateData.certificateType as any) || 'A1',
+            password: certificateData.certificatePassword,
+            certificate: certificateData.certificate,
+            lastUpload: new Date(),
+          },
+          update: {
+            type: (certificateData.certificateType as any) || 'A1',
+            password: certificateData.certificatePassword,
+            certificate: certificateData.certificate,
+            lastUpload: new Date(),
+          },
+        });
+      }
+
       // Create default InvoicyConfig (emissor)
       const existingConfig = await tx.invoicyConfig.findFirst({
         where: { companyId, isDefault: true },
@@ -176,8 +208,8 @@ export class FiscalOnboardingService {
             companyId,
             name: 'Matriz',
             isDefault: true,
-            environment: 'HOMOLOGACAO',
-            ambiente: 2,
+            environment,
+            ambiente: environment === 'PRODUCAO' ? 1 : 2,
             emitCrt: 1,
             serieNfe: 1,
             proximoNumeroNfe: 1,
@@ -390,7 +422,13 @@ export class FiscalOnboardingService {
       );
     }
 
-    await this.activateModule(requestId, request.companyId, accessKey);
+    await this.activateModule(
+      requestId,
+      request.companyId,
+      accessKey,
+      undefined,
+      'HOMOLOGACAO',
+    );
 
     await this.prisma.fiscalOnboardingRequest.update({
       where: { id: requestId },
@@ -429,6 +467,7 @@ export class FiscalOnboardingService {
         bairro: request.bairro,
         cidade: request.cidade,
         complemento: request.complemento,
+        environment: 'HOMOLOGACAO',
       });
 
       await this.activateModule(
@@ -436,6 +475,7 @@ export class FiscalOnboardingService {
         request.companyId,
         result.accessKey,
         result.cryptoKey,
+        result.environment,
       );
 
       return { success: true, message: 'Auto-provisioning succeeded on retry' };

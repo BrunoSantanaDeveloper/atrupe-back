@@ -34,6 +34,9 @@ describe('FiscalOnboardingService', () => {
     productFiscalData: {
       create: jest.fn().mockResolvedValue({}),
     },
+    digitalCertificate: {
+      upsert: jest.fn().mockResolvedValue({}),
+    },
     $transaction: jest.fn((callback) => callback(mockPrisma)),
   };
 

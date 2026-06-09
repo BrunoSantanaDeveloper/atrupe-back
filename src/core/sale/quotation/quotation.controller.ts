@@ -39,6 +39,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { AbacService } from '../../auth/abac/abac.service';
 
 const RESOURCE = 'quotation';
+const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
 
 @ApiTags('Orçamentos')
 @UseGuards(JwtAuthGuard, BlockLevelGuard)
@@ -461,7 +462,7 @@ export class QuotationController {
     return this.quotationService.open(id, req.user?.userId);
   }
 
-  @Get(':id')
+  @Get(UUID_ROUTE)
   @ApiOperation({ summary: 'Obtém um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
   @ApiResponse({

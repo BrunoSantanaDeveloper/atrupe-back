@@ -144,6 +144,18 @@ export class CreateInvoicyConfigDto {
   @Min(1)
   proximoNumeroNfce?: number;
 
+  @ApiPropertyOptional({ description: 'ID do CSC da NFC-e' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  cscId?: string;
+
+  @ApiPropertyOptional({ description: 'Token CSC da NFC-e' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  cscToken?: string;
+
   // NFS-e fields
   @ApiPropertyOptional({ description: 'Série da NFS-e (RPS)' })
   @IsString()
@@ -345,6 +357,18 @@ export class UpdateInvoicyConfigDto {
   @IsOptional()
   @Min(1)
   proximoNumeroNfce?: number;
+
+  @ApiPropertyOptional({ description: 'ID do CSC da NFC-e' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  cscId?: string;
+
+  @ApiPropertyOptional({ description: 'Token CSC da NFC-e' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  cscToken?: string;
 
   // NFS-e fields
   @ApiPropertyOptional({ description: 'Série da NFS-e (RPS)' })

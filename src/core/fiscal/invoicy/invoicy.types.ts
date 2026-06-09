@@ -155,7 +155,7 @@ export interface InvoicyNfeDest {
   idEstrangeiro?: string;
   xNome_dest: string;
   indIEDest: number;
-  enderDest: InvoicyNfeEnderDest;
+  enderDest?: InvoicyNfeEnderDest;
 }
 
 export interface InvoicyNfeProd {
@@ -261,7 +261,7 @@ export interface InvoicyNfeDocumento {
   Versao: number;
   ide: InvoicyNfeIde;
   emit: InvoicyNfeEmit;
-  dest: InvoicyNfeDest;
+  dest?: InvoicyNfeDest;
   entrega?: InvoicyNfeEntrega;
   det: InvoicyNfeDet[];
   total: InvoicyNfeTotal;
