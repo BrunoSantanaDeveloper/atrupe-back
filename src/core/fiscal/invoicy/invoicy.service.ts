@@ -3,6 +3,7 @@ import {
   NotFoundException,
   Logger,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'nestjs-prisma';
@@ -70,6 +71,14 @@ export class InvoicyService {
     if (dto.defaultOperationNature !== undefined)
       data.defaultOperationNature = dto.defaultOperationNature;
     if (dto.taxInfoText !== undefined) data.taxInfoText = dto.taxInfoText;
+    if (dto.sendDanfeXmlAutomatically !== undefined)
+      data.sendDanfeXmlAutomatically = dto.sendDanfeXmlAutomatically;
+    if (dto.sendDanfeAutomatically !== undefined)
+      data.sendDanfeAutomatically = dto.sendDanfeAutomatically;
+    if (dto.sendXmlAutomatically !== undefined)
+      data.sendXmlAutomatically = dto.sendXmlAutomatically;
+    if (dto.sendFiscalEmailCopyTo !== undefined)
+      data.sendFiscalEmailCopyTo = dto.sendFiscalEmailCopyTo;
 
     // NF-e field mappings (frontend -> database)
     if (dto.nfeSeries !== undefined) {
@@ -94,12 +103,83 @@ export class InvoicyService {
     }
     if (dto.nfceNextNumber !== undefined)
       data.proximoNumeroNfce = dto.nfceNextNumber;
+    if (dto.serieNfce !== undefined) data.serieNfce = dto.serieNfce;
+    if (dto.proximoNumeroNfce !== undefined)
+      data.proximoNumeroNfce = dto.proximoNumeroNfce;
+    if (dto.cscId !== undefined && dto.cscId !== '') data.cscId = dto.cscId;
+    if (dto.cscToken !== undefined && dto.cscToken !== '')
+      data.cscToken = dto.cscToken;
 
     // Boolean field
     if ('isActive' in dto && dto.isActive !== undefined)
       data.isActive = dto.isActive;
 
     return data;
+  }
+
+  private resolveDtoEnvironment(
+    dto: CreateInvoicyConfigDto | UpdateInvoicyConfigDto,
+  ): 'PRODUCAO' | 'HOMOLOGACAO' | undefined {
+    if (dto.environment !== undefined) {
+      return dto.environment === 'PRODUCAO' ? 'PRODUCAO' : 'HOMOLOGACAO';
+    }
+
+    if (dto.ambiente !== undefined) {
+      const ambiente = String(dto.ambiente);
+      return ambiente === '1' || ambiente === 'PRODUCAO'
+        ? 'PRODUCAO'
+        : 'HOMOLOGACAO';
+    }
+
+    return undefined;
+  }
+
+  private normalizeEnvironment(environment?: string | null) {
+    return environment === 'PRODUCAO' ? 'PRODUCAO' : 'HOMOLOGACAO';
+  }
+
+  private async ensureCompanyRegisteredForEnvironment(
+    companyId: string,
+    environment: 'PRODUCAO' | 'HOMOLOGACAO',
+  ) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      include: { address: true, DigitalCertificate: true },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Empresa não encontrada');
+    }
+
+    if (!company.cnpj) {
+      throw new BadRequestException(
+        'CNPJ da empresa é obrigatório para cadastrar no Invoicy',
+      );
+    }
+
+    const address = company.address?.[0];
+    const registration = await this.invoicyHttpService.registerCompany({
+      cnpj: company.cnpj,
+      razaoSocial: company.legalName || company.name,
+      nomeFantasia: company.name,
+      ie: company.stateRegistration || undefined,
+      im: company.municipalRegistration || undefined,
+      uf: address?.state || undefined,
+      cep: address?.zipcode || undefined,
+      logradouro: address?.street || undefined,
+      numero: address?.number || undefined,
+      bairro: address?.neighborhood || undefined,
+      cidade: address?.city || undefined,
+      environment,
+      certificate: company.DigitalCertificate?.certificate || undefined,
+      certificatePassword: company.DigitalCertificate?.password || undefined,
+      certificateType: company.DigitalCertificate?.type || undefined,
+    });
+
+    await this.prisma.company.update({
+      where: { id: companyId },
+      data: { accessKey: registration.accessKey },
+    });
   }
 
   // Map database fields to frontend fields
@@ -151,6 +231,8 @@ export class InvoicyService {
       nfseNextNumber: config.proximoRpsNfse || 1,
       nfceSeries: config.serieNfce?.toString() || '1',
       nfceNextNumber: config.proximoNumeroNfce || 1,
+      cscId: config.cscId || '',
+      cscConfigured: !!config.cscToken,
 
       // IBGE Code (Configuration specific if we want to override, or just null)
       // Keeping it on root as it might be relevant for the configuration specifically
@@ -260,6 +342,7 @@ export class InvoicyService {
     }
 
     const data = await this.prepareDataWithCep(dto);
+    const targetEnvironment = this.resolveDtoEnvironment(dto);
 
     // Se é o primeiro emissor ou marcado como padrão, garantir apenas um padrão
     const countEmissores = await this.prisma.invoicyConfig.count({
@@ -274,6 +357,13 @@ export class InvoicyService {
         where: { companyId, isDefault: true },
         data: { isDefault: false },
       });
+    }
+
+    if (targetEnvironment === 'PRODUCAO') {
+      await this.ensureCompanyRegisteredForEnvironment(
+        companyId,
+        targetEnvironment,
+      );
     }
 
     const result = await this.prisma.invoicyConfig.create({
@@ -325,6 +415,16 @@ export class InvoicyService {
     const data = await this.prepareDataWithCep(dto);
 
     // Se está marcando como padrão, remover padrão dos outros
+    const targetEnvironment = this.resolveDtoEnvironment(dto);
+    const currentEnvironment = this.normalizeEnvironment(config.environment);
+
+    if (targetEnvironment && targetEnvironment !== currentEnvironment) {
+      await this.ensureCompanyRegisteredForEnvironment(
+        config.companyId,
+        targetEnvironment,
+      );
+    }
+
     if (dto.isDefault === true) {
       await this.prisma.invoicyConfig.updateMany({
         where: {
@@ -435,6 +535,25 @@ export class InvoicyService {
       certificate,
       certificatePassword,
       certificateType,
+      environment:
+        config.environment === 'PRODUCAO' ? 'PRODUCAO' : 'HOMOLOGACAO',
+    });
+
+    await this.prisma.digitalCertificate.upsert({
+      where: { companyId: config.companyId },
+      create: {
+        companyId: config.companyId,
+        type: certificateType as any,
+        password: certificatePassword,
+        certificate,
+        lastUpload: new Date(),
+      },
+      update: {
+        type: certificateType as any,
+        password: certificatePassword,
+        certificate,
+        lastUpload: new Date(),
+      },
     });
 
     // Limpar cache de token pois credenciais podem ter mudado

@@ -9,6 +9,8 @@ import {
   UseGuards,
   Req,
   NotFoundException,
+  ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { CancelOrderDto, CreateOrderDto } from './dto/create-order.dto';
@@ -23,8 +25,10 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AbacService } from '../../auth/abac/abac.service';
+import { isUUID } from 'class-validator';
 
 const RESOURCE = 'order';
+const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
 
 @ApiTags('Ordem de serviço')
 @UseGuards(JwtAuthGuard)
@@ -74,6 +78,43 @@ export class OrderController {
     return await this.orderService.findAll(query);
   }
 
+  @Get('export')
+  @ApiOperation({
+    summary: 'ObtÃ©m as ordens de serviÃ§o filtradas para exportaÃ§Ã£o',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Lista de ordens de serviÃ§o para exportaÃ§Ã£o retornada com sucesso.',
+  })
+  async export(@Req() req, @Query() query: FilterOrderDto) {
+    const canExport = await this.abacService.hasPermission(
+      req.user,
+      'export',
+      'sale:order',
+    );
+
+    if (!canExport) {
+      throw new ForbiddenException(
+        'Sem permissÃ£o para exportar ordens de serviÃ§o',
+      );
+    }
+
+    query.companyId = req.user.companyId;
+
+    const canSeeOtherOrders = await this.abacService.hasPermission(
+      req.user,
+      'view',
+      'sale:other_quotation',
+    );
+
+    if (!canSeeOtherOrders && !req.user.isAdmin && req.user.employeeId) {
+      query.sellerId = req.user.employeeId;
+    }
+
+    return await this.orderService.findAllForExport(query);
+  }
+
   @Get('quantity')
   @ApiOperation({
     summary: 'Obtém a quantidade de todos os status de ordens',
@@ -100,7 +141,7 @@ export class OrderController {
     return this.orderService.findAllQuantity(companyId, sellerId);
   }
 
-  @Get(':id')
+  @Get(UUID_ROUTE)
   @ApiOperation({ summary: 'Obtém uma ordem de serviço pelo ID' })
   @ApiParam({
     name: 'id',
@@ -116,6 +157,10 @@ export class OrderController {
     description: 'Ordem de serviço não encontrada.',
   })
   async findOne(@Param('id') id: string, @Req() req) {
+    if (!isUUID(id, '4')) {
+      throw new BadRequestException('Invalid id');
+    }
+
     const order = await this.orderService.findOne(id);
 
     if (!order) {

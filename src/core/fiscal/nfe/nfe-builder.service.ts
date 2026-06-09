@@ -46,6 +46,7 @@ export class NfeBuilderService {
         ide: this.buildIdentificacao(dto, config, numero, destResult, now),
         emit: this.buildEmitente(config, emitCmun),
         dest: this.buildDestinatario(dto, destResult, config),
+        entrega: await this.buildEntrega(dto),
         det: this.buildProdutos(
           dto.items,
           destResult.uf,
@@ -271,6 +272,57 @@ export class NfeBuilderService {
           : {}),
         cPais_dest: parseInt(dto.destPais || '1058', 10),
       },
+    };
+  }
+
+  /**
+   * Constrói bloco de local de entrega (Grupo G da NF-e)
+   */
+  private async buildEntrega(dto: EmitNfeDto): Promise<any> {
+    if (!dto.entregaEndereco) {
+      return undefined;
+    }
+
+    let cmun = 0;
+    let uf = dto.entregaUf || '';
+    let municipio = dto.entregaMunicipio || '';
+
+    if (dto.entregaCep) {
+      this.logger.log(
+        `Buscando código IBGE de entrega para CEP: ${dto.entregaCep}`,
+      );
+      const cepData = await fetchCepData(dto.entregaCep);
+      if (cepData) {
+        cmun = parseInt(cepData.codigoIbge, 10) || 0;
+        uf = cepData.uf;
+        municipio = cepData.cidade;
+        this.logger.log(`Código IBGE da entrega: ${cmun} (${municipio}/${uf})`);
+      }
+    }
+
+    if (!cmun) {
+      throw new BadRequestException(
+        'CEP de entrega inválido ou código IBGE não encontrado para o endereço de entrega.',
+      );
+    }
+
+    const cleanCnpjCpf = (dto.entregaCnpjCpf || dto.destCnpjCpf || '').replace(
+      /\D/g,
+      '',
+    );
+
+    return {
+      ...(cleanCnpjCpf.length === 14 ? { CNPJ_entrega: cleanCnpjCpf } : {}),
+      ...(cleanCnpjCpf.length === 11 ? { CPF_entrega: cleanCnpjCpf } : {}),
+      xLgr_entrega: dto.entregaEndereco,
+      nro_entrega: dto.entregaNumero || 'S/N',
+      xCpl_entrega: dto.entregaComplemento || undefined,
+      xBairro_entrega: dto.entregaBairro || '',
+      cMun_entrega: cmun,
+      xMun_entrega: municipio,
+      UF_entrega: uf,
+      CEP_entrega:
+        parseInt((dto.entregaCep || '').replace(/\D/g, ''), 10) || undefined,
     };
   }
 

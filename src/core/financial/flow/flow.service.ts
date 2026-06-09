@@ -9,6 +9,8 @@ import { PrismaService } from 'nestjs-prisma';
 import { FinancialFlowFilterDTO } from './dto/filter.dto';
 import { InstallmentStatusCheck } from '../utils/financial.types';
 
+const EXPORT_LIMIT = '10000';
+
 @Injectable()
 export class FlowService {
   private readonly logger = new Logger(FlowService.name);
@@ -441,6 +443,29 @@ export class FlowService {
         'Error fetching financial flow data',
       );
     }
+  }
+
+  async findAllForExport(filter: FinancialFlowFilterDTO) {
+    const result = await this.findAll({
+      ...filter,
+      page: '1',
+      limit: EXPORT_LIMIT,
+      showValues: filter.showValues || 'on',
+    });
+
+    const data = result.data.flatMap((group) =>
+      group.transactions.map((transaction) => ({
+        ...transaction,
+        groupDate: group.date,
+      })),
+    );
+
+    return {
+      total: data.length,
+      totalGroups: result.total,
+      exportLimit: Number(EXPORT_LIMIT),
+      data,
+    };
   }
 
   private buildFlowGroupedData(

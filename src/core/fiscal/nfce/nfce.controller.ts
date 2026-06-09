@@ -7,13 +7,16 @@ import {
   Query,
   UseGuards,
   Req,
+  Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import { BlockLevelGuard } from '../../auth/guards/block-level.guard';
 import { PermissionsGuard } from '../../auth/abac/permissions.guard';
 import { HasPermission } from '../../auth/abac/has-permission.decorator';
 import { NfceService } from './nfce.service';
+import { NfceThermalService } from './nfce-thermal.service';
 import {
   EmitNfceDto,
   CancelNfceDto,
@@ -27,7 +30,10 @@ import {
 @UseGuards(JwtAuthGuard, PermissionsGuard, BlockLevelGuard)
 @Controller('fiscal/nfce')
 export class NfceController {
-  constructor(private readonly nfceService: NfceService) {}
+  constructor(
+    private readonly nfceService: NfceService,
+    private readonly nfceThermalService: NfceThermalService,
+  ) {}
 
   @Get()
   @HasPermission('view', 'nota_fiscal:emitidas')
@@ -94,6 +100,23 @@ export class NfceController {
   @ApiOperation({ summary: 'Obter URL do DANFE' })
   async getDanfeUrl(@Req() req, @Param('id') id: string) {
     return this.nfceService.getDanfeUrl(id, req.user.companyId);
+  }
+
+  @Get(':id/thermal')
+  @HasPermission('view', 'nota_fiscal:emitidas')
+  @ApiOperation({ summary: 'Obter DANFE NFC-e termico em HTML 80mm' })
+  async getThermalDanfe(
+    @Req() req,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const html = await this.nfceThermalService.generateHtml(
+      id,
+      req.user.companyId,
+    );
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
   }
 
   @Get(':id/xml')

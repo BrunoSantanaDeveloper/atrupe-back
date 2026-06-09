@@ -4,6 +4,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
+import { NfeEmailService } from './nfe-email.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { NfeStatus } from '@prisma/client';
 
@@ -237,6 +238,10 @@ const mockProductFiscalService = {
   getOrCreateWithDefaults: jest.fn(),
 };
 
+const mockNfeEmailService = {
+  sendAuthorizedNfeEmail: jest.fn().mockResolvedValue({ success: true }),
+};
+
 describe('NfeService', () => {
   let service: NfeService;
   let prisma: typeof mockPrismaService;
@@ -253,6 +258,7 @@ describe('NfeService', () => {
         { provide: InvoicyService, useValue: mockInvoicyService },
         { provide: InvoicyApiService, useValue: mockInvoicyApiService },
         { provide: ProductFiscalService, useValue: mockProductFiscalService },
+        { provide: NfeEmailService, useValue: mockNfeEmailService },
       ],
     }).compile();
 

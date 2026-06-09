@@ -30,6 +30,7 @@ import {
 } from '@nestjs/swagger';
 
 const RESOURCE = 'client';
+const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
 
 @ApiTags('Clientes')
 @UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
@@ -158,7 +159,19 @@ export class ClientController {
     return this.clientService.findAll(filter);
   }
 
-  @Get(':id')
+  @Get('export')
+  @HasPermission('export', 'register:client')
+  @ApiOperation({ summary: 'ObtÃ©m os clientes filtrados para exportaÃ§Ã£o' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de clientes para exportaÃ§Ã£o retornada com sucesso.',
+  })
+  export(@Req() req, @Query() filter: ClientFilterDTO) {
+    filter.companyId = req.user.companyId;
+    return this.clientService.findAllForExport(filter);
+  }
+
+  @Get(UUID_ROUTE)
   @TenantResource('client')
   @ApiOperation({ summary: 'Obtém um cliente pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })

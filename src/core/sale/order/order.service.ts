@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  HttpException,
 } from '@nestjs/common';
 import { CancelOrderDto, CreateOrderDto } from './dto/create-order.dto';
 import { PrismaService } from 'nestjs-prisma';
@@ -13,6 +14,8 @@ import { Order, OrderStatus, Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { ORDER_FIND_ONE_INCLUDE } from './order.includes';
 import { transformOrderToResponse } from './order.transformers';
+
+const EXPORT_LIMIT = '10000';
 
 export interface OrderGroup {
   date: string;
@@ -308,6 +311,25 @@ export class OrderService {
     }
   }
 
+  async findAllForExport(dto: FilterOrderDto) {
+    const result = await this.findAll({
+      ...dto,
+      page: '1',
+      limit: EXPORT_LIMIT,
+    });
+
+    return {
+      total: result.total,
+      exportLimit: Number(EXPORT_LIMIT),
+      data: result.data.flatMap((group: any) =>
+        group.orders.map((order) => ({
+          ...order,
+          groupDate: group.date,
+        })),
+      ),
+    };
+  }
+
   async findAllQuantity(companyId: string, sellerId?: string) {
     const allStatuses: OrderStatus[] = [
       'PENDING',
@@ -391,6 +413,10 @@ export class OrderService {
 
       return transformOrderToResponse(order as any, financialTableData);
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       this.logger.error('Error fetching order', error.stack);
       throw new InternalServerErrorException(
         'Erro ao buscar a ordem de serviço.',

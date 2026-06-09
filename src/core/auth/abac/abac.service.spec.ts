@@ -186,6 +186,36 @@ describe('AbacService', () => {
       );
       expect(result).toBe(false);
     });
+
+    it('deve negar export quando a role tem apenas view no mesmo recurso', async () => {
+      prisma.role.findUnique.mockResolvedValue({
+        permissions: ['sale:quotation:view'],
+        isAdmin: false,
+      });
+
+      const result = await service.hasPermission(
+        { isSystemAdmin: false, isAdmin: false, role: 'r' },
+        'export',
+        'sale:quotation',
+      );
+
+      expect(result).toBe(false);
+    });
+
+    it('deve permitir export somente quando a role tem permissao export no recurso', async () => {
+      prisma.role.findUnique.mockResolvedValue({
+        permissions: ['sale:quotation:export'],
+        isAdmin: false,
+      });
+
+      const result = await service.hasPermission(
+        { isSystemAdmin: false, isAdmin: false, role: 'r' },
+        'export',
+        'sale:quotation',
+      );
+
+      expect(result).toBe(true);
+    });
   });
 
   // ── hasAnyPermission ──────────────────────────────────────────────────────

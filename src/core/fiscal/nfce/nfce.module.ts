@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { NfceController } from './nfce.controller';
 import { NfceService } from './nfce.service';
 import { NfceContingencySyncService } from './nfce-contingency-sync.service';
+import { NfceThermalService } from './nfce-thermal.service';
 import { InvoicyModule } from '../invoicy/invoicy.module';
 import { PrismaModule } from 'nestjs-prisma';
 import { AuthModule } from '../../auth/auth.module';
@@ -9,7 +10,7 @@ import { AuthModule } from '../../auth/auth.module';
 @Module({
   imports: [PrismaModule, InvoicyModule, forwardRef(() => AuthModule)],
   controllers: [NfceController],
-  providers: [NfceService, NfceContingencySyncService],
-  exports: [NfceService, NfceContingencySyncService],
+  providers: [NfceService, NfceContingencySyncService, NfceThermalService],
+  exports: [NfceService, NfceContingencySyncService, NfceThermalService],
 })
 export class NfceModule {}

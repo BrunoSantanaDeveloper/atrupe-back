@@ -31,6 +31,7 @@ import {
 } from '@nestjs/swagger';
 
 const RESOURCE = 'product';
+const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
 
 @ApiTags('Produtos')
 @UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
@@ -67,6 +68,18 @@ export class ProductController {
     return await this.productService.findAll(filter);
   }
 
+  @Get('export')
+  @HasPermission('export', 'product_settings:products')
+  @ApiOperation({ summary: 'ObtÃ©m os produtos filtrados para exportaÃ§Ã£o' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de produtos para exportaÃ§Ã£o retornada com sucesso.',
+  })
+  async export(@Req() req, @Query() filter: ProductFilterDTO) {
+    filter.companyId = req.user.companyId;
+    return await this.productService.findAllForExport(filter);
+  }
+
   @Get('quantity')
   @ApiOperation({
     summary: 'Obtém a quantidade de todos os status de produtos',
@@ -80,7 +93,7 @@ export class ProductController {
     return this.productService.findAllQuantity(companyId);
   }
 
-  @Get(':id')
+  @Get(UUID_ROUTE)
   @TenantResource('product')
   @ApiOperation({ summary: 'Obtém um produto pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do produto' })

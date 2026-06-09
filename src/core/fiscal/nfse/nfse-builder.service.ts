@@ -52,7 +52,12 @@ export class NfseBuilderService {
             RPSTipo: 1, // 1 = RPS
             dEmis: new Date().toISOString(),
             dCompetencia: new Date(dto.dataCompetencia).toISOString(),
-            LocalPrestServ: 1, // 1 = No município (default)
+            LocalPrestServ:
+              dto.entregaCodigoMunicipio &&
+              dto.entregaCodigoMunicipio !==
+                (config.ibgeCode || config.emitCmun)
+                ? 2
+                : 1,
             natOp: dto.naturezaOperacao || 1, // 1 = Tributação no município
             Operacao: 1,
             RegEspTrib: 1, // 1 = Nenhum
@@ -217,6 +222,21 @@ export class NfseBuilderService {
         dto.codigoMunicipio || config.ibgeCode || '0',
         10,
       ),
+      ...(dto.entregaEndereco
+        ? {
+            LocalPrestacao: {
+              SerEndTpLgr: 'Rua',
+              SerEndLgr: dto.entregaEndereco,
+              SerEndNumero: dto.entregaNumero || 'S/N',
+              SerEndBairro: dto.entregaBairro || '',
+              SerEndxMun: dto.entregaMunicipio || '',
+              SerEndcMun: parseInt(dto.entregaCodigoMunicipio || '0', 10) || 0,
+              SerEndCep:
+                parseInt((dto.entregaCep || '').replace(/\D/g, ''), 10) || 0,
+              SerEndSiglaUF: dto.entregaUf || '',
+            },
+          }
+        : {}),
     };
   }
 

@@ -228,6 +228,7 @@ export class NfseService {
       clientId: clientId || null,
       selectedAddressId,
       clientAddresses,
+      entrega: null,
 
       // Prestador
       prestador: {
@@ -340,13 +341,19 @@ export class NfseService {
         0,
       ) / 100;
 
-    // Priorizar endereço selecionado via DTO, senão endereço de entrega da OS, senão o primeiro cadastrado
-    const selectedAddress = dto.addressId
+    // Tomador: sempre o principal cadastral do cliente
+    const clientAddress = client.address?.[0];
+
+    // Local de prestação / entrega
+    const selectedEntregaAddress = dto.addressId
       ? client.address?.find((a: any) => a.id === dto.addressId)
       : null;
-    const deliveryAddress = (quotation as any).deliveryInfo?.clientAddress;
-    const clientAddress =
-      selectedAddress || deliveryAddress || client.address?.[0];
+    // Se o usuário especificou addressId ou manual, usamos. Caso contrário, usamos a entrega da OS se existente
+    const entregaAddress =
+      selectedEntregaAddress ||
+      (dto.entregaEndereco
+        ? null
+        : (quotation as any).deliveryInfo?.clientAddress);
 
     // Buscar código IBGE do município do tomador via CEP
     let tomadorCmun = '';
@@ -372,6 +379,40 @@ export class NfseService {
       }
     } else {
       this.logger.warn('Tomador sem CEP cadastrado');
+    }
+
+    // Buscar código IBGE do local de prestação (entrega) se aplicável
+    let entregaCmun = '';
+    let entregaMunicipio = dto.entregaMunicipio || entregaAddress?.city || '';
+    let entregaUf = dto.entregaUf || entregaAddress?.state || '';
+    const entregaCep = dto.entregaCep || entregaAddress?.zipcode || '';
+    const entregaEndereco = dto.entregaEndereco || entregaAddress?.street || '';
+    const entregaNumero = dto.entregaNumero || entregaAddress?.number || '';
+    const entregaComplemento =
+      dto.entregaComplemento || entregaAddress?.complement || '';
+    const entregaBairro =
+      dto.entregaBairro || entregaAddress?.neighborhood || '';
+
+    if (entregaEndereco) {
+      if (entregaCep) {
+        this.logger.log(
+          `Buscando código IBGE para CEP de prestação: ${entregaCep}`,
+        );
+        const cepData = await fetchCepData(entregaCep);
+        if (cepData) {
+          entregaCmun = cepData.codigoIbge;
+          entregaMunicipio = cepData.cidade;
+          entregaUf = cepData.uf;
+        }
+      }
+
+      if (
+        !entregaCmun &&
+        (dto.entregaCodigoMunicipio || (entregaAddress as any)?.ibgeCode)
+      ) {
+        entregaCmun =
+          dto.entregaCodigoMunicipio || (entregaAddress as any)?.ibgeCode || '';
+      }
     }
 
     // Construir DTO completo
@@ -411,6 +452,18 @@ export class NfseService {
         email: client.email || '',
         telefone: client.phone || client.mobile || '',
       },
+      ...(entregaEndereco
+        ? {
+            entregaEndereco,
+            entregaNumero: entregaNumero || 'S/N',
+            entregaComplemento,
+            entregaBairro,
+            entregaCep,
+            entregaMunicipio,
+            entregaUf,
+            entregaCodigoMunicipio: entregaCmun,
+          }
+        : {}),
     };
 
     // Validar dados obrigatórios
@@ -572,7 +625,12 @@ export class NfseService {
               RPSTipo: 1, // 1 = RPS
               dEmis: new Date().toISOString(),
               dCompetencia: new Date(dto.dataCompetencia).toISOString(),
-              LocalPrestServ: 1, // 1 = No município (default)
+              LocalPrestServ:
+                dto.entregaCodigoMunicipio &&
+                dto.entregaCodigoMunicipio !==
+                  (config.ibgeCode || config.emitCmun)
+                  ? 2
+                  : 1,
               natOp: dto.naturezaOperacao || 1, // 1 = Tributação no município
               Operacao: 1,
               RegEspTrib: 1, // 1 = Nenhum
@@ -634,6 +692,25 @@ export class NfseService {
                   dto.codigoMunicipio || config.ibgeCode || '0',
                   10,
                 ),
+                ...(dto.entregaEndereco
+                  ? {
+                      LocalPrestacao: {
+                        SerEndTpLgr: 'Rua',
+                        SerEndLgr: dto.entregaEndereco,
+                        SerEndNumero: dto.entregaNumero || 'S/N',
+                        SerEndBairro: dto.entregaBairro || '',
+                        SerEndxMun: dto.entregaMunicipio || '',
+                        SerEndcMun:
+                          parseInt(dto.entregaCodigoMunicipio || '0', 10) || 0,
+                        SerEndCep:
+                          parseInt(
+                            (dto.entregaCep || '').replace(/\D/g, ''),
+                            10,
+                          ) || 0,
+                        SerEndSiglaUF: dto.entregaUf || '',
+                      },
+                    }
+                  : {}),
               },
               Tomador: {
                 TomaCNPJ: dto.tomador.cnpj

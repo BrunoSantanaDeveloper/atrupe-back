@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { UserResponseDto } from './dto/response.dto';
 import { CacheService } from 'src/svc/cache/cache.service';
@@ -127,7 +131,40 @@ export class UserCrudService {
     });
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto) {
+  private async assertCanUpdateUser(id: string, actor?: any) {
+    if (!actor || actor.isSystemAdmin) return;
+
+    if (actor.userId === id) return;
+
+    if (!actor.companyId) {
+      throw new ForbiddenException('Acesso negado.');
+    }
+
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        employee: {
+          select: { companyId: true },
+        },
+      },
+    });
+
+    if (!targetUser) {
+      throw new NotFoundException('Usuario nao encontrado.');
+    }
+
+    const sameCompany = targetUser.employee.some(
+      (employee) => employee.companyId === actor.companyId,
+    );
+
+    if (!sameCompany) {
+      throw new ForbiddenException('Acesso negado.');
+    }
+  }
+
+  async update(id: string, updateUserDto: UpdateUserDto, actor?: any) {
+    await this.assertCanUpdateUser(id, actor);
+
     const { isActive, password, ...rest } = updateUserDto;
 
     const updatedUser = await this.prisma.$transaction(async (tx) => {

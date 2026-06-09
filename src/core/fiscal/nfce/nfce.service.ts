@@ -44,6 +44,7 @@ export class NfceService {
       ambiente: config.environment, // 'HOMOLOGACAO' ou 'PRODUCAO'
       emitCrt: config.emitCrt || 1,
       naturezaOperacao: 'Venda de mercadoria',
+      informacoesComplementares: config.taxInfoText || '',
       prazoCancelamentoMinutos: config.prazoCancelamentoNfce ?? 30,
     };
   }
@@ -176,6 +177,12 @@ export class NfceService {
     }
 
     // Obter próximo número da NFC-e (sem incrementar ainda - só incrementa após emissão bem-sucedida)
+    if (!config.cscId || !config.cscToken) {
+      throw new BadRequestException(
+        'CSC da NFC-e nao configurado. Informe o ID do CSC e o Token CSC no emissor fiscal antes de emitir NFC-e.',
+      );
+    }
+
     const numero = config.proximoNumeroNfce || 1;
 
     // Calcular valor total
@@ -216,6 +223,12 @@ export class NfceService {
         ),
         valorTroco: dto.valorTroco || 0,
         formaPagamento: dto.pagamentos[0]?.tipo || '01',
+        cpfConsumidor: dto.cpfConsumidor || null,
+        consumidorNome: dto.consumidorNome || null,
+        informacoesComplementares:
+          dto.informacoesComplementares || config.taxInfoText || null,
+        itensSnapshot: dto.itens as any,
+        pagamentosSnapshot: dto.pagamentos as any,
       },
     });
 
@@ -254,6 +267,17 @@ export class NfceService {
 
       // Construir payload para o Invoicy (NFC-e usa modelo 65)
       const now = new Date();
+      const consumidorDoc = (dto.cpfConsumidor || '').replace(/\D/g, '');
+      const dest =
+        consumidorDoc.length === 11 || consumidorDoc.length === 14
+          ? {
+              ...(consumidorDoc.length === 14
+                ? { CNPJ_dest: consumidorDoc }
+                : { CPF_dest: consumidorDoc }),
+              xNome_dest: dto.consumidorNome || 'CONSUMIDOR',
+              indIEDest: 9,
+            }
+          : undefined;
       const invoicyRequest: InvoicyNfeRequest = {
         Documento: {
           ModeloDocumento: 'NFCe',
@@ -313,20 +337,7 @@ export class NfceService {
                 ) || 0,
             },
           },
-          dest: {
-            xNome_dest: dto.consumidorNome || 'CONSUMIDOR NAO IDENTIFICADO',
-            indIEDest: 9,
-            enderDest: {
-              xLgr_dest: '',
-              nro_dest: '',
-              xBairro_dest: '',
-              cMun_dest: 0,
-              xMun_dest: '',
-              UF_dest: config.company.address.state || '',
-              CEP_dest: 0,
-              cPais_dest: 1058,
-            },
-          },
+          ...(dest ? { dest } : {}),
           det: dto.itens.map((item, index) => {
             const fiscalData = item.productId
               ? fiscalDataMap.get(item.productId)

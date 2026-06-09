@@ -1,0 +1,21 @@
+<p>Ola, {{recipientName}}.</p>
+
+<p>A NF-e {{numero}}/{{serie}} emitida por {{emitterName}} foi autorizada.</p>
+
+<p><strong>Valor:</strong> {{valorTotal}}</p>
+{{#if chaveAcesso}}
+<p><strong>Chave de acesso:</strong> {{chaveAcesso}}</p>
+{{/if}}
+
+{{#if hasDanfe}}
+<p>
+  Voce pode acessar o DANFE pelo link abaixo:<br />
+  <a href="{{danfeUrl}}">{{danfeUrl}}</a>
+</p>
+{{/if}}
+
+{{#if hasXml}}
+<p>O XML autorizado segue anexado a este e-mail.</p>
+{{/if}}
+
+<p>Atenciosamente,<br />Atrupe</p>

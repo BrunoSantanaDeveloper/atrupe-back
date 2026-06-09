@@ -393,6 +393,48 @@ export class EmitNfeDto {
   @IsOptional()
   destIdEstrangeiro?: string;
 
+  @ApiPropertyOptional({ description: 'CNPJ/CPF do local de entrega' })
+  @IsString()
+  @IsOptional()
+  entregaCnpjCpf?: string;
+
+  @ApiPropertyOptional({ description: 'Endereço do local de entrega' })
+  @IsString()
+  @IsOptional()
+  entregaEndereco?: string;
+
+  @ApiPropertyOptional({
+    description: 'Número do endereço do local de entrega',
+  })
+  @IsString()
+  @IsOptional()
+  entregaNumero?: string;
+
+  @ApiPropertyOptional({ description: 'Complemento do local de entrega' })
+  @IsString()
+  @IsOptional()
+  entregaComplemento?: string;
+
+  @ApiPropertyOptional({ description: 'Bairro do local de entrega' })
+  @IsString()
+  @IsOptional()
+  entregaBairro?: string;
+
+  @ApiPropertyOptional({ description: 'CEP do local de entrega' })
+  @IsString()
+  @IsOptional()
+  entregaCep?: string;
+
+  @ApiPropertyOptional({ description: 'Município do local de entrega' })
+  @IsString()
+  @IsOptional()
+  entregaMunicipio?: string;
+
+  @ApiPropertyOptional({ description: 'UF do local de entrega' })
+  @IsString()
+  @IsOptional()
+  entregaUf?: string;
+
   @ApiPropertyOptional({ description: 'Itens da NF-e', type: [NfeItemDto] })
   @IsArray()
   @IsOptional()

@@ -9,6 +9,7 @@ import { NfeStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
+import { NfeEmailService } from './nfe-email.service';
 import {
   InvoicyNfeRequest,
   INVOICY_SUCCESS_CODES,
@@ -34,6 +35,7 @@ export class NfeService {
     private readonly invoicyService: InvoicyService,
     private readonly invoicyApiService: InvoicyApiService,
     private readonly productFiscalService: ProductFiscalService,
+    private readonly nfeEmailService: NfeEmailService,
   ) {}
 
   /**
@@ -112,9 +114,9 @@ export class NfeService {
       );
     }
 
-    // Priorizar endereço de entrega da OS; fallback para endereço principal do cliente
+    // Destinatário usa sempre o endereço cadastral principal do cliente
+    const clientAddress = client.address?.[0];
     const deliveryAddress = quotation.deliveryInfo?.clientAddress;
-    const clientAddress = deliveryAddress || client.address?.[0];
 
     // Ensure fiscal data exists for all products (auto-populate defaults if missing)
     const productIds = quotation.quotationProduct.map((qp) => qp.productId);
@@ -212,7 +214,7 @@ export class NfeService {
           }
         : null,
       clientId: client.id,
-      selectedAddressId: deliveryAddress?.id || client.address?.[0]?.id || null,
+      selectedAddressId: deliveryAddress?.id || null,
       clientAddresses: Array.isArray(client.address)
         ? client.address.map((addr: any) => ({
             id: addr.id,
@@ -265,6 +267,18 @@ export class NfeService {
         complemento: clientAddress?.complement || '',
         pais: '1058', // Brasil
       },
+      entrega: deliveryAddress
+        ? {
+            cnpjCpf: client.cnpj || client.cpf || '',
+            endereco: deliveryAddress.street || '',
+            numero: deliveryAddress.number || 'S/N',
+            complemento: deliveryAddress.complement || '',
+            bairro: deliveryAddress.neighborhood || '',
+            cidade: deliveryAddress.city || '',
+            estado: deliveryAddress.state || '',
+            cep: deliveryAddress.zipcode || '',
+          }
+        : null,
 
       // Itens
       items,
@@ -587,6 +601,7 @@ export class NfeService {
       clientId: clientId || null,
       selectedAddressId,
       clientAddresses,
+      entrega: null,
 
       // Configuração de emissão
       emissao: {
@@ -1709,6 +1724,7 @@ export class NfeService {
               cPais_dest: parseInt(dto.destPais || '1058', 10),
             },
           },
+          entrega: await this.buildEntregaInline(dto),
           det: dto.items.map((item, index) => ({
             prod: {
               cProd: item.productId || `ITEM${index + 1}`,
@@ -1917,6 +1933,20 @@ export class NfeService {
       // Incrementar número da NF-e somente após emissão bem-sucedida
       await this.invoicyService.incrementNfeNumber(config.id);
 
+      await this.nfeEmailService
+        .sendAuthorizedNfeEmail({
+          nfe: updatedNfe,
+          config,
+          recipientEmail: dto.destEmail,
+          recipientName: dto.destNome,
+          automatic: true,
+        })
+        .catch((emailError) => {
+          this.logger.warn(
+            `Envio automatico de e-mail da NF-e ${updatedNfe.id} falhou: ${emailError.message}`,
+          );
+        });
+
       return updatedNfe;
     } catch (error) {
       // Atualizar status para rejeitado em caso de erro
@@ -1967,6 +1997,57 @@ export class NfeService {
       DF: 53,
     };
     return ufCodes[uf?.toUpperCase()] || 43; // Default RS
+  }
+
+  /**
+   * Constrói bloco de local de entrega para emissão inline
+   */
+  private async buildEntregaInline(dto: EmitNfeDto): Promise<any> {
+    if (!dto.entregaEndereco) {
+      return undefined;
+    }
+
+    let cmun = 0;
+    let uf = dto.entregaUf || '';
+    let municipio = dto.entregaMunicipio || '';
+
+    if (dto.entregaCep) {
+      this.logger.log(
+        `Buscando código IBGE de entrega para CEP: ${dto.entregaCep}`,
+      );
+      const cepData = await fetchCepData(dto.entregaCep);
+      if (cepData) {
+        cmun = parseInt(cepData.codigoIbge, 10) || 0;
+        uf = cepData.uf;
+        municipio = cepData.cidade;
+        this.logger.log(`Código IBGE da entrega: ${cmun} (${municipio}/${uf})`);
+      }
+    }
+
+    if (!cmun) {
+      throw new BadRequestException(
+        'CEP de entrega inválido ou código IBGE não encontrado para o endereço de entrega.',
+      );
+    }
+
+    const cleanCnpjCpf = (dto.entregaCnpjCpf || dto.destCnpjCpf || '').replace(
+      /\D/g,
+      '',
+    );
+
+    return {
+      ...(cleanCnpjCpf.length === 14 ? { CNPJ_entrega: cleanCnpjCpf } : {}),
+      ...(cleanCnpjCpf.length === 11 ? { CPF_entrega: cleanCnpjCpf } : {}),
+      xLgr_entrega: dto.entregaEndereco,
+      nro_entrega: dto.entregaNumero || 'S/N',
+      xCpl_entrega: dto.entregaComplemento || undefined,
+      xBairro_entrega: dto.entregaBairro || '',
+      cMun_entrega: cmun,
+      xMun_entrega: municipio,
+      UF_entrega: uf,
+      CEP_entrega:
+        parseInt((dto.entregaCep || '').replace(/\D/g, ''), 10) || undefined,
+    };
   }
 
   async cancel(id: string, companyId: string, dto: CancelNfeDto) {
@@ -2231,6 +2312,21 @@ export class NfeService {
     }
 
     return { xml: nfe.xmlAutorizado };
+  }
+
+  async sendAuthorizedEmail(id: string, companyId: string) {
+    const nfe = await this.findById(id, companyId);
+    const config = await this.invoicyService.getConfig(companyId);
+
+    if (!config) {
+      throw new BadRequestException('Configuracao do Invoicy nao encontrada.');
+    }
+
+    return this.nfeEmailService.sendAuthorizedNfeEmail({
+      nfe,
+      config,
+      automatic: false,
+    });
   }
 
   // ==================== Draft Methods ====================

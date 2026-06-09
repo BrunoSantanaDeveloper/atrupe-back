@@ -149,6 +149,8 @@ describe('NfceService', () => {
         isActive: true,
         ibgeCode: '4314902',
         emitCrt: 1,
+        cscId: '1',
+        cscToken: 'CSC_TOKEN_TESTE',
         company: {
           cnpj: '12345678000123',
           legalName: 'Empresa Teste LTDA',
@@ -238,6 +240,106 @@ describe('NfceService', () => {
       expect(invoicyService.incrementNfceNumber).toHaveBeenCalledWith(
         'config-1', // incrementNfceNumber recebe config.id
       );
+    });
+
+    it('should send recipient document when consumer CPF is provided', async () => {
+      await service.emit(mockCompanyId, {
+        naturezaOperacao: 'Venda',
+        cpfConsumidor: '111.222.333-44',
+        consumidorNome: 'Cliente Teste',
+        itens: [
+          {
+            productId: '1',
+            codigo: '001',
+            descricao: 'Produto',
+            ncm: '12345678',
+            cfop: '5102',
+            unidade: 'UN',
+            quantidade: 1,
+            valorUnitario: 100,
+          },
+        ],
+        pagamentos: [{ tipo: '01', valor: 100 }],
+      });
+
+      const request = invoicyApiService.emitNfe.mock.calls[0][1][0];
+
+      expect(request.Documento.dest).toMatchObject({
+        CPF_dest: '11122233344',
+        xNome_dest: 'Cliente Teste',
+        indIEDest: 9,
+      });
+      expect(request.Documento.dest.enderDest).toBeUndefined();
+    });
+
+    it('should omit recipient when consumer CPF/CNPJ is not provided', async () => {
+      await service.emit(mockCompanyId, {
+        naturezaOperacao: 'Venda',
+        consumidorNome: 'Cliente sem documento',
+        itens: [
+          {
+            productId: '1',
+            codigo: '001',
+            descricao: 'Produto',
+            ncm: '12345678',
+            cfop: '5102',
+            unidade: 'UN',
+            quantidade: 1,
+            valorUnitario: 100,
+          },
+        ],
+        pagamentos: [{ tipo: '01', valor: 100 }],
+      });
+
+      const request = invoicyApiService.emitNfe.mock.calls[0][1][0];
+
+      expect(request.Documento.dest).toBeUndefined();
+    });
+
+    it('should require CSC configuration before emission', async () => {
+      invoicyService.getConfig.mockResolvedValueOnce({
+        id: 'config-1',
+        serieNfce: 1,
+        proximoNumeroNfce: 1,
+        ambiente: 2,
+        isActive: true,
+        ibgeCode: '4314902',
+        emitCrt: 1,
+        cscId: null,
+        cscToken: null,
+        company: {
+          cnpj: '12345678000123',
+          legalName: 'Empresa Teste LTDA',
+          stateRegistration: '1234567890',
+          address: {
+            street: 'Rua Teste',
+            number: '100',
+            neighborhood: 'Centro',
+            city: 'Porto Alegre',
+            state: 'RS',
+            zipcode: '90000000',
+          },
+        },
+      });
+
+      await expect(
+        service.emit(mockCompanyId, {
+          naturezaOperacao: 'Venda',
+          itens: [
+            {
+              productId: '1',
+              codigo: '001',
+              descricao: 'Produto',
+              ncm: '12345678',
+              cfop: '5102',
+              unidade: 'UN',
+              quantidade: 1,
+              valorUnitario: 100,
+            },
+          ],
+          pagamentos: [{ tipo: '01', valor: 100 }],
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

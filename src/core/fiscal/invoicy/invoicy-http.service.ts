@@ -48,6 +48,11 @@ export class InvoicyHttpService {
     return this.INVOICY_URLS[environment] || this.INVOICY_URLS.HOMOLOGACAO;
   }
 
+  private getPartnerEnvironment(): InvoicyEnvironment {
+    const environment = this.configService.get<string>('INVOICY_ENVIRONMENT');
+    return environment === 'PRODUCAO' ? 'PRODUCAO' : 'HOMOLOGACAO';
+  }
+
   /**
    * Get global partner key from environment
    */
@@ -573,9 +578,10 @@ export class InvoicyHttpService {
    * but with Atrupe's own CNPJ and accessKey.
    */
   async authenticateAsPartner(
-    environment: InvoicyEnvironment = 'HOMOLOGACAO',
+    environment?: InvoicyEnvironment,
   ): Promise<string> {
-    const cacheKey = `partner_${environment}`;
+    const selectedEnvironment = environment || this.getPartnerEnvironment();
+    const cacheKey = `partner_${selectedEnvironment}`;
     const cached = this.tokenCache.get(cacheKey);
     const now = Math.floor(Date.now() / 1000);
 
@@ -601,7 +607,7 @@ export class InvoicyHttpService {
     };
 
     const jwtToken = jwt.sign(jwtPayload, accessKey, { algorithm: 'HS256' });
-    const baseUrl = this.getBaseUrl(environment);
+    const baseUrl = this.getBaseUrl(selectedEnvironment);
 
     try {
       const response = await this.httpClient.post<InvoicyAuthResponse>(
@@ -633,6 +639,108 @@ export class InvoicyHttpService {
     }
   }
 
+  private extractCompanyAccessKey(
+    payload: any,
+  ): { accessKey: string; cryptoKey?: string } | null {
+    const queue = [payload];
+    let inspected = 0;
+
+    while (queue.length > 0 && inspected < 100) {
+      inspected++;
+      const current = queue.shift();
+
+      if (!current) continue;
+
+      if (Array.isArray(current)) {
+        queue.push(...current);
+        continue;
+      }
+
+      if (typeof current !== 'object') continue;
+
+      const accessKey = current.EmpAK || current.accessKey || current.AccessKey;
+      if (accessKey) {
+        return {
+          accessKey,
+          cryptoKey:
+            current.ChaveCriptografia || current.cryptoKey || current.CryptoKey,
+        };
+      }
+
+      for (const value of Object.values(current)) {
+        if (value && (typeof value === 'object' || Array.isArray(value))) {
+          queue.push(value);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private hasSuccessCode(payload: any): boolean {
+    const queue = [payload];
+    let inspected = 0;
+
+    while (queue.length > 0 && inspected < 100) {
+      inspected++;
+      const current = queue.shift();
+
+      if (!current) continue;
+
+      if (Array.isArray(current)) {
+        queue.push(...current);
+        continue;
+      }
+
+      if (typeof current !== 'object') continue;
+
+      if (current.Codigo === 100 || current.Codigo === '100') return true;
+
+      for (const value of Object.values(current)) {
+        if (value && (typeof value === 'object' || Array.isArray(value))) {
+          queue.push(value);
+        }
+      }
+    }
+
+    return false;
+  }
+
+  private getRegistrationRejection(payload: any): string | null {
+    const queue = [payload];
+    let inspected = 0;
+
+    while (queue.length > 0 && inspected < 100) {
+      inspected++;
+      const current = queue.shift();
+
+      if (!current) continue;
+
+      if (Array.isArray(current)) {
+        queue.push(...current);
+        continue;
+      }
+
+      if (typeof current !== 'object') continue;
+
+      if (
+        current.Descricao &&
+        current.Codigo !== 100 &&
+        current.Codigo !== '100'
+      ) {
+        return `Codigo ${current.Codigo}: ${current.Descricao}`;
+      }
+
+      for (const value of Object.values(current)) {
+        if (value && (typeof value === 'object' || Array.isArray(value))) {
+          queue.push(value);
+        }
+      }
+    }
+
+    return null;
+  }
+
   /**
    * Register a new company in Invoicy via partner API.
    * Returns the EmpAK (Access Key) needed for future operations.
@@ -654,29 +762,46 @@ export class InvoicyHttpService {
     certificate?: string;
     certificatePassword?: string;
     certificateType?: string;
-  }): Promise<{ accessKey: string; cryptoKey?: string }> {
+    environment?: InvoicyEnvironment;
+  }): Promise<{
+    accessKey: string;
+    cryptoKey?: string;
+    environment: InvoicyEnvironment;
+  }> {
+    const environment = data.environment || this.getPartnerEnvironment();
+
     this.logger.log(
-      `Registering company ${this.maskCnpj(data.cnpj)} in Invoicy`,
+      `Registering company ${this.maskCnpj(data.cnpj)} in Invoicy (${environment})`,
     );
 
     // First check if company already exists
     try {
-      const existing = await this.consultCompany(data.cnpj);
-      if (existing?.EmpAK) {
+      const existing = await this.consultCompany(data.cnpj, environment);
+      const existingCredentials = this.extractCompanyAccessKey(existing);
+      if (existingCredentials) {
         this.logger.log(
           'Company already registered in Invoicy, returning existing key',
         );
+        if (data.certificate) {
+          await this.updateCompanyCertificate({
+            cnpj: data.cnpj,
+            certificate: data.certificate,
+            certificatePassword: data.certificatePassword || '',
+            certificateType: data.certificateType,
+            environment,
+          });
+        }
         return {
-          accessKey: existing.EmpAK,
-          cryptoKey: existing.ChaveCriptografia,
+          ...existingCredentials,
+          environment,
         };
       }
     } catch {
       // Company not found — proceed with registration
     }
 
-    const token = await this.authenticateAsPartner();
-    const baseUrl = this.getBaseUrl('HOMOLOGACAO');
+    const token = await this.authenticateAsPartner(environment);
+    const baseUrl = this.getBaseUrl(environment);
 
     const payload = [
       {
@@ -721,6 +846,26 @@ export class InvoicyHttpService {
         `Invoicy company registration response: ${JSON.stringify(result).substring(0, 200)}`,
       );
 
+      const credentials = this.extractCompanyAccessKey(result);
+      if (credentials) {
+        return { ...credentials, environment };
+      }
+
+      const rejection = this.getRegistrationRejection(result);
+      if (rejection) {
+        throw new Error(`Invoicy rejeitou o cadastro. ${rejection}`);
+      }
+
+      if (this.hasSuccessCode(result)) {
+        // Some Invoicy responses confirm the registration without returning EmpAK.
+        // In that case, consult the company right away before falling back to review.
+        const companyData = await this.consultCompany(data.cnpj, environment);
+        const consultedCredentials = this.extractCompanyAccessKey(companyData);
+        if (consultedCredentials) {
+          return { ...consultedCredentials, environment };
+        }
+      }
+
       // Extract EmpAK from response
       // Response structure: { Codigo, Mensagem, RetornoCadastro: [{ EmpAK, ChaveCriptografia }] }
       if (result?.RetornoCadastro?.length > 0) {
@@ -729,6 +874,7 @@ export class InvoicyHttpService {
           return {
             accessKey: cadastro.EmpAK,
             cryptoKey: cadastro.ChaveCriptografia,
+            environment,
           };
         }
       }
@@ -742,6 +888,7 @@ export class InvoicyHttpService {
             return {
               accessKey: cadastro.EmpAK,
               cryptoKey: cadastro.ChaveCriptografia,
+              environment,
             };
           }
           // Se não tem EmpAK e tem Descricao de erro (ex: 101)
@@ -754,11 +901,12 @@ export class InvoicyHttpService {
         // Check for success code 100
         if (first.Codigo === 100 || first.Codigo === '100') {
           // Try to get company data via GET
-          const companyData = await this.consultCompany(data.cnpj);
+          const companyData = await this.consultCompany(data.cnpj, environment);
           if (companyData?.EmpAK) {
             return {
               accessKey: companyData.EmpAK,
               cryptoKey: companyData.ChaveCriptografia,
+              environment,
             };
           }
         }
@@ -785,9 +933,13 @@ export class InvoicyHttpService {
   /**
    * Consult company by CNPJ in Invoicy.
    */
-  async consultCompany(cnpj: string): Promise<any> {
-    const token = await this.authenticateAsPartner();
-    const baseUrl = this.getBaseUrl('HOMOLOGACAO');
+  async consultCompany(
+    cnpj: string,
+    environment?: InvoicyEnvironment,
+  ): Promise<any> {
+    const selectedEnvironment = environment || this.getPartnerEnvironment();
+    const token = await this.authenticateAsPartner(selectedEnvironment);
+    const baseUrl = this.getBaseUrl(selectedEnvironment);
     const cleanCnpj = cnpj.replace(/\D/g, '');
 
     const response = await this.httpClient.get(
@@ -812,13 +964,16 @@ export class InvoicyHttpService {
     certificate: string;
     certificatePassword: string;
     certificateType?: string;
+    environment?: InvoicyEnvironment;
   }): Promise<void> {
+    const environment = data.environment || this.getPartnerEnvironment();
+
     this.logger.log(
-      `Updating certificate for company ${this.maskCnpj(data.cnpj)} in Invoicy`,
+      `Updating certificate for company ${this.maskCnpj(data.cnpj)} in Invoicy (${environment})`,
     );
 
-    const token = await this.authenticateAsPartner();
-    const baseUrl = this.getBaseUrl('HOMOLOGACAO');
+    const token = await this.authenticateAsPartner(environment);
+    const baseUrl = this.getBaseUrl(environment);
 
     const payload = [
       {

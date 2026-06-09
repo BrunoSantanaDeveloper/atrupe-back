@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsBoolean,
+  IsEmail,
   IsNumber,
   Min,
   Max,
@@ -143,6 +144,18 @@ export class CreateInvoicyConfigDto {
   @Min(1)
   proximoNumeroNfce?: number;
 
+  @ApiPropertyOptional({ description: 'ID do CSC da NFC-e' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  cscId?: string;
+
+  @ApiPropertyOptional({ description: 'Token CSC da NFC-e' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  cscToken?: string;
+
   // NFS-e fields
   @ApiPropertyOptional({ description: 'Série da NFS-e (RPS)' })
   @IsString()
@@ -212,6 +225,39 @@ export class CreateInvoicyConfigDto {
   @IsOptional()
   @Transform(emptyToUndefined)
   taxInfoText?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Envia DANFE/XML automaticamente ao destinatário após autorização',
+    default: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  sendDanfeXmlAutomatically?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Inclui o link do DANFE no e-mail fiscal',
+    default: true,
+  })
+  @IsBoolean()
+  @IsOptional()
+  sendDanfeAutomatically?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Anexa o XML autorizado no e-mail fiscal',
+    default: true,
+  })
+  @IsBoolean()
+  @IsOptional()
+  sendXmlAutomatically?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'E-mail adicional para receber copia do envio fiscal',
+  })
+  @IsEmail()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  sendFiscalEmailCopyTo?: string;
 }
 
 export class UpdateInvoicyConfigDto {
@@ -312,6 +358,18 @@ export class UpdateInvoicyConfigDto {
   @Min(1)
   proximoNumeroNfce?: number;
 
+  @ApiPropertyOptional({ description: 'ID do CSC da NFC-e' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  cscId?: string;
+
+  @ApiPropertyOptional({ description: 'Token CSC da NFC-e' })
+  @IsString()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  cscToken?: string;
+
   // NFS-e fields
   @ApiPropertyOptional({ description: 'Série da NFS-e (RPS)' })
   @IsString()
@@ -386,4 +444,34 @@ export class UpdateInvoicyConfigDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Envia DANFE/XML automaticamente ao destinatário após autorização',
+  })
+  @IsBoolean()
+  @IsOptional()
+  sendDanfeXmlAutomatically?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Inclui o link do DANFE no e-mail fiscal',
+  })
+  @IsBoolean()
+  @IsOptional()
+  sendDanfeAutomatically?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Anexa o XML autorizado no e-mail fiscal',
+  })
+  @IsBoolean()
+  @IsOptional()
+  sendXmlAutomatically?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'E-mail adicional para receber copia do envio fiscal',
+  })
+  @IsEmail()
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  sendFiscalEmailCopyTo?: string;
 }

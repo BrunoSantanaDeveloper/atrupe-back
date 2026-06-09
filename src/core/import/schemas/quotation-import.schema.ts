@@ -113,12 +113,15 @@ export const QUOTATION_IMPORT_SCHEMA = {
     },
     {
       name: 'VendedorEmail',
-      required: true,
+      required: false,
       type: 'string',
       maxLength: 255,
-      description: 'Email do vendedor',
+      description:
+        'Email do vendedor. Se ficar vazio, usa um vendedor ativo da empresa',
       example: 'vendedor@empresa.com',
       validate: async (value: string, companyId: string, prisma: any) => {
+        if (!value || value.trim() === '') return null;
+
         const employee = await prisma.employee.findFirst({
           where: {
             user: {

@@ -540,6 +540,7 @@ export class AdminDashboardService {
             companyName: company.legalName || company.name,
             code: `#${company.id.slice(0, 4).toUpperCase()}`,
             document: company.cnpj || '',
+            userId: user?.id || '',
             userName: user?.name || '',
             userDocument: employee?.cpf || '',
             phone: user?.phone || company.phone || company.mobile || '',

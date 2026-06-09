@@ -47,6 +47,10 @@ export class QuotationService {
     return this.crudService.findAll(dto);
   }
 
+  findAllForExport(dto: FilterQuotationDto) {
+    return this.crudService.findAllForExport(dto);
+  }
+
   findAllQuantity(companyId: string, sellerId?: string) {
     return this.crudService.findAllQuantity(companyId, sellerId);
   }

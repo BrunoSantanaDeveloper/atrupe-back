@@ -1,6 +1,8 @@
 import { Controller, Get, Query, UseGuards, Req } from '@nestjs/common';
 import { ReportService } from './report.service';
 import { JwtAuthGuard } from '../../core/auth/guards/jwt.guard';
+import { PermissionsGuard } from '../../core/auth/abac/permissions.guard';
+import { HasAnyPermission } from '../../core/auth/abac/has-any-permission.decorator';
 import {
   BlockLevelGuard,
   RequireUnblocked,
@@ -18,7 +20,7 @@ import { Request } from 'express';
 
 const RESOURCE = 'report';
 
-@UseGuards(JwtAuthGuard, BlockLevelGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, BlockLevelGuard)
 @Controller(RESOURCE)
 export class ReportController {
   constructor(
@@ -51,6 +53,11 @@ export class ReportController {
   // ============== FINANCIAL REPORT ENDPOINTS ==============
 
   @Get('financial/summary')
+  @HasAnyPermission(
+    { action: 'view', resource: 'financial:flow' },
+    { action: 'view', resource: 'reports:financial' },
+    { action: 'view', resource: 'dashboard:financial' },
+  )
   async getFinancialSummary(
     @Query() filters: FinancialReportFilterDto,
     @Req() req: Request,
@@ -60,6 +67,11 @@ export class ReportController {
   }
 
   @Get('financial/chart')
+  @HasAnyPermission(
+    { action: 'view', resource: 'financial:flow' },
+    { action: 'view', resource: 'reports:financial' },
+    { action: 'view', resource: 'dashboard:financial' },
+  )
   async getFinancialChart(
     @Query() filters: FinancialReportFilterDto,
     @Req() req: Request,
@@ -69,6 +81,10 @@ export class ReportController {
   }
 
   @Get('financial/table')
+  @HasAnyPermission(
+    { action: 'view', resource: 'financial:flow' },
+    { action: 'view', resource: 'reports:financial' },
+  )
   async getFinancialTable(
     @Query() filters: FinancialReportFilterDto,
     @Req() req: Request,
@@ -78,6 +94,7 @@ export class ReportController {
   }
 
   @Get('financial/pdf-data')
+  @HasAnyPermission({ action: 'view', resource: 'reports:financial' })
   @RequireUnblocked()
   async getFinancialPdfData(
     @Query() filters: FinancialReportFilterDto,
@@ -88,6 +105,7 @@ export class ReportController {
   }
 
   @Get('financial/advanced-pdf-data')
+  @HasAnyPermission({ action: 'view', resource: 'reports:financial' })
   @RequireUnblocked()
   async getAdvancedFinancialPdfData(
     @Query() filters: AdvancedFinancialReportFilterDto,
@@ -111,6 +129,11 @@ export class ReportController {
   }
 
   @Get('sales/summary')
+  @HasAnyPermission(
+    { action: 'view', resource: 'reports:sales' },
+    { action: 'view', resource: 'dashboard:sales' },
+    { action: 'view', resource: 'dashboard:quotations' },
+  )
   async getSalesSummary(
     @Query() filters: SalesReportFilterDto,
     @Req() req: Request,
@@ -121,6 +144,10 @@ export class ReportController {
   }
 
   @Get('sales/evolution')
+  @HasAnyPermission(
+    { action: 'view', resource: 'reports:sales' },
+    { action: 'view', resource: 'dashboard:rankings' },
+  )
   async getSalesEvolution(
     @Query() filters: SalesReportFilterDto,
     @Req() req: Request,
@@ -131,6 +158,7 @@ export class ReportController {
   }
 
   @Get('sales/approved-rejected')
+  @HasAnyPermission({ action: 'view', resource: 'reports:sales' })
   async getApprovedRejected(
     @Query() filters: SalesReportFilterDto,
     @Req() req: Request,
@@ -141,6 +169,7 @@ export class ReportController {
   }
 
   @Get('sales/quotations-origin')
+  @HasAnyPermission({ action: 'view', resource: 'reports:sales' })
   async getQuotationsOrigin(
     @Query() filters: SalesReportFilterDto,
     @Req() req: Request,
@@ -151,6 +180,7 @@ export class ReportController {
   }
 
   @Get('sales/orders-origin')
+  @HasAnyPermission({ action: 'view', resource: 'reports:sales' })
   async getOrdersOrigin(
     @Query() filters: SalesReportFilterDto,
     @Req() req: Request,
@@ -161,6 +191,10 @@ export class ReportController {
   }
 
   @Get('sales/top-products')
+  @HasAnyPermission(
+    { action: 'view', resource: 'reports:sales' },
+    { action: 'view', resource: 'dashboard:rankings' },
+  )
   async getTopProducts(
     @Query() filters: SalesReportFilterDto,
     @Req() req: Request,
@@ -171,6 +205,10 @@ export class ReportController {
   }
 
   @Get('sales/top-clients')
+  @HasAnyPermission(
+    { action: 'view', resource: 'reports:sales' },
+    { action: 'view', resource: 'dashboard:rankings' },
+  )
   async getTopClients(
     @Query() filters: SalesReportFilterDto,
     @Req() req: Request,
@@ -180,7 +218,22 @@ export class ReportController {
     return this.reportService.getTopClients(companyId, filters);
   }
 
+  @Get('sales/by-seller')
+  @HasAnyPermission(
+    { action: 'view', resource: 'reports:sales' },
+    { action: 'view', resource: 'dashboard:rankings' },
+  )
+  async getSalesBySeller(
+    @Query() filters: SalesReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    await this.enforceSalesPermission(req, filters);
+    return this.reportService.getSalesBySeller(companyId, filters);
+  }
+
   @Get('sales/table')
+  @HasAnyPermission({ action: 'view', resource: 'reports:sales' })
   async getSalesTable(
     @Query() filters: SalesReportFilterDto,
     @Req() req: Request,
@@ -191,6 +244,7 @@ export class ReportController {
   }
 
   @Get('sales/pdf-data')
+  @HasAnyPermission({ action: 'view', resource: 'reports:sales' })
   @RequireUnblocked()
   async getSalesPdfData(
     @Query() filters: SalesReportFilterDto,
@@ -204,6 +258,7 @@ export class ReportController {
   // ============== CASH FLOW REPORT ENDPOINTS ==============
 
   @Get('cash-flow/summary')
+  @HasAnyPermission({ action: 'view', resource: 'reports:financial' })
   async getCashFlowSummary(
     @Query() filters: CashFlowReportFilterDto,
     @Req() req: Request,
@@ -213,6 +268,7 @@ export class ReportController {
   }
 
   @Get('cash-flow/chart')
+  @HasAnyPermission({ action: 'view', resource: 'reports:financial' })
   async getCashFlowChart(
     @Query() filters: CashFlowReportFilterDto,
     @Req() req: Request,
@@ -222,6 +278,7 @@ export class ReportController {
   }
 
   @Get('cash-flow/table')
+  @HasAnyPermission({ action: 'view', resource: 'reports:financial' })
   async getCashFlowTable(
     @Query() filters: CashFlowReportFilterDto,
     @Req() req: Request,
@@ -231,6 +288,7 @@ export class ReportController {
   }
 
   @Get('cash-flow/pdf-data')
+  @HasAnyPermission({ action: 'view', resource: 'reports:financial' })
   @RequireUnblocked()
   async getCashFlowPdfData(
     @Query() filters: CashFlowReportFilterDto,
@@ -243,6 +301,7 @@ export class ReportController {
   // ============== SECTOR REPORT ==============
 
   @Get('sector-results')
+  @HasAnyPermission({ action: 'view', resource: 'reports:sector_result' })
   async getSectorResults(
     @Query() filters: SalesReportFilterDto,
     @Req() req: Request,
@@ -252,6 +311,7 @@ export class ReportController {
   }
 
   @Get('sector-results/pdf-data')
+  @HasAnyPermission({ action: 'view', resource: 'reports:sector_result' })
   @RequireUnblocked()
   async getSectorResultsPdfData(
     @Query() filters: SalesReportFilterDto,
@@ -264,6 +324,7 @@ export class ReportController {
   // ============== DFC REPORT ENDPOINTS ==============
 
   @Get('dfc/summary')
+  @HasAnyPermission({ action: 'view', resource: 'reports:dfc' })
   async getDfcSummary(
     @Query() filters: DfcReportFilterDto,
     @Req() req: Request,
@@ -273,6 +334,7 @@ export class ReportController {
   }
 
   @Get('dfc/cash-flow-chart')
+  @HasAnyPermission({ action: 'view', resource: 'reports:dfc' })
   async getDfcCashFlowChart(
     @Query() filters: DfcReportFilterDto,
     @Req() req: Request,
@@ -282,6 +344,7 @@ export class ReportController {
   }
 
   @Get('dfc/revenue-expense-chart')
+  @HasAnyPermission({ action: 'view', resource: 'reports:dfc' })
   async getDfcRevenueExpenseChart(
     @Query() filters: DfcReportFilterDto,
     @Req() req: Request,
@@ -291,12 +354,14 @@ export class ReportController {
   }
 
   @Get('dfc/table')
+  @HasAnyPermission({ action: 'view', resource: 'reports:dfc' })
   async getDfcTable(@Query() filters: DfcReportFilterDto, @Req() req: Request) {
     const companyId = (req as any).user?.companyId;
     return this.reportService.getDfcTable(companyId, filters);
   }
 
   @Get('dfc/pdf-data')
+  @HasAnyPermission({ action: 'view', resource: 'reports:dfc' })
   @RequireUnblocked()
   async getDfcPdfData(
     @Query() filters: DfcReportFilterDto,
@@ -309,6 +374,7 @@ export class ReportController {
   // ============== COMMISSION REPORT ENDPOINTS ==============
 
   @Get('commission/summary')
+  @HasAnyPermission({ action: 'view', resource: 'reports:commission' })
   async getCommissionSummary(
     @Query() filters: CommissionReportFilterDto,
     @Req() req: Request,
@@ -318,6 +384,7 @@ export class ReportController {
   }
 
   @Get('commission/table')
+  @HasAnyPermission({ action: 'view', resource: 'reports:commission' })
   async getCommissionTable(
     @Query() filters: CommissionReportFilterDto,
     @Req() req: Request,

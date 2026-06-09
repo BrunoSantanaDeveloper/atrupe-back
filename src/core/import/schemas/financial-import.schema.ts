@@ -173,6 +173,40 @@ export const FINANCIAL_IMPORT_SCHEMA = {
       maxLength: 100,
       description: 'Nome da subcategoria',
       example: 'Produtos',
+      validate: async (
+        value: string,
+        companyId: string,
+        prisma: any,
+        row: any,
+      ) => {
+        if (!value || value.trim() === '') return null;
+
+        let natureId: string | undefined;
+        if (row.Natureza && row.Natureza.trim() !== '') {
+          const nature = await prisma.nature.findFirst({
+            where: {
+              description: row.Natureza,
+              companyId,
+              isActive: true,
+            },
+          });
+          natureId = nature?.id;
+        }
+
+        const subCategory = await prisma.subCategory.findFirst({
+          where: {
+            description: value,
+            companyId,
+            isActive: true,
+            ...(natureId ? { natureId } : {}),
+          },
+        });
+
+        if (!subCategory) {
+          return 'Subcategoria nao encontrada. Cadastre a subcategoria antes de importar';
+        }
+        return null;
+      },
     },
     {
       name: 'CondicaoPagamento',

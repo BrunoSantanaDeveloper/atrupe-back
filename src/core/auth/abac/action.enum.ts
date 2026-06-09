@@ -3,4 +3,5 @@ export enum AbacAction {
   Edit = 'edit',
   Create = 'create',
   Delete = 'delete',
+  Export = 'export',
 }

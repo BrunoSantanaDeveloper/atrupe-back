@@ -155,7 +155,7 @@ export interface InvoicyNfeDest {
   idEstrangeiro?: string;
   xNome_dest: string;
   indIEDest: number;
-  enderDest: InvoicyNfeEnderDest;
+  enderDest?: InvoicyNfeEnderDest;
 }
 
 export interface InvoicyNfeProd {
@@ -243,12 +243,26 @@ export interface InvoicyNfeAut {
   CPF?: string;
 }
 
+export interface InvoicyNfeEntrega {
+  CNPJ_entrega?: string;
+  CPF_entrega?: string;
+  xLgr_entrega: string;
+  nro_entrega: string;
+  xCpl_entrega?: string;
+  xBairro_entrega: string;
+  cMun_entrega: number;
+  xMun_entrega: string;
+  UF_entrega: string;
+  CEP_entrega?: number;
+}
+
 export interface InvoicyNfeDocumento {
   ModeloDocumento: 'NFe' | 'NFCe';
   Versao: number;
   ide: InvoicyNfeIde;
   emit: InvoicyNfeEmit;
-  dest: InvoicyNfeDest;
+  dest?: InvoicyNfeDest;
+  entrega?: InvoicyNfeEntrega;
   det: InvoicyNfeDet[];
   total: InvoicyNfeTotal;
   pag: InvoicyNfePag[];
