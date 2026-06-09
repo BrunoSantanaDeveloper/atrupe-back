@@ -79,6 +79,9 @@ jobs:
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     environment: Test
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Set lower case owner and repo names
         run: |
@@ -92,16 +95,59 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
           envs: GHCR_PAT,GHCR_USER,GHCR_IMAGE
           script: |
+            set -Eeuo pipefail
+
+            wait_for_service() {
+              SERVICE_NAME="$1"
+              TIMEOUT_SECONDS="${2:-240}"
+              END_TIME=$((SECONDS + TIMEOUT_SECONDS))
+
+              while [ "$SECONDS" -lt "$END_TIME" ]; do
+                UPDATE_STATE=$(docker service inspect "$SERVICE_NAME" --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{else}}completed{{end}}')
+                REPLICAS=$(docker service ls --filter "name=$SERVICE_NAME" --format '{{.Replicas}}' | head -1)
+                RUNNING_REPLICAS="${REPLICAS%/*}"
+                DESIRED_REPLICAS="${REPLICAS#*/}"
+
+                if [ "$UPDATE_STATE" = "completed" ] && [ "$RUNNING_REPLICAS" = "$DESIRED_REPLICAS" ] && [ "$DESIRED_REPLICAS" != "0" ]; then
+                  echo "Service $SERVICE_NAME updated successfully ($REPLICAS)."
+                  return 0
+                fi
+
+                if echo "$UPDATE_STATE" | grep -Eq 'rollback|paused'; then
+                  echo "Service $SERVICE_NAME update failed with state: $UPDATE_STATE"
+                  docker service ps "$SERVICE_NAME" --no-trunc
+                  return 1
+                fi
+
+                sleep 5
+              done
+
+              echo "Timed out waiting for $SERVICE_NAME to converge."
+              docker service ps "$SERVICE_NAME" --no-trunc
+              return 1
+            }
+
+            free_disk_if_needed() {
+              AVAILABLE_KB=$(df -Pk / | awk 'NR == 2 { print $4 }')
+              MIN_AVAILABLE_KB=5242880
+
+              if [ "$AVAILABLE_KB" -lt "$MIN_AVAILABLE_KB" ]; then
+                echo "Less than 5 GB free on /. Pruning Docker build cache before pulling the image."
+                docker builder prune -af || true
+              fi
+            }
+
             # === BACKUP DO BANCO ANTES DO DEPLOY ===
             BACKUP_DIR=/home/ubuntu/db-backups/dev
             mkdir -p "$BACKUP_DIR"
             BACKUP_FILE="$BACKUP_DIR/backup-$(date +%Y%m%d-%H%M%S).sql"
-            POSTGRES_CONTAINER=$(docker ps --filter name=postgres --format '{{.Names}}' | grep dev | head -1)
+            POSTGRES_CONTAINER=$(docker ps --filter name=postgres --format '{{.Names}}' | grep dev | head -1 || true)
             if [ -n "$POSTGRES_CONTAINER" ]; then
-              DB_USER=$(docker exec "$POSTGRES_CONTAINER" env | grep POSTGRES_USER | cut -d= -f2 | tr -d '[:space:]')
-              DB_NAME=$(docker exec "$POSTGRES_CONTAINER" env | grep POSTGRES_DB | cut -d= -f2 | tr -d '[:space:]')
+              DB_USER=$(docker exec "$POSTGRES_CONTAINER" env | grep POSTGRES_USER | cut -d= -f2 | tr -d '[:space:]' || true)
+              DB_NAME=$(docker exec "$POSTGRES_CONTAINER" env | grep POSTGRES_DB | cut -d= -f2 | tr -d '[:space:]' || true)
               docker exec "$POSTGRES_CONTAINER" pg_dump -U "${DB_USER:-postgres}" "${DB_NAME:-atrupeDbDev}" > "$BACKUP_FILE" \
                 && echo "✅ Backup salvo: $BACKUP_FILE" \
                 || echo "⚠️  Backup falhou — continuando deploy..."
@@ -117,9 +163,15 @@ jobs:
 
             # === DEPLOY VIA DOCKER STACK ===
             echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            free_disk_if_needed
             docker pull "$GHCR_IMAGE":dev
             export GHCR_IMAGE="$GHCR_IMAGE"
+<<<<<<< HEAD
             node scripts/prepare-stack.js docker-stack.dev.yml /home/ubuntu/atrupe-back/.env.dev | docker stack deploy -c - atrupe-dev --with-registry-auth
+=======
+            python3 scripts/prepare-stack.py docker-stack.dev.yml /home/ubuntu/atrupe-back/.env.dev | docker stack deploy -c - atrupe-dev --with-registry-auth
+            wait_for_service atrupe-dev_atrupe 240
+>>>>>>> dev
             docker image prune -f
         env:
           GHCR_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -191,6 +243,9 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Set lower case owner and repo names
         run: |
@@ -204,16 +259,59 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
           envs: GHCR_PAT,GHCR_USER,GHCR_IMAGE
           script: |
+            set -Eeuo pipefail
+
+            wait_for_service() {
+              SERVICE_NAME="$1"
+              TIMEOUT_SECONDS="${2:-240}"
+              END_TIME=$((SECONDS + TIMEOUT_SECONDS))
+
+              while [ "$SECONDS" -lt "$END_TIME" ]; do
+                UPDATE_STATE=$(docker service inspect "$SERVICE_NAME" --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{else}}completed{{end}}')
+                REPLICAS=$(docker service ls --filter "name=$SERVICE_NAME" --format '{{.Replicas}}' | head -1)
+                RUNNING_REPLICAS="${REPLICAS%/*}"
+                DESIRED_REPLICAS="${REPLICAS#*/}"
+
+                if [ "$UPDATE_STATE" = "completed" ] && [ "$RUNNING_REPLICAS" = "$DESIRED_REPLICAS" ] && [ "$DESIRED_REPLICAS" != "0" ]; then
+                  echo "Service $SERVICE_NAME updated successfully ($REPLICAS)."
+                  return 0
+                fi
+
+                if echo "$UPDATE_STATE" | grep -Eq 'rollback|paused'; then
+                  echo "Service $SERVICE_NAME update failed with state: $UPDATE_STATE"
+                  docker service ps "$SERVICE_NAME" --no-trunc
+                  return 1
+                fi
+
+                sleep 5
+              done
+
+              echo "Timed out waiting for $SERVICE_NAME to converge."
+              docker service ps "$SERVICE_NAME" --no-trunc
+              return 1
+            }
+
+            free_disk_if_needed() {
+              AVAILABLE_KB=$(df -Pk / | awk 'NR == 2 { print $4 }')
+              MIN_AVAILABLE_KB=5242880
+
+              if [ "$AVAILABLE_KB" -lt "$MIN_AVAILABLE_KB" ]; then
+                echo "Less than 5 GB free on /. Pruning Docker build cache before pulling the image."
+                docker builder prune -af || true
+              fi
+            }
+
             # === BACKUP DO BANCO ANTES DO DEPLOY ===
             BACKUP_DIR=/home/ubuntu/db-backups/prod
             mkdir -p "$BACKUP_DIR"
             BACKUP_FILE="$BACKUP_DIR/backup-$(date +%Y%m%d-%H%M%S).sql"
-            POSTGRES_CONTAINER=$(docker ps --filter name=postgres --format '{{.Names}}' | grep -v dev | head -1)
+            POSTGRES_CONTAINER=$(docker ps --filter name=postgres --format '{{.Names}}' | grep -v dev | head -1 || true)
             if [ -n "$POSTGRES_CONTAINER" ]; then
-              DB_USER=$(docker exec "$POSTGRES_CONTAINER" env | grep POSTGRES_USER | cut -d= -f2 | tr -d '[:space:]')
-              DB_NAME=$(docker exec "$POSTGRES_CONTAINER" env | grep POSTGRES_DB | cut -d= -f2 | tr -d '[:space:]')
+              DB_USER=$(docker exec "$POSTGRES_CONTAINER" env | grep POSTGRES_USER | cut -d= -f2 | tr -d '[:space:]' || true)
+              DB_NAME=$(docker exec "$POSTGRES_CONTAINER" env | grep POSTGRES_DB | cut -d= -f2 | tr -d '[:space:]' || true)
               docker exec "$POSTGRES_CONTAINER" pg_dump -U "${DB_USER:-postgres}" "${DB_NAME:-atrupeDb}" > "$BACKUP_FILE" \
                 && echo "✅ Backup salvo: $BACKUP_FILE" \
                 || echo "⚠️  Backup falhou — continuando deploy..."
@@ -229,9 +327,15 @@ jobs:
 
             # === DEPLOY VIA DOCKER STACK ===
             echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            free_disk_if_needed
             docker pull "$GHCR_IMAGE":latest
             export GHCR_IMAGE="$GHCR_IMAGE"
+<<<<<<< HEAD
             node scripts/prepare-stack.js docker-stack.prod.yml /home/ubuntu/atrupe-back/.env.prod | docker stack deploy -c - atrupe-api --with-registry-auth
+=======
+            python3 scripts/prepare-stack.py docker-stack.prod.yml /home/ubuntu/atrupe-back/.env.prod | docker stack deploy -c - atrupe-api --with-registry-auth
+            wait_for_service atrupe-api_atrupe 240
+>>>>>>> dev
             docker image prune -f
         env:
           GHCR_PAT: ${{ secrets.GITHUB_TOKEN }}
