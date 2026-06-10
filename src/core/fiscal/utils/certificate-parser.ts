@@ -111,7 +111,17 @@ function onlyDigits(value: string): string {
   return (value || '').replace(/\D/g, '');
 }
 
-function extractCnpj(value: string): string | null {
+export function extractCnpj(value: string): string | null {
+  if (!value) return null;
+
+  const commonName = extractCN(value);
+  const cnpjFromCommonName = findFirstCnpj(commonName || '');
+  if (cnpjFromCommonName) return cnpjFromCommonName;
+
+  return findFirstCnpj(value);
+}
+
+function findFirstCnpj(value: string): string | null {
   if (!value) return null;
 
   const formatted = value.match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/);
