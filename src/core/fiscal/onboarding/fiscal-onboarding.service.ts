@@ -358,6 +358,42 @@ export class FiscalOnboardingService {
     });
   }
 
+  private async tryActivatePendingReview(request: any): Promise<boolean> {
+    try {
+      const result = await this.invoicyHttpService.registerCompany({
+        cnpj: request.cnpj,
+        razaoSocial: request.razaoSocial,
+        nomeFantasia: request.nomeFantasia || request.razaoSocial,
+        ie: request.ie,
+        im: request.im,
+        uf: request.uf,
+        codigoIbge: request.codigoIbge,
+        cep: request.cep,
+        logradouro: request.logradouro,
+        numero: request.numero,
+        bairro: request.bairro,
+        cidade: request.cidade,
+        complemento: request.complemento,
+        environment: 'HOMOLOGACAO',
+      });
+
+      await this.activateModule(
+        request.id,
+        request.companyId,
+        result.accessKey,
+        result.cryptoKey,
+        result.environment,
+      );
+
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        `Pending fiscal onboarding reconciliation failed for company ${request.companyId}: ${error.message}`,
+      );
+      return false;
+    }
+  }
+
   async getStatus(companyId: string) {
     const request = await this.prisma.fiscalOnboardingRequest.findFirst({
       where: { companyId },
@@ -378,6 +414,34 @@ export class FiscalOnboardingService {
         };
       }
       return { status: 'NOT_STARTED', hasConfig: false };
+    }
+
+    if (request.status === 'PENDING_REVIEW') {
+      if (hasConfig) {
+        await this.prisma.fiscalOnboardingRequest.update({
+          where: { id: request.id },
+          data: {
+            status: 'ACTIVE',
+            resolvedAt: new Date(),
+            errorMessage: null,
+          },
+        });
+
+        return {
+          status: 'ACTIVE',
+          hasConfig: true,
+          createdAt: request.createdAt,
+        };
+      }
+
+      const activated = await this.tryActivatePendingReview(request);
+      if (activated) {
+        return {
+          status: 'ACTIVE',
+          hasConfig: true,
+          createdAt: request.createdAt,
+        };
+      }
     }
 
     return {
