@@ -24,6 +24,7 @@ export interface InvoicyTokenCache {
   token: string;
   expiresAt: number;
   companyId: string;
+  credentialsHash?: string;
 }
 
 // ============================================

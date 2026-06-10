@@ -51,7 +51,9 @@ export class InvoicyApiService {
       response[0].Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED
     ) {
       this.logger.warn(
-        `Invoicy returned non-success code: ${response[0].Codigo}`,
+        `Invoicy returned non-success code: ${response[0].Codigo} - ${
+          response[0].Descricao || response[0].ErrorInvoicy || 'Sem descricao'
+        }`,
       );
     }
 

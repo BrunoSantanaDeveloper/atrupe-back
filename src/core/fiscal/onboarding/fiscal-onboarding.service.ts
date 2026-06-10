@@ -8,6 +8,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { FiscalOnboardingDto } from './fiscal-onboarding.dto';
+import { validatePfxCertificateCnpj } from '../utils/certificate-parser';
 
 @Injectable()
 export class FiscalOnboardingService {
@@ -20,6 +21,18 @@ export class FiscalOnboardingService {
   ) {}
 
   async submitOnboarding(companyId: string, dto: FiscalOnboardingDto) {
+    if (dto.certificate) {
+      const validation = validatePfxCertificateCnpj(
+        dto.certificate,
+        dto.certificatePassword || '',
+        dto.cnpj,
+      );
+
+      if (!validation.valid) {
+        throw new BadRequestException(validation.message);
+      }
+    }
+
     // Check for existing active onboarding
     const existing = await this.prisma.fiscalOnboardingRequest.findFirst({
       where: {

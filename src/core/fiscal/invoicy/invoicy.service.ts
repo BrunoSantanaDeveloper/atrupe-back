@@ -12,6 +12,7 @@ import {
   UpdateInvoicyConfigDto,
 } from './dtos/invoicy-config.dto';
 import { InvoicyHttpService } from './invoicy-http.service';
+import { validatePfxCertificateCnpj } from '../utils/certificate-parser';
 
 @Injectable()
 export class InvoicyService {
@@ -154,6 +155,14 @@ export class InvoicyService {
     if (!company.cnpj) {
       throw new BadRequestException(
         'CNPJ da empresa é obrigatório para cadastrar no Invoicy',
+      );
+    }
+
+    if (company.DigitalCertificate?.certificate) {
+      this.validateCertificateMatchesCompany(
+        company.DigitalCertificate.certificate,
+        company.DigitalCertificate.password || '',
+        company.cnpj,
       );
     }
 
@@ -530,6 +539,12 @@ export class InvoicyService {
       throw new NotFoundException('CNPJ da empresa não encontrado');
     }
 
+    this.validateCertificateMatchesCompany(
+      certificate,
+      certificatePassword,
+      cnpj,
+    );
+
     await this.invoicyHttpService.updateCompanyCertificate({
       cnpj,
       certificate,
@@ -565,6 +580,22 @@ export class InvoicyService {
   /**
    * Definir emissor como padrão
    */
+  private validateCertificateMatchesCompany(
+    certificate: string,
+    certificatePassword: string,
+    companyCnpj: string,
+  ) {
+    const result = validatePfxCertificateCnpj(
+      certificate,
+      certificatePassword,
+      companyCnpj,
+    );
+
+    if (!result.valid) {
+      throw new BadRequestException(result.message);
+    }
+  }
+
   async setDefault(id: string, companyId: string) {
     const config = await this.prisma.invoicyConfig.findUnique({
       where: { id },

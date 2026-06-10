@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'nestjs-prisma';
 import axios, { AxiosInstance } from 'axios';
+import { createHash } from 'crypto';
 import * as jwt from 'jsonwebtoken';
 import {
   InvoicyAuthResponse,
@@ -12,6 +13,7 @@ import {
   InvoicyNfseRequest,
   INVOICY_SUCCESS_CODES,
 } from './invoicy.types';
+import { validatePfxCertificateCnpj } from '../utils/certificate-parser';
 
 @Injectable()
 export class InvoicyHttpService {
@@ -96,12 +98,17 @@ export class InvoicyHttpService {
    * Implements JWT generation and OAuth2 authentication as per Invoicy API docs
    */
   async authenticate(companyId: string): Promise<string> {
-    // Check cache first
-    const cached = this.tokenCache.get(companyId);
     const now = Math.floor(Date.now() / 1000);
+    const credentials = await this.getCompanyCredentials(companyId);
+    const credentialsHash = this.getCredentialsHash(credentials);
+    const cached = this.tokenCache.get(companyId);
 
     // If token exists and is still valid (with 5 min buffer), return it
-    if (cached && cached.expiresAt > now + 300) {
+    if (
+      cached &&
+      cached.expiresAt > now + 300 &&
+      cached.credentialsHash === credentialsHash
+    ) {
       return cached.token;
     }
 
@@ -109,7 +116,6 @@ export class InvoicyHttpService {
       `Generating new Invoicy token for company ${this.maskCompanyId(companyId)}`,
     );
 
-    const credentials = await this.getCompanyCredentials(companyId);
     const partnerKey = this.getPartnerKey();
 
     if (!partnerKey) {
@@ -161,6 +167,7 @@ export class InvoicyHttpService {
         token: accessToken,
         expiresAt: accessTokenExpireAt,
         companyId,
+        credentialsHash,
       });
 
       this.logger.log(
@@ -194,6 +201,22 @@ export class InvoicyHttpService {
    */
   clearTokenCache(companyId: string): void {
     this.tokenCache.delete(companyId);
+  }
+
+  private getCredentialsHash(credentials: {
+    cnpj: string;
+    accessKey: string;
+    environment: InvoicyEnvironment;
+  }): string {
+    return createHash('sha256')
+      .update(
+        [
+          credentials.cnpj.replace(/\D/g, ''),
+          credentials.accessKey,
+          credentials.environment,
+        ].join('|'),
+      )
+      .digest('hex');
   }
 
   /**
@@ -741,6 +764,22 @@ export class InvoicyHttpService {
     return null;
   }
 
+  private ensureCertificateMatchesCnpj(
+    certificate: string,
+    certificatePassword: string,
+    cnpj: string,
+  ) {
+    const validation = validatePfxCertificateCnpj(
+      certificate,
+      certificatePassword,
+      cnpj,
+    );
+
+    if (!validation.valid) {
+      throw new Error(validation.message);
+    }
+  }
+
   /**
    * Register a new company in Invoicy via partner API.
    * Returns the EmpAK (Access Key) needed for future operations.
@@ -773,6 +812,14 @@ export class InvoicyHttpService {
     this.logger.log(
       `Registering company ${this.maskCnpj(data.cnpj)} in Invoicy (${environment})`,
     );
+
+    if (data.certificate) {
+      this.ensureCertificateMatchesCnpj(
+        data.certificate,
+        data.certificatePassword || '',
+        data.cnpj,
+      );
+    }
 
     // First check if company already exists
     try {
@@ -970,6 +1017,12 @@ export class InvoicyHttpService {
 
     this.logger.log(
       `Updating certificate for company ${this.maskCnpj(data.cnpj)} in Invoicy (${environment})`,
+    );
+
+    this.ensureCertificateMatchesCnpj(
+      data.certificate,
+      data.certificatePassword,
+      data.cnpj,
     );
 
     const token = await this.authenticateAsPartner(environment);

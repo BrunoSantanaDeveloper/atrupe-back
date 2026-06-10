@@ -5,9 +5,18 @@ import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { FiscalOnboardingDto } from './fiscal-onboarding.dto';
+import { validatePfxCertificateCnpj } from '../utils/certificate-parser';
+
+jest.mock('../utils/certificate-parser', () => ({
+  validatePfxCertificateCnpj: jest.fn(),
+}));
 
 describe('FiscalOnboardingService', () => {
   let service: FiscalOnboardingService;
+  const mockValidatePfxCertificateCnpj =
+    validatePfxCertificateCnpj as jest.MockedFunction<
+      typeof validatePfxCertificateCnpj
+    >;
 
   const mockPrisma = {
     fiscalOnboardingRequest: {
@@ -47,6 +56,11 @@ describe('FiscalOnboardingService', () => {
   const mockInvoicyService = {};
 
   beforeEach(async () => {
+    mockValidatePfxCertificateCnpj.mockReturnValue({
+      valid: true,
+      certificateCnpj: '12345678901234',
+    });
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FiscalOnboardingService,
