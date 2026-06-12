@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'nestjs-prisma';
 import axios, { AxiosInstance } from 'axios';
@@ -14,6 +14,9 @@ import {
   INVOICY_SUCCESS_CODES,
 } from './invoicy.types';
 import { validatePfxCertificateCnpj } from '../utils/certificate-parser';
+
+export const INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE =
+  'O CNPJ ja esta cadastrado no Invoicy, mas nao esta vinculado à Atrupe. Entre em contato com o suporte para solicitar a transferencia ou liberacao da empresa junto a Migrate/Invoicy.';
 
 @Injectable()
 export class InvoicyHttpService {
@@ -764,6 +767,89 @@ export class InvoicyHttpService {
     return null;
   }
 
+  private isCompanyAlreadyRegisteredRejection(payload: any): boolean {
+    const queue = [payload];
+    let inspected = 0;
+
+    while (queue.length > 0 && inspected < 100) {
+      inspected++;
+      const current = queue.shift();
+
+      if (!current) continue;
+
+      if (Array.isArray(current)) {
+        queue.push(...current);
+        continue;
+      }
+
+      if (typeof current !== 'object') {
+        if (this.hasCompanyAlreadyRegisteredText(String(current))) return true;
+        continue;
+      }
+
+      const text = [
+        current.Mensagem,
+        current.message,
+        current.Descricao,
+        current.description,
+        current.Erro,
+        current.error,
+      ]
+        .filter(Boolean)
+        .join(' ');
+
+      if (this.hasCompanyAlreadyRegisteredText(text)) return true;
+
+      for (const value of Object.values(current)) {
+        if (value && (typeof value === 'object' || Array.isArray(value))) {
+          queue.push(value);
+        } else if (
+          value &&
+          this.hasCompanyAlreadyRegisteredText(String(value))
+        ) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  private hasCompanyAlreadyRegisteredText(value: string): boolean {
+    const text = value
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    return (
+      text.includes('cnpj') &&
+      (text.includes('ja cadastr') ||
+        text.includes('empresa cadastr') ||
+        text.includes('ja existe') ||
+        text.includes('already registered') ||
+        text.includes('already exists') ||
+        text.includes('duplicate'))
+    );
+  }
+
+  private isCompanyNotFoundError(error: any): boolean {
+    const status = error?.response?.status;
+    if (status === 404) return true;
+
+    const payload = error?.response?.data;
+    const text =
+      typeof payload === 'string'
+        ? payload.toLowerCase()
+        : JSON.stringify(payload || {}).toLowerCase();
+
+    return (
+      text.includes('nao encontr') ||
+      text.includes('não encontr') ||
+      text.includes('not found') ||
+      text.includes('inexistente')
+    );
+  }
+
   private ensureCertificateMatchesCnpj(
     certificate: string,
     certificatePassword: string,
@@ -843,7 +929,10 @@ export class InvoicyHttpService {
           environment,
         };
       }
-    } catch {
+    } catch (error) {
+      if (!this.isCompanyNotFoundError(error)) {
+        throw error;
+      }
       // Company not found — proceed with registration
     }
 
@@ -900,6 +989,11 @@ export class InvoicyHttpService {
 
       const rejection = this.getRegistrationRejection(result);
       if (rejection) {
+        if (this.isCompanyAlreadyRegisteredRejection(result)) {
+          throw new BadRequestException(
+            INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE,
+          );
+        }
         throw new Error(`Invoicy rejeitou o cadastro. ${rejection}`);
       }
 
@@ -940,6 +1034,11 @@ export class InvoicyHttpService {
           }
           // Se não tem EmpAK e tem Descricao de erro (ex: 101)
           if (cadastro.Descricao) {
+            if (this.isCompanyAlreadyRegisteredRejection(cadastro)) {
+              throw new BadRequestException(
+                INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE,
+              );
+            }
             throw new Error(
               `Invoicy rejeitou o cadastro. Código ${cadastro.Codigo}: ${cadastro.Descricao}`,
             );
@@ -967,6 +1066,11 @@ export class InvoicyHttpService {
         this.logger.error(
           `Invoicy registration error: ${JSON.stringify(error.response.data)}`,
         );
+        if (this.isCompanyAlreadyRegisteredRejection(error.response.data)) {
+          throw new BadRequestException(
+            INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE,
+          );
+        }
         const msg =
           error.response.data?.Mensagem ||
           error.response.data?.message ||

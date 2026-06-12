@@ -5,7 +5,10 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
-import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
+import {
+  INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE,
+  InvoicyHttpService,
+} from '../invoicy/invoicy-http.service';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { FiscalOnboardingDto } from './fiscal-onboarding.dto';
 import { validatePfxCertificateCnpj } from '../utils/certificate-parser';
@@ -80,17 +83,30 @@ export class FiscalOnboardingService {
         onboardingId: request.id,
       };
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Erro inesperado';
+      const reviewMessage = this.getPendingReviewMessage(errorMessage);
+
       this.logger.error(
-        `Auto-provisioning failed for company ${companyId}: ${error.message}`,
+        `Auto-provisioning failed for company ${companyId}: ${errorMessage}`,
       );
-      await this.markForReview(request.id, error.message);
+      await this.markForReview(request.id, reviewMessage);
       return {
         status: 'PENDING_REVIEW',
-        message:
-          'Dados recebidos com sucesso. A configuração será concluída pela equipe Atrupe em breve.',
+        message: reviewMessage,
         onboardingId: request.id,
       };
     }
+  }
+
+  private getPendingReviewMessage(errorMessage: string) {
+    if (
+      errorMessage.includes(INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE)
+    ) {
+      return INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE;
+    }
+
+    return 'Dados recebidos com sucesso. A configuracao sera concluida pela equipe Atrupe em breve.';
   }
 
   private async autoProvision(request: any, dto: FiscalOnboardingDto) {
@@ -251,7 +267,7 @@ export class FiscalOnboardingService {
   private async seedDefaultFiscalData(tx: any, companyId: string) {
     // 1. Seed default CFOPs (essenciais para Simples Nacional)
     const defaultCfops = [
-      // Saídas — Mercadorias
+      // Saidas - Mercadorias
       {
         code: '5101',
         description: 'Venda de produção do estabelecimento',
@@ -262,7 +278,7 @@ export class FiscalOnboardingService {
         description: 'Venda de mercadoria adquirida ou recebida de terceiros',
         type: 'SAIDA',
       },
-      // Saídas — Fora do estado
+      // Saidas - Fora do estado
       {
         code: '6101',
         description: 'Venda de produção do estabelecimento (fora do estado)',
@@ -274,14 +290,14 @@ export class FiscalOnboardingService {
           'Venda de mercadoria adquirida ou recebida de terceiros (fora do estado)',
         type: 'SAIDA',
       },
-      // Saídas — Serviços (NFS-e)
+      // Saidas - Servicos (NFS-e)
       {
         code: '5933',
         description:
           'Prestação de serviços compreendidos em mais de uma tributação municipal',
         type: 'SAIDA',
       },
-      // Entradas — Compras
+      // Entradas - Compras
       {
         code: '1102',
         description:
@@ -325,7 +341,7 @@ export class FiscalOnboardingService {
         await tx.productFiscalData.create({
           data: {
             productId: product.id,
-            ncm: '00000000', // Placeholder — usuário deve atualizar por produto
+            ncm: '00000000', // Placeholder - usuario deve atualizar por produto
             cfopInState: '5102', // Padrão: venda de mercadoria terceiros (dentro do estado)
             cfopOutState: '6102', // Padrão: venda de mercadoria terceiros (fora do estado)
             commercialUnit: 'UN',

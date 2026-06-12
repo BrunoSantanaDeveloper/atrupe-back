@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { FiscalOnboardingService } from './fiscal-onboarding.service';
 import { PrismaService } from 'nestjs-prisma';
-import { InvoicyHttpService } from '../invoicy/invoicy-http.service';
+import {
+  INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE,
+  InvoicyHttpService,
+} from '../invoicy/invoicy-http.service';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { FiscalOnboardingDto } from './fiscal-onboarding.dto';
@@ -158,6 +161,32 @@ describe('FiscalOnboardingService', () => {
       expect(mockPrisma.fiscalOnboardingRequest.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ status: 'PENDING_REVIEW' }),
+        }),
+      );
+    });
+
+    it('should explain when the company is linked to another Invoicy partner', async () => {
+      mockPrisma.fiscalOnboardingRequest.findFirst.mockResolvedValue(null);
+      mockPrisma.fiscalOnboardingRequest.create.mockResolvedValue({
+        id: 'request-1',
+        companyId: 'company-1',
+      });
+      mockInvoicyHttpService.registerCompany.mockRejectedValue(
+        new Error(INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE),
+      );
+
+      const result = await service.submitOnboarding('company-1', dto);
+
+      expect(result.status).toBe('PENDING_REVIEW');
+      expect(result.message).toBe(
+        INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE,
+      );
+      expect(mockPrisma.fiscalOnboardingRequest.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'PENDING_REVIEW',
+            errorMessage: INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE,
+          }),
         }),
       );
     });
