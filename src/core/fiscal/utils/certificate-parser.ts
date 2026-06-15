@@ -1,5 +1,6 @@
-import * as tls from 'tls';
 import * as crypto from 'crypto';
+import * as forge from 'node-forge';
+import * as tls from 'tls';
 
 export interface CertificateInfo {
   expiresAt: Date | null;
@@ -11,49 +12,94 @@ export interface CertificateInfo {
 
 /**
  * Parses a PFX/PKCS12 certificate (base64) and extracts metadata.
- * Uses Node.js built-in tls + crypto modules — no external dependencies.
- *
- * @param base64Certificate - Base64-encoded PFX file content
- * @param password - PFX password
- * @returns Parsed certificate info or null if parsing fails
+ * The Node TLS path is kept for modern certificates; forge is used as a
+ * fallback for PKCS#12 files that OpenSSL rejects because of legacy ciphers.
  */
 export function parsePfxCertificate(
   base64Certificate: string,
   password: string,
 ): CertificateInfo | null {
-  try {
-    const pfxBuffer = Buffer.from(stripDataUrl(base64Certificate), 'base64');
+  const pfxBuffer = Buffer.from(stripDataUrl(base64Certificate), 'base64');
 
-    // Create secure context to extract the certificate
+  return (
+    parsePfxCertificateWithNode(pfxBuffer, password) ||
+    parsePfxCertificateWithForge(pfxBuffer, password)
+  );
+}
+
+function parsePfxCertificateWithNode(
+  pfxBuffer: Buffer,
+  password: string,
+): CertificateInfo | null {
+  try {
     const secureContext = tls.createSecureContext({
       pfx: pfxBuffer,
       passphrase: password,
     });
 
-    // Get the raw certificate from the context
     const rawCert = (secureContext as any).context?.getCertificate?.();
+    if (!rawCert) return null;
 
-    if (rawCert) {
-      try {
-        const x509 = new crypto.X509Certificate(rawCert);
-        return {
-          expiresAt: new Date(x509.validTo),
-          issuer: extractCN(x509.issuer) || x509.issuer,
-          serialNumber: x509.serialNumber,
-          subject: extractCN(x509.subject) || x509.subject,
-          cnpj: extractCnpj(x509.subject),
-        };
-      } catch {
-        // X509Certificate constructor may not be available in older Node versions
-      }
-    }
+    const x509 = new crypto.X509Certificate(rawCert);
 
-    return null;
+    return {
+      expiresAt: new Date(x509.validTo),
+      issuer: extractCN(x509.issuer) || x509.issuer,
+      serialNumber: x509.serialNumber,
+      subject: extractCN(x509.subject) || x509.subject,
+      cnpj: extractCnpj(x509.subject),
+    };
   } catch (error) {
-    // Log but don't throw — certificate parsing is non-critical
-    console.warn('Failed to parse PFX certificate:', error?.message || error);
+    console.warn(
+      'Failed to parse PFX certificate with Node:',
+      error?.message || error,
+    );
     return null;
   }
+}
+
+function parsePfxCertificateWithForge(
+  pfxBuffer: Buffer,
+  password: string,
+): CertificateInfo | null {
+  try {
+    const p12Asn1 = forge.asn1.fromDer(pfxBuffer.toString('binary'));
+    const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, password || '');
+    const certBags = p12.getBags({ bagType: forge.pki.oids.certBag })[
+      forge.pki.oids.certBag
+    ];
+
+    const cert = certBags?.find((bag) => !!bag.cert)?.cert;
+    if (!cert) return null;
+
+    const subject = forgeDistinguishedNameToString(cert.subject);
+    const issuer = forgeDistinguishedNameToString(cert.issuer);
+
+    return {
+      expiresAt: cert.validity?.notAfter || null,
+      issuer: extractCN(issuer) || issuer,
+      serialNumber: cert.serialNumber || null,
+      subject: extractCN(subject) || subject,
+      cnpj: extractCnpj(subject),
+    };
+  } catch (error) {
+    console.warn(
+      'Failed to parse PFX certificate with forge:',
+      error?.message || error,
+    );
+    return null;
+  }
+}
+
+function forgeDistinguishedNameToString(
+  name: forge.pki.Certificate['subject'],
+): string {
+  return (name.attributes || [])
+    .map((attribute) => {
+      const key = attribute.shortName || attribute.name || attribute.type;
+      return `${key}=${attribute.value}`;
+    })
+    .join('\n');
 }
 
 export function validatePfxCertificateCnpj(
@@ -95,7 +141,7 @@ export function validatePfxCertificateCnpj(
 
 /**
  * Extracts Common Name (CN) from a distinguished name string.
- * Example: "CN=EMPRESA LTDA\nO=ICP-Brasil" → "EMPRESA LTDA"
+ * Example: "CN=EMPRESA LTDA\nO=ICP-Brasil" -> "EMPRESA LTDA"
  */
 function extractCN(dn: string): string | null {
   if (!dn) return null;
