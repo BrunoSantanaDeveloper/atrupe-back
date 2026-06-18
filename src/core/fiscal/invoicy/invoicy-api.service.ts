@@ -78,6 +78,7 @@ export class InvoicyApiService {
           Evento: {
             ChaveNFe: chaveAcesso,
             TipoEvento: 110111, // Cancelamento
+            nSeqEvento: 1,
             Justificativa: justificativa,
           },
         },

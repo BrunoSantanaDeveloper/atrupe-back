@@ -80,6 +80,7 @@ describe('InvoicyApiService', () => {
             Evento: {
               ChaveNFe: 'CHAVE1234567890',
               TipoEvento: 110111,
+              nSeqEvento: 1,
               Justificativa: 'Cliente desistiu',
             },
           },

@@ -2297,6 +2297,7 @@ model NfeCorrectionEvent {
   correcao        String    @db.Text
   protocolo       String?
   dataEvento      DateTime?
+  xmlEvento       String?   @db.Text
   nfe             Nfe       @relation(fields: [nfeId], references: [id], onDelete: Cascade)
 
   @@index([nfeId])

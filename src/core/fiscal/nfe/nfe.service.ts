@@ -740,7 +740,13 @@ export class NfeService {
       }
     }
 
-    return { destinatario, items };
+    // Extrair indFinal da tag <ide> — usado pelo prepareComplementary
+    const ideXml = extractTag(xml, 'ide');
+    const indFinal = ideXml
+      ? parseInt(extractTag(ideXml, 'indFinal') || '0', 10)
+      : 0;
+
+    return { destinatario, items, indFinal };
   }
 
   private getDestinatarioFromDraftOrXml(draftData: any, xmlData: any) {
@@ -877,6 +883,44 @@ export class NfeService {
       };
     });
 
+    const config = await this.invoicyService.getConfig(companyId);
+    const emitUf = (config?.company?.address?.state || '').toUpperCase();
+
+    const originalCfop = (draftData?.items?.[0]?.cfop ||
+      xmlData?.items?.[0]?.cfop ||
+      0) as number;
+
+    // Sugestão de CFOP para devolução com base no CFOP original
+    const getSuggestedDevolutionCfop = (destUf: string): number => {
+      const isInterestadual =
+        emitUf && destUf && emitUf !== destUf.toUpperCase();
+      const lastThree = originalCfop % 1000;
+      // Produção própria (5101/6101) -> 1201/2201
+      if (lastThree === 101) {
+        return isInterestadual ? 2201 : 1201;
+      }
+      // Mercadoria adquirida (5102/6102) -> 1202/2202
+      if (lastThree === 102) {
+        return isInterestadual ? 2202 : 1202;
+      }
+      // Fallback
+      return isInterestadual ? 2202 : 1202;
+    };
+
+    // getDestinatarioFromDraftOrXml retorna o campo como 'estado' (tanto do draftData quanto do XML)
+    const destUfForCfop =
+      (destinatarioOverride as any)?.estado ||
+      (destinatarioOverride as any)?.uf ||
+      (destinatarioOverride as any)?.destUf ||
+      '';
+
+    const suggestedCfop = getSuggestedDevolutionCfop(destUfForCfop);
+
+    const mappedItemsWithCfop = mappedItems.map((item: any) => ({
+      ...item,
+      cfop: suggestedCfop,
+    }));
+
     return {
       ...baseData,
       clientId: clientId || null,
@@ -892,7 +936,13 @@ export class NfeService {
         ...baseData.destinatario,
         ...destinatarioOverride,
       },
-      items: mappedItems.length ? mappedItems : baseData.items,
+      pagamento: {
+        forma: '90',
+        formaDescricao: 'Sem pagamento',
+        valor: 0.0,
+      },
+      duplicatas: [],
+      items: mappedItemsWithCfop.length ? mappedItemsWithCfop : baseData.items,
       originalNfeId: originalNfe.id,
       originalNfeNumero: originalNfe.numero,
       originalNfeChave: originalNfe.chaveAcesso,
@@ -960,6 +1010,13 @@ export class NfeService {
 
     const baseData = await this.prepareStandalone(companyId, clientId);
 
+    // Copiar consumidorFinal da nota original (fallback para 0 se ausente)
+    const consumidorFinalOriginal =
+      draftData?.emissao?.consumidorFinal ??
+      draftData?.consumidorFinal ??
+      (xmlData as any)?.indFinal ??
+      0;
+
     return {
       ...baseData,
       clientId: clientId || null,
@@ -968,7 +1025,7 @@ export class NfeService {
         tipo: 1,
         finalidade: 2,
         operationNature: 'Complemento de NF-e',
-        consumidorFinal: 0,
+        consumidorFinal: consumidorFinalOriginal,
         nfeReferenciada: originalNfe.chaveAcesso,
       },
       destinatario: {
@@ -1250,6 +1307,25 @@ export class NfeService {
       if (filters.endDate) {
         where.createdAt.lte = new Date(filters.endDate);
       }
+    }
+
+    // Obtém IDs de NF-es rejeitadas duplicadas para excluir da listagem
+    const excludedRowsAll = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT r.id FROM nfes r
+      WHERE r."companyId" = ${companyId}
+        AND r.status = 'REJECTED'
+        AND EXISTS (
+          SELECT 1 FROM nfes a
+          WHERE a."companyId" = r."companyId"
+            AND a.numero = r.numero
+            AND a.serie = r.serie
+            AND a.status = 'AUTHORIZED'
+            AND a."createdAt" > r."createdAt"
+        )
+    `;
+    const excludedNfeIdsAll = excludedRowsAll.map((row) => row.id);
+    if (excludedNfeIdsAll.length > 0) {
+      where.id = { notIn: excludedNfeIdsAll };
     }
 
     const [items, total] = await Promise.all([
@@ -1742,7 +1818,6 @@ export class NfeService {
                   : 'SEM GTIN',
               xProd: item.description || `Produto ${index + 1}`,
               NCM: (item.ncm || '00000000').replace(/\D/g, ''),
-              // CFOP: 5xxx para operação interna (mesmo estado), 6xxx para interestadual
               CFOP: (() => {
                 const baseCfop =
                   item.cfop || parseInt(config.defaultCfop || '5102', 10);
@@ -1757,6 +1832,24 @@ export class NfeService {
 
                 const isInterestadual =
                   destUfFromCep !== config.company.address.state;
+
+                if (dto.finalidade === 4) {
+                  const lastThree = baseCfop % 1000;
+                  if (lastThree === 101 || lastThree === 201) {
+                    return isInterestadual ? 2201 : 1201;
+                  }
+                  if (lastThree === 102 || lastThree === 202) {
+                    return isInterestadual ? 2202 : 1202;
+                  }
+                  const prefix = Math.floor(baseCfop / 1000);
+                  if (prefix === 1 && isInterestadual) {
+                    return baseCfop + 1000;
+                  }
+                  if (prefix === 2 && !isInterestadual) {
+                    return baseCfop - 1000;
+                  }
+                  return isInterestadual ? 2202 : 1202;
+                }
 
                 // Se é operação interestadual e CFOP começa com 5, converter para 6
                 if (isInterestadual && Math.floor(baseCfop / 1000) === 5) {
@@ -1818,12 +1911,22 @@ export class NfeService {
           pag: [
             {
               tPag: dto.pagamento?.forma || '99',
-              vPag: valorTotal.toFixed(2),
+              vPag:
+                dto.pagamento?.forma === '90' ? '0.00' : valorTotal.toFixed(2),
             },
           ],
           transp: {
             modFrete: String(dto.modalidadeFrete ?? 9),
           },
+          // Informações adicionais / complementares
+          ...(dto.additionalInfo || (config as any).taxInfoText
+            ? {
+                infAdic: {
+                  infCpl:
+                    dto.additionalInfo || (config as any).taxInfoText || '',
+                },
+              }
+            : {}),
           // Duplicatas/Cobrança
           ...(dto.duplicatas && dto.duplicatas.length > 0
             ? {
@@ -2767,7 +2870,47 @@ export class NfeService {
     return this.prisma.nfeCorrectionEvent.findMany({
       where: { nfeId },
       orderBy: { sequenciaEvento: 'asc' },
+      select: {
+        id: true,
+        sequenciaEvento: true,
+        correcao: true,
+        protocolo: true,
+        dataEvento: true,
+        createdAt: true,
+        xmlEvento: true,
+      },
     });
+  }
+
+  async getCorrectionEventXml(
+    nfeId: string,
+    eventId: string,
+    companyId: string,
+  ) {
+    // Validação de posse: a NF-e deve pertencer à empresa
+    const nfe = await this.prisma.nfe.findFirst({
+      where: { id: nfeId, companyId },
+    });
+
+    if (!nfe) {
+      throw new NotFoundException('NF-e não encontrada');
+    }
+
+    const event = await this.prisma.nfeCorrectionEvent.findFirst({
+      where: { id: eventId, nfeId },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Evento de correção não encontrado');
+    }
+
+    if (!event.xmlEvento) {
+      throw new NotFoundException(
+        'XML não disponível para este evento. O XML pode não ter sido retornado pela Invoicy no momento do envio.',
+      );
+    }
+
+    return { xml: event.xmlEvento, sequencia: event.sequenciaEvento };
   }
 
   async exportXml(
@@ -2860,6 +3003,26 @@ export class NfeService {
       nfeWhere.createdAt = createdAtFilter;
       nfseWhere.createdAt = createdAtFilter;
       nfceWhere.createdAt = createdAtFilter;
+    }
+
+    // Item 1: Obtém IDs de NF-es rejeitadas que já têm versão autorizada posterior
+    // com mesmo numero+serie para não exibi-las em duplicidade
+    const excludedRows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT r.id FROM nfes r
+      WHERE r."companyId" = ${companyId}
+        AND r.status = 'REJECTED'
+        AND EXISTS (
+          SELECT 1 FROM nfes a
+          WHERE a."companyId" = r."companyId"
+            AND a.numero = r.numero
+            AND a.serie = r.serie
+            AND a.status = 'AUTHORIZED'
+            AND a."createdAt" > r."createdAt"
+        )
+    `;
+    const excludedNfeIds = excludedRows.map((row) => row.id);
+    if (excludedNfeIds.length > 0) {
+      nfeWhere.id = { notIn: excludedNfeIds };
     }
 
     if (recordType === 'TODOS' || recordType === 'PEDIDOS') {
@@ -3022,7 +3185,10 @@ export class NfeService {
           ? `${o.quotation.series.code}-${o.quotation.quotationNumber}`
           : `OS ${o.quotation?.quotationNumber || ''}`,
         totalValue: o.quotation?.totalValue || 0,
-        nfes: [...(o.nfes || []), ...(o.nfeOrders?.map((no) => no.nfe) || [])],
+        nfes: [
+          ...(o.nfes || []),
+          ...(o.nfeOrders?.map((no) => no.nfe) || []),
+        ].filter((n) => !excludedNfeIds.includes(n.id)),
         originalData: o,
       });
     }
@@ -3032,11 +3198,14 @@ export class NfeService {
         typeof n.draftData === 'string'
           ? JSON.parse(n.draftData)
           : n.draftData || {};
+      const finalidade =
+        draftData?.emissao?.finalidade ?? draftData?.finalidade ?? 1;
       unifiedItems.push({
         type: 'NFE_AVULSA',
         id: n.id,
         createdAt: n.createdAt,
         status: n.status,
+        finalidade,
         clientName:
           draftData?.destinatario?.razaoSocial ||
           draftData?.destNome ||

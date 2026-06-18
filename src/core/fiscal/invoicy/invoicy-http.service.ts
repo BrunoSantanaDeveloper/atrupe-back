@@ -426,11 +426,16 @@ export class InvoicyHttpService {
           Evento: {
             ChaveNFe: chaveAcesso,
             TipoEvento: 110111, // Cancelamento
+            nSeqEvento: 1,
             Justificativa: justificativa,
           },
         },
       },
     ];
+
+    this.logger.log(
+      `Payload de cancelamento NF-e montado: ChaveNFe=${chaveAcesso}, nSeqEvento=1`,
+    );
 
     return this.makeRequest<InvoicyResponse[]>(
       companyId,

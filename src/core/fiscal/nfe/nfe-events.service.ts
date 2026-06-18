@@ -37,9 +37,12 @@ export class NfeEventsService {
    * Cancela uma NF-e autorizada
    */
   async cancel(nfe: any, companyId: string, dto: CancelNfeDto): Promise<any> {
-    if (nfe.status !== NfeStatus.AUTHORIZED) {
+    if (
+      nfe.status !== NfeStatus.AUTHORIZED &&
+      nfe.status !== NfeStatus.CORRECTION_SENT
+    ) {
       throw new BadRequestException(
-        'Apenas NF-e autorizadas podem ser canceladas',
+        'Apenas NF-e autorizadas ou com carta de correção podem ser canceladas',
       );
     }
 
@@ -82,15 +85,21 @@ export class NfeEventsService {
         );
       }
 
+      this.logger.log(
+        `Resposta bruta Invoicy cancelamento NF-e ${nfe.numero}: ${JSON.stringify(response)}`,
+      );
+
       const doc = response.Documentos?.[0];
       const situacao = doc?.Situacao;
       const isCancelled =
         situacao?.SitCodigo === 135 || situacao?.SitCodigo === 101;
 
       if (!isCancelled) {
-        throw new Error(
-          situacao?.SitDescricao || 'Cancelamento não autorizado pela SEFAZ',
-        );
+        const mensagemSefaz =
+          doc?.MensagemSefaz?.DscMsg ||
+          situacao?.SitDescricao ||
+          'Cancelamento não autorizado pela SEFAZ';
+        throw new Error(mensagemSefaz);
       }
 
       const updatedNfe = await this.prisma.nfe.update({
@@ -118,9 +127,12 @@ export class NfeEventsService {
     companyId: string,
     dto: CorrectionLetterDto,
   ): Promise<any> {
-    if (nfe.status !== NfeStatus.AUTHORIZED) {
+    if (
+      nfe.status !== NfeStatus.AUTHORIZED &&
+      nfe.status !== NfeStatus.CORRECTION_SENT
+    ) {
       throw new BadRequestException(
-        'Cartas de correção só podem ser enviadas para NF-e autorizadas',
+        'Cartas de correção só podem ser enviadas para NF-e autorizadas ou com correção anterior',
       );
     }
 
@@ -190,7 +202,17 @@ export class NfeEventsService {
         },
       });
 
-      // Persistir evento no histórico de correções
+      // Persistir evento no histórico de correções (com XML se disponível)
+      const xmlEvento = doc?.DocXMLBase64
+        ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
+        : null;
+
+      if (!xmlEvento) {
+        this.logger.warn(
+          `XML da CC-e não retornado pela Invoicy para NF-e ${nfe.numero} (evento seq ${sequenciaEvento})`,
+        );
+      }
+
       await this.prisma.nfeCorrectionEvent.create({
         data: {
           nfeId: nfe.id,
@@ -198,6 +220,7 @@ export class NfeEventsService {
           correcao: dto.correcao,
           protocolo: doc?.DocProtocolo || null,
           dataEvento: new Date(),
+          xmlEvento,
         },
       });
 

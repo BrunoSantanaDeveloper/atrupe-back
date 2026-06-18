@@ -21,6 +21,7 @@ import {
 import { PermissionsGuard } from '../../auth/abac/permissions.guard';
 import { HasPermission } from '../../auth/abac/has-permission.decorator';
 import { NfeService } from './nfe.service';
+import { NfeEventsService } from './nfe-events.service';
 import {
   EmitNfeDto,
   EmitNfeFromOrderDto,
@@ -37,7 +38,10 @@ import {
 @UseGuards(JwtAuthGuard, PermissionsGuard, BlockLevelGuard)
 @Controller('fiscal/nfe')
 export class NfeController {
-  constructor(private readonly nfeService: NfeService) {}
+  constructor(
+    private readonly nfeService: NfeService,
+    private readonly nfeEventsService: NfeEventsService,
+  ) {}
 
   @Get()
   @HasPermission('view', 'nota_fiscal:emitidas')
@@ -182,7 +186,8 @@ export class NfeController {
   @HasPermission('delete', 'nota_fiscal:cancelar')
   @ApiOperation({ summary: 'Cancelar NF-e' })
   async cancel(@Req() req, @Param('id') id: string, @Body() dto: CancelNfeDto) {
-    return this.nfeService.cancel(id, req.user.companyId, dto);
+    const nfe = await this.nfeService.findById(id, req.user.companyId);
+    return this.nfeEventsService.cancel(nfe, req.user.companyId, dto);
   }
 
   @Post(':id/correction-letter')
@@ -193,7 +198,12 @@ export class NfeController {
     @Param('id') id: string,
     @Body() dto: CorrectionLetterDto,
   ) {
-    return this.nfeService.sendCorrectionLetter(id, req.user.companyId, dto);
+    const nfe = await this.nfeService.findById(id, req.user.companyId);
+    return this.nfeEventsService.sendCorrectionLetter(
+      nfe,
+      req.user.companyId,
+      dto,
+    );
   }
 
   @Get(':id/corrections')
@@ -201,6 +211,21 @@ export class NfeController {
   @ApiOperation({ summary: 'Listar histórico de cartas de correção' })
   async listCorrections(@Req() req, @Param('id') id: string) {
     return this.nfeService.listCorrectionEvents(id, req.user.companyId);
+  }
+
+  @Get(':id/corrections/:eventId/xml')
+  @HasPermission('view', 'nota_fiscal:emitidas')
+  @ApiOperation({ summary: 'Download do XML de uma carta de correção (CC-e)' })
+  async getCorrectionEventXml(
+    @Req() req,
+    @Param('id') id: string,
+    @Param('eventId') eventId: string,
+  ) {
+    return this.nfeService.getCorrectionEventXml(
+      id,
+      eventId,
+      req.user.companyId,
+    );
   }
 
   @Get(':id/status')

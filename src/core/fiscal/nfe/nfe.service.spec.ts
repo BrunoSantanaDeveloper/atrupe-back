@@ -193,6 +193,7 @@ const mockCorrectionResponse = [
 
 // Mock implementations
 const mockPrismaService = {
+  $queryRaw: jest.fn().mockResolvedValue([]),
   order: {
     findUnique: jest.fn(),
     findFirst: jest.fn(),

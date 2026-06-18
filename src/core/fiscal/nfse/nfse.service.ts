@@ -503,6 +503,30 @@ export class NfseService {
       );
     }
 
+    // Se houver endereço de entrega (local de prestação) e não houver código de município, resolver via CEP
+    if (dto.entregaEndereco && !dto.entregaCodigoMunicipio) {
+      if (!dto.entregaCep) {
+        throw new BadRequestException(
+          'CEP de entrega é obrigatório quando o endereço de entrega (local de prestação) é informado.',
+        );
+      }
+      this.logger.log(
+        `Buscando código IBGE do local de prestação/entrega via CEP: ${dto.entregaCep}`,
+      );
+      const cepData = await fetchCepData(dto.entregaCep);
+      if (!cepData || !cepData.codigoIbge) {
+        throw new BadRequestException(
+          `Não foi possível localizar o código IBGE para o CEP de entrega/prestação informado: ${dto.entregaCep}. Verifique o CEP ou digite o código do município manualmente.`,
+        );
+      }
+      dto.entregaCodigoMunicipio = cepData.codigoIbge;
+      if (!dto.entregaMunicipio) dto.entregaMunicipio = cepData.cidade;
+      if (!dto.entregaUf) dto.entregaUf = cepData.uf;
+      this.logger.log(
+        `IBGE do local de prestação resolvido: ${dto.entregaCodigoMunicipio}`,
+      );
+    }
+
     // Read current RPS number (will only increment after successful emission)
     const rpsNumero = config.proximoRpsNfse || 1;
     const rpsSerie = config.serieNfse || 'A1';
@@ -542,6 +566,7 @@ export class NfseService {
         codigoServico: dto.codigoServico,
         discriminacao: dto.discriminacao,
         codigoMunicipio: dto.codigoMunicipio,
+        draftData: dto as any,
       },
     });
 

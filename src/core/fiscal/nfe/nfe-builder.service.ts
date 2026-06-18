@@ -58,6 +58,14 @@ export class NfeBuilderService {
         transp: { modFrete: String(dto.modalidadeFrete ?? 9) },
         ...this.buildCobranca(dto, numero, valorTotal),
         ...this.buildAutXml(dto),
+        // Informações adicionais / complementares
+        ...(dto.additionalInfo || config?.taxInfoText
+          ? {
+              infAdic: {
+                infCpl: dto.additionalInfo || config?.taxInfoText || '',
+              },
+            }
+          : {}),
       },
     };
   }
@@ -399,7 +407,9 @@ export class NfeBuilderService {
    * Constrói bloco de pagamento
    */
   private buildPagamento(valorTotal: number, tPag?: string): any[] {
-    return [{ tPag: tPag || '99', vPag: valorTotal.toFixed(2) }];
+    // tPag = '90' significa "Sem Pagamento" — vPag deve ser 0.00 (exigência fiscal)
+    const vPag = tPag === '90' ? '0.00' : valorTotal.toFixed(2);
+    return [{ tPag: tPag || '99', vPag }];
   }
 
   /**
@@ -480,12 +490,21 @@ export class NfeBuilderService {
     const isInterestadual = destUf !== emitUf;
 
     if (finalidade === 4) {
+      const lastThree = baseCfop % 1000;
+      if (lastThree === 101 || lastThree === 201) {
+        return isInterestadual ? 2201 : 1201;
+      }
+      if (lastThree === 102 || lastThree === 202) {
+        return isInterestadual ? 2202 : 1202;
+      }
       const prefix = Math.floor(baseCfop / 1000);
-      if (prefix === 5)
-        return isInterestadual ? baseCfop - 5000 + 2000 : baseCfop - 4000;
-      if (prefix === 6)
-        return isInterestadual ? baseCfop - 4000 : baseCfop - 5000 + 1000;
-      return baseCfop;
+      if (prefix === 1 && isInterestadual) {
+        return baseCfop + 1000;
+      }
+      if (prefix === 2 && !isInterestadual) {
+        return baseCfop - 1000;
+      }
+      return isInterestadual ? 2202 : 1202;
     }
 
     // 5xxx -> 6xxx para interestadual
