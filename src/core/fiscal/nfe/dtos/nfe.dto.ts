@@ -8,6 +8,9 @@ import {
   ValidateNested,
   IsEnum,
   Min,
+  Max,
+  MinLength,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -504,6 +507,8 @@ export class CorrectionLetterDto {
   @ApiProperty({ description: 'Texto da correção (mín 15 caracteres)' })
   @IsString()
   @IsNotEmpty()
+  @MinLength(15)
+  @MaxLength(1000)
   correcao: string;
 
   @ApiPropertyOptional({
@@ -511,6 +516,8 @@ export class CorrectionLetterDto {
     default: 1,
   })
   @IsInt()
+  @Min(1)
+  @Max(20)
   @IsOptional()
   sequenciaEvento?: number;
 }

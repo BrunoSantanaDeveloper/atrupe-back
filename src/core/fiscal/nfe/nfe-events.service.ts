@@ -136,9 +136,23 @@ export class NfeEventsService {
       );
     }
 
-    if (dto.correcao.length < 15) {
+    const correcao = dto.correcao?.trim() || '';
+
+    if (correcao.length < 15) {
       throw new BadRequestException(
         'O texto da correção deve ter no mínimo 15 caracteres',
+      );
+    }
+
+    if (correcao.length > 1000) {
+      throw new BadRequestException(
+        'O texto da correção deve ter no máximo 1000 caracteres',
+      );
+    }
+
+    if (!/^\d{44}$/.test(nfe.chaveAcesso || '')) {
+      throw new BadRequestException(
+        'A chave de acesso da NF-e deve conter exatamente 44 dígitos',
       );
     }
 
@@ -153,9 +167,13 @@ export class NfeEventsService {
       const sequenciaEvento =
         dto.sequenciaEvento ?? (lastEvent ? lastEvent.sequenciaEvento + 1 : 1);
 
-      if (sequenciaEvento > 20) {
+      if (
+        !Number.isInteger(sequenciaEvento) ||
+        sequenciaEvento < 1 ||
+        sequenciaEvento > 20
+      ) {
         throw new BadRequestException(
-          'Limite máximo de 20 cartas de correção por NF-e atingido',
+          'A sequência da carta de correção deve ser um número entre 1 e 20',
         );
       }
 
@@ -164,7 +182,7 @@ export class NfeEventsService {
         await this.invoicyApiService.sendCorrectionLetter(
           companyId,
           nfe.chaveAcesso,
-          dto.correcao,
+          correcao,
           sequenciaEvento,
         );
 
@@ -176,7 +194,12 @@ export class NfeEventsService {
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
         throw new Error(
-          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+          this.getCorrectionRejectionMessage(
+            response,
+            nfe.chaveAcesso,
+            sequenciaEvento,
+            correcao.length,
+          ),
         );
       }
 
@@ -186,8 +209,12 @@ export class NfeEventsService {
 
       if (!isApproved) {
         throw new Error(
-          situacao?.SitDescricao ||
-            'Carta de correção não autorizada pela SEFAZ',
+          this.getCorrectionRejectionMessage(
+            response,
+            nfe.chaveAcesso,
+            sequenciaEvento,
+            correcao.length,
+          ),
         );
       }
 
@@ -195,7 +222,7 @@ export class NfeEventsService {
         where: { id: nfe.id },
         data: {
           status: NfeStatus.CORRECTION_SENT,
-          cartaCorrecao: dto.correcao,
+          cartaCorrecao: correcao,
           dataCorrecao: new Date(),
           protocoloCorrecao: doc?.DocProtocolo || null,
           sequenciaCorrecao: sequenciaEvento,
@@ -217,7 +244,7 @@ export class NfeEventsService {
         data: {
           nfeId: nfe.id,
           sequenciaEvento,
-          correcao: dto.correcao,
+          correcao,
           protocolo: doc?.DocProtocolo || null,
           dataEvento: new Date(),
           xmlEvento,
@@ -234,6 +261,43 @@ export class NfeEventsService {
         `Erro ao enviar carta de correção: ${error.message}`,
       );
     }
+  }
+
+  private getCorrectionRejectionMessage(
+    response: any,
+    chaveAcesso: string,
+    sequenciaEvento: number,
+    correctionLength: number,
+  ): string {
+    const doc = response?.Documentos?.[0];
+    const providerMessages = [
+      response?.ErrorInvoicy,
+      doc?.MensagemSefaz?.DscMsg,
+      doc?.Situacao?.SitDescricao,
+      response?.Mensagem,
+      response?.Descricao,
+    ]
+      .filter((message): message is string =>
+        Boolean(typeof message === 'string' && message.trim()),
+      )
+      .map((message) => message.trim());
+
+    const genericMessage =
+      'Não foi possível processar a operação, verifique os dados enviados e tente novamente.';
+    const specificMessage = providerMessages.find(
+      (message) => message !== genericMessage,
+    );
+    const code = response?.Codigo ? ` (código ${response.Codigo})` : '';
+
+    if (specificMessage) {
+      return `Carta de correção rejeitada${code}: ${specificMessage}`;
+    }
+
+    return (
+      `O Invoicy rejeitou a carta de correção${code}, mas não informou qual campo está inválido. ` +
+      `Dados enviados: chave de acesso ${chaveAcesso} (44 dígitos), ` +
+      `sequência ${sequenciaEvento} e texto da correção com ${correctionLength} caracteres.`
+    );
   }
 
   /**

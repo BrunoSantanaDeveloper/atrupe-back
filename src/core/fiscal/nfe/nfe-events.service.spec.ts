@@ -137,10 +137,11 @@ describe('NfeEventsService', () => {
     });
 
     it('deve enviar a carta de correção e atualizar o banco de dados', async () => {
+      const chaveAcesso = '42260657968205000182550010000000101000005700';
       const nfe = {
         id: 'nfe-1',
         status: NfeStatus.AUTHORIZED,
-        chaveAcesso: 'CHAVE123',
+        chaveAcesso,
       };
 
       invoicyApiMock.sendCorrectionLetter.mockResolvedValue([
@@ -164,7 +165,7 @@ describe('NfeEventsService', () => {
 
       expect(invoicyApiMock.sendCorrectionLetter).toHaveBeenCalledWith(
         'company-1',
-        'CHAVE123',
+        chaveAcesso,
         'Correção de CFOP para 6102',
         1,
       );
@@ -178,6 +179,57 @@ describe('NfeEventsService', () => {
         }),
       );
       expect(result.status).toBe(NfeStatus.CORRECTION_SENT);
+    });
+
+    it('deve informar o detalhe retornado pelo Invoicy', async () => {
+      const nfe = {
+        id: 'nfe-1',
+        numero: 10,
+        status: NfeStatus.AUTHORIZED,
+        chaveAcesso: '42260657968205000182550010000000101000005700',
+      };
+
+      invoicyApiMock.sendCorrectionLetter.mockResolvedValue([
+        {
+          Codigo: 400,
+          Descricao:
+            'Não foi possível processar a operação, verifique os dados enviados e tente novamente.',
+          ErrorInvoicy: 'O campo Correcao contém caracteres inválidos',
+        },
+      ]);
+
+      await expect(
+        service.sendCorrectionLetter(nfe, 'company-1', {
+          correcao: 'Correção da descrição do produto',
+        }),
+      ).rejects.toThrow(
+        'Carta de correção rejeitada (código 400): O campo Correcao contém caracteres inválidos',
+      );
+    });
+
+    it('deve explicar os dados enviados quando o Invoicy retorna apenas erro genérico', async () => {
+      const chaveAcesso = '42260657968205000182550010000000101000005700';
+      const correcao = 'Correção da descrição do produto';
+      const nfe = {
+        id: 'nfe-1',
+        numero: 10,
+        status: NfeStatus.AUTHORIZED,
+        chaveAcesso,
+      };
+
+      invoicyApiMock.sendCorrectionLetter.mockResolvedValue([
+        {
+          Codigo: 400,
+          Descricao:
+            'Não foi possível processar a operação, verifique os dados enviados e tente novamente.',
+        },
+      ]);
+
+      await expect(
+        service.sendCorrectionLetter(nfe, 'company-1', { correcao }),
+      ).rejects.toThrow(
+        `Dados enviados: chave de acesso ${chaveAcesso} (44 dígitos), sequência 1 e texto da correção com ${correcao.length} caracteres.`,
+      );
     });
   });
 });
