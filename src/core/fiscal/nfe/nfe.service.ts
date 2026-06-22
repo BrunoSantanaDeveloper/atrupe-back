@@ -11,6 +11,7 @@ import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
 import { NfeEmailService } from './nfe-email.service';
 import {
+  InvoicyDocumentResult,
   InvoicyNfeRequest,
   INVOICY_SUCCESS_CODES,
 } from '../invoicy/invoicy.types';
@@ -233,7 +234,7 @@ export class NfeService {
       emissao: {
         emissor: config.company.legalName || config.company.name || '',
         emissorCnpj: config.company.cnpj || '',
-        proximoDocumento: `${config.proximoNumeroNfe || 1} - ${config.serieNfe || 1}`,
+        proximoDocumento: `${config.proximoNumeroNfe || 1}/${config.serieNfe || 1}`,
         serie: config.serieNfe || 1,
         tipo: 1, // 1 = Saída
         finalidade: 1, // 1 = NF-e normal
@@ -607,7 +608,7 @@ export class NfeService {
       emissao: {
         emissor: config.company.legalName || config.company.name || '',
         emissorCnpj: config.company.cnpj || '',
-        proximoDocumento: `${config.proximoNumeroNfe || 1} - ${config.serieNfe || 1}`,
+        proximoDocumento: `${config.proximoNumeroNfe || 1}/${config.serieNfe || 1}`,
         serie: config.serieNfe || 1,
         tipo: 1,
         finalidade: 1,
@@ -946,6 +947,7 @@ export class NfeService {
       originalNfeId: originalNfe.id,
       originalNfeNumero: originalNfe.numero,
       originalNfeChave: originalNfe.chaveAcesso,
+      defaultCfop: String(suggestedCfop),
     };
   }
 
@@ -1017,6 +1019,12 @@ export class NfeService {
       (xmlData as any)?.indFinal ??
       0;
 
+    const originalSalesCfop =
+      draftData?.items?.[0]?.cfop ||
+      xmlData?.items?.[0]?.cfop ||
+      baseData.defaultCfop ||
+      '5102';
+
     return {
       ...baseData,
       clientId: clientId || null,
@@ -1036,6 +1044,7 @@ export class NfeService {
       originalNfeId: originalNfe.id,
       originalNfeNumero: originalNfe.numero,
       originalNfeChave: originalNfe.chaveAcesso,
+      defaultCfop: String(originalSalesCfop),
     };
   }
 
@@ -2033,6 +2042,12 @@ export class NfeService {
         );
       }
 
+      await this.persistDanfePdf(nfe.id, doc).catch((danfeError) => {
+        this.logger.warn(
+          `Nao foi possivel armazenar a DANFE da NF-e ${nfe.id}: ${danfeError.message}`,
+        );
+      });
+
       // Incrementar número da NF-e somente após emissão bem-sucedida
       await this.invoicyService.incrementNfeNumber(config.id);
 
@@ -2395,15 +2410,74 @@ export class NfeService {
     return map[sitCodigo] || null;
   }
 
+  private async persistDanfePdf(
+    nfeId: string,
+    doc: InvoicyDocumentResult,
+  ): Promise<void> {
+    const pdf = await this.resolveDanfePdf(doc);
+    if (!pdf) {
+      this.logger.warn(
+        `DANFE da NF-e ${nfeId} nao foi retornada como PDF valido`,
+      );
+      return;
+    }
+
+    await this.prisma.nfeDanfeDocument.upsert({
+      where: { nfeId },
+      create: { nfeId, pdf },
+      update: { pdf },
+    });
+  }
+
+  private async resolveDanfePdf(
+    doc: Pick<InvoicyDocumentResult, 'DocPDFBase64' | 'DocPDFDownload'>,
+  ): Promise<Buffer | null> {
+    if (doc.DocPDFBase64) {
+      const base64 = doc.DocPDFBase64.replace(
+        /^data:application\/pdf;base64,/i,
+        '',
+      );
+      const pdf = Buffer.from(base64, 'base64');
+      if (this.isPdf(pdf)) return pdf;
+    }
+
+    if (!doc.DocPDFDownload) return null;
+
+    try {
+      const response = await fetch(doc.DocPDFDownload, {
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!response.ok) return null;
+
+      const pdf = Buffer.from(await response.arrayBuffer());
+      return this.isPdf(pdf) ? pdf : null;
+    } catch (error) {
+      this.logger.warn(
+        `Nao foi possivel baixar a DANFE retornada pelo Invoicy: ${error.message}`,
+      );
+      return null;
+    }
+  }
+
+  private isPdf(content: Buffer): boolean {
+    return content.subarray(0, 5).toString('ascii') === '%PDF-';
+  }
+
   async getDanfeUrl(id: string, companyId: string) {
     const nfe = await this.findById(id, companyId);
+    const danfeDocument = await this.prisma.nfeDanfeDocument.findUnique({
+      where: { nfeId: nfe.id },
+    });
 
-    if (!nfe.danfeUrl) {
+    if (!danfeDocument && !nfe.danfeUrl) {
       // TODO: Buscar DANFE da API do Invoicy se não estiver armazenado
       throw new NotFoundException('DANFE não disponível para esta NF-e');
     }
 
-    return { url: nfe.danfeUrl };
+    return {
+      pdfBase64: danfeDocument?.pdf.toString('base64') || null,
+      url: nfe.danfeUrl,
+    };
   }
 
   async getXml(id: string, companyId: string) {

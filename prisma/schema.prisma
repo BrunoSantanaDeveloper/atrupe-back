@@ -9,12 +9,12 @@ datasource db {
 }
 
 model Company {
-  id                    String               @id @default(uuid())
+  id                    String                    @id @default(uuid())
   name                  String // Nome Fantasia
-  createdAt             DateTime             @default(now())
-  isActive              Boolean              @default(true)
-  updatedAt             DateTime?            @updatedAt
-  blockLevel            BlockLevel           @default(NONE)
+  createdAt             DateTime                  @default(now())
+  isActive              Boolean                   @default(true)
+  updatedAt             DateTime?                 @updatedAt
+  blockLevel            BlockLevel                @default(NONE)
   blockedAt             DateTime?
   blockReason           String?
   cnpj                  String?
@@ -72,11 +72,11 @@ model Company {
   subCategory           SubCategory[]
   Subscription          Subscription[]
   suppliers             Supplier[]
-  parentCompany         Company?             @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
-  subsidiaries          Company[]            @relation("CompanyHierarchy")
-  mainQuotations        Quotation[]          @relation("MainCompany")
-  fiscalQuotations      Quotation[]          @relation("FiscalSubCompany")
-  sectors               CompanySector[]      @relation("CompanyToCompanySector")
+  parentCompany         Company?                  @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
+  subsidiaries          Company[]                 @relation("CompanyHierarchy")
+  mainQuotations        Quotation[]               @relation("MainCompany")
+  fiscalQuotations      Quotation[]               @relation("FiscalSubCompany")
+  sectors               CompanySector[]           @relation("CompanyToCompanySector")
   history               CompanyHistory[]
   importLogs            ImportLog[]
   invoicyConfigs        InvoicyConfig[]
@@ -291,7 +291,7 @@ model Client {
   planId            String?
   isBranch          Boolean                  @default(false)
   isImported        Boolean                  @default(false)
-  stateRegistration String?                  // IE (Inscrição Estadual) — required for ICMS taxpayers on NF-e
+  stateRegistration String? // IE (Inscrição Estadual) — required for ICMS taxpayers on NF-e
   indicadorIE       Int?                     @default(9) // 1=Contribuinte ICMS, 2=Isento, 9=Não contribuinte
   address           Address[]
   paymentConditions ClientPaymentCondition[]
@@ -335,7 +335,7 @@ model Supplier {
   minValue          Float?
   isBranch          Boolean                    @default(false)
   isImported        Boolean                    @default(false)
-  stateRegistration String?                    // IE (Inscrição Estadual)
+  stateRegistration String? // IE (Inscrição Estadual)
   indicadorIE       Int?                       @default(9) // 1=Contribuinte ICMS, 2=Isento, 9=Não contribuinte
   address           Address[]
   client            Client[]
@@ -1574,8 +1574,8 @@ model Subscription {
   billingType          BillingType           @default(CREDIT_CARD)
   cycle                Cycle                 @default(MONTHLY)
   couponId             String?
-  couponCode           String?               // Desnormalizado para display
-  discountValue        Float?                // Valor do desconto aplicado (centavos)
+  couponCode           String? // Desnormalizado para display
+  discountValue        Float? // Valor do desconto aplicado (centavos)
   discountType         DiscountType?
   Company              Company?              @relation(fields: [companyId], references: [id])
   customer             Customer              @relation(fields: [customerId], references: [id])
@@ -1685,7 +1685,7 @@ model AcademyProgress {
 }
 
 model UserActivity {
-  id         String    @id @default(uuid())
+  id         String              @id @default(uuid())
   userId     String
   companyId  String?
   employeeId String?
@@ -1694,11 +1694,11 @@ model UserActivity {
   method     String? // Método HTTP (GET, POST, PUT, DELETE)
   ipAddress  String?
   userAgent  String?
-  lastActive DateTime  @default(now()) // Última atividade registrada
-  createdAt  DateTime  @default(now()) // Primeira atividade da sessão
-  isActive   Boolean   @default(true) // Se a sessão está ativa
+  lastActive DateTime            @default(now()) // Última atividade registrada
+  createdAt  DateTime            @default(now()) // Primeira atividade da sessão
+  isActive   Boolean             @default(true) // Se a sessão está ativa
   logoutAt   DateTime? // Quando o usuário fez logout
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   events     UserActivityEvent[]
 
   @@index([userId])
@@ -2121,7 +2121,7 @@ model InvoicyConfig {
   emitCrt Int? @default(1) // 1=Simples Nacional, 2=SN Excesso, 3=Regime Normal
 
   // Configurações fiscais padrão
-  defaultNcm              String? // NCM padrão para novos produtos (ex: 49119900)
+  defaultNcm             String? // NCM padrão para novos produtos (ex: 49119900)
   codigoServico          String?
   aliquotaIss            Float?
   defaultCfop            String?
@@ -2154,7 +2154,7 @@ model InvoicyConfig {
   contingenciaNfceDataHora DateTime?
 
   // NFC-e prazo de cancelamento (configurável por estado)
-  prazoCancelamentoNfce    Int       @default(30) // minutos
+  prazoCancelamentoNfce Int @default(30) // minutos
 
   // Envio fiscal por e-mail
   sendDanfeXmlAutomatically Boolean @default(false)
@@ -2267,7 +2267,8 @@ model Nfe {
   quotation             Quotation? @relation(fields: [quotationId], references: [id])
   orders                NfeOrder[]
 
-  correctionEvents      NfeCorrectionEvent[]
+  correctionEvents NfeCorrectionEvent[]
+  danfeDocument    NfeDanfeDocument?
 
   @@index([companyId])
   @@index([orderId])
@@ -2302,6 +2303,16 @@ model NfeCorrectionEvent {
 
   @@index([nfeId])
   @@map("nfe_correction_events")
+}
+
+model NfeDanfeDocument {
+  nfeId     String   @id
+  pdf       Bytes
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  nfe       Nfe      @relation(fields: [nfeId], references: [id], onDelete: Cascade)
+
+  @@map("nfe_danfe_documents")
 }
 
 model ProductFiscalData {
@@ -2418,47 +2429,47 @@ enum NfceStatus {
 
 // NFC-e Model - Nota Fiscal de Consumidor Eletrônica
 model Nfce {
-  id                    String     @id @default(uuid())
-  createdAt             DateTime   @default(now())
-  updatedAt             DateTime   @updatedAt
-  companyId             String
-  orderId               String?
-  quotationId           String?
-  numero                Int
-  serie                 Int
-  chaveAcesso           String?    @unique
-  protocolo             String?
-  status                NfceStatus @default(PENDING)
-  ambiente              Int // 1 = Produção, 2 = Homologação
-  dataEmissao           DateTime?
-  dataAutorizacao       DateTime?
-  valorTotal            Float
-  valorDesconto         Float?     @default(0)
-  valorTroco            Float?     @default(0)
-  cpfConsumidor         String?
-  consumidorNome        String?
+  id                        String     @id @default(uuid())
+  createdAt                 DateTime   @default(now())
+  updatedAt                 DateTime   @updatedAt
+  companyId                 String
+  orderId                   String?
+  quotationId               String?
+  numero                    Int
+  serie                     Int
+  chaveAcesso               String?    @unique
+  protocolo                 String?
+  status                    NfceStatus @default(PENDING)
+  ambiente                  Int // 1 = Produção, 2 = Homologação
+  dataEmissao               DateTime?
+  dataAutorizacao           DateTime?
+  valorTotal                Float
+  valorDesconto             Float?     @default(0)
+  valorTroco                Float?     @default(0)
+  cpfConsumidor             String?
+  consumidorNome            String?
   informacoesComplementares String?    @db.Text
   itensSnapshot             Json?
   pagamentosSnapshot        Json?
-  formaPagamento        String? // Código da forma de pagamento
-  xmlEnvio              String?    @db.Text
-  xmlRetorno            String?    @db.Text
-  xmlAutorizado         String?    @db.Text
-  qrCodeUrl             String? // URL do QR Code
-  urlConsulta           String? // URL para consulta pública
-  danfeUrl              String?
-  motivoRejeicao        String?
-  motivoCancelamento    String?
-  dataCancelamento      DateTime?
-  protocoloCancelamento String?
-  contingencia          Boolean    @default(false)
-  dataContingencia      DateTime?
-  motivoContingencia    String?
-  invoicyId             String?
-  invoicyProtocol       String?
-  company               Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order                 Order?     @relation(fields: [orderId], references: [id])
-  quotation             Quotation? @relation(fields: [quotationId], references: [id])
+  formaPagamento            String? // Código da forma de pagamento
+  xmlEnvio                  String?    @db.Text
+  xmlRetorno                String?    @db.Text
+  xmlAutorizado             String?    @db.Text
+  qrCodeUrl                 String? // URL do QR Code
+  urlConsulta               String? // URL para consulta pública
+  danfeUrl                  String?
+  motivoRejeicao            String?
+  motivoCancelamento        String?
+  dataCancelamento          DateTime?
+  protocoloCancelamento     String?
+  contingencia              Boolean    @default(false)
+  dataContingencia          DateTime?
+  motivoContingencia        String?
+  invoicyId                 String?
+  invoicyProtocol           String?
+  company                   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order                     Order?     @relation(fields: [orderId], references: [id])
+  quotation                 Quotation? @relation(fields: [quotationId], references: [id])
 
   @@index([companyId])
   @@index([orderId])
@@ -2473,19 +2484,19 @@ enum DigitalCertificateType {
 }
 
 model DigitalCertificate {
-  id          String                 @id @default(uuid())
-  companyId   String                 @unique
-  type        DigitalCertificateType @default(A1)
-  name        String?
-  description String?
-  password    String?
-  certificate String?                @db.Text
-  lastUpload  DateTime?
-  expiresAt   DateTime?              // Certificate expiration date (parsed from PFX)
-  issuer      String?                // Certificate issuer (e.g. "AC SERASA")
-  serialNumber String?               // Certificate serial number
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
+  id           String                 @id @default(uuid())
+  companyId    String                 @unique
+  type         DigitalCertificateType @default(A1)
+  name         String?
+  description  String?
+  password     String?
+  certificate  String?                @db.Text
+  lastUpload   DateTime?
+  expiresAt    DateTime? // Certificate expiration date (parsed from PFX)
+  issuer       String? // Certificate issuer (e.g. "AC SERASA")
+  serialNumber String? // Certificate serial number
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -2493,19 +2504,19 @@ model DigitalCertificate {
 }
 
 model FiscalOnboardingRequest {
-  id          String                  @id @default(uuid())
-  companyId   String
-  status      FiscalOnboardingStatus  @default(PENDING)
+  id        String                 @id @default(uuid())
+  companyId String
+  status    FiscalOnboardingStatus @default(PENDING)
 
   // Dados fiscais coletados do cliente
-  cnpj        String
-  razaoSocial String
+  cnpj         String
+  razaoSocial  String
   nomeFantasia String?
-  ie          String?
-  im          String?
-  cnae        String?
-  uf          String
-  codigoIbge  String?
+  ie           String?
+  im           String?
+  cnae         String?
+  uf           String
+  codigoIbge   String?
 
   // Endereço
   cep         String?
@@ -2516,17 +2527,17 @@ model FiscalOnboardingRequest {
   complemento String?
 
   // Resultado do auto-provisioning
-  invoicyAccessKey    String?
-  invoicyCryptoKey    String?
-  errorMessage        String?   @db.Text
+  invoicyAccessKey String?
+  invoicyCryptoKey String?
+  errorMessage     String? @db.Text
 
   // Metadados
-  resolvedBy  String?
-  resolvedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime? @updatedAt
+  resolvedBy String?
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime? @updatedAt
 
-  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
   @@index([status])
@@ -2556,15 +2567,15 @@ model Coupon {
   code              String         @unique
   description       String?
   discountType      DiscountType
-  discountValue     Float          // Para PERCENT: ex 20 (= 20%). Para VALUE: em centavos, ex 5000 (= R$50)
+  discountValue     Float // Para PERCENT: ex 20 (= 20%). Para VALUE: em centavos, ex 5000 (= R$50)
   durationType      CouponDuration @default(ONCE)
-  durationMonths    Int?           // Usado apenas quando durationType = MONTHS
-  maxUses           Int?           // Null = ilimitado
+  durationMonths    Int? // Usado apenas quando durationType = MONTHS
+  maxUses           Int? // Null = ilimitado
   currentUses       Int            @default(0)
   maxUsesPerCompany Int            @default(1) // Admin define dinamicamente
-  minPlanValue      Float?         // Valor mínimo do plano para aplicar (centavos)
+  minPlanValue      Float? // Valor mínimo do plano para aplicar (centavos)
   validFrom         DateTime       @default(now())
-  validUntil        DateTime?      // Null = sem expiração
+  validUntil        DateTime? // Null = sem expiração
   isActive          Boolean        @default(true)
   appliesToPlans    String[]       @default([]) // IDs dos planos. Vazio = todos
   appliesToModules  Boolean        @default(true)
@@ -2584,9 +2595,9 @@ model CouponUsage {
   couponId        String
   companyId       String
   subscriptionId  String?
-  discountApplied Float    // Valor real do desconto aplicado (centavos)
-  originalValue   Float    // Valor original antes do desconto (centavos)
-  finalValue      Float    // Valor final após desconto (centavos)
+  discountApplied Float // Valor real do desconto aplicado (centavos)
+  originalValue   Float // Valor original antes do desconto (centavos)
+  finalValue      Float // Valor final após desconto (centavos)
   createdAt       DateTime @default(now())
   coupon          Coupon   @relation(fields: [couponId], references: [id])
 
@@ -2601,7 +2612,7 @@ enum DiscountType {
 }
 
 enum CouponDuration {
-  ONCE      // Desconto apenas na primeira cobrança
+  ONCE // Desconto apenas na primeira cobrança
   RECURRING // Desconto permanente em todas as cobranças
-  MONTHS    // Desconto por N meses
+  MONTHS // Desconto por N meses
 }

@@ -213,6 +213,10 @@ const mockPrismaService = {
   nfeOrder: {
     createMany: jest.fn(),
   },
+  nfeDanfeDocument: {
+    findUnique: jest.fn(),
+    upsert: jest.fn(),
+  },
   quotation: {
     findFirst: jest.fn(),
     findUnique: jest.fn(),
@@ -678,6 +682,26 @@ describe('NfeService', () => {
           correcao: 'Correção de dados do documento fiscal',
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('getDanfeUrl', () => {
+    it('should return the persisted PDF instead of relying on the external URL', async () => {
+      prisma.nfe.findFirst.mockResolvedValue({
+        ...mockNfe,
+        danfeUrl: 'https://example.com/danfe.pdf',
+      });
+      prisma.nfeDanfeDocument.findUnique.mockResolvedValue({
+        nfeId: mockNfeId,
+        pdf: Buffer.from('%PDF-test'),
+      });
+
+      const result = await service.getDanfeUrl(mockNfeId, mockCompanyId);
+
+      expect(result.pdfBase64).toBe(
+        Buffer.from('%PDF-test').toString('base64'),
+      );
+      expect(result.url).toBe('https://example.com/danfe.pdf');
     });
   });
 });
