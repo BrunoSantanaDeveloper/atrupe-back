@@ -262,13 +262,14 @@ describe('Security Regression Tests (T-019)', () => {
 
   describe('Rate Limiting (T-001 related)', () => {
     it('should have ThrottlerGuard applied to AuthController', () => {
-      // Verify ThrottlerGuard decorator exists
+      // AuthController usa AuthThrottlerGuard (extends ThrottlerGuard) para
+      // rastrear o IP real do usuário via header x-user-ip.
 
       expect(ThrottlerGuard).toBeDefined();
     });
 
-    it('should have rate limit of 5 requests per minute on login', () => {
-      // AuthController uses @Throttle({ auth: { limit: 5, ttl: 60000 } })
+    it('should have rate limit of 10 requests per minute on login', () => {
+      // AuthController usa @Throttle({ auth: { limit: 10, ttl: 60000 } })
 
       expect(Throttle).toBeDefined();
     });

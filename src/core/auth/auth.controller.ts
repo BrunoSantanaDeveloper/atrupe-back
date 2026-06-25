@@ -1,7 +1,8 @@
 import { Controller, Post, Req, UseGuards } from '@nestjs/common';
-import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { ActivityMonitorService } from '../activity-monitor/activity-monitor.service';
+import { AuthThrottlerGuard } from './guards/auth-throttler.guard';
 import { LocalAuthGuard } from './guards/local.guard';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import {
@@ -29,7 +30,7 @@ class LoginDto {
 
 @Controller('auth')
 @ApiTags('Autenticação')
-@UseGuards(ThrottlerGuard)
+@UseGuards(AuthThrottlerGuard)
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
@@ -37,7 +38,7 @@ export class AuthController {
   ) {}
 
   @Post('login')
-  @Throttle({ auth: { limit: 5, ttl: 60000 } })
+  @Throttle({ auth: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: 'Realiza o login do usuário' })
   @ApiBody({
     description: 'Payload para login',
