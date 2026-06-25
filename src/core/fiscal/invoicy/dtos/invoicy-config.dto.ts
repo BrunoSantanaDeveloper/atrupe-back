@@ -475,3 +475,39 @@ export class UpdateInvoicyConfigDto {
   @Transform(emptyToUndefined)
   sendFiscalEmailCopyTo?: string;
 }
+
+export class SetCscDto {
+  @ApiProperty({ description: 'ID do CSC (Código de Segurança do Consumidor)' })
+  @IsString()
+  @IsNotEmpty()
+  cscId: string;
+
+  @ApiProperty({ description: 'Token CSC (Código de Segurança do Consumidor)' })
+  @IsString()
+  @IsNotEmpty()
+  cscToken: string;
+}
+
+export class SetAccessKeyDto {
+  @ApiProperty({ description: 'Chave de acesso Invoicy da empresa' })
+  @IsString()
+  @IsNotEmpty()
+  accessKey: string;
+}
+
+export class SetNfceNumberingDto {
+  @ApiProperty({ description: 'Série da NFC-e para o ambiente', minimum: 1 })
+  @Transform(parseNumber)
+  @IsNumber()
+  @Min(1)
+  nfceSeries: number;
+
+  @ApiProperty({
+    description: 'Próximo número da NFC-e para o ambiente',
+    minimum: 1,
+  })
+  @Transform(parseNumber)
+  @IsNumber()
+  @Min(1)
+  nfceNextNumber: number;
+}

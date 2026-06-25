@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { PlugService } from '../../svc/plug/plug.service';
@@ -29,6 +29,19 @@ import { Logger } from '@nestjs/common';
 import { CompanySeedsService } from './company-seeds.service';
 import { CompanyHistoryService } from './company-history.service';
 import { parsePfxCertificate } from '../fiscal/utils/certificate-parser';
+import { EncryptionService } from '../../shared/services/encryption.service';
+import { FiscalRolloutPolicyService } from '../fiscal/shared/fiscal-rollout-policy.service';
+import { FiscalCredentialResolverService } from '../fiscal/shared/fiscal-credential-resolver.service';
+import { FiscalEnvironment } from '@prisma/client';
+import * as crypto from 'crypto';
+
+export type CompanyWithFiscalRelations = Prisma.CompanyGetPayload<{
+  include: {
+    environmentCredentials: true;
+    DigitalCertificate: true;
+    address?: true;
+  };
+}>;
 
 @Injectable()
 export class CompanyService {
@@ -39,6 +52,9 @@ export class CompanyService {
     private readonly plugService: PlugService,
     private readonly companySeedsService: CompanySeedsService,
     private readonly companyHistoryService: CompanyHistoryService,
+    private readonly encryptionService: EncryptionService,
+    private readonly fiscalRolloutPolicy: FiscalRolloutPolicyService,
+    private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
   ) {}
   async createFirstAccess(email: string, companyId: string) {
     try {
@@ -196,20 +212,9 @@ export class CompanyService {
             // Fiscal fields
             cnae: fiscal?.cnae,
             partnerKey: fiscal?.partnerKey,
-            accessKey: fiscal?.accessKey,
-            // Certificate relation
-            DigitalCertificate:
-              fiscal?.certificateType || fiscal?.certificate
-                ? {
-                    create: {
-                      type: fiscal.certificateType,
-                      description: fiscal.certificateDescription,
-                      password: fiscal.certificatePassword,
-                      certificate: fiscal.certificate,
-                      name: fiscal.certificateName,
-                    },
-                  }
-                : undefined,
+            accessKey: this.fiscalRolloutPolicy.shouldWriteToLegacy()
+              ? fiscal?.accessKey
+              : null,
             // Create related address
             address: address
               ? {
@@ -229,15 +234,26 @@ export class CompanyService {
           include: {
             address: true,
             DigitalCertificate: true,
+            environmentCredentials: true,
           },
         });
         return company;
       });
 
+      await this.postCreateUpdateFiscalSecrets(company.id, fiscal);
       await this.createDefaultItems(email, company.id);
       this.logger.log('Default items created successfully');
 
-      return this.formatCompany(company);
+      const finalCompany = await this.prisma.company.findUnique({
+        where: { id: company.id },
+        include: {
+          address: true,
+          DigitalCertificate: true,
+          environmentCredentials: true,
+        },
+      });
+
+      return this.formatCompany(finalCompany!);
     } catch (e) {
       console.error(e);
       throw e;
@@ -545,7 +561,7 @@ export class CompanyService {
       const { general, address, personalization, socialNetworks, fiscal } =
         createCompanyDto;
 
-      return await this.prisma.company.create({
+      const createdCompany = await this.prisma.company.create({
         data: {
           name: general.name,
           legalName: general.legalName,
@@ -573,16 +589,22 @@ export class CompanyService {
           // Fiscal fields
           cnae: fiscal?.cnae,
           partnerKey: fiscal?.partnerKey,
-          accessKey: fiscal?.accessKey,
+          accessKey: this.fiscalRolloutPolicy.shouldWriteToLegacy()
+            ? fiscal?.accessKey
+            : null,
           // Certificate relation
           DigitalCertificate:
             fiscal?.certificateType || fiscal?.certificate
               ? {
                   create: {
-                    type: fiscal.certificateType,
+                    type: fiscal.certificateType || 'A1',
                     description: fiscal.certificateDescription,
-                    password: fiscal.certificatePassword,
-                    certificate: fiscal.certificate,
+                    password: this.fiscalRolloutPolicy.shouldWriteToLegacy()
+                      ? fiscal.certificatePassword
+                      : null,
+                    certificate: this.fiscalRolloutPolicy.shouldWriteToLegacy()
+                      ? fiscal.certificate
+                      : null,
                     name: fiscal.certificateName,
                   },
                 }
@@ -607,11 +629,129 @@ export class CompanyService {
         include: {
           address: true,
           DigitalCertificate: true,
+          environmentCredentials: true,
         },
       });
+
+      await this.postCreateUpdateFiscalSecrets(createdCompany.id, fiscal);
+
+      const finalCompany = await this.prisma.company.findUnique({
+        where: { id: createdCompany.id },
+        include: {
+          address: true,
+          DigitalCertificate: true,
+          environmentCredentials: true,
+        },
+      });
+
+      return this.formatCompany(finalCompany as any);
     } catch (e) {
       console.error(e);
       throw e;
+    }
+  }
+
+  private async postCreateUpdateFiscalSecrets(companyId: string, fiscal: any) {
+    if (!fiscal) return;
+
+    const environment = FiscalEnvironment.HOMOLOGACAO;
+
+    if (fiscal.accessKey) {
+      const credential = await this.prisma.companyEnvironmentCredential.upsert({
+        where: {
+          companyId_environment: {
+            companyId,
+            environment,
+          },
+        },
+        update: {},
+        create: {
+          companyId,
+          environment,
+        },
+      });
+
+      const providerAccessKeyEncrypted = this.encryptionService.encrypt(
+        fiscal.accessKey,
+        {
+          table: 'company_environment_credentials',
+          recordId: credential.id,
+          companyId,
+          field: 'providerAccessKeyEncrypted',
+          scope: environment,
+        },
+      );
+
+      await this.prisma.companyEnvironmentCredential.update({
+        where: { id: credential.id },
+        data: { providerAccessKeyEncrypted },
+      });
+
+      if (!this.fiscalRolloutPolicy.shouldWriteToLegacy()) {
+        await this.prisma.company.update({
+          where: { id: companyId },
+          data: { accessKey: null },
+        });
+      }
+    }
+
+    if (fiscal.certificate || fiscal.certificatePassword) {
+      const existingCert = await this.prisma.digitalCertificate.findUnique({
+        where: { companyId },
+      });
+
+      const certId = existingCert?.id || crypto.randomUUID();
+
+      let passwordEncrypted: string | null = null;
+      if (fiscal.certificatePassword) {
+        passwordEncrypted = this.encryptionService.encrypt(
+          fiscal.certificatePassword,
+          {
+            table: 'digital_certificates',
+            recordId: certId,
+            companyId,
+            field: 'passwordEncrypted',
+            scope: 'GLOBAL',
+          },
+        );
+      }
+
+      let certificateEncrypted: string | null = null;
+      if (fiscal.certificate) {
+        certificateEncrypted = this.encryptionService.encrypt(
+          fiscal.certificate,
+          {
+            table: 'digital_certificates',
+            recordId: certId,
+            companyId,
+            field: 'certificateEncrypted',
+            scope: 'GLOBAL',
+          },
+        );
+      }
+
+      const updateData: any = {
+        passwordEncrypted,
+        certificateEncrypted,
+      };
+
+      if (!this.fiscalRolloutPolicy.shouldWriteToLegacy()) {
+        updateData.password = null;
+        updateData.certificate = null;
+      }
+
+      await this.prisma.digitalCertificate.upsert({
+        where: { companyId },
+        update: updateData,
+        create: {
+          id: certId,
+          companyId,
+          type: fiscal.certificateType || 'A1',
+          description: fiscal.certificateDescription,
+          name: fiscal.certificateName,
+          ...updateData,
+        },
+      });
     }
   }
 
@@ -639,6 +779,7 @@ export class CompanyService {
         include: {
           address: true,
           DigitalCertificate: true,
+          environmentCredentials: true,
         },
         orderBy: {
           principalCompanyId: 'desc',
@@ -655,7 +796,7 @@ export class CompanyService {
     });
 
     const formattedCompanies = sortedCompanies.map((company, index) =>
-      this.formatCompany(company, index === 0),
+      this.formatCompany(company as any, index === 0),
     );
 
     return {
@@ -671,9 +812,11 @@ export class CompanyService {
       include: {
         address: true,
         DigitalCertificate: true,
+        environmentCredentials: true,
       },
     });
-    return this.formatCompany(company);
+    if (!company) return null;
+    return this.formatCompany(company as any);
   }
 
   async update(id: string, updateCompanyDto: UpdateCompanyDto) {
@@ -701,12 +844,21 @@ export class CompanyService {
       // Fiscal fields
       cnae: fiscal?.cnae,
       partnerKey: fiscal?.partnerKey,
-      accessKey: fiscal?.accessKey,
+      accessKey: this.fiscalRolloutPolicy.shouldWriteToLegacy()
+        ? fiscal?.accessKey
+        : undefined,
     };
 
     if (updateCompanyDto.isActive !== undefined) {
       data['isActive'] = updateCompanyDto.isActive;
     }
+
+    // Snapshot fiscal-relevante antes do update, para detectar mudanças que
+    // exigem rebaixar os ambientes fiscais (CNPJ/IE/endereço alteram o XML emitido).
+    const fiscalSnapshot = await this.prisma.company.findUnique({
+      where: { id },
+      select: { cnpj: true, stateRegistration: true },
+    });
 
     try {
       // Update company basic data
@@ -716,6 +868,7 @@ export class CompanyService {
         include: {
           address: true,
           DigitalCertificate: true,
+          environmentCredentials: true,
         },
       });
 
@@ -728,9 +881,85 @@ export class CompanyService {
         );
       }
 
+      // Handle accessKey encryption
+      if (fiscal?.accessKey) {
+        let config = await this.prisma.invoicyConfig.findFirst({
+          where: { companyId: id, isDefault: true },
+        });
+        if (!config) {
+          config = await this.prisma.invoicyConfig.findFirst({
+            where: { companyId: id },
+          });
+        }
+
+        const env = config
+          ? config.activeEnvironment ||
+            (config.environment === 'PRODUCAO' || config.ambiente === 1
+              ? FiscalEnvironment.PRODUCAO
+              : FiscalEnvironment.HOMOLOGACAO)
+          : FiscalEnvironment.HOMOLOGACAO;
+
+        const credential =
+          await this.prisma.companyEnvironmentCredential.upsert({
+            where: {
+              companyId_environment: {
+                companyId: id,
+                environment: env,
+              },
+            },
+            update: {},
+            create: {
+              companyId: id,
+              environment: env,
+            },
+          });
+
+        const providerAccessKeyEncrypted = this.encryptionService.encrypt(
+          fiscal.accessKey,
+          {
+            table: 'company_environment_credentials',
+            recordId: credential.id,
+            companyId: id,
+            field: 'providerAccessKeyEncrypted',
+            scope: env,
+          },
+        );
+
+        await this.prisma.companyEnvironmentCredential.update({
+          where: { id: credential.id },
+          data: { providerAccessKeyEncrypted },
+        });
+
+        if (!this.fiscalRolloutPolicy.shouldWriteToLegacy()) {
+          await this.prisma.company.update({
+            where: { id },
+            data: { accessKey: null },
+          });
+        }
+      }
+
       // Handle address
       if (address) {
         await this.handleAddressUpdate(id, address, updatedCompany.address);
+      }
+
+      // Rebaixar TODOS os ambientes fiscais para DRAFT quando CNPJ, IE ou endereço
+      // mudarem — esses campos compõem o XML emitido, então qualquer READY anterior
+      // deixa de ser válido e exige nova ativação/validação.
+      const cnpjChanged =
+        data.cnpj !== undefined && data.cnpj !== fiscalSnapshot?.cnpj;
+      const ieChanged =
+        data.stateRegistration !== undefined &&
+        data.stateRegistration !== fiscalSnapshot?.stateRegistration;
+      if (cnpjChanged || ieChanged || !!address) {
+        await this.prisma.invoicyEnvironmentConfig.updateMany({
+          where: { invoicyConfig: { companyId: id } },
+          data: {
+            status: 'DRAFT',
+            lastValidationAt: null,
+            lastValidationError: null,
+          },
+        });
       }
 
       // Return updated company with address and certificate
@@ -739,19 +968,17 @@ export class CompanyService {
         include: {
           address: true,
           DigitalCertificate: true,
+          environmentCredentials: true,
         },
       });
 
-      return this.formatCompany(finalCompany);
+      return this.formatCompany(finalCompany as any);
     } catch (e) {
       this.logger.error(`Error updating company ${id}:`, e);
       throw e;
     }
   }
 
-  /**
-   * Handles digital certificate upsert or deletion during company update.
-   */
   private async handleCertificateUpdate(
     companyId: string,
     fiscal: UpdateCompanyDto['fiscal'],
@@ -762,70 +989,122 @@ export class CompanyService {
         fiscal.certificate &&
         (!existingCert || existingCert.certificate !== fiscal.certificate);
 
-      const hasChanges =
-        !existingCert ||
-        isFileChanged ||
-        existingCert.type !== fiscal.certificateType ||
-        existingCert.description !== fiscal.certificateDescription ||
-        existingCert.password !== fiscal.certificatePassword ||
-        existingCert.name !== fiscal.certificateName;
+      const certId = existingCert?.id || crypto.randomUUID();
 
-      if (hasChanges) {
-        const updateData = {
-          type: fiscal.certificateType as any,
-          description: fiscal.certificateDescription,
-          password: fiscal.certificatePassword,
-          certificate: fiscal.certificate,
-          name: fiscal.certificateName,
-        };
+      let passwordEncrypted: string | null = null;
+      if (fiscal.certificatePassword) {
+        passwordEncrypted = this.encryptionService.encrypt(
+          fiscal.certificatePassword,
+          {
+            table: 'digital_certificates',
+            recordId: certId,
+            companyId,
+            field: 'passwordEncrypted',
+            scope: 'GLOBAL',
+          },
+        );
+      } else if (existingCert?.passwordEncrypted) {
+        passwordEncrypted = existingCert.passwordEncrypted;
+      }
 
-        if (isFileChanged) {
-          updateData['lastUpload'] = new Date();
+      let certificateEncrypted: string | null = null;
+      if (fiscal.certificate) {
+        certificateEncrypted = this.encryptionService.encrypt(
+          fiscal.certificate,
+          {
+            table: 'digital_certificates',
+            recordId: certId,
+            companyId,
+            field: 'certificateEncrypted',
+            scope: 'GLOBAL',
+          },
+        );
+      } else if (existingCert?.certificateEncrypted) {
+        certificateEncrypted = existingCert.certificateEncrypted;
+      }
 
-          // Parse PFX to extract certificate metadata
-          if (fiscal.certificate && fiscal.certificatePassword) {
-            const certInfo = parsePfxCertificate(
-              fiscal.certificate,
-              fiscal.certificatePassword,
-            );
-            if (certInfo) {
-              updateData['expiresAt'] = certInfo.expiresAt;
-              updateData['issuer'] = certInfo.issuer;
-              updateData['serialNumber'] = certInfo.serialNumber;
-              this.logger.log(
-                `Certificate parsed: expires ${certInfo.expiresAt?.toISOString()}, issuer: ${certInfo.issuer}`,
-              );
-            } else {
-              this.logger.warn(
-                'Failed to parse PFX certificate — metadata not extracted',
-              );
-            }
-          }
+      const updateData: any = {
+        type: fiscal.certificateType as any,
+        description: fiscal.certificateDescription,
+        name: fiscal.certificateName,
+        passwordEncrypted,
+        certificateEncrypted,
+      };
+
+      if (this.fiscalRolloutPolicy.shouldWriteToLegacy()) {
+        updateData.password = fiscal.certificatePassword;
+        updateData.certificate = fiscal.certificate;
+      } else {
+        updateData.password = null;
+        updateData.certificate = null;
+      }
+
+      if (isFileChanged) {
+        updateData['lastUpload'] = new Date();
+
+        let certPlaintext = fiscal.certificate;
+        let passwordPlaintext = fiscal.certificatePassword;
+
+        if (!certPlaintext && existingCert?.certificateEncrypted) {
+          certPlaintext = this.encryptionService.decrypt(
+            existingCert.certificateEncrypted,
+            {
+              table: 'digital_certificates',
+              recordId: certId,
+              companyId,
+              field: 'certificateEncrypted',
+              scope: 'GLOBAL',
+            },
+          );
+        }
+        if (!passwordPlaintext && existingCert?.passwordEncrypted) {
+          passwordPlaintext = this.encryptionService.decrypt(
+            existingCert.passwordEncrypted,
+            {
+              table: 'digital_certificates',
+              recordId: certId,
+              companyId,
+              field: 'passwordEncrypted',
+              scope: 'GLOBAL',
+            },
+          );
         }
 
-        await this.prisma.digitalCertificate.upsert({
-          where: { companyId },
-          update: updateData,
-          create: {
-            companyId,
-            ...updateData,
-            lastUpload: isFileChanged ? new Date() : undefined,
-          },
-        });
+        if (certPlaintext && passwordPlaintext) {
+          const certInfo = parsePfxCertificate(
+            certPlaintext,
+            passwordPlaintext,
+          );
+          if (certInfo) {
+            updateData['expiresAt'] = certInfo.expiresAt;
+            updateData['issuer'] = certInfo.issuer;
+            updateData['serialNumber'] = certInfo.serialNumber;
+            this.logger.log(
+              `Certificate parsed: expires ${certInfo.expiresAt?.toISOString()}, issuer: ${certInfo.issuer}`,
+            );
+          } else {
+            this.logger.warn(
+              'Failed to parse PFX certificate — metadata not extracted',
+            );
+          }
+        }
       }
+
+      await this.prisma.digitalCertificate.upsert({
+        where: { companyId },
+        update: updateData,
+        create: {
+          id: certId,
+          companyId,
+          ...updateData,
+          lastUpload: isFileChanged ? new Date() : undefined,
+        },
+      });
     } else if (
       (fiscal.certificateType === null ||
         (fiscal.certificateType as any) === '') &&
       (fiscal.certificate === null || fiscal.certificate === '')
     ) {
-      // Explicitly requested deletion
-      try {
-        await this.prisma.digitalCertificate.delete({
-          where: { companyId },
-        });
-      } catch {
-        // Ignore if already deleted
-      }
     }
   }
 
@@ -1681,10 +1960,22 @@ export class CompanyService {
     };
   }
 
-  private formatCompany(company: any, isPrincipal?: boolean) {
+  private formatCompany(
+    company: CompanyWithFiscalRelations,
+    isPrincipal?: boolean,
+  ) {
+    if (
+      !('environmentCredentials' in company) ||
+      !('DigitalCertificate' in company)
+    ) {
+      throw new InternalServerErrorException(
+        'Query Hardening Error: Relações fiscais obrigatórias não foram carregadas',
+      );
+    }
+
     return {
       id: company.id,
-      principal: isPrincipal ?? company.principal,
+      principal: isPrincipal ?? false,
       isActive: company.isActive,
       general: {
         name: company.name,
@@ -1723,13 +2014,21 @@ export class CompanyService {
       },
       fiscal: {
         cnae: company.cnae,
-        partnerKey: company.partnerKey,
-        accessKey: company.accessKey,
+        providerConfigured: !!(
+          company.accessKey ||
+          company.environmentCredentials.some(
+            (c) => c.providerAccessKeyEncrypted,
+          )
+        ),
+        hasCertificate: !!(
+          company.DigitalCertificate?.certificate ||
+          company.DigitalCertificate?.certificateEncrypted
+        ),
         certificateType: company.DigitalCertificate?.type,
         certificateDescription: company.DigitalCertificate?.description,
-        certificatePassword: company.DigitalCertificate?.password,
-        certificate: company.DigitalCertificate?.certificate,
         certificateName: company.DigitalCertificate?.name,
+        certificateExpiresAt: company.DigitalCertificate?.expiresAt,
+        certificateSerialNumber: company.DigitalCertificate?.serialNumber,
         certificateLastUpload: company.DigitalCertificate?.lastUpload,
         certificateUpdatedAt: company.DigitalCertificate?.updatedAt,
       },

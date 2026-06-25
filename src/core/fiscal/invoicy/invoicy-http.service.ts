@@ -14,6 +14,8 @@ import {
   INVOICY_SUCCESS_CODES,
 } from './invoicy.types';
 import { validatePfxCertificateCnpj } from '../utils/certificate-parser';
+import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
+import { FiscalEnvironment } from '@prisma/client';
 
 export const INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE =
   'O CNPJ ja esta cadastrado no Invoicy, mas nao esta vinculado à Atrupe. Entre em contato com o suporte para solicitar a transferencia ou liberacao da empresa junto a Migrate/Invoicy.';
@@ -37,6 +39,7 @@ export class InvoicyHttpService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
   ) {
     this.httpClient = axios.create({
       timeout: 60000, // 60 seconds for fiscal operations
@@ -68,31 +71,57 @@ export class InvoicyHttpService {
   /**
    * Get company credentials from database
    */
-  async getCompanyCredentials(companyId: string) {
-    const config = await this.prisma.invoicyConfig.findFirst({
-      where: { companyId, isDefault: true },
-      include: {
-        company: true,
-      },
-    });
+  async getCompanyCredentials(companyId: string, invoicyConfigId?: string) {
+    let environment: FiscalEnvironment;
 
-    if (!config) {
-      throw new Error(
-        `Configuração do Invoicy não encontrada para empresa ${companyId}`,
-      );
+    if (invoicyConfigId) {
+      environment =
+        await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+          companyId,
+          invoicyConfigId,
+        );
+    } else {
+      let config = await this.prisma.invoicyConfig.findFirst({
+        where: { companyId, isDefault: true },
+      });
+      if (!config) {
+        config = await this.prisma.invoicyConfig.findFirst({
+          where: { companyId },
+        });
+      }
+      if (config) {
+        environment =
+          await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+            companyId,
+            config.id,
+          );
+      } else {
+        environment = FiscalEnvironment.HOMOLOGACAO;
+      }
     }
 
-    if (!config.company?.accessKey) {
+    const runtimeCreds =
+      await this.fiscalCredentialResolver.getCompanyRuntimeCredentials(
+        companyId,
+        environment,
+      );
+
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { cnpj: true },
+    });
+
+    if (!runtimeCreds.accessKey) {
       throw new Error(
-        `Chave de acesso (accessKey) não configurada para empresa ${companyId}. ` +
+        `Chave de acesso (accessKey) não configurada para empresa ${companyId} no ambiente ${environment}. ` +
           `Entre em contato com o suporte para obter sua chave de acesso Invoicy.`,
       );
     }
 
     return {
-      cnpj: config.company.cnpj || '',
-      accessKey: config.company.accessKey,
-      environment: (config.environment as InvoicyEnvironment) || 'HOMOLOGACAO',
+      cnpj: company?.cnpj || '',
+      accessKey: runtimeCreds.accessKey,
+      environment: environment as InvoicyEnvironment,
     };
   }
 
@@ -100,11 +129,19 @@ export class InvoicyHttpService {
    * Generate authentication token for a company
    * Implements JWT generation and OAuth2 authentication as per Invoicy API docs
    */
-  async authenticate(companyId: string): Promise<string> {
+  async authenticate(
+    companyId: string,
+    invoicyConfigId?: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
-    const credentials = await this.getCompanyCredentials(companyId);
+    const credentials = await this.getCompanyCredentials(
+      companyId,
+      invoicyConfigId,
+    );
     const credentialsHash = this.getCredentialsHash(credentials);
-    const cached = this.tokenCache.get(companyId);
+    const cacheKey = `${companyId}:${credentials.environment}`;
+    const cached = this.tokenCache.get(cacheKey);
 
     // If token exists and is still valid (with 5 min buffer), return it
     if (
@@ -160,13 +197,14 @@ export class InvoicyHttpService {
           headers: {
             'Content-Type': 'application/json',
           },
+          signal,
         },
       );
 
       const { accessToken, accessTokenExpireAt } = response.data;
 
       // Cache the token
-      this.tokenCache.set(companyId, {
+      this.tokenCache.set(cacheKey, {
         token: accessToken,
         expiresAt: accessTokenExpireAt,
         companyId,
@@ -178,32 +216,36 @@ export class InvoicyHttpService {
       );
       return accessToken;
     } catch (error) {
+      // Sanitização: nunca logar message bruta nem corpo da resposta (podem conter
+      // credenciais ou tokens). Logar apenas status HTTP + códigos estruturados.
+      const status = error.response?.status;
+      const errorCode =
+        error.response?.data?.codigo || error.response?.data?.code;
+      const errorMsg =
+        error.response?.data?.mensagem || error.response?.data?.message;
       this.logger.error(
-        `Failed to authenticate with Invoicy: ${error.message}`,
+        `Failed to authenticate with Invoicy (status ${status ?? 'n/a'})` +
+          (errorCode || errorMsg
+            ? `: ${errorCode ?? ''} ${errorMsg ?? ''}`.trim()
+            : ''),
       );
-
-      // Log error status without exposing sensitive data
-      if (error.response) {
-        this.logger.error(`Response status: ${error.response.status}`);
-        // Only log error code/message, not full response
-        const errorCode =
-          error.response.data?.codigo || error.response.data?.code;
-        const errorMsg =
-          error.response.data?.mensagem || error.response.data?.message;
-        if (errorCode || errorMsg) {
-          this.logger.error(`Error: ${errorCode} - ${errorMsg}`);
-        }
-      }
-
-      throw new Error(`Falha na autenticação com Invoicy: ${error.message}`);
+      throw new Error(
+        `Falha na autenticação com Invoicy (${status ?? 'n/a'})` +
+          (errorCode ? `: ${errorCode}` : ''),
+      );
     }
   }
 
   /**
    * Clear cached token for a company (useful when credentials change)
    */
-  clearTokenCache(companyId: string): void {
-    this.tokenCache.delete(companyId);
+  clearTokenCache(companyId: string, environment?: InvoicyEnvironment): void {
+    if (environment) {
+      this.tokenCache.delete(`${companyId}:${environment}`);
+    } else {
+      this.tokenCache.delete(`${companyId}:HOMOLOGACAO`);
+      this.tokenCache.delete(`${companyId}:PRODUCAO`);
+    }
   }
 
   private getCredentialsHash(credentials: {
@@ -230,32 +272,59 @@ export class InvoicyHttpService {
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     endpoint: string,
     data?: unknown,
+    invoicyConfigId?: string,
+    signal?: AbortSignal,
   ): Promise<T> {
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
       try {
-        return await this.executeRequest<T>(companyId, method, endpoint, data);
+        return await this.executeRequest<T>(
+          companyId,
+          method,
+          endpoint,
+          data,
+          invoicyConfigId,
+          signal,
+        );
       } catch (error) {
         lastError = error;
 
         // Don't retry client errors (4xx) except 401 (handled in executeRequest)
         if (this.isClientError(error) && error.response?.status !== 401) {
-          if (error.response?.data) {
-            this.logger.error(
-              `Invoicy API Error: ${JSON.stringify(error.response.data)}`,
-            );
-          }
+          // Sanitização: não serializar o corpo da resposta (pode conter tokens/EmpAK).
+          const errCode =
+            error.response?.data?.codigo || error.response?.data?.code;
+          const errMsg =
+            error.response?.data?.mensagem || error.response?.data?.message;
+          this.logger.error(
+            `Request failed with client error ${error.response?.status}` +
+              (errCode || errMsg
+                ? `: ${errCode ?? ''} ${errMsg ?? ''}`.trim()
+                : ''),
+          );
           throw error;
         }
 
-        // Don't retry on last attempt
-        if (attempt < this.MAX_RETRIES && this.isRetryableError(error)) {
+        if (attempt < this.MAX_RETRIES) {
           const delay = this.INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
           this.logger.warn(
-            `Request to ${endpoint} failed (attempt ${attempt}/${this.MAX_RETRIES}), retrying in ${delay}ms...`,
+            `Request failed (attempt ${attempt}/${this.MAX_RETRIES}). Retrying in ${delay}ms...`,
           );
-          await this.delay(delay);
+          if (signal?.aborted) {
+            throw new Error('AbortError');
+          }
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(resolve, delay);
+            signal?.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timer);
+                reject(new Error('AbortError'));
+              },
+              { once: true },
+            );
+          });
         }
       }
     }
@@ -271,9 +340,14 @@ export class InvoicyHttpService {
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     endpoint: string,
     data?: unknown,
+    invoicyConfigId?: string,
+    signal?: AbortSignal,
   ): Promise<T> {
-    const token = await this.authenticate(companyId);
-    const credentials = await this.getCompanyCredentials(companyId);
+    const token = await this.authenticate(companyId, invoicyConfigId, signal);
+    const credentials = await this.getCompanyCredentials(
+      companyId,
+      invoicyConfigId,
+    );
     const baseUrl = this.getBaseUrl(credentials.environment);
 
     try {
@@ -288,6 +362,7 @@ export class InvoicyHttpService {
         url: fullUrl,
         data,
         headers: requestHeaders,
+        signal,
       });
 
       return response.data;
@@ -295,22 +370,30 @@ export class InvoicyHttpService {
       // If unauthorized, clear cache and retry once with new token
       if (error.response?.status === 401) {
         this.logger.warn(
-          `Token expired for company ${this.maskCompanyId(companyId)}, refreshing...`,
+          `Token expired for company ${this.maskCompanyId(companyId)} in environment ${credentials.environment}, refreshing...`,
         );
-        this.clearTokenCache(companyId);
-        const newToken = await this.authenticate(companyId);
+        this.clearTokenCache(companyId, credentials.environment);
+        const newToken = await this.authenticate(
+          companyId,
+          invoicyConfigId,
+          signal,
+        );
 
-        const retryResponse = await this.httpClient.request<T>({
+        const fullUrl = `${baseUrl}${endpoint}`;
+        const requestHeaders = {
+          Authorization: `Bearer ${newToken}`,
+          'Content-Type': 'application/json',
+        };
+
+        const response = await this.httpClient.request<T>({
           method,
-          url: `${baseUrl}${endpoint}`,
+          url: fullUrl,
           data,
-          headers: {
-            Authorization: `Bearer ${newToken}`,
-            'Content-Type': 'application/json',
-          },
+          headers: requestHeaders,
+          signal,
         });
 
-        return retryResponse.data;
+        return response.data;
       }
 
       throw error;
@@ -591,9 +674,9 @@ export class InvoicyHttpService {
     try {
       await this.authenticate(companyId);
       return true;
-    } catch (error) {
+    } catch {
       this.logger.error(
-        `Connection test failed for company ${companyId}: ${error.message}`,
+        `Connection test failed for company ${this.maskCompanyId(companyId)}`,
       );
       return false;
     }
@@ -610,6 +693,7 @@ export class InvoicyHttpService {
    */
   async authenticateAsPartner(
     environment?: InvoicyEnvironment,
+    signal?: AbortSignal,
   ): Promise<string> {
     const selectedEnvironment = environment || this.getPartnerEnvironment();
     const cacheKey = `partner_${selectedEnvironment}`;
@@ -644,6 +728,7 @@ export class InvoicyHttpService {
       const response = await this.httpClient.post<InvoicyAuthResponse>(
         `${baseUrl}/oauth2/invoicy/auth`,
         { token: jwtToken },
+        signal ? { signal } : undefined,
       );
 
       const { accessToken, accessTokenExpireAt } = response.data;
@@ -657,16 +742,23 @@ export class InvoicyHttpService {
       this.logger.log('Successfully authenticated as partner with Invoicy');
       return accessToken;
     } catch (error) {
-      this.logger.error(`Partner authentication failed: ${error.message}`);
-      let detalhe = '';
-      if (error.response?.data) {
-        detalhe =
-          typeof error.response.data === 'string'
-            ? error.response.data
-            : JSON.stringify(error.response.data);
-        this.logger.error(`Invoicy error: ${detalhe}`);
-      }
-      throw new Error(`Falha na autenticação de parceiro (400): ${detalhe}`);
+      // Sanitização: nunca serializar o corpo da resposta (pode conter tokens/EmpAK).
+      // Logar apenas status e o código/mensagem de erro estruturados, se houver.
+      const status = error.response?.status;
+      const errorCode =
+        error.response?.data?.codigo || error.response?.data?.code;
+      const errorMsg =
+        error.response?.data?.mensagem || error.response?.data?.message;
+      this.logger.error(
+        `Partner authentication failed (status ${status ?? 'n/a'})` +
+          (errorCode || errorMsg
+            ? `: ${errorCode ?? ''} ${errorMsg ?? ''}`.trim()
+            : ''),
+      );
+      throw new Error(
+        `Falha na autenticação de parceiro (${status ?? 400})` +
+          (errorCode ? `: ${errorCode}` : ''),
+      );
     }
   }
 
@@ -872,6 +964,136 @@ export class InvoicyHttpService {
   }
 
   /**
+   * Autentica usando as credenciais do ambiente especificado (sem fallback legado).
+   * Usado pelo readiness/activation para validar o ambiente correto.
+   */
+  async authenticateForEnvironment(
+    companyId: string,
+    cnpj: string,
+    environment: FiscalEnvironment,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const partnerKey = this.getPartnerKey();
+    if (!partnerKey) {
+      throw new Error('INVOICY_PARTNER_KEY não configurada');
+    }
+
+    const creds =
+      await this.fiscalCredentialResolver.getCompanyCredentialsForValidation(
+        companyId,
+        environment,
+      );
+
+    if (!creds.accessKey) {
+      throw new Error(
+        `Access key não configurada para ambiente ${environment}`,
+      );
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    const jwtPayload = {
+      iat: now,
+      exp: now + 120,
+      sub: cnpj.replace(/\D/g, ''),
+      partnerKey,
+    };
+
+    const jwtToken = jwt.sign(jwtPayload, creds.accessKey, {
+      algorithm: 'HS256',
+    });
+    const baseUrl = this.getBaseUrl(environment as InvoicyEnvironment);
+
+    const response = await axios.post<InvoicyAuthResponse>(
+      `${baseUrl}/oauth2/invoicy/auth`,
+      { token: jwtToken },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 60000,
+        signal,
+      },
+    );
+
+    return response.data.accessToken;
+  }
+
+  /**
+   * Valida uma access key BRUTA (ainda não persistida) contra o Invoicy,
+   * autenticando no ambiente informado sem ler/gravar credenciais no banco.
+   *
+   * Retorna `true` se a autenticação for aceita. Lança erro em caso de
+   * indisponibilidade/erro de rede (para que o chamador NÃO substitua uma
+   * chave válida por causa de falha transitória). Retorna `false` apenas
+   * quando o provider rejeita a credencial (status 4xx de autenticação).
+   */
+  async validateRawAccessKey(
+    cnpj: string,
+    environment: FiscalEnvironment,
+    accessKey: string,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    const partnerKey = this.getPartnerKey();
+    if (!partnerKey) {
+      throw new Error('INVOICY_PARTNER_KEY não configurada');
+    }
+    if (!accessKey) {
+      return false;
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    const jwtPayload = {
+      iat: now,
+      exp: now + 120,
+      sub: cnpj.replace(/\D/g, ''),
+      partnerKey,
+    };
+    const jwtToken = jwt.sign(jwtPayload, accessKey, { algorithm: 'HS256' });
+    const baseUrl = this.getBaseUrl(environment as InvoicyEnvironment);
+
+    try {
+      const response = await axios.post<InvoicyAuthResponse>(
+        `${baseUrl}/oauth2/invoicy/auth`,
+        { token: jwtToken },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 60000,
+          signal,
+        },
+      );
+      return !!response.data?.accessToken;
+    } catch (error) {
+      const status = error.response?.status;
+      // Credencial rejeitada pelo provider → chave inválida (não é falha transitória).
+      if (status === 400 || status === 401 || status === 403) {
+        return false;
+      }
+      // Indisponibilidade/erro inesperado: propagar para não substituir chave válida.
+      throw error;
+    }
+  }
+
+  /**
+   * Verifica se a empresa já está cadastrada no Invoicy no ambiente especificado.
+   * Retorna true se encontrada, false se não encontrada.
+   */
+  async companyExistsInEnvironment(
+    cnpj: string,
+    environment: FiscalEnvironment,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    try {
+      const existing = await this.consultCompany(
+        cnpj,
+        environment as InvoicyEnvironment,
+        signal,
+      );
+      return !!this.extractCompanyAccessKey(existing);
+    } catch (error) {
+      if (this.isCompanyNotFoundError(error)) return false;
+      throw error;
+    }
+  }
+
+  /**
    * Register a new company in Invoicy via partner API.
    * Returns the EmpAK (Access Key) needed for future operations.
    */
@@ -893,6 +1115,7 @@ export class InvoicyHttpService {
     certificatePassword?: string;
     certificateType?: string;
     environment?: InvoicyEnvironment;
+    signal?: AbortSignal;
   }): Promise<{
     accessKey: string;
     cryptoKey?: string;
@@ -914,7 +1137,11 @@ export class InvoicyHttpService {
 
     // First check if company already exists
     try {
-      const existing = await this.consultCompany(data.cnpj, environment);
+      const existing = await this.consultCompany(
+        data.cnpj,
+        environment,
+        data.signal,
+      );
       const existingCredentials = this.extractCompanyAccessKey(existing);
       if (existingCredentials) {
         this.logger.log(
@@ -927,6 +1154,7 @@ export class InvoicyHttpService {
             certificatePassword: data.certificatePassword || '',
             certificateType: data.certificateType,
             environment,
+            signal: data.signal,
           });
         }
         return {
@@ -941,7 +1169,7 @@ export class InvoicyHttpService {
       // Company not found — proceed with registration
     }
 
-    const token = await this.authenticateAsPartner(environment);
+    const token = await this.authenticateAsPartner(environment, data.signal);
     const baseUrl = this.getBaseUrl(environment);
 
     const payload = [
@@ -979,12 +1207,13 @@ export class InvoicyHttpService {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
+          ...(data.signal ? { signal: data.signal } : {}),
         },
       );
 
       const result = response.data;
       this.logger.log(
-        `Invoicy company registration response: ${JSON.stringify(result).substring(0, 200)}`,
+        `Invoicy company registration response: Codigo=${result?.Codigo} Mensagem=${result?.Mensagem}`,
       );
 
       const credentials = this.extractCompanyAccessKey(result);
@@ -1005,7 +1234,11 @@ export class InvoicyHttpService {
       if (this.hasSuccessCode(result)) {
         // Some Invoicy responses confirm the registration without returning EmpAK.
         // In that case, consult the company right away before falling back to review.
-        const companyData = await this.consultCompany(data.cnpj, environment);
+        const companyData = await this.consultCompany(
+          data.cnpj,
+          environment,
+          data.signal,
+        );
         const consultedCredentials = this.extractCompanyAccessKey(companyData);
         if (consultedCredentials) {
           return { ...consultedCredentials, environment };
@@ -1052,7 +1285,11 @@ export class InvoicyHttpService {
         // Check for success code 100
         if (first.Codigo === 100 || first.Codigo === '100') {
           // Try to get company data via GET
-          const companyData = await this.consultCompany(data.cnpj, environment);
+          const companyData = await this.consultCompany(
+            data.cnpj,
+            environment,
+            data.signal,
+          );
           if (companyData?.EmpAK) {
             return {
               accessKey: companyData.EmpAK,
@@ -1063,13 +1300,17 @@ export class InvoicyHttpService {
         }
       }
 
+      // Nunca serializar `result` inteiro: pode conter EmpAK/ChaveCriptografia (segredos).
       throw new Error(
-        `Resposta inesperada do Invoicy: ${JSON.stringify(result).substring(0, 300)}`,
+        `Resposta inesperada do Invoicy ao cadastrar empresa (Codigo=${
+          result?.Codigo ??
+          (Array.isArray(result) ? result[0]?.Codigo : undefined)
+        })`,
       );
     } catch (error) {
       if (error.response?.data) {
         this.logger.error(
-          `Invoicy registration error: ${JSON.stringify(error.response.data)}`,
+          `Invoicy registration error: Codigo=${error.response.data?.Codigo} Mensagem=${error.response.data?.Mensagem}`,
         );
         if (this.isCompanyAlreadyRegisteredRejection(error.response.data)) {
           throw new BadRequestException(
@@ -1079,7 +1320,7 @@ export class InvoicyHttpService {
         const msg =
           error.response.data?.Mensagem ||
           error.response.data?.message ||
-          JSON.stringify(error.response.data);
+          'Erro desconhecido';
         throw new Error(`Erro ao cadastrar empresa no Invoicy: ${msg}`);
       }
       throw error;
@@ -1092,9 +1333,10 @@ export class InvoicyHttpService {
   async consultCompany(
     cnpj: string,
     environment?: InvoicyEnvironment,
+    signal?: AbortSignal,
   ): Promise<any> {
     const selectedEnvironment = environment || this.getPartnerEnvironment();
-    const token = await this.authenticateAsPartner(selectedEnvironment);
+    const token = await this.authenticateAsPartner(selectedEnvironment, signal);
     const baseUrl = this.getBaseUrl(selectedEnvironment);
     const cleanCnpj = cnpj.replace(/\D/g, '');
 
@@ -1105,6 +1347,7 @@ export class InvoicyHttpService {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        signal,
       },
     );
 
@@ -1121,6 +1364,7 @@ export class InvoicyHttpService {
     certificatePassword: string;
     certificateType?: string;
     environment?: InvoicyEnvironment;
+    signal?: AbortSignal;
   }): Promise<void> {
     const environment = data.environment || this.getPartnerEnvironment();
 
@@ -1134,7 +1378,7 @@ export class InvoicyHttpService {
       data.cnpj,
     );
 
-    const token = await this.authenticateAsPartner(environment);
+    const token = await this.authenticateAsPartner(environment, data.signal);
     const baseUrl = this.getBaseUrl(environment);
 
     const payload = [
@@ -1154,18 +1398,25 @@ export class InvoicyHttpService {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        ...(data.signal ? { signal: data.signal } : {}),
       });
 
       this.logger.log(
         `Certificate updated successfully for ${this.maskCnpj(data.cnpj)}`,
       );
     } catch (error) {
-      const msg =
-        error.response?.data?.Mensagem ||
-        error.response?.data?.message ||
-        error.message;
-      this.logger.error(`Failed to update certificate: ${msg}`);
-      throw new Error(`Erro ao atualizar certificado no Invoicy: ${msg}`);
+      const status = error.response?.status;
+      const errorCode =
+        error.response?.data?.Codigo ||
+        error.response?.data?.codigo ||
+        error.response?.data?.code;
+      this.logger.error(
+        `Failed to update certificate (status ${status ?? 'n/a'})` +
+          (errorCode ? `: ${errorCode}` : ''),
+      );
+      throw new Error(
+        `Erro ao atualizar certificado no Invoicy (${errorCode ?? status ?? 'PROVIDER_ERROR'})`,
+      );
     }
   }
 }

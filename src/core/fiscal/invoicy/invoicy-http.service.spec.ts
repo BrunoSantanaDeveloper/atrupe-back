@@ -14,6 +14,7 @@ describe('InvoicyHttpService response parsing', () => {
           return '';
         }),
       } as any,
+      {} as any,
     ) as any;
 
   it('extracts EmpAK from nested registration responses', () => {

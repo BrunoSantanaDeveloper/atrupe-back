@@ -74,6 +74,13 @@ export class NfceController {
     return this.nfceService.cancel(id, req.user.companyId, dto);
   }
 
+  @Post(':id/reprocess')
+  @HasPermission('create', 'nota_fiscal:emitir')
+  @ApiOperation({ summary: 'Reprocessar NFC-e (status UNKNOWN ou PROCESSING)' })
+  async reprocess(@Req() req, @Param('id') id: string) {
+    return this.nfceService.reprocess(id, req.user.companyId);
+  }
+
   @Post('inutilizar')
   @HasPermission('delete', 'nota_fiscal:cancelar')
   @ApiOperation({ summary: 'Inutilizar numeração de NFC-e' })

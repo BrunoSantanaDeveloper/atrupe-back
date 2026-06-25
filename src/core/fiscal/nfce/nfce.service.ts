@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
@@ -20,6 +21,7 @@ import {
   ContingenciaNfceDto,
   NfceFilterDto,
 } from './dtos/nfce.dto';
+import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 
 @Injectable()
 export class NfceService {
@@ -29,6 +31,7 @@ export class NfceService {
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
     private readonly invoicyApiService: InvoicyApiService,
+    private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
   ) {}
 
   async prepareStandalone(companyId: string) {
@@ -38,10 +41,22 @@ export class NfceService {
         'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
       );
     }
+    const environment =
+      await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+        companyId,
+        config.id,
+      );
+    const credentials =
+      await this.fiscalCredentialResolver.getEmissorRuntimeCredentials(
+        companyId,
+        config.id,
+        environment,
+      );
+
     return {
-      numero: config.proximoNumeroNfce || 1,
-      serie: config.serieNfce || 1,
-      ambiente: config.environment, // 'HOMOLOGACAO' ou 'PRODUCAO'
+      numero: credentials.nfceNextNumber || 1,
+      serie: credentials.nfceSeries || 1,
+      ambiente: environment, // 'HOMOLOGACAO' ou 'PRODUCAO'
       emitCrt: config.emitCrt || 1,
       naturezaOperacao: 'Venda de mercadoria',
       informacoesComplementares: config.taxInfoText || '',
@@ -176,14 +191,24 @@ export class NfceService {
       throw new BadRequestException('Integração com Invoicy está desativada.');
     }
 
-    // Obter próximo número da NFC-e (sem incrementar ainda - só incrementa após emissão bem-sucedida)
-    if (!config.cscId || !config.cscToken) {
+    const environment =
+      await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+        companyId,
+        config.id,
+      );
+    const emissorCredentials =
+      await this.fiscalCredentialResolver.getEmissorRuntimeCredentials(
+        companyId,
+        config.id,
+        environment,
+      );
+
+    // Guard: CSC obrigatório
+    if (!emissorCredentials.cscId || !emissorCredentials.cscToken) {
       throw new BadRequestException(
-        'CSC da NFC-e nao configurado. Informe o ID do CSC e o Token CSC no emissor fiscal antes de emitir NFC-e.',
+        'CSC da NFC-e não configurado. Informe o ID do CSC e o Token CSC no emissor fiscal antes de emitir NFC-e.',
       );
     }
-
-    const numero = config.proximoNumeroNfce || 1;
 
     // Calcular valor total
     const valorTotal = dto.itens.reduce((acc, item) => {
@@ -204,229 +229,253 @@ export class NfceService {
       );
     }
 
+    // Guard: IBGE code obrigatório (antes de reservar número)
+    let emitCmun = config.ibgeCode;
+    if (!emitCmun && config.company?.address?.zipcode) {
+      const cepData = await fetchCepData(config.company.address.zipcode);
+      if (cepData) {
+        emitCmun = cepData.codigoIbge;
+      }
+    }
+    const parsedCmun = parseInt(emitCmun || '0', 10);
+    if (!parsedCmun) {
+      throw new BadRequestException(
+        'Código IBGE do município do emitente não configurado ou inválido. ' +
+          'Configure o código no emissor ou aguarde que o check de readiness retorne PASS.',
+      );
+    }
+
     const isContingency = !!config.contingenciaNfceAtiva;
 
-    // Criar registro da NFC-e
-    const nfce = await this.prisma.nfce.create({
-      data: {
-        companyId,
-        orderId: dto.orderId,
-        quotationId: dto.quotationId,
-        numero,
-        serie: config.serieNfce || 1,
-        status: isContingency ? NfceStatus.CONTINGENCY : NfceStatus.PROCESSING,
-        ambiente: config.ambiente,
-        valorTotal,
-        valorDesconto: dto.itens.reduce(
-          (acc, item) => acc + (item.valorDesconto || 0),
-          0,
-        ),
-        valorTroco: dto.valorTroco || 0,
-        formaPagamento: dto.pagamentos[0]?.tipo || '01',
-        cpfConsumidor: dto.cpfConsumidor || null,
-        consumidorNome: dto.consumidorNome || null,
-        informacoesComplementares:
-          dto.informacoesComplementares || config.taxInfoText || null,
-        itensSnapshot: dto.itens as any,
-        pagamentosSnapshot: dto.pagamentos as any,
-      },
+    // Buscar dados fiscais dos produtos (antes da transação)
+    const productIds = dto.itens.map((item) => item.productId).filter(Boolean);
+    const fiscalDataList = await this.prisma.productFiscalData.findMany({
+      where: { productId: { in: productIds } },
     });
+    const fiscalDataMap = new Map(
+      fiscalDataList.map((fd) => [fd.productId, fd]),
+    );
+
+    // TRANSAÇÃO ATÔMICA: Reservar número + criar registro NFC-e
+    const { nfce, invoicyRequest } = await this.prisma.$transaction(
+      async (tx) => {
+        const { reservedNumber, series } =
+          await this.fiscalCredentialResolver.reserveNfceNumber(
+            tx,
+            config.id,
+            environment,
+          );
+
+        // Construir payload para o Invoicy (NFC-e usa modelo 65)
+        const now = new Date();
+        const consumidorDoc = (dto.cpfConsumidor || '').replace(/\D/g, '');
+        const dest =
+          consumidorDoc.length === 11 || consumidorDoc.length === 14
+            ? {
+                ...(consumidorDoc.length === 14
+                  ? { CNPJ_dest: consumidorDoc }
+                  : { CPF_dest: consumidorDoc }),
+                xNome_dest: dto.consumidorNome || 'CONSUMIDOR',
+                indIEDest: 9,
+              }
+            : undefined;
+
+        // IE: ISENTO ou dígitos
+        const rawIe = (config.company.stateRegistration || '').trim();
+        const emitIe =
+          rawIe.toUpperCase() === 'ISENTO'
+            ? 'ISENTO'
+            : rawIe.replace(/\D/g, '');
+
+        const invoicyRequest: InvoicyNfeRequest = {
+          Documento: {
+            ModeloDocumento: 'NFCe',
+            Versao: 4,
+            ide: {
+              cUF: this.getUfCode(config.company.address.state),
+              natOp: dto.naturezaOperacao || 'Venda de mercadoria',
+              mod: '65',
+              serie: series.toString(),
+              nNF: reservedNumber,
+              dhEmi: now.toISOString(),
+              fusoHorario: '-03:00',
+              tpNf: 1, // Saída
+              idDest: 1, // Operação interna
+              cMunFg: parsedCmun,
+              tpImp: 4, // DANFE NFC-e
+              tpEmis: isContingency ? 9 : 1, // 1=Normal, 9=Contingência Off-line
+              cDV: 0,
+              tpAmb: environment === 'PRODUCAO' ? 1 : 2,
+              finNFe: 1,
+              indFinal: 1, // Consumidor final
+              indPres: 1, // Presença do comprador
+              procEmi: 0,
+              verProc: 'Atrupe 1.0',
+              idCSC: emissorCredentials.cscId
+                ? parseInt(emissorCredentials.cscId, 10)
+                : undefined,
+              CSC: emissorCredentials.cscToken || undefined,
+              ...(isContingency
+                ? {
+                    dhCont: (
+                      config.contingenciaNfceDataHora || now
+                    ).toISOString(),
+                    xJust:
+                      config.contingenciaNfceMotivo ||
+                      'Problemas tecnicos de conexao',
+                  }
+                : {}),
+            },
+            emit: {
+              CNPJ_emit: (config.company.cnpj || '').replace(/\D/g, ''),
+              xNome: config.company.legalName || '',
+              IE: emitIe || undefined,
+              CRT: config.emitCrt || 1,
+              enderEmit: {
+                xLgr: config.company.address.street || '',
+                nro: config.company.address.number || 'S/N',
+                xBairro: config.company.address.neighborhood || '',
+                cMun: parsedCmun,
+                xMun: config.company.address.city || '',
+                UF: config.company.address.state || '',
+                CEP:
+                  parseInt(
+                    (config.company.address.zipcode || '').replace(/\D/g, ''),
+                    10,
+                  ) || 0,
+              },
+            },
+            ...(dest ? { dest } : {}),
+            det: dto.itens.map((item, index) => {
+              const fiscalData = item.productId
+                ? fiscalDataMap.get(item.productId)
+                : null;
+
+              const orig =
+                item.icmsOrigem !== undefined && item.icmsOrigem !== null
+                  ? parseInt(item.icmsOrigem, 10)
+                  : fiscalData?.icmsOrigin
+                    ? parseInt(fiscalData.icmsOrigin, 10)
+                    : 0;
+
+              const icmsCst = item.icmsCst || fiscalData?.icmsCst || '102';
+              const pisCst = item.pisCst || fiscalData?.pisCst || '49';
+              const cofinsCst = item.cofinsCst || fiscalData?.cofinsCst || '49';
+
+              return {
+                prod: {
+                  cProd: item.codigo || `ITEM${index + 1}`,
+                  cEAN: item.cean || fiscalData?.cean || 'SEM GTIN',
+                  cEANTrib: item.cean || fiscalData?.cean || 'SEM GTIN',
+                  xProd: item.descricao || `Produto ${index + 1}`,
+                  NCM: (item.ncm || fiscalData?.ncm || '00000000').replace(
+                    /\D/g,
+                    '',
+                  ),
+                  CEST: item.cest || fiscalData?.cest || undefined,
+                  CFOP: item.cfop
+                    ? Number(item.cfop)
+                    : fiscalData?.cfopInState
+                      ? Number(fiscalData.cfopInState)
+                      : 5102,
+                  uCOM: item.unidade || fiscalData?.commercialUnit || 'UN',
+                  qCOM: item.quantidade.toFixed(4),
+                  vUnCom: item.valorUnitario.toFixed(10),
+                  vProd: (item.quantidade * item.valorUnitario).toFixed(2),
+                  uTrib: item.unidade || fiscalData?.commercialUnit || 'UN',
+                  qTrib: item.quantidade.toFixed(4),
+                  vUnTrib: item.valorUnitario.toFixed(10),
+                  indTot: 1,
+                },
+                imposto: {
+                  ICMS: {
+                    orig,
+                    CST: icmsCst,
+                  },
+                  PIS: {
+                    CST_pis: pisCst,
+                  },
+                  COFINS: {
+                    CST_cofins: cofinsCst,
+                  },
+                },
+              };
+            }),
+            total: {
+              ICMStot: {
+                vBC_ttlnfe: '0.00',
+                vICMS_ttlnfe: '0.00',
+                vICMSDeson_ttlnfe: '0.00',
+                vBCST_ttlnfe: '0.00',
+                vProd_ttlnfe: valorTotal.toFixed(2),
+                vFrete_ttlnfe: '0.00',
+                vSeg_ttlnfe: '0.00',
+                vDesc_ttlnfe: dto.itens
+                  .reduce((acc, i) => acc + (i.valorDesconto || 0), 0)
+                  .toFixed(2),
+                vII_ttlnfe: '0.00',
+                vIPI_ttlnfe: '0.00',
+                vPIS_ttlnfe: '0.00',
+                vCOFINS_ttlnfe: '0.00',
+                vOutro: '0.00',
+                vNF: valorTotal.toFixed(2),
+              },
+            },
+            pag: dto.pagamentos.map((pag) => ({
+              tPag: pag.tipo,
+              vPag: pag.valor.toFixed(2),
+            })),
+            transp: {
+              modFrete: '9',
+            },
+          },
+        };
+
+        // Criar registro da NFC-e (numero já reservado atomicamente)
+        const nfce = await tx.nfce.create({
+          data: {
+            companyId,
+            invoicyConfigId: config.id,
+            orderId: dto.orderId,
+            quotationId: dto.quotationId,
+            numero: reservedNumber,
+            serie: series,
+            status: isContingency
+              ? NfceStatus.CONTINGENCY
+              : NfceStatus.PROCESSING,
+            ambiente: environment === 'PRODUCAO' ? 1 : 2,
+            valorTotal,
+            valorDesconto: dto.itens.reduce(
+              (acc, item) => acc + (item.valorDesconto || 0),
+              0,
+            ),
+            valorTroco: dto.valorTroco || 0,
+            formaPagamento: dto.pagamentos[0]?.tipo || '01',
+            cpfConsumidor: dto.cpfConsumidor || null,
+            consumidorNome: dto.consumidorNome || null,
+            informacoesComplementares:
+              dto.informacoesComplementares || config.taxInfoText || null,
+            itensSnapshot: dto.itens as any,
+            pagamentosSnapshot: dto.pagamentos as any,
+            invoicyPayloadEnvio: invoicyRequest as any,
+          },
+        });
+
+        return { nfce, invoicyRequest };
+      },
+    );
 
     try {
-      this.logger.log(`Emitindo NFC-e ${numero} para empresa ${companyId}`);
-
-      // Ensure we have emitter IBGE code
-      let emitCmun = config.ibgeCode;
-      const emitCep = config.company?.address?.zipcode;
-
-      if (!emitCmun && emitCep) {
-        this.logger.log(
-          `Emitente (Empresa) sem código IBGE configurado. Buscando via CEP do emitente: ${emitCep}`,
-        );
-        const cepData = await fetchCepData(emitCep);
-        if (cepData) {
-          emitCmun = cepData.codigoIbge;
-          this.logger.log(`IBGE do emitente encontrado: ${emitCmun}`);
-        } else {
-          this.logger.warn(
-            `Não foi possível encontrar IBGE para CEP do emitente: ${emitCep}`,
-          );
-        }
-      }
-
-      // Buscar dados fiscais dos produtos
-      const productIds = dto.itens
-        .map((item) => item.productId)
-        .filter(Boolean);
-      const fiscalDataList = await this.prisma.productFiscalData.findMany({
-        where: { productId: { in: productIds } },
-      });
-      const fiscalDataMap = new Map(
-        fiscalDataList.map((fd) => [fd.productId, fd]),
+      this.logger.log(
+        `Emitindo NFC-e ${nfce.numero}/${environment} para empresa ${companyId}`,
       );
 
-      // Construir payload para o Invoicy (NFC-e usa modelo 65)
-      const now = new Date();
-      const consumidorDoc = (dto.cpfConsumidor || '').replace(/\D/g, '');
-      const dest =
-        consumidorDoc.length === 11 || consumidorDoc.length === 14
-          ? {
-              ...(consumidorDoc.length === 14
-                ? { CNPJ_dest: consumidorDoc }
-                : { CPF_dest: consumidorDoc }),
-              xNome_dest: dto.consumidorNome || 'CONSUMIDOR',
-              indIEDest: 9,
-            }
-          : undefined;
-      const invoicyRequest: InvoicyNfeRequest = {
-        Documento: {
-          ModeloDocumento: 'NFCe',
-          Versao: 4,
-          ide: {
-            cUF: this.getUfCode(config.company.address.state),
-            natOp: dto.naturezaOperacao || 'Venda de mercadoria',
-            mod: '65',
-            serie: (config.serieNfce || 1).toString(),
-            nNF: numero,
-            dhEmi: now.toISOString(),
-            fusoHorario: '-03:00',
-            tpNf: 1, // Saída
-            idDest: 1, // Operação interna
-            cMunFg: parseInt(emitCmun || '0', 10),
-            tpImp: 4, // DANFE NFC-e
-            tpEmis: config.contingenciaNfceAtiva ? 9 : 1, // 1=Normal, 9=Contingência Off-line
-            cDV: 0,
-            tpAmb:
-              config.ambiente === 1 || config.environment === 'PRODUCAO'
-                ? 1
-                : 2,
-            finNFe: 1,
-            indFinal: 1, // Consumidor final
-            indPres: 1, // Presença do comprador
-            procEmi: 0,
-            verProc: 'Atrupe 1.0',
-            idCSC: config.cscId ? parseInt(config.cscId, 10) : undefined,
-            CSC: config.cscToken || undefined,
-            ...(config.contingenciaNfceAtiva
-              ? {
-                  dhCont: (
-                    config.contingenciaNfceDataHora || now
-                  ).toISOString(),
-                  xJust:
-                    config.contingenciaNfceMotivo ||
-                    'Problemas tecnicos de conexao',
-                }
-              : {}),
-          },
-          emit: {
-            CNPJ_emit: (config.company.cnpj || '').replace(/\D/g, ''),
-            xNome: config.company.legalName || '',
-            IE: (config.company.stateRegistration || '').replace(/\D/g, ''),
-            CRT: config.emitCrt || 1,
-            enderEmit: {
-              xLgr: config.company.address.street || '',
-              nro: config.company.address.number || 'S/N',
-              xBairro: config.company.address.neighborhood || '',
-              cMun: parseInt(emitCmun || '0', 10),
-              xMun: config.company.address.city || '',
-              UF: config.company.address.state || '',
-              CEP:
-                parseInt(
-                  (config.company.address.zipcode || '').replace(/\D/g, ''),
-                  10,
-                ) || 0,
-            },
-          },
-          ...(dest ? { dest } : {}),
-          det: dto.itens.map((item, index) => {
-            const fiscalData = item.productId
-              ? fiscalDataMap.get(item.productId)
-              : null;
-
-            const orig =
-              item.icmsOrigem !== undefined && item.icmsOrigem !== null
-                ? parseInt(item.icmsOrigem, 10)
-                : fiscalData?.icmsOrigin
-                  ? parseInt(fiscalData.icmsOrigin, 10)
-                  : 0;
-
-            const icmsCst = item.icmsCst || fiscalData?.icmsCst || '102';
-            const pisCst = item.pisCst || fiscalData?.pisCst || '49';
-            const cofinsCst = item.cofinsCst || fiscalData?.cofinsCst || '49';
-
-            return {
-              prod: {
-                cProd: item.codigo || `ITEM${index + 1}`,
-                cEAN: item.cean || fiscalData?.cean || 'SEM GTIN',
-                cEANTrib: item.cean || fiscalData?.cean || 'SEM GTIN',
-                xProd: item.descricao || `Produto ${index + 1}`,
-                NCM: (item.ncm || fiscalData?.ncm || '00000000').replace(
-                  /\D/g,
-                  '',
-                ),
-                CEST: item.cest || fiscalData?.cest || undefined,
-                CFOP: item.cfop
-                  ? Number(item.cfop)
-                  : fiscalData?.cfopInState
-                    ? Number(fiscalData.cfopInState)
-                    : 5102,
-                uCOM: item.unidade || fiscalData?.commercialUnit || 'UN',
-                qCOM: item.quantidade.toFixed(4),
-                vUnCom: item.valorUnitario.toFixed(10),
-                vProd: (item.quantidade * item.valorUnitario).toFixed(2),
-                uTrib: item.unidade || fiscalData?.commercialUnit || 'UN',
-                qTrib: item.quantidade.toFixed(4),
-                vUnTrib: item.valorUnitario.toFixed(10),
-                indTot: 1,
-              },
-              imposto: {
-                ICMS: {
-                  orig,
-                  CST: icmsCst,
-                },
-                PIS: {
-                  CST_pis: pisCst,
-                },
-                COFINS: {
-                  CST_cofins: cofinsCst,
-                },
-              },
-            };
-          }),
-          total: {
-            ICMStot: {
-              vBC_ttlnfe: '0.00',
-              vICMS_ttlnfe: '0.00',
-              vICMSDeson_ttlnfe: '0.00',
-              vBCST_ttlnfe: '0.00',
-              vProd_ttlnfe: valorTotal.toFixed(2),
-              vFrete_ttlnfe: '0.00',
-              vSeg_ttlnfe: '0.00',
-              vDesc_ttlnfe: dto.itens
-                .reduce((acc, i) => acc + (i.valorDesconto || 0), 0)
-                .toFixed(2),
-              vII_ttlnfe: '0.00',
-              vIPI_ttlnfe: '0.00',
-              vPIS_ttlnfe: '0.00',
-              vCOFINS_ttlnfe: '0.00',
-              vOutro: '0.00',
-              vNF: valorTotal.toFixed(2),
-            },
-          },
-          pag: dto.pagamentos.map((pag) => ({
-            tPag: pag.tipo,
-            vPag: pag.valor.toFixed(2),
-          })),
-          transp: {
-            modFrete: '9',
-          },
-        },
-      };
-
       // Chamar API do Invoicy
-      const invoicyResponses = await this.invoicyApiService.emitNfe(companyId, [
-        invoicyRequest,
-      ]);
+      const invoicyResponses = await this.invoicyApiService.emitNfe(
+        companyId,
+        [invoicyRequest],
+        config.id,
+      );
 
       // Processar resposta
       const response = invoicyResponses[0];
@@ -449,7 +498,7 @@ export class NfceService {
       const isAuthorized =
         situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150;
 
-      const targetStatus = config.contingenciaNfceAtiva
+      const targetStatus = isContingency
         ? NfceStatus.CONTINGENCY
         : isAuthorized
           ? NfceStatus.AUTHORIZED
@@ -466,7 +515,7 @@ export class NfceService {
           invoicyProtocol: doc.DocProtocolo || null,
           dataEmissao: new Date(),
           dataAutorizacao: isAuthorized ? new Date() : null,
-          qrCodeUrl: doc.DocCompleto || null, // URL do QR Code
+          qrCodeUrl: doc.DocCompleto || null,
           urlConsulta: doc.DocPDFDownload || null,
           danfeUrl: doc.DocPDFDownload || null,
           xmlAutorizado: doc.DocXMLBase64
@@ -482,23 +531,58 @@ export class NfceService {
         );
       }
 
-      // Incrementar número da NFC-e somente após emissão bem-sucedida
-      await this.invoicyService.incrementNfceNumber(config.id);
-
       return updatedNfce;
     } catch (error) {
-      // Atualizar status para rejeitado em caso de erro
+      // Distinguir erro de transporte de rejeição fiscal
+      const isUnknownOutcome =
+        error?.code === 'ECONNABORTED' ||
+        error?.code === 'ECONNRESET' ||
+        error?.code === 'ETIMEDOUT' ||
+        error?.response === undefined ||
+        error?.response?.status >= 500;
+
+      const newStatus = isUnknownOutcome
+        ? NfceStatus.UNKNOWN
+        : NfceStatus.REJECTED;
+      const motivoRejeicao = isUnknownOutcome
+        ? 'Erro de transporte — resultado desconhecido'
+        : this.extractSafeErrorMessage(error);
+
       await this.prisma.nfce.update({
         where: { id: nfce.id },
         data: {
-          status: NfceStatus.REJECTED,
-          motivoRejeicao: error.message,
+          status: newStatus,
+          motivoRejeicao,
         },
       });
 
-      this.logger.error(`Erro ao emitir NFC-e: ${error.message}`, error.stack);
-      throw new BadRequestException(`Erro ao emitir NFC-e: ${error.message}`);
+      // Log sem secrets: apenas número, série, ambiente, status
+      this.logger.error(
+        `Emissão NFC-e ${nfce.numero}/${environment} falhou (${newStatus}): ${error?.code ?? error?.constructor?.name}`,
+      );
+
+      if (isUnknownOutcome) {
+        throw new BadRequestException(
+          'Falha de comunicação com o Invoicy. A NFC-e está em estado DESCONHECIDO — ' +
+            'use o endpoint de reprocessamento para verificar o resultado antes de reemitir.',
+        );
+      }
+      throw new BadRequestException(`NFC-e rejeitada: ${motivoRejeicao}`);
     }
+  }
+
+  private extractSafeErrorMessage(error: any): string {
+    const structured =
+      error?.response?.data?.Descricao ||
+      error?.response?.data?.descricao ||
+      error?.response?.data?.Mensagem ||
+      error?.response?.data?.mensagem ||
+      error?.response?.data?.message ||
+      error?.message;
+
+    return typeof structured === 'string' && structured.trim()
+      ? structured.trim().slice(0, 500)
+      : 'Erro fiscal desconhecido';
   }
 
   /**
@@ -535,6 +619,194 @@ export class NfceService {
       DF: 53,
     };
     return ufCodes[uf?.toUpperCase()] || 43;
+  }
+
+  async reprocess(id: string, companyId: string) {
+    return this.reprocessWithAtomicClaim(id, companyId);
+  }
+  private async reprocessWithAtomicClaim(id: string, companyId: string) {
+    const staleBefore = new Date(Date.now() - 5 * 60 * 1000);
+    const claimed = await this.prisma.nfce.updateMany({
+      where: {
+        id,
+        companyId,
+        OR: [
+          { status: NfceStatus.UNKNOWN },
+          { status: NfceStatus.PROCESSING, updatedAt: { lt: staleBefore } },
+        ],
+      },
+      data: {
+        status: NfceStatus.PROCESSING,
+        motivoRejeicao: null,
+      },
+    });
+
+    if (claimed.count !== 1) {
+      const current = await this.findById(id, companyId);
+      throw new ConflictException(
+        `NFC-e nao esta disponivel para reprocessamento. Status atual: ${current.status}`,
+      );
+    }
+
+    const nfce = await this.findById(id, companyId);
+
+    if (!nfce.invoicyPayloadEnvio || !nfce.invoicyConfigId) {
+      await this.prisma.nfce.update({
+        where: { id: nfce.id },
+        data: {
+          status: NfceStatus.UNKNOWN,
+          motivoRejeicao:
+            'Payload original ou emissor ausente; reprocessamento automatico bloqueado',
+        },
+      });
+      throw new BadRequestException(
+        'Impossivel reprocessar: payload original ou emissor nao encontrado. Faca consulta manual antes de qualquer nova emissao.',
+      );
+    }
+
+    const emissor = await this.prisma.invoicyConfig.findFirst({
+      where: { id: nfce.invoicyConfigId, companyId },
+      select: { id: true },
+    });
+    if (!emissor) {
+      await this.prisma.nfce.update({
+        where: { id: nfce.id },
+        data: {
+          status: NfceStatus.UNKNOWN,
+          motivoRejeicao:
+            'Emissor original nao encontrado; reprocessamento automatico bloqueado',
+        },
+      });
+      throw new BadRequestException(
+        'Emissor original da NFC-e nao encontrado para esta empresa.',
+      );
+    }
+
+    if (nfce.chaveAcesso) {
+      const responses = await this.invoicyApiService.consultNfeSefaz(
+        companyId,
+        nfce.chaveAcesso,
+        nfce.invoicyConfigId,
+      );
+      const doc = responses[0]?.Documentos?.[0];
+      const situacao = doc?.Situacao;
+
+      if (situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150) {
+        return this.prisma.nfce.update({
+          where: { id: nfce.id },
+          data: {
+            status: NfceStatus.AUTHORIZED,
+            protocolo: doc.DocProtocolo || nfce.protocolo,
+            dataAutorizacao: new Date(),
+            motivoRejeicao: null,
+          },
+        });
+      }
+
+      if (
+        situacao &&
+        situacao.SitCodigo !== 100 &&
+        situacao.SitCodigo !== 150
+      ) {
+        return this.prisma.nfce.update({
+          where: { id: nfce.id },
+          data: {
+            status: NfceStatus.REJECTED,
+            motivoRejeicao: situacao.SitDescricao,
+          },
+        });
+      }
+    }
+
+    const environment =
+      await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+        companyId,
+        nfce.invoicyConfigId,
+      );
+
+    try {
+      this.logger.log(
+        `Reprocessando NFC-e ${nfce.numero}/${environment} (id: ${nfce.id})`,
+      );
+
+      const invoicyResponses = await this.invoicyApiService.emitNfe(
+        companyId,
+        [nfce.invoicyPayloadEnvio as any],
+        nfce.invoicyConfigId,
+      );
+
+      const response = invoicyResponses[0];
+      if (!response) {
+        throw new Error('Nenhuma resposta recebida do Invoicy');
+      }
+
+      const doc = response.Documentos?.[0];
+      if (!doc) {
+        throw new Error('Documento nao retornado pelo Invoicy');
+      }
+
+      const situacao = doc.Situacao;
+      const isAuthorized =
+        situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150;
+      const payload = nfce.invoicyPayloadEnvio as any;
+      const isContingency =
+        payload?.Documento?.ide?.tpEmis === 9 || nfce.contingencia;
+
+      const targetStatus = isContingency
+        ? NfceStatus.CONTINGENCY
+        : isAuthorized
+          ? NfceStatus.AUTHORIZED
+          : NfceStatus.REJECTED;
+
+      return this.prisma.nfce.update({
+        where: { id: nfce.id },
+        data: {
+          status: targetStatus,
+          chaveAcesso: doc.DocChaAcesso || nfce.chaveAcesso,
+          protocolo: doc.DocProtocolo || nfce.protocolo,
+          invoicyId: doc.DocIDUnico || nfce.invoicyId,
+          invoicyProtocol: doc.DocProtocolo || nfce.invoicyProtocol,
+          dataAutorizacao: isAuthorized ? new Date() : nfce.dataAutorizacao,
+          qrCodeUrl: doc.DocCompleto || nfce.qrCodeUrl,
+          danfeUrl: doc.DocPDFDownload || nfce.danfeUrl,
+          xmlAutorizado: doc.DocXMLBase64
+            ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
+            : nfce.xmlAutorizado,
+          motivoRejeicao: !isAuthorized ? situacao?.SitDescricao : null,
+        },
+      });
+    } catch (error) {
+      const isUnknownOutcome =
+        error?.code === 'ECONNABORTED' ||
+        error?.code === 'ECONNRESET' ||
+        error?.code === 'ETIMEDOUT' ||
+        error?.response === undefined ||
+        error?.response?.status >= 500;
+
+      if (isUnknownOutcome) {
+        await this.prisma.nfce.update({
+          where: { id: nfce.id },
+          data: {
+            status: NfceStatus.UNKNOWN,
+            motivoRejeicao:
+              'Erro de comunicacao/provedor no reprocessamento - resultado desconhecido',
+          },
+        });
+        throw new BadRequestException(
+          'Falha de comunicacao novamente. A NFC-e permanece em estado DESCONHECIDO. Tente novamente em alguns instantes.',
+        );
+      }
+
+      const safeReason = this.extractSafeErrorMessage(error);
+      await this.prisma.nfce.update({
+        where: { id: nfce.id },
+        data: {
+          status: NfceStatus.REJECTED,
+          motivoRejeicao: safeReason,
+        },
+      });
+      throw new BadRequestException(`Reprocessamento falhou: ${safeReason}`);
+    }
   }
 
   async cancel(id: string, companyId: string, dto: CancelNfceDto) {
@@ -738,6 +1010,7 @@ export class NfceService {
       const invoicyResponses = await this.invoicyApiService.consultNfeSefaz(
         companyId,
         nfce.chaveAcesso,
+        nfce.invoicyConfigId || undefined,
       );
 
       const response = invoicyResponses[0];

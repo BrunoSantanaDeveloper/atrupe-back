@@ -3,6 +3,7 @@ import * as forge from 'node-forge';
 import * as tls from 'tls';
 
 export interface CertificateInfo {
+  validFrom: Date | null;
   expiresAt: Date | null;
   issuer: string | null;
   serialNumber: string | null;
@@ -43,6 +44,7 @@ function parsePfxCertificateWithNode(
     const x509 = new crypto.X509Certificate(rawCert);
 
     return {
+      validFrom: new Date(x509.validFrom),
       expiresAt: new Date(x509.validTo),
       issuer: extractCN(x509.issuer) || x509.issuer,
       serialNumber: x509.serialNumber,
@@ -76,6 +78,7 @@ function parsePfxCertificateWithForge(
     const issuer = forgeDistinguishedNameToString(cert.issuer);
 
     return {
+      validFrom: cert.validity?.notBefore || null,
       expiresAt: cert.validity?.notAfter || null,
       issuer: extractCN(issuer) || issuer,
       serialNumber: cert.serialNumber || null,

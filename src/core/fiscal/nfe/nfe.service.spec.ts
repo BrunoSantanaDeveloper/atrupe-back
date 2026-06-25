@@ -6,7 +6,7 @@ import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
 import { NfeEmailService } from './nfe-email.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
-import { NfeStatus } from '@prisma/client';
+import { NfceStatus, NfeStatus } from '@prisma/client';
 
 // Mock fetchCepData
 jest.mock('../utils/cep.util', () => ({
@@ -195,8 +195,10 @@ const mockCorrectionResponse = [
 const mockPrismaService = {
   $queryRaw: jest.fn().mockResolvedValue([]),
   order: {
+    findMany: jest.fn(),
     findUnique: jest.fn(),
     findFirst: jest.fn(),
+    count: jest.fn(),
   },
   company: {
     findUnique: jest.fn(),
@@ -208,6 +210,14 @@ const mockPrismaService = {
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    count: jest.fn(),
+  },
+  nfse: {
+    findMany: jest.fn(),
+    count: jest.fn(),
+  },
+  nfce: {
+    findMany: jest.fn(),
     count: jest.fn(),
   },
   nfeOrder: {
@@ -317,6 +327,78 @@ describe('NfeService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('findUnified', () => {
+    beforeEach(() => {
+      prisma.$queryRaw.mockResolvedValue([]);
+      prisma.nfe.findMany.mockResolvedValue([]);
+      prisma.nfe.count.mockResolvedValue(0);
+      prisma.nfse.findMany.mockResolvedValue([]);
+      prisma.nfse.count.mockResolvedValue(0);
+    });
+
+    it('should include NFC-e linked to an order in unified standalone list', async () => {
+      const linkedNfce = {
+        id: 'nfce-linked-1',
+        companyId: mockCompanyId,
+        orderId: mockOrderId,
+        quotationId: null,
+        numero: 42,
+        serie: 1,
+        status: NfceStatus.AUTHORIZED,
+        createdAt: new Date('2026-06-24T12:00:00.000Z'),
+        consumidorNome: null,
+        valorTotal: 123.45,
+        order: {
+          id: mockOrderId,
+          quotation: {
+            quotationNumber: 1234,
+            series: null,
+            client: { name: 'Cliente da OS' },
+          },
+        },
+      };
+
+      prisma.nfce.findMany.mockResolvedValue([linkedNfce]);
+      prisma.nfce.count.mockResolvedValue(1);
+
+      const result = await service.findUnified(mockCompanyId, {
+        page: '1',
+        limit: '20',
+        recordType: 'NOTAS_AVULSAS',
+      });
+
+      expect(prisma.nfce.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.not.objectContaining({ orderId: null }),
+          include: {
+            order: {
+              include: {
+                quotation: {
+                  include: {
+                    client: true,
+                    series: true,
+                  },
+                },
+              },
+            },
+          },
+        }),
+      );
+      expect(prisma.nfce.count).toHaveBeenCalledWith({
+        where: expect.not.objectContaining({ orderId: null }),
+      });
+
+      const item = result.data[0].items[0];
+      expect(item).toMatchObject({
+        type: 'NFCE_AVULSA',
+        id: linkedNfce.id,
+        clientName: 'Cliente da OS',
+        reference: 'NFC-e 42 · OS 1234',
+        totalValue: 123.45,
+      });
     });
   });
 

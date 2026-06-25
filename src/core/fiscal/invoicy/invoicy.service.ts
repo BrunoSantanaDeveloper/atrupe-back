@@ -13,6 +13,16 @@ import {
 } from './dtos/invoicy-config.dto';
 import { InvoicyHttpService } from './invoicy-http.service';
 import { validatePfxCertificateCnpj } from '../utils/certificate-parser';
+import { EncryptionService } from '../../../shared/services/encryption.service';
+import { FiscalRolloutPolicyService } from '../shared/fiscal-rollout-policy.service';
+import { FiscalAuditService } from '../shared/fiscal-audit.service';
+import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
+import {
+  FiscalEnvironment,
+  FiscalConfigAction,
+  ActorType,
+} from '@prisma/client';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class InvoicyService {
@@ -22,6 +32,10 @@ export class InvoicyService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly invoicyHttpService: InvoicyHttpService,
+    private readonly encryptionService: EncryptionService,
+    private readonly fiscalRolloutPolicy: FiscalRolloutPolicyService,
+    private readonly fiscalAuditService: FiscalAuditService,
+    private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
   ) {}
 
   /**
@@ -43,26 +57,8 @@ export class InvoicyService {
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.isDefault !== undefined) data.isDefault = dto.isDefault;
 
-    // Sincroniza ambiente (int) e environment (string) sempre juntos
-    // O form pode enviar 'ambiente' como string ('PRODUCAO'/'HOMOLOGACAO')
-    // ou como número (1/2). O campo 'environment' é sempre string.
-    if (dto.environment !== undefined) {
-      data.environment = dto.environment;
-      data.ambiente = dto.environment === 'PRODUCAO' ? 1 : 2;
-    }
-    if (dto.ambiente !== undefined) {
-      // Se chegou como número (correto)
-      if (typeof dto.ambiente === 'number') {
-        data.ambiente = dto.ambiente;
-        data.environment = dto.ambiente === 1 ? 'PRODUCAO' : 'HOMOLOGACAO';
-      } else {
-        // Se chegou como string (via form select) — normaliza
-        const ambStr = String(dto.ambiente);
-        const isProd = ambStr === 'PRODUCAO' || ambStr === '1';
-        data.ambiente = isProd ? 1 : 2;
-        data.environment = isProd ? 'PRODUCAO' : 'HOMOLOGACAO';
-      }
-    }
+    // environment/ambiente are legacy fields — not accepted via DTO anymore.
+    // Use activate() endpoint to change the active environment.
 
     if (dto.emitCrt !== undefined) data.emitCrt = dto.emitCrt;
     if (dto.codigoServico !== undefined) data.codigoServico = dto.codigoServico;
@@ -107,9 +103,14 @@ export class InvoicyService {
     if (dto.serieNfce !== undefined) data.serieNfce = dto.serieNfce;
     if (dto.proximoNumeroNfce !== undefined)
       data.proximoNumeroNfce = dto.proximoNumeroNfce;
+    // CSC fields via PATCH are rejected — use /environments/:environment/csc endpoint
+    if (dto.cscToken !== undefined && dto.cscToken !== '') {
+      throw new BadRequestException(
+        'Credenciais devem ser alteradas pelos endpoints dedicados (/environments/:environment/csc)',
+      );
+    }
+    // cscId without cscToken is allowed for informational update only
     if (dto.cscId !== undefined && dto.cscId !== '') data.cscId = dto.cscId;
-    if (dto.cscToken !== undefined && dto.cscToken !== '')
-      data.cscToken = dto.cscToken;
 
     // Boolean field
     if ('isActive' in dto && dto.isActive !== undefined)
@@ -139,85 +140,107 @@ export class InvoicyService {
     return environment === 'PRODUCAO' ? 'PRODUCAO' : 'HOMOLOGACAO';
   }
 
-  private async ensureCompanyRegisteredForEnvironment(
-    companyId: string,
-    environment: 'PRODUCAO' | 'HOMOLOGACAO',
-  ) {
-    const company = await this.prisma.company.findUnique({
-      where: { id: companyId },
-      include: { address: true, DigitalCertificate: true },
-    });
-
-    if (!company) {
-      throw new NotFoundException('Empresa não encontrada');
-    }
-
-    if (!company.cnpj) {
-      throw new BadRequestException(
-        'CNPJ da empresa é obrigatório para cadastrar no Invoicy',
-      );
-    }
-
-    if (company.DigitalCertificate?.certificate) {
-      this.validateCertificateMatchesCompany(
-        company.DigitalCertificate.certificate,
-        company.DigitalCertificate.password || '',
-        company.cnpj,
-      );
-    }
-
-    const address = company.address?.[0];
-    const registration = await this.invoicyHttpService.registerCompany({
-      cnpj: company.cnpj,
-      razaoSocial: company.legalName || company.name,
-      nomeFantasia: company.name,
-      ie: company.stateRegistration || undefined,
-      im: company.municipalRegistration || undefined,
-      uf: address?.state || undefined,
-      cep: address?.zipcode || undefined,
-      logradouro: address?.street || undefined,
-      numero: address?.number || undefined,
-      bairro: address?.neighborhood || undefined,
-      cidade: address?.city || undefined,
-      environment,
-      certificate: company.DigitalCertificate?.certificate || undefined,
-      certificatePassword: company.DigitalCertificate?.password || undefined,
-      certificateType: company.DigitalCertificate?.type || undefined,
-    });
-
-    await this.prisma.company.update({
-      where: { id: companyId },
-      data: { accessKey: registration.accessKey },
-    });
-  }
-
   // Map database fields to frontend fields
   private mapDbToResponse(config: any) {
     if (!config) return null;
 
     const company = config.company || {};
-    const address = company.address?.[0] || {}; // Assume first address is principal
+    const address =
+      (company.address as any[] | undefined)?.find(
+        (a: any) => a.type === 'Principal',
+      ) ||
+      company.address?.[0] ||
+      {};
     const digitalCertificate = company.DigitalCertificate || {};
 
-    // Normalizar environment a partir de ambiente (int) se estiver nulo
-    // Garante consistência mesmo em registros antigos com campos dessincronizados
     const normalizedEnvironment =
       config.environment ||
       (config.ambiente === 1 ? 'PRODUCAO' : 'HOMOLOGACAO');
 
     return {
-      ...config,
+      // Allowlist explícita — nunca expor campos cifrados ou chaves de parceiro
+      id: config.id,
+      companyId: config.companyId,
+      name: config.name,
+      isDefault: config.isDefault,
+      isActive: config.isActive,
       environment: normalizedEnvironment,
-      // Nested company structure
+      ambiente: config.ambiente,
+      activeEnvironment: config.activeEnvironment ?? null,
+      emitCrt: config.emitCrt,
+      defaultNcm: config.defaultNcm || null,
+      codigoServico: config.codigoServico,
+      aliquotaIss: config.aliquotaIss,
+      defaultCfop: config.defaultCfop,
+      defaultOperationNature: config.defaultOperationNature,
+      taxInfoText: config.taxInfoText,
+      ibgeCode: config.emitCmun || null,
+      contingenciaNfceAtiva: config.contingenciaNfceAtiva,
+      contingenciaNfceMotivo: config.contingenciaNfceMotivo,
+      contingenciaNfceDataHora: config.contingenciaNfceDataHora,
+      prazoCancelamentoNfce: config.prazoCancelamentoNfce,
+      sendDanfeXmlAutomatically: config.sendDanfeXmlAutomatically,
+      sendDanfeAutomatically: config.sendDanfeAutomatically,
+      sendXmlAutomatically: config.sendXmlAutomatically,
+      sendFiscalEmailCopyTo: config.sendFiscalEmailCopyTo,
+      createdAt: config.createdAt,
+      updatedAt: config.updatedAt,
+
+      // Campo virtual derivado do UF do endereço principal (usado por nfe.service)
+      emitUf: address.state ?? null,
+
+      // Numeração — nomes legados mantidos para compatibilidade com nfe/nfce/nfse services
+      serieNfe: config.serieNfe,
+      proximoNumeroNfe: config.proximoNumeroNfe,
+      serieNfce: config.serieNfce,
+      proximoNumeroNfce: config.proximoNumeroNfce,
+      serieNfse: config.serieNfse,
+      proximoRpsNfse: config.proximoRpsNfse,
+      emitCmun: config.emitCmun,
+      // Nomes API-friendly (usados no frontend)
+      nfeSeries: config.serieNfe?.toString() || '1',
+      nfeNextNumber: config.proximoNumeroNfe || 1,
+      nfseSeries: config.serieNfse || 'A1',
+      nfseNextNumber: config.proximoRpsNfse || 1,
+      nfceSeries: config.serieNfce?.toString() || '1',
+      nfceNextNumber: config.proximoNumeroNfce || 1,
+      cscId: config.cscId || '',
+      cscConfigured:
+        !!config.cscToken ||
+        ((config.environmentConfigs as any[]) ?? []).some(
+          (ec: any) => !!ec.cscTokenEncrypted,
+        ),
+
+      // Estado por ambiente (DRAFT/VALIDATING/READY/ERROR...) para a UI.
+      // environmentSwitchLocked é enriquecido de forma assíncrona em getById.
+      environmentSwitchLocked: null as boolean | null,
+      environments: ((config.environmentConfigs as any[]) ?? []).map(
+        (ec: any) => ({
+          environment: ec.environment,
+          status: ec.status,
+          cscConfigured: !!ec.cscTokenEncrypted,
+          lastValidationAt: ec.lastValidationAt ?? null,
+          lastValidationError: ec.lastValidationError ?? null,
+          activatedAt: ec.activatedAt ?? null,
+        }),
+      ),
+
+      // Nested company — sem accessKey, partnerKey, chaves cifradas
       company: {
         id: company.id,
-        name: company.name, // Nome Fantasia
-        legalName: company.legalName, // Razão Social
+        name: company.name,
+        legalName: company.legalName,
         cnpj: company.cnpj,
-        stateRegistration: company.stateRegistration, // IE
-        municipalRegistration: company.municipalRegistration, // IM
-        accessKey: company.accessKey,
-        partnerKey: company.partnerKey,
+        stateRegistration: company.stateRegistration,
+        municipalRegistration: company.municipalRegistration,
+        // Considera tanto o legado (Company.accessKey) quanto a credencial
+        // ambiental cifrada (CompanyEnvironmentCredential). Emissores migrados
+        // para criptografia não devem aparecer como não configurados.
+        providerConfigured:
+          !!company.accessKey ||
+          ((company.environmentCredentials as any[]) ?? []).some(
+            (c: any) => !!c.providerAccessKeyEncrypted,
+          ),
         address: {
           street: address.street,
           number: address.number,
@@ -232,23 +255,6 @@ export class InvoicyService {
         certificateIssuer: digitalCertificate.issuer || null,
         certificateSerialNumber: digitalCertificate.serialNumber || null,
       },
-
-      // Fiscal specific config
-      nfeSeries: config.serieNfe?.toString() || '1',
-      nfeNextNumber: config.proximoNumeroNfe || 1,
-      nfseSeries: config.serieNfse || 'A1',
-      nfseNextNumber: config.proximoRpsNfse || 1,
-      nfceSeries: config.serieNfce?.toString() || '1',
-      nfceNextNumber: config.proximoNumeroNfce || 1,
-      cscId: config.cscId || '',
-      cscConfigured: !!config.cscToken,
-
-      // IBGE Code (Configuration specific if we want to override, or just null)
-      // Keeping it on root as it might be relevant for the configuration specifically
-      ibgeCode: config.emitCmun || null,
-
-      // Default NCM for new products
-      defaultNcm: config.defaultNcm || null,
     };
   }
 
@@ -260,16 +266,34 @@ export class InvoicyService {
       where: { companyId },
       orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
       include: {
+        environmentConfigs: true,
         company: {
           include: {
             address: true,
             DigitalCertificate: true, // Assuming this is the relation name
+            environmentCredentials: {
+              select: { environment: true, providerAccessKeyEncrypted: true },
+            },
           },
         },
       },
     });
 
-    return configs.map((config) => this.mapDbToResponse(config));
+    const switchLocked = await this.fiscalRolloutPolicy
+      .isRolloutActivationEnabled()
+      .then((enabled) => !enabled)
+      .catch(() => true);
+
+    return configs.map((config) => {
+      const mapped = this.mapDbToResponse(config);
+      if (mapped) {
+        // Para listas, derivamos o lock apenas do gate global de ativacao,
+        // evitando N consultas (uma por emissor). A primeira ativacao deve
+        // continuar liberada quando o rollout global permitir.
+        mapped.environmentSwitchLocked = switchLocked;
+      }
+      return mapped;
+    });
   }
 
   /**
@@ -279,16 +303,25 @@ export class InvoicyService {
     const config = await this.prisma.invoicyConfig.findUnique({
       where: { id },
       include: {
+        environmentConfigs: true,
         company: {
           include: {
             address: true,
             DigitalCertificate: true,
+            environmentCredentials: {
+              select: { environment: true, providerAccessKeyEncrypted: true },
+            },
           },
         },
       },
     });
 
-    return this.mapDbToResponse(config);
+    const mapped = this.mapDbToResponse(config);
+    if (mapped) {
+      mapped.environmentSwitchLocked =
+        await this.fiscalRolloutPolicy.isEnvironmentSwitchLocked(id);
+    }
+    return mapped;
   }
 
   /**
@@ -298,10 +331,14 @@ export class InvoicyService {
     const config = await this.prisma.invoicyConfig.findFirst({
       where: { companyId, isDefault: true },
       include: {
+        environmentConfigs: true,
         company: {
           include: {
             address: true,
             DigitalCertificate: true,
+            environmentCredentials: {
+              select: { environment: true, providerAccessKeyEncrypted: true },
+            },
           },
         },
       },
@@ -313,18 +350,37 @@ export class InvoicyService {
         where: { companyId },
         orderBy: { createdAt: 'asc' },
         include: {
+          environmentConfigs: true,
           company: {
             include: {
               address: true,
               DigitalCertificate: true,
+              environmentCredentials: {
+                select: {
+                  environment: true,
+                  providerAccessKeyEncrypted: true,
+                },
+              },
             },
           },
         },
       });
-      return this.mapDbToResponse(firstConfig);
+      const mappedFirst = this.mapDbToResponse(firstConfig);
+      if (mappedFirst && firstConfig) {
+        mappedFirst.environmentSwitchLocked =
+          await this.fiscalRolloutPolicy.isEnvironmentSwitchLocked(
+            firstConfig.id,
+          );
+      }
+      return mappedFirst;
     }
 
-    return this.mapDbToResponse(config);
+    const mapped = this.mapDbToResponse(config);
+    if (mapped) {
+      mapped.environmentSwitchLocked =
+        await this.fiscalRolloutPolicy.isEnvironmentSwitchLocked(config.id);
+    }
+    return mapped;
   }
 
   /**
@@ -351,7 +407,6 @@ export class InvoicyService {
     }
 
     const data = await this.prepareDataWithCep(dto);
-    const targetEnvironment = this.resolveDtoEnvironment(dto);
 
     // Se é o primeiro emissor ou marcado como padrão, garantir apenas um padrão
     const countEmissores = await this.prisma.invoicyConfig.count({
@@ -368,24 +423,29 @@ export class InvoicyService {
       });
     }
 
-    if (targetEnvironment === 'PRODUCAO') {
-      await this.ensureCompanyRegisteredForEnvironment(
-        companyId,
-        targetEnvironment,
-      );
-    }
-
     const result = await this.prisma.invoicyConfig.create({
       data: {
         ...data,
         companyId,
         isDefault,
+        // Legacy fields: always start as HOMOLOGACAO; activeEnvironment is set by activate()
+        environment: 'HOMOLOGACAO',
+        ambiente: 2,
+        environmentConfigs: {
+          create: {
+            environment: 'HOMOLOGACAO',
+            status: 'DRAFT',
+          },
+        },
       },
       include: {
         company: {
           include: {
             address: true,
             DigitalCertificate: true,
+            environmentCredentials: {
+              select: { environment: true, providerAccessKeyEncrypted: true },
+            },
           },
         },
       },
@@ -423,17 +483,6 @@ export class InvoicyService {
 
     const data = await this.prepareDataWithCep(dto);
 
-    // Se está marcando como padrão, remover padrão dos outros
-    const targetEnvironment = this.resolveDtoEnvironment(dto);
-    const currentEnvironment = this.normalizeEnvironment(config.environment);
-
-    if (targetEnvironment && targetEnvironment !== currentEnvironment) {
-      await this.ensureCompanyRegisteredForEnvironment(
-        config.companyId,
-        targetEnvironment,
-      );
-    }
-
     if (dto.isDefault === true) {
       await this.prisma.invoicyConfig.updateMany({
         where: {
@@ -453,6 +502,9 @@ export class InvoicyService {
           include: {
             address: true,
             DigitalCertificate: true,
+            environmentCredentials: {
+              select: { environment: true, providerAccessKeyEncrypted: true },
+            },
           },
         },
       },
@@ -518,12 +570,15 @@ export class InvoicyService {
   /**
    * Atualizar certificado digital do emissor.
    * Envia o novo certificado para o Invoicy via API de parceiro.
+   * Grava criptografado (e em plaintext legado se modo DUAL).
    */
   async updateCertificate(
     id: string,
     certificate: string,
     certificatePassword: string,
     certificateType = 'A1',
+    actorUserId?: string,
+    actorUserName?: string,
   ) {
     const config = await this.prisma.invoicyConfig.findUnique({
       where: { id },
@@ -551,29 +606,129 @@ export class InvoicyService {
       certificatePassword,
       certificateType,
       environment:
-        config.environment === 'PRODUCAO' ? 'PRODUCAO' : 'HOMOLOGACAO',
+        ((config.activeEnvironment as string) ?? config.environment) ===
+        'PRODUCAO'
+          ? 'PRODUCAO'
+          : 'HOMOLOGACAO',
     });
 
-    await this.prisma.digitalCertificate.upsert({
+    // Upsert para obter/criar o ID do certificado (necessário para AAD)
+    const existing = await this.prisma.digitalCertificate.findUnique({
       where: { companyId: config.companyId },
-      create: {
-        companyId: config.companyId,
-        type: certificateType as any,
-        password: certificatePassword,
-        certificate,
-        lastUpload: new Date(),
+      select: { id: true },
+    });
+    const certId = existing?.id ?? crypto.randomUUID();
+    const companyId = config.companyId;
+
+    const passwordEncrypted = this.encryptionService.encrypt(
+      certificatePassword,
+      {
+        table: 'digital_certificates',
+        recordId: certId,
+        companyId,
+        field: 'passwordEncrypted',
+        scope: 'GLOBAL',
       },
-      update: {
-        type: certificateType as any,
-        password: certificatePassword,
-        certificate,
-        lastUpload: new Date(),
+    );
+    const certificateEncrypted = this.encryptionService.encrypt(certificate, {
+      table: 'digital_certificates',
+      recordId: certId,
+      companyId,
+      field: 'certificateEncrypted',
+      scope: 'GLOBAL',
+    });
+
+    const writeToLegacy = this.fiscalRolloutPolicy.shouldWriteToLegacy();
+
+    const auditAction = actorUserId
+      ? this.fiscalAuditService.runAuditedAction(
+          {
+            companyId,
+            invoicyConfigId: id,
+            emissorName: config.name,
+            action: FiscalConfigAction.CERTIFICATE_UPLOADED,
+            actorType: ActorType.USER,
+            createdBy: actorUserId,
+            createdByName: actorUserName ?? actorUserId,
+            description: 'Certificado digital atualizado',
+          },
+          async (tx) => {
+            if (existing) {
+              await tx.digitalCertificate.update({
+                where: { id: certId },
+                data: {
+                  type: certificateType as any,
+                  passwordEncrypted,
+                  certificateEncrypted,
+                  lastUpload: new Date(),
+                  ...(writeToLegacy
+                    ? { password: certificatePassword, certificate }
+                    : {}),
+                },
+              });
+            } else {
+              await tx.digitalCertificate.create({
+                data: {
+                  id: certId,
+                  companyId,
+                  type: certificateType as any,
+                  passwordEncrypted,
+                  certificateEncrypted,
+                  lastUpload: new Date(),
+                  ...(writeToLegacy
+                    ? { password: certificatePassword, certificate }
+                    : {}),
+                },
+              });
+            }
+          },
+        )
+      : (async () => {
+          if (existing) {
+            await this.prisma.digitalCertificate.update({
+              where: { id: certId },
+              data: {
+                type: certificateType as any,
+                passwordEncrypted,
+                certificateEncrypted,
+                lastUpload: new Date(),
+                ...(writeToLegacy
+                  ? { password: certificatePassword, certificate }
+                  : {}),
+              },
+            });
+          } else {
+            await this.prisma.digitalCertificate.create({
+              data: {
+                id: certId,
+                companyId,
+                type: certificateType as any,
+                passwordEncrypted,
+                certificateEncrypted,
+                lastUpload: new Date(),
+                ...(writeToLegacy
+                  ? { password: certificatePassword, certificate }
+                  : {}),
+              },
+            });
+          }
+        })();
+
+    await auditAction;
+
+    // Certificado é GLOBAL: rebaixar TODOS os ambientes de TODOS os emissores da empresa
+    await this.prisma.invoicyEnvironmentConfig.updateMany({
+      where: {
+        invoicyConfig: { companyId },
+      },
+      data: {
+        status: 'DRAFT',
+        lastValidationAt: null,
+        lastValidationError: null,
       },
     });
 
-    // Limpar cache de token pois credenciais podem ter mudado
-    this.invoicyHttpService.clearTokenCache(config.companyId);
-
+    this.invoicyHttpService.clearTokenCache(companyId);
     return { success: true, message: 'Certificado atualizado com sucesso' };
   }
 
@@ -620,6 +775,9 @@ export class InvoicyService {
           include: {
             address: true,
             DigitalCertificate: true,
+            environmentCredentials: {
+              select: { environment: true, providerAccessKeyEncrypted: true },
+            },
           },
         },
       },
@@ -680,38 +838,408 @@ export class InvoicyService {
   }
 
   /**
-   * Testar conexão com o Invoicy para um emissor específico
+   * Testar conexão com o Invoicy para um emissor específico.
+   * Usa o resolvedor de credenciais para obter a chave correta do ambiente.
    */
   async testConnection(emissoreId: string): Promise<boolean> {
-    const config = await this.getById(emissoreId);
+    const fullConfig = await this.prisma.invoicyConfig.findUnique({
+      where: { id: emissoreId },
+    });
 
-    if (!config) {
+    if (!fullConfig) {
       throw new NotFoundException('Emissor não encontrado');
-    }
-
-    if (!config.accessKey) {
-      this.logger.warn(
-        `Chave de acesso (accessKey) não configurada para emissor ${emissoreId}`,
-      );
-      return false;
     }
 
     try {
       this.logger.log(
         `Testando conexão com Invoicy para emissor ${emissoreId}`,
       );
-      // Usar companyId do emissor para o teste
-      const fullConfig = await this.prisma.invoicyConfig.findUnique({
-        where: { id: emissoreId },
-      });
       return await this.invoicyHttpService.testConnection(fullConfig.companyId);
-    } catch (error) {
-      this.logger.error(
-        `Erro ao testar conexão com Invoicy: ${error.message}`,
-        error.stack,
-      );
+    } catch {
+      this.logger.error('Erro ao testar conexão com Invoicy');
       return false;
     }
+  }
+
+  /**
+   * Verifica que o emissor pertence à empresa do usuário (anti-IDOR).
+   * Lança NotFoundException para não revelar existência do recurso.
+   */
+  async verifyOwnership(id: string, companyId: string): Promise<void> {
+    const config = await this.prisma.invoicyConfig.findUnique({
+      where: { id },
+      select: { companyId: true },
+    });
+    if (!config || config.companyId !== companyId) {
+      throw new NotFoundException('Emissor não encontrado');
+    }
+  }
+
+  /**
+   * Verifica se a troca de ambiente está bloqueada para um emissor.
+   * Retorna true enquanto a migração de criptografia não estiver concluída.
+   */
+  async getEnvironmentSwitchLocked(invoicyConfigId: string): Promise<boolean> {
+    return this.fiscalRolloutPolicy.isEnvironmentSwitchLocked(invoicyConfigId);
+  }
+
+  /**
+   * Configurar CSC para um ambiente específico do emissor.
+   * Segue o protocolo validate-before-replace com auditoria transacional.
+   */
+  async setCsc(
+    invoicyConfigId: string,
+    environment: FiscalEnvironment,
+    cscId: string,
+    cscToken: string,
+    actorUserId: string,
+    actorUserName: string,
+  ): Promise<{ success: boolean }> {
+    const config = await this.prisma.invoicyConfig.findUnique({
+      where: { id: invoicyConfigId },
+      include: { company: true },
+    });
+
+    if (!config) {
+      throw new NotFoundException('Emissor não encontrado');
+    }
+
+    const companyId = config.companyId;
+    const emissorName = config.name;
+
+    await this.fiscalAuditService.runAuditedAction(
+      {
+        companyId,
+        invoicyConfigId,
+        emissorName,
+        action: FiscalConfigAction.CREDENTIALS_ROTATE,
+        actorType: ActorType.USER,
+        createdBy: actorUserId,
+        createdByName: actorUserName,
+        environment,
+        description: `CSC configurado para ambiente ${environment}`,
+        changes: { cscId },
+      },
+      async (tx) => {
+        // Upsert-then-encrypt: obter id estável antes de cifrar (garante AAD correto)
+        const row = await tx.invoicyEnvironmentConfig.upsert({
+          where: {
+            invoicyConfigId_environment: { invoicyConfigId, environment },
+          },
+          create: {
+            invoicyConfigId,
+            environment,
+            cscId,
+            cscTokenEncrypted: null,
+          },
+          update: { cscId },
+          select: { id: true },
+        });
+
+        const cscTokenEncrypted = this.encryptionService.encrypt(cscToken, {
+          table: 'invoicy_environment_configs',
+          recordId: row.id,
+          companyId,
+          field: 'cscTokenEncrypted',
+          scope: environment,
+        });
+
+        await tx.invoicyEnvironmentConfig.update({
+          where: { id: row.id },
+          data: {
+            cscTokenEncrypted,
+            // Rebaixar para DRAFT: credencial alterada invalida ativação anterior
+            status: 'DRAFT',
+            lastValidationAt: null,
+            lastValidationError: null,
+          },
+        });
+
+        // Escrita dupla no legado se modo DUAL e ambiente for o ativo do emissor
+        const activeEnv =
+          await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+            companyId,
+            invoicyConfigId,
+          );
+        if (
+          this.fiscalRolloutPolicy.shouldWriteToLegacy() &&
+          activeEnv === environment
+        ) {
+          await tx.invoicyConfig.update({
+            where: { id: invoicyConfigId },
+            data: { cscId, cscToken },
+          });
+        }
+      },
+    );
+
+    return { success: true };
+  }
+
+  /**
+   * Remover CSC de um ambiente específico do emissor.
+   */
+  async deleteCsc(
+    invoicyConfigId: string,
+    environment: FiscalEnvironment,
+    actorUserId: string,
+    actorUserName: string,
+  ): Promise<{ success: boolean }> {
+    const config = await this.prisma.invoicyConfig.findUnique({
+      where: { id: invoicyConfigId },
+    });
+
+    if (!config) {
+      throw new NotFoundException('Emissor não encontrado');
+    }
+
+    const companyId = config.companyId;
+
+    await this.fiscalAuditService.runAuditedAction(
+      {
+        companyId,
+        invoicyConfigId,
+        emissorName: config.name,
+        action: FiscalConfigAction.CREDENTIALS_ROTATE,
+        actorType: ActorType.USER,
+        createdBy: actorUserId,
+        createdByName: actorUserName,
+        environment,
+        description: `CSC removido do ambiente ${environment}`,
+      },
+      async (tx) => {
+        await tx.invoicyEnvironmentConfig.updateMany({
+          where: { invoicyConfigId, environment },
+          data: {
+            cscId: null,
+            cscTokenEncrypted: null,
+            status: 'DRAFT',
+            lastValidationAt: null,
+            lastValidationError: null,
+          },
+        });
+
+        // Limpar legado se modo DUAL e ambiente ativo
+        const activeEnv =
+          await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+            companyId,
+            invoicyConfigId,
+          );
+        if (
+          this.fiscalRolloutPolicy.shouldWriteToLegacy() &&
+          activeEnv === environment
+        ) {
+          await tx.invoicyConfig.update({
+            where: { id: invoicyConfigId },
+            data: { cscId: null, cscToken: null },
+          });
+        }
+      },
+    );
+
+    return { success: true };
+  }
+
+  /**
+   * Configurar access key do Invoicy para um ambiente específico.
+   * Valida autenticação antes de substituir a chave anterior.
+   */
+  async setAccessKey(
+    invoicyConfigId: string,
+    environment: FiscalEnvironment,
+    accessKey: string,
+    actorUserId: string,
+    actorUserName: string,
+  ): Promise<{ success: boolean }> {
+    const config = await this.prisma.invoicyConfig.findUnique({
+      where: { id: invoicyConfigId },
+      include: { company: true },
+    });
+
+    if (!config) {
+      throw new NotFoundException('Emissor não encontrado');
+    }
+
+    const companyId = config.companyId;
+
+    const cnpj = config.company?.cnpj;
+    if (!cnpj) {
+      throw new BadRequestException('Empresa sem CNPJ configurado');
+    }
+
+    const auditData = {
+      companyId,
+      invoicyConfigId,
+      emissorName: config.name,
+      action: FiscalConfigAction.CREDENTIALS_ROTATE,
+      actorType: ActorType.USER,
+      createdBy: actorUserId,
+      createdByName: actorUserName,
+      environment,
+      description: `Access key configurada para ambiente ${environment}`,
+    };
+
+    // A chamada externa precisa ocorrer fora da transação interativa do Prisma.
+    // Em caso de rejeição ou indisponibilidade, registra FAILED separadamente e
+    // preserva a credencial atual.
+    try {
+      const isValid = await this.invoicyHttpService.validateRawAccessKey(
+        cnpj,
+        environment,
+        accessKey,
+      );
+      if (!isValid) {
+        throw new BadRequestException(
+          'Access key rejeitada pelo Invoicy para este ambiente',
+        );
+      }
+    } catch (error) {
+      await this.fiscalAuditService.recordFailedAction(auditData, error);
+      throw error;
+    }
+
+    await this.fiscalAuditService.runAuditedAction(auditData, async (tx) => {
+      // Upsert-then-encrypt: obter id estável antes de cifrar (garante AAD correto)
+      const row = await tx.companyEnvironmentCredential.upsert({
+        where: { companyId_environment: { companyId, environment } },
+        create: { companyId, environment, providerAccessKeyEncrypted: null },
+        update: {},
+        select: { id: true },
+      });
+
+      const providerAccessKeyEncrypted = this.encryptionService.encrypt(
+        accessKey,
+        {
+          table: 'company_environment_credentials',
+          recordId: row.id,
+          companyId,
+          field: 'providerAccessKeyEncrypted',
+          scope: environment,
+        },
+      );
+
+      await tx.companyEnvironmentCredential.update({
+        where: { id: row.id },
+        data: { providerAccessKeyEncrypted },
+      });
+
+      // Escrita dupla no legado se modo DUAL e ambiente ativo
+      const activeEnv =
+        await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+          companyId,
+          invoicyConfigId,
+        );
+      if (
+        this.fiscalRolloutPolicy.shouldWriteToLegacy() &&
+        activeEnv === environment
+      ) {
+        await tx.company.update({
+          where: { id: companyId },
+          data: { accessKey },
+        });
+      }
+
+      // Rebaixar TODOS os emissores da empresa neste ambiente para DRAFT,
+      // INCLUSIVE o alvo. A access key (CompanyEnvironmentCredential) é
+      // compartilhada por company+environment; trocá-la invalida qualquer
+      // READY existente, que passa a exigir nova ativação/validação.
+      await tx.invoicyEnvironmentConfig.updateMany({
+        where: { invoicyConfig: { companyId }, environment },
+        data: {
+          status: 'DRAFT',
+          lastValidationAt: null,
+          lastValidationError: null,
+        },
+      });
+
+      // Invalidar cache de token pois credenciais mudaram
+      this.invoicyHttpService.clearTokenCache(companyId, environment as any);
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Configurar série e próximo número da NFC-e para um ambiente específico.
+   *
+   * A numeração fiscal por ambiente vive em `InvoicyEnvironmentConfig` e é a
+   * fonte usada pela reserva atômica de número (Plano 3) quando
+   * `USE_ENCRYPTED_FISCAL_DB=true`. O PATCH comum do emissor altera apenas os
+   * campos legados, por isso este endpoint dedicado é necessário para o check
+   * de readiness `nfce_numbering`.
+   */
+  async setNfceNumbering(
+    invoicyConfigId: string,
+    environment: FiscalEnvironment,
+    nfceSeries: number,
+    nfceNextNumber: number,
+    actorUserId: string,
+    actorUserName: string,
+  ): Promise<{ success: boolean }> {
+    if (
+      !nfceSeries ||
+      nfceSeries < 1 ||
+      !nfceNextNumber ||
+      nfceNextNumber < 1
+    ) {
+      throw new BadRequestException('Série e próximo número devem ser ≥ 1');
+    }
+
+    const config = await this.prisma.invoicyConfig.findUnique({
+      where: { id: invoicyConfigId },
+    });
+    if (!config) {
+      throw new NotFoundException('Emissor não encontrado');
+    }
+
+    const companyId = config.companyId;
+
+    await this.fiscalAuditService.runAuditedAction(
+      {
+        companyId,
+        invoicyConfigId,
+        emissorName: config.name,
+        action: FiscalConfigAction.ENVIRONMENT_CONFIG_CREATE,
+        actorType: ActorType.USER,
+        createdBy: actorUserId,
+        createdByName: actorUserName,
+        environment,
+        description: `Numeração NFC-e configurada para ambiente ${environment}`,
+        changes: { nfceSeries, nfceNextNumber },
+      },
+      async (tx) => {
+        await tx.invoicyEnvironmentConfig.upsert({
+          where: {
+            invoicyConfigId_environment: { invoicyConfigId, environment },
+          },
+          create: {
+            invoicyConfigId,
+            environment,
+            nfceSeries,
+            nfceNextNumber,
+          },
+          update: { nfceSeries, nfceNextNumber },
+        });
+
+        // Escrita dupla no legado se modo DUAL e ambiente for o ativo do emissor
+        const activeEnv =
+          await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+            companyId,
+            invoicyConfigId,
+          );
+        if (
+          this.fiscalRolloutPolicy.shouldWriteToLegacy() &&
+          activeEnv === environment
+        ) {
+          await tx.invoicyConfig.update({
+            where: { id: invoicyConfigId },
+            data: { serieNfce: nfceSeries, proximoNumeroNfce: nfceNextNumber },
+          });
+        }
+      },
+    );
+
+    return { success: true };
   }
 
   /**

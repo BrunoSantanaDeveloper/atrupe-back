@@ -7,9 +7,11 @@ import { ProductFiscalModule } from './product-fiscal/product-fiscal.module';
 import { CfopModule } from './cfop/cfop.module';
 import { OperationNatureModule } from './operation-nature/operation-nature.module';
 import { FiscalOnboardingModule } from './onboarding/fiscal-onboarding.module';
+import { FiscalSecurityModule } from './shared/fiscal-security.module';
 
 @Module({
   imports: [
+    FiscalSecurityModule,
     InvoicyModule,
     NfeModule,
     NfseModule,
@@ -20,6 +22,7 @@ import { FiscalOnboardingModule } from './onboarding/fiscal-onboarding.module';
     FiscalOnboardingModule,
   ],
   exports: [
+    FiscalSecurityModule,
     InvoicyModule,
     NfeModule,
     NfseModule,

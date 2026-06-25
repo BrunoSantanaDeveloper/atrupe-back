@@ -81,6 +81,7 @@ model Company {
   importLogs            ImportLog[]
   invoicyConfigs        InvoicyConfig[]
   fiscalOnboarding      FiscalOnboardingRequest[]
+  environmentCredentials CompanyEnvironmentCredential[]
   nfes                  Nfe[]
   nfses                 Nfse[]
   nfces                 Nfce[]
@@ -428,6 +429,7 @@ model User {
   quotationHistory     QuotationHistory[]  @relation("QuotationHistoryUser")
   orderHistory         OrderHistory[]      @relation("OrderHistoryUser")
   companyHistory       CompanyHistory[]    @relation("CompanyHistoryUser")
+  fiscalHistory        InvoicyConfigHistory[] @relation("FiscalHistoryUser")
   userActivities       UserActivity[]
   userActivityEvents   UserActivityEvent[]
   importLogs           ImportLog[]
@@ -2162,6 +2164,12 @@ model InvoicyConfig {
   sendXmlAutomatically      Boolean @default(true)
   sendFiscalEmailCopyTo     String?
 
+  activeEnvironment  FiscalEnvironment?
+  environmentConfigs InvoicyEnvironmentConfig[]
+  history            InvoicyConfigHistory[]
+  activationAttempts FiscalActivationAttempt[]
+  nfces              Nfce[]
+
   @@index([companyId])
   @@map("invoicy_configs")
 }
@@ -2421,10 +2429,11 @@ model Nfse {
 enum NfceStatus {
   PENDING
   PROCESSING
+  UNKNOWN      // Emissão tentada, resultado desconhecido (timeout/rede)
   AUTHORIZED
   REJECTED
   CANCELLED
-  CONTINGENCY // Contingência offline
+  CONTINGENCY  // Contingência offline
 }
 
 // NFC-e Model - Nota Fiscal de Consumidor Eletrônica
@@ -2435,6 +2444,7 @@ model Nfce {
   companyId                 String
   orderId                   String?
   quotationId               String?
+  invoicyConfigId           String?    // Emissor (InvoicyConfig) usado na tentativa
   numero                    Int
   serie                     Int
   chaveAcesso               String?    @unique
@@ -2451,6 +2461,7 @@ model Nfce {
   informacoesComplementares String?    @db.Text
   itensSnapshot             Json?
   pagamentosSnapshot        Json?
+  invoicyPayloadEnvio       Json?      // Payload Invoicy exato usado/reusado no reprocessamento
   formaPagamento            String? // Código da forma de pagamento
   xmlEnvio                  String?    @db.Text
   xmlRetorno                String?    @db.Text
@@ -2468,13 +2479,15 @@ model Nfce {
   invoicyId                 String?
   invoicyProtocol           String?
   company                   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoicyConfig             InvoicyConfig? @relation(fields: [invoicyConfigId], references: [id], onDelete: SetNull)
   order                     Order?     @relation(fields: [orderId], references: [id])
   quotation                 Quotation? @relation(fields: [quotationId], references: [id])
 
+  @@unique([companyId, numero, serie, ambiente], name: "nfce_unique_emission")
   @@index([companyId])
+  @@index([invoicyConfigId])
   @@index([orderId])
   @@index([status])
-  @@index([numero, serie, companyId])
   @@map("nfces")
 }
 
@@ -2484,19 +2497,21 @@ enum DigitalCertificateType {
 }
 
 model DigitalCertificate {
-  id           String                 @id @default(uuid())
-  companyId    String                 @unique
-  type         DigitalCertificateType @default(A1)
-  name         String?
-  description  String?
-  password     String?
-  certificate  String?                @db.Text
-  lastUpload   DateTime?
-  expiresAt    DateTime? // Certificate expiration date (parsed from PFX)
-  issuer       String? // Certificate issuer (e.g. "AC SERASA")
-  serialNumber String? // Certificate serial number
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
+  id                   String                 @id @default(uuid())
+  companyId            String                 @unique
+  type                 DigitalCertificateType @default(A1)
+  name                 String?
+  description          String?
+  password             String?
+  certificate          String?                @db.Text
+  passwordEncrypted    String?
+  certificateEncrypted String?                @db.Text
+  lastUpload           DateTime?
+  expiresAt            DateTime? // Certificate expiration date (parsed from PFX)
+  issuer               String? // Certificate issuer (e.g. "AC SERASA")
+  serialNumber         String? // Certificate serial number
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -2527,9 +2542,11 @@ model FiscalOnboardingRequest {
   complemento String?
 
   // Resultado do auto-provisioning
-  invoicyAccessKey String?
-  invoicyCryptoKey String?
-  errorMessage     String? @db.Text
+  invoicyAccessKey          String?
+  invoicyCryptoKey          String?
+  invoicyAccessKeyEncrypted String?
+  invoicyCryptoKeyEncrypted String?
+  errorMessage              String? @db.Text
 
   // Metadados
   resolvedBy String?
@@ -2615,4 +2632,172 @@ enum CouponDuration {
   ONCE // Desconto apenas na primeira cobrança
   RECURRING // Desconto permanente em todas as cobranças
   MONTHS // Desconto por N meses
+}
+
+enum FiscalEnvironment {
+  HOMOLOGACAO
+  PRODUCAO
+}
+
+enum FiscalEnvironmentStatus {
+  DRAFT
+  VALIDATING
+  READY
+  ERROR
+  DISABLED
+  MIGRATED_UNVERIFIED
+}
+
+enum FiscalConfigAction {
+  ENVIRONMENT_CONFIG_CREATE
+  CREDENTIALS_ROTATE
+  ENVIRONMENT_ACTIVATED
+  VALIDATION_RUN
+  READ_CREDENTIALS
+  CERTIFICATE_UPLOADED
+}
+
+enum ActorType {
+  USER
+  SYSTEM
+  ADMIN
+}
+
+enum FiscalConfigHistoryResult {
+  SUCCESS
+  FAILED
+}
+
+enum FiscalSecretMigrationStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum FiscalActivationStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model CompanyEnvironmentCredential {
+  id                         String            @id @default(uuid())
+  companyId                  String
+  company                    Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  environment                FiscalEnvironment
+  providerAccessKeyEncrypted String?
+
+  createdAt                  DateTime          @default(now())
+  updatedAt                  DateTime          @updatedAt
+
+  @@unique([companyId, environment])
+  @@map("company_environment_credentials")
+}
+
+model InvoicyEnvironmentConfig {
+  id                  String                  @id @default(uuid())
+  invoicyConfigId     String
+  invoicyConfig       InvoicyConfig           @relation(fields: [invoicyConfigId], references: [id], onDelete: Cascade)
+
+  environment         FiscalEnvironment
+
+  cscId               String?
+  cscTokenEncrypted   String?
+
+  nfceSeries          Int?                    @default(1)
+  nfceNextNumber      Int?                    @default(1)
+
+  status              FiscalEnvironmentStatus @default(DRAFT)
+  lastValidationAt    DateTime?
+  lastValidationError String?                 @db.Text
+  activatedAt         DateTime?
+  activatedBy         String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  @@unique([invoicyConfigId, environment])
+  @@map("invoicy_environment_configs")
+}
+
+model InvoicyConfigHistory {
+  id              String                    @id @default(uuid())
+  invoicyConfigId String?
+  invoicyConfig   InvoicyConfig?            @relation(fields: [invoicyConfigId], references: [id], onDelete: SetNull)
+  companyId       String
+  emissorName     String
+
+  action          FiscalConfigAction
+  actorType       ActorType
+  createdByName   String
+  environment     FiscalEnvironment?
+  result          FiscalConfigHistoryResult
+  correlationId   String
+  description     String
+  changes         Json?
+  metadata        Json?
+
+  createdBy       String?
+  user            User?                     @relation("FiscalHistoryUser", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt       DateTime                  @default(now())
+
+  @@index([invoicyConfigId])
+  @@index([companyId])
+  @@index([createdAt])
+  @@map("invoicy_config_history")
+}
+
+model FiscalActivationAttempt {
+  id              String                 @id @default(uuid())
+  invoicyConfigId String
+  invoicyConfig   InvoicyConfig          @relation(fields: [invoicyConfigId], references: [id], onDelete: Cascade)
+  environment     FiscalEnvironment
+  idempotencyKey  String?
+  status          FiscalActivationStatus @default(RUNNING)
+  attemptId       String                 @unique
+  leaseExpiresAt  DateTime
+  resultSnapshot  Json?
+  errorCode       String?
+  createdBy       String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@unique([invoicyConfigId, environment, idempotencyKey])
+  @@index([invoicyConfigId, status])
+  @@index([status, leaseExpiresAt])
+  @@map("fiscal_activation_attempts")
+}
+
+model FiscalSecretMigrationState {
+  id             String                      @id @default(uuid())
+  version        Int                         @default(1) @unique // @unique garante apenas um estado por versão de migração
+  status         FiscalSecretMigrationStatus @default(PENDING)
+  totalRecords   Int                         @default(0)
+  processedOk    Int                         @default(0)
+  processedError Int                         @default(0)
+  cursors        Json?                       @default("{}")      // Cursores de retomada compostos por tabela: { "Company": { "createdAt": "...", "id": "..." }, ... }
+  snapshotTime   DateTime?                   // High-water mark persistido e reutilizado em todas as retomadas da versão
+  errorSanitized String?                     @db.Text
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime                    @default(now())
+  updatedAt      DateTime                    @updatedAt
+
+  @@map("fiscal_secret_migration_state")
+}
+
+model FiscalSecretRekeyJob {
+  id          String                      @id @default(uuid())
+  oldKeyId    String
+  newKeyId    String
+  status      FiscalSecretMigrationStatus @default(PENDING)
+  cursors     Json                        @default("{}")      // Cursores de retomada por tabela e campo: { "CompanyEnvironmentCredential.providerAccessKeyEncrypted": { "createdAt": "...", "id": "..." } }
+  errorCode   String?                     // Código seguro/estruturado; nunca recebe error.message bruto
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+
+  @@unique([oldKeyId, newKeyId])
+  @@map("fiscal_secret_rekey_jobs")
 }

@@ -7,6 +7,7 @@ import {
   InvoicyNfseRequest,
   INVOICY_SUCCESS_CODES,
 } from './invoicy.types';
+import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 
 /**
  * InvoicyApiService - Domain API Layer for Fiscal Documents
@@ -26,6 +27,7 @@ export class InvoicyApiService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly invoicyHttpService: InvoicyHttpService,
+    private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
   ) {}
 
   // ============================================
@@ -38,12 +40,19 @@ export class InvoicyApiService {
   async emitNfe(
     companyId: string,
     documents: InvoicyNfeRequest[],
+    invoicyConfigId?: string,
   ): Promise<InvoicyResponse[]> {
     this.logger.log(`Emitting NF-e/NFC-e for company ${companyId}`);
 
     const response = await this.invoicyHttpService.makeRequest<
       InvoicyResponse[]
-    >(companyId, 'POST', '/senddocuments/nfe?type=Emissao', documents);
+    >(
+      companyId,
+      'POST',
+      '/senddocuments/nfe?type=Emissao',
+      documents,
+      invoicyConfigId,
+    );
 
     // Check for errors in response
     if (
@@ -138,16 +147,42 @@ export class InvoicyApiService {
     numeroInicial: number,
     numeroFinal: number,
     justificativa: string,
+    invoicyConfigId?: string,
   ): Promise<InvoicyResponse[]> {
     this.logger.log(
       `Inutilizing NFC-e range ${numeroInicial}-${numeroFinal} for company ${companyId}`,
     );
 
-    const credentials =
-      await this.invoicyHttpService.getCompanyCredentials(companyId);
-    const config = await this.prisma.invoicyConfig.findFirst({
-      where: { companyId, isDefault: true },
-    });
+    let config = invoicyConfigId
+      ? await this.prisma.invoicyConfig.findUnique({
+          where: { id: invoicyConfigId },
+        })
+      : await this.prisma.invoicyConfig.findFirst({
+          where: { companyId, isDefault: true },
+        });
+
+    if (!config) {
+      config = await this.prisma.invoicyConfig.findFirst({
+        where: { companyId },
+      });
+    }
+
+    const configId = config?.id;
+    if (!configId) {
+      throw new Error(
+        `Configuração do Invoicy não encontrada para empresa ${companyId}`,
+      );
+    }
+
+    const environment =
+      await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+        companyId,
+        configId,
+      );
+    const credentials = await this.invoicyHttpService.getCompanyCredentials(
+      companyId,
+      configId,
+    );
 
     const inutRequest = [
       {
@@ -161,7 +196,7 @@ export class InvoicyApiService {
             NumeroInicial: numeroInicial,
             NumeroFinal: numeroFinal,
             Justificativa: justificativa,
-            tpAmb: config?.ambiente || 2,
+            tpAmb: environment === 'PRODUCAO' ? 1 : 2,
           },
         },
       },
@@ -172,6 +207,7 @@ export class InvoicyApiService {
       'POST',
       '/senddocuments/nfe?type=Inutilizacao',
       inutRequest,
+      configId,
     );
   }
 
@@ -184,16 +220,42 @@ export class InvoicyApiService {
     numeroInicial: number,
     numeroFinal: number,
     justificativa: string,
+    invoicyConfigId?: string,
   ): Promise<InvoicyResponse[]> {
     this.logger.log(
       `Inutilizing NF-e range ${numeroInicial}-${numeroFinal} for company ${companyId}`,
     );
 
-    const credentials =
-      await this.invoicyHttpService.getCompanyCredentials(companyId);
-    const config = await this.prisma.invoicyConfig.findFirst({
-      where: { companyId, isDefault: true },
-    });
+    let config = invoicyConfigId
+      ? await this.prisma.invoicyConfig.findUnique({
+          where: { id: invoicyConfigId },
+        })
+      : await this.prisma.invoicyConfig.findFirst({
+          where: { companyId, isDefault: true },
+        });
+
+    if (!config) {
+      config = await this.prisma.invoicyConfig.findFirst({
+        where: { companyId },
+      });
+    }
+
+    const configId = config?.id;
+    if (!configId) {
+      throw new Error(
+        `Configuração do Invoicy não encontrada para empresa ${companyId}`,
+      );
+    }
+
+    const environment =
+      await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+        companyId,
+        configId,
+      );
+    const credentials = await this.invoicyHttpService.getCompanyCredentials(
+      companyId,
+      configId,
+    );
 
     const inutRequest = [
       {
@@ -207,7 +269,7 @@ export class InvoicyApiService {
             NumeroInicial: numeroInicial,
             NumeroFinal: numeroFinal,
             Justificativa: justificativa,
-            tpAmb: config?.ambiente || 2,
+            tpAmb: environment === 'PRODUCAO' ? 1 : 2,
           },
         },
       },
@@ -218,6 +280,7 @@ export class InvoicyApiService {
       'POST',
       '/senddocuments/nfe?type=Inutilizacao',
       inutRequest,
+      configId,
     );
   }
 
@@ -337,6 +400,7 @@ export class InvoicyApiService {
   async consultNfeSefaz(
     companyId: string,
     chaveAcesso: string,
+    invoicyConfigId?: string,
   ): Promise<InvoicyResponse[]> {
     this.logger.log(
       `Consultando status NF-e ${chaveAcesso} para empresa ${companyId}`,
@@ -360,6 +424,7 @@ export class InvoicyApiService {
       'POST',
       '/senddocuments/nfe?type=ConsultaSincronizacao',
       consultRequest,
+      invoicyConfigId,
     );
   }
 

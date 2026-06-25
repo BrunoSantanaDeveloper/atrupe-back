@@ -6,6 +6,8 @@ import {
   InvoicyHttpService,
 } from '../invoicy/invoicy-http.service';
 import { InvoicyService } from '../invoicy/invoicy.service';
+import { EncryptionService } from '../../../shared/services/encryption.service';
+import { FiscalRolloutPolicyService } from '../shared/fiscal-rollout-policy.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { FiscalOnboardingDto } from './fiscal-onboarding.dto';
 import { validatePfxCertificateCnpj } from '../utils/certificate-parser';
@@ -36,6 +38,15 @@ describe('FiscalOnboardingService', () => {
       findFirst: jest.fn(),
       create: jest.fn(),
     },
+    companyEnvironmentCredential: {
+      upsert: jest.fn().mockResolvedValue({ id: 'cred-1' }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    address: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({}),
+    },
     cfopConfig: {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({}),
@@ -47,9 +58,18 @@ describe('FiscalOnboardingService', () => {
       create: jest.fn().mockResolvedValue({}),
     },
     digitalCertificate: {
+      findUnique: jest.fn().mockResolvedValue(null),
       upsert: jest.fn().mockResolvedValue({}),
     },
     $transaction: jest.fn((callback) => callback(mockPrisma)),
+  };
+
+  const mockEncryptionService = {
+    encrypt: jest.fn().mockReturnValue('encrypted-value'),
+  };
+
+  const mockFiscalRolloutPolicy = {
+    shouldWriteToLegacy: jest.fn().mockReturnValue(true),
   };
 
   const mockInvoicyHttpService = {
@@ -70,6 +90,11 @@ describe('FiscalOnboardingService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: InvoicyHttpService, useValue: mockInvoicyHttpService },
         { provide: InvoicyService, useValue: mockInvoicyService },
+        { provide: EncryptionService, useValue: mockEncryptionService },
+        {
+          provide: FiscalRolloutPolicyService,
+          useValue: mockFiscalRolloutPolicy,
+        },
       ],
     }).compile();
 
@@ -139,10 +164,12 @@ describe('FiscalOnboardingService', () => {
 
       expect(result.status).toBe('ACTIVE');
       expect(mockInvoicyHttpService.registerCompany).toHaveBeenCalled();
-      expect(mockPrisma.company.update).toHaveBeenCalledWith({
-        where: { id: 'company-1' },
-        data: { accessKey: 'access-123' },
-      });
+      expect(mockPrisma.company.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'company-1' },
+          data: expect.objectContaining({ accessKey: 'access-123' }),
+        }),
+      );
     });
 
     it('should fallback to PENDING_REVIEW if API fails', async () => {
@@ -219,10 +246,12 @@ describe('FiscalOnboardingService', () => {
       const result = await service.adminApprove('req-1', 'admin-1', 'key-123');
 
       expect(result.success).toBe(true);
-      expect(mockPrisma.company.update).toHaveBeenCalledWith({
-        where: { id: 'company-1' },
-        data: { accessKey: 'key-123' },
-      });
+      expect(mockPrisma.company.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'company-1' },
+          data: expect.objectContaining({ accessKey: 'key-123' }),
+        }),
+      );
       expect(mockPrisma.fiscalOnboardingRequest.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'req-1' },

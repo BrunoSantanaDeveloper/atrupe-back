@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { InvoicyApiService } from './invoicy-api.service';
 import { InvoicyHttpService } from './invoicy-http.service';
 import { PrismaService } from 'nestjs-prisma';
+import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { INVOICY_SUCCESS_CODES } from './invoicy.types';
 
 describe('InvoicyApiService', () => {
@@ -27,6 +28,14 @@ describe('InvoicyApiService', () => {
         InvoicyApiService,
         { provide: InvoicyHttpService, useValue: httpServiceMock },
         { provide: PrismaService, useValue: prismaMock },
+        {
+          provide: FiscalCredentialResolverService,
+          useValue: {
+            resolveOperationalEnvironment: jest
+              .fn()
+              .mockResolvedValue('HOMOLOGACAO'),
+          },
+        },
       ],
     }).compile();
 
@@ -57,8 +66,28 @@ describe('InvoicyApiService', () => {
         'POST',
         '/senddocuments/nfe?type=Emissao',
         documents,
+        undefined,
       );
       expect(result).toEqual(expectedResponse);
+    });
+
+    it('deve repassar invoicyConfigId quando informado', async () => {
+      const documents: any[] = [{ Documento: { ModeloDocumento: 'NFCe' } }];
+      const expectedResponse = [
+        { Codigo: INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED },
+      ];
+
+      httpServiceMock.makeRequest.mockResolvedValueOnce(expectedResponse);
+
+      await service.emitNfe('company-123', documents, 'config-123');
+
+      expect(httpServiceMock.makeRequest).toHaveBeenCalledWith(
+        'company-123',
+        'POST',
+        '/senddocuments/nfe?type=Emissao',
+        documents,
+        'config-123',
+      );
     });
   });
 
@@ -138,8 +167,15 @@ describe('InvoicyApiService', () => {
       } as any);
 
       prismaMock.invoicyConfig.findFirst.mockResolvedValueOnce({
+        id: 'config-123',
         ambiente: 1, // Produção
       });
+
+      // Override default mock to return PRODUCAO for this test
+      const resolverMock = (service as any).fiscalCredentialResolver;
+      resolverMock.resolveOperationalEnvironment.mockResolvedValueOnce(
+        'PRODUCAO',
+      );
 
       httpServiceMock.makeRequest.mockResolvedValueOnce([{ Codigo: 100 }]);
 
@@ -176,6 +212,7 @@ describe('InvoicyApiService', () => {
         'POST',
         '/senddocuments/nfe?type=Inutilizacao',
         expectedPayload,
+        'config-123',
       );
     });
   });

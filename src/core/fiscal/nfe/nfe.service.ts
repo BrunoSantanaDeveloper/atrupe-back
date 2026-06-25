@@ -3063,7 +3063,7 @@ export class NfeService {
     const orderWhere: any = { quotation: { companyId } };
     const nfeWhere: any = { companyId, orderId: null, quotationId: null };
     const nfseWhere: any = { companyId, orderId: null, quotationId: null };
-    const nfceWhere: any = { companyId, orderId: null, quotationId: null };
+    const nfceWhere: any = { companyId, quotationId: null };
 
     if (filters.startDate || filters.endDate) {
       const createdAtFilter: any = {};
@@ -3222,6 +3222,18 @@ export class NfeService {
         where: nfceWhere,
         take: itemsToFetch,
         orderBy: { createdAt: 'desc' },
+        include: {
+          order: {
+            include: {
+              quotation: {
+                include: {
+                  client: true,
+                  series: true,
+                },
+              },
+            },
+          },
+        },
       });
       nfceCountPromise = this.prisma.nfce.count({ where: nfceWhere });
     }
@@ -3311,14 +3323,24 @@ export class NfeService {
     }
 
     for (const nf of nfceAvulsas as any[]) {
-      const clientName = nf.consumidorNome || 'Consumidor não identificado';
+      const order = nf.order;
+      const orderReference = order?.quotation?.series?.code
+        ? `${order.quotation.series.code}-${order.quotation.quotationNumber}`
+        : order?.quotation?.quotationNumber
+          ? `OS ${order.quotation.quotationNumber}`
+          : null;
       unifiedItems.push({
         type: 'NFCE_AVULSA',
         id: nf.id,
         createdAt: nf.createdAt,
         status: nf.status,
-        clientName,
-        reference: `NFC-e ${nf.numero}`,
+        clientName:
+          nf.consumidorNome ||
+          order?.quotation?.client?.name ||
+          'Consumidor não identificado',
+        reference: orderReference
+          ? `NFC-e ${nf.numero} · ${orderReference}`
+          : `NFC-e ${nf.numero}`,
         totalValue: nf.valorTotal || 0,
         nfes: [],
         nfce: nf,

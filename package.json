@@ -26,7 +26,15 @@
     "cleanup:duplicates": "ts-node src/scripts/cleanup-duplicate-subscriptions.ts",
     "deploy:prod": "./scripts/deploy-prod.sh",
     "deploy:dev": "./scripts/deploy-dev.sh",
-    "seed:fiscal": "node prisma/apply-fiscal-seeds.js"
+    "seed:fiscal": "node prisma/apply-fiscal-seeds.js",
+    "fiscal:migrate": "node dist/src/scripts/migrate-fiscal-secrets.js",
+    "fiscal:migrate:dry": "node dist/src/scripts/migrate-fiscal-secrets.js --dry-run",
+    "fiscal:migrate:dev": "ts-node src/scripts/migrate-fiscal-secrets.ts",
+    "fiscal:migrate:dry:dev": "ts-node src/scripts/migrate-fiscal-secrets.ts --dry-run",
+    "fiscal:nullify": "node dist/src/scripts/nullify-legacy-fiscal-secrets.js",
+    "fiscal:nullify:dry": "node dist/src/scripts/nullify-legacy-fiscal-secrets.js --dry-run",
+    "fiscal:nullify:dev": "ts-node src/scripts/nullify-legacy-fiscal-secrets.ts",
+    "fiscal:nullify:dry:dev": "ts-node src/scripts/nullify-legacy-fiscal-secrets.ts --dry-run"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",

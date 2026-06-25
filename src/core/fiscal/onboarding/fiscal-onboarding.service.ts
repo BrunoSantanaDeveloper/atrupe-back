@@ -12,6 +12,10 @@ import {
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { FiscalOnboardingDto } from './fiscal-onboarding.dto';
 import { validatePfxCertificateCnpj } from '../utils/certificate-parser';
+import { EncryptionService } from '../../../shared/services/encryption.service';
+import { FiscalRolloutPolicyService } from '../shared/fiscal-rollout-policy.service';
+import { FiscalEnvironment } from '@prisma/client';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class FiscalOnboardingService {
@@ -21,6 +25,8 @@ export class FiscalOnboardingService {
     private readonly prisma: PrismaService,
     private readonly invoicyHttpService: InvoicyHttpService,
     private readonly invoicyService: InvoicyService,
+    private readonly encryptionService: EncryptionService,
+    private readonly fiscalRolloutPolicy: FiscalRolloutPolicyService,
   ) {}
 
   async submitOnboarding(companyId: string, dto: FiscalOnboardingDto) {
@@ -160,17 +166,74 @@ export class FiscalOnboardingService {
       certificateType?: string;
     },
   ) {
+    const env = environment as FiscalEnvironment;
+
+    // Encrypt onboarding details
+    let invoicyAccessKeyEncrypted: string | null = null;
+    if (accessKey) {
+      invoicyAccessKeyEncrypted = this.encryptionService.encrypt(accessKey, {
+        table: 'fiscal_onboarding_requests',
+        recordId: requestId,
+        companyId,
+        field: 'invoicyAccessKeyEncrypted',
+        scope: 'GLOBAL',
+      });
+    }
+    let invoicyCryptoKeyEncrypted: string | null = null;
+    if (cryptoKey) {
+      invoicyCryptoKeyEncrypted = this.encryptionService.encrypt(cryptoKey, {
+        table: 'fiscal_onboarding_requests',
+        recordId: requestId,
+        companyId,
+        field: 'invoicyCryptoKeyEncrypted',
+        scope: 'GLOBAL',
+      });
+    }
+
     await this.prisma.$transaction(async (tx) => {
       // Fetch the onboarding request to get the submitted data
       const request = await tx.fiscalOnboardingRequest.findUnique({
         where: { id: requestId },
       });
 
-      // Update company with Invoicy accessKey + sync onboarding data
+      // Create CompanyEnvironmentCredential
+      const credential = await tx.companyEnvironmentCredential.upsert({
+        where: {
+          companyId_environment: {
+            companyId,
+            environment: env,
+          },
+        },
+        update: {},
+        create: {
+          companyId,
+          environment: env,
+        },
+      });
+
+      const providerAccessKeyEncrypted = this.encryptionService.encrypt(
+        accessKey,
+        {
+          table: 'company_environment_credentials',
+          recordId: credential.id,
+          companyId,
+          field: 'providerAccessKeyEncrypted',
+          scope: env,
+        },
+      );
+
+      await tx.companyEnvironmentCredential.update({
+        where: { id: credential.id },
+        data: { providerAccessKeyEncrypted },
+      });
+
+      // Update company
       await tx.company.update({
         where: { id: companyId },
         data: {
-          accessKey,
+          accessKey: this.fiscalRolloutPolicy.shouldWriteToLegacy()
+            ? accessKey
+            : null,
           ...(request?.razaoSocial && { legalName: request.razaoSocial }),
           ...(request?.cnpj && { cnpj: request.cnpj }),
           ...(request?.cnae && { cnae: request.cnae }),
@@ -208,21 +271,59 @@ export class FiscalOnboardingService {
       }
 
       if (certificateData?.certificate) {
+        const existingCert = await tx.digitalCertificate.findUnique({
+          where: { companyId },
+        });
+        const certId = existingCert?.id || crypto.randomUUID();
+
+        let passwordEncrypted: string | null = null;
+        if (certificateData.certificatePassword) {
+          passwordEncrypted = this.encryptionService.encrypt(
+            certificateData.certificatePassword,
+            {
+              table: 'digital_certificates',
+              recordId: certId,
+              companyId,
+              field: 'passwordEncrypted',
+              scope: 'GLOBAL',
+            },
+          );
+        }
+
+        const certificateEncrypted = this.encryptionService.encrypt(
+          certificateData.certificate,
+          {
+            table: 'digital_certificates',
+            recordId: certId,
+            companyId,
+            field: 'certificateEncrypted',
+            scope: 'GLOBAL',
+          },
+        );
+
+        const certUpdate: any = {
+          type: (certificateData.certificateType as any) || 'A1',
+          passwordEncrypted,
+          certificateEncrypted,
+          lastUpload: new Date(),
+        };
+
+        if (this.fiscalRolloutPolicy.shouldWriteToLegacy()) {
+          certUpdate.password = certificateData.certificatePassword;
+          certUpdate.certificate = certificateData.certificate;
+        } else {
+          certUpdate.password = null;
+          certUpdate.certificate = null;
+        }
+
         await tx.digitalCertificate.upsert({
           where: { companyId },
           create: {
+            id: certId,
             companyId,
-            type: (certificateData.certificateType as any) || 'A1',
-            password: certificateData.certificatePassword,
-            certificate: certificateData.certificate,
-            lastUpload: new Date(),
+            ...certUpdate,
           },
-          update: {
-            type: (certificateData.certificateType as any) || 'A1',
-            password: certificateData.certificatePassword,
-            certificate: certificateData.certificate,
-            lastUpload: new Date(),
-          },
+          update: certUpdate,
         });
       }
 
@@ -249,14 +350,23 @@ export class FiscalOnboardingService {
       }
 
       // Update onboarding request status
+      const onboardingUpdate: any = {
+        status: 'ACTIVE',
+        invoicyAccessKeyEncrypted,
+        invoicyCryptoKeyEncrypted,
+        resolvedAt: new Date(),
+      };
+      if (this.fiscalRolloutPolicy.shouldWriteToLegacy()) {
+        onboardingUpdate.invoicyAccessKey = accessKey;
+        onboardingUpdate.invoicyCryptoKey = cryptoKey;
+      } else {
+        onboardingUpdate.invoicyAccessKey = null;
+        onboardingUpdate.invoicyCryptoKey = null;
+      }
+
       await tx.fiscalOnboardingRequest.update({
         where: { id: requestId },
-        data: {
-          status: 'ACTIVE',
-          invoicyAccessKey: accessKey,
-          invoicyCryptoKey: cryptoKey,
-          resolvedAt: new Date(),
-        },
+        data: onboardingUpdate,
       });
 
       // Execute auto-seeding
@@ -426,6 +536,12 @@ export class FiscalOnboardingService {
   async getStatus(companyId: string) {
     const request = await this.prisma.fiscalOnboardingRequest.findFirst({
       where: { companyId },
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        errorMessage: true,
+      },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -485,14 +601,55 @@ export class FiscalOnboardingService {
   // ============== Admin endpoints ==============
 
   async listPending() {
-    return this.prisma.fiscalOnboardingRequest.findMany({
+    const requests = await this.prisma.fiscalOnboardingRequest.findMany({
       where: { status: 'PENDING_REVIEW' },
-      include: {
+      select: {
+        id: true,
+        companyId: true,
+        status: true,
+        cnpj: true,
+        razaoSocial: true,
+        nomeFantasia: true,
+        ie: true,
+        im: true,
+        cnae: true,
+        uf: true,
+        codigoIbge: true,
+        cep: true,
+        logradouro: true,
+        numero: true,
+        bairro: true,
+        cidade: true,
+        complemento: true,
+        errorMessage: true,
+        resolvedBy: true,
+        resolvedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        invoicyAccessKey: true,
+        invoicyCryptoKey: true,
+        invoicyAccessKeyEncrypted: true,
+        invoicyCryptoKeyEncrypted: true,
         company: {
           select: { name: true, legalName: true, cnpj: true },
         },
       },
       orderBy: { createdAt: 'asc' },
+    });
+
+    return requests.map((req) => {
+      const {
+        invoicyAccessKey,
+        invoicyCryptoKey,
+        invoicyAccessKeyEncrypted,
+        invoicyCryptoKeyEncrypted,
+        ...rest
+      } = req;
+      return {
+        ...rest,
+        hasAccessKey: !!(invoicyAccessKey || invoicyAccessKeyEncrypted),
+        hasCryptoKey: !!(invoicyCryptoKey || invoicyCryptoKeyEncrypted),
+      };
     });
   }
 

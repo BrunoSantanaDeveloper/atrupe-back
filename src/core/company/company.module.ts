@@ -10,9 +10,11 @@ import { SupplierModule } from '../supplier/supplier.module';
 import { ClientModule } from '../client/client.module';
 import { CompanySeedsService } from './company-seeds.service';
 import { CompanyHistoryService } from './company-history.service';
+import { FiscalSecurityModule } from '../fiscal/shared/fiscal-security.module';
 
 @Module({
   imports: [
+    FiscalSecurityModule,
     PrismaModule,
     AuthModule,
     AddressModule,
