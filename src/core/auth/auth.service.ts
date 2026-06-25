@@ -126,7 +126,7 @@ export class AuthService {
       // Login normal para usuários de empresa
       const employee = user.employee?.[0];
       const companyId = employee?.company?.id;
-      let planInfo = companyId
+      const planInfo = companyId
         ? await this.planControlService.getCompanyPlanInfo(companyId)
         : null;
 
@@ -136,32 +136,23 @@ export class AuthService {
       const isBlocked =
         employee?.company?.blockLevel && employee.company.blockLevel !== 'NONE';
 
-      // Verificar para empresas com TRIAL ativo (pode ter comprado plano pago)
-      // OU empresas bloqueadas (pode ter pago e sistema não sincronizou)
+      // Sync com Asaas feito em background para não bloquear o login.
+      // O usuário verá o plano atualizado no próximo login caso tenha sido ativado.
       if (companyId && (isTrialPlan || isBlocked)) {
-        try {
-          this.logger.log(
-            `Empresa ${companyId} ${isTrialPlan ? 'em TRIAL' : 'bloqueada'}, verificando sync com Asaas...`,
-          );
-          const syncResult =
-            await this.subscriptionsService.checkAndSyncSubscriptionStatus(
-              companyId,
+        this.subscriptionsService
+          .checkAndSyncSubscriptionStatus(companyId)
+          .then((syncResult) => {
+            if (syncResult.status === 'activated') {
+              this.logger.log(
+                `Assinatura ativada em background para empresa ${companyId}`,
+              );
+            }
+          })
+          .catch((error) => {
+            this.logger.error(
+              `Erro no sync Asaas em background (empresa ${companyId}): ${error.message}`,
             );
-
-          // Se a assinatura foi ativada, buscar novamente as informações do plano
-          if (syncResult.status === 'activated') {
-            this.logger.log(
-              `Assinatura ativada/desbloqueada durante login para empresa ${companyId}`,
-            );
-            planInfo =
-              await this.planControlService.getCompanyPlanInfo(companyId);
-          }
-        } catch (error) {
-          this.logger.error(
-            `Erro ao verificar pagamentos pendentes: ${error.message}`,
-          );
-          // Continua o login normalmente mesmo se a verificação falhar
-        }
+          });
       }
 
       const subscription = planInfo?.planType ?? 'TRIAL';
