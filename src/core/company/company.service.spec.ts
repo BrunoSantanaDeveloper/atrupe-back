@@ -5,6 +5,9 @@ import { PlugService } from '../../svc/plug/plug.service';
 import { CompanySeedsService } from './company-seeds.service';
 import { CompanyHistoryService } from './company-history.service';
 import { Logger } from '@nestjs/common';
+import { EncryptionService } from 'src/shared/services/encryption.service';
+import { FiscalRolloutPolicyService } from '../fiscal/shared/fiscal-rollout-policy.service';
+import { FiscalCredentialResolverService } from '../fiscal/shared/fiscal-credential-resolver.service';
 
 // Mock data
 const mockCompanyId = 'company-uuid-123';
@@ -55,6 +58,7 @@ const mockCompanyRaw = {
     lastUpload: new Date(),
     updatedAt: new Date(),
   },
+  environmentCredentials: [],
 };
 
 const mockCreateCompanyDto = {
@@ -244,6 +248,9 @@ const mockPrismaService = {
   payrollSetup: {
     create: jest.fn(),
   },
+  invoicyEnvironmentConfig: {
+    updateMany: jest.fn(),
+  },
   $transaction: jest.fn((callback) => callback(mockPrismaService)),
 };
 
@@ -261,6 +268,31 @@ const mockCompanyHistoryService = {
   listHistory: jest.fn(),
 };
 
+const mockEncryptionService = {
+  encrypt: jest.fn(),
+  decrypt: jest.fn(),
+  reEncrypt: jest.fn(),
+  generateAAD: jest.fn(),
+};
+
+const mockFiscalRolloutPolicyService = {
+  shouldReadFromEncrypted: jest.fn().mockReturnValue(false),
+  shouldWriteToLegacy: jest.fn().mockReturnValue(true),
+  isRolloutActivationEnabled: jest.fn().mockResolvedValue(false),
+  isProductionActivationEnabled: jest.fn().mockReturnValue(false),
+  isEnvironmentSwitchLocked: jest.fn().mockResolvedValue(true),
+  validateBootstrapConfig: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockFiscalCredentialResolverService = {
+  getCompanyRuntimeCredentials: jest.fn(),
+  getEmissorRuntimeCredentials: jest.fn(),
+  getCompanyCredentialsForValidation: jest.fn(),
+  getEmissorCredentialsForValidation: jest.fn(),
+  resolveOperationalEnvironment: jest.fn(),
+  reserveNfceNumber: jest.fn(),
+};
+
 describe('CompanyService', () => {
   let service: CompanyService;
   let prisma: typeof mockPrismaService;
@@ -276,6 +308,15 @@ describe('CompanyService', () => {
         { provide: PlugService, useValue: mockPlugService },
         { provide: CompanySeedsService, useValue: mockCompanySeedsService },
         { provide: CompanyHistoryService, useValue: mockCompanyHistoryService },
+        { provide: EncryptionService, useValue: mockEncryptionService },
+        {
+          provide: FiscalRolloutPolicyService,
+          useValue: mockFiscalRolloutPolicyService,
+        },
+        {
+          provide: FiscalCredentialResolverService,
+          useValue: mockFiscalCredentialResolverService,
+        },
       ],
     }).compile();
 
@@ -345,16 +386,19 @@ describe('CompanyService', () => {
       expect(result.general).toHaveProperty('name', 'Empresa Teste');
       expect(prisma.company.findFirst).toHaveBeenCalledWith({
         where: { id: mockCompanyId },
-        include: { address: true, DigitalCertificate: true },
+        include: {
+          address: true,
+          DigitalCertificate: true,
+          environmentCredentials: true,
+        },
       });
     });
 
     it('should return null when company not found', async () => {
       prisma.company.findFirst.mockResolvedValue(null);
 
-      // Note: The actual findOne implementation may not handle null properly
-      // This test documents the current behavior (throws on null)
-      await expect(service.findOne('invalid-id')).rejects.toThrow();
+      const result = await service.findOne('invalid-id');
+      expect(result).toBeNull();
     });
   });
 
@@ -437,7 +481,12 @@ describe('CompanyService', () => {
     beforeEach(() => {
       // Mock all seed check methods to return true (already exists)
       prisma.companySector.findMany.mockResolvedValue([{ id: 'sector-1' }]);
-      prisma.company.findUnique.mockResolvedValue({ unitDefaults: 'UN' });
+      // findUnique returns full company so formatCompany (which requires fiscal
+      // relations) succeeds both for seed checks and for the final fetch.
+      prisma.company.findUnique.mockResolvedValue({
+        ...mockCompanyRaw,
+        unitDefaults: 'UN',
+      });
       prisma.saleSeries.findMany.mockResolvedValue([{ id: 'series-1' }]);
       prisma.paymentCondition.findMany.mockResolvedValue([{ id: 'cond-1' }]);
       prisma.bankAccount.findFirst.mockResolvedValue({ id: 'bank-1' });
@@ -460,6 +509,8 @@ describe('CompanyService', () => {
         name: mockCreateCompanyDto.general.name,
       };
       prisma.company.create.mockResolvedValue(createdCompany);
+      // Override findUnique so the final fetch returns the newly created company.
+      prisma.company.findUnique.mockResolvedValue(createdCompany);
 
       const result = await service.createMainCompany(
         mockEmail,
@@ -646,7 +697,7 @@ describe('CompanyService', () => {
       expect(prisma.address.create).toHaveBeenCalled();
     });
 
-    it('should delete certificate when explicitly set to null', async () => {
+    it('should not delete certificate when type and file are set to null', async () => {
       const updateWithNullCert = {
         ...mockUpdateCompanyDto,
         fiscal: {
@@ -655,13 +706,10 @@ describe('CompanyService', () => {
           certificate: null,
         },
       };
-      prisma.digitalCertificate.delete.mockResolvedValue({ id: 'deleted' });
 
       await service.update(mockCompanyId, updateWithNullCert);
 
-      expect(prisma.digitalCertificate.delete).toHaveBeenCalledWith({
-        where: { companyId: mockCompanyId },
-      });
+      expect(prisma.digitalCertificate.delete).not.toHaveBeenCalled();
     });
   });
 
