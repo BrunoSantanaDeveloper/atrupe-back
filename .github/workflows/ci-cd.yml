@@ -141,37 +141,25 @@ jobs:
             }
 
             # === BACKUP DO BANCO ANTES DO DEPLOY ===
-            set -Eeuo pipefail
             BACKUP_DIR=/home/ubuntu/db-backups/dev
             mkdir -p "$BACKUP_DIR"
-            BACKUP_FINAL="$BACKUP_DIR/backup-$(date +%Y%m%d-%H%M%S).sql.age"
-            BACKUP_PARTIAL="${BACKUP_FINAL}.partial"
-            AGE_RECIPIENT_FILE="/home/ubuntu/.config/age/backup-recipients.txt"
+            BACKUP_FILE="$BACKUP_DIR/backup-$(date +%Y%m%d-%H%M%S).sql.gz"
             POSTGRES_CONTAINER=$(docker ps --filter name=postgres --format '{{.Names}}' | grep dev | head -1 || true)
             if [ -n "$POSTGRES_CONTAINER" ]; then
               DB_USER=$(docker exec "$POSTGRES_CONTAINER" env | grep POSTGRES_USER | cut -d= -f2 | tr -d '[:space:]' || true)
               DB_NAME=$(docker exec "$POSTGRES_CONTAINER" env | grep POSTGRES_DB | cut -d= -f2 | tr -d '[:space:]' || true)
-              if command -v age >/dev/null 2>&1 && test -s "$AGE_RECIPIENT_FILE"; then
-                age --version
-                trap 'rm -f "$BACKUP_PARTIAL"' EXIT
-                docker exec "$POSTGRES_CONTAINER" pg_dump -U "${DB_USER:-postgres}" "${DB_NAME:-atrupeDbDev}" \
-                  | age -R "$AGE_RECIPIENT_FILE" -o "$BACKUP_PARTIAL" \
-                  && mv "$BACKUP_PARTIAL" "$BACKUP_FINAL" \
-                  && echo "✅ Backup cifrado salvo: $BACKUP_FINAL" \
-                  || echo "⚠️  Backup cifrado falhou — continuando deploy..."
-                ls -t "$BACKUP_DIR"/backup-*.sql.age 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
-              else
-                echo "⚠️  age não instalado ou arquivo de recipients ausente — backup pulado. Provisione a VPS antes do próximo deploy."
-              fi
+              docker exec "$POSTGRES_CONTAINER" pg_dump -U "${DB_USER:-postgres}" "${DB_NAME:-atrupeDbDev}" | gzip -c > "$BACKUP_FILE" \
+                && echo "✅ Backup salvo: $BACKUP_FILE" \
+                || echo "⚠️  Backup falhou — continuando deploy..."
+              ls -t "$BACKUP_DIR"/backup-*.sql.gz 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
             else
               echo "⚠️  Container postgres (dev) não encontrado — backup pulado..."
             fi
-            set +e
             # === ATUALIZAR REPOSITÓRIO LOCAL NA VPS ===
             cd /home/ubuntu/atrupe-back || exit 1
             git fetch origin
             git checkout dev
-            git pull
+            git pull --ff-only
 
             # === DEPLOY VIA DOCKER STACK ===
             echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
@@ -313,37 +301,25 @@ jobs:
             }
 
             # === BACKUP DO BANCO ANTES DO DEPLOY ===
-            set -Eeuo pipefail
             BACKUP_DIR=/home/ubuntu/db-backups/prod
             mkdir -p "$BACKUP_DIR"
-            BACKUP_FINAL="$BACKUP_DIR/backup-$(date +%Y%m%d-%H%M%S).sql.age"
-            BACKUP_PARTIAL="${BACKUP_FINAL}.partial"
-            AGE_RECIPIENT_FILE="/home/ubuntu/.config/age/backup-recipients.txt"
+            BACKUP_FILE="$BACKUP_DIR/backup-$(date +%Y%m%d-%H%M%S).sql.gz"
             POSTGRES_CONTAINER=$(docker ps --filter name=postgres --format '{{.Names}}' | grep -v dev | head -1 || true)
             if [ -n "$POSTGRES_CONTAINER" ]; then
               DB_USER=$(docker exec "$POSTGRES_CONTAINER" env | grep POSTGRES_USER | cut -d= -f2 | tr -d '[:space:]' || true)
               DB_NAME=$(docker exec "$POSTGRES_CONTAINER" env | grep POSTGRES_DB | cut -d= -f2 | tr -d '[:space:]' || true)
-              if command -v age >/dev/null 2>&1 && test -s "$AGE_RECIPIENT_FILE"; then
-                age --version
-                trap 'rm -f "$BACKUP_PARTIAL"' EXIT
-                docker exec "$POSTGRES_CONTAINER" pg_dump -U "${DB_USER:-postgres}" "${DB_NAME:-atrupeDb}" \
-                  | age -R "$AGE_RECIPIENT_FILE" -o "$BACKUP_PARTIAL" \
-                  && mv "$BACKUP_PARTIAL" "$BACKUP_FINAL" \
-                  && echo "✅ Backup cifrado salvo: $BACKUP_FINAL" \
-                  || echo "⚠️  Backup cifrado falhou — continuando deploy..."
-                ls -t "$BACKUP_DIR"/backup-*.sql.age 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
-              else
-                echo "⚠️  age não instalado ou arquivo de recipients ausente — backup pulado. Provisione a VPS antes do próximo deploy."
-              fi
+              docker exec "$POSTGRES_CONTAINER" pg_dump -U "${DB_USER:-postgres}" "${DB_NAME:-atrupeDb}" | gzip -c > "$BACKUP_FILE" \
+                && echo "✅ Backup salvo: $BACKUP_FILE" \
+                || echo "⚠️  Backup falhou — continuando deploy..."
+              ls -t "$BACKUP_DIR"/backup-*.sql.gz 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
             else
               echo "⚠️  Container postgres (prod) não encontrado — backup pulado..."
             fi
-            set +e
             # === ATUALIZAR REPOSITÓRIO LOCAL NA VPS ===
             cd /home/ubuntu/atrupe-back || exit 1
             git fetch origin
             git checkout main
-            git pull
+            git pull --ff-only
 
             # === DEPLOY VIA DOCKER STACK ===
             echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
