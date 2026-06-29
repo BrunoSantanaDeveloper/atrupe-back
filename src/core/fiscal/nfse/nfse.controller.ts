@@ -20,6 +20,7 @@ import { NfseService } from './nfse.service';
 import {
   EmitNfseDto,
   EmitNfseFromOrderDto,
+  EmitNfseFromOrdersDto,
   CancelNfseDto,
   NfseFilterDto,
 } from './dtos/nfse.dto';
@@ -61,6 +62,16 @@ export class NfseController {
   @ApiOperation({ summary: 'Emitir NFS-e a partir de uma ordem de serviço' })
   async emit(@Req() req, @Body() dto: EmitNfseFromOrderDto) {
     return this.nfseService.emitFromOrder(req.user.companyId, dto);
+  }
+
+  @Post('emit-consolidated')
+  @HasPermission('create', 'nota_fiscal:emitir')
+  @RequireUnblocked()
+  @ApiOperation({
+    summary: 'Emitir NFS-e consolidada a partir de múltiplas ordens de serviço',
+  })
+  async emitConsolidated(@Req() req, @Body() dto: EmitNfseFromOrdersDto) {
+    return this.nfseService.emitFromOrders(req.user.companyId, dto);
   }
 
   @Post('emit-full')

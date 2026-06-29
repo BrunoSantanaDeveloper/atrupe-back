@@ -15,6 +15,7 @@ import {
 import {
   EmitNfseDto,
   EmitNfseFromOrderDto,
+  EmitNfseFromOrdersDto,
   CancelNfseDto,
   NfseFilterDto,
 } from './dtos/nfse.dto';
@@ -497,6 +498,226 @@ export class NfseService {
     }
 
     return this.emit(companyId, fullDto);
+  }
+
+  // Emitir NFS-e consolidada a partir de múltiplas ordens de serviço
+  async emitFromOrders(companyId: string, dto: EmitNfseFromOrdersDto) {
+    const uniqueOrderIds = [...new Set(dto.orderIds.filter(Boolean))];
+
+    if (uniqueOrderIds.length < 2) {
+      throw new BadRequestException(
+        'Selecione ao menos duas ordens para consolidar a NFS-e',
+      );
+    }
+
+    // Buscar todas as cotações de uma vez
+    const quotations = await this.prisma.quotation.findMany({
+      where: {
+        companyId,
+        order: { id: { in: uniqueOrderIds } },
+      },
+      include: {
+        client: { include: { address: true } },
+        order: true,
+        quotationProduct: {
+          include: { product: { include: { fiscalData: true } } },
+        },
+      },
+    });
+
+    if (quotations.length !== uniqueOrderIds.length) {
+      throw new NotFoundException(
+        'Uma ou mais ordens de serviço não foram encontradas',
+      );
+    }
+
+    // Validar que todas as OS são do mesmo cliente
+    const clientIds = [...new Set(quotations.map((q) => q.clientId))];
+    if (clientIds.length > 1) {
+      throw new BadRequestException(
+        'Todas as ordens devem pertencer ao mesmo cliente para consolidar a NFS-e',
+      );
+    }
+
+    // Buscar configuração do Invoicy
+    const config = await this.invoicyService.getConfig(companyId);
+    if (!config) {
+      throw new BadRequestException(
+        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
+      );
+    }
+
+    // Código IBGE do prestador
+    let prestadorCmun = config.ibgeCode || '';
+    const emitCep = config.company?.address?.zipcode;
+    if (!prestadorCmun && emitCep) {
+      const cepData = await fetchCepData(emitCep);
+      if (cepData) {
+        prestadorCmun = cepData.codigoIbge;
+        await this.prisma.invoicyConfig.updateMany({
+          where: { companyId },
+          data: { emitCmun: prestadorCmun },
+        });
+      }
+    }
+
+    // Somar valorServicos apenas de itens com isService=true de todas as ordens
+    const valorServicos =
+      quotations.reduce((total, q) => {
+        const serviceProducts = q.quotationProduct.filter(
+          (qp) => (qp.product as any)?.isService,
+        );
+        return (
+          total +
+          serviceProducts.reduce(
+            (acc, qp) => acc + (qp.finalValue || qp.totalValue || 0),
+            0,
+          )
+        );
+      }, 0) / 100;
+
+    // Tomador: cliente da primeira ordem (ou overrides do DTO)
+    const client = quotations[0].client;
+    const clientAddress = client?.address?.[0];
+
+    const tomadorCepFinal = dto.tomadorCep || clientAddress?.zipcode || '';
+    const tomadorEnderecoFinal =
+      dto.tomadorEndereco ?? clientAddress?.street ?? '';
+
+    let tomadorCmun = '';
+    let tomadorMunicipio = dto.tomadorMunicipio || clientAddress?.city || '';
+    let tomadorUf = dto.tomadorUf || clientAddress?.state || '';
+
+    if (tomadorCepFinal) {
+      const cepData = await fetchCepData(tomadorCepFinal);
+      if (cepData) {
+        tomadorCmun = cepData.codigoIbge;
+        if (!dto.tomadorMunicipio) tomadorMunicipio = cepData.cidade;
+        if (!dto.tomadorUf) tomadorUf = cepData.uf;
+      } else {
+        this.logger.warn(
+          `CEP do tomador não encontrado na NFS-e consolidada: ${tomadorCepFinal}`,
+        );
+      }
+    }
+
+    // Local de entrega/prestação
+    let entregaCmun = '';
+    let entregaMunicipio = dto.entregaMunicipio || '';
+    let entregaUf = dto.entregaUf || '';
+    const entregaCep = dto.entregaCep || '';
+    const entregaEndereco = dto.entregaEndereco || '';
+    const entregaNumero = dto.entregaNumero || '';
+    const entregaComplemento = dto.entregaComplemento || '';
+    const entregaBairro = dto.entregaBairro || '';
+
+    if (entregaEndereco && entregaCep) {
+      const cepData = await fetchCepData(entregaCep);
+      if (cepData) {
+        entregaCmun = cepData.codigoIbge;
+        if (!entregaMunicipio) entregaMunicipio = cepData.cidade;
+        if (!entregaUf) entregaUf = cepData.uf;
+      }
+    }
+
+    // Códigos das OS para anotação
+    const orderCodes = quotations
+      .map(
+        (q) =>
+          (q.order as any)?.orderCode ||
+          (q.order as any)?.code ||
+          q.order?.id?.slice(0, 8) ||
+          '',
+      )
+      .filter(Boolean)
+      .join(', ');
+
+    const fullDto: EmitNfseDto = {
+      orderId: uniqueOrderIds[0],
+      quotationId: quotations[0].id,
+      dataCompetencia: new Date().toISOString().split('T')[0],
+      naturezaOperacao: 1,
+      codigoServico: dto.codigoServico || config.codigoServico || '',
+      discriminacao: dto.discriminacao,
+      codigoMunicipio: prestadorCmun,
+      valorServicos,
+      aliquotaIss: dto.aliquotaIss || config.aliquotaIss || 0,
+      issRetido: dto.issRetido || false,
+      tomador: {
+        cnpj: dto.tomadorCnpjCpf
+          ? dto.tomadorCnpjCpf.replace(/\D/g, '').length === 14
+            ? dto.tomadorCnpjCpf.replace(/\D/g, '')
+            : undefined
+          : client?.cnpj || undefined,
+        cpf: dto.tomadorCnpjCpf
+          ? dto.tomadorCnpjCpf.replace(/\D/g, '').length === 11
+            ? dto.tomadorCnpjCpf.replace(/\D/g, '')
+            : undefined
+          : client?.cpf || undefined,
+        razaoSocial:
+          dto.tomadorRazaoSocial ||
+          (client as any)?.corporateName ||
+          client?.name ||
+          '',
+        endereco: tomadorEnderecoFinal,
+        numero: dto.tomadorNumero ?? clientAddress?.number ?? 'S/N',
+        complemento: dto.tomadorComplemento ?? clientAddress?.complement ?? '',
+        bairro: dto.tomadorBairro ?? clientAddress?.neighborhood ?? '',
+        cep: tomadorCepFinal,
+        codigoMunicipio: tomadorCmun,
+        municipio: tomadorMunicipio,
+        uf: tomadorUf,
+        email: dto.tomadorEmail ?? client?.email ?? '',
+        telefone:
+          dto.tomadorTelefone ??
+          (client as any)?.phone ??
+          (client as any)?.mobile ??
+          '',
+      },
+      ...(entregaEndereco
+        ? {
+            entregaEndereco,
+            entregaNumero: entregaNumero || 'S/N',
+            entregaComplemento,
+            entregaBairro,
+            entregaCep,
+            entregaMunicipio,
+            entregaUf,
+            entregaCodigoMunicipio: entregaCmun,
+          }
+        : {}),
+    };
+
+    if (!fullDto.tomador.razaoSocial) {
+      throw new BadRequestException('Cliente não possui nome cadastrado');
+    }
+    if (!fullDto.codigoMunicipio) {
+      throw new BadRequestException(
+        'Código do município do prestador não configurado. Verifique a configuração fiscal do emissor.',
+      );
+    }
+    if (!fullDto.tomador.codigoMunicipio) {
+      throw new BadRequestException(
+        'Código do município do tomador não encontrado. Verifique o CEP cadastrado para o cliente.',
+      );
+    }
+
+    const nfse = await this.emit(companyId, fullDto);
+
+    // Guardar todos os orderIds no draftData para referência
+    if (nfse?.id) {
+      await this.prisma.nfse.update({
+        where: { id: nfse.id },
+        data: {
+          draftData: {
+            consolidatedOrderIds: uniqueOrderIds,
+            orderCodes,
+          } as any,
+        },
+      });
+    }
+
+    return nfse;
   }
 
   async emit(companyId: string, dto: EmitNfseDto) {
