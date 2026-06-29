@@ -764,12 +764,14 @@ export class SubscriptionsService {
         true,
       );
 
+      // Desconto calculado sobre o valor do módulo contratado neste checkout,
+      // não sobre o total da assinatura (plano + módulos já existentes).
       const discountCalculation = this.couponsService.calculateDiscount(
         coupon,
-        newValueBase,
+        feature.price || 0,
       );
       discountAmount = discountCalculation.discountAmount;
-      finalValueCentavos = discountCalculation.finalValue;
+      finalValueCentavos = newValueBase - discountAmount;
     }
 
     const newValue = finalValueCentavos / 100;
@@ -835,15 +837,15 @@ export class SubscriptionsService {
       });
 
       if (coupon) {
-        const discountApplied = newValueBase - finalValueCentavos;
+        const modulePrice = feature.price || 0;
         await tx.couponUsage.create({
           data: {
             couponId: coupon.id,
             companyId: request.user.companyId,
             subscriptionId,
-            discountApplied,
-            originalValue: newValueBase,
-            finalValue: finalValueCentavos,
+            discountApplied: discountAmount,
+            originalValue: modulePrice,
+            finalValue: modulePrice - discountAmount,
           },
         });
 

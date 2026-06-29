@@ -230,6 +230,84 @@ export class EmitNfseFromOrderDto {
   @IsString()
   @IsOptional()
   entregaCodigoMunicipio?: string;
+
+  // Campos opcionais para sobrescrever dados do tomador vindos do cadastro do cliente
+  @ApiPropertyOptional({
+    description: 'Razão social do tomador (sobrescreve o cadastro)',
+  })
+  @IsString()
+  @IsOptional()
+  tomadorRazaoSocial?: string;
+
+  @ApiPropertyOptional({
+    description: 'CNPJ ou CPF do tomador (sobrescreve o cadastro)',
+  })
+  @IsString()
+  @IsOptional()
+  tomadorCnpjCpf?: string;
+
+  @ApiPropertyOptional({
+    description: 'E-mail do tomador (sobrescreve o cadastro)',
+  })
+  @IsString()
+  @IsOptional()
+  tomadorEmail?: string;
+
+  @ApiPropertyOptional({
+    description: 'Telefone do tomador (sobrescreve o cadastro)',
+  })
+  @IsString()
+  @IsOptional()
+  tomadorTelefone?: string;
+
+  @ApiPropertyOptional({
+    description: 'Logradouro do tomador (sobrescreve o cadastro)',
+  })
+  @IsString()
+  @IsOptional()
+  tomadorEndereco?: string;
+
+  @ApiPropertyOptional({
+    description: 'Número do endereço do tomador (sobrescreve o cadastro)',
+  })
+  @IsString()
+  @IsOptional()
+  tomadorNumero?: string;
+
+  @ApiPropertyOptional({
+    description: 'Complemento do tomador (sobrescreve o cadastro)',
+  })
+  @IsString()
+  @IsOptional()
+  tomadorComplemento?: string;
+
+  @ApiPropertyOptional({
+    description: 'Bairro do tomador (sobrescreve o cadastro)',
+  })
+  @IsString()
+  @IsOptional()
+  tomadorBairro?: string;
+
+  @ApiPropertyOptional({
+    description: 'CEP do tomador (sobrescreve o cadastro)',
+  })
+  @IsString()
+  @IsOptional()
+  tomadorCep?: string;
+
+  @ApiPropertyOptional({
+    description: 'Município do tomador (sobrescreve o cadastro)',
+  })
+  @IsString()
+  @IsOptional()
+  tomadorMunicipio?: string;
+
+  @ApiPropertyOptional({
+    description: 'UF do tomador (sobrescreve o cadastro)',
+  })
+  @IsString()
+  @IsOptional()
+  tomadorUf?: string;
 }
 
 // DTO completo para emissão manual

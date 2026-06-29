@@ -333,10 +333,13 @@ export class NfseService {
       }
     }
 
-    // Calcular valor total dos serviços (usar finalValue ou totalValue)
+    // Calcular valor total dos serviços — soma apenas itens com isService=true
     // IMPORTANTE: Valores no banco estão em centavos, dividir por 100 para reais
+    const serviceProducts = quotation.quotationProduct.filter(
+      (qp) => (qp.product as any)?.isService,
+    );
     const valorServicos =
-      quotation.quotationProduct.reduce(
+      serviceProducts.reduce(
         (acc: number, qp) => acc + (qp.finalValue || qp.totalValue || 0),
         0,
       ) / 100;
@@ -355,27 +358,30 @@ export class NfseService {
         ? null
         : (quotation as any).deliveryInfo?.clientAddress);
 
+    // Campos do tomador: usa override do DTO quando fornecido, senão usa cadastro do cliente
+    const tomadorCepFinal = dto.tomadorCep || clientAddress?.zipcode || '';
+    const tomadorEnderecoFinal =
+      dto.tomadorEndereco ?? clientAddress?.street ?? '';
+
     // Buscar código IBGE do município do tomador via CEP
     let tomadorCmun = '';
-    let tomadorMunicipio = clientAddress?.city || '';
-    let tomadorUf = clientAddress?.state || '';
+    let tomadorMunicipio = dto.tomadorMunicipio || clientAddress?.city || '';
+    let tomadorUf = dto.tomadorUf || clientAddress?.state || '';
 
-    if (clientAddress?.zipcode) {
+    if (tomadorCepFinal) {
       this.logger.log(
-        `Buscando código IBGE para CEP do tomador: ${clientAddress.zipcode}`,
+        `Buscando código IBGE para CEP do tomador: ${tomadorCepFinal}`,
       );
-      const cepData = await fetchCepData(clientAddress.zipcode);
+      const cepData = await fetchCepData(tomadorCepFinal);
       if (cepData) {
         tomadorCmun = cepData.codigoIbge;
-        tomadorMunicipio = cepData.cidade;
-        tomadorUf = cepData.uf;
+        if (!dto.tomadorMunicipio) tomadorMunicipio = cepData.cidade;
+        if (!dto.tomadorUf) tomadorUf = cepData.uf;
         this.logger.log(
           `Código IBGE do tomador: ${tomadorCmun} (${tomadorMunicipio}/${tomadorUf})`,
         );
       } else {
-        this.logger.warn(
-          `CEP do tomador não encontrado: ${clientAddress.zipcode}`,
-        );
+        this.logger.warn(`CEP do tomador não encontrado: ${tomadorCepFinal}`);
       }
     } else {
       this.logger.warn('Tomador sem CEP cadastrado');
@@ -438,19 +444,28 @@ export class NfseService {
         0,
       issRetido: dto.issRetido || false,
       tomador: {
-        cnpj: client.cnpj || undefined,
-        cpf: client.cpf || undefined,
-        razaoSocial: client.corporateName || client.name || '',
-        endereco: clientAddress?.street || '',
-        numero: clientAddress?.number || 'S/N',
-        complemento: clientAddress?.complement || '',
-        bairro: clientAddress?.neighborhood || '',
-        cep: clientAddress?.zipcode || '',
-        codigoMunicipio: tomadorCmun, // Código IBGE do município do TOMADOR (via CEP)
+        cnpj: dto.tomadorCnpjCpf
+          ? dto.tomadorCnpjCpf.replace(/\D/g, '').length === 14
+            ? dto.tomadorCnpjCpf.replace(/\D/g, '')
+            : undefined
+          : client.cnpj || undefined,
+        cpf: dto.tomadorCnpjCpf
+          ? dto.tomadorCnpjCpf.replace(/\D/g, '').length === 11
+            ? dto.tomadorCnpjCpf.replace(/\D/g, '')
+            : undefined
+          : client.cpf || undefined,
+        razaoSocial:
+          dto.tomadorRazaoSocial || client.corporateName || client.name || '',
+        endereco: tomadorEnderecoFinal,
+        numero: dto.tomadorNumero ?? clientAddress?.number ?? 'S/N',
+        complemento: dto.tomadorComplemento ?? clientAddress?.complement ?? '',
+        bairro: dto.tomadorBairro ?? clientAddress?.neighborhood ?? '',
+        cep: tomadorCepFinal,
+        codigoMunicipio: tomadorCmun,
         municipio: tomadorMunicipio,
         uf: tomadorUf,
-        email: client.email || '',
-        telefone: client.phone || client.mobile || '',
+        email: dto.tomadorEmail ?? client.email ?? '',
+        telefone: dto.tomadorTelefone ?? client.phone ?? client.mobile ?? '',
       },
       ...(entregaEndereco
         ? {
