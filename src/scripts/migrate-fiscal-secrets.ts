@@ -109,10 +109,12 @@ async function migrateCompanyCredentials(
     });
 
     if (emissores.length === 0) {
-      throw new Error(
-        `Empresa ${company.id} tem accessKey mas nenhum emissor. ` +
-          'Nao e possivel derivar o ambiente operacional legado.',
+      console.warn(
+        `\n[AVISO] Empresa ${company.id} tem accessKey sem emissores. Pulando.`,
       );
+      progress.company.done++;
+      printProgress(progress);
+      continue;
     }
 
     // Deriva conjunto único de ambientes operacionais

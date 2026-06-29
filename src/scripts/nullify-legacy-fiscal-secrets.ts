@@ -51,6 +51,18 @@ async function reconcile(prisma: PrismaClient, kr: Keyring): Promise<void> {
   });
 
   for (const company of companiesWithKey) {
+    const emissores = await prisma.invoicyConfig.findMany({
+      where: { companyId: company.id },
+      select: { id: true },
+    });
+
+    if (emissores.length === 0) {
+      console.warn(
+        `[AVISO] Empresa ${company.id} tem accessKey sem emissores. Pulando na reconciliacao.`,
+      );
+      continue;
+    }
+
     const creds = await prisma.companyEnvironmentCredential.findMany({
       where: {
         companyId: company.id,

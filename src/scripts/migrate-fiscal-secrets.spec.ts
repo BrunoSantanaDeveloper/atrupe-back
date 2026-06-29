@@ -218,7 +218,7 @@ describe('runMigration', () => {
     );
   });
 
-  test('falha quando Company tem accessKey mas nenhum emissor para derivar ambiente', async () => {
+  test('pula Company com accessKey mas sem emissores (dado orfao)', async () => {
     const kr = makeTestKeyring();
     const prisma = makePrisma({
       company: {
@@ -232,19 +232,17 @@ describe('runMigration', () => {
       },
       invoicyConfig: {
         count: jest.fn().mockResolvedValue(0),
-        // Nenhum emissor para c1 → não pode derivar ambiente
+        // Nenhum emissor para c1 → empresa eh pulada com aviso
         findMany: jest.fn().mockResolvedValue([]),
       },
     });
 
-    await expect(runMigration(prisma, kr, false)).rejects.toThrow(
-      /nenhum emissor/,
-    );
+    await runMigration(prisma, kr, false);
 
     expect(prisma.companyEnvironmentCredential.upsert).not.toHaveBeenCalled();
     expect(prisma.fiscalSecretMigrationState.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: 'FAILED' }),
+        data: expect.objectContaining({ status: 'COMPLETED' }),
       }),
     );
   });

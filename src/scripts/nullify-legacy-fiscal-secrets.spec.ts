@@ -140,6 +140,12 @@ describe('runNullify — reconciliação anti-join', () => {
         findMany: jest.fn().mockResolvedValue([{ id: 'c1' }]),
         updateMany: jest.fn(),
       },
+      invoicyConfig: {
+        // Empresa tem emissor, portanto NÃO é pulada; mas não tem credencial cifrada
+        findMany: jest.fn().mockResolvedValue([{ id: 'ic1' }]),
+        count: jest.fn().mockResolvedValue(0),
+        updateMany: jest.fn(),
+      },
       companyEnvironmentCredential: {
         findMany: jest.fn().mockResolvedValue([]), // nenhuma credencial cifrada
       },
@@ -181,6 +187,12 @@ describe('runNullify — reconciliação anti-join', () => {
     const prisma = buildPrisma({
       company: {
         findMany: jest.fn().mockResolvedValue([{ id: 'c1' }]),
+        updateMany: jest.fn(),
+      },
+      invoicyConfig: {
+        // Empresa tem emissor, portanto NÃO é pulada
+        findMany: jest.fn().mockResolvedValue([{ id: 'ic1' }]),
+        count: jest.fn().mockResolvedValue(0),
         updateMany: jest.fn(),
       },
       companyEnvironmentCredential: {
