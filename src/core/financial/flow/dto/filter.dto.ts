@@ -118,4 +118,14 @@ export class FinancialFlowFilterDTO extends BaseFilterDTO {
     required: false,
   })
   supplierId?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description:
+      'Atalho de período selecionado no filtro (uso exclusivo da UI, não utilizado para filtrar os resultados)',
+    example: 'current_month',
+    required: false,
+  })
+  period?: string;
 }
