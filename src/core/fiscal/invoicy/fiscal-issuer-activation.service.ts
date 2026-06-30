@@ -157,6 +157,7 @@ export class FiscalIssuerActivationService {
         companyId,
         invoicyConfigId,
         environment,
+        undefined,
         signal,
       );
       if (!fullReadiness.ready) {
