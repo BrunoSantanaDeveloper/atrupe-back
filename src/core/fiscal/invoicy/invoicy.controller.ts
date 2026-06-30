@@ -7,6 +7,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   Req,
   BadRequestException,
@@ -252,6 +253,7 @@ export class EmissoresController {
     @Req() req,
     @Param('invoicyConfigId') invoicyConfigId: string,
     @Param('environment') environment: FiscalEnvironment,
+    @Query('docType') docType?: 'NFE' | 'NFSE' | 'NFCE',
   ) {
     await this.invoicyService.verifyOwnership(
       invoicyConfigId,
@@ -261,6 +263,7 @@ export class EmissoresController {
       req.user.companyId,
       invoicyConfigId,
       environment,
+      docType,
     );
   }
 

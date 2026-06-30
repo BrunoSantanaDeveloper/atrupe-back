@@ -24,8 +24,10 @@ export class FiscalIssuerReadinessService {
     companyId: string,
     invoicyConfigId: string,
     environment: FiscalEnvironment,
+    docType?: 'NFE' | 'NFSE' | 'NFCE',
   ): Promise<{ localReady: boolean; checks: ReadinessCheck[] }> {
     const checks: ReadinessCheck[] = [];
+    const isNfce = !docType || docType === 'NFCE';
 
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
@@ -39,8 +41,10 @@ export class FiscalIssuerReadinessService {
     // 1. company_document
     checks.push(this.checkCompanyDocument(company?.cnpj));
 
-    // 2. state_registration (IE numérica informada — não aceita ISENTO)
-    checks.push(this.checkStateRegistration(company?.stateRegistration));
+    // 2. state_registration — obrigatória para NF-e e NFC-e; NFS-e usa IM (não verificado aqui)
+    if (docType !== 'NFSE') {
+      checks.push(this.checkStateRegistration(company?.stateRegistration));
+    }
 
     // 3. company_address
     checks.push(this.checkCompanyAddress(company?.address, emissor?.emitCmun));
@@ -54,13 +58,17 @@ export class FiscalIssuerReadinessService {
       ),
     );
 
-    // 5. nfce_csc
-    checks.push(
-      await this.checkNfceCsc(companyId, invoicyConfigId, environment),
-    );
+    // 5. nfce_csc — exclusivo NFC-e
+    if (isNfce) {
+      checks.push(
+        await this.checkNfceCsc(companyId, invoicyConfigId, environment),
+      );
+    }
 
-    // 6. nfce_numbering
-    checks.push(await this.checkNfceNumbering(invoicyConfigId, environment));
+    // 6. nfce_numbering — exclusivo NFC-e
+    if (isNfce) {
+      checks.push(await this.checkNfceNumbering(invoicyConfigId, environment));
+    }
 
     const localReady = checks.every((c) => c.status === 'PASS');
     return { localReady, checks };
@@ -70,12 +78,14 @@ export class FiscalIssuerReadinessService {
     companyId: string,
     invoicyConfigId: string,
     environment: FiscalEnvironment,
+    docType?: 'NFE' | 'NFSE' | 'NFCE',
     signal?: AbortSignal,
   ): Promise<ReadinessResult> {
     const { localReady, checks } = await this.checkLocalReadiness(
       companyId,
       invoicyConfigId,
       environment,
+      docType,
     );
 
     const company = await this.prisma.company.findUnique({
