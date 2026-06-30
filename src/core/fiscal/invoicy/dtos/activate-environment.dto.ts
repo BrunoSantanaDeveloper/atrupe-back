@@ -1,5 +1,6 @@
 import {
   IsBoolean,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -20,4 +21,8 @@ export class ActivateEnvironmentDto {
   @IsOptional()
   @IsBoolean()
   confirmFiscalValidity?: boolean;
+
+  @IsOptional()
+  @IsIn(['NFE', 'NFSE', 'NFCE'])
+  docType?: 'NFE' | 'NFSE' | 'NFCE';
 }

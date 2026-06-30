@@ -64,6 +64,7 @@ const mockInvoicyApiService = {
 
 const mockFiscalCredentialResolver = {
   resolveOperationalEnvironment: jest.fn().mockResolvedValue('HOMOLOGACAO'),
+  assertEnvironmentReady: jest.fn().mockResolvedValue(undefined),
   getEmissorRuntimeCredentials: jest.fn().mockResolvedValue({
     cscId: '1',
     cscToken: 'CSC_TOKEN_TESTE',

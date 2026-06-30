@@ -117,6 +117,13 @@ export class NfeService {
       );
     }
 
+    const environment =
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config);
+    await this.fiscalCredentialResolver.assertEnvironmentReady(
+      config.id,
+      environment,
+    );
+
     // Destinatário usa sempre o endereço cadastral principal do cliente
     const clientAddress = client.address?.[0];
     const deliveryAddress = quotation.deliveryInfo?.clientAddress;
@@ -250,8 +257,7 @@ export class NfeService {
         // Se a OS tem entrega por transportadora, usar modalidade CIF (0); senão, Sem ocorrência (9)
         modalidadeFrete:
           quotation.deliveryInfo?.deliveryType === 'CARRIER' ? 0 : 9,
-        ambiente:
-          this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config),
+        ambiente: environment,
       },
 
       // Destinatário
@@ -530,6 +536,13 @@ export class NfeService {
       );
     }
 
+    const environment =
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config);
+    await this.fiscalCredentialResolver.assertEnvironmentReady(
+      config.id,
+      environment,
+    );
+
     // Buscar dados do cliente, se informado
     let destinatario: Record<string, any> = {
       razaoSocial: '',
@@ -622,8 +635,7 @@ export class NfeService {
         dataSaida: new Date().toISOString(),
         destinoOperacao: 1,
         modalidadeFrete: 9,
-        ambiente:
-          this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config),
+        ambiente: environment,
       },
 
       // Destinatário
@@ -1500,6 +1512,13 @@ export class NfeService {
       throw new BadRequestException('Integração com Invoicy está desativada.');
     }
 
+    const environment =
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config);
+    await this.fiscalCredentialResolver.assertEnvironmentReady(
+      config.id,
+      environment,
+    );
+
     // Validar que temos itens
     if (!dto.items || dto.items.length === 0) {
       throw new BadRequestException('NF-e deve conter ao menos um item');
@@ -1622,7 +1641,7 @@ export class NfeService {
             numero,
             serie: config.serieNfe,
             status: NfeStatus.PROCESSING,
-            ambiente: config.ambiente,
+            ambiente: environment === 'PRODUCAO' ? 1 : 2,
             valorTotal,
             motivoRejeicao: null,
           },
@@ -1644,7 +1663,7 @@ export class NfeService {
             numero,
             serie: config.serieNfe,
             status: NfeStatus.PROCESSING,
-            ambiente: config.ambiente,
+            ambiente: environment === 'PRODUCAO' ? 1 : 2,
             valorTotal,
             // Limpar possível mensagem de erro anterior ao tentar emitir novamente
             motivoRejeicao: null,
@@ -1664,7 +1683,7 @@ export class NfeService {
           numero,
           serie: config.serieNfe,
           status: NfeStatus.PROCESSING,
-          ambiente: config.ambiente,
+          ambiente: environment === 'PRODUCAO' ? 1 : 2,
           valorTotal,
           draftData: dto as any,
         },
@@ -1742,10 +1761,7 @@ export class NfeService {
             tpImp: 1, // DANFE retrato
             tpEmis: 1, // Emissão normal
             cDV: 0, // Será calculado pelo Invoicy
-            tpAmb:
-              config.ambiente === 1 || config.environment === 'PRODUCAO'
-                ? 1
-                : 2,
+            tpAmb: environment === 'PRODUCAO' ? 1 : 2,
             finNFe: dto.finalidade ?? 1, // NF-e normal
             indFinal:
               dto.consumidorFinal ??
@@ -1790,7 +1806,7 @@ export class NfeService {
                 }),
             // Em homologação, SEFAZ exige este nome exato para o destinatário
             xNome_dest:
-              config.ambiente === 'HOMOLOGACAO' || config.ambiente !== 1
+              environment === 'HOMOLOGACAO'
                 ? 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
                 : dto.destNome || '',
             indIEDest: isForeign ? 9 : (dto.destIndIEDest ?? 9),

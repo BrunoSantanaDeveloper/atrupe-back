@@ -129,6 +129,7 @@ const mockInvoicyService = {
 
 const mockFiscalCredentialResolver = {
   resolveEnvironmentFromConfig: jest.fn().mockReturnValue('HOMOLOGACAO'),
+  assertEnvironmentReady: jest.fn().mockResolvedValue(undefined),
 };
 
 const mockInvoicyApiService = {

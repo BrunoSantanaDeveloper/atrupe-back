@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../config/prisma/prisma.service';
 import { EncryptionService } from '../../../shared/services/encryption.service';
@@ -320,6 +324,34 @@ export class FiscalCredentialResolverService {
       return FiscalEnvironment.PRODUCAO;
     }
     return FiscalEnvironment.HOMOLOGACAO;
+  }
+
+  /**
+   * Garante que o ambiente resolvido para emissão foi formalmente ativado
+   * (wizard de ativação concluído, status READY em InvoicyEnvironmentConfig).
+   * Sem essa checagem, emissões caem no fluxo legado sem credenciais
+   * configuradas para o ambiente e falham tarde, com erro genérico do Invoicy.
+   * Deve ser chamado no início de todo prepare/emit (NF-e, NFS-e, NFC-e).
+   */
+  async assertEnvironmentReady(
+    invoicyConfigId: string,
+    environment: FiscalEnvironment,
+  ): Promise<void> {
+    const envConfig = await this.prisma.invoicyEnvironmentConfig.findUnique({
+      where: {
+        invoicyConfigId_environment: { invoicyConfigId, environment },
+      },
+      select: { status: true },
+    });
+
+    if (!envConfig || envConfig.status !== 'READY') {
+      const envLabel =
+        environment === FiscalEnvironment.PRODUCAO ? 'produção' : 'homologação';
+      throw new UnprocessableEntityException(
+        `O ambiente de ${envLabel} deste emissor ainda não foi ativado. ` +
+          'Acesse Configurações > Emissores de Nota Fiscal e conclua a ativação antes de emitir documentos.',
+      );
+    }
   }
 
   /**

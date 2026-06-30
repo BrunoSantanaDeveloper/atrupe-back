@@ -161,6 +161,13 @@ export class NfseService {
       );
     }
 
+    const environment =
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config);
+    await this.fiscalCredentialResolver.assertEnvironmentReady(
+      config.id,
+      environment,
+    );
+
     // Dados do tomador (vazio por padrão)
     let tomador: Record<string, any> = {
       cnpj: undefined,
@@ -238,8 +245,7 @@ export class NfseService {
         cnpj: config.company.cnpj || '',
         razaoSocial: config.company.legalName || config.company.name || '',
         inscricaoMunicipal: config.company.municipalRegistration || '',
-        ambiente:
-          this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config),
+        ambiente: environment,
       },
 
       // RPS
@@ -736,6 +742,13 @@ export class NfseService {
       throw new BadRequestException('Integração com Invoicy está desativada.');
     }
 
+    const environment =
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config);
+    await this.fiscalCredentialResolver.assertEnvironmentReady(
+      config.id,
+      environment,
+    );
+
     if (!config.company.municipalRegistration) {
       throw new BadRequestException(
         'Inscrição Municipal não configurada. Necessária para emissão de NFS-e.',
@@ -789,7 +802,7 @@ export class NfseService {
         rpsSerie,
         rpsTipo: 1,
         status: NfseStatus.PROCESSING,
-        ambiente: config.ambiente,
+        ambiente: environment === 'PRODUCAO' ? 1 : 2,
         dataCompetencia: new Date(dto.dataCompetencia),
         valorServicos,
         valorDeducoes,
@@ -901,10 +914,7 @@ export class NfseService {
               OptSN: config.emitCrt === 1 ? 1 : 2, // 1 = Sim, 2 = Não
               IncCult: 2, // 2 = Não
               Status: 1, // 1 = Normal
-              tpAmb:
-                config.ambiente === 1 || config.environment === 'PRODUCAO'
-                  ? 1
-                  : 2,
+              tpAmb: environment === 'PRODUCAO' ? 1 : 2,
               Prestador: {
                 CNPJ_prest: (config.company.cnpj || '').replace(/\D/g, ''),
                 xNome: config.company.legalName || '',

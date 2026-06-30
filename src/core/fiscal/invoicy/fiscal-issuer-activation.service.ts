@@ -57,6 +57,7 @@ export class FiscalIssuerActivationService {
     options: {
       idempotencyKey?: string;
       confirmFiscalValidity?: boolean;
+      docType?: 'NFE' | 'NFSE' | 'NFCE';
       actorUserId?: string;
       actorUserName?: string;
     } = {},
@@ -132,6 +133,7 @@ export class FiscalIssuerActivationService {
           companyId,
           invoicyConfigId,
           environment,
+          options.docType,
         );
       if (!localReady) {
         const failedChecks = checks
@@ -157,7 +159,7 @@ export class FiscalIssuerActivationService {
         companyId,
         invoicyConfigId,
         environment,
-        undefined,
+        options.docType,
         signal,
       );
       if (!fullReadiness.ready) {

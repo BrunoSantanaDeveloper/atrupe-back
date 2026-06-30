@@ -310,6 +310,7 @@ export class EmissoresController {
       {
         idempotencyKey: dto.idempotencyKey,
         confirmFiscalValidity: dto.confirmFiscalValidity,
+        docType: dto.docType,
         actorUserId: req.user.id,
         actorUserName: req.user.name,
       },
