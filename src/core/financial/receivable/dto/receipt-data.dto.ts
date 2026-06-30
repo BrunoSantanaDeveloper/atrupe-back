@@ -95,4 +95,13 @@ export class ReceiptDataResponseDto {
 
   @ApiProperty({ type: [ReceiptItemDto] })
   items: ReceiptItemDto[];
+
+  @ApiProperty({ example: 'João da Silva', required: false })
+  employeeName?: string;
+
+  @ApiProperty({
+    example: 'https://files-atrupe.s3.us-east-1.amazonaws.com/signature.png',
+    required: false,
+  })
+  employeeSignatureUrl?: string;
 }

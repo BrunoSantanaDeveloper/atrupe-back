@@ -388,12 +388,13 @@ export class ReceivableController {
     type: ReceiptDataResponseDto,
   })
   getBatchReceiptData(
+    @Req() req,
     @Query('installmentIds') installmentIds: string | string[],
   ): Promise<ReceiptDataResponseDto> {
     const ids = Array.isArray(installmentIds)
       ? installmentIds
       : (installmentIds || '').split(',').filter(Boolean);
-    return this.receivableService.getBatchReceiptData(ids);
+    return this.receivableService.getBatchReceiptData(ids, req.user.userId);
   }
 
   @Get('installment/:installmentId/receipt-data')
@@ -413,6 +414,7 @@ export class ReceivableController {
   })
   @ApiResponse({ status: 404, description: 'Parcela não encontrada.' })
   getReceiptData(
+    @Req() req,
     @Param('installmentId') installmentId: string,
     @Query('paidDate') paidDate?: string,
     @Query('paidAmount') paidAmount?: string,
@@ -421,6 +423,7 @@ export class ReceivableController {
       installmentId,
       paidDate,
       paidAmount,
+      req.user.userId,
     );
   }
 
