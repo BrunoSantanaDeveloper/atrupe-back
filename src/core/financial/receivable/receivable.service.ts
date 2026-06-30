@@ -1662,6 +1662,7 @@ export class ReceivableService {
 
   async getBatchReceiptData(
     installmentIds: string[],
+    userId?: string,
   ): Promise<ReceiptDataResponseDto> {
     if (!installmentIds || installmentIds.length === 0) {
       throw new BadRequestException('Nenhuma parcela informada.');
@@ -1719,6 +1720,21 @@ export class ReceivableService {
     if (!company) {
       throw new NotFoundException('Empresa não encontrada.');
     }
+
+    // Buscar funcionário (colaborador logado) para assinatura no recibo
+    const employee = userId
+      ? await this.prisma.employee.findFirst({
+          where: {
+            userId,
+            companyId: installments[0].receivable.companyId,
+          },
+          select: {
+            name: true,
+            signatureUrl: true,
+            user: { select: { name: true } },
+          },
+        })
+      : null;
 
     const totalValue = installments.reduce(
       (sum, inst) => sum + (inst.amount || 0) + (inst.additionalFee || 0),
@@ -1780,6 +1796,8 @@ export class ReceivableService {
       month,
       year,
       items,
+      employeeName: employee?.user?.name || employee?.name || undefined,
+      employeeSignatureUrl: employee?.signatureUrl || undefined,
     };
   }
 
@@ -1839,6 +1857,7 @@ export class ReceivableService {
     installmentId: string,
     paidDate?: string,
     paidAmount?: string,
+    userId?: string,
   ): Promise<ReceiptDataResponseDto> {
     // Buscar a parcela com todas as informações necessárias
     const installment = await this.prisma.receivableInstallment.findUnique({
@@ -1890,6 +1909,21 @@ export class ReceivableService {
     if (!company) {
       throw new NotFoundException('Empresa não encontrada.');
     }
+
+    // Buscar funcionário (colaborador logado) para assinatura no recibo
+    const employee = userId
+      ? await this.prisma.employee.findFirst({
+          where: {
+            userId,
+            companyId: installment.receivable.companyId,
+          },
+          select: {
+            name: true,
+            signatureUrl: true,
+            user: { select: { name: true } },
+          },
+        })
+      : null;
 
     // Calcular o valor base do recibo (usar paidAmount do frontend, ou do DB se estiver paga/parcialmente paga, senão usar valor original)
     let baseAmount = installment.amount || 0;
@@ -1973,6 +2007,8 @@ export class ReceivableService {
           value: totalValue,
         },
       ],
+      employeeName: employee?.user?.name || employee?.name || undefined,
+      employeeSignatureUrl: employee?.signatureUrl || undefined,
     };
   }
 }
