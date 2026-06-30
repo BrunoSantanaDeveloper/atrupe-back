@@ -1653,6 +1653,16 @@ export class PayableService {
         });
       }
 
+      // Incluir motivo e observação do usuário nas notas
+      if (changeReason) {
+        notesToAdd.push(
+          `Motivo: ${FinancialNotesUtil.formatChangeReason(changeReason)}`,
+        );
+      }
+      if (changeNotes) {
+        notesToAdd.push(`Observação: ${changeNotes}`);
+      }
+
       // Atualizar o campo notes com as alterações registradas
       if (notesToAdd.length > 0) {
         const currentPayable = await this.prisma.payable.findUnique({

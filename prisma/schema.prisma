@@ -88,6 +88,7 @@ model Company {
   cfopConfigs           CfopConfig[]
   operationNatures      OperationNature[]
   aiConversations       AiConversation[]
+  contactSources        ContactSource[]
 
   @@map("companies")
 }
@@ -229,6 +230,8 @@ model Contact {
 model ContactSource {
   id         String      @id @default(uuid())
   name       String
+  companyId  String?
+  company    Company?    @relation(fields: [companyId], references: [id])
   quotations Quotation[]
 
   @@map("contact_sources")

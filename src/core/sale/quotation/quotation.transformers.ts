@@ -297,6 +297,7 @@ export function transformQuotationToResponse(
     companyId: quotation.companyId,
     sellerId: quotation.sellerId,
     orderId: quotation.order?.id ?? null,
+    quotationNumber: quotation.quotationNumber,
     createdAt: quotation.createdAt,
     updatedAt: quotation.updatedAt,
     dueDate: quotation.dueDate,

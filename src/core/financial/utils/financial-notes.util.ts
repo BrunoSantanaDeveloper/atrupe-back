@@ -1,7 +1,18 @@
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
+const CHANGE_REASON_LABELS: Record<string, string> = {
+  CORRECAO: 'Correção de valor',
+  DESCONTO: 'Desconto',
+  JUROS: 'Juros / Multa / Mora',
+  OUTROS: 'Outros',
+};
+
 export class FinancialNotesUtil {
+  static formatChangeReason(reason: string): string {
+    return CHANGE_REASON_LABELS[reason] ?? reason;
+  }
+
   /**
    * Formata um valor em centavos para o formato de moeda brasileira
    * @param cents - Valor em centavos (ex: 66389 = R$ 663,89)

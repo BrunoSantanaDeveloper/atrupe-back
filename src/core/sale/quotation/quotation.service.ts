@@ -79,8 +79,8 @@ export class QuotationService {
     return this.crudService.duplicate(quotationId, duplicateDto, userId);
   }
 
-  findAllContactSources() {
-    return this.crudService.findAllContactSources();
+  findAllContactSources(companyId?: string) {
+    return this.crudService.findAllContactSources(companyId);
   }
 
   // =====================================================
@@ -121,8 +121,12 @@ export class QuotationService {
   // Workflow Operations → QuotationWorkflowService
   // =====================================================
 
-  approve(quotationId: string, userId?: string): Promise<Order> {
-    return this.workflowService.approve(quotationId, userId);
+  approve(
+    quotationId: string,
+    userId?: string,
+    approvedAt?: Date,
+  ): Promise<Order> {
+    return this.workflowService.approve(quotationId, userId, approvedAt);
   }
 
   billQuotation(quotationId: string) {

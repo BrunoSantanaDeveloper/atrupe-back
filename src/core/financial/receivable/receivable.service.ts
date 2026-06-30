@@ -1618,6 +1618,16 @@ export class ReceivableService {
         });
       }
 
+      // Incluir motivo e observação do usuário nas notas
+      if (changeReason) {
+        notesToAdd.push(
+          `Motivo: ${FinancialNotesUtil.formatChangeReason(changeReason)}`,
+        );
+      }
+      if (changeNotes) {
+        notesToAdd.push(`Observação: ${changeNotes}`);
+      }
+
       // Atualizar o campo notes com as alterações registradas
       if (notesToAdd.length > 0) {
         const currentReceivable = await this.prisma.receivable.findUnique({
@@ -1640,6 +1650,129 @@ export class ReceivableService {
     } catch (error) {
       this.logger.error('Erro ao compensar parcela', error.stack);
     }
+  }
+
+  async getBatchReceiptData(
+    installmentIds: string[],
+  ): Promise<ReceiptDataResponseDto> {
+    if (!installmentIds || installmentIds.length === 0) {
+      throw new BadRequestException('Nenhuma parcela informada.');
+    }
+
+    const installments = await this.prisma.receivableInstallment.findMany({
+      where: { id: { in: installmentIds } },
+      include: {
+        paymentCondition: true,
+        receivable: { include: { client: true } },
+      },
+      orderBy: { installmentNumber: 'asc' },
+    });
+
+    if (installments.length === 0) {
+      throw new NotFoundException('Parcelas não encontradas.');
+    }
+
+    const clientIds = [
+      ...new Set(installments.map((i) => i.receivable.clientId)),
+    ];
+    if (clientIds.length > 1) {
+      throw new BadRequestException(
+        'Todas as parcelas devem ser do mesmo cliente.',
+      );
+    }
+
+    const company = await this.prisma.company.findUnique({
+      where: { id: installments[0].receivable.companyId },
+      select: {
+        name: true,
+        cnpj: true,
+        email: true,
+        phone: true,
+        siteUrl: true,
+        logoUrl: true,
+        instagram: true,
+        facebook: true,
+        linkedin: true,
+        address: {
+          where: { type: 'Principal' },
+          select: {
+            street: true,
+            number: true,
+            complement: true,
+            neighborhood: true,
+            city: true,
+            state: true,
+            zipcode: true,
+          },
+        },
+      },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Empresa não encontrada.');
+    }
+
+    const totalValue = installments.reduce(
+      (sum, inst) => sum + (inst.amount || 0) + (inst.additionalFee || 0),
+      0,
+    );
+
+    const today = new Date();
+    const day = format(today, 'dd', { locale: ptBR });
+    const month = format(today, 'MMMM', { locale: ptBR });
+    const year = format(today, 'yyyy', { locale: ptBR });
+
+    const clientName = installments[0].receivable.client?.name || 'Cliente';
+    const principalAddress = company.address?.[0];
+
+    const items = installments.map((inst) => ({
+      reference: String(inst.installmentNumber || 1).padStart(2, '0'),
+      description: inst.receivable.description || 'Descrição do serviço',
+      date: format(inst.paidDate || inst.dueDate, 'dd/MM/yyyy', {
+        locale: ptBR,
+      }),
+      paymentMethod: inst.paymentCondition?.name || 'N/D',
+      value: (inst.amount || 0) + (inst.additionalFee || 0),
+    }));
+
+    return {
+      company: {
+        name: company.name,
+        cnpj: company.cnpj || '',
+        email: company.email || '',
+        siteUrl: company.siteUrl || undefined,
+        address: principalAddress
+          ? {
+              street: principalAddress.street || '',
+              number: principalAddress.number || '',
+              complement: principalAddress.complement || undefined,
+              neighborhood: principalAddress.neighborhood || '',
+              city: principalAddress.city || '',
+              state: principalAddress.state || '',
+              zipCode: principalAddress.zipcode || '',
+            }
+          : {
+              street: '',
+              number: '',
+              neighborhood: '',
+              city: '',
+              state: '',
+              zipCode: '',
+            },
+        logo: company.logoUrl || undefined,
+        socialNetworks: {
+          instagram: company.instagram || undefined,
+          facebook: company.facebook || undefined,
+          linkedin: company.linkedin || undefined,
+        },
+      },
+      clientName,
+      totalValue,
+      day,
+      month,
+      year,
+      items,
+    };
   }
 
   async updateReceivableStatus(receivableId: string): Promise<void> {

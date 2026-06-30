@@ -115,6 +115,7 @@ export class SalaryPdfService {
             : null,
         },
         employeeName: payroll.employee.user?.name || payroll.employee.name,
+        employeeSignatureUrl: payroll.employee.signatureUrl ?? null,
         reference: `${String(payroll.month + 1).padStart(2, '0')}/${payroll.year}`,
         items: payroll.items.map((item) => ({
           id: item.id,
@@ -245,6 +246,7 @@ export class SalaryPdfService {
             : null,
         },
         employeeName: payroll.employee.user?.name || payroll.employee.name,
+        employeeSignatureUrl: payroll.employee.signatureUrl ?? null,
         reference: `${String(payroll.month + 1).padStart(2, '0')}/${payroll.year}`,
         items: [
           {

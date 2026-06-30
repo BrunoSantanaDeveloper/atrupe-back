@@ -264,6 +264,7 @@ export function transformPdfDelivery(deliveryInfo: any) {
           financialNotes: deliveryInfo.supplier.financialNotes,
         }
       : null,
+    modality: deliveryInfo.modality ?? null,
     daysAfterApproval: deliveryInfo.daysAfterApproval,
     estimatedDate: deliveryInfo.estimatedDate,
     freightCost: deliveryInfo.cost,

@@ -129,7 +129,12 @@ export class QuotationCrudService {
           clientId,
           contactId,
           seriesId: seriesId || undefined,
-          quotationNumber: updatedSeries.currentBudgetNumber,
+          quotationNumber:
+            createQuotationDto.quotationNumber ??
+            updatedSeries.currentBudgetNumber,
+          ...(createQuotationDto.createdAt
+            ? { createdAt: new Date(createQuotationDto.createdAt) }
+            : {}),
         },
       });
 
@@ -605,9 +610,12 @@ export class QuotationCrudService {
   /**
    * Busca fontes de contato
    */
-  async findAllContactSources() {
+  async findAllContactSources(companyId?: string) {
     try {
       return await this.prisma.contactSource.findMany({
+        where: companyId
+          ? { OR: [{ companyId }, { companyId: null }] }
+          : undefined,
         orderBy: { name: 'asc' },
       });
     } catch (error) {

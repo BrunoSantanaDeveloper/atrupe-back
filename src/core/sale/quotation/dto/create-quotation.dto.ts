@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsBoolean,
+  IsDateString,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -329,7 +330,24 @@ export class CreateQuotationDto {
   })
   quickSale?: boolean;
 
-  quotationNumber: number;
+  @IsOptional()
+  @IsDateString()
+  @ApiProperty({
+    description: 'Data de criação retroativa (somente admin)',
+    example: '2024-01-15T10:00:00.000Z',
+    required: false,
+  })
+  createdAt?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @ApiProperty({
+    description: 'Número do orçamento (somente admin, para casos de migração)',
+    example: 42,
+    required: false,
+  })
+  quotationNumber?: number;
 
   // @IsArray()
   // @ValidateNested({ each: true })

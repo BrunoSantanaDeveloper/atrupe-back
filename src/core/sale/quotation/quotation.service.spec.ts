@@ -177,6 +177,7 @@ describe('QuotationService', () => {
       expect(workflowService.approve).toHaveBeenCalledWith(
         mockQuotationId,
         mockUserId,
+        undefined,
       );
     });
 
@@ -717,6 +718,7 @@ describe('QuotationService', () => {
       expect(workflowService.approve).toHaveBeenCalledWith(
         mockQuotationId,
         mockUserId,
+        undefined,
       );
     });
 

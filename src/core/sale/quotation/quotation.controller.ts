@@ -136,6 +136,10 @@ export class QuotationController {
     description: 'Orçamento criado com sucesso.',
   })
   create(@Body() createQuotationDto: CreateQuotationDto, @Req() req) {
+    if (!req.user?.isAdmin) {
+      delete createQuotationDto.createdAt;
+      delete createQuotationDto.quotationNumber;
+    }
     return this.quotationService.create(createQuotationDto, req.user?.userId);
   }
 
@@ -314,8 +318,8 @@ export class QuotationController {
     description: 'Lista de fontes de contato retornada com sucesso.',
     isArray: true,
   })
-  async findAllContactSources() {
-    return this.quotationService.findAllContactSources();
+  async findAllContactSources(@Req() req) {
+    return this.quotationService.findAllContactSources(req.user?.companyId);
   }
 
   @Get('quantity')
@@ -371,12 +375,20 @@ export class QuotationController {
     status: 400,
     description: 'ID inválido.',
   })
-  async approve(@Param('id') id: string, @Req() req) {
+  async approve(
+    @Param('id') id: string,
+    @Req() req,
+    @Body() body?: { approvedAt?: string },
+  ) {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
     await this.validateOwnership(id, req.user, 'edit');
-    return this.quotationService.approve(id, req.user?.userId);
+    const approvedAt =
+      req.user?.isAdmin && body?.approvedAt
+        ? new Date(body.approvedAt)
+        : undefined;
+    return this.quotationService.approve(id, req.user?.userId, approvedAt);
   }
 
   @Post(':id/bill')
@@ -524,6 +536,9 @@ export class QuotationController {
     @Body() updateQuotationDto: UpdateQuotationDto,
     @Req() req,
   ) {
+    if (!req.user?.isAdmin) {
+      delete updateQuotationDto.quotationNumber;
+    }
     await this.validateOwnership(id, req.user, 'edit');
     return await this.quotationService.update(
       id,

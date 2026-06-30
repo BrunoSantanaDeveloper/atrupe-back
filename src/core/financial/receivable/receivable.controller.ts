@@ -377,6 +377,25 @@ export class ReceivableController {
     return this.receivableService.remove(id);
   }
 
+  @Get('batch-receipt-data')
+  @ApiOperation({
+    summary:
+      'Retorna dados para gerar um recibo agrupado de múltiplas parcelas',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Dados do recibo retornados com sucesso.',
+    type: ReceiptDataResponseDto,
+  })
+  getBatchReceiptData(
+    @Query('installmentIds') installmentIds: string | string[],
+  ): Promise<ReceiptDataResponseDto> {
+    const ids = Array.isArray(installmentIds)
+      ? installmentIds
+      : (installmentIds || '').split(',').filter(Boolean);
+    return this.receivableService.getBatchReceiptData(ids);
+  }
+
   @Get('installment/:installmentId/receipt-data')
   @ApiOperation({
     summary: 'Retorna os dados formatados para gerar um recibo de uma parcela',

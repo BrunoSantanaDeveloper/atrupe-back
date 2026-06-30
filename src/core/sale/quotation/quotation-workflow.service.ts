@@ -293,7 +293,11 @@ export class QuotationWorkflowService {
   /**
    * Aprova um orçamento e cria pedido
    */
-  async approve(quotationId: string, userId?: string): Promise<Order> {
+  async approve(
+    quotationId: string,
+    userId?: string,
+    approvedAt?: Date,
+  ): Promise<Order> {
     const quotationBase = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
       select: { companyId: true },
@@ -314,7 +318,7 @@ export class QuotationWorkflowService {
           where: { id: quotationId },
           data: {
             status: QuotationStatus.APPROVED,
-            approvedAt: new Date(),
+            approvedAt: approvedAt ?? new Date(),
           },
           include: {
             deliveryInfo: {
