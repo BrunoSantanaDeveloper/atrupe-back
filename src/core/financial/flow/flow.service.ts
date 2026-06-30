@@ -388,6 +388,9 @@ export class FlowService {
                   },
                   orderBy: { [dateType]: 'desc' },
                 },
+                quotation: {
+                  select: { quotationPayment: { select: { type: true } } },
+                },
               },
             },
           },
@@ -545,6 +548,7 @@ export class FlowService {
         0,
       ),
       description: inst.receivable.description || '',
+      invoiceType: inst.receivable.quotation?.quotationPayment?.type ?? null,
       client: inst.receivable.client
         ? {
             id: inst.receivable.client.id,
@@ -781,6 +785,9 @@ export class FlowService {
           },
           orderBy: { dueDate: 'asc' },
         },
+        quotation: {
+          select: { quotationPayment: { select: { type: true } } },
+        },
       },
     });
 
@@ -788,7 +795,10 @@ export class FlowService {
       throw new NotFoundException('Conta a receber não encontrada.');
     }
 
-    return receivable;
+    return {
+      ...receivable,
+      invoiceType: receivable.quotation?.quotationPayment?.type ?? null,
+    };
   }
 
   async getPayableDetails(id: string) {

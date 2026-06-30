@@ -466,14 +466,22 @@ export class ReceivableService {
           },
           orderBy: { installmentNumber: 'asc' },
         },
+        quotation: {
+          select: {
+            quotationPayment: { select: { type: true } },
+          },
+        },
       },
     });
     if (!receivable)
       throw new NotFoundException('Conta a receber não encontrada.');
 
+    const invoiceType = receivable.quotation?.quotationPayment?.type ?? null;
+
     // Aplicar status dinâmico nas parcelas
     return {
       ...receivable,
+      invoiceType,
       installments: receivable.installments.map((installment) =>
         this.applyDynamicStatus(installment),
       ),

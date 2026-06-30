@@ -187,6 +187,7 @@ model SellerProfile {
   canCancelSale             Boolean    @default(false)
   employees                 Employee[]
   company                   Company    @relation(fields: [companyId], references: [id])
+  allowedSeries             SaleSeries[] @relation("SeriesAllowedProfiles")
 
   @@map("seller_profile")
 }
@@ -958,6 +959,7 @@ model SaleSeries {
   isDefault           Boolean              @default(false)
   quotation           Quotation[]
   company             Company              @relation(fields: [companyId], references: [id])
+  allowedProfiles     SellerProfile[]      @relation("SeriesAllowedProfiles")
 
   @@unique([code, companyId])
   @@map("sale_series")

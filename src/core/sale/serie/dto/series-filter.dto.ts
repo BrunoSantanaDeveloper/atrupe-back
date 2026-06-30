@@ -12,4 +12,8 @@ export class SeriesFilterDTO extends BaseFilterDTO {
   @IsBoolean()
   @Transform(({ value }) => value === 'true')
   isActive?: boolean;
+
+  // Set by controller from req.user — not from query params
+  employeeId?: string;
+  isAdmin?: boolean;
 }

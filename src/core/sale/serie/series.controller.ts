@@ -44,6 +44,8 @@ export class SaleSeriesController {
   @Get()
   async findAll(@Req() req, @Query() filter: SeriesFilterDTO) {
     filter.companyId = req.user.companyId;
+    filter.employeeId = req.user.employeeId;
+    filter.isAdmin = req.user.isAdmin;
     return await this.saleSeriesService.findAll(filter);
   }
 

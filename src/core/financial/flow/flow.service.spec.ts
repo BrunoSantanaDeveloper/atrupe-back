@@ -118,7 +118,7 @@ describe('FlowService', () => {
     it('should return receivable if found', async () => {
       prismaMock.receivable.findUnique.mockResolvedValue({ id: 'rec-1' });
       const result = await service.getReceivableDetails('rec-1');
-      expect(result).toEqual({ id: 'rec-1' });
+      expect(result).toEqual({ id: 'rec-1', invoiceType: null });
     });
 
     it('should throw NotFoundException if receivable not found', async () => {

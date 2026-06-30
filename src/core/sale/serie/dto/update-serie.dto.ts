@@ -10,6 +10,8 @@ import {
   IsOptional,
   IsBoolean,
   IsEnum,
+  IsArray,
+  IsUUID,
 } from 'class-validator';
 
 export class UpdateSaleSeriesDto {
@@ -92,4 +94,15 @@ export class UpdateSaleSeriesDto {
   @IsBoolean()
   @IsOptional()
   isDefault?: boolean;
+
+  @ApiProperty({
+    description:
+      'IDs dos perfis de vendedor que podem usar esta série. Vazio = disponível para todos.',
+    type: [String],
+    required: false,
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  allowedProfileIds?: string[];
 }

@@ -31,15 +31,33 @@ export class SaleSeriesService {
     if (filter.isActive !== undefined) {
       where.isActive = filter.isActive;
     }
+
+    // When fetching active series for a non-admin seller, apply profile restriction:
+    // series with no allowedProfiles = available to everyone
+    // series with allowedProfiles = only those profiles can use it
+    if (filter.isActive === true && !filter.isAdmin && filter.employeeId) {
+      const employee = await this.prisma.employee.findUnique({
+        where: { id: filter.employeeId },
+        select: { sellerProfileId: true },
+      });
+      if (employee?.sellerProfileId) {
+        where.OR = [
+          { allowedProfiles: { none: {} } },
+          { allowedProfiles: { some: { id: employee.sellerProfileId } } },
+        ];
+      } else {
+        where.allowedProfiles = { none: {} };
+      }
+    }
+
     try {
       const skip = (+page - 1) * +limit;
 
       const [total, saleSeries] = await Promise.all([
-        this.prisma.saleSeries.count({
-          where,
-        }),
+        this.prisma.saleSeries.count({ where }),
         this.prisma.saleSeries.findMany({
           where,
+          include: { allowedProfiles: { select: { id: true, name: true } } },
           orderBy: [{ isTraining: 'desc' }, { description: 'asc' }],
           skip,
           take: +limit,
@@ -60,6 +78,7 @@ export class SaleSeriesService {
   async findOne(id: string) {
     const series = await this.prisma.saleSeries.findUnique({
       where: { id, isActive: true },
+      include: { allowedProfiles: { select: { id: true, name: true } } },
     });
 
     if (!series) {
@@ -128,9 +147,19 @@ export class SaleSeriesService {
           }
         }
 
+        const { allowedProfileIds, ...rest } = updateSaleSeriesDto;
+
         return await tx.saleSeries.update({
           where: { id },
-          data: updateSaleSeriesDto,
+          data: {
+            ...rest,
+            ...(allowedProfileIds !== undefined && {
+              allowedProfiles: {
+                set: allowedProfileIds.map((profileId) => ({ id: profileId })),
+              },
+            }),
+          },
+          include: { allowedProfiles: { select: { id: true, name: true } } },
         });
       });
     } catch (error) {
