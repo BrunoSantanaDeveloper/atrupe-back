@@ -269,6 +269,27 @@ export class FiscalCredentialResolverService {
     };
   }
 
+  /**
+   * Resolve o ambiente operacional diretamente de um objeto de configuração já carregado,
+   * sem realizar nova consulta ao banco. Preferir este método em fluxos de prepare onde
+   * a config já foi buscada, evitando round-trips desnecessários.
+   *
+   * Precedência: activeEnvironment → environment legado → ambiente legado → HOMOLOGACAO
+   */
+  resolveEnvironmentFromConfig(config: {
+    activeEnvironment?: string | null;
+    environment?: string | null;
+    ambiente?: number | null;
+  }): FiscalEnvironment {
+    if (config.activeEnvironment) {
+      return config.activeEnvironment as FiscalEnvironment;
+    }
+    if (config.environment === 'PRODUCAO' || config.ambiente === 1) {
+      return FiscalEnvironment.PRODUCAO;
+    }
+    return FiscalEnvironment.HOMOLOGACAO;
+  }
+
   async resolveOperationalEnvironment(
     companyId: string,
     invoicyConfigId: string,

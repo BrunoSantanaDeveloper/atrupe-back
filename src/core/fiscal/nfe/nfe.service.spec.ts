@@ -5,6 +5,7 @@ import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
 import { NfeEmailService } from './nfe-email.service';
+import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { NfceStatus, NfeStatus } from '@prisma/client';
 
@@ -257,6 +258,10 @@ const mockNfeEmailService = {
   sendAuthorizedNfeEmail: jest.fn().mockResolvedValue({ success: true }),
 };
 
+const mockFiscalCredentialResolver = {
+  resolveEnvironmentFromConfig: jest.fn().mockReturnValue('HOMOLOGACAO'),
+};
+
 describe('NfeService', () => {
   let service: NfeService;
   let prisma: typeof mockPrismaService;
@@ -274,6 +279,10 @@ describe('NfeService', () => {
         { provide: InvoicyApiService, useValue: mockInvoicyApiService },
         { provide: ProductFiscalService, useValue: mockProductFiscalService },
         { provide: NfeEmailService, useValue: mockNfeEmailService },
+        {
+          provide: FiscalCredentialResolverService,
+          useValue: mockFiscalCredentialResolver,
+        },
       ],
     }).compile();
 

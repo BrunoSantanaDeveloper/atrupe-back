@@ -20,6 +20,7 @@ import {
   NfseFilterDto,
 } from './dtos/nfse.dto';
 import { fetchCepData } from '../utils/cep.util';
+import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 
 @Injectable()
 export class NfseService {
@@ -29,6 +30,7 @@ export class NfseService {
     private readonly prisma: PrismaService,
     private readonly invoicyService: InvoicyService,
     private readonly invoicyApiService: InvoicyApiService,
+    private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
   ) {}
 
   async findAll(companyId: string, filters: NfseFilterDto) {
@@ -236,7 +238,8 @@ export class NfseService {
         cnpj: config.company.cnpj || '',
         razaoSocial: config.company.legalName || config.company.name || '',
         inscricaoMunicipal: config.company.municipalRegistration || '',
-        ambiente: config.ambiente || 'HOMOLOGACAO',
+        ambiente:
+          this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config),
       },
 
       // RPS

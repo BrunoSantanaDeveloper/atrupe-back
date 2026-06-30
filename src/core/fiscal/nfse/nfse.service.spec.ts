@@ -3,6 +3,7 @@ import { NfseService } from './nfse.service';
 import { PrismaService } from 'nestjs-prisma';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
+import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { NfseStatus } from '@prisma/client';
 
@@ -126,6 +127,10 @@ const mockInvoicyService = {
   incrementNfseRpsNumber: jest.fn().mockResolvedValue(1),
 };
 
+const mockFiscalCredentialResolver = {
+  resolveEnvironmentFromConfig: jest.fn().mockReturnValue('HOMOLOGACAO'),
+};
+
 const mockInvoicyApiService = {
   emitNfse: jest.fn(),
   cancelNfse: jest.fn(),
@@ -146,6 +151,10 @@ describe('NfseService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: InvoicyService, useValue: mockInvoicyService },
         { provide: InvoicyApiService, useValue: mockInvoicyApiService },
+        {
+          provide: FiscalCredentialResolverService,
+          useValue: mockFiscalCredentialResolver,
+        },
       ],
     }).compile();
 

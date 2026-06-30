@@ -26,6 +26,7 @@ import {
   NfeFilterDto,
   UpdateNfeDraftDto,
 } from './dtos/nfe.dto';
+import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 
 @Injectable()
 export class NfeService {
@@ -37,6 +38,7 @@ export class NfeService {
     private readonly invoicyApiService: InvoicyApiService,
     private readonly productFiscalService: ProductFiscalService,
     private readonly nfeEmailService: NfeEmailService,
+    private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
   ) {}
 
   /**
@@ -248,7 +250,8 @@ export class NfeService {
         // Se a OS tem entrega por transportadora, usar modalidade CIF (0); senão, Sem ocorrência (9)
         modalidadeFrete:
           quotation.deliveryInfo?.deliveryType === 'CARRIER' ? 0 : 9,
-        ambiente: config.environment || 'HOMOLOGACAO',
+        ambiente:
+          this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config),
       },
 
       // Destinatário
@@ -619,7 +622,8 @@ export class NfeService {
         dataSaida: new Date().toISOString(),
         destinoOperacao: 1,
         modalidadeFrete: 9,
-        ambiente: config.environment || 'HOMOLOGACAO',
+        ambiente:
+          this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config),
       },
 
       // Destinatário

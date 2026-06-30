@@ -7,7 +7,10 @@ import {
 import { PrismaService } from 'nestjs-prisma';
 import { NfeStatus } from '@prisma/client';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
-import { INVOICY_SUCCESS_CODES } from '../invoicy/invoicy.types';
+import {
+  INVOICY_ERROR_CODES,
+  INVOICY_SUCCESS_CODES,
+} from '../invoicy/invoicy.types';
 import { CancelNfeDto, CorrectionLetterDto } from './dtos/nfe.dto';
 
 /**
@@ -269,6 +272,21 @@ export class NfeEventsService {
     sequenciaEvento: number,
     correctionLength: number,
   ): string {
+    const knownCodes: Record<number, string> = {
+      [INVOICY_ERROR_CODES.COMPANY_NOT_ENABLED]:
+        'A empresa emissora não está habilitada na Invoicy. Acesse Configurações → Emissores e verifique se o emissor está ativo.',
+      [INVOICY_ERROR_CODES.INVALID_KEY]:
+        'Chave de acesso da NF-e inválida. O documento pode ter sido emitido com dados inconsistentes.',
+      [INVOICY_ERROR_CODES.REJECTED_BY_SEFAZ]:
+        'A SEFAZ rejeitou o evento. Verifique os dados da NF-e e tente novamente.',
+    };
+
+    const code = response?.Codigo as number | undefined;
+
+    if (code && knownCodes[code]) {
+      return `Carta de correção rejeitada (código ${code}): ${knownCodes[code]}`;
+    }
+
     const doc = response?.Documentos?.[0];
     const providerMessages = [
       response?.ErrorInvoicy,
@@ -287,14 +305,14 @@ export class NfeEventsService {
     const specificMessage = providerMessages.find(
       (message) => message !== genericMessage,
     );
-    const code = response?.Codigo ? ` (código ${response.Codigo})` : '';
+    const codeStr = code ? ` (código ${code})` : '';
 
     if (specificMessage) {
-      return `Carta de correção rejeitada${code}: ${specificMessage}`;
+      return `Carta de correção rejeitada${codeStr}: ${specificMessage}`;
     }
 
     return (
-      `O Invoicy rejeitou a carta de correção${code}, mas não informou qual campo está inválido. ` +
+      `O Invoicy rejeitou a carta de correção${codeStr}, mas não informou qual campo está inválido. ` +
       `Dados enviados: chave de acesso ${chaveAcesso} (44 dígitos), ` +
       `sequência ${sequenciaEvento} e texto da correção com ${correctionLength} caracteres.`
     );
