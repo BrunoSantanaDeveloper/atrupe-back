@@ -60,6 +60,25 @@ export class CreateDeliveryInfoDto {
   value: number;
 
   @ApiProperty({
+    description: 'Horário de entrega no formato HH:MM (ex: 14:00)',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  deliveryTime?: string;
+
+  @ApiProperty({
+    description:
+      'Modo de exibição do prazo no PDF: DAYS (em dias) ou DATE (data exata)',
+    required: false,
+    enum: ['DAYS', 'DATE'],
+    default: 'DAYS',
+  })
+  @IsOptional()
+  @IsString()
+  deliveryDisplayMode?: string;
+
+  @ApiProperty({
     description: 'Observações adicionais sobre a entrega',
     required: false,
   })

@@ -1,5 +1,3 @@
-import { PrismaService } from 'nestjs-prisma';
-
 export const SUPPLIER_IMPORT_SCHEMA = {
   fields: [
     {
@@ -40,11 +38,7 @@ export const SUPPLIER_IMPORT_SCHEMA = {
       type: 'string',
       description: 'CPF do fornecedor (com ou sem pontuação)',
       example: '123.456.789-00',
-      validate: async (
-        value: string,
-        companyId: string,
-        prisma: PrismaService,
-      ) => {
+      validate: async (value: string) => {
         if (!value) return null;
 
         // Limpar e completar zeros (Excel remove zeros à esquerda)
@@ -56,15 +50,6 @@ export const SUPPLIER_IMPORT_SCHEMA = {
           return 'Formato de CPF inválido (deve ter 11 dígitos)';
         }
 
-        // Verificar duplicata
-        const existing = await prisma.supplier.findFirst({
-          where: { cpf: value, companyId },
-        });
-
-        if (existing) {
-          return `CPF já existe para o fornecedor: ${existing.name}`;
-        }
-
         return null;
       },
     },
@@ -74,11 +59,7 @@ export const SUPPLIER_IMPORT_SCHEMA = {
       type: 'string',
       description: 'CNPJ da empresa (com ou sem pontuação)',
       example: '12.345.678/0001-90',
-      validate: async (
-        value: string,
-        companyId: string,
-        prisma: PrismaService,
-      ) => {
+      validate: async (value: string) => {
         if (!value) return null;
 
         // Limpar e completar zeros (Excel remove zeros à esquerda)
@@ -90,15 +71,6 @@ export const SUPPLIER_IMPORT_SCHEMA = {
           return 'Formato de CNPJ inválido (deve ter 14 dígitos)';
         }
 
-        // Verificar duplicata
-        const existing = await prisma.supplier.findFirst({
-          where: { cnpj: value, companyId },
-        });
-
-        if (existing) {
-          return `CNPJ já existe para o fornecedor: ${existing.name}`;
-        }
-
         return null;
       },
     },
@@ -106,17 +78,17 @@ export const SUPPLIER_IMPORT_SCHEMA = {
       name: 'telefone',
       required: false,
       type: 'string',
-      maxLength: 20,
-      description: 'Telefone',
-      example: '(11) 3333-4444',
+      maxLength: 100,
+      description: 'Telefone (múltiplos números separados por /)',
+      example: '(11) 3333-4444 / (11) 3333-5555',
     },
     {
       name: 'celular',
       required: false,
       type: 'string',
-      maxLength: 20,
-      description: 'Celular',
-      example: '(11) 99999-8888',
+      maxLength: 100,
+      description: 'Celular (múltiplos números separados por /)',
+      example: '(11) 99999-8888 / (11) 98888-7777',
     },
     {
       name: 'rg',
@@ -168,7 +140,7 @@ export const SUPPLIER_IMPORT_SCHEMA = {
       name: 'responsavelTelefone',
       required: false,
       type: 'string',
-      maxLength: 20,
+      maxLength: 100,
       description: 'Telefone do responsável',
       example: '(11) 3333-4444',
     },
@@ -176,7 +148,7 @@ export const SUPPLIER_IMPORT_SCHEMA = {
       name: 'responsavelCelular',
       required: false,
       type: 'string',
-      maxLength: 20,
+      maxLength: 100,
       description: 'Celular do responsável',
       example: '(11) 99999-8888',
     },

@@ -1153,23 +1153,25 @@ model QuotationInstallment {
 }
 
 model DeliveryInfo {
-  id                String            @id @default(uuid())
-  quotationId       String            @unique
-  daysAfterApproval Int?
-  estimatedDate     DateTime?
-  modality          String            @default("Indefinida")
-  cost              Float?
-  value             Float?
-  notes             String?
-  supplierId        String?
-  clientAddressId   String?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime?         @updatedAt
-  deliveryType      DeliveryType      @default(PICKUP)
-  quotation         Quotation         @relation(fields: [quotationId], references: [id])
-  supplier          Supplier?         @relation(fields: [supplierId], references: [id])
-  clientAddress     Address?          @relation(fields: [clientAddressId], references: [id])
-  deliverySchedule  DeliverySchedule?
+  id                  String            @id @default(uuid())
+  quotationId         String            @unique
+  daysAfterApproval   Int?
+  estimatedDate       DateTime?
+  deliveryTime        String?           // HH:MM — horário de entrega exibido no PDF
+  deliveryDisplayMode String?           @default("DAYS") // DAYS | DATE
+  modality            String            @default("Indefinida")
+  cost                Float?
+  value               Float?
+  notes               String?
+  supplierId          String?
+  clientAddressId     String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime?         @updatedAt
+  deliveryType        DeliveryType      @default(PICKUP)
+  quotation           Quotation         @relation(fields: [quotationId], references: [id])
+  supplier            Supplier?         @relation(fields: [supplierId], references: [id])
+  clientAddress       Address?          @relation(fields: [clientAddressId], references: [id])
+  deliverySchedule    DeliverySchedule?
 
   @@index([quotationId])
   @@map("delivery_info")

@@ -586,7 +586,7 @@ export class ScheduledExpenseService {
                 },
               },
               orderBy: {
-                description: 'asc',
+                dueDay: 'asc',
               },
             },
           },

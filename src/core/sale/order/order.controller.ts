@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
   Param,
   Delete,
@@ -15,6 +16,7 @@ import {
 import { OrderService } from './order.service';
 import { CancelOrderDto, CreateOrderDto } from './dto/create-order.dto';
 import { FilterOrderDto } from './dto/filter.dto';
+import { UpdateOrderInfoDto } from './dto/update-order.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import {
   ApiTags,
@@ -187,6 +189,22 @@ export class OrderController {
     }
 
     return order;
+  }
+
+  @Patch(':id/info')
+  @ApiOperation({
+    summary:
+      'Editar informações da OS (cliente, vendedor, responsável, endereço)',
+  })
+  @ApiResponse({ status: 200, description: 'Ordem atualizada com sucesso.' })
+  @ApiResponse({ status: 400, description: 'Dados inválidos ou OS cancelada.' })
+  @ApiResponse({ status: 404, description: 'Ordem não encontrada.' })
+  async updateOrderInfo(
+    @Param('id') id: string,
+    @Body() dto: UpdateOrderInfoDto,
+    @Req() req,
+  ) {
+    return this.orderService.updateOrderInfo(id, dto, req.user.userId);
   }
 
   @Post(':id/cancel')

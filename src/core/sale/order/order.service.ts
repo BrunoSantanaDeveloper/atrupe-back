@@ -14,6 +14,7 @@ import { Order, OrderStatus, Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { ORDER_FIND_ONE_INCLUDE } from './order.includes';
 import { transformOrderToResponse } from './order.transformers';
+import { UpdateOrderInfoDto } from './dto/update-order.dto';
 
 const EXPORT_LIMIT = '10000';
 
@@ -917,5 +918,176 @@ export class OrderService {
       commission: commissionInstallments,
       delivery: deliveryInstallments,
     };
+  }
+
+  async updateOrderInfo(
+    orderId: string,
+    dto: UpdateOrderInfoDto,
+    userId: string,
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        status: true,
+        quotation: {
+          select: {
+            id: true,
+            clientId: true,
+            sellerId: true,
+            contactId: true,
+            client: { select: { name: true } },
+            seller: { select: { name: true } },
+            contact: { select: { name: true } },
+            deliveryInfo: {
+              select: { id: true, clientAddressId: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Ordem de serviço não encontrada.');
+    }
+
+    if (order.status === 'CANCELED') {
+      throw new BadRequestException(
+        'Não é possível editar uma ordem de serviço cancelada.',
+      );
+    }
+
+    const { quotation } = order;
+
+    // Snapshot "before" for history
+    const before: Record<string, string | null> = {};
+    const after: Record<string, string | null> = {};
+
+    if (dto.clientId !== undefined && dto.clientId !== quotation.clientId) {
+      before.clientId = quotation.clientId;
+      before.clientName = quotation.client?.name ?? null;
+      after.clientId = dto.clientId;
+    }
+    if (dto.sellerId !== undefined && dto.sellerId !== quotation.sellerId) {
+      before.sellerId = quotation.sellerId;
+      before.sellerName = quotation.seller?.name ?? null;
+      after.sellerId = dto.sellerId;
+    }
+    if (dto.contactId !== undefined && dto.contactId !== quotation.contactId) {
+      before.contactId = quotation.contactId;
+      before.contactName = quotation.contact?.name ?? null;
+      after.contactId = dto.contactId;
+    }
+    if (dto.deliveryClientAddressId !== undefined) {
+      before.deliveryClientAddressId =
+        quotation.deliveryInfo?.clientAddressId ?? null;
+      after.deliveryClientAddressId = dto.deliveryClientAddressId;
+    }
+
+    const changedFields = Object.keys(after);
+    if (changedFields.length === 0) {
+      return this.findOne(orderId);
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      // Update quotation fields
+      const quotationUpdate: Record<string, string | null> = {};
+      if (dto.clientId !== undefined) quotationUpdate.clientId = dto.clientId;
+      if (dto.sellerId !== undefined) quotationUpdate.sellerId = dto.sellerId;
+      if (dto.contactId !== undefined)
+        quotationUpdate.contactId = dto.contactId || null;
+
+      if (Object.keys(quotationUpdate).length > 0) {
+        await tx.quotation.update({
+          where: { id: quotation.id },
+          data: quotationUpdate,
+        });
+      }
+
+      // Update delivery address
+      if (dto.deliveryClientAddressId !== undefined && quotation.deliveryInfo) {
+        let addressId: string | null = dto.deliveryClientAddressId;
+
+        if (
+          dto.deliveryClientAddressId === 'custom' &&
+          dto.deliveryCustomAddress
+        ) {
+          const existingCustom = quotation.deliveryInfo.clientAddressId
+            ? await tx.address.findFirst({
+                where: {
+                  id: quotation.deliveryInfo.clientAddressId,
+                  type: 'CustomForDelivery',
+                },
+              })
+            : null;
+
+          if (existingCustom) {
+            await tx.address.update({
+              where: { id: existingCustom.id },
+              data: dto.deliveryCustomAddress,
+            });
+            addressId = existingCustom.id;
+          } else {
+            const newAddr = await tx.address.create({
+              data: { ...dto.deliveryCustomAddress, type: 'CustomForDelivery' },
+            });
+            addressId = newAddr.id;
+          }
+        } else if (
+          dto.deliveryClientAddressId !== 'custom' &&
+          quotation.deliveryInfo.clientAddressId
+        ) {
+          // If switching away from a custom address, clean it up
+          const prevCustom = await tx.address.findFirst({
+            where: {
+              id: quotation.deliveryInfo.clientAddressId,
+              type: 'CustomForDelivery',
+            },
+          });
+          if (prevCustom) {
+            try {
+              await tx.address.delete({ where: { id: prevCustom.id } });
+            } catch {
+              // Ignore if address is referenced elsewhere
+            }
+          }
+        }
+
+        if (dto.deliveryClientAddressId === '') addressId = null;
+
+        await tx.deliveryInfo.update({
+          where: { id: quotation.deliveryInfo.id },
+          data: { clientAddressId: addressId },
+        });
+      }
+
+      // Create OrderHistory entry
+      await tx.orderHistory.create({
+        data: {
+          orderId,
+          action: 'EDITED',
+          description: `Informações editadas por ${user?.name ?? 'Usuário'} — ${[
+            after.clientId ? 'cliente' : null,
+            after.sellerId ? 'vendedor' : null,
+            after.contactId ? 'responsável' : null,
+            after.deliveryClientAddressId !== undefined
+              ? 'endereço de entrega'
+              : null,
+          ]
+            .filter(Boolean)
+            .join(', ')}`,
+          changes: { before, after },
+          createdBy: userId,
+          createdByName: user?.name ?? null,
+        } as any,
+      });
+    });
+
+    return this.findOne(orderId);
   }
 }

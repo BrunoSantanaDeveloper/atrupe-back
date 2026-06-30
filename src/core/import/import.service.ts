@@ -513,15 +513,16 @@ export class ImportService {
           const rowNumber = i + 2;
 
           try {
+            let shouldCount = true;
             if (importLog.entity === 'client') {
               await this.importClient(row, importLog.companyId);
             } else if (importLog.entity === 'product') {
               await this.importProduct(row, importLog.companyId);
             } else if (importLog.entity === 'supplier') {
-              await this.importSupplier(row, importLog.companyId);
+              shouldCount = await this.importSupplier(row, importLog.companyId);
             }
 
-            successCount++;
+            if (shouldCount) successCount++;
           } catch (error) {
             failedCount++;
             errors.push({
@@ -717,7 +718,7 @@ export class ImportService {
   /**
    * Importar um fornecedor do CSV
    */
-  private async importSupplier(row: any, companyId: string): Promise<void> {
+  private async importSupplier(row: any, companyId: string): Promise<boolean> {
     // Normalizar tipo
     let type = row.tipo?.toUpperCase();
     if (type === 'F' || type === 'PESSOA') type = 'PERSON';
@@ -761,6 +762,20 @@ export class ImportService {
         cnpjClean = cnpjClean.padStart(14, '0');
       }
       cnpjNormalized = cnpjClean;
+    }
+
+    // Ignorar se CNPJ ou CPF já está cadastrado
+    if (cnpjNormalized) {
+      const dup = await this.prisma.supplier.findFirst({
+        where: { cnpj: cnpjNormalized, companyId },
+      });
+      if (dup) return false;
+    }
+    if (cpfNormalized) {
+      const dup = await this.prisma.supplier.findFirst({
+        where: { cpf: cpfNormalized, companyId },
+      });
+      if (dup) return false;
     }
 
     // Criar fornecedor
@@ -811,6 +826,7 @@ export class ImportService {
             : undefined,
       },
     });
+    return true;
   }
 
   /**
