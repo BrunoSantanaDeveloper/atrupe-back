@@ -7,8 +7,9 @@ END $$;
 -- AlterTable invoicy_environment_configs: add docType column with default NFCE
 ALTER TABLE "invoicy_environment_configs" ADD COLUMN IF NOT EXISTS "docType" "FiscalDocType" NOT NULL DEFAULT 'NFCE';
 
--- Drop old unique constraint (idempotent)
+-- Drop old unique constraint/index (idempotent) — may be a raw index depending on environment
 ALTER TABLE "invoicy_environment_configs" DROP CONSTRAINT IF EXISTS "invoicy_environment_configs_invoicyConfigId_environment_key";
+DROP INDEX IF EXISTS "invoicy_environment_configs_invoicyConfigId_environment_key";
 
 -- Add new unique constraint (idempotent)
 DO $$ BEGIN
@@ -19,8 +20,9 @@ END $$;
 -- AlterTable fiscal_activation_attempts: add docType column
 ALTER TABLE "fiscal_activation_attempts" ADD COLUMN IF NOT EXISTS "docType" "FiscalDocType" NOT NULL DEFAULT 'NFCE';
 
--- Drop old unique constraint (idempotent)
+-- Drop old unique constraint/index (idempotent) — may be a raw index depending on environment
 ALTER TABLE "fiscal_activation_attempts" DROP CONSTRAINT IF EXISTS "fiscal_activation_attempts_invoicyConfigId_environment_idempotencyKey_key";
+DROP INDEX IF EXISTS "fiscal_activation_attempts_invoicyConfigId_environment_idem_key";
 
 -- Add new unique constraint (idempotent)
 DO $$ BEGIN
