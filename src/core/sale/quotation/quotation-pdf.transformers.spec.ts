@@ -140,28 +140,15 @@ describe('QuotationPdfTransformers', () => {
   });
 
   describe('transformPdfContact', () => {
-    it('should transform first contact', () => {
-      const client = {
-        name: 'Test Client',
-        type: 'PERSON',
-        cpf: null,
-        cnpj: null,
-        phone: null,
-        email: null,
-        notes: null,
-        financialNotes: null,
-        address: [],
-        contacts: [
-          {
-            name: 'Contact Person',
-            phone: '11777777777',
-            email: 'contact@example.com',
-            notes: 'Primary contact',
-          },
-        ],
+    it('should transform selected quotation contact', () => {
+      const contact = {
+        name: 'Contact Person',
+        phone: '11777777777',
+        email: 'contact@example.com',
+        notes: 'Primary contact',
       };
 
-      const result = transformPdfContact(client);
+      const result = transformPdfContact(contact);
 
       expect(result).toEqual({
         name: 'Contact Person',
@@ -171,21 +158,8 @@ describe('QuotationPdfTransformers', () => {
       });
     });
 
-    it('should return null when no contacts', () => {
-      const client = {
-        name: 'Test Client',
-        type: 'PERSON',
-        cpf: null,
-        cnpj: null,
-        phone: null,
-        email: null,
-        notes: null,
-        financialNotes: null,
-        address: [],
-        contacts: [],
-      };
-
-      const result = transformPdfContact(client);
+    it('should return null when no contact is selected', () => {
+      const result = transformPdfContact(null);
       expect(result).toBeNull();
     });
   });
@@ -225,7 +199,6 @@ describe('QuotationPdfTransformers', () => {
       expect(result.status).toBe('APPROVED');
     });
   });
-
   describe('transformPdfOrder', () => {
     it('should transform order correctly', () => {
       const order = {
