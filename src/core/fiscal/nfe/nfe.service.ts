@@ -1,4 +1,4 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   BadRequestException,
@@ -42,8 +42,8 @@ export class NfeService {
   ) {}
 
   /**
-   * Prepara os dados para emissão de NF-e a partir de uma ordem de serviço.
-   * Retorna todos os dados pré-preenchidos para o frontend editar antes de emitir.
+   * Prepara os dados para emissÃ£o de NF-e a partir de uma ordem de serviÃ§o.
+   * Retorna todos os dados prÃ©-preenchidos para o frontend editar antes de emitir.
    */
   async prepareFromOrder(companyId: string, orderId: string) {
     // Buscar a ordem via quotation para garantir o filtro por companyId
@@ -60,7 +60,7 @@ export class NfeService {
         },
         order: {
           include: {
-            nfes: true, // Incluir NF-e já emitidas
+            nfes: true, // Incluir NF-e jÃ¡ emitidas
             nfeOrders: {
               include: {
                 nfe: true,
@@ -101,30 +101,31 @@ export class NfeService {
     })) as any;
 
     if (!quotation || !quotation.order) {
-      throw new NotFoundException('Ordem de serviço não encontrada');
+      throw new NotFoundException('Ordem de serviÃ§o nÃ£o encontrada');
     }
 
     const client = quotation.client;
     if (!client) {
-      throw new BadRequestException('Cliente não encontrado no orçamento');
+      throw new BadRequestException('Cliente nÃ£o encontrado no orÃ§amento');
     }
 
-    // Buscar configuração do Invoicy para defaults
+    // Buscar configuraÃ§Ã£o do Invoicy para defaults
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
       throw new BadRequestException(
-        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
+        'ConfiguraÃ§Ã£o do Invoicy nÃ£o encontrada. Configure a integraÃ§Ã£o primeiro.',
       );
     }
 
     const environment =
-      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config);
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config, 'NFE');
     await this.fiscalCredentialResolver.assertEnvironmentReady(
       config.id,
       environment,
+      'NFE',
     );
 
-    // Destinatário usa sempre o endereço cadastral principal do cliente
+    // DestinatÃ¡rio usa sempre o endereÃ§o cadastral principal do cliente
     const clientAddress = client.address?.[0];
     const deliveryAddress = quotation.deliveryInfo?.clientAddress;
 
@@ -175,7 +176,7 @@ export class NfeService {
           itemNumber: index + 1,
           productId: qp.productId,
           productCode: qp.product?.code || '',
-          description: qp.product?.name || 'Produto/Serviço',
+          description: qp.product?.name || 'Produto/ServiÃ§o',
           ncm: fiscalData?.ncm || '',
           cfop: selectedCfop,
           cstIcms: fiscalData?.icmsCst || '102',
@@ -201,7 +202,7 @@ export class NfeService {
     const valorDescontos = items.reduce((acc, item) => acc + item.discount, 0);
     const valorNota = valorProdutos - valorDescontos;
 
-    // Verificar se já existe NF-e emitida para esta ordem
+    // Verificar se jÃ¡ existe NF-e emitida para esta ordem
     const existingNfe =
       quotation.order.nfes?.[0] ||
       quotation.order.nfeOrders?.map((item) => item.nfe).find(Boolean);
@@ -239,28 +240,28 @@ export class NfeService {
           }))
         : [],
 
-      // Configuração de emissão
+      // ConfiguraÃ§Ã£o de emissÃ£o
       emissao: {
         emissor: config.company.legalName || config.company.name || '',
         emissorCnpj: config.company.cnpj || '',
         proximoDocumento: `${config.proximoNumeroNfe || 1}/${config.serieNfe || 1}`,
         serie: config.serieNfe || 1,
-        tipo: 1, // 1 = Saída
+        tipo: 1, // 1 = SaÃ­da
         finalidade: 1, // 1 = NF-e normal
         operationNature: config.defaultOperationNature || 'Venda de mercadoria',
-        consumidorFinal: client.cnpj ? 0 : 1, // 0 = Não, 1 = Sim (pessoa física)
-        presencaConsumidor: 1, // 1 = Operação presencial
+        consumidorFinal: client.cnpj ? 0 : 1, // 0 = NÃ£o, 1 = Sim (pessoa fÃ­sica)
+        presencaConsumidor: 1, // 1 = OperaÃ§Ã£o presencial
         nfeReferenciada: null,
         dataSaida: new Date().toISOString(),
         destinoOperacao:
           clientAddress?.state === config.company.address.state ? 1 : 2, // 1 = Interna, 2 = Interestadual
-        // Se a OS tem entrega por transportadora, usar modalidade CIF (0); senão, Sem ocorrência (9)
+        // Se a OS tem entrega por transportadora, usar modalidade CIF (0); senÃ£o, Sem ocorrÃªncia (9)
         modalidadeFrete:
           quotation.deliveryInfo?.deliveryType === 'CARRIER' ? 0 : 9,
         ambiente: environment,
       },
 
-      // Destinatário
+      // DestinatÃ¡rio
       destinatario: {
         razaoSocial: client.corporateName || client.name || '',
         cnpjCpf: client.cnpj || client.cpf || '',
@@ -293,7 +294,7 @@ export class NfeService {
       // Itens
       items,
 
-      // Transportadora: pré-preencher com dados do supplier da OS quando deliveryType = CARRIER
+      // Transportadora: prÃ©-preencher com dados do supplier da OS quando deliveryType = CARRIER
       transportadora: (() => {
         const delivery = quotation.deliveryInfo;
         if (delivery?.deliveryType === 'CARRIER' && delivery.supplier) {
@@ -320,7 +321,7 @@ export class NfeService {
         };
       })(),
 
-      // Volumes: pré-preencher volume consolidado quando deliveryType = CARRIER
+      // Volumes: prÃ©-preencher volume consolidado quando deliveryType = CARRIER
       volumes: (() => {
         const isCarrier = quotation.deliveryInfo?.deliveryType === 'CARRIER';
         if (!isCarrier) return [];
@@ -370,7 +371,7 @@ export class NfeService {
       // Duplicatas
       duplicatas: [],
 
-      // Informações complementares
+      // InformaÃ§Ãµes complementares
       informacoesComplementares: config.taxInfoText || '',
 
       // Totais
@@ -391,7 +392,7 @@ export class NfeService {
         valorNota: Number(valorNota.toFixed(2)),
       },
 
-      // Autorização para download (XML)
+      // AutorizaÃ§Ã£o para download (XML)
       autXml: [],
     };
   }
@@ -524,23 +525,24 @@ export class NfeService {
   }
 
   /**
-   * Prepara os dados para emissão de NF-e avulsa (sem ordem de serviço).
-   * Retorna dados padrão do emitente e, opcionalmente, dados do destinatário se clientId informado.
+   * Prepara os dados para emissÃ£o de NF-e avulsa (sem ordem de serviÃ§o).
+   * Retorna dados padrÃ£o do emitente e, opcionalmente, dados do destinatÃ¡rio se clientId informado.
    */
   async prepareStandalone(companyId: string, clientId?: string) {
-    // Buscar configuração do Invoicy
+    // Buscar configuraÃ§Ã£o do Invoicy
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
       throw new BadRequestException(
-        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
+        'ConfiguraÃ§Ã£o do Invoicy nÃ£o encontrada. Configure a integraÃ§Ã£o primeiro.',
       );
     }
 
     const environment =
-      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config);
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config, 'NFE');
     await this.fiscalCredentialResolver.assertEnvironmentReady(
       config.id,
       environment,
+      'NFE',
     );
 
     // Buscar dados do cliente, se informado
@@ -571,7 +573,7 @@ export class NfeService {
       });
 
       if (!client) {
-        throw new NotFoundException('Cliente não encontrado');
+        throw new NotFoundException('Cliente nÃ£o encontrado');
       }
 
       const clientAddress = (client as any).address?.[0];
@@ -620,7 +622,7 @@ export class NfeService {
       clientAddresses,
       entrega: null,
 
-      // Configuração de emissão
+      // ConfiguraÃ§Ã£o de emissÃ£o
       emissao: {
         emissor: config.company.legalName || config.company.name || '',
         emissorCnpj: config.company.cnpj || '',
@@ -638,13 +640,13 @@ export class NfeService {
         ambiente: environment,
       },
 
-      // Destinatário
+      // DestinatÃ¡rio
       destinatario,
 
       // Itens (vazio para nota avulsa)
       items: [],
 
-      // Transportadora (vazio por padrão)
+      // Transportadora (vazio por padrÃ£o)
       transportadora: {
         cnpjCpf: '',
         razaoSocial: '',
@@ -657,7 +659,7 @@ export class NfeService {
       // Volumes
       volumes: [],
 
-      // Pagamento padrão
+      // Pagamento padrÃ£o
       pagamento: {
         forma: '01',
         formaDescricao: 'Dinheiro',
@@ -667,7 +669,7 @@ export class NfeService {
       // Duplicatas
       duplicatas: [],
 
-      // Informações complementares
+      // InformaÃ§Ãµes complementares
       informacoesComplementares: config.taxInfoText || '',
 
       // Totais zerados
@@ -688,7 +690,7 @@ export class NfeService {
         valorNota: 0,
       },
 
-      // Autorização para download (XML)
+      // AutorizaÃ§Ã£o para download (XML)
       autXml: [],
 
       defaultCfop: config.defaultCfop || '',
@@ -757,7 +759,7 @@ export class NfeService {
       }
     }
 
-    // Extrair indFinal da tag <ide> — usado pelo prepareComplementary
+    // Extrair indFinal da tag <ide> â€” usado pelo prepareComplementary
     const ideXml = extractTag(xml, 'ide');
     const indFinal = ideXml
       ? parseInt(extractTag(ideXml, 'indFinal') || '0', 10)
@@ -793,7 +795,7 @@ export class NfeService {
       }
     }
 
-    // 2. Tentar mesclar/sobrepor com dados reais do XML (xmlData), pois o XML é a fonte da verdade da NF emitida
+    // 2. Tentar mesclar/sobrepor com dados reais do XML (xmlData), pois o XML Ã© a fonte da verdade da NF emitida
     if (xmlData?.destinatario) {
       destinatario = {
         ...destinatario,
@@ -814,7 +816,7 @@ export class NfeService {
     });
 
     if (!originalNfe) {
-      throw new NotFoundException('NF-e não encontrada');
+      throw new NotFoundException('NF-e nÃ£o encontrada');
     }
 
     if (originalNfe.status !== NfeStatus.AUTHORIZED) {
@@ -907,12 +909,12 @@ export class NfeService {
       xmlData?.items?.[0]?.cfop ||
       0) as number;
 
-    // Sugestão de CFOP para devolução com base no CFOP original
+    // SugestÃ£o de CFOP para devoluÃ§Ã£o com base no CFOP original
     const getSuggestedDevolutionCfop = (destUf: string): number => {
       const isInterestadual =
         emitUf && destUf && emitUf !== destUf.toUpperCase();
       const lastThree = originalCfop % 1000;
-      // Produção própria (5101/6101) -> 1201/2201
+      // ProduÃ§Ã£o prÃ³pria (5101/6101) -> 1201/2201
       if (lastThree === 101) {
         return isInterestadual ? 2201 : 1201;
       }
@@ -945,7 +947,7 @@ export class NfeService {
         ...baseData.emissao,
         tipo: 0,
         finalidade: 4,
-        operationNature: 'Devolução de mercadoria',
+        operationNature: 'DevoluÃ§Ã£o de mercadoria',
         consumidorFinal: 0,
         nfeReferenciada: originalNfe.chaveAcesso,
       },
@@ -977,7 +979,7 @@ export class NfeService {
     });
 
     if (!originalNfe) {
-      throw new NotFoundException('NF-e não encontrada');
+      throw new NotFoundException('NF-e nÃ£o encontrada');
     }
 
     if (originalNfe.status !== NfeStatus.AUTHORIZED) {
@@ -1070,7 +1072,7 @@ export class NfeService {
     });
 
     if (!originalNfe) {
-      throw new NotFoundException('NF-e não encontrada');
+      throw new NotFoundException('NF-e nÃ£o encontrada');
     }
 
     if (originalNfe.status !== NfeStatus.REJECTED) {
@@ -1157,7 +1159,7 @@ export class NfeService {
     };
   }
 
-  // Emitir NF-e a partir de uma ordem de serviço (busca dados automaticamente)
+  // Emitir NF-e a partir de uma ordem de serviÃ§o (busca dados automaticamente)
 
   async emitFromOrder(companyId: string, dto: EmitNfeFromOrderDto) {
     // Buscar a ordem via quotation para garantir o filtro por companyId
@@ -1195,10 +1197,10 @@ export class NfeService {
     });
 
     if (!quotation || !quotation.order) {
-      throw new NotFoundException('Ordem de serviço não encontrada');
+      throw new NotFoundException('Ordem de serviÃ§o nÃ£o encontrada');
     }
 
-    // Verificar se já existe NF-e autorizada para esta ordem
+    // Verificar se jÃ¡ existe NF-e autorizada para esta ordem
     const existingNfe = await this.prisma.nfe.findFirst({
       where: {
         orderId: dto.orderId,
@@ -1208,25 +1210,25 @@ export class NfeService {
 
     if (existingNfe) {
       throw new BadRequestException(
-        `Já existe uma NF-e autorizada para esta ordem de serviço (Nº ${existingNfe.numero}/${existingNfe.serie})`,
+        `JÃ¡ existe uma NF-e autorizada para esta ordem de serviÃ§o (NÂº ${existingNfe.numero}/${existingNfe.serie})`,
       );
     }
 
     const client = quotation.client;
     if (!client) {
-      throw new BadRequestException('Cliente não encontrado no orçamento');
+      throw new BadRequestException('Cliente nÃ£o encontrado no orÃ§amento');
     }
 
-    // Buscar configuração do Invoicy para defaults
+    // Buscar configuraÃ§Ã£o do Invoicy para defaults
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
       throw new BadRequestException(
-        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
+        'ConfiguraÃ§Ã£o do Invoicy nÃ£o encontrada. Configure a integraÃ§Ã£o primeiro.',
       );
     }
 
     // Preparar itens da NF-e (usar totalValue ou finalValue dividido pela quantidade)
-    // IMPORTANTE: Valores no banco estão em centavos, dividir por 100 para reais
+    // IMPORTANTE: Valores no banco estÃ£o em centavos, dividir por 100 para reais
     const items = quotation.quotationProduct.map((qp) => {
       const totalValueCents = qp.finalValue || qp.totalValue || 0;
       const totalValueReais = totalValueCents / 100;
@@ -1241,10 +1243,10 @@ export class NfeService {
     });
 
     if (items.length === 0) {
-      throw new BadRequestException('Orçamento não possui itens');
+      throw new BadRequestException('OrÃ§amento nÃ£o possui itens');
     }
 
-    // Obter endereço principal do cliente
+    // Obter endereÃ§o principal do cliente
     const clientAddress = client.address?.[0];
 
     // Construir DTO completo
@@ -1285,15 +1287,15 @@ export class NfeService {
       items,
     };
 
-    // Validar dados obrigatórios
+    // Validar dados obrigatÃ³rios
     if (!fullDto.destCnpjCpf) {
-      throw new BadRequestException('Cliente não possui CPF/CNPJ cadastrado');
+      throw new BadRequestException('Cliente nÃ£o possui CPF/CNPJ cadastrado');
     }
     if (!fullDto.destNome) {
-      throw new BadRequestException('Cliente não possui nome cadastrado');
+      throw new BadRequestException('Cliente nÃ£o possui nome cadastrado');
     }
     if (!fullDto.destEndereco) {
-      throw new BadRequestException('Cliente não possui endereço cadastrado');
+      throw new BadRequestException('Cliente nÃ£o possui endereÃ§o cadastrado');
     }
 
     return this.emit(companyId, fullDto);
@@ -1334,7 +1336,7 @@ export class NfeService {
       }
     }
 
-    // Obtém IDs de NF-es rejeitadas duplicadas para excluir da listagem
+    // ObtÃ©m IDs de NF-es rejeitadas duplicadas para excluir da listagem
     const excludedRowsAll = await this.prisma.$queryRaw<{ id: string }[]>`
       SELECT r.id FROM nfes r
       WHERE r."companyId" = ${companyId}
@@ -1435,7 +1437,7 @@ export class NfeService {
     });
 
     if (!nfe) {
-      throw new NotFoundException('NF-e não encontrada');
+      throw new NotFoundException('NF-e nÃ£o encontrada');
     }
 
     return nfe;
@@ -1447,7 +1449,7 @@ export class NfeService {
     });
 
     if (!nfe) {
-      throw new NotFoundException('NF-e não encontrada');
+      throw new NotFoundException('NF-e nÃ£o encontrada');
     }
 
     return nfe;
@@ -1500,23 +1502,26 @@ export class NfeService {
   }
 
   async emit(companyId: string, dto: EmitNfeDto) {
-    // Buscar configuração do Invoicy
+    // Buscar configuraÃ§Ã£o do Invoicy
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
       throw new BadRequestException(
-        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
+        'ConfiguraÃ§Ã£o do Invoicy nÃ£o encontrada. Configure a integraÃ§Ã£o primeiro.',
       );
     }
 
     if (!config.isActive) {
-      throw new BadRequestException('Integração com Invoicy está desativada.');
+      throw new BadRequestException(
+        'IntegraÃ§Ã£o com Invoicy estÃ¡ desativada.',
+      );
     }
 
     const environment =
-      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config);
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config, 'NFE');
     await this.fiscalCredentialResolver.assertEnvironmentReady(
       config.id,
       environment,
+      'NFE',
     );
 
     // Validar que temos itens
@@ -1524,7 +1529,7 @@ export class NfeService {
       throw new BadRequestException('NF-e deve conter ao menos um item');
     }
 
-    // Validar destinatário
+    // Validar destinatÃ¡rio
     const isForeign = dto.destPais && dto.destPais !== '1058';
     const cleanCnpjCpf = dto.destCnpjCpf?.replace(/\D/g, '') || '';
     if (!isForeign) {
@@ -1533,7 +1538,7 @@ export class NfeService {
         (cleanCnpjCpf.length !== 11 && cleanCnpjCpf.length !== 14)
       ) {
         throw new BadRequestException(
-          'CPF/CNPJ do destinatário é obrigatório e deve ser válido (11 dígitos para CPF ou 14 para CNPJ)',
+          'CPF/CNPJ do destinatÃ¡rio Ã© obrigatÃ³rio e deve ser vÃ¡lido (11 dÃ­gitos para CPF ou 14 para CNPJ)',
         );
       }
     } else {
@@ -1543,7 +1548,7 @@ export class NfeService {
         dto.destIdEstrangeiro.length > 20
       ) {
         throw new BadRequestException(
-          'Para destinatários estrangeiros, a Identificação do Estrangeiro (idEstrangeiro) é obrigatória e deve ter entre 5 e 20 caracteres',
+          'Para destinatÃ¡rios estrangeiros, a IdentificaÃ§Ã£o do Estrangeiro (idEstrangeiro) Ã© obrigatÃ³ria e deve ter entre 5 e 20 caracteres',
         );
       }
     }
@@ -1561,7 +1566,7 @@ export class NfeService {
       throw new BadRequestException('Data de saida/entrada invalida');
     }
 
-    // Buscar código IBGE do município do destinatário via CEP
+    // Buscar cÃ³digo IBGE do municÃ­pio do destinatÃ¡rio via CEP
     let destCmun = isForeign ? 9999999 : 0;
     let destUfFromCep = isForeign ? 'EX' : dto.destUf || '';
     let destMunFromCep = isForeign
@@ -1569,31 +1574,33 @@ export class NfeService {
       : dto.destMunicipio || '';
     if (!isForeign && dto.destCep) {
       this.logger.log(
-        `Buscando código IBGE para CEP do destinatário: ${dto.destCep}`,
+        `Buscando cÃ³digo IBGE para CEP do destinatÃ¡rio: ${dto.destCep}`,
       );
       const cepData = await fetchCepData(dto.destCep);
       if (cepData) {
         destCmun = parseInt(cepData.codigoIbge, 10) || 0;
-        destUfFromCep = cepData.uf; // Usar UF do CEP para garantir consistência
+        destUfFromCep = cepData.uf; // Usar UF do CEP para garantir consistÃªncia
         destMunFromCep = cepData.cidade; // Usar cidade do CEP
         this.logger.log(
-          `Código IBGE do destinatário: ${destCmun} (${destMunFromCep}/${destUfFromCep})`,
+          `CÃ³digo IBGE do destinatÃ¡rio: ${destCmun} (${destMunFromCep}/${destUfFromCep})`,
         );
       } else {
-        this.logger.warn(`CEP do destinatário não encontrado: ${dto.destCep}`);
+        this.logger.warn(
+          `CEP do destinatÃ¡rio nÃ£o encontrado: ${dto.destCep}`,
+        );
       }
     } else if (!isForeign) {
-      this.logger.warn('Destinatário sem CEP cadastrado');
+      this.logger.warn('DestinatÃ¡rio sem CEP cadastrado');
     }
 
-    // Validar que temos o código IBGE do destinatário
+    // Validar que temos o cÃ³digo IBGE do destinatÃ¡rio
     if (!destCmun) {
       throw new BadRequestException(
-        'CEP do destinatário é obrigatório para emissão de NF-e. Cadastre um CEP válido para o cliente.',
+        'CEP do destinatÃ¡rio Ã© obrigatÃ³rio para emissÃ£o de NF-e. Cadastre um CEP vÃ¡lido para o cliente.',
       );
     }
 
-    // Obter próximo número da NF-e (sem incrementar ainda - só incrementa após emissão bem-sucedida)
+    // Obter prÃ³ximo nÃºmero da NF-e (sem incrementar ainda - sÃ³ incrementa apÃ³s emissÃ£o bem-sucedida)
     const numero = config.proximoNumeroNfe || 1;
 
     // Calcular valor total
@@ -1665,7 +1672,7 @@ export class NfeService {
             status: NfeStatus.PROCESSING,
             ambiente: environment === 'PRODUCAO' ? 1 : 2,
             valorTotal,
-            // Limpar possível mensagem de erro anterior ao tentar emitir novamente
+            // Limpar possÃ­vel mensagem de erro anterior ao tentar emitir novamente
             motivoRejeicao: null,
             draftData: dto as any,
           },
@@ -1673,7 +1680,7 @@ export class NfeService {
       }
     }
 
-    // Se não encontrou rascunho (ou é avulsa sem ordem), cria nova
+    // Se nÃ£o encontrou rascunho (ou Ã© avulsa sem ordem), cria nova
     if (!nfe) {
       nfe = await this.prisma.nfe.create({
         data: {
@@ -1714,7 +1721,7 @@ export class NfeService {
 
       if (!emitCmun && emitCep) {
         this.logger.log(
-          `Emitente (Empresa) sem código IBGE configurado. Buscando via CEP do emitente: ${emitCep}`,
+          `Emitente (Empresa) sem cÃ³digo IBGE configurado. Buscando via CEP do emitente: ${emitCep}`,
         );
         const cepData = await fetchCepData(emitCep);
         if (cepData) {
@@ -1729,7 +1736,7 @@ export class NfeService {
           this.logger.log(`IBGE do emitente persistido no InvoicyConfig`);
         } else {
           this.logger.warn(
-            `Não foi possível encontrar IBGE para CEP do emitente: ${emitCep}`,
+            `NÃ£o foi possÃ­vel encontrar IBGE para CEP do emitente: ${emitCep}`,
           );
         }
       }
@@ -1759,8 +1766,8 @@ export class NfeService {
                 : 2, // 1 = Interna, 2 = Interestadual, 3 = Exterior
             cMunFg: parseInt(emitCmun || '0', 10),
             tpImp: 1, // DANFE retrato
-            tpEmis: 1, // Emissão normal
-            cDV: 0, // Será calculado pelo Invoicy
+            tpEmis: 1, // EmissÃ£o normal
+            cDV: 0, // SerÃ¡ calculado pelo Invoicy
             tpAmb: environment === 'PRODUCAO' ? 1 : 2,
             finNFe: dto.finalidade ?? 1, // NF-e normal
             indFinal:
@@ -1804,7 +1811,7 @@ export class NfeService {
                     ? { CPF_dest: dto.destCnpjCpf.replace(/\D/g, '') }
                     : {}),
                 }),
-            // Em homologação, SEFAZ exige este nome exato para o destinatário
+            // Em homologaÃ§Ã£o, SEFAZ exige este nome exato para o destinatÃ¡rio
             xNome_dest:
               environment === 'HOMOLOGACAO'
                 ? 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
@@ -1817,9 +1824,9 @@ export class NfeService {
               xLgr_dest: dto.destEndereco || '',
               nro_dest: dto.destNumero || 'S/N',
               xBairro_dest: dto.destBairro || '',
-              cMun_dest: destCmun, // Código IBGE do município do destinatário
-              xMun_dest: destMunFromCep, // Nome do município (do CEP)
-              UF_dest: destUfFromCep, // UF do destinatário (do CEP para garantir consistência)
+              cMun_dest: destCmun, // CÃ³digo IBGE do municÃ­pio do destinatÃ¡rio
+              xMun_dest: destMunFromCep, // Nome do municÃ­pio (do CEP)
+              UF_dest: destUfFromCep, // UF do destinatÃ¡rio (do CEP para garantir consistÃªncia)
               ...(!isForeign
                 ? {
                     CEP_dest:
@@ -1880,12 +1887,12 @@ export class NfeService {
                   return isInterestadual ? 2202 : 1202;
                 }
 
-                // Se é operação interestadual e CFOP começa com 5, converter para 6
+                // Se Ã© operaÃ§Ã£o interestadual e CFOP comeÃ§a com 5, converter para 6
                 if (isInterestadual && Math.floor(baseCfop / 1000) === 5) {
                   return baseCfop + 1000; // 5102 -> 6102
                 }
 
-                // Se é operação interna e CFOP começa com 6, converter para 5
+                // Se Ã© operaÃ§Ã£o interna e CFOP comeÃ§a com 6, converter para 5
                 if (!isInterestadual && Math.floor(baseCfop / 1000) === 6) {
                   return baseCfop - 1000; // 6102 -> 5102
                 }
@@ -1947,7 +1954,7 @@ export class NfeService {
           transp: {
             modFrete: String(dto.modalidadeFrete ?? 9),
           },
-          // Informações adicionais / complementares
+          // InformaÃ§Ãµes adicionais / complementares
           ...(dto.additionalInfo || (config as any).taxInfoText
             ? {
                 infAdic: {
@@ -1956,7 +1963,7 @@ export class NfeService {
                 },
               }
             : {}),
-          // Duplicatas/Cobrança
+          // Duplicatas/CobranÃ§a
           ...(dto.duplicatas && dto.duplicatas.length > 0
             ? {
                 cobr: {
@@ -1974,7 +1981,7 @@ export class NfeService {
                 },
               }
             : {}),
-          // Autorização de download
+          // AutorizaÃ§Ã£o de download
           ...(dto.autXml && dto.autXml.length > 0
             ? {
                 autXML: dto.autXml.map((doc) => {
@@ -2001,16 +2008,16 @@ export class NfeService {
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
         throw new Error(
-          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+          response.Descricao || `Erro Invoicy: cÃ³digo ${response.Codigo}`,
         );
       }
 
       const doc = response.Documentos?.[0];
       if (!doc) {
-        throw new Error('Documento não retornado pelo Invoicy');
+        throw new Error('Documento nÃ£o retornado pelo Invoicy');
       }
 
-      // Verificar situação do documento
+      // Verificar situaÃ§Ã£o do documento
       const situacao = doc.Situacao;
       const isAuthorized =
         situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150;
@@ -2028,8 +2035,8 @@ export class NfeService {
           this.logger.warn(
             `Conflito de chave de acesso detectado. NFe antiga: ${conflictingNfe.id}, Nova NFe: ${nfe.id}. Removendo chave da antiga para prosseguir.`,
           );
-          // Opção: Limpar a chave da antiga ou deletá-la se for lixo/rejeitada.
-          // Como estamos em um novo processo, vamos limpar a chave da antiga para permitir a atualização.
+          // OpÃ§Ã£o: Limpar a chave da antiga ou deletÃ¡-la se for lixo/rejeitada.
+          // Como estamos em um novo processo, vamos limpar a chave da antiga para permitir a atualizaÃ§Ã£o.
           await this.prisma.nfe.update({
             where: { id: conflictingNfe.id },
             data: { chaveAcesso: null },
@@ -2068,7 +2075,7 @@ export class NfeService {
         );
       });
 
-      // Incrementar número da NF-e somente após emissão bem-sucedida
+      // Incrementar nÃºmero da NF-e somente apÃ³s emissÃ£o bem-sucedida
       await this.invoicyService.incrementNfeNumber(config.id);
 
       await this.nfeEmailService
@@ -2138,7 +2145,7 @@ export class NfeService {
   }
 
   /**
-   * Constrói bloco de local de entrega para emissão inline
+   * ConstrÃ³i bloco de local de entrega para emissÃ£o inline
    */
   private async buildEntregaInline(dto: EmitNfeDto): Promise<any> {
     if (!dto.entregaEndereco) {
@@ -2151,20 +2158,22 @@ export class NfeService {
 
     if (dto.entregaCep) {
       this.logger.log(
-        `Buscando código IBGE de entrega para CEP: ${dto.entregaCep}`,
+        `Buscando cÃ³digo IBGE de entrega para CEP: ${dto.entregaCep}`,
       );
       const cepData = await fetchCepData(dto.entregaCep);
       if (cepData) {
         cmun = parseInt(cepData.codigoIbge, 10) || 0;
         uf = cepData.uf;
         municipio = cepData.cidade;
-        this.logger.log(`Código IBGE da entrega: ${cmun} (${municipio}/${uf})`);
+        this.logger.log(
+          `CÃ³digo IBGE da entrega: ${cmun} (${municipio}/${uf})`,
+        );
       }
     }
 
     if (!cmun) {
       throw new BadRequestException(
-        'CEP de entrega inválido ou código IBGE não encontrado para o endereço de entrega.',
+        'CEP de entrega invÃ¡lido ou cÃ³digo IBGE nÃ£o encontrado para o endereÃ§o de entrega.',
       );
     }
 
@@ -2199,11 +2208,11 @@ export class NfeService {
 
     if (dto.justificativa.length < 15) {
       throw new BadRequestException(
-        'A justificativa deve ter no mínimo 15 caracteres',
+        'A justificativa deve ter no mÃ­nimo 15 caracteres',
       );
     }
 
-    // Verificar se está dentro do prazo (24h)
+    // Verificar se estÃ¡ dentro do prazo (24h)
     const horasDaEmissao =
       (Date.now() - new Date(nfe.dataEmissao).getTime()) / (1000 * 60 * 60);
     if (horasDaEmissao > 24) {
@@ -2232,7 +2241,7 @@ export class NfeService {
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
         throw new Error(
-          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+          response.Descricao || `Erro Invoicy: cÃ³digo ${response.Codigo}`,
         );
       }
 
@@ -2243,7 +2252,7 @@ export class NfeService {
 
       if (!isCancelled) {
         throw new Error(
-          situacao?.SitDescricao || 'Cancelamento não autorizado pela SEFAZ',
+          situacao?.SitDescricao || 'Cancelamento nÃ£o autorizado pela SEFAZ',
         );
       }
 
@@ -2273,23 +2282,23 @@ export class NfeService {
 
     if (nfe.status !== NfeStatus.AUTHORIZED) {
       throw new BadRequestException(
-        'Cartas de correção só podem ser enviadas para NF-e autorizadas',
+        'Cartas de correÃ§Ã£o sÃ³ podem ser enviadas para NF-e autorizadas',
       );
     }
 
     if (dto.correcao.length < 15) {
       throw new BadRequestException(
-        'O texto da correção deve ter no mínimo 15 caracteres',
+        'O texto da correÃ§Ã£o deve ter no mÃ­nimo 15 caracteres',
       );
     }
 
     try {
-      this.logger.log(`Enviando carta de correção para NF-e ${nfe.numero}`);
+      this.logger.log(`Enviando carta de correÃ§Ã£o para NF-e ${nfe.numero}`);
 
-      // Obter sequência do evento (max 20 cartas de correção por NF-e)
+      // Obter sequÃªncia do evento (max 20 cartas de correÃ§Ã£o por NF-e)
       const sequenciaEvento = dto.sequenciaEvento || 1;
 
-      // Chamar API do Invoicy para carta de correção
+      // Chamar API do Invoicy para carta de correÃ§Ã£o
       const invoicyResponses =
         await this.invoicyApiService.sendCorrectionLetter(
           companyId,
@@ -2306,7 +2315,7 @@ export class NfeService {
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
         throw new Error(
-          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+          response.Descricao || `Erro Invoicy: cÃ³digo ${response.Codigo}`,
         );
       }
 
@@ -2317,7 +2326,7 @@ export class NfeService {
       if (!isApproved) {
         throw new Error(
           situacao?.SitDescricao ||
-            'Carta de correção não autorizada pela SEFAZ',
+            'Carta de correÃ§Ã£o nÃ£o autorizada pela SEFAZ',
         );
       }
 
@@ -2335,11 +2344,11 @@ export class NfeService {
       return updatedNfe;
     } catch (error) {
       this.logger.error(
-        `Erro ao enviar carta de correção: ${error.message}`,
+        `Erro ao enviar carta de correÃ§Ã£o: ${error.message}`,
         error.stack,
       );
       throw new BadRequestException(
-        `Erro ao enviar carta de correção: ${error.message}`,
+        `Erro ao enviar carta de correÃ§Ã£o: ${error.message}`,
       );
     }
   }
@@ -2353,7 +2362,7 @@ export class NfeService {
         numero: nfe.numero,
         serie: nfe.serie,
         status: nfe.status,
-        statusDescription: 'Chave de acesso não disponível para consulta',
+        statusDescription: 'Chave de acesso nÃ£o disponÃ­vel para consulta',
         checkedAt: new Date().toISOString(),
       };
     }
@@ -2375,7 +2384,7 @@ export class NfeService {
       let currentStatus = nfe.status;
       if (newStatus && newStatus !== nfe.status) {
         this.logger.log(
-          `Status NF-e ${nfe.numero} mudou: ${nfe.status} → ${newStatus}`,
+          `Status NF-e ${nfe.numero} mudou: ${nfe.status} â†’ ${newStatus}`,
         );
 
         await this.prisma.nfe.update({
@@ -2490,8 +2499,8 @@ export class NfeService {
     });
 
     if (!danfeDocument && !nfe.danfeUrl) {
-      // TODO: Buscar DANFE da API do Invoicy se não estiver armazenado
-      throw new NotFoundException('DANFE não disponível para esta NF-e');
+      // TODO: Buscar DANFE da API do Invoicy se nÃ£o estiver armazenado
+      throw new NotFoundException('DANFE nÃ£o disponÃ­vel para esta NF-e');
     }
 
     return {
@@ -2504,8 +2513,8 @@ export class NfeService {
     const nfe = await this.findById(id, companyId);
 
     if (!nfe.xmlAutorizado) {
-      // TODO: Buscar XML da API do Invoicy se não estiver armazenado
-      throw new NotFoundException('XML não disponível para esta NF-e');
+      // TODO: Buscar XML da API do Invoicy se nÃ£o estiver armazenado
+      throw new NotFoundException('XML nÃ£o disponÃ­vel para esta NF-e');
     }
 
     return { xml: nfe.xmlAutorizado };
@@ -2530,8 +2539,8 @@ export class NfeService {
 
   /**
    * Cria um rascunho de NF-e ou retorna um existente.
-   * Se já existe um rascunho para esta ordem, retorna os dados dele.
-   * Se não existe, cria um novo com os dados do prepareFromOrder.
+   * Se jÃ¡ existe um rascunho para esta ordem, retorna os dados dele.
+   * Se nÃ£o existe, cria um novo com os dados do prepareFromOrder.
    */
   async createOrGetDraft(companyId: string, orderId: string) {
     const existingLinkedNfe = await this.prisma.nfe.findFirst({
@@ -2557,7 +2566,7 @@ export class NfeService {
       );
     }
 
-    // Verificar se já existe rascunho para esta ordem
+    // Verificar se jÃ¡ existe rascunho para esta ordem
     const existingDraft = await this.prisma.nfe.findFirst({
       where: {
         companyId,
@@ -2566,7 +2575,7 @@ export class NfeService {
       },
     });
 
-    // Se já existe rascunho, retornar dados preparados com dados do rascunho
+    // Se jÃ¡ existe rascunho, retornar dados preparados com dados do rascunho
     if (existingDraft) {
       const preparedData = await this.prepareFromOrder(companyId, orderId);
       const draftData = (existingDraft.draftData as Record<string, any>) || {};
@@ -2612,10 +2621,12 @@ export class NfeService {
     // Buscar dados preparados
     const preparedData = await this.prepareFromOrder(companyId, orderId);
 
-    // Obter config para série e número
+    // Obter config para sÃ©rie e nÃºmero
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
-      throw new BadRequestException('Configuração do Invoicy não encontrada.');
+      throw new BadRequestException(
+        'ConfiguraÃ§Ã£o do Invoicy nÃ£o encontrada.',
+      );
     }
 
     // Criar novo rascunho
@@ -2803,7 +2814,7 @@ export class NfeService {
     });
 
     if (!draft) {
-      throw new NotFoundException('Rascunho não encontrado');
+      throw new NotFoundException('Rascunho nÃ£o encontrado');
     }
 
     const existingDraftData = (draft.draftData as Record<string, any>) || {};
@@ -2846,7 +2857,7 @@ export class NfeService {
   }
 
   /**
-   * Deleta um rascunho (cancelar digitação).
+   * Deleta um rascunho (cancelar digitaÃ§Ã£o).
    */
   async deleteDraft(companyId: string, draftId: string) {
     const draft = await this.prisma.nfe.findFirst({
@@ -2858,7 +2869,7 @@ export class NfeService {
     });
 
     if (!draft) {
-      throw new NotFoundException('Rascunho não encontrado');
+      throw new NotFoundException('Rascunho nÃ£o encontrado');
     }
 
     await this.prisma.nfe.delete({
@@ -2874,23 +2885,25 @@ export class NfeService {
   }
 
   /**
-   * Inutiliza uma faixa de numeração de NF-e na SEFAZ.
+   * Inutiliza uma faixa de numeraÃ§Ã£o de NF-e na SEFAZ.
    */
   async inutilizar(companyId: string, dto: InutilizarNfeDto) {
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
-      throw new BadRequestException('Configuração do Invoicy não encontrada.');
+      throw new BadRequestException(
+        'ConfiguraÃ§Ã£o do Invoicy nÃ£o encontrada.',
+      );
     }
 
     if (dto.justificativa.length < 15) {
       throw new BadRequestException(
-        'A justificativa deve ter no mínimo 15 caracteres',
+        'A justificativa deve ter no mÃ­nimo 15 caracteres',
       );
     }
 
     if (dto.numeroInicial > dto.numeroFinal) {
       throw new BadRequestException(
-        'Número inicial deve ser menor ou igual ao número final',
+        'NÃºmero inicial deve ser menor ou igual ao nÃºmero final',
       );
     }
 
@@ -2898,7 +2911,7 @@ export class NfeService {
 
     try {
       this.logger.log(
-        `Inutilizando NF-e ${dto.numeroInicial} a ${dto.numeroFinal} (série ${serie}) para empresa ${companyId}`,
+        `Inutilizando NF-e ${dto.numeroInicial} a ${dto.numeroFinal} (sÃ©rie ${serie}) para empresa ${companyId}`,
       );
 
       const invoicyResponses = await this.invoicyApiService.inutilizarNfe(
@@ -2916,7 +2929,7 @@ export class NfeService {
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
         throw new Error(
-          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+          response.Descricao || `Erro Invoicy: cÃ³digo ${response.Codigo}`,
         );
       }
 
@@ -2926,13 +2939,13 @@ export class NfeService {
 
       if (!isInutilized) {
         throw new Error(
-          situacao?.SitDescricao || 'Inutilização não autorizada pela SEFAZ',
+          situacao?.SitDescricao || 'InutilizaÃ§Ã£o nÃ£o autorizada pela SEFAZ',
         );
       }
 
       return {
         success: true,
-        message: `Numeração ${dto.numeroInicial} a ${dto.numeroFinal} inutilizada com sucesso`,
+        message: `NumeraÃ§Ã£o ${dto.numeroInicial} a ${dto.numeroFinal} inutilizada com sucesso`,
         serie,
         numeroInicial: dto.numeroInicial,
         numeroFinal: dto.numeroFinal,
@@ -2950,7 +2963,7 @@ export class NfeService {
   }
 
   /**
-   * Lista o histórico de cartas de correção de uma NF-e
+   * Lista o histÃ³rico de cartas de correÃ§Ã£o de uma NF-e
    */
   async listCorrectionEvents(nfeId: string, companyId: string) {
     const nfe = await this.prisma.nfe.findFirst({
@@ -2958,7 +2971,7 @@ export class NfeService {
     });
 
     if (!nfe) {
-      throw new NotFoundException('NF-e não encontrada');
+      throw new NotFoundException('NF-e nÃ£o encontrada');
     }
 
     return this.prisma.nfeCorrectionEvent.findMany({
@@ -2981,13 +2994,13 @@ export class NfeService {
     eventId: string,
     companyId: string,
   ) {
-    // Validação de posse: a NF-e deve pertencer à empresa
+    // ValidaÃ§Ã£o de posse: a NF-e deve pertencer Ã  empresa
     const nfe = await this.prisma.nfe.findFirst({
       where: { id: nfeId, companyId },
     });
 
     if (!nfe) {
-      throw new NotFoundException('NF-e não encontrada');
+      throw new NotFoundException('NF-e nÃ£o encontrada');
     }
 
     const event = await this.prisma.nfeCorrectionEvent.findFirst({
@@ -2995,12 +3008,12 @@ export class NfeService {
     });
 
     if (!event) {
-      throw new NotFoundException('Evento de correção não encontrado');
+      throw new NotFoundException('Evento de correÃ§Ã£o nÃ£o encontrado');
     }
 
     if (!event.xmlEvento) {
       throw new NotFoundException(
-        'XML não disponível para este evento. O XML pode não ter sido retornado pela Invoicy no momento do envio.',
+        'XML nÃ£o disponÃ­vel para este evento. O XML pode nÃ£o ter sido retornado pela Invoicy no momento do envio.',
       );
     }
 
@@ -3013,7 +3026,7 @@ export class NfeService {
     endDate: string,
   ): Promise<Buffer> {
     if (!startDate || !endDate) {
-      throw new BadRequestException('startDate e endDate são obrigatórios');
+      throw new BadRequestException('startDate e endDate sÃ£o obrigatÃ³rios');
     }
 
     const start = new Date(startDate);
@@ -3040,7 +3053,7 @@ export class NfeService {
 
     if (nfes.length === 0) {
       throw new NotFoundException(
-        'Nenhuma NF-e autorizada com XML encontrada no período',
+        'Nenhuma NF-e autorizada com XML encontrada no perÃ­odo',
       );
     }
 
@@ -3055,7 +3068,7 @@ export class NfeService {
 
     const buffer = await zip.generateAsync({ type: 'nodebuffer' });
     this.logger.log(
-      `Exportados ${nfes.length} XMLs de NF-e para ZIP — empresa ${companyId}`,
+      `Exportados ${nfes.length} XMLs de NF-e para ZIP â€” empresa ${companyId}`,
     );
 
     return buffer;
@@ -3099,8 +3112,8 @@ export class NfeService {
       nfceWhere.createdAt = createdAtFilter;
     }
 
-    // Item 1: Obtém IDs de NF-es rejeitadas que já têm versão autorizada posterior
-    // com mesmo numero+serie para não exibi-las em duplicidade
+    // Item 1: ObtÃ©m IDs de NF-es rejeitadas que jÃ¡ tÃªm versÃ£o autorizada posterior
+    // com mesmo numero+serie para nÃ£o exibi-las em duplicidade
     const excludedRows = await this.prisma.$queryRaw<{ id: string }[]>`
       SELECT r.id FROM nfes r
       WHERE r."companyId" = ${companyId}
@@ -3286,7 +3299,7 @@ export class NfeService {
         id: o.id,
         createdAt: o.createdAt,
         status: o.status,
-        clientName: o.quotation?.client?.name || 'Cliente não identificado',
+        clientName: o.quotation?.client?.name || 'Cliente nÃ£o identificado',
         reference: o.quotation?.series?.code
           ? `${o.quotation.series.code}-${o.quotation.quotationNumber}`
           : `OS ${o.quotation?.quotationNumber || ''}`,
@@ -3315,7 +3328,7 @@ export class NfeService {
         clientName:
           draftData?.destinatario?.razaoSocial ||
           draftData?.destNome ||
-          'Avulsa s/ Destinatário',
+          'Avulsa s/ DestinatÃ¡rio',
         reference: `NF-e ${n.numero}`,
         totalValue: n.valorTotal || 0,
         nfes: [n],

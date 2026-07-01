@@ -2183,7 +2183,10 @@ model InvoicyConfig {
   sendXmlAutomatically      Boolean @default(true)
   sendFiscalEmailCopyTo     String?
 
-  activeEnvironment  FiscalEnvironment?
+  activeEnvironment    FiscalEnvironment?
+  activeEnvironmentNfe  FiscalEnvironment?
+  activeEnvironmentNfse FiscalEnvironment?
+  activeEnvironmentNfce FiscalEnvironment?
   environmentConfigs InvoicyEnvironmentConfig[]
   history            InvoicyConfigHistory[]
   activationAttempts FiscalActivationAttempt[]
@@ -2658,6 +2661,12 @@ enum FiscalEnvironment {
   PRODUCAO
 }
 
+enum FiscalDocType {
+  NFE
+  NFSE
+  NFCE
+}
+
 enum FiscalEnvironmentStatus {
   DRAFT
   VALIDATING
@@ -2720,6 +2729,7 @@ model InvoicyEnvironmentConfig {
   invoicyConfig       InvoicyConfig           @relation(fields: [invoicyConfigId], references: [id], onDelete: Cascade)
 
   environment         FiscalEnvironment
+  docType             FiscalDocType
 
   cscId               String?
   cscTokenEncrypted   String?
@@ -2735,7 +2745,7 @@ model InvoicyEnvironmentConfig {
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
 
-  @@unique([invoicyConfigId, environment])
+  @@unique([invoicyConfigId, environment, docType])
   @@map("invoicy_environment_configs")
 }
 
@@ -2771,6 +2781,7 @@ model FiscalActivationAttempt {
   invoicyConfigId String
   invoicyConfig   InvoicyConfig          @relation(fields: [invoicyConfigId], references: [id], onDelete: Cascade)
   environment     FiscalEnvironment
+  docType         FiscalDocType          @default(NFCE)
   idempotencyKey  String?
   status          FiscalActivationStatus @default(RUNNING)
   attemptId       String                 @unique
@@ -2781,8 +2792,8 @@ model FiscalActivationAttempt {
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
 
-  @@unique([invoicyConfigId, environment, idempotencyKey])
-  @@index([invoicyConfigId, status])
+  @@unique([invoicyConfigId, environment, docType, idempotencyKey])
+  @@index([invoicyConfigId, docType, status])
   @@index([status, leaseExpiresAt])
   @@map("fiscal_activation_attempts")
 }

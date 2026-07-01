@@ -45,10 +45,12 @@ export class NfceService {
       await this.fiscalCredentialResolver.resolveOperationalEnvironment(
         companyId,
         config.id,
+        'NFCE',
       );
     await this.fiscalCredentialResolver.assertEnvironmentReady(
       config.id,
       environment,
+      'NFCE',
     );
     const credentials =
       await this.fiscalCredentialResolver.getEmissorRuntimeCredentials(
@@ -199,10 +201,12 @@ export class NfceService {
       await this.fiscalCredentialResolver.resolveOperationalEnvironment(
         companyId,
         config.id,
+        'NFCE',
       );
     await this.fiscalCredentialResolver.assertEnvironmentReady(
       config.id,
       environment,
+      'NFCE',
     );
     const emissorCredentials =
       await this.fiscalCredentialResolver.getEmissorRuntimeCredentials(
@@ -730,6 +734,7 @@ export class NfceService {
       await this.fiscalCredentialResolver.resolveOperationalEnvironment(
         companyId,
         nfce.invoicyConfigId,
+        'NFCE',
       );
 
     try {

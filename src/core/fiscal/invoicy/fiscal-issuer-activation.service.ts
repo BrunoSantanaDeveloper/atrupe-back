@@ -92,11 +92,12 @@ export class FiscalIssuerActivationService {
     // Normalizar chave de idempotência
     const idempotencyKey = options.idempotencyKey?.trim() ?? null;
 
-    // 4. Adquirir lease (serializa por emissor via FOR UPDATE)
+    // 4. Adquirir lease (serializa por emissor+docType via FOR UPDATE)
     const { attemptId, replayed, resultSnapshot } = await this.acquireLease(
       invoicyConfigId,
       environment,
       idempotencyKey,
+      options.docType ?? 'NFCE',
     );
 
     if (replayed) {
@@ -182,6 +183,7 @@ export class FiscalIssuerActivationService {
         companyId,
         invoicyConfigId,
         environment,
+        options.docType ?? 'NFCE',
         attemptId,
         snapshot,
         options.actorUserId,
@@ -194,6 +196,7 @@ export class FiscalIssuerActivationService {
         companyId,
         invoicyConfigId,
         environment,
+        options.docType ?? 'NFCE',
         attemptId,
         error instanceof ReadinessFailedError
           ? error.errorCode
@@ -217,6 +220,7 @@ export class FiscalIssuerActivationService {
     invoicyConfigId: string,
     environment: FiscalEnvironment,
     idempotencyKey: string | null,
+    docType: 'NFE' | 'NFSE' | 'NFCE',
   ): Promise<{ attemptId: string; replayed: boolean; resultSnapshot?: any }> {
     return this.prisma.$transaction(async (tx) => {
       // Lock no emissor para serializar ativações por emissor
@@ -224,16 +228,15 @@ export class FiscalIssuerActivationService {
         SELECT id FROM invoicy_configs WHERE id = ${invoicyConfigId} FOR UPDATE
       `;
 
-      // Travar TODAS as tentativas RUNNING deste emissor com FOR UPDATE.
-      // Isso bloqueia o heartbeat (renewLease) de renovar entre nossa leitura e
-      // a marcação como FAILED — fechando a corrida de lease. O campo `expired`
-      // é avaliado com o relógio do banco (NOW()) no momento do lock.
+      // Travar tentativas RUNNING deste emissor+docType com FOR UPDATE.
+      // Permite ativações concorrentes de docTypes diferentes (NFE e NFC-e independentes).
       const lockedRunning = await tx.$queryRaw<
         { id: string; expired: boolean }[]
       >`
         SELECT id, ("leaseExpiresAt" <= NOW()) AS expired
         FROM fiscal_activation_attempts
         WHERE "invoicyConfigId" = ${invoicyConfigId}
+          AND "docType" = ${docType}::"FiscalDocType"
           AND status = 'RUNNING'::"FiscalActivationStatus"
         FOR UPDATE
       `;
@@ -274,9 +277,10 @@ export class FiscalIssuerActivationService {
       if (idempotencyKey) {
         const existing = await tx.fiscalActivationAttempt.findUnique({
           where: {
-            invoicyConfigId_environment_idempotencyKey: {
+            invoicyConfigId_environment_docType_idempotencyKey: {
               invoicyConfigId,
               environment,
+              docType,
               idempotencyKey,
             },
           },
@@ -305,11 +309,16 @@ export class FiscalIssuerActivationService {
 
           await tx.invoicyEnvironmentConfig.upsert({
             where: {
-              invoicyConfigId_environment: { invoicyConfigId, environment },
+              invoicyConfigId_environment_docType: {
+                invoicyConfigId,
+                environment,
+                docType,
+              },
             },
             create: {
               invoicyConfigId,
               environment,
+              docType,
               status: FiscalEnvironmentStatus.VALIDATING,
             },
             update: { status: FiscalEnvironmentStatus.VALIDATING },
@@ -323,6 +332,7 @@ export class FiscalIssuerActivationService {
         data: {
           invoicyConfigId,
           environment,
+          docType,
           idempotencyKey,
           status: FiscalActivationStatus.RUNNING,
           attemptId,
@@ -330,14 +340,19 @@ export class FiscalIssuerActivationService {
         },
       });
 
-      // Marcar InvoicyEnvironmentConfig como VALIDATING (upsert defensivo para emissores legados)
+      // Marcar InvoicyEnvironmentConfig como VALIDATING por docType
       await tx.invoicyEnvironmentConfig.upsert({
         where: {
-          invoicyConfigId_environment: { invoicyConfigId, environment },
+          invoicyConfigId_environment_docType: {
+            invoicyConfigId,
+            environment,
+            docType,
+          },
         },
         create: {
           invoicyConfigId,
           environment,
+          docType,
           status: FiscalEnvironmentStatus.VALIDATING,
         },
         update: { status: FiscalEnvironmentStatus.VALIDATING },
@@ -363,6 +378,7 @@ export class FiscalIssuerActivationService {
     companyId: string,
     invoicyConfigId: string,
     environment: FiscalEnvironment,
+    docType: 'NFE' | 'NFSE' | 'NFCE',
     attemptId: string,
     snapshot: any,
     actorUserId: string | undefined,
@@ -409,7 +425,11 @@ export class FiscalIssuerActivationService {
 
         await tx.invoicyEnvironmentConfig.update({
           where: {
-            invoicyConfigId_environment: { invoicyConfigId, environment },
+            invoicyConfigId_environment_docType: {
+              invoicyConfigId,
+              environment,
+              docType,
+            },
           },
           data: {
             status: FiscalEnvironmentStatus.READY,
@@ -420,9 +440,19 @@ export class FiscalIssuerActivationService {
           },
         });
 
+        // Atualiza activeEnvironment global (legado) e o campo específico por docType
+        const docTypeField =
+          docType === 'NFE'
+            ? 'activeEnvironmentNfe'
+            : docType === 'NFSE'
+              ? 'activeEnvironmentNfse'
+              : 'activeEnvironmentNfce';
         await tx.invoicyConfig.update({
           where: { id: invoicyConfigId },
-          data: { activeEnvironment: environment },
+          data: {
+            activeEnvironment: environment,
+            [docTypeField]: environment,
+          },
         });
       },
     );
@@ -432,6 +462,7 @@ export class FiscalIssuerActivationService {
     companyId: string,
     invoicyConfigId: string,
     environment: FiscalEnvironment,
+    docType: 'NFE' | 'NFSE' | 'NFCE',
     attemptId: string,
     errorCode: string,
     actorUserName: string,
@@ -473,7 +504,11 @@ export class FiscalIssuerActivationService {
           if ((updated as number) > 0) {
             await tx.invoicyEnvironmentConfig.update({
               where: {
-                invoicyConfigId_environment: { invoicyConfigId, environment },
+                invoicyConfigId_environment_docType: {
+                  invoicyConfigId,
+                  environment,
+                  docType,
+                },
               },
               data: {
                 status: FiscalEnvironmentStatus.ERROR,

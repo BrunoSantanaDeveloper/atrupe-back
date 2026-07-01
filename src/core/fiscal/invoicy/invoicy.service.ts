@@ -211,12 +211,17 @@ export class InvoicyService {
           (ec: any) => !!ec.cscTokenEncrypted,
         ),
 
-      // Estado por ambiente (DRAFT/VALIDATING/READY/ERROR...) para a UI.
+      activeEnvironmentNfe: config.activeEnvironmentNfe ?? null,
+      activeEnvironmentNfse: config.activeEnvironmentNfse ?? null,
+      activeEnvironmentNfce: config.activeEnvironmentNfce ?? null,
+
+      // Estado por ambiente+docType (DRAFT/VALIDATING/READY/ERROR...) para a UI.
       // environmentSwitchLocked é enriquecido de forma assíncrona em getById.
       environmentSwitchLocked: null as boolean | null,
       environments: ((config.environmentConfigs as any[]) ?? []).map(
         (ec: any) => ({
           environment: ec.environment,
+          docType: ec.docType,
           status: ec.status,
           cscConfigured: !!ec.cscTokenEncrypted,
           lastValidationAt: ec.lastValidationAt ?? null,

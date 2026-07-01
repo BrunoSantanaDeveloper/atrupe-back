@@ -358,7 +358,13 @@ export class FiscalIssuerReadinessService {
     environment: FiscalEnvironment,
   ): Promise<ReadinessCheck> {
     const envConfig = await this.prisma.invoicyEnvironmentConfig.findUnique({
-      where: { invoicyConfigId_environment: { invoicyConfigId, environment } },
+      where: {
+        invoicyConfigId_environment_docType: {
+          invoicyConfigId,
+          environment,
+          docType: 'NFCE',
+        },
+      },
       select: { nfceSeries: true, nfceNextNumber: true },
     });
 

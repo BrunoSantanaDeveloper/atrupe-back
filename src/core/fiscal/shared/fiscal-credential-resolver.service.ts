@@ -133,9 +133,10 @@ export class FiscalCredentialResolverService {
     if (this.rolloutPolicy.shouldReadFromEncrypted()) {
       const envConfig = await this.prisma.invoicyEnvironmentConfig.findUnique({
         where: {
-          invoicyConfigId_environment: {
+          invoicyConfigId_environment_docType: {
             invoicyConfigId,
             environment,
+            docType: 'NFCE',
           },
         },
       });
@@ -180,10 +181,32 @@ export class FiscalCredentialResolverService {
     certificate: string | null;
     certificatePassword: string | null;
   }> {
-    const credential =
-      await this.prisma.companyEnvironmentCredential.findUnique({
-        where: { companyId_environment: { companyId, environment } },
+    let credential = await this.prisma.companyEnvironmentCredential.findUnique({
+      where: { companyId_environment: { companyId, environment } },
+    });
+
+    // A chave de acesso do Invoicy é a mesma para homologação e produção.
+    // Quando o registro de PRODUCAO ainda não existe (antes da primeira ativação),
+    // usa a credencial de HOMOLOGACAO como fallback para que o diagnóstico passe.
+    // O ensureRegistered na ativação persiste a chave formalmente para o ambiente.
+    // credentialScope rastreia o ambiente REAL da credencial encontrada (necessário
+    // para descriptografar com o mesmo AAD usado na cifragem).
+    let credentialScope: 'HOMOLOGACAO' | 'PRODUCAO' =
+      environment === FiscalEnvironment.PRODUCAO ? 'PRODUCAO' : 'HOMOLOGACAO';
+    if (
+      !credential?.providerAccessKeyEncrypted &&
+      environment === FiscalEnvironment.PRODUCAO
+    ) {
+      credential = await this.prisma.companyEnvironmentCredential.findUnique({
+        where: {
+          companyId_environment: {
+            companyId,
+            environment: FiscalEnvironment.HOMOLOGACAO,
+          },
+        },
       });
+      credentialScope = 'HOMOLOGACAO';
+    }
 
     const certificate = await this.prisma.digitalCertificate.findUnique({
       where: { companyId },
@@ -198,7 +221,7 @@ export class FiscalCredentialResolverService {
           recordId: credential.id,
           companyId,
           field: 'providerAccessKeyEncrypted',
-          scope: environment,
+          scope: credentialScope,
         },
       );
     }
@@ -251,7 +274,13 @@ export class FiscalCredentialResolverService {
     nfceNextNumber: number;
   }> {
     const envConfig = await this.prisma.invoicyEnvironmentConfig.findUnique({
-      where: { invoicyConfigId_environment: { invoicyConfigId, environment } },
+      where: {
+        invoicyConfigId_environment_docType: {
+          invoicyConfigId,
+          environment,
+          docType: 'NFCE',
+        },
+      },
     });
 
     let cscToken: string | null = null;
@@ -280,29 +309,43 @@ export class FiscalCredentialResolverService {
    *
    * Precedência: activeEnvironment → environment legado → ambiente legado → HOMOLOGACAO
    */
-  resolveEnvironmentFromConfig(config: {
-    activeEnvironment?: string | null;
-    environment?: string | null;
-    ambiente?: number | null;
-  }): FiscalEnvironment {
-    if (config.activeEnvironment) {
+  resolveEnvironmentFromConfig(
+    config: {
+      activeEnvironment?: string | null;
+      activeEnvironmentNfe?: string | null;
+      activeEnvironmentNfse?: string | null;
+      activeEnvironmentNfce?: string | null;
+      environment?: string | null;
+      ambiente?: number | null;
+    },
+    docType?: 'NFE' | 'NFSE' | 'NFCE',
+  ): FiscalEnvironment {
+    if (docType === 'NFE' && config.activeEnvironmentNfe)
+      return config.activeEnvironmentNfe as FiscalEnvironment;
+    if (docType === 'NFSE' && config.activeEnvironmentNfse)
+      return config.activeEnvironmentNfse as FiscalEnvironment;
+    if (docType === 'NFCE' && config.activeEnvironmentNfce)
+      return config.activeEnvironmentNfce as FiscalEnvironment;
+    if (config.activeEnvironment)
       return config.activeEnvironment as FiscalEnvironment;
-    }
-    if (config.environment === 'PRODUCAO' || config.ambiente === 1) {
+    if (config.environment === 'PRODUCAO' || config.ambiente === 1)
       return FiscalEnvironment.PRODUCAO;
-    }
     return FiscalEnvironment.HOMOLOGACAO;
   }
 
   async resolveOperationalEnvironment(
     companyId: string,
     invoicyConfigId: string,
+    docType?: 'NFE' | 'NFSE' | 'NFCE',
   ): Promise<FiscalEnvironment> {
     const invoicyConfig = await this.prisma.invoicyConfig.findUnique({
       where: { id: invoicyConfigId },
       select: {
         companyId: true,
         activeEnvironment: true,
+        activeEnvironmentNfe: true,
+        activeEnvironmentNfse: true,
+        activeEnvironmentNfce: true,
         environment: true,
         ambiente: true,
       },
@@ -314,16 +357,7 @@ export class FiscalCredentialResolverService {
       );
     }
 
-    if (invoicyConfig.activeEnvironment) {
-      return invoicyConfig.activeEnvironment;
-    }
-
-    const envStr = invoicyConfig.environment;
-    const ambInt = invoicyConfig.ambiente;
-    if (envStr === 'PRODUCAO' || ambInt === 1) {
-      return FiscalEnvironment.PRODUCAO;
-    }
-    return FiscalEnvironment.HOMOLOGACAO;
+    return this.resolveEnvironmentFromConfig(invoicyConfig, docType);
   }
 
   /**
@@ -336,10 +370,15 @@ export class FiscalCredentialResolverService {
   async assertEnvironmentReady(
     invoicyConfigId: string,
     environment: FiscalEnvironment,
+    docType: 'NFE' | 'NFSE' | 'NFCE',
   ): Promise<void> {
     const envConfig = await this.prisma.invoicyEnvironmentConfig.findUnique({
       where: {
-        invoicyConfigId_environment: { invoicyConfigId, environment },
+        invoicyConfigId_environment_docType: {
+          invoicyConfigId,
+          environment,
+          docType,
+        },
       },
       select: { status: true },
     });
@@ -347,8 +386,10 @@ export class FiscalCredentialResolverService {
     if (!envConfig || envConfig.status !== 'READY') {
       const envLabel =
         environment === FiscalEnvironment.PRODUCAO ? 'produção' : 'homologação';
+      const docLabel =
+        docType === 'NFE' ? 'NF-e' : docType === 'NFSE' ? 'NFS-e' : 'NFC-e';
       throw new UnprocessableEntityException(
-        `O ambiente de ${envLabel} deste emissor ainda não foi ativado. ` +
+        `O ambiente de ${envLabel} para ${docLabel} deste emissor ainda não foi ativado. ` +
           'Acesse Configurações > Emissores de Nota Fiscal e conclua a ativação antes de emitir documentos.',
       );
     }
@@ -378,11 +419,13 @@ export class FiscalCredentialResolverService {
       );
     }
 
-    // 2. Lock the environmental config (InvoicyEnvironmentConfig)
+    // 2. Lock the environmental config (InvoicyEnvironmentConfig) for NFCE
     const envConfigs = await tx.$queryRaw<any[]>`
       SELECT id, "nfceNextNumber", "nfceSeries"
       FROM invoicy_environment_configs
-      WHERE "invoicyConfigId" = ${invoicyConfigId} AND environment = ${environment}::"FiscalEnvironment"
+      WHERE "invoicyConfigId" = ${invoicyConfigId}
+        AND environment = ${environment}::"FiscalEnvironment"
+        AND "docType" = 'NFCE'::"FiscalDocType"
       FOR UPDATE
     `;
     const envConfig = envConfigs[0];
@@ -420,6 +463,7 @@ export class FiscalCredentialResolverService {
           data: {
             invoicyConfigId,
             environment,
+            docType: 'NFCE',
             nfceNextNumber: nextNumber,
             nfceSeries: series,
           },
@@ -444,6 +488,7 @@ export class FiscalCredentialResolverService {
           data: {
             invoicyConfigId,
             environment,
+            docType: 'NFCE',
             nfceNextNumber: nextNumber,
             nfceSeries: series,
           },
