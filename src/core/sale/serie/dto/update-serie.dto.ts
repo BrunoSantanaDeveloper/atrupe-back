@@ -12,6 +12,7 @@ import {
   IsEnum,
   IsArray,
   IsUUID,
+  Min,
 } from 'class-validator';
 
 export class UpdateSaleSeriesDto {
@@ -38,6 +39,16 @@ export class UpdateSaleSeriesDto {
   @IsString()
   @IsOptional()
   title?: string;
+
+  @ApiProperty({
+    description: 'Número atual do orçamento nesta série.',
+    example: 100,
+    required: false,
+  })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  currentBudgetNumber?: number;
 
   @ApiProperty({
     description: 'Validade da proposta em dias.',

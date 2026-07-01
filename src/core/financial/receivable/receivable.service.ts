@@ -341,7 +341,7 @@ export class ReceivableService {
             notes: true,
             status: true,
             referenceDate: true,
-            client: { select: { id: true, name: true } },
+            client: { select: { id: true, name: true, cnpj: true, cpf: true } },
             // supplier: { select: { id: true, name: true } },
             nature: { select: { id: true, description: true } },
             subCategory: { select: { id: true, description: true } },
@@ -400,6 +400,8 @@ export class ReceivableService {
               ? {
                   id: inst.receivable.client.id,
                   name: inst.receivable.client.name,
+                  cnpj: inst.receivable.client.cnpj,
+                  cpf: inst.receivable.client.cpf,
                 }
               : null,
             subCategory: inst.receivable?.subCategory
@@ -1681,12 +1683,31 @@ export class ReceivableService {
       throw new NotFoundException('Parcelas não encontradas.');
     }
 
-    const clientIds = [
-      ...new Set(installments.map((i) => i.receivable.clientId)),
-    ];
-    if (clientIds.length > 1) {
+    if (installments.length !== installmentIds.length) {
+      throw new NotFoundException(
+        'Uma ou mais parcelas não foram encontradas.',
+      );
+    }
+
+    const normalizeDocument = (value?: string | null) =>
+      (value || '').replace(/\D/g, '');
+
+    const clientKeys = installments.map((i) => {
+      const client = i.receivable.client;
+      return normalizeDocument(client?.cnpj) || normalizeDocument(client?.cpf);
+    });
+
+    if (clientKeys.some((clientKey) => !clientKey)) {
       throw new BadRequestException(
-        'Todas as parcelas devem ser do mesmo cliente.',
+        'Todas as parcelas devem possuir CPF/CNPJ do cliente.',
+      );
+    }
+
+    const uniqueClientKeys = [...new Set(clientKeys)];
+
+    if (uniqueClientKeys.length > 1) {
+      throw new BadRequestException(
+        'Todas as parcelas devem ser do mesmo CPF/CNPJ.',
       );
     }
 

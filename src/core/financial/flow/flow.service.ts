@@ -553,6 +553,8 @@ export class FlowService {
         ? {
             id: inst.receivable.client.id,
             name: inst.receivable.client.name,
+            cnpj: inst.receivable.client.cnpj,
+            cpf: inst.receivable.client.cpf,
           }
         : null,
       subCategory: inst.receivable.subCategory

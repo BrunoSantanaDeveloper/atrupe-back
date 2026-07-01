@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  ForbiddenException,
+  HttpException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -18,6 +20,9 @@ export class SaleSeriesService {
       return await this.prisma.saleSeries.create({ data: createSaleSeriesDto });
     } catch (error) {
       console.error(error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
       if (error.code === 'P2002') {
         throw new BadRequestException('Sale series code already exists');
       }
@@ -126,9 +131,70 @@ export class SaleSeriesService {
     };
   }
 
-  async update(id: string, updateSaleSeriesDto: UpdateSaleSeriesDto) {
+  async update(
+    id: string,
+    updateSaleSeriesDto: UpdateSaleSeriesDto,
+    isAdmin = false,
+  ) {
     try {
       return await this.prisma.$transaction(async (tx) => {
+        const isUpdatingCurrentBudgetNumber =
+          updateSaleSeriesDto.currentBudgetNumber !== undefined;
+
+        if (isUpdatingCurrentBudgetNumber) {
+          const currentBudgetNumber = Number(
+            updateSaleSeriesDto.currentBudgetNumber,
+          );
+
+          if (
+            !Number.isInteger(currentBudgetNumber) ||
+            currentBudgetNumber < 0
+          ) {
+            throw new BadRequestException(
+              'O número atual do orçamento deve ser um inteiro maior ou igual a zero.',
+            );
+          }
+
+          updateSaleSeriesDto.currentBudgetNumber = currentBudgetNumber;
+        }
+
+        if (isUpdatingCurrentBudgetNumber && !isAdmin) {
+          throw new ForbiddenException(
+            'Somente administradores podem alterar o número atual do orçamento.',
+          );
+        }
+
+        const seriesForNumberValidation = isUpdatingCurrentBudgetNumber
+          ? await tx.saleSeries.findUnique({
+              where: { id },
+              select: { currentBudgetNumber: true },
+            })
+          : null;
+
+        if (isUpdatingCurrentBudgetNumber && !seriesForNumberValidation) {
+          throw new NotFoundException(`Sale series not found`);
+        }
+
+        if (
+          isUpdatingCurrentBudgetNumber &&
+          updateSaleSeriesDto.currentBudgetNumber !==
+            seriesForNumberValidation?.currentBudgetNumber
+        ) {
+          const existingQuotation = await tx.quotation.findFirst({
+            where: {
+              seriesId: id,
+              quotationNumber: updateSaleSeriesDto.currentBudgetNumber,
+            },
+            select: { id: true },
+          });
+
+          if (existingQuotation) {
+            throw new BadRequestException(
+              `Já existe um orçamento com o número ${updateSaleSeriesDto.currentBudgetNumber} nesta série.`,
+            );
+          }
+        }
+
         // Se estiver definindo como padrão, primeiro remover o padrão de outras séries
         if (updateSaleSeriesDto.isDefault === true) {
           const currentSeries = await tx.saleSeries.findUnique({
@@ -164,7 +230,10 @@ export class SaleSeriesService {
       });
     } catch (error) {
       console.error(error);
-      if ((error.code = 'P2002')) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      if (error.code === 'P2002') {
         throw new BadRequestException('Sale series code already exists');
       }
       throw new BadRequestException('Error on update sale series');

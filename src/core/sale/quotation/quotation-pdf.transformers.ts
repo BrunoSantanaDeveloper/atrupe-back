@@ -66,6 +66,12 @@ type QuotationPdfRaw = {
     name: string | null;
     signatureUrl: string | null;
   };
+  contact?: {
+    name: string | null;
+    phone: string | null;
+    email: string | null;
+    notes: string | null;
+  } | null;
   series?: {
     code: string;
     title: string;
@@ -136,10 +142,9 @@ export function transformPdfClient(client: QuotationPdfRaw['client']) {
   };
 }
 
-export function transformPdfContact(client: QuotationPdfRaw['client']) {
-  if (!client?.contacts?.[0]) return null;
+export function transformPdfContact(contact: QuotationPdfRaw['contact']) {
+  if (!contact) return null;
 
-  const contact = client.contacts[0];
   return {
     name: contact.name,
     phone: contact.phone,
@@ -380,7 +385,7 @@ export function transformQuotationToPdfData(
   return {
     company: transformPdfCompany(quotation.company),
     client: transformPdfClient(quotation.client),
-    contact: transformPdfContact(quotation.client),
+    contact: transformPdfContact(quotation.contact),
     quotation: transformPdfQuotationInfo(quotation),
     order: transformPdfOrder(quotation.order, quotation.approvedAt),
     quotationItems: transformPdfQuotationItems(quotation.quotationProduct),

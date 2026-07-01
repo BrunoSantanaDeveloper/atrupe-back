@@ -64,6 +64,13 @@ export const PDF_SELLER_SELECT = {
   signatureUrl: true,
 } as const;
 
+export const PDF_CONTACT_SELECT = {
+  name: true,
+  phone: true,
+  email: true,
+  notes: true,
+} as const;
+
 export const PDF_SERIES_SELECT = {
   code: true,
   title: true,
@@ -189,6 +196,9 @@ export const QUOTATION_PDF_DATA_INCLUDE = {
   },
   seller: {
     select: PDF_SELLER_SELECT,
+  },
+  contact: {
+    select: PDF_CONTACT_SELECT,
   },
   series: {
     select: PDF_SERIES_SELECT,

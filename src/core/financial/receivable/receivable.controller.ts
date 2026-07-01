@@ -92,6 +92,56 @@ export class ReceivableController {
     return await this.receivableService.findAll(paginationDto);
   }
 
+  @Get('batch-receipt-data')
+  @ApiOperation({
+    summary:
+      'Retorna dados para gerar um recibo agrupado de múltiplas parcelas',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Dados do recibo retornados com sucesso.',
+    type: ReceiptDataResponseDto,
+  })
+  getBatchReceiptData(
+    @Req() req,
+    @Query('installmentIds') installmentIds: string | string[],
+  ): Promise<ReceiptDataResponseDto> {
+    const ids = Array.isArray(installmentIds)
+      ? installmentIds
+      : (installmentIds || '').split(',').filter(Boolean);
+    return this.receivableService.getBatchReceiptData(ids, req.user.userId);
+  }
+
+  @Get('installment/:installmentId/receipt-data')
+  @ApiOperation({
+    summary: 'Retorna os dados formatados para gerar um recibo de uma parcela',
+  })
+  @ApiParam({
+    name: 'installmentId',
+    required: true,
+    description: 'ID da parcela',
+    type: String,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Dados do recibo retornados com sucesso.',
+    type: ReceiptDataResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Parcela não encontrada.' })
+  getReceiptData(
+    @Req() req,
+    @Param('installmentId') installmentId: string,
+    @Query('paidDate') paidDate?: string,
+    @Query('paidAmount') paidAmount?: string,
+  ): Promise<ReceiptDataResponseDto> {
+    return this.receivableService.getReceiptData(
+      installmentId,
+      paidDate,
+      paidAmount,
+      req.user.userId,
+    );
+  }
+
   @Get(':id')
   @TenantResource('receivable')
   @ApiOperation({ summary: 'Obtém uma conta a receber pelo ID' })
@@ -375,56 +425,6 @@ export class ReceivableController {
   @ApiResponse({ status: 404, description: 'Conta a receber não encontrada.' })
   remove(@Param('id') id: string) {
     return this.receivableService.remove(id);
-  }
-
-  @Get('batch-receipt-data')
-  @ApiOperation({
-    summary:
-      'Retorna dados para gerar um recibo agrupado de múltiplas parcelas',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Dados do recibo retornados com sucesso.',
-    type: ReceiptDataResponseDto,
-  })
-  getBatchReceiptData(
-    @Req() req,
-    @Query('installmentIds') installmentIds: string | string[],
-  ): Promise<ReceiptDataResponseDto> {
-    const ids = Array.isArray(installmentIds)
-      ? installmentIds
-      : (installmentIds || '').split(',').filter(Boolean);
-    return this.receivableService.getBatchReceiptData(ids, req.user.userId);
-  }
-
-  @Get('installment/:installmentId/receipt-data')
-  @ApiOperation({
-    summary: 'Retorna os dados formatados para gerar um recibo de uma parcela',
-  })
-  @ApiParam({
-    name: 'installmentId',
-    required: true,
-    description: 'ID da parcela',
-    type: String,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Dados do recibo retornados com sucesso.',
-    type: ReceiptDataResponseDto,
-  })
-  @ApiResponse({ status: 404, description: 'Parcela não encontrada.' })
-  getReceiptData(
-    @Req() req,
-    @Param('installmentId') installmentId: string,
-    @Query('paidDate') paidDate?: string,
-    @Query('paidAmount') paidAmount?: string,
-  ): Promise<ReceiptDataResponseDto> {
-    return this.receivableService.getReceiptData(
-      installmentId,
-      paidDate,
-      paidAmount,
-      req.user.userId,
-    );
   }
 
   /**

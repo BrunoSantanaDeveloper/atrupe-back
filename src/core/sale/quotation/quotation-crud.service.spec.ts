@@ -53,40 +53,52 @@ const mockQuotation = {
   quotationProduct: [],
 };
 
-const createMockPrismaService = () => ({
-  quotation: {
-    create: jest.fn(),
-    findUnique: jest.fn(),
-    findMany: jest.fn(),
-    update: jest.fn(),
-    count: jest.fn(),
-  },
-  saleSeries: {
-    findUnique: jest.fn(),
-    update: jest.fn(),
-  },
-  company: {
-    findUnique: jest.fn(),
-  },
-  contact: {
-    findFirst: jest.fn(),
-  },
-  deliveryInfo: {
-    create: jest.fn(),
-  },
-  paymentCondition: {
-    findFirst: jest.fn(),
-  },
-  quotationPayment: {
-    create: jest.fn(),
-  },
-  contactSource: {
-    findMany: jest.fn(),
-  },
-  employee: {
-    findUnique: jest.fn(),
-  },
-});
+const createMockPrismaService = () => {
+  const prisma = {
+    quotation: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn(),
+      count: jest.fn(),
+    },
+    saleSeries: {
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+    company: {
+      findUnique: jest.fn(),
+    },
+    contact: {
+      findFirst: jest.fn(),
+    },
+    deliveryInfo: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+    deliverySchedule: {
+      updateMany: jest.fn(),
+    },
+    paymentCondition: {
+      findFirst: jest.fn(),
+    },
+    quotationPayment: {
+      create: jest.fn(),
+    },
+    contactSource: {
+      findMany: jest.fn(),
+    },
+    employee: {
+      findUnique: jest.fn(),
+    },
+  };
+
+  return {
+    ...prisma,
+    $transaction: jest.fn((callback) => callback(prisma)),
+  };
+};
 
 describe('QuotationCrudService', () => {
   let service: QuotationCrudService;

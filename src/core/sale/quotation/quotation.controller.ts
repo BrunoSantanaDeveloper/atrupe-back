@@ -537,6 +537,8 @@ export class QuotationController {
     @Req() req,
   ) {
     if (!req.user?.isAdmin) {
+      delete updateQuotationDto.createdAt;
+      delete updateQuotationDto.approvedAt;
       delete updateQuotationDto.quotationNumber;
     }
     await this.validateOwnership(id, req.user, 'edit');

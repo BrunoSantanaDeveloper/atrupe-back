@@ -530,6 +530,16 @@ export class QuotationCrudService {
     });
   }
 
+  private parseDateField(value: string | Date, fieldName: string): Date {
+    const parsedDate = value instanceof Date ? value : new Date(value);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      throw new BadRequestException(`${fieldName} inválida.`);
+    }
+
+    return parsedDate;
+  }
+
   /**
    * Atualiza um orçamento
    */
@@ -547,17 +557,118 @@ export class QuotationCrudService {
         throw new NotFoundException(`Orçamento com ID '${id}' não encontrado.`);
       }
 
-      const updatedQuotation = await this.prisma.quotation.update({
-        where: { id },
-        data: updateQuotationDto,
-      });
+      const updateData: any = { ...updateQuotationDto };
+      const hasContactId = Object.prototype.hasOwnProperty.call(
+        updateQuotationDto,
+        'contactId',
+      );
+      const hasApprovedAt = Object.prototype.hasOwnProperty.call(
+        updateQuotationDto,
+        'approvedAt',
+      );
+
+      if (hasContactId) {
+        const contactId = updateQuotationDto.contactId || null;
+        const clientId =
+          updateQuotationDto.clientId ?? existingQuotation.clientId;
+
+        if (contactId) {
+          if (!clientId) {
+            throw new BadRequestException(
+              'Informe um cliente para vincular o responsável.',
+            );
+          }
+
+          const contact = await this.prisma.contact.findFirst({
+            where: {
+              id: contactId,
+              clientId,
+            },
+            select: { id: true },
+          });
+
+          if (!contact) {
+            throw new BadRequestException(
+              `Contato não encontrado ou não pertence ao cliente informado`,
+            );
+          }
+        }
+
+        updateData.contactId = contactId;
+      }
+
+      if (updateQuotationDto.createdAt) {
+        updateData.createdAt = this.parseDateField(
+          updateQuotationDto.createdAt,
+          'Data de criação',
+        );
+      }
+
+      if (hasApprovedAt) {
+        if (existingQuotation.status !== QuotationStatus.APPROVED) {
+          throw new BadRequestException(
+            'A data de aprovação só pode ser alterada após o orçamento ser aprovado.',
+          );
+        }
+
+        updateData.approvedAt = this.parseDateField(
+          updateQuotationDto.approvedAt as string,
+          'Data de aprovação',
+        );
+      }
+
+      const updatedQuotation = await this.prisma.$transaction(
+        async (prisma) => {
+          const quotation = await prisma.quotation.update({
+            where: { id },
+            data: updateData,
+          });
+
+          if (hasApprovedAt) {
+            const deliveryInfo = await prisma.deliveryInfo.findUnique({
+              where: { quotationId: id },
+              select: {
+                id: true,
+                daysAfterApproval: true,
+              },
+            });
+
+            if (deliveryInfo) {
+              const estimatedDate = deliveryInfo.daysAfterApproval
+                ? add(updateData.approvedAt, {
+                    days: deliveryInfo.daysAfterApproval,
+                  })
+                : updateData.approvedAt;
+
+              await prisma.deliveryInfo.update({
+                where: { id: deliveryInfo.id },
+                data: { estimatedDate },
+              });
+
+              await prisma.deliverySchedule.updateMany({
+                where: { quotationId: id },
+                data: { scheduledDate: estimatedDate },
+              });
+            }
+          }
+
+          return quotation;
+        },
+      );
 
       // History: register edit with before/after changes
       if (userId) {
         try {
-          const changedFields = Object.keys(updateQuotationDto).filter(
-            (key) => updateQuotationDto[key] !== existingQuotation[key],
-          );
+          const changedFields = Object.keys(updateData).filter((key) => {
+            const before = existingQuotation[key];
+            const after = updateData[key];
+
+            if (before instanceof Date && after instanceof Date) {
+              return before.getTime() !== after.getTime();
+            }
+
+            return after !== before;
+          });
 
           if (changedFields.length > 0) {
             const user = await this.prisma.user.findUnique({
@@ -569,7 +680,7 @@ export class QuotationCrudService {
             const after = {};
             for (const field of changedFields) {
               before[field] = existingQuotation[field];
-              after[field] = updateQuotationDto[field];
+              after[field] = updateData[field];
             }
 
             await this.prisma.quotationHistory.create({

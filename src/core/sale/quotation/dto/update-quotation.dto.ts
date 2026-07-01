@@ -6,6 +6,7 @@ import {
   QuotationProductItemDto,
 } from './create-quotation.dto';
 import {
+  IsDateString,
   IsNumber,
   IsOptional,
   IsString,
@@ -117,6 +118,15 @@ export class UpdateQuotationDto extends PartialType(CreateQuotationDto) {
     required: false,
   })
   tagId?: string;
+
+  @IsOptional()
+  @IsDateString()
+  @ApiProperty({
+    description: 'Data de aprovação retroativa (somente admin)',
+    example: '2024-01-15T10:00:00.000Z',
+    required: false,
+  })
+  approvedAt?: string;
 }
 
 export class UpdateItemDto extends PartialType(AddItemDto) {

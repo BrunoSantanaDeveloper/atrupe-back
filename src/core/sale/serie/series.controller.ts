@@ -9,6 +9,7 @@ import {
   Req,
   UseGuards,
   Query,
+  ForbiddenException,
 } from '@nestjs/common';
 
 import {
@@ -64,8 +65,22 @@ export class SaleSeriesController {
   update(
     @Param('id') id: string,
     @Body() updateSaleSeriesDto: UpdateSaleSeriesDto,
+    @Req() req,
   ) {
-    return this.saleSeriesService.update(id, updateSaleSeriesDto);
+    if (
+      updateSaleSeriesDto.currentBudgetNumber !== undefined &&
+      !req.user?.isAdmin
+    ) {
+      throw new ForbiddenException(
+        'Somente administradores podem alterar o número atual do orçamento.',
+      );
+    }
+
+    return this.saleSeriesService.update(
+      id,
+      updateSaleSeriesDto,
+      req.user?.isAdmin,
+    );
   }
 
   @ApiOperation({ summary: 'Inactivate a sale series by ID' })
