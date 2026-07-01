@@ -167,8 +167,10 @@ describe('ReceivableController', () => {
   describe('getReceiptData', () => {
     it('deve chamar getReceiptData no service com os parâmetros corretos', async () => {
       serviceMock.getReceiptData.mockResolvedValue({ amount: 100 });
+      const mockReq = { user: { userId: 'u1' } };
 
       const result = await controller.getReceiptData(
+        mockReq,
         'inst-1',
         '2024-01-01',
         '150',
@@ -178,6 +180,7 @@ describe('ReceivableController', () => {
         'inst-1',
         '2024-01-01',
         '150',
+        mockReq.user.userId,
       );
       expect(result).toEqual({ amount: 100 });
     });
