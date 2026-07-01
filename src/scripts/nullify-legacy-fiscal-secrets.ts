@@ -123,9 +123,10 @@ async function reconcile(prisma: PrismaClient, kr: Keyring): Promise<void> {
 
     const envConfig = await prisma.invoicyEnvironmentConfig.findUnique({
       where: {
-        invoicyConfigId_environment: {
+        invoicyConfigId_environment_docType: {
           invoicyConfigId: config.id,
           environment: env as any,
+          docType: 'NFCE',
         },
       },
     });

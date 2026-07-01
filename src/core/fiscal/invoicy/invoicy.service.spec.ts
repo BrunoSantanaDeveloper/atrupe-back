@@ -281,9 +281,10 @@ describe('InvoicyService', () => {
       expect(tx.invoicyEnvironmentConfig.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
-            invoicyConfigId_environment: {
+            invoicyConfigId_environment_docType: {
               invoicyConfigId: 'config-1',
               environment: FiscalEnvironment.PRODUCAO,
+              docType: 'NFCE',
             },
           },
           update: { nfceSeries: 2, nfceNextNumber: 55 },

@@ -929,11 +929,16 @@ export class InvoicyService {
         // Upsert-then-encrypt: obter id estável antes de cifrar (garante AAD correto)
         const row = await tx.invoicyEnvironmentConfig.upsert({
           where: {
-            invoicyConfigId_environment: { invoicyConfigId, environment },
+            invoicyConfigId_environment_docType: {
+              invoicyConfigId,
+              environment,
+              docType: 'NFCE',
+            },
           },
           create: {
             invoicyConfigId,
             environment,
+            docType: 'NFCE',
             cscId,
             cscTokenEncrypted: null,
           },
@@ -1215,11 +1220,16 @@ export class InvoicyService {
       async (tx) => {
         await tx.invoicyEnvironmentConfig.upsert({
           where: {
-            invoicyConfigId_environment: { invoicyConfigId, environment },
+            invoicyConfigId_environment_docType: {
+              invoicyConfigId,
+              environment,
+              docType: 'NFCE',
+            },
           },
           create: {
             invoicyConfigId,
             environment,
+            docType: 'NFCE',
             nfceSeries,
             nfceNextNumber,
           },

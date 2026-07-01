@@ -232,9 +232,10 @@ async function migrateInvoicyConfigs(
     // Passo 1: upsert preservando nfceSeries/nfceNextNumber existentes
     const existing = await prisma.invoicyEnvironmentConfig.findUnique({
       where: {
-        invoicyConfigId_environment: {
+        invoicyConfigId_environment_docType: {
           invoicyConfigId: config.id,
           environment: env as any,
+          docType: 'NFCE',
         },
       },
     });
@@ -247,6 +248,7 @@ async function migrateInvoicyConfigs(
         data: {
           invoicyConfigId: config.id,
           environment: env as any,
+          docType: 'NFCE',
           nfceSeries: config.serieNfce ?? 1,
           nfceNextNumber: config.proximoNumeroNfce ?? 1,
         },
