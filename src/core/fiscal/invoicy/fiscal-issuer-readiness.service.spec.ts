@@ -122,4 +122,88 @@ describe('FiscalIssuerReadinessService — local checks', () => {
       service.checkConnection('c1', FiscalEnvironment.HOMOLOGACAO),
     ).resolves.toBe(false);
   });
+
+  describe('checkFullReadiness — provider checks', () => {
+    const baseCompany = {
+      cnpj: '11222333000181',
+      stateRegistration: '123456789',
+      address: [
+        {
+          type: 'Principal',
+          state: 'SC',
+          zipcode: '88000000',
+          city: 'Florianópolis',
+          street: 'Rua X',
+          neighborhood: 'Centro',
+          number: '1',
+        },
+      ],
+      DigitalCertificate: null,
+    };
+
+    beforeEach(() => {
+      prisma.invoicyConfig.findUnique.mockResolvedValue({
+        emitCmun: '4205407',
+      });
+      resolver.getEmissorCredentialsForValidation.mockResolvedValue({});
+      prisma.invoicyEnvironmentConfig.findUnique.mockResolvedValue(null);
+    });
+
+    it('trata ambos como PENDING quando empresa não está registrada no provider (primeira ativação em produção)', async () => {
+      prisma.company.findUnique.mockResolvedValue({
+        cnpj: '11222333000181',
+        ...baseCompany,
+      });
+      http.companyExistsInEnvironment.mockResolvedValue(false);
+      http.authenticateForEnvironment.mockRejectedValue(
+        new Error('Request failed with status code 400'),
+      );
+
+      const result = await service.checkFullReadiness(
+        'c1',
+        'e1',
+        FiscalEnvironment.PRODUCAO,
+        'NFE',
+      );
+
+      const reg = result.checks.find(
+        (c) => c.check === 'provider_registration',
+      );
+      const auth = result.checks.find(
+        (c) => c.check === 'provider_authentication',
+      );
+      expect(reg?.status).toBe('PENDING');
+      expect(auth?.status).toBe('PENDING');
+      expect(result.blocking).not.toContain('provider_registration');
+      expect(result.blocking).not.toContain('provider_authentication');
+    });
+
+    it('mantém FAIL quando empresa já está registrada mas autenticação falha (chave errada)', async () => {
+      prisma.company.findUnique.mockResolvedValue({
+        cnpj: '11222333000181',
+        ...baseCompany,
+      });
+      http.companyExistsInEnvironment.mockResolvedValue(true);
+      http.authenticateForEnvironment.mockRejectedValue(
+        new Error('Request failed with status code 400'),
+      );
+
+      const result = await service.checkFullReadiness(
+        'c1',
+        'e1',
+        FiscalEnvironment.PRODUCAO,
+        'NFE',
+      );
+
+      const reg = result.checks.find(
+        (c) => c.check === 'provider_registration',
+      );
+      const auth = result.checks.find(
+        (c) => c.check === 'provider_authentication',
+      );
+      expect(reg?.status).toBe('PASS');
+      expect(auth?.status).toBe('FAIL');
+      expect(result.blocking).toContain('provider_authentication');
+    });
+  });
 });

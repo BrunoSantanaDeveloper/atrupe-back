@@ -116,11 +116,26 @@ export class FiscalIssuerReadinessService {
       registrationCheck.message = undefined;
     }
 
+    // Se a empresa não está registrada no provider (registration FAIL) e a autenticação
+    // também falha (consequência direta — não há credencial de produção ainda), ambos são
+    // esperados antes da primeira ativação. O fluxo de activate() registra a empresa via
+    // ensureRegistered e persiste a chave do ambiente, por isso tratamos como PENDING e
+    // não como bloqueantes.
+    if (registrationCheck.status === 'FAIL' && authCheck.status === 'FAIL') {
+      registrationCheck.status = 'PENDING';
+      registrationCheck.message =
+        'Será cadastrada no Invoicy durante a ativação';
+      authCheck.status = 'PENDING';
+      authCheck.message = undefined;
+    }
+
     checks.push(registrationCheck);
     checks.push(authCheck);
 
+    // PENDING significa "será resolvido durante a ativação" → não bloqueia.
+    // Só bloqueia FAIL explícito (ex: empresa registrada mas chave errada).
     const providerReady =
-      registrationCheck.status === 'PASS' && authCheck.status === 'PASS';
+      registrationCheck.status !== 'FAIL' && authCheck.status !== 'FAIL';
 
     let requiresProviderRegistration: boolean | null = null;
     if (registrationCheck.status !== 'PENDING') {
