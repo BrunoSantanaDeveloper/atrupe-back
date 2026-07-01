@@ -88,7 +88,8 @@ model Company {
   cfopConfigs           CfopConfig[]
   operationNatures      OperationNature[]
   aiConversations       AiConversation[]
-  contactSources        ContactSource[]
+  contactSources              ContactSource[]
+  hiddenContactSources        CompanyHiddenContactSource[]
 
   @@map("companies")
 }
@@ -229,13 +230,24 @@ model Contact {
 }
 
 model ContactSource {
-  id         String      @id @default(uuid())
-  name       String
-  companyId  String?
-  company    Company?    @relation(fields: [companyId], references: [id])
-  quotations Quotation[]
+  id              String                         @id @default(uuid())
+  name            String
+  companyId       String?
+  company         Company?                       @relation(fields: [companyId], references: [id])
+  quotations      Quotation[]
+  hiddenByCompanies CompanyHiddenContactSource[]
 
   @@map("contact_sources")
+}
+
+model CompanyHiddenContactSource {
+  companyId       String
+  contactSourceId String
+  company         Company       @relation(fields: [companyId], references: [id])
+  contactSource   ContactSource @relation(fields: [contactSourceId], references: [id])
+
+  @@id([companyId, contactSourceId])
+  @@map("company_hidden_contact_sources")
 }
 
 model CreditLimitDefault {

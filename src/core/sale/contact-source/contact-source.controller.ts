@@ -62,4 +62,20 @@ export class ContactSourceController {
   remove(@Req() req, @Param('id') id: string) {
     return this.service.remove(id, req.user.companyId);
   }
+
+  @ApiOperation({ summary: 'Ocultar origem global para esta empresa' })
+  @ApiResponse({ status: 201, description: 'Origem ocultada com sucesso' })
+  @ApiParam({ name: 'id', description: 'ID da origem' })
+  @Post(':id/hide')
+  hide(@Req() req, @Param('id') id: string) {
+    return this.service.hide(id, req.user.companyId);
+  }
+
+  @ApiOperation({ summary: 'Desocultar origem global para esta empresa' })
+  @ApiResponse({ status: 200, description: 'Origem restaurada com sucesso' })
+  @ApiParam({ name: 'id', description: 'ID da origem' })
+  @Delete(':id/hide')
+  unhide(@Req() req, @Param('id') id: string) {
+    return this.service.unhide(id, req.user.companyId);
+  }
 }
