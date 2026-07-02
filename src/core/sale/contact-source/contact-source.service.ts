@@ -38,8 +38,18 @@ export class ContactSourceService {
       where: { id },
     });
     if (!source) throw new NotFoundException('Origem não encontrada.');
+
+    if (source.companyId === null) {
+      // Global item: hide it and create a company-owned copy with the new name
+      await this.hide(id, companyId);
+      return this.prisma.contactSource.create({
+        data: { name: dto.name, companyId },
+      });
+    }
+
     if (source.companyId !== companyId)
-      throw new ForbiddenException('Não é possível editar uma origem global.');
+      throw new ForbiddenException('Sem permissão para editar esta origem.');
+
     return this.prisma.contactSource.update({ where: { id }, data: dto });
   }
 
@@ -48,8 +58,15 @@ export class ContactSourceService {
       where: { id },
     });
     if (!source) throw new NotFoundException('Origem não encontrada.');
+
+    if (source.companyId === null) {
+      // Global item: hide it for this company instead of deleting
+      return this.hide(id, companyId);
+    }
+
     if (source.companyId !== companyId)
-      throw new ForbiddenException('Não é possível excluir uma origem global.');
+      throw new ForbiddenException('Sem permissão para excluir esta origem.');
+
     return this.prisma.contactSource.delete({ where: { id } });
   }
 
