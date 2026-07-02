@@ -170,7 +170,9 @@ export class ImportService {
       }
 
       // Parse CSV
-      const rows = await this.parseCsv(fileBuffer);
+      const rows = (await this.parseCsv(fileBuffer)).map((r) =>
+        this.normalizeRow(r),
+      );
 
       // Validar schema
       const schema = this.getSchema(importLog.entity);
@@ -404,6 +406,20 @@ export class ImportService {
   }
 
   /**
+   * Normalizar linha do CSV: converte valores nulos exportados por sistemas externos
+   * ("NULL", "N/A", "NA", "None", "-") para string vazia
+   */
+  private normalizeRow(row: any): any {
+    const nullPattern = /^(null|n\/a|na|none|-)$/i;
+    return Object.fromEntries(
+      Object.entries(row).map(([k, v]) => [
+        k,
+        typeof v === 'string' && nullPattern.test(v.trim()) ? '' : v,
+      ]),
+    );
+  }
+
+  /**
    * Validar email
    */
   private isValidEmail(email: string): boolean {
@@ -481,7 +497,9 @@ export class ImportService {
       }
 
       // Parse CSV novamente
-      const rows = await this.parseCsv(fileBuffer);
+      const rows = (await this.parseCsv(fileBuffer)).map((r) =>
+        this.normalizeRow(r),
+      );
 
       let successCount = 0;
       let failedCount = 0;

@@ -679,7 +679,7 @@ export class ReportService {
       where: {
         ...this.getSalesQuotationFilters(companyId, filters),
         createdAt: { gte: startDate, lte: endDate },
-        ...(filters.originId ? {} : { contactSourceId: { not: null } }),
+        ...(filters.originId ? {} : { NOT: { contactSourceId: null } }),
       },
       _count: true,
     });
@@ -716,7 +716,7 @@ export class ReportService {
         quotation: {
           ...this.getSalesQuotationFilters(companyId, filters),
           approvedAt: { gte: startDate, lte: endDate },
-          ...(filters.originId ? {} : { contactSourceId: { not: null } }),
+          ...(filters.originId ? {} : { NOT: { contactSourceId: null } }),
         },
       },
       include: {
@@ -806,7 +806,7 @@ export class ReportService {
         quotation: {
           ...this.getSalesQuotationFilters(companyId, filters),
           approvedAt: { gte: startDate, lte: endDate },
-          ...(filters.clientId ? {} : { clientId: { not: null } }),
+          ...(filters.clientId ? {} : { NOT: { clientId: null } }),
         },
       },
       include: {
@@ -854,7 +854,7 @@ export class ReportService {
         quotation: {
           ...this.getSalesQuotationFilters(companyId, filters),
           approvedAt: { gte: startDate, lte: endDate },
-          ...(filters.sellerId ? {} : { sellerId: { not: null } }),
+          ...(filters.sellerId ? {} : { NOT: { sellerId: null } }),
         },
       },
       include: {

@@ -968,20 +968,19 @@ export class InvoicyService {
           },
         });
 
-        // Escrita dupla no legado se modo DUAL e ambiente for o ativo do emissor
-        const activeEnv =
-          await this.fiscalCredentialResolver.resolveOperationalEnvironment(
-            companyId,
-            invoicyConfigId,
-          );
-        if (
-          this.fiscalRolloutPolicy.shouldWriteToLegacy() &&
-          activeEnv === environment
-        ) {
-          await tx.invoicyConfig.update({
-            where: { id: invoicyConfigId },
-            data: { cscId, cscToken },
-          });
+        // Escrita dupla no legado somente se modo DUAL e ambiente for o ativo do emissor
+        if (this.fiscalRolloutPolicy.shouldWriteToLegacy()) {
+          const activeEnv =
+            await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+              companyId,
+              invoicyConfigId,
+            );
+          if (activeEnv === environment) {
+            await tx.invoicyConfig.update({
+              where: { id: invoicyConfigId },
+              data: { cscId, cscToken },
+            });
+          }
         }
       },
     );
@@ -1032,20 +1031,19 @@ export class InvoicyService {
           },
         });
 
-        // Limpar legado se modo DUAL e ambiente ativo
-        const activeEnv =
-          await this.fiscalCredentialResolver.resolveOperationalEnvironment(
-            companyId,
-            invoicyConfigId,
-          );
-        if (
-          this.fiscalRolloutPolicy.shouldWriteToLegacy() &&
-          activeEnv === environment
-        ) {
-          await tx.invoicyConfig.update({
-            where: { id: invoicyConfigId },
-            data: { cscId: null, cscToken: null },
-          });
+        // Limpar legado somente se modo DUAL e ambiente ativo
+        if (this.fiscalRolloutPolicy.shouldWriteToLegacy()) {
+          const activeEnv =
+            await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+              companyId,
+              invoicyConfigId,
+            );
+          if (activeEnv === environment) {
+            await tx.invoicyConfig.update({
+              where: { id: invoicyConfigId },
+              data: { cscId: null, cscToken: null },
+            });
+          }
         }
       },
     );
@@ -1136,20 +1134,19 @@ export class InvoicyService {
         data: { providerAccessKeyEncrypted },
       });
 
-      // Escrita dupla no legado se modo DUAL e ambiente ativo
-      const activeEnv =
-        await this.fiscalCredentialResolver.resolveOperationalEnvironment(
-          companyId,
-          invoicyConfigId,
-        );
-      if (
-        this.fiscalRolloutPolicy.shouldWriteToLegacy() &&
-        activeEnv === environment
-      ) {
-        await tx.company.update({
-          where: { id: companyId },
-          data: { accessKey },
-        });
+      // Escrita dupla no legado somente se modo DUAL e ambiente ativo
+      if (this.fiscalRolloutPolicy.shouldWriteToLegacy()) {
+        const activeEnv =
+          await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+            companyId,
+            invoicyConfigId,
+          );
+        if (activeEnv === environment) {
+          await tx.company.update({
+            where: { id: companyId },
+            data: { accessKey },
+          });
+        }
       }
 
       // Rebaixar TODOS os emissores da empresa neste ambiente para DRAFT,
@@ -1239,20 +1236,22 @@ export class InvoicyService {
           update: { nfceSeries, nfceNextNumber },
         });
 
-        // Escrita dupla no legado se modo DUAL e ambiente for o ativo do emissor
-        const activeEnv =
-          await this.fiscalCredentialResolver.resolveOperationalEnvironment(
-            companyId,
-            invoicyConfigId,
-          );
-        if (
-          this.fiscalRolloutPolicy.shouldWriteToLegacy() &&
-          activeEnv === environment
-        ) {
-          await tx.invoicyConfig.update({
-            where: { id: invoicyConfigId },
-            data: { serieNfce: nfceSeries, proximoNumeroNfce: nfceNextNumber },
-          });
+        // Escrita dupla no legado somente se modo DUAL e ambiente for o ativo do emissor
+        if (this.fiscalRolloutPolicy.shouldWriteToLegacy()) {
+          const activeEnv =
+            await this.fiscalCredentialResolver.resolveOperationalEnvironment(
+              companyId,
+              invoicyConfigId,
+            );
+          if (activeEnv === environment) {
+            await tx.invoicyConfig.update({
+              where: { id: invoicyConfigId },
+              data: {
+                serieNfce: nfceSeries,
+                proximoNumeroNfce: nfceNextNumber,
+              },
+            });
+          }
         }
       },
     );
