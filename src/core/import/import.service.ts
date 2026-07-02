@@ -576,8 +576,8 @@ export class ImportService {
   private async importClient(row: any, companyId: string): Promise<void> {
     // Normalizar tipo
     let type = row.tipo?.toUpperCase();
-    if (type === 'F' || type === 'PESSOA') type = 'PERSON';
-    if (type === 'J' || type === 'EMPRESA') type = 'COMPANY';
+    if (type === 'F' || type === 'PESSOA' || type === 'CPF') type = 'PERSON';
+    if (type === 'J' || type === 'EMPRESA' || type === 'CNPJ') type = 'COMPANY';
 
     // Buscar ou criar categoria/grupo
     let categoryId = null;
@@ -721,8 +721,8 @@ export class ImportService {
   private async importSupplier(row: any, companyId: string): Promise<boolean> {
     // Normalizar tipo
     let type = row.tipo?.toUpperCase();
-    if (type === 'F' || type === 'PESSOA') type = 'PERSON';
-    if (type === 'J' || type === 'EMPRESA') type = 'COMPANY';
+    if (type === 'F' || type === 'PESSOA' || type === 'CPF') type = 'PERSON';
+    if (type === 'J' || type === 'EMPRESA' || type === 'CNPJ') type = 'COMPANY';
 
     // Buscar ou criar categoria
     let categoryId = null;

@@ -23,11 +23,18 @@ export const SUPPLIER_IMPORT_SCHEMA = {
       example: 'EMPRESA',
       validate: async (value: string) => {
         if (
-          !['PESSOA', 'EMPRESA', 'PERSON', 'COMPANY', 'F', 'J'].includes(
-            value.toUpperCase(),
-          )
+          ![
+            'PESSOA',
+            'EMPRESA',
+            'PERSON',
+            'COMPANY',
+            'F',
+            'J',
+            'CPF',
+            'CNPJ',
+          ].includes(value.toUpperCase())
         ) {
-          return 'Tipo deve ser PESSOA, EMPRESA, F ou J';
+          return 'Tipo deve ser PESSOA, EMPRESA, F, J, CPF ou CNPJ';
         }
         return null;
       },

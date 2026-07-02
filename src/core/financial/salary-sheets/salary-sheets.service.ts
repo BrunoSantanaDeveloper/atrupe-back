@@ -994,11 +994,11 @@ export class SalarySheetsService {
     return updatedSalarySheet;
   }
 
-  async getSalarySheetPdfData(id: string) {
-    return this.pdfService.getSalarySheetPdfData(id);
+  async getSalarySheetPdfData(id: string, userId?: string) {
+    return this.pdfService.getSalarySheetPdfData(id, userId);
   }
 
-  async getAdvanceItemPdfData(itemId: string) {
-    return this.pdfService.getAdvanceItemPdfData(itemId);
+  async getAdvanceItemPdfData(itemId: string, userId?: string) {
+    return this.pdfService.getAdvanceItemPdfData(itemId, userId);
   }
 }

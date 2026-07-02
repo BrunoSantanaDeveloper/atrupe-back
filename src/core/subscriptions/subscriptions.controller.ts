@@ -32,6 +32,7 @@ import { ListTrialCompaniesDto } from './dto/list-trial-companies.dto';
 import { ListIncompleteRegistrationsDto } from './dto/list-incomplete-registrations.dto';
 import { ListActiveClientsDto } from './dto/list-active-clients.dto';
 import { UpdateActiveClientDto } from './dto/update-active-client.dto';
+import { SyncAddressDto } from './dto/sync-address.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
 import { CancelSubscriptionDto } from './dto/cancel-subscription.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
@@ -168,6 +169,37 @@ export class SubscriptionsController {
   async syncWithAsaas(@Param('companyId') companyId: string) {
     return await this.subscriptionsService.checkAndSyncSubscriptionStatus(
       companyId,
+    );
+  }
+
+  @Get('active-clients/:companyId/customer-address')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary: 'Retorna endereço do customer da empresa (SystemAdmin)',
+  })
+  @ApiParam({ name: 'companyId', description: 'Company ID' })
+  @ApiResponse({ status: 200, description: 'Endereço retornado' })
+  async getCustomerAddress(@Param('companyId') companyId: string) {
+    return await this.companyManagementService.getCustomerAddress(companyId);
+  }
+
+  @Patch('active-clients/:companyId/sync-address-asaas')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary: 'Atualiza endereço do customer local e no Asaas (SystemAdmin)',
+  })
+  @ApiParam({ name: 'companyId', description: 'Company ID' })
+  @ApiBody({ type: SyncAddressDto })
+  @ApiResponse({ status: 200, description: 'Endereço sincronizado' })
+  async syncAddressToAsaas(
+    @Param('companyId') companyId: string,
+    @Body() dto: SyncAddressDto,
+    @Req() req: any,
+  ) {
+    return await this.companyManagementService.syncCustomerAddressToAsaas(
+      companyId,
+      dto,
+      req.user.id,
     );
   }
 

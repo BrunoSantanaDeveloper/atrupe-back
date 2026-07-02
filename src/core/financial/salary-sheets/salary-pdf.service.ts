@@ -12,7 +12,7 @@ export class SalaryPdfService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSalarySheetPdfData(id: string) {
+  async getSalarySheetPdfData(id: string, userId?: string) {
     try {
       const payroll = await this.prisma.payroll.findUnique({
         where: { id },
@@ -46,6 +46,15 @@ export class SalaryPdfService {
       if (!payroll) {
         throw new NotFoundException('Folha de pagamento não encontrada');
       }
+
+      // Assinatura exibida no PDF é a do colaborador logado que está
+      // gerando o documento, não a do colaborador dono da folha
+      const loggedEmployee = userId
+        ? await this.prisma.employee.findFirst({
+            where: { userId, companyId: payroll.companyId },
+            select: { signatureUrl: true },
+          })
+        : null;
 
       const companyAddress = payroll.company.address[0];
 
@@ -115,7 +124,7 @@ export class SalaryPdfService {
             : null,
         },
         employeeName: payroll.employee.user?.name || payroll.employee.name,
-        employeeSignatureUrl: payroll.employee.signatureUrl ?? null,
+        employeeSignatureUrl: loggedEmployee?.signatureUrl ?? null,
         reference: `${String(payroll.month + 1).padStart(2, '0')}/${payroll.year}`,
         items: payroll.items.map((item) => ({
           id: item.id,
@@ -151,7 +160,7 @@ export class SalaryPdfService {
     }
   }
 
-  async getAdvanceItemPdfData(itemId: string) {
+  async getAdvanceItemPdfData(itemId: string, userId?: string) {
     try {
       const payrollItem = await this.prisma.payrollItem.findUnique({
         where: { id: itemId },
@@ -190,6 +199,15 @@ export class SalaryPdfService {
 
       const payroll = payrollItem.payroll;
       const companyAddress = payroll.company.address[0];
+
+      // Assinatura exibida no PDF é a do colaborador logado que está
+      // gerando o documento, não a do colaborador dono da folha
+      const loggedEmployee = userId
+        ? await this.prisma.employee.findFirst({
+            where: { userId, companyId: payroll.companyId },
+            select: { signatureUrl: true },
+          })
+        : null;
 
       const startDate = new Date(payroll.year, payroll.month, 1);
       const endDate = new Date(payroll.year, payroll.month + 1, 0);
@@ -246,7 +264,7 @@ export class SalaryPdfService {
             : null,
         },
         employeeName: payroll.employee.user?.name || payroll.employee.name,
-        employeeSignatureUrl: payroll.employee.signatureUrl ?? null,
+        employeeSignatureUrl: loggedEmployee?.signatureUrl ?? null,
         reference: `${String(payroll.month + 1).padStart(2, '0')}/${payroll.year}`,
         items: [
           {

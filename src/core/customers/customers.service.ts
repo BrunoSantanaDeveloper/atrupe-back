@@ -125,9 +125,13 @@ export class CustomersService {
       email: createCustomerDto.email,
       phone: createCustomerDto.phone,
       mobilePhone: createCustomerDto.phone,
-      postalCode: createCustomerDto.postalCode, // Enviando postalCode, não é necessário enviar city, province e address, somente addressNumber e complement
+      postalCode: createCustomerDto.postalCode,
+      address: createCustomerDto.address,
       addressNumber: createCustomerDto.addressNumber,
       complement: createCustomerDto.complement,
+      province: createCustomerDto.province,
+      city: createCustomerDto.city,
+      state: createCustomerDto.state,
       externalReference: createCustomerDto.externalReference, // ID do cliente no banco de dados
       // notificationDisabled: false, // true para desabilitar o envio de notificações de cobrança
       // additionalEmails: 'john.doe@asaas.com,john.doe.silva@asaas.com.br', // Emails adicionais para envio de notificações de cobrança separados por ","

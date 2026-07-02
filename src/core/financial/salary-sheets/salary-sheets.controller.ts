@@ -331,8 +331,8 @@ export class SalarySheetsController {
     status: 404,
     description: 'Folha de pagamento não encontrada.',
   })
-  async getSalarySheetPdfData(@Param('id') id: string) {
-    return await this.salaryService.getSalarySheetPdfData(id);
+  async getSalarySheetPdfData(@Param('id') id: string, @Req() req) {
+    return await this.salaryService.getSalarySheetPdfData(id, req.user.userId);
   }
 
   @Get('item/:itemId/advance-pdf-data')
@@ -407,8 +407,11 @@ export class SalarySheetsController {
     status: 404,
     description: 'Item da folha de pagamento não encontrado.',
   })
-  async getAdvanceItemPdfData(@Param('itemId') itemId: string) {
-    return await this.salaryService.getAdvanceItemPdfData(itemId);
+  async getAdvanceItemPdfData(@Param('itemId') itemId: string, @Req() req) {
+    return await this.salaryService.getAdvanceItemPdfData(
+      itemId,
+      req.user.userId,
+    );
   }
 
   @Post('item/:payrollId')

@@ -471,6 +471,114 @@ export class CompanyManagementService {
   }
 
   /**
+   * Retorna os dados de endereço do customer vinculado à empresa.
+   */
+  async getCustomerAddress(companyId: string) {
+    const customer = await this.prisma.customer.findFirst({
+      where: { companyId },
+      select: {
+        id: true,
+        asaasCustomerId: true,
+        postalCode: true,
+        address: true,
+        addressNumber: true,
+        complement: true,
+        province: true,
+        city: true,
+        state: true,
+      },
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer não encontrado para esta empresa');
+    }
+
+    return customer;
+  }
+
+  /**
+   * Atualiza o endereço do customer localmente e no Asaas.
+   * Requer senha do administrador.
+   */
+  async syncCustomerAddressToAsaas(
+    companyId: string,
+    dto: {
+      postalCode?: string;
+      address?: string;
+      addressNumber?: string;
+      complement?: string;
+      province?: string;
+      city?: string;
+      state?: string;
+      password: string;
+    },
+    adminUserId: string,
+  ) {
+    const adminUser = await this.prisma.user.findUnique({
+      where: { id: adminUserId },
+    });
+
+    if (!adminUser) {
+      throw new UnauthorizedException('Usuário não encontrado');
+    }
+
+    const isPasswordValid = await argon2.verify(
+      adminUser.password,
+      dto.password,
+    );
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Senha incorreta');
+    }
+
+    const customer = await this.prisma.customer.findFirst({
+      where: { companyId },
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer não encontrado para esta empresa');
+    }
+
+    // Atualizar localmente
+    const updateData: any = {};
+    if (dto.postalCode !== undefined) updateData.postalCode = dto.postalCode;
+    if (dto.address !== undefined) updateData.address = dto.address;
+    if (dto.addressNumber !== undefined)
+      updateData.addressNumber = dto.addressNumber;
+    if (dto.complement !== undefined) updateData.complement = dto.complement;
+    if (dto.province !== undefined) updateData.province = dto.province;
+    if (dto.city !== undefined) updateData.city = dto.city;
+    if (dto.state !== undefined) updateData.state = dto.state;
+
+    await this.prisma.customer.update({
+      where: { id: customer.id },
+      data: updateData,
+    });
+
+    // Atualizar no Asaas (apenas se tiver ID real, não temp_ ou trial_)
+    const hasAsaasLink =
+      customer.asaasCustomerId &&
+      !customer.asaasCustomerId.startsWith('temp_') &&
+      !customer.asaasCustomerId.startsWith('trial_') &&
+      !customer.asaasCustomerId.startsWith('manual_');
+
+    if (hasAsaasLink) {
+      await this.asaasGateway.updateAsaasCustomer(
+        customer.asaasCustomerId,
+        updateData,
+      );
+    }
+
+    this.logger.log(
+      `Endereço do customer ${customer.id} atualizado por ${adminUser.name}. Asaas: ${hasAsaasLink ? 'sincronizado' : 'ignorado (sem vínculo)'}`,
+    );
+
+    return {
+      message: 'Endereço atualizado com sucesso',
+      asaasSynced: hasAsaasLink,
+    };
+  }
+
+  /**
    * Exclui uma conta (empresa) completamente do sistema.
    * Remove todos os dados relacionados de forma permanente.
    * Requer senha do administrador para confirmação.

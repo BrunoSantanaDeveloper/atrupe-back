@@ -1005,8 +1005,62 @@ export class OrderService {
       dto.deliveryClientAddressId !== undefined &&
       newAddressId !== currentAddressId
     ) {
-      before.deliveryClientAddressId = currentAddressId;
-      after.deliveryClientAddressId = dto.deliveryClientAddressId;
+      const formatAddr = (
+        a: {
+          street?: string;
+          number?: string;
+          neighborhood?: string;
+          city?: string;
+          state?: string;
+        } | null,
+      ) => {
+        if (!a) return null;
+        return [
+          a.street,
+          a.number,
+          a.neighborhood,
+          a.city && a.state ? `${a.city}/${a.state}` : (a.city ?? a.state),
+        ]
+          .filter(Boolean)
+          .join(', ');
+      };
+
+      const currentAddr = currentAddressId
+        ? await this.prisma.address.findUnique({
+            where: { id: currentAddressId },
+            select: {
+              street: true,
+              number: true,
+              neighborhood: true,
+              city: true,
+              state: true,
+            },
+          })
+        : null;
+
+      let afterAddrText: string | null = null;
+      if (!dto.deliveryClientAddressId) {
+        afterAddrText = null;
+      } else if (dto.deliveryClientAddressId === 'custom') {
+        afterAddrText = dto.deliveryCustomAddress
+          ? formatAddr(dto.deliveryCustomAddress)
+          : 'Endereço personalizado';
+      } else {
+        const newAddr = await this.prisma.address.findUnique({
+          where: { id: dto.deliveryClientAddressId },
+          select: {
+            street: true,
+            number: true,
+            neighborhood: true,
+            city: true,
+            state: true,
+          },
+        });
+        afterAddrText = formatAddr(newAddr);
+      }
+
+      before.deliveryAddress = formatAddr(currentAddr);
+      after.deliveryAddress = afterAddrText;
     }
 
     const changedFields = Object.keys(after);
@@ -1100,9 +1154,7 @@ export class OrderService {
             after.clientId ? 'cliente' : null,
             after.sellerId ? 'vendedor' : null,
             after.contactId ? 'responsável' : null,
-            after.deliveryClientAddressId !== undefined
-              ? 'endereço de entrega'
-              : null,
+            after.deliveryAddress !== undefined ? 'endereço de entrega' : null,
           ]
             .filter(Boolean)
             .join(', ')}`,

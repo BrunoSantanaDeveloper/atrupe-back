@@ -167,8 +167,12 @@ export class SubscriptionsService {
           email: customer.email,
           mobilePhone: customer.mobilePhone || customer.phone,
           postalCode: customer.postalCode,
+          address: customer.address,
           addressNumber: customer.addressNumber,
           complement: customer.complement,
+          province: customer.province,
+          city: customer.city,
+          state: customer.state,
           externalReference: existingCustomer.id,
         };
 

@@ -25,11 +25,18 @@ export const CLIENT_IMPORT_SCHEMA = {
       example: 'PESSOA',
       validate: async (value: string) => {
         if (
-          !['PESSOA', 'EMPRESA', 'PERSON', 'COMPANY', 'F', 'J'].includes(
-            value.toUpperCase(),
-          )
+          ![
+            'PESSOA',
+            'EMPRESA',
+            'PERSON',
+            'COMPANY',
+            'F',
+            'J',
+            'CPF',
+            'CNPJ',
+          ].includes(value.toUpperCase())
         ) {
-          return 'Tipo deve ser PESSOA, EMPRESA, F ou J';
+          return 'Tipo deve ser PESSOA, EMPRESA, F, J, CPF ou CNPJ';
         }
         return null;
       },
@@ -106,17 +113,17 @@ export const CLIENT_IMPORT_SCHEMA = {
       name: 'telefone',
       required: false,
       type: 'string',
-      maxLength: 20,
-      description: 'Telefone',
-      example: '(11) 3333-4444',
+      maxLength: 100,
+      description: 'Telefone (múltiplos números separados por /)',
+      example: '(11) 3333-4444 / (11) 3333-5555',
     },
     {
       name: 'celular',
       required: false,
       type: 'string',
-      maxLength: 20,
-      description: 'Celular',
-      example: '(11) 99999-8888',
+      maxLength: 100,
+      description: 'Celular (múltiplos números separados por /)',
+      example: '(11) 99999-8888 / (11) 98888-7777',
     },
     {
       name: 'rg',
@@ -167,7 +174,7 @@ export const CLIENT_IMPORT_SCHEMA = {
       name: 'responsavelTelefone',
       required: false,
       type: 'string',
-      maxLength: 20,
+      maxLength: 100,
       description: 'Telefone do responsável',
       example: '(11) 3333-4444',
     },
@@ -175,7 +182,7 @@ export const CLIENT_IMPORT_SCHEMA = {
       name: 'responsavelCelular',
       required: false,
       type: 'string',
-      maxLength: 20,
+      maxLength: 100,
       description: 'Celular do responsável',
       example: '(11) 99999-8888',
     },

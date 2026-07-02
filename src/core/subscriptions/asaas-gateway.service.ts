@@ -184,4 +184,38 @@ export class AsaasGatewayService {
       );
     }
   }
+
+  /**
+   * Atualiza um customer no Asaas
+   */
+  async updateAsaasCustomer(
+    asaasCustomerId: string,
+    customerData: Record<string, any>,
+  ): Promise<any> {
+    try {
+      const api = await this.asaasApi();
+      const response = await api.put(
+        `/customers/${asaasCustomerId}`,
+        customerData,
+      );
+      return response.data;
+    } catch (error) {
+      this.logger.error(
+        'Erro ao atualizar customer no Asaas:',
+        JSON.stringify({
+          message: error.message,
+          response: error.response?.data,
+          status: error.response?.status,
+          asaasCustomerId,
+        }),
+      );
+      throw new Error(
+        error.response?.data?.errors
+          ?.map((err: any) => err.description)
+          .join('. ') ||
+          error.message ||
+          'Falha ao atualizar cliente no gateway de pagamento',
+      );
+    }
+  }
 }
