@@ -149,11 +149,31 @@ export class FlowService {
             client: { name: { contains: search, mode: 'insensitive' } },
           },
         },
+        {
+          receivable: {
+            description: { contains: search, mode: 'insensitive' },
+          },
+        },
+        {
+          receivable: {
+            reference: { contains: search, mode: 'insensitive' },
+          },
+        },
       ];
       filtersPayables.OR = [
         {
           payable: {
             supplier: { name: { contains: search, mode: 'insensitive' } },
+          },
+        },
+        {
+          payable: {
+            description: { contains: search, mode: 'insensitive' },
+          },
+        },
+        {
+          payable: {
+            reference: { contains: search, mode: 'insensitive' },
           },
         },
       ];
@@ -323,11 +343,31 @@ export class FlowService {
             client: { name: { contains: search, mode: 'insensitive' } },
           },
         },
+        {
+          receivable: {
+            description: { contains: search, mode: 'insensitive' },
+          },
+        },
+        {
+          receivable: {
+            reference: { contains: search, mode: 'insensitive' },
+          },
+        },
       ];
       filtersPayables.OR = [
         {
           payable: {
             supplier: { name: { contains: search, mode: 'insensitive' } },
+          },
+        },
+        {
+          payable: {
+            description: { contains: search, mode: 'insensitive' },
+          },
+        },
+        {
+          payable: {
+            reference: { contains: search, mode: 'insensitive' },
           },
         },
       ];

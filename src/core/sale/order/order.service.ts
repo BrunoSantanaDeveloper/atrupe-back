@@ -964,23 +964,48 @@ export class OrderService {
     const after: Record<string, string | null> = {};
 
     if (dto.clientId !== undefined && dto.clientId !== quotation.clientId) {
+      const newClient = dto.clientId
+        ? await this.prisma.client.findUnique({
+            where: { id: dto.clientId },
+            select: { name: true },
+          })
+        : null;
       before.clientId = quotation.clientId;
       before.clientName = quotation.client?.name ?? null;
       after.clientId = dto.clientId;
+      after.clientName = newClient?.name ?? null;
     }
     if (dto.sellerId !== undefined && dto.sellerId !== quotation.sellerId) {
+      const newSeller = dto.sellerId
+        ? await this.prisma.employee.findUnique({
+            where: { id: dto.sellerId },
+            select: { name: true },
+          })
+        : null;
       before.sellerId = quotation.sellerId;
       before.sellerName = quotation.seller?.name ?? null;
       after.sellerId = dto.sellerId;
+      after.sellerName = newSeller?.name ?? null;
     }
     if (dto.contactId !== undefined && dto.contactId !== quotation.contactId) {
+      const newContact = dto.contactId
+        ? await this.prisma.contact.findUnique({
+            where: { id: dto.contactId },
+            select: { name: true },
+          })
+        : null;
       before.contactId = quotation.contactId;
       before.contactName = quotation.contact?.name ?? null;
       after.contactId = dto.contactId;
+      after.contactName = newContact?.name ?? null;
     }
-    if (dto.deliveryClientAddressId !== undefined) {
-      before.deliveryClientAddressId =
-        quotation.deliveryInfo?.clientAddressId ?? null;
+    const currentAddressId = quotation.deliveryInfo?.clientAddressId ?? null;
+    const newAddressId = dto.deliveryClientAddressId || null;
+    if (
+      dto.deliveryClientAddressId !== undefined &&
+      newAddressId !== currentAddressId
+    ) {
+      before.deliveryClientAddressId = currentAddressId;
       after.deliveryClientAddressId = dto.deliveryClientAddressId;
     }
 

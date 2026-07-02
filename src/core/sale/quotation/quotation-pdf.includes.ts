@@ -61,7 +61,6 @@ export const PDF_CLIENT_SELECT = {
 
 export const PDF_SELLER_SELECT = {
   name: true,
-  signatureUrl: true,
 } as const;
 
 export const PDF_CONTACT_SELECT = {

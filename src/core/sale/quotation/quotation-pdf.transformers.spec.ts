@@ -181,7 +181,6 @@ describe('QuotationPdfTransformers', () => {
         company: {} as any,
         seller: {
           name: 'John Seller',
-          signatureUrl: 'https://example.com/signature.png',
         },
         series: {
           code: 'A',
@@ -190,13 +189,43 @@ describe('QuotationPdfTransformers', () => {
         quotationProduct: [],
       };
 
-      const result = transformPdfQuotationInfo(quotation);
+      const result = transformPdfQuotationInfo(
+        quotation,
+        'https://example.com/employee-signature.png',
+      );
 
       expect(result.number).toBe(12345);
       expect(result.seriesCode).toBe('A');
       expect(result.description).toBe('Test quotation');
       expect(result.seller.name).toBe('John Seller');
+      expect(result.seller.signature).toBe(
+        'https://example.com/employee-signature.png',
+      );
       expect(result.status).toBe('APPROVED');
+    });
+
+    it('should default signature to null when no logged employee signature is provided', () => {
+      const quotation = {
+        id: 'test-id',
+        companyId: 'company-id',
+        clientId: 'client-id',
+        quotationNumber: 12345,
+        description: 'Test quotation',
+        status: 'APPROVED',
+        totalValue: 1000,
+        createdAt: new Date('2026-01-15'),
+        dueDate: new Date('2026-02-15'),
+        approvedAt: new Date('2026-01-20'),
+        finishedAt: null,
+        company: {} as any,
+        seller: { name: 'John Seller' },
+        series: null,
+        quotationProduct: [],
+      };
+
+      const result = transformPdfQuotationInfo(quotation);
+
+      expect(result.seller.signature).toBeNull();
     });
   });
   describe('transformPdfOrder', () => {
@@ -481,7 +510,7 @@ describe('QuotationPdfTransformers', () => {
         approvedAt: null,
         finishedAt: null,
         company: {} as any,
-        seller: { name: null, signatureUrl: null },
+        seller: { name: null },
         quotationProduct: [],
         quotationPayment: {
           discountTotal: 100,
@@ -524,7 +553,7 @@ describe('QuotationPdfTransformers', () => {
           address: [],
         },
         client: null,
-        seller: { name: 'Seller', signatureUrl: null },
+        seller: { name: 'Seller' },
         series: null,
         order: null,
         quotationProduct: [],

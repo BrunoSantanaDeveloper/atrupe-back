@@ -227,8 +227,8 @@ export class QuotationService {
   // PDF Operations → QuotationPdfService
   // =====================================================
 
-  getQuotationPdfData(id: string) {
-    return this.pdfService.getQuotationPdfData(id);
+  getQuotationPdfData(id: string, userId?: string) {
+    return this.pdfService.getQuotationPdfData(id, userId);
   }
 
   // =====================================================

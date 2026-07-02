@@ -323,10 +323,11 @@ describe('QuotationService', () => {
     it('should delegate getQuotationPdfData to pdfService', async () => {
       pdfService.getQuotationPdfData.mockResolvedValue({ data: 'pdf' });
 
-      await service.getQuotationPdfData(mockQuotationId);
+      await service.getQuotationPdfData(mockQuotationId, 'user-1');
 
       expect(pdfService.getQuotationPdfData).toHaveBeenCalledWith(
         mockQuotationId,
+        'user-1',
       );
     });
 
@@ -737,9 +738,10 @@ describe('QuotationService', () => {
       pdfService.getQuotationPdfData.mockResolvedValue({
         pdfData: '...',
       } as any);
-      await service.getQuotationPdfData(mockQuotationId);
+      await service.getQuotationPdfData(mockQuotationId, 'user-1');
       expect(pdfService.getQuotationPdfData).toHaveBeenCalledWith(
         mockQuotationId,
+        'user-1',
       );
     });
   });

@@ -64,7 +64,6 @@ type QuotationPdfRaw = {
   } | null;
   seller: {
     name: string | null;
-    signatureUrl: string | null;
   };
   contact?: {
     name: string | null;
@@ -153,14 +152,18 @@ export function transformPdfContact(contact: QuotationPdfRaw['contact']) {
   };
 }
 
-export function transformPdfQuotationInfo(quotation: QuotationPdfRaw) {
+export function transformPdfQuotationInfo(
+  quotation: QuotationPdfRaw,
+  loggedEmployeeSignatureUrl: string | null = null,
+) {
   return {
     number: quotation.quotationNumber,
     seriesCode: quotation.series?.code,
     description: quotation.description,
     seller: {
       name: quotation.seller.name,
-      signature: quotation.seller.signatureUrl,
+      // Assinatura é a do colaborador logado que gerou o PDF, não a do vendedor atribuído
+      signature: loggedEmployeeSignatureUrl,
     },
     createdAt: quotation.createdAt,
     dueDate: quotation.dueDate,
@@ -381,12 +384,13 @@ export function transformPdfTotal(quotation: QuotationPdfRaw) {
 export function transformQuotationToPdfData(
   quotation: QuotationPdfRaw,
   availablePaymentMethods: string[] = [],
+  loggedEmployeeSignatureUrl: string | null = null,
 ) {
   return {
     company: transformPdfCompany(quotation.company),
     client: transformPdfClient(quotation.client),
     contact: transformPdfContact(quotation.contact),
-    quotation: transformPdfQuotationInfo(quotation),
+    quotation: transformPdfQuotationInfo(quotation, loggedEmployeeSignatureUrl),
     order: transformPdfOrder(quotation.order, quotation.approvedAt),
     quotationItems: transformPdfQuotationItems(quotation.quotationProduct),
     delivery: transformPdfDelivery(quotation.deliveryInfo),

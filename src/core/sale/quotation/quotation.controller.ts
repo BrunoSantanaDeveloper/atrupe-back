@@ -765,10 +765,10 @@ export class QuotationController {
     status: 404,
     description: 'Orçamento não encontrado.',
   })
-  async getQuotationPdfData(@Param('id') id: string) {
+  async getQuotationPdfData(@Param('id') id: string, @Req() req) {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
-    return await this.quotationService.getQuotationPdfData(id);
+    return await this.quotationService.getQuotationPdfData(id, req.user.userId);
   }
 }

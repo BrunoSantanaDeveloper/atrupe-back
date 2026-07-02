@@ -744,6 +744,13 @@ export class ScheduledExpenseService {
           amount = scheduledExpense.amount;
         }
 
+        const isPaid = launchData.markAsPaid === true;
+        const resolvedPaidDate = isPaid
+          ? launchData.paidDate
+            ? new Date(launchData.paidDate)
+            : dueDate
+          : null;
+
         // Criar a conta a pagar baseada na despesa agendada
         const payable = await this.prisma.payable.create({
           data: {
@@ -756,7 +763,7 @@ export class ScheduledExpenseService {
             totalValue: amount,
             mainAdditionalFee: 0,
             installmentQty: 1,
-            status: 'PENDING',
+            status: isPaid ? 'PAID' : 'PENDING',
             supplierId: scheduledExpense.supplierId,
             companyId,
             natureId: scheduledExpense.categoryId,
@@ -780,8 +787,9 @@ export class ScheduledExpenseService {
             additionalFee: 0,
             paymentConditionId: null,
             bankAccountId: defaultBankAccountId,
-            status: 'PENDING',
-            paidDate: null,
+            status: isPaid ? 'PAID' : 'PENDING',
+            paidDate: resolvedPaidDate,
+            paidAmount: isPaid ? amount : null,
           },
         });
 

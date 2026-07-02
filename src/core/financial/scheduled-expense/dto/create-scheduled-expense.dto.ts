@@ -5,6 +5,7 @@ import {
   IsString,
   IsUUID,
   IsEnum,
+  IsBoolean,
   Min,
   Max,
   IsDateString,
@@ -164,6 +165,24 @@ export class LaunchScheduledExpenseDto {
     required: false,
   })
   notes?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({
+    description: 'Marcar parcela como paga ao lançar',
+    example: false,
+    required: false,
+  })
+  markAsPaid?: boolean;
+
+  @IsOptional()
+  @IsDateString()
+  @ApiProperty({
+    description: 'Data de pagamento (usado quando markAsPaid=true)',
+    example: '2025-07-01',
+    required: false,
+  })
+  paidDate?: string;
 }
 
 export class ScheduledExpenseFilterDto extends BaseFilterDTO {

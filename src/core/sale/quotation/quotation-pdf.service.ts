@@ -25,7 +25,7 @@ export class QuotationPdfService {
   /**
    * Retorna dados formatados do orçamento para geração de PDF
    */
-  async getQuotationPdfData(id: string) {
+  async getQuotationPdfData(id: string, userId?: string) {
     try {
       const quotation = await this.prisma.quotation.findUnique({
         where: { id },
@@ -43,9 +43,19 @@ export class QuotationPdfService {
           quotation.clientId,
         );
 
+      // Assinatura exibida no PDF é a do colaborador logado que está
+      // gerando o documento, não a do vendedor atribuído ao orçamento
+      const loggedEmployee = userId
+        ? await this.prisma.employee.findFirst({
+            where: { userId, companyId: quotation.companyId },
+            select: { signatureUrl: true },
+          })
+        : null;
+
       return transformQuotationToPdfData(
         quotation as any,
         availablePaymentMethods,
+        loggedEmployee?.signatureUrl ?? null,
       );
     } catch (error) {
       this.logger.error('Error generating quotation PDF data:', error.stack);

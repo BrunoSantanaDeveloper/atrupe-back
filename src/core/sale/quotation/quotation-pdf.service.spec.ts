@@ -17,6 +17,9 @@ describe('QuotationPdfService', () => {
       quotation: {
         findUnique: jest.fn(),
       },
+      employee: {
+        findFirst: jest.fn(),
+      },
     };
 
     financialServiceMock = {
@@ -65,11 +68,42 @@ describe('QuotationPdfService', () => {
       expect(
         financialServiceMock.getAvailablePaymentMethods,
       ).toHaveBeenCalledWith('c-1', 'cli-1');
+      expect(prismaMock.employee.findFirst).not.toHaveBeenCalled();
       expect(pdfTransformers.transformQuotationToPdfData).toHaveBeenCalledWith(
         mockQuotation,
         mockPaymentMethods,
+        null,
       );
       expect(result).toEqual(mockTransformedData);
+    });
+
+    it('deve usar a assinatura do colaborador logado (userId) ao gerar o PDF', async () => {
+      const mockQuotation = { id: 'q-1', companyId: 'c-1', clientId: 'cli-1' };
+      const mockPaymentMethods = [{ id: 'pm-1' }];
+      const mockTransformedData = { id: 'q-1', pdfReady: true };
+
+      prismaMock.quotation.findUnique.mockResolvedValue(mockQuotation);
+      prismaMock.employee.findFirst.mockResolvedValue({
+        signatureUrl: 'https://example.com/employee-signature.png',
+      });
+      financialServiceMock.getAvailablePaymentMethods.mockResolvedValue(
+        mockPaymentMethods,
+      );
+      (
+        pdfTransformers.transformQuotationToPdfData as jest.Mock
+      ).mockReturnValue(mockTransformedData);
+
+      await service.getQuotationPdfData('q-1', 'user-1');
+
+      expect(prismaMock.employee.findFirst).toHaveBeenCalledWith({
+        where: { userId: 'user-1', companyId: 'c-1' },
+        select: { signatureUrl: true },
+      });
+      expect(pdfTransformers.transformQuotationToPdfData).toHaveBeenCalledWith(
+        mockQuotation,
+        mockPaymentMethods,
+        'https://example.com/employee-signature.png',
+      );
     });
 
     it('deve lançar InternalServerErrorException (contendo NotFound) se orçamento não for encontrado', async () => {
