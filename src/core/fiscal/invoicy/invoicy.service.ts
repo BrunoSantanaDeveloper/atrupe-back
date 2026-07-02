@@ -90,8 +90,11 @@ export class InvoicyService {
 
     // NFS-e field mappings (frontend -> database)
     if (dto.nfseSeries !== undefined) data.serieNfse = dto.nfseSeries;
+    if (dto.serieNfse !== undefined) data.serieNfse = dto.serieNfse;
     if (dto.nfseNextNumber !== undefined)
       data.proximoRpsNfse = dto.nfseNextNumber;
+    if (dto.proximoRpsNfse !== undefined)
+      data.proximoRpsNfse = dto.proximoRpsNfse;
 
     // NFC-e field mappings (frontend -> database)
     if (dto.nfceSeries !== undefined) {
