@@ -347,13 +347,17 @@ export class NfseService {
       }
     }
 
-    // Calcular valor total dos serviÃ§os â€” soma apenas itens com isService=true
-    // IMPORTANTE: Valores no banco estÃ£o em centavos, dividir por 100 para reais
-    const serviceProducts = quotation.quotationProduct.filter(
+    // Calcular valor total dos serviços — prefere itens com isService=true;
+    // se nenhum estiver marcado como serviço, usa todos os itens (fallback)
+    // IMPORTANTE: Valores no banco estão em centavos, dividir por 100 para reais
+    const allProducts = quotation.quotationProduct;
+    const serviceProducts = allProducts.filter(
       (qp) => (qp.product as any)?.isService,
     );
+    const productsToSum =
+      serviceProducts.length > 0 ? serviceProducts : allProducts;
     const valorServicos =
-      serviceProducts.reduce(
+      productsToSum.reduce(
         (acc: number, qp) => acc + (qp.finalValue || qp.totalValue || 0),
         0,
       ) / 100;
@@ -574,15 +578,16 @@ export class NfseService {
       }
     }
 
-    // Somar valorServicos apenas de itens com isService=true de todas as ordens
+    // Somar valorServicos — prefere itens com isService=true por quotation;
+    // se nenhum estiver marcado como serviço em uma quotation, usa todos os itens dela (fallback)
     const valorServicos =
       quotations.reduce((total, q) => {
-        const serviceProducts = q.quotationProduct.filter(
-          (qp) => (qp.product as any)?.isService,
-        );
+        const all = q.quotationProduct;
+        const services = all.filter((qp) => (qp.product as any)?.isService);
+        const toSum = services.length > 0 ? services : all;
         return (
           total +
-          serviceProducts.reduce(
+          toSum.reduce(
             (acc, qp) => acc + (qp.finalValue || qp.totalValue || 0),
             0,
           )
