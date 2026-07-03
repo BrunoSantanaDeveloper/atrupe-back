@@ -135,8 +135,8 @@ export class EmissoresController {
       body.certificate,
       body.certificatePassword,
       body.certificateType,
-      req.user.id,
-      req.user.name,
+      req.user.userId,
+      req.user.username,
     );
   }
 
@@ -163,8 +163,8 @@ export class EmissoresController {
       environment,
       body.cscId,
       body.cscToken,
-      req.user.id,
-      req.user.name,
+      req.user.userId,
+      req.user.username,
     );
   }
 
@@ -185,8 +185,8 @@ export class EmissoresController {
     return this.invoicyService.deleteCsc(
       invoicyConfigId,
       environment,
-      req.user.id,
-      req.user.name,
+      req.user.userId,
+      req.user.username,
     );
   }
 
@@ -212,8 +212,8 @@ export class EmissoresController {
       invoicyConfigId,
       environment,
       body.accessKey,
-      req.user.id,
-      req.user.name,
+      req.user.userId,
+      req.user.username,
     );
   }
 
@@ -239,8 +239,8 @@ export class EmissoresController {
       environment,
       body.nfceSeries,
       body.nfceNextNumber,
-      req.user.id,
-      req.user.name,
+      req.user.userId,
+      req.user.username,
     );
   }
 
@@ -311,8 +311,8 @@ export class EmissoresController {
         idempotencyKey: dto.idempotencyKey,
         confirmFiscalValidity: dto.confirmFiscalValidity,
         docType: dto.docType,
-        actorUserId: req.user.id,
-        actorUserName: req.user.name,
+        actorUserId: req.user.userId,
+        actorUserName: req.user.username,
       },
     );
   }
