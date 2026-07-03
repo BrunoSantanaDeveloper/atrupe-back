@@ -310,7 +310,8 @@ describe('NfceService', () => {
 
       expect(request.Documento.dest).toMatchObject({
         CPF_dest: '11122233344',
-        xNome_dest: 'Cliente Teste',
+        xNome_dest:
+          'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL',
         indIEDest: 9,
       });
       expect(request.Documento.dest.enderDest).toBeUndefined();
@@ -620,7 +621,8 @@ describe('NfceService', () => {
       const payload = invoicyApiService.emitNfe.mock.calls[0][1][0];
       expect(payload.Documento.dest).toMatchObject({
         CPF_dest: '11122233344',
-        xNome_dest: 'Cliente Teste',
+        xNome_dest:
+          'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL',
         indIEDest: 9,
       });
     });

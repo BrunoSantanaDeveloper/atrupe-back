@@ -287,7 +287,10 @@ export class NfceService {
                 ...(consumidorDoc.length === 14
                   ? { CNPJ_dest: consumidorDoc }
                   : { CPF_dest: consumidorDoc }),
-                xNome_dest: dto.consumidorNome || 'CONSUMIDOR',
+                xNome_dest:
+                  environment === 'HOMOLOGACAO'
+                    ? 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
+                    : dto.consumidorNome || 'CONSUMIDOR',
                 indIEDest: 9,
               }
             : undefined;
