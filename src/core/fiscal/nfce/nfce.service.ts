@@ -382,7 +382,10 @@ export class NfceService {
                   cProd: item.codigo || `ITEM${index + 1}`,
                   cEAN: item.cean || fiscalData?.cean || 'SEM GTIN',
                   cEANTrib: item.cean || fiscalData?.cean || 'SEM GTIN',
-                  xProd: item.descricao || `Produto ${index + 1}`,
+                  xProd:
+                    environment === 'HOMOLOGACAO' && index === 0
+                      ? 'NOTA FISCAL EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
+                      : item.descricao || `Produto ${index + 1}`,
                   NCM: (item.ncm || fiscalData?.ncm || '00000000').replace(
                     /\D/g,
                     '',
