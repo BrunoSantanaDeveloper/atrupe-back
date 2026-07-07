@@ -8,6 +8,7 @@ import {
   parsePfxCertificate,
   validatePfxCertificateCnpj,
 } from '../utils/certificate-parser';
+import { fetchCepData } from '../utils/cep.util';
 import { FiscalEnvironment } from '@prisma/client';
 import { ReadinessResult, ReadinessCheck } from './dtos/fiscal-readiness.dto';
 
@@ -38,6 +39,31 @@ export class FiscalIssuerReadinessService {
       where: { id: invoicyConfigId },
     });
 
+    // Resolve emitCmun a partir do CEP do endereço principal quando ainda não configurado.
+    // Salva de volta para que verificações futuras não precisem repetir o lookup.
+    let emitCmun = emissor?.emitCmun;
+    if ((!emitCmun || emitCmun === '0') && emissor) {
+      const principalAddress =
+        (company?.address as any[] | undefined)?.find(
+          (a) => a.type === 'Principal',
+        ) ?? company?.address?.[0];
+      const zipcode = principalAddress?.zipcode;
+      if (zipcode) {
+        try {
+          const cepData = await fetchCepData(zipcode);
+          if (cepData?.codigoIbge) {
+            emitCmun = cepData.codigoIbge;
+            await this.prisma.invoicyConfig.update({
+              where: { id: invoicyConfigId },
+              data: { emitCmun },
+            });
+          }
+        } catch {
+          // CEP lookup falhou — prossegue sem IBGE, check vai reportar a pendência
+        }
+      }
+    }
+
     // 1. company_document
     checks.push(this.checkCompanyDocument(company?.cnpj));
 
@@ -47,7 +73,7 @@ export class FiscalIssuerReadinessService {
     }
 
     // 3. company_address
-    checks.push(this.checkCompanyAddress(company?.address, emissor?.emitCmun));
+    checks.push(this.checkCompanyAddress(company?.address, emitCmun));
 
     // 4. certificate
     checks.push(
