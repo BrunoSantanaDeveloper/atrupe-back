@@ -517,6 +517,8 @@ describe('OrderTransformers', () => {
           payable: [],
         },
         nfes: [],
+        nfces: [],
+        nfses: [],
       };
 
       const result = transformOrderToResponse(order, { totalPaid: 0 });
