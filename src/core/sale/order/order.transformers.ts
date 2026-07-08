@@ -12,6 +12,8 @@ type OrderRaw = {
   status: string;
   quotation: QuotationRaw;
   nfes: any[];
+  nfces: any[];
+  nfses: any[];
 };
 
 type QuotationRaw = {
@@ -455,5 +457,7 @@ export function transformOrderToResponse(
     status: order.status,
     quotation: transformOrderQuotation(order.quotation, financialTableData),
     nfes: order.nfes || [],
+    nfces: order.nfces || [],
+    nfses: order.nfses || [],
   };
 }

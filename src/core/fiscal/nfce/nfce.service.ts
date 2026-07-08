@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
-import { NfceStatus } from '@prisma/client';
+import { NfceStatus, NfeStatus, NfseStatus, OrderStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import {
@@ -185,6 +185,20 @@ export class NfceService {
   }
 
   async emit(companyId: string, dto: EmitNfceDto) {
+    const linkedOrder = dto.orderId
+      ? await this.assertOrderCanReceiveNfce(companyId, dto.orderId)
+      : null;
+
+    if (
+      dto.orderId &&
+      dto.quotationId &&
+      linkedOrder?.quotationId !== dto.quotationId
+    ) {
+      throw new BadRequestException(
+        'A ordem de serviço informada não pertence ao orçamento enviado.',
+      );
+    }
+
     // Buscar configuração do Invoicy
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
@@ -222,11 +236,22 @@ export class NfceService {
       );
     }
 
-    // Calcular valor total
-    const valorTotal = dto.itens.reduce((acc, item) => {
+    // Calcular totais
+    const valorProdutos = dto.itens.reduce((acc, item) => {
       const valorItem = item.quantidade * item.valorUnitario;
-      return acc + valorItem - (item.valorDesconto || 0);
+      return acc + valorItem;
     }, 0);
+    const valorDesconto = dto.itens.reduce(
+      (acc, item) => acc + (item.valorDesconto || 0),
+      0,
+    );
+    const valorTotal = Number((valorProdutos - valorDesconto).toFixed(2));
+
+    if (valorTotal <= 0) {
+      throw new BadRequestException(
+        'Valor total da NFC-e deve ser maior que zero.',
+      );
+    }
 
     // Calcular valor dos pagamentos
     const valorPagamentos = dto.pagamentos.reduce(
@@ -235,9 +260,20 @@ export class NfceService {
     );
 
     // Validar pagamentos
-    if (Math.abs(valorPagamentos - valorTotal) > 0.01 && !dto.valorTroco) {
+    const expectedTroco = Number(
+      Math.max(0, valorPagamentos - valorTotal).toFixed(2),
+    );
+    const valorTroco = Number((dto.valorTroco || 0).toFixed(2));
+
+    if (valorPagamentos + 0.01 < valorTotal) {
       throw new BadRequestException(
-        'Valor dos pagamentos deve ser igual ao valor total ou incluir troco',
+        'Valor dos pagamentos deve ser igual ou superior ao valor total da NFC-e.',
+      );
+    }
+
+    if (Math.abs(expectedTroco - valorTroco) > 0.01) {
+      throw new BadRequestException(
+        'Valor do troco deve corresponder à diferença entre pagamentos e total da NFC-e.',
       );
     }
 
@@ -267,6 +303,7 @@ export class NfceService {
     const fiscalDataMap = new Map(
       fiscalDataList.map((fd) => [fd.productId, fd]),
     );
+    this.assertFiscalItemsReady(dto.itens, fiscalDataMap);
 
     // TRANSAÇÃO ATÔMICA: Reservar número + criar registro NFC-e
     const { nfce, invoicyRequest } = await this.prisma.$transaction(
@@ -425,12 +462,10 @@ export class NfceService {
                 vICMS_ttlnfe: '0.00',
                 vICMSDeson_ttlnfe: '0.00',
                 vBCST_ttlnfe: '0.00',
-                vProd_ttlnfe: valorTotal.toFixed(2),
+                vProd_ttlnfe: valorProdutos.toFixed(2),
                 vFrete_ttlnfe: '0.00',
                 vSeg_ttlnfe: '0.00',
-                vDesc_ttlnfe: dto.itens
-                  .reduce((acc, i) => acc + (i.valorDesconto || 0), 0)
-                  .toFixed(2),
+                vDesc_ttlnfe: valorDesconto.toFixed(2),
                 vII_ttlnfe: '0.00',
                 vIPI_ttlnfe: '0.00',
                 vPIS_ttlnfe: '0.00',
@@ -463,11 +498,8 @@ export class NfceService {
               : NfceStatus.PROCESSING,
             ambiente: environment === 'PRODUCAO' ? 1 : 2,
             valorTotal,
-            valorDesconto: dto.itens.reduce(
-              (acc, item) => acc + (item.valorDesconto || 0),
-              0,
-            ),
-            valorTroco: dto.valorTroco || 0,
+            valorDesconto,
+            valorTroco,
             formaPagamento: dto.pagamentos[0]?.tipo || '01',
             cpfConsumidor: dto.cpfConsumidor || null,
             consumidorNome: dto.consumidorNome || null,
@@ -601,6 +633,149 @@ export class NfceService {
     return typeof structured === 'string' && structured.trim()
       ? structured.trim().slice(0, 500)
       : 'Erro fiscal desconhecido';
+  }
+
+  private async assertOrderCanReceiveNfce(companyId: string, orderId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id: orderId,
+        quotation: { companyId },
+      },
+      select: {
+        id: true,
+        status: true,
+        quotationId: true,
+        nfes: {
+          where: {
+            status: {
+              in: [
+                NfeStatus.AUTHORIZED,
+                NfeStatus.CORRECTION_SENT,
+                NfeStatus.DRAFT,
+                NfeStatus.PROCESSING,
+                NfeStatus.PENDING,
+              ],
+            },
+          },
+          select: { id: true, status: true },
+          take: 1,
+        },
+        nfeOrders: {
+          where: {
+            nfe: {
+              status: {
+                in: [
+                  NfeStatus.AUTHORIZED,
+                  NfeStatus.CORRECTION_SENT,
+                  NfeStatus.DRAFT,
+                  NfeStatus.PROCESSING,
+                  NfeStatus.PENDING,
+                ],
+              },
+            },
+          },
+          select: { id: true },
+          take: 1,
+        },
+        nfses: {
+          where: {
+            status: {
+              in: [
+                NfseStatus.AUTHORIZED,
+                NfseStatus.DRAFT,
+                NfseStatus.PROCESSING,
+                NfseStatus.PENDING,
+              ],
+            },
+          },
+          select: { id: true, status: true },
+          take: 1,
+        },
+        nfces: {
+          where: {
+            status: {
+              in: [
+                NfceStatus.AUTHORIZED,
+                NfceStatus.PROCESSING,
+                NfceStatus.UNKNOWN,
+                NfceStatus.CONTINGENCY,
+                NfceStatus.PENDING,
+              ],
+            },
+          },
+          select: { id: true, status: true },
+          take: 1,
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Ordem de servico nao encontrada.');
+    }
+
+    if (order.status === OrderStatus.CANCELED) {
+      throw new BadRequestException(
+        'Nao e possivel emitir NFC-e para uma ordem de servico cancelada.',
+      );
+    }
+
+    if (
+      order.nfes.length > 0 ||
+      order.nfeOrders.length > 0 ||
+      order.nfses.length > 0 ||
+      order.nfces.length > 0
+    ) {
+      throw new ConflictException(
+        'Esta ordem de servico ja possui documento fiscal ativo ou autorizado.',
+      );
+    }
+
+    return order;
+  }
+
+  private assertFiscalItemsReady(
+    itens: EmitNfceDto['itens'],
+    fiscalDataMap: Map<string, any>,
+  ) {
+    for (const [index, item] of itens.entries()) {
+      const fiscalData = item.productId
+        ? fiscalDataMap.get(item.productId)
+        : null;
+      const label = item.descricao || `Item ${index + 1}`;
+      const ncm = (item.ncm || fiscalData?.ncm || '').replace(/\D/g, '');
+      const cfop = (item.cfop || fiscalData?.cfopInState || '').replace(
+        /\D/g,
+        '',
+      );
+      const unidade = item.unidade || fiscalData?.commercialUnit;
+      const icmsCst = item.icmsCst || fiscalData?.icmsCst;
+      const pisCst = item.pisCst || fiscalData?.pisCst;
+      const cofinsCst = item.cofinsCst || fiscalData?.cofinsCst;
+
+      if (ncm.length !== 8 || ncm === '00000000') {
+        throw new BadRequestException(
+          `Dados fiscais incompletos para ${label}: informe um NCM valido.`,
+        );
+      }
+
+      if (cfop.length !== 4) {
+        throw new BadRequestException(
+          `Dados fiscais incompletos para ${label}: informe um CFOP valido.`,
+        );
+      }
+
+      if (!unidade) {
+        throw new BadRequestException(
+          `Dados fiscais incompletos para ${label}: informe a unidade comercial.`,
+        );
+      }
+
+      if (!icmsCst || !pisCst || !cofinsCst) {
+        throw new BadRequestException(
+          `Dados fiscais incompletos para ${label}: informe CST/CSOSN, PIS e COFINS.`,
+        );
+      }
+    }
   }
 
   /**

@@ -121,6 +121,9 @@ describe('InvoicyApiService', () => {
         'POST',
         '/senddocuments/nfe?type=Evento',
         expectedPayload,
+        undefined,
+        undefined,
+        undefined,
       );
     });
   });
@@ -156,6 +159,9 @@ describe('InvoicyApiService', () => {
         'POST',
         '/senddocuments/nfe?type=Evento',
         expectedPayload,
+        undefined,
+        undefined,
+        undefined,
       );
     });
   });

@@ -1,3 +1,5 @@
+import { NfceStatus, NfseStatus } from '@prisma/client';
+
 /**
  * Includes reutilizáveis para queries de Order
  * Extraídos do método findOne() para melhor manutenibilidade
@@ -15,6 +17,62 @@ export const ORDER_NFES_SELECT = {
     chaveAcesso: true,
     danfeUrl: true,
     dataEmissao: true,
+  },
+};
+
+export const ORDER_NFCES_SELECT = {
+  where: {
+    status: {
+      in: [
+        NfceStatus.AUTHORIZED,
+        NfceStatus.CONTINGENCY,
+        NfceStatus.PROCESSING,
+        NfceStatus.UNKNOWN,
+        NfceStatus.PENDING,
+      ],
+    },
+  },
+  orderBy: { createdAt: 'desc' as const },
+  take: 1,
+  select: {
+    id: true,
+    numero: true,
+    serie: true,
+    status: true,
+    chaveAcesso: true,
+    danfeUrl: true,
+    dataEmissao: true,
+    qrCodeUrl: true,
+    xmlAutorizado: true,
+    motivoRejeicao: true,
+  },
+};
+
+export const ORDER_NFSES_SELECT = {
+  where: {
+    status: {
+      in: [
+        NfseStatus.AUTHORIZED,
+        NfseStatus.PROCESSING,
+        NfseStatus.PENDING,
+        NfseStatus.DRAFT,
+      ],
+    },
+  },
+  orderBy: { createdAt: 'desc' as const },
+  take: 1,
+  select: {
+    id: true,
+    numero: true,
+    serie: true,
+    rpsNumero: true,
+    rpsSerie: true,
+    status: true,
+    codigoVerificacao: true,
+    pdfUrl: true,
+    dataEmissao: true,
+    xmlRetorno: true,
+    motivoRejeicao: true,
   },
 };
 
@@ -207,4 +265,6 @@ export const ORDER_FIND_ONE_INCLUDE = {
     include: ORDER_QUOTATION_INCLUDE,
   },
   nfes: ORDER_NFES_SELECT,
+  nfces: ORDER_NFCES_SELECT,
+  nfses: ORDER_NFSES_SELECT,
 };

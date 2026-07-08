@@ -12,7 +12,10 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
-import { BlockLevelGuard } from '../../auth/guards/block-level.guard';
+import {
+  BlockLevelGuard,
+  RequireUnblocked,
+} from '../../auth/guards/block-level.guard';
 import { PermissionsGuard } from '../../auth/abac/permissions.guard';
 import { HasPermission } from '../../auth/abac/has-permission.decorator';
 import { NfceService } from './nfce.service';
@@ -58,6 +61,7 @@ export class NfceController {
 
   @Post('emit')
   @HasPermission('create', 'nota_fiscal:emitir')
+  @RequireUnblocked()
   @ApiOperation({ summary: 'Emitir NFC-e' })
   async emit(@Req() req, @Body() dto: EmitNfceDto) {
     return this.nfceService.emit(req.user.companyId, dto);
@@ -76,6 +80,7 @@ export class NfceController {
 
   @Post(':id/reprocess')
   @HasPermission('create', 'nota_fiscal:emitir')
+  @RequireUnblocked()
   @ApiOperation({ summary: 'Reprocessar NFC-e (status UNKNOWN ou PROCESSING)' })
   async reprocess(@Req() req, @Param('id') id: string) {
     return this.nfceService.reprocess(id, req.user.companyId);
@@ -83,6 +88,7 @@ export class NfceController {
 
   @Post('inutilizar')
   @HasPermission('delete', 'nota_fiscal:cancelar')
+  @RequireUnblocked()
   @ApiOperation({ summary: 'Inutilizar numeração de NFC-e' })
   async inutilizar(@Req() req, @Body() dto: InutilizarNfceDto) {
     return this.nfceService.inutilizar(req.user.companyId, dto);
@@ -90,6 +96,7 @@ export class NfceController {
 
   @Post('contingencia')
   @HasPermission('edit', 'nota_fiscal:config')
+  @RequireUnblocked()
   @ApiOperation({ summary: 'Ativar/Desativar modo contingência' })
   async toggleContingencia(@Req() req, @Body() dto: ContingenciaNfceDto) {
     return this.nfceService.toggleContingencia(req.user.companyId, dto);

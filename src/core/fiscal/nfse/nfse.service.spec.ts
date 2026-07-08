@@ -4,8 +4,12 @@ import { PrismaService } from 'nestjs-prisma';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
-import { NfseStatus } from '@prisma/client';
+import {
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
+import { NfseStatus, OrderStatus } from '@prisma/client';
 
 // Mock fetchCepData para evitar chamadas HTTP reais
 jest.mock('../utils/cep.util', () => ({
@@ -26,7 +30,12 @@ const mockNfseId = 'nfse-uuid-789';
 const mockOrder = {
   id: mockOrderId,
   companyId: mockCompanyId,
+  quotationId: 'quotation-1',
   status: 'COMPLETED',
+  nfes: [],
+  nfeOrders: [],
+  nfses: [],
+  nfces: [],
   items: [
     {
       id: 'item-1',
@@ -106,7 +115,7 @@ const mockInvoicyResponse = [
 ];
 
 const mockPrismaService = {
-  order: { findUnique: jest.fn() },
+  order: { findUnique: jest.fn(), findFirst: jest.fn() },
   company: { findUnique: jest.fn() },
   quotation: { findFirst: jest.fn() },
   nfse: {
@@ -118,6 +127,9 @@ const mockPrismaService = {
     count: jest.fn(),
   },
   invoicyConfig: { findFirst: jest.fn() },
+  $queryRaw: jest.fn(),
+  $executeRaw: jest.fn(),
+  $transaction: jest.fn((callback) => callback(mockPrismaService)),
 };
 
 const mockInvoicyService = {
@@ -145,6 +157,13 @@ describe('NfseService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockPrismaService.$transaction.mockImplementation((callback) =>
+      callback(mockPrismaService),
+    );
+    mockPrismaService.$queryRaw.mockResolvedValue([
+      { id: 'config-1', proximoRpsNfse: 1, serieNfse: 'A1' },
+    ]);
+    mockPrismaService.$executeRaw.mockResolvedValue(1);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -218,6 +237,7 @@ describe('NfseService', () => {
         ],
       });
       prisma.order.findUnique.mockResolvedValue(mockOrder);
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
       prisma.company.findUnique.mockResolvedValue(mockOrder.company);
       mockInvoicyService.getConfig.mockResolvedValue({
         id: 'config-1',
@@ -309,6 +329,80 @@ describe('NfseService', () => {
           discriminacao: 'Teste',
         }),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should reject emission for canceled order', async () => {
+      prisma.quotation.findFirst.mockResolvedValueOnce({
+        id: 'quotation-1',
+        companyId: mockCompanyId,
+        order: { ...mockOrder, status: OrderStatus.CANCELED },
+        client: mockOrder.client,
+        quotationProduct: [
+          {
+            id: 'qp-1',
+            productId: 'service-1',
+            quantity: 1,
+            finalValue: 500,
+            totalValue: 500,
+            product: mockOrder.items[0].product,
+          },
+        ],
+      });
+
+      await expect(
+        service.emitFromOrder(mockCompanyId, {
+          orderId: mockOrderId,
+          codigoServico: '1.05',
+          discriminacao: 'Teste',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(invoicyApiService.emitNfse).not.toHaveBeenCalled();
+    });
+
+    it('should reject emission when order already has active fiscal document', async () => {
+      prisma.quotation.findFirst.mockResolvedValueOnce({
+        id: 'quotation-1',
+        companyId: mockCompanyId,
+        order: {
+          ...mockOrder,
+          nfses: [{ id: 'nfse-existing', status: NfseStatus.AUTHORIZED }],
+        },
+        client: mockOrder.client,
+        quotationProduct: [
+          {
+            id: 'qp-1',
+            productId: 'service-1',
+            quantity: 1,
+            finalValue: 500,
+            totalValue: 500,
+            product: mockOrder.items[0].product,
+          },
+        ],
+      });
+
+      await expect(
+        service.emitFromOrder(mockCompanyId, {
+          orderId: mockOrderId,
+          codigoServico: '1.05',
+          discriminacao: 'Teste',
+        }),
+      ).rejects.toThrow(ConflictException);
+
+      expect(invoicyApiService.emitNfse).not.toHaveBeenCalled();
+    });
+
+    it('should reserve RPS number inside transaction before calling Invoicy', async () => {
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'ServiÃ§o de consultoria em TI',
+      });
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.$queryRaw).toHaveBeenCalled();
+      expect(prisma.$executeRaw).toHaveBeenCalled();
+      expect(mockInvoicyService.incrementNfseRpsNumber).not.toHaveBeenCalled();
     });
   });
 

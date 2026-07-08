@@ -71,10 +71,16 @@ export class InvoicyHttpService {
   /**
    * Get company credentials from database
    */
-  async getCompanyCredentials(companyId: string, invoicyConfigId?: string) {
+  async getCompanyCredentials(
+    companyId: string,
+    invoicyConfigId?: string,
+    forceEnvironment?: FiscalEnvironment,
+  ) {
     let environment: FiscalEnvironment;
 
-    if (invoicyConfigId) {
+    if (forceEnvironment) {
+      environment = forceEnvironment;
+    } else if (invoicyConfigId) {
       environment =
         await this.fiscalCredentialResolver.resolveOperationalEnvironment(
           companyId,
@@ -133,11 +139,13 @@ export class InvoicyHttpService {
     companyId: string,
     invoicyConfigId?: string,
     signal?: AbortSignal,
+    forceEnvironment?: FiscalEnvironment,
   ): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
     const credentials = await this.getCompanyCredentials(
       companyId,
       invoicyConfigId,
+      forceEnvironment,
     );
     const credentialsHash = this.getCredentialsHash(credentials);
     const cacheKey = `${companyId}:${credentials.environment}`;
@@ -274,6 +282,7 @@ export class InvoicyHttpService {
     data?: unknown,
     invoicyConfigId?: string,
     signal?: AbortSignal,
+    forceEnvironment?: FiscalEnvironment,
   ): Promise<T> {
     let lastError: Error | null = null;
 
@@ -286,6 +295,7 @@ export class InvoicyHttpService {
           data,
           invoicyConfigId,
           signal,
+          forceEnvironment,
         );
       } catch (error) {
         lastError = error;
@@ -342,11 +352,18 @@ export class InvoicyHttpService {
     data?: unknown,
     invoicyConfigId?: string,
     signal?: AbortSignal,
+    forceEnvironment?: FiscalEnvironment,
   ): Promise<T> {
-    const token = await this.authenticate(companyId, invoicyConfigId, signal);
+    const token = await this.authenticate(
+      companyId,
+      invoicyConfigId,
+      signal,
+      forceEnvironment,
+    );
     const credentials = await this.getCompanyCredentials(
       companyId,
       invoicyConfigId,
+      forceEnvironment,
     );
     const baseUrl = this.getBaseUrl(credentials.environment);
 
@@ -377,6 +394,7 @@ export class InvoicyHttpService {
           companyId,
           invoicyConfigId,
           signal,
+          forceEnvironment,
         );
 
         const fullUrl = `${baseUrl}${endpoint}`;

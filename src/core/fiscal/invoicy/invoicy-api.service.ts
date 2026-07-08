@@ -8,6 +8,7 @@ import {
   INVOICY_SUCCESS_CODES,
 } from './invoicy.types';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
+import { FiscalEnvironment } from '@prisma/client';
 
 /**
  * InvoicyApiService - Domain API Layer for Fiscal Documents
@@ -76,6 +77,7 @@ export class InvoicyApiService {
     companyId: string,
     chaveAcesso: string,
     justificativa: string,
+    ambiente?: number,
   ): Promise<InvoicyResponse[]> {
     this.logger.log(`Canceling NF-e ${chaveAcesso} for company ${companyId}`);
 
@@ -94,11 +96,21 @@ export class InvoicyApiService {
       },
     ];
 
+    const forceEnvironment =
+      ambiente !== undefined
+        ? ambiente === 1
+          ? FiscalEnvironment.PRODUCAO
+          : FiscalEnvironment.HOMOLOGACAO
+        : undefined;
+
     return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
       '/senddocuments/nfe?type=Evento',
       cancelRequest,
+      undefined,
+      undefined,
+      forceEnvironment,
     );
   }
 
@@ -110,6 +122,7 @@ export class InvoicyApiService {
     chaveAcesso: string,
     correcao: string,
     sequenciaEvento: number = 1,
+    ambiente?: number,
   ): Promise<InvoicyResponse[]> {
     this.logger.log(
       `Sending correction letter for NF-e ${chaveAcesso}, company ${companyId}`,
@@ -130,11 +143,21 @@ export class InvoicyApiService {
       },
     ];
 
+    const forceEnvironment =
+      ambiente !== undefined
+        ? ambiente === 1
+          ? FiscalEnvironment.PRODUCAO
+          : FiscalEnvironment.HOMOLOGACAO
+        : undefined;
+
     return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
       '/senddocuments/nfe?type=Evento',
       correctionRequest,
+      undefined,
+      undefined,
+      forceEnvironment,
     );
   }
 
@@ -313,6 +336,7 @@ export class InvoicyApiService {
     numero: number,
     codigoVerificacao: string,
     motivo: string,
+    ambiente?: number,
   ): Promise<InvoicyResponse[]> {
     this.logger.log(`Canceling NFS-e ${numero} for company ${companyId}`);
 
@@ -330,11 +354,21 @@ export class InvoicyApiService {
       },
     ];
 
+    const forceEnvironment =
+      ambiente !== undefined
+        ? ambiente === 1
+          ? FiscalEnvironment.PRODUCAO
+          : FiscalEnvironment.HOMOLOGACAO
+        : undefined;
+
     return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
       '/senddocuments/nfse?type=Evento',
       cancelRequest,
+      undefined,
+      undefined,
+      forceEnvironment,
     );
   }
 

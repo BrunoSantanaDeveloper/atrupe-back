@@ -4,11 +4,29 @@ import { PrismaService } from 'nestjs-prisma';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
-import { NfceStatus } from '@prisma/client';
+import {
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
+import { NfceStatus, OrderStatus } from '@prisma/client';
 
 const mockCompanyId = 'company-uuid-123';
 const mockNfceId = 'nfce-uuid-789';
+const mockOrderId = 'order-uuid-123';
+const mockQuotationId = 'quotation-uuid-123';
+
+const mockProductFiscalData = [
+  {
+    productId: '1',
+    ncm: '12345678',
+    cfopInState: '5102',
+    commercialUnit: 'UN',
+    icmsCst: '102',
+    pisCst: '49',
+    cofinsCst: '49',
+  },
+];
 
 const mockNfce = {
   id: mockNfceId,
@@ -34,6 +52,7 @@ const mockInvoicyResponse = {
 
 const mockPrismaService = {
   company: { findUnique: jest.fn() },
+  order: { findFirst: jest.fn() },
   nfce: {
     findMany: jest.fn(),
     findFirst: jest.fn(),
@@ -176,7 +195,18 @@ describe('NfceService', () => {
 
   describe('emit', () => {
     beforeEach(() => {
-      prisma.productFiscalData.findMany.mockResolvedValue([]);
+      prisma.productFiscalData.findMany.mockResolvedValue(
+        mockProductFiscalData,
+      );
+      prisma.order.findFirst.mockResolvedValue({
+        id: mockOrderId,
+        status: OrderStatus.IN_PRODUCTION,
+        quotationId: mockQuotationId,
+        nfes: [],
+        nfeOrders: [],
+        nfses: [],
+        nfces: [],
+      });
       prisma.company.findUnique.mockResolvedValue({
         id: mockCompanyId,
         name: 'Empresa',
@@ -258,6 +288,186 @@ describe('NfceService', () => {
 
       expect(result.status).toBe(NfceStatus.AUTHORIZED);
       expect(result.chaveAcesso).toBeDefined();
+    });
+
+    it('should persist orderId when emitting from an order', async () => {
+      await service.emit(mockCompanyId, {
+        orderId: mockOrderId,
+        quotationId: mockQuotationId,
+        naturezaOperacao: 'Venda ao consumidor final',
+        itens: [
+          {
+            productId: '1',
+            codigo: '001',
+            descricao: 'Produto',
+            ncm: '12345678',
+            cfop: '5102',
+            unidade: 'UN',
+            quantidade: 1,
+            valorUnitario: 100,
+          },
+        ],
+        pagamentos: [{ tipo: '01', valor: 100 }],
+      });
+
+      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            id: mockOrderId,
+            quotation: { companyId: mockCompanyId },
+          },
+        }),
+      );
+      expect(prisma.nfce.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            orderId: mockOrderId,
+            quotationId: mockQuotationId,
+          }),
+        }),
+      );
+    });
+
+    it('should reject NFC-e when linked order is not found for company', async () => {
+      prisma.order.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.emit(mockCompanyId, {
+          orderId: mockOrderId,
+          naturezaOperacao: 'Venda',
+          itens: [
+            {
+              productId: '1',
+              codigo: '001',
+              descricao: 'Produto',
+              ncm: '12345678',
+              cfop: '5102',
+              unidade: 'UN',
+              quantidade: 1,
+              valorUnitario: 100,
+            },
+          ],
+          pagamentos: [{ tipo: '01', valor: 100 }],
+        }),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(invoicyService.getConfig).not.toHaveBeenCalled();
+    });
+
+    it('should reject NFC-e when linked order is canceled', async () => {
+      prisma.order.findFirst.mockResolvedValueOnce({
+        id: mockOrderId,
+        status: OrderStatus.CANCELED,
+        quotationId: mockQuotationId,
+        nfes: [],
+        nfeOrders: [],
+        nfses: [],
+        nfces: [],
+      });
+
+      await expect(
+        service.emit(mockCompanyId, {
+          orderId: mockOrderId,
+          naturezaOperacao: 'Venda',
+          itens: [
+            {
+              productId: '1',
+              codigo: '001',
+              descricao: 'Produto',
+              ncm: '12345678',
+              cfop: '5102',
+              unidade: 'UN',
+              quantidade: 1,
+              valorUnitario: 100,
+            },
+          ],
+          pagamentos: [{ tipo: '01', valor: 100 }],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject NFC-e when linked order already has an active fiscal document', async () => {
+      prisma.order.findFirst.mockResolvedValueOnce({
+        id: mockOrderId,
+        status: OrderStatus.IN_PRODUCTION,
+        quotationId: mockQuotationId,
+        nfes: [],
+        nfeOrders: [],
+        nfses: [],
+        nfces: [{ id: 'nfce-existing', status: NfceStatus.AUTHORIZED }],
+      });
+
+      await expect(
+        service.emit(mockCompanyId, {
+          orderId: mockOrderId,
+          naturezaOperacao: 'Venda',
+          itens: [
+            {
+              productId: '1',
+              codigo: '001',
+              descricao: 'Produto',
+              ncm: '12345678',
+              cfop: '5102',
+              unidade: 'UN',
+              quantidade: 1,
+              valorUnitario: 100,
+            },
+          ],
+          pagamentos: [{ tipo: '01', valor: 100 }],
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should validate payment change against discounted total', async () => {
+      await service.emit(mockCompanyId, {
+        naturezaOperacao: 'Venda',
+        itens: [
+          {
+            productId: '1',
+            codigo: '001',
+            descricao: 'Produto',
+            ncm: '12345678',
+            cfop: '5102',
+            unidade: 'UN',
+            quantidade: 1,
+            valorUnitario: 100,
+            valorDesconto: 10,
+          },
+        ],
+        pagamentos: [{ tipo: '01', valor: 100 }],
+        valorTroco: 10,
+      });
+
+      const request = invoicyApiService.emitNfe.mock.calls[0][1][0];
+      expect(request.Documento.total.ICMStot.vProd_ttlnfe).toBe('100.00');
+      expect(request.Documento.total.ICMStot.vDesc_ttlnfe).toBe('10.00');
+      expect(request.Documento.total.ICMStot.vNF).toBe('90.00');
+    });
+
+    it('should reject inconsistent payment change', async () => {
+      await expect(
+        service.emit(mockCompanyId, {
+          naturezaOperacao: 'Venda',
+          itens: [
+            {
+              productId: '1',
+              codigo: '001',
+              descricao: 'Produto',
+              ncm: '12345678',
+              cfop: '5102',
+              unidade: 'UN',
+              quantidade: 1,
+              valorUnitario: 100,
+            },
+          ],
+          pagamentos: [{ tipo: '01', valor: 120 }],
+          valorTroco: 0,
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(
+        mockFiscalCredentialResolver.reserveNfceNumber,
+      ).not.toHaveBeenCalled();
     });
 
     it('should reserve NFC-e number atomically before API call', async () => {
@@ -563,7 +773,18 @@ describe('NfceService', () => {
 
     beforeEach(() => {
       invoicyService.getConfig.mockResolvedValue(baseConfig);
-      prisma.productFiscalData.findMany.mockResolvedValue([]);
+      prisma.productFiscalData.findMany.mockResolvedValue(
+        mockProductFiscalData,
+      );
+      prisma.order.findFirst.mockResolvedValue({
+        id: mockOrderId,
+        status: OrderStatus.IN_PRODUCTION,
+        quotationId: mockQuotationId,
+        nfes: [],
+        nfeOrders: [],
+        nfses: [],
+        nfces: [],
+      });
       prisma.nfce.create.mockResolvedValue(mockNfce);
       prisma.nfce.update.mockResolvedValue({
         ...mockNfce,

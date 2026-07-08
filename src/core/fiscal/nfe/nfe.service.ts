@@ -5,7 +5,7 @@
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
-import { NfeStatus } from '@prisma/client';
+import { NfeStatus, NfseStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
@@ -2231,6 +2231,7 @@ export class NfeService {
         companyId,
         nfe.chaveAcesso,
         dto.justificativa,
+        nfe.ambiente,
       );
 
       // Processar resposta
@@ -2305,6 +2306,7 @@ export class NfeService {
           nfe.chaveAcesso,
           dto.correcao,
           sequenciaEvento,
+          nfe.ambiente,
         );
 
       // Processar resposta
@@ -3137,15 +3139,30 @@ export class NfeService {
         orderWhere.OR = [
           { nfes: { some: { status: 'AUTHORIZED' } } },
           { nfeOrders: { some: { nfe: { status: 'AUTHORIZED' } } } },
+          { nfses: { some: { status: NfseStatus.AUTHORIZED } } },
         ];
       } else if (status === 'EM_DIGITACAO') {
         orderWhere.OR = [
           { nfes: { some: { status: 'DRAFT' } } },
           { nfeOrders: { some: { nfe: { status: 'DRAFT' } } } },
+          {
+            nfses: {
+              some: {
+                status: {
+                  in: [
+                    NfseStatus.DRAFT,
+                    NfseStatus.PENDING,
+                    NfseStatus.PROCESSING,
+                  ],
+                },
+              },
+            },
+          },
         ];
         orderWhere.AND = [
           { nfes: { none: { status: 'AUTHORIZED' } } },
           { nfeOrders: { none: { nfe: { status: 'AUTHORIZED' } } } },
+          { nfses: { none: { status: NfseStatus.AUTHORIZED } } },
         ];
       } else if (status === 'NAO_EMITIDA') {
         orderWhere.AND = [
@@ -3153,6 +3170,20 @@ export class NfeService {
           {
             nfeOrders: {
               none: { nfe: { status: { in: ['AUTHORIZED', 'DRAFT'] } } },
+            },
+          },
+          {
+            nfses: {
+              none: {
+                status: {
+                  in: [
+                    NfseStatus.AUTHORIZED,
+                    NfseStatus.DRAFT,
+                    NfseStatus.PENDING,
+                    NfseStatus.PROCESSING,
+                  ],
+                },
+              },
             },
           },
         ];
@@ -3186,6 +3217,7 @@ export class NfeService {
           },
           nfes: true,
           nfeOrders: { include: { nfe: true } },
+          nfses: true,
         },
       });
       ordersCountPromise = this.prisma.order.count({ where: orderWhere });
@@ -3308,6 +3340,8 @@ export class NfeService {
           ...(o.nfes || []),
           ...(o.nfeOrders?.map((no) => no.nfe) || []),
         ].filter((n) => !excludedNfeIds.includes(n.id)),
+        nfses: o.nfses || [],
+        nfse: (o.nfses || [])[0] || null,
         originalData: o,
       });
     }

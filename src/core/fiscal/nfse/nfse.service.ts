@@ -2,10 +2,11 @@
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
-import { NfseStatus } from '@prisma/client';
+import { NfceStatus, NfeStatus, NfseStatus, OrderStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import {
@@ -25,6 +26,26 @@ import { FiscalCredentialResolverService } from '../shared/fiscal-credential-res
 @Injectable()
 export class NfseService {
   private readonly logger = new Logger(NfseService.name);
+  private readonly activeNfeStatuses = [
+    NfeStatus.AUTHORIZED,
+    NfeStatus.CORRECTION_SENT,
+    NfeStatus.DRAFT,
+    NfeStatus.PROCESSING,
+    NfeStatus.PENDING,
+  ];
+  private readonly activeNfseStatuses = [
+    NfseStatus.AUTHORIZED,
+    NfseStatus.DRAFT,
+    NfseStatus.PROCESSING,
+    NfseStatus.PENDING,
+  ];
+  private readonly activeNfceStatuses = [
+    NfceStatus.AUTHORIZED,
+    NfceStatus.PROCESSING,
+    NfceStatus.UNKNOWN,
+    NfceStatus.CONTINGENCY,
+    NfceStatus.PENDING,
+  ];
 
   constructor(
     private readonly prisma: PrismaService,
@@ -286,7 +307,7 @@ export class NfseService {
             address: true,
           },
         },
-        order: true,
+        order: { include: this.orderFiscalInclude() },
         deliveryInfo: {
           include: {
             clientAddress: true,
@@ -307,6 +328,8 @@ export class NfseService {
     if (!quotation || !quotation.order) {
       throw new NotFoundException('Ordem de serviÃ§o nÃ£o encontrada');
     }
+
+    this.assertOrdersCanReceiveNfse([quotation.order as any]);
 
     const client = quotation.client;
     if (!client) {
@@ -535,7 +558,7 @@ export class NfseService {
       },
       include: {
         client: { include: { address: true } },
-        order: true,
+        order: { include: this.orderFiscalInclude() },
         quotationProduct: {
           include: { product: { include: { fiscalData: true } } },
         },
@@ -547,6 +570,10 @@ export class NfseService {
         'Uma ou mais ordens de serviÃ§o nÃ£o foram encontradas',
       );
     }
+
+    this.assertOrdersCanReceiveNfse(
+      quotations.map((quotation) => quotation.order as any),
+    );
 
     // Validar que todas as OS sÃ£o do mesmo cliente
     const clientIds = [...new Set(quotations.map((q) => q.clientId))];
@@ -739,6 +766,28 @@ export class NfseService {
   }
 
   async emit(companyId: string, dto: EmitNfseDto) {
+    if (dto.orderId) {
+      const linkedOrder = await this.prisma.order.findFirst({
+        where: {
+          id: dto.orderId,
+          quotation: { companyId },
+        },
+        include: this.orderFiscalInclude(),
+      });
+
+      if (!linkedOrder) {
+        throw new NotFoundException('Ordem de serviÃ§o nÃ£o encontrada');
+      }
+
+      this.assertOrdersCanReceiveNfse([linkedOrder as any]);
+
+      if (dto.quotationId && linkedOrder.quotationId !== dto.quotationId) {
+        throw new BadRequestException(
+          'A ordem de serviÃ§o informada nÃ£o pertence ao orÃ§amento enviado.',
+        );
+      }
+    }
+
     // Buscar configuraÃ§Ã£o do Invoicy
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
@@ -794,10 +843,6 @@ export class NfseService {
       );
     }
 
-    // Read current RPS number (will only increment after successful emission)
-    const rpsNumero = config.proximoRpsNfse || 1;
-    const rpsSerie = config.serieNfse || 'A1';
-
     // Calcular valores
     const valorServicos = dto.valorServicos;
     const valorDeducoes = dto.valorDeducoes || 0;
@@ -805,37 +850,46 @@ export class NfseService {
     const aliquotaIss = dto.aliquotaIss || config.aliquotaIss || 0;
     const valorIss = (baseCalculo * aliquotaIss) / 100;
 
-    // Criar registro da NFS-e
-    const nfse = await this.prisma.nfse.create({
-      data: {
-        companyId,
-        orderId: dto.orderId,
-        quotationId: dto.quotationId,
-        numero: 0, // SerÃ¡ preenchido apÃ³s retorno da prefeitura
-        serie: rpsSerie,
-        rpsNumero,
-        rpsSerie,
-        rpsTipo: 1,
-        status: NfseStatus.PROCESSING,
-        ambiente: environment === 'PRODUCAO' ? 1 : 2,
-        dataCompetencia: new Date(dto.dataCompetencia),
-        valorServicos,
-        valorDeducoes,
-        valorPis: dto.valorPis || 0,
-        valorCofins: dto.valorCofins || 0,
-        valorInss: dto.valorInss || 0,
-        valorIr: dto.valorIr || 0,
-        valorCsll: dto.valorCsll || 0,
-        valorIss,
-        aliquotaIss,
-        baseCalculo,
-        issRetido: dto.issRetido || false,
-        codigoServico: dto.codigoServico,
-        discriminacao: dto.discriminacao,
-        codigoMunicipio: dto.codigoMunicipio,
-        draftData: dto as any,
+    this.assertNfsePayloadReady(dto, valorServicos, valorDeducoes, baseCalculo);
+
+    const { nfse, rpsNumero, rpsSerie } = await this.prisma.$transaction(
+      async (tx) => {
+        const reserved = await this.reserveNfseRps(tx, config.id);
+
+        const nfse = await tx.nfse.create({
+          data: {
+            companyId,
+            orderId: dto.orderId,
+            quotationId: dto.quotationId,
+            numero: 0, // SerÃ¡ preenchido apÃ³s retorno da prefeitura
+            serie: reserved.rpsSerie,
+            rpsNumero: reserved.rpsNumero,
+            rpsSerie: reserved.rpsSerie,
+            rpsTipo: 1,
+            status: NfseStatus.PROCESSING,
+            ambiente: environment === 'PRODUCAO' ? 1 : 2,
+            dataCompetencia: new Date(dto.dataCompetencia || new Date()),
+            valorServicos,
+            valorDeducoes,
+            valorPis: dto.valorPis || 0,
+            valorCofins: dto.valorCofins || 0,
+            valorInss: dto.valorInss || 0,
+            valorIr: dto.valorIr || 0,
+            valorCsll: dto.valorCsll || 0,
+            valorIss,
+            aliquotaIss,
+            baseCalculo,
+            issRetido: dto.issRetido || false,
+            codigoServico: dto.codigoServico,
+            discriminacao: dto.discriminacao,
+            codigoMunicipio: dto.codigoMunicipio,
+            draftData: dto as any,
+          },
+        });
+
+        return { nfse, ...reserved };
       },
-    });
+    );
 
     try {
       this.logger.log(
@@ -1072,23 +1126,197 @@ export class NfseService {
         );
       }
 
-      // Increment RPS number only after successful emission
-      await this.invoicyService.incrementNfseRpsNumber(config.id);
-
       return updatedNfse;
     } catch (error) {
-      // Atualizar status para rejeitado em caso de erro
+      const isUnknownOutcome =
+        !(error instanceof BadRequestException) &&
+        (error?.code === 'ECONNABORTED' ||
+          error?.code === 'ECONNRESET' ||
+          error?.code === 'ETIMEDOUT' ||
+          error?.response === undefined ||
+          error?.response?.status >= 500);
+      const motivoRejeicao = isUnknownOutcome
+        ? 'Erro de transporte - resultado desconhecido'
+        : this.extractSafeErrorMessage(error);
+
       await this.prisma.nfse.update({
         where: { id: nfse.id },
         data: {
-          status: NfseStatus.REJECTED,
-          motivoRejeicao: error.message,
+          status: isUnknownOutcome
+            ? NfseStatus.PROCESSING
+            : NfseStatus.REJECTED,
+          motivoRejeicao,
         },
       });
 
-      this.logger.error(`Erro ao emitir NFS-e: ${error.message}`, error.stack);
-      throw new BadRequestException(`Erro ao emitir NFS-e: ${error.message}`);
+      this.logger.error(`Erro ao emitir NFS-e: ${motivoRejeicao}`, error.stack);
+
+      if (isUnknownOutcome) {
+        throw new BadRequestException(
+          'Falha de comunicaÃ§Ã£o com o Invoicy. A NFS-e ficou em processamento com resultado desconhecido; consulte o status antes de reemitir.',
+        );
+      }
+
+      throw new BadRequestException(`Erro ao emitir NFS-e: ${motivoRejeicao}`);
     }
+  }
+
+  private orderFiscalInclude() {
+    return {
+      nfes: {
+        where: { status: { in: this.activeNfeStatuses } },
+        select: { id: true, status: true },
+        take: 1,
+      },
+      nfeOrders: {
+        where: {
+          nfe: { status: { in: this.activeNfeStatuses } },
+        },
+        select: { id: true },
+        take: 1,
+      },
+      nfses: {
+        where: { status: { in: this.activeNfseStatuses } },
+        select: { id: true, status: true },
+        take: 1,
+      },
+      nfces: {
+        where: { status: { in: this.activeNfceStatuses } },
+        select: { id: true, status: true },
+        take: 1,
+      },
+    };
+  }
+
+  private assertOrdersCanReceiveNfse(orders: any[]) {
+    for (const order of orders) {
+      if (!order) {
+        throw new NotFoundException('Ordem de serviÃ§o nÃ£o encontrada');
+      }
+
+      if (order.status === OrderStatus.CANCELED) {
+        throw new BadRequestException(
+          'NÃ£o Ã© possÃ­vel emitir NFS-e para uma ordem de serviÃ§o cancelada.',
+        );
+      }
+
+      if (
+        order.nfes?.length > 0 ||
+        order.nfeOrders?.length > 0 ||
+        order.nfses?.length > 0 ||
+        order.nfces?.length > 0
+      ) {
+        throw new ConflictException(
+          'Esta ordem de serviÃ§o jÃ¡ possui documento fiscal ativo ou autorizado.',
+        );
+      }
+    }
+  }
+
+  private assertNfsePayloadReady(
+    dto: EmitNfseDto,
+    valorServicos: number,
+    valorDeducoes: number,
+    baseCalculo: number,
+  ) {
+    const codigoServicoDigits = (dto.codigoServico || '').replace(/\D/g, '');
+    const prestadorMunicipio = (dto.codigoMunicipio || '').replace(/\D/g, '');
+    const tomadorMunicipio = (dto.tomador?.codigoMunicipio || '').replace(
+      /\D/g,
+      '',
+    );
+    const cnpj = (dto.tomador?.cnpj || '').replace(/\D/g, '');
+    const cpf = (dto.tomador?.cpf || '').replace(/\D/g, '');
+
+    if (valorServicos <= 0) {
+      throw new BadRequestException(
+        'Valor dos serviÃ§os deve ser maior que zero.',
+      );
+    }
+
+    if (valorDeducoes < 0 || baseCalculo < 0) {
+      throw new BadRequestException(
+        'Valor das deduÃ§Ãµes nÃ£o pode exceder o valor dos serviÃ§os.',
+      );
+    }
+
+    if (!codigoServicoDigits || Number(codigoServicoDigits) <= 0) {
+      throw new BadRequestException(
+        'CÃ³digo do serviÃ§o municipal Ã© obrigatÃ³rio para emitir NFS-e.',
+      );
+    }
+
+    if (!prestadorMunicipio || Number(prestadorMunicipio) <= 0) {
+      throw new BadRequestException(
+        'CÃ³digo IBGE do municÃ­pio do prestador Ã© obrigatÃ³rio para emitir NFS-e.',
+      );
+    }
+
+    if (!tomadorMunicipio || Number(tomadorMunicipio) <= 0) {
+      throw new BadRequestException(
+        'CÃ³digo IBGE do municÃ­pio do tomador Ã© obrigatÃ³rio para emitir NFS-e.',
+      );
+    }
+
+    if (!dto.tomador?.razaoSocial?.trim()) {
+      throw new BadRequestException(
+        'RazÃ£o social do tomador Ã© obrigatÃ³ria.',
+      );
+    }
+
+    if (
+      !dto.tomador?.idEstrangeiro &&
+      cnpj.length !== 14 &&
+      cpf.length !== 11
+    ) {
+      throw new BadRequestException(
+        'Informe CPF ou CNPJ vÃ¡lido para o tomador da NFS-e.',
+      );
+    }
+  }
+
+  private async reserveNfseRps(
+    tx: any,
+    invoicyConfigId: string,
+  ): Promise<{ rpsNumero: number; rpsSerie: string }> {
+    const configs = await tx.$queryRaw<any[]>`
+      SELECT id, "proximoRpsNfse", "serieNfse"
+      FROM invoicy_configs
+      WHERE id = ${invoicyConfigId}
+      FOR UPDATE
+    `;
+    const config = configs[0];
+
+    if (!config) {
+      throw new NotFoundException(
+        `Emissor fiscal ${invoicyConfigId} nÃ£o encontrado`,
+      );
+    }
+
+    const rpsNumero = config.proximoRpsNfse ?? 1;
+    const rpsSerie = config.serieNfse || 'A1';
+
+    await tx.$executeRaw`
+      UPDATE invoicy_configs
+      SET "proximoRpsNfse" = ${rpsNumero + 1}
+      WHERE id = ${invoicyConfigId}
+    `;
+
+    return { rpsNumero, rpsSerie };
+  }
+
+  private extractSafeErrorMessage(error: any): string {
+    const structured =
+      error?.response?.data?.Descricao ||
+      error?.response?.data?.descricao ||
+      error?.response?.data?.Mensagem ||
+      error?.response?.data?.mensagem ||
+      error?.response?.data?.message ||
+      error?.message;
+
+    return typeof structured === 'string' && structured.trim()
+      ? structured.trim().slice(0, 500)
+      : 'Erro fiscal desconhecido';
   }
 
   async cancel(id: string, companyId: string, dto: CancelNfseDto) {
@@ -1117,6 +1345,7 @@ export class NfseService {
         nfse.numero,
         nfse.codigoVerificacao,
         dto.justificativa,
+        nfse.ambiente,
       );
 
       // Processar resposta

@@ -111,6 +111,24 @@ describe('OrderService', () => {
           status: OrderStatus.FINISHED,
           createdAt: new Date('2026-01-13T12:00:00.000Z'),
           nfes: [],
+          nfces: [
+            {
+              id: 'processing-nfce-1',
+              numero: 2,
+              serie: 1,
+              status: 'PROCESSING',
+              danfeUrl: null,
+            },
+          ],
+          nfses: [
+            {
+              id: 'processing-nfse-1',
+              numero: 3,
+              serie: 'A1',
+              status: 'PROCESSING',
+              pdfUrl: null,
+            },
+          ],
           nfeOrders: [
             {
               nfe: {
@@ -160,6 +178,16 @@ describe('OrderService', () => {
         nfe: { status: { in: ['AUTHORIZED', 'DRAFT'] } },
       });
       expect(findManyArgs.include.nfeOrders.take).toBeUndefined();
+      expect(findManyArgs.include.nfces.where).toEqual({
+        status: {
+          in: ['AUTHORIZED', 'CONTINGENCY', 'PROCESSING', 'UNKNOWN', 'PENDING'],
+        },
+      });
+      expect(findManyArgs.include.nfses.where).toEqual({
+        status: {
+          in: ['AUTHORIZED', 'PROCESSING', 'PENDING', 'DRAFT'],
+        },
+      });
       expect((result.data as any[])[0].orders[0].nfes).toEqual([
         {
           id: 'draft-nfe-1',
@@ -167,6 +195,24 @@ describe('OrderService', () => {
           serie: 1,
           status: 'DRAFT',
           danfeUrl: null,
+        },
+      ]);
+      expect((result.data as any[])[0].orders[0].nfces).toEqual([
+        {
+          id: 'processing-nfce-1',
+          numero: 2,
+          serie: 1,
+          status: 'PROCESSING',
+          danfeUrl: null,
+        },
+      ]);
+      expect((result.data as any[])[0].orders[0].nfses).toEqual([
+        {
+          id: 'processing-nfse-1',
+          numero: 3,
+          serie: 'A1',
+          status: 'PROCESSING',
+          pdfUrl: null,
         },
       ]);
     });

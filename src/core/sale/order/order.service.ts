@@ -10,13 +10,47 @@ import {
 import { CancelOrderDto, CreateOrderDto } from './dto/create-order.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { FilterOrderDto } from './dto/filter.dto';
-import { Order, OrderStatus, Prisma } from '@prisma/client';
+import {
+  NfceStatus,
+  NfseStatus,
+  Order,
+  OrderStatus,
+  Prisma,
+} from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { ORDER_FIND_ONE_INCLUDE } from './order.includes';
 import { transformOrderToResponse } from './order.transformers';
 import { UpdateOrderInfoDto } from './dto/update-order.dto';
 
 const EXPORT_LIMIT = '10000';
+const ACTIVE_NFCE_STATUSES: NfceStatus[] = [
+  NfceStatus.AUTHORIZED,
+  NfceStatus.CONTINGENCY,
+  NfceStatus.PROCESSING,
+  NfceStatus.UNKNOWN,
+  NfceStatus.PENDING,
+];
+const ISSUED_NFCE_STATUSES: NfceStatus[] = [
+  NfceStatus.AUTHORIZED,
+  NfceStatus.CONTINGENCY,
+];
+const DRAFT_NFCE_STATUSES: NfceStatus[] = [
+  NfceStatus.PROCESSING,
+  NfceStatus.UNKNOWN,
+  NfceStatus.PENDING,
+];
+const ACTIVE_NFSE_STATUSES: NfseStatus[] = [
+  NfseStatus.AUTHORIZED,
+  NfseStatus.PROCESSING,
+  NfseStatus.PENDING,
+  NfseStatus.DRAFT,
+];
+const ISSUED_NFSE_STATUSES: NfseStatus[] = [NfseStatus.AUTHORIZED];
+const DRAFT_NFSE_STATUSES: NfseStatus[] = [
+  NfseStatus.PROCESSING,
+  NfseStatus.PENDING,
+  NfseStatus.DRAFT,
+];
 
 export interface OrderGroup {
   date: string;
@@ -72,15 +106,21 @@ export class OrderService {
           where.OR = [
             { nfes: { some: { status: 'AUTHORIZED' } } },
             { nfeOrders: { some: { nfe: { status: 'AUTHORIZED' } } } },
+            { nfces: { some: { status: { in: ISSUED_NFCE_STATUSES } } } },
+            { nfses: { some: { status: { in: ISSUED_NFSE_STATUSES } } } },
           ];
         } else if (dto.nfeStatus === 'EM_DIGITACAO') {
           where.OR = [
             { nfes: { some: { status: 'DRAFT' } } },
             { nfeOrders: { some: { nfe: { status: 'DRAFT' } } } },
+            { nfces: { some: { status: { in: DRAFT_NFCE_STATUSES } } } },
+            { nfses: { some: { status: { in: DRAFT_NFSE_STATUSES } } } },
           ];
           where.AND = [
             { nfes: { none: { status: 'AUTHORIZED' } } },
             { nfeOrders: { none: { nfe: { status: 'AUTHORIZED' } } } },
+            { nfces: { none: { status: { in: ISSUED_NFCE_STATUSES } } } },
+            { nfses: { none: { status: { in: ISSUED_NFSE_STATUSES } } } },
           ];
         } else if (dto.nfeStatus === 'TODAS') {
           // Sem filtro de NFE, mas se for tela de NFE, esconder canceladas sem NF
@@ -88,6 +128,8 @@ export class OrderService {
             { status: { not: OrderStatus.CANCELED } },
             { nfes: { some: {} } },
             { nfeOrders: { some: {} } },
+            { nfces: { some: {} } },
+            { nfses: { some: {} } },
           ];
         } else if (dto.nfeStatus) {
           // Padrão (NAO_EMITIDA): ordens sem nenhuma NF AUTHORIZED ou DRAFT e que NÃO estão canceladas
@@ -97,6 +139,16 @@ export class OrderService {
             {
               nfeOrders: {
                 none: { nfe: { status: { in: ['AUTHORIZED', 'DRAFT'] } } },
+              },
+            },
+            {
+              nfces: {
+                none: { status: { in: ACTIVE_NFCE_STATUSES } },
+              },
+            },
+            {
+              nfses: {
+                none: { status: { in: ACTIVE_NFSE_STATUSES } },
               },
             },
           ];
@@ -225,6 +277,43 @@ export class OrderService {
               },
             },
           },
+          nfces: {
+            where: {
+              status: { in: ACTIVE_NFCE_STATUSES },
+            },
+            orderBy: { createdAt: 'desc' },
+            select: {
+              id: true,
+              numero: true,
+              serie: true,
+              status: true,
+              danfeUrl: true,
+              dataEmissao: true,
+              chaveAcesso: true,
+              qrCodeUrl: true,
+              xmlAutorizado: true,
+              motivoRejeicao: true,
+            },
+          },
+          nfses: {
+            where: {
+              status: { in: ACTIVE_NFSE_STATUSES },
+            },
+            orderBy: { createdAt: 'desc' },
+            select: {
+              id: true,
+              numero: true,
+              serie: true,
+              rpsNumero: true,
+              rpsSerie: true,
+              status: true,
+              codigoVerificacao: true,
+              pdfUrl: true,
+              dataEmissao: true,
+              xmlRetorno: true,
+              motivoRejeicao: true,
+            },
+          },
         },
         take: Number(dto.limit),
         skip: (Number(dto.page) - 1) * Number(dto.limit),
@@ -290,6 +379,8 @@ export class OrderService {
               quotationPayment: quotation.quotationPayment,
             },
             nfes: order.nfes || [],
+            nfces: order.nfces || [],
+            nfses: order.nfses || [],
           });
 
           return acc;
