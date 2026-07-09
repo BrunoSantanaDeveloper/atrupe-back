@@ -224,6 +224,10 @@ const mockPrismaService = {
   nfeOrder: {
     createMany: jest.fn(),
   },
+  nfeCorrectionEvent: {
+    findFirst: jest.fn(),
+    create: jest.fn(),
+  },
   nfeDanfeDocument: {
     findUnique: jest.fn(),
     upsert: jest.fn(),

@@ -2281,30 +2281,50 @@ export class NfeService {
   ) {
     const nfe = await this.findById(id, companyId);
 
-    if (nfe.status !== NfeStatus.AUTHORIZED) {
+    if (
+      nfe.status !== NfeStatus.AUTHORIZED &&
+      nfe.status !== NfeStatus.CORRECTION_SENT
+    ) {
       throw new BadRequestException(
-        'Cartas de correÃ§Ã£o sÃ³ podem ser enviadas para NF-e autorizadas',
+        'Cartas de correÃ§Ã£o sÃ³ podem ser enviadas para NF-e autorizadas ou com correÃ§Ã£o anterior',
       );
     }
 
-    if (dto.correcao.length < 15) {
+    const correcao = dto.correcao?.trim() || '';
+
+    if (correcao.length < 15) {
       throw new BadRequestException(
         'O texto da correÃ§Ã£o deve ter no mÃ­nimo 15 caracteres',
+      );
+    }
+
+    if (correcao.length > 1000) {
+      throw new BadRequestException(
+        'O texto da correÃ§Ã£o deve ter no mÃ¡ximo 1000 caracteres',
       );
     }
 
     try {
       this.logger.log(`Enviando carta de correÃ§Ã£o para NF-e ${nfe.numero}`);
 
-      // Obter sequÃªncia do evento (max 20 cartas de correÃ§Ã£o por NF-e)
-      const sequenciaEvento = dto.sequenciaEvento || 1;
+      const lastEvent = await this.prisma.nfeCorrectionEvent.findFirst({
+        where: { nfeId: id },
+        orderBy: { sequenciaEvento: 'desc' },
+      });
+      const sequenciaEvento = lastEvent ? lastEvent.sequenciaEvento + 1 : 1;
+
+      if (sequenciaEvento > 20) {
+        throw new BadRequestException(
+          'A sequÃªncia da carta de correÃ§Ã£o deve ser um nÃºmero entre 1 e 20',
+        );
+      }
 
       // Chamar API do Invoicy para carta de correÃ§Ã£o
       const invoicyResponses =
         await this.invoicyApiService.sendCorrectionLetter(
           companyId,
           nfe.chaveAcesso,
-          dto.correcao,
+          correcao,
           sequenciaEvento,
           nfe.ambiente,
         );
@@ -2332,14 +2352,30 @@ export class NfeService {
         );
       }
 
+      const dataEvento = new Date();
+      const xmlEvento = doc?.DocXMLBase64
+        ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
+        : null;
+
       const updatedNfe = await this.prisma.nfe.update({
         where: { id },
         data: {
           status: NfeStatus.CORRECTION_SENT,
-          cartaCorrecao: dto.correcao,
-          dataCorrecao: new Date(),
+          cartaCorrecao: correcao,
+          dataCorrecao: dataEvento,
           protocoloCorrecao: doc?.DocProtocolo || null,
           sequenciaCorrecao: sequenciaEvento,
+        },
+      });
+
+      await this.prisma.nfeCorrectionEvent.create({
+        data: {
+          nfeId: id,
+          sequenciaEvento,
+          correcao,
+          protocolo: doc?.DocProtocolo || null,
+          dataEvento,
+          xmlEvento,
         },
       });
 
@@ -2976,7 +3012,7 @@ export class NfeService {
       throw new NotFoundException('NF-e nÃ£o encontrada');
     }
 
-    return this.prisma.nfeCorrectionEvent.findMany({
+    const events = await this.prisma.nfeCorrectionEvent.findMany({
       where: { nfeId },
       orderBy: { sequenciaEvento: 'asc' },
       select: {
@@ -2989,6 +3025,11 @@ export class NfeService {
         xmlEvento: true,
       },
     });
+
+    return events.map(({ xmlEvento, ...event }) => ({
+      ...event,
+      hasXml: !!xmlEvento,
+    }));
   }
 
   async getCorrectionEventXml(

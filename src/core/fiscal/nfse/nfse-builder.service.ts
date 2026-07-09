@@ -167,11 +167,15 @@ export class NfseBuilderService {
    * Constrói dados do prestador (empresa emissora)
    */
   private buildPrestador(config: any): any {
+    const municipalRegistration = (
+      config.company.municipalRegistration || ''
+    ).replace(/\D/g, '');
+
     return {
       CNPJ_prest: (config.company.cnpj || '').replace(/\D/g, ''),
       xNome: config.company.legalName || '',
       xFant: config.company.name || '',
-      IM: (config.company.municipalRegistration || '').replace(/\D/g, ''),
+      ...(municipalRegistration ? { IM: municipalRegistration } : {}),
       enderPrest: {
         TPEnd: 'Rua',
         xLgr: config.company.address.street || '',

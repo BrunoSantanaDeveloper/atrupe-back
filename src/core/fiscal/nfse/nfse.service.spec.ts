@@ -289,6 +289,41 @@ describe('NfseService', () => {
       expect(invoicyApiService.emitNfse).toHaveBeenCalled();
     });
 
+    it('should retry without provider municipal registration when city rejects IM', async () => {
+      mockInvoicyApiService.emitNfse
+        .mockImplementationOnce(async (_companyId, payloads) => {
+          expect(payloads[0].Documento.RPS[0].Prestador.IM).toBe('12345');
+          return [
+            {
+              Codigo: 100,
+              Descricao: 'Documentos processados com sucesso',
+              Documentos: [
+                {
+                  Situacao: {
+                    SitCodigo: 2,
+                    SitDescricao:
+                      'Pendente - [#inv0405] - Mensagem retornada pela prefeitura: Código: E0120, Mensagem: IM do prestador nao deve ser informado',
+                  },
+                },
+              ],
+            },
+          ];
+        })
+        .mockImplementationOnce(async (_companyId, payloads) => {
+          expect(payloads[0].Documento.RPS[0].Prestador.IM).toBeUndefined();
+          return mockInvoicyResponse;
+        });
+
+      const result = await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Serviço de consultoria em TI',
+      });
+
+      expect(result).toBeDefined();
+      expect(invoicyApiService.emitNfse).toHaveBeenCalledTimes(2);
+    });
+
     it('should only include service items', async () => {
       const orderWithProducts = {
         ...mockOrder,

@@ -162,97 +162,104 @@ export class NfeEventsService {
     try {
       this.logger.log(`Enviando carta de correção para NF-e ${nfe.numero}`);
 
-      // Calcular próxima sequência automaticamente com base nos eventos já registrados
-      const lastEvent = await this.prisma.nfeCorrectionEvent.findFirst({
-        where: { nfeId: nfe.id },
-        orderBy: { sequenciaEvento: 'desc' },
-      });
-      const sequenciaEvento =
-        dto.sequenciaEvento ?? (lastEvent ? lastEvent.sequenciaEvento + 1 : 1);
+      const updatedNfe = await this.prisma.$transaction(
+        async (tx) => {
+          // Lock pessimista da NF-e: evita duas CC-e concorrentes calcularem a mesma sequência.
+          await tx.nfe.update({
+            where: { id: nfe.id },
+            data: { updatedAt: new Date() },
+            select: { id: true },
+          });
 
-      if (
-        !Number.isInteger(sequenciaEvento) ||
-        sequenciaEvento < 1 ||
-        sequenciaEvento > 20
-      ) {
-        throw new BadRequestException(
-          'A sequência da carta de correção deve ser um número entre 1 e 20',
-        );
-      }
+          const lastEvent = await tx.nfeCorrectionEvent.findFirst({
+            where: { nfeId: nfe.id },
+            orderBy: { sequenciaEvento: 'desc' },
+          });
+          const sequenciaEvento = lastEvent ? lastEvent.sequenciaEvento + 1 : 1;
 
-      // Chamar API do Invoicy para carta de correção
-      const invoicyResponses =
-        await this.invoicyApiService.sendCorrectionLetter(
-          companyId,
-          nfe.chaveAcesso,
-          correcao,
-          sequenciaEvento,
-        );
+          if (sequenciaEvento > 20) {
+            throw new BadRequestException(
+              'A sequência da carta de correção deve ser um número entre 1 e 20',
+            );
+          }
 
-      // Processar resposta
-      const response = invoicyResponses[0];
-      if (!response) {
-        throw new Error('Nenhuma resposta recebida do Invoicy');
-      }
+          const invoicyResponses =
+            await this.invoicyApiService.sendCorrectionLetter(
+              companyId,
+              nfe.chaveAcesso,
+              correcao,
+              sequenciaEvento,
+              nfe.ambiente,
+            );
 
-      if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-        throw new Error(
-          this.getCorrectionRejectionMessage(
-            response,
-            nfe.chaveAcesso,
-            sequenciaEvento,
-            correcao.length,
-          ),
-        );
-      }
+          const response = invoicyResponses[0];
+          if (!response) {
+            throw new Error('Nenhuma resposta recebida do Invoicy');
+          }
 
-      const doc = response.Documentos?.[0];
-      const situacao = doc?.Situacao;
-      const isApproved = situacao?.SitCodigo === 135;
+          if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
+            throw new Error(
+              this.getCorrectionRejectionMessage(
+                response,
+                nfe.chaveAcesso,
+                sequenciaEvento,
+                correcao.length,
+              ),
+            );
+          }
 
-      if (!isApproved) {
-        throw new Error(
-          this.getCorrectionRejectionMessage(
-            response,
-            nfe.chaveAcesso,
-            sequenciaEvento,
-            correcao.length,
-          ),
-        );
-      }
+          const doc = response.Documentos?.[0];
+          const situacao = doc?.Situacao;
+          const isApproved = situacao?.SitCodigo === 135;
 
-      const updatedNfe = await this.prisma.nfe.update({
-        where: { id: nfe.id },
-        data: {
-          status: NfeStatus.CORRECTION_SENT,
-          cartaCorrecao: correcao,
-          dataCorrecao: new Date(),
-          protocoloCorrecao: doc?.DocProtocolo || null,
-          sequenciaCorrecao: sequenciaEvento,
+          if (!isApproved) {
+            throw new Error(
+              this.getCorrectionRejectionMessage(
+                response,
+                nfe.chaveAcesso,
+                sequenciaEvento,
+                correcao.length,
+              ),
+            );
+          }
+
+          const xmlEvento = doc?.DocXMLBase64
+            ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
+            : null;
+
+          if (!xmlEvento) {
+            this.logger.warn(
+              `XML da CC-e não retornado pela Invoicy para NF-e ${nfe.numero} (evento seq ${sequenciaEvento})`,
+            );
+          }
+
+          const dataEvento = new Date();
+          const persistedNfe = await tx.nfe.update({
+            where: { id: nfe.id },
+            data: {
+              status: NfeStatus.CORRECTION_SENT,
+              cartaCorrecao: correcao,
+              dataCorrecao: dataEvento,
+              protocoloCorrecao: doc?.DocProtocolo || null,
+              sequenciaCorrecao: sequenciaEvento,
+            },
+          });
+
+          await tx.nfeCorrectionEvent.create({
+            data: {
+              nfeId: nfe.id,
+              sequenciaEvento,
+              correcao,
+              protocolo: doc?.DocProtocolo || null,
+              dataEvento,
+              xmlEvento,
+            },
+          });
+
+          return persistedNfe;
         },
-      });
-
-      // Persistir evento no histórico de correções (com XML se disponível)
-      const xmlEvento = doc?.DocXMLBase64
-        ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
-        : null;
-
-      if (!xmlEvento) {
-        this.logger.warn(
-          `XML da CC-e não retornado pela Invoicy para NF-e ${nfe.numero} (evento seq ${sequenciaEvento})`,
-        );
-      }
-
-      await this.prisma.nfeCorrectionEvent.create({
-        data: {
-          nfeId: nfe.id,
-          sequenciaEvento,
-          correcao,
-          protocolo: doc?.DocProtocolo || null,
-          dataEvento: new Date(),
-          xmlEvento,
-        },
-      });
+        { maxWait: 5000, timeout: 30000 },
+      );
 
       return updatedNfe;
     } catch (error) {

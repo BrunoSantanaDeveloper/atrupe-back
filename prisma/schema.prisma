@@ -2331,6 +2331,7 @@ model NfeCorrectionEvent {
   xmlEvento       String?   @db.Text
   nfe             Nfe       @relation(fields: [nfeId], references: [id], onDelete: Cascade)
 
+  @@unique([nfeId, sequenciaEvento])
   @@index([nfeId])
   @@map("nfe_correction_events")
 }

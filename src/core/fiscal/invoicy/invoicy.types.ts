@@ -286,7 +286,7 @@ export interface InvoicyNfsePrestador {
   CNPJ_prest: string;
   xNome: string;
   xFant?: string;
-  IM: string;
+  IM?: string;
   IE?: string;
   enderPrest: {
     TPEnd?: string;

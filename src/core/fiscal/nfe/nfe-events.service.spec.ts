@@ -13,6 +13,7 @@ describe('NfeEventsService', () => {
 
   beforeEach(async () => {
     prismaMock = {
+      $transaction: jest.fn(async (callback) => callback(prismaMock)),
       nfe: {
         update: jest.fn(),
       },
@@ -142,6 +143,7 @@ describe('NfeEventsService', () => {
         id: 'nfe-1',
         status: NfeStatus.AUTHORIZED,
         chaveAcesso,
+        ambiente: 2,
       };
 
       invoicyApiMock.sendCorrectionLetter.mockResolvedValue([
@@ -168,6 +170,7 @@ describe('NfeEventsService', () => {
         chaveAcesso,
         'Correção de CFOP para 6102',
         1,
+        2,
       );
       expect(prismaMock.nfe.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -175,6 +178,16 @@ describe('NfeEventsService', () => {
           data: expect.objectContaining({
             status: NfeStatus.CORRECTION_SENT,
             protocoloCorrecao: 'PROTOCOLO123',
+          }),
+        }),
+      );
+      expect(prismaMock.nfeCorrectionEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            nfeId: 'nfe-1',
+            sequenciaEvento: 1,
+            correcao: 'Correção de CFOP para 6102',
+            protocolo: 'PROTOCOLO123',
           }),
         }),
       );

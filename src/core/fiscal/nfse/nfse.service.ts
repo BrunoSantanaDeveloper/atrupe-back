@@ -813,12 +813,6 @@ export class NfseService {
       'NFSE',
     );
 
-    if (!config.company.municipalRegistration) {
-      throw new BadRequestException(
-        'InscriÃ§Ã£o Municipal nÃ£o configurada. NecessÃ¡ria para emissÃ£o de NFS-e.',
-      );
-    }
-
     // Se houver endereÃ§o de entrega (local de prestaÃ§Ã£o) e nÃ£o houver cÃ³digo de municÃ­pio, resolver via CEP
     if (dto.entregaEndereco && !dto.entregaCodigoMunicipio) {
       if (!dto.entregaCep) {
@@ -959,6 +953,9 @@ export class NfseService {
         },
       ];
 
+      const prestadorMunicipalRegistration =
+        this.getPrestadorMunicipalRegistration(config);
+
       // Construir payload para o Invoicy
       const invoicyRequest: InvoicyNfseRequest = {
         Documento: {
@@ -988,10 +985,9 @@ export class NfseService {
                 CNPJ_prest: (config.company.cnpj || '').replace(/\D/g, ''),
                 xNome: config.company.legalName || '',
                 xFant: config.company.name || '',
-                IM: (config.company.municipalRegistration || '').replace(
-                  /\D/g,
-                  '',
-                ),
+                ...(prestadorMunicipalRegistration
+                  ? { IM: prestadorMunicipalRegistration }
+                  : {}),
                 enderPrest: {
                   TPEnd: 'Rua', // Default
                   xLgr: config.company.address.street || '',
@@ -1077,16 +1073,16 @@ export class NfseService {
         },
       };
 
-      // Chamar API do Invoicy
-      const invoicyResponses = await this.invoicyApiService.emitNfse(
-        companyId,
-        [invoicyRequest],
-      );
+      let response = await this.sendNfseToInvoicy(companyId, invoicyRequest);
 
-      // Processar resposta
-      const response = invoicyResponses[0];
-      if (!response) {
-        throw new Error('Nenhuma resposta recebida do Invoicy');
+      if (
+        this.shouldRetryNfseWithoutPrestadorIm(response) &&
+        this.removePrestadorMunicipalRegistration(invoicyRequest)
+      ) {
+        this.logger.warn(
+          `Prefeitura rejeitou a NFS-e ${nfse.id} por IM do prestador informada. Reenviando RPS ${rpsNumero}/${rpsSerie} sem Prestador.IM.`,
+        );
+        response = await this.sendNfseToInvoicy(companyId, invoicyRequest);
       }
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
@@ -1186,6 +1182,66 @@ export class NfseService {
         take: 1,
       },
     };
+  }
+
+  private getPrestadorMunicipalRegistration(config: any): string | undefined {
+    const municipalRegistration = (
+      config.company?.municipalRegistration || ''
+    ).replace(/\D/g, '');
+
+    return municipalRegistration || undefined;
+  }
+
+  private async sendNfseToInvoicy(
+    companyId: string,
+    invoicyRequest: InvoicyNfseRequest,
+  ) {
+    const invoicyResponses = await this.invoicyApiService.emitNfse(companyId, [
+      invoicyRequest,
+    ]);
+
+    const response = invoicyResponses[0];
+    if (!response) {
+      throw new Error('Nenhuma resposta recebida do Invoicy');
+    }
+
+    return response;
+  }
+
+  private removePrestadorMunicipalRegistration(
+    invoicyRequest: InvoicyNfseRequest,
+  ): boolean {
+    const prestador = invoicyRequest.Documento.RPS?.[0]
+      ?.Prestador as unknown as Record<string, unknown> | undefined;
+
+    if (!prestador?.IM) {
+      return false;
+    }
+
+    delete prestador.IM;
+    return true;
+  }
+
+  private shouldRetryNfseWithoutPrestadorIm(response: any): boolean {
+    const doc = response?.Documentos?.[0];
+    const message = [
+      response?.Descricao,
+      response?.Mensagem,
+      response?.ErrorInvoicy,
+      doc?.MensagemSefaz?.DscMsg,
+      doc?.Situacao?.SitDescricao,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+    return (
+      message.includes('e0120') ||
+      (message.includes('im do prestador') &&
+        message.includes('nao deve ser informado'))
+    );
   }
 
   private assertOrdersCanReceiveNfse(orders: any[]) {
