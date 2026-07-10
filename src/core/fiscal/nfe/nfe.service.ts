@@ -937,7 +937,7 @@ export class NfeService {
 
     const mappedItemsWithCfop = mappedItems.map((item: any) => ({
       ...item,
-      cfop: suggestedCfop,
+      cfop: String(suggestedCfop),
     }));
 
     return {
@@ -3376,7 +3376,7 @@ export class NfeService {
         reference: o.quotation?.series?.code
           ? `${o.quotation.series.code}-${o.quotation.quotationNumber}`
           : `OS ${o.quotation?.quotationNumber || ''}`,
-        totalValue: o.quotation?.totalValue || 0,
+        totalValue: (o.quotation?.totalValue || 0) / 100,
         nfes: [
           ...(o.nfes || []),
           ...(o.nfeOrders?.map((no) => no.nfe) || []),
