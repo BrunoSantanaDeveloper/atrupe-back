@@ -987,6 +987,8 @@ export class NfseService {
               Operacao: 1,
               RegEspTrib: 1, // 1 = Nenhum
               OptSN: config.emitCrt === 1 ? 1 : 2, // 1 = Sim, 2 = NÃ£o
+              // Obrigatório quando OptSN=1 (Simples Nacional): 1=Competência, 2=Caixa
+              ...(config.emitCrt === 1 ? { RegApuracao: 1 } : {}),
               IncCult: 2, // 2 = NÃ£o
               Status: 1, // 1 = Normal
               tpAmb: environment === 'PRODUCAO' ? 1 : 2,
