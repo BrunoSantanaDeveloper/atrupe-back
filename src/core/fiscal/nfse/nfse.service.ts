@@ -1075,12 +1075,13 @@ export class NfseService {
 
       let response = await this.sendNfseToInvoicy(companyId, invoicyRequest);
 
-      if (
-        this.shouldRetryNfseWithoutPrestadorIm(response) &&
-        this.removePrestadorMunicipalRegistration(invoicyRequest)
-      ) {
+      if (this.shouldRetryNfseWithoutPrestadorIm(response)) {
+        // Remove IM do request (no-op se não estava presente) e retenta sempre,
+        // pois o Invoicy pode incluir IM a partir dos dados cadastrados na plataforma
+        // mesmo que não enviemos no payload — causando E0120 em municípios que não aceitam IM.
+        this.removePrestadorMunicipalRegistration(invoicyRequest);
         this.logger.warn(
-          `Prefeitura rejeitou a NFS-e ${nfse.id} por IM do prestador informada. Reenviando RPS ${rpsNumero}/${rpsSerie} sem Prestador.IM.`,
+          `Prefeitura rejeitou a NFS-e ${nfse.id} com E0120 (IM inválida). Reenviando RPS ${rpsNumero}/${rpsSerie} sem Prestador.IM.`,
         );
         response = await this.sendNfseToInvoicy(companyId, invoicyRequest);
       }
