@@ -271,6 +271,15 @@ export class NfseService {
         razaoSocial: config.company.legalName || config.company.name || '',
         inscricaoMunicipal: config.company.municipalRegistration || '',
         ambiente: environment,
+        endereco: {
+          logradouro: config.company.address?.street || '',
+          numero: config.company.address?.number || 'S/N',
+          complemento: '',
+          bairro: config.company.address?.neighborhood || '',
+          cidade: config.company.address?.city || '',
+          uf: config.company.address?.state || '',
+          cep: config.company.address?.zipcode || '',
+        },
       },
 
       // RPS
