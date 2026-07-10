@@ -947,7 +947,7 @@ export class NfeService {
         ...baseData.emissao,
         tipo: 0,
         finalidade: 4,
-        operationNature: 'DevoluÃ§Ã£o de mercadoria',
+        operationNature: 'Devolução de mercadoria',
         consumidorFinal: 0,
         nfeReferenciada: originalNfe.chaveAcesso,
       },

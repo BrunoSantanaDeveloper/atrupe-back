@@ -115,6 +115,8 @@ export function transformDeliveryInfo(deliveryInfo: any) {
     notes: deliveryInfo.notes,
     modality: deliveryInfo.modality,
     clientAddressId: deliveryInfo.clientAddressId,
+    deliveryTime: deliveryInfo.deliveryTime,
+    deliveryDisplayMode: deliveryInfo.deliveryDisplayMode ?? 'DAYS',
     createdAt: deliveryInfo.createdAt,
     updatedAt: deliveryInfo.updatedAt,
     clientAddress: deliveryInfo.clientAddress
