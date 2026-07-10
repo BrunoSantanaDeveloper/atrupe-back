@@ -82,6 +82,7 @@ describe('NfeEventsService', () => {
         status: NfeStatus.AUTHORIZED,
         dataEmissao: new Date(),
         chaveAcesso: 'CHAVE123',
+        ambiente: 1,
       };
 
       invoicyApiMock.cancelNfe.mockResolvedValue([
@@ -106,6 +107,7 @@ describe('NfeEventsService', () => {
         'company-1',
         'CHAVE123',
         'Cancelamento longo o suficiente',
+        1,
       );
       expect(prismaMock.nfe.update).toHaveBeenCalledWith(
         expect.objectContaining({

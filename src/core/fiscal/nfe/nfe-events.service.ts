@@ -74,6 +74,7 @@ export class NfeEventsService {
         companyId,
         nfe.chaveAcesso,
         dto.justificativa,
+        nfe.ambiente,
       );
 
       // Processar resposta
@@ -204,6 +205,7 @@ export class NfeEventsService {
                 nfe.chaveAcesso,
                 sequenciaEvento,
                 correcao.length,
+                nfe.ambiente,
               ),
             );
           }
@@ -219,6 +221,7 @@ export class NfeEventsService {
                 nfe.chaveAcesso,
                 sequenciaEvento,
                 correcao.length,
+                nfe.ambiente,
               ),
             );
           }
@@ -278,10 +281,13 @@ export class NfeEventsService {
     chaveAcesso: string,
     sequenciaEvento: number,
     correctionLength: number,
+    ambiente?: number,
   ): string {
+    const envLabel = ambiente === 1 ? 'produção' : 'homologação';
     const knownCodes: Record<number, string> = {
       [INVOICY_ERROR_CODES.COMPANY_NOT_ENABLED]:
-        'A empresa emissora não está habilitada na Invoicy. Acesse Configurações → Emissores e verifique se o emissor está ativo.',
+        `A empresa emissora não está habilitada no Invoicy para o ambiente de ${envLabel}. ` +
+        `Acesse Configurações → Emissores, selecione o emissor e conclua a ativação do ambiente de ${envLabel} para NF-e.`,
       [INVOICY_ERROR_CODES.INVALID_KEY]:
         'Chave de acesso da NF-e inválida. O documento pode ter sido emitido com dados inconsistentes.',
       [INVOICY_ERROR_CODES.REJECTED_BY_SEFAZ]:

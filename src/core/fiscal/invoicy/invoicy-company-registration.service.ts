@@ -46,17 +46,29 @@ export class InvoicyCompanyRegistrationService {
 
     const cnpj = company.cnpj ?? '';
 
-    // Check local credential first — if already persisted, nothing to do.
-    // This also covers recovery after a previous attempt that registered remotely
-    // but failed before the local commit: registerCompany handles that case by
-    // returning the existing key from consultCompany.
+    // Check local credential first. If one exists AND the company is actually
+    // registered in Invoicy, nothing to do.
+    // We must verify with Invoicy because the backfill migration may have
+    // populated this credential from the legacy company.accessKey without ever
+    // calling POST /companies on the target environment — in that case the
+    // credential is stale/wrong and we need to (re-)register.
     const localCred = await this.prisma.companyEnvironmentCredential.findUnique(
       {
         where: { companyId_environment: { companyId, environment } },
         select: { providerAccessKeyEncrypted: true },
       },
     );
-    if (localCred?.providerAccessKeyEncrypted) return;
+    if (localCred?.providerAccessKeyEncrypted) {
+      const alreadyInInvoicy =
+        await this.invoicyHttpService.companyExistsInEnvironment(
+          cnpj,
+          environment as InvoicyEnvironment,
+          signal,
+        );
+      if (alreadyInInvoicy) return;
+      // Local credential exists but company is not in Invoicy for this env —
+      // the credential is from the backfill and needs to be replaced.
+    }
 
     // Selecionar o endereço Principal
     const address =
