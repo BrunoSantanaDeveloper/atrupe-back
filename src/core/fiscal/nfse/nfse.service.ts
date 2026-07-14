@@ -1105,6 +1105,17 @@ export class NfseService {
         response = await this.sendNfseToInvoicy(companyId, invoicyRequest);
       }
 
+      if (this.shouldRetryNfseWithRegApuracao(response)) {
+        // Prefeitura exige RegApuracao quando a empresa é optante do Simples Nacional.
+        // config.emitCrt pode estar nulo em alguns emissores (campo não configurado),
+        // mas a prefeitura ainda identifica a empresa como SN pelos seus registros.
+        this.addRegApuracaoToNfseRequest(invoicyRequest);
+        this.logger.warn(
+          `Prefeitura rejeitou a NFS-e ${nfse.id} com E0166 (RegApuracao ausente). Reenviando RPS ${rpsNumero}/${rpsSerie} com RegApuracao=1.`,
+        );
+        response = await this.sendNfseToInvoicy(companyId, invoicyRequest);
+      }
+
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
         throw new Error(
           response.Descricao || `Erro Invoicy: cÃ³digo ${response.Codigo}`,
@@ -1262,6 +1273,36 @@ export class NfseService {
       (message.includes('im do prestador') &&
         message.includes('nao deve ser informado'))
     );
+  }
+
+  private shouldRetryNfseWithRegApuracao(response: any): boolean {
+    const doc = response?.Documentos?.[0];
+    const message = [
+      response?.Descricao,
+      response?.Mensagem,
+      response?.ErrorInvoicy,
+      doc?.MensagemSefaz?.DscMsg,
+      doc?.Situacao?.SitDescricao,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+    return (
+      message.includes('e0166') ||
+      message.includes('regime de apuracao') ||
+      (message.includes('regapuracao') && message.includes('obrigatorio'))
+    );
+  }
+
+  private addRegApuracaoToNfseRequest(invoicyRequest: InvoicyNfseRequest): void {
+    const rps = invoicyRequest.Documento.RPS?.[0] as any;
+    if (rps && rps.RegApuracao === undefined) {
+      rps.RegApuracao = 1; // 1 = Compet\u00eancia
+      rps.OptSN = 1; // Garante consist\u00eancia: empresa \u00e9 SN
+    }
   }
 
   private assertOrdersCanReceiveNfse(orders: any[]) {
