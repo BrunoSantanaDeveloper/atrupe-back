@@ -1050,8 +1050,16 @@ export class NfseService {
                         SerEndNumero: dto.entregaNumero || 'S/N',
                         SerEndBairro: dto.entregaBairro || '',
                         SerEndxMun: dto.entregaMunicipio || '',
+                        // Fallback para o código IBGE do emissor quando o frontend
+                        // não informar (ex.: endereço do prestador pré-preenchido)
                         SerEndcMun:
-                          parseInt(dto.entregaCodigoMunicipio || '0', 10) || 0,
+                          parseInt(
+                            dto.entregaCodigoMunicipio ||
+                              config.ibgeCode ||
+                              config.emitCmun ||
+                              '0',
+                            10,
+                          ) || 0,
                         SerEndCep:
                           parseInt(
                             (dto.entregaCep || '').replace(/\D/g, ''),
