@@ -1092,7 +1092,15 @@ export class NfseService {
         },
       };
 
+      this.logger.debug(
+        `[NFS-e] Payload enviado ao Invoicy: ${JSON.stringify(invoicyRequest.Documento.RPS?.[0], (key, val) =>
+          key === 'CNPJ_prest' || key === 'TomaCNPJ' || key === 'TomaCPF' ? '***' : val,
+        )}`,
+      );
+
       let response = await this.sendNfseToInvoicy(companyId, invoicyRequest);
+
+      this.logger.debug(`[NFS-e] Resposta Invoicy: ${JSON.stringify(response)}`);
 
       if (this.shouldRetryNfseWithoutPrestadorIm(response)) {
         // Remove IM do request (no-op se não estava presente) e retenta sempre,
