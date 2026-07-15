@@ -291,6 +291,9 @@ export class QuotationCrudService {
       }
 
       if (dto.search) {
+        const searchNumber = parseInt(dto.search, 10);
+        const isNumeric =
+          !isNaN(searchNumber) && String(searchNumber) === dto.search.trim();
         where = {
           ...where,
           AND: [
@@ -314,6 +317,9 @@ export class QuotationCrudService {
                     },
                   },
                 },
+                ...(isNumeric
+                  ? [{ quotationNumber: { equals: searchNumber } }]
+                  : []),
               ],
             },
           ],
