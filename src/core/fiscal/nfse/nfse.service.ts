@@ -988,7 +988,7 @@ export class NfseService {
               RegEspTrib: 1, // 1 = Nenhum
               OptSN: config.emitCrt === 1 ? 1 : 2, // 1 = Sim, 2 = NÃ£o
               // Obrigatório quando OptSN=1 (Simples Nacional): 1=Competência, 2=Caixa
-              ...(config.emitCrt === 1 ? { RegApuracao: 1 } : {}),
+              ...(config.emitCrt === 1 ? { RegApuracaoSN: 1 } : {}),
               IncCult: 2, // 2 = NÃ£o
               Status: 1, // 1 = Normal
               tpAmb: environment === 'PRODUCAO' ? 1 : 2,
@@ -1307,8 +1307,8 @@ export class NfseService {
 
   private addRegApuracaoToNfseRequest(invoicyRequest: InvoicyNfseRequest): void {
     const rps = invoicyRequest.Documento.RPS?.[0] as any;
-    if (rps && rps.RegApuracao === undefined) {
-      rps.RegApuracao = 1; // 1 = Compet\u00eancia
+    if (rps && rps.RegApuracaoSN === undefined) {
+      rps.RegApuracaoSN = 1; // 1 = Compet\u00eancia (DPS NFS-e Nacional: regApuracaoSN)
       rps.OptSN = 1; // Garante consist\u00eancia: empresa \u00e9 SN
     }
   }

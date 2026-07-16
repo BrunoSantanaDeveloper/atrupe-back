@@ -380,7 +380,7 @@ export interface InvoicyNfseRps {
   Operacao?: number;
   RegEspTrib?: number;
   OptSN: number;
-  RegApuracao?: number; // 1 = Competência, 2 = Caixa — obrigatório quando OptSN = 1
+  RegApuracaoSN?: number; // 1 = Competência, 2 = Caixa — obrigatório quando OptSN = 1 (DPS NFS-e Nacional: regApuracaoSN)
   IncCult: number;
   Status: number;
   tpAmb: number;
