@@ -986,8 +986,9 @@ export class NfseService {
               natOp: dto.naturezaOperacao || 1, // 1 = TributaÃ§Ã£o no municÃ­pio
               Operacao: 1,
               RegEspTrib: 1, // 1 = Nenhum
-              OptSN: config.emitCrt === 1 ? 1 : 2, // 1 = Sim, 2 = NÃ£o
-              // Obrigatório quando OptSN=1 (Simples Nacional): 1=Competência, 2=Caixa
+              // OptSN Invoicy: 1=Não optante→opSimpNac:3, 2=ME→opSimpNac:1, 3=EPP→opSimpNac:2
+              OptSN: config.emitCrt === 1 ? 2 : 1,
+              // regApuracaoSN: obrigatório quando opSimpNac=1(ME) ou 2(EPP); 1=Competência
               ...(config.emitCrt === 1 ? { RegApuracaoSN: 1 } : {}),
               IncCult: 2, // 2 = NÃ£o
               Status: 1, // 1 = Normal
@@ -1093,14 +1094,20 @@ export class NfseService {
       };
 
       this.logger.debug(
-        `[NFS-e] Payload enviado ao Invoicy: ${JSON.stringify(invoicyRequest.Documento.RPS?.[0], (key, val) =>
-          key === 'CNPJ_prest' || key === 'TomaCNPJ' || key === 'TomaCPF' ? '***' : val,
+        `[NFS-e] Payload enviado ao Invoicy: ${JSON.stringify(
+          invoicyRequest.Documento.RPS?.[0],
+          (key, val) =>
+            key === 'CNPJ_prest' || key === 'TomaCNPJ' || key === 'TomaCPF'
+              ? '***'
+              : val,
         )}`,
       );
 
       let response = await this.sendNfseToInvoicy(companyId, invoicyRequest);
 
-      this.logger.debug(`[NFS-e] Resposta Invoicy: ${JSON.stringify(response)}`);
+      this.logger.debug(
+        `[NFS-e] Resposta Invoicy: ${JSON.stringify(response)}`,
+      );
 
       if (this.shouldRetryNfseWithoutPrestadorIm(response)) {
         // Remove IM do request (no-op se não estava presente) e retenta sempre,
@@ -1305,11 +1312,13 @@ export class NfseService {
     );
   }
 
-  private addRegApuracaoToNfseRequest(invoicyRequest: InvoicyNfseRequest): void {
+  private addRegApuracaoToNfseRequest(
+    invoicyRequest: InvoicyNfseRequest,
+  ): void {
     const rps = invoicyRequest.Documento.RPS?.[0] as any;
     if (rps && rps.RegApuracaoSN === undefined) {
       rps.RegApuracaoSN = 1; // 1 = Compet\u00eancia (DPS NFS-e Nacional: regApuracaoSN)
-      rps.OptSN = 1; // Garante consist\u00eancia: empresa \u00e9 SN
+      rps.OptSN = 2; // 2=ME no Invoicy \u2192 opSimpNac:1 no DPS; empresa \u00e9 SN optante
     }
   }
 

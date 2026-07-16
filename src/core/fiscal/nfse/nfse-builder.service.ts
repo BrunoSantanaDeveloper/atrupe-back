@@ -61,7 +61,8 @@ export class NfseBuilderService {
             natOp: dto.naturezaOperacao || 1, // 1 = Tributação no município
             Operacao: 1,
             RegEspTrib: 1, // 1 = Nenhum
-            OptSN: config.emitCrt === 1 ? 1 : 2, // 1 = Sim, 2 = Não
+            // Invoicy: 1=Não optante→opSimpNac:3, 2=ME→opSimpNac:1, 3=EPP→opSimpNac:2
+            OptSN: config.emitCrt === 1 ? 2 : 1,
             IncCult: 2, // 2 = Não
             Status: 1, // 1 = Normal
             tpAmb:
