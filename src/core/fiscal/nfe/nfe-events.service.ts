@@ -69,12 +69,14 @@ export class NfeEventsService {
         `Cancelando NF-e ${nfe.numero} para empresa ${companyId}`,
       );
 
+      const ambienteEvento = this.resolveDocumentEnvironment(nfe);
+
       // Chamar API do Invoicy para cancelamento
       const invoicyResponses = await this.invoicyApiService.cancelNfe(
         companyId,
         nfe.chaveAcesso,
         dto.justificativa,
-        nfe.ambiente,
+        ambienteEvento,
       );
 
       // Processar resposta
@@ -85,7 +87,7 @@ export class NfeEventsService {
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
         throw new Error(
-          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+          this.getCancelRejectionMessage(response, ambienteEvento),
         );
       }
 
@@ -277,14 +279,11 @@ export class NfeEventsService {
     }
   }
 
-  private getCorrectionRejectionMessage(
-    response: any,
-    chaveAcesso: string,
-    sequenciaEvento: number,
-    correctionLength: number,
-    ambiente?: number,
-  ): string {
-    const envLabel = ambiente === 1 ? 'produção' : 'homologação';
+  private getKnownEventErrorMessage(
+    code: number | undefined,
+    envLabel: string,
+  ): string | undefined {
+    if (!code) return undefined;
     const knownCodes: Record<number, string> = {
       [INVOICY_ERROR_CODES.COMPANY_NOT_ENABLED]:
         `A empresa emissora não está habilitada no Invoicy para o ambiente de ${envLabel}. ` +
@@ -294,9 +293,10 @@ export class NfeEventsService {
       [INVOICY_ERROR_CODES.REJECTED_BY_SEFAZ]:
         'A SEFAZ rejeitou o evento. Verifique os dados da NF-e e tente novamente.',
     };
+    return knownCodes[code];
+  }
 
-    const code = response?.Codigo as number | undefined;
-
+  private extractSpecificProviderMessage(response: any): string | undefined {
     const doc = response?.Documentos?.[0];
     const providerMessages = [
       response?.ErrorInvoicy,
@@ -312,17 +312,49 @@ export class NfeEventsService {
 
     const genericMessage =
       'Não foi possível processar a operação, verifique os dados enviados e tente novamente.';
-    const specificMessage = providerMessages.find(
-      (message) => message !== genericMessage,
+    return providerMessages.find((message) => message !== genericMessage);
+  }
+
+  private getCancelRejectionMessage(response: any, ambiente?: number): string {
+    const envLabel = ambiente === 1 ? 'produção' : 'homologação';
+    const code = response?.Codigo as number | undefined;
+    const specificMessage = this.extractSpecificProviderMessage(response);
+    const codeStr = code ? ` (código ${code})` : '';
+
+    if (specificMessage) {
+      return `Cancelamento rejeitado${codeStr}: ${specificMessage}`;
+    }
+
+    const knownMessage = this.getKnownEventErrorMessage(code, envLabel);
+    if (knownMessage) {
+      return `Cancelamento rejeitado (código ${code}): ${knownMessage}`;
+    }
+
+    return (
+      `O Invoicy rejeitou o cancelamento${codeStr}, mas não informou o motivo. ` +
+      `Verifique se o emissor está habilitado no ambiente de ${envLabel} e tente novamente.`
     );
+  }
+
+  private getCorrectionRejectionMessage(
+    response: any,
+    chaveAcesso: string,
+    sequenciaEvento: number,
+    correctionLength: number,
+    ambiente?: number,
+  ): string {
+    const envLabel = ambiente === 1 ? 'produção' : 'homologação';
+    const code = response?.Codigo as number | undefined;
+    const specificMessage = this.extractSpecificProviderMessage(response);
     const codeStr = code ? ` (código ${code})` : '';
 
     if (specificMessage) {
       return `Carta de correção rejeitada${codeStr}: ${specificMessage}`;
     }
 
-    if (code && knownCodes[code]) {
-      return `Carta de correção rejeitada (código ${code}): ${knownCodes[code]}`;
+    const knownMessage = this.getKnownEventErrorMessage(code, envLabel);
+    if (knownMessage) {
+      return `Carta de correção rejeitada (código ${code}): ${knownMessage}`;
     }
 
     return (
