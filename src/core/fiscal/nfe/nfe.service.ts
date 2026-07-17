@@ -3142,6 +3142,19 @@ export class NfeService {
     const recordType = filters.recordType || 'TODOS'; // 'TODOS', 'PEDIDOS', 'NOTAS_AVULSAS'
     const status = filters.status || 'TODOS';
     const search = filters.search || '';
+    const config = await this.invoicyService.getConfig(companyId);
+    const resolveEnvironmentNumber = (documentType: 'NFE' | 'NFSE' | 'NFCE') =>
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(
+        config,
+        documentType,
+      ) === 'PRODUCAO'
+        ? 1
+        : 2;
+    const fiscalEnvironments = {
+      nfe: resolveEnvironmentNumber('NFE'),
+      nfse: resolveEnvironmentNumber('NFSE'),
+      nfce: resolveEnvironmentNumber('NFCE'),
+    };
 
     let ordersPromise = Promise.resolve([]);
     let nfeAvulsasPromise = Promise.resolve([]);
@@ -3195,14 +3208,47 @@ export class NfeService {
     if (recordType === 'TODOS' || recordType === 'PEDIDOS') {
       if (status === 'EMITIDA') {
         orderWhere.OR = [
-          { nfes: { some: { status: 'AUTHORIZED' } } },
-          { nfeOrders: { some: { nfe: { status: 'AUTHORIZED' } } } },
-          { nfses: { some: { status: NfseStatus.AUTHORIZED } } },
+          {
+            nfes: {
+              some: {
+                status: 'AUTHORIZED',
+                ambiente: fiscalEnvironments.nfe,
+              },
+            },
+          },
+          {
+            nfeOrders: {
+              some: {
+                nfe: {
+                  status: 'AUTHORIZED',
+                  ambiente: fiscalEnvironments.nfe,
+                },
+              },
+            },
+          },
+          {
+            nfses: {
+              some: {
+                status: NfseStatus.AUTHORIZED,
+                ambiente: fiscalEnvironments.nfse,
+              },
+            },
+          },
         ];
       } else if (status === 'EM_DIGITACAO') {
         orderWhere.OR = [
-          { nfes: { some: { status: 'DRAFT' } } },
-          { nfeOrders: { some: { nfe: { status: 'DRAFT' } } } },
+          {
+            nfes: {
+              some: { status: 'DRAFT', ambiente: fiscalEnvironments.nfe },
+            },
+          },
+          {
+            nfeOrders: {
+              some: {
+                nfe: { status: 'DRAFT', ambiente: fiscalEnvironments.nfe },
+              },
+            },
+          },
           {
             nfses: {
               some: {
@@ -3213,21 +3259,57 @@ export class NfeService {
                     NfseStatus.PROCESSING,
                   ],
                 },
+                ambiente: fiscalEnvironments.nfse,
               },
             },
           },
         ];
         orderWhere.AND = [
-          { nfes: { none: { status: 'AUTHORIZED' } } },
-          { nfeOrders: { none: { nfe: { status: 'AUTHORIZED' } } } },
-          { nfses: { none: { status: NfseStatus.AUTHORIZED } } },
+          {
+            nfes: {
+              none: {
+                status: 'AUTHORIZED',
+                ambiente: fiscalEnvironments.nfe,
+              },
+            },
+          },
+          {
+            nfeOrders: {
+              none: {
+                nfe: {
+                  status: 'AUTHORIZED',
+                  ambiente: fiscalEnvironments.nfe,
+                },
+              },
+            },
+          },
+          {
+            nfses: {
+              none: {
+                status: NfseStatus.AUTHORIZED,
+                ambiente: fiscalEnvironments.nfse,
+              },
+            },
+          },
         ];
       } else if (status === 'NAO_EMITIDA') {
         orderWhere.AND = [
-          { nfes: { none: { status: { in: ['AUTHORIZED', 'DRAFT'] } } } },
+          {
+            nfes: {
+              none: {
+                status: { in: ['AUTHORIZED', 'DRAFT'] },
+                ambiente: fiscalEnvironments.nfe,
+              },
+            },
+          },
           {
             nfeOrders: {
-              none: { nfe: { status: { in: ['AUTHORIZED', 'DRAFT'] } } },
+              none: {
+                nfe: {
+                  status: { in: ['AUTHORIZED', 'DRAFT'] },
+                  ambiente: fiscalEnvironments.nfe,
+                },
+              },
             },
           },
           {
@@ -3241,6 +3323,7 @@ export class NfeService {
                     NfseStatus.PROCESSING,
                   ],
                 },
+                ambiente: fiscalEnvironments.nfse,
               },
             },
           },
