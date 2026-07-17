@@ -203,9 +203,13 @@ export class NfeService {
     const valorNota = valorProdutos - valorDescontos;
 
     // Verificar se jÃ¡ existe NF-e emitida para esta ordem
-    const existingNfe =
-      quotation.order.nfes?.[0] ||
-      quotation.order.nfeOrders?.map((item) => item.nfe).find(Boolean);
+    const activeEnvironment =
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config, 'NFE');
+    const activeEnvironmentNumber = activeEnvironment === 'PRODUCAO' ? 1 : 2;
+    const existingNfe = [
+      ...(quotation.order.nfes || []),
+      ...(quotation.order.nfeOrders || []).map((item) => item.nfe),
+    ].find((nfe) => nfe && nfe.ambiente === activeEnvironmentNumber);
 
     return {
       // Metadados
@@ -410,6 +414,16 @@ export class NfeService {
       );
     }
 
+    const config = await this.invoicyService.getConfig(companyId);
+    if (!config) {
+      throw new BadRequestException(
+        'Configuracao do Invoicy nao encontrada. Configure a integracao primeiro.',
+      );
+    }
+    const activeEnvironment =
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config, 'NFE');
+    const activeEnvironmentNumber = activeEnvironment === 'PRODUCAO' ? 1 : 2;
+
     const quotations = (await this.prisma.quotation.findMany({
       where: {
         companyId,
@@ -452,6 +466,7 @@ export class NfeService {
       const blockingNfe = [...directNfes, ...pivotNfes].find(
         (nfe) =>
           nfe.id !== ignoredNfeId &&
+          nfe.ambiente === activeEnvironmentNumber &&
           [NfeStatus.AUTHORIZED, NfeStatus.DRAFT].includes(nfe.status),
       );
 
@@ -1200,11 +1215,21 @@ export class NfeService {
       throw new NotFoundException('Ordem de serviÃ§o nÃ£o encontrada');
     }
 
+    const config = await this.invoicyService.getConfig(companyId);
+    if (!config) {
+      throw new BadRequestException(
+        'ConfiguraÃ§Ã£o do Invoicy nÃ£o encontrada. Configure a integraÃ§Ã£o primeiro.',
+      );
+    }
+    const environment =
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config, 'NFE');
+
     // Verificar se jÃ¡ existe NF-e autorizada para esta ordem
     const existingNfe = await this.prisma.nfe.findFirst({
       where: {
         orderId: dto.orderId,
         status: NfeStatus.AUTHORIZED,
+        ambiente: environment === 'PRODUCAO' ? 1 : 2,
       },
     });
 
@@ -1217,14 +1242,6 @@ export class NfeService {
     const client = quotation.client;
     if (!client) {
       throw new BadRequestException('Cliente nÃ£o encontrado no orÃ§amento');
-    }
-
-    // Buscar configuraÃ§Ã£o do Invoicy para defaults
-    const config = await this.invoicyService.getConfig(companyId);
-    if (!config) {
-      throw new BadRequestException(
-        'ConfiguraÃ§Ã£o do Invoicy nÃ£o encontrada. Configure a integraÃ§Ã£o primeiro.',
-      );
     }
 
     // Preparar itens da NF-e (usar totalValue ou finalValue dividido pela quantidade)

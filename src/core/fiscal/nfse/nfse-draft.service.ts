@@ -82,12 +82,14 @@ export class NfseDraftService {
   async findDraftByOrderId(
     companyId: string,
     orderId: string,
+    ambiente?: number,
   ): Promise<any | null> {
     return this.prisma.nfse.findFirst({
       where: {
         companyId,
         orderId,
         status: NfseStatus.DRAFT,
+        ...(ambiente ? { ambiente } : {}),
       },
     });
   }
@@ -134,6 +136,12 @@ export class NfseDraftService {
     dto: CreateNfseDraftDto,
     config: any,
   ): Promise<any> {
+    const ambiente =
+      (config?.activeEnvironmentNfse ||
+        config?.activeEnvironment ||
+        config?.environment) === 'PRODUCAO' || config?.ambiente === 1
+        ? 1
+        : 2;
     if (!config) {
       throw new BadRequestException('Configuração do Invoicy não encontrada.');
     }
@@ -143,6 +151,7 @@ export class NfseDraftService {
       const existingDraft = await this.findDraftByOrderId(
         companyId,
         dto.orderId,
+        ambiente,
       );
       if (existingDraft) {
         this.logger.log(
@@ -170,7 +179,7 @@ export class NfseDraftService {
         rpsSerie,
         rpsTipo: 1,
         status: NfseStatus.DRAFT,
-        ambiente: config.ambiente || 2,
+        ambiente,
         valorServicos: dto.valorServicos || 0,
         codigoServico: dto.codigoServico,
         discriminacao: dto.discriminacao,

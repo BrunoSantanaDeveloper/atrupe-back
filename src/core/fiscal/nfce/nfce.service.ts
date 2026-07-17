@@ -185,20 +185,6 @@ export class NfceService {
   }
 
   async emit(companyId: string, dto: EmitNfceDto) {
-    const linkedOrder = dto.orderId
-      ? await this.assertOrderCanReceiveNfce(companyId, dto.orderId)
-      : null;
-
-    if (
-      dto.orderId &&
-      dto.quotationId &&
-      linkedOrder?.quotationId !== dto.quotationId
-    ) {
-      throw new BadRequestException(
-        'A ordem de serviço informada não pertence ao orçamento enviado.',
-      );
-    }
-
     // Buscar configuração do Invoicy
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
@@ -217,6 +203,22 @@ export class NfceService {
         config.id,
         'NFCE',
       );
+    const linkedOrder = dto.orderId
+      ? await this.assertOrderCanReceiveNfce(
+          companyId,
+          dto.orderId,
+          environment === 'PRODUCAO' ? 1 : 2,
+        )
+      : null;
+    if (
+      dto.orderId &&
+      dto.quotationId &&
+      linkedOrder?.quotationId !== dto.quotationId
+    ) {
+      throw new BadRequestException(
+        'A ordem de serviço informada não pertence ao orçamento enviado.',
+      );
+    }
     await this.fiscalCredentialResolver.assertEnvironmentReady(
       config.id,
       environment,
@@ -635,7 +637,11 @@ export class NfceService {
       : 'Erro fiscal desconhecido';
   }
 
-  private async assertOrderCanReceiveNfce(companyId: string, orderId: string) {
+  private async assertOrderCanReceiveNfce(
+    companyId: string,
+    orderId: string,
+    ambiente: number,
+  ) {
     const order = await this.prisma.order.findFirst({
       where: {
         id: orderId,
@@ -647,6 +653,7 @@ export class NfceService {
         quotationId: true,
         nfes: {
           where: {
+            ambiente,
             status: {
               in: [
                 NfeStatus.AUTHORIZED,
@@ -663,6 +670,7 @@ export class NfceService {
         nfeOrders: {
           where: {
             nfe: {
+              ambiente,
               status: {
                 in: [
                   NfeStatus.AUTHORIZED,
@@ -679,6 +687,7 @@ export class NfceService {
         },
         nfses: {
           where: {
+            ambiente,
             status: {
               in: [
                 NfseStatus.AUTHORIZED,
@@ -693,6 +702,7 @@ export class NfceService {
         },
         nfces: {
           where: {
+            ambiente,
             status: {
               in: [
                 NfceStatus.AUTHORIZED,

@@ -77,6 +77,9 @@ export class OrderService {
     try {
       const where: Prisma.OrderWhereInput = {};
       const quotationFilters: Prisma.QuotationWhereInput = {};
+      const fiscalEnvironments = dto.companyId
+        ? await this.getActiveFiscalEnvironments(dto.companyId)
+        : { nfe: 2, nfse: 2, nfce: 2 };
 
       // Filtros básicos - acumulando em quotationFilters
       if (dto.companyId) {
@@ -104,23 +107,107 @@ export class OrderService {
       if (!dto.search) {
         if (dto.nfeStatus === 'EMITIDA') {
           where.OR = [
-            { nfes: { some: { status: 'AUTHORIZED' } } },
-            { nfeOrders: { some: { nfe: { status: 'AUTHORIZED' } } } },
-            { nfces: { some: { status: { in: ISSUED_NFCE_STATUSES } } } },
-            { nfses: { some: { status: { in: ISSUED_NFSE_STATUSES } } } },
+            {
+              nfes: {
+                some: {
+                  status: 'AUTHORIZED',
+                  ambiente: fiscalEnvironments.nfe,
+                },
+              },
+            },
+            {
+              nfeOrders: {
+                some: {
+                  nfe: {
+                    status: 'AUTHORIZED',
+                    ambiente: fiscalEnvironments.nfe,
+                  },
+                },
+              },
+            },
+            {
+              nfces: {
+                some: {
+                  status: { in: ISSUED_NFCE_STATUSES },
+                  ambiente: fiscalEnvironments.nfce,
+                },
+              },
+            },
+            {
+              nfses: {
+                some: {
+                  status: { in: ISSUED_NFSE_STATUSES },
+                  ambiente: fiscalEnvironments.nfse,
+                },
+              },
+            },
           ];
         } else if (dto.nfeStatus === 'EM_DIGITACAO') {
           where.OR = [
-            { nfes: { some: { status: 'DRAFT' } } },
-            { nfeOrders: { some: { nfe: { status: 'DRAFT' } } } },
-            { nfces: { some: { status: { in: DRAFT_NFCE_STATUSES } } } },
-            { nfses: { some: { status: { in: DRAFT_NFSE_STATUSES } } } },
+            {
+              nfes: {
+                some: { status: 'DRAFT', ambiente: fiscalEnvironments.nfe },
+              },
+            },
+            {
+              nfeOrders: {
+                some: {
+                  nfe: { status: 'DRAFT', ambiente: fiscalEnvironments.nfe },
+                },
+              },
+            },
+            {
+              nfces: {
+                some: {
+                  status: { in: DRAFT_NFCE_STATUSES },
+                  ambiente: fiscalEnvironments.nfce,
+                },
+              },
+            },
+            {
+              nfses: {
+                some: {
+                  status: { in: DRAFT_NFSE_STATUSES },
+                  ambiente: fiscalEnvironments.nfse,
+                },
+              },
+            },
           ];
           where.AND = [
-            { nfes: { none: { status: 'AUTHORIZED' } } },
-            { nfeOrders: { none: { nfe: { status: 'AUTHORIZED' } } } },
-            { nfces: { none: { status: { in: ISSUED_NFCE_STATUSES } } } },
-            { nfses: { none: { status: { in: ISSUED_NFSE_STATUSES } } } },
+            {
+              nfes: {
+                none: {
+                  status: 'AUTHORIZED',
+                  ambiente: fiscalEnvironments.nfe,
+                },
+              },
+            },
+            {
+              nfeOrders: {
+                none: {
+                  nfe: {
+                    status: 'AUTHORIZED',
+                    ambiente: fiscalEnvironments.nfe,
+                  },
+                },
+              },
+            },
+            {
+              nfces: {
+                none: {
+                  status: { in: ISSUED_NFCE_STATUSES },
+                  ambiente: fiscalEnvironments.nfce,
+                },
+              },
+            },
+            {
+              nfses: {
+                none: {
+                  status: { in: ISSUED_NFSE_STATUSES },
+                  ambiente: fiscalEnvironments.nfse,
+                },
+              },
+            },
           ];
         } else if (dto.nfeStatus === 'TODAS') {
           // Sem filtro de NFE, mas se for tela de NFE, esconder canceladas sem NF
@@ -135,20 +222,38 @@ export class OrderService {
           // Padrão (NAO_EMITIDA): ordens sem nenhuma NF AUTHORIZED ou DRAFT e que NÃO estão canceladas
           // Isso permite que ordens com NF rejeitadas ou com erro ainda apareçam para serem reemitidas
           where.AND = [
-            { nfes: { none: { status: { in: ['AUTHORIZED', 'DRAFT'] } } } },
+            {
+              nfes: {
+                none: {
+                  status: { in: ['AUTHORIZED', 'DRAFT'] },
+                  ambiente: fiscalEnvironments.nfe,
+                },
+              },
+            },
             {
               nfeOrders: {
-                none: { nfe: { status: { in: ['AUTHORIZED', 'DRAFT'] } } },
+                none: {
+                  nfe: {
+                    status: { in: ['AUTHORIZED', 'DRAFT'] },
+                    ambiente: fiscalEnvironments.nfe,
+                  },
+                },
               },
             },
             {
               nfces: {
-                none: { status: { in: ACTIVE_NFCE_STATUSES } },
+                none: {
+                  status: { in: ACTIVE_NFCE_STATUSES },
+                  ambiente: fiscalEnvironments.nfce,
+                },
               },
             },
             {
               nfses: {
-                none: { status: { in: ACTIVE_NFSE_STATUSES } },
+                none: {
+                  status: { in: ACTIVE_NFSE_STATUSES },
+                  ambiente: fiscalEnvironments.nfse,
+                },
               },
             },
           ];
@@ -252,6 +357,7 @@ export class OrderService {
               chaveAcesso: true,
               xmlAutorizado: true,
               motivoRejeicao: true,
+              ambiente: true,
             },
           },
           nfeOrders: {
@@ -273,6 +379,7 @@ export class OrderService {
                   chaveAcesso: true,
                   xmlAutorizado: true,
                   motivoRejeicao: true,
+                  ambiente: true,
                 },
               },
             },
@@ -293,6 +400,7 @@ export class OrderService {
               qrCodeUrl: true,
               xmlAutorizado: true,
               motivoRejeicao: true,
+              ambiente: true,
             },
           },
           nfses: {
@@ -312,6 +420,7 @@ export class OrderService {
               dataEmissao: true,
               xmlRetorno: true,
               motivoRejeicao: true,
+              ambiente: true,
             },
           },
         },
@@ -401,6 +510,34 @@ export class OrderService {
       this.logger.error('Error fetching orders', error.stack);
       throw new Error('Erro ao buscar os pedidos.');
     }
+  }
+
+  private async getActiveFiscalEnvironments(companyId: string) {
+    const config = await this.prisma.invoicyConfig.findFirst({
+      where: { companyId },
+      orderBy: { isDefault: 'desc' },
+      select: {
+        activeEnvironment: true,
+        activeEnvironmentNfe: true,
+        activeEnvironmentNfse: true,
+        activeEnvironmentNfce: true,
+        environment: true,
+        ambiente: true,
+      },
+    });
+
+    const legacyEnvironment =
+      config?.activeEnvironment ||
+      config?.environment ||
+      (config?.ambiente === 1 ? 'PRODUCAO' : 'HOMOLOGACAO');
+    const toNumber = (environment?: string | null) =>
+      environment === 'PRODUCAO' ? 1 : 2;
+
+    return {
+      nfe: toNumber(config?.activeEnvironmentNfe || legacyEnvironment),
+      nfse: toNumber(config?.activeEnvironmentNfse || legacyEnvironment),
+      nfce: toNumber(config?.activeEnvironmentNfce || legacyEnvironment),
+    };
   }
 
   async findAllForExport(dto: FilterOrderDto) {

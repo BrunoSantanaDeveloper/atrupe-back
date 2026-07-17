@@ -351,7 +351,7 @@ describe('NfceService', () => {
         }),
       ).rejects.toThrow(NotFoundException);
 
-      expect(invoicyService.getConfig).not.toHaveBeenCalled();
+      expect(invoicyService.getConfig).toHaveBeenCalledWith(mockCompanyId);
     });
 
     it('should reject NFC-e when linked order is canceled', async () => {

@@ -162,6 +162,7 @@ export class NfeEventsService {
 
     try {
       this.logger.log(`Enviando carta de correção para NF-e ${nfe.numero}`);
+      const ambienteEvento = this.resolveDocumentEnvironment(nfe);
 
       const updatedNfe = await this.prisma.$transaction(
         async (tx) => {
@@ -190,7 +191,7 @@ export class NfeEventsService {
               nfe.chaveAcesso,
               correcao,
               sequenciaEvento,
-              nfe.ambiente,
+              ambienteEvento,
             );
 
           const response = invoicyResponses[0];
@@ -205,7 +206,7 @@ export class NfeEventsService {
                 nfe.chaveAcesso,
                 sequenciaEvento,
                 correcao.length,
-                nfe.ambiente,
+                ambienteEvento,
               ),
             );
           }
@@ -221,7 +222,7 @@ export class NfeEventsService {
                 nfe.chaveAcesso,
                 sequenciaEvento,
                 correcao.length,
-                nfe.ambiente,
+                ambienteEvento,
               ),
             );
           }
@@ -296,10 +297,6 @@ export class NfeEventsService {
 
     const code = response?.Codigo as number | undefined;
 
-    if (code && knownCodes[code]) {
-      return `Carta de correção rejeitada (código ${code}): ${knownCodes[code]}`;
-    }
-
     const doc = response?.Documentos?.[0];
     const providerMessages = [
       response?.ErrorInvoicy,
@@ -324,11 +321,54 @@ export class NfeEventsService {
       return `Carta de correção rejeitada${codeStr}: ${specificMessage}`;
     }
 
+    if (code && knownCodes[code]) {
+      return `Carta de correção rejeitada (código ${code}): ${knownCodes[code]}`;
+    }
+
     return (
       `O Invoicy rejeitou a carta de correção${codeStr}, mas não informou qual campo está inválido. ` +
       `Dados enviados: chave de acesso ${chaveAcesso} (44 dígitos), ` +
       `sequência ${sequenciaEvento} e texto da correção com ${correctionLength} caracteres.`
     );
+  }
+
+  /**
+   * O XML autorizado é a fonte fiscal de verdade para o ambiente. Algumas NF-e
+   * legadas foram persistidas com `ambiente` divergente durante a troca de
+   * homologação para produção, o que direcionava eventos ao endpoint incorreto.
+   */
+  private resolveDocumentEnvironment(nfe: any): number {
+    const xmlCandidates = [
+      nfe?.xmlAutorizado,
+      nfe?.xmlRetorno,
+      nfe?.xmlEnvio,
+    ].filter((xml): xml is string => typeof xml === 'string' && xml.length > 0);
+
+    for (const xmlCandidate of xmlCandidates) {
+      const decodedCandidates = [xmlCandidate];
+      try {
+        decodedCandidates.push(
+          Buffer.from(xmlCandidate, 'base64').toString('utf-8'),
+        );
+      } catch {
+        // O conteúdo já pode estar em XML puro.
+      }
+
+      for (const xml of decodedCandidates) {
+        const match = xml.match(/<tpAmb[^>]*>\s*([12])\s*<\/tpAmb>/i);
+        if (match) {
+          const xmlEnvironment = Number(match[1]);
+          if (nfe?.ambiente !== xmlEnvironment) {
+            this.logger.warn(
+              `Ambiente divergente na NF-e ${nfe?.id}: banco=${nfe?.ambiente}, XML=${xmlEnvironment}. Usando o XML para o evento fiscal.`,
+            );
+          }
+          return xmlEnvironment;
+        }
+      }
+    }
+
+    return nfe?.ambiente === 1 ? 1 : 2;
   }
 
   /**
