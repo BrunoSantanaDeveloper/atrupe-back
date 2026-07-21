@@ -407,11 +407,8 @@ export class AiToolRegistry {
       'page',
       'limit',
     ]);
-    const canSeeOtherSellers = await this.abacService.hasPermission(
-      user,
-      'view',
-      'sale:other_quotation',
-    );
+    const canSeeOtherSellers =
+      await this.abacService.canAccessOtherSellers(user);
 
     if (!canSeeOtherSellers && !user.isAdmin && user.employeeId) {
       filters.sellerId = user.employeeId;

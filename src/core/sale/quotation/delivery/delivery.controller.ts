@@ -46,11 +46,8 @@ export class DeliveryController {
       throw new ForbiddenException('Orçamento pertence a outra empresa');
     }
 
-    const canAccessOtherQuotations = await this.abacService.hasPermission(
-      { userId: user.userId, username: user.username },
-      'edit',
-      'sale:other_quotation',
-    );
+    const canAccessOtherQuotations =
+      await this.abacService.canAccessOtherSellers(user, 'edit');
 
     if (
       !canAccessOtherQuotations &&

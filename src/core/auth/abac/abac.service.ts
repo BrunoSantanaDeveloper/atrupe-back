@@ -75,4 +75,26 @@ export class AbacService {
     }
     return false;
   }
+
+  /**
+   * Verifica se o usuário pode acessar vendas/orçamentos de outros vendedores.
+   *
+   * Duas famílias de chave convivem na base: cargos legados usam
+   * 'sale:other_sellers' e cargos salvos pela tela de cargos usam
+   * 'sale:other_quotation' (ver app-web/src/consts/permissions.ts). Como a tela
+   * reescreve o array inteiro ao salvar, um cargo nunca tem as duas — por isso
+   * toda checagem precisa aceitar as duas chaves.
+   *
+   * IMPORTANTE: passe o `req.user` completo. Um objeto parcial (sem `role`)
+   * faz `hasPermission` retornar false para qualquer permissão.
+   */
+  async canAccessOtherSellers(
+    user: any,
+    action: 'view' | 'edit' = 'view',
+  ): Promise<boolean> {
+    return this.hasAnyPermission(user, [
+      { action, resource: 'sale:other_quotation' },
+      { action, resource: 'sale:other_sellers' },
+    ]);
+  }
 }

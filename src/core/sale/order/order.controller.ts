@@ -67,10 +67,8 @@ export class OrderController {
     query.companyId = req.user.companyId;
 
     // Verificar se o usuário pode ver ordens de outros vendedores
-    const canSeeOtherOrders = await this.abacService.hasPermission(
+    const canSeeOtherOrders = await this.abacService.canAccessOtherSellers(
       req.user,
-      'view',
-      'sale:other_quotation',
     );
 
     if (!canSeeOtherOrders && !req.user.isAdmin && req.user.employeeId) {
@@ -104,10 +102,8 @@ export class OrderController {
 
     query.companyId = req.user.companyId;
 
-    const canSeeOtherOrders = await this.abacService.hasPermission(
+    const canSeeOtherOrders = await this.abacService.canAccessOtherSellers(
       req.user,
-      'view',
-      'sale:other_quotation',
     );
 
     if (!canSeeOtherOrders && !req.user.isAdmin && req.user.employeeId) {
@@ -129,10 +125,8 @@ export class OrderController {
     const companyId = req.user.companyId;
 
     // Verificar se o usuário pode ver ordens de outros vendedores
-    const canSeeOtherOrders = await this.abacService.hasPermission(
+    const canSeeOtherOrders = await this.abacService.canAccessOtherSellers(
       req.user,
-      'view',
-      'sale:other_quotation',
     );
 
     let sellerId: string | undefined;
@@ -175,10 +169,8 @@ export class OrderController {
     }
 
     // Verificar se o usuário pode ver ordens de outros vendedores
-    const canSeeOtherOrders = await this.abacService.hasPermission(
+    const canSeeOtherOrders = await this.abacService.canAccessOtherSellers(
       req.user,
-      'view',
-      'sale:other_quotation',
     );
 
     // Se não pode ver ordens de outros, verificar se é o dono

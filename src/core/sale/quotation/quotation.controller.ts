@@ -69,21 +69,8 @@ export class QuotationController {
     },
     action: 'view' | 'edit' = 'view',
   ): Promise<string | undefined> {
-    // DIAGNÓSTICO TEMPORÁRIO — remover após confirmar fix
-    console.log(
-      `[PERM-DEBUG] role=${user.role} | isAdmin=${user.isAdmin} | employeeId=${user.employeeId} | action=${action}`,
-    );
-
-    // Chave 'sale:other_sellers' é o que está salvo no banco para todos os clientes.
-    const canAccessOtherQuotations = await this.abacService.hasPermission(
-      user,
-      action,
-      'sale:other_sellers',
-    );
-
-    console.warn(
-      `[PERM-DEBUG] canAccess=${canAccessOtherQuotations} | sellerFilter=${!canAccessOtherQuotations && !user.isAdmin && user.employeeId ? user.employeeId : 'NONE'}`,
-    );
+    const canAccessOtherQuotations =
+      await this.abacService.canAccessOtherSellers(user, action);
 
     if (!canAccessOtherQuotations && !user.isAdmin && user.employeeId) {
       return user.employeeId;

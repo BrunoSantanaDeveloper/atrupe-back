@@ -40,9 +40,25 @@ describe('AiToolRegistry', () => {
       order: { groupBy: jest.fn() },
       quotation: { groupBy: jest.fn() },
     };
+    const hasPermission =
+      overrides?.hasPermission || jest.fn().mockResolvedValue(true);
+    // Espelha a implementação real: hasAnyPermission/canAccessOtherSellers
+    // delegam para hasPermission, então os mocks por chave continuam valendo.
+    const hasAnyPermission = jest.fn(async (user, permissions) => {
+      for (const { action, resource } of permissions) {
+        if (await hasPermission(user, action, resource)) return true;
+      }
+      return false;
+    });
     const abacService = {
-      hasPermission:
-        overrides?.hasPermission || jest.fn().mockResolvedValue(true),
+      hasPermission,
+      hasAnyPermission,
+      canAccessOtherSellers: jest.fn((user, action = 'view') =>
+        hasAnyPermission(user, [
+          { action, resource: 'sale:other_quotation' },
+          { action, resource: 'sale:other_sellers' },
+        ]),
+      ),
     };
     const reportService = {
       menu: jest.fn(),

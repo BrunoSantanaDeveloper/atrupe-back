@@ -658,11 +658,8 @@ export class AiOperationalQueryService {
     filters.companyId = user.companyId;
     if (catalogEntry.domain !== 'sales') return;
 
-    const canSeeOtherSellers = await this.abacService.hasPermission(
-      user,
-      'view',
-      'sale:other_quotation',
-    );
+    const canSeeOtherSellers =
+      await this.abacService.canAccessOtherSellers(user);
     if (!canSeeOtherSellers && !user.isAdmin && user.employeeId) {
       filters.sellerId = user.employeeId;
     }

@@ -33,10 +33,8 @@ export class ReportController {
     req: any,
     filters: SalesReportFilterDto,
   ) {
-    const canSeeOtherSellers = await this.abacService.hasPermission(
-      { userId: req.user.userId, username: req.user.username },
-      'view',
-      'sale:other_quotation',
+    const canSeeOtherSellers = await this.abacService.canAccessOtherSellers(
+      req.user,
     );
 
     if (!canSeeOtherSellers && !req.user.isAdmin && req.user.employeeId) {
@@ -120,11 +118,8 @@ export class ReportController {
   @Get('sales/permissions')
   async getSalesPermissions(@Req() req: Request) {
     const user = (req as any).user;
-    const canSeeOtherSellers = await this.abacService.hasPermission(
-      { userId: user.userId, username: user.username },
-      'view',
-      'sale:other_quotation',
-    );
+    const canSeeOtherSellers =
+      await this.abacService.canAccessOtherSellers(user);
     return { canSeeOtherSellers };
   }
 

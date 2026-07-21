@@ -203,4 +203,48 @@ describe('AbacService — cenários reais de hasPermission', () => {
       expect(prisma.role.findUnique).toHaveBeenCalledTimes(1);
     });
   });
+
+  // ── canAccessOtherSellers — as duas famílias de chave ─────────────────────
+
+  describe('canAccessOtherSellers', () => {
+    const user = { isSystemAdmin: false, isAdmin: false, role: 'role-1' };
+
+    it('deve permitir com a chave nova (sale:other_quotation)', async () => {
+      prisma.role.findUnique.mockResolvedValue({
+        permissions: ['sale:other_quotation:view'],
+        isAdmin: false,
+      });
+      expect(await service.canAccessOtherSellers(user)).toBe(true);
+    });
+
+    it('deve permitir com a chave legada (sale:other_sellers)', async () => {
+      prisma.role.findUnique.mockResolvedValue({
+        permissions: ['sale:other_sellers:view'],
+        isAdmin: false,
+      });
+      expect(await service.canAccessOtherSellers(user)).toBe(true);
+    });
+
+    it('deve respeitar a ação edit em ambas as chaves', async () => {
+      prisma.role.findUnique.mockResolvedValue({
+        permissions: ['sale:other_sellers:view'],
+        isAdmin: false,
+      });
+      expect(await service.canAccessOtherSellers(user, 'edit')).toBe(false);
+
+      prisma.role.findUnique.mockResolvedValue({
+        permissions: ['sale:other_quotation:edit'],
+        isAdmin: false,
+      });
+      expect(await service.canAccessOtherSellers(user, 'edit')).toBe(true);
+    });
+
+    it('deve negar quando o cargo não tem nenhuma das duas chaves', async () => {
+      prisma.role.findUnique.mockResolvedValue({
+        permissions: ['sale:quotation:view'],
+        isAdmin: false,
+      });
+      expect(await service.canAccessOtherSellers(user)).toBe(false);
+    });
+  });
 });
