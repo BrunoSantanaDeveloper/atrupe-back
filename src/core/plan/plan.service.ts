@@ -124,6 +124,40 @@ export class PlanService {
     }
   }
 
+  /**
+   * Lista os planos gerenciáveis pelo SystemAdmin (globais, exceto TRIAL),
+   * com os dados necessários para o painel de disponibilidade — inclusive o
+   * preço mesmo quando o plano está inativo (ao contrário de getPublicPlans).
+   */
+  async getManageablePlans() {
+    try {
+      return await this.prisma.plan.findMany({
+        where: {
+          companyId: null, // Apenas planos globais
+          planType: {
+            not: 'TRIAL', // TRIAL não é contratável
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+          planType: true,
+          basePrice: true,
+          additionalUserPrice: true,
+          isActive: true,
+          badge: true,
+        },
+        orderBy: {
+          order: 'asc',
+        },
+      });
+    } catch (error) {
+      throw new BadRequestException(
+        'Error fetching manageable plans: ' + error.message,
+      );
+    }
+  }
+
   async findPlanById(id: string) {
     try {
       const plan = await this.prisma.plan.findUnique({
@@ -169,6 +203,36 @@ export class PlanService {
       }
       throw new BadRequestException('Error updating plan: ' + error.message);
     }
+  }
+
+  /**
+   * Ativa ou desativa a disponibilidade de um plano para contratação.
+   * Responsabilidade exclusiva do SystemAdmin. Ao ativar, remove o selo
+   * "Em breve"; ao desativar, reaplica o selo automaticamente.
+   */
+  async setPlanAvailability(id: string, isActive: boolean) {
+    const plan = await this.prisma.plan.findUnique({
+      where: { id },
+      select: { id: true, basePrice: true },
+    });
+
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    if (isActive && (!plan.basePrice || plan.basePrice <= 0)) {
+      throw new BadRequestException(
+        'Defina um preço base maior que zero antes de disponibilizar o plano para contratação.',
+      );
+    }
+
+    return this.prisma.plan.update({
+      where: { id },
+      data: {
+        isActive,
+        badge: isActive ? null : { text: 'Em breve', variant: 'orangeLight' },
+      },
+    });
   }
 
   async deletePlan(id: string) {

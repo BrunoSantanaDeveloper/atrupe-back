@@ -47,6 +47,16 @@ export class CreatePlanDTO {
 
 export class UpdatePlanDTO extends PartialType(CreatePlanDTO) {}
 
+export class SetPlanAvailabilityDTO {
+  @IsBoolean()
+  @ApiProperty({
+    description: 'Define se o plano fica disponível para contratação',
+    example: true,
+    required: true,
+  })
+  isActive: boolean;
+}
+
 export class ListPlanDTO extends CreatePlanDTO {
   @IsUUID()
   @ApiProperty({

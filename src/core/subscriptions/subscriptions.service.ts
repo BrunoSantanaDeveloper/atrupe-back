@@ -143,6 +143,12 @@ export class SubscriptionsService {
       throw new NotFoundException('Plan not found');
     }
 
+    if (!plan.isActive) {
+      throw new BadRequestException(
+        'Este plano não está disponível para contratação.',
+      );
+    }
+
     // Buscar customer existente ou criar um novo
     let finalCustomer: any;
     const existingCustomer = await this.prisma.customer.findFirst({
@@ -578,6 +584,12 @@ export class SubscriptionsService {
 
     if (!newPlan) {
       throw new NotFoundException('New plan not found');
+    }
+
+    if (!newPlan.isActive) {
+      throw new BadRequestException(
+        'Este plano não está disponível para contratação.',
+      );
     }
 
     // Calcular valor dos módulos extras da subscription atual

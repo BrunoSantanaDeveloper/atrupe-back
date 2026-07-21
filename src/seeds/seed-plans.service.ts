@@ -75,8 +75,9 @@ export class SeedPlansService {
           basePrice: config.plan.basePrice,
           additionalUserPrice: config.plan.additionalUserPrice,
           planType: config.plan.planType,
-          isActive: config.plan.isActive,
-          badge: config.badge || null,
+          // isActive e badge NÃO são sobrescritos no update: a disponibilidade
+          // para contratação é responsabilidade do SystemAdmin (painel de
+          // planos). O seed define apenas o valor inicial na criação.
           concept: config.concept || null,
           features: config.featuresList || null,
           videoUrl: config.videoUrl || null,

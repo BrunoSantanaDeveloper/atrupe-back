@@ -16,7 +16,11 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { PlanService } from './plan.service';
-import { CreatePlanDTO, UpdatePlanDTO } from './dtos/plan';
+import {
+  CreatePlanDTO,
+  UpdatePlanDTO,
+  SetPlanAvailabilityDTO,
+} from './dtos/plan';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 
@@ -72,6 +76,21 @@ export class PlanController {
     return this.planService.getPublicModules();
   }
 
+  @Get('manage')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Lista os planos gerenciáveis (disponibilidade para contratação) — apenas SystemAdmin',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de planos gerenciáveis retornada com sucesso',
+  })
+  getManageablePlans() {
+    return this.planService.getManageablePlans();
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard, SystemAdminGuard)
   @ApiBearerAuth()
@@ -94,6 +113,28 @@ export class PlanController {
   })
   updatePlan(@Param('id') id: string, @Body() updatePlanDTO: UpdatePlanDTO) {
     return this.planService.updatePlan(id, updatePlanDTO);
+  }
+
+  @Patch(':id/availability')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Ativa/desativa um plano para contratação (apenas SystemAdmin)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Disponibilidade do plano atualizada com sucesso',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado. Apenas administradores do sistema.',
+  })
+  @ApiResponse({ status: 404, description: 'Plano não encontrado' })
+  setPlanAvailability(
+    @Param('id') id: string,
+    @Body() dto: SetPlanAvailabilityDTO,
+  ) {
+    return this.planService.setPlanAvailability(id, dto.isActive);
   }
 
   @Delete(':id')

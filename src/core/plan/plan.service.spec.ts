@@ -157,4 +157,76 @@ describe('PlanService', () => {
       expect(result).toEqual({ id: 'p1' });
     });
   });
+
+  describe('getManageablePlans', () => {
+    it('deve listar planos globais não-TRIAL ordenados', async () => {
+      prismaMock.plan.findMany.mockResolvedValue([
+        { id: 'p1', name: 'Start', isActive: true },
+      ]);
+
+      const result = await service.getManageablePlans();
+
+      expect(prismaMock.plan.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { companyId: null, planType: { not: 'TRIAL' } },
+          orderBy: { order: 'asc' },
+        }),
+      );
+      expect(result).toEqual([{ id: 'p1', name: 'Start', isActive: true }]);
+    });
+  });
+
+  describe('setPlanAvailability', () => {
+    it('deve lançar NotFoundException se o plano não existir', async () => {
+      prismaMock.plan.findUnique.mockResolvedValue(null);
+
+      await expect(service.setPlanAvailability('p1', true)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(prismaMock.plan.update).not.toHaveBeenCalled();
+    });
+
+    it('deve lançar BadRequestException ao ativar plano sem preço', async () => {
+      prismaMock.plan.findUnique.mockResolvedValue({ id: 'p1', basePrice: 0 });
+
+      await expect(service.setPlanAvailability('p1', true)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prismaMock.plan.update).not.toHaveBeenCalled();
+    });
+
+    it('deve ativar plano e remover o selo', async () => {
+      prismaMock.plan.findUnique.mockResolvedValue({
+        id: 'p1',
+        basePrice: 23000,
+      });
+      prismaMock.plan.update.mockResolvedValue({ id: 'p1', isActive: true });
+
+      const result = await service.setPlanAvailability('p1', true);
+
+      expect(prismaMock.plan.update).toHaveBeenCalledWith({
+        where: { id: 'p1' },
+        data: { isActive: true, badge: null },
+      });
+      expect(result).toEqual({ id: 'p1', isActive: true });
+    });
+
+    it('deve desativar plano e reaplicar o selo "Em breve"', async () => {
+      prismaMock.plan.findUnique.mockResolvedValue({
+        id: 'p1',
+        basePrice: 23000,
+      });
+      prismaMock.plan.update.mockResolvedValue({ id: 'p1', isActive: false });
+
+      await service.setPlanAvailability('p1', false);
+
+      expect(prismaMock.plan.update).toHaveBeenCalledWith({
+        where: { id: 'p1' },
+        data: {
+          isActive: false,
+          badge: { text: 'Em breve', variant: 'orangeLight' },
+        },
+      });
+    });
+  });
 });

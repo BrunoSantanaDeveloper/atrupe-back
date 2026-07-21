@@ -139,6 +139,8 @@ export const PLAN_CONFIGURATIONS = {
       basePrice: 23000, // preço lite
       additionalUserPrice: 1500,
       order: 2,
+      // Estado inicial na criação. A ativação para contratação é feita pelo
+      // SystemAdmin no painel de planos (não é sobrescrita em re-seeds).
       isActive: false,
     },
     badge: {
@@ -174,7 +176,71 @@ export const PLAN_CONFIGURATIONS = {
     },
     features: liteFeatures,
     videoUrl: 'https://youtu.be/phhbVqmLWdM',
-    featuresList: null,
+    featuresList: [
+      {
+        title: 'Empresa e sistema',
+        items: [
+          '5 usuários',
+          'Cadastro de 1 CNPJ',
+          'Padrões de medida',
+          'Cadastro de colaboradores',
+          'Perfis de usuário',
+          'Setores',
+        ],
+        videoUrl: '',
+      },
+      {
+        title: 'Vendas',
+        items: [
+          'Orçamentos',
+          'Ordens de serviço',
+          'Venda rápida',
+          'Status de orçamento personalizados',
+          'Coluna de status nos orçamentos',
+          'Motivos de rejeição e cancelamento',
+          'Detalhes de itens no PDF',
+        ],
+        videoUrl: '',
+      },
+      {
+        title: 'Financeiro',
+        items: [
+          'Fluxo financeiro',
+          'Formas de pagamento',
+          'Despesas fixas',
+          'Folha de pagamento (Simplificada)',
+          'Plano de contas',
+          'Contas a receber',
+          'Contas a pagar',
+          'Controle de caixa',
+          'Frente de caixa (PDV)',
+          'Contas bancárias',
+          'Limite de crédito de clientes',
+          'Repasse de taxa da operadora',
+          'Diferença de pagamento',
+        ],
+        videoUrl: '',
+      },
+      {
+        title: 'Produtos',
+        items: ['Produtos com composição', 'Etapas de produção nos produtos'],
+        videoUrl: '',
+      },
+      {
+        title: 'Produção',
+        items: [
+          'Agenda de entrega com abas de produção',
+          'Etapas de produção na agenda',
+          'Fase atual nas ordens de serviço',
+        ],
+        videoUrl: '',
+      },
+      {
+        title: 'Cadastros',
+        items: ['Clientes (Completo)', 'Fornecedores (Completo)'],
+        videoUrl: '',
+      },
+    ],
     limits: {
       max_users: 5,
       max_companies: 1,
