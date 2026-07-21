@@ -402,6 +402,27 @@ export class SubscriptionsController {
     );
   }
 
+  @Patch('change-plan')
+  @ApiOperation({
+    summary:
+      'Troca o plano da assinatura atual da empresa (in-place). Disponível mesmo com a conta bloqueada por inadimplência — a cobrança em aberto é preservada e continua sendo o que restaura o acesso.',
+  })
+  @ApiResponse({ status: 200, description: 'Plano alterado com sucesso' })
+  @ApiResponse({
+    status: 400,
+    description: 'Plano indisponível, sem preço ou igual ao atual',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Assinatura ou plano não encontrado',
+  })
+  async changePlan(@Body() changePlanDto: UpgradeSubscriptionDto, @Req() req) {
+    return await this.subscriptionsService.changePlan(
+      req.user.companyId,
+      changePlanDto.planId,
+    );
+  }
+
   @Patch(':id/upgrade')
   @ApiOperation({ summary: 'Upgrade subscription to a new plan' })
   @ApiParam({ name: 'id', description: 'Subscription ID' })

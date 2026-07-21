@@ -59,6 +59,7 @@ describe('SubscriptionsService', () => {
 
   const mockAsaasGatewayService = {
     cancelAsaasSubscription: jest.fn(),
+    updateAsaasSubscription: jest.fn(),
   };
 
   const mockCouponsService = {
@@ -190,6 +191,137 @@ describe('SubscriptionsService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('changePlan', () => {
+    const currentSubscription = {
+      id: 'sub-1',
+      companyId: 'company-1',
+      planId: 'plan-start',
+      asaasSubscriptionId: 'sub_123',
+      additionalUsers: 2,
+      plan: { name: 'Start' },
+      subscriptionFeatures: [
+        { isActive: true, price: 7000, feature: { key: 'nota_fiscal' } },
+      ],
+    };
+
+    const litePlan = {
+      id: 'plan-lite',
+      name: 'Lite',
+      isActive: true,
+      basePrice: 23000,
+      additionalUserPrice: 1500,
+    };
+
+    it('deve lançar NotFoundException se não houver assinatura Asaas', async () => {
+      mockPrismaService.subscription.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.changePlan('company-1', 'plan-lite'),
+      ).rejects.toThrow(NotFoundException);
+      expect(
+        mockAsaasGatewayService.updateAsaasSubscription,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('deve lançar NotFoundException se o plano não existir', async () => {
+      mockPrismaService.subscription.findFirst.mockResolvedValue(
+        currentSubscription,
+      );
+      mockPrismaService.plan.findUnique.mockResolvedValue(null);
+
+      await expect(service.changePlan('company-1', 'plan-x')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(
+        mockAsaasGatewayService.updateAsaasSubscription,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('deve recusar plano indisponível para contratação', async () => {
+      mockPrismaService.subscription.findFirst.mockResolvedValue(
+        currentSubscription,
+      );
+      mockPrismaService.plan.findUnique.mockResolvedValue({
+        ...litePlan,
+        isActive: false,
+      });
+
+      await expect(
+        service.changePlan('company-1', 'plan-lite'),
+      ).rejects.toThrow(BadRequestException);
+      expect(
+        mockAsaasGatewayService.updateAsaasSubscription,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('deve recusar plano sem preço definido', async () => {
+      mockPrismaService.subscription.findFirst.mockResolvedValue(
+        currentSubscription,
+      );
+      mockPrismaService.plan.findUnique.mockResolvedValue({
+        ...litePlan,
+        basePrice: 0,
+      });
+
+      await expect(
+        service.changePlan('company-1', 'plan-lite'),
+      ).rejects.toThrow(BadRequestException);
+      expect(
+        mockAsaasGatewayService.updateAsaasSubscription,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('deve recusar troca para o mesmo plano', async () => {
+      mockPrismaService.subscription.findFirst.mockResolvedValue({
+        ...currentSubscription,
+        planId: 'plan-lite',
+      });
+      mockPrismaService.plan.findUnique.mockResolvedValue(litePlan);
+
+      await expect(
+        service.changePlan('company-1', 'plan-lite'),
+      ).rejects.toThrow(BadRequestException);
+      expect(
+        mockAsaasGatewayService.updateAsaasSubscription,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('deve trocar in-place preservando a cobrança pendente', async () => {
+      mockPrismaService.subscription.findFirst.mockResolvedValue(
+        currentSubscription,
+      );
+      mockPrismaService.plan.findUnique.mockResolvedValue(litePlan);
+      mockPrismaService.subscription.update.mockResolvedValue({
+        id: 'sub-1',
+        planId: 'plan-lite',
+      });
+
+      const result = await service.changePlan('company-1', 'plan-lite');
+
+      // base 23000 + módulo 7000 + 2 usuários * 1500 = 33000 centavos => R$ 330
+      expect(
+        mockAsaasGatewayService.updateAsaasSubscription,
+      ).toHaveBeenCalledWith('sub_123', {
+        value: 330,
+        description: 'Assinatura Lite',
+        updatePendingPayments: false,
+      });
+
+      // Não pode cancelar a assinatura (isso órfãozaria a fatura vencida)
+      expect(
+        mockAsaasGatewayService.cancelAsaasSubscription,
+      ).not.toHaveBeenCalled();
+
+      expect(mockPrismaService.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sub-1' },
+          data: { planId: 'plan-lite', value: 330 },
+        }),
+      );
+      expect(result).toEqual({ id: 'sub-1', planId: 'plan-lite' });
     });
   });
 });

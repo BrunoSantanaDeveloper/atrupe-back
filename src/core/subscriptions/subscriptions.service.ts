@@ -712,6 +712,100 @@ export class SubscriptionsService {
     return newSubscription;
   }
 
+  /**
+   * Troca o plano da assinatura atual "in-place", sem cancelar/recriar a
+   * assinatura no Asaas.
+   *
+   * Por que in-place: o fluxo de `upgrade()` cancela a assinatura no Asaas e
+   * cria outra. Se a empresa está inadimplente, a fatura vencida fica órfã da
+   * assinatura antiga e o bloqueio deixa de encontrá-la (débito perdido).
+   * Atualizando no lugar, a fatura em aberto continua válida e pagável — ao
+   * quitá-la o webhook desbloqueia a empresa já no novo plano.
+   *
+   * `updatePendingPayments: false` é intencional: a fatura vencida se refere a
+   * um período já consumido no plano antigo e mantém o valor original. O preço
+   * do novo plano passa a valer nas próximas cobranças.
+   */
+  async changePlan(companyId: string, newPlanId: string) {
+    // Assinatura real no Asaas (mesmo critério usado pelo fluxo de bloqueio)
+    const currentSubscription = await this.prisma.subscription.findFirst({
+      where: {
+        companyId,
+        asaasSubscriptionId: { startsWith: 'sub_' },
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        plan: true,
+        subscriptionFeatures: { include: { feature: true } },
+      },
+    });
+
+    if (!currentSubscription) {
+      throw new NotFoundException(
+        'Nenhuma assinatura ativa encontrada para esta empresa.',
+      );
+    }
+
+    const newPlan = await this.prisma.plan.findUnique({
+      where: { id: newPlanId },
+    });
+
+    if (!newPlan) {
+      throw new NotFoundException('Plano não encontrado.');
+    }
+
+    if (!newPlan.isActive) {
+      throw new BadRequestException(
+        'Este plano não está disponível para contratação.',
+      );
+    }
+
+    if (!newPlan.basePrice || newPlan.basePrice <= 0) {
+      throw new BadRequestException('Este plano não possui preço definido.');
+    }
+
+    if (newPlan.id === currentSubscription.planId) {
+      throw new BadRequestException('A empresa já está neste plano.');
+    }
+
+    // Mantém os módulos adicionais já contratados no novo valor
+    const featuresValue = (currentSubscription.subscriptionFeatures || [])
+      .filter((sf) => sf.isActive !== false)
+      .reduce((sum, sf) => sum + (sf.price || 0), 0);
+
+    const newValue =
+      (newPlan.basePrice +
+        featuresValue +
+        (newPlan.additionalUserPrice || 0) *
+          (currentSubscription.additionalUsers || 0)) /
+      100;
+
+    // Atualiza a assinatura no Asaas preservando a(s) cobrança(s) em aberto
+    await this.asaasGateway.updateAsaasSubscription(
+      currentSubscription.asaasSubscriptionId,
+      {
+        value: newValue,
+        description: `Assinatura ${newPlan.name}`,
+        updatePendingPayments: false,
+      },
+    );
+
+    const updated = await this.prisma.subscription.update({
+      where: { id: currentSubscription.id },
+      data: {
+        planId: newPlan.id,
+        value: newValue,
+      },
+      include: { plan: true },
+    });
+
+    this.logger.log(
+      `Plano da empresa ${companyId} alterado de ${currentSubscription.plan?.name} para ${newPlan.name} (in-place; cobrança pendente preservada)`,
+    );
+
+    return updated;
+  }
+
   async addModule(
     subscriptionId: string,
     moduleId: string,
