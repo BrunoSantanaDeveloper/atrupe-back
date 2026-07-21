@@ -131,12 +131,17 @@ export class ContractService {
         const user = await this.prisma.user.findUnique({
           where: { id: userId },
           include: {
-            customer: true,
             userRole: { include: { role: true } },
           },
         });
 
-        const companyId = user?.customer?.companyId;
+        // Busca companyId via Employee (link correto entre usuário e empresa)
+        const employee = await this.prisma.employee.findFirst({
+          where: { userId },
+          orderBy: { createdAt: 'asc' },
+        });
+        const companyId = employee?.companyId;
+
         const isAdmin = user?.userRole?.some(
           (ur) => ur.role.name === 'Admin' || ur.isSystemAdmin,
         );

@@ -81,6 +81,18 @@ export class SupplierController {
     return await this.supplierService.findAll(filter);
   }
 
+  @Get('export')
+  @HasPermission('export', 'register:supplier')
+  @ApiOperation({ summary: 'Obtém os fornecedores filtrados para exportação' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de fornecedores para exportação retornada com sucesso.',
+  })
+  export(@Req() req, @Query() filter: SupplierFilterDTO) {
+    filter.companyId = req.user.companyId;
+    return this.supplierService.findAllForExport(filter);
+  }
+
   @Get(':id')
   @TenantResource('supplier')
   @ApiOperation({ summary: 'Obtém um fornecedor pelo ID' })

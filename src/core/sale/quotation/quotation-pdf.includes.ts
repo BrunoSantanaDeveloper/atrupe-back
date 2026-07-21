@@ -178,6 +178,9 @@ export const PDF_QUOTATION_PAYMENT_SELECT = {
         },
       },
     },
+    orderBy: {
+      dueDate: 'asc' as const,
+    },
   },
 } as const;
 

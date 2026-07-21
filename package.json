@@ -34,7 +34,11 @@
     "fiscal:nullify": "node dist/src/scripts/nullify-legacy-fiscal-secrets.js",
     "fiscal:nullify:dry": "node dist/src/scripts/nullify-legacy-fiscal-secrets.js --dry-run",
     "fiscal:nullify:dev": "ts-node src/scripts/nullify-legacy-fiscal-secrets.ts",
-    "fiscal:nullify:dry:dev": "ts-node src/scripts/nullify-legacy-fiscal-secrets.ts --dry-run"
+    "fiscal:nullify:dry:dev": "ts-node src/scripts/nullify-legacy-fiscal-secrets.ts --dry-run",
+    "permissions:normalize": "node dist/src/scripts/normalize-other-sellers-permission.js",
+    "permissions:normalize:dry": "node dist/src/scripts/normalize-other-sellers-permission.js --dry-run",
+    "permissions:normalize:dev": "ts-node src/scripts/normalize-other-sellers-permission.ts",
+    "permissions:normalize:dry:dev": "ts-node src/scripts/normalize-other-sellers-permission.ts --dry-run"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",

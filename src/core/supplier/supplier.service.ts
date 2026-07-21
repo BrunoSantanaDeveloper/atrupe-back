@@ -9,6 +9,8 @@ import { PrismaService } from 'nestjs-prisma';
 import { SupplierFilterDTO } from './dto/filter.dto';
 import { ClientStatus, OwnerType, Prisma } from '@prisma/client';
 
+const EXPORT_LIMIT = '10000';
+
 @Injectable()
 export class SupplierService {
   constructor(private readonly prisma: PrismaService) {}
@@ -236,6 +238,20 @@ export class SupplierService {
       console.error(e);
       throw new BadRequestException('Supplier list error');
     }
+  }
+
+  async findAllForExport(filter: SupplierFilterDTO) {
+    const result = await this.findAll({
+      ...filter,
+      page: '1',
+      limit: EXPORT_LIMIT,
+    });
+
+    return {
+      total: result.total,
+      exportLimit: Number(EXPORT_LIMIT),
+      data: result.data,
+    };
   }
 
   async findAllQuantity(companyId: string) {
