@@ -3,6 +3,7 @@ import {
   NotFoundException,
   UnauthorizedException,
   ConflictException,
+  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'src/config/prisma/prisma.service';
@@ -54,13 +55,28 @@ export class CompanyManagementService {
       throw new NotFoundException('Empresa não encontrada.');
     }
 
-    // Buscar o plano START automaticamente
-    const plan = await this.prisma.plan.findFirst({
-      where: { planType: 'START' },
-    });
+    // Plano escolhido pelo admin. Sem planId, mantém o comportamento
+    // histórico e usa o START.
+    const plan = assignDto.planId
+      ? await this.prisma.plan.findUnique({ where: { id: assignDto.planId } })
+      : await this.prisma.plan.findFirst({ where: { planType: 'START' } });
 
     if (!plan) {
-      throw new NotFoundException('Plano START não encontrado no sistema.');
+      throw new NotFoundException(
+        assignDto.planId
+          ? 'Plano não encontrado.'
+          : 'Plano START não encontrado no sistema.',
+      );
+    }
+
+    if (!plan.isActive) {
+      throw new BadRequestException(
+        'Este plano não está disponível para contratação.',
+      );
+    }
+
+    if (!plan.basePrice || plan.basePrice <= 0) {
+      throw new BadRequestException('Este plano não possui preço definido.');
     }
 
     // Calcular valor base do plano (sem features ou usuários adicionais)
@@ -134,11 +150,11 @@ export class CompanyManagementService {
     });
 
     this.logger.log(
-      `Subscription START atribuída manualmente: ${subscription.id} para empresa ${company.name}`,
+      `Subscription ${plan.name} atribuída manualmente: ${subscription.id} para empresa ${company.name}`,
     );
 
     return {
-      message: 'Plano START atribuído com sucesso à empresa.',
+      message: `Plano ${plan.name} atribuído com sucesso à empresa.`,
       subscription: await this.prisma.subscription.findUnique({
         where: { id: subscription.id },
         include: {

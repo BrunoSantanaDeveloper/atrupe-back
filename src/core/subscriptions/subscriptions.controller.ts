@@ -35,6 +35,7 @@ import { UpdateActiveClientDto } from './dto/update-active-client.dto';
 import { SyncAddressDto } from './dto/sync-address.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
 import { CancelSubscriptionDto } from './dto/cancel-subscription.dto';
+import { ChangePlanAdminDto } from './dto/change-plan-admin.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
@@ -255,6 +256,46 @@ export class SubscriptionsController {
     return await this.companyManagementService.updateActiveClient(
       companyId,
       updateDto,
+      req.user.userId,
+    );
+  }
+
+  @Patch('active-clients/:companyId/change-plan')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary: 'Troca o plano de uma empresa (apenas SystemAdmin)',
+  })
+  @ApiParam({ name: 'companyId', description: 'Company ID' })
+  @ApiBody({
+    description: 'Novo plano e senha gerencial',
+    type: ChangePlanAdminDto,
+  })
+  @ApiResponse({ status: 200, description: 'Plano alterado com sucesso' })
+  @ApiResponse({
+    status: 400,
+    description: 'Plano indisponível, sem preço ou igual ao atual',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Senha do administrador incorreta',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado. Apenas administradores do sistema',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Assinatura ou plano não encontrado',
+  })
+  async changePlanAsAdmin(
+    @Param('companyId') companyId: string,
+    @Body() changePlanDto: ChangePlanAdminDto,
+    @Req() req,
+  ) {
+    return await this.subscriptionsService.changePlanAsAdmin(
+      companyId,
+      changePlanDto.planId,
+      changePlanDto.password,
       req.user.userId,
     );
   }

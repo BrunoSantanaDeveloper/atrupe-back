@@ -895,6 +895,39 @@ export class SubscriptionsService {
     return updated;
   }
 
+  /**
+   * Troca o plano de uma empresa a pedido do SystemAdmin (suporte/comercial).
+   * Exige a senha gerencial, seguindo a convenção dos demais mutadores admin.
+   * A regra de cobrança é a mesma do cliente: reset de ciclo se houver
+   * inadimplência, caso contrário só o valor muda a partir do próximo ciclo.
+   */
+  async changePlanAsAdmin(
+    companyId: string,
+    newPlanId: string,
+    password: string,
+    adminUserId: string,
+  ) {
+    const adminUser = await this.prisma.user.findFirst({
+      where: { id: adminUserId },
+    });
+
+    if (!adminUser) {
+      throw new UnauthorizedException('Usuário administrador não encontrado.');
+    }
+
+    const isPasswordValid = await argon2.verify(adminUser.password, password);
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Senha do administrador incorreta.');
+    }
+
+    this.logger.log(
+      `SystemAdmin ${adminUserId} solicitou troca de plano da empresa ${companyId}`,
+    );
+
+    return this.changePlan(companyId, newPlanId);
+  }
+
   async addModule(
     subscriptionId: string,
     moduleId: string,

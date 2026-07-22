@@ -371,6 +371,64 @@ describe('SubscriptionsService', () => {
       expect(mockAsaasGatewayService.deleteAsaasPayment).not.toHaveBeenCalled();
     });
 
+    it('changePlanAsAdmin: recusa senha gerencial incorreta', async () => {
+      mockPrismaService.user.findFirst.mockResolvedValue({
+        id: 'admin-1',
+        password: 'hashed',
+      });
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        service.changePlanAsAdmin(
+          'company-1',
+          'plan-lite',
+          'senha-errada',
+          'admin-1',
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+
+      // Não pode chegar a mexer na assinatura sem autorização
+      expect(mockPrismaService.subscription.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('changePlanAsAdmin: com senha válida delega para changePlan', async () => {
+      mockPrismaService.user.findFirst.mockResolvedValue({
+        id: 'admin-1',
+        password: 'hashed',
+      });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      mockPrismaService.subscription.findFirst.mockResolvedValue(
+        currentSubscription,
+      );
+      mockPrismaService.plan.findUnique.mockResolvedValue(litePlan);
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue(
+        [],
+      );
+      mockPrismaService.subscription.update.mockResolvedValue({
+        id: 'sub-1',
+        planId: 'plan-lite',
+      });
+
+      await service.changePlanAsAdmin(
+        'company-1',
+        'plan-lite',
+        'senha-certa',
+        'admin-1',
+      );
+
+      expect(
+        mockAsaasGatewayService.updateAsaasSubscription,
+      ).toHaveBeenCalledWith(
+        'sub_123',
+        expect.objectContaining({ value: 330, description: 'Assinatura Lite' }),
+      );
+      expect(mockPrismaService.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ planId: 'plan-lite' }),
+        }),
+      );
+    });
+
     it('não deve mexer em cobranças quando a assinatura está em dia', async () => {
       mockPrismaService.subscription.findFirst.mockResolvedValue(
         currentSubscription,

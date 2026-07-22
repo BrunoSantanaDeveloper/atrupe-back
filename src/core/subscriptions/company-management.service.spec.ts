@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { CompanyManagementService } from './company-management.service';
 import { PrismaService } from 'src/config/prisma/prisma.service';
@@ -106,7 +107,7 @@ describe('CompanyManagementService', () => {
   const mockPrismaService = {
     user: { findFirst: jest.fn(), findUnique: jest.fn() },
     company: { findUnique: jest.fn() },
-    plan: { findFirst: jest.fn() },
+    plan: { findFirst: jest.fn(), findUnique: jest.fn() },
     subscription: {
       findFirst: jest.fn(),
       create: jest.fn(),
@@ -187,6 +188,78 @@ describe('CompanyManagementService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
+    it('should use the provided planId instead of START', async () => {
+      mockPrismaService.user.findFirst.mockResolvedValue({
+        id: 'admin-1',
+        password: 'hashed',
+      });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        id: 'company-1',
+        name: 'Test',
+        customer: [{ id: 'existing-cus' }],
+      });
+      mockPrismaService.plan.findUnique.mockResolvedValue({
+        id: 'plan-lite',
+        name: 'Lite',
+        planType: 'LITE',
+        basePrice: 23000,
+        isActive: true,
+      });
+      mockPrismaService.subscription.findFirst.mockResolvedValue(null);
+      mockPrismaService.subscription.create.mockResolvedValue({
+        id: 'sub-new',
+      });
+      mockPrismaService.subscription.findUnique.mockResolvedValue({
+        id: 'sub-new',
+        plan: { name: 'Lite' },
+      });
+
+      const result = await service.assignManual(
+        { ...assignDto, planId: 'plan-lite' } as any,
+        'admin-1',
+      );
+
+      expect(mockPrismaService.plan.findUnique).toHaveBeenCalledWith({
+        where: { id: 'plan-lite' },
+      });
+      expect(mockPrismaService.plan.findFirst).not.toHaveBeenCalled();
+      expect(mockPrismaService.subscription.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ planId: 'plan-lite', value: 230 }),
+        }),
+      );
+      expect(result.message).toContain('Lite');
+    });
+
+    it('should reject an inactive plan', async () => {
+      mockPrismaService.user.findFirst.mockResolvedValue({
+        id: 'admin-1',
+        password: 'hashed',
+      });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        id: 'company-1',
+        name: 'Test',
+        customer: [{ id: 'existing-cus' }],
+      });
+      mockPrismaService.plan.findUnique.mockResolvedValue({
+        id: 'plan-pro',
+        name: 'Pro',
+        planType: 'PRO',
+        basePrice: 0,
+        isActive: false,
+      });
+
+      await expect(
+        service.assignManual(
+          { ...assignDto, planId: 'plan-pro' } as any,
+          'admin-1',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrismaService.subscription.create).not.toHaveBeenCalled();
+    });
+
     it('should throw NotFoundException when START plan not found', async () => {
       mockPrismaService.user.findFirst.mockResolvedValue({
         id: 'admin-1',
@@ -219,8 +292,10 @@ describe('CompanyManagementService', () => {
       });
       mockPrismaService.plan.findFirst.mockResolvedValue({
         id: 'plan-start',
+        name: 'Start',
         planType: 'START',
         basePrice: 9900,
+        isActive: true,
       });
       mockPrismaService.subscription.findFirst.mockResolvedValue({
         id: 'old-sub',
@@ -271,8 +346,10 @@ describe('CompanyManagementService', () => {
       });
       mockPrismaService.plan.findFirst.mockResolvedValue({
         id: 'plan-start',
+        name: 'Start',
         planType: 'START',
         basePrice: 5000,
+        isActive: true,
       });
       mockPrismaService.subscription.findFirst.mockResolvedValue(null);
       mockPrismaService.subscription.create.mockResolvedValue({
