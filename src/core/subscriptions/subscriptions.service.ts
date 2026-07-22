@@ -712,19 +712,41 @@ export class SubscriptionsService {
     return newSubscription;
   }
 
+  /** Formata data no padrão aceito pelo Asaas (YYYY-MM-DD) */
+  private toAsaasDate(date: Date): string {
+    return date.toISOString().split('T')[0];
+  }
+
+  /** Avança a data em um ciclo de cobrança */
+  private addCycle(date: Date, cycle?: string): Date {
+    const next = new Date(date);
+
+    if (cycle === 'YEARLY') {
+      next.setFullYear(next.getFullYear() + 1);
+    } else {
+      next.setMonth(next.getMonth() + 1);
+    }
+
+    return next;
+  }
+
   /**
    * Troca o plano da assinatura atual "in-place", sem cancelar/recriar a
    * assinatura no Asaas.
    *
    * Por que in-place: o fluxo de `upgrade()` cancela a assinatura no Asaas e
-   * cria outra. Se a empresa está inadimplente, a fatura vencida fica órfã da
+   * cria outra. Se a empresa está inadimplente, a cobrança vencida fica órfã da
    * assinatura antiga e o bloqueio deixa de encontrá-la (débito perdido).
-   * Atualizando no lugar, a fatura em aberto continua válida e pagável — ao
-   * quitá-la o webhook desbloqueia a empresa já no novo plano.
    *
-   * `updatePendingPayments: false` é intencional: a fatura vencida se refere a
-   * um período já consumido no plano antigo e mantém o valor original. O preço
-   * do novo plano passa a valer nas próximas cobranças.
+   * Política de cobrança quando há inadimplência (conta bloqueada):
+   * o cliente paga para usar — e durante o bloqueio ele não teve acesso. Por
+   * isso o ciclo é REINICIADO em vez de cobrar o período vencido: a cobrança
+   * mais antiga é reemitida com o valor do plano escolhido agora, vencendo
+   * hoje, e as demais cobranças em aberto (períodos não usufruídos) são
+   * removidas. O próximo vencimento passa a ser um ciclo à frente de hoje.
+   *
+   * Sem inadimplência, nada disso se aplica: apenas o valor da assinatura muda,
+   * valendo a partir do próximo ciclo, sem mexer em cobranças já emitidas.
    */
   async changePlan(companyId: string, newPlanId: string) {
     // Assinatura real no Asaas (mesmo critério usado pelo fluxo de bloqueio)
@@ -780,27 +802,94 @@ export class SubscriptionsService {
           (currentSubscription.additionalUsers || 0)) /
       100;
 
-    // Atualiza a assinatura no Asaas preservando a(s) cobrança(s) em aberto
-    await this.asaasGateway.updateAsaasSubscription(
-      currentSubscription.asaasSubscriptionId,
-      {
+    // Cobranças em aberto no Asaas (fonte da verdade)
+    let openPayments: Array<{ id: string; status: string; dueDate: string }> =
+      [];
+
+    try {
+      const asaasPayments =
+        await this.asaasGateway.getAsaasSubscriptionPayments(
+          currentSubscription.asaasSubscriptionId,
+        );
+
+      openPayments = asaasPayments
+        .filter((p) => p.status === 'PENDING' || p.status === 'OVERDUE')
+        .sort(
+          (a, b) =>
+            new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+        );
+    } catch (error) {
+      this.logger.warn(
+        `Não foi possível listar cobranças da assinatura ${currentSubscription.asaasSubscriptionId}: ${error.message}`,
+      );
+    }
+
+    const hasOverdue = openPayments.some((p) => p.status === 'OVERDUE');
+    const today = new Date();
+
+    if (hasOverdue) {
+      // Reset de ciclo: não cobra o período em que a conta esteve bloqueada.
+      const nextDueDate = this.addCycle(today, currentSubscription.cycle);
+
+      await this.asaasGateway.updateAsaasSubscription(
+        currentSubscription.asaasSubscriptionId,
+        {
+          value: newValue,
+          description: `Assinatura ${newPlan.name}`,
+          nextDueDate: this.toAsaasDate(nextDueDate),
+          updatePendingPayments: false,
+        },
+      );
+
+      // Reaproveita a cobrança mais antiga como fatura de reativação.
+      // Feito ANTES de remover as demais para o cliente nunca ficar sem
+      // nenhuma cobrança pagável — o desbloqueio depende desse pagamento.
+      const [invoiceToKeep, ...supersededInvoices] = openPayments;
+
+      await this.asaasGateway.updateAsaasPayment(invoiceToKeep.id, {
         value: newValue,
+        dueDate: this.toAsaasDate(today),
         description: `Assinatura ${newPlan.name}`,
-        updatePendingPayments: false,
-      },
-    );
+      });
+
+      for (const invoice of supersededInvoices) {
+        try {
+          await this.asaasGateway.deleteAsaasPayment(invoice.id);
+        } catch (error) {
+          // Não aborta a troca: a fatura de reativação já está correta.
+          this.logger.warn(
+            `Falha ao remover cobrança ${invoice.id} superada pelo reset de ciclo: ${error.message}`,
+          );
+        }
+      }
+    } else {
+      // Assinatura em dia: muda apenas o valor daqui pra frente, sem mexer no
+      // ciclo nem nas cobranças já emitidas.
+      await this.asaasGateway.updateAsaasSubscription(
+        currentSubscription.asaasSubscriptionId,
+        {
+          value: newValue,
+          description: `Assinatura ${newPlan.name}`,
+          updatePendingPayments: false,
+        },
+      );
+    }
 
     const updated = await this.prisma.subscription.update({
       where: { id: currentSubscription.id },
       data: {
         planId: newPlan.id,
         value: newValue,
+        ...(hasOverdue ? { nextDueDate: today } : {}),
       },
       include: { plan: true },
     });
 
     this.logger.log(
-      `Plano da empresa ${companyId} alterado de ${currentSubscription.plan?.name} para ${newPlan.name} (in-place; cobrança pendente preservada)`,
+      `Plano da empresa ${companyId} alterado de ${currentSubscription.plan?.name} para ${newPlan.name}` +
+        (hasOverdue
+          ? ` (ciclo reiniciado: cobrança de reativação de R$ ${newValue} vencendo hoje)`
+          : ' (sem inadimplência: novo valor vale a partir do próximo ciclo)'),
     );
 
     return updated;

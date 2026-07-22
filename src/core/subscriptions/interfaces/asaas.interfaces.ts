@@ -37,3 +37,22 @@ export interface AsaasUpdateSubscriptionPayload {
   status?: string;
   updatePendingPayments?: boolean;
 }
+
+/** Atualização de uma cobrança individual (não da assinatura) */
+export interface AsaasUpdatePaymentPayload {
+  value?: number;
+  /** Formato aceito pelo Asaas: YYYY-MM-DD */
+  dueDate?: string;
+  description?: string;
+  billingType?: string;
+}
+
+export interface AsaasPaymentResponse {
+  id: string;
+  status: string;
+  value: number;
+  dueDate: string;
+  description?: string;
+  invoiceUrl?: string;
+  bankSlipUrl?: string;
+}

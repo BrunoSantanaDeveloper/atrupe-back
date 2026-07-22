@@ -60,6 +60,9 @@ describe('SubscriptionsService', () => {
   const mockAsaasGatewayService = {
     cancelAsaasSubscription: jest.fn(),
     updateAsaasSubscription: jest.fn(),
+    getAsaasSubscriptionPayments: jest.fn(),
+    updateAsaasPayment: jest.fn(),
+    deleteAsaasPayment: jest.fn(),
   };
 
   const mockCouponsService = {
@@ -201,6 +204,7 @@ describe('SubscriptionsService', () => {
       planId: 'plan-start',
       asaasSubscriptionId: 'sub_123',
       additionalUsers: 2,
+      cycle: 'MONTHLY',
       plan: { name: 'Start' },
       subscriptionFeatures: [
         { isActive: true, price: 7000, feature: { key: 'nota_fiscal' } },
@@ -289,11 +293,92 @@ describe('SubscriptionsService', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('deve trocar in-place preservando a cobrança pendente', async () => {
+    it('deve reiniciar o ciclo quando há cobrança vencida', async () => {
       mockPrismaService.subscription.findFirst.mockResolvedValue(
         currentSubscription,
       );
       mockPrismaService.plan.findUnique.mockResolvedValue(litePlan);
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { id: 'pay_2', status: 'PENDING', dueDate: '2026-07-16' },
+        { id: 'pay_1', status: 'OVERDUE', dueDate: '2026-06-16' },
+      ]);
+      mockPrismaService.subscription.update.mockResolvedValue({
+        id: 'sub-1',
+        planId: 'plan-lite',
+      });
+
+      const hoje = new Date().toISOString().split('T')[0];
+
+      await service.changePlan('company-1', 'plan-lite');
+
+      // base 23000 + módulo 7000 + 2 usuários * 1500 = 33000 centavos => R$ 330
+      // A cobrança mais antiga vira a fatura de reativação: valor do NOVO
+      // plano, vencendo hoje — nada do período bloqueado é cobrado.
+      expect(mockAsaasGatewayService.updateAsaasPayment).toHaveBeenCalledWith(
+        'pay_1',
+        {
+          value: 330,
+          dueDate: hoje,
+          description: 'Assinatura Lite',
+        },
+      );
+
+      // A cobrança do período não usufruído é descartada
+      expect(mockAsaasGatewayService.deleteAsaasPayment).toHaveBeenCalledWith(
+        'pay_2',
+      );
+      expect(mockAsaasGatewayService.deleteAsaasPayment).toHaveBeenCalledTimes(
+        1,
+      );
+
+      // Assinatura passa a valer o novo plano com o próximo vencimento à frente
+      expect(
+        mockAsaasGatewayService.updateAsaasSubscription,
+      ).toHaveBeenCalledWith(
+        'sub_123',
+        expect.objectContaining({
+          value: 330,
+          description: 'Assinatura Lite',
+          nextDueDate: expect.any(String),
+          updatePendingPayments: false,
+        }),
+      );
+
+      // Nunca cancela a assinatura (isso órfãozaria as cobranças)
+      expect(
+        mockAsaasGatewayService.cancelAsaasSubscription,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('não deve remover cobranças se a fatura de reativação falhar', async () => {
+      mockPrismaService.subscription.findFirst.mockResolvedValue(
+        currentSubscription,
+      );
+      mockPrismaService.plan.findUnique.mockResolvedValue(litePlan);
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { id: 'pay_1', status: 'OVERDUE', dueDate: '2026-06-16' },
+        { id: 'pay_2', status: 'PENDING', dueDate: '2026-07-16' },
+      ]);
+      mockAsaasGatewayService.updateAsaasPayment.mockRejectedValue(
+        new Error('Asaas indisponível'),
+      );
+
+      await expect(
+        service.changePlan('company-1', 'plan-lite'),
+      ).rejects.toThrow('Asaas indisponível');
+
+      // O cliente nunca pode ficar sem nenhuma cobrança pagável
+      expect(mockAsaasGatewayService.deleteAsaasPayment).not.toHaveBeenCalled();
+    });
+
+    it('não deve mexer em cobranças quando a assinatura está em dia', async () => {
+      mockPrismaService.subscription.findFirst.mockResolvedValue(
+        currentSubscription,
+      );
+      mockPrismaService.plan.findUnique.mockResolvedValue(litePlan);
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { id: 'pay_9', status: 'PENDING', dueDate: '2026-08-16' },
+      ]);
       mockPrismaService.subscription.update.mockResolvedValue({
         id: 'sub-1',
         planId: 'plan-lite',
@@ -301,7 +386,6 @@ describe('SubscriptionsService', () => {
 
       const result = await service.changePlan('company-1', 'plan-lite');
 
-      // base 23000 + módulo 7000 + 2 usuários * 1500 = 33000 centavos => R$ 330
       expect(
         mockAsaasGatewayService.updateAsaasSubscription,
       ).toHaveBeenCalledWith('sub_123', {
@@ -310,10 +394,9 @@ describe('SubscriptionsService', () => {
         updatePendingPayments: false,
       });
 
-      // Não pode cancelar a assinatura (isso órfãozaria a fatura vencida)
-      expect(
-        mockAsaasGatewayService.cancelAsaasSubscription,
-      ).not.toHaveBeenCalled();
+      // Sem inadimplência não se mexe no ciclo nem nas cobranças emitidas
+      expect(mockAsaasGatewayService.updateAsaasPayment).not.toHaveBeenCalled();
+      expect(mockAsaasGatewayService.deleteAsaasPayment).not.toHaveBeenCalled();
 
       expect(mockPrismaService.subscription.update).toHaveBeenCalledWith(
         expect.objectContaining({

@@ -6,6 +6,8 @@ import {
   AsaasCreateSubscriptionPayload,
   AsaasSubscriptionResponse,
   AsaasUpdateSubscriptionPayload,
+  AsaasUpdatePaymentPayload,
+  AsaasPaymentResponse,
 } from './interfaces/asaas.interfaces';
 
 @Injectable()
@@ -133,6 +135,66 @@ export class AsaasGatewayService {
       throw new Error(
         `Falha ao buscar cobranças da assinatura no Asaas: ${error.message}`,
       );
+    }
+  }
+
+  /**
+   * Atualiza uma cobrança individual (valor, vencimento, descrição).
+   * Usado para reemitir a cobrança de reativação quando o cliente troca de
+   * plano estando inadimplente — o Asaas usa POST para update, assim como
+   * em subscriptions.
+   */
+  async updateAsaasPayment(
+    paymentId: string,
+    data: AsaasUpdatePaymentPayload,
+  ): Promise<AsaasPaymentResponse> {
+    const route = `/payments/${paymentId}`;
+
+    try {
+      const api = await this.asaasApi();
+      const response = await api.post(route, data);
+      return response.data;
+    } catch (error) {
+      const errorResponse = error.response?.data?.errors;
+      const errorDescription = errorResponse
+        ?.map((err) => err.description)
+        .join(', ');
+
+      this.logger.error(
+        'Erro ao atualizar cobrança no Asaas:',
+        JSON.stringify({
+          message: error.message,
+          response: errorResponse,
+          status: error.response?.status,
+          route,
+          data,
+        }),
+      );
+      throw new Error(
+        errorDescription ||
+          error.message ||
+          'Falha ao atualizar cobrança no Asaas',
+      );
+    }
+  }
+
+  /**
+   * Remove uma cobrança do Asaas. Usado para descartar cobranças de períodos
+   * que o cliente não usufruiu (conta bloqueada) após o reset do ciclo.
+   */
+  async deleteAsaasPayment(paymentId: string): Promise<void> {
+    const route = `/payments/${paymentId}`;
+
+    try {
+      const api = await this.asaasApi();
+      await api.delete(route);
+    } catch (error) {
+      this.logger.error(
+        `Erro ao remover cobrança ${paymentId} no Asaas: ${JSON.stringify(
+          error.response?.data || error.message,
+        )}`,
+      );
+      throw new Error('Falha ao remover cobrança no Asaas');
     }
   }
 
