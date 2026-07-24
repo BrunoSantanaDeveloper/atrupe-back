@@ -3142,6 +3142,15 @@ export class NfeService {
     const recordType = filters.recordType || 'TODOS'; // 'TODOS', 'PEDIDOS', 'NOTAS_AVULSAS'
     const status = filters.status || 'TODOS';
     const search = filters.search || '';
+
+    // Filtro por tipo de documento fiscal (abas NF-e / NFS-e / NFC-e).
+    const docType = filters.docType || 'TODOS'; // 'TODOS', 'NFE', 'NFSE', 'NFCE'
+    const includeNfe = docType === 'TODOS' || docType === 'NFE';
+    const includeNfse = docType === 'TODOS' || docType === 'NFSE';
+    const includeNfce = docType === 'TODOS' || docType === 'NFCE';
+    // Pedidos de venda alimentam a fila de emissão de NF-e e NFS-e (produtos e
+    // serviços); não fazem parte do fluxo de NFC-e (venda ao consumidor).
+    const includeOrders = includeNfe || includeNfse;
     const config = await this.invoicyService.getConfig(companyId);
     const resolveEnvironmentNumber = (documentType: 'NFE' | 'NFSE' | 'NFCE') =>
       this.fiscalCredentialResolver.resolveEnvironmentFromConfig(
@@ -3205,7 +3214,7 @@ export class NfeService {
       nfeWhere.id = { notIn: excludedNfeIds };
     }
 
-    if (recordType === 'TODOS' || recordType === 'PEDIDOS') {
+    if ((recordType === 'TODOS' || recordType === 'PEDIDOS') && includeOrders) {
       if (status === 'EMITIDA') {
         orderWhere.OR = [
           {
@@ -3365,83 +3374,89 @@ export class NfeService {
     }
 
     if (recordType === 'TODOS' || recordType === 'NOTAS_AVULSAS') {
-      if (status === 'EMITIDA') nfeWhere.status = 'AUTHORIZED';
-      else if (status === 'EM_DIGITACAO') nfeWhere.status = 'DRAFT';
-      else if (status === 'CANCELADA') nfeWhere.status = 'CANCELLED';
-      else if (status === 'REJEITADA') nfeWhere.status = 'REJECTED';
-      else if (status === 'NAO_EMITIDA') nfeWhere.id = 'not-possible';
+      if (includeNfe) {
+        if (status === 'EMITIDA') nfeWhere.status = 'AUTHORIZED';
+        else if (status === 'EM_DIGITACAO') nfeWhere.status = 'DRAFT';
+        else if (status === 'CANCELADA') nfeWhere.status = 'CANCELLED';
+        else if (status === 'REJEITADA') nfeWhere.status = 'REJECTED';
+        else if (status === 'NAO_EMITIDA') nfeWhere.id = 'not-possible';
 
-      if (search) {
-        const searchAsNumber = Number(search.replace(/\D/g, ''));
-        if (!isNaN(searchAsNumber) && searchAsNumber > 0) {
-          nfeWhere.numero = searchAsNumber;
-        } else {
-          nfeWhere.chaveAcesso = { contains: search };
+        if (search) {
+          const searchAsNumber = Number(search.replace(/\D/g, ''));
+          if (!isNaN(searchAsNumber) && searchAsNumber > 0) {
+            nfeWhere.numero = searchAsNumber;
+          } else {
+            nfeWhere.chaveAcesso = { contains: search };
+          }
         }
+
+        nfeAvulsasPromise = this.prisma.nfe.findMany({
+          where: nfeWhere,
+          take: itemsToFetch,
+          orderBy: { createdAt: 'desc' },
+        });
+        nfeCountPromise = this.prisma.nfe.count({ where: nfeWhere });
       }
 
-      nfeAvulsasPromise = this.prisma.nfe.findMany({
-        where: nfeWhere,
-        take: itemsToFetch,
-        orderBy: { createdAt: 'desc' },
-      });
-      nfeCountPromise = this.prisma.nfe.count({ where: nfeWhere });
+      if (includeNfse) {
+        if (status === 'EMITIDA') nfseWhere.status = 'AUTHORIZED';
+        else if (status === 'EM_DIGITACAO') nfseWhere.status = 'DRAFT';
+        else if (status === 'CANCELADA') nfseWhere.status = 'CANCELLED';
+        else if (status === 'REJEITADA') nfseWhere.status = 'REJECTED';
+        else if (status === 'NAO_EMITIDA') nfseWhere.id = 'not-possible';
 
-      if (status === 'EMITIDA') nfseWhere.status = 'AUTHORIZED';
-      else if (status === 'EM_DIGITACAO') nfseWhere.status = 'DRAFT';
-      else if (status === 'CANCELADA') nfseWhere.status = 'CANCELLED';
-      else if (status === 'REJEITADA') nfseWhere.status = 'REJECTED';
-      else if (status === 'NAO_EMITIDA') nfseWhere.id = 'not-possible';
-
-      if (search) {
-        const searchAsNumber = Number(search.replace(/\D/g, ''));
-        if (!isNaN(searchAsNumber) && searchAsNumber > 0) {
-          nfseWhere.numero = searchAsNumber;
-        } else {
-          nfseWhere.codigoVerificacao = { contains: search };
+        if (search) {
+          const searchAsNumber = Number(search.replace(/\D/g, ''));
+          if (!isNaN(searchAsNumber) && searchAsNumber > 0) {
+            nfseWhere.numero = searchAsNumber;
+          } else {
+            nfseWhere.codigoVerificacao = { contains: search };
+          }
         }
+
+        nfseAvulsasPromise = this.prisma.nfse.findMany({
+          where: nfseWhere,
+          take: itemsToFetch,
+          orderBy: { createdAt: 'desc' },
+        });
+        nfseCountPromise = this.prisma.nfse.count({ where: nfseWhere });
       }
 
-      nfseAvulsasPromise = this.prisma.nfse.findMany({
-        where: nfseWhere,
-        take: itemsToFetch,
-        orderBy: { createdAt: 'desc' },
-      });
-      nfseCountPromise = this.prisma.nfse.count({ where: nfseWhere });
+      if (includeNfce) {
+        if (status === 'EMITIDA') nfceWhere.status = 'AUTHORIZED';
+        else if (status === 'EM_DIGITACAO') nfceWhere.status = 'PROCESSING';
+        else if (status === 'CANCELADA') nfceWhere.status = 'CANCELLED';
+        else if (status === 'REJEITADA') nfceWhere.status = 'REJECTED';
+        else if (status === 'NAO_EMITIDA') nfceWhere.id = 'not-possible';
 
-      if (status === 'EMITIDA') nfceWhere.status = 'AUTHORIZED';
-      else if (status === 'EM_DIGITACAO') nfceWhere.status = 'PROCESSING';
-      else if (status === 'CANCELADA') nfceWhere.status = 'CANCELLED';
-      else if (status === 'REJEITADA') nfceWhere.status = 'REJECTED';
-      else if (status === 'NAO_EMITIDA') nfceWhere.id = 'not-possible';
-
-      if (search) {
-        const searchAsNumber = Number(search.replace(/\D/g, ''));
-        if (!isNaN(searchAsNumber) && searchAsNumber > 0) {
-          nfceWhere.numero = searchAsNumber;
-        } else {
-          nfceWhere.chaveAcesso = { contains: search };
+        if (search) {
+          const searchAsNumber = Number(search.replace(/\D/g, ''));
+          if (!isNaN(searchAsNumber) && searchAsNumber > 0) {
+            nfceWhere.numero = searchAsNumber;
+          } else {
+            nfceWhere.chaveAcesso = { contains: search };
+          }
         }
-      }
 
-      nfceAvulsasPromise = this.prisma.nfce.findMany({
-        where: nfceWhere,
-        take: itemsToFetch,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          order: {
-            include: {
-              quotation: {
-                include: {
-                  client: true,
-                  series: true,
+        nfceAvulsasPromise = this.prisma.nfce.findMany({
+          where: nfceWhere,
+          take: itemsToFetch,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            order: {
+              include: {
+                quotation: {
+                  include: {
+                    client: true,
+                    series: true,
+                  },
                 },
               },
             },
           },
-        },
-      });
-      nfceCountPromise = this.prisma.nfce.count({ where: nfceWhere });
+        });
+        nfceCountPromise = this.prisma.nfce.count({ where: nfceWhere });
+      }
     }
 
     const [
