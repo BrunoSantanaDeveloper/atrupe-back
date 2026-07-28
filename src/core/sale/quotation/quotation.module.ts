@@ -7,6 +7,7 @@ import { OrderModule } from '../order/order.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { PaymentModule } from './payment/payment.module';
 import { DeliveryScheduleModule } from '../delivery-schedule/delivery-schedule.module';
+import { PlanControlModule } from '../../plan/plan-control.module';
 
 // Sub-services
 import { QuotationCrudService } from './quotation-crud.service';
@@ -24,6 +25,7 @@ import { QuotationImportService } from './quotation-import.service';
     DeliveryModule,
     PaymentModule,
     DeliveryScheduleModule,
+    PlanControlModule,
   ],
   controllers: [QuotationController],
   providers: [

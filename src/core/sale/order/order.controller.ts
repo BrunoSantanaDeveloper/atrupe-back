@@ -27,6 +27,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AbacService } from '../../auth/abac/abac.service';
+import { PlanControlService } from '../../plan/plan-control.service';
 import { isUUID } from 'class-validator';
 
 const RESOURCE = 'order';
@@ -40,7 +41,25 @@ export class OrderController {
   constructor(
     private readonly orderService: OrderService,
     private readonly abacService: AbacService,
+    private readonly planControlService: PlanControlService,
   ) {}
+
+  /**
+   * Aba de O.S. no cadastro de cliente (filtro por clientId) é feature do
+   * plano Lite (client_additional_tabs). Impõe o paywall no backend, já que o
+   * filtro por cliente só é usado por essa aba.
+   */
+  private async enforceClientTabsFeature(query: {
+    companyId: string;
+    clientId?: string;
+  }) {
+    if (query.clientId) {
+      await this.planControlService.enforceFeature(
+        query.companyId,
+        'client_additional_tabs',
+      );
+    }
+  }
 
   @Post()
   @ApiOperation({ summary: 'Cria uma nova ordem de serviço' })
@@ -65,6 +84,8 @@ export class OrderController {
   })
   async findAll(@Req() req, @Query() query: FilterOrderDto) {
     query.companyId = req.user.companyId;
+
+    await this.enforceClientTabsFeature(query);
 
     // Verificar se o usuário pode ver ordens de outros vendedores
     const canSeeOtherOrders = await this.abacService.canAccessOtherSellers(
@@ -101,6 +122,8 @@ export class OrderController {
     }
 
     query.companyId = req.user.companyId;
+
+    await this.enforceClientTabsFeature(query);
 
     const canSeeOtherOrders = await this.abacService.canAccessOtherSellers(
       req.user,

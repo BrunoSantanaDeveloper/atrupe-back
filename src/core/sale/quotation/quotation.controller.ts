@@ -37,6 +37,7 @@ import { QuotationProduct } from '@prisma/client';
 import { CancelOrderDto } from '../order/dto/create-order.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { AbacService } from '../../auth/abac/abac.service';
+import { PlanControlService } from '../../plan/plan-control.service';
 
 const RESOURCE = 'quotation';
 const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
@@ -52,7 +53,25 @@ export class QuotationController {
     private readonly quotationService: QuotationService,
     private readonly abacService: AbacService,
     private readonly prisma: PrismaService,
+    private readonly planControlService: PlanControlService,
   ) {}
+
+  /**
+   * Aba de orçamentos no cadastro de cliente (filtro por clientId) é feature
+   * do plano Lite (client_additional_tabs). Impõe o paywall no backend, já que
+   * o filtro por cliente só é usado por essa aba.
+   */
+  private async enforceClientTabsFeature(query: {
+    companyId: string;
+    clientId?: string;
+  }) {
+    if (query.clientId) {
+      await this.planControlService.enforceFeature(
+        query.companyId,
+        'client_additional_tabs',
+      );
+    }
+  }
 
   /**
    * Resolves the effective seller filter based on ABAC permissions.
@@ -260,6 +279,8 @@ export class QuotationController {
   async findAll(@Req() req, @Query() query: FilterQuotationDto) {
     query.companyId = req.user.companyId;
 
+    await this.enforceClientTabsFeature(query);
+
     const sellerFilter = await this.resolveSellerFilter(req.user);
     if (sellerFilter) {
       query.sellerId = sellerFilter;
@@ -289,6 +310,8 @@ export class QuotationController {
     }
 
     query.companyId = req.user.companyId;
+
+    await this.enforceClientTabsFeature(query);
 
     const sellerFilter = await this.resolveSellerFilter(req.user);
     if (sellerFilter) {
