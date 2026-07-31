@@ -7,9 +7,15 @@ import { NfseDraftService } from './nfse-draft.service';
 import { InvoicyModule } from '../invoicy/invoicy.module';
 import { PrismaModule } from 'nestjs-prisma';
 import { AuthModule } from '../../auth/auth.module';
+import { MailModule } from '../../mail/mail.module';
 
 @Module({
-  imports: [PrismaModule, InvoicyModule, forwardRef(() => AuthModule)],
+  imports: [
+    PrismaModule,
+    InvoicyModule,
+    MailModule,
+    forwardRef(() => AuthModule),
+  ],
   controllers: [NfseController],
   providers: [
     NfseService,

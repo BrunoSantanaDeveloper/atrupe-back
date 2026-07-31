@@ -120,23 +120,24 @@ export class TomadorDto {
   @IsNotEmpty()
   cep: string;
 
-  @ApiProperty({ description: 'Código do município IBGE' })
-  @ValidateIf((o) => !o.codigoPais || o.codigoPais === '1058')
+  @ApiPropertyOptional({
+    description: 'Código do município IBGE (resolvido via CEP quando omitido)',
+  })
   @IsString()
-  @IsNotEmpty()
-  codigoMunicipio: string;
+  @IsOptional()
+  codigoMunicipio?: string;
 
-  @ApiProperty({ description: 'Nome do município' })
-  @ValidateIf((o) => !o.codigoPais || o.codigoPais === '1058')
+  @ApiPropertyOptional({
+    description: 'Nome do município (resolvido via CEP quando omitido)',
+  })
   @IsString()
-  @IsNotEmpty()
-  municipio: string;
+  @IsOptional()
+  municipio?: string;
 
-  @ApiProperty({ description: 'UF' })
-  @ValidateIf((o) => !o.codigoPais || o.codigoPais === '1058')
+  @ApiPropertyOptional({ description: 'UF (resolvida via CEP quando omitida)' })
   @IsString()
-  @IsNotEmpty()
-  uf: string;
+  @IsOptional()
+  uf?: string;
 
   @ApiPropertyOptional({ description: 'Email' })
   @IsString()

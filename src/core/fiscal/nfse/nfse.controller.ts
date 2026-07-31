@@ -113,4 +113,11 @@ export class NfseController {
   async getXml(@Req() req, @Param('id') id: string) {
     return this.nfseService.getXml(id, req.user.companyId);
   }
+
+  @Post(':id/send-email')
+  @HasPermission('view', 'nota_fiscal:emitidas')
+  @ApiOperation({ summary: 'Enviar PDF/XML da NFS-e por e-mail ao tomador' })
+  async sendEmail(@Req() req, @Param('id') id: string) {
+    return this.nfseService.sendAuthorizedEmail(id, req.user.companyId);
+  }
 }

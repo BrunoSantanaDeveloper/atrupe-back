@@ -2320,19 +2320,34 @@ model NfeOrder {
   @@map("nfe_orders")
 }
 
+enum NfeCorrectionStatus {
+  PENDING // sequência reservada, evento ainda não confirmado pela SEFAZ
+  REGISTERED // evento registrado (cStat 135 ou 136)
+  REJECTED // rejeitado pelo provedor/SEFAZ ou falha na transmissão
+}
+
 model NfeCorrectionEvent {
-  id              String    @id @default(uuid())
-  createdAt       DateTime  @default(now())
+  id              String              @id @default(uuid())
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
   nfeId           String
   sequenciaEvento Int
-  correcao        String    @db.Text
+  correcao        String              @db.Text
+  status          NfeCorrectionStatus @default(PENDING)
   protocolo       String?
   dataEvento      DateTime?
-  xmlEvento       String?   @db.Text
-  nfe             Nfe       @relation(fields: [nfeId], references: [id], onDelete: Cascade)
+  xmlEvento       String?             @db.Text
+  ambiente        Int? // 1 = Produção, 2 = Homologação (ambiente efetivamente usado no evento)
+  sitCodigo       Int? // cStat devolvido pela SEFAZ (135 = vinculado, 136 = registrado sem vínculo)
+  codigoRetorno   Int? // código de retorno do provedor (Invoicy)
+  motivoRejeicao  String?             @db.Text
+  createdBy       String? // userId de quem disparou o evento
+  createdByName   String?
+  nfe             Nfe                 @relation(fields: [nfeId], references: [id], onDelete: Cascade)
 
   @@unique([nfeId, sequenciaEvento])
   @@index([nfeId])
+  @@index([nfeId, status])
   @@map("nfe_correction_events")
 }
 
@@ -2436,6 +2451,8 @@ model Nfse {
   dataCancelamento      DateTime?
   invoicyId             String?
   invoicyProtocol       String?
+  emailSentAt           DateTime?
+  emailSentTo           String?
   draftData             Json? // Dados do rascunho (tomador, itens, etc.)
   company               Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   order                 Order?     @relation(fields: [orderId], references: [id])

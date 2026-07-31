@@ -4,6 +4,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
+import { MailService } from '../../mail/mail.service';
 import {
   NotFoundException,
   BadRequestException,
@@ -174,6 +175,10 @@ describe('NfseService', () => {
         {
           provide: FiscalCredentialResolverService,
           useValue: mockFiscalCredentialResolver,
+        },
+        {
+          provide: MailService,
+          useValue: { sendEmail: jest.fn().mockResolvedValue(undefined) },
         },
       ],
     }).compile();

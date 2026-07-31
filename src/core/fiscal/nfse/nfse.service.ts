@@ -22,6 +22,7 @@ import {
 } from './dtos/nfse.dto';
 import { fetchCepData } from '../utils/cep.util';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
+import { MailService } from '../../mail/mail.service';
 
 @Injectable()
 export class NfseService {
@@ -52,6 +53,7 @@ export class NfseService {
     private readonly invoicyService: InvoicyService,
     private readonly invoicyApiService: InvoicyApiService,
     private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
+    private readonly mailService: MailService,
   ) {}
 
   async findAll(companyId: string, filters: NfseFilterDto) {
@@ -846,6 +848,19 @@ export class NfseService {
       );
     }
 
+    // Resolver município do tomador via CEP quando codigoMunicipio não informado
+    if (!dto.tomador.codigoMunicipio && dto.tomador.cep) {
+      const cepClean = dto.tomador.cep.replace(/\D/g, '');
+      if (cepClean.length === 8) {
+        const cepData = await fetchCepData(cepClean);
+        if (cepData) {
+          dto.tomador.codigoMunicipio = cepData.codigoIbge;
+          if (!dto.tomador.municipio) dto.tomador.municipio = cepData.cidade;
+          if (!dto.tomador.uf) dto.tomador.uf = cepData.uf;
+        }
+      }
+    }
+
     // Calcular valores
     const valorServicos = dto.valorServicos;
     const valorDeducoes = dto.valorDeducoes || 0;
@@ -1167,6 +1182,18 @@ export class NfseService {
           `NFS-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}`,
         );
       }
+
+      // Envio automático de email (fire-and-forget)
+      this.sendNfseEmailAutomatic(
+        updatedNfse,
+        config,
+        dto.tomador?.email,
+        dto.tomador?.razaoSocial,
+      ).catch((err) =>
+        this.logger.warn(
+          `Envio automático de e-mail NFS-e ${updatedNfse.id} falhou: ${err.message}`,
+        ),
+      );
 
       return updatedNfse;
     } catch (error) {
@@ -1570,10 +1597,99 @@ export class NfseService {
     const nfse = await this.findById(id, companyId);
 
     if (!nfse.xmlRetorno) {
-      // TODO: Buscar XML da API do Invoicy se nÃ£o estiver armazenado
-      throw new NotFoundException('XML nÃ£o disponÃ­vel para esta NFS-e');
+      throw new NotFoundException('XML não disponível para esta NFS-e');
     }
 
     return { xml: nfse.xmlRetorno };
+  }
+
+  async sendAuthorizedEmail(id: string, companyId: string) {
+    const nfse = await this.findById(id, companyId);
+    const config = await this.invoicyService.getConfig(companyId);
+
+    if (nfse.status !== NfseStatus.AUTHORIZED) {
+      throw new BadRequestException(
+        'Apenas NFS-e autorizadas podem ser enviadas por e-mail',
+      );
+    }
+
+    if (!nfse.pdfUrl && !nfse.xmlRetorno) {
+      throw new BadRequestException(
+        'NFS-e sem PDF ou XML disponível para envio',
+      );
+    }
+
+    const draftData = nfse.draftData as any;
+    const recipientEmail =
+      draftData?.tomador?.email || draftData?.tomadorEmail || '';
+    const recipientName =
+      draftData?.tomador?.razaoSocial || draftData?.tomadorRazaoSocial || '';
+
+    if (!recipientEmail) {
+      throw new BadRequestException('Tomador sem e-mail cadastrado');
+    }
+
+    return this.sendNfseEmailCore(nfse, config, recipientEmail, recipientName);
+  }
+
+  private async sendNfseEmailAutomatic(
+    nfse: any,
+    config: any,
+    recipientEmail: string | undefined,
+    recipientName: string | undefined,
+  ) {
+    if (!config?.sendDanfeXmlAutomatically) return;
+    if (!recipientEmail) {
+      this.logger.warn(
+        `NFS-e ${nfse.id} autorizada sem e-mail do tomador para envio automático`,
+      );
+      return;
+    }
+    return this.sendNfseEmailCore(nfse, config, recipientEmail, recipientName);
+  }
+
+  private async sendNfseEmailCore(
+    nfse: any,
+    config: any,
+    recipientEmail: string,
+    recipientName: string | undefined,
+  ) {
+    const to = (recipientEmail || '').trim();
+    if (!to) throw new BadRequestException('E-mail do destinatário inválido');
+
+    const copyTo = (config?.sendFiscalEmailCopyTo || '').trim();
+    const recipients = [to, copyTo].filter(Boolean).join(',');
+
+    const emitterName =
+      config?.company?.legalName || config?.company?.name || 'Atrupe';
+    const valorTotal = (nfse.valorServicos || 0).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
+
+    await this.mailService.sendEmail(
+      recipients,
+      `NFS-e ${nfse.numero}/${nfse.serie} autorizada`,
+      'nfe-authorized',
+      {
+        recipientName: recipientName || 'Cliente',
+        emitterName,
+        numero: nfse.numero,
+        serie: nfse.serie,
+        chaveAcesso: nfse.codigoVerificacao || '',
+        valorTotal,
+        danfeUrl: nfse.pdfUrl || '',
+        hasDanfe: !!nfse.pdfUrl,
+        hasXml: false,
+      },
+      [],
+    );
+
+    await this.prisma.nfse.update({
+      where: { id: nfse.id },
+      data: { emailSentAt: new Date(), emailSentTo: to },
+    });
+
+    return { success: true, sentTo: to };
   }
 }
