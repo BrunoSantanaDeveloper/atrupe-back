@@ -116,14 +116,18 @@ describe('InvoicyApiService', () => {
         },
       ];
 
+      // Eventos fiscais nao sao idempotentes: seguem com AbortSignal proprio e
+      // com o retry desligado (ultimo argumento), para nunca reenviar um evento
+      // que a SEFAZ ja' possa ter registrado.
       expect(httpServiceMock.makeRequest).toHaveBeenCalledWith(
         'company-123',
         'POST',
         '/senddocuments/nfe?type=Evento',
         expectedPayload,
         undefined,
+        expect.any(AbortSignal),
         undefined,
-        undefined,
+        true,
       );
     });
   });
@@ -154,14 +158,18 @@ describe('InvoicyApiService', () => {
         },
       ];
 
+      // Eventos fiscais nao sao idempotentes: seguem com AbortSignal proprio e
+      // com o retry desligado (ultimo argumento), para nunca reenviar um evento
+      // que a SEFAZ ja' possa ter registrado.
       expect(httpServiceMock.makeRequest).toHaveBeenCalledWith(
         'company-123',
         'POST',
         '/senddocuments/nfe?type=Evento',
         expectedPayload,
         undefined,
+        expect.any(AbortSignal),
         undefined,
-        undefined,
+        true,
       );
     });
   });

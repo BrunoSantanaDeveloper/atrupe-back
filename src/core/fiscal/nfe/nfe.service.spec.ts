@@ -175,23 +175,6 @@ const mockCancelResponse = [
   },
 ];
 
-const mockCorrectionResponse = [
-  {
-    Codigo: 100,
-    Descricao: 'Evento processado com sucesso',
-    Documentos: [
-      {
-        DocChaAcesso: '35260212345678000123550010000000011123456789',
-        DocProtocolo: '143210987654322',
-        Situacao: {
-          SitCodigo: 135, // Evento registrado (carta correção)
-          SitDescricao: 'Evento registrado e vinculado a NF-e',
-        },
-      },
-    ],
-  },
-];
-
 // Mock implementations
 const mockPrismaService = {
   $queryRaw: jest.fn().mockResolvedValue([]),
@@ -235,6 +218,9 @@ const mockPrismaService = {
   quotation: {
     findFirst: jest.fn(),
     findUnique: jest.fn(),
+  },
+  client: {
+    findFirst: jest.fn(),
   },
   invoicyConfig: {
     findFirst: jest.fn(),
@@ -497,6 +483,104 @@ describe('NfeService', () => {
     });
   });
 
+  describe('prepareDevolution', () => {
+    const authorizedXml = `<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc><NFe><infNFe><ide><natOp>Venda</natOp><indFinal>0</indFinal></ide>
+<dest><CNPJ>57968205000182</CNPJ><xNome>Cliente Exemplo</xNome><indIEDest>1</indIEDest><IE>250123456</IE>
+<enderDest><xLgr>Rua Antônio Jovita Duarte</xLgr><nro>S/N</nro><xBairro>Centro</xBairro>
+<cMun>4216602</cMun><xMun>São José</xMun><UF>SC</UF><CEP>88103000</CEP>
+<cPais>1058</cPais><xPais>BRASIL</xPais></enderDest></dest>
+<det nItem="1"><prod><cProd>PROD-001</cProd><xProd>Produto Teste</xProd><NCM>12345678</NCM>
+<CFOP>5102</CFOP><uCOM>UN</uCOM><qCOM>2.0000</qCOM><vUnCom>100.00</vUnCom><vProd>200.00</vProd>
+</prod></det></infNFe></NFe></nfeProc>`;
+
+    const authorizedNfe = {
+      ...mockNfe,
+      status: NfeStatus.AUTHORIZED,
+      chaveAcesso: '42260657968205000182550010000000101000005700',
+      orderId: null,
+      quotationId: null,
+      draftData: null,
+      xmlAutorizado: authorizedXml,
+    };
+
+    beforeEach(() => {
+      invoicyService.getConfig.mockResolvedValue({
+        id: 'config-id',
+        serieNfe: 1,
+        proximoNumeroNfe: 1,
+        ambiente: 2,
+        defaultOperationNature: 'Venda de mercadoria',
+        company: mockCompany,
+      });
+      prisma.nfe.findFirst.mockResolvedValue(authorizedNfe);
+      prisma.client.findFirst.mockResolvedValue(null);
+    });
+
+    it('should keep Brasil (1058) as the recipient country from the authorized XML', async () => {
+      const result = await service.prepareDevolution(mockCompanyId, mockNfeId);
+
+      expect(result.destinatario.pais).toBe('1058');
+      expect(result.destinatario.cnpjCpf).toBe('57968205000182');
+      expect(result.destinatario.estado).toBe('SC');
+      expect(result.destinatario.cidade).toBe('São José');
+      expect(result.emissao.finalidade).toBe(4);
+    });
+
+    it('should carry over the IE indicator from the authorized XML', async () => {
+      const result = await service.prepareDevolution(mockCompanyId, mockNfeId);
+
+      expect(result.destinatario.indIEDest).toBe(1);
+      expect(result.destinatario.ie).toBe('250123456');
+    });
+
+    it('should not let empty XML tags erase draft data', async () => {
+      prisma.nfe.findFirst.mockResolvedValue({
+        ...authorizedNfe,
+        draftData: {
+          destinatario: {
+            razaoSocial: 'Cliente Exemplo',
+            cnpjCpf: '57968205000182',
+            email: 'contato@cliente.com.br',
+            telefone: '48999998888',
+            pais: '1058',
+          },
+        },
+      });
+
+      const result = await service.prepareDevolution(mockCompanyId, mockNfeId);
+
+      // O XML não traz <email>/<fone>, então os valores do rascunho devem sobreviver
+      expect(result.destinatario.email).toBe('contato@cliente.com.br');
+      expect(result.destinatario.telefone).toBe('48999998888');
+      expect(result.destinatario.pais).toBe('1058');
+    });
+
+    it('should fall back to Brasil when the NF-e has no recipient country', async () => {
+      prisma.nfe.findFirst.mockResolvedValue({
+        ...authorizedNfe,
+        xmlAutorizado: null,
+        xmlEnvio: null,
+        draftData: { destinatario: { razaoSocial: 'Sem país' } },
+      });
+
+      const result = await service.prepareDevolution(mockCompanyId, mockNfeId);
+
+      expect(result.destinatario.pais).toBe('1058');
+    });
+
+    it('should reject devolution of a NF-e that is not authorized', async () => {
+      prisma.nfe.findFirst.mockResolvedValue({
+        ...authorizedNfe,
+        status: NfeStatus.DRAFT,
+      });
+
+      await expect(
+        service.prepareDevolution(mockCompanyId, mockNfeId),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
   describe('createOrGetDraft', () => {
     beforeEach(() => {
       prisma.quotation.findFirst.mockResolvedValue(mockQuotation);
@@ -726,58 +810,6 @@ describe('NfeService', () => {
           justificativa: 'curto',
         }),
       ).rejects.toThrow();
-    });
-  });
-
-  describe('sendCorrectionLetter', () => {
-    const authorizedNfe = {
-      ...mockNfe,
-      status: NfeStatus.AUTHORIZED,
-      chaveAcesso: '35260212345678000123550010000000011123456789',
-    };
-
-    beforeEach(() => {
-      prisma.nfe.findFirst.mockResolvedValue(authorizedNfe);
-      invoicyApiService.sendCorrectionLetter.mockResolvedValue(
-        mockCorrectionResponse,
-      );
-      prisma.nfe.update.mockResolvedValue({
-        ...authorizedNfe,
-        status: NfeStatus.CORRECTION_SENT,
-        cartaCorrecao: 'Correção de endereço do destinatário',
-        sequenciaCorrecao: 1,
-      });
-    });
-
-    it('should send correction letter', async () => {
-      const result = await service.sendCorrectionLetter(
-        mockNfeId,
-        mockCompanyId,
-        {
-          correcao: 'Correção de endereço do destinatário para Rua Nova, 100',
-        },
-      );
-
-      expect(result.status).toBe(NfeStatus.CORRECTION_SENT);
-      expect(result.cartaCorrecao).toBeDefined();
-    });
-
-    it('should throw if correction text is too short', async () => {
-      await expect(
-        service.sendCorrectionLetter(mockNfeId, mockCompanyId, {
-          correcao: 'curto',
-        }),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('should throw if NFe is not authorized', async () => {
-      prisma.nfe.findFirst.mockResolvedValue(mockNfe); // DRAFT status
-
-      await expect(
-        service.sendCorrectionLetter(mockNfeId, mockCompanyId, {
-          correcao: 'Correção de dados do documento fiscal',
-        }),
-      ).rejects.toThrow(BadRequestException);
     });
   });
 

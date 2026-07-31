@@ -1,5 +1,5 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { NfeStatus } from '@prisma/client';
+import { NfeStatus, NfeCorrectionStatus } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 import { MailService } from '../../mail/mail.service';
 
@@ -27,7 +27,13 @@ export class NfeEmailService {
     recipientName,
     automatic = false,
   }: SendAuthorizedNfeEmailParams) {
-    if (!nfe || nfe.status !== NfeStatus.AUTHORIZED) {
+    // CORRECTION_SENT tambem e' uma nota valida: bloquear o envio depois da
+    // primeira CC-e impedia ate' o reenvio da propria NF-e ao destinatario.
+    if (
+      !nfe ||
+      (nfe.status !== NfeStatus.AUTHORIZED &&
+        nfe.status !== NfeStatus.CORRECTION_SENT)
+    ) {
       throw new BadRequestException(
         'Apenas NF-e autorizadas podem ser enviadas por e-mail',
       );
@@ -60,10 +66,33 @@ export class NfeEmailService {
     }
 
     const attachments = [];
+    const identifier = nfe.chaveAcesso || `${nfe.numero}_${nfe.serie}`;
     if (sendXml && nfe.xmlAutorizado) {
       attachments.push({
-        filename: `NFe_${nfe.chaveAcesso || `${nfe.numero}_${nfe.serie}`}.xml`,
+        filename: `NFe_${identifier}.xml`,
         content: nfe.xmlAutorizado,
+        contentType: 'application/xml',
+      });
+    }
+
+    // O emitente e' obrigado a dar ciencia das correcoes ao destinatario, entao
+    // as CC-e registradas seguem junto com o XML da nota.
+    const correctionEvents = sendXml
+      ? await this.prisma.nfeCorrectionEvent.findMany({
+          where: {
+            nfeId: nfe.id,
+            status: NfeCorrectionStatus.REGISTERED,
+            xmlEvento: { not: null },
+          },
+          select: { sequenciaEvento: true, xmlEvento: true },
+          orderBy: { sequenciaEvento: 'asc' },
+        })
+      : [];
+
+    for (const event of correctionEvents) {
+      attachments.push({
+        filename: `CCe_${identifier}_seq_${event.sequenciaEvento}.xml`,
+        content: event.xmlEvento,
         contentType: 'application/xml',
       });
     }

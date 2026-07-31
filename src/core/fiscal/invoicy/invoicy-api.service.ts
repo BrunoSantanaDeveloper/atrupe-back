@@ -25,6 +25,13 @@ import { FiscalEnvironment } from '@prisma/client';
 export class InvoicyApiService {
   private readonly logger = new Logger(InvoicyApiService.name);
 
+  /**
+   * Teto de espera para eventos fiscais (CC-e, cancelamento). Precisa ser menor
+   * que o timeout da transação que persiste o resultado, senão o evento pode ser
+   * registrado na SEFAZ sem que o sistema consiga gravá-lo.
+   */
+  private readonly FISCAL_EVENT_TIMEOUT_MS = 45000;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly invoicyHttpService: InvoicyHttpService,
@@ -103,14 +110,16 @@ export class InvoicyApiService {
           : FiscalEnvironment.HOMOLOGACAO
         : undefined;
 
+    // Ver comentário em sendCorrectionLetter: evento fiscal não é idempotente.
     return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
       '/senddocuments/nfe?type=Evento',
       cancelRequest,
       undefined,
-      undefined,
+      AbortSignal.timeout(this.FISCAL_EVENT_TIMEOUT_MS),
       forceEnvironment,
+      true,
     );
   }
 
@@ -150,14 +159,18 @@ export class InvoicyApiService {
           : FiscalEnvironment.HOMOLOGACAO
         : undefined;
 
+    // Evento fiscal não é idempotente: um reenvio após timeout de leitura pode
+    // registrar a mesma CC-e duas vezes na SEFAZ. O AbortSignal garante que a
+    // resposta chegue dentro da janela em que o chamador ainda consegue persistir.
     return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
       '/senddocuments/nfe?type=Evento',
       correctionRequest,
       undefined,
-      undefined,
+      AbortSignal.timeout(this.FISCAL_EVENT_TIMEOUT_MS),
       forceEnvironment,
+      true,
     );
   }
 

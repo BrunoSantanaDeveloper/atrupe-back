@@ -3,15 +3,40 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
-import { NfeStatus } from '@prisma/client';
+import { NfeStatus, NfeCorrectionStatus } from '@prisma/client';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import {
   INVOICY_ERROR_CODES,
   INVOICY_SUCCESS_CODES,
 } from '../invoicy/invoicy.types';
 import { CancelNfeDto, CorrectionLetterDto } from './dtos/nfe.dto';
+
+/** Autor do evento fiscal, propagado do token para a trilha de auditoria. */
+export interface FiscalEventAuthor {
+  userId?: string;
+  name?: string;
+}
+
+/** Códigos de situação da SEFAZ aceitos para o evento 110110. */
+const CCE_REGISTERED = 135; // evento registrado e vinculado à NF-e
+const CCE_REGISTERED_UNLINKED = 136; // evento registrado, ainda não vinculado
+
+/** Limite legal de cartas de correção por NF-e (NT 2011/003). */
+const CCE_MAX_SEQUENCE = 20;
+
+/** Prazo legal da CC-e: 720 horas (30 dias) contadas da autorização. */
+const CCE_DEADLINE_HOURS = 720;
+
+/**
+ * Uma reserva PENDING mais nova que isso é considerada "em voo" e bloqueia um
+ * novo envio. Mais velha que isso, presume-se processo interrompido: a sequência
+ * fica queimada (pode ter sido registrada na SEFAZ) e seguimos para a próxima.
+ */
+const CCE_PENDING_IN_FLIGHT_MS = 5 * 60 * 1000;
 
 /**
  * NfeEventsService - Eventos pós-emissão de NF-e
@@ -126,13 +151,27 @@ export class NfeEventsService {
   }
 
   /**
-   * Envia carta de correção eletrônica (CC-e)
+   * Envia carta de correção eletrônica (CC-e / evento 110110)
+   *
+   * O envio é dividido em três etapas para que a chamada HTTP à SEFAZ NUNCA
+   * aconteça dentro de uma transação de banco:
+   *
+   *   1. Pré-condições — nada é gravado, nenhuma sequência é consumida.
+   *   2. Transação curta que trava a NF-e e reserva a sequência em PENDING.
+   *   3. POST ao provedor FORA da transação.
+   *   4. Transação curta que confirma (REGISTERED) ou marca a rejeição (REJECTED).
+   *
+   * Antes disso, um estouro do timeout da transação com o evento já registrado
+   * na SEFAZ revertia a gravação: o sistema ficava sem o XML de um evento que
+   * existe no fisco e reenviava a mesma sequência indefinidamente (cStat 573).
    */
   async sendCorrectionLetter(
     nfe: any,
     companyId: string,
     dto: CorrectionLetterDto,
+    author: FiscalEventAuthor = {},
   ): Promise<any> {
+    // ---- 1. Pré-condições -------------------------------------------------
     if (
       nfe.status !== NfeStatus.AUTHORIZED &&
       nfe.status !== NfeStatus.CORRECTION_SENT
@@ -142,7 +181,7 @@ export class NfeEventsService {
       );
     }
 
-    const correcao = dto.correcao?.trim() || '';
+    const correcao = this.sanitizeCorrectionText(dto.correcao);
 
     if (correcao.length < 15) {
       throw new BadRequestException(
@@ -162,121 +201,324 @@ export class NfeEventsService {
       );
     }
 
+    this.assertWithinCorrectionDeadline(nfe);
+
+    const ambienteEvento = this.resolveDocumentEnvironment(nfe);
+
+    // ---- 2. Reserva da sequência (transação curta, sem I/O externo) --------
+    const reservation = await this.reserveCorrectionSequence(
+      nfe,
+      correcao,
+      ambienteEvento,
+      author,
+    );
+    const { sequenciaEvento } = reservation;
+
+    this.logger.log(
+      `Enviando carta de correção seq ${sequenciaEvento} para NF-e ${nfe.numero} (chave ${nfe.chaveAcesso}, ambiente ${ambienteEvento}, empresa ${companyId})`,
+    );
+
+    // ---- 3. Chamada ao provedor, FORA da transação ------------------------
+    let response: any;
     try {
-      this.logger.log(`Enviando carta de correção para NF-e ${nfe.numero}`);
-      const ambienteEvento = this.resolveDocumentEnvironment(nfe);
-
-      const updatedNfe = await this.prisma.$transaction(
-        async (tx) => {
-          // Lock pessimista da NF-e: evita duas CC-e concorrentes calcularem a mesma sequência.
-          await tx.nfe.update({
-            where: { id: nfe.id },
-            data: { updatedAt: new Date() },
-            select: { id: true },
-          });
-
-          const lastEvent = await tx.nfeCorrectionEvent.findFirst({
-            where: { nfeId: nfe.id },
-            orderBy: { sequenciaEvento: 'desc' },
-          });
-          const sequenciaEvento = lastEvent ? lastEvent.sequenciaEvento + 1 : 1;
-
-          if (sequenciaEvento > 20) {
-            throw new BadRequestException(
-              'A sequência da carta de correção deve ser um número entre 1 e 20',
-            );
-          }
-
-          const invoicyResponses =
-            await this.invoicyApiService.sendCorrectionLetter(
-              companyId,
-              nfe.chaveAcesso,
-              correcao,
-              sequenciaEvento,
-              ambienteEvento,
-            );
-
-          const response = invoicyResponses[0];
-          if (!response) {
-            throw new Error('Nenhuma resposta recebida do Invoicy');
-          }
-
-          if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-            throw new Error(
-              this.getCorrectionRejectionMessage(
-                response,
-                nfe.chaveAcesso,
-                sequenciaEvento,
-                correcao.length,
-                ambienteEvento,
-              ),
-            );
-          }
-
-          const doc = response.Documentos?.[0];
-          const situacao = doc?.Situacao;
-          const isApproved = situacao?.SitCodigo === 135;
-
-          if (!isApproved) {
-            throw new Error(
-              this.getCorrectionRejectionMessage(
-                response,
-                nfe.chaveAcesso,
-                sequenciaEvento,
-                correcao.length,
-                ambienteEvento,
-              ),
-            );
-          }
-
-          const xmlEvento = doc?.DocXMLBase64
-            ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
-            : null;
-
-          if (!xmlEvento) {
-            this.logger.warn(
-              `XML da CC-e não retornado pela Invoicy para NF-e ${nfe.numero} (evento seq ${sequenciaEvento})`,
-            );
-          }
-
-          const dataEvento = new Date();
-          const persistedNfe = await tx.nfe.update({
-            where: { id: nfe.id },
-            data: {
-              status: NfeStatus.CORRECTION_SENT,
-              cartaCorrecao: correcao,
-              dataCorrecao: dataEvento,
-              protocoloCorrecao: doc?.DocProtocolo || null,
-              sequenciaCorrecao: sequenciaEvento,
-            },
-          });
-
-          await tx.nfeCorrectionEvent.create({
-            data: {
-              nfeId: nfe.id,
-              sequenciaEvento,
-              correcao,
-              protocolo: doc?.DocProtocolo || null,
-              dataEvento,
-              xmlEvento,
-            },
-          });
-
-          return persistedNfe;
-        },
-        { maxWait: 5000, timeout: 30000 },
-      );
-
-      return updatedNfe;
+      const invoicyResponses =
+        await this.invoicyApiService.sendCorrectionLetter(
+          companyId,
+          nfe.chaveAcesso,
+          correcao,
+          sequenciaEvento,
+          ambienteEvento,
+        );
+      response = invoicyResponses?.[0];
     } catch (error) {
+      // Falha de transporte: o evento PODE ter sido registrado na SEFAZ. A
+      // sequência permanece queimada de propósito — reenviá-la causaria 573.
+      await this.markCorrectionRejected(reservation.id, {
+        motivoRejeicao: `Falha na comunicação com o provedor fiscal: ${error.message}`,
+      });
       this.logger.error(
-        `Erro ao enviar carta de correção: ${error.message}`,
+        `Falha de transporte na CC-e seq ${sequenciaEvento} da NF-e ${nfe.chaveAcesso}: ${error.message}`,
         error.stack,
       );
-      throw new BadRequestException(
-        `Erro ao enviar carta de correção: ${error.message}`,
+      throw new ServiceUnavailableException(
+        'Não foi possível falar com o serviço fiscal para enviar a carta de correção. ' +
+          'A tentativa foi registrada. Consulte a NF-e na SEFAZ antes de tentar novamente.',
       );
     }
+
+    if (!response) {
+      await this.markCorrectionRejected(reservation.id, {
+        motivoRejeicao: 'Nenhuma resposta recebida do provedor fiscal',
+      });
+      throw new ServiceUnavailableException(
+        'O serviço fiscal não retornou resposta para a carta de correção. A tentativa foi registrada.',
+      );
+    }
+
+    const doc = response.Documentos?.[0];
+    const sitCodigo = doc?.Situacao?.SitCodigo as number | undefined;
+    const isRegistered =
+      response.Codigo === INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED &&
+      (sitCodigo === CCE_REGISTERED || sitCodigo === CCE_REGISTERED_UNLINKED);
+
+    if (!isRegistered) {
+      const motivo = this.getCorrectionRejectionMessage(
+        response,
+        nfe.chaveAcesso,
+        sequenciaEvento,
+        correcao.length,
+        ambienteEvento,
+      );
+      await this.markCorrectionRejected(reservation.id, {
+        motivoRejeicao: motivo,
+        codigoRetorno: response.Codigo ?? null,
+        sitCodigo: sitCodigo ?? null,
+      });
+      throw new BadRequestException(motivo);
+    }
+
+    // ---- 4. Confirmação (transação curta) ---------------------------------
+    return this.confirmCorrectionEvent({
+      nfe,
+      reservationId: reservation.id,
+      sequenciaEvento,
+      correcao,
+      doc,
+      sitCodigo,
+      codigoRetorno: response.Codigo ?? null,
+    });
+  }
+
+  /**
+   * Trava a NF-e, revalida o status dentro da transação e reserva a próxima
+   * sequência gravando o evento em PENDING.
+   */
+  private async reserveCorrectionSequence(
+    nfe: any,
+    correcao: string,
+    ambiente: number,
+    author: FiscalEventAuthor,
+  ) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        // Lock pessimista da NF-e: serializa duas CC-e concorrentes.
+        await tx.nfe.update({
+          where: { id: nfe.id },
+          data: { updatedAt: new Date() },
+          select: { id: true },
+        });
+
+        // O status foi lido antes da transação; reler evita corrida com um
+        // cancelamento que tenha sido confirmado nesse meio-tempo.
+        const current = await tx.nfe.findUnique({
+          where: { id: nfe.id },
+          select: { status: true },
+        });
+
+        if (
+          current?.status !== NfeStatus.AUTHORIZED &&
+          current?.status !== NfeStatus.CORRECTION_SENT
+        ) {
+          throw new ConflictException(
+            'O status da NF-e mudou enquanto a carta de correção era preparada. Recarregue a nota e tente novamente.',
+          );
+        }
+
+        const inFlight = await tx.nfeCorrectionEvent.findFirst({
+          where: {
+            nfeId: nfe.id,
+            status: NfeCorrectionStatus.PENDING,
+            createdAt: { gte: new Date(Date.now() - CCE_PENDING_IN_FLIGHT_MS) },
+          },
+          orderBy: { sequenciaEvento: 'desc' },
+        });
+
+        if (inFlight) {
+          throw new ConflictException(
+            `Já existe uma carta de correção em processamento para esta NF-e (sequência ${inFlight.sequenciaEvento}). Aguarde a conclusão antes de enviar outra.`,
+          );
+        }
+
+        const lastEvent = await tx.nfeCorrectionEvent.findFirst({
+          where: { nfeId: nfe.id },
+          orderBy: { sequenciaEvento: 'desc' },
+          select: { sequenciaEvento: true },
+        });
+        const sequenciaEvento = lastEvent ? lastEvent.sequenciaEvento + 1 : 1;
+
+        if (sequenciaEvento > CCE_MAX_SEQUENCE) {
+          throw new BadRequestException(
+            `Esta NF-e já utilizou as ${CCE_MAX_SEQUENCE} cartas de correção permitidas pela SEFAZ.`,
+          );
+        }
+
+        return tx.nfeCorrectionEvent.create({
+          data: {
+            nfeId: nfe.id,
+            sequenciaEvento,
+            correcao,
+            status: NfeCorrectionStatus.PENDING,
+            ambiente,
+            createdBy: author.userId ?? null,
+            createdByName: author.name ?? null,
+          },
+          select: { id: true, sequenciaEvento: true },
+        });
+      },
+      { maxWait: 5000, timeout: 10000 },
+    );
+  }
+
+  /**
+   * Persiste o desfecho negativo sem derrubar o fluxo de erro do chamador: a
+   * exceção original é sempre mais informativa que uma falha de gravação aqui.
+   */
+  private async markCorrectionRejected(
+    eventId: string,
+    data: {
+      motivoRejeicao: string;
+      codigoRetorno?: number | null;
+      sitCodigo?: number | null;
+    },
+  ): Promise<void> {
+    try {
+      await this.prisma.nfeCorrectionEvent.update({
+        where: { id: eventId },
+        data: {
+          status: NfeCorrectionStatus.REJECTED,
+          motivoRejeicao: data.motivoRejeicao,
+          codigoRetorno: data.codigoRetorno ?? null,
+          sitCodigo: data.sitCodigo ?? null,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Não foi possível registrar a rejeição da CC-e ${eventId}: ${error.message}`,
+        error.stack,
+      );
+    }
+  }
+
+  /**
+   * Confirma o evento já registrado na SEFAZ. O update da NF-e é condicionado ao
+   * status para não sobrescrever um cancelamento concorrente.
+   */
+  private async confirmCorrectionEvent(params: {
+    nfe: any;
+    reservationId: string;
+    sequenciaEvento: number;
+    correcao: string;
+    doc: any;
+    sitCodigo?: number;
+    codigoRetorno: number | null;
+  }): Promise<any> {
+    const {
+      nfe,
+      reservationId,
+      sequenciaEvento,
+      correcao,
+      doc,
+      sitCodigo,
+      codigoRetorno,
+    } = params;
+
+    const xmlEvento = doc?.DocXMLBase64
+      ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
+      : null;
+
+    if (!xmlEvento) {
+      this.logger.warn(
+        `XML da CC-e não retornado pelo provedor para NF-e ${nfe.chaveAcesso} (evento seq ${sequenciaEvento})`,
+      );
+    }
+
+    // Data de registro na SEFAZ quando disponível; relógio local como fallback.
+    const dataEvento = this.parseProviderDate(doc?.DocDhAut) ?? new Date();
+    const protocolo = doc?.DocProtocolo || null;
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.nfeCorrectionEvent.update({
+          where: { id: reservationId },
+          data: {
+            status: NfeCorrectionStatus.REGISTERED,
+            protocolo,
+            dataEvento,
+            xmlEvento,
+            sitCodigo: sitCodigo ?? null,
+            codigoRetorno,
+          },
+        });
+
+        const { count } = await tx.nfe.updateMany({
+          where: {
+            id: nfe.id,
+            status: { in: [NfeStatus.AUTHORIZED, NfeStatus.CORRECTION_SENT] },
+          },
+          data: {
+            status: NfeStatus.CORRECTION_SENT,
+            cartaCorrecao: correcao,
+            dataCorrecao: dataEvento,
+            protocoloCorrecao: protocolo,
+            sequenciaCorrecao: sequenciaEvento,
+          },
+        });
+
+        if (count === 0) {
+          // A CC-e existe na SEFAZ e está gravada, mas a nota saiu de um estado
+          // corrigível (tipicamente cancelamento concorrente). Preservar o
+          // estado atual é mais seguro do que reescrevê-lo.
+          this.logger.warn(
+            `CC-e seq ${sequenciaEvento} registrada na SEFAZ, mas a NF-e ${nfe.id} não está mais em estado corrigível. Status preservado.`,
+          );
+        }
+
+        this.logger.log(
+          `CC-e seq ${sequenciaEvento} registrada para NF-e ${nfe.chaveAcesso} (cStat ${sitCodigo}, protocolo ${protocolo ?? 'não informado'})`,
+        );
+
+        return tx.nfe.findUnique({ where: { id: nfe.id } });
+      },
+      { maxWait: 5000, timeout: 10000 },
+    );
+  }
+
+  /**
+   * O leiaute do evento não aceita quebras de linha nem caracteres de controle
+   * em xCorrecao. Normalizar aqui evita uma ida à SEFAZ só para tomar rejeição.
+   */
+  private sanitizeCorrectionText(input?: string): string {
+    return (
+      (input ?? '')
+        .replace(/[\r\n\t]+/g, ' ')
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\x00-\x1F\x7F]/g, '')
+        .replace(/\u00A0/g, ' ') // NBSP vindo de colagem de Word/Excel
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+    );
+  }
+
+  /**
+   * A CC-e só pode ser transmitida em até 720 horas (30 dias) da autorização.
+   */
+  private assertWithinCorrectionDeadline(nfe: any): void {
+    const reference = nfe?.dataAutorizacao ?? nfe?.dataEmissao;
+    if (!reference) return;
+
+    const hours = (Date.now() - new Date(reference).getTime()) / 3600000;
+    if (hours > CCE_DEADLINE_HOURS) {
+      throw new BadRequestException(
+        `O prazo de ${CCE_DEADLINE_HOURS} horas (30 dias) para carta de correção foi excedido. ` +
+          'Nesse caso a regularização deve ser feita por NF-e complementar ou de ajuste.',
+      );
+    }
+  }
+
+  private parseProviderDate(value?: string): Date | null {
+    if (!value) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   private getKnownEventErrorMessage(
@@ -401,92 +643,6 @@ export class NfeEventsService {
     }
 
     return nfe?.ambiente === 1 ? 1 : 2;
-  }
-
-  /**
-   * Consulta status de uma NF-e
-   */
-  async consultStatus(nfe: any, companyId: string): Promise<any> {
-    if (!nfe.chaveAcesso) {
-      return {
-        id: nfe.id,
-        numero: nfe.numero,
-        serie: nfe.serie,
-        status: nfe.status,
-        statusDescription: 'Chave de acesso não disponível para consulta',
-        checkedAt: new Date().toISOString(),
-      };
-    }
-
-    try {
-      this.logger.log(`Consultando status real NF-e ${nfe.numero} na SEFAZ`);
-
-      const invoicyResponses = await this.invoicyApiService.consultNfeSefaz(
-        companyId,
-        nfe.chaveAcesso,
-      );
-
-      const response = invoicyResponses[0];
-      const doc = response?.Documentos?.[0];
-      const situacao = doc?.Situacao;
-
-      const newStatus = this.mapSefazCodToStatus(situacao?.SitCodigo);
-
-      let updatedNfe = nfe;
-      if (newStatus && newStatus !== nfe.status) {
-        this.logger.log(
-          `Status NF-e ${nfe.numero} mudou: ${nfe.status} → ${newStatus}`,
-        );
-
-        updatedNfe = await this.prisma.nfe.update({
-          where: { id: nfe.id },
-          data: { status: newStatus as any },
-        });
-      }
-
-      return {
-        id: updatedNfe.id,
-        numero: updatedNfe.numero,
-        serie: updatedNfe.serie,
-        status: updatedNfe.status,
-        statusChanged: newStatus !== nfe.status,
-        sefazCode: situacao?.SitCodigo,
-        sefazDescription: situacao?.SitDescricao,
-        chaveAcesso: nfe.chaveAcesso,
-        protocolo: nfe.protocolo,
-        dataEmissao: nfe.dataEmissao,
-        dataAutorizacao: nfe.dataAutorizacao,
-        checkedAt: new Date().toISOString(),
-      };
-    } catch (error) {
-      this.logger.error(
-        `Erro ao consultar status NF-e ${nfe.numero}: ${error.message}`,
-        error.stack,
-      );
-      return {
-        id: nfe.id,
-        numero: nfe.numero,
-        serie: nfe.serie,
-        status: nfe.status,
-        sefazError: error.message,
-        checkedAt: new Date().toISOString(),
-      };
-    }
-  }
-
-  private mapSefazCodToStatus(sitCodigo?: number): string | null {
-    if (!sitCodigo) return null;
-
-    const map: Record<number, string> = {
-      100: 'AUTHORIZED',
-      101: 'CANCELLED',
-      102: 'CANCELLED',
-      135: 'CORRECTION_SENT',
-      204: 'AUTHORIZED',
-      217: 'REJECTED',
-    };
-
-    return map[sitCodigo] || null;
   }
 
   /**

@@ -274,6 +274,11 @@ export class InvoicyHttpService {
 
   /**
    * Make authenticated request to Invoicy API with retry logic
+   *
+   * `disableRetry` deve ser usado em TODA escrita fiscal não idempotente
+   * (eventos, emissão, inutilização): o payload não carrega chave de
+   * idempotência, então reenviar após um timeout de leitura pode duplicar um
+   * documento que a SEFAZ já processou.
    */
   async makeRequest<T>(
     companyId: string,
@@ -283,10 +288,12 @@ export class InvoicyHttpService {
     invoicyConfigId?: string,
     signal?: AbortSignal,
     forceEnvironment?: FiscalEnvironment,
+    disableRetry = false,
   ): Promise<T> {
     let lastError: Error | null = null;
+    const maxAttempts = disableRetry ? 1 : this.MAX_RETRIES;
 
-    for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         return await this.executeRequest<T>(
           companyId,
@@ -316,10 +323,10 @@ export class InvoicyHttpService {
           throw error;
         }
 
-        if (attempt < this.MAX_RETRIES) {
+        if (attempt < maxAttempts) {
           const delay = this.INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
           this.logger.warn(
-            `Request failed (attempt ${attempt}/${this.MAX_RETRIES}). Retrying in ${delay}ms...`,
+            `Request failed (attempt ${attempt}/${maxAttempts}). Retrying in ${delay}ms...`,
           );
           if (signal?.aborted) {
             throw new Error('AbortError');
@@ -543,42 +550,6 @@ export class InvoicyHttpService {
       'POST',
       '/senddocuments/nfe?type=Evento',
       cancelRequest,
-    );
-  }
-
-  /**
-   * Send correction letter (Carta de Correção) for NF-e
-   */
-  async sendCorrectionLetter(
-    companyId: string,
-    chaveAcesso: string,
-    correcao: string,
-    sequenciaEvento: number = 1,
-  ): Promise<InvoicyResponse[]> {
-    this.logger.log(
-      `Sending correction letter for NF-e ${chaveAcesso}, company ${companyId}`,
-    );
-
-    const correctionRequest = [
-      {
-        Documento: {
-          ModeloDocumento: 'NFe',
-          Versao: 4,
-          Evento: {
-            ChaveNFe: chaveAcesso,
-            TipoEvento: 110110, // Carta de Correção
-            nSeqEvento: sequenciaEvento,
-            Correcao: correcao,
-          },
-        },
-      },
-    ];
-
-    return this.makeRequest<InvoicyResponse[]>(
-      companyId,
-      'POST',
-      '/senddocuments/nfe?type=Evento',
-      correctionRequest,
     );
   }
 

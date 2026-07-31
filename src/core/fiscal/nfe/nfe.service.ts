@@ -5,7 +5,7 @@
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
-import { NfeStatus, NfseStatus } from '@prisma/client';
+import { NfeStatus, NfseStatus, NfeCorrectionStatus } from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
@@ -21,7 +21,6 @@ import {
   EmitNfeDto,
   EmitNfeFromOrderDto,
   CancelNfeDto,
-  CorrectionLetterDto,
   InutilizarNfeDto,
   NfeFilterDto,
   UpdateNfeDraftDto,
@@ -727,7 +726,9 @@ export class NfeService {
       destinatario = {
         razaoSocial: extractTag(destXml, 'xNome'),
         cnpjCpf: extractTag(destXml, 'CNPJ') || extractTag(destXml, 'CPF'),
+        idEstrangeiro: extractTag(destXml, 'idEstrangeiro'),
         ie: extractTag(destXml, 'IE'),
+        indIEDest: Number(extractTag(destXml, 'indIEDest')) || undefined,
         email: extractTag(destXml, 'email'),
         endereco: extractTag(enderDestXml, 'xLgr'),
         numero: extractTag(enderDestXml, 'nro'),
@@ -735,7 +736,8 @@ export class NfeService {
         cidade: extractTag(enderDestXml, 'xMun'),
         estado: extractTag(enderDestXml, 'UF'),
         cep: extractTag(enderDestXml, 'CEP'),
-        pais: 'Brasil',
+        // cPais é o código BACEN (1058 = Brasil), mesmo formato usado no rascunho.
+        pais: extractTag(enderDestXml, 'cPais') || '1058',
         complemento: extractTag(enderDestXml, 'xCpl'),
         telefone: extractTag(enderDestXml, 'fone'),
       };
@@ -810,12 +812,23 @@ export class NfeService {
       }
     }
 
-    // 2. Tentar mesclar/sobrepor com dados reais do XML (xmlData), pois o XML Ã© a fonte da verdade da NF emitida
+    // 2. Tentar mesclar/sobrepor com dados reais do XML (xmlData), pois o XML Ã© a fonte da verdade da NF emitida.
+    //    Tags ausentes no XML (email, fone, idEstrangeiro...) vêm como '' e não podem apagar o que veio do rascunho.
     if (xmlData?.destinatario) {
+      const fromXml = Object.fromEntries(
+        Object.entries(xmlData.destinatario).filter(
+          ([, value]) => value !== undefined && value !== null && value !== '',
+        ),
+      );
       destinatario = {
         ...destinatario,
-        ...xmlData.destinatario,
+        ...fromXml,
       };
+    }
+
+    // Garante o país sempre preenchido (1058 = Brasil) para o formulário não cair em "estrangeiro"
+    if (!destinatario.pais) {
+      destinatario.pais = '1058';
     }
 
     return destinatario;
@@ -2291,123 +2304,6 @@ export class NfeService {
     }
   }
 
-  async sendCorrectionLetter(
-    id: string,
-    companyId: string,
-    dto: CorrectionLetterDto,
-  ) {
-    const nfe = await this.findById(id, companyId);
-
-    if (
-      nfe.status !== NfeStatus.AUTHORIZED &&
-      nfe.status !== NfeStatus.CORRECTION_SENT
-    ) {
-      throw new BadRequestException(
-        'Cartas de correÃ§Ã£o sÃ³ podem ser enviadas para NF-e autorizadas ou com correÃ§Ã£o anterior',
-      );
-    }
-
-    const correcao = dto.correcao?.trim() || '';
-
-    if (correcao.length < 15) {
-      throw new BadRequestException(
-        'O texto da correÃ§Ã£o deve ter no mÃ­nimo 15 caracteres',
-      );
-    }
-
-    if (correcao.length > 1000) {
-      throw new BadRequestException(
-        'O texto da correÃ§Ã£o deve ter no mÃ¡ximo 1000 caracteres',
-      );
-    }
-
-    try {
-      this.logger.log(`Enviando carta de correÃ§Ã£o para NF-e ${nfe.numero}`);
-
-      const lastEvent = await this.prisma.nfeCorrectionEvent.findFirst({
-        where: { nfeId: id },
-        orderBy: { sequenciaEvento: 'desc' },
-      });
-      const sequenciaEvento = lastEvent ? lastEvent.sequenciaEvento + 1 : 1;
-
-      if (sequenciaEvento > 20) {
-        throw new BadRequestException(
-          'A sequÃªncia da carta de correÃ§Ã£o deve ser um nÃºmero entre 1 e 20',
-        );
-      }
-
-      // Chamar API do Invoicy para carta de correÃ§Ã£o
-      const invoicyResponses =
-        await this.invoicyApiService.sendCorrectionLetter(
-          companyId,
-          nfe.chaveAcesso,
-          correcao,
-          sequenciaEvento,
-          nfe.ambiente,
-        );
-
-      // Processar resposta
-      const response = invoicyResponses[0];
-      if (!response) {
-        throw new Error('Nenhuma resposta recebida do Invoicy');
-      }
-
-      if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-        throw new Error(
-          response.Descricao || `Erro Invoicy: cÃ³digo ${response.Codigo}`,
-        );
-      }
-
-      const doc = response.Documentos?.[0];
-      const situacao = doc?.Situacao;
-      const isApproved = situacao?.SitCodigo === 135;
-
-      if (!isApproved) {
-        throw new Error(
-          situacao?.SitDescricao ||
-            'Carta de correÃ§Ã£o nÃ£o autorizada pela SEFAZ',
-        );
-      }
-
-      const dataEvento = new Date();
-      const xmlEvento = doc?.DocXMLBase64
-        ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
-        : null;
-
-      const updatedNfe = await this.prisma.nfe.update({
-        where: { id },
-        data: {
-          status: NfeStatus.CORRECTION_SENT,
-          cartaCorrecao: correcao,
-          dataCorrecao: dataEvento,
-          protocoloCorrecao: doc?.DocProtocolo || null,
-          sequenciaCorrecao: sequenciaEvento,
-        },
-      });
-
-      await this.prisma.nfeCorrectionEvent.create({
-        data: {
-          nfeId: id,
-          sequenciaEvento,
-          correcao,
-          protocolo: doc?.DocProtocolo || null,
-          dataEvento,
-          xmlEvento,
-        },
-      });
-
-      return updatedNfe;
-    } catch (error) {
-      this.logger.error(
-        `Erro ao enviar carta de correÃ§Ã£o: ${error.message}`,
-        error.stack,
-      );
-      throw new BadRequestException(
-        `Erro ao enviar carta de correÃ§Ã£o: ${error.message}`,
-      );
-    }
-  }
-
   async consultStatus(id: string, companyId: string) {
     const nfe = await this.findById(id, companyId);
 
@@ -2434,12 +2330,19 @@ export class NfeService {
       const doc = response?.Documentos?.[0];
       const situacao = doc?.Situacao;
 
-      const newStatus = this.mapSefazCodToStatus(situacao?.SitCodigo);
+      const newStatus = this.mapSefazCodToStatus(
+        situacao?.SitCodigo,
+        doc?.DocEveTp,
+      );
 
       let currentStatus = nfe.status;
-      if (newStatus && newStatus !== nfe.status) {
+      if (
+        newStatus &&
+        newStatus !== nfe.status &&
+        this.isAllowedSefazTransition(nfe.status, newStatus)
+      ) {
         this.logger.log(
-          `Status NF-e ${nfe.numero} mudou: ${nfe.status} â†’ ${newStatus}`,
+          `Status NF-e ${nfe.numero} mudou: ${nfe.status} -> ${newStatus}`,
         );
 
         await this.prisma.nfe.update({
@@ -2447,6 +2350,10 @@ export class NfeService {
           data: { status: newStatus as any },
         });
         currentStatus = newStatus as any;
+      } else if (newStatus && newStatus !== nfe.status) {
+        this.logger.warn(
+          `Transicao de status ignorada para NF-e ${nfe.numero}: ${nfe.status} -> ${newStatus} (cStat ${situacao?.SitCodigo})`,
+        );
       }
 
       return {
@@ -2454,7 +2361,7 @@ export class NfeService {
         numero: nfe.numero,
         serie: nfe.serie,
         status: currentStatus,
-        statusChanged: newStatus !== nfe.status,
+        statusChanged: currentStatus !== nfe.status,
         sefazCode: situacao?.SitCodigo,
         sefazDescription: situacao?.SitDescricao,
         chaveAcesso: nfe.chaveAcesso,
@@ -2479,19 +2386,49 @@ export class NfeService {
     }
   }
 
-  private mapSefazCodToStatus(sitCodigo?: number): string | null {
+  /**
+   * O cStat 135 ("evento registrado e vinculado a NF-e") e' generico: vale tanto
+   * para carta de correcao quanto para cancelamento. Sem olhar o tipo do evento
+   * (DocEveTp), um cancelamento consultado na SEFAZ era gravado como
+   * CORRECTION_SENT e a nota voltava a aparecer como valida.
+   */
+  private mapSefazCodToStatus(
+    sitCodigo?: number,
+    tipoEvento?: number,
+  ): string | null {
     if (!sitCodigo) return null;
+
+    if (sitCodigo === 135 || sitCodigo === 136) {
+      if (tipoEvento === 110111) return 'CANCELLED';
+      if (tipoEvento === 110110) return 'CORRECTION_SENT';
+      // Tipo de evento desconhecido: nao ha' como decidir com seguranca.
+      return null;
+    }
 
     const map: Record<number, string> = {
       100: 'AUTHORIZED',
       101: 'CANCELLED',
       102: 'CANCELLED',
-      135: 'CORRECTION_SENT',
       204: 'AUTHORIZED',
       217: 'REJECTED',
     };
 
     return map[sitCodigo] || null;
+  }
+
+  /**
+   * Estados terminais nao podem ser revertidos por uma consulta, e uma nota que
+   * ja' recebeu CC-e nao volta a AUTHORIZED.
+   */
+  private isAllowedSefazTransition(current: string, next: string): boolean {
+    if (current === NfeStatus.CANCELLED) return false;
+    if (
+      current === NfeStatus.CORRECTION_SENT &&
+      next === NfeStatus.AUTHORIZED
+    ) {
+      return false;
+    }
+    return true;
   }
 
   private async persistDanfePdf(
@@ -3036,8 +2973,14 @@ export class NfeService {
         id: true,
         sequenciaEvento: true,
         correcao: true,
+        status: true,
         protocolo: true,
         dataEvento: true,
+        motivoRejeicao: true,
+        sitCodigo: true,
+        ambiente: true,
+        createdBy: true,
+        createdByName: true,
         createdAt: true,
         xmlEvento: true,
       },
@@ -3093,10 +3036,12 @@ export class NfeService {
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
 
+    // CORRECTION_SENT precisa entrar: uma NF-e que recebeu carta de correcao
+    // continua sendo um documento autorizado e valido para a escrituracao.
     const nfes = await this.prisma.nfe.findMany({
       where: {
         companyId,
-        status: 'AUTHORIZED',
+        status: { in: ['AUTHORIZED', 'CORRECTION_SENT'] },
         dataEmissao: { gte: start, lte: end },
         xmlAutorizado: { not: null },
       },
@@ -3107,6 +3052,14 @@ export class NfeService {
         chaveAcesso: true,
         xmlAutorizado: true,
         dataEmissao: true,
+        correctionEvents: {
+          where: {
+            status: NfeCorrectionStatus.REGISTERED,
+            xmlEvento: { not: null },
+          },
+          select: { sequenciaEvento: true, xmlEvento: true },
+          orderBy: { sequenciaEvento: 'asc' },
+        },
       },
       orderBy: { numero: 'asc' },
     });
@@ -3121,14 +3074,25 @@ export class NfeService {
     const JSZip = require('jszip');
     const zip = new JSZip();
 
+    let correctionCount = 0;
     for (const nfe of nfes) {
-      const filename = `NFe_${nfe.numero}_${nfe.chaveAcesso || nfe.id}.xml`;
-      zip.file(filename, nfe.xmlAutorizado);
+      const identifier = nfe.chaveAcesso || nfe.id;
+      zip.file(`NFe_${nfe.numero}_${identifier}.xml`, nfe.xmlAutorizado);
+
+      // O XML do evento 110110 integra o documento fiscal e precisa ser
+      // guardado junto da nota pelo mesmo prazo decadencial.
+      for (const event of nfe.correctionEvents) {
+        zip.file(
+          `CCe_${identifier}_seq_${event.sequenciaEvento}.xml`,
+          event.xmlEvento,
+        );
+        correctionCount++;
+      }
     }
 
     const buffer = await zip.generateAsync({ type: 'nodebuffer' });
     this.logger.log(
-      `Exportados ${nfes.length} XMLs de NF-e para ZIP â€” empresa ${companyId}`,
+      `Exportados ${nfes.length} XMLs de NF-e e ${correctionCount} XMLs de CC-e para ZIP - empresa ${companyId}`,
     );
 
     return buffer;

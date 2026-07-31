@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { NfeService } from './nfe.service';
 import { NfeBuilderService } from './nfe-builder.service';
 import { NfeDraftService } from './nfe-draft.service';
@@ -17,6 +18,15 @@ import { MailModule } from '../../mail/mail.module';
     InvoicyModule,
     ProductFiscalModule,
     MailModule,
+    // Eventos fiscais custam chamadas pagas ao provedor e seguram conexao do
+    // pool: sem teto, um unico tenant consegue degradar todos os outros.
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60000,
+        limit: 10,
+      },
+    ]),
     forwardRef(() => AuthModule),
   ],
   controllers: [NfeController],

@@ -38,7 +38,11 @@
     "permissions:normalize": "node dist/src/scripts/normalize-other-sellers-permission.js",
     "permissions:normalize:dry": "node dist/src/scripts/normalize-other-sellers-permission.js --dry-run",
     "permissions:normalize:dev": "ts-node src/scripts/normalize-other-sellers-permission.ts",
-    "permissions:normalize:dry:dev": "ts-node src/scripts/normalize-other-sellers-permission.ts --dry-run"
+    "permissions:normalize:dry:dev": "ts-node src/scripts/normalize-other-sellers-permission.ts --dry-run",
+    "permissions:cce": "node dist/src/scripts/backfill-carta-correcao-permission.js",
+    "permissions:cce:dry": "node dist/src/scripts/backfill-carta-correcao-permission.js --dry-run",
+    "permissions:cce:dev": "ts-node src/scripts/backfill-carta-correcao-permission.ts",
+    "permissions:cce:dry:dev": "ts-node src/scripts/backfill-carta-correcao-permission.ts --dry-run"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",

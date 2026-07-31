@@ -12,6 +12,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import {
@@ -20,6 +21,7 @@ import {
 } from '../../auth/guards/block-level.guard';
 import { PermissionsGuard } from '../../auth/abac/permissions.guard';
 import { HasPermission } from '../../auth/abac/has-permission.decorator';
+import { HasAnyPermission } from '../../auth/abac/has-any-permission.decorator';
 import { NfeService } from './nfe.service';
 import { NfeEventsService } from './nfe-events.service';
 import {
@@ -35,7 +37,7 @@ import {
 
 @ApiTags('Fiscal - NF-e')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionsGuard, BlockLevelGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, BlockLevelGuard, ThrottlerGuard)
 @Controller('fiscal/nfe')
 export class NfeController {
   constructor(
@@ -191,7 +193,8 @@ export class NfeController {
   }
 
   @Post(':id/correction-letter')
-  @HasPermission('edit', 'nota_fiscal:emitir')
+  @HasPermission('edit', 'nota_fiscal:carta_correcao')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: 'Enviar carta de correção' })
   async sendCorrectionLetter(
     @Req() req,
@@ -203,18 +206,25 @@ export class NfeController {
       nfe,
       req.user.companyId,
       dto,
+      { userId: req.user.userId, name: req.user.username },
     );
   }
 
   @Get(':id/corrections')
-  @HasPermission('view', 'nota_fiscal:emitidas')
+  @HasAnyPermission(
+    { action: 'view', resource: 'nota_fiscal:carta_correcao' },
+    { action: 'view', resource: 'nota_fiscal:emitidas' },
+  )
   @ApiOperation({ summary: 'Listar histórico de cartas de correção' })
   async listCorrections(@Req() req, @Param('id') id: string) {
     return this.nfeService.listCorrectionEvents(id, req.user.companyId);
   }
 
   @Get(':id/corrections/:eventId/xml')
-  @HasPermission('view', 'nota_fiscal:emitidas')
+  @HasAnyPermission(
+    { action: 'view', resource: 'nota_fiscal:carta_correcao' },
+    { action: 'view', resource: 'nota_fiscal:emitidas' },
+  )
   @ApiOperation({ summary: 'Download do XML de uma carta de correção (CC-e)' })
   async getCorrectionEventXml(
     @Req() req,
