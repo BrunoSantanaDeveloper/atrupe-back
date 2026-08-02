@@ -162,6 +162,7 @@ export class ClientService {
               stateRegistration:
                 createClientDto.general.stateRegistration || null,
               indicadorIE: createClientDto.general.indicadorIE ?? 9,
+              responsibleId: createClientDto.responsibleId || null,
             },
           });
 
@@ -188,6 +189,7 @@ export class ClientService {
             await prisma.contact.createMany({
               data: createClientDto.contacts.map((contact) => ({
                 name: contact.name,
+                sector: contact.sector,
                 email: contact.email,
                 phone: contact.phone,
                 mobile: contact.mobile,
@@ -341,6 +343,10 @@ export class ClientService {
         where = { ...where, status: filter.status };
       }
 
+      if (filter.responsibleId) {
+        where = { ...where, responsibleId: filter.responsibleId };
+      }
+
       // Configurar ordenação
       let orderBy = {};
       if (filter.orderBy) {
@@ -363,6 +369,12 @@ export class ClientService {
           orderBy: orderBy,
           include: {
             category: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            responsible: {
               select: {
                 id: true,
                 name: true,
@@ -413,6 +425,12 @@ export class ClientService {
           },
         },
         category: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        responsible: {
           select: {
             id: true,
             name: true,
@@ -504,7 +522,9 @@ export class ClientService {
         isBranch: client.isBranch || false,
         stateRegistration: client.stateRegistration || '',
         indicadorIE: client.indicadorIE ?? 9,
+        responsible: client.responsible,
       },
+      responsibleId: client.responsibleId,
       addresses: client.address.map((address) => ({
         type: address.type,
         zipcode: address.zipcode,
@@ -517,6 +537,7 @@ export class ClientService {
       })),
       contacts: client.contacts.map((contact) => ({
         name: contact.name,
+        sector: contact.sector,
         email: contact.email,
         phone: contact.phone,
         mobile: contact.mobile,
@@ -718,6 +739,7 @@ export class ClientService {
                 await prisma.contact.createMany({
                   data: updateClientDto.contacts.map((contact) => ({
                     name: contact.name,
+                    sector: contact.sector,
                     email: contact.email,
                     phone: contact.phone,
                     mobile: contact.mobile,
@@ -773,7 +795,6 @@ export class ClientService {
       'birthdate',
       'notes',
       'financialNotes',
-      'responsibleId',
       'activityId',
       'type',
     ];
@@ -784,8 +805,12 @@ export class ClientService {
       return acc;
     }, {});
 
+    // Responsável (colaborador): seta o FK escalar direto. String vazia ou null
+    // desassocia (Sem Responsável). `undefined` mantém o valor atual.
     if (dto.responsibleId) {
-      update['responsible'] = { connect: { id: dto.responsibleId } };
+      update['responsibleId'] = dto.responsibleId;
+    } else if (dto.responsibleId === null || dto.responsibleId === '') {
+      update['responsibleId'] = null;
     }
 
     if (dto.companyId) {

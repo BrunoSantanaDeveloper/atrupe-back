@@ -198,6 +198,15 @@ export const BASE_FEATURES = [
     isActive: true,
   },
   {
+    key: 'client_responsible_management',
+    name: 'Gestão de Responsável do Cliente',
+    description:
+      'Atribuir um colaborador responsável ao cliente e filtrar a carteira por responsável',
+    category: 'clients',
+    price: 0,
+    isActive: true,
+  },
+  {
     key: 'bank_account_delete',
     name: 'Excluir Conta Bancária',
     description: 'Excluir contas bancárias do sistema',

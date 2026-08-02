@@ -23,6 +23,7 @@ const liteFeatures = [
   'product_production_stages',
   'client_additional_tabs',
   'supplier_additional_tabs',
+  'client_responsible_management',
   'bank_account_delete',
   'bank_account_provision',
   'payment_difference',

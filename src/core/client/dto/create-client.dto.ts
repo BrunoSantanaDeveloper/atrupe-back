@@ -137,6 +137,10 @@ class ContactDto {
   name: string;
 
   @IsOptional()
+  @IsString()
+  sector?: string;
+
+  @IsOptional()
   email?: string;
 
   @IsOptional()
@@ -207,6 +211,15 @@ export class CreateClientDto {
     example: 'ACTIVE',
   })
   status: ClientStatus;
+
+  @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description: 'ID do colaborador responsável pelo cliente',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  responsibleId?: string;
 }
 
 export class PreRegisterClientDto {

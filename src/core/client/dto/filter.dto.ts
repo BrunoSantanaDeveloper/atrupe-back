@@ -33,6 +33,15 @@ export class ClientFilterDTO extends BaseFilterDTO {
   status: ClientStatus;
 
   @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description: 'ID do colaborador responsável para filtrar a carteira',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  responsibleId?: string;
+
+  @IsOptional()
   @IsString()
   @ApiProperty({
     description: 'Campo para ordenação',

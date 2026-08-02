@@ -19,6 +19,7 @@ import { PermissionsGuard } from '../auth/abac/permissions.guard';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
 import { TenantGuard } from '../auth/guards/tenant.guard';
 import { TenantResource } from '../auth/guards/tenant-resource.decorator';
+import { PlanControlService } from '../plan/plan-control.service';
 import { ClientFilterDTO } from './dto/filter.dto';
 import {
   ApiTags,
@@ -37,7 +38,27 @@ const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
 @ApiBearerAuth()
 @Controller(RESOURCE)
 export class ClientController {
-  constructor(private readonly clientService: ClientService) {}
+  constructor(
+    private readonly clientService: ClientService,
+    private readonly planControlService: PlanControlService,
+  ) {}
+
+  /**
+   * Gestão de responsável (colaborador) do cliente é feature do plano Lite
+   * (client_responsible_management). Impõe o paywall no backend tanto ao
+   * atribuir um responsável quanto ao filtrar a carteira por responsável.
+   */
+  private async enforceResponsibleFeature(
+    companyId: string,
+    responsibleId?: string,
+  ) {
+    if (responsibleId) {
+      await this.planControlService.enforceFeature(
+        companyId,
+        'client_responsible_management',
+      );
+    }
+  }
 
   @Post()
   @HasPermission('create', 'register:client')
@@ -50,11 +71,15 @@ export class ClientController {
     status: 201,
     description: 'Cliente criado com sucesso.',
   })
-  create(@Req() req, @Body() createClientDto: CreateClientDto) {
+  async create(@Req() req, @Body() createClientDto: CreateClientDto) {
     createClientDto.companyId = req.user.companyId;
     if (createClientDto.companyId !== req.user.companyId) {
       throw new UnauthorizedException('Unauthorized');
     }
+    await this.enforceResponsibleFeature(
+      req.user.companyId,
+      createClientDto.responsibleId,
+    );
     return this.clientService.create(createClientDto);
   }
 
@@ -154,8 +179,12 @@ export class ClientController {
     description: 'Lista de clientes retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Req() req, @Query() filter: ClientFilterDTO) {
+  async findAll(@Req() req, @Query() filter: ClientFilterDTO) {
     filter.companyId = req.user.companyId;
+    await this.enforceResponsibleFeature(
+      req.user.companyId,
+      filter.responsibleId,
+    );
     return this.clientService.findAll(filter);
   }
 
@@ -166,8 +195,12 @@ export class ClientController {
     status: 200,
     description: 'Lista de clientes para exportaÃ§Ã£o retornada com sucesso.',
   })
-  export(@Req() req, @Query() filter: ClientFilterDTO) {
+  async export(@Req() req, @Query() filter: ClientFilterDTO) {
     filter.companyId = req.user.companyId;
+    await this.enforceResponsibleFeature(
+      req.user.companyId,
+      filter.responsibleId,
+    );
     return this.clientService.findAllForExport(filter);
   }
 
@@ -239,7 +272,15 @@ export class ClientController {
     status: 404,
     description: 'Cliente não encontrado.',
   })
-  update(@Param('id') id: string, @Body() updateClientDto: UpdateClientDto) {
+  async update(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() updateClientDto: UpdateClientDto,
+  ) {
+    await this.enforceResponsibleFeature(
+      req.user.companyId,
+      updateClientDto.responsibleId,
+    );
     return this.clientService.update(id, updateClientDto);
   }
 
