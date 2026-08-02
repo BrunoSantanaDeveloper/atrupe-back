@@ -70,14 +70,15 @@ export class CreateInvoicyConfigDto {
   ambiente?: number;
 
   @ApiPropertyOptional({
-    description: 'CRT: 1 = Simples Nacional, 2 = SN Excesso, 3 = Regime Normal',
+    description:
+      'CRT: 1 = Simples Nacional, 2 = SN Excesso, 3 = Regime Normal, 4 = MEI',
     default: 1,
   })
   @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(1)
-  @Max(3)
+  @Max(4)
   emitCrt?: number;
 
   // NF-e fields
@@ -199,6 +200,18 @@ export class CreateInvoicyConfigDto {
   @Max(100)
   aliquotaIss?: number;
 
+  @ApiPropertyOptional({
+    description:
+      'Prazo de cancelamento da NFC-e em minutos (varia por UF; SP usa 30)',
+    default: 30,
+  })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  @Max(1440)
+  prazoCancelamentoNfce?: number;
+
   // Defaults
   @ApiPropertyOptional({
     description: 'NCM padrão para novos produtos (ex: 49119900)',
@@ -294,13 +307,14 @@ export class UpdateInvoicyConfigDto {
   ambiente?: number;
 
   @ApiPropertyOptional({
-    description: 'CRT: 1 = Simples Nacional, 2 = SN Excesso, 3 = Regime Normal',
+    description:
+      'CRT: 1 = Simples Nacional, 2 = SN Excesso, 3 = Regime Normal, 4 = MEI',
   })
   @Transform(parseNumber)
   @IsNumber()
   @IsOptional()
   @Min(1)
-  @Max(3)
+  @Max(4)
   emitCrt?: number;
 
   // NF-e fields
@@ -412,6 +426,18 @@ export class UpdateInvoicyConfigDto {
   @Min(0)
   @Max(100)
   aliquotaIss?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Prazo de cancelamento da NFC-e em minutos (varia por UF; SP usa 30)',
+    default: 30,
+  })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  @Max(1440)
+  prazoCancelamentoNfce?: number;
 
   // Defaults
   @ApiPropertyOptional({

@@ -119,6 +119,10 @@ export class InvoicyService {
     if ('isActive' in dto && dto.isActive !== undefined)
       data.isActive = dto.isActive;
 
+    // Prazo de cancelamento da NFC-e (minutos) — varia por UF
+    if (dto.prazoCancelamentoNfce !== undefined)
+      data.prazoCancelamentoNfce = dto.prazoCancelamentoNfce;
+
     return data;
   }
 

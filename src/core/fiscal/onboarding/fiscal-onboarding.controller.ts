@@ -18,10 +18,12 @@ import { FiscalOnboardingService } from './fiscal-onboarding.service';
 import { FiscalOnboardingDto } from './fiscal-onboarding.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import { SystemAdminGuard } from '../../auth/guards/system-admin.guard';
+import { PermissionsGuard } from '../../auth/abac/permissions.guard';
+import { HasPermission } from '../../auth/abac/has-permission.decorator';
 
 @ApiTags('fiscal-onboarding')
 @Controller('fiscal/onboarding')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class FiscalOnboardingController {
   constructor(
@@ -29,6 +31,7 @@ export class FiscalOnboardingController {
   ) {}
 
   @Post()
+  @HasPermission('edit', 'nota_fiscal:config')
   @ApiOperation({
     summary: 'Submeter dados fiscais para ativação do módulo NF',
     description:
@@ -43,6 +46,9 @@ export class FiscalOnboardingController {
     );
   }
 
+  // Sem @HasPermission de propósito: é leitura do próprio tenant, sem mutação,
+  // e alimenta os gates de UI (FiscalModuleGate, banners de pendência) que
+  // qualquer usuário autenticado renderiza. Gatear aqui quebraria essas telas.
   @Get('status')
   @ApiOperation({
     summary: 'Consultar status do onboarding fiscal',
@@ -55,6 +61,7 @@ export class FiscalOnboardingController {
   }
 
   @Post('seed-defaults')
+  @HasPermission('edit', 'nota_fiscal:config')
   @ApiOperation({
     summary: 'Aplicar CFOPs e dados fiscais padrão (self-service)',
     description:

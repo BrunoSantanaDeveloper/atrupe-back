@@ -198,8 +198,10 @@ export class InvoicyApiService {
         });
 
     if (!config) {
+      // orderBy determinístico para empresas com mais de um emissor.
       config = await this.prisma.invoicyConfig.findFirst({
         where: { companyId },
+        orderBy: { createdAt: 'asc' },
       });
     }
 
@@ -271,8 +273,10 @@ export class InvoicyApiService {
         });
 
     if (!config) {
+      // orderBy determinístico para empresas com mais de um emissor.
       config = await this.prisma.invoicyConfig.findFirst({
         where: { companyId },
+        orderBy: { createdAt: 'asc' },
       });
     }
 

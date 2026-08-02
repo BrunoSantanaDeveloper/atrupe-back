@@ -1633,7 +1633,15 @@ export class NfeService {
     // Obter prÃ³ximo nÃºmero da NF-e (sem incrementar ainda - sÃ³ incrementa apÃ³s emissÃ£o bem-sucedida)
     const numero = config.proximoNumeroNfe || 1;
 
-    // Calcular valor total
+    // Valor bruto dos produtos (sem desconto) — alimenta det.vProd e vProd_ttlnfe.
+    // A SEFAZ valida vNF = vProd - vDesc + frete + seguro + outros, então vProd
+    // precisa ser bruto e o desconto entra apenas em vDesc.
+    const valorProdutos = dto.items.reduce(
+      (acc, item) => acc + item.quantity * item.unitValue,
+      0,
+    );
+
+    // Valor líquido da nota (após descontos) — alimenta vNF e vPag.
     const valorTotal = dto.items.reduce(
       (acc, item) =>
         acc + item.quantity * item.unitValue - (item.discount || 0),
@@ -1758,9 +1766,11 @@ export class NfeService {
           emitCmun = cepData.codigoIbge;
           this.logger.log(`IBGE do emitente encontrado: ${emitCmun}`);
 
-          // Cache IBGE code to avoid external API calls on subsequent emissions
-          await this.prisma.invoicyConfig.updateMany({
-            where: { companyId },
+          // Cache IBGE code to avoid external API calls on subsequent emissions.
+          // Escopado ao emissor desta emissão — emissores distintos podem ter
+          // endereços (e portanto municípios) diferentes.
+          await this.prisma.invoicyConfig.update({
+            where: { id: config.id },
             data: { emitCmun },
           });
           this.logger.log(`IBGE do emitente persistido no InvoicyConfig`);
@@ -1770,6 +1780,34 @@ export class NfeService {
           );
         }
       }
+
+      // Resolver o CFOP de cada item ANTES de montar o payload: o tipo do
+      // documento (tpNF) precisa ser coerente com a família do CFOP, senão a
+      // SEFAZ rejeita (CFOP de entrada em documento de saída).
+      const isInterestadual = destUfFromCep !== config.company.address.state;
+      const isDevolucao = dto.finalidade === 4;
+      const resolvedCfops = dto.items.map((item) =>
+        this.resolveItemCfop({
+          baseCfop: item.cfop || parseInt(config.defaultCfop || '5102', 10),
+          isForeign,
+          isInterestadual,
+          isDevolucao,
+        }),
+      );
+
+      const hasCfopEntrada = resolvedCfops.some((c) => this.isCfopEntrada(c));
+      const hasCfopSaida = resolvedCfops.some((c) => !this.isCfopEntrada(c));
+      if (hasCfopEntrada && hasCfopSaida) {
+        throw new BadRequestException(
+          'A nota mistura CFOP de entrada e de saída no mesmo documento. ' +
+            'Separe os itens em notas distintas.',
+        );
+      }
+
+      // CFOP de entrada obriga documento de entrada; caso contrário respeita o DTO.
+      const tipoDocumento = hasCfopEntrada ? 0 : (dto.tipo ?? 1);
+
+      this.assertFiscalItemsReady(dto.items, resolvedCfops);
 
       // Construir payload para o Invoicy
       const invoicyRequest: InvoicyNfeRequest = {
@@ -1788,7 +1826,7 @@ export class NfeService {
             dhEmi: now.toISOString(),
             dhSaiEnt: dataSaida.toISOString(),
             fusoHorario: '-03:00',
-            tpNf: dto.tipo ?? 1, // 0 = Entrada, 1 = Saida
+            tpNf: tipoDocumento, // 0 = Entrada, 1 = Saida
             idDest: isForeign
               ? 3
               : destUfFromCep === config.company.address.state
@@ -1884,51 +1922,7 @@ export class NfeService {
                   : 'SEM GTIN',
               xProd: item.description || `Produto ${index + 1}`,
               NCM: (item.ncm || '00000000').replace(/\D/g, ''),
-              CFOP: (() => {
-                const baseCfop =
-                  item.cfop || parseInt(config.defaultCfop || '5102', 10);
-
-                if (isForeign) {
-                  const prefix = Math.floor(baseCfop / 1000);
-                  if (prefix === 5 || prefix === 6) {
-                    return baseCfop - prefix * 1000 + 7000;
-                  }
-                  return baseCfop;
-                }
-
-                const isInterestadual =
-                  destUfFromCep !== config.company.address.state;
-
-                if (dto.finalidade === 4) {
-                  const lastThree = baseCfop % 1000;
-                  if (lastThree === 101 || lastThree === 201) {
-                    return isInterestadual ? 2201 : 1201;
-                  }
-                  if (lastThree === 102 || lastThree === 202) {
-                    return isInterestadual ? 2202 : 1202;
-                  }
-                  const prefix = Math.floor(baseCfop / 1000);
-                  if (prefix === 1 && isInterestadual) {
-                    return baseCfop + 1000;
-                  }
-                  if (prefix === 2 && !isInterestadual) {
-                    return baseCfop - 1000;
-                  }
-                  return isInterestadual ? 2202 : 1202;
-                }
-
-                // Se Ã© operaÃ§Ã£o interestadual e CFOP comeÃ§a com 5, converter para 6
-                if (isInterestadual && Math.floor(baseCfop / 1000) === 5) {
-                  return baseCfop + 1000; // 5102 -> 6102
-                }
-
-                // Se Ã© operaÃ§Ã£o interna e CFOP comeÃ§a com 6, converter para 5
-                if (!isInterestadual && Math.floor(baseCfop / 1000) === 6) {
-                  return baseCfop - 1000; // 6102 -> 5102
-                }
-
-                return baseCfop;
-              })(),
+              CFOP: resolvedCfops[index],
               uCOM: item.uCom || 'UN',
               qCOM: item.quantity.toFixed(4),
               vUnCom: item.unitValue.toFixed(10),
@@ -1960,7 +1954,7 @@ export class NfeService {
               vICMS_ttlnfe: '0.00',
               vICMSDeson_ttlnfe: '0.00',
               vBCST_ttlnfe: '0.00',
-              vProd_ttlnfe: valorTotal.toFixed(2),
+              vProd_ttlnfe: valorProdutos.toFixed(2),
               vFrete_ttlnfe: '0.00',
               vSeg_ttlnfe: '0.00',
               vDesc_ttlnfe: dto.items
@@ -2171,7 +2165,104 @@ export class NfeService {
       GO: 52,
       DF: 53,
     };
-    return ufCodes[uf?.toUpperCase()] || 43; // Default RS
+    const code = ufCodes[uf?.toUpperCase()];
+    if (!code) {
+      // Falha fechada: um default silencioso (RS) rotearia o documento para a
+      // SEFAZ errada e gravaria cUF divergente na chave de acesso.
+      throw new BadRequestException(
+        `UF do emitente inválida ou não informada: "${uf ?? ''}". ` +
+          'Verifique o endereço da empresa em Configurações > Empresa.',
+      );
+    }
+    return code;
+  }
+
+  /**
+   * Resolve o CFOP de um item conforme destino, finalidade e CFOP base.
+   *
+   * Ordem dos branches importa: devolução (finNFe=4) é avaliada ANTES de
+   * exterior, senão uma devolução para o exterior sai com CFOP de venda.
+   */
+  private resolveItemCfop(params: {
+    baseCfop: number;
+    isForeign: boolean;
+    isInterestadual: boolean;
+    isDevolucao: boolean;
+  }): number {
+    const { baseCfop, isForeign, isInterestadual, isDevolucao } = params;
+    const lastThree = baseCfop % 1000;
+    const prefix = Math.floor(baseCfop / 1000);
+
+    if (isDevolucao) {
+      if (isForeign) {
+        // Saída para o exterior em devolução de compra: 7201/7202
+        return lastThree === 101 || lastThree === 201 ? 7201 : 7202;
+      }
+      if (lastThree === 101 || lastThree === 201) {
+        return isInterestadual ? 2201 : 1201;
+      }
+      if (lastThree === 102 || lastThree === 202) {
+        return isInterestadual ? 2202 : 1202;
+      }
+      if (prefix === 1 && isInterestadual) return baseCfop + 1000;
+      if (prefix === 2 && !isInterestadual) return baseCfop - 1000;
+      return isInterestadual ? 2202 : 1202;
+    }
+
+    if (isForeign) {
+      if (prefix === 5 || prefix === 6) {
+        return baseCfop - prefix * 1000 + 7000;
+      }
+      return baseCfop;
+    }
+
+    // Operação interestadual com CFOP interno (5xxx) → 6xxx
+    if (isInterestadual && prefix === 5) return baseCfop + 1000;
+    // Operação interna com CFOP interestadual (6xxx) → 5xxx
+    if (!isInterestadual && prefix === 6) return baseCfop - 1000;
+
+    return baseCfop;
+  }
+
+  /** CFOPs de entrada (1xxx/2xxx/3xxx) exigem documento de entrada (tpNF=0). */
+  private isCfopEntrada(cfop: number): boolean {
+    const prefix = Math.floor(cfop / 1000);
+    return prefix === 1 || prefix === 2 || prefix === 3;
+  }
+
+  /**
+   * Valida os dados fiscais mínimos de cada item antes de montar o XML.
+   *
+   * Portado de NfceService.assertFiscalItemsReady: sem isso a NF-e sai com
+   * NCM '00000000' e CFOP inválido e é rejeitada pela SEFAZ com mensagem
+   * genérica, depois do usuário ter preenchido a nota inteira.
+   */
+  private assertFiscalItemsReady(
+    items: EmitNfeDto['items'],
+    resolvedCfops: number[],
+  ) {
+    for (const [index, item] of items.entries()) {
+      const label = item.description || `Item ${index + 1}`;
+      const ncm = (item.ncm || '').replace(/\D/g, '');
+      const cfop = String(resolvedCfops[index] ?? '').replace(/\D/g, '');
+
+      if (ncm.length !== 8 || ncm === '00000000') {
+        throw new BadRequestException(
+          `Dados fiscais incompletos para ${label}: informe um NCM válido ` +
+            '(8 dígitos). Cadastre em Configurações > Produtos > Dados Fiscais.',
+        );
+      }
+
+      if (cfop.length !== 4) {
+        throw new BadRequestException(
+          `Dados fiscais incompletos para ${label}: informe um CFOP válido.`,
+        );
+      }
+
+      // Unidade comercial não é validada: o payload já aplica o default 'UN'
+      // e a SEFAZ não confere uCom contra tabela. Exigir aqui bloquearia
+      // emissões que hoje passam sem nenhum ganho fiscal.
+    }
   }
 
   /**

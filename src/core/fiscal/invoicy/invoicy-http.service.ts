@@ -91,8 +91,11 @@ export class InvoicyHttpService {
         where: { companyId, isDefault: true },
       });
       if (!config) {
+        // orderBy determinístico: sem ele, empresas com mais de um emissor
+        // podem resolver credenciais de emissores diferentes entre chamadas.
         config = await this.prisma.invoicyConfig.findFirst({
           where: { companyId },
+          orderBy: { createdAt: 'asc' },
         });
       }
       if (config) {

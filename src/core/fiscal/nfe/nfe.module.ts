@@ -1,7 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { NfeService } from './nfe.service';
-import { NfeBuilderService } from './nfe-builder.service';
 import { NfeDraftService } from './nfe-draft.service';
 import { NfeEventsService } from './nfe-events.service';
 import { NfeEmailService } from './nfe-email.service';
@@ -30,13 +29,7 @@ import { MailModule } from '../../mail/mail.module';
     forwardRef(() => AuthModule),
   ],
   controllers: [NfeController],
-  providers: [
-    NfeService,
-    NfeBuilderService,
-    NfeDraftService,
-    NfeEventsService,
-    NfeEmailService,
-  ],
+  providers: [NfeService, NfeDraftService, NfeEventsService, NfeEmailService],
   exports: [NfeService],
 })
 export class NfeModule {}

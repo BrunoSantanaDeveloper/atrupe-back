@@ -489,10 +489,10 @@ export class NfseService {
       codigoMunicipio: prestadorCmun,
       valorServicos,
       aliquotaIss:
-        dto.aliquotaIss ||
+        dto.aliquotaIss ??
         (quotation.quotationProduct[0]?.product as any)?.fiscalData
-          ?.aliquotaIss ||
-        config.aliquotaIss ||
+          ?.aliquotaIss ??
+        config.aliquotaIss ??
         0,
       issRetido: dto.issRetido || false,
       tomador: {
@@ -697,7 +697,7 @@ export class NfseService {
       discriminacao: dto.discriminacao,
       codigoMunicipio: prestadorCmun,
       valorServicos,
-      aliquotaIss: dto.aliquotaIss || config.aliquotaIss || 0,
+      aliquotaIss: dto.aliquotaIss ?? config.aliquotaIss ?? 0,
       issRetido: dto.issRetido || false,
       tomador: {
         cnpj: dto.tomadorCnpjCpf
@@ -865,7 +865,16 @@ export class NfseService {
     const valorServicos = dto.valorServicos;
     const valorDeducoes = dto.valorDeducoes || 0;
     const baseCalculo = valorServicos - valorDeducoes;
-    const aliquotaIss = dto.aliquotaIss || config.aliquotaIss || 0;
+    // `??` e não `||`: alíquota 0 é legítima (serviço isento/imune) e não pode
+    // cair no fallback. Se nada estiver configurado, falha fechada em vez de
+    // emitir ISS zerado silenciosamente.
+    const aliquotaIss = dto.aliquotaIss ?? config.aliquotaIss;
+    if (aliquotaIss === null || aliquotaIss === undefined) {
+      throw new BadRequestException(
+        'Alíquota de ISS não resolvida. Informe a alíquota na emissão ou ' +
+          'configure a alíquota padrão em Configurações > Emissores.',
+      );
+    }
     const valorIss = (baseCalculo * aliquotaIss) / 100;
 
     this.assertNfsePayloadReady(dto, valorServicos, valorDeducoes, baseCalculo);
@@ -924,23 +933,29 @@ export class NfseService {
         ItemuMed: item.unidade || 'UN',
         ItemvlDed: 0,
         ItemTributavel: 'S',
+        // Município de incidência do ISS — NÃO é o código de serviço.
         ItemTributMunicipio: parseInt(
-          item.codigoServico || dto.codigoMunicipio || '0',
+          dto.codigoMunicipio || config.ibgeCode || '0',
           10,
         ),
         ItemvIss:
           (item.quantidade *
             item.valorUnitario *
-            (item.aliquotaIss || aliquotaIss)) /
+            (item.aliquotaIss ?? aliquotaIss)) /
           100,
-        ItemAliquota: item.aliquotaIss || aliquotaIss,
+        // `??` e não `||`: alíquota 0 é legítima (serviço isento/imune).
+        ItemAliquota: item.aliquotaIss ?? aliquotaIss,
         ItemVlrTotal: item.quantidade * item.valorUnitario,
         ItemBaseCalculo: item.quantidade * item.valorUnitario,
         ItemIssRetido: item.issRetido ? 1 : 2,
+        // Código da lista de serviços LC 116 do item; cai para o do emissor.
         ItemIteListServico: parseInt(
-          config.codigoServico?.replace(/\D/g, '') || '0',
+          (item.codigoServico || config.codigoServico || '').replace(
+            /\D/g,
+            '',
+          ) || '0',
           10,
-        ), // Usar cÃ³digo do serviÃ§o principal se nÃ£o informado no item
+        ),
         ItemExigibilidadeISS: 1, // ExigÃ­vel
         ItemcMunIncidencia: parseInt(
           dto.codigoMunicipio || config.ibgeCode || '0',
