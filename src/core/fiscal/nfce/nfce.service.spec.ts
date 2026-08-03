@@ -93,6 +93,13 @@ const mockFiscalCredentialResolver = {
   reserveNfceNumber: jest
     .fn()
     .mockResolvedValue({ reservedNumber: 1, series: 1 }),
+  resolveEnvironmentFromConfig: jest.fn().mockReturnValue('HOMOLOGACAO'),
+  getEmissorCredentialsForValidation: jest.fn().mockResolvedValue({
+    cscId: '1',
+    cscToken: 'CSC_TOKEN_TESTE',
+    nfceSeries: 1,
+    nfceNextNumber: 1,
+  }),
 };
 
 describe('NfceService', () => {
@@ -669,13 +676,32 @@ describe('NfceService', () => {
         justificativa: 'Numeração perdida por falha técnica',
       });
 
+      // O emissor é repassado para que a inutilização resolva credenciais e
+      // ambiente do emissor correto, não do padrão da empresa.
       expect(invoicyApiService.inutilizarNfce).toHaveBeenCalledWith(
         mockCompanyId,
         expect.any(Number),
         expect.any(Number),
         expect.any(Number),
         expect.any(String),
+        'config-1',
       );
+    });
+
+    it('exige ambiente ativado antes de inutilizar', async () => {
+      mockFiscalCredentialResolver.assertEnvironmentReady.mockRejectedValueOnce(
+        new Error('ambiente não ativado'),
+      );
+
+      await expect(
+        service.inutilizar(mockCompanyId, {
+          numeroInicial: 1,
+          numeroFinal: 5,
+          justificativa: 'Numeração perdida por falha técnica',
+        }),
+      ).rejects.toThrow();
+
+      expect(invoicyApiService.inutilizarNfce).not.toHaveBeenCalled();
     });
   });
 

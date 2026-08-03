@@ -1028,8 +1028,15 @@ export class NfceService {
       );
     }
 
-    // Verificar se está dentro do prazo (configurável por estado/emissor)
-    const config = await this.invoicyService.getConfig(companyId);
+    // Prazo do emissor que REALMENTE emitiu a nota, não do emissor padrão da
+    // empresa. O prazo varia por UF e emissores podem estar em UFs distintas;
+    // usar o padrão daria o prazo errado para notas de outro emissor.
+    const config = nfce.invoicyConfigId
+      ? await this.prisma.invoicyConfig.findFirst({
+          where: { id: nfce.invoicyConfigId, companyId },
+          select: { prazoCancelamentoNfce: true },
+        })
+      : await this.invoicyService.getConfig(companyId);
     const prazoMinutos = config?.prazoCancelamentoNfce ?? 30;
 
     const minutosDaEmissao =
@@ -1045,11 +1052,15 @@ export class NfceService {
         `Cancelando NFC-e ${nfce.numero} para empresa ${companyId}`,
       );
 
-      // Chamar API do Invoicy para cancelamento (NFC-e usa mesmo endpoint que NF-e)
+      // Chamar API do Invoicy para cancelamento (NFC-e usa mesmo endpoint que NF-e).
+      // `nfce.ambiente` garante que o evento vá ao MESMO ambiente da emissão —
+      // um emissor promovido de homologação para produção cancelaria no
+      // ambiente errado sem isso.
       const invoicyResponses = await this.invoicyApiService.cancelNfe(
         companyId,
         nfce.chaveAcesso,
         dto.justificativa,
+        nfce.ambiente,
       );
 
       // Processar resposta
@@ -1101,6 +1112,20 @@ export class NfceService {
       throw new BadRequestException('Configuração do Invoicy não encontrada.');
     }
 
+    // Inutilização é evento fiscal: exige ambiente formalmente ativado, igual
+    // à emissão. Sem isso a chamada falharia tarde, com erro genérico do
+    // Invoicy, depois do usuário já ter confirmado a faixa.
+    const environment =
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(
+        config,
+        'NFCE',
+      );
+    await this.fiscalCredentialResolver.assertEnvironmentReady(
+      config.id,
+      environment,
+      'NFCE',
+    );
+
     if (dto.justificativa.length < 15) {
       throw new BadRequestException(
         'A justificativa deve ter no mínimo 15 caracteres',
@@ -1118,13 +1143,23 @@ export class NfceService {
         `Inutilizando NFC-e ${dto.numeroInicial} a ${dto.numeroFinal} para empresa ${companyId}`,
       );
 
-      // Chamar API do Invoicy para inutilização
+      // Série do AMBIENTE em uso, não a legada global: inutilizar a faixa da
+      // série errada não protege a numeração que está de fato sendo emitida.
+      const envCreds =
+        await this.fiscalCredentialResolver.getEmissorCredentialsForValidation(
+          companyId,
+          config.id,
+          environment,
+        );
+      const serie = envCreds.nfceSeries ?? config.serieNfce ?? 1;
+
       const invoicyResponses = await this.invoicyApiService.inutilizarNfce(
         companyId,
-        config.serieNfce || 1,
+        serie,
         dto.numeroInicial,
         dto.numeroFinal,
         dto.justificativa,
+        config.id,
       );
 
       // Processar resposta
