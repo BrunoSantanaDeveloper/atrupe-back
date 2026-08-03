@@ -40,6 +40,15 @@ export class AbacService {
 
     if (permissions.length === 0) return false;
 
+    // Hierarquia: quem pode editar/criar/excluir também pode visualizar.
+    // O frontend já assume isso (usePermissions.ts), então sem esta regra o
+    // backend nega leituras que a UI oferece — o usuário vê o botão e toma 403.
+    const impliesView = ['edit', 'create', 'delete'];
+    const actionMatches = (userAction: string) =>
+      userAction === action ||
+      userAction === '*' ||
+      (action === 'view' && impliesView.includes(userAction));
+
     return permissions.some((rolePolicy) => {
       // Wildcard: '*' grants all permissions
       if (rolePolicy === '*') return true;
@@ -47,17 +56,11 @@ export class AbacService {
       const parts = rolePolicy.split(':');
       if (parts.length === 2) {
         const [userResource, userAction] = parts;
-        return (
-          userResource === resource &&
-          (userAction === action || userAction === '*')
-        );
+        return userResource === resource && actionMatches(userAction);
       } else if (parts.length === 3) {
         const userResource = `${parts[0]}:${parts[1]}`;
         const userAction = parts[2];
-        return (
-          userResource === resource &&
-          (userAction === action || userAction === '*')
-        );
+        return userResource === resource && actionMatches(userAction);
       }
       return false;
     });

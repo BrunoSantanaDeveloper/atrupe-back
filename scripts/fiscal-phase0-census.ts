@@ -5,9 +5,9 @@
  * Fase 0, porque duas mudanças dela falham fechada e podem bloquear emissões
  * que hoje passam:
  *
- *   1. `assertFiscalItemsReady` na NF-e rejeita item sem NCM de 8 dígitos,
- *      sem CFOP de 4 dígitos ou sem unidade comercial. O seed do onboarding
- *      grava NCM '00000000', então empresas seedadas e nunca revisadas param.
+ *   1. `assertFiscalItemsReady` na NF-e rejeita item sem NCM de 8 dígitos ou
+ *      sem CFOP de 4 dígitos. O seed do onboarding grava NCM '00000000',
+ *      então empresas seedadas e nunca revisadas param de emitir.
  *   2. `getUfCode` deixa de cair em RS (43) para UF desconhecida e lança.
  *
  * Também reporta empresas com 0 ou 2+ emissores marcados como padrão, o que
