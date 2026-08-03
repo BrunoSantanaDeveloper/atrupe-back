@@ -1821,19 +1821,56 @@ export class NfeService {
         }
       }
 
+      // Natureza de operação cadastrada, quando existir. O catálogo
+      // OperationNature já carrega o trio que precisa viajar coerente
+      // (finalidade, presença do consumidor e CFOP interno/interestadual),
+      // mas nada disso era lido na emissão — o CFOP saía de aritmética
+      // ±1000 sobre um escalar por empresa.
+      //
+      // Opt-in por DADO, não por flag: só entra em cena quando a empresa
+      // cadastrou a natureza E preencheu os CFOPs. Sem isso, o caminho
+      // anterior é preservado integralmente.
+      const naturezaDescricao =
+        dto.operationNature || config.defaultOperationNature || null;
+      const natureza = naturezaDescricao
+        ? await this.prisma.operationNature.findFirst({
+            where: {
+              companyId,
+              description: naturezaDescricao,
+              isActive: true,
+            },
+            include: { cfopInternal: true, cfopExternal: true },
+          })
+        : null;
+
       // Resolver o CFOP de cada item ANTES de montar o payload: o tipo do
       // documento (tpNF) precisa ser coerente com a família do CFOP, senão a
       // SEFAZ rejeita (CFOP de entrada em documento de saída).
       const isInterestadual = destUfFromCep !== config.company.address.state;
       const isDevolucao = dto.finalidade === 4;
-      const resolvedCfops = dto.items.map((item) =>
-        this.resolveItemCfop({
-          baseCfop: item.cfop || parseInt(config.defaultCfop || '5102', 10),
+
+      // CFOP declarado pela natureza para o escopo desta operação.
+      const cfopDaNatureza = isInterestadual
+        ? natureza?.cfopExternal?.code
+        : natureza?.cfopInternal?.code;
+
+      const resolvedCfops = dto.items.map((item) => {
+        // Precedência: CFOP do item > CFOP da natureza > default do emissor.
+        // O item vence porque um produto pode legitimamente exigir CFOP
+        // distinto do resto da nota (ex: 5101 produção própria vs 5102
+        // revenda) — a natureza descreve a operação, não cada mercadoria.
+        const baseCfop =
+          item.cfop ||
+          (cfopDaNatureza ? parseInt(cfopDaNatureza, 10) : undefined) ||
+          parseInt(config.defaultCfop || '5102', 10);
+
+        return this.resolveItemCfop({
+          baseCfop,
           isForeign,
           isInterestadual,
           isDevolucao,
-        }),
-      );
+        });
+      });
 
       const hasCfopEntrada = resolvedCfops.some((c) => this.isCfopEntrada(c));
       const hasCfopSaida = resolvedCfops.some((c) => !this.isCfopEntrada(c));
@@ -1848,6 +1885,17 @@ export class NfeService {
       const tipoDocumento = hasCfopEntrada ? 0 : (dto.tipo ?? 1);
 
       this.assertFiscalItemsReady(dto.items, resolvedCfops);
+
+      // Finalidade e presença do consumidor herdadas da natureza quando a
+      // emissão não as informa. Campos são String no modelo; ignora valor
+      // não-numérico em vez de gerar NaN no XML.
+      const parseNat = (v?: string | null): number | undefined => {
+        if (v === null || v === undefined || v === '') return undefined;
+        const n = Number(v);
+        return Number.isInteger(n) ? n : undefined;
+      };
+      const finalidadeNatureza = parseNat(natureza?.finality);
+      const presencaNatureza = parseNat(natureza?.consumerPresence);
 
       // Construir payload para o Invoicy
       const invoicyRequest: InvoicyNfeRequest = {
@@ -1877,11 +1925,11 @@ export class NfeService {
             tpEmis: 1, // EmissÃ£o normal
             cDV: 0, // SerÃ¡ calculado pelo Invoicy
             tpAmb: environment === 'PRODUCAO' ? 1 : 2,
-            finNFe: dto.finalidade ?? 1, // NF-e normal
+            finNFe: dto.finalidade ?? finalidadeNatureza ?? 1, // NF-e normal
             indFinal:
               dto.consumidorFinal ??
               (dto.destCnpjCpf?.replace(/\D/g, '').length === 11 ? 1 : 0),
-            indPres: dto.presencaConsumidor ?? 1,
+            indPres: dto.presencaConsumidor ?? presencaNatureza ?? 1,
             procEmi: 0, // Aplicativo do contribuinte
             verProc: 'Atrupe 1.0',
             ...(cleanReferencedNfe

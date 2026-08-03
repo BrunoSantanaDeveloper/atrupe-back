@@ -49,6 +49,16 @@ describe('FiscalOnboardingService', () => {
     },
     cfopConfig: {
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([
+        { id: 'cfop-5101', code: '5101' },
+        { id: 'cfop-5102', code: '5102' },
+        { id: 'cfop-6101', code: '6101' },
+        { id: 'cfop-6102', code: '6102' },
+      ]),
+      create: jest.fn().mockResolvedValue({}),
+    },
+    operationNature: {
+      findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({}),
     },
     product: {

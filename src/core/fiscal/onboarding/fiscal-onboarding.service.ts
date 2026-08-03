@@ -439,6 +439,66 @@ export class FiscalOnboardingService {
       }
     }
 
+    // 1b. Semear naturezas de operação ligadas aos CFOPs acima.
+    //
+    // A emissão de NF-e usa a natureza para resolver CFOP interno/externo,
+    // finalidade e presença do consumidor. Sem naturezas cadastradas, ela cai
+    // no default do emissor — funciona, mas não distingue produção própria de
+    // revenda nem ajusta o CFOP por UF de destino.
+    const cfopPorCodigo = new Map(
+      (
+        await tx.cfopConfig.findMany({
+          where: { companyId, code: { in: ['5101', '5102', '6101', '6102'] } },
+          select: { id: true, code: true },
+        })
+      ).map((c) => [c.code, c.id]),
+    );
+
+    const defaultNatures = [
+      {
+        description: 'Venda de mercadoria adquirida de terceiros',
+        type: 'SAIDA',
+        finality: '1', // NF-e normal
+        consumerPresence: '1', // Operação presencial
+        internal: '5102',
+        external: '6102',
+        info: 'Revenda. Padrão para a maioria das operações comerciais.',
+      },
+      {
+        description: 'Venda de produção do estabelecimento',
+        type: 'SAIDA',
+        finality: '1',
+        consumerPresence: '1',
+        internal: '5101',
+        external: '6101',
+        info: 'Produto fabricado pela própria empresa.',
+      },
+    ];
+
+    for (const nature of defaultNatures) {
+      const exists = await tx.operationNature.findFirst({
+        where: { companyId, description: nature.description },
+      });
+      if (exists) continue;
+
+      await tx.operationNature.create({
+        data: {
+          companyId,
+          description: nature.description,
+          type: nature.type,
+          finality: nature.finality,
+          consumerPresence: nature.consumerPresence,
+          info: nature.info,
+          cfopInternalId: cfopPorCodigo.get(nature.internal) ?? null,
+          cfopExternalId: cfopPorCodigo.get(nature.external) ?? null,
+          isActive: true,
+        },
+      });
+      this.logger.log(
+        `Seeded natureza "${nature.description}" for company ${companyId}`,
+      );
+    }
+
     // 2. Seed ProductFiscalData for ALL existing products without fiscal data
     const products = await tx.product.findMany({
       where: { companyId },

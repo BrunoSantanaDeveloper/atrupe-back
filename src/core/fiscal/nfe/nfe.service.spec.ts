@@ -227,6 +227,9 @@ const mockPrismaService = {
   invoicyConfig: {
     findFirst: jest.fn(),
   },
+  operationNature: {
+    findFirst: jest.fn().mockResolvedValue(null),
+  },
 };
 
 const mockInvoicyService = {
@@ -776,6 +779,110 @@ describe('NfeService', () => {
       ]);
 
       await expect(service.emit(mockCompanyId, mockEmitDto)).rejects.toThrow();
+    });
+
+    // Fase 6: OperationNature passa a alimentar CFOP, finalidade e presença do
+    // consumidor. É opt-in por DADO — sem natureza cadastrada, o comportamento
+    // anterior tem de permanecer idêntico.
+    describe('natureza de operação cadastrada', () => {
+      const semCfopDoItem = {
+        ...mockEmitDto,
+        items: [{ ...mockEmitDto.items[0], cfop: undefined }],
+      };
+
+      const enviado = () =>
+        invoicyApiService.emitNfe.mock.calls[0][1][0].Documento;
+
+      it('usa o CFOP interno da natureza quando a operação é interna', async () => {
+        prisma.operationNature.findFirst.mockResolvedValue({
+          id: 'nature-1',
+          description: 'Venda de mercadoria',
+          finality: '1',
+          consumerPresence: '1',
+          cfopInternal: { code: '5101' },
+          cfopExternal: { code: '6101' },
+        });
+
+        await service.emit(mockCompanyId, semCfopDoItem);
+
+        expect(enviado().det[0].prod.CFOP).toBe(5101);
+      });
+
+      it('CFOP do item vence o da natureza', async () => {
+        prisma.operationNature.findFirst.mockResolvedValue({
+          id: 'nature-1',
+          description: 'Venda de mercadoria',
+          finality: '1',
+          consumerPresence: '1',
+          cfopInternal: { code: '5101' },
+          cfopExternal: { code: '6101' },
+        });
+
+        // mockEmitDto traz cfop 5102 explícito no item.
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        expect(enviado().det[0].prod.CFOP).toBe(5102);
+      });
+
+      it('herda finalidade e presença do consumidor da natureza', async () => {
+        prisma.operationNature.findFirst.mockResolvedValue({
+          id: 'nature-1',
+          description: 'Venda de mercadoria',
+          finality: '1',
+          consumerPresence: '4',
+          cfopInternal: { code: '5102' },
+          cfopExternal: { code: '6102' },
+        });
+
+        await service.emit(mockCompanyId, semCfopDoItem);
+
+        expect(enviado().ide.indPres).toBe(4);
+      });
+
+      it('a emissão sobrescreve a natureza quando informa o valor', async () => {
+        prisma.operationNature.findFirst.mockResolvedValue({
+          id: 'nature-1',
+          description: 'Venda de mercadoria',
+          finality: '1',
+          consumerPresence: '4',
+          cfopInternal: { code: '5102' },
+          cfopExternal: { code: '6102' },
+        });
+
+        await service.emit(mockCompanyId, {
+          ...semCfopDoItem,
+          presencaConsumidor: 9,
+        });
+
+        expect(enviado().ide.indPres).toBe(9);
+      });
+
+      it('sem natureza cadastrada, mantém o comportamento anterior', async () => {
+        prisma.operationNature.findFirst.mockResolvedValue(null);
+
+        await service.emit(mockCompanyId, semCfopDoItem);
+
+        // Cai no defaultCfop do emissor e nos defaults históricos.
+        expect(enviado().det[0].prod.CFOP).toBe(5102);
+        expect(enviado().ide.indPres).toBe(1);
+        expect(enviado().ide.finNFe).toBe(1);
+      });
+
+      it('ignora finalidade não-numérica em vez de gerar NaN', async () => {
+        prisma.operationNature.findFirst.mockResolvedValue({
+          id: 'nature-1',
+          description: 'Venda de mercadoria',
+          finality: 'Normal',
+          consumerPresence: '',
+          cfopInternal: { code: '5102' },
+          cfopExternal: { code: '6102' },
+        });
+
+        await service.emit(mockCompanyId, semCfopDoItem);
+
+        expect(enviado().ide.finNFe).toBe(1);
+        expect(enviado().ide.indPres).toBe(1);
+      });
     });
   });
 
