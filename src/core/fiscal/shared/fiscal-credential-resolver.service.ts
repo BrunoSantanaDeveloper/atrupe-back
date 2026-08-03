@@ -396,6 +396,145 @@ export class FiscalCredentialResolverService {
   }
 
   /**
+   * Reserva atomicamente o próximo número de NF-e para (emissor, ambiente).
+   *
+   * Deve ser chamado DENTRO de uma transação, ANTES de transmitir ao Invoicy.
+   * Antes desta função, `NfeService.emit` lia `proximoNumeroNfe` sem lock e só
+   * incrementava após a autorização — duas emissões concorrentes montavam o
+   * payload com o mesmo número e a segunda era rejeitada como duplicada.
+   *
+   * Retorna o número reservado (valor ANTES do incremento).
+   */
+  async reserveNfeNumber(
+    tx: any, // Prisma.TransactionClient
+    invoicyConfigId: string,
+    environment: FiscalEnvironment,
+  ): Promise<{ reservedNumber: number; series: number }> {
+    // Lock do emissor legado — mesma ordem de locks do reserveNfceNumber
+    // (emissor → ambiente), para não gerar deadlock entre docTypes.
+    const configs = await tx.$queryRaw<any[]>`
+      SELECT id, "proximoNumeroNfe", "serieNfe"
+      FROM invoicy_configs
+      WHERE id = ${invoicyConfigId}
+      FOR UPDATE
+    `;
+    const config = configs[0];
+    if (!config) {
+      throw new NotFoundException(
+        `Emissor fiscal ${invoicyConfigId} não encontrado`,
+      );
+    }
+
+    const envConfigs = await tx.$queryRaw<any[]>`
+      SELECT id, "nfeNextNumber", "nfeSeries"
+      FROM invoicy_environment_configs
+      WHERE "invoicyConfigId" = ${invoicyConfigId}
+        AND environment = ${environment}::"FiscalEnvironment"
+        AND "docType" = 'NFE'::"FiscalDocType"
+      FOR UPDATE
+    `;
+    const envConfig = envConfigs[0];
+
+    // A linha ambiental é a autoridade quando existe (criada pela migration
+    // 20260803120000). Sem ela, cai no campo legado global.
+    const reservedNumber =
+      envConfig?.nfeNextNumber ?? config.proximoNumeroNfe ?? 1;
+    const series = envConfig?.nfeSeries ?? config.serieNfe ?? 1;
+    const nextNumber = reservedNumber + 1;
+
+    if (envConfig) {
+      await tx.$executeRaw`
+        UPDATE invoicy_environment_configs
+        SET "nfeNextNumber" = ${nextNumber}
+        WHERE id = ${envConfig.id}
+      `;
+    } else {
+      await tx.invoicyEnvironmentConfig.create({
+        data: {
+          invoicyConfigId,
+          environment,
+          docType: 'NFE',
+          nfeNextNumber: nextNumber,
+          nfeSeries: series,
+        },
+      });
+    }
+
+    // Espelha no campo legado enquanto ele ainda for lido pelo prepare.
+    await tx.$executeRaw`
+      UPDATE invoicy_configs
+      SET "proximoNumeroNfe" = ${nextNumber}
+      WHERE id = ${invoicyConfigId}
+    `;
+
+    return { reservedNumber, series };
+  }
+
+  /**
+   * Reserva atomicamente o próximo RPS de NFS-e para (emissor, ambiente).
+   * Mesmo contrato de reserveNfeNumber; a série da NFS-e é alfanumérica.
+   */
+  async reserveNfseRpsNumber(
+    tx: any, // Prisma.TransactionClient
+    invoicyConfigId: string,
+    environment: FiscalEnvironment,
+  ): Promise<{ reservedNumber: number; series: string }> {
+    const configs = await tx.$queryRaw<any[]>`
+      SELECT id, "proximoRpsNfse", "serieNfse"
+      FROM invoicy_configs
+      WHERE id = ${invoicyConfigId}
+      FOR UPDATE
+    `;
+    const config = configs[0];
+    if (!config) {
+      throw new NotFoundException(
+        `Emissor fiscal ${invoicyConfigId} não encontrado`,
+      );
+    }
+
+    const envConfigs = await tx.$queryRaw<any[]>`
+      SELECT id, "nfseNextNumber", "nfseSeries"
+      FROM invoicy_environment_configs
+      WHERE "invoicyConfigId" = ${invoicyConfigId}
+        AND environment = ${environment}::"FiscalEnvironment"
+        AND "docType" = 'NFSE'::"FiscalDocType"
+      FOR UPDATE
+    `;
+    const envConfig = envConfigs[0];
+
+    const reservedNumber =
+      envConfig?.nfseNextNumber ?? config.proximoRpsNfse ?? 1;
+    const series = envConfig?.nfseSeries ?? config.serieNfse ?? 'A1';
+    const nextNumber = reservedNumber + 1;
+
+    if (envConfig) {
+      await tx.$executeRaw`
+        UPDATE invoicy_environment_configs
+        SET "nfseNextNumber" = ${nextNumber}
+        WHERE id = ${envConfig.id}
+      `;
+    } else {
+      await tx.invoicyEnvironmentConfig.create({
+        data: {
+          invoicyConfigId,
+          environment,
+          docType: 'NFSE',
+          nfseNextNumber: nextNumber,
+          nfseSeries: series,
+        },
+      });
+    }
+
+    await tx.$executeRaw`
+      UPDATE invoicy_configs
+      SET "proximoRpsNfse" = ${nextNumber}
+      WHERE id = ${invoicyConfigId}
+    `;
+
+    return { reservedNumber, series };
+  }
+
+  /**
    * Reserve the next NFC-e number atomically (lock + increment).
    * Must be called WITHIN a transaction before calling the Invoicy API.
    * Returns the reserved number (value BEFORE increment).

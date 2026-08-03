@@ -1655,8 +1655,20 @@ export class NfeService {
       );
     }
 
-    // Obter prÃ³ximo nÃºmero da NF-e (sem incrementar ainda - sÃ³ incrementa apÃ³s emissÃ£o bem-sucedida)
-    const numero = config.proximoNumeroNfe || 1;
+    // Reserva ATÔMICA do número, antes de qualquer transmissão.
+    //
+    // Antes: lia `config.proximoNumeroNfe` sem lock e só incrementava após a
+    // autorização — duas emissões concorrentes montavam o payload com o mesmo
+    // número e a segunda era rejeitada como duplicada pela SEFAZ.
+    // Mesmo contrato já usado pela NFC-e (reserveNfceNumber).
+    const { reservedNumber: numero, series: serieReservada } =
+      await this.prisma.$transaction((tx) =>
+        this.fiscalCredentialResolver.reserveNfeNumber(
+          tx,
+          config.id,
+          environment,
+        ),
+      );
 
     // Valor bruto dos produtos (sem desconto) — alimenta det.vProd e vProd_ttlnfe.
     // A SEFAZ valida vNF = vProd - vDesc + frete + seguro + outros, então vProd
@@ -1709,7 +1721,7 @@ export class NfeService {
           where: { id: draftNfe.id },
           data: {
             numero,
-            serie: config.serieNfe,
+            serie: serieReservada,
             status: NfeStatus.PROCESSING,
             ambiente: environment === 'PRODUCAO' ? 1 : 2,
             invoicyConfigId: config.id,
@@ -1732,7 +1744,7 @@ export class NfeService {
           where: { id: draftNfe.id },
           data: {
             numero,
-            serie: config.serieNfe,
+            serie: serieReservada,
             status: NfeStatus.PROCESSING,
             ambiente: environment === 'PRODUCAO' ? 1 : 2,
             invoicyConfigId: config.id,
@@ -1753,7 +1765,7 @@ export class NfeService {
           orderId: dto.orderId,
           quotationId: dto.quotationId,
           numero,
-          serie: config.serieNfe,
+          serie: serieReservada,
           status: NfeStatus.PROCESSING,
           ambiente: environment === 'PRODUCAO' ? 1 : 2,
           invoicyConfigId: config.id,
@@ -1849,7 +1861,7 @@ export class NfeService {
               config.defaultOperationNature ||
               'Venda de mercadoria',
             mod: '55',
-            serie: config.serieNfe?.toString() || '1',
+            serie: serieReservada?.toString() || '1',
             nNF: numero,
             dhEmi: now.toISOString(),
             dhSaiEnt: dataSaida.toISOString(),
@@ -2135,8 +2147,8 @@ export class NfeService {
         );
       });
 
-      // Incrementar nÃºmero da NF-e somente apÃ³s emissÃ£o bem-sucedida
-      await this.invoicyService.incrementNfeNumber(config.id);
+      // O número já foi reservado atomicamente antes da transmissão
+      // (reserveNfeNumber). Incrementar aqui pularia um número a cada emissão.
 
       await this.nfeEmailService
         .sendAuthorizedNfeEmail({

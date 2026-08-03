@@ -178,6 +178,8 @@ const mockCancelResponse = [
 // Mock implementations
 const mockPrismaService = {
   $queryRaw: jest.fn().mockResolvedValue([]),
+  $executeRaw: jest.fn().mockResolvedValue(1),
+  $transaction: jest.fn((callback) => callback(mockPrismaService)),
   order: {
     findMany: jest.fn(),
     findUnique: jest.fn(),
@@ -251,6 +253,9 @@ const mockNfeEmailService = {
 const mockFiscalCredentialResolver = {
   resolveEnvironmentFromConfig: jest.fn().mockReturnValue('HOMOLOGACAO'),
   assertEnvironmentReady: jest.fn().mockResolvedValue(undefined),
+  reserveNfeNumber: jest
+    .fn()
+    .mockResolvedValue({ reservedNumber: 1, series: 1 }),
 };
 
 describe('NfeService', () => {
@@ -750,7 +755,13 @@ describe('NfeService', () => {
       expect(result.status).toBe(NfeStatus.AUTHORIZED);
       expect(result.chaveAcesso).toBeDefined();
       expect(invoicyApiService.emitNfe).toHaveBeenCalled();
-      expect(invoicyService.incrementNfeNumber).toHaveBeenCalled();
+      // O número é reservado atomicamente ANTES de transmitir, por ambiente.
+      // O incremento pós-autorização foi removido: mantê-lo pularia um número
+      // a cada emissão, agora que a reserva já incrementa.
+      expect(
+        mockFiscalCredentialResolver.reserveNfeNumber,
+      ).toHaveBeenCalledWith(expect.anything(), 'config-id', 'HOMOLOGACAO');
+      expect(invoicyService.incrementNfeNumber).not.toHaveBeenCalled();
     });
 
     it('should throw if items are empty', async () => {

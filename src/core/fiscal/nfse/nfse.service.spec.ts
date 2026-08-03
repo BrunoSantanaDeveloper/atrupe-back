@@ -143,6 +143,9 @@ const mockInvoicyService = {
 const mockFiscalCredentialResolver = {
   resolveEnvironmentFromConfig: jest.fn().mockReturnValue('HOMOLOGACAO'),
   assertEnvironmentReady: jest.fn().mockResolvedValue(undefined),
+  reserveNfseRpsNumber: jest
+    .fn()
+    .mockResolvedValue({ reservedNumber: 1, series: 'A1' }),
 };
 
 const mockInvoicyApiService = {
@@ -440,8 +443,10 @@ describe('NfseService', () => {
       });
 
       expect(prisma.$transaction).toHaveBeenCalled();
-      expect(prisma.$queryRaw).toHaveBeenCalled();
-      expect(prisma.$executeRaw).toHaveBeenCalled();
+      // A reserva atômica vive no resolver e é escopada por ambiente.
+      expect(
+        mockFiscalCredentialResolver.reserveNfseRpsNumber,
+      ).toHaveBeenCalledWith(expect.anything(), 'config-1', 'HOMOLOGACAO');
       expect(mockInvoicyService.incrementNfseRpsNumber).not.toHaveBeenCalled();
     });
   });

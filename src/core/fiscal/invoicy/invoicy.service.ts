@@ -443,11 +443,44 @@ export class InvoicyService {
         // Legacy fields: always start as HOMOLOGACAO; activeEnvironment is set by activate()
         environment: 'HOMOLOGACAO',
         ambiente: 2,
+        // Cria as SEIS linhas de ambiente (2 ambientes x 3 docTypes).
+        //
+        // Antes criava uma só, sem docType explícito — o DEFAULT 'NFCE' do
+        // banco a transformava em NFC-e em silêncio, e o emissor nascia sem
+        // nenhuma linha para NF-e e NFS-e. Todas em DRAFT: existir a linha não
+        // significa ambiente ativado, isso continua com o assistente.
         environmentConfigs: {
-          create: {
-            environment: 'HOMOLOGACAO',
-            status: 'DRAFT',
-          },
+          create: (['HOMOLOGACAO', 'PRODUCAO'] as const).flatMap((env) =>
+            (['NFE', 'NFSE', 'NFCE'] as const).map((docType) => ({
+              environment: env,
+              docType,
+              status: 'DRAFT' as const,
+              // Semeia a numeração informada na criação apenas no ambiente de
+              // homologação; produção começa com sequência independente.
+              ...(env === 'HOMOLOGACAO'
+                ? {
+                    ...(docType === 'NFE'
+                      ? {
+                          nfeSeries: data.serieNfe ?? 1,
+                          nfeNextNumber: data.proximoNumeroNfe ?? 1,
+                        }
+                      : {}),
+                    ...(docType === 'NFSE'
+                      ? {
+                          nfseSeries: data.serieNfse ?? 'A1',
+                          nfseNextNumber: data.proximoRpsNfse ?? 1,
+                        }
+                      : {}),
+                    ...(docType === 'NFCE'
+                      ? {
+                          nfceSeries: data.serieNfce ?? 1,
+                          nfceNextNumber: data.proximoNumeroNfce ?? 1,
+                        }
+                      : {}),
+                  }
+                : {}),
+            })),
+          ),
         },
       },
       include: {

@@ -2767,13 +2767,27 @@ model InvoicyEnvironmentConfig {
   invoicyConfig       InvoicyConfig           @relation(fields: [invoicyConfigId], references: [id], onDelete: Cascade)
 
   environment         FiscalEnvironment
-  docType             FiscalDocType
+  // @default(NFCE) alinha o schema ao banco: a migration
+  // 20260701130000 criou a coluna com DEFAULT 'NFCE'. Sem isso o Prisma e o
+  // banco divergiam e linhas criadas sem docType explicito viravam NFCE em
+  // silencio.
+  docType             FiscalDocType           @default(NFCE)
 
   cscId               String?
   cscTokenEncrypted   String?
 
+  // Numeracao por (emissor, ambiente, docType). Cada linha usa apenas o par
+  // correspondente ao seu docType. Sao colunas separadas em vez de um par
+  // generico porque a serie da NFS-e e alfanumerica e a de NF-e/NFC-e e
+  // inteira — um unico par nao tipa as duas.
   nfceSeries          Int?                    @default(1)
   nfceNextNumber      Int?                    @default(1)
+
+  nfeSeries           Int?                    @default(1)
+  nfeNextNumber       Int?                    @default(1)
+
+  nfseSeries          String?                 @default("A1")
+  nfseNextNumber      Int?                    @default(1)
 
   status              FiscalEnvironmentStatus @default(DRAFT)
   lastValidationAt    DateTime?

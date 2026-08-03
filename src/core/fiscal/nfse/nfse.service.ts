@@ -881,7 +881,15 @@ export class NfseService {
 
     const { nfse, rpsNumero, rpsSerie } = await this.prisma.$transaction(
       async (tx) => {
-        const reserved = await this.reserveNfseRps(tx, config.id);
+        // Reserva por (emissor, ambiente): antes era global, então emitir em
+        // homologação consumia número da sequência de produção.
+        const { reservedNumber, series } =
+          await this.fiscalCredentialResolver.reserveNfseRpsNumber(
+            tx,
+            config.id,
+            environment,
+          );
+        const reserved = { rpsNumero: reservedNumber, rpsSerie: series };
 
         const nfse = await tx.nfse.create({
           data: {
@@ -1465,36 +1473,6 @@ export class NfseService {
         'Informe CPF ou CNPJ vÃ¡lido para o tomador da NFS-e.',
       );
     }
-  }
-
-  private async reserveNfseRps(
-    tx: any,
-    invoicyConfigId: string,
-  ): Promise<{ rpsNumero: number; rpsSerie: string }> {
-    const configs = await tx.$queryRaw<any[]>`
-      SELECT id, "proximoRpsNfse", "serieNfse"
-      FROM invoicy_configs
-      WHERE id = ${invoicyConfigId}
-      FOR UPDATE
-    `;
-    const config = configs[0];
-
-    if (!config) {
-      throw new NotFoundException(
-        `Emissor fiscal ${invoicyConfigId} nÃ£o encontrado`,
-      );
-    }
-
-    const rpsNumero = config.proximoRpsNfse ?? 1;
-    const rpsSerie = config.serieNfse || 'A1';
-
-    await tx.$executeRaw`
-      UPDATE invoicy_configs
-      SET "proximoRpsNfse" = ${rpsNumero + 1}
-      WHERE id = ${invoicyConfigId}
-    `;
-
-    return { rpsNumero, rpsSerie };
   }
 
   private extractSafeErrorMessage(error: any): string {
