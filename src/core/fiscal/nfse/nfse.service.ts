@@ -886,6 +886,7 @@ export class NfseService {
         const nfse = await tx.nfse.create({
           data: {
             companyId,
+            invoicyConfigId: config.id,
             orderId: dto.orderId,
             quotationId: dto.quotationId,
             numero: 0, // SerÃ¡ preenchido apÃ³s retorno da prefeitura
@@ -1133,6 +1134,14 @@ export class NfseService {
         )}`,
       );
 
+      // Persistir o payload ANTES de transmitir, para que o snapshot exista
+      // mesmo se a chamada falhar. Os retries abaixo mutam `invoicyRequest`,
+      // então o snapshot é reescrito ao final com o que de fato foi aceito.
+      await this.prisma.nfse.update({
+        where: { id: nfse.id },
+        data: { invoicyPayloadEnvio: invoicyRequest as any },
+      });
+
       let response = await this.sendNfseToInvoicy(companyId, invoicyRequest);
 
       this.logger.debug(
@@ -1160,6 +1169,13 @@ export class NfseService {
         );
         response = await this.sendNfseToInvoicy(companyId, invoicyRequest);
       }
+
+      // Reescreve o snapshot com o payload final — os retries acima mutam o
+      // objeto, e o que interessa rastrear é o que a prefeitura recebeu.
+      await this.prisma.nfse.update({
+        where: { id: nfse.id },
+        data: { invoicyPayloadEnvio: invoicyRequest as any },
+      });
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
         throw new Error(

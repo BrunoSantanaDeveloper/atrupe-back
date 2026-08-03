@@ -930,10 +930,35 @@ export class NfeService {
       };
     });
 
-    const config = await this.invoicyService.getConfig(companyId);
-    const emitUf = (config?.company?.address?.state || '').toUpperCase();
+    // Fonte da verdade para a devolução é o que foi REALMENTE transmitido na
+    // nota original, não a configuração atual — o emissor padrão e seus
+    // defaults podem ter mudado desde a emissão.
+    const payloadEnvio =
+      originalNfe.invoicyPayloadEnvio &&
+      typeof originalNfe.invoicyPayloadEnvio === 'object'
+        ? (originalNfe.invoicyPayloadEnvio as any)
+        : null;
 
-    const originalCfop = (draftData?.items?.[0]?.cfop ||
+    // UF do emitente: preferir o emissor que gerou a nota.
+    const emissorOriginal = originalNfe.invoicyConfigId
+      ? await this.prisma.invoicyConfig.findFirst({
+          where: { id: originalNfe.invoicyConfigId, companyId },
+          select: { id: true },
+        })
+      : null;
+    const config = emissorOriginal
+      ? await this.invoicyService.getById(emissorOriginal.id)
+      : await this.invoicyService.getConfig(companyId);
+    const emitUf = (
+      payloadEnvio?.Documento?.emit?.enderEmit?.UF ||
+      config?.company?.address?.state ||
+      ''
+    ).toUpperCase();
+
+    // CFOP original: o snapshot tem o valor resolvido na emissão; draftData
+    // costuma trazer cfop undefined, o que jogava a devolução no fallback.
+    const originalCfop = (payloadEnvio?.Documento?.det?.[0]?.prod?.CFOP ||
+      draftData?.items?.[0]?.cfop ||
       xmlData?.items?.[0]?.cfop ||
       0) as number;
 
@@ -1687,6 +1712,7 @@ export class NfeService {
             serie: config.serieNfe,
             status: NfeStatus.PROCESSING,
             ambiente: environment === 'PRODUCAO' ? 1 : 2,
+            invoicyConfigId: config.id,
             valorTotal,
             motivoRejeicao: null,
           },
@@ -1709,6 +1735,7 @@ export class NfeService {
             serie: config.serieNfe,
             status: NfeStatus.PROCESSING,
             ambiente: environment === 'PRODUCAO' ? 1 : 2,
+            invoicyConfigId: config.id,
             valorTotal,
             // Limpar possÃ­vel mensagem de erro anterior ao tentar emitir novamente
             motivoRejeicao: null,
@@ -1729,6 +1756,7 @@ export class NfeService {
           serie: config.serieNfe,
           status: NfeStatus.PROCESSING,
           ambiente: environment === 'PRODUCAO' ? 1 : 2,
+          invoicyConfigId: config.id,
           valorTotal,
           draftData: dto as any,
         },
@@ -2018,6 +2046,14 @@ export class NfeService {
             : {}),
         },
       };
+
+      // Persistir o payload ANTES de transmitir: se a chamada falhar ou o
+      // processo cair, o snapshot do que seria enviado continua disponível
+      // para diagnóstico e para devolução/CC-e posteriores.
+      await this.prisma.nfe.update({
+        where: { id: nfe.id },
+        data: { invoicyPayloadEnvio: invoicyRequest as any },
+      });
 
       // Chamar API do Invoicy
       const invoicyResponses = await this.invoicyApiService.emitNfe(companyId, [

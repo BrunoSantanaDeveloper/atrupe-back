@@ -2191,6 +2191,8 @@ model InvoicyConfig {
   history            InvoicyConfigHistory[]
   activationAttempts FiscalActivationAttempt[]
   nfces              Nfce[]
+  nfes               Nfe[]
+  nfses              Nfse[]
 
   @@index([companyId])
   @@map("invoicy_configs")
@@ -2292,9 +2294,17 @@ model Nfe {
   emailSentTo           String?
   emailSendError        String?    @db.Text
   draftData             Json? // Dados do rascunho (destinatário, itens, etc.)
-  company               Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order                 Order?     @relation(fields: [orderId], references: [id])
-  quotation             Quotation? @relation(fields: [quotationId], references: [id])
+
+  // Rastreabilidade: qual emissor gerou o documento e com que payload.
+  // Sem isso, devolução e CC-e re-derivam CFOP/natureza da config ATUAL, que
+  // pode ter mudado desde a emissão. Espelha o que Nfce já fazia.
+  invoicyConfigId       String?
+  invoicyPayloadEnvio   Json? // Snapshot do payload enviado ao Invoicy
+
+  company               Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order                 Order?         @relation(fields: [orderId], references: [id])
+  quotation             Quotation?     @relation(fields: [quotationId], references: [id])
+  invoicyConfig         InvoicyConfig? @relation(fields: [invoicyConfigId], references: [id], onDelete: Restrict)
   orders                NfeOrder[]
 
   correctionEvents NfeCorrectionEvent[]
@@ -2304,6 +2314,7 @@ model Nfe {
   @@index([orderId])
   @@index([status])
   @@index([numero, serie, companyId])
+  @@index([invoicyConfigId])
   @@map("nfes")
 }
 
@@ -2454,14 +2465,21 @@ model Nfse {
   emailSentAt           DateTime?
   emailSentTo           String?
   draftData             Json? // Dados do rascunho (tomador, itens, etc.)
-  company               Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order                 Order?     @relation(fields: [orderId], references: [id])
-  quotation             Quotation? @relation(fields: [quotationId], references: [id])
+
+  // Rastreabilidade: ver comentário equivalente em Nfe.
+  invoicyConfigId       String?
+  invoicyPayloadEnvio   Json? // Snapshot do payload enviado ao Invoicy
+
+  company               Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order                 Order?         @relation(fields: [orderId], references: [id])
+  quotation             Quotation?     @relation(fields: [quotationId], references: [id])
+  invoicyConfig         InvoicyConfig? @relation(fields: [invoicyConfigId], references: [id], onDelete: Restrict)
 
   @@index([companyId])
   @@index([orderId])
   @@index([status])
   @@index([numero, serie, companyId])
+  @@index([invoicyConfigId])
   @@map("nfses")
 }
 
@@ -2519,7 +2537,9 @@ model Nfce {
   invoicyId                 String?
   invoicyProtocol           String?
   company                   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  invoicyConfig             InvoicyConfig? @relation(fields: [invoicyConfigId], references: [id], onDelete: SetNull)
+  // Restrict e nao SetNull: excluir um emissor nao pode apagar a atribuicao
+  // de NFC-e ja autorizadas — isso destroi a trilha fiscal do documento.
+  invoicyConfig             InvoicyConfig? @relation(fields: [invoicyConfigId], references: [id], onDelete: Restrict)
   order                     Order?     @relation(fields: [orderId], references: [id])
   quotation                 Quotation? @relation(fields: [quotationId], references: [id])
 
