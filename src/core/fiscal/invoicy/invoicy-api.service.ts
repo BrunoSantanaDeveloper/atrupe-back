@@ -480,6 +480,71 @@ export class InvoicyApiService {
   }
 
   /**
+   * Consulta um documento trazendo os eventos vinculados e o PDF de cada um.
+   *
+   * O DACCE (representacao impressa da carta de correcao) nao vem no retorno do
+   * envio do evento: e' preciso consultar o documento com ParmEventos=S e
+   * ParmPDFBase64=S, e o PDF chega em Eventos[].DocEvePDF. Layout publicado em
+   * migrate-company/integracao-InvoiCy-BR (Consulta de documentos).
+   */
+  async consultDocumentEvents(
+    companyId: string,
+    chaveAcesso: string,
+    ambiente?: number,
+    invoicyConfigId?: string,
+  ): Promise<InvoicyResponse[]> {
+    this.logger.log(
+      `Consultando eventos da NF-e ${chaveAcesso} para empresa ${companyId}`,
+    );
+
+    const forceEnvironment = this.toFiscalEnvironment(ambiente);
+
+    const credentials = await this.invoicyHttpService.getCompanyCredentials(
+      companyId,
+      invoicyConfigId,
+      forceEnvironment,
+    );
+    const cnpj = (credentials.cnpj || '').replace(/\D/g, '');
+
+    const params = new URLSearchParams({
+      type: 'Consulta',
+      ModeloDocumento: 'NFe',
+      Versao: '4.00',
+      CnpjEmissor: cnpj,
+      CnpjEmpresa: cnpj,
+      ChaveAcesso: chaveAcesso,
+      EmitidoRecebido: 'E',
+      tpAmb: String(ambiente ?? 2),
+      DocumentosResumo: 'N',
+      ParmSituacao: 'S',
+      ParmEventos: 'S',
+      ParmPDFBase64: 'S',
+      ParmPDFLink: 'S',
+      ParmXMLCompleto: 'N',
+      ParmXMLLink: 'N',
+    });
+
+    return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
+      companyId,
+      'GET',
+      `/senddocuments/nfe?${params.toString()}`,
+      undefined,
+      invoicyConfigId,
+      AbortSignal.timeout(this.FISCAL_EVENT_TIMEOUT_MS),
+      forceEnvironment,
+    );
+  }
+
+  private toFiscalEnvironment(
+    ambiente?: number,
+  ): FiscalEnvironment | undefined {
+    if (ambiente === undefined) return undefined;
+    return ambiente === 1
+      ? FiscalEnvironment.PRODUCAO
+      : FiscalEnvironment.HOMOLOGACAO;
+  }
+
+  /**
    * Check SEFAZ availability status
    * Returns true if SEFAZ is responding, false otherwise
    */

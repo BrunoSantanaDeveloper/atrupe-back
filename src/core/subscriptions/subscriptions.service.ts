@@ -748,7 +748,11 @@ export class SubscriptionsService {
    * Sem inadimplência, nada disso se aplica: apenas o valor da assinatura muda,
    * valendo a partir do próximo ciclo, sem mexer em cobranças já emitidas.
    */
-  async changePlan(companyId: string, newPlanId: string) {
+  async changePlan(
+    companyId: string,
+    newPlanId: string,
+    options?: { skipActiveCheck?: boolean },
+  ) {
     // Assinatura real no Asaas (mesmo critério usado pelo fluxo de bloqueio)
     const currentSubscription = await this.prisma.subscription.findFirst({
       where: {
@@ -776,7 +780,7 @@ export class SubscriptionsService {
       throw new NotFoundException('Plano não encontrado.');
     }
 
-    if (!newPlan.isActive) {
+    if (!options?.skipActiveCheck && !newPlan.isActive) {
       throw new BadRequestException(
         'Este plano não está disponível para contratação.',
       );
@@ -925,7 +929,7 @@ export class SubscriptionsService {
       `SystemAdmin ${adminUserId} solicitou troca de plano da empresa ${companyId}`,
     );
 
-    return this.changePlan(companyId, newPlanId);
+    return this.changePlan(companyId, newPlanId, { skipActiveCheck: true });
   }
 
   async addModule(

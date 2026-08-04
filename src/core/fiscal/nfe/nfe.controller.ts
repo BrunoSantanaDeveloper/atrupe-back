@@ -12,7 +12,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { SkipThrottle, Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import {
@@ -45,7 +45,11 @@ export class NfeController {
     private readonly nfeEventsService: NfeEventsService,
   ) {}
 
+  // Leituras que so tocam o banco ficam fora do teto de 10/min do modulo: a
+  // tela de emissao refaz a consulta a cada troca de aba/filtro e o throttler,
+  // chaveado por IP, zerava a listagem inteira com 429 apos poucos cliques.
   @Get()
+  @SkipThrottle()
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Listar NF-e' })
   async findAll(@Req() req, @Query() filters: NfeFilterDto) {
@@ -53,6 +57,7 @@ export class NfeController {
   }
 
   @Get('unified')
+  @SkipThrottle()
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Listagem unificada de Notas Fiscais e Pedidos' })
   async findUnified(@Req() req, @Query() filters: any) {
@@ -60,6 +65,7 @@ export class NfeController {
   }
 
   @Get('prepare-standalone')
+  @SkipThrottle()
   @HasPermission('view', 'nota_fiscal:emitir')
   @ApiOperation({
     summary:
@@ -70,6 +76,7 @@ export class NfeController {
   }
 
   @Get('prepare/:orderId')
+  @SkipThrottle()
   @HasPermission('view', 'nota_fiscal:emitir')
   @ApiOperation({
     summary: 'Preparar dados para emissão de NF-e a partir de uma ordem',
@@ -79,6 +86,7 @@ export class NfeController {
   }
 
   @Get(':id/prepare-devolution')
+  @SkipThrottle()
   @HasPermission('create', 'nota_fiscal:emitir')
   @ApiOperation({ summary: 'Preparar dados para emissão de NF-e de devolução' })
   async prepareDevolution(@Req() req, @Param('id') id: string) {
@@ -86,6 +94,7 @@ export class NfeController {
   }
 
   @Get(':id/prepare-complementary')
+  @SkipThrottle()
   @HasPermission('create', 'nota_fiscal:emitir')
   @ApiOperation({ summary: 'Preparar dados para emissão de NF-e complementar' })
   async prepareComplementary(@Req() req, @Param('id') id: string) {
@@ -93,6 +102,7 @@ export class NfeController {
   }
 
   @Get(':id/prepare-reissue')
+  @SkipThrottle()
   @HasPermission('create', 'nota_fiscal:emitir')
   @ApiOperation({ summary: 'Preparar dados para reemissão de NF-e rejeitada' })
   async prepareReissue(@Req() req, @Param('id') id: string) {
@@ -154,6 +164,7 @@ export class NfeController {
   // ==================== NF-e Endpoints ====================
 
   @Get(':id')
+  @SkipThrottle()
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Obter NF-e por ID' })
   async findById(@Req() req, @Param('id') id: string) {
@@ -211,6 +222,7 @@ export class NfeController {
   }
 
   @Get(':id/corrections')
+  @SkipThrottle()
   @HasAnyPermission(
     { action: 'view', resource: 'nota_fiscal:carta_correcao' },
     { action: 'view', resource: 'nota_fiscal:emitidas' },
@@ -221,6 +233,7 @@ export class NfeController {
   }
 
   @Get(':id/corrections/:eventId/xml')
+  @SkipThrottle()
   @HasAnyPermission(
     { action: 'view', resource: 'nota_fiscal:carta_correcao' },
     { action: 'view', resource: 'nota_fiscal:emitidas' },
@@ -238,6 +251,26 @@ export class NfeController {
     );
   }
 
+  // Sem SkipThrottle: na primeira vez isso vai ao provedor buscar a DACCE, ao
+  // contrario do XML que sai direto do banco.
+  @Get(':id/corrections/:eventId/pdf')
+  @HasAnyPermission(
+    { action: 'view', resource: 'nota_fiscal:carta_correcao' },
+    { action: 'view', resource: 'nota_fiscal:emitidas' },
+  )
+  @ApiOperation({ summary: 'Download da DACCE (PDF) de uma carta de correção' })
+  async getCorrectionEventPdf(
+    @Req() req,
+    @Param('id') id: string,
+    @Param('eventId') eventId: string,
+  ) {
+    return this.nfeService.getCorrectionEventPdf(
+      id,
+      eventId,
+      req.user.companyId,
+    );
+  }
+
   @Get(':id/status')
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Consultar status da NF-e' })
@@ -246,6 +279,7 @@ export class NfeController {
   }
 
   @Get(':id/danfe')
+  @SkipThrottle()
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Obter URL do DANFE' })
   async getDanfeUrl(@Req() req, @Param('id') id: string) {
@@ -253,6 +287,7 @@ export class NfeController {
   }
 
   @Get(':id/xml')
+  @SkipThrottle()
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Obter XML da NF-e' })
   async getXml(@Req() req, @Param('id') id: string) {

@@ -2356,10 +2356,25 @@ model NfeCorrectionEvent {
   createdByName   String?
   nfe             Nfe                 @relation(fields: [nfeId], references: [id], onDelete: Cascade)
 
+  document NfeCorrectionDocument?
+
   @@unique([nfeId, sequenciaEvento])
   @@index([nfeId])
   @@index([nfeId, status])
   @@map("nfe_correction_events")
+}
+
+/// DACCE (representação impressa da CC-e) em cache. Fica fora de
+/// NfeCorrectionEvent porque a listagem de eventos é lida com frequência e não
+/// deve carregar o binário junto.
+model NfeCorrectionDocument {
+  correctionEventId String             @id
+  pdf               Bytes
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  correctionEvent   NfeCorrectionEvent @relation(fields: [correctionEventId], references: [id], onDelete: Cascade)
+
+  @@map("nfe_correction_documents")
 }
 
 model NfeDanfeDocument {

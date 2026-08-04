@@ -2,16 +2,23 @@
   Injectable,
   NotFoundException,
   BadRequestException,
+  ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
-import { NfeStatus, NfseStatus, NfeCorrectionStatus } from '@prisma/client';
+import {
+  NfeStatus,
+  NfseStatus,
+  NfeCorrectionStatus,
+  OrderStatus,
+} from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
 import { NfeEmailService } from './nfe-email.service';
 import {
   InvoicyDocumentResult,
+  InvoicyDocumentEvent,
   InvoicyNfeRequest,
   INVOICY_SUCCESS_CODES,
 } from '../invoicy/invoicy.types';
@@ -41,10 +48,48 @@ export class NfeService {
   ) {}
 
   /**
+   * O.S. cancelada nao pode gerar documento fiscal. A trava vive no service
+   * porque o bloqueio da tela e apenas cosmetico: deep link para a pagina de
+   * emissao ou chamada direta a API passavam direto.
+   */
+  private async assertOrdersNotCanceled(companyId: string, orderIds: string[]) {
+    const uniqueOrderIds = [...new Set((orderIds || []).filter(Boolean))];
+    if (uniqueOrderIds.length === 0) return;
+
+    const canceledOrders = await this.prisma.order.findMany({
+      where: {
+        id: { in: uniqueOrderIds },
+        status: OrderStatus.CANCELED,
+        quotation: { companyId },
+      },
+      include: { quotation: { include: { series: true } } },
+    });
+
+    if (canceledOrders.length === 0) return;
+
+    const referencias = canceledOrders
+      .map((order) => {
+        const quotation = order.quotation as any;
+        return quotation?.series?.code
+          ? `${quotation.series.code}-${quotation.quotationNumber}`
+          : `OS ${quotation?.quotationNumber ?? order.id}`;
+      })
+      .join(', ');
+
+    throw new BadRequestException(
+      canceledOrders.length === 1
+        ? `A ordem de servico ${referencias} esta cancelada e nao pode gerar nota fiscal.`
+        : `As ordens de servico ${referencias} estao canceladas e nao podem gerar nota fiscal.`,
+    );
+  }
+
+  /**
    * Prepara os dados para emissÃ£o de NF-e a partir de uma ordem de serviÃ§o.
    * Retorna todos os dados prÃ©-preenchidos para o frontend editar antes de emitir.
    */
   async prepareFromOrder(companyId: string, orderId: string) {
+    await this.assertOrdersNotCanceled(companyId, [orderId]);
+
     // Buscar a ordem via quotation para garantir o filtro por companyId
     const quotation = (await this.prisma.quotation.findFirst({
       where: {
@@ -412,6 +457,8 @@ export class NfeService {
         'Selecione ao menos duas ordens para consolidar a NF-e',
       );
     }
+
+    await this.assertOrdersNotCanceled(companyId, uniqueOrderIds);
 
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
@@ -1215,6 +1262,8 @@ export class NfeService {
   // Emitir NF-e a partir de uma ordem de serviÃ§o (busca dados automaticamente)
 
   async emitFromOrder(companyId: string, dto: EmitNfeFromOrderDto) {
+    await this.assertOrdersNotCanceled(companyId, [dto.orderId]);
+
     // Buscar a ordem via quotation para garantir o filtro por companyId
     const quotation = await this.prisma.quotation.findFirst({
       where: {
@@ -1557,6 +1606,13 @@ export class NfeService {
   }
 
   async emit(companyId: string, dto: EmitNfeDto) {
+    // Funil final da emissao: cobre tambem `emit-full`, que recebe o orderId
+    // pronto do frontend sem passar pelos preparadores.
+    await this.assertOrdersNotCanceled(companyId, [
+      ...(dto.orderId ? [dto.orderId] : []),
+      ...(dto.orderIds || []),
+    ]);
+
     // Buscar configuraÃ§Ã£o do Invoicy
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
@@ -2722,10 +2778,29 @@ export class NfeService {
    * Se nÃ£o existe, cria um novo com os dados do prepareFromOrder.
    */
   async createOrGetDraft(companyId: string, orderId: string) {
+    await this.assertOrdersNotCanceled(companyId, [orderId]);
+
+    const config = await this.invoicyService.getConfig(companyId);
+    if (!config) {
+      throw new BadRequestException('Configuracao do Invoicy nao encontrada.');
+    }
+
+    // Documento de outro ambiente nao bloqueia a O.S.: NF-e de homologacao nao
+    // tem validade fiscal, entao a ordem segue liberada para emitir em
+    // producao. Mesmo criterio ja usado em prepareConsolidatedFromOrders.
+    const ambienteAtivo =
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(
+        config,
+        'NFE',
+      ) === 'PRODUCAO'
+        ? 1
+        : 2;
+
     const existingLinkedNfe = await this.prisma.nfe.findFirst({
       where: {
         companyId,
         status: { in: [NfeStatus.AUTHORIZED, NfeStatus.DRAFT] },
+        ambiente: ambienteAtivo,
         orders: {
           some: { orderId },
         },
@@ -2751,6 +2826,7 @@ export class NfeService {
         companyId,
         orderId,
         status: NfeStatus.DRAFT,
+        ambiente: ambienteAtivo,
       },
     });
 
@@ -2800,14 +2876,6 @@ export class NfeService {
     // Buscar dados preparados
     const preparedData = await this.prepareFromOrder(companyId, orderId);
 
-    // Obter config para sÃ©rie e nÃºmero
-    const config = await this.invoicyService.getConfig(companyId);
-    if (!config) {
-      throw new BadRequestException(
-        'ConfiguraÃ§Ã£o do Invoicy nÃ£o encontrada.',
-      );
-    }
-
     // Criar novo rascunho
     const draft = await this.prisma.nfe.create({
       data: {
@@ -2817,7 +2885,9 @@ export class NfeService {
         numero: config.proximoNumeroNfe || 1,
         serie: config.serieNfe || 1,
         status: NfeStatus.DRAFT,
-        ambiente: config.ambiente || 2,
+        // Ambiente resolvido por documento: `config.ambiente` e o campo global
+        // e divergia quando NF-e e NFC-e estavam em ambientes diferentes.
+        ambiente: ambienteAtivo,
         valorTotal: preparedData.totais.valorNota,
         draftData: JSON.parse(
           JSON.stringify({
@@ -3208,6 +3278,162 @@ export class NfeService {
     }
 
     return { xml: event.xmlEvento, sequencia: event.sequenciaEvento };
+  }
+
+  /**
+   * Devolve o DACCE (PDF da carta de correcao) em base64.
+   *
+   * O provedor nao devolve o PDF no retorno do envio do evento, so' na consulta
+   * do documento com ParmEventos=S. Como e' uma chamada externa, o resultado e'
+   * cacheado em nfe_correction_documents na primeira vez.
+   */
+  async getCorrectionEventPdf(
+    nfeId: string,
+    eventId: string,
+    companyId: string,
+  ) {
+    const nfe = await this.prisma.nfe.findFirst({
+      where: { id: nfeId, companyId },
+      select: { id: true, chaveAcesso: true, ambiente: true },
+    });
+
+    if (!nfe) {
+      throw new NotFoundException('NF-e não encontrada');
+    }
+
+    const event = await this.prisma.nfeCorrectionEvent.findFirst({
+      where: { id: eventId, nfeId },
+      select: {
+        id: true,
+        sequenciaEvento: true,
+        status: true,
+        ambiente: true,
+        document: { select: { pdf: true } },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Evento de correção não encontrado');
+    }
+
+    if (event.document?.pdf) {
+      return {
+        pdfBase64: event.document.pdf.toString('base64'),
+        sequencia: event.sequenciaEvento,
+      };
+    }
+
+    if (event.status !== NfeCorrectionStatus.REGISTERED) {
+      throw new NotFoundException(
+        'A DACCE só existe para cartas de correção registradas na SEFAZ.',
+      );
+    }
+
+    if (!nfe.chaveAcesso) {
+      throw new NotFoundException(
+        'NF-e sem chave de acesso: não é possível consultar a DACCE no provedor.',
+      );
+    }
+
+    const pdf = await this.fetchCorrectionPdfFromProvider(
+      companyId,
+      nfe.chaveAcesso,
+      event.ambiente ?? nfe.ambiente,
+      event.sequenciaEvento,
+    );
+
+    if (!pdf) {
+      throw new NotFoundException(
+        'A DACCE ainda não está disponível no provedor fiscal. ' +
+          'O documento costuma levar alguns minutos após o registro do evento; tente novamente mais tarde.',
+      );
+    }
+
+    await this.prisma.nfeCorrectionDocument.upsert({
+      where: { correctionEventId: event.id },
+      create: { correctionEventId: event.id, pdf },
+      update: { pdf },
+    });
+
+    return {
+      pdfBase64: pdf.toString('base64'),
+      sequencia: event.sequenciaEvento,
+    };
+  }
+
+  /**
+   * Consulta o documento no provedor e extrai o PDF do evento com a sequencia
+   * pedida. Devolve null quando o provedor ainda nao tem a DACCE pronta.
+   */
+  private async fetchCorrectionPdfFromProvider(
+    companyId: string,
+    chaveAcesso: string,
+    ambiente: number,
+    sequenciaEvento: number,
+  ): Promise<Buffer | null> {
+    let responses: any[];
+    try {
+      responses = await this.invoicyApiService.consultDocumentEvents(
+        companyId,
+        chaveAcesso,
+        ambiente,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Falha ao consultar a DACCE da NF-e ${chaveAcesso} seq ${sequenciaEvento}: ${error.message}`,
+      );
+      throw new ServiceUnavailableException(
+        'Não foi possível falar com o serviço fiscal para obter a DACCE. Tente novamente em instantes.',
+      );
+    }
+
+    const eventos: InvoicyDocumentEvent[] = (responses || []).flatMap(
+      (response) =>
+        (response?.Documentos || []).flatMap((doc: any) => doc?.Eventos || []),
+    );
+
+    const evento = eventos.find(
+      (item) => Number(item?.DocEvenSeq) === sequenciaEvento,
+    );
+
+    if (!evento) {
+      this.logger.warn(
+        `Provedor nao retornou o evento seq ${sequenciaEvento} da NF-e ${chaveAcesso} (${eventos.length} evento(s) na resposta)`,
+      );
+      return null;
+    }
+
+    return this.resolveEventPdf(evento);
+  }
+
+  private async resolveEventPdf(
+    evento: InvoicyDocumentEvent,
+  ): Promise<Buffer | null> {
+    if (evento.DocEvePDF) {
+      const base64 = evento.DocEvePDF.replace(
+        /^data:application\/pdf;base64,/i,
+        '',
+      );
+      const pdf = Buffer.from(base64, 'base64');
+      if (this.isPdf(pdf)) return pdf;
+    }
+
+    if (!evento.DocEvePDFLink) return null;
+
+    try {
+      const response = await fetch(evento.DocEvePDFLink, {
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!response.ok) return null;
+
+      const pdf = Buffer.from(await response.arrayBuffer());
+      return this.isPdf(pdf) ? pdf : null;
+    } catch (error) {
+      this.logger.warn(
+        `Nao foi possivel baixar a DACCE pelo link do provedor: ${error.message}`,
+      );
+      return null;
+    }
   }
 
   async exportXml(

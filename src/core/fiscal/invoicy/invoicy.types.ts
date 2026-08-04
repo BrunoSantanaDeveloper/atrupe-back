@@ -54,6 +54,28 @@ export interface InvoicyDocumentNfse {
   NFSeDataEmissao: string;
 }
 
+/**
+ * Evento vinculado a um documento, como devolvido pela consulta com
+ * ParmEventos=S. Os nomes seguem o layout publicado pela Migrate em
+ * migrate-company/integracao-InvoiCy-BR (webhook/Exemplos JSON).
+ */
+export interface InvoicyDocumentEvent {
+  DocEvenSeq: string | number;
+  DocEveTp: string | number;
+  DocEveXML: string;
+  DocEveXMLLink: string;
+  cStat: string | number;
+  DocEveDescricao: string;
+  DocEveId: string;
+  DocEveArqNome: string;
+  DocEveArqExtensao: string;
+  /** DACCE em base64 — so' vem preenchido com ParmPDFBase64=S. */
+  DocEvePDF: string;
+  DocEvePDFLink: string;
+  DocEveProtocolo: string;
+  DocEveDhReg: string;
+}
+
 export interface InvoicyDocumentResult {
   DocModelo: 'NFe' | 'NFCe' | 'NFSE';
   DocNumero: number;
@@ -72,6 +94,7 @@ export interface InvoicyDocumentResult {
   DocXMLDownload: string;
   DocImpressora: string;
   Situacao: InvoicyDocumentSituacao;
+  Eventos?: InvoicyDocumentEvent[];
   MensagemSefaz: {
     CodMsg: number;
     DscMsg: string;

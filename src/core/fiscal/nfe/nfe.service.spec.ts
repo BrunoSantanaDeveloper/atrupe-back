@@ -6,7 +6,11 @@ import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
 import { NfeEmailService } from './nfe-email.service';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { NfceStatus, NfeStatus } from '@prisma/client';
 
 // Mock fetchCepData
@@ -181,7 +185,9 @@ const mockPrismaService = {
   $executeRaw: jest.fn().mockResolvedValue(1),
   $transaction: jest.fn((callback) => callback(mockPrismaService)),
   order: {
-    findMany: jest.fn(),
+    // Vazio por padrao: assertOrdersNotCanceled consulta ordens canceladas
+    // antes de preparar/emitir e so bloqueia quando encontra alguma.
+    findMany: jest.fn().mockResolvedValue([]),
     findUnique: jest.fn(),
     findFirst: jest.fn(),
     count: jest.fn(),
@@ -213,6 +219,9 @@ const mockPrismaService = {
     findFirst: jest.fn(),
     create: jest.fn(),
   },
+  nfeCorrectionDocument: {
+    upsert: jest.fn(),
+  },
   nfeDanfeDocument: {
     findUnique: jest.fn(),
     upsert: jest.fn(),
@@ -243,6 +252,7 @@ const mockInvoicyApiService = {
   cancelNfe: jest.fn(),
   getStatusNfe: jest.fn(),
   sendCorrectionLetter: jest.fn(),
+  consultDocumentEvents: jest.fn(),
 };
 
 const mockProductFiscalService = {
@@ -488,6 +498,21 @@ describe('NfeService', () => {
 
       // Only product items should be included
       expect(result.items.every((item) => !item.isService)).toBe(true);
+    });
+
+    it('recusa preparar NF-e de ordem cancelada', async () => {
+      prisma.order.findMany.mockResolvedValueOnce([
+        {
+          id: mockOrderId,
+          status: 'CANCELED',
+          quotation: { quotationNumber: 2, series: { code: 'T1' } },
+        },
+      ]);
+
+      await expect(
+        service.prepareFromOrder(mockCompanyId, mockOrderId),
+      ).rejects.toThrow('T1-2');
+      expect(prisma.quotation.findFirst).not.toHaveBeenCalled();
     });
   });
 
@@ -948,6 +973,129 @@ describe('NfeService', () => {
         Buffer.from('%PDF-test').toString('base64'),
       );
       expect(result.url).toBe('https://example.com/danfe.pdf');
+    });
+  });
+
+  describe('getCorrectionEventPdf', () => {
+    const eventId = 'evt-1';
+    const pdf = Buffer.from('%PDF-dacce');
+
+    const registeredEvent = (overrides = {}) => ({
+      id: eventId,
+      sequenciaEvento: 2,
+      status: 'REGISTERED',
+      ambiente: 2,
+      document: null,
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      prisma.nfe.findFirst.mockResolvedValue({
+        id: mockNfeId,
+        chaveAcesso: '42260657968205000182550010000000101000005700',
+        ambiente: 2,
+      });
+    });
+
+    it('devolve o PDF do cache sem chamar o provedor', async () => {
+      prisma.nfeCorrectionEvent.findFirst.mockResolvedValue(
+        registeredEvent({ document: { pdf } }),
+      );
+
+      const result = await service.getCorrectionEventPdf(
+        mockNfeId,
+        eventId,
+        mockCompanyId,
+      );
+
+      expect(result.pdfBase64).toBe(pdf.toString('base64'));
+      expect(result.sequencia).toBe(2);
+      expect(
+        mockInvoicyApiService.consultDocumentEvents,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('busca no provedor o evento com a sequencia certa e cacheia', async () => {
+      prisma.nfeCorrectionEvent.findFirst.mockResolvedValue(registeredEvent());
+      mockInvoicyApiService.consultDocumentEvents.mockResolvedValue([
+        {
+          Documentos: [
+            {
+              Eventos: [
+                {
+                  DocEvenSeq: '1',
+                  DocEvePDF: Buffer.from('%PDF-outra').toString('base64'),
+                },
+                { DocEvenSeq: '2', DocEvePDF: pdf.toString('base64') },
+              ],
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getCorrectionEventPdf(
+        mockNfeId,
+        eventId,
+        mockCompanyId,
+      );
+
+      expect(result.pdfBase64).toBe(pdf.toString('base64'));
+      expect(prisma.nfeCorrectionDocument.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { correctionEventId: eventId },
+          create: { correctionEventId: eventId, pdf },
+        }),
+      );
+    });
+
+    it('recusa base64 que nao seja PDF de verdade', async () => {
+      prisma.nfeCorrectionEvent.findFirst.mockResolvedValue(registeredEvent());
+      mockInvoicyApiService.consultDocumentEvents.mockResolvedValue([
+        {
+          Documentos: [
+            {
+              Eventos: [
+                {
+                  DocEvenSeq: '2',
+                  DocEvePDF:
+                    Buffer.from('<html>erro</html>').toString('base64'),
+                },
+              ],
+            },
+          ],
+        },
+      ]);
+
+      await expect(
+        service.getCorrectionEventPdf(mockNfeId, eventId, mockCompanyId),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(prisma.nfeCorrectionDocument.upsert).not.toHaveBeenCalled();
+    });
+
+    it('nao busca DACCE de evento rejeitado', async () => {
+      prisma.nfeCorrectionEvent.findFirst.mockResolvedValue(
+        registeredEvent({ status: 'REJECTED' }),
+      );
+
+      await expect(
+        service.getCorrectionEventPdf(mockNfeId, eventId, mockCompanyId),
+      ).rejects.toThrow('registradas na SEFAZ');
+
+      expect(
+        mockInvoicyApiService.consultDocumentEvents,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('devolve 503 quando a consulta ao provedor falha', async () => {
+      prisma.nfeCorrectionEvent.findFirst.mockResolvedValue(registeredEvent());
+      mockInvoicyApiService.consultDocumentEvents.mockRejectedValue(
+        new Error('timeout'),
+      );
+
+      await expect(
+        service.getCorrectionEventPdf(mockNfeId, eventId, mockCompanyId),
+      ).rejects.toThrow(ServiceUnavailableException);
     });
   });
 });
