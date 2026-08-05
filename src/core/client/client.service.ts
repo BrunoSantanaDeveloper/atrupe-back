@@ -523,6 +523,7 @@ export class ClientService {
         stateRegistration: client.stateRegistration || '',
         indicadorIE: client.indicadorIE ?? 9,
         responsible: client.responsible,
+        financialNotes: client.financialNotes,
       },
       responsibleId: client.responsibleId,
       addresses: client.address.map((address) => ({
