@@ -1014,6 +1014,40 @@ describe('NfceService', () => {
       expect(error.message).toContain('Falha de comunicação');
     });
 
+    it('erro de programação: não é tratado como falha de transporte', async () => {
+      // Um RangeError não tem error.response, o que antes o classificava como
+      // "resultado desconhecido" e deixava a NFC-e em UNKNOWN.
+      invoicyApiService.emitNfe.mockRejectedValueOnce(
+        new RangeError('Invalid time value'),
+      );
+
+      const error = await service
+        .emit(mockCompanyId, {
+          naturezaOperacao: 'Venda',
+          itens: [
+            {
+              productId: '1',
+              codigo: '001',
+              descricao: 'Produto',
+              ncm: '12345678',
+              cfop: '5102',
+              unidade: 'UN',
+              quantidade: 1,
+              valorUnitario: 100,
+            },
+          ],
+          pagamentos: [{ tipo: '01', valor: 100 }],
+        })
+        .catch((e) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error.message).not.toContain('Falha de comunicação');
+      expect(error.message).toContain('Invalid time value');
+
+      const statusGravado = prisma.nfce.update.mock.calls.at(-1)[0].data.status;
+      expect(statusGravado).toBe(NfceStatus.REJECTED);
+    });
+
     it('rejeição fiscal (SitCodigo ≠ 100/150): lança BadRequestException', async () => {
       invoicyApiService.emitNfe.mockResolvedValueOnce([
         {
@@ -1165,10 +1199,13 @@ describe('NfceService', () => {
         }),
       );
 
+      // O 4º argumento é o ambiente já resolvido para o payload: o transporte
+      // não pode reabrir essa decisão e cair no campo global activeEnvironment.
       expect(invoicyApiService.emitNfe).toHaveBeenCalledWith(
         mockCompanyId,
         expect.any(Array),
         'config-1',
+        'HOMOLOGACAO',
       );
     });
   });
@@ -1246,6 +1283,7 @@ describe('NfceService', () => {
         mockCompanyId,
         [unknownNfce.invoicyPayloadEnvio],
         'config-1',
+        'HOMOLOGACAO',
       );
     });
   });

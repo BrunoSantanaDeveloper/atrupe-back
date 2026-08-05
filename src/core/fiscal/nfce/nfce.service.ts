@@ -527,6 +527,7 @@ export class NfceService {
         companyId,
         [invoicyRequest],
         config.id,
+        environment,
       );
 
       // Processar resposta
@@ -585,13 +586,31 @@ export class NfceService {
 
       return updatedNfce;
     } catch (error) {
+      // Rejeição fiscal que nós mesmos lançamos acima: o status REJECTED e a
+      // descrição da SEFAZ já foram gravados. Sem este repasse o fluxo abaixo
+      // regravava motivoRejeicao com a mensagem já prefixada e relançava com
+      // prefixo duplo ("NFC-e rejeitada: NFC-e rejeitada: ...").
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      // Erros de programação (RangeError, TypeError...) nunca são falha de
+      // transporte; sem esta exclusão viravam "resultado desconhecido" e
+      // deixavam a NFC-e em UNKNOWN, escondendo a causa real.
+      const isProgrammingError =
+        error instanceof TypeError ||
+        error instanceof RangeError ||
+        error instanceof ReferenceError ||
+        error instanceof SyntaxError;
+
       // Distinguir erro de transporte de rejeição fiscal
       const isUnknownOutcome =
-        error?.code === 'ECONNABORTED' ||
-        error?.code === 'ECONNRESET' ||
-        error?.code === 'ETIMEDOUT' ||
-        error?.response === undefined ||
-        error?.response?.status >= 500;
+        !isProgrammingError &&
+        (error?.code === 'ECONNABORTED' ||
+          error?.code === 'ECONNRESET' ||
+          error?.code === 'ETIMEDOUT' ||
+          error?.response === undefined ||
+          error?.response?.status >= 500);
 
       const newStatus = isUnknownOutcome
         ? NfceStatus.UNKNOWN
@@ -612,6 +631,12 @@ export class NfceService {
       this.logger.error(
         `Emissão NFC-e ${nfce.numero}/${environment} falhou (${newStatus}): ${error?.code ?? error?.constructor?.name}`,
       );
+
+      // Stack de erro de programação não carrega payload nem credenciais, e sem
+      // ele um bug de código fica indiagnosticável nos logs.
+      if (isProgrammingError) {
+        this.logger.error(error.stack);
+      }
 
       if (isUnknownOutcome) {
         throw new BadRequestException(
@@ -937,6 +962,7 @@ export class NfceService {
         companyId,
         [nfce.invoicyPayloadEnvio as any],
         nfce.invoicyConfigId,
+        environment,
       );
 
       const response = invoicyResponses[0];
@@ -980,12 +1006,26 @@ export class NfceService {
         },
       });
     } catch (error) {
+      // Erros de programação (RangeError, TypeError...) nunca são falha de
+      // transporte; sem esta exclusão mantinham a NFC-e em UNKNOWN e pediam
+      // nova tentativa, escondendo a causa real.
+      const isProgrammingError =
+        error instanceof TypeError ||
+        error instanceof RangeError ||
+        error instanceof ReferenceError ||
+        error instanceof SyntaxError;
+
+      if (isProgrammingError) {
+        this.logger.error(error.stack);
+      }
+
       const isUnknownOutcome =
-        error?.code === 'ECONNABORTED' ||
-        error?.code === 'ECONNRESET' ||
-        error?.code === 'ETIMEDOUT' ||
-        error?.response === undefined ||
-        error?.response?.status >= 500;
+        !isProgrammingError &&
+        (error?.code === 'ECONNABORTED' ||
+          error?.code === 'ECONNRESET' ||
+          error?.code === 'ETIMEDOUT' ||
+          error?.response === undefined ||
+          error?.response?.status >= 500);
 
       if (isUnknownOutcome) {
         await this.prisma.nfce.update({
