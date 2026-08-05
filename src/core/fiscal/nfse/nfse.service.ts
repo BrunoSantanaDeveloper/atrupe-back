@@ -1015,7 +1015,11 @@ export class NfseService {
               RPSSerie: rpsSerie,
               RPSTipo: 1, // 1 = RPS
               dEmis: new Date().toISOString(),
-              dCompetencia: new Date(dto.dataCompetencia).toISOString(),
+              // dataCompetencia é opcional no DTO (a emissão avulsa não envia);
+              // usa a data atual como padrão, igual ao registro no banco.
+              dCompetencia: new Date(
+                dto.dataCompetencia || new Date(),
+              ).toISOString(),
               LocalPrestServ:
                 dto.entregaCodigoMunicipio &&
                 dto.entregaCodigoMunicipio !==
@@ -1239,8 +1243,18 @@ export class NfseService {
 
       return updatedNfse;
     } catch (error) {
+      // Erros de programação (RangeError, TypeError...) nunca são falha de
+      // transporte. Sem essa exclusão eles viravam "resultado desconhecido" e
+      // deixavam a NFS-e em PROCESSING, escondendo a causa real.
+      const isProgrammingError =
+        error instanceof TypeError ||
+        error instanceof RangeError ||
+        error instanceof ReferenceError ||
+        error instanceof SyntaxError;
+
       const isUnknownOutcome =
         !(error instanceof BadRequestException) &&
+        !isProgrammingError &&
         (error?.code === 'ECONNABORTED' ||
           error?.code === 'ECONNRESET' ||
           error?.code === 'ETIMEDOUT' ||
