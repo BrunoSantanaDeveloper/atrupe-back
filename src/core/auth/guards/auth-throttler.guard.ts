@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { ThrottlerGuard } from '@nestjs/throttler';
+
+import { ScopedThrottlerGuard } from '../../../common/throttler/scoped-throttler.guard';
 
 /**
  * Throttler de autenticação que identifica o cliente pelo IP real do usuário.
@@ -11,9 +12,14 @@ import { ThrottlerGuard } from '@nestjs/throttler';
  *
  * O frontend envia o IP real do usuário no header `x-user-ip`; usamos ele
  * (com fallbacks) para que cada usuário tenha seu próprio limite.
+ *
+ * O teto de 5/min é o padrão; login e refresh sobem para 10 via
+ * `@Throttle({ auth: ... })` no controller.
  */
 @Injectable()
-export class AuthThrottlerGuard extends ThrottlerGuard {
+export class AuthThrottlerGuard extends ScopedThrottlerGuard([
+  { name: 'auth', ttl: 60000, limit: 5 },
+]) {
   protected async getTracker(req: Record<string, any>): Promise<string> {
     const forwarded = req.headers?.['x-forwarded-for'];
     const forwardedIp = Array.isArray(forwarded)

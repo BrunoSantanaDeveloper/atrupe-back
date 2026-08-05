@@ -9,7 +9,8 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
+import { PublicThrottlerGuard } from './guards/public-throttler.guard';
 import { UserService } from './user.service';
 import {
   CreateMailVerificationDto,
@@ -52,7 +53,7 @@ export class UserController {
   }
 
   @Post()
-  @UseGuards(ThrottlerGuard)
+  @UseGuards(PublicThrottlerGuard)
   @Throttle({ public: { limit: 3, ttl: 60000 } })
   @ApiOperation({ summary: 'Cria um novo usuário' })
   @ApiBody({
@@ -324,7 +325,7 @@ export class UserController {
   }
 
   @Post('forgot-password')
-  @UseGuards(ThrottlerGuard)
+  @UseGuards(PublicThrottlerGuard)
   @Throttle({ public: { limit: 3, ttl: 60000 } })
   @ApiOperation({ summary: 'Solicita redefinição de senha' })
   @ApiBody({
@@ -342,7 +343,7 @@ export class UserController {
   }
 
   @Post('reset-password')
-  @UseGuards(ThrottlerGuard)
+  @UseGuards(PublicThrottlerGuard)
   @Throttle({ public: { limit: 3, ttl: 60000 } })
   @ApiOperation({ summary: 'Redefine a senha do usuário' })
   @ApiBody({
@@ -364,7 +365,7 @@ export class UserController {
   }
 
   @Post('verify-email')
-  @UseGuards(ThrottlerGuard)
+  @UseGuards(PublicThrottlerGuard)
   @Throttle({ public: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Verifica o email do usuário' })
   @ApiBody({
@@ -384,7 +385,7 @@ export class UserController {
   }
 
   @Post('resend-verification')
-  @UseGuards(ThrottlerGuard)
+  @UseGuards(PublicThrottlerGuard)
   @Throttle({ public: { limit: 3, ttl: 60000 } })
   @ApiOperation({ summary: 'Reenvia o email de verificação' })
   @ApiBody({
@@ -410,7 +411,7 @@ export class UserController {
   }
 
   @Post('create-password')
-  @UseGuards(ThrottlerGuard)
+  @UseGuards(PublicThrottlerGuard)
   @Throttle({ public: { limit: 3, ttl: 60000 } })
   @ApiOperation({
     summary: 'Cria uma senha para o usuário após verificação de email',

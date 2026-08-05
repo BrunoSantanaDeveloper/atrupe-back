@@ -1,5 +1,4 @@
 import { Module, forwardRef } from '@nestjs/common';
-import { ThrottlerModule } from '@nestjs/throttler';
 import { UserService } from './user.service';
 import { UserCrudService } from './user-crud.service';
 import { UserPasswordService } from './user-password.service';
@@ -17,13 +16,6 @@ import { EmployeeHistoryModule } from '../employee/history/history.module';
   imports: [
     PrismaModule,
     CacheModule,
-    ThrottlerModule.forRoot([
-      {
-        name: 'public',
-        ttl: 60000,
-        limit: 3, // 3 requests per 60s for public user endpoints
-      },
-    ]),
     PlugModule,
     forwardRef(() => CompanyModule),
     EmployeeHistoryModule,

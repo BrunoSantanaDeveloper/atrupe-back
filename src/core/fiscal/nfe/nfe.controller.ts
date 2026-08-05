@@ -12,7 +12,8 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { SkipThrottle, Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
+import { FiscalThrottlerGuard } from './guards/fiscal-throttler.guard';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import {
@@ -37,7 +38,12 @@ import {
 
 @ApiTags('Fiscal - NF-e')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionsGuard, BlockLevelGuard, ThrottlerGuard)
+@UseGuards(
+  JwtAuthGuard,
+  PermissionsGuard,
+  BlockLevelGuard,
+  FiscalThrottlerGuard,
+)
 @Controller('fiscal/nfe')
 export class NfeController {
   constructor(

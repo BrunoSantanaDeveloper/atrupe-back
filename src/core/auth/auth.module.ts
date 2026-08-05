@@ -1,5 +1,4 @@
 import { Module, forwardRef } from '@nestjs/common';
-import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtModule } from '@nestjs/jwt';
@@ -20,13 +19,6 @@ import { ActivityMonitorModule } from '../activity-monitor/activity-monitor.modu
   imports: [
     PrismaModule,
     PassportModule,
-    ThrottlerModule.forRoot([
-      {
-        name: 'auth',
-        ttl: 60000, // 60 seconds
-        limit: 5, // 5 requests per 60s (default for auth endpoints)
-      },
-    ]),
     JwtModule.register({
       global: true,
       secret: jwtConstants.secret,

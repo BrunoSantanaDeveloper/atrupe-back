@@ -12,6 +12,7 @@ import { UtilsModule } from './svc/utils/utils.module';
 import { PdfService } from './svc/pdf/pdf.service';
 import { PrismaModule } from './config/prisma/prisma.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { ContractModule } from './core/contract/contract.module';
 import { ActivityTrackingInterceptor } from './core/activity-monitor/interceptors/activity-tracking.interceptor';
 import { ActivityMonitorService } from './core/activity-monitor/activity-monitor.service';
@@ -21,6 +22,11 @@ import { PrismaService } from './config/prisma/prisma.service';
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
     ScheduleModule.forRoot(),
+    // Registracao unica do ThrottlerModule: ele e @Global e mais de um forRoot()
+    // faria a ultima registracao sobrescrever a configuracao de todos os
+    // modulos. Aqui ele so provisiona o storage compartilhado — os limites de
+    // cada modulo ficam nos guards criados por `provideScopedThrottler`.
+    ThrottlerModule.forRoot([]),
     PrismaModule,
     CoreModule,
     ReportModule,
