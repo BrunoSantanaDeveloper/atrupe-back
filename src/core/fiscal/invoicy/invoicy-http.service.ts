@@ -527,43 +527,6 @@ export class InvoicyHttpService {
   }
 
   /**
-   * Cancel NF-e or NFC-e document
-   */
-  async cancelNfe(
-    companyId: string,
-    chaveAcesso: string,
-    justificativa: string,
-  ): Promise<InvoicyResponse[]> {
-    this.logger.log(`Canceling NF-e ${chaveAcesso} for company ${companyId}`);
-
-    const cancelRequest = [
-      {
-        Documento: {
-          ModeloDocumento: 'NFe',
-          Versao: 4,
-          Evento: {
-            ChaveNFe: chaveAcesso,
-            TipoEvento: 110111, // Cancelamento
-            nSeqEvento: 1,
-            Justificativa: justificativa,
-          },
-        },
-      },
-    ];
-
-    this.logger.log(
-      `Payload de cancelamento NF-e montado: ChaveNFe=${chaveAcesso}, nSeqEvento=1`,
-    );
-
-    return this.makeRequest<InvoicyResponse[]>(
-      companyId,
-      'POST',
-      '/senddocuments/nfe?type=Evento',
-      cancelRequest,
-    );
-  }
-
-  /**
    * Inutilize NFC-e number range
    */
   async inutilizarNfce(

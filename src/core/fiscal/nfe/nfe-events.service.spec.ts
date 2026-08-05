@@ -151,6 +151,8 @@ describe('NfeEventsService', () => {
     it('deve cancelar a NFe com sucesso e atualizar no banco de dados', async () => {
       const nfe = {
         id: 'nfe-1',
+        numero: 10,
+        serie: 1,
         status: NfeStatus.AUTHORIZED,
         dataEmissao: new Date(),
         chaveAcesso: 'CHAVE123',
@@ -172,6 +174,7 @@ describe('NfeEventsService', () => {
         'CHAVE123',
         'Cancelamento longo o suficiente',
         1,
+        expect.objectContaining({ numero: 10 }),
       );
       expect(result.status).toBe(NfeStatus.CANCELLED);
     });
@@ -253,6 +256,7 @@ describe('NfeEventsService', () => {
         'Correção de CFOP para 6102',
         1,
         2,
+        expect.objectContaining({ numero: 10 }),
       );
 
       // Reserva em PENDING antes do POST, com autoria.
@@ -309,6 +313,7 @@ describe('NfeEventsService', () => {
         'Correção da descrição do produto',
         4,
         2,
+        expect.objectContaining({ numero: 10 }),
       );
     });
 
@@ -388,6 +393,7 @@ describe('NfeEventsService', () => {
         'Correção da descrição do produto',
         1,
         1,
+        expect.objectContaining({ numero: 10 }),
       );
     });
 
@@ -521,6 +527,7 @@ describe('NfeEventsService', () => {
         'Correção da descrição do produto',
         1,
         2,
+        expect.objectContaining({ numero: 10 }),
       );
     });
 

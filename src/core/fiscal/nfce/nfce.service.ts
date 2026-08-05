@@ -1101,6 +1101,11 @@ export class NfceService {
         nfce.chaveAcesso,
         dto.justificativa,
         nfce.ambiente,
+        {
+          numero: nfce.numero,
+          serie: nfce.serie,
+          invoicyConfigId: nfce.invoicyConfigId ?? undefined,
+        },
       );
 
       // Processar resposta

@@ -8,7 +8,50 @@ import {
   INVOICY_SUCCESS_CODES,
 } from './invoicy.types';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
+import { UF_CODES } from '../utils/fiscal-validators';
 import { FiscalEnvironment } from '@prisma/client';
+
+/**
+ * Dados do documento usados para montar um evento fiscal. Todos opcionais: a
+ * chave de acesso já carrega CNPJ, modelo, série e número, e é dela que esses
+ * valores saem quando disponível.
+ */
+export interface FiscalEventDocument {
+  numero?: number;
+  serie?: number | string;
+  cnpj?: string;
+  invoicyConfigId?: string;
+}
+
+/** Texto legal fixo da CC-e, conforme o exemplo oficial do provedor. */
+const CCE_COND_USO =
+  'A Carta de Correcao e disciplinada pelo paragrafo 1o-A do art. 7o do ' +
+  'Convenio S/N, de 15 de dezembro de 1970 e pode ser utilizada para ' +
+  'regularizacao de erro ocorrido na emissao de documento fiscal, desde que o ' +
+  'erro nao esteja relacionado com: I - as variaveis que determinam o valor do ' +
+  'imposto tais como: base de calculo, aliquota, diferenca de preco, ' +
+  'quantidade, valor da operacao ou da prestacao; II - a correcao de dados ' +
+  'cadastrais que implique mudanca do remetente ou do destinatario; III - a ' +
+  'data de emissao ou de saida.';
+
+/**
+ * "YYYY-MM-DDTHH:mm:ss" no fuso de Brasília, sem sufixo — a forma do exemplo
+ * oficial, que informa o fuso em campo separado (EveFusoHorario).
+ */
+function formatLocalDateTime(date: Date): string {
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date);
+  // 'sv-SE' produz "YYYY-MM-DD HH:mm:ss"; o leiaute pede o separador 'T'.
+  return parts.replace(' ', 'T');
+}
 
 /**
  * InvoicyApiService - Domain API Layer for Fiscal Documents
@@ -88,37 +131,32 @@ export class InvoicyApiService {
   }
 
   /**
-   * Cancel NF-e or NFC-e document
+   * Cancel NF-e or NFC-e document (evento 110111)
+   *
+   * Ver docs/fiscal/invoicy/ para o contrato e o porquê da forma abaixo.
    */
   async cancelNfe(
     companyId: string,
     chaveAcesso: string,
     justificativa: string,
     ambiente?: number,
+    documento?: FiscalEventDocument,
   ): Promise<InvoicyResponse[]> {
     this.logger.log(`Canceling NF-e ${chaveAcesso} for company ${companyId}`);
 
     const cancelRequest = [
-      {
-        Documento: {
-          ModeloDocumento: 'NFe',
-          Versao: 4,
-          Evento: {
-            ChaveNFe: chaveAcesso,
-            TipoEvento: 110111, // Cancelamento
-            nSeqEvento: 1,
-            Justificativa: justificativa,
-          },
+      this.buildFiscalEvent(chaveAcesso, ambiente, documento, {
+        EveTp: 110111,
+        Evedet: {
+          EveDesc: 'Cancelamento',
+          EvexJust: justificativa,
+          // EvenProt é opcional no XSD; o provedor resolve o protocolo pelo
+          // documento que ele já indexou.
         },
-      },
+      }),
     ];
 
-    const forceEnvironment =
-      ambiente !== undefined
-        ? ambiente === 1
-          ? FiscalEnvironment.PRODUCAO
-          : FiscalEnvironment.HOMOLOGACAO
-        : undefined;
+    const forceEnvironment = this.toFiscalEnvironment(ambiente);
 
     // Ver comentário em sendCorrectionLetter: evento fiscal não é idempotente.
     return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
@@ -126,7 +164,7 @@ export class InvoicyApiService {
       'POST',
       '/senddocuments/nfe?type=Evento',
       cancelRequest,
-      undefined,
+      documento?.invoicyConfigId,
       AbortSignal.timeout(this.FISCAL_EVENT_TIMEOUT_MS),
       forceEnvironment,
       true,
@@ -134,7 +172,7 @@ export class InvoicyApiService {
   }
 
   /**
-   * Send correction letter (Carta de Correção) for NF-e
+   * Send correction letter (Carta de Correção) for NF-e (evento 110110)
    */
   async sendCorrectionLetter(
     companyId: string,
@@ -142,32 +180,25 @@ export class InvoicyApiService {
     correcao: string,
     sequenciaEvento: number = 1,
     ambiente?: number,
+    documento?: FiscalEventDocument,
   ): Promise<InvoicyResponse[]> {
     this.logger.log(
       `Sending correction letter for NF-e ${chaveAcesso}, company ${companyId}`,
     );
 
     const correctionRequest = [
-      {
-        Documento: {
-          ModeloDocumento: 'NFe',
-          Versao: 4,
-          Evento: {
-            ChaveNFe: chaveAcesso,
-            TipoEvento: 110110, // Carta de Correção
-            nSeqEvento: sequenciaEvento,
-            Correcao: correcao,
-          },
+      this.buildFiscalEvent(chaveAcesso, ambiente, documento, {
+        EveTp: 110110,
+        EvenSeq: String(sequenciaEvento),
+        Evedet: {
+          EveDesc: 'Carta de Correcao',
+          EveCorrecao: correcao,
+          EveCondUso: CCE_COND_USO,
         },
-      },
+      }),
     ];
 
-    const forceEnvironment =
-      ambiente !== undefined
-        ? ambiente === 1
-          ? FiscalEnvironment.PRODUCAO
-          : FiscalEnvironment.HOMOLOGACAO
-        : undefined;
+    const forceEnvironment = this.toFiscalEnvironment(ambiente);
 
     // Evento fiscal não é idempotente: um reenvio após timeout de leitura pode
     // registrar a mesma CC-e duas vezes na SEFAZ. O AbortSignal garante que a
@@ -177,11 +208,92 @@ export class InvoicyApiService {
       'POST',
       '/senddocuments/nfe?type=Evento',
       correctionRequest,
-      undefined,
+      documento?.invoicyConfigId,
       AbortSignal.timeout(this.FISCAL_EVENT_TIMEOUT_MS),
       forceEnvironment,
       true,
     );
+  }
+
+  /**
+   * Monta o corpo de um evento no formato do provedor.
+   *
+   * A forma é a do exemplo oficial (docs/fiscal/invoicy/evento-*.exemplo.json) e
+   * do schema Envio_NFe-NFCe_4.0.xsd, cuja raiz é `EnvioEvento` — NÃO existe o
+   * wrapper `Documento` aqui (ele só é válido na emissão). O documento também
+   * não é endereçado pela chave de acesso: os obrigatórios são
+   * NtfCnpjEmissor + NtfNumero + NtfSerie + tpAmb, e `ChaAcesso` é opcional.
+   *
+   * Enquanto isto era `{ Documento: { Evento: { ChaveNFe, TipoEvento, ... } } }`
+   * — nomes que não existem no dicionário do provedor — todo evento voltava com
+   * o erro genérico 606 e nenhum jamais foi registrado.
+   */
+  /** Código IBGE da UF do emitente, exigido pela inutilização (`UfEmissor`). */
+  private async resolveUfCode(companyId: string): Promise<number | undefined> {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { address: { select: { state: true }, take: 1 } },
+    });
+    const uf = company?.address?.[0]?.state?.toUpperCase();
+    return uf ? UF_CODES[uf] : undefined;
+  }
+
+  private buildFiscalEvent(
+    chaveAcesso: string,
+    ambiente: number | undefined,
+    documento: FiscalEventDocument | undefined,
+    evento: {
+      EveTp: number;
+      EvenSeq?: string;
+      Evedet: Record<string, unknown>;
+    },
+  ) {
+    const chave = (chaveAcesso || '').replace(/\D/g, '');
+    const { EveTp, EvenSeq, Evedet } = evento;
+
+    // A chave de acesso é a fonte de verdade para o que ela mesma carrega:
+    // CNPJ nas posições 7-20, modelo em 21-22, série em 23-25 e número em 26-34.
+    // Os campos de `documento` só entram quando a chave não estiver disponível.
+    const cnpjDaChave = chave.slice(6, 20);
+    const modeloDaChave = chave.slice(20, 22);
+    const serieDaChave = chave.slice(22, 25);
+    const numeroDaChave = chave.slice(25, 34);
+
+    const cnpj = cnpjDaChave || (documento?.cnpj || '').replace(/\D/g, '');
+    const numero = numeroDaChave
+      ? parseInt(numeroDaChave, 10)
+      : documento?.numero;
+    // O provedor guarda a série sem zeros à esquerda (a consulta do documento
+    // devolve DocSerie "1" para a chave que traz "001"), e foi assim que a
+    // emissão a enviou.
+    const serie = serieDaChave
+      ? String(parseInt(serieDaChave, 10))
+      : documento?.serie !== undefined
+        ? String(documento.serie)
+        : undefined;
+
+    return {
+      // NFC-e é modelo 65: o literal 'NFe' fixo mandava o modelo errado em todo
+      // cancelamento de NFC-e, que reusa este mesmo caminho.
+      ModeloDocumento: modeloDaChave === '65' ? 'NFCe' : 'NFe',
+      Versao: 4,
+      Evento: {
+        NtfCnpjEmissor: cnpj,
+        NtfNumero: numero,
+        NtfSerie: serie,
+        tpAmb: ambiente === 1 ? 1 : 2,
+        EveInf: {
+          // Hora local sem sufixo, com o fuso no campo irmão — é a forma do
+          // exemplo oficial. Enviar UTC com "Z" junto de EveFusoHorario -03:00
+          // faria o provedor montar um evento 3h no futuro, que a SEFAZ rejeita.
+          EveDh: formatLocalDateTime(new Date()),
+          EveFusoHorario: '-03:00',
+          EveTp,
+          EvenSeq: EvenSeq ?? '1',
+          Evedet,
+        },
+      },
+    };
   }
 
   /**
@@ -232,21 +344,20 @@ export class InvoicyApiService {
       configId,
     );
 
+    // Forma plana, sem wrapper `Documento` — ver docs/fiscal/invoicy/
+    // inutilizacao.exemplo.json. Note que aqui o campo é `CnpjEmissor`, e não o
+    // `NtfCnpjEmissor` do evento: o provedor usa grafias distintas por operação.
     const inutRequest = [
       {
-        Documento: {
-          ModeloDocumento: 'NFCe',
-          Versao: 4,
-          Inutilizacao: {
-            Ano: new Date().getFullYear(),
-            CNPJ: credentials.cnpj.replace(/\D/g, ''),
-            Serie: serie,
-            NumeroInicial: numeroInicial,
-            NumeroFinal: numeroFinal,
-            Justificativa: justificativa,
-            tpAmb: environment === 'PRODUCAO' ? 1 : 2,
-          },
-        },
+        ModeloDocumento: 'NFCe',
+        Versao: 4,
+        CnpjEmissor: credentials.cnpj.replace(/\D/g, ''),
+        tpAmb: environment === 'PRODUCAO' ? 1 : 2,
+        UfEmissor: await this.resolveUfCode(companyId),
+        NumeroInicial: numeroInicial,
+        NumeroFinal: numeroFinal,
+        Serie: String(serie),
+        Justificativa: justificativa,
       },
     ];
 
@@ -307,21 +418,18 @@ export class InvoicyApiService {
       configId,
     );
 
+    // Forma plana — ver docs/fiscal/invoicy/inutilizacao.exemplo.json.
     const inutRequest = [
       {
-        Documento: {
-          ModeloDocumento: 'NFe',
-          Versao: 4,
-          Inutilizacao: {
-            Ano: new Date().getFullYear(),
-            CNPJ: credentials.cnpj.replace(/\D/g, ''),
-            Serie: serie,
-            NumeroInicial: numeroInicial,
-            NumeroFinal: numeroFinal,
-            Justificativa: justificativa,
-            tpAmb: environment === 'PRODUCAO' ? 1 : 2,
-          },
-        },
+        ModeloDocumento: 'NFe',
+        Versao: 4,
+        CnpjEmissor: credentials.cnpj.replace(/\D/g, ''),
+        tpAmb: environment === 'PRODUCAO' ? 1 : 2,
+        UfEmissor: await this.resolveUfCode(companyId),
+        NumeroInicial: numeroInicial,
+        NumeroFinal: numeroFinal,
+        Serie: String(serie),
+        Justificativa: justificativa,
       },
     ];
 

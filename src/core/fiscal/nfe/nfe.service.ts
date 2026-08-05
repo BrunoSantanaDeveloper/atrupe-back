@@ -2510,6 +2510,11 @@ export class NfeService {
         nfe.chaveAcesso,
         dto.justificativa,
         nfe.ambiente,
+        {
+          numero: nfe.numero,
+          serie: nfe.serie,
+          invoicyConfigId: nfe.invoicyConfigId ?? undefined,
+        },
       );
 
       // Processar resposta

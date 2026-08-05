@@ -5,6 +5,13 @@ import { PrismaService } from 'nestjs-prisma';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { INVOICY_SUCCESS_CODES } from './invoicy.types';
 
+/**
+ * Chave real de uma NF-e da Plottec (homologação). Os eventos derivam dela o
+ * CNPJ (posições 7-20), o modelo (21-22), a série (23-25) e o número (26-34),
+ * então os testes de payload precisam de uma chave válida, não de um literal.
+ */
+const CHAVE_NFE = '32260749464815000110550010000000101000004900';
+
 describe('InvoicyApiService', () => {
   let service: InvoicyApiService;
   let httpServiceMock: jest.Mocked<InvoicyHttpService>;
@@ -20,6 +27,9 @@ describe('InvoicyApiService', () => {
     prismaMock = {
       invoicyConfig: {
         findFirst: jest.fn(),
+      },
+      company: {
+        findUnique: jest.fn().mockResolvedValue({ address: [{ state: 'ES' }] }),
       },
     };
 
@@ -123,25 +133,31 @@ describe('InvoicyApiService', () => {
   });
 
   describe('2. Cancelamento de NFe (cancelNfe)', () => {
-    it('deve montar o payload XML de Evento de Cancelamento (110111)', async () => {
+    it('deve montar o evento de cancelamento (110111) na forma do provedor', async () => {
       httpServiceMock.makeRequest.mockResolvedValueOnce([{ Codigo: 100 }]);
 
-      await service.cancelNfe(
-        'company-123',
-        'CHAVE1234567890',
-        'Cliente desistiu',
-      );
+      await service.cancelNfe('company-123', CHAVE_NFE, 'Cliente desistiu', 2);
 
       const expectedPayload = [
         {
-          Documento: {
-            ModeloDocumento: 'NFe',
-            Versao: 4,
-            Evento: {
-              ChaveNFe: 'CHAVE1234567890',
-              TipoEvento: 110111,
-              nSeqEvento: 1,
-              Justificativa: 'Cliente desistiu',
+          ModeloDocumento: 'NFe',
+          Versao: 4,
+          Evento: {
+            NtfCnpjEmissor: '49464815000110',
+            NtfNumero: 10,
+            NtfSerie: '1',
+            tpAmb: 2,
+            EveInf: {
+              EveDh: expect.stringMatching(
+                /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/,
+              ),
+              EveFusoHorario: '-03:00',
+              EveTp: 110111,
+              EvenSeq: '1',
+              Evedet: {
+                EveDesc: 'Cancelamento',
+                EvexJust: 'Cliente desistiu',
+              },
             },
           },
         },
@@ -157,33 +173,47 @@ describe('InvoicyApiService', () => {
         expectedPayload,
         undefined,
         expect.any(AbortSignal),
-        undefined,
+        'HOMOLOGACAO',
         true,
       );
     });
   });
 
   describe('3. Carta de Correção (sendCorrectionLetter)', () => {
-    it('deve montar o payload XML de Carta de Correção (110110)', async () => {
+    it('deve montar o evento de CC-e (110110) na forma do provedor', async () => {
       httpServiceMock.makeRequest.mockResolvedValueOnce([{ Codigo: 100 }]);
 
       await service.sendCorrectionLetter(
         'company-123',
-        'CHAVE123',
+        CHAVE_NFE,
         'Ajuste de CFOP',
+        2,
         2,
       );
 
       const expectedPayload = [
         {
-          Documento: {
-            ModeloDocumento: 'NFe',
-            Versao: 4,
-            Evento: {
-              ChaveNFe: 'CHAVE123',
-              TipoEvento: 110110,
-              nSeqEvento: 2,
-              Correcao: 'Ajuste de CFOP',
+          ModeloDocumento: 'NFe',
+          Versao: 4,
+          Evento: {
+            NtfCnpjEmissor: '49464815000110',
+            NtfNumero: 10,
+            NtfSerie: '1',
+            tpAmb: 2,
+            EveInf: {
+              EveDh: expect.stringMatching(
+                /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/,
+              ),
+              EveFusoHorario: '-03:00',
+              EveTp: 110110,
+              EvenSeq: '2',
+              Evedet: {
+                EveDesc: 'Carta de Correcao',
+                EveCorrecao: 'Ajuste de CFOP',
+                EveCondUso: expect.stringContaining(
+                  'A Carta de Correcao e disciplinada',
+                ),
+              },
             },
           },
         },
@@ -199,7 +229,7 @@ describe('InvoicyApiService', () => {
         expectedPayload,
         undefined,
         expect.any(AbortSignal),
-        undefined,
+        'HOMOLOGACAO',
         true,
       );
     });
@@ -224,8 +254,6 @@ describe('InvoicyApiService', () => {
 
       httpServiceMock.makeRequest.mockResolvedValueOnce([{ Codigo: 100 }]);
 
-      const currentYear = new Date().getFullYear();
-
       await service.inutilizarNfce(
         'company-123',
         1,
@@ -236,19 +264,15 @@ describe('InvoicyApiService', () => {
 
       const expectedPayload = [
         {
-          Documento: {
-            ModeloDocumento: 'NFCe',
-            Versao: 4,
-            Inutilizacao: {
-              Ano: currentYear,
-              CNPJ: '11222333000144', // Garantir que só fiquem números
-              Serie: 1,
-              NumeroInicial: 10,
-              NumeroFinal: 20,
-              Justificativa: 'Salto de numeração',
-              tpAmb: 1,
-            },
-          },
+          ModeloDocumento: 'NFCe',
+          Versao: 4,
+          CnpjEmissor: '11222333000144', // Garantir que só fiquem números
+          tpAmb: 1,
+          UfEmissor: 32, // ES
+          NumeroInicial: 10,
+          NumeroFinal: 20,
+          Serie: '1',
+          Justificativa: 'Salto de numeração',
         },
       ];
 

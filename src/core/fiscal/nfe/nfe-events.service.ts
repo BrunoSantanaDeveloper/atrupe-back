@@ -102,6 +102,11 @@ export class NfeEventsService {
         nfe.chaveAcesso,
         dto.justificativa,
         ambienteEvento,
+        {
+          numero: nfe.numero,
+          serie: nfe.serie,
+          invoicyConfigId: nfe.invoicyConfigId ?? undefined,
+        },
       );
 
       // Processar resposta
@@ -231,6 +236,11 @@ export class NfeEventsService {
           correcao,
           sequenciaEvento,
           ambienteEvento,
+          {
+            numero: nfe.numero,
+            serie: nfe.serie,
+            invoicyConfigId: nfe.invoicyConfigId ?? undefined,
+          },
         );
       response = invoicyResponses?.[0];
     } catch (error) {
