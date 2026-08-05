@@ -402,8 +402,10 @@ export interface InvoicyNfseRps {
   natOp: number;
   Operacao?: number;
   RegEspTrib?: number;
-  OptSN: number;
-  RegApuracaoSN?: number; // 1 = Competência, 2 = Caixa — obrigatório quando OptSN = 1 (DPS NFS-e Nacional: regApuracaoSN)
+  OptSN: number; // 1 = optante do Simples Nacional, 2 = não optante
+  // Obrigatório para ME/EPP optante do SN. 1 = tributos federais e municipais
+  // apurados pelo SN, 2 = ISSQN por fora do SN, 3 = federais e municipais por fora.
+  regApTribSN?: number;
   IncCult: number;
   Status: number;
   tpAmb: number;

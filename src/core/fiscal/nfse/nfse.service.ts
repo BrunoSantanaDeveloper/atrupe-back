@@ -1024,11 +1024,14 @@ export class NfseService {
                   : 1,
               natOp: dto.naturezaOperacao || 1, // 1 = TributaÃ§Ã£o no municÃ­pio
               Operacao: 1,
-              RegEspTrib: 1, // 1 = Nenhum
-              // OptSN Invoicy: 1=Não optante→opSimpNac:3, 2=ME→opSimpNac:1, 3=EPP→opSimpNac:2
-              OptSN: config.emitCrt === 1 ? 2 : 1,
-              // regApuracaoSN: obrigatório quando opSimpNac=1(ME) ou 2(EPP); 1=Competência
-              ...(config.emitCrt === 1 ? { RegApuracaoSN: 1 } : {}),
+              // RegEspTrib segue a enumeração ABRASF do Invoicy (6 = ME/EPP),
+              // que ele converte para o regEspTrib do layout nacional.
+              RegEspTrib: config.emitCrt === 1 ? 6 : 1,
+              // OptSN: 1 = optante do Simples Nacional, 2 = não optante
+              OptSN: config.emitCrt === 1 ? 1 : 2,
+              // regApTribSN: obrigatório para ME/EPP optante do SN.
+              // 1 = tributos federais e municipais apurados pelo SN
+              ...(config.emitCrt === 1 ? { regApTribSN: 1 } : {}),
               IncCult: 2, // 2 = NÃ£o
               Status: 1, // 1 = Normal
               tpAmb: environment === 'PRODUCAO' ? 1 : 2,
@@ -1382,9 +1385,11 @@ export class NfseService {
     invoicyRequest: InvoicyNfseRequest,
   ): void {
     const rps = invoicyRequest.Documento.RPS?.[0] as any;
-    if (rps && rps.RegApuracaoSN === undefined) {
-      rps.RegApuracaoSN = 1; // 1 = Compet\u00eancia (DPS NFS-e Nacional: regApuracaoSN)
-      rps.OptSN = 2; // 2=ME no Invoicy \u2192 opSimpNac:1 no DPS; empresa \u00e9 SN optante
+    if (rps && rps.regApTribSN === undefined) {
+      // Empresa \u00e9 optante do SN mesmo quando emitCrt n\u00e3o est\u00e1 configurado.
+      rps.regApTribSN = 1; // tributos federais e municipais apurados pelo SN
+      rps.OptSN = 1; // 1 = optante do Simples Nacional
+      rps.RegEspTrib = 6; // ABRASF: 6 = ME/EPP
     }
   }
 
