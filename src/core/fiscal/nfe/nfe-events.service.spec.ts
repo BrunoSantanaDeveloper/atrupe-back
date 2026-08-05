@@ -546,5 +546,85 @@ describe('NfeEventsService', () => {
         `Dados enviados: chave de acesso ${CHAVE} (44 dígitos), sequência 1 e texto da correção com ${correcao.length} caracteres.`,
       );
     });
+
+    /**
+     * O código 606 já foi traduzido como "a empresa não está habilitada no
+     * ambiente" com instrução para reativar o emissor. Em 05/08/2026 isso foi
+     * verificado em produção e é falso: no mesmo ambiente e com a mesma
+     * credencial a empresa autentica, emite e consulta o documento (o provedor
+     * devolve Codigo 100 com protocolo da SEFAZ). Nada neste fluxo lê o estado
+     * de ativação do emissor — a instrução apontava o usuário para o indicador
+     * errado. Enquanto não houver documentação do provedor, o código cru é a
+     * única informação que o sistema pode sustentar.
+     */
+    it('não atribui causa ao código 606 nem manda reativar o emissor', async () => {
+      prismaMock.__mockResults['nfeCorrectionEvent.create'] = () => ({
+        id: 'evt-1',
+        sequenciaEvento: 1,
+      });
+      invoicyApiMock.sendCorrectionLetter.mockResolvedValue([{ Codigo: 606 }]);
+
+      const erro = await service
+        .sendCorrectionLetter(authorizedNfe(), 'company-1', {
+          correcao: 'Correção da descrição do produto',
+        })
+        .catch((e) => e);
+
+      expect(erro).toBeInstanceOf(BadRequestException);
+      expect(erro.message).toContain('606');
+      expect(erro.message).toContain('homologação');
+      expect(erro.message).not.toMatch(/não está habilitada/i);
+      expect(erro.message).not.toMatch(/conclua a ativação/i);
+      expect(erro.message).not.toMatch(/Emissores/i);
+    });
+
+    it('registra a resposta bruta do provedor quando a CC-e é rejeitada', async () => {
+      const logSpy = jest
+        .spyOn((service as any).logger, 'error')
+        .mockImplementation(() => undefined);
+
+      prismaMock.__mockResults['nfeCorrectionEvent.create'] = () => ({
+        id: 'evt-1',
+        sequenciaEvento: 1,
+      });
+      invoicyApiMock.sendCorrectionLetter.mockResolvedValue([
+        { Codigo: 606, PistaDoProvedor: 'campo-x-ausente' },
+      ]);
+
+      await service
+        .sendCorrectionLetter(authorizedNfe(), 'company-1', {
+          correcao: 'Correção da descrição do produto',
+        })
+        .catch(() => undefined);
+
+      const logado = logSpy.mock.calls.map(([m]) => String(m)).join('\n');
+      expect(logado).toContain('PistaDoProvedor');
+      expect(logado).toContain('campo-x-ausente');
+    });
+
+    it('não despeja blobs grandes (DANFE/XML) no log da rejeição', async () => {
+      const logSpy = jest
+        .spyOn((service as any).logger, 'error')
+        .mockImplementation(() => undefined);
+
+      prismaMock.__mockResults['nfeCorrectionEvent.create'] = () => ({
+        id: 'evt-1',
+        sequenciaEvento: 1,
+      });
+      const blob = 'A'.repeat(5000);
+      invoicyApiMock.sendCorrectionLetter.mockResolvedValue([
+        { Codigo: 606, DocPDF: blob },
+      ]);
+
+      await service
+        .sendCorrectionLetter(authorizedNfe(), 'company-1', {
+          correcao: 'Correção da descrição do produto',
+        })
+        .catch(() => undefined);
+
+      const logado = logSpy.mock.calls.map(([m]) => String(m)).join('\n');
+      expect(logado).not.toContain(blob);
+      expect(logado).toContain('5000 bytes omitidos');
+    });
   });
 });

@@ -110,15 +110,18 @@ export class NfeEventsService {
         throw new Error('Nenhuma resposta recebida do Invoicy');
       }
 
+      // O log da resposta bruta precisa vir ANTES do throw: no caminho de
+      // rejeição — justamente o que se precisa diagnosticar — ele nunca rodava.
+      this.logger.log(
+        `Resposta bruta Invoicy cancelamento NF-e ${nfe.numero} (ambiente ${ambienteEvento}): ` +
+          this.stringifyProviderResponse(response),
+      );
+
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
         throw new Error(
           this.getCancelRejectionMessage(response, ambienteEvento),
         );
       }
-
-      this.logger.log(
-        `Resposta bruta Invoicy cancelamento NF-e ${nfe.numero}: ${JSON.stringify(response)}`,
-      );
 
       const doc = response.Documentos?.[0];
       const situacao = doc?.Situacao;
@@ -262,6 +265,15 @@ export class NfeEventsService {
       (sitCodigo === CCE_REGISTERED || sitCodigo === CCE_REGISTERED_UNLINKED);
 
     if (!isRegistered) {
+      // Sem isto o diagnóstico morre no código de retorno: o provedor rejeita
+      // vários casos com um código genérico e sem descrição, e era exatamente
+      // o corpo da resposta que faltava para entender o 606 da CC-e.
+      this.logger.error(
+        `CC-e rejeitada pelo provedor. NF-e ${nfe.numero} (chave ${nfe.chaveAcesso}), ` +
+          `seq ${sequenciaEvento}, ambiente ${ambienteEvento}. ` +
+          `Resposta bruta: ${this.stringifyProviderResponse(response)}`,
+      );
+
       const motivo = this.getCorrectionRejectionMessage(
         response,
         nfe.chaveAcesso,
@@ -521,21 +533,44 @@ export class NfeEventsService {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
+  /**
+   * Traduções que o sistema consegue SUSTENTAR. O 606 saiu daqui de propósito:
+   * a mensagem antiga afirmava "a empresa não está habilitada no ambiente" e
+   * mandava concluir a ativação do emissor, mas nada nesse fluxo verifica
+   * habilitação — o evento nem lê o emissor. Em 05/08/2026 o diagnóstico do
+   * incidente da Plottec (CNPJ 49464815000110) provou a afirmação falsa: no
+   * mesmo ambiente e com a mesma credencial, a empresa autentica, a consulta
+   * do documento devolve Codigo 100 com protocolo SEFAZ e a emissão funciona.
+   * Sem documentação do provedor, o código cru é a única informação honesta.
+   */
   private getKnownEventErrorMessage(
     code: number | undefined,
-    envLabel: string,
+    _envLabel: string,
   ): string | undefined {
     if (!code) return undefined;
     const knownCodes: Record<number, string> = {
-      [INVOICY_ERROR_CODES.COMPANY_NOT_ENABLED]:
-        `A empresa emissora não está habilitada no Invoicy para o ambiente de ${envLabel}. ` +
-        `Acesse Configurações → Emissores, selecione o emissor e conclua a ativação do ambiente de ${envLabel} para NF-e.`,
       [INVOICY_ERROR_CODES.INVALID_KEY]:
         'Chave de acesso da NF-e inválida. O documento pode ter sido emitido com dados inconsistentes.',
       [INVOICY_ERROR_CODES.REJECTED_BY_SEFAZ]:
         'A SEFAZ rejeitou o evento. Verifique os dados da NF-e e tente novamente.',
     };
     return knownCodes[code];
+  }
+
+  /**
+   * Serializa a resposta do provedor para log, sem despejar os blobs (DANFE em
+   * base64, XML) que dominariam a linha e sem quebrar em referência cíclica.
+   */
+  private stringifyProviderResponse(response: any): string {
+    try {
+      return JSON.stringify(response, (_key, value) =>
+        typeof value === 'string' && value.length > 500
+          ? `<${value.length} bytes omitidos>`
+          : value,
+      );
+    } catch {
+      return '<resposta não serializável>';
+    }
   }
 
   private extractSpecificProviderMessage(response: any): string | undefined {
@@ -573,8 +608,8 @@ export class NfeEventsService {
     }
 
     return (
-      `O Invoicy rejeitou o cancelamento${codeStr}, mas não informou o motivo. ` +
-      `Verifique se o emissor está habilitado no ambiente de ${envLabel} e tente novamente.`
+      `O Invoicy rejeitou o cancelamento${codeStr} sem informar o motivo. ` +
+      `Ambiente: ${envLabel}. A resposta completa do provedor ficou registrada no log do evento.`
     );
   }
 
@@ -600,9 +635,10 @@ export class NfeEventsService {
     }
 
     return (
-      `O Invoicy rejeitou a carta de correção${codeStr}, mas não informou qual campo está inválido. ` +
-      `Dados enviados: chave de acesso ${chaveAcesso} (44 dígitos), ` +
-      `sequência ${sequenciaEvento} e texto da correção com ${correctionLength} caracteres.`
+      `O Invoicy rejeitou a carta de correção${codeStr} sem informar o motivo. ` +
+      `Ambiente: ${envLabel}. Dados enviados: chave de acesso ${chaveAcesso} (44 dígitos), ` +
+      `sequência ${sequenciaEvento} e texto da correção com ${correctionLength} caracteres. ` +
+      `A resposta completa do provedor ficou registrada no log do evento.`
     );
   }
 

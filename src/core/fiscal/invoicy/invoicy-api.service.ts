@@ -44,11 +44,19 @@ export class InvoicyApiService {
 
   /**
    * Emit NF-e or NFC-e document
+   *
+   * `forceEnvironment` deve receber o MESMO ambiente usado para montar o
+   * payload (o `ide.tpAmb` do documento). Sem ele, o transporte resolve o
+   * ambiente por conta própria e cai no campo global `activeEnvironment`, que
+   * pode divergir do campo por tipo de documento — a nota sairia para o host de
+   * um ambiente carregando o tpAmb do outro, e os eventos dela (roteados pelo
+   * tpAmb do XML) bateriam no ambiente errado depois.
    */
   async emitNfe(
     companyId: string,
     documents: InvoicyNfeRequest[],
     invoicyConfigId?: string,
+    forceEnvironment?: FiscalEnvironment,
   ): Promise<InvoicyResponse[]> {
     this.logger.log(`Emitting NF-e/NFC-e for company ${companyId}`);
 
@@ -60,6 +68,8 @@ export class InvoicyApiService {
       '/senddocuments/nfe?type=Emissao',
       documents,
       invoicyConfigId,
+      undefined,
+      forceEnvironment,
     );
 
     // Check for errors in response

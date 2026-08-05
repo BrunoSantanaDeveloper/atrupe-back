@@ -433,8 +433,18 @@ export const INVOICY_SUCCESS_CODES = {
   DOCUMENTS_PROCESSED: 100,
 };
 
+/**
+ * Estes nomes são LEITURA NOSSA dos códigos do provedor, não documentação dele:
+ * não há tabela oficial versionada neste repositório. O 606 já foi chamado de
+ * COMPANY_NOT_ENABLED e a mensagem correspondente mandava o usuário reativar o
+ * emissor; em 05/08/2026 isso foi provado falso (empresa autenticando, emitindo
+ * e consultando normalmente no mesmo ambiente que devolveu 606 numa CC-e).
+ * Antes de mapear qualquer código novo para uma causa, confirme com o suporte
+ * do Invoicy e registre a fonte aqui.
+ */
 export const INVOICY_ERROR_CODES = {
   INVALID_KEY: 173,
-  COMPANY_NOT_ENABLED: 606,
   REJECTED_BY_SEFAZ: 225,
+  /** Significado real desconhecido. Ver comentário acima antes de usar. */
+  UNSPECIFIED_606: 606,
 };

@@ -2172,9 +2172,14 @@ export class NfeService {
       });
 
       // Chamar API do Invoicy
-      const invoicyResponses = await this.invoicyApiService.emitNfe(companyId, [
-        invoicyRequest,
-      ]);
+      // O ambiente resolvido para o payload (ide.tpAmb) vai junto: sem ele o
+      // transporte resolveria de novo, pelo campo global activeEnvironment.
+      const invoicyResponses = await this.invoicyApiService.emitNfe(
+        companyId,
+        [invoicyRequest],
+        config.id,
+        environment,
+      );
 
       // Processar resposta
       const response = invoicyResponses[0];

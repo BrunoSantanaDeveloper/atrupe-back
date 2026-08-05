@@ -75,6 +75,7 @@ export class InvoicyHttpService {
     companyId: string,
     invoicyConfigId?: string,
     forceEnvironment?: FiscalEnvironment,
+    docType?: 'NFE' | 'NFSE' | 'NFCE',
   ) {
     let environment: FiscalEnvironment;
 
@@ -85,6 +86,7 @@ export class InvoicyHttpService {
         await this.fiscalCredentialResolver.resolveOperationalEnvironment(
           companyId,
           invoicyConfigId,
+          docType,
         );
     } else {
       let config = await this.prisma.invoicyConfig.findFirst({
@@ -99,10 +101,15 @@ export class InvoicyHttpService {
         });
       }
       if (config) {
+        // Sem docType a precedência pula os campos por documento e cai no
+        // campo global activeEnvironment, que a ativação de QUALQUER docType
+        // sobrescreve. Era assim que o host do transporte podia divergir do
+        // ambiente com que o documento foi montado.
         environment =
           await this.fiscalCredentialResolver.resolveOperationalEnvironment(
             companyId,
             config.id,
+            docType,
           );
       } else {
         environment = FiscalEnvironment.HOMOLOGACAO;

@@ -67,8 +67,37 @@ describe('InvoicyApiService', () => {
         '/senddocuments/nfe?type=Emissao',
         documents,
         undefined,
+        undefined,
+        undefined,
       );
       expect(result).toEqual(expectedResponse);
+    });
+
+    // O ambiente do payload tem de chegar ao transporte: é ele que escolhe o
+    // host e a credencial. Sem isso o transporte resolve por conta própria e
+    // pode divergir do tpAmb gravado no documento.
+    it('deve repassar o ambiente forçado para o transporte', async () => {
+      const documents: any[] = [{ Documento: { ModeloDocumento: 'NFe' } }];
+      httpServiceMock.makeRequest.mockResolvedValueOnce([
+        { Codigo: INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED },
+      ]);
+
+      await service.emitNfe(
+        'company-123',
+        documents,
+        'config-1',
+        'PRODUCAO' as any,
+      );
+
+      expect(httpServiceMock.makeRequest).toHaveBeenCalledWith(
+        'company-123',
+        'POST',
+        '/senddocuments/nfe?type=Emissao',
+        documents,
+        'config-1',
+        undefined,
+        'PRODUCAO',
+      );
     });
 
     it('deve repassar invoicyConfigId quando informado', async () => {
@@ -87,6 +116,8 @@ describe('InvoicyApiService', () => {
         '/senddocuments/nfe?type=Emissao',
         documents,
         'config-123',
+        undefined,
+        undefined,
       );
     });
   });

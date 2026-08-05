@@ -798,6 +798,24 @@ describe('NfeService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    /**
+     * O transporte não pode reabrir a decisão de ambiente. Quando ele resolvia
+     * sozinho, caía no campo global `activeEnvironment` (que a ativação de
+     * qualquer docType sobrescreve) e a nota podia ser enviada ao host de um
+     * ambiente carregando o `tpAmb` do outro — deixando os eventos dela, que
+     * são roteados pelo tpAmb do XML, apontados para o ambiente errado.
+     */
+    it('transmite no mesmo ambiente com que montou o payload', async () => {
+      await service.emit(mockCompanyId, mockEmitDto);
+
+      const [, documentos, invoicyConfigId, forceEnvironment] =
+        invoicyApiService.emitNfe.mock.calls[0];
+
+      expect(invoicyConfigId).toBe('config-id');
+      expect(forceEnvironment).toBe('HOMOLOGACAO');
+      expect(documentos[0].Documento.ide.tpAmb).toBe(2);
+    });
+
     it('should handle Invoicy failure', async () => {
       invoicyApiService.emitNfe.mockResolvedValue([
         { Codigo: 225, Descricao: 'Rejeitado pela SEFAZ' },
