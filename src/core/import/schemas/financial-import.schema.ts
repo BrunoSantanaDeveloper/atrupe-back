@@ -1,3 +1,6 @@
+// Quantas contas bancárias listar na mensagem de erro antes de resumir o restante
+const MAX_LISTED_BANK_ACCOUNTS = 10;
+
 export const FINANCIAL_IMPORT_SCHEMA = {
   fields: [
     {
@@ -294,7 +297,24 @@ export const FINANCIAL_IMPORT_SCHEMA = {
         });
 
         if (!bankAccount) {
-          return 'Conta bancária não encontrada. Cadastre a conta antes de importar';
+          const registered = await prisma.bankAccount.findMany({
+            where: { companyId, isActive: true },
+            select: { name: true },
+            orderBy: { name: 'asc' },
+          });
+
+          if (registered.length === 0) {
+            return 'Conta bancária não encontrada. Nenhuma conta ativa cadastrada nesta empresa. Cadastre em Configurações > Financeiro > Contas Bancárias antes de importar';
+          }
+
+          const listed = registered
+            .slice(0, MAX_LISTED_BANK_ACCOUNTS)
+            .map((account: { name: string }) => account.name);
+          const remaining = registered.length - listed.length;
+          const names =
+            listed.join(', ') + (remaining > 0 ? ` e mais ${remaining}` : '');
+
+          return `Conta bancária não encontrada. O nome deve ser idêntico ao cadastrado. Contas ativas: ${names}`;
         }
         return null;
       },

@@ -75,6 +75,11 @@ export const BASE_BANKS = [
     icon: 'bancoob',
   },
   {
+    name: 'Banco Cooperativo Sicredi S.A.',
+    code: '748',
+    icon: 'bancoCooperativoSicredi',
+  },
+  {
     name: 'Banco Votorantim',
     code: '655',
     icon: 'bancoVotorantim',
