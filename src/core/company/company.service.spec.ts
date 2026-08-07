@@ -8,6 +8,7 @@ import { Logger } from '@nestjs/common';
 import { EncryptionService } from 'src/shared/services/encryption.service';
 import { FiscalRolloutPolicyService } from '../fiscal/shared/fiscal-rollout-policy.service';
 import { FiscalCredentialResolverService } from '../fiscal/shared/fiscal-credential-resolver.service';
+import { InvoicyCompanyRegistrationService } from '../fiscal/invoicy/invoicy-company-registration.service';
 
 // Mock data
 const mockCompanyId = 'company-uuid-123';
@@ -293,6 +294,11 @@ const mockFiscalCredentialResolverService = {
   reserveNfceNumber: jest.fn(),
 };
 
+const mockInvoicyCompanyRegistrationService = {
+  ensureRegistered: jest.fn(),
+  syncRegistrationData: jest.fn().mockResolvedValue([]),
+};
+
 describe('CompanyService', () => {
   let service: CompanyService;
   let prisma: typeof mockPrismaService;
@@ -316,6 +322,10 @@ describe('CompanyService', () => {
         {
           provide: FiscalCredentialResolverService,
           useValue: mockFiscalCredentialResolverService,
+        },
+        {
+          provide: InvoicyCompanyRegistrationService,
+          useValue: mockInvoicyCompanyRegistrationService,
         },
       ],
     }).compile();

@@ -1,4 +1,8 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../../config/prisma/prisma.service';
 import { EncryptionService } from '../../../shared/services/encryption.service';
 import { FiscalAuditService } from '../shared/fiscal-audit.service';
@@ -176,5 +180,75 @@ export class InvoicyCompanyRegistrationService {
       companyId,
       environment as InvoicyEnvironment,
     );
+  }
+
+  /**
+   * Reenvia ao Invoicy os dados cadastrais atuais da empresa.
+   *
+   * ensureRegistered so' envia esses dados na criacao do cadastro. Quem editar
+   * razao social, IE ou endereco depois disso fica com o Invoicy defasado, e
+   * documentos montados pelo provedor a partir do cadastro (DACCE) saem com
+   * campos em branco.
+   *
+   * Sincroniza apenas ambientes em que a empresa ja' esta' cadastrada — nunca
+   * cria cadastro novo. Devolve os ambientes efetivamente atualizados.
+   */
+  async syncRegistrationData(
+    companyId: string,
+    signal?: AbortSignal,
+  ): Promise<FiscalEnvironment[]> {
+    const company = await this.prisma.company.findUniqueOrThrow({
+      where: { id: companyId },
+      include: { address: true },
+    });
+
+    const cnpj = (company.cnpj ?? '').replace(/\D/g, '');
+    const razaoSocial = company.legalName || company.name;
+
+    if (!cnpj || !razaoSocial) {
+      throw new BadRequestException(
+        'Empresa sem CNPJ ou razão social: complete o cadastro antes de sincronizar com o Invoicy',
+      );
+    }
+
+    const address =
+      (company.address ?? []).find((a: any) => a.type === 'Principal') ??
+      company.address?.[0];
+
+    // O codigo IBGE fica no emissor, nao no endereco da empresa.
+    const emissor = await this.prisma.invoicyConfig.findFirst({
+      where: { companyId },
+      orderBy: { createdAt: 'asc' },
+      select: { emitCmun: true },
+    });
+
+    const credentials = await this.prisma.companyEnvironmentCredential.findMany(
+      {
+        where: { companyId, providerAccessKeyEncrypted: { not: null } },
+        select: { environment: true },
+      },
+    );
+
+    const updated: FiscalEnvironment[] = [];
+
+    for (const { environment } of credentials) {
+      await this.invoicyHttpService.updateCompanyRegistration({
+        cnpj,
+        razaoSocial,
+        nomeFantasia: company.name,
+        ie: company.stateRegistration || undefined,
+        im: company.municipalRegistration || undefined,
+        codigoIbge: emissor?.emitCmun || undefined,
+        cep: address?.zipcode || undefined,
+        logradouro: address?.street || undefined,
+        numero: address?.number || undefined,
+        bairro: address?.neighborhood || undefined,
+        environment: environment as InvoicyEnvironment,
+        signal,
+      });
+      updated.push(environment);
+    }
+
+    return updated;
   }
 }

@@ -42,7 +42,11 @@
     "permissions:cce": "node dist/src/scripts/backfill-carta-correcao-permission.js",
     "permissions:cce:dry": "node dist/src/scripts/backfill-carta-correcao-permission.js --dry-run",
     "permissions:cce:dev": "ts-node src/scripts/backfill-carta-correcao-permission.ts",
-    "permissions:cce:dry:dev": "ts-node src/scripts/backfill-carta-correcao-permission.ts --dry-run"
+    "permissions:cce:dry:dev": "ts-node src/scripts/backfill-carta-correcao-permission.ts --dry-run",
+    "invoicy:sync-cadastro": "node dist/src/scripts/sync-invoicy-company-registration.js",
+    "invoicy:sync-cadastro:dry": "node dist/src/scripts/sync-invoicy-company-registration.js --dry-run",
+    "invoicy:sync-cadastro:dev": "ts-node src/scripts/sync-invoicy-company-registration.ts",
+    "invoicy:sync-cadastro:dry:dev": "ts-node src/scripts/sync-invoicy-company-registration.ts --dry-run"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",

@@ -11,10 +11,12 @@ import { ClientModule } from '../client/client.module';
 import { CompanySeedsService } from './company-seeds.service';
 import { CompanyHistoryService } from './company-history.service';
 import { FiscalSecurityModule } from '../fiscal/shared/fiscal-security.module';
+import { InvoicyModule } from '../fiscal/invoicy/invoicy.module';
 
 @Module({
   imports: [
     FiscalSecurityModule,
+    InvoicyModule,
     PrismaModule,
     AuthModule,
     AddressModule,

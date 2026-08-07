@@ -1317,6 +1317,91 @@ export class InvoicyHttpService {
   }
 
   /**
+   * Sincroniza os dados cadastrais da empresa no Invoicy.
+   *
+   * registerCompany so' envia esses campos na CRIACAO: se a empresa ja' existe,
+   * ele devolve a chave e sai. Sem este metodo, razao social, IE e endereco
+   * congelam no valor que estavam quando o cadastro nasceu — e documentos que o
+   * Invoicy monta a partir do cadastro (DACCE, por exemplo) saem com campos em
+   * branco mesmo com o dado correto no nosso banco.
+   */
+  async updateCompanyRegistration(data: {
+    cnpj: string;
+    razaoSocial: string;
+    nomeFantasia?: string;
+    ie?: string;
+    im?: string;
+    codigoIbge?: string;
+    cep?: string;
+    logradouro?: string;
+    numero?: string;
+    bairro?: string;
+    complemento?: string;
+    environment?: InvoicyEnvironment;
+    signal?: AbortSignal;
+  }): Promise<void> {
+    const environment = data.environment || this.getPartnerEnvironment();
+
+    if (!data.razaoSocial?.trim()) {
+      // Sobrescrever o cadastro com vazio e' pior que deixá-lo desatualizado.
+      throw new BadRequestException(
+        'Razão social é obrigatória para sincronizar o cadastro no Invoicy',
+      );
+    }
+
+    this.logger.log(
+      `Sincronizando cadastro da empresa ${this.maskCnpj(data.cnpj)} no Invoicy (${environment})`,
+    );
+
+    const token = await this.authenticateAsPartner(environment, data.signal);
+    const baseUrl = this.getBaseUrl(environment);
+
+    const payload = [
+      {
+        EmpCNPJ: data.cnpj.replace(/\D/g, ''),
+        EmpRazSocial: data.razaoSocial,
+        EmpNomFantasia: data.nomeFantasia || data.razaoSocial,
+        EmpApelido: data.nomeFantasia || data.razaoSocial.substring(0, 50),
+        EmpIE: data.ie || 'ISENTO',
+        EmpIM: data.im || '',
+        MunCodigo: data.codigoIbge || '',
+        EmpEndereco: data.logradouro || '',
+        EmpNumero: data.numero || 'S/N',
+        EmpBairro: data.bairro || '',
+        EmpCEP: data.cep?.replace(/\D/g, '') || '',
+        EmpComplemento: data.complemento || '',
+      },
+    ];
+
+    try {
+      await this.httpClient.put(`${baseUrl}/companies`, payload, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        ...(data.signal ? { signal: data.signal } : {}),
+      });
+
+      this.logger.log(
+        `Cadastro sincronizado no Invoicy para ${this.maskCnpj(data.cnpj)}`,
+      );
+    } catch (error) {
+      const status = error.response?.status;
+      const errorCode =
+        error.response?.data?.Codigo ||
+        error.response?.data?.codigo ||
+        error.response?.data?.code;
+      this.logger.error(
+        `Falha ao sincronizar cadastro no Invoicy (status ${status ?? 'n/a'})` +
+          (errorCode ? `: ${errorCode}` : ''),
+      );
+      throw new Error(
+        `Erro ao sincronizar cadastro no Invoicy (${errorCode ?? status ?? 'PROVIDER_ERROR'})`,
+      );
+    }
+  }
+
+  /**
    * Update digital certificate for an already-registered company in Invoicy.
    * Uses the partner PUT /companies endpoint to update company data including certificate.
    */

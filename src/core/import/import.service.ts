@@ -14,6 +14,20 @@ import {
   SUPPLIER_IMPORT_SCHEMA,
 } from './schemas';
 
+/**
+ * Unidades cujo preço total depende de uma medida (área, comprimento, peso…).
+ * Para elas o `unitCost` é uma taxa por unidade bruta (R$/mm², R$/segundo…) e
+ * só vira total quando multiplicado pela medida.
+ */
+const DIMENSIONAL_UNIT_KINDS = [
+  'AREA',
+  'LENGTH',
+  'CAPACITY',
+  'WEIGHT',
+  'DISTANCE',
+  'DURATION',
+];
+
 @Injectable()
 export class ImportService {
   private fileBuffers: Map<string, Buffer> = new Map();
@@ -1074,10 +1088,15 @@ export class ImportService {
         salePrice = rawUnitCost * widthMm * heightMm;
       } else if (unitKind === 'DURATION' && durationSeconds) {
         salePrice = rawUnitCost * durationSeconds;
-      } else {
-        // Base de venda para outras métricas não dimensionais ou unidades isoladas
+      } else if (!DIMENSIONAL_UNIT_KINDS.includes(unitKind)) {
+        // Unidade sem dimensão (UN, PC…): o valor unitário já é o próprio total.
         salePrice = rawUnitCost;
       }
+      // Unidade dimensional sem medida no CSV (ex.: produto por m² sem largura e
+      // altura): não existe total a calcular. Gravar `rawUnitCost` aqui colocaria
+      // uma taxa por unidade bruta (R$/mm², R$/segundo…) num campo de total, que a
+      // listagem exibiria como 0,00. Fica null e o total é calculado no orçamento,
+      // quando a medida é informada.
     }
 
     // Buscar item existente do produto (para evitar duplicação em re-importação)

@@ -85,6 +85,14 @@ const createMockPrismaService = () => {
     },
     quotationPayment: {
       create: jest.fn(),
+      update: jest.fn(),
+    },
+    quotationProduct: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+    },
+    quotationProductItem: {
+      create: jest.fn(),
     },
     contactSource: {
       findMany: jest.fn(),
@@ -307,6 +315,92 @@ describe('QuotationCrudService', () => {
       const result = await service.findAllContactSources();
 
       expect(result).toEqual(mockSources);
+    });
+  });
+
+  describe('duplicate', () => {
+    const buildProduct = (name: string) => ({
+      productId: `product-${name}`,
+      description: name,
+      quantity: 1,
+      technicalDescription: null,
+      imageUrl: null,
+      notes: null,
+      totalValue: 100,
+      finalValue: 100,
+      discount: null,
+      discountType: null,
+      allowEditDescription: true,
+      allowEditValues: true,
+      items: [
+        { productItemId: `item-${name}-1`, name: `${name} 1`, quantity: 1 },
+        { productItemId: `item-${name}-2`, name: `${name} 2`, quantity: 1 },
+      ],
+    });
+
+    beforeEach(() => {
+      prisma.quotation.findUnique.mockResolvedValue({
+        ...mockQuotation,
+        seriesId: mockSeriesId,
+        clientId: 'client-uuid',
+        contactId: null,
+        contactSourceId: null,
+        subCompanyId: null,
+        deliveryInfo: {},
+        quotationPayment: {},
+        quotationProduct: [
+          buildProduct('A'),
+          buildProduct('B'),
+          buildProduct('C'),
+        ],
+      });
+      prisma.saleSeries.update.mockResolvedValue({ currentBudgetNumber: 102 });
+      prisma.quotation.create.mockResolvedValue({ id: 'new-quotation-uuid' });
+      prisma.deliveryInfo.create.mockResolvedValue({});
+      prisma.quotationPayment.create.mockResolvedValue({});
+      prisma.quotationProduct.create.mockImplementation(({ data }) =>
+        Promise.resolve({ id: `new-${data.description}`, ...data }),
+      );
+      prisma.quotationProductItem.create.mockResolvedValue({});
+      prisma.quotationProduct.findMany.mockResolvedValue([]);
+      prisma.quotation.update.mockResolvedValue({});
+      prisma.quotationPayment.update.mockResolvedValue({});
+    });
+
+    it('should read the original products and items ordered by createdAt', async () => {
+      await service.duplicate(mockQuotationId, {});
+
+      const include = prisma.quotation.findUnique.mock.calls[0][0].include;
+      expect(include.quotationProduct.orderBy).toEqual({ createdAt: 'asc' });
+      expect(include.quotationProduct.include.items.orderBy).toEqual({
+        createdAt: 'asc',
+      });
+    });
+
+    it('should keep the original item order with strictly increasing createdAt', async () => {
+      await service.duplicate(mockQuotationId, {});
+
+      const created = prisma.quotationProduct.create.mock.calls.map(
+        ([{ data }]) => data,
+      );
+
+      expect(created.map((p) => p.description)).toEqual(['A', 'B', 'C']);
+
+      const timestamps = [
+        ...created,
+        ...prisma.quotationProductItem.create.mock.calls.map(
+          ([{ data }]) => data,
+        ),
+      ].map((record) => record.createdAt.getTime());
+
+      expect(timestamps).toHaveLength(9);
+      expect(new Set(timestamps).size).toBe(timestamps.length);
+      created.forEach((product, index) => {
+        if (index === 0) return;
+        expect(product.createdAt.getTime()).toBeGreaterThan(
+          created[index - 1].createdAt.getTime(),
+        );
+      });
     });
   });
 

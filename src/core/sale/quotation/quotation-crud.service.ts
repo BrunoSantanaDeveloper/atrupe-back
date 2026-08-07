@@ -754,8 +754,11 @@ export class QuotationCrudService {
       include: {
         quotationProduct: {
           include: {
-            items: true,
+            items: {
+              orderBy: { createdAt: 'asc' },
+            },
           },
+          orderBy: { createdAt: 'asc' },
         },
         deliveryInfo: true,
         quotationPayment: true,
@@ -831,6 +834,13 @@ export class QuotationCrudService {
         },
       });
     }
+
+    // As telas e o PDF ordenam produtos/itens por createdAt. Os inserts abaixo
+    // são sequenciais, mas podem cair no mesmo milissegundo, então o createdAt
+    // é atribuído explicitamente para preservar a ordem do orçamento original.
+    const baseCreatedAt = Date.now();
+    let createdAtOffset = 0;
+    const nextCreatedAt = () => new Date(baseCreatedAt + createdAtOffset++);
 
     for (const product of quotation.quotationProduct) {
       const currentProduct = duplicateDto.updatePrices
@@ -917,6 +927,7 @@ export class QuotationCrudService {
         allowEditValues: product.allowEditValues,
         quotationId: newQuotation.id,
         productId: product.productId,
+        createdAt: nextCreatedAt(),
       };
 
       const newProduct = await this.prisma.quotationProduct.create({
@@ -951,6 +962,7 @@ export class QuotationCrudService {
           unitCost: baseUnitCost,
           salePrice: calculatedSalePrice,
           totalValue: calculatedSalePrice,
+          createdAt: nextCreatedAt(),
         };
 
         try {

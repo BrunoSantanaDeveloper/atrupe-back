@@ -57,6 +57,7 @@ export class DuplicateQuotationProductDto {
   discountType?: string;
   allowEditDescription?: boolean;
   allowEditValues?: boolean;
+  createdAt?: Date;
 }
 
 export class DuplicateQuotationProductItemDto {
@@ -79,4 +80,5 @@ export class DuplicateQuotationProductItemDto {
   unitCost?: number;
   salePrice?: number;
   totalValue?: number;
+  createdAt?: Date;
 }

@@ -32,6 +32,7 @@ import { parsePfxCertificate } from '../fiscal/utils/certificate-parser';
 import { EncryptionService } from '../../shared/services/encryption.service';
 import { FiscalRolloutPolicyService } from '../fiscal/shared/fiscal-rollout-policy.service';
 import { FiscalCredentialResolverService } from '../fiscal/shared/fiscal-credential-resolver.service';
+import { InvoicyCompanyRegistrationService } from '../fiscal/invoicy/invoicy-company-registration.service';
 import { FiscalEnvironment } from '@prisma/client';
 import * as crypto from 'crypto';
 
@@ -55,6 +56,7 @@ export class CompanyService {
     private readonly encryptionService: EncryptionService,
     private readonly fiscalRolloutPolicy: FiscalRolloutPolicyService,
     private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
+    private readonly invoicyCompanyRegistration: InvoicyCompanyRegistrationService,
   ) {}
   async createFirstAccess(email: string, companyId: string) {
     try {
@@ -857,7 +859,13 @@ export class CompanyService {
     // exigem rebaixar os ambientes fiscais (CNPJ/IE/endereço alteram o XML emitido).
     const fiscalSnapshot = await this.prisma.company.findUnique({
       where: { id },
-      select: { cnpj: true, stateRegistration: true },
+      select: {
+        cnpj: true,
+        stateRegistration: true,
+        legalName: true,
+        name: true,
+        municipalRegistration: true,
+      },
     });
 
     try {
@@ -960,6 +968,37 @@ export class CompanyService {
             lastValidationError: null,
           },
         });
+      }
+
+      // O cadastro no Invoicy so' recebe esses dados na criacao. Sem reenviar
+      // aqui, o provedor fica com o valor antigo para sempre e os documentos que
+      // ele monta a partir do cadastro (DACCE) saem com campos defasados.
+      const registrationChanged =
+        cnpjChanged ||
+        ieChanged ||
+        !!address ||
+        (data.legalName !== undefined &&
+          data.legalName !== fiscalSnapshot?.legalName) ||
+        (data.name !== undefined && data.name !== fiscalSnapshot?.name) ||
+        (data.municipalRegistration !== undefined &&
+          data.municipalRegistration !== fiscalSnapshot?.municipalRegistration);
+
+      if (registrationChanged) {
+        try {
+          const environments =
+            await this.invoicyCompanyRegistration.syncRegistrationData(id);
+          if (environments.length) {
+            this.logger.log(
+              `Cadastro da empresa ${id} sincronizado no Invoicy (${environments.join(', ')})`,
+            );
+          }
+        } catch (error) {
+          // O provedor nao pode derrubar o save: o dado local e' a fonte da
+          // verdade e a sincronizacao pode ser refeita pelo script.
+          this.logger.error(
+            `Falha ao sincronizar cadastro da empresa ${id} no Invoicy: ${error.message}`,
+          );
+        }
       }
 
       // Return updated company with address and certificate
