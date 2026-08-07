@@ -1089,33 +1089,56 @@ export class NfseService {
                   dto.codigoMunicipio || config.ibgeCode || '0',
                   10,
                 ),
-                ...(dto.entregaEndereco
+                // LocalPrestacao é sempre enviado: sem ele o Invoicy gera
+                // <locPrest> vazio na DPS e a prefeitura rejeita com E1235
+                // (schema exige cLocPrestacao). Sem entrega informada, o local
+                // de prestação é o endereço do próprio prestador
+                // (LocalPrestServ: 1).
+                LocalPrestacao: dto.entregaEndereco
                   ? {
-                      LocalPrestacao: {
-                        SerEndTpLgr: 'Rua',
-                        SerEndLgr: dto.entregaEndereco,
-                        SerEndNumero: dto.entregaNumero || 'S/N',
-                        SerEndBairro: dto.entregaBairro || '',
-                        SerEndxMun: dto.entregaMunicipio || '',
-                        // Fallback para o código IBGE do emissor quando o frontend
-                        // não informar (ex.: endereço do prestador pré-preenchido)
-                        SerEndcMun:
-                          parseInt(
-                            dto.entregaCodigoMunicipio ||
-                              config.ibgeCode ||
-                              config.emitCmun ||
-                              '0',
-                            10,
-                          ) || 0,
-                        SerEndCep:
-                          parseInt(
-                            (dto.entregaCep || '').replace(/\D/g, ''),
-                            10,
-                          ) || 0,
-                        SerEndSiglaUF: dto.entregaUf || '',
-                      },
+                      SerEndTpLgr: 'Rua',
+                      SerEndLgr: dto.entregaEndereco,
+                      SerEndNumero: dto.entregaNumero || 'S/N',
+                      SerEndBairro: dto.entregaBairro || '',
+                      SerEndxMun: dto.entregaMunicipio || '',
+                      // Fallback para o código IBGE do emissor quando o frontend
+                      // não informar (ex.: endereço do prestador pré-preenchido)
+                      SerEndcMun:
+                        parseInt(
+                          dto.entregaCodigoMunicipio ||
+                            config.ibgeCode ||
+                            config.emitCmun ||
+                            '0',
+                          10,
+                        ) || 0,
+                      SerEndCep:
+                        parseInt(
+                          (dto.entregaCep || '').replace(/\D/g, ''),
+                          10,
+                        ) || 0,
+                      SerEndSiglaUF: dto.entregaUf || '',
                     }
-                  : {}),
+                  : {
+                      SerEndTpLgr: 'Rua',
+                      SerEndLgr: config.company.address.street || '',
+                      SerEndNumero: config.company.address.number || 'S/N',
+                      SerEndBairro: config.company.address.neighborhood || '',
+                      SerEndxMun: config.company.address.city || '',
+                      SerEndcMun:
+                        parseInt(
+                          config.ibgeCode || config.emitCmun || '0',
+                          10,
+                        ) || 0,
+                      SerEndCep:
+                        parseInt(
+                          (config.company.address.zipcode || '').replace(
+                            /\D/g,
+                            '',
+                          ),
+                          10,
+                        ) || 0,
+                      SerEndSiglaUF: config.company.address.state || '',
+                    },
               },
               Tomador: {
                 TomaCNPJ: dto.tomador.cnpj
