@@ -84,6 +84,15 @@ export class ImportController {
     return result;
   }
 
+  @Post(':id/bank-accounts')
+  @ApiOperation({
+    summary:
+      'Cria as contas bancárias citadas no CSV que a empresa ainda não tem',
+  })
+  async createBankAccounts(@Param('id') importId: string) {
+    return this.importService.createMissingBankAccounts(importId);
+  }
+
   @Post(':id/process')
   @ApiOperation({ summary: 'Process import after validation' })
   async processImport(@Param('id') importId: string) {

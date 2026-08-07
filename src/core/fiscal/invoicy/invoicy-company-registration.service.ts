@@ -222,6 +222,24 @@ export class InvoicyCompanyRegistrationService {
       select: { emitCmun: true },
     });
 
+    // O PUT reescreve o cadastro inteiro: campo que for vazio aqui apaga o que
+    // existe no provedor. Como o cadastro atual pode estar MAIS completo que o
+    // nosso, so' sincronizamos com o endereco inteiro em maos.
+    const missing = [
+      !address?.street && 'logradouro',
+      !address?.number && 'número',
+      !address?.neighborhood && 'bairro',
+      !address?.zipcode && 'CEP',
+      !emissor?.emitCmun && 'código IBGE do município (emissor)',
+    ].filter(Boolean);
+
+    if (missing.length) {
+      throw new BadRequestException(
+        `Cadastro incompleto para sincronizar com o Invoicy — faltando: ${missing.join(', ')}. ` +
+          'Sincronizar assim apagaria esses dados no provedor.',
+      );
+    }
+
     const credentials = await this.prisma.companyEnvironmentCredential.findMany(
       {
         where: { companyId, providerAccessKeyEncrypted: { not: null } },

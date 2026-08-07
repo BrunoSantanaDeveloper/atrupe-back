@@ -355,6 +355,15 @@ describe('NfeService', () => {
       prisma.nfe.count.mockResolvedValue(0);
       prisma.nfse.findMany.mockResolvedValue([]);
       prisma.nfse.count.mockResolvedValue(0);
+      prisma.nfce.findMany.mockResolvedValue([]);
+      prisma.nfce.count.mockResolvedValue(0);
+      prisma.order.findMany.mockResolvedValue([]);
+      prisma.order.count.mockResolvedValue(0);
+      // clearAllMocks preserva implementações, então um teste que troque o
+      // ambiente do emissor vazaria para os seguintes sem este reset.
+      mockFiscalCredentialResolver.resolveEnvironmentFromConfig.mockReturnValue(
+        'HOMOLOGACAO',
+      );
     });
 
     it('should include NFC-e linked to an order in unified standalone list', async () => {
@@ -416,6 +425,145 @@ describe('NfeService', () => {
         clientName: 'Cliente da OS',
         reference: 'NFC-e 42 · OS 1234',
         totalValue: 123.45,
+      });
+    });
+
+    /**
+     * Produção e homologação apareciam misturadas na mesma lista, sem forma de
+     * separar. O filtro é aplicado no where (não em memória) porque a
+     * paginação usa os counts do banco.
+     */
+    describe('filtro de ambiente', () => {
+      it('aplica o ambiente nas notas avulsas', async () => {
+        await service.findUnified(mockCompanyId, {
+          recordType: 'NOTAS_AVULSAS',
+          ambiente: '2',
+        });
+
+        for (const model of ['nfe', 'nfse', 'nfce'] as const) {
+          expect(prisma[model].findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: expect.objectContaining({ ambiente: 2 }),
+            }),
+          );
+          expect(prisma[model].count).toHaveBeenCalledWith({
+            where: expect.objectContaining({ ambiente: 2 }),
+          });
+        }
+      });
+
+      it('não filtra ambiente quando o valor é ausente ou inválido', async () => {
+        await service.findUnified(mockCompanyId, {
+          recordType: 'NOTAS_AVULSAS',
+          ambiente: 'PRODUCAO',
+        });
+
+        expect(prisma.nfe.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.not.objectContaining({ ambiente: expect.anything() }),
+          }),
+        );
+      });
+
+      /**
+       * Os branches de status dos pedidos atribuem orderWhere.AND diretamente.
+       * Aplicar o ambiente antes deles — ou por atribuição — apagaria o filtro
+       * de status silenciosamente.
+       */
+      it('combina ambiente e status no pedido sem descartar nenhum dos dois', async () => {
+        await service.findUnified(mockCompanyId, {
+          recordType: 'PEDIDOS',
+          status: 'NAO_EMITIDA',
+          ambiente: '2',
+        });
+
+        const { where } = prisma.order.findMany.mock.calls[0][0];
+
+        // O AND do status permanece...
+        expect(where.AND).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              nfes: { none: expect.objectContaining({ ambiente: 2 }) },
+            }),
+          ]),
+        );
+        // ...e o OR de ambiente foi empilhado ao lado dele.
+        expect(where.AND).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              OR: expect.arrayContaining([
+                { nfes: { some: { ambiente: 2 } } },
+                { nfeOrders: { some: { nfe: { ambiente: 2 } } } },
+                { nfses: { some: { ambiente: 2 } } },
+              ]),
+            }),
+          ]),
+        );
+        expect(where.status).toEqual({ not: 'CANCELED' });
+      });
+
+      it('mantém na lista o pedido que ainda não tem documento algum', async () => {
+        await service.findUnified(mockCompanyId, {
+          recordType: 'PEDIDOS',
+          ambiente: '1',
+        });
+
+        const { where } = prisma.order.findMany.mock.calls[0][0];
+        const ambienteClause = where.AND.find((clause: any) => clause.OR);
+
+        expect(ambienteClause.OR).toEqual(
+          expect.arrayContaining([
+            {
+              AND: [
+                { nfes: { none: {} } },
+                { nfeOrders: { none: {} } },
+                { nfses: { none: {} } },
+              ],
+            },
+          ]),
+        );
+      });
+
+      /**
+       * Sem isto, filtrar homologação com o emissor ativo em produção devolveria
+       * pedidos já emitidos marcados como "não emitida": o status olharia um
+       * ambiente e o filtro, outro.
+       */
+      it('resolve o status dos pedidos pelo ambiente filtrado, não pelo ativo', async () => {
+        mockFiscalCredentialResolver.resolveEnvironmentFromConfig.mockReturnValue(
+          'PRODUCAO',
+        );
+
+        await service.findUnified(mockCompanyId, {
+          recordType: 'PEDIDOS',
+          status: 'EMITIDA',
+          ambiente: '2',
+        });
+
+        const { where } = prisma.order.findMany.mock.calls[0][0];
+        expect(where.OR).toEqual(
+          expect.arrayContaining([
+            { nfes: { some: { status: 'AUTHORIZED', ambiente: 2 } } },
+          ]),
+        );
+      });
+
+      it('só considera os tipos de documento da aba ativa', async () => {
+        await service.findUnified(mockCompanyId, {
+          recordType: 'PEDIDOS',
+          docType: 'NFSE',
+          ambiente: '2',
+        });
+
+        const { where } = prisma.order.findMany.mock.calls[0][0];
+        const ambienteClause = where.AND.find((clause: any) => clause.OR);
+
+        expect(ambienteClause.OR).toEqual(
+          expect.arrayContaining([{ nfses: { some: { ambiente: 2 } } }]),
+        );
+        expect(ambienteClause.OR).not.toEqual(
+          expect.arrayContaining([{ nfes: { some: { ambiente: 2 } } }]),
+        );
       });
     });
   });

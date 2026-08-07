@@ -2315,6 +2315,8 @@ model Nfe {
   @@index([status])
   @@index([numero, serie, companyId])
   @@index([invoicyConfigId])
+  // A listagem unificada filtra por ambiente dentro da empresa.
+  @@index([companyId, ambiente])
   @@map("nfes")
 }
 
@@ -2495,6 +2497,8 @@ model Nfse {
   @@index([status])
   @@index([numero, serie, companyId])
   @@index([invoicyConfigId])
+  // A listagem unificada filtra por ambiente dentro da empresa.
+  @@index([companyId, ambiente])
   @@map("nfses")
 }
 
@@ -2563,6 +2567,9 @@ model Nfce {
   @@index([invoicyConfigId])
   @@index([orderId])
   @@index([status])
+  // A listagem unificada filtra por ambiente dentro da empresa. O unique acima
+  // não serve: numero e serie vêm antes de ambiente na ordem das colunas.
+  @@index([companyId, ambiente])
   @@map("nfces")
 }
 

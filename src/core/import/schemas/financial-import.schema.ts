@@ -1,3 +1,5 @@
+import { findActiveBankAccountByName } from '../bank-account-matching';
+
 // Quantas contas bancárias listar na mensagem de erro antes de resumir o restante
 const MAX_LISTED_BANK_ACCOUNTS = 10;
 
@@ -288,13 +290,11 @@ export const FINANCIAL_IMPORT_SCHEMA = {
       validate: async (value: string, companyId: string, prisma: any) => {
         if (!value || value.trim() === '') return null;
 
-        const bankAccount = await prisma.bankAccount.findFirst({
-          where: {
-            name: value,
-            companyId,
-            isActive: true,
-          },
-        });
+        const bankAccount = await findActiveBankAccountByName(
+          prisma,
+          companyId,
+          value,
+        );
 
         if (!bankAccount) {
           const registered = await prisma.bankAccount.findMany({

@@ -13,6 +13,11 @@ import {
   FINANCIAL_IMPORT_SCHEMA,
   SUPPLIER_IMPORT_SCHEMA,
 } from './schemas';
+import {
+  GENERIC_BANK_CODE,
+  collectBankAccountNames,
+  findActiveBankAccountByName,
+} from './bank-account-matching';
 
 /**
  * Unidades cujo preço total depende de uma medida (área, comprimento, peso…).
@@ -197,6 +202,14 @@ export class ImportService {
         allowOverride,
       );
 
+      // Contas bancárias citadas no arquivo que a empresa ainda não tem. Criar
+      // conta é feature de plano (em Trial o cliente nem enxerga a tela), então
+      // devolvemos a lista para a tela oferecer a criação em vez de só barrar.
+      const missingBankAccounts =
+        importLog.entity === 'financial'
+          ? await this.findMissingBankAccounts(rows, importLog.companyId)
+          : [];
+
       // Atualizar registro
       await this.prisma.importLog.update({
         where: { id: importId },
@@ -219,6 +232,7 @@ export class ImportService {
         totalRows: rows.length,
         validRows: validationResult.validRows,
         errors: validationResult.errors,
+        missingBankAccounts,
         preview: rows.slice(0, 10),
       };
     } catch (error) {
@@ -234,6 +248,143 @@ export class ImportService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Contas bancárias citadas no CSV que a empresa não tem cadastradas e ativas.
+   */
+  private async findMissingBankAccounts(
+    rows: any[],
+    companyId: string,
+  ): Promise<string[]> {
+    const missing: string[] = [];
+
+    for (const name of collectBankAccountNames(rows)) {
+      const account = await findActiveBankAccountByName(
+        this.prisma,
+        companyId,
+        name,
+      );
+      if (!account) missing.push(name);
+    }
+
+    return missing;
+  }
+
+  /**
+   * Cria as contas bancárias citadas no CSV que ainda não existem, após a
+   * confirmação do usuário na tela de importação.
+   *
+   * Os nomes saem do próprio arquivo já enviado — não de um payload arbitrário —
+   * então a criação fica limitada ao que a importação realmente precisa.
+   *
+   * A instituição não é dedutível de um nome livre como "Sicredi CC 47204-3":
+   * usamos o banco genérico 000, o mesmo do provisionamento inicial da empresa, e
+   * o cliente ajusta depois. Conta inativa de mesmo nome é reativada em vez de
+   * duplicada, porque o validador filtra por `isActive`.
+   */
+  async createMissingBankAccounts(importId: string) {
+    const importLog = await this.prisma.importLog.findUnique({
+      where: { id: importId },
+    });
+
+    if (!importLog) {
+      throw new BadRequestException('Import not found');
+    }
+
+    if (importLog.entity !== 'financial') {
+      throw new BadRequestException(
+        'Only financial imports reference bank accounts',
+      );
+    }
+
+    const fileBuffer = this.fileBuffers.get(importId);
+
+    if (!fileBuffer) {
+      throw new BadRequestException(
+        'File not found. Please upload the file again.',
+      );
+    }
+
+    const rows = (await this.parseCsv(fileBuffer)).map((r) =>
+      this.normalizeRow(r),
+    );
+
+    const bank = await this.prisma.bank.findFirst({
+      where: { code: GENERIC_BANK_CODE },
+    });
+
+    if (!bank) {
+      throw new BadRequestException(
+        `Banco de código ${GENERIC_BANK_CODE} não encontrado`,
+      );
+    }
+
+    // O cadastro pela tela cria uma linha de controle de caixa por condição de
+    // pagamento, todas desligadas por padrão. Replicado aqui para a conta criada
+    // pela importação ficar igual a uma criada pela interface.
+    const paymentConditions = await this.prisma.paymentCondition.findMany({
+      where: { companyId: importLog.companyId, isActive: true },
+      select: { id: true },
+    });
+
+    const created: string[] = [];
+    const reactivated: string[] = [];
+    const skipped: string[] = [];
+
+    for (const name of collectBankAccountNames(rows)) {
+      const active = await findActiveBankAccountByName(
+        this.prisma,
+        importLog.companyId,
+        name,
+      );
+
+      if (active) {
+        skipped.push(active.name);
+        continue;
+      }
+
+      const inactive = await this.prisma.bankAccount.findFirst({
+        where: {
+          name: { equals: name, mode: 'insensitive' },
+          companyId: importLog.companyId,
+        },
+      });
+
+      if (inactive) {
+        await this.prisma.bankAccount.update({
+          where: { id: inactive.id },
+          data: { isActive: true },
+        });
+        reactivated.push(inactive.name);
+        continue;
+      }
+
+      await this.prisma.bankAccount.create({
+        data: {
+          name,
+          description: 'Criada pela importação financeira',
+          companyId: importLog.companyId,
+          bankId: bank.id,
+          cashControl: true,
+          bankAccountCashControl: {
+            createMany: {
+              data: paymentConditions.map((condition) => ({
+                paymentConditionId: condition.id,
+                acceptIncomes: false,
+                incomeType: 'PAYSOFF' as const,
+                acceptPayments: false,
+                paymentType: 'PAYSOFF' as const,
+              })),
+            },
+          },
+        },
+      });
+
+      created.push(name);
+    }
+
+    return { created, reactivated, skipped };
   }
 
   /**
@@ -2446,13 +2597,11 @@ export class ImportService {
             // Buscar conta bancária
             let bankAccountId: string | null = null;
             if (item.ContaBancaria) {
-              const bankAccount = await this.prisma.bankAccount.findFirst({
-                where: {
-                  name: item.ContaBancaria,
-                  companyId,
-                  isActive: true,
-                },
-              });
+              const bankAccount = await findActiveBankAccountByName(
+                this.prisma,
+                companyId,
+                item.ContaBancaria,
+              );
               if (bankAccount) {
                 bankAccountId = bankAccount.id;
               }
@@ -2577,13 +2726,11 @@ export class ImportService {
             // Buscar conta bancária
             let bankAccountId: string | null = null;
             if (item.ContaBancaria) {
-              const bankAccount = await this.prisma.bankAccount.findFirst({
-                where: {
-                  name: item.ContaBancaria,
-                  companyId,
-                  isActive: true,
-                },
-              });
+              const bankAccount = await findActiveBankAccountByName(
+                this.prisma,
+                companyId,
+                item.ContaBancaria,
+              );
               if (bankAccount) {
                 bankAccountId = bankAccount.id;
               }

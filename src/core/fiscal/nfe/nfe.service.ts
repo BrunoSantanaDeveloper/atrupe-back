@@ -25,6 +25,10 @@ import {
 import { fetchCepData } from '../utils/cep.util';
 import { getTPag } from '../utils/payment-method-map';
 import {
+  parseProjectDayBoundary,
+  toProjectDateKey,
+} from '../utils/project-date.util';
+import {
   EmitNfeDto,
   EmitNfeFromOrderDto,
   CancelNfeDto,
@@ -3552,6 +3556,20 @@ export class NfeService {
       nfce: resolveEnvironmentNumber('NFCE'),
     };
 
+    // Filtro explícito de ambiente (1 = produção, 2 = homologação). Ausente ou
+    // inválido significa "todos". Quando informado, ele passa a valer também
+    // para resolver o status dos pedidos: sem isso, filtrar homologação com o
+    // emissor ativo em produção devolveria pedidos marcados "Não emitida",
+    // porque o status olharia um ambiente e o filtro outro.
+    const ambienteFiltro =
+      filters.ambiente === '1' || filters.ambiente === 1
+        ? 1
+        : filters.ambiente === '2' || filters.ambiente === 2
+          ? 2
+          : undefined;
+    const envNfe = ambienteFiltro ?? fiscalEnvironments.nfe;
+    const envNfse = ambienteFiltro ?? fiscalEnvironments.nfse;
+
     let ordersPromise = Promise.resolve([]);
     let nfeAvulsasPromise = Promise.resolve([]);
     let nfseAvulsasPromise = Promise.resolve([]);
@@ -3568,17 +3586,30 @@ export class NfeService {
     const nfceWhere: any = { companyId, quotationId: null };
 
     if (filters.startDate || filters.endDate) {
+      // O período escolhido é o dia CIVIL brasileiro. Fixar em UTC fazia o dia
+      // começar às 21h do dia anterior, incluindo e excluindo notas erradas nas
+      // pontas — e divergindo do cabeçalho de grupo, que agrupa por data local.
       const createdAtFilter: any = {};
-      if (filters.startDate) {
-        createdAtFilter.gte = new Date(`${filters.startDate}T00:00:00.000Z`);
-      }
-      if (filters.endDate) {
-        createdAtFilter.lte = new Date(`${filters.endDate}T23:59:59.999Z`);
-      }
+      const start =
+        filters.startDate &&
+        parseProjectDayBoundary(filters.startDate, 'start');
+      const end =
+        filters.endDate && parseProjectDayBoundary(filters.endDate, 'end');
+      if (start) createdAtFilter.gte = start;
+      if (end) createdAtFilter.lte = end;
       orderWhere.createdAt = createdAtFilter;
       nfeWhere.createdAt = createdAtFilter;
       nfseWhere.createdAt = createdAtFilter;
       nfceWhere.createdAt = createdAtFilter;
+    }
+
+    // Nas avulsas o ambiente é coluna própria do documento. Nos pedidos ele é
+    // herdado dos documentos e só pode ser aplicado depois dos branches de
+    // status, que atribuem orderWhere.AND diretamente.
+    if (ambienteFiltro) {
+      nfeWhere.ambiente = ambienteFiltro;
+      nfseWhere.ambiente = ambienteFiltro;
+      nfceWhere.ambiente = ambienteFiltro;
     }
 
     // Item 1: ObtÃ©m IDs de NF-es rejeitadas que jÃ¡ tÃªm versÃ£o autorizada posterior
@@ -3608,7 +3639,7 @@ export class NfeService {
             nfes: {
               some: {
                 status: 'AUTHORIZED',
-                ambiente: fiscalEnvironments.nfe,
+                ambiente: envNfe,
               },
             },
           },
@@ -3617,7 +3648,7 @@ export class NfeService {
               some: {
                 nfe: {
                   status: 'AUTHORIZED',
-                  ambiente: fiscalEnvironments.nfe,
+                  ambiente: envNfe,
                 },
               },
             },
@@ -3626,7 +3657,7 @@ export class NfeService {
             nfses: {
               some: {
                 status: NfseStatus.AUTHORIZED,
-                ambiente: fiscalEnvironments.nfse,
+                ambiente: envNfse,
               },
             },
           },
@@ -3635,13 +3666,13 @@ export class NfeService {
         orderWhere.OR = [
           {
             nfes: {
-              some: { status: 'DRAFT', ambiente: fiscalEnvironments.nfe },
+              some: { status: 'DRAFT', ambiente: envNfe },
             },
           },
           {
             nfeOrders: {
               some: {
-                nfe: { status: 'DRAFT', ambiente: fiscalEnvironments.nfe },
+                nfe: { status: 'DRAFT', ambiente: envNfe },
               },
             },
           },
@@ -3655,7 +3686,7 @@ export class NfeService {
                     NfseStatus.PROCESSING,
                   ],
                 },
-                ambiente: fiscalEnvironments.nfse,
+                ambiente: envNfse,
               },
             },
           },
@@ -3665,7 +3696,7 @@ export class NfeService {
             nfes: {
               none: {
                 status: 'AUTHORIZED',
-                ambiente: fiscalEnvironments.nfe,
+                ambiente: envNfe,
               },
             },
           },
@@ -3674,7 +3705,7 @@ export class NfeService {
               none: {
                 nfe: {
                   status: 'AUTHORIZED',
-                  ambiente: fiscalEnvironments.nfe,
+                  ambiente: envNfe,
                 },
               },
             },
@@ -3683,7 +3714,7 @@ export class NfeService {
             nfses: {
               none: {
                 status: NfseStatus.AUTHORIZED,
-                ambiente: fiscalEnvironments.nfse,
+                ambiente: envNfse,
               },
             },
           },
@@ -3694,7 +3725,7 @@ export class NfeService {
             nfes: {
               none: {
                 status: { in: ['AUTHORIZED', 'DRAFT'] },
-                ambiente: fiscalEnvironments.nfe,
+                ambiente: envNfe,
               },
             },
           },
@@ -3703,7 +3734,7 @@ export class NfeService {
               none: {
                 nfe: {
                   status: { in: ['AUTHORIZED', 'DRAFT'] },
-                  ambiente: fiscalEnvironments.nfe,
+                  ambiente: envNfe,
                 },
               },
             },
@@ -3719,7 +3750,7 @@ export class NfeService {
                     NfseStatus.PROCESSING,
                   ],
                 },
-                ambiente: fiscalEnvironments.nfse,
+                ambiente: envNfse,
               },
             },
           },
@@ -3727,6 +3758,40 @@ export class NfeService {
         orderWhere.status = { not: 'CANCELED' };
       } else if (status === 'CANCELADA') {
         orderWhere.status = 'CANCELED';
+      }
+
+      // Precisa vir DEPOIS dos branches acima, que atribuem orderWhere.AND
+      // diretamente: aplicar antes seria descartado junto com o filtro de
+      // status. Por isso empilha em AND em vez de atribuir.
+      if (ambienteFiltro) {
+        // O pedido não tem ambiente próprio — herda o dos documentos emitidos a
+        // partir dele. Pedido ainda sem documento aparece em qualquer ambiente:
+        // está por emitir e não pertence a nenhum.
+        const ambienteOr: any[] = [
+          ...(includeNfe
+            ? [
+                { nfes: { some: { ambiente: ambienteFiltro } } },
+                { nfeOrders: { some: { nfe: { ambiente: ambienteFiltro } } } },
+              ]
+            : []),
+          ...(includeNfse
+            ? [{ nfses: { some: { ambiente: ambienteFiltro } } }]
+            : []),
+          {
+            AND: [
+              { nfes: { none: {} } },
+              { nfeOrders: { none: {} } },
+              { nfses: { none: {} } },
+            ],
+          },
+        ];
+
+        const existingAnd = orderWhere.AND
+          ? Array.isArray(orderWhere.AND)
+            ? orderWhere.AND
+            : [orderWhere.AND]
+          : [];
+        orderWhere.AND = [...existingAnd, { OR: ambienteOr }];
       }
 
       if (search) {
@@ -3968,7 +4033,9 @@ export class NfeService {
     let currentGroup = null;
 
     for (const item of paginatedItems) {
-      const dateStr = item.createdAt.toISOString().split('T')[0];
+      // Data local da operação, não UTC: agrupar por UTC jogava as emissões
+      // feitas depois das 21h no dia seguinte.
+      const dateStr = toProjectDateKey(item.createdAt);
       if (dateStr !== currentDate) {
         if (currentGroup) groupedItems.push(currentGroup);
         currentDate = dateStr;
