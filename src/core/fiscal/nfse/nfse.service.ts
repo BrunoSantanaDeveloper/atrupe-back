@@ -56,6 +56,20 @@ export class NfseService {
     private readonly mailService: MailService,
   ) {}
 
+  /**
+   * Valor monetário com 2 casas. Sem isso, `(0.01 * 2.53) / 100` chega ao
+   * Invoicy como 0.00025299999999999997 e a API responde HTTP 500.
+   * NF-e e NFC-e já arredondam todo o payload; a NFS-e era a exceção.
+   */
+  private money(value: number): number {
+    return Number((value || 0).toFixed(2));
+  }
+
+  /** Alíquota com 4 casas — municípios usam alíquotas como 2,5341%. */
+  private rate(value: number): number {
+    return Number((value || 0).toFixed(4));
+  }
+
   async findAll(companyId: string, filters: NfseFilterDto) {
     const page = filters.page || 1;
     const limit = filters.limit || 20;
@@ -861,21 +875,23 @@ export class NfseService {
       }
     }
 
-    // Calcular valores
-    const valorServicos = dto.valorServicos;
-    const valorDeducoes = dto.valorDeducoes || 0;
-    const baseCalculo = valorServicos - valorDeducoes;
+    // Calcular valores. Tudo arredondado na origem para que banco e payload
+    // compartilhem exatamente o mesmo número.
+    const valorServicos = this.money(dto.valorServicos);
+    const valorDeducoes = this.money(dto.valorDeducoes || 0);
+    const baseCalculo = this.money(valorServicos - valorDeducoes);
     // `??` e não `||`: alíquota 0 é legítima (serviço isento/imune) e não pode
     // cair no fallback. Se nada estiver configurado, falha fechada em vez de
     // emitir ISS zerado silenciosamente.
-    const aliquotaIss = dto.aliquotaIss ?? config.aliquotaIss;
-    if (aliquotaIss === null || aliquotaIss === undefined) {
+    const aliquotaIssRaw = dto.aliquotaIss ?? config.aliquotaIss;
+    if (aliquotaIssRaw === null || aliquotaIssRaw === undefined) {
       throw new BadRequestException(
         'Alíquota de ISS não resolvida. Informe a alíquota na emissão ou ' +
           'configure a alíquota padrão em Configurações > Emissores.',
       );
     }
-    const valorIss = (baseCalculo * aliquotaIss) / 100;
+    const aliquotaIss = this.rate(aliquotaIssRaw);
+    const valorIss = this.money((baseCalculo * aliquotaIss) / 100);
 
     this.assertNfsePayloadReady(dto, valorServicos, valorDeducoes, baseCalculo);
 
@@ -933,44 +949,47 @@ export class NfseService {
       );
 
       // FunÃ§Ã£o auxiliar para construir lista de itens
-      const listaItens = dto.itens?.map((item, index) => ({
-        ItemSeq: index + 1,
-        ItemCod: item.codigo,
-        ItemDesc: item.descricao,
-        ItemQtde: item.quantidade,
-        ItemvUnit: item.valorUnitario,
-        ItemuMed: item.unidade || 'UN',
-        ItemvlDed: 0,
-        ItemTributavel: 'S',
-        // Município de incidência do ISS — NÃO é o código de serviço.
-        ItemTributMunicipio: parseInt(
-          dto.codigoMunicipio || config.ibgeCode || '0',
-          10,
-        ),
-        ItemvIss:
-          (item.quantidade *
-            item.valorUnitario *
-            (item.aliquotaIss ?? aliquotaIss)) /
-          100,
+      const listaItens = dto.itens?.map((item, index) => {
+        // Base arredondada uma vez e reaproveitada, para que ItemvIss fique
+        // aritmeticamente consistente com ItemBaseCalculo.
+        const itemBase = this.money(item.quantidade * item.valorUnitario);
         // `??` e não `||`: alíquota 0 é legítima (serviço isento/imune).
-        ItemAliquota: item.aliquotaIss ?? aliquotaIss,
-        ItemVlrTotal: item.quantidade * item.valorUnitario,
-        ItemBaseCalculo: item.quantidade * item.valorUnitario,
-        ItemIssRetido: item.issRetido ? 1 : 2,
-        // Código da lista de serviços LC 116 do item; cai para o do emissor.
-        ItemIteListServico: parseInt(
-          (item.codigoServico || config.codigoServico || '').replace(
-            /\D/g,
-            '',
-          ) || '0',
-          10,
-        ),
-        ItemExigibilidadeISS: 1, // ExigÃ­vel
-        ItemcMunIncidencia: parseInt(
-          dto.codigoMunicipio || config.ibgeCode || '0',
-          10,
-        ),
-      })) || [
+        const itemAliquota = this.rate(item.aliquotaIss ?? aliquotaIss);
+
+        return {
+          ItemSeq: index + 1,
+          ItemCod: item.codigo,
+          ItemDesc: item.descricao,
+          ItemQtde: item.quantidade,
+          ItemvUnit: this.money(item.valorUnitario),
+          ItemuMed: item.unidade || 'UN',
+          ItemvlDed: 0,
+          ItemTributavel: 'S',
+          // Município de incidência do ISS — NÃO é o código de serviço.
+          ItemTributMunicipio: parseInt(
+            dto.codigoMunicipio || config.ibgeCode || '0',
+            10,
+          ),
+          ItemvIss: this.money((itemBase * itemAliquota) / 100),
+          ItemAliquota: itemAliquota,
+          ItemVlrTotal: itemBase,
+          ItemBaseCalculo: itemBase,
+          ItemIssRetido: item.issRetido ? 1 : 2,
+          // Código da lista de serviços LC 116 do item; cai para o do emissor.
+          ItemIteListServico: parseInt(
+            (item.codigoServico || config.codigoServico || '').replace(
+              /\D/g,
+              '',
+            ) || '0',
+            10,
+          ),
+          ItemExigibilidadeISS: 1, // ExigÃ­vel
+          ItemcMunIncidencia: parseInt(
+            dto.codigoMunicipio || config.ibgeCode || '0',
+            10,
+          ),
+        };
+      }) || [
         {
           ItemSeq: 1,
           ItemCod: 'SERV',
@@ -1065,11 +1084,11 @@ export class NfseService {
                 Valores: {
                   ValServicos: valorServicos,
                   ValDeducoes: valorDeducoes,
-                  ValPIS: dto.valorPis || 0,
-                  ValCOFINS: dto.valorCofins || 0,
-                  ValINSS: dto.valorInss || 0,
-                  ValIR: dto.valorIr || 0,
-                  ValCSLL: dto.valorCsll || 0,
+                  ValPIS: this.money(dto.valorPis || 0),
+                  ValCOFINS: this.money(dto.valorCofins || 0),
+                  ValINSS: this.money(dto.valorInss || 0),
+                  ValIR: this.money(dto.valorIr || 0),
+                  ValCSLL: this.money(dto.valorCsll || 0),
                   ISSRetido: dto.issRetido ? 1 : 2, // 1 = Sim, 2 = NÃ£o
                   ValISS: valorIss,
                   ValOutrasRetencoes: 0,
@@ -1180,7 +1199,12 @@ export class NfseService {
         data: { invoicyPayloadEnvio: invoicyRequest as any },
       });
 
-      let response = await this.sendNfseToInvoicy(companyId, invoicyRequest);
+      let response = await this.sendNfseToInvoicy(
+        companyId,
+        invoicyRequest,
+        config.id,
+        environment,
+      );
 
       this.logger.debug(
         `[NFS-e] Resposta Invoicy: ${JSON.stringify(response)}`,
@@ -1194,7 +1218,12 @@ export class NfseService {
         this.logger.warn(
           `Prefeitura rejeitou a NFS-e ${nfse.id} com E0120 (IM inválida). Reenviando RPS ${rpsNumero}/${rpsSerie} sem Prestador.IM.`,
         );
-        response = await this.sendNfseToInvoicy(companyId, invoicyRequest);
+        response = await this.sendNfseToInvoicy(
+          companyId,
+          invoicyRequest,
+          config.id,
+          environment,
+        );
       }
 
       if (this.shouldRetryNfseWithRegApuracao(response)) {
@@ -1205,7 +1234,12 @@ export class NfseService {
         this.logger.warn(
           `Prefeitura rejeitou a NFS-e ${nfse.id} com E0166 (RegApuracao ausente). Reenviando RPS ${rpsNumero}/${rpsSerie} com RegApuracao=1.`,
         );
-        response = await this.sendNfseToInvoicy(companyId, invoicyRequest);
+        response = await this.sendNfseToInvoicy(
+          companyId,
+          invoicyRequest,
+          config.id,
+          environment,
+        );
       }
 
       // Reescreve o snapshot com o payload final — os retries acima mutam o
@@ -1347,10 +1381,18 @@ export class NfseService {
   private async sendNfseToInvoicy(
     companyId: string,
     invoicyRequest: InvoicyNfseRequest,
+    invoicyConfigId?: string,
+    environment?: 'HOMOLOGACAO' | 'PRODUCAO',
   ) {
-    const invoicyResponses = await this.invoicyApiService.emitNfse(companyId, [
-      invoicyRequest,
-    ]);
+    // Repassa emissor e ambiente já resolvidos com docType 'NFSE'. Sem isso o
+    // transporte recai no activeEnvironment global e pode falar com um host de
+    // ambiente diferente do tpAmb que vai no payload.
+    const invoicyResponses = await this.invoicyApiService.emitNfse(
+      companyId,
+      [invoicyRequest],
+      invoicyConfigId,
+      environment,
+    );
 
     const response = invoicyResponses[0];
     if (!response) {

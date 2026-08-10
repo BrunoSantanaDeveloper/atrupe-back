@@ -452,14 +452,23 @@ export class InvoicyApiService {
   async emitNfse(
     companyId: string,
     documents: InvoicyNfseRequest[],
+    invoicyConfigId?: string,
+    environment?: FiscalEnvironment,
   ): Promise<InvoicyResponse[]> {
     this.logger.log(`Emitting NFS-e for company ${companyId}`);
 
+    // Emissão não é idempotente: o payload não carrega chave de idempotência,
+    // então reenviar após falha de leitura pode duplicar um RPS que a
+    // prefeitura já processou. Mesmo tratamento de emitNfe/cancelNfe.
     return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
       '/senddocuments/nfse?type=Emissao',
       documents,
+      invoicyConfigId,
+      AbortSignal.timeout(this.FISCAL_EVENT_TIMEOUT_MS),
+      environment,
+      true,
     );
   }
 

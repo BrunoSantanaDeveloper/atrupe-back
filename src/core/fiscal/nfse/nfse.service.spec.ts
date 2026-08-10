@@ -348,7 +348,8 @@ describe('NfseService', () => {
         discriminacao: 'Serviço de consultoria em TI',
       });
 
-      // Verify emitNfse was called with InvoicyNfseRequest structure
+      // Verify emitNfse was called with InvoicyNfseRequest structure,
+      // repassando emissor e ambiente resolvidos para o transporte.
       expect(invoicyApiService.emitNfse).toHaveBeenCalledWith(
         mockCompanyId,
         expect.arrayContaining([
@@ -359,6 +360,42 @@ describe('NfseService', () => {
             }),
           }),
         ]),
+        'config-1',
+        'HOMOLOGACAO',
+      );
+    });
+
+    it('arredonda valores monetários antes de enviar ao Invoicy', async () => {
+      // (0.01 * 2.53) / 100 === 0.00025299999999999997 em ponto flutuante.
+      // O Invoicy responde HTTP 500 a decimais com 20 dígitos significativos.
+      await service.emit(mockCompanyId, {
+        tomador: {
+          cnpj: '12345678901234',
+          razaoSocial: 'Cliente Teste LTDA',
+          endereco: 'Avenida Paulista',
+          numero: '1000',
+          bairro: 'Bela Vista',
+          cep: '01310100',
+          codigoMunicipio: '3550308',
+        },
+        codigoServico: '1.05',
+        codigoMunicipio: '4314902',
+        discriminacao: 'teste',
+        valorServicos: 0.01,
+        aliquotaIss: 2.53,
+        naturezaOperacao: 1,
+      } as any);
+
+      const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+      const rps = documentos[0].Documento.RPS[0];
+
+      const casasDecimais = (n: number) =>
+        (String(n).split('.')[1] || '').length;
+
+      expect(casasDecimais(rps.Servico.Valores.ValISS)).toBeLessThanOrEqual(2);
+      expect(casasDecimais(rps.ListaItens[0].ItemvIss)).toBeLessThanOrEqual(2);
+      expect(JSON.stringify(rps.Servico.Valores.ValISS)).not.toContain(
+        '0000000',
       );
     });
 
