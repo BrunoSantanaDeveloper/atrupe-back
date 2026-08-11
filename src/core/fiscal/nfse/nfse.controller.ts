@@ -93,9 +93,21 @@ export class NfseController {
     return this.nfseService.cancel(id, req.user.companyId, dto);
   }
 
+  @Post('reconcile')
+  @HasPermission('view', 'nota_fiscal:emitidas')
+  @ApiOperation({
+    summary:
+      'Reconciliar NFS-e pendentes com o provedor (PROCESSING e rejeitadas sem número)',
+  })
+  async reconcilePending(@Req() req) {
+    return this.nfseService.reconcilePending(req.user.companyId);
+  }
+
   @Get(':id/status')
   @HasPermission('view', 'nota_fiscal:emitidas')
-  @ApiOperation({ summary: 'Consultar status da NFS-e' })
+  @ApiOperation({
+    summary: 'Consultar status da NFS-e no provedor e reconciliar o registro',
+  })
   async consultStatus(@Req() req, @Param('id') id: string) {
     return this.nfseService.consultStatus(id, req.user.companyId);
   }

@@ -516,6 +516,70 @@ export class InvoicyApiService {
     );
   }
 
+  /**
+   * Consulta NFS-e no provedor por faixa de numeração de RPS.
+   *
+   * Para NFS-e o "Número" do documento no InvoiCy é o número do RPS — a
+   * numeração da nota municipal vem separada em NFSe.NFSeNumero. Por isso a
+   * consulta é por rpsNumero, que é o único identificador que temos quando a
+   * emissão falha antes de a prefeitura devolver um número.
+   *
+   * Layout: migrate-company/integracao-InvoiCy-BR, "Consulta de documentos"
+   * (Consulta Por Faixa Número.xml / get_consulta.txt).
+   */
+  async consultNfse(
+    companyId: string,
+    rpsNumeroInicial: number,
+    rpsNumeroFinal: number,
+    serie: string,
+    ambiente?: number,
+    invoicyConfigId?: string,
+  ): Promise<InvoicyResponse[]> {
+    this.logger.log(
+      `Consultando NFS-e RPS ${rpsNumeroInicial}-${rpsNumeroFinal}/${serie} para empresa ${companyId}`,
+    );
+
+    const forceEnvironment = this.toFiscalEnvironment(ambiente);
+
+    const credentials = await this.invoicyHttpService.getCompanyCredentials(
+      companyId,
+      invoicyConfigId,
+      forceEnvironment,
+    );
+    const cnpj = (credentials.cnpj || '').replace(/\D/g, '');
+
+    const params = new URLSearchParams({
+      type: 'Consulta',
+      ModeloDocumento: 'NFSe',
+      Versao: '1.00',
+      CnpjEmissor: cnpj,
+      CnpjEmpresa: cnpj,
+      NumeroInicial: String(rpsNumeroInicial),
+      NumeroFinal: String(rpsNumeroFinal),
+      Serie: serie,
+      tpAmb: String(ambiente ?? 2),
+      EmitidoRecebido: 'E',
+      DocumentosResumo: 'N',
+      ParmSituacao: 'S',
+      ParmEventos: 'N',
+      ParmPDFBase64: 'N',
+      ParmPDFLink: 'S',
+      ParmXMLCompleto: 'S',
+      ParmXMLLink: 'N',
+    });
+
+    // Consulta é idempotente: retry aqui é seguro e desejável.
+    return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
+      companyId,
+      'GET',
+      `/senddocuments/nfse?${params.toString()}`,
+      undefined,
+      invoicyConfigId,
+      AbortSignal.timeout(this.FISCAL_EVENT_TIMEOUT_MS),
+      forceEnvironment,
+    );
+  }
+
   // ============================================
   // Health Check
   // ============================================

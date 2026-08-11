@@ -1645,34 +1645,192 @@ export class NfseService {
     }
   }
 
+  /**
+   * Consulta a NFS-e no provedor e reconcilia o registro local.
+   *
+   * Existe porque a emissão trata a resposta síncrona como verdade final: se
+   * ela se perde (timeout, HTTP 5xx) ou a prefeitura autoriza depois, o
+   * registro fica em PROCESSING/REJECTED enquanto a nota existe de fato. Sem
+   * isto a única saída é conferir manualmente no portal do InvoiCy.
+   */
   async consultStatus(id: string, companyId: string) {
     const nfse = await this.findById(id, companyId);
+    const config = await this.invoicyService.getConfig(companyId);
 
+    this.logger.log(
+      `Consultando NFS-e ${nfse.id} (RPS ${nfse.rpsNumero}/${nfse.rpsSerie}) no provedor`,
+    );
+
+    let doc: any;
     try {
-      // TODO: Implementar consulta real ao status da NFS-e na prefeitura via Invoicy
-      this.logger.log(`Consultando status da NFS-e ${nfse.numero}`);
+      const responses = await this.invoicyApiService.consultNfse(
+        companyId,
+        nfse.rpsNumero,
+        nfse.rpsNumero,
+        nfse.rpsSerie,
+        nfse.ambiente,
+        config.id,
+      );
 
-      return {
-        id: nfse.id,
-        numero: nfse.numero,
-        serie: nfse.serie,
-        rpsNumero: nfse.rpsNumero,
-        rpsSerie: nfse.rpsSerie,
-        status: nfse.status,
-        codigoVerificacao: nfse.codigoVerificacao,
-        protocolo: nfse.protocolo,
-        dataEmissao: nfse.dataEmissao,
-        valorServicos: nfse.valorServicos,
-      };
+      doc = responses?.[0]?.Documentos?.[0];
     } catch (error) {
       this.logger.error(
-        `Erro ao consultar status da NFS-e: ${error.message}`,
+        `Erro ao consultar NFS-e ${nfse.id}: ${error.message}`,
         error.stack,
       );
       throw new BadRequestException(
-        `Erro ao consultar status da NFS-e: ${error.message}`,
+        `Erro ao consultar NFS-e no provedor: ${error.message}`,
       );
     }
+
+    // Sem documento: o provedor nunca registrou este RPS. É o caso de uma
+    // emissão que falhou no transporte — o número está livre para reemitir.
+    if (!doc) {
+      if (nfse.status === NfseStatus.PROCESSING) {
+        await this.prisma.nfse.update({
+          where: { id: nfse.id },
+          data: {
+            status: NfseStatus.REJECTED,
+            motivoRejeicao:
+              'Consulta ao provedor não localizou o RPS: a emissão não chegou a ser registrada.',
+          },
+        });
+      }
+
+      return {
+        id: nfse.id,
+        rpsNumero: nfse.rpsNumero,
+        rpsSerie: nfse.rpsSerie,
+        encontradoNoProvedor: false,
+        statusAnterior: nfse.status,
+        status:
+          nfse.status === NfseStatus.PROCESSING
+            ? NfseStatus.REJECTED
+            : nfse.status,
+        statusAlterado: nfse.status === NfseStatus.PROCESSING,
+        mensagem:
+          'RPS não localizado no provedor. Nenhuma nota foi gerada para esta numeração.',
+      };
+    }
+
+    const situacao = doc.Situacao;
+    const isAuthorized = situacao?.SitCodigo === 100;
+    const isCancelled = situacao?.SitCodigo === 101;
+
+    const novoStatus = isAuthorized
+      ? NfseStatus.AUTHORIZED
+      : isCancelled
+        ? NfseStatus.CANCELLED
+        : NfseStatus.REJECTED;
+
+    const statusAlterado = novoStatus !== nfse.status;
+
+    const atualizada = await this.prisma.nfse.update({
+      where: { id: nfse.id },
+      data: {
+        status: novoStatus,
+        numero: doc.NFSe?.NFSeNumero || nfse.numero,
+        codigoVerificacao:
+          doc.NFSe?.NFSeCodVerificacao || nfse.codigoVerificacao,
+        protocolo: doc.DocProtocolo || nfse.protocolo,
+        invoicyId: doc.DocIDUnico || nfse.invoicyId,
+        pdfUrl: doc.DocPDFDownload || nfse.pdfUrl,
+        xmlRetorno: doc.DocXMLBase64 || nfse.xmlRetorno,
+        motivoRejeicao: isAuthorized ? null : situacao?.SitDescricao || null,
+      },
+    });
+
+    if (statusAlterado) {
+      this.logger.warn(
+        `NFS-e ${nfse.id} reconciliada: ${nfse.status} -> ${novoStatus} ` +
+          `(RPS ${nfse.rpsNumero}, nota ${atualizada.numero})`,
+      );
+    }
+
+    return {
+      id: atualizada.id,
+      numero: atualizada.numero,
+      serie: atualizada.serie,
+      rpsNumero: atualizada.rpsNumero,
+      rpsSerie: atualizada.rpsSerie,
+      encontradoNoProvedor: true,
+      statusAnterior: nfse.status,
+      status: atualizada.status,
+      statusAlterado,
+      codigoVerificacao: atualizada.codigoVerificacao,
+      protocolo: atualizada.protocolo,
+      pdfUrl: atualizada.pdfUrl,
+      dataEmissao: atualizada.dataEmissao,
+      valorServicos: atualizada.valorServicos,
+      situacaoProvedor: situacao?.SitDescricao || null,
+    };
+  }
+
+  /**
+   * Varre as NFS-e cujo desfecho local pode não refletir o provedor e
+   * reconcilia cada uma.
+   *
+   * Alvos:
+   * - PROCESSING: emissão que perdeu a resposta (timeout/5xx).
+   * - REJECTED sem número: a prefeitura pode ter autorizado depois, ou a
+   *   rejeição foi de uma tentativa anterior do mesmo RPS. Foi assim que uma
+   *   nota autorizada ficou invisível para o sistema.
+   */
+  async reconcilePending(companyId: string, limite = 25) {
+    const candidatas = await this.prisma.nfse.findMany({
+      where: {
+        companyId,
+        OR: [
+          { status: NfseStatus.PROCESSING },
+          { status: NfseStatus.REJECTED, numero: 0 },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limite,
+      select: { id: true, rpsNumero: true, rpsSerie: true, status: true },
+    });
+
+    const resultados: any[] = [];
+
+    for (const candidata of candidatas) {
+      try {
+        const resultado = await this.consultStatus(candidata.id, companyId);
+        resultados.push({
+          id: candidata.id,
+          rpsNumero: candidata.rpsNumero,
+          statusAnterior: candidata.status,
+          status: resultado.status,
+          alterada: resultado.statusAlterado,
+          encontradoNoProvedor: resultado.encontradoNoProvedor,
+        });
+      } catch (error) {
+        // Uma consulta que falha não pode abortar a varredura inteira.
+        resultados.push({
+          id: candidata.id,
+          rpsNumero: candidata.rpsNumero,
+          statusAnterior: candidata.status,
+          erro: error.message,
+        });
+      }
+
+      // Espaçamento entre consultas: o provedor recomenda intervalo entre
+      // consultas consecutivas.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+
+    const alteradas = resultados.filter((r) => r.alterada).length;
+
+    this.logger.log(
+      `Reconciliação NFS-e da empresa ${companyId}: ${candidatas.length} consultadas, ${alteradas} atualizadas`,
+    );
+
+    return {
+      consultadas: candidatas.length,
+      alteradas,
+      // Sinaliza que a varredura pode não ter coberto tudo.
+      limiteAtingido: candidatas.length === limite,
+      resultados,
+    };
   }
 
   async getPdfUrl(id: string, companyId: string) {

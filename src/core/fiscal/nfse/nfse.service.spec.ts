@@ -152,6 +152,7 @@ const mockInvoicyApiService = {
   emitNfse: jest.fn(),
   cancelNfse: jest.fn(),
   getStatusNfse: jest.fn(),
+  consultNfse: jest.fn(),
 };
 
 describe('NfseService', () => {
@@ -540,6 +541,105 @@ describe('NfseService', () => {
           justificativa: 'Teste cancelamento',
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('consultStatus', () => {
+    beforeEach(() => {
+      mockInvoicyService.getConfig.mockResolvedValue({
+        id: 'config-1',
+        ambiente: 2,
+      });
+    });
+
+    it('reconcilia nota autorizada no provedor que estava REJECTED local', async () => {
+      // Caso real: a prefeitura autorizou a nota, mas o sistema gravou a
+      // rejeição de uma tentativa anterior do mesmo RPS.
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.REJECTED,
+        numero: 0,
+        rpsNumero: 26,
+        rpsSerie: '1',
+        ambiente: 2,
+      });
+      invoicyApiService.consultNfse.mockResolvedValue([
+        {
+          Codigo: 100,
+          Documentos: [
+            {
+              Situacao: { SitCodigo: 100, SitDescricao: 'NFS-e autorizada' },
+              NFSe: { NFSeNumero: 1, NFSeCodVerificacao: 'ABC123' },
+              DocPDFDownload: 'https://invoicy.com/pdf/1',
+            },
+          ],
+        },
+      ]);
+      prisma.nfse.update.mockImplementation(({ data }) =>
+        Promise.resolve({ ...mockNfse, ...data }),
+      );
+
+      const result = await service.consultStatus(mockNfseId, mockCompanyId);
+
+      expect(result.encontradoNoProvedor).toBe(true);
+      expect(result.statusAlterado).toBe(true);
+      expect(result.status).toBe(NfseStatus.AUTHORIZED);
+      expect(result.numero).toBe(1);
+      expect(prisma.nfse.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: NfseStatus.AUTHORIZED,
+            numero: 1,
+            motivoRejeicao: null,
+          }),
+        }),
+      );
+    });
+
+    it('RPS ausente no provedor: PROCESSING vira REJECTED', async () => {
+      // Emissão que falhou no transporte — nenhuma nota foi gerada.
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.PROCESSING,
+        numero: 0,
+        rpsNumero: 32,
+        rpsSerie: '1',
+        ambiente: 2,
+      });
+      invoicyApiService.consultNfse.mockResolvedValue([
+        { Codigo: 100, Documentos: [] },
+      ]);
+      prisma.nfse.update.mockResolvedValue({ ...mockNfse });
+
+      const result = await service.consultStatus(mockNfseId, mockCompanyId);
+
+      expect(result.encontradoNoProvedor).toBe(false);
+      expect(result.status).toBe(NfseStatus.REJECTED);
+      expect(result.statusAlterado).toBe(true);
+    });
+
+    it('consulta o provedor pela faixa do próprio RPS', async () => {
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        rpsNumero: 32,
+        rpsSerie: '1',
+        ambiente: 2,
+      });
+      invoicyApiService.consultNfse.mockResolvedValue([
+        { Codigo: 100, Documentos: [] },
+      ]);
+      prisma.nfse.update.mockResolvedValue({ ...mockNfse });
+
+      await service.consultStatus(mockNfseId, mockCompanyId);
+
+      expect(invoicyApiService.consultNfse).toHaveBeenCalledWith(
+        mockCompanyId,
+        32,
+        32,
+        '1',
+        2,
+        'config-1',
+      );
     });
   });
 
