@@ -997,6 +997,63 @@ describe('NfeService', () => {
       await expect(service.emit(mockCompanyId, mockEmitDto)).rejects.toThrow();
     });
 
+    /**
+     * A reserva acontece antes da transmissão, então toda rejeição queima um
+     * número. Como a nota rejeitada nunca existiu na SEFAZ, o número continua
+     * livre — e devolvê-lo evita um vão que só se regulariza com inutilização.
+     */
+    describe('devolução do número após rejeição', () => {
+      const rejeitadaPelaSefaz = () =>
+        invoicyApiService.emitNfe.mockResolvedValue([
+          {
+            Codigo: 100,
+            Documentos: [
+              {
+                Situacao: {
+                  SitCodigo: 539,
+                  SitDescricao: 'Duplicidade de NF-e',
+                },
+              },
+            ],
+          },
+        ]);
+
+      const updatesDeSequencia = () =>
+        prisma.$executeRaw.mock.calls
+          .map((call: any) => call[0].join(''))
+          .filter((sql: string) => sql.includes('nfeNextNumber'));
+
+      it('devolve o número quando a SEFAZ recusa a nota', async () => {
+        rejeitadaPelaSefaz();
+
+        await expect(
+          service.emit(mockCompanyId, mockEmitDto),
+        ).rejects.toThrow();
+
+        expect(updatesDeSequencia()).toHaveLength(1);
+      });
+
+      it('não devolve o número em falha de transporte', async () => {
+        // A nota PODE ter sido autorizada sem a resposta chegar. Devolver aqui
+        // levaria a duplicidade 539 na emissão seguinte.
+        invoicyApiService.emitNfe.mockRejectedValue(
+          new Error('timeout of 45000ms exceeded'),
+        );
+
+        await expect(
+          service.emit(mockCompanyId, mockEmitDto),
+        ).rejects.toThrow();
+
+        expect(updatesDeSequencia()).toHaveLength(0);
+      });
+
+      it('não devolve o número quando a nota é autorizada', async () => {
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        expect(updatesDeSequencia()).toHaveLength(0);
+      });
+    });
+
     // Fase 6: OperationNature passa a alimentar CFOP, finalidade e presença do
     // consumidor. É opt-in por DADO — sem natureza cadastrada, o comportamento
     // anterior tem de permanecer idêntico.

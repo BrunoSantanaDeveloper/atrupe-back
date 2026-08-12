@@ -7,6 +7,7 @@
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import {
+  FiscalEnvironment,
   NfeStatus,
   NfseStatus,
   NfeCorrectionStatus,
@@ -2253,6 +2254,12 @@ export class NfeService {
       });
 
       if (!isAuthorized) {
+        // Resposta CONCLUSIVA da SEFAZ: a nota nao foi autorizada, entao o
+        // numero continua livre. Devolver aqui e o unico ponto seguro — no
+        // catch abaixo cai tambem falha de transporte, onde a nota PODE ter
+        // sido autorizada.
+        await this.releaseRejectedNfeNumber(config.id, environment, numero);
+
         throw new BadRequestException(
           `NF-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}`,
         );
@@ -2294,6 +2301,58 @@ export class NfeService {
 
       this.logger.error(`Erro ao emitir NF-e: ${error.message}`, error.stack);
       throw new BadRequestException(`Erro ao emitir NF-e: ${error.message}`);
+    }
+  }
+
+  /**
+   * Devolve a sequencia ao numero reservado quando a SEFAZ rejeita a nota.
+   *
+   * A reserva e atomica e acontece ANTES da transmissao — e isso que impede
+   * duas emissoes concorrentes de montarem o payload com o mesmo numero. O
+   * custo e que toda rejeicao queima um numero: a nota nunca existiu na SEFAZ,
+   * mas a sequencia ja andou, e o vao resultante so se regulariza com
+   * inutilizacao. Reaproveitar numero de nota rejeitada e legitimo.
+   *
+   * O UPDATE e condicional de proposito: so devolve se a sequencia ainda
+   * estiver exatamente em `numero + 1`, ou seja, se ninguem reservou no
+   * meio-tempo. Se outra emissao ja avancou, devolver reordenaria a numeracao
+   * — pior que o vao. Nesse caso o numero fica vago e exige inutilizacao.
+   *
+   * NUNCA chamar em falha de transporte ou timeout: ali a nota PODE ter sido
+   * autorizada sem que a resposta chegasse, e devolver o numero levaria direto
+   * a rejeicao 539 (duplicidade) na proxima emissao.
+   */
+  private async releaseRejectedNfeNumber(
+    invoicyConfigId: string,
+    environment: FiscalEnvironment,
+    reservedNumber: number,
+  ): Promise<void> {
+    try {
+      const released = await this.prisma.$executeRaw`
+        UPDATE invoicy_environment_configs
+        SET "nfeNextNumber" = ${reservedNumber}
+        WHERE "invoicyConfigId" = ${invoicyConfigId}
+          AND environment = ${environment}::"FiscalEnvironment"
+          AND "docType" = 'NFE'::"FiscalDocType"
+          AND "nfeNextNumber" = ${reservedNumber + 1}
+      `;
+
+      if (released > 0) {
+        this.logger.log(
+          `Numero ${reservedNumber} devolvido a sequencia de NF-e (${environment}) apos rejeicao da SEFAZ.`,
+        );
+      } else {
+        this.logger.log(
+          `Numero ${reservedNumber} nao devolvido: a sequencia de NF-e (${environment}) ja avancou. ` +
+            'O numero fica vago e precisara de inutilizacao.',
+        );
+      }
+    } catch (error) {
+      // Best-effort: devolver numero nunca pode mascarar a rejeicao original,
+      // que e o que o usuario precisa ver.
+      this.logger.warn(
+        `Falha ao devolver o numero ${reservedNumber} a sequencia de NF-e: ${error.message}`,
+      );
     }
   }
 
