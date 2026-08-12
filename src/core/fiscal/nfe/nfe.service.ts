@@ -296,8 +296,10 @@ export class NfeService {
       emissao: {
         emissor: config.company.legalName || config.company.name || '',
         emissorCnpj: config.company.cnpj || '',
-        proximoDocumento: `${config.proximoNumeroNfe || 1}/${config.serieNfe || 1}`,
-        serie: config.serieNfe || 1,
+        // Numeração do ambiente ativo, a mesma que reserveNfeNumber vai consumir.
+        // Ler o campo legado global mostrava um número que não seria emitido.
+        proximoDocumento: `${config.activeNumbering.nfe.nextNumber}/${config.activeNumbering.nfe.series}`,
+        serie: config.activeNumbering.nfe.series,
         tipo: 1, // 1 = SaÃ­da
         finalidade: 1, // 1 = NF-e normal
         operationNature: config.defaultOperationNature || 'Venda de mercadoria',
@@ -691,8 +693,10 @@ export class NfeService {
       emissao: {
         emissor: config.company.legalName || config.company.name || '',
         emissorCnpj: config.company.cnpj || '',
-        proximoDocumento: `${config.proximoNumeroNfe || 1}/${config.serieNfe || 1}`,
-        serie: config.serieNfe || 1,
+        // Numeração do ambiente ativo, a mesma que reserveNfeNumber vai consumir.
+        // Ler o campo legado global mostrava um número que não seria emitido.
+        proximoDocumento: `${config.activeNumbering.nfe.nextNumber}/${config.activeNumbering.nfe.series}`,
+        serie: config.activeNumbering.nfe.series,
         tipo: 1,
         finalidade: 1,
         operationNature: config.defaultOperationNature || 'Venda de mercadoria',
@@ -2896,8 +2900,11 @@ export class NfeService {
         companyId,
         orderId,
         quotationId: preparedData.quotationId,
-        numero: config.proximoNumeroNfe || 1,
-        serie: config.serieNfe || 1,
+        // Numero provisorio do rascunho: a reserva definitiva acontece no emit.
+        // Vem da linha ambiental para o rascunho nao exibir um numero que a
+        // emissao nunca usaria.
+        numero: config.activeNumbering.nfe.nextNumber,
+        serie: config.activeNumbering.nfe.series,
         status: NfeStatus.DRAFT,
         // Ambiente resolvido por documento: `config.ambiente` e o campo global
         // e divergia quando NF-e e NFC-e estavam em ambientes diferentes.
@@ -3021,10 +3028,13 @@ export class NfeService {
         companyId,
         orderId: preparedData.orderId,
         quotationId: preparedData.quotationId,
-        numero: config.proximoNumeroNfe || 1,
-        serie: config.serieNfe || 1,
+        // Numero provisorio e ambiente saem da MESMA linha ambiental. Antes o
+        // numero vinha da coluna global e o ambiente de `config.ambiente`, o que
+        // permitia gravar rascunho com numero de producao e ambiente 2.
+        numero: config.activeNumbering.nfe.nextNumber,
+        serie: config.activeNumbering.nfe.series,
         status: NfeStatus.DRAFT,
-        ambiente: config.ambiente || 2,
+        ambiente: config.activeNumbering.nfe.environment === 'PRODUCAO' ? 1 : 2,
         valorTotal: preparedData.totais.valorNota,
         draftData: JSON.parse(
           JSON.stringify({

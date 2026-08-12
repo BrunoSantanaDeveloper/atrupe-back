@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsBoolean,
   IsEmail,
+  IsIn,
   IsNumber,
   Min,
   Max,
@@ -344,6 +345,40 @@ export class UpdateInvoicyConfigDto {
   @IsOptional()
   @Min(1)
   proximoNumeroNfe?: number;
+
+  // Ambiente a que a numeração informada se aplica.
+  //
+  // A numeração vive em invoicy_environment_configs por (emissor, ambiente,
+  // docType) desde a Fase 3. Sem dizer o ambiente, o PATCH gravava apenas a
+  // coluna legada global de invoicy_configs — que a emissão não lê — e o valor
+  // digitado não tinha efeito nenhum. Quando omitido, vale o ambiente ativo
+  // daquele docType.
+  @ApiPropertyOptional({
+    description: 'Ambiente da numeração de NF-e informada',
+    enum: ['HOMOLOGACAO', 'PRODUCAO'],
+  })
+  @IsIn(['HOMOLOGACAO', 'PRODUCAO'])
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  nfeNumberingEnvironment?: 'HOMOLOGACAO' | 'PRODUCAO';
+
+  @ApiPropertyOptional({
+    description: 'Ambiente da numeração de NFC-e informada',
+    enum: ['HOMOLOGACAO', 'PRODUCAO'],
+  })
+  @IsIn(['HOMOLOGACAO', 'PRODUCAO'])
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  nfceNumberingEnvironment?: 'HOMOLOGACAO' | 'PRODUCAO';
+
+  @ApiPropertyOptional({
+    description: 'Ambiente da numeração de NFS-e informada',
+    enum: ['HOMOLOGACAO', 'PRODUCAO'],
+  })
+  @IsIn(['HOMOLOGACAO', 'PRODUCAO'])
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  nfseNumberingEnvironment?: 'HOMOLOGACAO' | 'PRODUCAO';
 
   // NFC-e fields
   @ApiPropertyOptional({ description: 'Série da NFC-e' })

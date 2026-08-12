@@ -298,9 +298,11 @@ export class NfseService {
         },
       },
 
-      // RPS
-      rpsNumero: config.proximoRpsNfse || 1,
-      rpsSerie: config.serieNfse || 'A1',
+      // RPS — numeração da linha do ambiente ativo, a mesma que
+      // reserveNfseRpsNumber vai consumir na emissão. A coluna legada
+      // `proximoRpsNfse` é global e não acompanha mais o contador.
+      rpsNumero: config.activeNumbering.nfse.nextNumber,
+      rpsSerie: config.activeNumbering.nfse.series,
 
       // Tomador
       tomador,

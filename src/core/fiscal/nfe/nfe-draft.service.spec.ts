@@ -87,7 +87,16 @@ describe('NfeDraftService', () => {
 
   describe('createDraft', () => {
     it('deve criar um rascunho com os dados fornecidos', async () => {
-      const config = { proximoNumeroNfe: 100, serieNfe: 2, ambiente: 1 };
+      // O rascunho numera pela linha ambiental (activeNumbering), não pelas
+      // colunas legadas — que aqui apontam de propósito para outro número.
+      const config = {
+        proximoNumeroNfe: 5,
+        serieNfe: 9,
+        ambiente: 1,
+        activeNumbering: {
+          nfe: { environment: 'PRODUCAO', series: 2, nextNumber: 100 },
+        },
+      };
       const preparedData = {
         totais: { valorNota: 500 },
         destinatario: { nome: 'Teste' },

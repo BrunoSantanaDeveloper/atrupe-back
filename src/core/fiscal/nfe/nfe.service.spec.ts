@@ -603,6 +603,11 @@ describe('NfeService', () => {
         id: 'config-id',
         serieNfe: 1,
         proximoNumeroNfe: 1,
+        activeNumbering: {
+          nfe: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+          nfce: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+          nfse: { environment: 'HOMOLOGACAO', series: 'A1', nextNumber: 1 },
+        },
         ambiente: 2,
         defaultOperationNature: 'Venda de mercadoria',
         company: mockCompany,
@@ -690,6 +695,11 @@ describe('NfeService', () => {
         id: 'config-id',
         serieNfe: 1,
         proximoNumeroNfe: 1,
+        activeNumbering: {
+          nfe: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+          nfce: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+          nfse: { environment: 'HOMOLOGACAO', series: 'A1', nextNumber: 1 },
+        },
         ambiente: 2,
         defaultOperationNature: 'Venda de mercadoria',
         company: mockCompany,
@@ -771,6 +781,11 @@ describe('NfeService', () => {
         id: 'config-id',
         serieNfe: 1,
         proximoNumeroNfe: 1,
+        activeNumbering: {
+          nfe: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+          nfce: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+          nfse: { environment: 'HOMOLOGACAO', series: 'A1', nextNumber: 1 },
+        },
         ambiente: 2,
         defaultOperationNature: 'Venda de mercadoria',
         company: mockCompany,
@@ -778,6 +793,11 @@ describe('NfeService', () => {
       invoicyService.getDefaultConfig.mockResolvedValue({
         serieNfe: 1,
         proximoNumeroNfe: 1,
+        activeNumbering: {
+          nfe: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+          nfce: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+          nfse: { environment: 'HOMOLOGACAO', series: 'A1', nextNumber: 1 },
+        },
         ambiente: 2,
       });
     });
@@ -860,6 +880,11 @@ describe('NfeService', () => {
       id: 'config-id',
       serieNfe: 1,
       proximoNumeroNfe: 1,
+      activeNumbering: {
+        nfe: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+        nfce: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+        nfse: { environment: 'HOMOLOGACAO', series: 'A1', nextNumber: 1 },
+      },
       ambiente: 'HOMOLOGACAO',
       isActive: true,
       defaultCfop: '5102',

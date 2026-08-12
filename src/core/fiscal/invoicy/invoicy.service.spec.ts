@@ -28,6 +28,12 @@ describe('InvoicyService', () => {
       count: jest.fn(),
       delete: jest.fn(),
     },
+    invoicyEnvironmentConfig: {
+      upsert: jest.fn(),
+    },
+    // update() abre transação para gravar as colunas legadas e as linhas
+    // ambientais de numeração de uma vez.
+    $transaction: jest.fn((callback: any) => callback(mockPrisma)),
   };
 
   const mockConfigService = {
@@ -51,6 +57,9 @@ describe('InvoicyService', () => {
   };
   const mockCredentialResolver = {
     resolveOperationalEnvironment: jest.fn(),
+    // Usado por mapDbToResponse/syncEnvironmentNumbering para saber de qual
+    // ambiente sai a numeração efetiva de cada docType.
+    resolveEnvironmentFromConfig: jest.fn().mockReturnValue('HOMOLOGACAO'),
   };
 
   beforeEach(async () => {
@@ -137,6 +146,90 @@ describe('InvoicyService', () => {
         where: { companyId: 'company-1', isDefault: true },
         data: { isDefault: false },
       });
+    });
+  });
+
+  /**
+   * A numeração vive em invoicy_environment_configs por (emissor, ambiente,
+   * docType) desde a Fase 3, e é de lá que a reserva atômica tira o número.
+   * Enquanto o PATCH gravava só a coluna legada global, o próximo número
+   * digitado na tela de Emissor não tinha efeito nenhum na emissão.
+   */
+  describe('update — numeração por ambiente', () => {
+    const configExistente = {
+      id: 'config-1',
+      companyId: 'company-1',
+      name: 'Matriz',
+      activeEnvironmentNfe: 'PRODUCAO',
+    };
+
+    const upsertDocTypes = () =>
+      mockPrisma.invoicyEnvironmentConfig.upsert.mock.calls.map(
+        (call: any) =>
+          call[0].where.invoicyConfigId_environment_docType.docType,
+      );
+
+    beforeEach(() => {
+      mockPrisma.invoicyConfig.findUnique.mockResolvedValue(configExistente);
+      mockPrisma.invoicyConfig.update.mockResolvedValue(configExistente);
+    });
+
+    it('grava o próximo número na linha do ambiente ativo, não só na coluna legada', async () => {
+      mockCredentialResolver.resolveEnvironmentFromConfig.mockReturnValue(
+        'PRODUCAO',
+      );
+
+      await service.update('config-1', { proximoNumeroNfe: 703 } as any);
+
+      expect(mockPrisma.invoicyEnvironmentConfig.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            invoicyConfigId_environment_docType: {
+              invoicyConfigId: 'config-1',
+              environment: 'PRODUCAO',
+              docType: 'NFE',
+            },
+          },
+          update: { nfeNextNumber: 703 },
+        }),
+      );
+    });
+
+    it('respeita o ambiente explicitamente informado no DTO', async () => {
+      mockCredentialResolver.resolveEnvironmentFromConfig.mockReturnValue(
+        'PRODUCAO',
+      );
+
+      await service.update('config-1', {
+        proximoNumeroNfe: 12,
+        serieNfe: 2,
+        nfeNumberingEnvironment: 'HOMOLOGACAO',
+      } as any);
+
+      expect(mockPrisma.invoicyEnvironmentConfig.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            invoicyConfigId_environment_docType: {
+              invoicyConfigId: 'config-1',
+              environment: 'HOMOLOGACAO',
+              docType: 'NFE',
+            },
+          },
+          update: { nfeSeries: 2, nfeNextNumber: 12 },
+        }),
+      );
+    });
+
+    it('não mexe na numeração dos outros documentos num PATCH parcial', async () => {
+      await service.update('config-1', { proximoNumeroNfe: 703 } as any);
+
+      expect(upsertDocTypes()).toEqual(['NFE']);
+    });
+
+    it('não faz upsert nenhum quando o PATCH não traz numeração', async () => {
+      await service.update('config-1', { name: 'Matriz SP' } as any);
+
+      expect(mockPrisma.invoicyEnvironmentConfig.upsert).not.toHaveBeenCalled();
     });
   });
 

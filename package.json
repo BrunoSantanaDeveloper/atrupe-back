@@ -46,7 +46,9 @@
     "invoicy:sync-cadastro": "node dist/src/scripts/sync-invoicy-company-registration.js",
     "invoicy:sync-cadastro:dry": "node dist/src/scripts/sync-invoicy-company-registration.js --dry-run",
     "invoicy:sync-cadastro:dev": "ts-node src/scripts/sync-invoicy-company-registration.ts",
-    "invoicy:sync-cadastro:dry:dev": "ts-node src/scripts/sync-invoicy-company-registration.ts --dry-run"
+    "invoicy:sync-cadastro:dry:dev": "ts-node src/scripts/sync-invoicy-company-registration.ts --dry-run",
+    "fiscal:numbering:audit": "node dist/src/scripts/audit-fiscal-numbering.js",
+    "fiscal:numbering:audit:dev": "ts-node src/scripts/audit-fiscal-numbering.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",

@@ -460,13 +460,13 @@ export class FiscalCredentialResolverService {
       });
     }
 
-    // Espelha no campo legado enquanto ele ainda for lido pelo prepare.
-    await tx.$executeRaw`
-      UPDATE invoicy_configs
-      SET "proximoNumeroNfe" = ${nextNumber}
-      WHERE id = ${invoicyConfigId}
-    `;
-
+    // NÃO espelha em invoicy_configs."proximoNumeroNfe" de propósito.
+    //
+    // Aquela coluna é global (não tem ambiente) e é o campo que o usuário edita
+    // na tela de Emissor. Espelhar o contador ali fazia a emissão sobrescrever
+    // o valor digitado a cada tentativa: quem ajustava a sequência de produção
+    // via um número diferente aparecer no formulário logo depois. Os leitores do
+    // prepare passaram a usar `activeNumbering`, que sai desta linha ambiental.
     return { reservedNumber, series };
   }
 
@@ -525,12 +525,8 @@ export class FiscalCredentialResolverService {
       });
     }
 
-    await tx.$executeRaw`
-      UPDATE invoicy_configs
-      SET "proximoRpsNfse" = ${nextNumber}
-      WHERE id = ${invoicyConfigId}
-    `;
-
+    // Mesma razão de reserveNfeNumber: `proximoRpsNfse` é o campo editável da
+    // tela, não o contador. Não espelhar aqui.
     return { reservedNumber, series };
   }
 

@@ -107,8 +107,11 @@ export class NfeDraftService {
         companyId,
         orderId,
         quotationId,
-        numero: config.proximoNumeroNfe || 1,
-        serie: config.serieNfe || 1,
+        // Numeracao da linha ambiental (activeNumbering), nao da coluna global
+        // de invoicy_configs: a reserva do emit le de la, e exibir o campo
+        // legado mostrava um numero que nao seria emitido.
+        numero: config.activeNumbering?.nfe?.nextNumber ?? 1,
+        serie: config.activeNumbering?.nfe?.series ?? config.serieNfe ?? 1,
         status: NfeStatus.DRAFT,
         ambiente: config.ambiente || 2,
         valorTotal: preparedData.totais?.valorNota || 0,

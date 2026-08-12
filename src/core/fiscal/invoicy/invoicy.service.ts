@@ -147,6 +147,72 @@ export class InvoicyService {
     return environment === 'PRODUCAO' ? 'PRODUCAO' : 'HOMOLOGACAO';
   }
 
+  /**
+   * Numeração efetiva de cada docType: a linha de `invoicy_environment_configs`
+   * do ambiente ATIVO daquele documento.
+   *
+   * As colunas legadas de `invoicy_configs` (serieNfe/proximoNumeroNfe e
+   * companhia) não servem para isso: elas são globais e a reserva atômica lê da
+   * linha ambiental. Quem exibia o campo legado mostrava um número diferente do
+   * que seria realmente emitido — foi o que escondeu a numeração de produção
+   * semeada em 1 pela migration 20260803120000.
+   *
+   * Cai no campo legado só quando a linha ambiental não veio no include ou
+   * ainda não existe (emissor anterior à Fase 3 que nunca emitiu).
+   */
+  private resolveActiveNumbering(config: any) {
+    const rows = (config.environmentConfigs as any[]) ?? [];
+
+    const pick = (
+      docType: 'NFE' | 'NFSE' | 'NFCE',
+      seriesColumn: string,
+      numberColumn: string,
+      legacySeries: any,
+      legacyNumber: any,
+    ) => {
+      const environment =
+        this.fiscalCredentialResolver.resolveEnvironmentFromConfig(
+          config,
+          docType,
+        );
+      const row = rows.find(
+        (r) => r.docType === docType && r.environment === environment,
+      );
+      return {
+        environment,
+        series:
+          row?.[seriesColumn] ??
+          legacySeries ??
+          (docType === 'NFSE' ? 'A1' : 1),
+        nextNumber: row?.[numberColumn] ?? legacyNumber ?? 1,
+      };
+    };
+
+    return {
+      nfe: pick(
+        'NFE',
+        'nfeSeries',
+        'nfeNextNumber',
+        config.serieNfe,
+        config.proximoNumeroNfe,
+      ),
+      nfce: pick(
+        'NFCE',
+        'nfceSeries',
+        'nfceNextNumber',
+        config.serieNfce,
+        config.proximoNumeroNfce,
+      ),
+      nfse: pick(
+        'NFSE',
+        'nfseSeries',
+        'nfseNextNumber',
+        config.serieNfse,
+        config.proximoRpsNfse,
+      ),
+    };
+  }
+
   // Map database fields to frontend fields
   private mapDbToResponse(config: any) {
     if (!config) return null;
@@ -196,6 +262,10 @@ export class InvoicyService {
       // Campo virtual derivado do UF do endereço principal (usado por nfe.service)
       emitUf: address.state ?? null,
 
+      // Numeração efetiva por documento (linha do ambiente ativo). É o que a
+      // emissão realmente consome — preferir isto aos campos legados abaixo.
+      activeNumbering: this.resolveActiveNumbering(config),
+
       // Numeração — nomes legados mantidos para compatibilidade com nfe/nfce/nfse services
       serieNfe: config.serieNfe,
       proximoNumeroNfe: config.proximoNumeroNfe,
@@ -234,6 +304,21 @@ export class InvoicyService {
           lastValidationAt: ec.lastValidationAt ?? null,
           lastValidationError: ec.lastValidationError ?? null,
           activatedAt: ec.activatedAt ?? null,
+          // Numeração da linha: só o par do docType da linha é significativo.
+          // A tela de Emissor precisa dela para editar homologação e produção
+          // separadamente, em vez de escrever numa coluna global.
+          series:
+            ec.docType === 'NFE'
+              ? ec.nfeSeries
+              : ec.docType === 'NFSE'
+                ? ec.nfseSeries
+                : ec.nfceSeries,
+          nextNumber:
+            ec.docType === 'NFE'
+              ? ec.nfeNextNumber
+              : ec.docType === 'NFSE'
+                ? ec.nfseNextNumber
+                : ec.nfceNextNumber,
         }),
       ),
 
@@ -484,6 +569,7 @@ export class InvoicyService {
         },
       },
       include: {
+        environmentConfigs: true,
         company: {
           include: {
             address: true,
@@ -539,23 +625,128 @@ export class InvoicyService {
       });
     }
 
-    const result = await this.prisma.invoicyConfig.update({
-      where: { id },
-      data,
-      include: {
-        company: {
-          include: {
-            address: true,
-            DigitalCertificate: true,
-            environmentCredentials: {
-              select: { environment: true, providerAccessKeyEncrypted: true },
+    const result = await this.prisma.$transaction(async (tx) => {
+      // A numeração vai ANTES do update para o include abaixo já devolver as
+      // linhas ambientais atualizadas, sem uma segunda leitura.
+      //
+      // Gravar só as colunas legadas não muda a numeração da emissão: a reserva
+      // atômica lê de invoicy_environment_configs. Sem este passo, o usuário
+      // digitava o próximo número, salvava, e a emissão seguia usando a
+      // sequência antiga do ambiente.
+      await this.syncEnvironmentNumbering(tx, config, dto, data);
+
+      return tx.invoicyConfig.update({
+        where: { id },
+        data,
+        include: {
+          environmentConfigs: true,
+          company: {
+            include: {
+              address: true,
+              DigitalCertificate: true,
+              environmentCredentials: {
+                select: { environment: true, providerAccessKeyEncrypted: true },
+              },
             },
           },
         },
-      },
+      });
     });
 
     return this.mapDbToResponse(result);
+  }
+
+  /**
+   * Propaga a numeração informada no PATCH para a linha de
+   * `invoicy_environment_configs` do ambiente correspondente.
+   *
+   * O ambiente vem de `<doc>NumberingEnvironment` quando informado; senão é o
+   * ambiente ATIVO daquele docType — que é onde a emissão vai buscar o número.
+   * Só escreve o par (série, próximo número) do docType cujos campos vieram no
+   * DTO, para um PATCH parcial não zerar a numeração dos outros documentos.
+   */
+  private async syncEnvironmentNumbering(
+    tx: any,
+    config: any,
+    dto: UpdateInvoicyConfigDto,
+    data: any,
+  ): Promise<void> {
+    const targets = [
+      {
+        docType: 'NFE' as const,
+        environment:
+          dto.nfeNumberingEnvironment ??
+          this.fiscalCredentialResolver.resolveEnvironmentFromConfig(
+            config,
+            'NFE',
+          ),
+        series: data.serieNfe,
+        nextNumber: data.proximoNumeroNfe,
+        seriesColumn: 'nfeSeries',
+        numberColumn: 'nfeNextNumber',
+      },
+      {
+        docType: 'NFCE' as const,
+        environment:
+          dto.nfceNumberingEnvironment ??
+          this.fiscalCredentialResolver.resolveEnvironmentFromConfig(
+            config,
+            'NFCE',
+          ),
+        series: data.serieNfce,
+        nextNumber: data.proximoNumeroNfce,
+        seriesColumn: 'nfceSeries',
+        numberColumn: 'nfceNextNumber',
+      },
+      {
+        docType: 'NFSE' as const,
+        environment:
+          dto.nfseNumberingEnvironment ??
+          this.fiscalCredentialResolver.resolveEnvironmentFromConfig(
+            config,
+            'NFSE',
+          ),
+        series: data.serieNfse,
+        nextNumber: data.proximoRpsNfse,
+        seriesColumn: 'nfseSeries',
+        numberColumn: 'nfseNextNumber',
+      },
+    ];
+
+    for (const target of targets) {
+      const changes: Record<string, any> = {};
+      if (target.series !== undefined)
+        changes[target.seriesColumn] = target.series;
+      if (target.nextNumber !== undefined)
+        changes[target.numberColumn] = target.nextNumber;
+
+      if (Object.keys(changes).length === 0) continue;
+
+      await tx.invoicyEnvironmentConfig.upsert({
+        where: {
+          invoicyConfigId_environment_docType: {
+            invoicyConfigId: config.id,
+            environment: target.environment,
+            docType: target.docType,
+          },
+        },
+        // status DRAFT no create: existir a linha nunca significou ambiente
+        // ativado — isso continua sendo do assistente de ativação.
+        create: {
+          invoicyConfigId: config.id,
+          environment: target.environment,
+          docType: target.docType,
+          status: 'DRAFT',
+          ...changes,
+        },
+        update: changes,
+      });
+
+      this.logger.log(
+        `Numeração de ${target.docType} do emissor ${config.id} ajustada em ${target.environment}: ` +
+          JSON.stringify(changes),
+      );
+    }
   }
 
   // updateConfig - alias removido, usar update() com id diretamente
@@ -833,6 +1024,12 @@ export class InvoicyService {
 
   /**
    * Incrementar número da NF-e para um emissor específico
+   *
+   * @deprecated Não usar em fluxo de emissão. Incrementa a coluna legada GLOBAL
+   * `proximoNumeroNfe`, que hoje é o campo editável da tela de Emissor e não a
+   * sequência que a SEFAZ vê — além de não separar homologação de produção.
+   * A reserva correta é `FiscalCredentialResolverService.reserveNfeNumber`,
+   * atômica e por (emissor, ambiente). Sem chamadores em produção.
    */
   async incrementNfeNumber(emissoreId: string): Promise<number> {
     const updated = await this.prisma.invoicyConfig.update({

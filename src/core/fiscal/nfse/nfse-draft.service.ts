@@ -165,8 +165,12 @@ export class NfseDraftService {
       }
     }
 
-    const rpsNumero = config.proximoRpsNfse || 1;
-    const rpsSerie = config.serieNfse || 'A1';
+    // Numeração provisória do rascunho: sai da linha ambiental, não da coluna
+    // global de invoicy_configs — a reserva definitiva no envio lê de lá.
+    const rpsNumero =
+      config.activeNumbering?.nfse?.nextNumber ?? config.proximoRpsNfse ?? 1;
+    const rpsSerie =
+      config.activeNumbering?.nfse?.series ?? config.serieNfse ?? 'A1';
 
     const draft = await this.prisma.nfse.create({
       data: {

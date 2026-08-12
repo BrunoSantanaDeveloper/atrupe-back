@@ -252,6 +252,11 @@ describe('NfseService', () => {
         id: 'config-1',
         serieNfse: 'A1',
         proximoRpsNfse: 1,
+        activeNumbering: {
+          nfe: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+          nfce: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+          nfse: { environment: 'HOMOLOGACAO', series: 'A1', nextNumber: 1 },
+        },
         ambiente: 2,
         isActive: true,
         ibgeCode: '4314902',

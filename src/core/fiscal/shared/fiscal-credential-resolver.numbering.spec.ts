@@ -120,6 +120,31 @@ describe('FiscalCredentialResolverService — reserva de numeração', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
+    it('não escreve o contador na coluna legada de invoicy_configs', async () => {
+      // Regressão: espelhar o contador em `proximoNumeroNfe` sobrescrevia o
+      // valor que o usuário acabara de digitar na tela de Emissor — quem
+      // ajustava a sequência de produção via o número voltar sozinho.
+      tx.$queryRaw
+        .mockResolvedValueOnce([
+          { id: CONFIG_ID, proximoNumeroNfe: 703, serieNfe: 1 },
+        ])
+        .mockResolvedValueOnce([
+          { id: 'env-1', nfeNextNumber: 3, nfeSeries: 1 },
+        ]);
+
+      await service.reserveNfeNumber(tx, CONFIG_ID, FiscalEnvironment.PRODUCAO);
+
+      const escritas = tx.$executeRaw.mock.calls.map((call) =>
+        call[0].join(''),
+      );
+      expect(escritas.some((sql) => sql.includes('invoicy_configs'))).toBe(
+        false,
+      );
+      expect(
+        escritas.some((sql) => sql.includes('invoicy_environment_configs')),
+      ).toBe(true);
+    });
+
     it('trava o emissor antes da linha ambiental (ordem de locks anti-deadlock)', async () => {
       tx.$queryRaw
         .mockResolvedValueOnce([
