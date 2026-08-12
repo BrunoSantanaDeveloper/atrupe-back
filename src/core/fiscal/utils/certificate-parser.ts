@@ -105,11 +105,33 @@ function forgeDistinguishedNameToString(
     .join('\n');
 }
 
+/** Raiz do CNPJ: os 8 primeiros dígitos, comuns a matriz e filiais. */
+function cnpjRoot(cnpj: string): string {
+  return onlyDigits(cnpj).slice(0, 8);
+}
+
+/**
+ * Valida se o certificado digital pode assinar as notas deste emitente.
+ *
+ * A comparação é pela RAIZ do CNPJ (8 primeiros dígitos), não pelos 14 dígitos:
+ * a SEFAZ aceita que o certificado da matriz assine as notas das filiais, e o
+ * contrário também. Exigir o CNPJ completo reprovava uma configuração legítima
+ * — e comum, já que a maioria das empresas com filial usa um único A1 — travando
+ * a ativação de produção com uma pendência que a SEFAZ nunca levantaria.
+ *
+ * A raiz continua barrando o que realmente importa: certificado de outra
+ * empresa.
+ */
 export function validatePfxCertificateCnpj(
   base64Certificate: string,
   password: string,
   expectedCnpj: string,
-): { valid: boolean; certificateCnpj?: string; message?: string } {
+): {
+  valid: boolean;
+  certificateCnpj?: string;
+  message?: string;
+  differentEstablishment?: boolean;
+} {
   const expected = onlyDigits(expectedCnpj);
   const certInfo = parsePfxCertificate(base64Certificate, password);
 
@@ -129,17 +151,25 @@ export function validatePfxCertificateCnpj(
     };
   }
 
-  if (certInfo.cnpj !== expected) {
+  if (cnpjRoot(certInfo.cnpj) !== cnpjRoot(expected)) {
     return {
       valid: false,
       certificateCnpj: certInfo.cnpj,
-      message: `O CNPJ do certificado digital (${formatCnpj(
+      message: `O certificado digital (${formatCnpj(
         certInfo.cnpj,
-      )}) é diferente do CNPJ cadastrado no Atrupe (${formatCnpj(expected)}).`,
+      )}) pertence a outra empresa. O CNPJ cadastrado no Atrupe é ${formatCnpj(
+        expected,
+      )} — o certificado precisa ser da mesma raiz de CNPJ (matriz ou filial).`,
     };
   }
 
-  return { valid: true, certificateCnpj: certInfo.cnpj };
+  // Mesma raiz, estabelecimento diferente: válido para a SEFAZ. Sinalizado para
+  // quem quiser avisar que a assinatura sai com o certificado de outra filial.
+  return {
+    valid: true,
+    certificateCnpj: certInfo.cnpj,
+    differentEstablishment: certInfo.cnpj !== expected,
+  };
 }
 
 /**
