@@ -65,6 +65,7 @@ const mockPrismaService = {
   invoicyConfig: { findFirst: jest.fn(), update: jest.fn() },
   productFiscalData: { findMany: jest.fn() },
   $transaction: jest.fn((callback) => callback(mockPrismaService)),
+  $executeRaw: jest.fn().mockResolvedValue(1),
 };
 
 const mockInvoicyService = {
@@ -587,6 +588,101 @@ describe('NfceService', () => {
           pagamentos: [{ tipo: '01', valor: 100 }],
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should release reserved number when SEFAZ conclusively rejects', async () => {
+      invoicyApiService.emitNfe.mockResolvedValueOnce([
+        {
+          Codigo: 100,
+          Descricao: 'Documentos processados',
+          Documentos: [
+            {
+              DocChaAcesso: mockInvoicyResponse.data.chaveAcesso,
+              DocProtocolo: null,
+              DocIDUnico: 'invoicy-id-rejected',
+              DocPDFDownload: null,
+              DocCompleto: null,
+              Situacao: {
+                SitCodigo: 999,
+                SitDescricao: 'Rejeição 999: CNPJ do emitente inválido',
+              },
+            },
+          ],
+        },
+      ]);
+
+      await expect(
+        service.emit(mockCompanyId, {
+          naturezaOperacao: 'Venda',
+          itens: [
+            {
+              productId: '1',
+              codigo: '001',
+              descricao: 'Produto',
+              ncm: '12345678',
+              cfop: '5102',
+              unidade: 'UN',
+              quantidade: 1,
+              valorUnitario: 100,
+            },
+          ],
+          pagamentos: [{ tipo: '01', valor: 100 }],
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      // O número reservado deve ser devolvido à sequência após rejeição conclusiva
+      expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
+    });
+
+    it('should NOT release reserved number on transport failure (UNKNOWN outcome)', async () => {
+      const transportError = Object.assign(new Error('read ECONNRESET'), {
+        code: 'ECONNRESET',
+      });
+      invoicyApiService.emitNfe.mockRejectedValueOnce(transportError);
+
+      await expect(
+        service.emit(mockCompanyId, {
+          naturezaOperacao: 'Venda',
+          itens: [
+            {
+              productId: '1',
+              codigo: '001',
+              descricao: 'Produto',
+              ncm: '12345678',
+              cfop: '5102',
+              unidade: 'UN',
+              quantidade: 1,
+              valorUnitario: 100,
+            },
+          ],
+          pagamentos: [{ tipo: '01', valor: 100 }],
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      // Falha de transporte: resultado incerto, não devolver o número
+      expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
+    });
+
+    it('should NOT release reserved number on successful authorization', async () => {
+      await service.emit(mockCompanyId, {
+        naturezaOperacao: 'Venda',
+        itens: [
+          {
+            productId: '1',
+            codigo: '001',
+            descricao: 'Produto',
+            ncm: '12345678',
+            cfop: '5102',
+            unidade: 'UN',
+            quantidade: 1,
+            valorUnitario: 100,
+          },
+        ],
+        pagamentos: [{ tipo: '01', valor: 100 }],
+      });
+
+      // Autorizado: número já pertence à nota, não devolver
+      expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
     });
   });
 

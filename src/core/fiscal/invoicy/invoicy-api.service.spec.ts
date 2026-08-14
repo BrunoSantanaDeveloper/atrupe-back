@@ -79,6 +79,9 @@ describe('InvoicyApiService', () => {
         undefined,
         undefined,
         undefined,
+        // disableRetry: emissão não é idempotente. Reenviar após um timeout
+        // transmitiria de novo um documento que a SEFAZ pode já ter processado.
+        true,
       );
       expect(result).toEqual(expectedResponse);
     });
@@ -107,6 +110,7 @@ describe('InvoicyApiService', () => {
         'config-1',
         undefined,
         'PRODUCAO',
+        true,
       );
     });
 
@@ -128,6 +132,7 @@ describe('InvoicyApiService', () => {
         'config-123',
         undefined,
         undefined,
+        true,
       );
     });
   });

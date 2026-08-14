@@ -1,4 +1,9 @@
-import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PlanControlService } from '../plan-control.service';
 
@@ -12,9 +17,11 @@ export class FeatureGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiredFeature = this.reflector.get<string>(
+    // Handler tem precedência sobre o controller, permitindo declarar a feature
+    // uma única vez na classe e sobrescrever em endpoints específicos
+    const requiredFeature = this.reflector.getAllAndOverride<string>(
       REQUIRED_FEATURE_KEY,
-      context.getHandler(),
+      [context.getHandler(), context.getClass()],
     );
 
     if (!requiredFeature) {
@@ -35,7 +42,12 @@ export class FeatureGuard implements CanActivate {
       );
       return true;
     } catch (error) {
-      return false; // Guard retorna false, a exceção será tratada pelo service
+      // Propaga a mensagem do plano ("Feature não disponível no plano X") em vez
+      // do 403 genérico do Nest; qualquer outra falha nega o acesso
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      return false;
     }
   }
 }

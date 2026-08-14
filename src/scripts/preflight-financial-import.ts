@@ -19,6 +19,8 @@ type ImportError = {
   field: string;
   value: string;
   error: string;
+  /** 'warning' = campo opcional que será normalizado, não reprova a linha */
+  severity?: 'error' | 'warning';
 };
 
 /**
@@ -79,21 +81,38 @@ export async function runPreflight(
   console.log(`📄 ${rows.length} linha(s) de dados em ${csvPath}\n`);
 
   const errors: ImportError[] = [];
+  const warnings: ImportError[] = [];
 
   for (let i = 0; i < rows.length; i++) {
-    const rowErrors: ImportError[] = await internals.validateRow(
+    const rowIssues: ImportError[] = await internals.validateRow(
       rows[i],
       FINANCIAL_IMPORT_SCHEMA,
       companyId,
       i + 2, // mesma numeração exibida na tela
       false,
     );
-    errors.push(...rowErrors);
+
+    // Aviso é campo opcional que será normalizado: não reprova a importação.
+    errors.push(...rowIssues.filter((issue) => issue.severity !== 'warning'));
+    warnings.push(...rowIssues.filter((issue) => issue.severity === 'warning'));
+  }
+
+  if (warnings.length > 0) {
+    console.log(`⚠️ ${warnings.length} aviso(s) — o valor será normalizado:`);
+    for (const warning of warnings.slice(0, 20)) {
+      console.log(
+        `   linha ${warning.row} [${warning.field}] ${warning.value}: ${warning.error}`,
+      );
+    }
+    if (warnings.length > 20) {
+      console.log(`   … +${warnings.length - 20}`);
+    }
+    console.log('');
   }
 
   if (errors.length === 0) {
     console.log('🎉 Nenhum erro: a importação passaria inteira.');
-    return { totalRows: rows.length, errors };
+    return { totalRows: rows.length, errors, warnings };
   }
 
   console.log(
@@ -124,7 +143,7 @@ export async function runPreflight(
     );
   }
 
-  return { totalRows: rows.length, errors };
+  return { totalRows: rows.length, errors, warnings };
 }
 
 async function main() {

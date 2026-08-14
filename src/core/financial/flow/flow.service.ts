@@ -391,6 +391,9 @@ export class FlowService {
 
       // Extrair as datas para busca detalhada
       // Normalizar datas para o início do dia (00:00:00.000) para agrupar corretamente
+      // Cada groupBy vem ordenado individualmente, então a união precisa ser
+      // reordenada para que datas presentes só em recebíveis ou só em pagáveis
+      // não fiquem fora de ordem.
       const dueDates = [
         ...new Set([
           ...receivablesGrouped.map((g) => {
@@ -406,7 +409,13 @@ export class FlowService {
             return date.toISOString();
           }),
         ]),
-      ].filter((d) => d !== null);
+      ]
+        .filter((d) => d !== null)
+        .sort((a, b) =>
+          sort.toLowerCase() === 'asc'
+            ? a.localeCompare(b)
+            : b.localeCompare(a),
+        );
 
       const receivableDetails =
         await this.prisma.receivableInstallment.findMany({

@@ -12,6 +12,8 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import { PermissionsGuard } from '../../auth/abac/permissions.guard';
 import { HasPermission } from '../../auth/abac/has-permission.decorator';
+import { FeatureGuard } from '../../plan/guards/feature.guard';
+import { RequiresFeature } from '../../plan/decorators/requires-feature.decorator';
 import { ProductFiscalService } from './product-fiscal.service';
 import {
   CreateProductFiscalDataDto,
@@ -20,7 +22,8 @@ import {
 
 @ApiTags('Fiscal - Dados Fiscais de Produto')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, FeatureGuard)
+@RequiresFeature('nota_fiscal')
 @Controller('fiscal/product')
 export class ProductFiscalController {
   constructor(private readonly productFiscalService: ProductFiscalService) {}

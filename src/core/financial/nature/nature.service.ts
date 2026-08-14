@@ -71,6 +71,9 @@ export class NatureService {
         where: {
           nature: {
             companyId,
+            // Categoria inativa não pode aparecer na aba de ativos,
+            // mesmo que ainda tenha subcategorias vinculadas
+            ...(status === 'ACTIVES' || !status ? { isActive: true } : {}),
             ...(level1 && { level1 }),
             ...(level2 && { level2 }),
             ...(search && {
@@ -145,24 +148,19 @@ export class NatureService {
             return true;
           }
 
+          // Categoria inativa sempre aparece na aba de inativos,
+          // mesmo sem subcategorias
+          if (!nature.isActive) {
+            return true;
+          }
+
           // Se não houver subcategorias, não incluir a natureza
           if (nature.subCategories.length === 0) {
             return false;
           }
 
-          // Filtrar subcategorias baseado no status
-          const filteredSubCategories = nature.subCategories.filter((sub) => {
-            if (status === 'ACTIVES' || !status) {
-              return sub.isActive;
-            }
-            if (status === 'INACTIVES') {
-              return !sub.isActive;
-            }
-            return true;
-          });
-
-          // Só incluir a natureza se tiver subcategorias após o filtro
-          return filteredSubCategories.length > 0;
+          // Só incluir a natureza ativa se ela tiver subcategorias inativas
+          return nature.subCategories.some((sub) => !sub.isActive);
         },
       );
 
@@ -323,26 +321,23 @@ export class NatureService {
       ...updateNatureDto,
     };
     try {
-      if (
-        updateNatureDto.hasOwnProperty('isActive') &&
-        typeof updateNatureDto.isActive === 'boolean'
-      ) {
-        await this.prisma.subCategory.updateMany({
-          where: { natureId: nature.id },
-          data: { isActive: updateNatureDto.isActive },
-        });
+      return await this.prisma.$transaction(async (prisma) => {
+        // O status da categoria é replicado para as suas subcategorias
+        if (typeof updateNatureDto.isActive === 'boolean') {
+          await prisma.subCategory.updateMany({
+            where: { natureId: nature.id },
+            data: { isActive: updateNatureDto.isActive },
+          });
+        }
 
-        delete updateNatureDto.isActive;
-      }
-      if (data.hasOwnProperty('isActive')) {
-        delete data.isActive;
-      }
-      return await this.prisma.nature.update({
-        where: { id },
-        data: data,
+        return await prisma.nature.update({
+          where: { id },
+          data: data,
+        });
       });
     } catch (error) {
       this.logger.error('Erro ao atualizar natureza', error.stack);
+      throw new BadRequestException('Erro ao atualizar a natureza!');
     }
   }
 

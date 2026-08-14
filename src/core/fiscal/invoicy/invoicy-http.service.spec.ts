@@ -4,6 +4,86 @@ import {
 } from './invoicy-http.service';
 import { BadRequestException } from '@nestjs/common';
 
+/**
+ * Política de retry do transporte fiscal.
+ *
+ * A regra que importa: escrita fiscal não é idempotente (o payload não carrega
+ * chave de idempotência), então repetir depois de um timeout pode transmitir
+ * duas vezes um documento que a SEFAZ já processou. A exceção é o 429 — ali o
+ * provedor recusou antes de processar, e nada chegou à SEFAZ.
+ */
+describe('InvoicyHttpService retry', () => {
+  const makeService = () =>
+    new InvoicyHttpService(
+      {} as any,
+      { get: jest.fn(() => '') } as any,
+      {} as any,
+    ) as any;
+
+  const erroHttp = (status: number, headers: Record<string, string> = {}) =>
+    Object.assign(new Error(`Request failed with status code ${status}`), {
+      response: { status, headers, data: {} },
+    });
+
+  const chamar = (service: any, disableRetry = false) =>
+    service.makeRequest(
+      'company-1',
+      'POST',
+      '/senddocuments/nfe?type=Emissao',
+      {},
+      undefined,
+      undefined,
+      undefined,
+      disableRetry,
+    );
+
+  it('repete quando o provedor devolve 429 e respeita o Retry-After', async () => {
+    const service = makeService();
+    const executeRequest = jest
+      .spyOn(service, 'executeRequest')
+      .mockRejectedValueOnce(erroHttp(429, { 'retry-after': '1' }))
+      .mockResolvedValueOnce([{ Codigo: 100 }]);
+
+    await expect(chamar(service)).resolves.toEqual([{ Codigo: 100 }]);
+    expect(executeRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('repete 429 mesmo com disableRetry — nada chegou à SEFAZ', async () => {
+    const service = makeService();
+    const executeRequest = jest
+      .spyOn(service, 'executeRequest')
+      .mockRejectedValueOnce(erroHttp(429, { 'retry-after': '1' }))
+      .mockResolvedValueOnce([{ Codigo: 100 }]);
+
+    await expect(chamar(service, true)).resolves.toEqual([{ Codigo: 100 }]);
+    expect(executeRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('não repete timeout quando disableRetry está ligado', async () => {
+    const service = makeService();
+    const executeRequest = jest
+      .spyOn(service, 'executeRequest')
+      .mockRejectedValue(
+        Object.assign(new Error('timeout of 60000ms exceeded'), {
+          code: 'ECONNABORTED',
+        }),
+      );
+
+    await expect(chamar(service, true)).rejects.toThrow('timeout');
+    expect(executeRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('não repete os demais erros 4xx', async () => {
+    const service = makeService();
+    const executeRequest = jest
+      .spyOn(service, 'executeRequest')
+      .mockRejectedValue(erroHttp(400));
+
+    await expect(chamar(service)).rejects.toThrow('status code 400');
+    expect(executeRequest).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('InvoicyHttpService response parsing', () => {
   const makeService = (environment?: string) =>
     new InvoicyHttpService(

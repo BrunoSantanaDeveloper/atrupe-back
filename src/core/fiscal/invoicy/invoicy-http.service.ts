@@ -29,6 +29,9 @@ export class InvoicyHttpService {
   // Retry configuration
   private readonly MAX_RETRIES = 3;
   private readonly INITIAL_DELAY_MS = 1000;
+  /** Rate limit pede espera maior que uma falha de rede. */
+  private readonly RATE_LIMIT_BASE_DELAY_MS = 3000;
+  private readonly MAX_RATE_LIMIT_DELAY_MS = 20000;
 
   // Base URLs for Invoicy API
   private readonly INVOICY_URLS = {
@@ -301,9 +304,11 @@ export class InvoicyHttpService {
     disableRetry = false,
   ): Promise<T> {
     let lastError: Error | null = null;
-    const maxAttempts = disableRetry ? 1 : this.MAX_RETRIES;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // O teto do laço é sempre MAX_RETRIES; `disableRetry` é decidido DENTRO do
+    // catch, porque só ali se sabe se a falha foi um rate limit — o único caso
+    // em que uma escrita não idempotente pode ser repetida.
+    for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
       try {
         return await this.executeRequest<T>(
           companyId,
@@ -318,7 +323,12 @@ export class InvoicyHttpService {
         lastError = error;
 
         // Don't retry client errors (4xx) except 401 (handled in executeRequest)
-        if (this.isClientError(error) && error.response?.status !== 401) {
+        // e 429 (rate limit), tratado logo abaixo.
+        if (
+          this.isClientError(error) &&
+          error.response?.status !== 401 &&
+          !this.isRateLimited(error)
+        ) {
           // Sanitização: não serializar o corpo da resposta (pode conter tokens/EmpAK).
           const errCode =
             error.response?.data?.codigo || error.response?.data?.code;
@@ -333,10 +343,24 @@ export class InvoicyHttpService {
           throw error;
         }
 
-        if (attempt < maxAttempts) {
-          const delay = this.INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+        // 429 é a única falha que uma escrita fiscal não idempotente pode
+        // repetir: o provedor RECUSOU a requisição antes de processá-la, então
+        // o documento não chegou à SEFAZ. Timeout e 5xx seguem barrados por
+        // `disableRetry` — ali a nota pode ter sido processada sem a resposta
+        // voltar, e reenviar duplicaria o documento.
+        const rateLimited = this.isRateLimited(error);
+        if (disableRetry && !rateLimited) {
+          throw error;
+        }
+
+        if (attempt < this.MAX_RETRIES) {
+          const delay = rateLimited
+            ? this.rateLimitDelay(error, attempt)
+            : this.INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
           this.logger.warn(
-            `Request failed (attempt ${attempt}/${maxAttempts}). Retrying in ${delay}ms...`,
+            `Request failed (attempt ${attempt}/${this.MAX_RETRIES})${
+              rateLimited ? ' — rate limit do provedor' : ''
+            }. Retrying in ${delay}ms...`,
           );
           if (signal?.aborted) {
             throw new Error('AbortError');
@@ -463,6 +487,50 @@ export class InvoicyHttpService {
    */
   private isClientError(error: any): boolean {
     return error.response?.status >= 400 && error.response?.status < 500;
+  }
+
+  /**
+   * 429: o provedor recusou a requisição por excesso de chamadas.
+   *
+   * É o único 4xx que pede repetição — a semântica do status é "volte mais
+   * tarde", não "seu pedido está errado". Tratá-lo como erro definitivo fazia a
+   * emissão desistir na primeira recusa e devolver ao usuário um
+   * "Request failed with status code 429", sem usar o backoff que já existe
+   * aqui.
+   */
+  private isRateLimited(error: any): boolean {
+    return error.response?.status === 429;
+  }
+
+  /**
+   * Espera antes de repetir uma chamada barrada por rate limit.
+   *
+   * Prefere o `Retry-After` do provedor (segundos ou data HTTP). Sem ele, cai
+   * num backoff mais largo que o padrão: janela de rate limit costuma ser de
+   * dezenas de segundos, e 1s/2s só queimaria as tentativas restantes.
+   */
+  private rateLimitDelay(error: any, attempt: number): number {
+    const header =
+      error.response?.headers?.['retry-after'] ??
+      error.response?.headers?.['Retry-After'];
+
+    if (header !== undefined) {
+      const seconds = Number(header);
+      if (Number.isFinite(seconds) && seconds > 0) {
+        return Math.min(seconds * 1000, this.MAX_RATE_LIMIT_DELAY_MS);
+      }
+
+      const retryAt = new Date(String(header)).getTime();
+      if (Number.isFinite(retryAt)) {
+        const wait = retryAt - Date.now();
+        if (wait > 0) return Math.min(wait, this.MAX_RATE_LIMIT_DELAY_MS);
+      }
+    }
+
+    return Math.min(
+      this.RATE_LIMIT_BASE_DELAY_MS * Math.pow(2, attempt - 1),
+      this.MAX_RATE_LIMIT_DELAY_MS,
+    );
   }
 
   /**

@@ -103,6 +103,13 @@ export class InvoicyApiService {
   ): Promise<InvoicyResponse[]> {
     this.logger.log(`Emitting NF-e/NFC-e for company ${companyId}`);
 
+    // disableRetry: emissão é escrita fiscal NÃO idempotente e o payload não
+    // carrega chave de idempotência — reenviar após um timeout de leitura pode
+    // transmitir duas vezes um documento que a SEFAZ já processou. A emissão de
+    // NFS-e e os eventos já seguiam esse contrato; a de NF-e ficou de fora.
+    //
+    // O rate limit (429) segue sendo repetido mesmo assim: ali o provedor
+    // recusou antes de processar, então não há documento em voo.
     const response = await this.invoicyHttpService.makeRequest<
       InvoicyResponse[]
     >(
@@ -113,6 +120,7 @@ export class InvoicyApiService {
       invoicyConfigId,
       undefined,
       forceEnvironment,
+      true,
     );
 
     // Check for errors in response

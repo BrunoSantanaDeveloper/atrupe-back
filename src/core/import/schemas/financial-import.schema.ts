@@ -1,4 +1,8 @@
-import { findActiveBankAccountByName } from '../bank-account-matching';
+import {
+  findActiveBankAccountByName,
+  findActiveNatureByDescription,
+  findActiveSubCategoryByDescription,
+} from '../import-references';
 
 // Quantas contas bancárias listar na mensagem de erro antes de resumir o restante
 const MAX_LISTED_BANK_ACCOUNTS = 10;
@@ -157,13 +161,11 @@ export const FINANCIAL_IMPORT_SCHEMA = {
       validate: async (value: string, companyId: string, prisma: any) => {
         if (!value || value.trim() === '') return null;
 
-        const nature = await prisma.nature.findFirst({
-          where: {
-            description: value,
-            companyId,
-            isActive: true,
-          },
-        });
+        const nature = await findActiveNatureByDescription(
+          prisma,
+          companyId,
+          value,
+        );
 
         if (!nature) {
           return 'Natureza não encontrada. Cadastre a natureza antes de importar';
@@ -188,24 +190,20 @@ export const FINANCIAL_IMPORT_SCHEMA = {
 
         let natureId: string | undefined;
         if (row.Natureza && row.Natureza.trim() !== '') {
-          const nature = await prisma.nature.findFirst({
-            where: {
-              description: row.Natureza,
-              companyId,
-              isActive: true,
-            },
-          });
+          const nature = await findActiveNatureByDescription(
+            prisma,
+            companyId,
+            row.Natureza,
+          );
           natureId = nature?.id;
         }
 
-        const subCategory = await prisma.subCategory.findFirst({
-          where: {
-            description: value,
-            companyId,
-            isActive: true,
-            ...(natureId ? { natureId } : {}),
-          },
-        });
+        const subCategory = await findActiveSubCategoryByDescription(
+          prisma,
+          companyId,
+          value,
+          natureId,
+        );
 
         if (!subCategory) {
           return 'Subcategoria nao encontrada. Cadastre a subcategoria antes de importar';

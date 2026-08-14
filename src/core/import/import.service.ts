@@ -15,9 +15,19 @@ import {
 } from './schemas';
 import {
   GENERIC_BANK_CODE,
+  FALLBACK_NATURE_DESCRIPTION,
+  ImportReference,
   collectBankAccountNames,
+  collectNatureNames,
+  collectSubCategoryRefs,
   findActiveBankAccountByName,
-} from './bank-account-matching';
+  findActiveNatureByDescription,
+  findActiveSubCategoryByDescription,
+} from './import-references';
+import {
+  resolveOptionalEmail,
+  sanitizeOptionalEmail,
+} from './optional-value-sanitizers';
 
 /**
  * Unidades cujo preço total depende de uma medida (área, comprimento, peso…).
@@ -202,12 +212,13 @@ export class ImportService {
         allowOverride,
       );
 
-      // Contas bancárias citadas no arquivo que a empresa ainda não tem. Criar
-      // conta é feature de plano (em Trial o cliente nem enxerga a tela), então
-      // devolvemos a lista para a tela oferecer a criação em vez de só barrar.
-      const missingBankAccounts =
+      // Cadastros citados no arquivo que a empresa ainda não tem. Criar conta
+      // bancária é feature de plano (em Trial o cliente nem enxerga a tela), e
+      // natureza/subcategoria vêm às centenas no extrato de outro sistema —
+      // devolvemos a lista para a tela oferecer o cadastro em vez de só barrar.
+      const missingRecords =
         importLog.entity === 'financial'
-          ? await this.findMissingBankAccounts(rows, importLog.companyId)
+          ? await this.findMissingReferences(rows, importLog.companyId)
           : [];
 
       // Atualizar registro
@@ -232,7 +243,8 @@ export class ImportService {
         totalRows: rows.length,
         validRows: validationResult.validRows,
         errors: validationResult.errors,
-        missingBankAccounts,
+        warnings: validationResult.warnings,
+        missingRecords,
         preview: rows.slice(0, 10),
       };
     } catch (error) {
@@ -251,13 +263,50 @@ export class ImportService {
   }
 
   /**
-   * Contas bancárias citadas no CSV que a empresa não tem cadastradas e ativas.
+   * Cadastros citados no CSV que a empresa não tem ativos: natureza,
+   * subcategoria e conta bancária.
    */
-  private async findMissingBankAccounts(
+  private async findMissingReferences(
     rows: any[],
     companyId: string,
-  ): Promise<string[]> {
-    const missing: string[] = [];
+  ): Promise<ImportReference[]> {
+    const missing: ImportReference[] = [];
+
+    for (const name of collectNatureNames(rows)) {
+      const nature = await findActiveNatureByDescription(
+        this.prisma,
+        companyId,
+        name,
+      );
+      if (!nature) missing.push({ type: 'nature', name });
+    }
+
+    for (const ref of collectSubCategoryRefs(rows)) {
+      // Mesma regra do validador: com natureza declarada, a subcategoria precisa
+      // estar pendurada nela para contar como existente.
+      const nature = ref.parent
+        ? await findActiveNatureByDescription(
+            this.prisma,
+            companyId,
+            ref.parent,
+          )
+        : null;
+
+      const subCategory = await findActiveSubCategoryByDescription(
+        this.prisma,
+        companyId,
+        ref.name,
+        nature?.id,
+      );
+
+      if (!subCategory) {
+        missing.push({
+          type: 'subCategory',
+          name: ref.name,
+          ...(ref.parent ? { parent: ref.parent } : {}),
+        });
+      }
+    }
 
     for (const name of collectBankAccountNames(rows)) {
       const account = await findActiveBankAccountByName(
@@ -265,25 +314,24 @@ export class ImportService {
         companyId,
         name,
       );
-      if (!account) missing.push(name);
+      if (!account) missing.push({ type: 'bankAccount', name });
     }
 
     return missing;
   }
 
   /**
-   * Cria as contas bancárias citadas no CSV que ainda não existem, após a
-   * confirmação do usuário na tela de importação.
+   * Cria os cadastros citados no CSV que ainda não existem, após a confirmação
+   * do usuário na tela de importação.
    *
    * Os nomes saem do próprio arquivo já enviado — não de um payload arbitrário —
    * então a criação fica limitada ao que a importação realmente precisa.
    *
-   * A instituição não é dedutível de um nome livre como "Sicredi CC 47204-3":
-   * usamos o banco genérico 000, o mesmo do provisionamento inicial da empresa, e
-   * o cliente ajusta depois. Conta inativa de mesmo nome é reativada em vez de
-   * duplicada, porque o validador filtra por `isActive`.
+   * A ordem importa: subcategoria depende de uma natureza-pai, que pode ter sido
+   * criada agora mesmo. Registro inativo de mesmo nome é reativado em vez de
+   * duplicado, porque o validador filtra por `isActive`.
    */
-  async createMissingBankAccounts(importId: string) {
+  async createMissingReferences(importId: string) {
     const importLog = await this.prisma.importLog.findUnique({
       where: { id: importId },
     });
@@ -294,7 +342,7 @@ export class ImportService {
 
     if (importLog.entity !== 'financial') {
       throw new BadRequestException(
-        'Only financial imports reference bank accounts',
+        'Only financial imports reference these records',
       );
     }
 
@@ -310,81 +358,195 @@ export class ImportService {
       this.normalizeRow(r),
     );
 
-    const bank = await this.prisma.bank.findFirst({
-      where: { code: GENERIC_BANK_CODE },
-    });
+    const companyId = importLog.companyId;
+    const created: ImportReference[] = [];
+    const reactivated: ImportReference[] = [];
+    const skipped: ImportReference[] = [];
 
-    if (!bank) {
-      throw new BadRequestException(
-        `Banco de código ${GENERIC_BANK_CODE} não encontrado`,
-      );
-    }
+    // Id de cada natureza resolvida no passo 1, para o passo 2 pendurar a
+    // subcategoria sem reconsultar o que acabou de ser gravado.
+    const natureIdByName = new Map<string, string>();
+    const rememberNature = (name: string, id: string) =>
+      natureIdByName.set(name.trim().toLowerCase(), id);
 
-    // O cadastro pela tela cria uma linha de controle de caixa por condição de
-    // pagamento, todas desligadas por padrão. Replicado aqui para a conta criada
-    // pela importação ficar igual a uma criada pela interface.
-    const paymentConditions = await this.prisma.paymentCondition.findMany({
-      where: { companyId: importLog.companyId, isActive: true },
-      select: { id: true },
-    });
-
-    const created: string[] = [];
-    const reactivated: string[] = [];
-    const skipped: string[] = [];
-
-    for (const name of collectBankAccountNames(rows)) {
-      const active = await findActiveBankAccountByName(
+    // 1. Naturezas — precisam existir antes das subcategorias.
+    for (const name of collectNatureNames(rows)) {
+      const active = await findActiveNatureByDescription(
         this.prisma,
-        importLog.companyId,
+        companyId,
         name,
       );
 
       if (active) {
-        skipped.push(active.name);
+        rememberNature(name, active.id);
+        skipped.push({ type: 'nature', name });
         continue;
       }
 
-      const inactive = await this.prisma.bankAccount.findFirst({
+      const inactive = await this.prisma.nature.findFirst({
         where: {
-          name: { equals: name, mode: 'insensitive' },
-          companyId: importLog.companyId,
+          description: { equals: name, mode: 'insensitive' },
+          companyId,
         },
       });
 
       if (inactive) {
-        await this.prisma.bankAccount.update({
+        await this.prisma.nature.update({
           where: { id: inactive.id },
           data: { isActive: true },
         });
-        reactivated.push(inactive.name);
+        rememberNature(name, inactive.id);
+        reactivated.push({ type: 'nature', name });
         continue;
       }
 
-      await this.prisma.bankAccount.create({
-        data: {
-          name,
-          description: 'Criada pela importação financeira',
-          companyId: importLog.companyId,
-          bankId: bank.id,
-          cashControl: true,
-          bankAccountCashControl: {
-            createMany: {
-              data: paymentConditions.map((condition) => ({
-                paymentConditionId: condition.id,
-                acceptIncomes: false,
-                incomeType: 'PAYSOFF' as const,
-                acceptPayments: false,
-                paymentType: 'PAYSOFF' as const,
-              })),
-            },
-          },
+      const createdNature = await this.prisma.nature.create({
+        data: { description: name, companyId },
+      });
+      rememberNature(name, createdNature.id);
+      created.push({ type: 'nature', name });
+    }
+
+    // 2. Subcategorias.
+    for (const ref of collectSubCategoryRefs(rows)) {
+      const parentNatureId = ref.parent
+        ? natureIdByName.get(ref.parent.trim().toLowerCase())
+        : undefined;
+
+      const active = await findActiveSubCategoryByDescription(
+        this.prisma,
+        companyId,
+        ref.name,
+        parentNatureId,
+      );
+
+      if (active) {
+        skipped.push({ type: 'subCategory', name: ref.name });
+        continue;
+      }
+
+      const natureId =
+        parentNatureId ?? (await this.resolveFallbackNatureId(companyId));
+
+      const inactive = await this.prisma.subCategory.findFirst({
+        where: {
+          description: { equals: ref.name, mode: 'insensitive' },
+          companyId,
+          natureId,
         },
       });
 
-      created.push(name);
+      if (inactive) {
+        await this.prisma.subCategory.update({
+          where: { id: inactive.id },
+          data: { isActive: true },
+        });
+        reactivated.push({ type: 'subCategory', name: ref.name });
+        continue;
+      }
+
+      await this.prisma.subCategory.create({
+        data: { description: ref.name, natureId, companyId },
+      });
+      created.push({ type: 'subCategory', name: ref.name });
+    }
+
+    // 3. Contas bancárias.
+    const bankAccountNames = collectBankAccountNames(rows);
+
+    if (bankAccountNames.length > 0) {
+      const bank = await this.prisma.bank.findFirst({
+        where: { code: GENERIC_BANK_CODE },
+      });
+
+      if (!bank) {
+        throw new BadRequestException(
+          `Banco de código ${GENERIC_BANK_CODE} não encontrado`,
+        );
+      }
+
+      // O cadastro pela tela cria uma linha de controle de caixa por condição de
+      // pagamento, todas desligadas por padrão. Replicado aqui para a conta criada
+      // pela importação ficar igual a uma criada pela interface.
+      const paymentConditions = await this.prisma.paymentCondition.findMany({
+        where: { companyId, isActive: true },
+        select: { id: true },
+      });
+
+      for (const name of bankAccountNames) {
+        const active = await findActiveBankAccountByName(
+          this.prisma,
+          companyId,
+          name,
+        );
+
+        if (active) {
+          skipped.push({ type: 'bankAccount', name: active.name });
+          continue;
+        }
+
+        const inactive = await this.prisma.bankAccount.findFirst({
+          where: {
+            name: { equals: name, mode: 'insensitive' },
+            companyId,
+          },
+        });
+
+        if (inactive) {
+          await this.prisma.bankAccount.update({
+            where: { id: inactive.id },
+            data: { isActive: true },
+          });
+          reactivated.push({ type: 'bankAccount', name: inactive.name });
+          continue;
+        }
+
+        await this.prisma.bankAccount.create({
+          data: {
+            name,
+            description: 'Criada pela importação financeira',
+            companyId,
+            bankId: bank.id,
+            cashControl: true,
+            bankAccountCashControl: {
+              createMany: {
+                data: paymentConditions.map((condition) => ({
+                  paymentConditionId: condition.id,
+                  acceptIncomes: false,
+                  incomeType: 'PAYSOFF' as const,
+                  acceptPayments: false,
+                  paymentType: 'PAYSOFF' as const,
+                })),
+              },
+            },
+          },
+        });
+
+        created.push({ type: 'bankAccount', name });
+      }
     }
 
     return { created, reactivated, skipped };
+  }
+
+  /**
+   * Natureza-pai para subcategoria que veio sem natureza na planilha. Reaproveita
+   * a primeira ativa da empresa e só cria a padrão quando não existe nenhuma —
+   * mesma receita que o import de produtos usa para o grupo.
+   */
+  private async resolveFallbackNatureId(companyId: string): Promise<string> {
+    const existing = await this.prisma.nature.findFirst({
+      where: { companyId, isActive: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (existing) return existing.id;
+
+    const created = await this.prisma.nature.create({
+      data: { description: FALLBACK_NATURE_DESCRIPTION, companyId },
+    });
+
+    return created.id;
   }
 
   /**
@@ -462,18 +624,27 @@ export class ImportService {
     allowOverride: boolean = false,
   ): Promise<any> {
     const errors: any[] = [];
+    const warnings: any[] = [];
     let validRows = 0;
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const rowNumber = i + 2; // +2 porque linha 1 é header e array começa em 0
 
-      const rowErrors = await this.validateRow(
+      const rowIssues = await this.validateRow(
         row,
         schema,
         companyId,
         rowNumber,
         allowOverride,
+      );
+
+      // Aviso não reprova a linha: é campo opcional que será normalizado.
+      const rowErrors = rowIssues.filter(
+        (issue) => issue.severity !== 'warning',
+      );
+      warnings.push(
+        ...rowIssues.filter((issue) => issue.severity === 'warning'),
       );
 
       if (rowErrors.length > 0) {
@@ -483,7 +654,7 @@ export class ImportService {
       }
     }
 
-    return { validRows, errors };
+    return { validRows, errors, warnings };
   }
 
   /**
@@ -519,11 +690,20 @@ export class ImportService {
 
       // Validar tipo
       if (field.type === 'email' && !this.isValidEmail(value)) {
+        // E-mail é campo opcional em todos os schemas: barrar o arquivo inteiro
+        // por causa dele é desproporcional. Normalizamos o que der (planilha
+        // costuma trazer dois e-mails no mesmo campo) e o usuário confirma a
+        // perda na revisão, em vez de ter que editar o CSV.
+        const sanitized = field.required ? null : sanitizeOptionalEmail(value);
+
         errors.push({
           row: rowNumber,
           field: field.name,
           value,
-          error: `Formato de email inválido`,
+          error: sanitized ? sanitized.message : `Formato de email inválido`,
+          ...(sanitized
+            ? { severity: 'warning', newValue: sanitized.value }
+            : {}),
         });
       }
 
@@ -827,7 +1007,7 @@ export class ImportService {
         companyId,
         type: type || 'PERSON',
         name: row.nome,
-        email: row.email || null,
+        email: resolveOptionalEmail(row.email),
         cpf: cpfNormalized,
         cnpj: cnpjNormalized,
         rg: row.rg || null,
@@ -861,7 +1041,7 @@ export class ImportService {
                 create: [
                   {
                     name: row.responsavelNome,
-                    email: row.responsavelEmail || null,
+                    email: resolveOptionalEmail(row.responsavelEmail),
                     phone: row.responsavelTelefone || null,
                     mobile: row.responsavelCelular || null,
                   },
@@ -967,7 +1147,7 @@ export class ImportService {
         companyId,
         type: type || 'COMPANY',
         name: row.nome,
-        email: row.email || null,
+        email: resolveOptionalEmail(row.email),
         cpf: cpfNormalized,
         cnpj: cnpjNormalized,
         rg: row.rg || null,
@@ -1000,7 +1180,7 @@ export class ImportService {
                 create: [
                   {
                     name: row.responsavelNome,
-                    email: row.responsavelEmail || null,
+                    email: resolveOptionalEmail(row.responsavelEmail),
                     phone: row.responsavelTelefone || null,
                     mobile: row.responsavelCelular || null,
                   },
@@ -2475,13 +2655,11 @@ export class ImportService {
         // Buscar natureza
         let natureId: string | null = null;
         if (firstItem.Natureza) {
-          const nature = await this.prisma.nature.findFirst({
-            where: {
-              description: firstItem.Natureza,
-              companyId,
-              isActive: true,
-            },
-          });
+          const nature = await findActiveNatureByDescription(
+            this.prisma,
+            companyId,
+            firstItem.Natureza,
+          );
           if (!nature) {
             throw new Error(`Natureza '${firstItem.Natureza}' não encontrada`);
           }
@@ -2491,13 +2669,12 @@ export class ImportService {
         // Buscar subcategoria
         let subCategoryId: string | null = null;
         if (firstItem.SubCategoria) {
-          const subCategory = await this.prisma.subCategory.findFirst({
-            where: {
-              description: firstItem.SubCategoria,
-              companyId,
-              isActive: true,
-            },
-          });
+          const subCategory = await findActiveSubCategoryByDescription(
+            this.prisma,
+            companyId,
+            firstItem.SubCategoria,
+            natureId,
+          );
           if (!subCategory) {
             throw new Error(
               `Subcategoria '${firstItem.SubCategoria}' não encontrada`,

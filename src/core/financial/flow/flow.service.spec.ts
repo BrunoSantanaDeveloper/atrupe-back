@@ -112,6 +112,61 @@ describe('FlowService', () => {
       expect(result.data).toBeDefined();
       expect(prismaMock.receivableInstallment.groupBy).toHaveBeenCalled();
     });
+
+    it('should order groups by date even when a date exists only in payables', async () => {
+      prismaMock.receivableInstallment.groupBy.mockResolvedValue([
+        { dueDate: new Date('2026-08-19T00:00:00.000Z') },
+        { dueDate: new Date('2026-08-09T00:00:00.000Z') },
+        { dueDate: new Date('2026-08-01T00:00:00.000Z') },
+      ]);
+      prismaMock.payableInstallment.groupBy.mockResolvedValue([
+        { dueDate: new Date('2026-08-05T00:00:00.000Z') },
+      ]);
+
+      prismaMock.receivableInstallment.findMany.mockResolvedValue([]);
+      prismaMock.payableInstallment.findMany.mockResolvedValue([]);
+
+      const result = await service.findAll({
+        companyId: 'comp-1',
+        dateType: 'dueDate',
+        page: '1',
+        limit: '10',
+      });
+
+      expect(result.data.map((group) => group.date.toISOString())).toEqual([
+        '2026-08-19T00:00:00.000Z',
+        '2026-08-09T00:00:00.000Z',
+        '2026-08-05T00:00:00.000Z',
+        '2026-08-01T00:00:00.000Z',
+      ]);
+    });
+
+    it('should order groups ascending when sort is asc', async () => {
+      prismaMock.receivableInstallment.groupBy.mockResolvedValue([
+        { dueDate: new Date('2026-08-01T00:00:00.000Z') },
+        { dueDate: new Date('2026-08-19T00:00:00.000Z') },
+      ]);
+      prismaMock.payableInstallment.groupBy.mockResolvedValue([
+        { dueDate: new Date('2026-08-05T00:00:00.000Z') },
+      ]);
+
+      prismaMock.receivableInstallment.findMany.mockResolvedValue([]);
+      prismaMock.payableInstallment.findMany.mockResolvedValue([]);
+
+      const result = await service.findAll({
+        companyId: 'comp-1',
+        dateType: 'dueDate',
+        sort: 'asc',
+        page: '1',
+        limit: '10',
+      });
+
+      expect(result.data.map((group) => group.date.toISOString())).toEqual([
+        '2026-08-01T00:00:00.000Z',
+        '2026-08-05T00:00:00.000Z',
+        '2026-08-19T00:00:00.000Z',
+      ]);
+    });
   });
 
   describe('getReceivableDetails', () => {
