@@ -895,6 +895,12 @@ export class NfseService {
     const aliquotaIss = this.rate(aliquotaIssRaw);
     const valorIss = this.money((baseCalculo * aliquotaIss) / 100);
 
+    // E0625: prestador ME/EPP optante do Simples (opSimpNac=3) não pode
+    // informar alíquota quando não há retenção (tpRetISSQN=1) — o ISS é
+    // recolhido pelo DAS, não pela alíquota municipal. Só volta a ser
+    // declarável quando o tomador retém.
+    const omitirAliquotaIss = config.emitCrt === 1 && !dto.issRetido;
+
     this.assertNfsePayloadReady(dto, valorServicos, valorDeducoes, baseCalculo);
 
     const { nfse, rpsNumero, rpsSerie } = await this.prisma.$transaction(
@@ -973,7 +979,7 @@ export class NfseService {
             10,
           ),
           ItemvIss: this.money((itemBase * itemAliquota) / 100),
-          ItemAliquota: itemAliquota,
+          ...(omitirAliquotaIss ? {} : { ItemAliquota: itemAliquota }),
           ItemVlrTotal: itemBase,
           ItemBaseCalculo: itemBase,
           ItemIssRetido: item.issRetido ? 1 : 2,
@@ -1006,7 +1012,7 @@ export class NfseService {
             10,
           ),
           ItemvIss: valorIss,
-          ItemAliquota: aliquotaIss,
+          ...(omitirAliquotaIss ? {} : { ItemAliquota: aliquotaIss }),
           ItemVlrTotal: valorServicos,
           ItemBaseCalculo: baseCalculo,
           ItemIssRetido: dto.issRetido ? 1 : 2,
@@ -1095,7 +1101,7 @@ export class NfseService {
                   ValISS: valorIss,
                   ValOutrasRetencoes: 0,
                   ValBaseCalculo: baseCalculo,
-                  ValAliqISS: aliquotaIss,
+                  ...(omitirAliquotaIss ? {} : { ValAliqISS: aliquotaIss }),
                 },
                 IteListServico: parseInt(
                   dto.codigoServico.replace(/\D/g, ''),

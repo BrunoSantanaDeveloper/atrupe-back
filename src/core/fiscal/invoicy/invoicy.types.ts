@@ -350,7 +350,8 @@ export interface InvoicyNfseListaItem {
   ItemcCnae?: number;
   ItemTributMunicipio: number;
   ItemvIss: number;
-  ItemAliquota: number;
+  /** Omitido para ME/EPP do Simples sem retenção de ISSQN — ver E0625. */
+  ItemAliquota?: number;
   ItemVlrTotal: number;
   ItemBaseCalculo: number;
   ItemIssRetido: number;
@@ -372,7 +373,8 @@ export interface InvoicyNfseServico {
     ValISS: number;
     ValOutrasRetencoes: number;
     ValBaseCalculo: number;
-    ValAliqISS: number;
+    /** Omitida para ME/EPP do Simples sem retenção de ISSQN — ver E0625. */
+    ValAliqISS?: number;
   };
   LocalPrestacao?: {
     SerEndTpLgr: string;

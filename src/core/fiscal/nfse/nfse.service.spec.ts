@@ -405,6 +405,61 @@ describe('NfseService', () => {
       );
     });
 
+    it('omite a alíquota para ME/EPP do Simples sem retenção de ISSQN', async () => {
+      // E0625: com opSimpNac=3 e tpRetISSQN=1 a prefeitura recusa pAliq.
+      await service.emit(mockCompanyId, {
+        tomador: {
+          cnpj: '12345678901234',
+          razaoSocial: 'Cliente Teste LTDA',
+          endereco: 'Avenida Paulista',
+          numero: '1000',
+          bairro: 'Bela Vista',
+          cep: '01310100',
+          codigoMunicipio: '3550308',
+        },
+        codigoServico: '1.05',
+        codigoMunicipio: '4314902',
+        discriminacao: 'teste',
+        valorServicos: 100,
+        aliquotaIss: 2.5,
+        issRetido: false,
+        naturezaOperacao: 1,
+      } as any);
+
+      const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+      const rps = documentos[0].Documento.RPS[0];
+
+      expect(rps.Servico.Valores).not.toHaveProperty('ValAliqISS');
+      expect(rps.ListaItens[0]).not.toHaveProperty('ItemAliquota');
+    });
+
+    it('mantém a alíquota quando o ISSQN é retido pelo tomador', async () => {
+      await service.emit(mockCompanyId, {
+        tomador: {
+          cnpj: '12345678901234',
+          razaoSocial: 'Cliente Teste LTDA',
+          endereco: 'Avenida Paulista',
+          numero: '1000',
+          bairro: 'Bela Vista',
+          cep: '01310100',
+          codigoMunicipio: '3550308',
+        },
+        codigoServico: '1.05',
+        codigoMunicipio: '4314902',
+        discriminacao: 'teste',
+        valorServicos: 100,
+        aliquotaIss: 2.5,
+        issRetido: true,
+        naturezaOperacao: 1,
+      } as any);
+
+      const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+      const rps = documentos[0].Documento.RPS[0];
+
+      expect(rps.Servico.Valores.ValAliqISS).toBe(2.5);
+      expect(rps.ListaItens[0].ItemAliquota).toBe(2.5);
+    });
+
     it('should throw if order not found', async () => {
       prisma.quotation.findFirst.mockResolvedValue(null);
 
