@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateMailVerificationDto {
@@ -79,6 +79,15 @@ export class CreateUserDto {
     required: true,
   })
   password: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'CPF do responsável principal da conta (admin)',
+    example: '123.456.789-00',
+    required: false,
+  })
+  cpf?: string;
 }
 
 export class CreateUserByEmployeeDto {

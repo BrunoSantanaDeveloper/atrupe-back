@@ -285,6 +285,7 @@ export class UserRegistrationService {
       await this.companyService.createFirstAccess(
         createUserDto.email,
         company.id,
+        createUserDto.cpf,
       );
       this.logger.log('First access configured successfully');
 
