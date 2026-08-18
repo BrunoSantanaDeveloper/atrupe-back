@@ -624,6 +624,28 @@ describe('NfeService', () => {
       expect(prisma.quotation.findFirst).toHaveBeenCalled();
     });
 
+    it('usa a descrição editada do item no lugar do nome do produto', async () => {
+      prisma.quotation.findFirst.mockResolvedValue({
+        ...mockQuotation,
+        quotationProduct: [
+          {
+            ...mockQuotation.quotationProduct[0],
+            description: 'SERVIÇOS',
+          },
+        ],
+      });
+
+      const result = await service.prepareFromOrder(mockCompanyId, mockOrderId);
+
+      expect(result.items[0].description).toBe('SERVIÇOS');
+    });
+
+    it('cai para o nome do produto quando o item não tem descrição', async () => {
+      const result = await service.prepareFromOrder(mockCompanyId, mockOrderId);
+
+      expect(result.items[0].description).toBe('Produto Teste');
+    });
+
     it('should throw NotFoundException when order not found', async () => {
       prisma.quotation.findFirst.mockResolvedValue(null);
 

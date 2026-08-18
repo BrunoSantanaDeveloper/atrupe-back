@@ -9,6 +9,7 @@ import {
 import { PrismaService } from 'nestjs-prisma';
 import { NfeStatus, NfeCorrectionStatus } from '@prisma/client';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
+import { NfeService } from './nfe.service';
 import {
   INVOICY_ERROR_CODES,
   INVOICY_SUCCESS_CODES,
@@ -59,6 +60,7 @@ export class NfeEventsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly invoicyApiService: InvoicyApiService,
+    private readonly nfeService: NfeService,
   ) {}
 
   /**
@@ -150,6 +152,20 @@ export class NfeEventsService {
           protocoloCancelamento: doc?.DocProtocolo || null,
         },
       });
+
+      // A DANFE guardada ainda e a da nota valida — e e ela que getDanfeUrl
+      // serve. Sem rebuscar, o usuario baixa o PDF sem a marca dagua de
+      // CANCELADA e nao tem como perceber pelo proprio documento que a nota
+      // caiu. refreshDanfeFromProvider nao lanca: o cancelamento ja esta
+      // registrado na SEFAZ neste ponto e nao pode virar erro por causa do PDF.
+      await this.nfeService.refreshDanfeFromProvider(
+        {
+          id: nfe.id,
+          chaveAcesso: nfe.chaveAcesso,
+          invoicyConfigId: nfe.invoicyConfigId,
+        },
+        companyId,
+      );
 
       return updatedNfe;
     } catch (error) {

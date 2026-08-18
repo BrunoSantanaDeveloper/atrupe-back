@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NfeEventsService } from './nfe-events.service';
 import { PrismaService } from 'nestjs-prisma';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
+import { NfeService } from './nfe.service';
 import {
   BadRequestException,
   ConflictException,
@@ -9,6 +10,10 @@ import {
 } from '@nestjs/common';
 import { NfeStatus, NfeCorrectionStatus } from '@prisma/client';
 import { INVOICY_SUCCESS_CODES } from '../invoicy/invoicy.types';
+
+const nfeServiceMock = {
+  refreshDanfeFromProvider: jest.fn().mockResolvedValue(true),
+};
 
 const CHAVE = '42260657968205000182550010000000101000005700';
 
@@ -105,6 +110,7 @@ describe('NfeEventsService', () => {
         NfeEventsService,
         { provide: PrismaService, useValue: prismaMock },
         { provide: InvoicyApiService, useValue: invoicyApiMock },
+        { provide: NfeService, useValue: nfeServiceMock },
       ],
     }).compile();
 
@@ -176,6 +182,66 @@ describe('NfeEventsService', () => {
         1,
         expect.objectContaining({ numero: 10 }),
       );
+      expect(result.status).toBe(NfeStatus.CANCELLED);
+    });
+
+    /**
+     * A DANFE é gravada na autorização e servida do banco. Sem rebuscá-la, o
+     * usuário baixa depois do cancelamento o mesmo PDF da nota válida, sem a
+     * marca d'água de CANCELADA.
+     */
+    it('rebusca a DANFE no provedor após cancelar', async () => {
+      const nfe = {
+        id: 'nfe-1',
+        status: NfeStatus.AUTHORIZED,
+        dataEmissao: new Date(),
+        chaveAcesso: CHAVE,
+        invoicyConfigId: 'config-1',
+        ambiente: 1,
+      };
+
+      invoicyApiMock.cancelNfe.mockResolvedValue(okResponse());
+      prismaMock.__mockResults['nfe.update'] = () => ({
+        ...nfe,
+        status: NfeStatus.CANCELLED,
+      });
+
+      await service.cancel(nfe, 'company-1', {
+        justificativa: 'Cancelamento longo o suficiente',
+      });
+
+      expect(nfeServiceMock.refreshDanfeFromProvider).toHaveBeenCalledWith(
+        {
+          id: 'nfe-1',
+          chaveAcesso: CHAVE,
+          invoicyConfigId: 'config-1',
+        },
+        'company-1',
+      );
+    });
+
+    it('não deixa uma falha ao atualizar a DANFE derrubar o cancelamento', async () => {
+      // O evento já está registrado na SEFAZ quando isto roda: transformar a
+      // falha do PDF em erro faria o usuário achar que o cancelamento não valeu.
+      const nfe = {
+        id: 'nfe-1',
+        status: NfeStatus.AUTHORIZED,
+        dataEmissao: new Date(),
+        chaveAcesso: CHAVE,
+        ambiente: 1,
+      };
+
+      invoicyApiMock.cancelNfe.mockResolvedValue(okResponse());
+      prismaMock.__mockResults['nfe.update'] = () => ({
+        ...nfe,
+        status: NfeStatus.CANCELLED,
+      });
+      nfeServiceMock.refreshDanfeFromProvider.mockResolvedValueOnce(false);
+
+      const result = await service.cancel(nfe, 'company-1', {
+        justificativa: 'Cancelamento longo o suficiente',
+      });
+
       expect(result.status).toBe(NfeStatus.CANCELLED);
     });
   });

@@ -225,7 +225,8 @@ export class NfeService {
           itemNumber: index + 1,
           productId: qp.productId,
           productCode: qp.product?.code || '',
-          description: qp.product?.name || 'Produto/ServiÃ§o',
+          // Descrição editada no item prevalece sobre o nome do produto do catálogo
+          description: qp.description || qp.product?.name || 'Produto/ServiÃ§o',
           ncm: fiscalData?.ncm || '',
           cfop: selectedCfop,
           cstIcms: fiscalData?.icmsCst || '102',
@@ -2754,13 +2755,13 @@ export class NfeService {
   private async persistDanfePdf(
     nfeId: string,
     doc: InvoicyDocumentResult,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const pdf = await this.resolveDanfePdf(doc);
     if (!pdf) {
       this.logger.warn(
         `DANFE da NF-e ${nfeId} nao foi retornada como PDF valido`,
       );
-      return;
+      return false;
     }
 
     await this.prisma.nfeDanfeDocument.upsert({
@@ -2768,6 +2769,59 @@ export class NfeService {
       create: { nfeId, pdf },
       update: { pdf },
     });
+    return true;
+  }
+
+  /**
+   * Rebusca a DANFE no provedor e substitui a versao armazenada.
+   *
+   * A DANFE e gravada no banco na autorizacao e servida de la (getDanfeUrl):
+   * ela nao se atualiza sozinha. Depois de um cancelamento o usuario continuava
+   * baixando o PDF da nota valida, sem a marca dagua de CANCELADA. A consulta
+   * devolve o documento no estado ATUAL, entao e dela que sai o PDF novo.
+   *
+   * Nunca lanca. Quando isto roda, o evento ja esta registrado na SEFAZ — falhar
+   * em atualizar um PDF nao pode derrubar a operacao nem virar uma mensagem de
+   * erro para uma operacao que deu certo.
+   */
+  async refreshDanfeFromProvider(
+    nfe: {
+      id: string;
+      chaveAcesso?: string | null;
+      invoicyConfigId?: string | null;
+    },
+    companyId: string,
+  ): Promise<boolean> {
+    if (!nfe?.chaveAcesso) return false;
+
+    try {
+      const responses = await this.invoicyApiService.consultNfeSefaz(
+        companyId,
+        nfe.chaveAcesso,
+        nfe.invoicyConfigId ?? undefined,
+      );
+
+      const doc = responses?.[0]?.Documentos?.[0];
+      if (!doc) {
+        this.logger.warn(
+          `Consulta da NF-e ${nfe.id} nao devolveu documento; DANFE mantida como estava.`,
+        );
+        return false;
+      }
+
+      const persisted = await this.persistDanfePdf(nfe.id, doc);
+      if (persisted) {
+        this.logger.log(
+          `DANFE da NF-e ${nfe.id} atualizada apos evento fiscal.`,
+        );
+      }
+      return persisted;
+    } catch (error) {
+      this.logger.warn(
+        `Nao foi possivel atualizar a DANFE da NF-e ${nfe.id}: ${error.message}`,
+      );
+      return false;
+    }
   }
 
   private async resolveDanfePdf(
