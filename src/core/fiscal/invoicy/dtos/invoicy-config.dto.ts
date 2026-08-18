@@ -6,6 +6,7 @@ import {
   IsEmail,
   IsIn,
   IsNumber,
+  IsInt,
   Min,
   Max,
 } from 'class-validator';
@@ -13,6 +14,17 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 
 // Helper to parse numeric strings or undefined
+/**
+ * Como parseNumber, mas preserva null: campos onde "vazio" é um valor
+ * significativo (limpar o que estava salvo) e não "não mexer".
+ */
+const parseNullableInt = ({ value }) => {
+  if (value === null || value === '' || value === '$undefined') return null;
+  if (value === undefined) return undefined;
+  const parsed = parseInt(value, 10);
+  return isNaN(parsed) ? null : parsed;
+};
+
 const parseNumber = ({ value }) => {
   if (
     value === '' ||
@@ -200,6 +212,19 @@ export class CreateInvoicyConfigDto {
   @Min(0)
   @Max(100)
   aliquotaIss?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Regime Especial de Tributação da NFS-e (ABRASF): 1=Microempresa ' +
+      'Municipal, 2=Estimativa, 3=Sociedade de Profissionais, 4=Cooperativa, ' +
+      '5=MEI, 6=ME/EPP. Vazio omite a tag.',
+  })
+  @Transform(parseNullableInt)
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(6)
+  regimeEspecialTributacao?: number | null;
 
   @ApiPropertyOptional({
     description:
@@ -461,6 +486,19 @@ export class UpdateInvoicyConfigDto {
   @Min(0)
   @Max(100)
   aliquotaIss?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Regime Especial de Tributação da NFS-e (ABRASF): 1=Microempresa ' +
+      'Municipal, 2=Estimativa, 3=Sociedade de Profissionais, 4=Cooperativa, ' +
+      '5=MEI, 6=ME/EPP. Vazio omite a tag.',
+  })
+  @Transform(parseNullableInt)
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(6)
+  regimeEspecialTributacao?: number | null;
 
   @ApiPropertyOptional({
     description:

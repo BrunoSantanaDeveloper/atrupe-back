@@ -63,6 +63,8 @@ export class InvoicyService {
     if (dto.emitCrt !== undefined) data.emitCrt = dto.emitCrt;
     if (dto.codigoServico !== undefined) data.codigoServico = dto.codigoServico;
     if (dto.aliquotaIss !== undefined) data.aliquotaIss = dto.aliquotaIss;
+    if (dto.regimeEspecialTributacao !== undefined)
+      data.regimeEspecialTributacao = dto.regimeEspecialTributacao;
     if (dto.defaultCfop !== undefined) data.defaultCfop = dto.defaultCfop;
     if (dto.defaultNcm !== undefined) data.defaultNcm = dto.defaultNcm;
     if (dto.defaultOperationNature !== undefined)
@@ -244,6 +246,7 @@ export class InvoicyService {
       defaultNcm: config.defaultNcm || null,
       codigoServico: config.codigoServico,
       aliquotaIss: config.aliquotaIss,
+      regimeEspecialTributacao: config.regimeEspecialTributacao ?? null,
       defaultCfop: config.defaultCfop,
       defaultOperationNature: config.defaultOperationNature,
       taxInfoText: config.taxInfoText,

@@ -1056,8 +1056,12 @@ export class NfseService {
               natOp: dto.naturezaOperacao || 1, // 1 = TributaÃ§Ã£o no municÃ­pio
               Operacao: 1,
               // RegEspTrib segue a enumeração ABRASF do Invoicy (6 = ME/EPP),
-              // que ele converte para o regEspTrib do layout nacional.
-              RegEspTrib: config.emitCrt === 1 ? 6 : 1,
+              // que ele converte para o regEspTrib do layout nacional. Alguns
+              // municípios exigem um regime específico e outros recusam a tag,
+              // então o emissor pode configurar; o padrão cobre o caso comum.
+              RegEspTrib:
+                config.regimeEspecialTributacao ??
+                (config.emitCrt === 1 ? 6 : 1),
               // OptSN: 1 = optante do Simples Nacional, 2 = não optante
               OptSN: config.emitCrt === 1 ? 1 : 2,
               // regApTribSN: obrigatório para ME/EPP optante do SN.
