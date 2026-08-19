@@ -5,7 +5,8 @@
     "compilerOptions": {
         "assets": [
             "core/mail/templates/**/*",
-            "core/mail/extras/**/*"
+            "core/mail/extras/**/*",
+            "assets/**/*"
         ],
         "watchAssets": true,
         "deleteOutDir": true

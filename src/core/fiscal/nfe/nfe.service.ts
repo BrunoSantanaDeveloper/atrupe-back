@@ -25,6 +25,7 @@ import {
 } from '../invoicy/invoicy.types';
 import { fetchCepData } from '../utils/cep.util';
 import { getTPag } from '../utils/payment-method-map';
+import { resolveCommercialQuantity } from '../utils/commercial-quantity.util';
 import {
   parseProjectDayBoundary,
   toProjectDateKey,
@@ -124,6 +125,9 @@ export class NfeService {
                 fiscalData: true,
               },
             },
+            // A quantidade medida (14 m2) vive nos items; sem esta relacao a
+            // NF-e saia com a "Qtd. Item" (1) e o peso dos volumes zerado.
+            items: true,
           },
         },
         series: true,
@@ -200,6 +204,9 @@ export class NfeService {
                 fiscalData: true,
               },
             },
+            // A quantidade medida (14 m2) vive nos items; sem esta relacao a
+            // NF-e saia com a "Qtd. Item" (1) e o peso dos volumes zerado.
+            items: true,
           },
         },
       },
@@ -210,7 +217,15 @@ export class NfeService {
       (qp, index) => {
         const totalValueCents = qp.finalValue || qp.totalValue || 0;
         const totalValueReais = totalValueCents / 100;
-        const unitValue = qp.quantity > 0 ? totalValueReais / qp.quantity : 0;
+
+        // Quantidade COMERCIAL: a medida do que foi vendido, nao a "Qtd. Item".
+        const comercial = resolveCommercialQuantity(qp.quantity, qp.items);
+
+        // Sem toFixed(2) de proposito: vProd sai de qCOM x vUnCom no payload,
+        // e o leiaute aceita 10 casas em vUnCom. Arredondar aqui fazia
+        // 14 x 0,04 = 0,56 divergir do total da nota (0,50) e a SEFAZ rejeitar.
+        const unitValue =
+          comercial.quantity > 0 ? totalValueReais / comercial.quantity : 0;
         const discountReais = (qp.discount || 0) / 100;
         const fiscalData = qp.product?.fiscalData;
 
@@ -233,9 +248,12 @@ export class NfeService {
           cstIpi: fiscalData?.ipiCst || '',
           cstPis: fiscalData?.pisCst || '',
           cstCofins: fiscalData?.cofinsCst || '',
-          unit: qp.product?.unit || 'UN',
-          quantity: qp.quantity,
-          unitValue: Number(unitValue.toFixed(2)),
+          unit: comercial.unit,
+          // A tela exibe `unit`; o payload de emissao le `uCom` (NfeItemDto).
+          // Mandar so um dos dois fazia a nota mostrar M2 e sair como UN.
+          uCom: comercial.unit,
+          quantity: comercial.quantity,
+          unitValue,
           discount: Number(discountReais.toFixed(2)),
           freight: 0,
           insurance: 0,
@@ -388,13 +406,16 @@ export class NfeService {
 
         if (productItems.length === 0) return [];
 
-        // Somar pesos dos QuotationProductItems (peso em kg, valor direto)
+        // Peso fica em MILIGRAMAS no banco (mesma escala que a tela converte
+        // com milligramsToKilograms); a NF-e pede quilos. O comentario antigo
+        // dizia "valor direto", mas a relacao `items` nunca era carregada, entao
+        // pesoTotal era sempre 0 e a conversao errada nunca apareceu.
         const pesoTotal = productItems.reduce((acc: number, qp: any) => {
-          const itemWeight = (qp.items || []).reduce(
+          const itemWeightMg = (qp.items || []).reduce(
             (s: number, i: any) => s + (i.weight || 0) * (i.quantity || 1),
             0,
           );
-          return acc + itemWeight;
+          return acc + itemWeightMg / 1_000_000;
         }, 0);
 
         const quantidadeTotal = productItems.reduce(
@@ -1303,6 +1324,9 @@ export class NfeService {
                 fiscalData: true,
               },
             },
+            // A quantidade medida (14 m2) vive nos items; sem esta relacao a
+            // NF-e saia com a "Qtd. Item" (1) e o peso dos volumes zerado.
+            items: true,
           },
         },
       },
@@ -1346,11 +1370,16 @@ export class NfeService {
     const items = quotation.quotationProduct.map((qp) => {
       const totalValueCents = qp.finalValue || qp.totalValue || 0;
       const totalValueReais = totalValueCents / 100;
-      const unitValue = qp.quantity > 0 ? totalValueReais / qp.quantity : 0;
+      // Mesma quantidade comercial do prepare: sem isto a emissao a partir da
+      // ordem e a emissao direta sairiam com quantidades diferentes.
+      const comercial = resolveCommercialQuantity(qp.quantity, qp.items);
+      const unitValue =
+        comercial.quantity > 0 ? totalValueReais / comercial.quantity : 0;
       const discountReais = (qp.discount || 0) / 100;
       return {
         productId: qp.productId,
-        quantity: qp.quantity,
+        quantity: comercial.quantity,
+        uCom: comercial.unit,
         unitValue,
         discount: discountReais,
       };

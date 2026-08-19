@@ -624,6 +624,90 @@ describe('NfeService', () => {
       expect(prisma.quotation.findFirst).toHaveBeenCalled();
     });
 
+    /**
+     * A O.S. #6-T1 aprovou 14 m² e a nota saía com quantidade 1: a NF-e lia
+     * QuotationProduct.quantity ("Qtd. Item") e a relação `items`, onde mora a
+     * medida, nunca era carregada.
+     */
+    describe('quantidade comercial', () => {
+      const comMedida = (over = {}) => ({
+        ...mockQuotation,
+        quotationProduct: [
+          {
+            ...mockQuotation.quotationProduct[0],
+            quantity: 1,
+            finalValue: 50, // R$ 0,50 em centavos
+            totalValue: 50,
+            items: [
+              {
+                quantity: 14,
+                unitKind: 'AREA',
+                width: 1000,
+                height: 1000,
+              },
+            ],
+            ...over,
+          },
+        ],
+      });
+
+      it('usa a medida do item, não a "Qtd. Item"', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(comMedida());
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.items[0].quantity).toBe(14);
+        expect(result.items[0].unit).toBe('M2');
+        // A tela lê `unit`, o payload de emissão lê `uCom`: os dois precisam
+        // sair do prepare, senão a nota mostra M2 e é transmitida como UN.
+        expect(result.items[0].uCom).toBe('M2');
+      });
+
+      /**
+       * O payload monta vProd como qCOM x vUnCom. Arredondar o unitário para 2
+       * casas fazia 14 x 0,04 = 0,56 divergir do total da nota (0,50) — soma
+       * dos itens diferente do total é rejeição na SEFAZ.
+       */
+      it('mantém precisão no unitário para vProd fechar com o total', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(comMedida());
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        const item = result.items[0];
+        expect(item.unitValue).toBeCloseTo(0.5 / 14, 10);
+
+        const vProd = Number((item.quantity * item.unitValue).toFixed(2));
+        expect(vProd).toBe(0.5);
+        expect(vProd).toBe(item.totalValue);
+      });
+
+      it('produto composto sai como unidade montada', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(
+          comMedida({
+            quantity: 3,
+            items: [
+              { quantity: 1, unitKind: 'AREA', width: 2000, height: 1000 },
+              { quantity: 2, unitKind: 'WEIGHT', weight: 250000 },
+            ],
+          }),
+        );
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.items[0].quantity).toBe(3);
+        expect(result.items[0].unit).toBe('UN');
+      });
+    });
+
     it('usa a descrição editada do item no lugar do nome do produto', async () => {
       prisma.quotation.findFirst.mockResolvedValue({
         ...mockQuotation,

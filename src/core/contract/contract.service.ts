@@ -17,23 +17,33 @@ export class ContractService {
 
   async findContract(res: Response) {
     try {
-      const filePath = path.join(process.cwd(), 'src', 'assets', 'terms.docx');
+      const candidates = [
+        path.join(process.cwd(), 'src', 'assets', 'terms.docx'),
+        path.join(process.cwd(), 'dist', 'assets', 'terms.docx'),
+        path.join(__dirname, '..', '..', 'assets', 'terms.docx'),
+        path.join(__dirname, 'assets', 'terms.docx'),
+      ];
 
-      const fileBuffer = await fs.promises.readFile(filePath);
-
-      const result = await mammoth.convertToHtml({ buffer: fileBuffer });
-      const html = result.value;
+      let html = '';
+      for (const filePath of candidates) {
+        try {
+          const fileBuffer = await fs.promises.readFile(filePath);
+          const result = await mammoth.convertToHtml({ buffer: fileBuffer });
+          html = result.value;
+          break;
+        } catch {
+          // tenta o próximo caminho
+        }
+      }
 
       const contract = await this.prisma.contract.findFirst({
-        where: {
-          version: 1,
-        },
+        where: { version: 1 },
       });
 
       res.setHeader('Content-Type', 'application/json');
       res.send({
         html,
-        contractId: contract.id,
+        contractId: contract?.id,
       });
     } catch (readError) {
       console.error('Error reading or converting file:', readError);
@@ -185,19 +195,26 @@ export class ContractService {
       let html = userContract.contract.contentUrl;
 
       if (!html && userContract.contract.version === 1) {
-        const filePath = path.join(
-          process.cwd(),
-          'src',
-          'assets',
-          'terms.docx',
-        );
-        const fileBuffer = await fs.promises.readFile(filePath);
-        const result = await mammoth.convertToHtml({ buffer: fileBuffer });
-        html = result.value;
+        const candidates = [
+          path.join(process.cwd(), 'src', 'assets', 'terms.docx'),
+          path.join(process.cwd(), 'dist', 'assets', 'terms.docx'),
+          path.join(__dirname, '..', '..', 'assets', 'terms.docx'),
+          path.join(__dirname, 'assets', 'terms.docx'),
+        ];
+        for (const filePath of candidates) {
+          try {
+            const fileBuffer = await fs.promises.readFile(filePath);
+            const result = await mammoth.convertToHtml({ buffer: fileBuffer });
+            html = result.value;
+            break;
+          } catch {
+            // tenta o próximo caminho
+          }
+        }
       }
 
       return {
-        html,
+        html: html || '',
         contractId: userContract.contractId,
         version: userContract.contract.version,
         acceptedAt: userContract.acceptedAt,
