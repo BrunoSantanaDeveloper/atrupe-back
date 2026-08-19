@@ -297,6 +297,42 @@ export class CreateInvoicyConfigDto {
   @IsOptional()
   @Transform(emptyToUndefined)
   sendFiscalEmailCopyTo?: string;
+
+  // Os campos abaixo existiam apenas no UpdateInvoicyConfigDto, mas o
+  // formulário de emissor os envia em TODO save — inclusive na criação. Com
+  // forbidNonWhitelisted global (app.module.ts:45), o POST voltava 400
+  // "property isActive should not exist" e nenhum emissor novo era criado.
+  @ApiPropertyOptional({ description: 'Configuração ativa' })
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Ambiente da numeração de NF-e informada',
+    enum: ['HOMOLOGACAO', 'PRODUCAO'],
+  })
+  @IsIn(['HOMOLOGACAO', 'PRODUCAO'])
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  nfeNumberingEnvironment?: 'HOMOLOGACAO' | 'PRODUCAO';
+
+  @ApiPropertyOptional({
+    description: 'Ambiente da numeração de NFC-e informada',
+    enum: ['HOMOLOGACAO', 'PRODUCAO'],
+  })
+  @IsIn(['HOMOLOGACAO', 'PRODUCAO'])
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  nfceNumberingEnvironment?: 'HOMOLOGACAO' | 'PRODUCAO';
+
+  @ApiPropertyOptional({
+    description: 'Ambiente da numeração de NFS-e informada',
+    enum: ['HOMOLOGACAO', 'PRODUCAO'],
+  })
+  @IsIn(['HOMOLOGACAO', 'PRODUCAO'])
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  nfseNumberingEnvironment?: 'HOMOLOGACAO' | 'PRODUCAO';
 }
 
 export class UpdateInvoicyConfigDto {
