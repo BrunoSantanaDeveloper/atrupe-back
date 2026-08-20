@@ -2145,10 +2145,11 @@ model InvoicyConfig {
   defaultNcm             String? // NCM padrão para novos produtos (ex: 49119900)
   codigoServico          String?
   aliquotaIss            Float?
-  // Regime Especial de Tributação (NFS-e), enumeração ABRASF do InvoiCy:
-  // 1=Microempresa Municipal, 2=Estimativa, 3=Sociedade de Profissionais,
-  // 4=Cooperativa, 5=MEI, 6=ME/EPP. Alguns municípios exigem, outros recusam;
-  // nulo omite a tag do payload.
+  // Regime Especial de Tributação (NFS-e). 1..6 é a enumeração ABRASF
+  // (1=Microempresa municipal, 2=Estimativa, 3=Sociedade de profissionais,
+  // 4=Cooperativa, 5=MEI, 6=ME/EPP); 7..16 são valores exclusivos do provedor
+  // da prefeitura (Elotech/GLC, E&L, Digifred, SEMFAZ, NF-Eletrônica,
+  // PRODEVAL). Alguns municípios exigem, outros recusam; nulo omite a tag.
   regimeEspecialTributacao Int?
   defaultCfop            String?
   defaultOperationNature String?

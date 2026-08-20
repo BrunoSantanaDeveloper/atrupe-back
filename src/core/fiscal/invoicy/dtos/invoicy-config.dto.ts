@@ -215,15 +215,17 @@ export class CreateInvoicyConfigDto {
 
   @ApiPropertyOptional({
     description:
-      'Regime Especial de Tributação da NFS-e (ABRASF): 1=Microempresa ' +
-      'Municipal, 2=Estimativa, 3=Sociedade de Profissionais, 4=Cooperativa, ' +
-      '5=MEI, 6=ME/EPP. Vazio omite a tag.',
+      'Regime Especial de Tributação da NFS-e. 1..6 é a enumeração ABRASF ' +
+      '(1=Microempresa municipal, 2=Estimativa, 3=Sociedade de profissionais, ' +
+      '4=Cooperativa, 5=MEI, 6=ME/EPP); 7..16 são valores exclusivos do ' +
+      'provedor da prefeitura (Elotech/GLC, E&L, Digifred, SEMFAZ, ' +
+      'NF-Eletrônica, PRODEVAL). Vazio omite a tag.',
   })
   @Transform(parseNullableInt)
   @IsInt()
   @IsOptional()
   @Min(1)
-  @Max(6)
+  @Max(16)
   regimeEspecialTributacao?: number | null;
 
   @ApiPropertyOptional({
@@ -525,15 +527,17 @@ export class UpdateInvoicyConfigDto {
 
   @ApiPropertyOptional({
     description:
-      'Regime Especial de Tributação da NFS-e (ABRASF): 1=Microempresa ' +
-      'Municipal, 2=Estimativa, 3=Sociedade de Profissionais, 4=Cooperativa, ' +
-      '5=MEI, 6=ME/EPP. Vazio omite a tag.',
+      'Regime Especial de Tributação da NFS-e. 1..6 é a enumeração ABRASF ' +
+      '(1=Microempresa municipal, 2=Estimativa, 3=Sociedade de profissionais, ' +
+      '4=Cooperativa, 5=MEI, 6=ME/EPP); 7..16 são valores exclusivos do ' +
+      'provedor da prefeitura (Elotech/GLC, E&L, Digifred, SEMFAZ, ' +
+      'NF-Eletrônica, PRODEVAL). Vazio omite a tag.',
   })
   @Transform(parseNullableInt)
   @IsInt()
   @IsOptional()
   @Min(1)
-  @Max(6)
+  @Max(16)
   regimeEspecialTributacao?: number | null;
 
   @ApiPropertyOptional({
