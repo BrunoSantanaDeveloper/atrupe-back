@@ -6,6 +6,10 @@ import {
   Min,
   Max,
 } from 'class-validator';
+import {
+  IsCnae,
+  IsCodigoServico,
+} from '../../../../helpers/validators/fiscal-servico';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 
@@ -162,6 +166,7 @@ export class CreateProductFiscalDataDto {
   })
   @IsString()
   @IsOptional()
+  @IsCodigoServico()
   codigoServico?: string;
 
   @ApiPropertyOptional({ description: 'Alíquota do ISS' })
@@ -187,6 +192,7 @@ export class CreateProductFiscalDataDto {
   @ApiPropertyOptional({ description: 'CNAE vinculado ao serviço' })
   @IsString()
   @IsOptional()
+  @IsCnae()
   cnae?: string;
 
   @ApiPropertyOptional({ description: 'Nomenclatura Brasileira de Serviços' })
@@ -339,6 +345,7 @@ export class UpdateProductFiscalDataDto {
   })
   @IsString()
   @IsOptional()
+  @IsCodigoServico()
   codigoServico?: string;
 
   @ApiPropertyOptional({ description: 'Alíquota do ISS' })
@@ -364,6 +371,7 @@ export class UpdateProductFiscalDataDto {
   @ApiPropertyOptional({ description: 'CNAE vinculado ao serviço' })
   @IsString()
   @IsOptional()
+  @IsCnae()
   cnae?: string;
 
   @ApiPropertyOptional({ description: 'Nomenclatura Brasileira de Serviços' })

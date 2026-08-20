@@ -62,6 +62,89 @@ export function formatNcm(ncm: string): string {
   return (ncm || '').replace(/\D/g, '').padStart(8, '0').substring(0, 8);
 }
 
+// ==================== CNAE ====================
+
+/**
+ * Valida CNAE (Classificação Nacional de Atividades Econômicas).
+ *
+ * Aceita com ou sem máscara: "3299003" ou "32.99-0/03" — ambos têm 7 dígitos.
+ *
+ * Existe porque o campo era texto livre e a base acumulou lixo: um cadastro
+ * com endereço de e-mail e outros com código da LC 116 ("13.05") no lugar do
+ * CNAE. Sem CNAE válido a NFS-e sai sem a atividade econômica do serviço.
+ */
+export function validateCnae(cnae: string): ValidationResult {
+  if (!cnae || !cnae.trim()) {
+    return { valid: false, message: 'CNAE é obrigatório' };
+  }
+
+  if (/[a-zA-Z@]/.test(cnae)) {
+    return {
+      valid: false,
+      message: 'CNAE deve conter apenas números (ex: 3299003 ou 32.99-0/03)',
+    };
+  }
+
+  const digits = cnae.replace(/\D/g, '');
+
+  if (digits.length !== 7) {
+    return {
+      valid: false,
+      message: `CNAE deve ter 7 dígitos (recebido: ${digits.length})`,
+    };
+  }
+
+  // Primeiros 2 dígitos são a divisão CNAE, de 01 a 99.
+  const divisao = parseInt(digits.substring(0, 2), 10);
+  if (divisao < 1 || divisao > 99) {
+    return { valid: false, message: 'CNAE inválido: divisão fora de 01 a 99' };
+  }
+
+  return { valid: true };
+}
+
+/** Formata CNAE no padrão XX.XX-X/XX. */
+export function formatCnae(cnae: string): string {
+  const d = (cnae || '').replace(/\D/g, '').padStart(7, '0').substring(0, 7);
+  return `${d.substring(0, 2)}.${d.substring(2, 4)}-${d.substring(4, 5)}/${d.substring(5, 7)}`;
+}
+
+// ==================== Código de serviço (LC 116/2003) ====================
+
+/**
+ * Valida o código da lista de serviços da LC 116/2003.
+ *
+ * Formato: item.subitem — "13.05", "17.06", "7.02". A lista tem 40 itens
+ * (1 a 40) e o subitem tem 2 dígitos.
+ *
+ * Não valida se o subitem existe de fato na LC 116: a lista é extensa e cada
+ * município publica a sua com desdobramentos próprios. A checagem é de forma,
+ * que já barra os erros que aparecem na prática (CNAE ou texto no lugar).
+ */
+export function validateCodigoServico(codigo: string): ValidationResult {
+  if (!codigo || !codigo.trim()) {
+    return { valid: false, message: 'Código do serviço é obrigatório' };
+  }
+
+  const match = codigo.trim().match(/^(\d{1,2})\.(\d{2})$/);
+  if (!match) {
+    return {
+      valid: false,
+      message: 'Código do serviço deve estar no formato 00.00 (ex: 13.05)',
+    };
+  }
+
+  const item = parseInt(match[1], 10);
+  if (item < 1 || item > 40) {
+    return {
+      valid: false,
+      message: 'Código do serviço inválido: item deve ser entre 1 e 40',
+    };
+  }
+
+  return { valid: true };
+}
+
 // ==================== CFOP ====================
 
 /**

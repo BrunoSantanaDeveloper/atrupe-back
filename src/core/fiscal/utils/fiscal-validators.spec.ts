@@ -12,6 +12,9 @@ import {
   validateCep,
   validateCpf,
   validateCnpj,
+  validateCnae,
+  formatCnae,
+  validateCodigoServico,
 } from './fiscal-validators';
 
 describe('Fiscal Validators', () => {
@@ -271,6 +274,49 @@ describe('Fiscal Validators', () => {
     it('deve validar cálculo de dígito verificador do CPF', () => {
       expect(validateCpf('52998224725').valid).toBe(true); // Gerador valido
       expect(validateCpf('123.456.789-10').valid).toBe(false); // Invalido
+    });
+  });
+
+  describe('CNAE', () => {
+    it('aceita com e sem máscara', () => {
+      expect(validateCnae('3299003').valid).toBe(true);
+      expect(validateCnae('32.99-0/03').valid).toBe(true);
+    });
+
+    it('rejeita o lixo que apareceu na base de produção', () => {
+      // Campo era texto livre; estes valores existem em invoicy_configs.
+      expect(validateCnae('vitoria.uliani@hotmail.com').valid).toBe(false);
+      expect(validateCnae('13.05').valid).toBe(false); // código LC 116, não CNAE
+      expect(validateCnae('').valid).toBe(false);
+    });
+
+    it('rejeita quantidade de dígitos diferente de 7', () => {
+      expect(validateCnae('329900').valid).toBe(false);
+      expect(validateCnae('32990033').valid).toBe(false);
+    });
+
+    it('formata no padrão XX.XX-X/XX', () => {
+      expect(formatCnae('3299003')).toBe('32.99-0/03');
+    });
+  });
+
+  describe('Código de serviço (LC 116)', () => {
+    it('aceita o formato item.subitem', () => {
+      expect(validateCodigoServico('13.05').valid).toBe(true);
+      expect(validateCodigoServico('7.02').valid).toBe(true);
+      expect(validateCodigoServico('17.06').valid).toBe(true);
+    });
+
+    it('rejeita item fora de 1 a 40', () => {
+      expect(validateCodigoServico('41.01').valid).toBe(false);
+      expect(validateCodigoServico('00.05').valid).toBe(false);
+    });
+
+    it('rejeita formato inválido', () => {
+      expect(validateCodigoServico('1305').valid).toBe(false);
+      expect(validateCodigoServico('13.5').valid).toBe(false);
+      expect(validateCodigoServico('3299003').valid).toBe(false); // CNAE
+      expect(validateCodigoServico('').valid).toBe(false);
     });
   });
 });

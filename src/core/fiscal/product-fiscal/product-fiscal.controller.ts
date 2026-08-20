@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
@@ -27,6 +28,18 @@ import {
 @Controller('fiscal/product')
 export class ProductFiscalController {
   constructor(private readonly productFiscalService: ProductFiscalService) {}
+
+  // Precede @Get(':productId') para não ser capturado como um productId.
+  @Get('pendencias-fiscais')
+  @HasPermission('view', 'nota_fiscal:config')
+  @ApiOperation({
+    summary: 'Listar serviços com cadastro fiscal incompleto ou inválido',
+  })
+  async listarPendenciasFiscais(@Req() req) {
+    return this.productFiscalService.listarPendenciasFiscais(
+      req.user.companyId,
+    );
+  }
 
   @Get(':productId')
   @HasPermission('view', 'nota_fiscal:config')
