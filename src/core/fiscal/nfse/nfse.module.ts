@@ -7,12 +7,14 @@ import { InvoicyModule } from '../invoicy/invoicy.module';
 import { PrismaModule } from 'nestjs-prisma';
 import { AuthModule } from '../../auth/auth.module';
 import { MailModule } from '../../mail/mail.module';
+import { ProductFiscalModule } from '../product-fiscal/product-fiscal.module';
 
 @Module({
   imports: [
     PrismaModule,
     InvoicyModule,
     MailModule,
+    ProductFiscalModule,
     forwardRef(() => AuthModule),
   ],
   controllers: [NfseController],

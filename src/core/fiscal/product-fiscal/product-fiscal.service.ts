@@ -24,6 +24,81 @@ export class ProductFiscalService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
+   * Avalia o cadastro fiscal de um serviço e devolve suas pendências.
+   * Extraído para ser reutilizado pela conferência da emissão, que precisa
+   * avaliar só os serviços da ordem em vez da empresa inteira.
+   */
+  avaliarCadastroFiscal(fiscalData: any): PendenciaFiscal[] {
+    const pendencias: PendenciaFiscal[] = [];
+
+    const codigoServico = fiscalData?.codigoServico?.trim();
+    if (!codigoServico) {
+      pendencias.push({
+        campo: 'codigoServico',
+        gravidade: 'bloqueia',
+        mensagem:
+          'Sem código da LC 116. A emissão usa o código padrão do emissor, ' +
+          'que pode não corresponder a este serviço.',
+        valorAtual: null,
+      });
+    } else {
+      const check = validateCodigoServico(codigoServico);
+      if (!check.valid) {
+        pendencias.push({
+          campo: 'codigoServico',
+          gravidade: 'bloqueia',
+          mensagem: check.message,
+          valorAtual: codigoServico,
+        });
+      }
+    }
+
+    const cnae = fiscalData?.cnae?.trim();
+    if (cnae) {
+      const check = validateCnae(cnae);
+      if (!check.valid) {
+        pendencias.push({
+          campo: 'cnae',
+          gravidade: 'bloqueia',
+          mensagem: check.message,
+          valorAtual: cnae,
+        });
+      }
+    }
+
+    if (
+      fiscalData?.aliquotaIss === null ||
+      fiscalData?.aliquotaIss === undefined
+    ) {
+      pendencias.push({
+        campo: 'aliquotaIss',
+        gravidade: 'atencao',
+        mensagem:
+          'Sem alíquota de ISS. A emissão cai na alíquota padrão do emissor.',
+        valorAtual: null,
+      });
+    }
+
+    // Reforma Tributária: exigidos do Simples Nacional a partir de 2027.
+    // Ver docs/fiscal/nfse-reforma-tributaria.md.
+    for (const [campo, rotulo] of [
+      ['nbs', 'NBS'],
+      ['codTribNacional', 'código de tributação nacional'],
+    ] as const) {
+      if (!fiscalData?.[campo]?.trim()) {
+        pendencias.push({
+          campo,
+          gravidade: 'atencao',
+          mensagem: `Sem ${rotulo}. Exigido do Simples Nacional a partir de 01/01/2027.`,
+          valorAtual: null,
+        });
+      }
+    }
+
+    return pendencias;
+  }
+
+  /**
    * Lista serviços com cadastro fiscal incompleto ou inválido.
    *
    * Motivação: a base tem serviços sem código LC 116 (a emissão cai no código
@@ -38,99 +113,26 @@ export class ProductFiscalService {
   async listarPendenciasFiscais(companyId: string) {
     const servicos = await this.prisma.product.findMany({
       where: { companyId, isService: true },
-      select: {
-        id: true,
-        name: true,
-        code: true,
-        fiscalData: true,
-      },
+      select: { id: true, name: true, code: true, fiscalData: true },
       orderBy: { name: 'asc' },
     });
 
     const itens = servicos
-      .map((servico) => {
-        const fd = servico.fiscalData;
-        const pendencias: PendenciaFiscal[] = [];
-
-        const codigoServico = fd?.codigoServico?.trim();
-        if (!codigoServico) {
-          pendencias.push({
-            campo: 'codigoServico',
-            gravidade: 'bloqueia',
-            mensagem:
-              'Sem código da LC 116. A emissão usa o código padrão do emissor, ' +
-              'que pode não corresponder a este serviço.',
-            valorAtual: null,
-          });
-        } else {
-          const check = validateCodigoServico(codigoServico);
-          if (!check.valid) {
-            pendencias.push({
-              campo: 'codigoServico',
-              gravidade: 'bloqueia',
-              mensagem: check.message,
-              valorAtual: codigoServico,
-            });
-          }
-        }
-
-        const cnae = fd?.cnae?.trim();
-        if (cnae) {
-          const check = validateCnae(cnae);
-          if (!check.valid) {
-            pendencias.push({
-              campo: 'cnae',
-              gravidade: 'bloqueia',
-              mensagem: check.message,
-              valorAtual: cnae,
-            });
-          }
-        }
-
-        if (fd?.aliquotaIss === null || fd?.aliquotaIss === undefined) {
-          pendencias.push({
-            campo: 'aliquotaIss',
-            gravidade: 'atencao',
-            mensagem:
-              'Sem alíquota de ISS. A emissão cai na alíquota padrão do emissor.',
-            valorAtual: null,
-          });
-        }
-
-        // Reforma Tributária: exigidos do Simples Nacional a partir de 2027.
-        // Ver docs/fiscal/nfse-reforma-tributaria.md.
-        for (const [campo, rotulo] of [
-          ['nbs', 'NBS'],
-          ['codTribNacional', 'código de tributação nacional'],
-        ] as const) {
-          if (!fd?.[campo]?.trim()) {
-            pendencias.push({
-              campo,
-              gravidade: 'atencao',
-              mensagem: `Sem ${rotulo}. Exigido do Simples Nacional a partir de 01/01/2027.`,
-              valorAtual: null,
-            });
-          }
-        }
-
-        return {
-          produtoId: servico.id,
-          nome: servico.name,
-          codigo: servico.code,
-          temCadastroFiscal: !!fd,
-          pendencias,
-        };
-      })
+      .map((servico) => ({
+        produtoId: servico.id,
+        nome: servico.name,
+        codigo: servico.code,
+        temCadastroFiscal: !!servico.fiscalData,
+        pendencias: this.avaliarCadastroFiscal(servico.fiscalData),
+      }))
       .filter((item) => item.pendencias.length > 0);
-
-    const bloqueiam = itens.filter((i) =>
-      i.pendencias.some((p) => p.gravidade === 'bloqueia'),
-    );
 
     return {
       totalServicos: servicos.length,
       comPendencia: itens.length,
-      bloqueiamEmissao: bloqueiam.length,
+      bloqueiamEmissao: itens.filter((i) =>
+        i.pendencias.some((p) => p.gravidade === 'bloqueia'),
+      ).length,
       itens,
     };
   }

@@ -23,6 +23,7 @@ import {
 import { fetchCepData } from '../utils/cep.util';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { MailService } from '../../mail/mail.service';
+import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
 
 @Injectable()
 export class NfseService {
@@ -54,6 +55,7 @@ export class NfseService {
     private readonly invoicyApiService: InvoicyApiService,
     private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
     private readonly mailService: MailService,
+    private readonly productFiscalService: ProductFiscalService,
   ) {}
 
   /**
@@ -1895,6 +1897,82 @@ export class NfseService {
       // Sinaliza que a varredura pode não ter coberto tudo.
       limiteAtingido: candidatas.length === limite,
       resultados,
+    };
+  }
+
+  /**
+   * Confere o cadastro fiscal dos serviços de uma ou mais ordens antes de
+   * emitir, e informa qual código de serviço a nota vai realmente carregar.
+   *
+   * Existe porque a emissão não falha quando o serviço não tem código próprio:
+   * ela cai silenciosamente no padrão do emissor
+   * (`dto.codigoServico || fiscalData.codigoServico || config.codigoServico`),
+   * e a nota é autorizada com uma classificação que pode não ser a do serviço.
+   * Isso é pior que uma rejeição — o erro só aparece numa fiscalização.
+   *
+   * A montagem também lê apenas `quotationProduct[0]`, então numa ordem com
+   * vários serviços o código do primeiro vale para a nota inteira. Por isso a
+   * conferência devolve `codigosDivergentes`.
+   */
+  async conferirEmissao(companyId: string, orderIds: string[]) {
+    const config = await this.invoicyService.getConfig(companyId);
+    const codigoPadraoEmissor = config?.codigoServico?.trim() || null;
+
+    const quotations = await this.prisma.quotation.findMany({
+      where: { companyId, order: { id: { in: orderIds } } },
+      include: {
+        quotationProduct: {
+          include: { product: { include: { fiscalData: true } } },
+        },
+      },
+    });
+
+    const servicos = quotations
+      .flatMap((q) => q.quotationProduct)
+      .filter((qp) => (qp.product as any)?.isService)
+      .map((qp) => {
+        const produto = qp.product as any;
+        const fiscalData = produto?.fiscalData;
+        const codigoProprio = fiscalData?.codigoServico?.trim() || null;
+
+        return {
+          produtoId: produto.id,
+          nome: produto.name,
+          codigoProprio,
+          // O que a nota vai carregar de fato, seguindo a mesma precedência
+          // da emissão.
+          codigoEfetivo: codigoProprio || codigoPadraoEmissor,
+          origemCodigo: codigoProprio
+            ? ('proprio' as const)
+            : codigoPadraoEmissor
+              ? ('padrao_emissor' as const)
+              : ('ausente' as const),
+          pendencias:
+            this.productFiscalService.avaliarCadastroFiscal(fiscalData),
+        };
+      });
+
+    // Uma nota carrega um único código de serviço. Serviços com códigos
+    // próprios diferentes na mesma ordem perdem a classificação dos demais.
+    const codigosDistintos = [
+      ...new Set(servicos.map((s) => s.codigoProprio).filter(Boolean)),
+    ];
+
+    const semCodigoAlgum = servicos.filter((s) => s.origemCodigo === 'ausente');
+    const usandoPadrao = servicos.filter(
+      (s) => s.origemCodigo === 'padrao_emissor',
+    );
+
+    return {
+      servicos,
+      codigoPadraoEmissor,
+      // Impede a emissão: sem código próprio nem padrão, a prefeitura recusa.
+      bloqueiam: semCodigoAlgum.map((s) => s.nome),
+      // Não impede, mas a nota sai com classificação possivelmente errada.
+      usandoCodigoPadrao: usandoPadrao.map((s) => s.nome),
+      codigosDivergentes: codigosDistintos.length > 1 ? codigosDistintos : [],
+      podeEmitir: semCodigoAlgum.length === 0,
+      exigeConfirmacao: usandoPadrao.length > 0 || codigosDistintos.length > 1,
     };
   }
 

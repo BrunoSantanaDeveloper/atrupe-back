@@ -49,6 +49,21 @@ export class NfseController {
     return this.nfseService.prepareStandalone(req.user.companyId, clientId);
   }
 
+  // Precede @Get(':id') para não ser capturado como um id de NFS-e.
+  @Get('conferir-emissao')
+  @HasPermission('view', 'nota_fiscal:emitir')
+  @ApiOperation({
+    summary:
+      'Conferir cadastro fiscal dos serviços e qual código a nota vai carregar',
+  })
+  async conferirEmissao(@Req() req, @Query('orderIds') orderIds: string) {
+    const ids = (orderIds || '')
+      .split(',')
+      .map((i) => i.trim())
+      .filter(Boolean);
+    return this.nfseService.conferirEmissao(req.user.companyId, ids);
+  }
+
   @Get(':id')
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Obter NFS-e por ID' })

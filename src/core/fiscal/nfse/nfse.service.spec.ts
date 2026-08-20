@@ -5,6 +5,7 @@ import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { MailService } from '../../mail/mail.service';
+import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
 import {
   NotFoundException,
   BadRequestException,
@@ -183,6 +184,10 @@ describe('NfseService', () => {
         {
           provide: MailService,
           useValue: { sendEmail: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: ProductFiscalService,
+          useValue: { avaliarCadastroFiscal: jest.fn().mockReturnValue([]) },
         },
       ],
     }).compile();
