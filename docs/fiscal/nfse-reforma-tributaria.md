@@ -199,6 +199,41 @@ A validação é **de forma, não de existência**: não confere se o subitem ex
 na LC 116, porque cada município publica a sua com desdobramentos próprios.
 Barra os erros que aparecem na prática.
 
+### Conferência antes da emissão — e por que ela não bloqueia
+
+`GET /fiscal/nfse/conferir-emissao?orderIds=` devolve, por serviço, o código
+próprio, o código que a nota vai carregar de fato e a origem dele
+(`proprio` | `padrao_emissor` | `ausente`).
+
+**O problema que ela resolve não é rejeição — é pior.** Sem código no serviço, a
+emissão não falha: a cadeia
+`dto.codigoServico || fiscalData.codigoServico || config.codigoServico` cai no
+padrão do emissor, a prefeitura **autoriza**, e a nota fica com uma
+classificação que pode não ser a do serviço. O erro só aparece numa
+fiscalização, quando já não dá para corrigir sem cancelamento. Uma rejeição
+seria melhor: falharia na hora.
+
+Dois agravantes na montagem, ainda não corrigidos:
+
+- `emitFromOrder` lê apenas `quotationProduct[0]`, então numa ordem com vários
+  serviços o código do primeiro vale para a nota inteira (daí
+  `codigosDivergentes` na resposta).
+- `emitFromOrders` (consolidada) nem consulta o produto — vai direto ao padrão
+  do emissor.
+
+> **DECISÃO (19/08/2026, confirmada pelo dono do produto): confirmação
+> explícita, não bloqueio.** A interface exige marcar "confirmo a classificação"
+> para liberar o botão de emitir, mas **não impede** a emissão.
+>
+> Motivo: há clientes emitindo legitimamente apoiados no código padrão do
+> emissor — para empresa de serviço único isso está correto. Bloquear de uma vez
+> interromperia esse uso sem aviso prévio.
+>
+> **Não transforme isto em bloqueio duro sem decisão de produto.** Se um dia for
+> a hora, o caminho é `handleEmit` em `IssueNfseForm.tsx`: trocar a guarda por um
+> `return` incondicional quando `exigeConfirmacao`. O caminho gradual seria
+> confirmação agora, bloqueio depois de um prazo para os clientes cadastrarem.
+
 ---
 
 ## Histórico de rejeições — o que cada erro ensinou
