@@ -460,6 +460,72 @@ describe('NfseService', () => {
       expect(rps.ListaItens[0].ItemAliquota).toBe(2.5);
     });
 
+    it('envia a classificação fiscal cadastrada no serviço', async () => {
+      // NBS, cód. nacional/municipal, CNAE e classificação IBS/CBS já eram
+      // cadastrados em ProductFiscalData e descartados na montagem do payload.
+      prisma.quotation.findFirst.mockResolvedValue({
+        id: 'quotation-1',
+        companyId: mockCompanyId,
+        order: mockOrder,
+        client: mockOrder.client,
+        quotationProduct: [
+          {
+            id: 'qp-1',
+            productId: 'service-1',
+            quantity: 1,
+            finalValue: 500,
+            totalValue: 500,
+            product: {
+              ...mockOrder.items[0].product,
+              fiscalData: {
+                codigoServico: '1.05',
+                aliquotaIss: 5,
+                discriminacao: 'Serviço de consultoria em TI',
+                nbs: '121012200',
+                codTribNacional: '230101',
+                codTribMunicipio: '001',
+                cnae: '329900',
+                codClassificacao: '000001',
+              },
+            },
+          },
+        ],
+      });
+
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Serviço de consultoria em TI',
+      });
+
+      const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+      const servico = documentos[0].Documento.RPS[0].Servico;
+
+      expect(servico.CodigoNBS).toBe('121012200');
+      expect(servico.codTributNacional).toBe('230101');
+      expect(servico.Cnae).toBe(329900);
+      expect(servico.IBSCBS).toEqual({ cClassTrib: '000001' });
+      // Código de tributação do município substitui o IBGE quando cadastrado.
+      expect(servico.TributMunicipio).toBe(1);
+    });
+
+    it('omite a classificação fiscal quando o serviço não a cadastra', async () => {
+      // Sem cadastro o payload não pode mudar: quem emite hoje continua igual.
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Serviço de consultoria em TI',
+      });
+
+      const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+      const servico = documentos[0].Documento.RPS[0].Servico;
+
+      expect(servico).not.toHaveProperty('CodigoNBS');
+      expect(servico).not.toHaveProperty('codTributNacional');
+      expect(servico).not.toHaveProperty('IBSCBS');
+      expect(servico.TributMunicipio).toBe(4314902);
+    });
+
     it('should throw if order not found', async () => {
       prisma.quotation.findFirst.mockResolvedValue(null);
 

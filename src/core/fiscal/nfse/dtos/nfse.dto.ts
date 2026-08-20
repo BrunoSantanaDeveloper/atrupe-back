@@ -509,6 +509,37 @@ export class EmitNfseDto {
   @IsNotEmpty()
   codigoMunicipio: string;
 
+  // Classificação fiscal do serviço. Já é cadastrada em ProductFiscalData e
+  // vinha sendo descartada na montagem do payload; cada campo omitido quando
+  // não cadastrado, para não alterar quem já emite sem eles.
+  @ApiPropertyOptional({
+    description: 'Nomenclatura Brasileira de Serviços (NBS)',
+  })
+  @IsString()
+  @IsOptional()
+  nbs?: string;
+
+  @ApiPropertyOptional({ description: 'Código de tributação nacional' })
+  @IsString()
+  @IsOptional()
+  codTribNacional?: string;
+
+  @ApiPropertyOptional({
+    description: 'Código de tributação no município (ex: 000, 001)',
+  })
+  @IsString()
+  @IsOptional()
+  codTribMunicipio?: string;
+
+  // `cnae` já é declarado acima neste mesmo DTO.
+
+  @ApiPropertyOptional({
+    description: 'Código de classificação tributária do IBS/CBS',
+  })
+  @IsString()
+  @IsOptional()
+  codClassificacao?: string;
+
   @ApiProperty({ description: 'Valor dos serviços' })
   @IsNumber()
   @Min(0)

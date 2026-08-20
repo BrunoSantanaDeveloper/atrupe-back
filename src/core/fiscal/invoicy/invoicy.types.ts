@@ -392,6 +392,19 @@ export interface InvoicyNfseServico {
   TributMunicipio: number;
   Discriminacao: string;
   cMun: number;
+  /** Nomenclatura Brasileira de Serviços. */
+  CodigoNBS?: string;
+  /** Código de tributação nacional do serviço. */
+  codTributNacional?: string;
+  /**
+   * Bloco da Reforma Tributária. Hoje só a classificação tributária é
+   * preenchida, a partir do cadastro do serviço; CST e os demais campos ainda
+   * não são coletados.
+   */
+  IBSCBS?: {
+    cClassTrib?: string;
+    CSTIBSCBS?: string;
+  };
 }
 
 export interface InvoicyNfseRps {

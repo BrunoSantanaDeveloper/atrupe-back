@@ -70,6 +70,36 @@ export class NfseService {
     return Number((value || 0).toFixed(4));
   }
 
+  /**
+   * Classificação fiscal cadastrada no serviço (ProductFiscalData). Só devolve
+   * as chaves preenchidas: cada campo ausente é omitido do payload, para não
+   * mudar o comportamento de quem emite hoje sem tê-los cadastrados.
+   */
+  private classificacaoFiscalDoServico(fiscalData: any) {
+    if (!fiscalData) return {};
+
+    const preenchido = (valor?: string | null) =>
+      valor && String(valor).trim() ? String(valor).trim() : undefined;
+
+    return {
+      ...(preenchido(fiscalData.nbs)
+        ? { nbs: preenchido(fiscalData.nbs) }
+        : {}),
+      ...(preenchido(fiscalData.codTribNacional)
+        ? { codTribNacional: preenchido(fiscalData.codTribNacional) }
+        : {}),
+      ...(preenchido(fiscalData.codTribMunicipio)
+        ? { codTribMunicipio: preenchido(fiscalData.codTribMunicipio) }
+        : {}),
+      ...(preenchido(fiscalData.cnae)
+        ? { cnae: preenchido(fiscalData.cnae) }
+        : {}),
+      ...(preenchido(fiscalData.codClassificacao)
+        ? { codClassificacao: preenchido(fiscalData.codClassificacao) }
+        : {}),
+    };
+  }
+
   async findAll(companyId: string, filters: NfseFilterDto) {
     const page = filters.page || 1;
     const limit = filters.limit || 20;
@@ -511,6 +541,9 @@ export class NfseService {
         config.aliquotaIss ??
         0,
       issRetido: dto.issRetido || false,
+      ...this.classificacaoFiscalDoServico(
+        (quotation.quotationProduct[0]?.product as any)?.fiscalData,
+      ),
       tomador: {
         cnpj: dto.tomadorCnpjCpf
           ? dto.tomadorCnpjCpf.replace(/\D/g, '').length === 14
@@ -715,6 +748,9 @@ export class NfseService {
       valorServicos,
       aliquotaIss: dto.aliquotaIss ?? config.aliquotaIss ?? 0,
       issRetido: dto.issRetido || false,
+      ...this.classificacaoFiscalDoServico(
+        (quotations[0]?.quotationProduct[0]?.product as any)?.fiscalData,
+      ),
       tomador: {
         cnpj: dto.tomadorCnpjCpf
           ? dto.tomadorCnpjCpf.replace(/\D/g, '').length === 14
@@ -1116,10 +1152,27 @@ export class NfseService {
                   dto.codigoMunicipio || config.ibgeCode || '0',
                   10,
                 ),
+                // Código de tributação no município (000/001/...) quando
+                // cadastrado no serviço. Sem cadastro mantém o valor histórico
+                // — trocá-lo às cegas mudaria notas que hoje são autorizadas.
                 TributMunicipio: parseInt(
-                  dto.codigoMunicipio || config.ibgeCode || '0',
+                  dto.codTribMunicipio ||
+                    dto.codigoMunicipio ||
+                    config.ibgeCode ||
+                    '0',
                   10,
                 ),
+                // Classificação fiscal do serviço, omitida quando não cadastrada.
+                ...(dto.nbs ? { CodigoNBS: dto.nbs } : {}),
+                ...(dto.codTribNacional
+                  ? { codTributNacional: dto.codTribNacional }
+                  : {}),
+                ...(dto.cnae
+                  ? { Cnae: parseInt(dto.cnae.replace(/\D/g, ''), 10) || 0 }
+                  : {}),
+                ...(dto.codClassificacao
+                  ? { IBSCBS: { cClassTrib: dto.codClassificacao } }
+                  : {}),
                 // LocalPrestacao é sempre enviado: sem ele o Invoicy gera
                 // <locPrest> vazio na DPS e a prefeitura rejeita com E1235
                 // (schema exige cLocPrestacao). Sem entrega informada, o local
