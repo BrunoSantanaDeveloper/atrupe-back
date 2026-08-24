@@ -18,6 +18,8 @@ describe('QuotationPdfTransformers', () => {
         name: 'Test Company',
         cnpj: '12.345.678/0001-90',
         email: 'test@company.com',
+        phone: '1133334444',
+        mobile: '11999998888',
         siteUrl: 'https://company.com',
         logoUrl: 'https://company.com/logo.png',
         textBeforeItems: 'Before items text',
@@ -43,6 +45,8 @@ describe('QuotationPdfTransformers', () => {
       expect(result.name).toBe('Test Company');
       expect(result.cnpj).toBe('12.345.678/0001-90');
       expect(result.email).toBe('test@company.com');
+      expect(result.phone).toBe('1133334444');
+      expect(result.mobile).toBe('11999998888');
       expect(result.address).toEqual({
         street: 'Test Street',
         number: '123',
@@ -64,6 +68,8 @@ describe('QuotationPdfTransformers', () => {
         name: 'Test Company',
         cnpj: null,
         email: null,
+        phone: null,
+        mobile: null,
         siteUrl: null,
         logoUrl: null,
         textBeforeItems: null,
@@ -185,6 +191,7 @@ describe('QuotationPdfTransformers', () => {
         series: {
           code: 'A',
           title: 'Series A',
+          proposalValidity: 15,
         },
         quotationProduct: [],
       };
@@ -196,6 +203,7 @@ describe('QuotationPdfTransformers', () => {
 
       expect(result.number).toBe(12345);
       expect(result.seriesCode).toBe('A');
+      expect(result.proposalValidity).toBe(15);
       expect(result.description).toBe('Test quotation');
       expect(result.seller.name).toBe('John Seller');
       expect(result.seller.signature).toBe(
@@ -543,6 +551,8 @@ describe('QuotationPdfTransformers', () => {
           name: 'Company',
           cnpj: null,
           email: null,
+          phone: null,
+          mobile: null,
           siteUrl: null,
           logoUrl: null,
           textBeforeItems: null,

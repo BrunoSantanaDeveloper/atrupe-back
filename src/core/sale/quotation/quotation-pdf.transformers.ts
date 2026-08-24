@@ -20,6 +20,8 @@ type QuotationPdfRaw = {
     name: string;
     cnpj: string | null;
     email: string | null;
+    phone: string | null;
+    mobile: string | null;
     siteUrl: string | null;
     logoUrl: string | null;
     textBeforeItems: string | null;
@@ -74,6 +76,7 @@ type QuotationPdfRaw = {
   series?: {
     code: string;
     title: string;
+    proposalValidity: number | null;
   } | null;
   order?: {
     id: string;
@@ -90,6 +93,8 @@ export function transformPdfCompany(company: QuotationPdfRaw['company']) {
     name: company.name,
     cnpj: company.cnpj,
     email: company.email,
+    phone: company.phone,
+    mobile: company.mobile,
     siteUrl: company.siteUrl,
     address: company.address[0]
       ? {
@@ -167,6 +172,7 @@ export function transformPdfQuotationInfo(
     },
     createdAt: quotation.createdAt,
     dueDate: quotation.dueDate,
+    proposalValidity: quotation.series?.proposalValidity ?? null,
     approvedAt: quotation.approvedAt,
     finishedAt: quotation.finishedAt,
     status: quotation.status,

@@ -7,6 +7,8 @@ export const PDF_COMPANY_SELECT = {
   name: true,
   cnpj: true,
   email: true,
+  phone: true,
+  mobile: true,
   siteUrl: true,
   logoUrl: true,
   textBeforeItems: true,
@@ -73,6 +75,7 @@ export const PDF_CONTACT_SELECT = {
 export const PDF_SERIES_SELECT = {
   code: true,
   title: true,
+  proposalValidity: true,
 } as const;
 
 export const PDF_PRODUCT_ITEM_INCLUDE = {
