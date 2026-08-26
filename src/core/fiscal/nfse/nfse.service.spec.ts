@@ -531,6 +531,95 @@ describe('NfseService', () => {
       expect(servico.TributMunicipio).toBe(4314902);
     });
 
+    it('envia os campos da Reforma Tributária quando informados', async () => {
+      // Nomes conforme Layout_Recepcao_NFSe_Reforma_Tributaria v4:
+      // cIndOp/indFinal/indDest/tpEnteGov/tpOper no RPS; ValRetFederais/
+      // Estaduais/Municipais e ValAliqINSS (decimal) em Valores.
+      await service.emit(mockCompanyId, {
+        tomador: {
+          cnpj: '12345678901234',
+          razaoSocial: 'Cliente Teste LTDA',
+          endereco: 'Avenida Paulista',
+          numero: '1000',
+          bairro: 'Bela Vista',
+          cep: '01310100',
+          codigoMunicipio: '3550308',
+        },
+        codigoServico: '1.05',
+        codigoMunicipio: '4314902',
+        discriminacao: 'teste',
+        valorServicos: 100,
+        aliquotaIss: 2.5,
+        naturezaOperacao: 1,
+        cIndOp: '100301',
+        indFinal: 0,
+        indDest: 0,
+        tpEnteGov: 4,
+        tpOper: 1,
+        tribAproxFederal: 1.5,
+        tribAproxEstadual: 0.5,
+        tribAproxMunicipal: 2.5,
+        aliquotaInss: 5,
+        valorInss: 3.21,
+      } as any);
+
+      const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+      const rps = documentos[0].Documento.RPS[0];
+
+      expect(rps.cIndOp).toBe('100301');
+      expect(rps.indFinal).toBe(0);
+      expect(rps.indDest).toBe(0);
+      expect(rps.tpEnteGov).toBe(4);
+      expect(rps.tpOper).toBe(1);
+      expect(rps.Servico.Valores.ValRetFederais).toBe(1.5);
+      expect(rps.Servico.Valores.ValRetEstaduais).toBe(0.5);
+      expect(rps.Servico.Valores.ValRetMunicipais).toBe(2.5);
+      // 5% vira 0.05 — o layout pede decimal
+      expect(rps.Servico.Valores.ValAliqINSS).toBe(0.05);
+      expect(rps.Servico.Valores.ValINSS).toBe(3.21);
+    });
+
+    it('omite os campos da Reforma quando não informados', async () => {
+      await service.emit(mockCompanyId, {
+        tomador: {
+          cnpj: '12345678901234',
+          razaoSocial: 'Cliente Teste LTDA',
+          endereco: 'Avenida Paulista',
+          numero: '1000',
+          bairro: 'Bela Vista',
+          cep: '01310100',
+          codigoMunicipio: '3550308',
+        },
+        codigoServico: '1.05',
+        codigoMunicipio: '4314902',
+        discriminacao: 'teste',
+        valorServicos: 100,
+        aliquotaIss: 2.5,
+        naturezaOperacao: 1,
+      } as any);
+
+      const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+      const rps = documentos[0].Documento.RPS[0];
+
+      for (const campo of [
+        'cIndOp',
+        'indFinal',
+        'indDest',
+        'tpEnteGov',
+        'tpOper',
+      ]) {
+        expect(rps).not.toHaveProperty(campo);
+      }
+      for (const campo of [
+        'ValRetFederais',
+        'ValRetEstaduais',
+        'ValRetMunicipais',
+        'ValAliqINSS',
+      ]) {
+        expect(rps.Servico.Valores).not.toHaveProperty(campo);
+      }
+    });
+
     it('should throw if order not found', async () => {
       prisma.quotation.findFirst.mockResolvedValue(null);
 

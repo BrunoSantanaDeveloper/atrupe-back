@@ -546,6 +546,35 @@ export class NfseService {
       ...this.classificacaoFiscalDoServico(
         (quotation.quotationProduct[0]?.product as any)?.fiscalData,
       ),
+      // Classificação escolhida na lista de serviços vence a do produto.
+      ...(dto.nbs ? { nbs: dto.nbs } : {}),
+      ...(dto.codTribNacional ? { codTribNacional: dto.codTribNacional } : {}),
+      ...(dto.codTribMunicipio
+        ? { codTribMunicipio: dto.codTribMunicipio }
+        : {}),
+      ...(dto.codClassificacao
+        ? { codClassificacao: dto.codClassificacao }
+        : {}),
+      // Campos adicionais da emissão (Reforma Tributária / retenções).
+      ...(dto.cIndOp ? { cIndOp: dto.cIndOp } : {}),
+      ...(dto.indFinal !== undefined ? { indFinal: dto.indFinal } : {}),
+      ...(dto.indDest !== undefined ? { indDest: dto.indDest } : {}),
+      ...(dto.tpEnteGov !== undefined ? { tpEnteGov: dto.tpEnteGov } : {}),
+      ...(dto.xTpEnteGov ? { xTpEnteGov: dto.xTpEnteGov } : {}),
+      ...(dto.tpOper !== undefined ? { tpOper: dto.tpOper } : {}),
+      ...(dto.tribAproxFederal !== undefined
+        ? { tribAproxFederal: dto.tribAproxFederal }
+        : {}),
+      ...(dto.tribAproxEstadual !== undefined
+        ? { tribAproxEstadual: dto.tribAproxEstadual }
+        : {}),
+      ...(dto.tribAproxMunicipal !== undefined
+        ? { tribAproxMunicipal: dto.tribAproxMunicipal }
+        : {}),
+      ...(dto.aliquotaInss !== undefined
+        ? { aliquotaInss: dto.aliquotaInss }
+        : {}),
+      ...(dto.valorInss !== undefined ? { valorInss: dto.valorInss } : {}),
       tomador: {
         cnpj: dto.tomadorCnpjCpf
           ? dto.tomadorCnpjCpf.replace(/\D/g, '').length === 14
@@ -753,6 +782,35 @@ export class NfseService {
       ...this.classificacaoFiscalDoServico(
         (quotations[0]?.quotationProduct[0]?.product as any)?.fiscalData,
       ),
+      // Classificação escolhida na lista de serviços vence a do produto.
+      ...(dto.nbs ? { nbs: dto.nbs } : {}),
+      ...(dto.codTribNacional ? { codTribNacional: dto.codTribNacional } : {}),
+      ...(dto.codTribMunicipio
+        ? { codTribMunicipio: dto.codTribMunicipio }
+        : {}),
+      ...(dto.codClassificacao
+        ? { codClassificacao: dto.codClassificacao }
+        : {}),
+      // Campos adicionais da emissão (Reforma Tributária / retenções).
+      ...(dto.cIndOp ? { cIndOp: dto.cIndOp } : {}),
+      ...(dto.indFinal !== undefined ? { indFinal: dto.indFinal } : {}),
+      ...(dto.indDest !== undefined ? { indDest: dto.indDest } : {}),
+      ...(dto.tpEnteGov !== undefined ? { tpEnteGov: dto.tpEnteGov } : {}),
+      ...(dto.xTpEnteGov ? { xTpEnteGov: dto.xTpEnteGov } : {}),
+      ...(dto.tpOper !== undefined ? { tpOper: dto.tpOper } : {}),
+      ...(dto.tribAproxFederal !== undefined
+        ? { tribAproxFederal: dto.tribAproxFederal }
+        : {}),
+      ...(dto.tribAproxEstadual !== undefined
+        ? { tribAproxEstadual: dto.tribAproxEstadual }
+        : {}),
+      ...(dto.tribAproxMunicipal !== undefined
+        ? { tribAproxMunicipal: dto.tribAproxMunicipal }
+        : {}),
+      ...(dto.aliquotaInss !== undefined
+        ? { aliquotaInss: dto.aliquotaInss }
+        : {}),
+      ...(dto.valorInss !== undefined ? { valorInss: dto.valorInss } : {}),
       tomador: {
         cnpj: dto.tomadorCnpjCpf
           ? dto.tomadorCnpjCpf.replace(/\D/g, '').length === 14
@@ -1105,6 +1163,18 @@ export class NfseService {
               // regApTribSN: obrigatório para ME/EPP optante do SN.
               // 1 = tributos federais e municipais apurados pelo SN
               ...(config.emitCrt === 1 ? { regApTribSN: 1 } : {}),
+              // Campos da Reforma Tributária (Layout NFS-e RT v4). Omitidos
+              // quando não informados — a nota continua saindo como antes.
+              ...(dto.cIndOp ? { cIndOp: dto.cIndOp } : {}),
+              ...(dto.indFinal !== undefined ? { indFinal: dto.indFinal } : {}),
+              ...(dto.indDest !== undefined ? { indDest: dto.indDest } : {}),
+              ...(dto.tpEnteGov !== undefined
+                ? { tpEnteGov: dto.tpEnteGov }
+                : {}),
+              ...(dto.tpEnteGov === 9 && dto.xTpEnteGov
+                ? { xTpEnteGov: dto.xTpEnteGov }
+                : {}),
+              ...(dto.tpOper !== undefined ? { tpOper: dto.tpOper } : {}),
               IncCult: 2, // 2 = NÃ£o
               Status: 1, // 1 = Normal
               tpAmb: environment === 'PRODUCAO' ? 1 : 2,
@@ -1144,6 +1214,20 @@ export class NfseService {
                   ValOutrasRetencoes: 0,
                   ValBaseCalculo: baseCalculo,
                   ...(omitirAliquotaIss ? {} : { ValAliqISS: aliquotaIss }),
+                  // Tributos aproximados por esfera (NFS-e Modelo Nacional) e
+                  // INSS. ValAliqINSS vai em decimal: 0,05 = 5% (layout RT v4).
+                  ...(dto.tribAproxFederal !== undefined
+                    ? { ValRetFederais: this.money(dto.tribAproxFederal) }
+                    : {}),
+                  ...(dto.tribAproxEstadual !== undefined
+                    ? { ValRetEstaduais: this.money(dto.tribAproxEstadual) }
+                    : {}),
+                  ...(dto.tribAproxMunicipal !== undefined
+                    ? { ValRetMunicipais: this.money(dto.tribAproxMunicipal) }
+                    : {}),
+                  ...(dto.aliquotaInss !== undefined
+                    ? { ValAliqINSS: this.rate(dto.aliquotaInss / 100) }
+                    : {}),
                 },
                 IteListServico: parseInt(
                   dto.codigoServico.replace(/\D/g, ''),

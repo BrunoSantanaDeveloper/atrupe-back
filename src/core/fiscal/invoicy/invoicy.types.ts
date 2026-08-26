@@ -375,6 +375,14 @@ export interface InvoicyNfseServico {
     ValBaseCalculo: number;
     /** Omitida para ME/EPP do Simples sem retenção de ISSQN — ver E0625. */
     ValAliqISS?: number;
+    /** Valor monetário aproximado dos tributos federais (Modelo Nacional). */
+    ValRetFederais?: number;
+    /** Valor monetário aproximado dos tributos estaduais (Modelo Nacional). */
+    ValRetEstaduais?: number;
+    /** Valor monetário aproximado dos tributos municipais (Modelo Nacional). */
+    ValRetMunicipais?: number;
+    /** Alíquota do INSS em decimal: 0,05 = 5%. */
+    ValAliqINSS?: number;
   };
   LocalPrestacao?: {
     SerEndTpLgr: string;
@@ -421,6 +429,19 @@ export interface InvoicyNfseRps {
   // Obrigatório para ME/EPP optante do SN. 1 = tributos federais e municipais
   // apurados pelo SN, 2 = ISSQN por fora do SN, 3 = federais e municipais por fora.
   regApTribSN?: number;
+  // ── Reforma Tributária (Layout_Recepcao_NFSe_Reforma_Tributaria v4) ──
+  /** Código indicador da operação, tabela Anexo VII (6 dígitos). */
+  cIndOp?: string;
+  /** Operação de uso ou consumo pessoal: 0=Não, 1=Sim. */
+  indFinal?: number;
+  /** Destinatário: 0=tomador é o destinatário, 1=destinatário diverso. */
+  indDest?: number;
+  /** Ente governamental: 1=União, 2=Estado, 3=DF, 4=Município, 9=outro. */
+  tpEnteGov?: number;
+  /** Descrição do ente quando tpEnteGov=9. */
+  xTpEnteGov?: string;
+  /** Tipo de operação com entes governamentais (1..5). */
+  tpOper?: number;
   IncCult: number;
   Status: number;
   tpAmb: number;

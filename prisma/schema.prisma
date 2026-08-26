@@ -84,6 +84,7 @@ model Company {
   environmentCredentials CompanyEnvironmentCredential[]
   nfes                  Nfe[]
   nfses                 Nfse[]
+  nfseServicos          NfseServico[]
   nfces                 Nfce[]
   cfopConfigs           CfopConfig[]
   operationNatures      OperationNature[]
@@ -2506,6 +2507,34 @@ model Nfse {
   // A listagem unificada filtra por ambiente dentro da empresa.
   @@index([companyId, ambiente])
   @@map("nfses")
+}
+
+// Lista de serviços da empresa para emissão de NFS-e.
+//
+// Espelha a "Lista de Serviços" do InvoiCy Web: a empresa cadastra várias
+// combinações de código LC 116 + classificação fiscal e escolhe qual usar no
+// ato da emissão. Independe de Product/ProductFiscalData porque a nota avulsa
+// não tem produto, e uma mesma empresa presta serviços de códigos distintos.
+model NfseServico {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  codigo           String // LC 116, ex "13.05"
+  descricao        String
+  aliquotaIss      Float?
+  codTribMunicipio String?
+  cnae             String?
+  nbs              String?
+  codTribNacional  String?
+  codClassificacao String? // cClassTrib IBS/CBS
+  isDefault        Boolean @default(false)
+
+  @@index([companyId])
+  @@map("nfse_servicos")
 }
 
 // NFC-e Status

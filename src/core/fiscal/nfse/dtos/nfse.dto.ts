@@ -10,6 +10,7 @@ import {
   IsBoolean,
   Min,
   ValidateIf,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -187,6 +188,100 @@ export class EmitNfseFromOrderDto {
   @IsOptional()
   issRetido?: boolean;
 
+  // ── Campos adicionais da emissão (Reforma Tributária / retenções) ──
+  @ApiPropertyOptional({
+    description: 'Código indicador da operação (Anexo VII)',
+  })
+  @IsString()
+  @IsOptional()
+  cIndOp?: string;
+
+  @ApiPropertyOptional({ description: 'Uso ou consumo pessoal: 0=Não, 1=Sim' })
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  indFinal?: number;
+
+  @ApiPropertyOptional({ description: 'Destinatário: 0=tomador, 1=diverso' })
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  indDest?: number;
+
+  @ApiPropertyOptional({ description: 'Ente governamental (1..4, 9=outro)' })
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(9)
+  tpEnteGov?: number;
+
+  @ApiPropertyOptional({ description: 'Descrição do ente quando tpEnteGov=9' })
+  @IsString()
+  @IsOptional()
+  xTpEnteGov?: string;
+
+  @ApiPropertyOptional({ description: 'Tipo de operação com entes gov (1..5)' })
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(5)
+  tpOper?: number;
+
+  @ApiPropertyOptional({ description: 'Trib. aproximados federais (R$)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  tribAproxFederal?: number;
+
+  @ApiPropertyOptional({ description: 'Trib. aproximados estaduais (R$)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  tribAproxEstadual?: number;
+
+  @ApiPropertyOptional({ description: 'Trib. aproximados municipais (R$)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  tribAproxMunicipal?: number;
+
+  @ApiPropertyOptional({ description: 'Alíquota do INSS (%)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  aliquotaInss?: number;
+
+  @ApiPropertyOptional({ description: 'Valor do INSS (R$)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  valorInss?: number;
+
+  // ── Classificação escolhida na lista de serviços da empresa ──
+  // Sobrepõe a classificação do produto (ProductFiscalData) quando informada.
+  @ApiPropertyOptional({ description: 'NBS do serviço escolhido' })
+  @IsString()
+  @IsOptional()
+  nbs?: string;
+
+  @ApiPropertyOptional({ description: 'Código de tributação nacional' })
+  @IsString()
+  @IsOptional()
+  codTribNacional?: string;
+
+  @ApiPropertyOptional({ description: 'Código de tributação no município' })
+  @IsString()
+  @IsOptional()
+  codTribMunicipio?: string;
+
+  @ApiPropertyOptional({ description: 'Classificação tributária IBS/CBS' })
+  @IsString()
+  @IsOptional()
+  codClassificacao?: string;
+
   @ApiPropertyOptional({ description: 'ID do endereço selecionado' })
   @IsString()
   @IsOptional()
@@ -337,6 +432,99 @@ export class EmitNfseFromOrdersDto {
   @IsBoolean()
   @IsOptional()
   issRetido?: boolean;
+  // ── Campos adicionais da emissão (Reforma Tributária / retenções) ──
+  @ApiPropertyOptional({
+    description: 'Código indicador da operação (Anexo VII)',
+  })
+  @IsString()
+  @IsOptional()
+  cIndOp?: string;
+
+  @ApiPropertyOptional({ description: 'Uso ou consumo pessoal: 0=Não, 1=Sim' })
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  indFinal?: number;
+
+  @ApiPropertyOptional({ description: 'Destinatário: 0=tomador, 1=diverso' })
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  indDest?: number;
+
+  @ApiPropertyOptional({ description: 'Ente governamental (1..4, 9=outro)' })
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(9)
+  tpEnteGov?: number;
+
+  @ApiPropertyOptional({ description: 'Descrição do ente quando tpEnteGov=9' })
+  @IsString()
+  @IsOptional()
+  xTpEnteGov?: string;
+
+  @ApiPropertyOptional({ description: 'Tipo de operação com entes gov (1..5)' })
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(5)
+  tpOper?: number;
+
+  @ApiPropertyOptional({ description: 'Trib. aproximados federais (R$)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  tribAproxFederal?: number;
+
+  @ApiPropertyOptional({ description: 'Trib. aproximados estaduais (R$)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  tribAproxEstadual?: number;
+
+  @ApiPropertyOptional({ description: 'Trib. aproximados municipais (R$)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  tribAproxMunicipal?: number;
+
+  @ApiPropertyOptional({ description: 'Alíquota do INSS (%)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  aliquotaInss?: number;
+
+  @ApiPropertyOptional({ description: 'Valor do INSS (R$)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  valorInss?: number;
+
+  // ── Classificação escolhida na lista de serviços da empresa ──
+  // Sobrepõe a classificação do produto (ProductFiscalData) quando informada.
+  @ApiPropertyOptional({ description: 'NBS do serviço escolhido' })
+  @IsString()
+  @IsOptional()
+  nbs?: string;
+
+  @ApiPropertyOptional({ description: 'Código de tributação nacional' })
+  @IsString()
+  @IsOptional()
+  codTribNacional?: string;
+
+  @ApiPropertyOptional({ description: 'Código de tributação no município' })
+  @IsString()
+  @IsOptional()
+  codTribMunicipio?: string;
+
+  @ApiPropertyOptional({ description: 'Classificação tributária IBS/CBS' })
+  @IsString()
+  @IsOptional()
+  codClassificacao?: string;
 
   @ApiPropertyOptional({ description: 'Endereço do local de prestação' })
   @IsString()
@@ -539,6 +727,85 @@ export class EmitNfseDto {
   @IsString()
   @IsOptional()
   codClassificacao?: string;
+
+  // ── Campos da Reforma Tributária e retenções (níveis RPS/Valores) ──
+  // Nomes e semântica conforme Layout_Recepcao_NFSe_Reforma_Tributaria v4
+  // (repositório migrate-company/integracao-InvoiCy-BR).
+
+  @ApiPropertyOptional({
+    description: 'Código indicador da operação (Anexo VII, 6 dígitos)',
+  })
+  @IsString()
+  @IsOptional()
+  cIndOp?: string;
+
+  @ApiPropertyOptional({
+    description: 'Operação de uso ou consumo pessoal: 0=Não, 1=Sim',
+  })
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  indFinal?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Destinatário dos serviços: 0=tomador é o destinatário, 1=destinatário diverso',
+  })
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  indDest?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Ente governamental: 1=União, 2=Estado, 3=DF, 4=Município, 9=outro',
+  })
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(9)
+  tpEnteGov?: number;
+
+  @ApiPropertyOptional({ description: 'Descrição do ente quando tpEnteGov=9' })
+  @IsString()
+  @IsOptional()
+  xTpEnteGov?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Tipo de operação com entes governamentais (1..5, layout InvoiCy)',
+  })
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(5)
+  tpOper?: number;
+
+  @ApiPropertyOptional({
+    description: 'Valor aproximado dos tributos federais',
+  })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  tribAproxFederal?: number;
+
+  @ApiPropertyOptional({
+    description: 'Valor aproximado dos tributos estaduais',
+  })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  tribAproxEstadual?: number;
+
+  @ApiPropertyOptional({
+    description: 'Valor aproximado dos tributos municipais',
+  })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  tribAproxMunicipal?: number;
 
   @ApiProperty({ description: 'Valor dos serviços' })
   @IsNumber()

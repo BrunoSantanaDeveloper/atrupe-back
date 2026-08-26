@@ -89,6 +89,48 @@ Se isso causar recusa, apagar o cadastro reverte sem deploy.
 
 ---
 
+## Campos de emissão implementados em 26/08/2026
+
+A pedido dos clientes, os campos de emissão do InvoiCy Web foram trazidos para
+as duas telas de NFS-e (via O.S. e avulsa), na seção recolhível "Campos
+adicionais". Mapeamento verificado na planilha oficial
+`Layout_Recepcao_NFSe_Reforma_Tributaria - versão 4.xlsx` do repositório
+`migrate-company/integracao-InvoiCy-BR` — não deduzido:
+
+| Rótulo (InvoiCy Web) | Campo InvoiCy | Valores |
+|---|---|---|
+| Indicador de Operação | `cIndOp` (RPS) | Anexo VII, 6 dígitos |
+| Uso ou Consumo Pessoal | `indFinal` (RPS) | 0=Não, 1=Sim |
+| Destinatário dos serviços | `indDest` (RPS) | 0=tomador é o destinatário, 1=diverso |
+| Operação c/ Entes Governamentais | `tpEnteGov`+`xTpEnteGov` (RPS) | 1..4, 9=outro |
+| Tipo de operação (ente gov) | `tpOper` (RPS) | 1..5 |
+| Trib Aprox Fed/Est/Mun | `ValRetFederais/Estaduais/Municipais` | R$ (Modelo Nacional) |
+| % INSS | `ValAliqINSS` | **decimal**: 0,05 = 5% (conversão no backend) |
+| Valor INSS | `ValINSS` | R$ |
+
+Pegadinha: apesar do prefixo "Ret", `ValRetFederais/Estaduais/Municipais` são
+os **valores monetários aproximados dos tributos** por esfera no Modelo
+Nacional — a planilha oficial é explícita. Não confundir com retenções.
+
+Todos opcionais e omitidos do payload quando vazios — sem preenchimento a nota
+sai exatamente como antes (testes `Reforma` no nfse.service.spec.ts travam os
+dois sentidos).
+
+### Lista de Serviços da empresa (26/08/2026)
+
+Espelho da "Lista de Serviços" do InvoiCy Web: modelo `NfseServico`
+(company-level, tabela `nfse_servicos`), CRUD em `/fiscal/nfse-servicos`
+(controller próprio para não disputar com o `@Get(':id')` do NfseController),
+gerenciada em Configurações → Emissores → aba NFS-e → "Gerenciar".
+
+Nas telas de emissão, o seletor "Lista de Serviços" preenche código + alíquota
+e envia a classificação (NBS, cód. nacional/municipal, cClassTrib) no payload,
+com precedência sobre a classificação do produto (`ProductFiscalData`). É
+company-level e não por produto porque a avulsa não tem produto e uma empresa
+presta serviços de códigos distintos.
+
+---
+
 ## Fatia 2 — PLANEJADA, não implementada
 
 ### O que falta enviar
