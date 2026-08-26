@@ -10,6 +10,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { NfeStatus, NfeCorrectionStatus } from '@prisma/client';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { NfeService } from './nfe.service';
+import { sanitizeFiscalText } from '../utils/fiscal-text.util';
 import {
   INVOICY_ERROR_CODES,
   INVOICY_SUCCESS_CODES,
@@ -526,15 +527,7 @@ export class NfeEventsService {
    * em xCorrecao. Normalizar aqui evita uma ida à SEFAZ só para tomar rejeição.
    */
   private sanitizeCorrectionText(input?: string): string {
-    return (
-      (input ?? '')
-        .replace(/[\r\n\t]+/g, ' ')
-        // eslint-disable-next-line no-control-regex
-        .replace(/[\x00-\x1F\x7F]/g, '')
-        .replace(/\u00A0/g, ' ') // NBSP vindo de colagem de Word/Excel
-        .replace(/\s{2,}/g, ' ')
-        .trim()
-    );
+    return sanitizeFiscalText(input);
   }
 
   /**

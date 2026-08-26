@@ -26,6 +26,7 @@ import {
 import { fetchCepData } from '../utils/cep.util';
 import { getTPag } from '../utils/payment-method-map';
 import { resolveCommercialQuantity } from '../utils/commercial-quantity.util';
+import { sanitizeInfCpl } from '../utils/fiscal-text.util';
 import {
   parseProjectDayBoundary,
   toProjectDateKey,
@@ -863,6 +864,38 @@ export class NfeService {
     return { destinatario, items, indFinal };
   }
 
+  /**
+   * Cabecalho da emissao guardado no rascunho, nas DUAS formas possiveis.
+   *
+   * `draftData` chega ora como o DTO PLANO que `emit` grava (`operationNature`,
+   * `finalidade`... na raiz), ora como o rascunho ANINHADO de `createDraft`
+   * (tudo dentro de `emissao`). O destinatario ja era lido nas duas formas; o
+   * cabecalho so era lido na aninhada, entao numa nota REJEITADA — onde o
+   * draftData e sempre o DTO plano — tudo que o usuario tinha ajustado voltava
+   * com o padrao do emissor ao clicar em "Corrigir e reemitir".
+   */
+  private getEmissaoFromDraft(draftData: any): Record<string, any> {
+    if (!draftData) return {};
+    if (draftData.emissao) return draftData.emissao;
+
+    const plano: Record<string, any> = {
+      operationNature: draftData.operationNature,
+      tipo: draftData.tipo,
+      finalidade: draftData.finalidade,
+      consumidorFinal: draftData.consumidorFinal,
+      presencaConsumidor: draftData.presencaConsumidor,
+      dataSaida: draftData.dataSaida,
+      nfeReferenciada: draftData.nfeReferenciada,
+      modalidadeFrete: draftData.modalidadeFrete,
+    };
+
+    // `undefined` significa "nao veio no envio": manter o padrao do baseData em
+    // vez de sobrescrever com vazio.
+    return Object.fromEntries(
+      Object.entries(plano).filter(([, valor]) => valor !== undefined),
+    );
+  }
+
   private getDestinatarioFromDraftOrXml(draftData: any, xmlData: any) {
     let destinatario: any = {};
 
@@ -1254,7 +1287,7 @@ export class NfeService {
 
     const baseData = await this.prepareStandalone(companyId, clientId);
 
-    const emissaoOverride = draftData?.emissao || {};
+    const emissaoOverride = this.getEmissaoFromDraft(draftData);
     const itemsOverride = draftData?.items || xmlData?.items || [];
 
     const mappedItems = itemsOverride.map((item: any) => {
@@ -1284,6 +1317,19 @@ export class NfeService {
         ...destinatarioOverride,
       },
       items: mappedItems.length ? mappedItems : baseData.items,
+
+      // O que o usuario digitou tem de sobreviver a rejeicao. `additionalInfo`
+      // e o nome no DTO de emissao; `informacoesComplementares` e o nome no
+      // rascunho e na resposta do prepare.
+      informacoesComplementares:
+        draftData?.additionalInfo ??
+        draftData?.informacoesComplementares ??
+        baseData.informacoesComplementares,
+      transportadora: draftData?.transportadora ?? baseData.transportadora,
+      volumes: draftData?.volumes ?? baseData.volumes,
+      duplicatas: draftData?.duplicatas ?? baseData.duplicatas,
+      autXml: draftData?.autXml ?? baseData.autXml,
+
       originalNfeId: originalNfe.id,
       originalNfeNumero: originalNfe.numero,
       motivoRejeicao: originalNfe.motivoRejeicao,
@@ -2162,14 +2208,15 @@ export class NfeService {
             modFrete: String(dto.modalidadeFrete ?? 9),
           },
           // InformaÃ§Ãµes adicionais / complementares
-          ...(dto.additionalInfo || (config as any).taxInfoText
-            ? {
-                infAdic: {
-                  infCpl:
-                    dto.additionalInfo || (config as any).taxInfoText || '',
-                },
-              }
-            : {}),
+          // infCpl e texto livre digitado pelo usuario: sem limpeza, uma quebra
+          // de linha colada de outro sistema derruba a validacao do XML com um
+          // erro generico que nao aponta o campo.
+          ...(() => {
+            const infCpl = sanitizeInfCpl(
+              dto.additionalInfo || (config as any).taxInfoText,
+            );
+            return infCpl ? { infAdic: { infCpl } } : {};
+          })(),
           // Duplicatas/CobranÃ§a
           ...(dto.duplicatas && dto.duplicatas.length > 0
             ? {
@@ -2284,6 +2331,7 @@ export class NfeService {
       });
 
       if (!isAuthorized) {
+        const orientacao = this.getRejectionHint(situacao?.SitCodigo);
         // Resposta CONCLUSIVA da SEFAZ: a nota nao foi autorizada, entao o
         // numero continua livre. Devolver aqui e o unico ponto seguro — no
         // catch abaixo cai tambem falha de transporte, onde a nota PODE ter
@@ -2291,7 +2339,8 @@ export class NfeService {
         await this.releaseRejectedNfeNumber(config.id, environment, numero);
 
         throw new BadRequestException(
-          `NF-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}`,
+          `NF-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}` +
+            (orientacao ? ` — ${orientacao}` : ''),
         );
       }
 
@@ -2332,6 +2381,36 @@ export class NfeService {
       this.logger.error(`Erro ao emitir NF-e: ${error.message}`, error.stack);
       throw new BadRequestException(`Erro ao emitir NF-e: ${error.message}`);
     }
+  }
+
+  /**
+   * Orientacao pratica para as rejeicoes que o texto da SEFAZ nao explica.
+   *
+   * O `xMotivo` costuma nomear o campo quando o problema e de conteudo
+   * ("Rejeicao: CFOP invalido"), e nesses casos ele basta. O que ele NAO diz e
+   * o que fazer quando a causa nao esta na nota — e a 656 e o caso extremo:
+   * "Consumo Indevido" nao tem nada a ver com os dados, e a reacao natural do
+   * usuario (clicar em "Corrigir e reemitir") piora o bloqueio.
+   *
+   * Lista curada de proposito: so codigos onde a orientacao acrescenta algo
+   * que o texto da SEFAZ nao carrega. Sem entrada, a mensagem original passa
+   * intacta.
+   */
+  private getRejectionHint(sitCodigo?: number): string | null {
+    const hints: Record<number, string> = {
+      // Bloqueio temporario por excesso de requisicoes do mesmo CNPJ.
+      656: 'a SEFAZ bloqueou temporariamente este CNPJ por excesso de tentativas. NAO reenvie agora: novas tentativas renovam o bloqueio. Aguarde cerca de 1 hora e emita uma unica vez.',
+      // Duplicidade: numero ja usado na SEFAZ.
+      539: 'ja existe nota autorizada com este numero e serie. Ajuste o proximo numero em Configuracoes > Emissores, na aba do documento, com o ambiente correto selecionado.',
+      204: 'esta nota ja foi transmitida antes. Consulte a situacao dela antes de emitir de novo.',
+      // Cadastro do emitente.
+      209: 'a inscricao estadual do emitente esta invalida. Confira o numero em Configuracoes da empresa > Nota Fiscal.',
+      210: 'a inscricao estadual nao pertence a este CNPJ no cadastro da SEFAZ. Confira se o IE e o CNPJ sao do mesmo estabelecimento (matriz ou filial).',
+      // Ambiente / credenciais.
+      252: 'o ambiente da nota diverge do ambiente autorizado para este emissor.',
+    };
+
+    return hints[sitCodigo ?? -1] ?? null;
   }
 
   /**

@@ -775,6 +775,112 @@ describe('NfeService', () => {
     });
   });
 
+  /**
+   * "Corrigir e reemitir" partia do zero: `emit` grava o DTO PLANO em
+   * `draftData`, mas o prepare só sabia ler o rascunho ANINHADO. Tudo que o
+   * usuário tinha digitado — informações complementares à frente — voltava com
+   * o padrão do emissor, e ele redigitava a cada rejeição.
+   */
+  describe('prepareReissue', () => {
+    const rejeitadaCom = (draftData: any) => ({
+      id: 'nfe-rejeitada',
+      companyId: mockCompanyId,
+      numero: 703,
+      status: NfeStatus.REJECTED,
+      motivoRejeicao: 'Rejeicao: Consumo Indevido',
+      draftData,
+      xmlEnvio: null,
+      xmlAutorizado: null,
+    });
+
+    beforeEach(() => {
+      prisma.quotation.findFirst.mockResolvedValue(mockQuotation);
+      prisma.order.findUnique.mockResolvedValue(mockOrder);
+      prisma.company.findUnique.mockResolvedValue(mockCompany);
+      prisma.client.findFirst.mockResolvedValue(null);
+      invoicyService.getConfig.mockResolvedValue({
+        id: 'config-id',
+        serieNfe: 1,
+        proximoNumeroNfe: 1,
+        activeNumbering: {
+          nfe: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+          nfce: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+          nfse: { environment: 'HOMOLOGACAO', series: 'A1', nextNumber: 1 },
+        },
+        ambiente: 2,
+        taxInfoText: 'Texto padrão do emissor',
+        defaultOperationNature: 'Venda de mercadoria',
+        company: mockCompany,
+      });
+    });
+
+    it('preserva as informações complementares digitadas antes da rejeição', async () => {
+      prisma.nfe.findFirst.mockResolvedValue(
+        rejeitadaCom({ additionalInfo: 'Pedido 4821 - entregar na portaria' }),
+      );
+
+      const result = await service.prepareReissue(
+        mockCompanyId,
+        'nfe-rejeitada',
+      );
+
+      expect(result.informacoesComplementares).toBe(
+        'Pedido 4821 - entregar na portaria',
+      );
+    });
+
+    it('preserva o cabeçalho da emissão do DTO plano', async () => {
+      prisma.nfe.findFirst.mockResolvedValue(
+        rejeitadaCom({
+          operationNature: 'Remessa para conserto',
+          finalidade: 4,
+          presencaConsumidor: 9,
+        }),
+      );
+
+      const result = await service.prepareReissue(
+        mockCompanyId,
+        'nfe-rejeitada',
+      );
+
+      expect(result.emissao.operationNature).toBe('Remessa para conserto');
+      expect(result.emissao.finalidade).toBe(4);
+      expect(result.emissao.presencaConsumidor).toBe(9);
+    });
+
+    it('mantém o padrão do emissor no que o usuário não informou', async () => {
+      prisma.nfe.findFirst.mockResolvedValue(
+        rejeitadaCom({ operationNature: 'Remessa para conserto' }),
+      );
+
+      const result = await service.prepareReissue(
+        mockCompanyId,
+        'nfe-rejeitada',
+      );
+
+      // `finalidade` não veio no envio: nao pode virar undefined.
+      expect(result.emissao.finalidade).toBe(1);
+      expect(result.informacoesComplementares).toBe('Texto padrão do emissor');
+    });
+
+    it('continua lendo o rascunho aninhado', async () => {
+      prisma.nfe.findFirst.mockResolvedValue(
+        rejeitadaCom({
+          emissao: { operationNature: 'Venda aninhada' },
+          informacoesComplementares: 'Observação do rascunho',
+        }),
+      );
+
+      const result = await service.prepareReissue(
+        mockCompanyId,
+        'nfe-rejeitada',
+      );
+
+      expect(result.emissao.operationNature).toBe('Venda aninhada');
+      expect(result.informacoesComplementares).toBe('Observação do rascunho');
+    });
+  });
+
   describe('prepareDevolution', () => {
     const authorizedXml = `<?xml version="1.0" encoding="UTF-8"?>
 <nfeProc><NFe><infNFe><ide><natOp>Venda</natOp><indFinal>0</indFinal></ide>
@@ -1093,6 +1199,48 @@ describe('NfeService', () => {
       expect(invoicyConfigId).toBe('config-id');
       expect(forceEnvironment).toBe('HOMOLOGACAO');
       expect(documentos[0].Documento.ide.tpAmb).toBe(2);
+    });
+
+    /**
+     * A 656 nao fala dos dados da nota: e bloqueio temporario por excesso de
+     * tentativas. Sem orientacao, o usuario clica em "Corrigir e reemitir" e
+     * renova o bloqueio.
+     */
+    it('orienta a esperar quando a SEFAZ devolve Consumo Indevido (656)', async () => {
+      invoicyApiService.emitNfe.mockResolvedValue([
+        {
+          Codigo: 100,
+          Documentos: [
+            {
+              Situacao: { SitCodigo: 656, SitDescricao: 'Consumo Indevido' },
+            },
+          ],
+        },
+      ]);
+
+      await expect(service.emit(mockCompanyId, mockEmitDto)).rejects.toThrow(
+        /NAO reenvie agora/,
+      );
+    });
+
+    it('mantem intacta a mensagem de rejeicao sem orientacao cadastrada', async () => {
+      invoicyApiService.emitNfe.mockResolvedValue([
+        {
+          Codigo: 100,
+          Documentos: [
+            {
+              Situacao: {
+                SitCodigo: 999,
+                SitDescricao: 'Rejeicao: motivo especifico da SEFAZ',
+              },
+            },
+          ],
+        },
+      ]);
+
+      await expect(service.emit(mockCompanyId, mockEmitDto)).rejects.toThrow(
+        'NF-e rejeitada: Rejeicao: motivo especifico da SEFAZ',
+      );
     });
 
     it('should handle Invoicy failure', async () => {
