@@ -282,6 +282,11 @@ export class EmitNfseFromOrderDto {
   @IsOptional()
   codClassificacao?: string;
 
+  @ApiPropertyOptional({ description: 'CNAE do serviço escolhido' })
+  @IsString()
+  @IsOptional()
+  cnae?: string;
+
   @ApiPropertyOptional({ description: 'ID do endereço selecionado' })
   @IsString()
   @IsOptional()
@@ -525,6 +530,11 @@ export class EmitNfseFromOrdersDto {
   @IsString()
   @IsOptional()
   codClassificacao?: string;
+
+  @ApiPropertyOptional({ description: 'CNAE do serviço escolhido' })
+  @IsString()
+  @IsOptional()
+  cnae?: string;
 
   @ApiPropertyOptional({ description: 'Endereço do local de prestação' })
   @IsString()

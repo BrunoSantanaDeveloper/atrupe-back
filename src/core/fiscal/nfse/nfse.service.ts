@@ -555,13 +555,16 @@ export class NfseService {
       ...(dto.codClassificacao
         ? { codClassificacao: dto.codClassificacao }
         : {}),
+      ...(dto.cnae ? { cnae: dto.cnae } : {}),
       // Campos adicionais da emissão (Reforma Tributária / retenções).
       ...(dto.cIndOp ? { cIndOp: dto.cIndOp } : {}),
       ...(dto.indFinal !== undefined ? { indFinal: dto.indFinal } : {}),
       ...(dto.indDest !== undefined ? { indDest: dto.indDest } : {}),
       ...(dto.tpEnteGov !== undefined ? { tpEnteGov: dto.tpEnteGov } : {}),
       ...(dto.xTpEnteGov ? { xTpEnteGov: dto.xTpEnteGov } : {}),
-      ...(dto.tpOper !== undefined ? { tpOper: dto.tpOper } : {}),
+      ...(dto.tpEnteGov !== undefined && dto.tpOper !== undefined
+        ? { tpOper: dto.tpOper }
+        : {}),
       ...(dto.tribAproxFederal !== undefined
         ? { tribAproxFederal: dto.tribAproxFederal }
         : {}),
@@ -791,13 +794,16 @@ export class NfseService {
       ...(dto.codClassificacao
         ? { codClassificacao: dto.codClassificacao }
         : {}),
+      ...(dto.cnae ? { cnae: dto.cnae } : {}),
       // Campos adicionais da emissão (Reforma Tributária / retenções).
       ...(dto.cIndOp ? { cIndOp: dto.cIndOp } : {}),
       ...(dto.indFinal !== undefined ? { indFinal: dto.indFinal } : {}),
       ...(dto.indDest !== undefined ? { indDest: dto.indDest } : {}),
       ...(dto.tpEnteGov !== undefined ? { tpEnteGov: dto.tpEnteGov } : {}),
       ...(dto.xTpEnteGov ? { xTpEnteGov: dto.xTpEnteGov } : {}),
-      ...(dto.tpOper !== undefined ? { tpOper: dto.tpOper } : {}),
+      ...(dto.tpEnteGov !== undefined && dto.tpOper !== undefined
+        ? { tpOper: dto.tpOper }
+        : {}),
       ...(dto.tribAproxFederal !== undefined
         ? { tribAproxFederal: dto.tribAproxFederal }
         : {}),
@@ -1174,7 +1180,12 @@ export class NfseService {
               ...(dto.tpEnteGov === 9 && dto.xTpEnteGov
                 ? { xTpEnteGov: dto.xTpEnteGov }
                 : {}),
-              ...(dto.tpOper !== undefined ? { tpOper: dto.tpOper } : {}),
+              // tpOper qualifica a operação com ente governamental; sem
+              // tpEnteGov seria um indicador órfão (o usuário desmarcou o
+              // ente e o valor ficaria fantasma).
+              ...(dto.tpEnteGov !== undefined && dto.tpOper !== undefined
+                ? { tpOper: dto.tpOper }
+                : {}),
               IncCult: 2, // 2 = NÃ£o
               Status: 1, // 1 = Normal
               tpAmb: environment === 'PRODUCAO' ? 1 : 2,

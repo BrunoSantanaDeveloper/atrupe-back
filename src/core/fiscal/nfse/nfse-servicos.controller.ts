@@ -2,7 +2,7 @@ import {
   Controller,
   Get,
   Post,
-  Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -42,6 +42,16 @@ export class NfseServicosController {
     });
   }
 
+  // O gerenciador (Configurações) usa esta rota: quem tem permissão de
+  // configuração fiscal pode não ter a de emissão, e sem isto via a lista
+  // vazia e recadastrava em duplicata.
+  @Get('config')
+  @HasPermission('view', 'nota_fiscal:config')
+  @ApiOperation({ summary: 'Listar serviços (acesso pela configuração)' })
+  async findAllConfig(@Req() req) {
+    return this.findAll(req);
+  }
+
   @Post()
   @HasPermission('edit', 'nota_fiscal:config')
   @ApiOperation({ summary: 'Cadastrar serviço na lista' })
@@ -54,7 +64,9 @@ export class NfseServicosController {
     });
   }
 
-  @Put(':id')
+  // @Patch, não @Put: updateItemNew do frontend emite PATCH, e é a
+  // convenção de todo o backend (client, category, employee...).
+  @Patch(':id')
   @HasPermission('edit', 'nota_fiscal:config')
   @ApiOperation({ summary: 'Atualizar serviço da lista' })
   async update(
