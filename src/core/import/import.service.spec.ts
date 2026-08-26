@@ -4,7 +4,7 @@ describe('ImportService CSV parsing', () => {
   let service: ImportService;
 
   beforeEach(() => {
-    service = new ImportService({} as any, {} as any);
+    service = new ImportService({} as any, {} as any, {} as any);
   });
 
   it('parses Excel CSV files with sep directive and semicolon delimiter', async () => {
@@ -91,7 +91,15 @@ describe('ImportService product import', () => {
       },
     };
 
-    service = new ImportService(prisma as any, {} as any);
+    const productFiscalService = {
+      getOrCreateWithDefaults: jest.fn().mockResolvedValue({}),
+    };
+
+    service = new ImportService(
+      prisma as any,
+      {} as any,
+      productFiscalService as any,
+    );
   });
 
   it('não grava taxa por unidade bruta em salePrice quando falta a medida', async () => {

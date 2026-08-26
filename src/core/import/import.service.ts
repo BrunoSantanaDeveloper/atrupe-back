@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { MinioService } from '../../svc/file-upload/minio.service';
+import { ProductFiscalService } from '../fiscal/product-fiscal/product-fiscal.service';
 import { ImportStatus } from '@prisma/client';
 import * as csv from 'fast-csv';
 import { Readable } from 'stream';
@@ -50,6 +51,7 @@ export class ImportService {
   constructor(
     private prisma: PrismaService,
     private minioService: MinioService,
+    private productFiscalService: ProductFiscalService,
   ) {}
 
   /**
@@ -1322,6 +1324,22 @@ export class ImportService {
           isService,
         },
       });
+    }
+
+    // A planilha não tem colunas fiscais: garante dados fiscais com os
+    // defaults da empresa (NCM/CFOP padrão), como no cadastro via tela.
+    // Idempotente — produto que já tem cadastro fiscal não é tocado.
+    try {
+      await this.productFiscalService.getOrCreateWithDefaults(
+        product.id,
+        companyId,
+      );
+    } catch (error) {
+      // Não-fatal: a importação do produto vale mesmo sem os dados fiscais
+      console.error(
+        `Failed to auto-populate fiscal data for imported product ${product.id}:`,
+        error.message,
+      );
     }
 
     // Criar item do produto (sempre criamos pelo menos 1 item para o produto importado)

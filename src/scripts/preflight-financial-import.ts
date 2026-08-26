@@ -70,9 +70,9 @@ export async function runPreflight(
   console.log(`✅ Empresa: ${companyName} (${companyId})`);
 
   // Reaproveita o parser e o validador do serviço em vez de replicá-los: assim
-  // o preflight não diverge do que o servidor faz de verdade. O MinioService
-  // não é usado por nenhum dos dois caminhos.
-  const service = new ImportService(prisma as any, null as any);
+  // o preflight não diverge do que o servidor faz de verdade. O MinioService e
+  // o ProductFiscalService não são usados por nenhum dos dois caminhos.
+  const service = new ImportService(prisma as any, null as any, null as any);
   const internals = service as any;
 
   const rows = (await service.parseCsv(readFileSync(csvPath))).map((row) =>

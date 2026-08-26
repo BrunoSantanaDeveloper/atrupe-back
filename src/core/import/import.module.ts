@@ -4,9 +4,12 @@ import { ImportService } from './import.service';
 import { QuotationImportService } from './services/quotation-import.service';
 import { PrismaModule } from 'nestjs-prisma';
 import { MinioModule } from '../../svc/file-upload/minio.module';
+import { ProductFiscalModule } from '../fiscal/product-fiscal/product-fiscal.module';
 
 @Module({
-  imports: [PrismaModule, MinioModule],
+  // ProductFiscalModule: produtos importados recebem dados fiscais com os
+  // mesmos defaults do cadastro via tela (getOrCreateWithDefaults).
+  imports: [PrismaModule, MinioModule, ProductFiscalModule],
   controllers: [ImportController],
   providers: [ImportService, QuotationImportService],
   exports: [ImportService, QuotationImportService],

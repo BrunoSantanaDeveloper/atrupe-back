@@ -48,7 +48,11 @@
     "invoicy:sync-cadastro:dev": "ts-node src/scripts/sync-invoicy-company-registration.ts",
     "invoicy:sync-cadastro:dry:dev": "ts-node src/scripts/sync-invoicy-company-registration.ts --dry-run",
     "fiscal:numbering:audit": "node dist/src/scripts/audit-fiscal-numbering.js",
-    "fiscal:numbering:audit:dev": "ts-node src/scripts/audit-fiscal-numbering.ts"
+    "fiscal:numbering:audit:dev": "ts-node src/scripts/audit-fiscal-numbering.ts",
+    "fiscal:ncm": "node dist/src/scripts/backfill-product-ncm.js",
+    "fiscal:ncm:dry": "node dist/src/scripts/backfill-product-ncm.js --dry-run",
+    "fiscal:ncm:dev": "ts-node src/scripts/backfill-product-ncm.ts",
+    "fiscal:ncm:dry:dev": "ts-node src/scripts/backfill-product-ncm.ts --dry-run"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",

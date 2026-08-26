@@ -61,7 +61,7 @@ describe('ImportService references', () => {
       ...overrides,
     };
 
-    const service = new ImportService(prisma, {} as any);
+    const service = new ImportService(prisma, {} as any, {} as any);
 
     // Popula o buffer em memória do serviço, que é de onde os dois fluxos leem.
     await service.createImport(
