@@ -13,6 +13,8 @@ import {
   ORDER_IMPORT_SCHEMA,
   FINANCIAL_IMPORT_SCHEMA,
   SUPPLIER_IMPORT_SCHEMA,
+  EMPLOYEE_IMPORT_SCHEMA,
+  findCompanyRecordByName,
 } from './schemas';
 import {
   GENERIC_BANK_CODE,
@@ -43,6 +45,25 @@ const DIMENSIONAL_UNIT_KINDS = [
   'DISTANCE',
   'DURATION',
 ];
+
+/**
+ * Índice de clientes montado uma vez por importação, para não varrer a base a
+ * cada linha processada.
+ */
+interface ClientIndex {
+  byLegacyId: Map<string, any>;
+  byDocument: Map<string, any>;
+}
+
+/**
+ * Índice de condições de pagamento. `byName` guarda lista, não item único:
+ * é justamente o nome repetido que precisa ser detectado.
+ */
+interface PaymentConditionIndex {
+  byLegacyId: Map<string, any>;
+  byName: Map<string, any[]>;
+  fallback: any | null;
+}
 
 @Injectable()
 export class ImportService {
@@ -78,17 +99,67 @@ export class ImportService {
     return parseFloat(normalized);
   }
 
-  private async findSeller(companyId: string, email?: string | null) {
+  /**
+   * Localiza o vendedor de um orçamento ou ordem importada.
+   *
+   * Ordem de resolução:
+   *
+   * 1. `legacyId` — caminho da migração. Casa direto com o colaborador, sem
+   *    passar pelo usuário e **sem filtrar por ativo**: parte relevante do
+   *    histórico pertence a vendedores já desligados, e descartá-los jogaria
+   *    essas vendas para outra pessoa.
+   * 2. `email` — caminho de quem importa com o time já cadastrado. Prefere o
+   *    colaborador ativo; se não houver, aceita o inativo em vez de falhar.
+   * 3. Nenhum identificador — mantém o comportamento antigo de usar o primeiro
+   *    vendedor ativo da empresa. Só vale quando o arquivo não informa vendedor.
+   *
+   * Se um identificador foi informado e não casou, devolve null para o chamador
+   * lançar erro: atribuir a venda a outra pessoa é pior do que recusar a linha.
+   */
+  private async findSeller(
+    companyId: string,
+    email?: string | null,
+    legacyId?: string | null,
+  ) {
+    const sellerLegacyId = legacyId?.trim();
+
+    if (sellerLegacyId) {
+      return this.prisma.employee.findFirst({
+        where: {
+          companyId,
+          legacyId: sellerLegacyId,
+        },
+        include: {
+          user: true,
+        },
+      });
+    }
+
     const sellerEmail = email?.trim();
 
     if (sellerEmail) {
-      return this.prisma.employee.findFirst({
+      const active = await this.prisma.employee.findFirst({
         where: {
           user: {
             email: sellerEmail,
           },
           companyId,
           isActive: true,
+        },
+        include: {
+          user: true,
+        },
+      });
+
+      if (active) return active;
+
+      // Vendedor desligado ainda responde pelo histórico dele.
+      return this.prisma.employee.findFirst({
+        where: {
+          user: {
+            email: sellerEmail,
+          },
+          companyId,
         },
         include: {
           user: true,
@@ -112,6 +183,24 @@ export class ImportService {
   }
 
   /**
+   * Mensagem de erro que nomeia o identificador realmente usado na linha, para
+   * o operador saber onde corrigir: código do legado, e-mail ou nenhum dos dois.
+   */
+  private sellerNotFoundMessage(row: any): string {
+    const legacyId = row.VendedorCodigoLegado?.trim();
+    if (legacyId) {
+      return `Vendedor com código legado '${legacyId}' não encontrado. Importe os colaboradores antes das vendas.`;
+    }
+
+    const email = row.VendedorEmail?.trim();
+    if (email) {
+      return `Vendedor com email '${email}' não encontrado`;
+    }
+
+    return 'Nenhum vendedor ativo encontrado para a empresa';
+  }
+
+  /**
    * Criar registro de importação e fazer upload do arquivo
    */
   async createImport(
@@ -128,6 +217,7 @@ export class ImportService {
       'supplier',
       'financial',
       'order',
+      'employee',
     ];
     if (!allowedEntities.includes(entity)) {
       throw new BadRequestException('Invalid entity type');
@@ -611,6 +701,7 @@ export class ImportService {
       order: ORDER_IMPORT_SCHEMA,
       financial: FINANCIAL_IMPORT_SCHEMA,
       supplier: SUPPLIER_IMPORT_SCHEMA,
+      employee: EMPLOYEE_IMPORT_SCHEMA,
     };
 
     return schemas[entity];
@@ -746,6 +837,21 @@ export class ImportService {
             error: customError,
           });
         }
+      }
+    }
+
+    // Regras que dependem de mais de uma coluna. O laço acima pula campo
+    // opcional vazio, então uma regra do tipo "informe A ou B" não tem como
+    // morar em nenhum dos dois campos.
+    if (schema.validateRow) {
+      const rowError = await schema.validateRow(row, companyId, this.prisma);
+      if (rowError) {
+        errors.push({
+          row: rowNumber,
+          field: '',
+          value: '',
+          error: rowError,
+        });
       }
     }
 
@@ -885,6 +991,12 @@ export class ImportService {
               await this.importProduct(row, importLog.companyId);
             } else if (importLog.entity === 'supplier') {
               shouldCount = await this.importSupplier(row, importLog.companyId);
+            } else if (importLog.entity === 'employee') {
+              await this.importEmployee(
+                row,
+                importLog.companyId,
+                importLog.userId,
+              );
             }
 
             if (shouldCount) successCount++;
@@ -1003,10 +1115,47 @@ export class ImportService {
       cnpjNormalized = cnpjClean;
     }
 
+    const legacyId = row.codigoLegado?.trim() || null;
+
+    // Reimportar o mesmo arquivo não pode duplicar a base de clientes. Quando a
+    // linha traz o código do legado, ele é a identidade do registro.
+    if (legacyId) {
+      const existing = await this.prisma.client.findFirst({
+        where: { companyId, legacyId },
+        select: { id: true },
+      });
+
+      if (existing) {
+        // Só os campos escalares: recriar endereço e contato duplicaria os
+        // vínculos a cada reprocessamento.
+        await this.prisma.client.update({
+          where: { id: existing.id },
+          data: {
+            type: type || 'PERSON',
+            name: row.nome,
+            email: resolveOptionalEmail(row.email),
+            cpf: cpfNormalized,
+            cnpj: cnpjNormalized,
+            rg: row.rg || null,
+            phone: row.telefone || null,
+            mobile: row.celular || null,
+            categoryId,
+            birthdate,
+            isBranch,
+            corporateName: row.razaoSocial || null,
+            notes: row.observacoes || null,
+            status,
+          },
+        });
+        return;
+      }
+    }
+
     // Criar cliente
     await this.prisma.client.create({
       data: {
         companyId,
+        legacyId,
         type: type || 'PERSON',
         name: row.nome,
         email: resolveOptionalEmail(row.email),
@@ -1192,6 +1341,122 @@ export class ImportService {
       },
     });
     return true;
+  }
+
+  /**
+   * Importar um colaborador do CSV.
+   *
+   * Não cria conta de usuário: a decisão da migração é trazer a pessoa como
+   * colaborador e deixar o admin da empresa criar o acesso depois, só para quem
+   * precisar. Por isso o vínculo com o histórico de vendas é feito por
+   * `legacyId`, e não pelo e-mail do usuário como no restante do importador.
+   *
+   * Idempotente por (companyId, legacyId): reprocessar o mesmo arquivo atualiza
+   * o colaborador em vez de duplicá-lo.
+   */
+  private async importEmployee(
+    row: any,
+    companyId: string,
+    userId?: string,
+  ): Promise<void> {
+    const legacyId = row.codigoLegado?.trim();
+    if (!legacyId) {
+      throw new Error("Campo 'codigoLegado' é obrigatório");
+    }
+
+    const [sector, role, sellerProfile] = await Promise.all([
+      findCompanyRecordByName(
+        this.prisma,
+        'companySector',
+        companyId,
+        row.setor,
+      ),
+      findCompanyRecordByName(this.prisma, 'role', companyId, row.cargo),
+      findCompanyRecordByName(
+        this.prisma,
+        'sellerProfile',
+        companyId,
+        row.perfilVendedor,
+      ),
+    ]);
+
+    // Colaborador desligado também entra: parte relevante do histórico de vendas
+    // pertence a quem já saiu, e o orçamento exige vendedor obrigatoriamente.
+    const isActive = row.ativo
+      ? ['SIM', 'S', 'TRUE', '1', 'YES'].includes(
+          row.ativo.trim().toUpperCase(),
+        )
+      : true;
+
+    let cpf: string | null = null;
+    if (row.cpf) {
+      let cpfClean = row.cpf.replace(/\D/g, '');
+      // Excel remove zeros à esquerda ao abrir o CSV
+      if (cpfClean.length < 11 && cpfClean.length >= 9) {
+        cpfClean = cpfClean.padStart(11, '0');
+      }
+      cpf = cpfClean;
+    }
+
+    const data = {
+      name: row.nome?.trim() || null,
+      cpf,
+      rg: row.rg || null,
+      phone: row.telefone || null,
+      mobile: row.celular || null,
+      // sallary é gravado em centavos, como todo valor monetário do sistema
+      sallary: this.toCents(row.salario),
+      isActive,
+      sectorId: sector?.id ?? null,
+      roleId: role?.id ?? null,
+      sellerProfileId: sellerProfile?.id ?? null,
+    };
+
+    const existing = await this.prisma.employee.findFirst({
+      where: { companyId, legacyId },
+    });
+
+    if (existing) {
+      await this.prisma.employee.update({
+        where: { id: existing.id },
+        data,
+      });
+      return;
+    }
+
+    const employee = await this.prisma.employee.create({
+      data: { ...data, companyId, legacyId, isImported: true },
+    });
+
+    // Mesmos efeitos colaterais do cadastro manual: sem os setups de folha, o
+    // colaborador importado fica invisível para a folha de pagamento.
+    const templates = await this.prisma.payrollTemplate.findMany({
+      where: { companyId },
+    });
+    if (templates.length > 0) {
+      await this.prisma.payrollSetup.createMany({
+        data: templates.map((template: any) => ({
+          name: template.name,
+          type: template.type,
+          amount: template.defaultAmount || 0,
+          isSet: true,
+          companyId,
+          employeeId: employee.id,
+          templateId: template.id,
+        })),
+      });
+    }
+
+    if (userId) {
+      await this.prisma.employeeHistory.create({
+        data: {
+          employeeId: employee.id,
+          action: 'CREATE',
+          description: `Colaborador importado do sistema legado (código ${legacyId})`,
+          createdBy: userId,
+        },
+      });
+    }
   }
 
   /**
@@ -1487,6 +1752,173 @@ export class ImportService {
   }
 
   /**
+   * Carrega as condições de pagamento da empresa uma única vez.
+   */
+  private async buildPaymentConditionIndex(
+    companyId: string,
+  ): Promise<PaymentConditionIndex> {
+    const conditions = await this.prisma.paymentCondition.findMany({
+      where: { companyId, isActive: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const byLegacyId = new Map<string, any>();
+    const byName = new Map<string, any[]>();
+
+    for (const condition of conditions) {
+      if (condition.legacyId) {
+        byLegacyId.set(condition.legacyId.trim(), condition);
+      }
+
+      const key = condition.name?.trim().toLowerCase();
+      if (!key) continue;
+      const bucket = byName.get(key) || [];
+      bucket.push(condition);
+      byName.set(key, bucket);
+    }
+
+    return { byLegacyId, byName, fallback: conditions[0] || null };
+  }
+
+  /**
+   * Resolve a condição de pagamento de uma linha.
+   *
+   * O legado repete nomes — "À prazo" existe com custo de 5,00% e de 3,90% — e
+   * a busca anterior pegava o primeiro resultado, sem erro. As parcelas entravam
+   * com o custo financeiro errado e nada indicava isso. Quando o nome é
+   * ambíguo, agora a linha falha e pede o código do legado.
+   */
+  private resolvePaymentCondition(index: PaymentConditionIndex, row: any) {
+    const legacyId = row.CondicaoPagamentoCodigoLegado?.trim();
+    if (legacyId) {
+      const byLegacy = index.byLegacyId.get(legacyId);
+      if (!byLegacy) {
+        throw new Error(
+          `Condição de pagamento com código legado '${legacyId}' não encontrada`,
+        );
+      }
+      return byLegacy;
+    }
+
+    const name = row.CondicaoPagamento?.trim();
+    if (name) {
+      const matches = index.byName.get(name.toLowerCase()) || [];
+
+      if (matches.length > 1) {
+        throw new Error(
+          `Condição de pagamento '${name}' é ambígua (${matches.length} cadastradas com esse nome). ` +
+            `Informe 'CondicaoPagamentoCodigoLegado' para escolher qual.`,
+        );
+      }
+
+      if (matches.length === 1) return matches[0];
+    }
+
+    // Sem identificador utilizável: mantém o comportamento antigo de usar a
+    // primeira condição ativa da empresa.
+    return index.fallback;
+  }
+
+  /**
+   * Carrega os clientes da empresa uma única vez e monta os índices de busca.
+   *
+   * A busca anterior caía num plano B que lia a base inteira de clientes a cada
+   * linha sem casamento direto. Com 956 clientes, 2.176 vendas e 1.663
+   * lançamentos financeiros, isso são milhões de registros materializados à toa.
+   */
+  private async buildClientIndex(companyId: string): Promise<ClientIndex> {
+    const clients = await this.prisma.client.findMany({
+      where: { companyId },
+      select: { id: true, cpf: true, cnpj: true, legacyId: true },
+    });
+
+    const byLegacyId = new Map<string, any>();
+    const byDocument = new Map<string, any>();
+
+    for (const client of clients) {
+      if (client.legacyId) {
+        byLegacyId.set(client.legacyId.trim(), client);
+      }
+
+      const cpf = (client.cpf || '').replace(/[^\d]/g, '');
+      if (cpf) byDocument.set(cpf, client);
+
+      const cnpj = (client.cnpj || '').replace(/[^\d]/g, '');
+      if (cnpj) byDocument.set(cnpj, client);
+    }
+
+    return { byLegacyId, byDocument };
+  }
+
+  /**
+   * Resolve o cliente de uma linha do arquivo.
+   *
+   * O código do legado tem precedência sobre o documento: 29% dos clientes da
+   * base legada não têm CPF nem CNPJ, e enquanto o documento era a única chave
+   * possível, 408 vendas não tinham como ser vinculadas a ninguém.
+   *
+   * A comparação de documento é por dígitos, dos dois lados. A versão anterior
+   * usava `contains`, que aceitava casamento parcial e podia trazer o cliente
+   * errado quando um documento era substring de outro.
+   */
+  private resolveClient(index: ClientIndex, row: any) {
+    const legacyId = row.ClienteCodigoLegado?.trim();
+    if (legacyId) {
+      return index.byLegacyId.get(legacyId) || null;
+    }
+
+    const document = (row.ClienteCpfCnpj || '').replace(/[^\d]/g, '');
+    if (document) {
+      return index.byDocument.get(document) || null;
+    }
+
+    return null;
+  }
+
+  private clientNotFoundMessage(row: any): string {
+    const legacyId = row.ClienteCodigoLegado?.trim();
+    if (legacyId) {
+      return `Cliente com código legado '${legacyId}' não encontrado. Importe os clientes antes das vendas.`;
+    }
+    return `Cliente com CPF/CNPJ '${row.ClienteCpfCnpj}' não encontrado`;
+  }
+
+  /**
+   * Alinha o contador de cada série ao maior número de orçamento já existente.
+   *
+   * A importação grava `quotationNumber` explícito, vindo do legado, mas quem
+   * numera o próximo orçamento é `SaleSeries.currentBudgetNumber`. Sem este
+   * ajuste, depois de importar um histórico que vai até 2196 a primeira venda
+   * nova sai como número 1, colidindo com o histórico.
+   *
+   * O contador nunca recua: se já estiver à frente, fica como está.
+   */
+  private async syncSeriesBudgetNumbers(companyId: string): Promise<void> {
+    const highestBySeries = await this.prisma.quotation.groupBy({
+      by: ['seriesId'],
+      where: { companyId, seriesId: { not: null } },
+      _max: { quotationNumber: true },
+    });
+
+    for (const group of highestBySeries) {
+      const highest = group._max?.quotationNumber;
+      if (!highest || !group.seriesId) continue;
+
+      const series = await this.prisma.saleSeries.findUnique({
+        where: { id: group.seriesId },
+        select: { currentBudgetNumber: true },
+      });
+
+      if (!series || series.currentBudgetNumber >= highest) continue;
+
+      await this.prisma.saleSeries.update({
+        where: { id: group.seriesId },
+        data: { currentBudgetNumber: highest },
+      });
+    }
+  }
+
+  /**
    * Importar orçamentos do CSV (agrupa linhas por NumeroVenda)
    */
   private async importQuotations(
@@ -1510,6 +1942,10 @@ export class ImportService {
       quotationsMap.get(key)!.push({ ...row, rowNumber: i + 2 });
     }
 
+    const clientIndex = await this.buildClientIndex(companyId);
+    const paymentConditionIndex =
+      await this.buildPaymentConditionIndex(companyId);
+
     // Processar cada orçamento
     for (const [key, items] of quotationsMap.entries()) {
       try {
@@ -1528,52 +1964,22 @@ export class ImportService {
           throw new Error(`Série '${firstItem.Serie}' não encontrada`);
         }
 
-        // Buscar cliente por CPF/CNPJ
-        const cleanCpfCnpj = firstItem.ClienteCpfCnpj.replace(/[^\d]/g, '');
-        let client = await this.prisma.client.findFirst({
-          where: {
-            companyId,
-            OR: [
-              { cpf: { contains: cleanCpfCnpj } },
-              { cnpj: { contains: cleanCpfCnpj } },
-              { cpf: firstItem.ClienteCpfCnpj },
-              { cnpj: firstItem.ClienteCpfCnpj },
-            ],
-          },
-        });
-
-        // Se não encontrou, tentar busca mais flexível
-        if (!client) {
-          const clients = await this.prisma.client.findMany({
-            where: { companyId },
-          });
-          client =
-            clients.find((c: any) => {
-              const cleanCpf = (c.cpf || '').replace(/[^\d]/g, '');
-              const cleanCnpj = (c.cnpj || '').replace(/[^\d]/g, '');
-              return cleanCpf === cleanCpfCnpj || cleanCnpj === cleanCpfCnpj;
-            }) || null;
-        }
+        // Buscar cliente pelo código do legado ou pelo CPF/CNPJ
+        const client = this.resolveClient(clientIndex, firstItem);
 
         if (!client) {
-          throw new Error(
-            `Cliente com CPF/CNPJ '${firstItem.ClienteCpfCnpj}' não encontrado`,
-          );
+          throw new Error(this.clientNotFoundMessage(firstItem));
         }
 
         // Buscar vendedor
         const seller = await this.findSeller(
           companyId,
           firstItem.VendedorEmail,
+          firstItem.VendedorCodigoLegado,
         );
 
         if (!seller) {
-          if (!firstItem.VendedorEmail) {
-            throw new Error('Nenhum vendedor ativo encontrado para a empresa');
-          }
-          throw new Error(
-            `Vendedor '${firstItem.VendedorEmail}' não encontrado`,
-          );
+          throw new Error(this.sellerNotFoundMessage(firstItem));
         }
 
         // Mapear status
@@ -1754,26 +2160,10 @@ export class ImportService {
         });
 
         // === CRIAR QUOTATION PAYMENT E PARCELAS ===
-        let paymentCondition = null;
-        if (firstItem.CondicaoPagamento) {
-          paymentCondition = await this.prisma.paymentCondition.findFirst({
-            where: {
-              name: firstItem.CondicaoPagamento,
-              companyId,
-              isActive: true,
-            },
-          });
-        }
-
-        // Fallback: buscar primeira condição de pagamento ativa
-        if (!paymentCondition) {
-          paymentCondition = await this.prisma.paymentCondition.findFirst({
-            where: {
-              companyId,
-              isActive: true,
-            },
-          });
-        }
+        const paymentCondition = this.resolvePaymentCondition(
+          paymentConditionIndex,
+          firstItem,
+        );
 
         if (paymentCondition) {
           const entradaValor = this.toCents(firstItem.EntradaValor) || 0;
@@ -1842,6 +2232,8 @@ export class ImportService {
       }
     }
 
+    await this.syncSeriesBudgetNumbers(companyId);
+
     return { successCount, failedCount, errors };
   }
 
@@ -1871,6 +2263,10 @@ export class ImportService {
       });
     }
 
+    const clientIndex = await this.buildClientIndex(companyId);
+    const paymentConditionIndex =
+      await this.buildPaymentConditionIndex(companyId);
+
     // Processar cada ordem
     for (const [key, items] of ordersMap) {
       try {
@@ -1889,52 +2285,22 @@ export class ImportService {
           throw new Error(`Série '${firstItem.Serie}' não encontrada`);
         }
 
-        // Buscar cliente por CPF/CNPJ
-        const cleanCpfCnpj = firstItem.ClienteCpfCnpj.replace(/[^\d]/g, '');
-        let client = await this.prisma.client.findFirst({
-          where: {
-            companyId,
-            OR: [
-              { cpf: { contains: cleanCpfCnpj } },
-              { cnpj: { contains: cleanCpfCnpj } },
-              { cpf: firstItem.ClienteCpfCnpj },
-              { cnpj: firstItem.ClienteCpfCnpj },
-            ],
-          },
-        });
-
-        // Se não encontrou, tentar busca mais flexível
-        if (!client) {
-          const clients = await this.prisma.client.findMany({
-            where: { companyId },
-          });
-          client =
-            clients.find((c: any) => {
-              const cleanCpf = (c.cpf || '').replace(/[^\d]/g, '');
-              const cleanCnpj = (c.cnpj || '').replace(/[^\d]/g, '');
-              return cleanCpf === cleanCpfCnpj || cleanCnpj === cleanCpfCnpj;
-            }) || null;
-        }
+        // Buscar cliente pelo código do legado ou pelo CPF/CNPJ
+        const client = this.resolveClient(clientIndex, firstItem);
 
         if (!client) {
-          throw new Error(
-            `Cliente com CPF/CNPJ '${firstItem.ClienteCpfCnpj}' não encontrado`,
-          );
+          throw new Error(this.clientNotFoundMessage(firstItem));
         }
 
         // Buscar vendedor
         const employee = await this.findSeller(
           companyId,
           firstItem.VendedorEmail,
+          firstItem.VendedorCodigoLegado,
         );
 
         if (!employee) {
-          if (!firstItem.VendedorEmail) {
-            throw new Error('Nenhum vendedor ativo encontrado para a empresa');
-          }
-          throw new Error(
-            `Vendedor com email '${firstItem.VendedorEmail}' não encontrado`,
-          );
+          throw new Error(this.sellerNotFoundMessage(firstItem));
         }
 
         // Validar status da ordem
@@ -2093,26 +2459,10 @@ export class ImportService {
         });
 
         // === CRIAR QUOTATION PAYMENT E PARCELAS ===
-        let paymentCondition = null;
-        if (firstItem.CondicaoPagamento) {
-          paymentCondition = await this.prisma.paymentCondition.findFirst({
-            where: {
-              name: firstItem.CondicaoPagamento,
-              companyId,
-              isActive: true,
-            },
-          });
-        }
-
-        // Fallback: buscar primeira condição de pagamento ativa
-        if (!paymentCondition) {
-          paymentCondition = await this.prisma.paymentCondition.findFirst({
-            where: {
-              companyId,
-              isActive: true,
-            },
-          });
-        }
+        const paymentCondition = this.resolvePaymentCondition(
+          paymentConditionIndex,
+          firstItem,
+        );
 
         if (paymentCondition) {
           const entradaValor = this.toCents(firstItem.EntradaValor) || 0;
@@ -2196,7 +2546,11 @@ export class ImportService {
 
         // === CRIAR PAYABLE DE COMISSÃO ===
         const comissaoValor = this.toCents(firstItem.ComissaoValor) || 0;
-        if (comissaoValor > 0 && firstItem.ComissaoFornecedorCpfCnpj) {
+        if (
+          comissaoValor > 0 &&
+          (firstItem.ComissaoVendedorCodigoLegado ||
+            firstItem.ComissaoFornecedorCpfCnpj)
+        ) {
           await this.createOrderCommissionPayable(
             quotation,
             firstItem,
@@ -2229,6 +2583,8 @@ export class ImportService {
         });
       }
     }
+
+    await this.syncSeriesBudgetNumbers(companyId);
 
     return { successCount, failedCount, errors };
   }
@@ -2472,26 +2828,48 @@ export class ImportService {
     series: any,
     comissaoValor: number,
   ) {
-    // Buscar fornecedor (comissionado)
-    const cleanCpfCnpj = firstItem.ComissaoFornecedorCpfCnpj.replace(
-      /[^\d]/g,
-      '',
-    );
-    const supplier = await this.prisma.supplier.findFirst({
-      where: {
-        companyId,
-        OR: [
-          { cpf: { contains: cleanCpfCnpj } },
-          { cnpj: { contains: cleanCpfCnpj } },
-        ],
-      },
-    });
+    // O comissionado pode ser um colaborador da casa ou um fornecedor externo.
+    // No legado da base piloto os 1.840 registros de comissão apontam para
+    // colaborador, então o código do vendedor tem precedência.
+    const sellerLegacyId = firstItem.ComissaoVendedorCodigoLegado?.trim();
 
-    if (!supplier) {
-      console.warn(
-        `Comissionado com CPF/CNPJ ${firstItem.ComissaoFornecedorCpfCnpj} não encontrado`,
+    let employee: any = null;
+    let supplier: any = null;
+
+    if (sellerLegacyId) {
+      employee = await this.prisma.employee.findFirst({
+        where: { companyId, legacyId: sellerLegacyId },
+      });
+
+      if (!employee) {
+        throw new Error(
+          `Comissionado com código legado '${sellerLegacyId}' não encontrado. Importe os colaboradores antes das vendas.`,
+        );
+      }
+    } else {
+      const cleanCpfCnpj = (firstItem.ComissaoFornecedorCpfCnpj || '').replace(
+        /[^\d]/g,
+        '',
       );
-      return null;
+
+      supplier = await this.prisma.supplier.findFirst({
+        where: {
+          companyId,
+          OR: [
+            { cpf: { contains: cleanCpfCnpj } },
+            { cnpj: { contains: cleanCpfCnpj } },
+          ],
+        },
+      });
+
+      // Antes isto apenas registrava um aviso e devolvia null, descartando a
+      // comissão em silêncio. Numa migração que traz R$ 464 mil em comissão,
+      // perder o lançamento sem erro visível é pior do que recusar a linha.
+      if (!supplier) {
+        throw new Error(
+          `Comissionado com CPF/CNPJ '${firstItem.ComissaoFornecedorCpfCnpj}' não encontrado`,
+        );
+      }
     }
 
     // Buscar natureza operacional
@@ -2531,7 +2909,9 @@ export class ImportService {
         totalValue: comissaoValor,
         installmentQty: 1,
         status: 'PENDING',
-        supplierId: supplier.id,
+        supplierId: supplier?.id || null,
+        employeeId: employee?.id || null,
+        expenseSource: employee ? 'EMPLOYEE' : 'SUPPLIER',
         companyId,
         natureId: nature?.id || null,
         subCategoryId: subCategory?.id || null,
@@ -2583,6 +2963,10 @@ export class ImportService {
       });
     }
 
+    const clientIndex = await this.buildClientIndex(companyId);
+    const paymentConditionIndex =
+      await this.buildPaymentConditionIndex(companyId);
+
     // Processar cada lançamento
     for (const [key, installments] of financialMap) {
       try {
@@ -2592,36 +2976,10 @@ export class ImportService {
         // Buscar cliente (se for receita)
         let clientId: string | null = null;
         if (isReceivable && firstItem.ClienteCpfCnpj) {
-          const cleanCpfCnpj = firstItem.ClienteCpfCnpj.replace(/[^\d]/g, '');
-          let client = await this.prisma.client.findFirst({
-            where: {
-              companyId,
-              OR: [
-                { cpf: { contains: cleanCpfCnpj } },
-                { cnpj: { contains: cleanCpfCnpj } },
-                { cpf: firstItem.ClienteCpfCnpj },
-                { cnpj: firstItem.ClienteCpfCnpj },
-              ],
-            },
-          });
-
-          // Se não encontrou, tentar busca mais flexível
-          if (!client) {
-            const clients = await this.prisma.client.findMany({
-              where: { companyId },
-            });
-            client =
-              clients.find((c: any) => {
-                const cleanCpf = (c.cpf || '').replace(/[^\d]/g, '');
-                const cleanCnpj = (c.cnpj || '').replace(/[^\d]/g, '');
-                return cleanCpf === cleanCpfCnpj || cleanCnpj === cleanCpfCnpj;
-              }) || null;
-          }
+          const client = this.resolveClient(clientIndex, firstItem);
 
           if (!client) {
-            throw new Error(
-              `Cliente com CPF/CNPJ '${firstItem.ClienteCpfCnpj}' não encontrado`,
-            );
+            throw new Error(this.clientNotFoundMessage(firstItem));
           }
           clientId = client.id;
         }
@@ -2775,15 +3133,11 @@ export class ImportService {
 
             // Buscar condição de pagamento
             let paymentConditionId: string | null = null;
-            if (item.CondicaoPagamento) {
-              const paymentCondition =
-                await this.prisma.paymentCondition.findFirst({
-                  where: {
-                    name: item.CondicaoPagamento,
-                    companyId,
-                    isActive: true,
-                  },
-                });
+            if (item.CondicaoPagamento || item.CondicaoPagamentoCodigoLegado) {
+              const paymentCondition = this.resolvePaymentCondition(
+                paymentConditionIndex,
+                item,
+              );
               if (paymentCondition) {
                 paymentConditionId = paymentCondition.id;
               }
@@ -2904,15 +3258,11 @@ export class ImportService {
 
             // Buscar condição de pagamento
             let paymentConditionId: string | null = null;
-            if (item.CondicaoPagamento) {
-              const paymentCondition =
-                await this.prisma.paymentCondition.findFirst({
-                  where: {
-                    name: item.CondicaoPagamento,
-                    companyId,
-                    isActive: true,
-                  },
-                });
+            if (item.CondicaoPagamento || item.CondicaoPagamentoCodigoLegado) {
+              const paymentCondition = this.resolvePaymentCondition(
+                paymentConditionIndex,
+                item,
+              );
               if (paymentCondition) {
                 paymentConditionId = paymentCondition.id;
               }

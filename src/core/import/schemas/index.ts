@@ -4,3 +4,4 @@ export * from './quotation-import.schema';
 export * from './order-import.schema';
 export * from './financial-import.schema';
 export * from './supplier-import.schema';
+export * from './employee-import.schema';

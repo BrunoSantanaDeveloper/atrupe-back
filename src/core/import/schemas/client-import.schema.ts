@@ -3,6 +3,15 @@ import { PrismaService } from 'nestjs-prisma';
 export const CLIENT_IMPORT_SCHEMA = {
   fields: [
     {
+      name: 'codigoLegado',
+      required: false,
+      type: 'string',
+      maxLength: 60,
+      description:
+        'Identificador do cliente no sistema legado. Na migração é obrigatório na prática: é a chave que liga as vendas a clientes sem CPF/CNPJ, e o que evita duplicar a base ao reprocessar o arquivo.',
+      example: '482',
+    },
+    {
       name: 'nome',
       required: true,
       type: 'string',

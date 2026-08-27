@@ -10,6 +10,46 @@ const MAX_LISTED_BANK_ACCOUNTS = 10;
 export const FINANCIAL_IMPORT_SCHEMA = {
   fields: [
     {
+      name: 'CondicaoPagamentoCodigoLegado',
+      required: false,
+      type: 'string',
+      maxLength: 60,
+      description:
+        'Código da condição de pagamento no legado. Tem precedência sobre CondicaoPagamento e é obrigatório quando o nome se repete no cadastro.',
+      example: '3',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        if (!value || value.trim() === '') return null;
+
+        const condition = await prisma.paymentCondition.findFirst({
+          where: { companyId, legacyId: value.trim() },
+        });
+        if (!condition) {
+          return 'Condição de pagamento não encontrada pelo código do legado';
+        }
+        return null;
+      },
+    },
+    {
+      name: 'ClienteCodigoLegado',
+      required: false,
+      type: 'string',
+      maxLength: 60,
+      description:
+        'Código do cliente no sistema legado. Tem precedência sobre ClienteCpfCnpj e é o único caminho para clientes sem documento.',
+      example: '482',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        if (!value || value.trim() === '') return null;
+
+        const client = await prisma.client.findFirst({
+          where: { companyId, legacyId: value.trim() },
+        });
+        if (!client) {
+          return 'Cliente não encontrado pelo código do legado. Importe os clientes antes das vendas';
+        }
+        return null;
+      },
+    },
+    {
       name: 'Tipo',
       required: true,
       type: 'string',

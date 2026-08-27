@@ -309,6 +309,7 @@ model Client {
   planId            String?
   isBranch          Boolean                  @default(false)
   isImported        Boolean                  @default(false)
+  legacyId          String?
   stateRegistration String? // IE (Inscrição Estadual) — required for ICMS taxpayers on NF-e
   indicadorIE       Int?                     @default(9) // 1=Contribuinte ICMS, 2=Isento, 9=Não contribuinte
   address           Address[]
@@ -322,6 +323,7 @@ model Client {
   quotation         Quotation[]
   receivable        Receivable[]
 
+  @@unique([companyId, legacyId])
   @@map("clients")
 }
 
@@ -388,6 +390,8 @@ model Employee {
   phone           String?
   rg              String?
   signatureUrl    String?
+  legacyId        String?
+  isImported      Boolean           @default(false)
   address         Address[]
   client          Client[]
   company         Company           @relation(fields: [companyId], references: [id])
@@ -401,6 +405,7 @@ model Employee {
   payables        Payable[]
   employeeHistory EmployeeHistory[]
 
+  @@unique([companyId, legacyId])
   @@map("employees")
 }
 
@@ -909,6 +914,7 @@ model PaymentMethod {
 model PaymentCondition {
   id                          String                        @id @default(uuid())
   name                        String
+  legacyId                    String?
   acceptInstallments          Boolean                       @default(false)
   costType                    PaymentConditionCostType
   companyId                   String
@@ -932,6 +938,7 @@ model PaymentCondition {
   receivableInstallments      ReceivableInstallment[]
   quotationInstallments       QuotationInstallment[]
 
+  @@unique([companyId, legacyId])
   // Fiscal: generate invoice on approval
   generateInvoice Boolean      @default(false) // Auto-generate NF on order approval?
   invoiceType     InvoiceType? // NFE, NFSE, NFCE, or null

@@ -36,7 +36,15 @@ export class ImportController {
         },
         entity: {
           type: 'string',
-          enum: ['client', 'product', 'quotation', 'supplier'],
+          enum: [
+            'client',
+            'product',
+            'quotation',
+            'supplier',
+            'financial',
+            'order',
+            'employee',
+          ],
         },
       },
     },

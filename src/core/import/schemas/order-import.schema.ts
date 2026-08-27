@@ -1,6 +1,66 @@
 export const ORDER_IMPORT_SCHEMA = {
   fields: [
     {
+      name: 'ComissaoVendedorCodigoLegado',
+      required: false,
+      type: 'string',
+      maxLength: 60,
+      description:
+        'Código do colaborador que recebe a comissão, no legado. Use quando a comissão é do vendedor da casa; tem precedência sobre ComissaoFornecedorCpfCnpj, que vale para comissionado externo.',
+      example: '15',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        if (!value || value.trim() === '') return null;
+
+        const employee = await prisma.employee.findFirst({
+          where: { companyId, legacyId: value.trim() },
+        });
+        if (!employee) {
+          return 'Comissionado não encontrado pelo código do legado. Importe os colaboradores antes das vendas';
+        }
+        return null;
+      },
+    },
+    {
+      name: 'CondicaoPagamentoCodigoLegado',
+      required: false,
+      type: 'string',
+      maxLength: 60,
+      description:
+        'Código da condição de pagamento no legado. Tem precedência sobre CondicaoPagamento e é obrigatório quando o nome se repete no cadastro.',
+      example: '3',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        if (!value || value.trim() === '') return null;
+
+        const condition = await prisma.paymentCondition.findFirst({
+          where: { companyId, legacyId: value.trim() },
+        });
+        if (!condition) {
+          return 'Condição de pagamento não encontrada pelo código do legado';
+        }
+        return null;
+      },
+    },
+    {
+      name: 'ClienteCodigoLegado',
+      required: false,
+      type: 'string',
+      maxLength: 60,
+      description:
+        'Código do cliente no sistema legado. Tem precedência sobre ClienteCpfCnpj e é o único caminho para clientes sem documento.',
+      example: '482',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        if (!value || value.trim() === '') return null;
+
+        const client = await prisma.client.findFirst({
+          where: { companyId, legacyId: value.trim() },
+        });
+        if (!client) {
+          return 'Cliente não encontrado pelo código do legado. Importe os clientes antes das vendas';
+        }
+        return null;
+      },
+    },
+    {
       name: 'NumeroVenda',
       required: true,
       type: 'number',
@@ -59,14 +119,23 @@ export const ORDER_IMPORT_SCHEMA = {
     },
     {
       name: 'ClienteCpfCnpj',
-      required: true,
+      required: false,
       type: 'string',
       maxLength: 18,
       description: 'CPF ou CNPJ do cliente (apenas números ou formatado)',
       example: '12345678900 ou 12.345.678/0001-90',
-      validate: async (value: string, companyId: string, prisma: any) => {
+      validate: async (
+        value: string,
+        companyId: string,
+        prisma: any,
+        row: any,
+      ) => {
+        // Quando a linha traz o codigo do legado, e ele quem identifica o
+        // cliente - inclusive os 29% que nao tem documento nenhum.
+        if (row?.ClienteCodigoLegado?.trim()) return null;
+
         // Remover formatação
-        const cleanValue = value.replace(/[^\\d]/g, '');
+        const cleanValue = value.replace(/[^\d]/g, '');
 
         // Buscar cliente por CPF ou CNPJ (removendo formatação do banco também)
         const client = await prisma.client.findFirst({
@@ -90,8 +159,8 @@ export const ORDER_IMPORT_SCHEMA = {
           });
 
           const found = clients.find((c: any) => {
-            const cleanCpf = (c.cpf || '').replace(/[^\\d]/g, '');
-            const cleanCnpj = (c.cnpj || '').replace(/[^\\d]/g, '');
+            const cleanCpf = (c.cpf || '').replace(/[^\d]/g, '');
+            const cleanCnpj = (c.cnpj || '').replace(/[^\d]/g, '');
             return cleanCpf === cleanValue || cleanCnpj === cleanValue;
           });
 
@@ -118,20 +187,48 @@ export const ORDER_IMPORT_SCHEMA = {
       description:
         'Email do vendedor. Se ficar vazio, usa um vendedor ativo da empresa',
       example: 'vendedor@empresa.com',
-      validate: async (value: string, companyId: string, prisma: any) => {
+      validate: async (
+        value: string,
+        companyId: string,
+        prisma: any,
+        row: any,
+      ) => {
         if (!value || value.trim() === '') return null;
+        // Quando a linha traz o código do legado, é ele quem manda.
+        if (row?.VendedorCodigoLegado?.trim()) return null;
 
+        // Sem filtro de ativo: vendedor desligado continua respondendo pelo
+        // histórico que ele fez enquanto estava na empresa.
         const employee = await prisma.employee.findFirst({
           where: {
             user: {
               email: value,
             },
             companyId,
-            isActive: true,
           },
         });
         if (!employee) {
           return 'Vendedor não encontrado. Cadastre o vendedor antes de importar';
+        }
+        return null;
+      },
+    },
+    {
+      name: 'VendedorCodigoLegado',
+      required: false,
+      type: 'string',
+      maxLength: 60,
+      description:
+        'Código do vendedor no sistema legado. Tem precedência sobre VendedorEmail e é o caminho usado na migração, porque não depende de conta de usuário.',
+      example: '15',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        if (!value || value.trim() === '') return null;
+
+        const employee = await prisma.employee.findFirst({
+          where: { companyId, legacyId: value.trim() },
+        });
+        if (!employee) {
+          return 'Vendedor não encontrado pelo código do legado. Importe os colaboradores antes das vendas';
         }
         return null;
       },
@@ -468,4 +565,18 @@ export const ORDER_IMPORT_SCHEMA = {
       example: 'SINGLE',
     },
   ],
+
+  /**
+   * O cliente precisa de pelo menos um identificador. Como as duas colunas
+   * sao opcionais isoladamente, a regra so pode ser avaliada na linha inteira.
+   */
+  validateRow: async (row: any) => {
+    const hasLegacyId = row.ClienteCodigoLegado?.trim();
+    const hasDocument = row.ClienteCpfCnpj?.trim();
+
+    if (!hasLegacyId && !hasDocument) {
+      return "Informe 'ClienteCodigoLegado' ou 'ClienteCpfCnpj' para identificar o cliente";
+    }
+    return null;
+  },
 };
