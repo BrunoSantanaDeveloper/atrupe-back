@@ -1,7 +1,11 @@
 import { assertSameCompany, onlyDigits } from './migrate-legacy-tenant';
+import { EXTRACTORS } from './legacy-extractors';
 import {
   CLIENT_EXTRACTOR,
   EMPLOYEE_EXTRACTOR,
+  PRODUCT_CODE_SQL,
+  PRODUCT_EXTRACTOR,
+  SUPPLIER_EXTRACTOR,
   normalizeLegacyDate,
   toSimNao,
 } from './legacy-extractors';
@@ -163,7 +167,7 @@ describe('SQL dos extratores', () => {
   it('restringe todas as tabelas à base informada', () => {
     // Uma tabela sem prefixo leria da base errada, que é o mesmo risco que o
     // conferidor de CNPJ existe para evitar.
-    for (const extractor of [EMPLOYEE_EXTRACTOR, CLIENT_EXTRACTOR]) {
+    for (const extractor of EXTRACTORS) {
       const sql = extractor.sql('acn_000001');
       const tableRefs = sql.match(/(?:FROM|JOIN)\s+(\S+)/gi) || [];
 
@@ -172,5 +176,82 @@ describe('SQL dos extratores', () => {
         expect(ref).toContain('acn_000001.');
       }
     }
+  });
+});
+
+describe('SUPPLIER_EXTRACTOR.map', () => {
+  const legacyRow = {
+    codigoLegado: 12,
+    nome: 'Empresa de Energia',
+    razaoSocial: '',
+    cpf: '',
+    cnpj: '',
+    rg: null,
+    tipoLegado: 2,
+    filial: 0,
+    observacoes: null,
+    categoria: 'Administrativo',
+    cep: '',
+    rua: '',
+    numero: '',
+    complemento: null,
+    bairro: '',
+    cidade: 'ITAJAÍ',
+    uf: 'SC',
+    email: null,
+    telefone: null,
+    celular: null,
+  };
+
+  it('mantém o código do legado como identidade', () => {
+    // 22 dos 25 fornecedores da base piloto não têm documento: sem o código,
+    // reprocessar duplicaria a base.
+    const row = SUPPLIER_EXTRACTOR.map(legacyRow);
+
+    expect(row.codigoLegado).toBe('12');
+    expect(row.cnpj).toBe('');
+    expect(row.cpf).toBe('');
+  });
+
+  it('traduz o tipo de entidade', () => {
+    expect(SUPPLIER_EXTRACTOR.map(legacyRow).tipo).toBe('EMPRESA');
+    expect(SUPPLIER_EXTRACTOR.map({ ...legacyRow, tipoLegado: 1 }).tipo).toBe(
+      'PESSOA',
+    );
+  });
+
+  it('leva a categoria, que o importador cria se não existir', () => {
+    expect(SUPPLIER_EXTRACTOR.map(legacyRow).categoria).toBe('Administrativo');
+  });
+});
+
+describe('PRODUCT_EXTRACTOR', () => {
+  const legacyRow = {
+    codigo: 'WBRV-47',
+    nome: 'WIND BANNER 3 MT REVENDA',
+    descricao: null,
+    setor: 'Impressão',
+    grupo: 'Material de Impressão',
+    unidadeMedida: '',
+    valorUnitario: '18.87',
+  };
+
+  it('usa o código já desambiguado pela consulta', () => {
+    const row = PRODUCT_EXTRACTOR.map(legacyRow);
+
+    expect(row.codigo).toBe('WBRV-47');
+    expect(row.setor).toBe('Impressão');
+    expect(row.valorUnitario).toBe('18.87');
+  });
+
+  it('deriva código único apenas quando o original repete', () => {
+    // No legado o código não é único: 57 produtos usam 46 códigos, e as
+    // repetições são produtos distintos (um "WBRV" cobre quatro tamanhos).
+    // Sem isso, o importador fundiria produtos diferentes num só registro.
+    const sql = PRODUCT_CODE_SQL('acn_000001', 'p');
+
+    expect(sql).toContain('acn_000001.est_produto');
+    expect(sql).toContain("CONCAT(p.cod, '-', p.idproduto)");
+    expect(sql).toContain('ELSE p.cod');
   });
 });

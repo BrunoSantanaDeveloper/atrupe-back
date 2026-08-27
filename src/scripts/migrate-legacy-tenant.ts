@@ -126,6 +126,10 @@ async function runStep(
         await internals.importEmployee(row, companyId, userId);
       } else if (extractor.entity === 'client') {
         await internals.importClient(row, companyId);
+      } else if (extractor.entity === 'supplier') {
+        await internals.importSupplier(row, companyId);
+      } else if (extractor.entity === 'product') {
+        await internals.importProduct(row, companyId);
       } else {
         throw new Error(`Entidade '${extractor.entity}' ainda não suportada`);
       }

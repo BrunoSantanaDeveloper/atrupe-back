@@ -1,6 +1,15 @@
 export const SUPPLIER_IMPORT_SCHEMA = {
   fields: [
     {
+      name: 'codigoLegado',
+      required: false,
+      type: 'string',
+      maxLength: 60,
+      description:
+        'Identificador do fornecedor no sistema legado. Na migração é o que evita duplicar a base ao reprocessar, já que boa parte dos fornecedores não tem CPF/CNPJ.',
+      example: '12',
+    },
+    {
       name: 'nome',
       required: true,
       type: 'string',

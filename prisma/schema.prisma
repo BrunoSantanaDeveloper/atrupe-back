@@ -329,6 +329,7 @@ model Client {
 
 model Supplier {
   id                String                     @id @default(uuid())
+  legacyId          String?
   name              String
   email             String?
   companyId         String
@@ -369,6 +370,7 @@ model Supplier {
   company           Company                    @relation(fields: [companyId], references: [id])
   category          Category?                  @relation("SupplierToCategory", fields: [categoryId], references: [id])
 
+  @@unique([companyId, legacyId])
   @@map("suppliers")
 }
 

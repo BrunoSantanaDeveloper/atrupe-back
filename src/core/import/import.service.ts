@@ -1278,6 +1278,39 @@ export class ImportService {
       cnpjNormalized = cnpjClean;
     }
 
+    const legacyId = row.codigoLegado?.trim() || null;
+
+    // Com código do legado, ele é a identidade: reprocessar atualiza em vez de
+    // duplicar. A deduplicação por documento não cobre isso — na base piloto,
+    // 22 dos 25 fornecedores não têm CPF nem CNPJ.
+    if (legacyId) {
+      const existing = await this.prisma.supplier.findFirst({
+        where: { companyId, legacyId },
+        select: { id: true },
+      });
+
+      if (existing) {
+        await this.prisma.supplier.update({
+          where: { id: existing.id },
+          data: {
+            type: type || 'COMPANY',
+            name: row.nome,
+            email: resolveOptionalEmail(row.email),
+            cpf: cpfNormalized,
+            cnpj: cnpjNormalized,
+            rg: row.rg || null,
+            phone: row.telefone || null,
+            mobile: row.celular || null,
+            corporateName: row.razaoSocial || null,
+            notes: row.observacoes || null,
+            categoryId,
+            isBranch,
+          },
+        });
+        return true;
+      }
+    }
+
     // Ignorar se CNPJ ou CPF já está cadastrado
     if (cnpjNormalized) {
       const dup = await this.prisma.supplier.findFirst({
@@ -1296,6 +1329,7 @@ export class ImportService {
     await this.prisma.supplier.create({
       data: {
         companyId,
+        legacyId,
         type: type || 'COMPANY',
         name: row.nome,
         email: resolveOptionalEmail(row.email),

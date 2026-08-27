@@ -164,12 +164,131 @@ export const CLIENT_EXTRACTOR: LegacyExtractor = {
 };
 
 /**
+ * Código do produto, garantido único dentro da empresa.
+ *
+ * No legado o código não é único: na base piloto, 57 produtos usam 46 códigos,
+ * e as repetições são produtos genuinamente diferentes — um mesmo "WBRV" cobre
+ * quatro tamanhos de Wind Banner. Como o sistema novo tem chave única por
+ * código e o importador atualiza o registro existente, importar sem tratar
+ * fundiria produtos distintos num só.
+ *
+ * A expressão preserva o código quando ele já é único e acrescenta o id do
+ * legado quando repete. Fica em constante porque o extrator de vendas precisa
+ * derivar exatamente o mesmo código para casar o item com o produto.
+ */
+export const PRODUCT_CODE_SQL = (base: string, alias: string) => `
+  CASE WHEN (SELECT COUNT(*) FROM ${base}.est_produto d WHERE d.cod = ${alias}.cod) > 1
+       THEN CONCAT(${alias}.cod, '-', ${alias}.idproduto)
+       ELSE ${alias}.cod END
+`;
+
+export const SUPPLIER_EXTRACTOR: LegacyExtractor = {
+  entity: 'supplier',
+  label: 'Fornecedores',
+  sql: (base) => `
+    SELECT
+      f.idfornecedor            AS codigoLegado,
+      e.nome                    AS nome,
+      e.razao_social            AS razaoSocial,
+      e.cpf                     AS cpf,
+      e.cnpj                    AS cnpj,
+      e.rg                      AS rg,
+      e.fkidtipo                AS tipoLegado,
+      e.is_filial               AS filial,
+      e.descricao               AS observacoes,
+      cat.categoria             AS categoria,
+      en.cep                    AS cep,
+      en.rua                    AS rua,
+      en.numero                 AS numero,
+      en.complemento            AS complemento,
+      en.bairro                 AS bairro,
+      ci.cidade                 AS cidade,
+      uf.sigla                  AS uf,
+      (SELECT cv.descricao
+         FROM ${base}.vp_entidade_contato ct
+         JOIN ${base}.vp_entidade_contato_valor cv ON cv.fkidcontato = ct.idcontato
+        WHERE ct.fkidentidade = e.identidade AND cv.fkidtipo = 1
+        LIMIT 1)                AS email,
+      (SELECT cv.descricao
+         FROM ${base}.vp_entidade_contato ct
+         JOIN ${base}.vp_entidade_contato_valor cv ON cv.fkidcontato = ct.idcontato
+        WHERE ct.fkidentidade = e.identidade AND cv.fkidtipo = 2
+        LIMIT 1)                AS telefone,
+      (SELECT cv.descricao
+         FROM ${base}.vp_entidade_contato ct
+         JOIN ${base}.vp_entidade_contato_valor cv ON cv.fkidcontato = ct.idcontato
+        WHERE ct.fkidentidade = e.identidade AND cv.fkidtipo = 3
+        LIMIT 1)                AS celular
+    FROM ${base}.forn_fornecedor f
+    JOIN ${base}.vp_entidade e ON e.identidade = f.fkidentidade
+    LEFT JOIN ${base}.forn_categoria cat  ON cat.idcategoria = f.fkidcategoria
+    LEFT JOIN ${base}.vp_endereco en      ON en.idendereco = e.fkidendereco_principal
+    LEFT JOIN ${base}.vp_endereco_cidade ci ON ci.idcidade = en.fkidcidade
+    LEFT JOIN ${base}.vp_endereco_uf uf   ON uf.iduf = ci.fkiduf
+    ORDER BY f.idfornecedor
+  `,
+  map: (row) => ({
+    codigoLegado: text(row.codigoLegado),
+    nome: text(row.nome),
+    razaoSocial: text(row.razaoSocial),
+    tipo: Number(row.tipoLegado) === 1 ? 'PESSOA' : 'EMPRESA',
+    cpf: text(row.cpf),
+    cnpj: text(row.cnpj),
+    rg: text(row.rg),
+    email: text(row.email),
+    telefone: text(row.telefone),
+    celular: text(row.celular),
+    categoria: text(row.categoria),
+    filial: toSimNao(row.filial),
+    observacoes: text(row.observacoes),
+    cep: text(row.cep),
+    rua: text(row.rua),
+    numero: text(row.numero),
+    complemento: text(row.complemento),
+    bairro: text(row.bairro),
+    cidade: text(row.cidade),
+    uf: text(row.uf),
+  }),
+};
+
+export const PRODUCT_EXTRACTOR: LegacyExtractor = {
+  entity: 'product',
+  label: 'Produtos',
+  sql: (base) => `
+    SELECT
+      ${PRODUCT_CODE_SQL(base, 'p')} AS codigo,
+      p.nome                    AS nome,
+      p.descricao               AS descricao,
+      s.setor                   AS setor,
+      cat.categoria             AS grupo,
+      sv.ser_un_comercial       AS unidadeMedida,
+      sv.valor                  AS valorUnitario
+    FROM ${base}.est_produto p
+    LEFT JOIN ${base}.emp_setor s             ON s.idsetor = p.fkidsetor
+    LEFT JOIN ${base}.est_produto_categoria cat ON cat.idcategoria = p.fkidcategoria
+    LEFT JOIN ${base}.ven_servico sv          ON sv.idservico = p.fkidservico
+    ORDER BY p.idproduto
+  `,
+  map: (row) => ({
+    codigo: text(row.codigo),
+    nome: text(row.nome),
+    descricao: text(row.descricao),
+    setor: text(row.setor),
+    grupo: text(row.grupo),
+    unidadeMedida: text(row.unidadeMedida),
+    valorUnitario: text(row.valorUnitario),
+  }),
+};
+
+/**
  * Ordem de carga. Cada etapa depende das anteriores: o importador procura o
  * registro relacionado por nome ou por código do legado.
  */
 export const EXTRACTORS: LegacyExtractor[] = [
   EMPLOYEE_EXTRACTOR,
   CLIENT_EXTRACTOR,
+  SUPPLIER_EXTRACTOR,
+  PRODUCT_EXTRACTOR,
 ];
 
 /** Consulta de conferência: identidade da empresa no legado. */
