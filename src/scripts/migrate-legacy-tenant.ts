@@ -1,0 +1,277 @@
+import { PrismaClient } from '@prisma/client';
+import * as mysql from 'mysql2/promise';
+import { ImportService } from '../core/import/import.service';
+import { resolveCompanyByEmail } from './preflight-financial-import';
+import {
+  EXTRACTORS,
+  LEGACY_COMPANY_SQL,
+  LegacyExtractor,
+} from './legacy-extractors';
+
+/**
+ * Migra um cliente da versão legada para o Atrupe novo.
+ *
+ * O fluxo pensado para a operação é: um dev cria a conta do cliente no app
+ * novo pelo cadastro normal (que já provisiona empresa e configurações base),
+ * passa o e-mail dessa conta e o nome da base legada, e este script preenche
+ * o resto.
+ *
+ * Roda fora do ciclo de requisição HTTP de propósito: não há limite de tempo
+ * de request nem o teto de memória do contêiner da API, então o histórico
+ * completo cabe sem depender de fila.
+ *
+ * É idempotente. Todo registro é gravado com o código do legado, então rodar
+ * de novo atualiza em vez de duplicar — dá para migrar em partes, conferir, e
+ * repetir sem limpar nada.
+ *
+ * Uso:
+ *   npx ts-node src/scripts/migrate-legacy-tenant.ts <email> <base> [--dry-run]
+ *
+ * Exemplo:
+ *   npx ts-node src/scripts/migrate-legacy-tenant.ts importacao@atrupe.com acn_001676 --dry-run
+ *
+ * Conexão com o legado (variáveis de ambiente):
+ *   LEGACY_DB_HOST      padrão 127.0.0.1 (túnel SSH até o RDS)
+ *   LEGACY_DB_PORT      padrão 13306
+ *   LEGACY_DB_USER      obrigatória
+ *   LEGACY_DB_PASSWORD  obrigatória
+ */
+
+export interface StepResult {
+  label: string;
+  extracted: number;
+  imported: number;
+  failed: number;
+  errors: { row: number; codigoLegado: string; error: string }[];
+}
+
+/** Só dígitos, para comparar documento entre os dois sistemas. */
+export function onlyDigits(value: any): string {
+  return String(value ?? '').replace(/[^\d]/g, '');
+}
+
+/**
+ * Impede a carga quando a base legada não é a do cliente que está na conta.
+ *
+ * É a proteção mais importante do script: sem ela, um nome de base trocado
+ * despeja os dados de um cliente dentro da empresa de outro, e nada no
+ * processo acusaria.
+ */
+export function assertSameCompany(
+  legacyCompany: { nome?: string; razao_social?: string; cnpj?: string },
+  newCompany: { name: string; cnpj: string | null },
+): void {
+  const legacyDoc = onlyDigits(legacyCompany?.cnpj);
+  const newDoc = onlyDigits(newCompany?.cnpj);
+
+  if (!legacyDoc || !newDoc) {
+    throw new Error(
+      `Não foi possível conferir a identidade da empresa: CNPJ ausente ` +
+        `(legado: '${legacyCompany?.cnpj ?? ''}', novo: '${newCompany?.cnpj ?? ''}'). ` +
+        `Preencha o CNPJ nos dois lados antes de migrar.`,
+    );
+  }
+
+  if (legacyDoc !== newDoc) {
+    throw new Error(
+      `A base legada não corresponde à empresa da conta informada.\n` +
+        `  Legado: ${legacyCompany.razao_social || legacyCompany.nome} — ${legacyCompany.cnpj}\n` +
+        `  Novo:   ${newCompany.name} — ${newCompany.cnpj}\n` +
+        `Confira o nome da base e o e-mail da conta.`,
+    );
+  }
+}
+
+async function runStep(
+  service: ImportService,
+  legacy: mysql.Connection,
+  base: string,
+  extractor: LegacyExtractor,
+  companyId: string,
+  userId: string,
+  dryRun: boolean,
+): Promise<StepResult> {
+  const [rawRows] = await legacy.query(extractor.sql(base));
+  const rows = (rawRows as any[]).map(extractor.map);
+
+  const result: StepResult = {
+    label: extractor.label,
+    extracted: rows.length,
+    imported: 0,
+    failed: 0,
+    errors: [],
+  };
+
+  const internals = service as any;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+
+    try {
+      if (dryRun) {
+        // Sem gravar: roda a mesma validação do servidor para antecipar as
+        // linhas que seriam recusadas.
+        const schema = internals.getSchema(extractor.entity);
+        const errors = await internals.validateRow(
+          row,
+          schema,
+          companyId,
+          i + 2,
+          false,
+        );
+        if (errors.length > 0) {
+          throw new Error(errors.map((e: any) => e.error).join('; '));
+        }
+      } else if (extractor.entity === 'employee') {
+        await internals.importEmployee(row, companyId, userId);
+      } else if (extractor.entity === 'client') {
+        await internals.importClient(row, companyId);
+      } else {
+        throw new Error(`Entidade '${extractor.entity}' ainda não suportada`);
+      }
+
+      result.imported++;
+    } catch (error: any) {
+      result.failed++;
+      result.errors.push({
+        row: i + 2,
+        codigoLegado: row.codigoLegado,
+        error: error.message,
+      });
+    }
+  }
+
+  return result;
+}
+
+export async function migrateLegacyTenant(
+  prisma: PrismaClient,
+  email: string,
+  base: string,
+  options: { dryRun?: boolean } = {},
+) {
+  const dryRun = options.dryRun ?? false;
+
+  if (!/^acn_\d+$/.test(base)) {
+    throw new Error(
+      `Nome de base inválido: '${base}'. Esperado o formato acn_000000.`,
+    );
+  }
+
+  const { companyId, companyName } = await resolveCompanyByEmail(prisma, email);
+
+  const user = await prisma.user.findFirst({
+    where: { email: email.toLowerCase().trim() },
+    select: { id: true },
+  });
+  if (!user) throw new Error(`Nenhum usuário com o e-mail ${email}`);
+
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { name: true, cnpj: true },
+  });
+
+  const legacy = await mysql.createConnection({
+    host: process.env.LEGACY_DB_HOST || '127.0.0.1',
+    port: Number(process.env.LEGACY_DB_PORT || 13306),
+    user: process.env.LEGACY_DB_USER,
+    password: process.env.LEGACY_DB_PASSWORD,
+    connectTimeout: 20000,
+  });
+
+  try {
+    const [companyRows] = await legacy.query(LEGACY_COMPANY_SQL(base));
+    const legacyCompany = (companyRows as any[])[0];
+
+    if (!legacyCompany) {
+      throw new Error(`Base '${base}' não tem empresa cadastrada`);
+    }
+
+    assertSameCompany(legacyCompany, company as any);
+
+    console.log(`Empresa de destino: ${companyName} (${companyId})`);
+    console.log(
+      `Base legada:        ${base} — ${legacyCompany.razao_social || legacyCompany.nome}`,
+    );
+    console.log(
+      dryRun
+        ? 'Modo:               simulação (nada será gravado)\n'
+        : 'Modo:               gravando\n',
+    );
+
+    const results: StepResult[] = [];
+
+    for (const extractor of EXTRACTORS) {
+      const result = await runStep(
+        service(prisma),
+        legacy,
+        base,
+        extractor,
+        companyId,
+        user.id,
+        dryRun,
+      );
+      results.push(result);
+
+      const status = result.failed === 0 ? 'ok' : `${result.failed} com erro`;
+      console.log(
+        `${result.label.padEnd(16)} extraídos ${String(result.extracted).padStart(6)} · ` +
+          `${dryRun ? 'válidos' : 'gravados'} ${String(result.imported).padStart(6)} · ${status}`,
+      );
+
+      // Primeiras falhas, para o operador entender o padrão sem abrir o log
+      for (const error of result.errors.slice(0, 5)) {
+        console.log(
+          `   linha ${error.row} (código ${error.codigoLegado}): ${error.error}`,
+        );
+      }
+      if (result.errors.length > 5) {
+        console.log(`   ... e mais ${result.errors.length - 5}`);
+      }
+    }
+
+    return results;
+  } finally {
+    await legacy.end();
+  }
+}
+
+/** O MinioService e o ProductFiscalService não são usados neste caminho. */
+function service(prisma: PrismaClient) {
+  return new ImportService(prisma as any, null as any, null as any);
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  const dryRun = args.includes('--dry-run');
+  const [email, base] = args.filter((a) => !a.startsWith('--'));
+
+  if (!email || !base) {
+    console.error(
+      'Uso: ts-node src/scripts/migrate-legacy-tenant.ts <email> <base> [--dry-run]',
+    );
+    process.exit(1);
+  }
+
+  const prisma = new PrismaClient();
+  try {
+    const results = await migrateLegacyTenant(prisma, email, base, { dryRun });
+    const failed = results.reduce((sum, r) => sum + r.failed, 0);
+
+    console.log(
+      failed === 0
+        ? '\nConcluído sem erros.'
+        : `\nConcluído com ${failed} linha(s) com erro.`,
+    );
+    process.exit(failed === 0 ? 0 : 1);
+  } catch (error: any) {
+    console.error(`\nFalhou: ${error.message}`);
+    process.exit(1);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+if (require.main === module) {
+  main();
+}
