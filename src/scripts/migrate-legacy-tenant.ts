@@ -42,6 +42,10 @@ export interface StepResult {
   extracted: number;
   imported: number;
   failed: number;
+  /** Documentos na origem, quando o extrator sabe contar. */
+  expected?: number;
+  /** Documentos distintos extraídos, quando uma linha não é um documento. */
+  documents?: number;
   errors: { row: number; codigoLegado: string; error: string }[];
 }
 
@@ -102,7 +106,44 @@ async function runStep(
     errors: [],
   };
 
+  if (extractor.documentKey) {
+    result.documents = new Set(rows.map(extractor.documentKey)).size;
+  }
+
+  if (extractor.expectedSql) {
+    const [countRows] = await legacy.query(extractor.expectedSql(base));
+    result.expected = Number((countRows as any[])[0]?.total ?? 0);
+  }
+
   const internals = service as any;
+
+  // Vendas e financeiro são processados em lote: o importador agrupa várias
+  // linhas no mesmo documento, então não dá para tratar linha a linha.
+  const BATCH_ENTITIES: Record<string, string> = {
+    quotation: 'importQuotations',
+    order: 'importOrders',
+    financial: 'importFinancial',
+  };
+
+  if (!dryRun && BATCH_ENTITIES[extractor.entity]) {
+    const method = BATCH_ENTITIES[extractor.entity];
+    // O contas a receber vem do financeiro do legado, com as parcelas reais.
+    const args =
+      extractor.entity === 'order'
+        ? [rows, companyId, { skipReceivable: true }]
+        : [rows, companyId];
+
+    const batch = await internals[method](...args);
+
+    result.imported = batch.successCount;
+    result.failed = batch.failedCount;
+    result.errors = (batch.errors || []).map((e: any) => ({
+      row: e.row,
+      codigoLegado: '',
+      error: e.error,
+    }));
+    return result;
+  }
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -218,10 +259,19 @@ export async function migrateLegacyTenant(
       results.push(result);
 
       const status = result.failed === 0 ? 'ok' : `${result.failed} com erro`;
+      const unit = result.documents ?? result.extracted;
       console.log(
-        `${result.label.padEnd(16)} extraídos ${String(result.extracted).padStart(6)} · ` +
+        `${result.label.padEnd(18)} origem ${String(result.expected ?? unit).padStart(6)} · ` +
+          `extraídos ${String(unit).padStart(6)} · ` +
           `${dryRun ? 'válidos' : 'gravados'} ${String(result.imported).padStart(6)} · ${status}`,
       );
+
+      // Diferença entre origem e extração é perda silenciosa se não for dita.
+      if (result.expected !== undefined && result.expected > unit) {
+        console.log(
+          `   ${result.expected - unit} documento(s) da origem não entraram na extração`,
+        );
+      }
 
       // Primeiras falhas, para o operador entender o padrão sem abrir o log
       for (const error of result.errors.slice(0, 5)) {

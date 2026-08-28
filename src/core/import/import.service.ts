@@ -2275,7 +2275,18 @@ export class ImportService {
    * Importar ordens de serviço (múltiplas linhas por ordem)
    * Inclui criação de lançamentos financeiros (receitas e despesas)
    */
-  private async importOrders(rows: any[], companyId: string) {
+  /**
+   * @param options.skipReceivable não cria o contas a receber da ordem.
+   *
+   * Usado pela migração do legado: lá o recebível vem do próprio financeiro do
+   * sistema antigo, com as parcelas, vencimentos e pagamentos reais. Deixar a
+   * ordem sintetizar um recebível de 30 dias dobraria o valor a receber.
+   */
+  private async importOrders(
+    rows: any[],
+    companyId: string,
+    options: { skipReceivable?: boolean } = {},
+  ) {
     let successCount = 0;
     let failedCount = 0;
     const errors: any[] = [];
@@ -2553,16 +2564,17 @@ export class ImportService {
             });
 
             // === CRIAR RECEIVABLE (RECEITA) ===
-            await this.createOrderReceivable(
-              quotation,
-              parcelas,
-              client,
-              companyId,
-              series,
-              entradaValor,
-              firstItem.EntradaVencimento,
-              paymentCondition,
-            );
+            if (!options.skipReceivable)
+              await this.createOrderReceivable(
+                quotation,
+                parcelas,
+                client,
+                companyId,
+                series,
+                entradaValor,
+                firstItem.EntradaVencimento,
+                paymentCondition,
+              );
           }
         }
 

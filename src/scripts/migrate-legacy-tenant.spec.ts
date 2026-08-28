@@ -3,8 +3,11 @@ import { EXTRACTORS } from './legacy-extractors';
 import {
   CLIENT_EXTRACTOR,
   EMPLOYEE_EXTRACTOR,
+  FINANCIAL_EXTRACTOR,
+  ORDER_EXTRACTOR,
   PRODUCT_CODE_SQL,
   PRODUCT_EXTRACTOR,
+  QUOTATION_EXTRACTOR,
   SUPPLIER_EXTRACTOR,
   normalizeLegacyDate,
   toSimNao,
@@ -253,5 +256,147 @@ describe('PRODUCT_EXTRACTOR', () => {
     expect(sql).toContain('acn_000001.est_produto');
     expect(sql).toContain("CONCAT(p.cod, '-', p.idproduto)");
     expect(sql).toContain('ELSE p.cod');
+  });
+});
+
+describe('extratores de venda', () => {
+  const saleRow = {
+    NumeroVenda: 2154,
+    Serie: 'T1',
+    statusLegado: 3,
+    statusEntrega: 4,
+    DataVenda: '2026-08-01T12:00:00.000Z',
+    DataEntrega: '2026-08-10T00:00:00.000Z',
+    ClienteCodigoLegado: 482,
+    ClienteNome: 'Cliente Exemplo',
+    VendedorCodigoLegado: 15,
+    CondicaoPagamentoCodigoLegado: 3,
+    tipoEntregaLegado: 1,
+    FreteCusto: '0.00',
+    FreteValor: '0.00',
+    ItemID: 9001,
+    ProdutoCodigo: 'WBRV-47',
+    ProdutoNome: 'WIND BANNER 3 MT',
+    Quantidade: '2',
+    ValorUnitario: '110.00',
+    ValorTotal: '220.00',
+    Desconto: '0.00',
+    ObservacaoItem: '',
+  };
+
+  it('identifica a venda por códigos do legado, não por documento nem e-mail', () => {
+    const row = ORDER_EXTRACTOR.map(saleRow);
+
+    expect(row.ClienteCodigoLegado).toBe('482');
+    expect(row.VendedorCodigoLegado).toBe('15');
+    expect(row.CondicaoPagamentoCodigoLegado).toBe('3');
+    expect(row.ClienteCpfCnpj).toBe('');
+    expect(row.VendedorEmail).toBe('');
+  });
+
+  it('deriva o status da ordem pela entrega, com o cancelamento vencendo', () => {
+    expect(ORDER_EXTRACTOR.map(saleRow).StatusOrdem).toBe('FINISHED');
+    expect(
+      ORDER_EXTRACTOR.map({ ...saleRow, statusEntrega: 2 }).StatusOrdem,
+    ).toBe('IN_PRODUCTION');
+    // Ordem cancelada continua cancelada mesmo com entrega finalizada
+    expect(
+      ORDER_EXTRACTOR.map({ ...saleRow, statusLegado: 4 }).StatusOrdem,
+    ).toBe('CANCELED');
+  });
+
+  it('traduz o tipo de entrega', () => {
+    expect(ORDER_EXTRACTOR.map(saleRow).TipoEntrega).toBe('PICKUP');
+    expect(
+      ORDER_EXTRACTOR.map({ ...saleRow, tipoEntregaLegado: 2 }).TipoEntrega,
+    ).toBe('CARRIER');
+  });
+
+  it('não preenche parcelas na venda', () => {
+    // O contas a receber vem do financeiro do legado, com as parcelas reais.
+    // Preencher aqui criaria um segundo recebível para a mesma venda.
+    const row: any = ORDER_EXTRACTOR.map(saleRow);
+
+    expect(row.Parcela1Valor).toBeUndefined();
+    expect(row.QtdParcelas).toBeUndefined();
+    expect(row.EntradaValor).toBeUndefined();
+  });
+
+  it('separa orçamento de ordem pelo status da origem', () => {
+    expect(QUOTATION_EXTRACTOR.sql('acn_1')).toContain('IN (1, 2)');
+    expect(ORDER_EXTRACTOR.sql('acn_1')).toContain('IN (3, 4)');
+  });
+
+  it('lê a entrega por subconsulta, não por junção', () => {
+    // Há um registro de entrega por item: juntar multiplicaria as linhas.
+    const sql = ORDER_EXTRACTOR.sql('acn_1');
+    expect(sql).not.toMatch(/JOIN\s+acn_1\.sales_entrega/);
+    expect(sql).toContain('FROM acn_1.sales_entrega e2');
+  });
+
+  it('traz só o item que é produto de verdade', () => {
+    // Os tipos 90, 98 e 99 são comissão e entrega: importá-los criaria
+    // produtos inexistentes e dobraria valores.
+    expect(ORDER_EXTRACTOR.sql('acn_1')).toContain('fkidtipovendaitem = 1');
+  });
+});
+
+describe('FINANCIAL_EXTRACTOR', () => {
+  const parcela = {
+    contaLegado: 1811,
+    tipoLegado: 1,
+    Referencia: 'Venda 2179-T1 - ADESIVOS',
+    Observacao: '',
+    DataReferencia: '2026-08-28T03:00:00.000Z',
+    ValorTotal: '2130.89',
+    ClienteCodigoLegado: 482,
+    Natureza: 'Operacional',
+    SubCategoria: 'Vendas',
+    ContaBancaria: 'PIX',
+    Parcela: 1,
+    QuantidadeParcelas: 2,
+    DataVencimento: '2026-09-28T03:00:00.000Z',
+    ValorParcela: '1065.45',
+    ValorPago: '0.00',
+    DataPagamento: null,
+    CondicaoPagamentoCodigoLegado: 3,
+  };
+
+  it('gera uma linha por parcela, sem o teto de três da venda', () => {
+    // Na base piloto há lançamentos com até seis parcelas.
+    const row = FINANCIAL_EXTRACTOR.map(parcela);
+
+    expect(row.Parcela).toBe('1');
+    expect(row.QuantidadeParcelas).toBe('2');
+    expect(row.ValorParcela).toBe('1065.45');
+  });
+
+  it('deriva o status pelo pagamento', () => {
+    expect(FINANCIAL_EXTRACTOR.map(parcela).Status).toBe('PENDENTE');
+    expect(
+      FINANCIAL_EXTRACTOR.map({
+        ...parcela,
+        DataPagamento: '2026-09-28T03:00:00.000Z',
+      }).Status,
+    ).toBe('PAGO');
+  });
+
+  it('inclui o id do lançamento na descrição', () => {
+    // O importador agrupa por tipo, descrição e data: sem o id, dois
+    // lançamentos do mesmo dia com o mesmo texto virariam um só.
+    expect(FINANCIAL_EXTRACTOR.map(parcela).Descricao).toContain('[1811]');
+  });
+
+  it('traduz receita e despesa', () => {
+    expect(FINANCIAL_EXTRACTOR.map(parcela).Tipo).toBe('RECEITA');
+    expect(FINANCIAL_EXTRACTOR.map({ ...parcela, tipoLegado: 2 }).Tipo).toBe(
+      'DESPESA',
+    );
+  });
+
+  it('ignora lançamento cancelado', () => {
+    expect(FINANCIAL_EXTRACTOR.sql('acn_1')).toContain(
+      'dtcancelamento IS NULL',
+    );
   });
 });
