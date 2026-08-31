@@ -216,13 +216,31 @@ export async function migrateLegacyTenant(
     select: { name: true, cnpj: true },
   });
 
-  const legacy = await mysql.createConnection({
-    host: process.env.LEGACY_DB_HOST || '127.0.0.1',
-    port: Number(process.env.LEGACY_DB_PORT || 13306),
-    user: process.env.LEGACY_DB_USER,
-    password: process.env.LEGACY_DB_PASSWORD,
-    connectTimeout: 20000,
-  });
+  const legacyHost = process.env.LEGACY_DB_HOST || '127.0.0.1';
+  const legacyPort = Number(process.env.LEGACY_DB_PORT || 13306);
+
+  // Sem este contexto o erro sai como um "connect ETIMEDOUT" solto, sem dizer
+  // qual das duas conexões falhou — a do banco novo ou a do legado.
+  let legacy: mysql.Connection;
+  try {
+    legacy = await mysql.createConnection({
+      host: legacyHost,
+      port: legacyPort,
+      user: process.env.LEGACY_DB_USER,
+      password: process.env.LEGACY_DB_PASSWORD,
+      connectTimeout: 20000,
+    });
+  } catch (error: any) {
+    const hint =
+      error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED'
+        ? ' O host não respondeu: confira se a origem está liberada no security group do banco legado, ou se o túnel SSH está de pé.'
+        : '';
+
+    throw new Error(
+      `Não foi possível conectar ao banco legado em ${legacyHost}:${legacyPort} ` +
+        `(${error.code || error.message}).${hint}`,
+    );
+  }
 
   try {
     const [companyRows] = await legacy.query(LEGACY_COMPANY_SQL(base));
