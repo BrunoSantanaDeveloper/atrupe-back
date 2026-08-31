@@ -297,6 +297,57 @@ describe('UserRegistrationService', () => {
       );
     });
 
+    it('deve gerar event_id e persistir a atribuição (oppref/utm) no usuário', async () => {
+      mockPrisma.mailVerification.findFirst.mockResolvedValueOnce(
+        makeVerification({ verified: true }),
+      );
+
+      const trialPlan = {
+        id: 'plan-trial',
+        planType: 'TRIAL',
+        planLimits: [{ limit: { key: 'trial_days' }, value: 14 }],
+      };
+      const newUser = { id: 'user-1', email: 'usuario@empresa.com' };
+      const newCustomer = { id: 'cust-1', email: 'usuario@empresa.com' };
+
+      // Captura o mock do user.create para inspecionar o data enviado.
+      const userCreate = jest.fn().mockResolvedValue(newUser);
+      mockPrisma.$transaction.mockImplementationOnce(async (cb) => {
+        const tx = {
+          user: { create: userCreate, update: jest.fn() },
+          customer: { create: jest.fn().mockResolvedValue(newCustomer) },
+          subscription: { create: jest.fn() },
+          plan: { findFirst: jest.fn().mockResolvedValue(trialPlan) },
+        };
+        return cb(tx);
+      });
+
+      mockCompanyService.createMainCompany.mockResolvedValueOnce({
+        id: 'company-1',
+      });
+      mockCompanyService.createFirstAccess.mockResolvedValueOnce(undefined);
+      mockPrisma.customer.update.mockResolvedValueOnce({});
+      mockPrisma.subscription.updateMany.mockResolvedValueOnce({});
+      mockPrisma.mailVerification.deleteMany.mockResolvedValueOnce({});
+
+      const oppref = 'op_teste_123';
+      const utm = { utm_source: 'chatgpt', utm_medium: 'cpc' };
+      const result = await service.createPassword(
+        makeCreateUserDto({ oppref, utm }) as any,
+      );
+
+      // Contrato §5.2: retorna um event_id (UUID) não vazio.
+      expect(result.eventId).toEqual(expect.any(String));
+      expect(result.eventId.length).toBeGreaterThan(0);
+
+      // §6.2: atribuição + event_id gravados no usuário, e o event_id retornado
+      // é o mesmo persistido.
+      const userData = userCreate.mock.calls[0][0].data;
+      expect(userData.signupEventId).toBe(result.eventId);
+      expect(userData.signupOppref).toBe(oppref);
+      expect(userData.signupUtm).toEqual(utm);
+    });
+
     it('deve lançar ConflictException se o email já foi cadastrado (P2002)', async () => {
       mockPrisma.mailVerification.findFirst.mockResolvedValueOnce(
         makeVerification({ verified: true }),

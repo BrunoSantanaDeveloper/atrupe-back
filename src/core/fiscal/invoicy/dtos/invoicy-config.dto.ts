@@ -99,17 +99,14 @@ export class CreateInvoicyConfigDto {
   @IsNumber()
   @IsOptional()
   @Min(1)
-  // Teto em 2 ate' que o Regime Normal seja validado contra o provedor. O
-  // calculo de ICMS/ST/DIFAL/PIS/COFINS/IPI por item ja' existe e tem
-  // cobertura de teste, mas nenhuma nota de CRT 3 foi emitida de verdade —
-  // e' isso que este teto protege, nao mais a ausencia de calculo.
-  // Ao liberar, subir para 3 (NAO para 4: CRT 4 e' MEI, que continua sem
-  // suporte) e ajustar a mensagem abaixo e a de invoicy.service.
-  @Max(2, {
+  // Teto em 3: CRT 3 (Regime Normal — Lucro Real e Presumido) esta' liberado
+  // porque o calculo de ICMS/ST/DIFAL/PIS/COFINS/IPI por item existe e barra
+  // a emissao quando falta dado, em vez de zerar imposto em silencio.
+  // CRT 4 (MEI) continua fora: nao tem apuracao propria implementada.
+  @Max(3, {
     message:
-      'Lucro Real, Lucro Presumido e MEI ainda não estão liberados. O cálculo ' +
-      'do Regime Normal já existe, mas aguarda validação em homologação. ' +
-      'Selecione Simples Nacional ou fale com o suporte.',
+      'MEI (CRT 4) ainda não é suportado: não há apuração própria ' +
+      'implementada para esse regime. Fale com o suporte.',
   })
   emitCrt?: number;
 
@@ -469,17 +466,14 @@ export class UpdateInvoicyConfigDto {
   @IsNumber()
   @IsOptional()
   @Min(1)
-  // Teto em 2 ate' que o Regime Normal seja validado contra o provedor. O
-  // calculo de ICMS/ST/DIFAL/PIS/COFINS/IPI por item ja' existe e tem
-  // cobertura de teste, mas nenhuma nota de CRT 3 foi emitida de verdade —
-  // e' isso que este teto protege, nao mais a ausencia de calculo.
-  // Ao liberar, subir para 3 (NAO para 4: CRT 4 e' MEI, que continua sem
-  // suporte) e ajustar a mensagem abaixo e a de invoicy.service.
-  @Max(2, {
+  // Teto em 3: CRT 3 (Regime Normal — Lucro Real e Presumido) esta' liberado
+  // porque o calculo de ICMS/ST/DIFAL/PIS/COFINS/IPI por item existe e barra
+  // a emissao quando falta dado, em vez de zerar imposto em silencio.
+  // CRT 4 (MEI) continua fora: nao tem apuracao propria implementada.
+  @Max(3, {
     message:
-      'Lucro Real, Lucro Presumido e MEI ainda não estão liberados. O cálculo ' +
-      'do Regime Normal já existe, mas aguarda validação em homologação. ' +
-      'Selecione Simples Nacional ou fale com o suporte.',
+      'MEI (CRT 4) ainda não é suportado: não há apuração própria ' +
+      'implementada para esse regime. Fale com o suporte.',
   })
   emitCrt?: number;
 

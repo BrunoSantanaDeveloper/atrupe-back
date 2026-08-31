@@ -16,7 +16,7 @@ import {
 import * as argon2 from 'argon2';
 import { CacheService } from 'src/svc/cache/cache.service';
 import { PlugService } from 'src/svc/plug/plug.service';
-import { randomInt } from 'crypto';
+import { randomInt, randomUUID } from 'crypto';
 import { MailerService } from '@nestjs-modules/mailer';
 import { CompanyService } from '../company/company.service';
 import { CreateCompanyDto } from '../company/dto/create-company.dto';
@@ -172,6 +172,11 @@ export class UserRegistrationService {
 
     let createdCompanyId: string | null = null;
 
+    // Identificador único da conversão de cadastro (§5.2). Gerado no backend,
+    // gravado contra o usuário e retornado ao frontend para uso no OpenAI Pixel
+    // e reutilização futura pela Conversions API (dedup navegador/servidor).
+    const signupEventId = randomUUID();
+
     try {
       const hashedPassword = await argon2.hash(createUserDto.password);
 
@@ -182,6 +187,9 @@ export class UserRegistrationService {
             email: createUserDto.email,
             password: hashedPassword,
             phone: createUserDto.mobile,
+            signupEventId,
+            signupOppref: createUserDto.oppref ?? null,
+            signupUtm: createUserDto.utm ?? Prisma.JsonNull,
           },
         });
 
@@ -293,7 +301,10 @@ export class UserRegistrationService {
         where: { email: createUserDto.email },
       });
 
-      return { message: 'Usuário criado com sucesso com plano TRIAL.' };
+      return {
+        message: 'Usuário criado com sucesso com plano TRIAL.',
+        eventId: signupEventId,
+      };
     } catch (error) {
       this.logger.error('Erro ao criar usuário:', error);
 

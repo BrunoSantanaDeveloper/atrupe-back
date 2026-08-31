@@ -429,8 +429,8 @@ export class UserController {
     description: 'Usuário não encontrado ou email não verificado.',
   })
   async createPassword(@Body() createUserDto: CreateUserDto) {
-    await this.userService.createPassword(createUserDto);
-    return { message: 'Senha criada com sucesso.' };
+    const result = await this.userService.createPassword(createUserDto);
+    return { message: 'Senha criada com sucesso.', eventId: result.eventId };
   }
 
   @Post('complete-registration')

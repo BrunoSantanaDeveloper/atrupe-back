@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsObject, IsOptional, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateMailVerificationDto {
@@ -88,6 +88,22 @@ export class CreateUserDto {
     required: false,
   })
   cpf?: string;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Parâmetro de atribuição oppref (OpenAI Ads)',
+    required: false,
+  })
+  oppref?: string;
+
+  @IsOptional()
+  @IsObject()
+  @ApiProperty({
+    description: 'Parâmetros UTM de atribuição (utm_source, utm_medium, ...)',
+    required: false,
+  })
+  utm?: Record<string, string>;
 }
 
 export class CreateUserByEmployeeDto {

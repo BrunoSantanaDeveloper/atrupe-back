@@ -444,6 +444,9 @@ model User {
   phone                String?
   isVerified           Boolean             @default(false)
   customerId           String?
+  signupEventId        String?             @unique
+  signupOppref         String?
+  signupUtm            Json?
   employee             Employee[]
   userContract         UserContract[]
   userRole             UserRole[]

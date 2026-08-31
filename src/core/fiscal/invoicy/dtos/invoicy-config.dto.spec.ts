@@ -22,19 +22,19 @@ describe('CRT do emissor', () => {
 
   for (const Classe of [CreateInvoicyConfigDto, UpdateInvoicyConfigDto]) {
     describe(Classe.name, () => {
-      it.each([1, 2])('aceita CRT %i (Simples Nacional)', async (crt) => {
+      // 1 e 2 = Simples Nacional; 3 = Regime Normal (Lucro Real e Presumido).
+      it.each([1, 2, 3])('aceita CRT %i', async (crt) => {
         expect(await erroDeCrt({ emitCrt: crt }, Classe)).toBeUndefined();
       });
 
-      it.each([3, 4])('recusa CRT %i com motivo explícito', async (crt) => {
-        const erro = await erroDeCrt({ emitCrt: crt }, Classe);
+      /** CRT 4 e' MEI, que nao tem apuracao propria implementada. */
+      it('recusa CRT 4 (MEI) com motivo explícito', async () => {
+        const erro = await erroDeCrt({ emitCrt: 4 }, Classe);
         expect(erro).toBeDefined();
-        // Casa com o que o usuário precisa ler — os regimes recusados e para
-        // onde ir —, não com a redação exata, que muda conforme o suporte
-        // avança.
+        // Casa com o que o usuário precisa ler — o regime recusado e para
+        // onde ir —, não com a redação exata.
         const mensagem = Object.values(erro!.constraints ?? {}).join(' ');
-        expect(mensagem).toMatch(/Lucro Real/i);
-        expect(mensagem).toMatch(/Lucro Presumido/i);
+        expect(mensagem).toMatch(/MEI/);
         expect(mensagem).toMatch(/suporte/i);
       });
     });
