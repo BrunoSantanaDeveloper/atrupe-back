@@ -31,6 +31,13 @@ import {
   parseProjectDayBoundary,
   toProjectDateKey,
 } from '../utils/project-date.util';
+import { aliquotaInterestadual as aliquotaInterestadualIcms } from '../utils/icms-interestadual.util';
+import {
+  montarImpostosNfe,
+  type ImpostosNfeMontados,
+  type ItemParaCalculo,
+} from '../utils/nfe-imposto-payload.util';
+import { IcmsAliquotaInternaService } from '../shared/icms-aliquota-interna.service';
 import {
   EmitNfeDto,
   EmitNfeFromOrderDto,
@@ -52,6 +59,7 @@ export class NfeService {
     private readonly productFiscalService: ProductFiscalService,
     private readonly nfeEmailService: NfeEmailService,
     private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
+    private readonly icmsAliquotaInterna: IcmsAliquotaInternaService,
   ) {}
 
   /**
@@ -1995,6 +2003,31 @@ export class NfeService {
         ? natureza?.cfopExternal?.code
         : natureza?.cfopInternal?.code;
 
+      /**
+       * Regime Normal calcula e destaca o imposto de cada item; o Simples
+       * Nacional segue o caminho antigo, que envia apenas os códigos — é o que
+       * mantém inalteradas as notas de quem já emite hoje.
+       */
+      const regimeNormal = (config.emitCrt ?? 1) >= 3;
+      const impostosCalculados = regimeNormal
+        ? await this.calcularImpostosRegimeNormal(dto, config, {
+            ufOrigem: config.company.address.state,
+            ufDestino: destUfFromCep,
+            interestadual: isInterestadual,
+          })
+        : null;
+
+      if (impostosCalculados?.bloqueios.length) {
+        // Barrar aqui é deliberado: sem os dados de cálculo a nota sairia com
+        // imposto zerado, que é pior do que não sair.
+        throw new BadRequestException(
+          [
+            'Não foi possível calcular os impostos da NF-e:',
+            ...impostosCalculados.bloqueios,
+          ].join(String.fromCharCode(10)),
+        );
+      }
+
       const resolvedCfops = dto.items.map((item) => {
         // Precedência: CFOP do item > CFOP da natureza > default do emissor.
         // O item vence porque um produto pode legitimamente exigir CFOP
@@ -2161,7 +2194,9 @@ export class NfeService {
               vUnTrib: item.unitValue.toFixed(10),
               indTot: 1,
             },
-            imposto: {
+            // Regime Normal usa o imposto calculado; Simples mantém os
+            // códigos, que é o que a apuração dele exige.
+            imposto: impostosCalculados?.impostos[index] ?? {
               ICMS: {
                 orig: 0, // Nacional
                 CST: item.cstIcms || '102', // Default Simples Nacional if missing
@@ -2179,10 +2214,17 @@ export class NfeService {
           })),
           total: {
             ICMStot: {
-              vBC_ttlnfe: '0.00',
-              vICMS_ttlnfe: '0.00',
+              // Sem cálculo (Simples), os totalizadores seguem zerados: a
+              // apuração é no documento único de arrecadação, não na nota.
+              ...(impostosCalculados?.totais ?? {
+                vBC_ttlnfe: '0.00',
+                vICMS_ttlnfe: '0.00',
+                vBCST_ttlnfe: '0.00',
+                vIPI_ttlnfe: '0.00',
+                vPIS_ttlnfe: '0.00',
+                vCOFINS_ttlnfe: '0.00',
+              }),
               vICMSDeson_ttlnfe: '0.00',
-              vBCST_ttlnfe: '0.00',
               vProd_ttlnfe: valorProdutos.toFixed(2),
               vFrete_ttlnfe: '0.00',
               vSeg_ttlnfe: '0.00',
@@ -2190,9 +2232,6 @@ export class NfeService {
                 .reduce((acc, i) => acc + (i.discount || 0), 0)
                 .toFixed(2),
               vII_ttlnfe: '0.00',
-              vIPI_ttlnfe: '0.00',
-              vPIS_ttlnfe: '0.00',
-              vCOFINS_ttlnfe: '0.00',
               vOutro: '0.00',
               vNF: valorTotal.toFixed(2),
             },
@@ -3754,6 +3793,94 @@ export class NfeService {
     );
 
     return buffer;
+  }
+
+  /**
+   * Calcula os impostos de todos os itens para emissores do Regime Normal.
+   *
+   * As alíquotas vivem no cadastro fiscal do produto, não no DTO da emissão —
+   * por isso a busca aqui. A alíquota interna da UF de destino vem do serviço
+   * parametrizável, que aplica os ajustes do superadmin sobre os padrões.
+   */
+  private async calcularImpostosRegimeNormal(
+    dto: EmitNfeDto,
+    config: any,
+    operacao: { ufOrigem: string; ufDestino: string; interestadual: boolean },
+  ): Promise<ImpostosNfeMontados> {
+    const productIds = [
+      ...new Set(dto.items.map((i) => i.productId).filter(Boolean)),
+    ] as string[];
+
+    const fiscais = productIds.length
+      ? await this.prisma.productFiscalData.findMany({
+          where: { productId: { in: productIds } },
+        })
+      : [];
+    const porProduto = new Map(fiscais.map((f) => [f.productId, f]));
+
+    const itens: ItemParaCalculo[] = dto.items.map((item) => {
+      const fiscal: any = item.productId
+        ? porProduto.get(item.productId)
+        : undefined;
+
+      return {
+        valores: {
+          valorProdutos: item.quantity * item.unitValue,
+          frete: item.freight,
+          seguro: item.insurance,
+          desconto: item.discount,
+        },
+        // O CST do item vence o do cadastro: a emissão pode legitimamente
+        // mudar a tributação de uma operação específica.
+        tributacao: {
+          icmsCst: item.cstIcms || fiscal?.icmsCst || '',
+          icmsOrigin: fiscal?.icmsOrigin,
+          icmsRate: fiscal?.icmsRate,
+          icmsReducao: fiscal?.icmsReducao,
+          icmsBaseModality: fiscal?.icmsBaseModality,
+          pisCst: item.cstPis || fiscal?.pisCst,
+          pisRate: fiscal?.pisRate,
+          cofinsCst: item.cstCofins || fiscal?.cofinsCst,
+          cofinsRate: fiscal?.cofinsRate,
+          ipiCst: item.cstIpi || fiscal?.ipiCst,
+          ipiRate: fiscal?.ipiRate,
+        },
+        ipiEnquadramento: fiscal?.ipiFramework,
+      };
+    });
+
+    // Consumidor final e contribuinte definem a incidência do DIFAL.
+    // indIEDest 1 = contribuinte do ICMS; 2 (isento) e 9 (não contribuinte) não.
+    const consumidorFinal = (dto.consumidorFinal ?? 0) === 1;
+    const contribuinte = (dto.destIndIEDest ?? 9) === 1;
+
+    const aliquotaInterestadual = operacao.interestadual
+      ? aliquotaInterestadualIcms(
+          operacao.ufOrigem,
+          operacao.ufDestino,
+          // A origem da mercadoria é do item; para a alíquota da operação vale
+          // a do primeiro item importado, se houver — o layout carrega uma só.
+          itens.find((i) =>
+            ['1', '2', '3', '8'].includes(
+              String(i.tributacao.icmsOrigin ?? ''),
+            ),
+          )?.tributacao.icmsOrigin,
+        )
+      : null;
+
+    const precisaDifal =
+      operacao.interestadual && consumidorFinal && !contribuinte;
+
+    return montarImpostosNfe(itens, {
+      interestadual: operacao.interestadual,
+      consumidorFinal,
+      contribuinte,
+      aliquotaInterestadual,
+      aliquotaInternaDestino: precisaDifal
+        ? await this.icmsAliquotaInterna.resolver(operacao.ufDestino)
+        : null,
+      aliquotaFcpDestino: null,
+    });
   }
 
   async findUnified(companyId: string, filters: any) {

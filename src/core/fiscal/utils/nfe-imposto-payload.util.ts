@@ -7,7 +7,8 @@
  * fica aninhado num grupo `CSTIPI` que exige `cEnq` ao lado. Conferir o schema
  * antes de mexer aqui: nome errado é campo silenciosamente ignorado.
  */
-import { calcularDifal, incideDifal, type DifalCalculado } from './difal.util';
+import { calcularDifal, incideDifal } from './difal.util';
+import type { InvoicyNfeImposto } from '../invoicy/invoicy.types';
 import {
   calcularImpostoItem,
   type ImpostoItemCalculado,
@@ -41,13 +42,8 @@ export interface ContextoOperacaoNfe {
   aliquotaFcpDestino?: number | null;
 }
 
-export interface ImpostoPayload {
-  ICMS: Record<string, unknown>;
-  PIS: Record<string, unknown>;
-  COFINS: Record<string, unknown>;
-  IPI?: Record<string, unknown>;
-  ICMSUFDest?: DifalCalculado;
-}
+/** O payload do item é exatamente o grupo de impostos que o provedor espera. */
+export type ImpostoPayload = InvoicyNfeImposto;
 
 export interface TotaisNfe {
   vBC_ttlnfe: string;
@@ -68,9 +64,9 @@ export interface ImpostosNfeMontados {
   bloqueios: string[];
 }
 
-function montarIcms(calc: ImpostoItemCalculado): Record<string, unknown> {
+function montarIcms(calc: ImpostoItemCalculado): ImpostoPayload['ICMS'] {
   const { icms } = calc;
-  const saida: Record<string, unknown> = { orig: icms.orig, CST: icms.CST };
+  const saida: ImpostoPayload['ICMS'] = { orig: icms.orig, CST: icms.CST };
 
   if (icms.vBC === undefined) return saida;
 
@@ -83,9 +79,9 @@ function montarIcms(calc: ImpostoItemCalculado): Record<string, unknown> {
   return saida;
 }
 
-function montarPis(calc: ImpostoItemCalculado): Record<string, unknown> {
+function montarPis(calc: ImpostoItemCalculado): ImpostoPayload['PIS'] {
   const { pis } = calc;
-  const saida: Record<string, unknown> = { CST_pis: pis.CST };
+  const saida: ImpostoPayload['PIS'] = { CST_pis: pis.CST };
   if (pis.valor === undefined) return saida;
   saida.vBC_pis = pis.vBC;
   saida.pPIS = pis.aliquota;
@@ -93,9 +89,9 @@ function montarPis(calc: ImpostoItemCalculado): Record<string, unknown> {
   return saida;
 }
 
-function montarCofins(calc: ImpostoItemCalculado): Record<string, unknown> {
+function montarCofins(calc: ImpostoItemCalculado): ImpostoPayload['COFINS'] {
   const { cofins } = calc;
-  const saida: Record<string, unknown> = { CST_cofins: cofins.CST };
+  const saida: ImpostoPayload['COFINS'] = { CST_cofins: cofins.CST };
   if (cofins.valor === undefined) return saida;
   saida.vBC_cofins = cofins.vBC;
   saida.pCOFINS = cofins.aliquota;
@@ -110,11 +106,13 @@ function montarCofins(calc: ImpostoItemCalculado): Record<string, unknown> {
 function montarIpi(
   calc: ImpostoItemCalculado,
   enquadramento?: string | null,
-): Record<string, unknown> | undefined {
+): ImpostoPayload['IPI'] {
   const { ipi } = calc;
   if (!ipi) return undefined;
 
-  const cstipi: Record<string, unknown> = { CST_IPI: ipi.CST };
+  const cstipi: NonNullable<ImpostoPayload['IPI']>['CSTIPI'] = {
+    CST_IPI: ipi.CST,
+  };
   if (ipi.valor !== undefined) {
     cstipi.vBC_IPI = ipi.vBC;
     cstipi.pIPI = ipi.aliquota;

@@ -199,21 +199,67 @@ export interface InvoicyNfeProd {
   indTot: number;
 }
 
+/**
+ * Grupo de impostos do item.
+ *
+ * Os nomes seguem o schema `Invoicy_NFe-NFCe v4.00.xsd`, que usa sufixos: o
+ * valor do ICMS próprio é `vICMS_icms`, e o IPI fica em `CSTIPI` com `cEnq` ao
+ * lado. Nome divergente não gera erro — o provedor ignora o campo e a nota sai
+ * sem o imposto destacado.
+ *
+ * Os campos de valor são opcionais porque o Simples Nacional envia apenas os
+ * códigos: a apuração dele é no documento único de arrecadação, não na nota.
+ */
 export interface InvoicyNfeImposto {
   ICMS: {
     orig: number;
     CST: string;
+    /** Modalidade da base; 3 = valor da operação. */
+    modBC?: number;
+    vBC?: number;
+    /** Percentual de redução da base (CST 20). */
+    pRedBC?: number;
+    pICMS?: number;
+    /** Valor do ICMS próprio. O sufixo é do layout, não engano. */
+    vICMS_icms?: number;
     pCredSN?: string;
     vCredICMSSN?: string;
   };
   PIS: {
     CST_pis: string;
+    vBC_pis?: number;
+    pPIS?: number;
+    vPIS?: number;
   };
   COFINS: {
     CST_cofins: string;
+    vBC_cofins?: number;
+    pCOFINS?: number;
+    vCOFINS?: number;
   };
   IPI?: {
-    CST_ipi: string;
+    /** Código de enquadramento legal; obrigatório quando o grupo é enviado. */
+    cEnq?: string;
+    CSTIPI?: {
+      CST_IPI: string;
+      vBC_IPI?: number;
+      pIPI?: number;
+      vIPI?: number;
+    };
+    /** Formato antigo, mantido enquanto o Simples Nacional o utiliza. */
+    CST_ipi?: string;
+  };
+  /** DIFAL da EC 87/15 — venda interestadual a consumidor final não contribuinte. */
+  ICMSUFDest?: {
+    vBCUFDest: number;
+    pICMSUFDest: number;
+    pICMSInter: number;
+    pICMSInterPart: number;
+    vICMSUFDest: number;
+    vICMSUFRemet: number;
+    vBCFCPUFDest?: number;
+    pFCPUFDest?: number;
+    vFCPUFDest?: number;
   };
 }
 

@@ -6,6 +6,7 @@ import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
 import { NfeEmailService } from './nfe-email.service';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
+import { IcmsAliquotaInternaService } from '../shared/icms-aliquota-interna.service';
 import {
   NotFoundException,
   BadRequestException,
@@ -239,6 +240,9 @@ const mockPrismaService = {
   operationNature: {
     findFirst: jest.fn().mockResolvedValue(null),
   },
+  productFiscalData: {
+    findMany: jest.fn().mockResolvedValue([]),
+  },
 };
 
 const mockInvoicyService = {
@@ -261,6 +265,10 @@ const mockProductFiscalService = {
 
 const mockNfeEmailService = {
   sendAuthorizedNfeEmail: jest.fn().mockResolvedValue({ success: true }),
+};
+
+const mockIcmsAliquotaInterna = {
+  resolver: jest.fn().mockResolvedValue(18),
 };
 
 const mockFiscalCredentialResolver = {
@@ -291,6 +299,10 @@ describe('NfeService', () => {
         {
           provide: FiscalCredentialResolverService,
           useValue: mockFiscalCredentialResolver,
+        },
+        {
+          provide: IcmsAliquotaInternaService,
+          useValue: mockIcmsAliquotaInterna,
         },
       ],
     }).compile();
@@ -1175,6 +1187,106 @@ describe('NfeService', () => {
         mockFiscalCredentialResolver.reserveNfeNumber,
       ).toHaveBeenCalledWith(expect.anything(), 'config-id', 'HOMOLOGACAO');
       expect(invoicyService.incrementNfeNumber).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A ramificação por regime é o que garante que ligar o motor não altera
+     * nenhuma nota em produção: todos os emissores de hoje são Simples.
+     */
+    describe('Regime Normal x Simples Nacional', () => {
+      const comRegime = (
+        emitCrt: number,
+        extra: Record<string, unknown> = {},
+      ) =>
+        invoicyService.getConfig.mockResolvedValue({
+          ...mockConfig,
+          emitCrt,
+          ...extra,
+        });
+
+      const impostoEnviado = () =>
+        invoicyApiService.emitNfe.mock.calls.at(-1)[1][0].Documento.det[0]
+          .imposto;
+      const totaisEnviados = () =>
+        invoicyApiService.emitNfe.mock.calls.at(-1)[1][0].Documento.total
+          .ICMStot;
+
+      it('mantém apenas os códigos e totais zerados no Simples Nacional', async () => {
+        comRegime(1);
+
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        expect(impostoEnviado().ICMS).toEqual({ orig: 0, CST: '102' });
+        expect(impostoEnviado().ICMS).not.toHaveProperty('vICMS_icms');
+        expect(totaisEnviados().vICMS_ttlnfe).toBe('0.00');
+        // O cadastro fiscal sequer é consultado nesse caminho.
+        expect(prisma.productFiscalData.findMany).not.toHaveBeenCalled();
+      });
+
+      it('calcula e destaca o imposto no Regime Normal', async () => {
+        comRegime(3);
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          {
+            productId: 'product-1',
+            icmsCst: '00',
+            icmsOrigin: '0',
+            icmsRate: 18,
+            pisCst: '01',
+            pisRate: 1.65,
+            cofinsCst: '01',
+            cofinsRate: 7.6,
+          },
+        ]);
+
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        expect(impostoEnviado().ICMS).toMatchObject({
+          CST: '00',
+          vBC: 200,
+          pICMS: 18,
+          vICMS_icms: 36,
+        });
+        expect(totaisEnviados().vICMS_ttlnfe).toBe('36.00');
+        expect(totaisEnviados().vBC_ttlnfe).toBe('200.00');
+      });
+
+      /**
+       * Sem alíquota cadastrada a nota sairia com imposto zerado. Barrar é o
+       * comportamento correto — é o defeito que o motor existe para eliminar.
+       */
+      it('barra a emissão do Regime Normal quando falta alíquota', async () => {
+        comRegime(3);
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          {
+            productId: 'product-1',
+            icmsCst: '00',
+            pisCst: '49',
+            cofinsCst: '49',
+          },
+        ]);
+
+        await expect(service.emit(mockCompanyId, mockEmitDto)).rejects.toThrow(
+          /Item 1.*alíquota de ICMS/s,
+        );
+        expect(invoicyApiService.emitNfe).not.toHaveBeenCalled();
+      });
+
+      it('barra o CST de substituição tributária, ainda não calculado', async () => {
+        comRegime(3);
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          {
+            productId: 'product-1',
+            icmsCst: '10',
+            icmsRate: 18,
+            pisCst: '49',
+            cofinsCst: '49',
+          },
+        ]);
+
+        await expect(service.emit(mockCompanyId, mockEmitDto)).rejects.toThrow(
+          /substituição tributária/,
+        );
+      });
     });
 
     it('should throw if items are empty', async () => {
