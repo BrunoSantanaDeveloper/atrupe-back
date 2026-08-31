@@ -115,10 +115,8 @@ describe('imposto-item.util', () => {
     });
 
     it.each([
-      ['10', /substituição tributária/i],
-      ['60', /substituição tributária/i],
-      ['70', /redução de base com substituição/i],
       ['51', /diferimento/i],
+      ['90', /outras/i],
     ])('bloqueia o CST %s, ainda não implementado', (cst, motivo) => {
       const r = calcularImpostoItem(
         { valorProdutos: 1000 },
@@ -128,6 +126,19 @@ describe('imposto-item.util', () => {
       expect(r.bloqueios[0]).toMatch(motivo);
       expect(r.icms.vICMS).toBeUndefined();
     });
+
+    it.each(['10', '70'])(
+      'bloqueia o CST %s sem MVA cadastrada para o destino',
+      (cst) => {
+        const r = calcularImpostoItem(
+          { valorProdutos: 1000 },
+          { ...tributado, icmsCst: cst, icmsReducao: 20 },
+        );
+
+        expect(r.bloqueios.join(' ')).toMatch(/MVA/i);
+        expect(r.icms.st).toBeUndefined();
+      },
+    );
 
     it('bloqueia CST desconhecido em vez de ignorá-lo', () => {
       const r = calcularImpostoItem(
@@ -155,6 +166,78 @@ describe('imposto-item.util', () => {
       expect(r.bloqueios.join(' ')).toMatch(/ICMS/);
       expect(r.bloqueios.join(' ')).toMatch(/PIS/);
       expect(r.bloqueios.join(' ')).toMatch(/COFINS/);
+    });
+  });
+
+  describe('substituição tributária', () => {
+    const comSt = {
+      ...tributado,
+      icmsCst: '10',
+      stMva: 40,
+      stAliquota: 18,
+    };
+
+    it('destaca ICMS próprio e ST no CST 10', () => {
+      const r = calcularImpostoItem({ valorProdutos: 1000 }, comSt);
+
+      expect(r.bloqueios).toEqual([]);
+      expect(r.icms.vICMS).toBe(180);
+      expect(r.icms.st).toMatchObject({
+        modBCST: 4,
+        pMVAST: 40,
+        vBCST: 1400,
+        pICMSST: 18,
+        vICMSST: 72, // 1400 x 18% - 180
+      });
+    });
+
+    /** CST 30 é isento no próprio, mas retém por substituição. */
+    it('retém sem ICMS próprio no CST 30', () => {
+      const r = calcularImpostoItem(
+        { valorProdutos: 1000 },
+        { ...comSt, icmsCst: '30' },
+      );
+
+      expect(r.bloqueios).toEqual([]);
+      expect(r.icms.vICMS).toBeUndefined();
+      expect(r.icms.st?.vICMSST).toBe(252);
+    });
+
+    it('combina redução de base e ST no CST 70', () => {
+      const r = calcularImpostoItem(
+        { valorProdutos: 1000 },
+        { ...comSt, icmsCst: '70', icmsReducao: 50 },
+      );
+
+      expect(r.bloqueios).toEqual([]);
+      expect(r.icms.pRedBC).toBe(50);
+      expect(r.icms.vBC).toBe(500);
+      expect(r.icms.vICMS).toBe(90);
+      expect(r.icms.st?.vBCST).toBe(1400);
+    });
+
+    /**
+     * CST 60 significa imposto já retido antes: os valores vêm do documento de
+     * origem, não de cálculo nosso, e os campos são opcionais no layout.
+     */
+    it('não destaca nem bloqueia no CST 60', () => {
+      const r = calcularImpostoItem(
+        { valorProdutos: 1000 },
+        { ...tributado, icmsCst: '60' },
+      );
+
+      expect(r.bloqueios).toEqual([]);
+      expect(r.icms).toEqual({ orig: 0, CST: '60' });
+    });
+
+    it('inclui o IPI na base da ST', () => {
+      const r = calcularImpostoItem(
+        { valorProdutos: 1000 },
+        { ...comSt, ipiCst: '50', ipiRate: 10 },
+      );
+
+      expect(r.ipi?.valor).toBe(100);
+      expect(r.icms.st?.vBCST).toBe(1540); // (1000 + 100) x 1,40
     });
   });
 

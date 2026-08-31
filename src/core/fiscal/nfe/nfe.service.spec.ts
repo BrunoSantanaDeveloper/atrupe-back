@@ -243,6 +243,9 @@ const mockPrismaService = {
   productFiscalData: {
     findMany: jest.fn().mockResolvedValue([]),
   },
+  productStRule: {
+    findMany: jest.fn().mockResolvedValue([]),
+  },
 };
 
 const mockInvoicyService = {
@@ -1194,6 +1197,13 @@ describe('NfeService', () => {
      * nenhuma nota em produção: todos os emissores de hoje são Simples.
      */
     describe('Regime Normal x Simples Nacional', () => {
+      // clearAllMocks limpa chamadas, não implementações: sem este reset a
+      // regra de ST de um teste vaza para o seguinte.
+      beforeEach(() => {
+        prisma.productFiscalData.findMany.mockResolvedValue([]);
+        prisma.productStRule.findMany.mockResolvedValue([]);
+      });
+
       const comRegime = (
         emitCrt: number,
         extra: Record<string, unknown> = {},
@@ -1271,7 +1281,42 @@ describe('NfeService', () => {
         expect(invoicyApiService.emitNfe).not.toHaveBeenCalled();
       });
 
-      it('barra o CST de substituição tributária, ainda não calculado', async () => {
+      /**
+       * A regra da UF de destino vence o padrão do produto: é assim que uma
+       * empresa que vende para vários estados usa a MVA de cada protocolo.
+       */
+      it('usa a regra de ST da UF de destino quando existe', async () => {
+        comRegime(3);
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          {
+            productId: 'product-1',
+            icmsCst: '10',
+            icmsRate: 18,
+            icmsStMva: 30,
+            pisCst: '49',
+            cofinsCst: '49',
+          },
+        ]);
+        prisma.productStRule.findMany.mockResolvedValue([
+          {
+            productId: 'product-1',
+            ufDestino: 'SP',
+            mva: 45,
+            aliquotaInterna: 18,
+          },
+        ]);
+
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        expect(impostoEnviado().ICMS).toMatchObject({
+          CST: '10',
+          pMVAST: 45,
+          pICMSST: 18,
+        });
+        expect(totaisEnviados().vBCST_ttlnfe).not.toBe('0.00');
+      });
+
+      it('barra o CST de substituição tributária quando falta MVA', async () => {
         comRegime(3);
         prisma.productFiscalData.findMany.mockResolvedValue([
           {
@@ -1284,7 +1329,7 @@ describe('NfeService', () => {
         ]);
 
         await expect(service.emit(mockCompanyId, mockEmitDto)).rejects.toThrow(
-          /substituição tributária/,
+          /MVA/,
         );
       });
     });

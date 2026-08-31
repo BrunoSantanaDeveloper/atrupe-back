@@ -224,6 +224,17 @@ export interface InvoicyNfeImposto {
     vICMS_icms?: number;
     pCredSN?: string;
     vCredICMSSN?: string;
+    /** Substituição tributária. modBCST 4 = margem de valor agregado. */
+    modBCST?: number;
+    pMVAST?: number;
+    pRedBCST?: number;
+    vBCST?: number;
+    pICMSST?: number;
+    /** Valor do ICMS-ST. O sufixo é do layout, como em vICMS_icms. */
+    vICMSST_icms?: number;
+    vBCFCPST?: number;
+    pFCPST?: number;
+    vFCPST?: number;
   };
   PIS: {
     CST_pis: string;

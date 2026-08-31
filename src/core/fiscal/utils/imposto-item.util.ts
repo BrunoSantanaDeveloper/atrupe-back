@@ -12,6 +12,8 @@
  * existe para eliminar: é melhor barrar a emissão do que emitir subdeclarado.
  */
 
+import { calcularIcmsSt, type StCalculado } from './icms-st-calculo.util';
+
 /** Arredonda para 2 casas sem arrastar resíduo de ponto flutuante. */
 const duasCasas = (valor: number) =>
   Math.round((valor + Number.EPSILON) * 100) / 100;
@@ -46,6 +48,12 @@ export interface TributacaoItem {
   cofinsRate?: number | null;
   ipiCst?: string | null;
   ipiRate?: number | null;
+  /** MVA já resolvida para a UF de destino (original ou ajustada). */
+  stMva?: number | null;
+  /** Alíquota interna do ICMS na UF de destino. */
+  stAliquota?: number | null;
+  stReducaoBase?: number | null;
+  stFcpRate?: number | null;
 }
 
 export interface IcmsCalculado {
@@ -56,6 +64,8 @@ export interface IcmsCalculado {
   pRedBC?: number;
   pICMS?: number;
   vICMS?: number;
+  /** Grupo de substituição tributária, nos CSTs que a exigem. */
+  st?: StCalculado;
 }
 
 export interface TributoCalculado {
@@ -79,16 +89,27 @@ export interface ImpostoItemCalculado {
   bloqueios: string[];
 }
 
-/** CSTs de ICMS que não destacam valor: isenta, não tributada, suspensão. */
-const CST_SEM_VALOR = new Set(['40', '41', '50']);
+/**
+ * CSTs de ICMS que não destacam valor.
+ *
+ * O 60 entra aqui porque o imposto já foi retido numa etapa anterior: os
+ * valores retidos vêm do documento de origem, não de cálculo nosso, e todos os
+ * campos correspondentes são opcionais no layout.
+ */
+const CST_SEM_VALOR = new Set(['40', '41', '50', '60']);
+
+/** CSTs de ICMS com substituição tributária. */
+const CST_COM_ST = new Set(['10', '30', '70']);
+
+/** CSTs de ICMS que destacam ICMS próprio (com redução, quando aplicável). */
+const CST_COM_PROPRIO = new Set(['00', '20', '10', '70']);
+
+/** CSTs que reduzem a base do ICMS próprio. */
+const CST_COM_REDUCAO = new Set(['20', '70']);
 
 /** CSTs de ICMS cujo cálculo ainda não está implementado. */
 const CST_NAO_IMPLEMENTADO: Record<string, string> = {
-  '10': 'substituição tributária',
-  '30': 'substituição tributária',
   '51': 'diferimento',
-  '60': 'ICMS cobrado anteriormente por substituição tributária',
-  '70': 'redução de base com substituição tributária',
   '90': 'tributação "outras"',
 };
 
@@ -117,6 +138,7 @@ function calcularIcms(
   base: number,
   trib: TributacaoItem,
   bloqueios: string[],
+  valorIpi: number,
 ): IcmsCalculado {
   const cst = (trib.icmsCst || '').trim();
   const icms: IcmsCalculado = {
@@ -139,39 +161,60 @@ function calcularIcms(
     return icms;
   }
 
-  if (cst !== '00' && cst !== '20') {
+  const temProprio = CST_COM_PROPRIO.has(cst);
+  const temSt = CST_COM_ST.has(cst);
+
+  if (!temProprio && !temSt) {
     bloqueios.push(`CST ${cst} do ICMS não é reconhecido.`);
     return icms;
   }
 
-  if (!temAliquota(trib.icmsRate)) {
-    bloqueios.push(
-      `CST ${cst} exige alíquota de ICMS, que não está cadastrada no produto.`,
-    );
-    return icms;
-  }
-
-  // Modalidade 3 = valor da operação, que é a usada aqui. As demais (margem
-  // agregada, pauta, tabelada) dependem de dado que o cálculo do item não tem,
-  // então não são presumidas.
-  icms.modBC = Number(trib.icmsBaseModality ?? 3) || 3;
-
-  let baseIcms = base;
-  if (cst === '20') {
-    const reducao = trib.icmsReducao;
-    if (!temAliquota(reducao) || reducao <= 0 || reducao >= 100) {
+  if (temProprio) {
+    if (!temAliquota(trib.icmsRate)) {
       bloqueios.push(
-        'CST 20 exige percentual de redução da base entre 0 e 100, não cadastrado no produto.',
+        `CST ${cst} exige alíquota de ICMS, que não está cadastrada no produto.`,
       );
       return icms;
     }
-    icms.pRedBC = duasCasas(reducao);
-    baseIcms = duasCasas(base * (1 - reducao / 100));
+
+    // Modalidade 3 = valor da operação. As demais (margem agregada, pauta,
+    // tabelada) dependem de dado que o cálculo do item não tem, então não são
+    // presumidas.
+    icms.modBC = Number(trib.icmsBaseModality ?? 3) || 3;
+
+    let baseIcms = base;
+    if (CST_COM_REDUCAO.has(cst)) {
+      const reducao = trib.icmsReducao;
+      if (!temAliquota(reducao) || reducao <= 0 || reducao >= 100) {
+        bloqueios.push(
+          `CST ${cst} exige percentual de redução da base entre 0 e 100, não cadastrado no produto.`,
+        );
+        return icms;
+      }
+      icms.pRedBC = duasCasas(reducao);
+      baseIcms = duasCasas(base * (1 - reducao / 100));
+    }
+
+    icms.vBC = duasCasas(baseIcms);
+    icms.pICMS = duasCasas(trib.icmsRate);
+    icms.vICMS = duasCasas((baseIcms * trib.icmsRate) / 100);
   }
 
-  icms.vBC = duasCasas(baseIcms);
-  icms.pICMS = duasCasas(trib.icmsRate);
-  icms.vICMS = duasCasas((baseIcms * trib.icmsRate) / 100);
+  if (temSt) {
+    const { st, bloqueios: bloqueiosSt } = calcularIcmsSt({
+      baseOperacao: base,
+      valorIpi: valorIpi,
+      mva: trib.stMva as number,
+      aliquotaSt: trib.stAliquota as number,
+      reducaoBaseSt: trib.stReducaoBase,
+      // O CST 30 não destaca ICMS próprio, então não há o que subtrair.
+      icmsProprio: icms.vICMS ?? 0,
+      aliquotaFcpSt: trib.stFcpRate,
+    });
+    bloqueios.push(...bloqueiosSt);
+    if (st) icms.st = st;
+  }
+
   return icms;
 }
 
@@ -242,10 +285,12 @@ export function calcularImpostoItem(
 ): ImpostoItemCalculado {
   const bloqueios: string[] = [];
   const base = calcularBaseOperacao(item);
+  // O IPI é calculado antes do ICMS porque integra a base da ST.
+  const ipi = calcularIpi(base, trib, bloqueios);
 
   return {
     baseOperacao: base,
-    icms: calcularIcms(base, trib, bloqueios),
+    icms: calcularIcms(base, trib, bloqueios, ipi?.valor ?? 0),
     pis: calcularPisCofins(base, trib.pisCst, trib.pisRate, 'PIS', bloqueios),
     cofins: calcularPisCofins(
       base,
@@ -254,7 +299,7 @@ export function calcularImpostoItem(
       'COFINS',
       bloqueios,
     ),
-    ipi: calcularIpi(base, trib, bloqueios),
+    ipi,
     bloqueios,
   };
 }

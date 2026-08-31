@@ -32,6 +32,7 @@ import {
   toProjectDateKey,
 } from '../utils/project-date.util';
 import { aliquotaInterestadual as aliquotaInterestadualIcms } from '../utils/icms-interestadual.util';
+import { resolverMva } from '../utils/icms-st.util';
 import {
   montarImpostosNfe,
   type ImpostosNfeMontados,
@@ -3821,6 +3822,66 @@ export class NfeService {
       : [];
     const porProduto = new Map(fiscais.map((f) => [f.productId, f]));
 
+    // Regras de ST da UF de destino. Sem linha para a UF, valem os campos de
+    // ST do próprio produto, que funcionam como padrão.
+    const regrasSt = productIds.length
+      ? await this.prisma.productStRule.findMany({
+          where: {
+            productId: { in: productIds },
+            ufDestino: operacao.ufDestino,
+          },
+        })
+      : [];
+    const stPorProduto = new Map(regrasSt.map((r) => [r.productId, r]));
+
+    // A alíquota interna do destino também é a "ALQ intra" da MVA ajustada.
+    const aliquotaInternaDestino = await this.icmsAliquotaInterna.resolver(
+      operacao.ufDestino,
+    );
+    const optanteSimples = (config.emitCrt ?? 1) <= 2;
+
+    const aliquotaInterestadual = operacao.interestadual
+      ? aliquotaInterestadualIcms(
+          operacao.ufOrigem,
+          operacao.ufDestino,
+          // A origem é do item, mas a alíquota da operação é uma só: os 4% da
+          // Resolução 13/2012 valem se houver mercadoria importada na nota.
+          fiscais.find((f) =>
+            ['1', '2', '3', '8'].includes(String(f.icmsOrigin ?? '')),
+          )?.icmsOrigin,
+        )
+      : null;
+
+    /**
+     * Parâmetros de ST do item: a regra da UF vence o padrão do produto, e a
+     * MVA passa por `resolverMva`, que aplica o ajuste interestadual e a
+     * dispensa do Simples Nacional (Convênio ICMS 35/2011).
+     */
+    const montarSt = (fiscal: any, productId?: string) => {
+      const regra: any = productId ? stPorProduto.get(productId) : undefined;
+      const mvaOriginal = regra?.mva ?? fiscal?.icmsStMva;
+      if (mvaOriginal === undefined || mvaOriginal === null) return {};
+
+      const aliquotaSt =
+        regra?.aliquotaInterna ?? fiscal?.icmsStRate ?? aliquotaInternaDestino;
+
+      return {
+        stMva:
+          aliquotaSt === null || aliquotaSt === undefined
+            ? mvaOriginal
+            : resolverMva({
+                mvaOriginal,
+                aliquotaInterestadual: aliquotaInterestadual ?? 0,
+                aliquotaInterna: aliquotaSt,
+                optanteSimples,
+                interestadual: operacao.interestadual,
+              }),
+        stAliquota: aliquotaSt,
+        stReducaoBase: regra?.reducaoBase ?? fiscal?.icmsStReducao,
+        stFcpRate: regra?.fcpStRate ?? fiscal?.fcpStRate,
+      };
+    };
+
     const itens: ItemParaCalculo[] = dto.items.map((item) => {
       const fiscal: any = item.productId
         ? porProduto.get(item.productId)
@@ -3847,6 +3908,7 @@ export class NfeService {
           cofinsRate: fiscal?.cofinsRate,
           ipiCst: item.cstIpi || fiscal?.ipiCst,
           ipiRate: fiscal?.ipiRate,
+          ...montarSt(fiscal, item.productId),
         },
         ipiEnquadramento: fiscal?.ipiFramework,
       };
@@ -3856,20 +3918,6 @@ export class NfeService {
     // indIEDest 1 = contribuinte do ICMS; 2 (isento) e 9 (não contribuinte) não.
     const consumidorFinal = (dto.consumidorFinal ?? 0) === 1;
     const contribuinte = (dto.destIndIEDest ?? 9) === 1;
-
-    const aliquotaInterestadual = operacao.interestadual
-      ? aliquotaInterestadualIcms(
-          operacao.ufOrigem,
-          operacao.ufDestino,
-          // A origem da mercadoria é do item; para a alíquota da operação vale
-          // a do primeiro item importado, se houver — o layout carrega uma só.
-          itens.find((i) =>
-            ['1', '2', '3', '8'].includes(
-              String(i.tributacao.icmsOrigin ?? ''),
-            ),
-          )?.tributacao.icmsOrigin,
-        )
-      : null;
 
     const precisaDifal =
       operacao.interestadual && consumidorFinal && !contribuinte;

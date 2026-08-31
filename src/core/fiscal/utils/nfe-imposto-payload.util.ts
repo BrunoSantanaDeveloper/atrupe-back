@@ -49,6 +49,8 @@ export interface TotaisNfe {
   vBC_ttlnfe: string;
   vICMS_ttlnfe: string;
   vBCST_ttlnfe: string;
+  vST_ttlnfe: string;
+  vFCPST_ttlnfe?: string;
   vIPI_ttlnfe: string;
   vPIS_ttlnfe: string;
   vCOFINS_ttlnfe: string;
@@ -68,7 +70,11 @@ function montarIcms(calc: ImpostoItemCalculado): ImpostoPayload['ICMS'] {
   const { icms } = calc;
   const saida: ImpostoPayload['ICMS'] = { orig: icms.orig, CST: icms.CST };
 
-  if (icms.vBC === undefined) return saida;
+  if (icms.vBC === undefined) {
+    // CST 30 tem ST sem ICMS próprio: o grupo de ST vai mesmo sem base própria.
+    aplicarSt(saida, icms);
+    return saida;
+  }
 
   saida.modBC = icms.modBC;
   if (icms.pRedBC !== undefined) saida.pRedBC = icms.pRedBC;
@@ -76,7 +82,30 @@ function montarIcms(calc: ImpostoItemCalculado): ImpostoPayload['ICMS'] {
   saida.pICMS = icms.pICMS;
   // Nome do schema: o valor do ICMS próprio é vICMS_icms, não vICMS.
   saida.vICMS_icms = icms.vICMS;
+  aplicarSt(saida, icms);
   return saida;
+}
+
+/** Acrescenta o grupo de ST ao ICMS, quando o CST o exige. */
+function aplicarSt(
+  saida: ImpostoPayload['ICMS'],
+  icms: ImpostoItemCalculado['icms'],
+): void {
+  const { st } = icms;
+  if (!st) return;
+
+  saida.modBCST = st.modBCST;
+  saida.pMVAST = st.pMVAST;
+  if (st.pRedBCST !== undefined) saida.pRedBCST = st.pRedBCST;
+  saida.vBCST = st.vBCST;
+  saida.pICMSST = st.pICMSST;
+  saida.vICMSST_icms = st.vICMSST;
+
+  if (st.vFCPST !== undefined) {
+    saida.vBCFCPST = st.vBCFCPST;
+    saida.pFCPST = st.pFCPST;
+    saida.vFCPST = st.vFCPST;
+  }
 }
 
 function montarPis(calc: ImpostoItemCalculado): ImpostoPayload['PIS'] {
@@ -141,6 +170,9 @@ export function montarImpostosNfe(
   const totais = {
     vBC: 0,
     vICMS: 0,
+    vBCST: 0,
+    vST: 0,
+    vFCPST: 0,
     vIPI: 0,
     vPIS: 0,
     vCOFINS: 0,
@@ -170,6 +202,9 @@ export function montarImpostosNfe(
     if (ipi) payload.IPI = ipi;
 
     totais.vBC += calc.icms.vBC ?? 0;
+    totais.vBCST += calc.icms.st?.vBCST ?? 0;
+    totais.vST += calc.icms.st?.vICMSST ?? 0;
+    totais.vFCPST += calc.icms.st?.vFCPST ?? 0;
     totais.vICMS += calc.icms.vICMS ?? 0;
     totais.vIPI += calc.ipi?.valor ?? 0;
     totais.vPIS += calc.pis.valor ?? 0;
@@ -198,13 +233,16 @@ export function montarImpostosNfe(
   const totaisPayload: TotaisNfe = {
     vBC_ttlnfe: moeda(totais.vBC),
     vICMS_ttlnfe: moeda(totais.vICMS),
-    // Substituição tributária ainda não é calculada; o CST correspondente
-    // bloqueia a emissão antes de chegar aqui.
-    vBCST_ttlnfe: moeda(0),
+    vBCST_ttlnfe: moeda(totais.vBCST),
+    vST_ttlnfe: moeda(totais.vST),
     vIPI_ttlnfe: moeda(totais.vIPI),
     vPIS_ttlnfe: moeda(totais.vPIS),
     vCOFINS_ttlnfe: moeda(totais.vCOFINS),
   };
+
+  if (totais.vFCPST > 0) {
+    totaisPayload.vFCPST_ttlnfe = moeda(totais.vFCPST);
+  }
 
   if (cabeDifal) {
     totaisPayload.vICMSUFDest_ttlnfe = moeda(totais.vICMSUFDest);
