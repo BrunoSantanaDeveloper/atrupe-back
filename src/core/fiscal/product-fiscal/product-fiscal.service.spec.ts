@@ -13,10 +13,11 @@ describe('ProductFiscalService', () => {
 
   beforeEach(async () => {
     prisma = {
-      product: { findMany: jest.fn() },
+      product: { findMany: jest.fn(), findUnique: jest.fn() },
       productFiscalData: {
         updateMany: jest.fn(),
         createMany: jest.fn(),
+        upsert: jest.fn(),
       },
       invoicyConfig: { findFirst: jest.fn().mockResolvedValue(null) },
       $transaction: jest.fn((ops: Promise<any>[]) => Promise.all(ops)),
@@ -31,6 +32,61 @@ describe('ProductFiscalService', () => {
 
     service = module.get<ProductFiscalService>(ProductFiscalService);
     jest.clearAllMocks();
+  });
+
+  /**
+   * MVA da substituição tributária e alíquota do FCP não são deriváveis: a
+   * primeira vem de protocolo entre estados por NCM, a segunda de lei estadual.
+   * Se não forem gravadas, o cálculo do Regime Normal fica sem entrada.
+   */
+  describe('cadastro de ST e FCP', () => {
+    beforeEach(() => {
+      prisma.product.findUnique.mockResolvedValue({ id: 'produto-1' });
+      prisma.productFiscalData.upsert.mockResolvedValue({});
+    });
+
+    it('persiste os campos de ST e FCP informados', async () => {
+      await service.upsert({
+        productId: 'produto-1',
+        icmsStMva: 40,
+        icmsStReducao: 10,
+        icmsStRate: 18,
+        fcpRate: 2,
+        fcpStRate: 2,
+      } as any);
+
+      const { create, update } =
+        prisma.productFiscalData.upsert.mock.calls[0][0];
+      const esperado = {
+        icmsStMva: 40,
+        icmsStReducao: 10,
+        icmsStRate: 18,
+        fcpRate: 2,
+        fcpStRate: 2,
+      };
+      expect(update).toMatchObject(esperado);
+      expect(create).toMatchObject(esperado);
+    });
+
+    it('grava nulo — e não zero — quando o campo não é informado', async () => {
+      await service.upsert({ productId: 'produto-1' } as any);
+
+      const { update } = prisma.productFiscalData.upsert.mock.calls[0][0];
+      expect(update.icmsStMva).toBeNull();
+      expect(update.fcpRate).toBeNull();
+    });
+
+    it('preserva alíquota zero, que é diferente de não cadastrada', async () => {
+      await service.upsert({
+        productId: 'produto-1',
+        fcpRate: 0,
+        icmsStMva: 0,
+      } as any);
+
+      const { update } = prisma.productFiscalData.upsert.mock.calls[0][0];
+      expect(update.fcpRate).toBe(0);
+      expect(update.icmsStMva).toBe(0);
+    });
   });
 
   describe('bulkUpdateNcm', () => {

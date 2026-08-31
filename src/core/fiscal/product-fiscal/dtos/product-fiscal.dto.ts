@@ -97,6 +97,47 @@ export class CreateProductFiscalDataDto {
   @IsOptional()
   icmsBaseModality?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Margem de valor agregado da ST (%), por protocolo entre estados',
+  })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  icmsStMva?: number;
+
+  @ApiPropertyOptional({ description: 'Redução da base de cálculo da ST (%)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  icmsStReducao?: number;
+
+  @ApiPropertyOptional({
+    description: 'Alíquota interna do ICMS-ST na UF de destino (%)',
+  })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  icmsStRate?: number;
+
+  @ApiPropertyOptional({
+    description: 'Alíquota do Fundo de Combate à Pobreza (%)',
+  })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  fcpRate?: number;
+
+  @ApiPropertyOptional({ description: 'Alíquota do FCP retido por ST (%)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  fcpStRate?: number;
+
   @ApiPropertyOptional({ description: 'Redução da base de cálculo ICMS' })
   @Transform(parseNumber)
   @IsNumber()
@@ -303,6 +344,47 @@ export class UpdateProductFiscalDataDto {
   @IsString()
   @IsOptional()
   icmsBaseModality?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Margem de valor agregado da ST (%), por protocolo entre estados',
+  })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  icmsStMva?: number;
+
+  @ApiPropertyOptional({ description: 'Redução da base de cálculo da ST (%)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  icmsStReducao?: number;
+
+  @ApiPropertyOptional({
+    description: 'Alíquota interna do ICMS-ST na UF de destino (%)',
+  })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  icmsStRate?: number;
+
+  @ApiPropertyOptional({
+    description: 'Alíquota do Fundo de Combate à Pobreza (%)',
+  })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  fcpRate?: number;
+
+  @ApiPropertyOptional({ description: 'Alíquota do FCP retido por ST (%)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  fcpStRate?: number;
 
   @ApiPropertyOptional({ description: 'Redução da base de cálculo ICMS' })
   @Transform(parseNumber)

@@ -545,6 +545,92 @@ describe('NfseService', () => {
      * em locPrest (E1235). Como codClassificacao tem valor padrão no cadastro,
      * isso saía em praticamente toda NFS-e.
      */
+    /**
+     * O grupo de valores do IBS/CBS é opcional no layout e o retorno do
+     * provedor não devolve esses valores. Ligá-lo por engano mudaria a nota de
+     * todo mundo, então o default tem de continuar desligado.
+     */
+    /**
+     * Fora do Simples não há regime especial a declarar. O padrão anterior
+     * mandava 1 = "Microempresa Municipal" para qualquer não-optante, o que é
+     * falso para uma empresa de Lucro Presumido ou Real.
+     */
+    describe('regime especial de tributação', () => {
+      const regimeEnviado = () => {
+        const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+        return documentos[0].Documento.RPS[0];
+      };
+
+      const emitirCom = async (patch: Record<string, unknown>) => {
+        const base = await mockInvoicyService.getConfig();
+        mockInvoicyService.getConfig.mockResolvedValue({ ...base, ...patch });
+        await service.emitFromOrder(mockCompanyId, {
+          orderId: mockOrderId,
+          codigoServico: '1.05',
+          discriminacao: 'Serviço de consultoria em TI',
+        });
+      };
+
+      it('declara ME/EPP do Simples para optante', async () => {
+        await emitirCom({ emitCrt: 1, regimeEspecialTributacao: null });
+        expect(regimeEnviado().RegEspTrib).toBe(6);
+      });
+
+      it('omite a tag fora do Simples em vez de declarar microempresa municipal', async () => {
+        await emitirCom({ emitCrt: 3, regimeEspecialTributacao: null });
+        expect(regimeEnviado()).not.toHaveProperty('RegEspTrib');
+      });
+
+      it('respeita o regime configurado no emissor', async () => {
+        await emitirCom({ emitCrt: 3, regimeEspecialTributacao: 4 });
+        expect(regimeEnviado().RegEspTrib).toBe(4);
+      });
+    });
+
+    it('não envia valores de IBS/CBS enquanto o emissor não habilitar', async () => {
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Serviço de consultoria em TI',
+      });
+
+      const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+      const valores = documentos[0].Documento.RPS[0].Servico.Valores;
+
+      expect(valores).not.toHaveProperty('IBSCBS');
+    });
+
+    it('envia os valores de IBS/CBS quando o emissor habilita', async () => {
+      const configBase = await mockInvoicyService.getConfig();
+      mockInvoicyService.getConfig.mockResolvedValue({
+        ...configBase,
+        ibsCbsEnviarValores: true,
+        emitCrt: 1,
+      });
+
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Serviço de consultoria em TI',
+        valorServicos: 55,
+        aliquotaIss: 4.4,
+      } as any);
+
+      const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+      const grupo = documentos[0].Documento.RPS[0].Servico.Valores.IBSCBS;
+
+      // Os percentuais de diferimento são obrigatórios dentro de IBS e CBS.
+      expect(grupo.IBS.ValpDifUF).toBe(0);
+      expect(grupo.IBS.ValpDifMun).toBe(0);
+      expect(grupo.CBS.ValpDifCBS).toBe(0);
+      // Optante do Simples usa os campos próprios, nunca os do regime regular.
+      expect(grupo.IBS).toHaveProperty('ValIBSSN');
+      expect(grupo.IBS).not.toHaveProperty('ValIBSTot');
+      expect(grupo.CBS).toHaveProperty('ValCBSSN');
+      expect(grupo.CBS).not.toHaveProperty('ValCBS');
+      expect(typeof grupo.ValBCIBSCBS).toBe('number');
+    });
+
     it('não envia o grupo IBSCBS pela metade quando falta o CST', async () => {
       prisma.quotation.findFirst.mockResolvedValue({
         id: 'quotation-1',

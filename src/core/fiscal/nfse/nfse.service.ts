@@ -21,6 +21,7 @@ import {
   NfseFilterDto,
 } from './dtos/nfse.dto';
 import { fetchCepData } from '../utils/cep.util';
+import { aliquotasVigentes, calcularIbsCbs } from '../utils/ibs-cbs.util';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { MailService } from '../../mail/mail.service';
 import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
@@ -70,6 +71,25 @@ export class NfseService {
   /** Alíquota com 4 casas — municípios usam alíquotas como 2,5341%. */
   private rate(value: number): number {
     return Number((value || 0).toFixed(4));
+  }
+
+  /**
+   * Envelope da resposta do provedor para persistência, sem os blobs (XML e PDF
+   * em base64) que dominariam a coluna. É o que permite diagnosticar uma
+   * rejeição depois: o motivo textual sozinho costuma ser genérico.
+   */
+  private retornoBrutoParaPersistir(response: any) {
+    try {
+      return JSON.parse(
+        JSON.stringify(response, (_k, v) =>
+          typeof v === 'string' && v.length > 500
+            ? `<${v.length} bytes omitidos>`
+            : v,
+        ),
+      );
+    } catch {
+      return { erro: 'resposta não serializável' };
+    }
   }
 
   /**
@@ -989,6 +1009,7 @@ export class NfseService {
     const valorServicos = this.money(dto.valorServicos);
     const valorDeducoes = this.money(dto.valorDeducoes || 0);
     const baseCalculo = this.money(valorServicos - valorDeducoes);
+
     // `??` e não `||`: alíquota 0 é legítima (serviço isento/imune) e não pode
     // cair no fallback. Se nada estiver configurado, falha fechada em vez de
     // emitir ISS zerado silenciosamente.
@@ -1001,6 +1022,84 @@ export class NfseService {
     }
     const aliquotaIss = this.rate(aliquotaIssRaw);
     const valorIss = this.money((baseCalculo * aliquotaIss) / 100);
+
+    /**
+     * Regime Especial de Tributação (enumeração ABRASF). Fora do Simples não há
+     * regime especial a declarar: o padrão anterior mandava 1 = "Microempresa
+     * Municipal" para qualquer não-optante, o que é uma declaração falsa para
+     * uma empresa de Lucro Presumido ou Real. Sem configuração explícita a tag
+     * passa a ser omitida — que é a semântica documentada do campo, já usada
+     * pelos municípios que recusam a tag.
+     */
+    const regimeEspecial =
+      config.regimeEspecialTributacao ?? (config.emitCrt === 1 ? 6 : undefined);
+
+    /**
+     * Grupo de VALORES do IBS/CBS. Desligado por padrão: no layout do provedor
+     * ele é opcional (ocorrência 0-1) e o retorno da recepção de RPS não
+     * devolve esses valores, então enviá-los é decisão de quem emite. Como a
+     * exigência varia por município, liga-se emissor a emissor.
+     *
+     * Quando enviado, os subgrupos IBS e CBS são obrigatórios e, dentro deles,
+     * os percentuais de diferimento — zero quando não há diferimento.
+     *
+     * A base sai de ValBaseCalculo menos o ISS, que é o comportamento
+     * observado nas DANFSe emitidas sob o novo layout. Continua sobrescrevível
+     * na emissão para o município que adotar composição diferente.
+     */
+    const valoresIbsCbs = (() => {
+      if (!(config as any).ibsCbsEnviarValores) return {};
+
+      const padrao = aliquotasVigentes();
+      if (!padrao.faseCoberta) {
+        this.logger.warn(
+          `Alíquotas de IBS/CBS não confirmadas para a data atual; usando as da fase de teste. Emissor ${config.id}.`,
+        );
+      }
+
+      const aliquotas = {
+        ibsUf: (config as any).aliquotaIbsUf ?? padrao.aliquotas.ibsUf,
+        ibsMun: (config as any).aliquotaIbsMun ?? padrao.aliquotas.ibsMun,
+        cbs: (config as any).aliquotaCbs ?? padrao.aliquotas.cbs,
+      };
+
+      const base = this.money(
+        dto.baseIbsCbs ?? Math.max(0, baseCalculo - valorIss),
+      );
+      const calc = calcularIbsCbs(base, aliquotas);
+
+      // Optante do Simples usa os campos próprios (ValIBSSN/ValCBSSN); o
+      // layout proíbe misturá-los com os do regime regular.
+      const optanteSn = config.emitCrt === 1 || config.emitCrt === 2;
+
+      return {
+        IBSCBS: {
+          IBS: {
+            ValpDifUF: 0,
+            ValpDifMun: 0,
+            ...(optanteSn
+              ? {
+                  ValpIBSSN: aliquotas.ibsUf + aliquotas.ibsMun,
+                  ValIBSSN: calc.ibsTotal,
+                }
+              : {
+                  ValIBSTot: calc.ibsTotal,
+                  ValIBSUF: calc.ibsUf,
+                  ValpIBSUF: aliquotas.ibsUf,
+                  ValIBSMun: calc.ibsMun,
+                  ValpIBSMun: aliquotas.ibsMun,
+                }),
+          },
+          CBS: {
+            ValpDifCBS: 0,
+            ...(optanteSn
+              ? { ValpCBSSN: aliquotas.cbs, ValCBSSN: calc.cbs }
+              : { ValCBS: calc.cbs, ValpCBS: aliquotas.cbs }),
+          },
+          ValBCIBSCBS: calc.base,
+        },
+      };
+    })();
 
     // E0625: prestador ME/EPP optante do Simples (opSimpNac=3) não pode
     // informar alíquota quando não há retenção (tpRetISSQN=1) — o ISS é
@@ -1169,9 +1268,9 @@ export class NfseService {
               // que ele converte para o regEspTrib do layout nacional. Alguns
               // municípios exigem um regime específico e outros recusam a tag,
               // então o emissor pode configurar; o padrão cobre o caso comum.
-              RegEspTrib:
-                config.regimeEspecialTributacao ??
-                (config.emitCrt === 1 ? 6 : 1),
+              ...(regimeEspecial !== undefined
+                ? { RegEspTrib: regimeEspecial }
+                : {}),
               // OptSN: 1 = optante do Simples Nacional, 2 = não optante
               OptSN: config.emitCrt === 1 ? 1 : 2,
               // regApTribSN: obrigatório para ME/EPP optante do SN.
@@ -1232,6 +1331,7 @@ export class NfseService {
                   ValISS: valorIss,
                   ValOutrasRetencoes: 0,
                   ValBaseCalculo: baseCalculo,
+                  ...valoresIbsCbs,
                   ...(omitirAliquotaIss ? {} : { ValAliqISS: aliquotaIss }),
                   // Tributos aproximados por esfera (NFS-e Modelo Nacional) e
                   // INSS. ValAliqINSS vai em decimal: 0,05 = 5% (layout RT v4).
@@ -1458,6 +1558,7 @@ export class NfseService {
           pdfUrl: doc.DocPDFDownload || null,
           xmlRetorno: doc.DocXMLBase64,
           motivoRejeicao: !isAuthorized ? situacao?.SitDescricao : null,
+          invoicyRetornoBruto: this.retornoBrutoParaPersistir(response),
         },
       });
 

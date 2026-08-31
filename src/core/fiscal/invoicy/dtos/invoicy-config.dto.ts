@@ -91,7 +91,16 @@ export class CreateInvoicyConfigDto {
   @IsNumber()
   @IsOptional()
   @Min(1)
-  @Max(4)
+  // Teto em 2 enquanto o cálculo de imposto do Regime Normal não existir: a
+  // montagem da nota destaca base e valor zerados, o que serve ao Simples
+  // Nacional e produziria documento subdeclarado para Lucro Real/Presumido.
+  // Ao liberar o CRT 3, subir para 4 e remover a mensagem em invoicy.service.
+  @Max(2, {
+    message:
+      'Lucro Real, Lucro Presumido e MEI ainda não são suportados: o cálculo ' +
+      'de ICMS, PIS, COFINS e IPI por item não está implementado. Selecione ' +
+      'Simples Nacional ou fale com o suporte.',
+  })
   emitCrt?: number;
 
   // NF-e fields
@@ -378,7 +387,16 @@ export class UpdateInvoicyConfigDto {
   @IsNumber()
   @IsOptional()
   @Min(1)
-  @Max(4)
+  // Teto em 2 enquanto o cálculo de imposto do Regime Normal não existir: a
+  // montagem da nota destaca base e valor zerados, o que serve ao Simples
+  // Nacional e produziria documento subdeclarado para Lucro Real/Presumido.
+  // Ao liberar o CRT 3, subir para 4 e remover a mensagem em invoicy.service.
+  @Max(2, {
+    message:
+      'Lucro Real, Lucro Presumido e MEI ainda não são suportados: o cálculo ' +
+      'de ICMS, PIS, COFINS e IPI por item não está implementado. Selecione ' +
+      'Simples Nacional ou fale com o suporte.',
+  })
   emitCrt?: number;
 
   // NF-e fields

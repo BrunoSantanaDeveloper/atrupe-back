@@ -771,6 +771,15 @@ export class EmitNfseDto {
   // (repositório migrate-company/integracao-InvoiCy-BR).
 
   @ApiPropertyOptional({
+    description:
+      'Base de cálculo do IBS/CBS; sem valor usa a base do ISS menos o ISS',
+  })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  baseIbsCbs?: number;
+
+  @ApiPropertyOptional({
     description: 'Código indicador da operação (Anexo VII, 6 dígitos)',
   })
   @IsString()

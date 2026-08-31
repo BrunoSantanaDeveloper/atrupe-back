@@ -2193,6 +2193,20 @@ model InvoicyConfig {
   // NFC-e prazo de cancelamento (configurável por estado)
   prazoCancelamentoNfce Int @default(30) // minutos
 
+  // ── Reforma Tributária (IBS/CBS) ──
+  // O grupo de VALORES do IBS/CBS é opcional no layout do provedor, e o retorno
+  // dele não devolve esses valores. Fica desligado por padrão: liga-se por
+  // emissor conforme cada prefeitura passar a exigir, sem afetar quem já emite.
+  ibsCbsEnviarValores Boolean @default(false)
+  // Regime de apuração do IBS/CBS no Simples Nacional:
+  // 1 = IBS e CBS pelo SN, 2 = CBS pelo SN e IBS regular, 3 = ambos regulares.
+  regApIbsCbsSn Int?
+  // Alíquotas; nulo cai no padrão nacional da fase vigente. A municipal é
+  // definida por cada município, por isso vive no emissor.
+  aliquotaIbsUf  Float?
+  aliquotaIbsMun Float?
+  aliquotaCbs    Float?
+
   // Envio fiscal por e-mail
   sendDanfeXmlAutomatically Boolean @default(false)
   sendDanfeAutomatically    Boolean @default(true)
@@ -2419,6 +2433,16 @@ model ProductFiscalData {
   icmsReducao      Float? // Redução da base de cálculo ICMS
   icmsCreditRate   Float? // Alíquota do crédito ICMS (Simples Nacional)
   icmsBaseModality String? // Modalidade da base de cálculo ICMS
+  // Substituição tributária. A margem de valor agregado é definida por
+  // protocolo entre estados, por NCM — não há tabela nacional a consultar,
+  // por isso o valor é cadastrado por produto.
+  icmsStMva        Float? // Margem de valor agregado da ST (%)
+  icmsStReducao    Float? // Redução da base de cálculo da ST (%)
+  icmsStRate       Float? // Alíquota interna do ICMS-ST na UF de destino (%)
+  // Fundo de Combate à Pobreza: a alíquota é definida por lei estadual e varia
+  // por produto, então também é cadastrada em vez de presumida.
+  fcpRate          Float? // Alíquota do FCP (%)
+  fcpStRate        Float? // Alíquota do FCP retido por ST (%)
   pisCst           String? // CST do PIS
   pisRate          Float? // Alíquota do PIS
   cofinsCst        String? // CST do COFINS
@@ -2506,6 +2530,10 @@ model Nfse {
   // Rastreabilidade: ver comentário equivalente em Nfe.
   invoicyConfigId       String?
   invoicyPayloadEnvio   Json? // Snapshot do payload enviado ao Invoicy
+  // Envelope da resposta do provedor (Codigo/Descricao/Situacao), com blobs
+  // elididos. Sem ele a rejeição guardava só SitDescricao e o motivo real
+  // ficava indiagnosticável — mesmo buraco que travou o 606 da CC-e.
+  invoicyRetornoBruto   Json?
 
   company               Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   order                 Order?         @relation(fields: [orderId], references: [id])
