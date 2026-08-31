@@ -6,11 +6,32 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 import { UpdateAiAccessConfigDto } from './dto/update-ai-access-config.dto';
+import { UpdateIcmsAliquotasDto } from './dto/update-icms-aliquotas.dto';
+import { IcmsAliquotaInternaService } from '../fiscal/shared/icms-aliquota-interna.service';
 
 @Controller('system-settings')
 @UseGuards(JwtAuthGuard, SystemAdminGuard)
 export class SystemSettingsController {
-  constructor(private readonly settingsService: SystemSettingsService) {}
+  constructor(
+    private readonly settingsService: SystemSettingsService,
+    private readonly icmsAliquotas: IcmsAliquotaInternaService,
+  ) {}
+
+  /**
+   * Alíquota interna do ICMS por UF. Parte dos padrões não foi conferida na
+   * legislação estadual, por isso cada linha informa a procedência — a tela
+   * mostra o que ainda precisa de validação em vez de sugerir que tudo está
+   * aferido.
+   */
+  @Get('icms-aliquotas-internas')
+  async listIcmsAliquotas() {
+    return this.icmsAliquotas.listar();
+  }
+
+  @Put('icms-aliquotas-internas')
+  async updateIcmsAliquotas(@Body() dto: UpdateIcmsAliquotasDto) {
+    return this.icmsAliquotas.atualizar(dto.aliquotas);
+  }
 
   @Get('asaas')
   async getAsaasConfig() {
