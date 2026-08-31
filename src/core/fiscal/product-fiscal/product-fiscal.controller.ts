@@ -20,6 +20,7 @@ import {
   CreateProductFiscalDataDto,
   UpdateProductFiscalDataDto,
   BulkUpdateNcmDto,
+  ProductStRuleDto,
 } from './dtos/product-fiscal.dto';
 
 @ApiTags('Fiscal - Dados Fiscais de Produto')
@@ -40,6 +41,34 @@ export class ProductFiscalController {
     return this.productFiscalService.listarPendenciasFiscais(
       req.user.companyId,
     );
+  }
+
+  // Precede @Get(':productId'): sem isso "st-rules" seria lido como productId.
+  @Get(':productId/st-rules')
+  @HasPermission('view', 'nota_fiscal:config')
+  @ApiOperation({ summary: 'Listar regras de ST do produto por UF' })
+  async listStRules(@Param('productId') productId: string) {
+    return this.productFiscalService.listStRules(productId);
+  }
+
+  @Put(':productId/st-rules')
+  @HasPermission('edit', 'nota_fiscal:config')
+  @ApiOperation({ summary: 'Criar ou atualizar a regra de ST de uma UF' })
+  async upsertStRule(
+    @Param('productId') productId: string,
+    @Body() dto: ProductStRuleDto,
+  ) {
+    return this.productFiscalService.upsertStRule(productId, dto);
+  }
+
+  @Delete(':productId/st-rules/:ufDestino')
+  @HasPermission('delete', 'nota_fiscal:config')
+  @ApiOperation({ summary: 'Remover a regra de ST de uma UF' })
+  async removeStRule(
+    @Param('productId') productId: string,
+    @Param('ufDestino') ufDestino: string,
+  ) {
+    return this.productFiscalService.removeStRule(productId, ufDestino);
   }
 
   @Get(':productId')

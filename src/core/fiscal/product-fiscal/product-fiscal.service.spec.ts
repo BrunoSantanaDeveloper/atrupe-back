@@ -19,6 +19,11 @@ describe('ProductFiscalService', () => {
         createMany: jest.fn(),
         upsert: jest.fn(),
       },
+      productStRule: {
+        findMany: jest.fn(),
+        upsert: jest.fn(),
+        deleteMany: jest.fn(),
+      },
       invoicyConfig: { findFirst: jest.fn().mockResolvedValue(null) },
       $transaction: jest.fn((ops: Promise<any>[]) => Promise.all(ops)),
     };
@@ -86,6 +91,56 @@ describe('ProductFiscalService', () => {
       const { update } = prisma.productFiscalData.upsert.mock.calls[0][0];
       expect(update.fcpRate).toBe(0);
       expect(update.icmsStMva).toBe(0);
+    });
+  });
+
+  /**
+   * A MVA e a alíquota interna vêm de protocolo entre estados e variam por
+   * destino: quem vende para todo o país precisa de uma linha por UF, não de um
+   * único valor no produto.
+   */
+  describe('regras de ST por UF', () => {
+    beforeEach(() => {
+      prisma.product.findUnique.mockResolvedValue({ id: 'produto-1' });
+      prisma.productStRule.upsert.mockResolvedValue({});
+      prisma.productStRule.deleteMany.mockResolvedValue({ count: 1 });
+    });
+
+    it('normaliza a sigla da UF ao gravar', async () => {
+      await service.upsertStRule('produto-1', {
+        ufDestino: ' sp ',
+        mva: 40,
+        aliquotaInterna: 18,
+      } as any);
+
+      const args = prisma.productStRule.upsert.mock.calls[0][0];
+      expect(args.where.productId_ufDestino.ufDestino).toBe('SP');
+      expect(args.create).toMatchObject({ ufDestino: 'SP', mva: 40 });
+    });
+
+    it('atualiza a linha existente em vez de duplicar a UF', async () => {
+      await service.upsertStRule('produto-1', {
+        ufDestino: 'SP',
+        mva: 45,
+      } as any);
+
+      const args = prisma.productStRule.upsert.mock.calls[0][0];
+      expect(args.update).toMatchObject({ mva: 45 });
+      expect(args.update).not.toHaveProperty('ufDestino');
+    });
+
+    it('recusa produto inexistente', async () => {
+      prisma.product.findUnique.mockResolvedValue(null);
+      await expect(
+        service.upsertStRule('nao-existe', { ufDestino: 'SP' } as any),
+      ).rejects.toThrow('Produto não encontrado');
+    });
+
+    it('reclama quando a regra a remover não existe', async () => {
+      prisma.productStRule.deleteMany.mockResolvedValue({ count: 0 });
+      await expect(service.removeStRule('produto-1', 'sp')).rejects.toThrow(
+        'Regra de ST não encontrada',
+      );
     });
   });
 

@@ -1286,6 +1286,7 @@ model Product {
   quotationProduct     QuotationProduct[]
   quotations           Quotation[]        @relation("QuotationToProduct")
   fiscalData           ProductFiscalData?
+  stRules              ProductStRule[]
 
   @@unique([code, companyId])
   @@map("products")
@@ -2469,6 +2470,28 @@ model ProductFiscalData {
   product          Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@map("product_fiscal_data")
+}
+
+/// Regra de substituição tributária por UF de destino.
+///
+/// A MVA e a alíquota interna variam por protocolo entre estados, então uma
+/// única MVA no produto não cobre quem vende para todo o país. Quando não há
+/// linha para a UF, o cálculo cai nos campos de ST do próprio ProductFiscalData,
+/// que passam a valer como padrão.
+model ProductStRule {
+  id              String  @id @default(uuid())
+  productId       String
+  ufDestino       String  // Sigla da UF de destino (2 letras)
+  mva             Float?  // MVA-ST original do protocolo (%)
+  aliquotaInterna Float?  // ALQ intra: alíquota interna na UF de destino (%)
+  reducaoBase     Float?  // Redução da base de cálculo da ST (%)
+  fcpStRate       Float?  // FCP retido por ST na UF de destino (%)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, ufDestino])
+  @@index([productId])
+  @@map("product_st_rules")
 }
 
 // NFS-e Status

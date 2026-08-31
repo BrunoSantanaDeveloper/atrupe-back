@@ -9,6 +9,7 @@ import {
   ArrayNotEmpty,
   ArrayMaxSize,
   IsUUID,
+  Length,
 } from 'class-validator';
 import {
   IsCnae,
@@ -509,4 +510,48 @@ export class UpdateProductFiscalDataDto {
   @IsString()
   @IsOptional()
   codClassificacao?: string;
+}
+
+/**
+ * Regra de substituição tributária para uma UF de destino.
+ *
+ * A MVA e a alíquota interna vêm de protocolo entre estados e variam por
+ * destino; sem regra para a UF, o cálculo usa os campos de ST do produto.
+ */
+export class ProductStRuleDto {
+  @ApiProperty({ description: 'Sigla da UF de destino', example: 'SP' })
+  @IsString()
+  @Length(2, 2)
+  ufDestino: string;
+
+  @ApiPropertyOptional({ description: 'MVA-ST original do protocolo (%)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  mva?: number;
+
+  @ApiPropertyOptional({
+    description: 'Alíquota interna do ICMS na UF de destino (%)',
+  })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  aliquotaInterna?: number;
+
+  @ApiPropertyOptional({ description: 'Redução da base de cálculo da ST (%)' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  reducaoBase?: number;
+
+  @ApiPropertyOptional({
+    description: 'FCP retido por ST na UF de destino (%)',
+  })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  fcpStRate?: number;
 }

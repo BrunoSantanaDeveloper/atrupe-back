@@ -8,6 +8,7 @@ import { PrismaService } from 'nestjs-prisma';
 import {
   CreateProductFiscalDataDto,
   UpdateProductFiscalDataDto,
+  ProductStRuleDto,
 } from './dtos/product-fiscal.dto';
 import {
   validateCnae,
@@ -407,6 +408,50 @@ export class ProductFiscalService {
       defaultNcm: config.defaultNcm || null,
       defaultCfop: config.defaultCfop || null,
     };
+  }
+
+  /**
+   * Regras de ST do produto, uma por UF de destino.
+   */
+  async listStRules(productId: string) {
+    return this.prisma.productStRule.findMany({
+      where: { productId },
+      orderBy: { ufDestino: 'asc' },
+    });
+  }
+
+  /**
+   * Cria ou atualiza a regra de ST de uma UF. A chave é (produto, UF), então
+   * reenviar a mesma UF corrige a linha em vez de duplicá-la.
+   */
+  async upsertStRule(productId: string, dto: ProductStRuleDto) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+    });
+    if (!product) throw new NotFoundException('Produto não encontrado');
+
+    const ufDestino = dto.ufDestino.trim().toUpperCase();
+    const data = {
+      mva: dto.mva ?? null,
+      aliquotaInterna: dto.aliquotaInterna ?? null,
+      reducaoBase: dto.reducaoBase ?? null,
+      fcpStRate: dto.fcpStRate ?? null,
+    };
+
+    return this.prisma.productStRule.upsert({
+      where: { productId_ufDestino: { productId, ufDestino } },
+      create: { productId, ufDestino, ...data },
+      update: data,
+    });
+  }
+
+  async removeStRule(productId: string, ufDestino: string) {
+    const uf = (ufDestino || '').trim().toUpperCase();
+    const { count } = await this.prisma.productStRule.deleteMany({
+      where: { productId, ufDestino: uf },
+    });
+    if (!count) throw new NotFoundException('Regra de ST não encontrada');
+    return { deleted: true };
   }
 
   private mapDtoToData(
