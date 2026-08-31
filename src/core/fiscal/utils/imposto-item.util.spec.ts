@@ -337,4 +337,48 @@ describe('imposto-item.util', () => {
       expect(r.cofins.valor).toBe(0.77);
     });
   });
+  /**
+   * Todo produto ja' cadastrado usa CSOSN (padrao 102), porque o sistema
+   * nasceu atendendo so' o Simples. Ao migrar para o Regime Normal todos
+   * bloqueiam de uma vez — a mensagem precisa dizer o que fazer.
+   */
+  describe('CSOSN no Regime Normal', () => {
+    it('explica que o codigo e do Simples e indica a saida', () => {
+      const { bloqueios } = calcularImpostoItem(
+        { valorProdutos: 1000 },
+        {
+          icmsCst: '102',
+          pisCst: '01',
+          pisRate: 1.65,
+          cofinsCst: '01',
+          cofinsRate: 7.6,
+        },
+      );
+
+      expect(bloqueios[0]).toMatch(/CSOSN/);
+      expect(bloqueios[0]).toMatch(/Simples Nacional/);
+      expect(bloqueios[0]).toMatch(/Regime Normal/);
+    });
+
+    it('vale para os demais CSOSN, nao so o padrao do cadastro', () => {
+      for (const cst of ['101', '201', '500', '900']) {
+        const { bloqueios } = calcularImpostoItem(
+          { valorProdutos: 100 },
+          { icmsCst: cst, pisCst: '07', cofinsCst: '07' },
+        );
+        expect(bloqueios[0]).toMatch(/CSOSN/);
+      }
+    });
+
+    /** CST desconhecido que nao e' CSOSN mantem a mensagem generica. */
+    it('nao confunde codigo invalido qualquer com CSOSN', () => {
+      const { bloqueios } = calcularImpostoItem(
+        { valorProdutos: 100 },
+        { icmsCst: '77', pisCst: '07', cofinsCst: '07' },
+      );
+
+      expect(bloqueios[0]).toMatch(/não é reconhecido/);
+      expect(bloqueios[0]).not.toMatch(/CSOSN/);
+    });
+  });
 });

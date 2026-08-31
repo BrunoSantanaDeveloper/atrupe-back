@@ -113,6 +113,27 @@ const CST_NAO_IMPLEMENTADO: Record<string, string> = {
   '90': 'tributação "outras"',
 };
 
+/**
+ * CSOSN — codigos de situacao tributaria do SIMPLES NACIONAL.
+ *
+ * Sao invalidos no Regime Normal, mas e' o que esta' em todo produto ja'
+ * cadastrado: o sistema nasceu atendendo so' o Simples e o padrao do cadastro
+ * e' 102. Ao migrar de regime, todos aparecem de uma vez — por isso a mensagem
+ * diz o que fazer, em vez de so' informar que o codigo nao foi reconhecido.
+ */
+const CSOSN = new Set([
+  '101',
+  '102',
+  '103',
+  '201',
+  '202',
+  '203',
+  '300',
+  '400',
+  '500',
+  '900',
+]);
+
 /** CSTs de PIS/COFINS com apuração por alíquota. Os demais não destacam valor. */
 const PIS_COFINS_COM_ALIQUOTA = new Set(['01', '02']);
 
@@ -165,7 +186,14 @@ function calcularIcms(
   const temSt = CST_COM_ST.has(cst);
 
   if (!temProprio && !temSt) {
-    bloqueios.push(`CST ${cst} do ICMS não é reconhecido.`);
+    bloqueios.push(
+      CSOSN.has(cst)
+        ? `O código ${cst} é CSOSN, do Simples Nacional, e não vale no Regime Normal. ` +
+            `Troque o CST de ICMS do produto por um do Regime Normal ` +
+            `(00 tributado, 20 com redução de base, 40 isento, 60 já retido por ST) ` +
+            `e informe a alíquota.`
+        : `CST ${cst} do ICMS não é reconhecido.`,
+    );
     return icms;
   }
 
