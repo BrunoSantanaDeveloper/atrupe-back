@@ -29,9 +29,13 @@ describe('CRT do emissor', () => {
       it.each([3, 4])('recusa CRT %i com motivo explícito', async (crt) => {
         const erro = await erroDeCrt({ emitCrt: crt }, Classe);
         expect(erro).toBeDefined();
-        expect(Object.values(erro!.constraints ?? {}).join(' ')).toMatch(
-          /ainda não são suportados/i,
-        );
+        // Casa com o que o usuário precisa ler — os regimes recusados e para
+        // onde ir —, não com a redação exata, que muda conforme o suporte
+        // avança.
+        const mensagem = Object.values(erro!.constraints ?? {}).join(' ');
+        expect(mensagem).toMatch(/Lucro Real/i);
+        expect(mensagem).toMatch(/Lucro Presumido/i);
+        expect(mensagem).toMatch(/suporte/i);
       });
     });
   }

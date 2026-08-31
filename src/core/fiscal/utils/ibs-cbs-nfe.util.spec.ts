@@ -200,6 +200,37 @@ describe('ibs-cbs-nfe.util', () => {
       expect(resolvidas).toEqual({ ibsUf: 0.1, ibsMun: 0.05, cbs: 0.9 });
     });
 
+    /**
+     * A partir de 2027 as alíquotas mudam por lei e ainda não estão
+     * confirmadas. Quem chama tem de barrar a emissão: seguir com as de teste
+     * subdeclararia a nota em duas ordens de grandeza.
+     */
+    it('sinaliza fase não coberta fora do período com alíquotas confirmadas', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2027-03-01T12:00:00Z'));
+      try {
+        const { aliquotas, faseCoberta } = aliquotasReformaTributaria({
+          reformaTributariaAtiva: true,
+        });
+
+        expect(aliquotas).not.toBeNull();
+        expect(faseCoberta).toBe(false);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('marca a fase como coberta em 2026', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-08-31T12:00:00Z'));
+      try {
+        expect(
+          aliquotasReformaTributaria({ reformaTributariaAtiva: true })
+            .faseCoberta,
+        ).toBe(true);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     /** Zero é alíquota legítima e não pode cair no padrão. */
     it('respeita alíquota zero configurada', () => {
       const { aliquotas: resolvidas } = aliquotasReformaTributaria({

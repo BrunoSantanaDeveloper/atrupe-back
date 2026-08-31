@@ -631,6 +631,62 @@ describe('NfseService', () => {
       expect(typeof grupo.ValBCIBSCBS).toBe('number');
     });
 
+    /**
+     * regApIBSCBSSN decide POR TRIBUTO qual regime apura. No regime 2 a CBS
+     * sai pelos campos do Simples e o IBS pelos do regime regular — um
+     * booleano único produziria a combinação errada.
+     */
+    it('separa IBS e CBS conforme o regime de apuração do Simples', async () => {
+      const configBase = await mockInvoicyService.getConfig();
+      mockInvoicyService.getConfig.mockResolvedValue({
+        ...configBase,
+        ibsCbsEnviarValores: true,
+        emitCrt: 1,
+        regApIbsCbsSn: 2,
+      });
+
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Serviço de consultoria em TI',
+      });
+
+      const documentos = mockInvoicyApiService.emitNfse.mock.calls.at(-1)[1];
+      const rps = documentos[0].Documento.RPS[0];
+      const grupo = rps.Servico.Valores.IBSCBS;
+
+      expect(rps.regApIBSCBSSN).toBe(2);
+      // CBS pelo Simples, IBS pelo regime regular.
+      expect(grupo.CBS).toHaveProperty('ValCBSSN');
+      expect(grupo.CBS).not.toHaveProperty('ValCBS');
+      expect(grupo.IBS).toHaveProperty('ValIBSTot');
+      expect(grupo.IBS).not.toHaveProperty('ValIBSSN');
+    });
+
+    it('usa os campos regulares quando o optante apura tudo pelo regime regular', async () => {
+      const configBase = await mockInvoicyService.getConfig();
+      mockInvoicyService.getConfig.mockResolvedValue({
+        ...configBase,
+        ibsCbsEnviarValores: true,
+        emitCrt: 1,
+        regApIbsCbsSn: 3,
+      });
+
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Serviço de consultoria em TI',
+      });
+
+      const rps =
+        mockInvoicyApiService.emitNfse.mock.calls.at(-1)[1][0].Documento.RPS[0];
+      const grupo = rps.Servico.Valores.IBSCBS;
+
+      expect(rps.regApIBSCBSSN).toBe(3);
+      expect(grupo.IBS).toHaveProperty('ValIBSTot');
+      expect(grupo.CBS).toHaveProperty('ValCBS');
+    });
+
     it('não envia o grupo IBSCBS pela metade quando falta o CST', async () => {
       prisma.quotation.findFirst.mockResolvedValue({
         id: 'quotation-1',

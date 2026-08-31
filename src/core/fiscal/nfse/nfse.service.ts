@@ -1047,13 +1047,30 @@ export class NfseService {
      * observado nas DANFSe emitidas sob o novo layout. Continua sobrescrevível
      * na emissão para o município que adotar composição diferente.
      */
+    /**
+     * Regime de apuração do IBS/CBS do optante do Simples (`regApIBSCBSSN`).
+     * Fora do Simples é sempre o regular. Sem configuração, o optante fica no
+     * 1 (ambos pelo SN), que é o comportamento anterior.
+     */
+    const optanteSimples = config.emitCrt === 1 || config.emitCrt === 2;
+    const regimeApuracaoIbsCbs = optanteSimples
+      ? ((config as any).regApIbsCbsSn ?? 1)
+      : 3;
+    const ibsPeloSimples = regimeApuracaoIbsCbs === 1;
+    const cbsPeloSimples =
+      regimeApuracaoIbsCbs === 1 || regimeApuracaoIbsCbs === 2;
+
     const valoresIbsCbs = (() => {
       if (!(config as any).ibsCbsEnviarValores) return {};
 
       const padrao = aliquotasVigentes();
+      // Seguir com as alíquotas de teste de 2026 numa fase de alíquotas
+      // cheias subdeclararia a nota em duas ordens de grandeza.
       if (!padrao.faseCoberta) {
-        this.logger.warn(
-          `Alíquotas de IBS/CBS não confirmadas para a data atual; usando as da fase de teste. Emissor ${config.id}.`,
+        throw new BadRequestException(
+          'As alíquotas de IBS/CBS da fase vigente ainda não estão ' +
+            'confirmadas no sistema. Atualize as alíquotas do emissor antes ' +
+            'de enviar os valores de IBS/CBS.',
         );
       }
 
@@ -1068,16 +1085,16 @@ export class NfseService {
       );
       const calc = calcularIbsCbs(base, aliquotas);
 
-      // Optante do Simples usa os campos próprios (ValIBSSN/ValCBSSN); o
-      // layout proíbe misturá-los com os do regime regular.
-      const optanteSn = config.emitCrt === 1 || config.emitCrt === 2;
-
+      // Os campos próprios do Simples (ValIBSSN/ValCBSSN) não podem se
+      // misturar com os do regime regular. Quem decide, POR TRIBUTO, é o
+      // regime de apuração: no regime 2 a CBS sai pelo Simples e o IBS pelo
+      // regular, então um booleano único produziria a combinação errada.
       return {
         IBSCBS: {
           IBS: {
             ValpDifUF: 0,
             ValpDifMun: 0,
-            ...(optanteSn
+            ...(ibsPeloSimples
               ? {
                   ValpIBSSN: aliquotas.ibsUf + aliquotas.ibsMun,
                   ValIBSSN: calc.ibsTotal,
@@ -1092,7 +1109,7 @@ export class NfseService {
           },
           CBS: {
             ValpDifCBS: 0,
-            ...(optanteSn
+            ...(cbsPeloSimples
               ? { ValpCBSSN: aliquotas.cbs, ValCBSSN: calc.cbs }
               : { ValCBS: calc.cbs, ValpCBS: aliquotas.cbs }),
           },
@@ -1276,6 +1293,12 @@ export class NfseService {
               // regApTribSN: obrigatório para ME/EPP optante do SN.
               // 1 = tributos federais e municipais apurados pelo SN
               ...(config.emitCrt === 1 ? { regApTribSN: 1 } : {}),
+              // regApIBSCBSSN: qual regime apura IBS e CBS do optante do
+              // Simples. 1 = ambos pelo SN, 2 = CBS pelo SN e IBS regular,
+              // 3 = ambos regulares. Fora do Simples nao se aplica.
+              ...(optanteSimples
+                ? { regApIBSCBSSN: regimeApuracaoIbsCbs }
+                : {}),
               // Campos da Reforma Tributária (Layout NFS-e RT v4). Omitidos
               // quando não informados — a nota continua saindo como antes.
               ...(dto.cIndOp ? { cIndOp: dto.cIndOp } : {}),

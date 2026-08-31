@@ -99,15 +99,17 @@ export class CreateInvoicyConfigDto {
   @IsNumber()
   @IsOptional()
   @Min(1)
-  // Teto em 2 enquanto o cálculo de imposto do Regime Normal não existir: a
-  // montagem da nota destaca base e valor zerados, o que serve ao Simples
-  // Nacional e produziria documento subdeclarado para Lucro Real/Presumido.
-  // Ao liberar o CRT 3, subir para 4 e remover a mensagem em invoicy.service.
+  // Teto em 2 ate' que o Regime Normal seja validado contra o provedor. O
+  // calculo de ICMS/ST/DIFAL/PIS/COFINS/IPI por item ja' existe e tem
+  // cobertura de teste, mas nenhuma nota de CRT 3 foi emitida de verdade —
+  // e' isso que este teto protege, nao mais a ausencia de calculo.
+  // Ao liberar, subir para 3 (NAO para 4: CRT 4 e' MEI, que continua sem
+  // suporte) e ajustar a mensagem abaixo e a de invoicy.service.
   @Max(2, {
     message:
-      'Lucro Real, Lucro Presumido e MEI ainda não são suportados: o cálculo ' +
-      'de ICMS, PIS, COFINS e IPI por item não está implementado. Selecione ' +
-      'Simples Nacional ou fale com o suporte.',
+      'Lucro Real, Lucro Presumido e MEI ainda não estão liberados. O cálculo ' +
+      'do Regime Normal já existe, mas aguarda validação em homologação. ' +
+      'Selecione Simples Nacional ou fale com o suporte.',
   })
   emitCrt?: number;
 
@@ -467,15 +469,17 @@ export class UpdateInvoicyConfigDto {
   @IsNumber()
   @IsOptional()
   @Min(1)
-  // Teto em 2 enquanto o cálculo de imposto do Regime Normal não existir: a
-  // montagem da nota destaca base e valor zerados, o que serve ao Simples
-  // Nacional e produziria documento subdeclarado para Lucro Real/Presumido.
-  // Ao liberar o CRT 3, subir para 4 e remover a mensagem em invoicy.service.
+  // Teto em 2 ate' que o Regime Normal seja validado contra o provedor. O
+  // calculo de ICMS/ST/DIFAL/PIS/COFINS/IPI por item ja' existe e tem
+  // cobertura de teste, mas nenhuma nota de CRT 3 foi emitida de verdade —
+  // e' isso que este teto protege, nao mais a ausencia de calculo.
+  // Ao liberar, subir para 3 (NAO para 4: CRT 4 e' MEI, que continua sem
+  // suporte) e ajustar a mensagem abaixo e a de invoicy.service.
   @Max(2, {
     message:
-      'Lucro Real, Lucro Presumido e MEI ainda não são suportados: o cálculo ' +
-      'de ICMS, PIS, COFINS e IPI por item não está implementado. Selecione ' +
-      'Simples Nacional ou fale com o suporte.',
+      'Lucro Real, Lucro Presumido e MEI ainda não estão liberados. O cálculo ' +
+      'do Regime Normal já existe, mas aguarda validação em homologação. ' +
+      'Selecione Simples Nacional ou fale com o suporte.',
   })
   emitCrt?: number;
 

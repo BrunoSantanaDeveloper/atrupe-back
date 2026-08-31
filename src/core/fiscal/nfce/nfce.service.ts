@@ -312,6 +312,17 @@ export class NfceService {
     );
     this.assertFiscalItemsReady(dto.itens, fiscalDataMap);
 
+    // Emitir com as alíquotas de teste de 2026 numa fase de alíquotas cheias
+    // subdeclararia a nota em duas ordens de grandeza.
+    const reformaNfce = aliquotasReformaTributaria(config);
+    if (reformaNfce.aliquotas && !reformaNfce.faseCoberta) {
+      throw new BadRequestException(
+        'As alíquotas de IBS/CBS da fase vigente ainda não estão confirmadas ' +
+          'no sistema. Atualize as alíquotas do emissor antes de emitir com a ' +
+          'Reforma Tributária ativa.',
+      );
+    }
+
     /**
      * Regime Normal calcula e destaca o imposto; o Simples segue enviando só
      * os códigos. A NFC-e é venda presencial ao consumidor dentro do estado,
@@ -349,7 +360,7 @@ export class NfceService {
               interestadual: false,
               consumidorFinal: true,
               contribuinte: false,
-              reformaTributaria: aliquotasReformaTributaria(config).aliquotas,
+              reformaTributaria: reformaNfce.aliquotas,
             },
           )
         : null;

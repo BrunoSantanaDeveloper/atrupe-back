@@ -182,7 +182,14 @@ export function montarIbsCbsTotais(itens: ValoresIbsCbsItem[]): TotaisIbsCbs {
 }
 
 /**
- * Valor da nota acrescido de IBS, CBS e Imposto Seletivo (`vNFIBScbsIS`).
+ * Valor da nota acrescido de IBS e CBS (`vNFIBScbsIS`).
+ *
+ * O "IS" do nome é o Imposto Seletivo, que **não é calculado por este
+ * sistema**. Ele só passa a incidir em 2027, alcança uma lista restrita de
+ * bens (fumo, bebidas alcoólicas, bebidas açucaradas, veículos, extração) e
+ * não há campo no cadastro do produto para declará-lo — nenhum produto pode,
+ * hoje, ser marcado como sujeito ao IS. Portanto a soma abaixo está completa
+ * para o que o sistema é capaz de emitir; quando o IS entrar, ele soma aqui.
  *
  * Os exemplos oficiais do provedor divergem para o MESMO item: a NF-e envia
  * 10,10 (valor da nota + IBS + CBS) e a NFC-e envia 10,00. Prevalece a NF-e,
@@ -200,7 +207,12 @@ export function calcularVNFIBScbsIS(
 export interface AliquotasReforma {
   /** Alíquotas a aplicar, ou `null` quando a Reforma não está ativa. */
   aliquotas: IbsCbsAliquotas | null;
-  /** Falso quando a fase vigente ainda não tem alíquotas confirmadas. */
+  /**
+   * Falso quando a fase vigente ainda não tem alíquotas confirmadas. Quem
+   * chama DEVE barrar a emissão nesse caso: seguir com as alíquotas de teste
+   * de 2026 (0,1% + 0,9%) numa fase de alíquotas cheias subdeclararia a nota
+   * em duas ordens de grandeza.
+   */
   faseCoberta: boolean;
 }
 

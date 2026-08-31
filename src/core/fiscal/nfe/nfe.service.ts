@@ -3837,9 +3837,13 @@ export class NfeService {
    */
   private aliquotasReformaTributaria(config: any): IbsCbsAliquotas | null {
     const { aliquotas, faseCoberta } = aliquotasReformaTributaria(config);
+    // Emitir com as alíquotas de teste de 2026 numa fase de alíquotas cheias
+    // subdeclararia a nota em duas ordens de grandeza. Barra.
     if (aliquotas && !faseCoberta) {
-      this.logger.warn(
-        `Alíquotas de IBS/CBS não confirmadas para a data atual; usando as da fase de teste. Emissor ${config.id}.`,
+      throw new BadRequestException(
+        'As alíquotas de IBS/CBS da fase vigente ainda não estão confirmadas ' +
+          'no sistema. Atualize as alíquotas do emissor antes de emitir com a ' +
+          'Reforma Tributária ativa.',
       );
     }
     return aliquotas;
