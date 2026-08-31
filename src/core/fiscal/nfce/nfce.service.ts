@@ -22,6 +22,7 @@ import {
   NfceFilterDto,
 } from './dtos/nfce.dto';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
+import { montarImpostosNfe } from '../utils/nfe-imposto-payload.util';
 
 @Injectable()
 export class NfceService {
@@ -307,6 +308,54 @@ export class NfceService {
     );
     this.assertFiscalItemsReady(dto.itens, fiscalDataMap);
 
+    /**
+     * Regime Normal calcula e destaca o imposto; o Simples segue enviando só
+     * os códigos. A NFC-e é venda presencial ao consumidor dentro do estado,
+     * então não há operação interestadual nem DIFAL a considerar.
+     */
+    const impostosCalculados =
+      (config.emitCrt ?? 1) >= 3
+        ? montarImpostosNfe(
+            dto.itens.map((item) => {
+              const fiscal: any = item.productId
+                ? fiscalDataMap.get(item.productId)
+                : undefined;
+              return {
+                valores: {
+                  valorProdutos: item.quantidade * item.valorUnitario,
+                  desconto: item.valorDesconto,
+                },
+                tributacao: {
+                  icmsCst: item.icmsCst || fiscal?.icmsCst || '',
+                  icmsOrigin: fiscal?.icmsOrigin,
+                  icmsRate: fiscal?.icmsRate,
+                  icmsReducao: fiscal?.icmsReducao,
+                  icmsBaseModality: fiscal?.icmsBaseModality,
+                  pisCst: item.pisCst || fiscal?.pisCst,
+                  pisRate: fiscal?.pisRate,
+                  cofinsCst: item.cofinsCst || fiscal?.cofinsCst,
+                  cofinsRate: fiscal?.cofinsRate,
+                },
+                ipiEnquadramento: fiscal?.ipiFramework,
+              };
+            }),
+            {
+              interestadual: false,
+              consumidorFinal: true,
+              contribuinte: false,
+            },
+          )
+        : null;
+
+    if (impostosCalculados?.bloqueios.length) {
+      throw new BadRequestException(
+        [
+          'Não foi possível calcular os impostos da NFC-e:',
+          ...impostosCalculados.bloqueios,
+        ].join(String.fromCharCode(10)),
+      );
+    }
+
     // TRANSAÇÃO ATÔMICA: Reservar número + criar registro NFC-e
     const { nfce, invoicyRequest } = await this.prisma.$transaction(
       async (tx) => {
@@ -444,7 +493,7 @@ export class NfceService {
                   vUnTrib: item.valorUnitario.toFixed(10),
                   indTot: 1,
                 },
-                imposto: {
+                imposto: impostosCalculados?.impostos[index] ?? {
                   ICMS: {
                     orig,
                     CST: icmsCst,
@@ -460,10 +509,12 @@ export class NfceService {
             }),
             total: {
               ICMStot: {
-                vBC_ttlnfe: '0.00',
-                vICMS_ttlnfe: '0.00',
+                ...(impostosCalculados?.totais ?? {
+                  vBC_ttlnfe: '0.00',
+                  vICMS_ttlnfe: '0.00',
+                  vBCST_ttlnfe: '0.00',
+                }),
                 vICMSDeson_ttlnfe: '0.00',
-                vBCST_ttlnfe: '0.00',
                 vProd_ttlnfe: valorProdutos.toFixed(2),
                 vFrete_ttlnfe: '0.00',
                 vSeg_ttlnfe: '0.00',

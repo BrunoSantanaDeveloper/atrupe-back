@@ -276,6 +276,91 @@ describe('NfceService', () => {
       });
     });
 
+    /**
+     * Mesma ramificação da NF-e: o Simples segue enviando só os códigos, e ligar
+     * o motor não altera nenhuma nota de quem emite hoje.
+     */
+    describe('Regime Normal x Simples Nacional', () => {
+      const itemPadrao = {
+        productId: '1',
+        codigo: '001',
+        descricao: 'Produto',
+        ncm: '12345678',
+        cfop: '5102',
+        unidade: 'UN',
+        quantidade: 1,
+        valorUnitario: 100,
+      };
+      const dtoPadrao = {
+        naturezaOperacao: 'Venda',
+        itens: [itemPadrao],
+        pagamentos: [{ tipo: '01', valor: 100 }],
+      } as any;
+
+      const comRegime = async (emitCrt: number) => {
+        const base = await mockInvoicyService.getConfig();
+        mockInvoicyService.getConfig.mockResolvedValue({ ...base, emitCrt });
+      };
+
+      const impostoEnviado = () =>
+        invoicyApiService.emitNfe.mock.calls.at(-1)[1][0].Documento.det[0]
+          .imposto;
+
+      it('mantém apenas os códigos no Simples Nacional', async () => {
+        await comRegime(1);
+        await service.emit(mockCompanyId, dtoPadrao);
+
+        expect(impostoEnviado().ICMS).not.toHaveProperty('vICMS_icms');
+      });
+
+      it('calcula e destaca o imposto no Regime Normal', async () => {
+        await comRegime(3);
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          {
+            productId: '1',
+            ncm: '12345678',
+            cfopInState: '5102',
+            commercialUnit: 'UN',
+            icmsCst: '00',
+            icmsOrigin: '0',
+            icmsRate: 18,
+            pisCst: '01',
+            pisRate: 1.65,
+            cofinsCst: '01',
+            cofinsRate: 7.6,
+          },
+        ]);
+
+        await service.emit(mockCompanyId, dtoPadrao);
+
+        expect(impostoEnviado().ICMS).toMatchObject({
+          CST: '00',
+          vBC: 100,
+          pICMS: 18,
+          vICMS_icms: 18,
+        });
+      });
+
+      it('barra a emissão do Regime Normal quando falta alíquota', async () => {
+        await comRegime(3);
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          {
+            productId: '1',
+            ncm: '12345678',
+            cfopInState: '5102',
+            commercialUnit: 'UN',
+            icmsCst: '00',
+            pisCst: '49',
+            cofinsCst: '49',
+          },
+        ]);
+
+        await expect(service.emit(mockCompanyId, dtoPadrao)).rejects.toThrow(
+          /alíquota de ICMS/,
+        );
+      });
+    });
+
     it('should emit NFC-e successfully', async () => {
       const result = await service.emit(mockCompanyId, {
         naturezaOperacao: 'Venda ao consumidor final',

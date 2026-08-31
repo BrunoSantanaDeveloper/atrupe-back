@@ -1495,6 +1495,8 @@ export class NfeService {
       throw new BadRequestException('Cliente nÃ£o possui endereÃ§o cadastrado');
     }
 
+    // Delega para emit(): é lá que o imposto do Regime Normal é calculado.
+    // Montar o payload direto aqui faria a emissão por ordem sair sem imposto.
     return this.emit(companyId, fullDto);
   }
 
@@ -1690,6 +1692,7 @@ export class NfeService {
       existingDraft?.id,
     );
 
+    // Mesma razão de emitFromOrder: o cálculo do imposto vive em emit().
     return this.emit(companyId, {
       ...dto,
       orderId: uniqueOrderIds[0],
