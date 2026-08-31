@@ -1530,11 +1530,12 @@ export class NfseService {
         );
       }
 
-      if (this.shouldRetryNfseWithRegApuracao(response)) {
-        // Prefeitura exige RegApuracao quando a empresa é optante do Simples Nacional.
-        // config.emitCrt pode estar nulo em alguns emissores (campo não configurado),
-        // mas a prefeitura ainda identifica a empresa como SN pelos seus registros.
-        this.addRegApuracaoToNfseRequest(invoicyRequest);
+      // O reenvio declara apuracao pelo Simples: so' faz sentido para quem e'
+      // optante. Fora disso a rejeicao sobe para o usuario.
+      if (
+        this.shouldRetryNfseWithRegApuracao(response) &&
+        this.addRegApuracaoToNfseRequest(invoicyRequest, config)
+      ) {
         this.logger.warn(
           `Prefeitura rejeitou a NFS-e ${nfse.id} com E0166 (RegApuracao ausente). Reenviando RPS ${rpsNumero}/${rpsSerie} com RegApuracao=1.`,
         );
@@ -1765,16 +1766,33 @@ export class NfseService {
     );
   }
 
+  /**
+   * Reenvio do E0166: declara a apuracao pelo Simples Nacional.
+   *
+   * So' vale para quem E' optante. Para um emissor do Regime Normal isto
+   * declararia, numa nota fiscal, que a empresa e' ME/EPP optante do Simples —
+   * declaracao falsa. Nesse caso nao reenvia: a rejeicao da prefeitura sobe
+   * para o usuario, que e' quem sabe o que o municipio exige.
+   *
+   * `emitCrt` nulo segue tratado como Simples: era o comportamento antes de o
+   * CRT 3 existir, e a prefeitura identifica a empresa pelos registros dela.
+   *
+   * Devolve `true` quando aplicou, para o chamador saber se ha' o que reenviar.
+   */
   private addRegApuracaoToNfseRequest(
     invoicyRequest: InvoicyNfseRequest,
-  ): void {
+    config: any,
+  ): boolean {
+    const optanteSimples = (config?.emitCrt ?? 1) <= 2;
+    if (!optanteSimples) return false;
+
     const rps = invoicyRequest.Documento.RPS?.[0] as any;
-    if (rps && rps.regApTribSN === undefined) {
-      // Empresa \u00e9 optante do SN mesmo quando emitCrt n\u00e3o est\u00e1 configurado.
-      rps.regApTribSN = 1; // tributos federais e municipais apurados pelo SN
-      rps.OptSN = 1; // 1 = optante do Simples Nacional
-      rps.RegEspTrib = 6; // ABRASF: 6 = ME/EPP
-    }
+    if (!rps || rps.regApTribSN !== undefined) return false;
+
+    rps.regApTribSN = 1; // tributos federais e municipais apurados pelo SN
+    rps.OptSN = 1; // 1 = optante do Simples Nacional
+    rps.RegEspTrib = 6; // ABRASF: 6 = ME/EPP
+    return true;
   }
 
   private assertOrdersCanReceiveNfse(orders: any[]) {

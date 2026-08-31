@@ -343,6 +343,82 @@ describe('NfseService', () => {
       expect(invoicyApiService.emitNfse).toHaveBeenCalledTimes(2);
     });
 
+    describe('reenvio do E0166 (RegApuracao)', () => {
+      const rejeicaoE0166 = [
+        {
+          Codigo: 100,
+          Descricao: 'Documentos processados com sucesso',
+          Documentos: [
+            {
+              Situacao: {
+                SitCodigo: 2,
+                SitDescricao:
+                  'Pendente - Mensagem retornada pela prefeitura: Codigo: E0166, Mensagem: Regime de apuracao obrigatorio',
+              },
+            },
+          ],
+        },
+      ];
+
+      /**
+       * Emissor com `emitCrt` nulo e' o caso que motivou o fallback: o payload
+       * nao leva regApTribSN, a prefeitura recusa, e o reenvio o acrescenta.
+       * Com CRT 1 o campo ja' vai no primeiro envio e nao ha' o que reenviar.
+       */
+      it('reenvia declarando o Simples quando o emissor nao tem CRT definido', async () => {
+        const configBase = await mockInvoicyService.getConfig();
+        mockInvoicyService.getConfig.mockResolvedValue({
+          ...configBase,
+          emitCrt: null,
+        });
+        mockInvoicyApiService.emitNfse
+          .mockResolvedValueOnce(rejeicaoE0166)
+          .mockResolvedValueOnce(mockInvoicyResponse);
+
+        await service.emitFromOrder(mockCompanyId, {
+          orderId: mockOrderId,
+          codigoServico: '1.05',
+          discriminacao: 'Servico de consultoria em TI',
+        });
+
+        expect(invoicyApiService.emitNfse).toHaveBeenCalledTimes(2);
+        const reenvio =
+          mockInvoicyApiService.emitNfse.mock.calls[1][1][0].Documento.RPS[0];
+        expect(reenvio.regApTribSN).toBe(1);
+        expect(reenvio.OptSN).toBe(1);
+      });
+
+      /**
+       * O reenvio declara a empresa como ME/EPP optante do Simples. Para um
+       * emissor do Regime Normal isso e' declaracao falsa numa nota fiscal —
+       * a rejeicao tem de subir em vez de ser contornada.
+       */
+      it('nao reenvia declarando Simples para emissor do Regime Normal', async () => {
+        const configBase = await mockInvoicyService.getConfig();
+        mockInvoicyService.getConfig.mockResolvedValue({
+          ...configBase,
+          emitCrt: 3,
+        });
+        mockInvoicyApiService.emitNfse.mockResolvedValue(rejeicaoE0166);
+
+        // A rejeicao sobe para o usuario: e' ele quem sabe o que o municipio
+        // exige de uma empresa fora do Simples.
+        await expect(
+          service.emitFromOrder(mockCompanyId, {
+            orderId: mockOrderId,
+            codigoServico: '1.05',
+            discriminacao: 'Servico de consultoria em TI',
+          }),
+        ).rejects.toThrow(/E0166/);
+
+        expect(invoicyApiService.emitNfse).toHaveBeenCalledTimes(1);
+        const enviado =
+          mockInvoicyApiService.emitNfse.mock.calls[0][1][0].Documento.RPS[0];
+        expect(enviado.OptSN).toBe(2);
+        expect(enviado.regApTribSN).toBeUndefined();
+      });
+    });
+
     it('should only include service items', async () => {
       const orderWithProducts = {
         ...mockOrder,
