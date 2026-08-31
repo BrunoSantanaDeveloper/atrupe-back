@@ -25,6 +25,14 @@ const parseNullableInt = ({ value }) => {
   return isNaN(parsed) ? null : parsed;
 };
 
+/** Como parseNullableInt, para percentuais fracionários (alíquotas). */
+const parseNullableNumber = ({ value }) => {
+  if (value === null || value === '' || value === '$undefined') return null;
+  if (value === undefined) return undefined;
+  const parsed = parseFloat(value);
+  return isNaN(parsed) ? null : parsed;
+};
+
 const parseNumber = ({ value }) => {
   if (
     value === '' ||
@@ -248,6 +256,78 @@ export class CreateInvoicyConfigDto {
   @Min(1)
   @Max(1440)
   prazoCancelamentoNfce?: number;
+
+  // ── Reforma Tributária (IBS/CBS) ──
+
+  @ApiPropertyOptional({
+    description:
+      'NFS-e: envia o grupo de VALORES do IBS/CBS. Opcional no layout e ' +
+      'exigido por parte dos municípios — por isso liga-se emissor a emissor.',
+    default: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  ibsCbsEnviarValores?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'NF-e/NFC-e: o grupo IBS/CBS só existe no layout paralelo da Reforma no ' +
+      'provedor, que o ativa por empresa e por módulo. Espelha o campo ' +
+      'AtivacaoReformaTributaria da consulta de cadastro: ligar sem o ' +
+      'provedor ter ativado faz o grupo ser ignorado em silêncio.',
+    default: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  reformaTributariaAtiva?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Regime de apuração do IBS/CBS no Simples Nacional. ' +
+      '1=IBS e CBS pelo SN, 2=CBS pelo SN e IBS regular, 3=ambos regulares.',
+  })
+  @Transform(parseNullableInt)
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(3)
+  regApIbsCbsSn?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Alíquota do IBS estadual em percentual. Vazio usa o padrão nacional ' +
+      'da fase vigente (0,1% na fase de teste de 2026).',
+  })
+  @Transform(parseNullableNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  aliquotaIbsUf?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Alíquota do IBS municipal em percentual. Definida por cada município, ' +
+      'por isso vive no emissor. Vazio usa o padrão nacional da fase vigente.',
+  })
+  @Transform(parseNullableNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  aliquotaIbsMun?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Alíquota da CBS em percentual. Vazio usa o padrão nacional da fase ' +
+      'vigente (0,9% na fase de teste de 2026).',
+  })
+  @Transform(parseNullableNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  aliquotaCbs?: number | null;
 
   // Defaults
   @ApiPropertyOptional({
@@ -569,6 +649,78 @@ export class UpdateInvoicyConfigDto {
   @Min(1)
   @Max(1440)
   prazoCancelamentoNfce?: number;
+
+  // ── Reforma Tributária (IBS/CBS) ──
+
+  @ApiPropertyOptional({
+    description:
+      'NFS-e: envia o grupo de VALORES do IBS/CBS. Opcional no layout e ' +
+      'exigido por parte dos municípios — por isso liga-se emissor a emissor.',
+    default: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  ibsCbsEnviarValores?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'NF-e/NFC-e: o grupo IBS/CBS só existe no layout paralelo da Reforma no ' +
+      'provedor, que o ativa por empresa e por módulo. Espelha o campo ' +
+      'AtivacaoReformaTributaria da consulta de cadastro: ligar sem o ' +
+      'provedor ter ativado faz o grupo ser ignorado em silêncio.',
+    default: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  reformaTributariaAtiva?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Regime de apuração do IBS/CBS no Simples Nacional. ' +
+      '1=IBS e CBS pelo SN, 2=CBS pelo SN e IBS regular, 3=ambos regulares.',
+  })
+  @Transform(parseNullableInt)
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(3)
+  regApIbsCbsSn?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Alíquota do IBS estadual em percentual. Vazio usa o padrão nacional ' +
+      'da fase vigente (0,1% na fase de teste de 2026).',
+  })
+  @Transform(parseNullableNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  aliquotaIbsUf?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Alíquota do IBS municipal em percentual. Definida por cada município, ' +
+      'por isso vive no emissor. Vazio usa o padrão nacional da fase vigente.',
+  })
+  @Transform(parseNullableNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  aliquotaIbsMun?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Alíquota da CBS em percentual. Vazio usa o padrão nacional da fase ' +
+      'vigente (0,9% na fase de teste de 2026).',
+  })
+  @Transform(parseNullableNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  aliquotaCbs?: number | null;
 
   // Defaults
   @ApiPropertyOptional({

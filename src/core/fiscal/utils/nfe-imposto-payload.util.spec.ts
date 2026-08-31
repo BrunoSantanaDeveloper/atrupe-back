@@ -228,6 +228,93 @@ describe('nfe-imposto-payload.util', () => {
     });
   });
 
+  describe('Reforma Tributária', () => {
+    const comReforma: ContextoOperacaoNfe = {
+      ...interna,
+      reformaTributaria: { ibsUf: 0.1, ibsMun: 0, cbs: 0.9 },
+    };
+
+    const itemRt = (valor: number) => ({
+      ...item(valor),
+      cstIbsCbs: '000',
+      codClassificacao: '000001',
+    });
+
+    /**
+     * O grupo só existe no layout paralelo da Reforma no provedor. Sem
+     * ativação nada é enviado — e a falta de CST de IBS/CBS no cadastro não
+     * pode barrar quem emite hoje.
+     */
+    it('não envia o grupo nem bloqueia com a Reforma desligada', () => {
+      const { impostos, ibsCbsTotais, bloqueios } = montarImpostosNfe(
+        [item(1000)],
+        interna,
+      );
+
+      expect(impostos[0]).not.toHaveProperty('IBSCBS');
+      expect(ibsCbsTotais).toBeUndefined();
+      expect(bloqueios).toEqual([]);
+    });
+
+    it('envia o grupo por item e o totalizador da nota', () => {
+      const { impostos, ibsCbsTotais, bloqueios } = montarImpostosNfe(
+        [itemRt(1000), itemRt(500)],
+        comReforma,
+      );
+
+      expect(bloqueios).toEqual([]);
+      expect(impostos[0].IBSCBS).toEqual({
+        CST: '000',
+        cClassTrib: '000001',
+        gIBSCBS: {
+          vBC: 1000,
+          gIBSUF: { pIBSUF: 0.1, vIBSUF: 1 },
+          gIBSMun: { pIBSMun: 0, vIBSMun: 0 },
+          vIBS: 1,
+          gCBS: { pCBS: 0.9, vCBS: 9 },
+        },
+      });
+      expect(ibsCbsTotais?.vBCIBSCBS).toBe(1500);
+      expect(ibsCbsTotais?.gCBS.vCBS).toBe(13.5);
+    });
+
+    /** A base do IBS/CBS é a mesma base da operação, com desconto aplicado. */
+    it('calcula sobre a base do item, não sobre o valor bruto', () => {
+      const { impostos } = montarImpostosNfe(
+        [
+          {
+            ...itemRt(1000),
+            valores: { valorProdutos: 1000, desconto: 200 },
+          },
+        ],
+        comReforma,
+      );
+
+      expect(impostos[0].IBSCBS?.gIBSCBS?.vBC).toBe(800);
+    });
+
+    it('atribui o bloqueio ao item que o originou', () => {
+      const { bloqueios } = montarImpostosNfe(
+        [itemRt(1000), { ...item(500), cstIbsCbs: '000' }],
+        comReforma,
+      );
+
+      expect(bloqueios).toHaveLength(1);
+      expect(bloqueios[0]).toMatch(/^Item 2: /);
+      expect(bloqueios[0]).toMatch(/cClassTrib/i);
+    });
+
+    it('mantém o totalizador zerado quando nenhum item gera valores', () => {
+      const { ibsCbsTotais } = montarImpostosNfe(
+        [{ ...item(1000), cstIbsCbs: '410', codClassificacao: '410008' }],
+        comReforma,
+      );
+
+      expect(ibsCbsTotais?.vBCIBSCBS).toBe(0);
+      expect(ibsCbsTotais?.gIBS.vIBS).toBe(0);
+    });
+  });
+
   describe('bloqueios', () => {
     it('identifica o item que impediu o cálculo', () => {
       const { bloqueios } = montarImpostosNfe(

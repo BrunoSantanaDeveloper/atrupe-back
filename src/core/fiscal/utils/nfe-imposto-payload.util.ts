@@ -8,6 +8,13 @@
  * antes de mexer aqui: nome errado é campo silenciosamente ignorado.
  */
 import { calcularDifal, incideDifal } from './difal.util';
+import {
+  montarIbsCbsItem,
+  montarIbsCbsTotais,
+  type TotaisIbsCbs,
+  type ValoresIbsCbsItem,
+} from './ibs-cbs-nfe.util';
+import type { IbsCbsAliquotas } from './ibs-cbs.util';
 import type { InvoicyNfeImposto } from '../invoicy/invoicy.types';
 import {
   calcularImpostoItem,
@@ -27,6 +34,10 @@ export interface ItemParaCalculo {
   tributacao: TributacaoItem;
   /** Código de enquadramento legal do IPI; 999 = tributação normal. */
   ipiEnquadramento?: string | null;
+  /** CST do IBS/CBS (Reforma Tributária), do cadastro fiscal do produto. */
+  cstIbsCbs?: string | null;
+  /** Código de classificação tributária do IBS/CBS (cClassTrib). */
+  codClassificacao?: string | null;
 }
 
 export interface ContextoOperacaoNfe {
@@ -40,6 +51,12 @@ export interface ContextoOperacaoNfe {
   aliquotaInternaDestino?: number | null;
   /** Alíquota do FCP na UF de destino. */
   aliquotaFcpDestino?: number | null;
+  /**
+   * Alíquotas de IBS/CBS quando a Reforma Tributária está ativa para a empresa
+   * no provedor. Ausente = grupo não enviado, que é o estado de hoje: o layout
+   * de emissão vigente não tem esses campos.
+   */
+  reformaTributaria?: IbsCbsAliquotas | null;
 }
 
 /** O payload do item é exatamente o grupo de impostos que o provedor espera. */
@@ -62,6 +79,8 @@ export interface TotaisNfe {
 export interface ImpostosNfeMontados {
   impostos: ImpostoPayload[];
   totais: TotaisNfe;
+  /** Totalizador da Reforma; ausente quando ela não está ativa. */
+  ibsCbsTotais?: TotaisIbsCbs;
   /** Impedimentos acumulados de todos os itens. Não vazio deve barrar a emissão. */
   bloqueios: string[];
 }
@@ -181,6 +200,9 @@ export function montarImpostosNfe(
     vICMSUFRemet: 0,
   };
 
+  /** Valores de IBS/CBS por item, para o totalizador da nota. */
+  const valoresIbsCbs: ValoresIbsCbsItem[] = [];
+
   const cabeDifal = incideDifal({
     interestadual: ctx.interestadual,
     consumidorFinal: ctx.consumidorFinal,
@@ -227,6 +249,20 @@ export function montarImpostosNfe(
       }
     }
 
+    // O grupo da Reforma só existe no layout paralelo do provedor; sem
+    // ativação, nada é enviado e nenhum bloqueio é gerado por falta de CST.
+    if (ctx.reformaTributaria) {
+      const ibsCbs = montarIbsCbsItem({
+        base: calc.baseOperacao,
+        cst: item.cstIbsCbs,
+        cClassTrib: item.codClassificacao,
+        aliquotas: ctx.reformaTributaria,
+      });
+      bloqueios.push(...ibsCbs.bloqueios.map((b) => prefixo + b));
+      if (ibsCbs.grupo) payload.IBSCBS = ibsCbs.grupo;
+      if (ibsCbs.valores) valoresIbsCbs.push(ibsCbs.valores);
+    }
+
     impostos.push(payload);
   });
 
@@ -250,5 +286,14 @@ export function montarImpostosNfe(
     totaisPayload.vFCPUFDest_ttlnfe = moeda(totais.vFCPUFDest);
   }
 
-  return { impostos, totais: totaisPayload, bloqueios };
+  if (!ctx.reformaTributaria) {
+    return { impostos, totais: totaisPayload, bloqueios };
+  }
+
+  return {
+    impostos,
+    totais: totaisPayload,
+    ibsCbsTotais: montarIbsCbsTotais(valoresIbsCbs),
+    bloqueios,
+  };
 }

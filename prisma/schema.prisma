@@ -2207,6 +2207,12 @@ model InvoicyConfig {
   aliquotaIbsUf  Float?
   aliquotaIbsMun Float?
   aliquotaCbs    Float?
+  // NF-e/NFC-e: o grupo IBS/CBS existe apenas no layout paralelo da Reforma no
+  // provedor, ativado por ele empresa a empresa e modulo a modulo. Espelha o
+  // campo AtivacaoReformaTributaria, devolvido na consulta de cadastro de
+  // empresa. Desligado enquanto o provedor nao ativar: enviar antes disso e
+  // campo ignorado em silencio.
+  reformaTributariaAtiva Boolean @default(false)
 
   // Envio fiscal por e-mail
   sendDanfeXmlAutomatically Boolean @default(false)

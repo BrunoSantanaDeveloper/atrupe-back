@@ -38,6 +38,11 @@ import {
   type ImpostosNfeMontados,
   type ItemParaCalculo,
 } from '../utils/nfe-imposto-payload.util';
+import type { IbsCbsAliquotas } from '../utils/ibs-cbs.util';
+import {
+  aliquotasReformaTributaria,
+  calcularVNFIBScbsIS,
+} from '../utils/ibs-cbs-nfe.util';
 import { IcmsAliquotaInternaService } from '../shared/icms-aliquota-interna.service';
 import {
   EmitNfeDto,
@@ -2211,8 +2216,12 @@ export class NfeService {
               COFINS: {
                 CST_cofins: item.cstCofins || '49',
               },
+              // O schema exige `cEnq` ao lado e o CST dentro de `CSTIPI`. O
+              // formato antigo, com `CST_ipi` solto, nao existe no layout: o
+              // grupo ia sem os dois filhos obrigatorios e era descartado.
               IPI: {
-                CST_ipi: item.cstIpi || '99',
+                cEnq: '999',
+                CSTIPI: { CST_IPI: item.cstIpi || '99' },
               },
             },
           })),
@@ -2239,6 +2248,18 @@ export class NfeService {
               vOutro: '0.00',
               vNF: valorTotal.toFixed(2),
             },
+            // Totalizador da Reforma. `vNFIBScbsIS` e' irmao de ICMStot, nao
+            // filho: e' o total COM os novos tributos, que a regra nacional
+            // manda nao somar em vProd/vNF durante 2025 e 2026.
+            ...(impostosCalculados?.ibsCbsTotais
+              ? {
+                  IBSCBSTot: impostosCalculados.ibsCbsTotais,
+                  vNFIBScbsIS: calcularVNFIBScbsIS(
+                    valorTotal,
+                    impostosCalculados.ibsCbsTotais,
+                  ),
+                }
+              : {}),
           },
           pag: [
             {
@@ -3806,6 +3827,24 @@ export class NfeService {
    * por isso a busca aqui. A alíquota interna da UF de destino vem do serviço
    * parametrizável, que aplica os ajustes do superadmin sobre os padrões.
    */
+  /**
+   * Alíquotas de IBS/CBS quando a Reforma está ativa para o emissor.
+   *
+   * Devolve `null` enquanto o provedor não ativar o layout da Reforma para a
+   * empresa — que é o estado de todos os emissores hoje. As alíquotas do
+   * emissor vencem o padrão nacional porque a parcela municipal do IBS é
+   * definida por cada município.
+   */
+  private aliquotasReformaTributaria(config: any): IbsCbsAliquotas | null {
+    const { aliquotas, faseCoberta } = aliquotasReformaTributaria(config);
+    if (aliquotas && !faseCoberta) {
+      this.logger.warn(
+        `Alíquotas de IBS/CBS não confirmadas para a data atual; usando as da fase de teste. Emissor ${config.id}.`,
+      );
+    }
+    return aliquotas;
+  }
+
   private async calcularImpostosRegimeNormal(
     dto: EmitNfeDto,
     config: any,
@@ -3911,6 +3950,8 @@ export class NfeService {
           ...montarSt(fiscal, item.productId),
         },
         ipiEnquadramento: fiscal?.ipiFramework,
+        cstIbsCbs: fiscal?.cstIbsCbs,
+        codClassificacao: fiscal?.codClassificacao,
       };
     });
 
@@ -3931,6 +3972,7 @@ export class NfeService {
         ? await this.icmsAliquotaInterna.resolver(operacao.ufDestino)
         : null,
       aliquotaFcpDestino: null,
+      reformaTributaria: this.aliquotasReformaTributaria(config),
     });
   }
 

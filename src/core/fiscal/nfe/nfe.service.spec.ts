@@ -1233,6 +1233,82 @@ describe('NfeService', () => {
         expect(prisma.productFiscalData.findMany).not.toHaveBeenCalled();
       });
 
+      /**
+       * O grupo de IPI exige `cEnq` e o CST dentro de `CSTIPI`. O caminho do
+       * Simples enviava `CST_ipi` solto — campo que nao existe no schema — e
+       * o grupo ia sem os dois filhos obrigatorios.
+       */
+      it('envia o IPI no formato do schema tambem no Simples', async () => {
+        comRegime(1);
+
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        expect(impostoEnviado().IPI).toEqual({
+          cEnq: '999',
+          CSTIPI: { CST_IPI: '99' },
+        });
+        expect(impostoEnviado().IPI).not.toHaveProperty('CST_ipi');
+      });
+
+      /**
+       * A Reforma so' trafega no layout paralelo do provedor. Sem ativacao,
+       * nada de IBS/CBS sai — nem grupo no item, nem totalizador.
+       */
+      it('nao envia IBS/CBS enquanto a Reforma nao esta ativa', async () => {
+        comRegime(3);
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          {
+            productId: 'product-1',
+            icmsCst: '00',
+            icmsOrigin: '0',
+            icmsRate: 18,
+            pisCst: '01',
+            pisRate: 1.65,
+            cofinsCst: '01',
+            cofinsRate: 7.6,
+            cstIbsCbs: '000',
+            codClassificacao: '000001',
+          },
+        ]);
+
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        expect(impostoEnviado()).not.toHaveProperty('IBSCBS');
+        const total =
+          invoicyApiService.emitNfe.mock.calls.at(-1)[1][0].Documento.total;
+        expect(total).not.toHaveProperty('IBSCBSTot');
+        expect(total).not.toHaveProperty('vNFIBScbsIS');
+      });
+
+      it('envia IBS/CBS quando a Reforma esta ativa para o emissor', async () => {
+        comRegime(3, { reformaTributariaAtiva: true });
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          {
+            productId: 'product-1',
+            icmsCst: '00',
+            icmsOrigin: '0',
+            icmsRate: 18,
+            pisCst: '01',
+            pisRate: 1.65,
+            cofinsCst: '01',
+            cofinsRate: 7.6,
+            cstIbsCbs: '000',
+            codClassificacao: '000001',
+          },
+        ]);
+
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        expect(impostoEnviado().IBSCBS).toMatchObject({
+          CST: '000',
+          cClassTrib: '000001',
+        });
+        const total =
+          invoicyApiService.emitNfe.mock.calls.at(-1)[1][0].Documento.total;
+        expect(total.IBSCBSTot).toBeDefined();
+        expect(total.vNFIBScbsIS).toBeDefined();
+      });
+
       it('calcula e destaca o imposto no Regime Normal', async () => {
         comRegime(3);
         prisma.productFiscalData.findMany.mockResolvedValue([

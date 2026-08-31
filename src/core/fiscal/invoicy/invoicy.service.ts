@@ -79,6 +79,17 @@ export class InvoicyService {
     if (dto.sendFiscalEmailCopyTo !== undefined)
       data.sendFiscalEmailCopyTo = dto.sendFiscalEmailCopyTo;
 
+    // Reforma Tributaria (IBS/CBS)
+    if (dto.ibsCbsEnviarValores !== undefined)
+      data.ibsCbsEnviarValores = dto.ibsCbsEnviarValores;
+    if (dto.reformaTributariaAtiva !== undefined)
+      data.reformaTributariaAtiva = dto.reformaTributariaAtiva;
+    if (dto.regApIbsCbsSn !== undefined) data.regApIbsCbsSn = dto.regApIbsCbsSn;
+    if (dto.aliquotaIbsUf !== undefined) data.aliquotaIbsUf = dto.aliquotaIbsUf;
+    if (dto.aliquotaIbsMun !== undefined)
+      data.aliquotaIbsMun = dto.aliquotaIbsMun;
+    if (dto.aliquotaCbs !== undefined) data.aliquotaCbs = dto.aliquotaCbs;
+
     // NF-e field mappings (frontend -> database)
     if (dto.nfeSeries !== undefined) {
       const parsed = parseInt(dto.nfeSeries, 10);
@@ -255,6 +266,17 @@ export class InvoicyService {
       contingenciaNfceMotivo: config.contingenciaNfceMotivo,
       contingenciaNfceDataHora: config.contingenciaNfceDataHora,
       prazoCancelamentoNfce: config.prazoCancelamentoNfce,
+
+      // Reforma Tributaria. Sem estes campos na allowlist os servicos fiscais
+      // liam `undefined` e o grupo de IBS/CBS jamais era enviado, por mais que
+      // a coluna estivesse ligada no banco.
+      ibsCbsEnviarValores: config.ibsCbsEnviarValores ?? false,
+      reformaTributariaAtiva: config.reformaTributariaAtiva ?? false,
+      regApIbsCbsSn: config.regApIbsCbsSn ?? null,
+      aliquotaIbsUf: config.aliquotaIbsUf ?? null,
+      aliquotaIbsMun: config.aliquotaIbsMun ?? null,
+      aliquotaCbs: config.aliquotaCbs ?? null,
+
       sendDanfeXmlAutomatically: config.sendDanfeXmlAutomatically,
       sendDanfeAutomatically: config.sendDanfeAutomatically,
       sendXmlAutomatically: config.sendXmlAutomatically,

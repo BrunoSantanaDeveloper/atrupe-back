@@ -386,6 +386,64 @@ describe('InvoicyService', () => {
     });
   });
 
+  /**
+   * mapDbToResponse e' uma allowlist explicita: campo que nao esta la' chega
+   * como `undefined` nos servicos fiscais. Os campos da Reforma ficaram de
+   * fora e o grupo de IBS/CBS nunca era enviado, por mais que a coluna
+   * estivesse ligada no banco.
+   */
+  describe('campos da Reforma Tributaria na allowlist', () => {
+    const configComReforma = {
+      id: 'config-1',
+      companyId: 'company-1',
+      name: 'Matriz',
+      isDefault: true,
+      environmentConfigs: [],
+      ibsCbsEnviarValores: true,
+      reformaTributariaAtiva: true,
+      regApIbsCbsSn: 2,
+      aliquotaIbsUf: 0.05,
+      aliquotaIbsMun: 0.02,
+      aliquotaCbs: 0.8,
+      company: {
+        id: 'company-1',
+        cnpj: '11222333000181',
+        address: [],
+        DigitalCertificate: null,
+        environmentCredentials: [],
+      },
+    };
+
+    it('devolve os campos da Reforma para os servicos fiscais', async () => {
+      mockPrisma.invoicyConfig.findFirst.mockResolvedValue(configComReforma);
+
+      const config: any = await service.getConfig('company-1');
+
+      expect(config.reformaTributariaAtiva).toBe(true);
+      expect(config.ibsCbsEnviarValores).toBe(true);
+      expect(config.regApIbsCbsSn).toBe(2);
+      expect(config.aliquotaIbsUf).toBe(0.05);
+      expect(config.aliquotaIbsMun).toBe(0.02);
+      expect(config.aliquotaCbs).toBe(0.8);
+    });
+
+    /** Emissor sem a Reforma nao pode chegar com `undefined` ao calculo. */
+    it('devolve os flags desligados quando o emissor nao tem os campos', async () => {
+      mockPrisma.invoicyConfig.findFirst.mockResolvedValue({
+        ...configComReforma,
+        ibsCbsEnviarValores: null,
+        reformaTributariaAtiva: null,
+        aliquotaIbsUf: null,
+      });
+
+      const config: any = await service.getConfig('company-1');
+
+      expect(config.reformaTributariaAtiva).toBe(false);
+      expect(config.ibsCbsEnviarValores).toBe(false);
+      expect(config.aliquotaIbsUf).toBeNull();
+    });
+  });
+
   describe('providerConfigured (credencial cifrada)', () => {
     it('na listagem nao bloqueia a primeira ativacao quando o rollout esta habilitado', async () => {
       mockRolloutPolicy.isRolloutActivationEnabled.mockResolvedValue(true);

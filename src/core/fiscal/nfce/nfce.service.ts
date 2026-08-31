@@ -23,6 +23,10 @@ import {
 } from './dtos/nfce.dto';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { montarImpostosNfe } from '../utils/nfe-imposto-payload.util';
+import {
+  aliquotasReformaTributaria,
+  calcularVNFIBScbsIS,
+} from '../utils/ibs-cbs-nfe.util';
 
 @Injectable()
 export class NfceService {
@@ -337,12 +341,15 @@ export class NfceService {
                   cofinsRate: fiscal?.cofinsRate,
                 },
                 ipiEnquadramento: fiscal?.ipiFramework,
+                cstIbsCbs: fiscal?.cstIbsCbs,
+                codClassificacao: fiscal?.codClassificacao,
               };
             }),
             {
               interestadual: false,
               consumidorFinal: true,
               contribuinte: false,
+              reformaTributaria: aliquotasReformaTributaria(config).aliquotas,
             },
           )
         : null;
@@ -526,6 +533,16 @@ export class NfceService {
                 vOutro: '0.00',
                 vNF: valorTotal.toFixed(2),
               },
+              // Totalizador da Reforma; irmao de ICMStot, nao filho.
+              ...(impostosCalculados?.ibsCbsTotais
+                ? {
+                    IBSCBSTot: impostosCalculados.ibsCbsTotais,
+                    vNFIBScbsIS: calcularVNFIBScbsIS(
+                      valorTotal,
+                      impostosCalculados.ibsCbsTotais,
+                    ),
+                  }
+                : {}),
             },
             pag: dto.pagamentos.map((pag) => ({
               tPag: pag.tipo,

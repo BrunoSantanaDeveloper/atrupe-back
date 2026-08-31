@@ -2,6 +2,7 @@
  * Invoicy API Type Definitions
  * Based on Invoicy REST API documentation and Postman collections
  */
+import type { GrupoIbsCbs } from '../utils/ibs-cbs-nfe.util';
 
 // ============================================
 // Authentication Types
@@ -249,17 +250,20 @@ export interface InvoicyNfeImposto {
     vCOFINS?: number;
   };
   IPI?: {
-    /** Código de enquadramento legal; obrigatório quando o grupo é enviado. */
-    cEnq?: string;
-    CSTIPI?: {
+    /** Código de enquadramento legal; 999 = tributação normal. */
+    cEnq: string;
+    CSTIPI: {
       CST_IPI: string;
       vBC_IPI?: number;
       pIPI?: number;
       vIPI?: number;
     };
-    /** Formato antigo, mantido enquanto o Simples Nacional o utiliza. */
-    CST_ipi?: string;
   };
+  /**
+   * Grupo IBS/CBS da Reforma Tributária. Só existe no layout paralelo do
+   * provedor: enviar sem a Reforma ativa para a empresa é campo ignorado.
+   */
+  IBSCBS?: GrupoIbsCbs;
   /** DIFAL da EC 87/15 — venda interestadual a consumidor final não contribuinte. */
   ICMSUFDest?: {
     vBCUFDest: number;
