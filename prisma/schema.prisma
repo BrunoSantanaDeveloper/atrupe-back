@@ -2437,6 +2437,10 @@ model ProductFiscalData {
   cnae             String? // CNAE vinculado ao serviço
   nbs              String? // Nomenclatura Brasileira de Serviços
   codTribNacional  String? // Código tributação nacional
+  // CST e classificação do IBS/CBS andam sempre em par: o grupo IBSCBS da NFS-e
+  // exige CSTIBSCBS, e enviar só a classificação produz grupo incompleto.
+  // "000" = tributação integral, que corresponde à classificação "000001".
+  cstIbsCbs        String? @default("000") // CST do IBS/CBS
   codClassificacao String? @default("000001") // Classificação IBS/CBS
   product          Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 

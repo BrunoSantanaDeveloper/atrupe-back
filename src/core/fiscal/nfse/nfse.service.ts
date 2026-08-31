@@ -96,6 +96,9 @@ export class NfseService {
       ...(preenchido(fiscalData.cnae)
         ? { cnae: preenchido(fiscalData.cnae) }
         : {}),
+      ...(preenchido(fiscalData.cstIbsCbs)
+        ? { cstIbsCbs: preenchido(fiscalData.cstIbsCbs) }
+        : {}),
       ...(preenchido(fiscalData.codClassificacao)
         ? { codClassificacao: preenchido(fiscalData.codClassificacao) }
         : {}),
@@ -552,6 +555,7 @@ export class NfseService {
       ...(dto.codTribMunicipio
         ? { codTribMunicipio: dto.codTribMunicipio }
         : {}),
+      ...(dto.cstIbsCbs ? { cstIbsCbs: dto.cstIbsCbs } : {}),
       ...(dto.codClassificacao
         ? { codClassificacao: dto.codClassificacao }
         : {}),
@@ -791,6 +795,7 @@ export class NfseService {
       ...(dto.codTribMunicipio
         ? { codTribMunicipio: dto.codTribMunicipio }
         : {}),
+      ...(dto.cstIbsCbs ? { cstIbsCbs: dto.cstIbsCbs } : {}),
       ...(dto.codClassificacao
         ? { codClassificacao: dto.codClassificacao }
         : {}),
@@ -1098,6 +1103,8 @@ export class NfseService {
             dto.codigoMunicipio || config.ibgeCode || '0',
             10,
           ),
+          // NBS do item; sem cadastro próprio herda o do serviço.
+          ...(item.nbs || dto.nbs ? { ItemNBS: item.nbs || dto.nbs } : {}),
         };
       }) || [
         {
@@ -1127,6 +1134,7 @@ export class NfseService {
             dto.codigoMunicipio || config.ibgeCode || '0',
             10,
           ),
+          ...(dto.nbs ? { ItemNBS: dto.nbs } : {}),
         },
       ];
 
@@ -1267,8 +1275,19 @@ export class NfseService {
                 ...(dto.cnae
                   ? { Cnae: parseInt(dto.cnae.replace(/\D/g, ''), 10) || 0 }
                   : {}),
-                ...(dto.codClassificacao
-                  ? { IBSCBS: { cClassTrib: dto.codClassificacao } }
+                // Grupo IBSCBS: CSTIBSCBS e cClassTrib são ambos obrigatórios
+                // no schema do provedor (InvoiCy_NFSe_Reforma_tributaria.xsd).
+                // Enviar só a classificação produzia grupo incompleto — mesmo
+                // tipo de defeito que gerava a rejeição de schema em locPrest.
+                // Por isso o grupo só é montado quando os dois existem, e o
+                // cadastro fornece os dois por padrão ("000" / "000001").
+                ...(dto.cstIbsCbs && dto.codClassificacao
+                  ? {
+                      IBSCBS: {
+                        CSTIBSCBS: dto.cstIbsCbs,
+                        cClassTrib: dto.codClassificacao,
+                      },
+                    }
                   : {}),
                 // LocalPrestacao é sempre enviado: sem ele o Invoicy gera
                 // <locPrest> vazio na DPS e a prefeitura rejeita com E1235

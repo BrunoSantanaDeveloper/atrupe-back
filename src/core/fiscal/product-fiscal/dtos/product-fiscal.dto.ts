@@ -5,6 +5,10 @@ import {
   IsNumber,
   Min,
   Max,
+  IsArray,
+  ArrayNotEmpty,
+  ArrayMaxSize,
+  IsUUID,
 } from 'class-validator';
 import {
   IsCnae,
@@ -205,10 +209,38 @@ export class CreateProductFiscalDataDto {
   @IsOptional()
   codTribNacional?: string;
 
+  @ApiPropertyOptional({
+    description: 'CST do IBS/CBS (ex.: 000 = tributação integral)',
+  })
+  @IsString()
+  @IsOptional()
+  cstIbsCbs?: string;
+
   @ApiPropertyOptional({ description: 'Classificação IBS/CBS' })
   @IsString()
   @IsOptional()
   codClassificacao?: string;
+}
+
+/** Teto por requisição: mantém a transação curta e limita o estrago de um
+ * envio acidental. A tela seleciona no máximo uma página de produtos. */
+export const BULK_NCM_MAX_PRODUCTS = 500;
+
+export class BulkUpdateNcmDto {
+  @ApiProperty({
+    description: 'IDs dos produtos que receberão o NCM',
+    type: [String],
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(BULK_NCM_MAX_PRODUCTS)
+  @IsUUID(undefined, { each: true })
+  productIds: string[];
+
+  @ApiProperty({ description: 'NCM de 8 dígitos aplicado a todos os produtos' })
+  @IsString()
+  @IsNotEmpty()
+  ncm: string;
 }
 
 export class UpdateProductFiscalDataDto {
@@ -383,6 +415,13 @@ export class UpdateProductFiscalDataDto {
   @IsString()
   @IsOptional()
   codTribNacional?: string;
+
+  @ApiPropertyOptional({
+    description: 'CST do IBS/CBS (ex.: 000 = tributação integral)',
+  })
+  @IsString()
+  @IsOptional()
+  cstIbsCbs?: string;
 
   @ApiPropertyOptional({ description: 'Classificação IBS/CBS' })
   @IsString()

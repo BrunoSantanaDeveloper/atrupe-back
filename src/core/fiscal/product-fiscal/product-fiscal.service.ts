@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import {
   CreateProductFiscalDataDto,
@@ -7,6 +12,8 @@ import {
 import {
   validateCnae,
   validateCodigoServico,
+  validateNcm,
+  formatNcm,
 } from '../utils/fiscal-validators';
 
 /** Pendência de cadastro que impede ou compromete a emissão de NFS-e. */
@@ -222,6 +229,89 @@ export class ProductFiscalService {
     });
   }
 
+  /**
+   * Aplica um NCM a vários produtos de uma vez.
+   *
+   * Existe porque corrigir NCM produto a produto não escala: uma base recém
+   * migrada tem dezenas de produtos com o NCM padrão herdado que precisam do
+   * código correto, e a emissão só falha quando a nota já foi montada.
+   *
+   * Escopo por empresa: IDs de outra empresa (ou inexistentes) são ignorados em
+   * silêncio e devolvidos apenas como contagem em `ignored` — o controller não
+   * tem TenantGuard e o filtro por companyId aqui é a única barreira.
+   *
+   * Produto sem cadastro fiscal recebe um registro novo com os mesmos defaults
+   * de getOrCreateWithDefaults, trocando só o NCM pelo informado. Produto que já
+   * tem cadastro tem SOMENTE o ncm alterado — CFOP, CSTs e alíquotas ajustados
+   * pelo usuário são preservados.
+   */
+  async bulkUpdateNcm(companyId: string, productIds: string[], ncm: string) {
+    const check = validateNcm(ncm);
+    if (!check.valid) {
+      throw new BadRequestException(check.message);
+    }
+
+    const cleanNcm = formatNcm(ncm);
+
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds }, companyId },
+      select: { id: true, fiscalData: { select: { id: true } } },
+    });
+
+    if (products.length === 0) {
+      throw new NotFoundException(
+        'Nenhum produto encontrado para aplicar o NCM.',
+      );
+    }
+
+    const idsWithFiscalData = products
+      .filter((product) => product.fiscalData)
+      .map((product) => product.id);
+    const idsWithoutFiscalData = products
+      .filter((product) => !product.fiscalData)
+      .map((product) => product.id);
+
+    const defaults = await this.getCompanyFiscalDefaults(companyId);
+
+    // Duas queries em lote em vez de uma operação por produto: a transação
+    // fecha rápido mesmo no teto de BULK_NCM_MAX_PRODUCTS itens.
+    const [updateResult, createResult] = await this.prisma.$transaction([
+      this.prisma.productFiscalData.updateMany({
+        where: { productId: { in: idsWithFiscalData } },
+        data: { ncm: cleanNcm },
+      }),
+      this.prisma.productFiscalData.createMany({
+        data: idsWithoutFiscalData.map((productId) => ({
+          productId,
+          ncm: cleanNcm,
+          cfopInState: defaults.defaultCfop || '5101',
+          cfopOutState: '6101',
+          commercialUnit: 'UN',
+          icmsOrigin: '0',
+          icmsCst: '102',
+          pisCst: '99',
+          cofinsCst: '99',
+        })),
+        skipDuplicates: true,
+      }),
+    ]);
+
+    const ignored = productIds.length - products.length;
+
+    this.logger.log(
+      `Bulk NCM ${cleanNcm} na empresa ${companyId}: ` +
+        `${updateResult.count} atualizados, ${createResult.count} criados, ` +
+        `${ignored} ignorados.`,
+    );
+
+    return {
+      ncm: cleanNcm,
+      updated: updateResult.count,
+      created: createResult.count,
+      ignored,
+    };
+  }
+
   async delete(productId: string) {
     const fiscalData = await this.prisma.productFiscalData.findUnique({
       where: { productId },
@@ -351,6 +441,7 @@ export class ProductFiscalService {
       cnae: dto.cnae || null,
       nbs: dto.nbs || null,
       codTribNacional: dto.codTribNacional || null,
+      cstIbsCbs: dto.cstIbsCbs || null,
       codClassificacao: dto.codClassificacao || null,
     };
   }

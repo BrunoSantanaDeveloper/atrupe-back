@@ -19,6 +19,7 @@ import { ProductFiscalService } from './product-fiscal.service';
 import {
   CreateProductFiscalDataDto,
   UpdateProductFiscalDataDto,
+  BulkUpdateNcmDto,
 } from './dtos/product-fiscal.dto';
 
 @ApiTags('Fiscal - Dados Fiscais de Produto')
@@ -70,6 +71,19 @@ export class ProductFiscalController {
   @ApiOperation({ summary: 'Criar ou atualizar dados fiscais de um produto' })
   async upsert(@Body() dto: CreateProductFiscalDataDto) {
     return this.productFiscalService.upsert(dto);
+  }
+
+  @Post('bulk-ncm')
+  @HasPermission('edit', 'nota_fiscal:config')
+  @ApiOperation({ summary: 'Aplica um NCM a vários produtos de uma vez' })
+  async bulkUpdateNcm(@Req() req, @Body() dto: BulkUpdateNcmDto) {
+    // companyId sai do token: o service usa esse escopo para recusar produtos
+    // de outra empresa, já que este controller não passa pelo TenantGuard.
+    return this.productFiscalService.bulkUpdateNcm(
+      req.user.companyId,
+      dto.productIds,
+      dto.ncm,
+    );
   }
 
   @Delete(':productId')

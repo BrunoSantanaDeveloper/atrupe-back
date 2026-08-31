@@ -490,6 +490,7 @@ describe('NfseService', () => {
                 codTribNacional: '230101',
                 codTribMunicipio: '001',
                 cnae: '329900',
+                cstIbsCbs: '000',
                 codClassificacao: '000001',
               },
             },
@@ -509,7 +510,13 @@ describe('NfseService', () => {
       expect(servico.CodigoNBS).toBe('121012200');
       expect(servico.codTributNacional).toBe('230101');
       expect(servico.Cnae).toBe(329900);
-      expect(servico.IBSCBS).toEqual({ cClassTrib: '000001' });
+      // O grupo precisa sair completo: CSTIBSCBS é obrigatório junto de
+      // cClassTrib no schema do provedor.
+      expect(servico.IBSCBS).toEqual({
+        CSTIBSCBS: '000',
+        cClassTrib: '000001',
+      });
+      expect(servico.CodigoNBS).toBe('121012200');
       // Código de tributação do município substitui o IBGE quando cadastrado.
       expect(servico.TributMunicipio).toBe(1);
     });
@@ -529,6 +536,95 @@ describe('NfseService', () => {
       expect(servico).not.toHaveProperty('codTributNacional');
       expect(servico).not.toHaveProperty('IBSCBS');
       expect(servico.TributMunicipio).toBe(4314902);
+    });
+
+    /**
+     * O schema InvoiCy_NFSe_Reforma_tributaria.xsd marca CSTIBSCBS como
+     * obrigatório dentro de IBSCBS. Enviar apenas cClassTrib gera grupo
+     * incompleto — a mesma classe de defeito que causou a rejeição de schema
+     * em locPrest (E1235). Como codClassificacao tem valor padrão no cadastro,
+     * isso saía em praticamente toda NFS-e.
+     */
+    it('não envia o grupo IBSCBS pela metade quando falta o CST', async () => {
+      prisma.quotation.findFirst.mockResolvedValue({
+        id: 'quotation-1',
+        companyId: mockCompanyId,
+        order: mockOrder,
+        client: mockOrder.client,
+        quotationProduct: [
+          {
+            id: 'qp-1',
+            productId: 'service-1',
+            quantity: 1,
+            finalValue: 500,
+            totalValue: 500,
+            product: {
+              ...mockOrder.items[0].product,
+              fiscalData: {
+                codigoServico: '1.05',
+                aliquotaIss: 5,
+                discriminacao: 'Serviço de consultoria em TI',
+                codClassificacao: '000001',
+                // sem cstIbsCbs
+              },
+            },
+          },
+        ],
+      });
+
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Serviço de consultoria em TI',
+      });
+
+      const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+      const servico = documentos[0].Documento.RPS[0].Servico;
+
+      expect(servico).not.toHaveProperty('IBSCBS');
+    });
+
+    it('leva o NBS do serviço para cada item da lista', async () => {
+      prisma.quotation.findFirst.mockResolvedValue({
+        id: 'quotation-1',
+        companyId: mockCompanyId,
+        order: mockOrder,
+        client: mockOrder.client,
+        quotationProduct: [
+          {
+            id: 'qp-1',
+            productId: 'service-1',
+            quantity: 1,
+            finalValue: 500,
+            totalValue: 500,
+            product: {
+              ...mockOrder.items[0].product,
+              fiscalData: {
+                codigoServico: '1.05',
+                aliquotaIss: 5,
+                discriminacao: 'Serviço de consultoria em TI',
+                nbs: '114061100',
+                cstIbsCbs: '000',
+                codClassificacao: '000001',
+              },
+            },
+          },
+        ],
+      });
+
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Serviço de consultoria em TI',
+      });
+
+      const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+      const rps = documentos[0].Documento.RPS[0];
+
+      expect(rps.Servico.CodigoNBS).toBe('114061100');
+      for (const item of rps.ListaItens.Item ?? rps.ListaItens) {
+        expect(item.ItemNBS).toBe('114061100');
+      }
     });
 
     it('envia os campos da Reforma Tributária quando informados', async () => {

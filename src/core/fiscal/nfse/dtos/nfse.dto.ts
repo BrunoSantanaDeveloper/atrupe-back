@@ -66,6 +66,13 @@ export class NfseItemDto {
   @IsBoolean()
   @IsOptional()
   issRetido?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Código NBS do item; sem valor herda o NBS do serviço',
+  })
+  @IsString()
+  @IsOptional()
+  nbs?: string;
 }
 
 export class TomadorDto {
@@ -276,6 +283,13 @@ export class EmitNfseFromOrderDto {
   @IsString()
   @IsOptional()
   codTribMunicipio?: string;
+
+  @ApiPropertyOptional({
+    description: 'CST do IBS/CBS (ex.: 000 = tributação integral)',
+  })
+  @IsString()
+  @IsOptional()
+  cstIbsCbs?: string;
 
   @ApiPropertyOptional({ description: 'Classificação tributária IBS/CBS' })
   @IsString()
@@ -526,6 +540,13 @@ export class EmitNfseFromOrdersDto {
   @IsOptional()
   codTribMunicipio?: string;
 
+  @ApiPropertyOptional({
+    description: 'CST do IBS/CBS (ex.: 000 = tributação integral)',
+  })
+  @IsString()
+  @IsOptional()
+  cstIbsCbs?: string;
+
   @ApiPropertyOptional({ description: 'Classificação tributária IBS/CBS' })
   @IsString()
   @IsOptional()
@@ -730,6 +751,13 @@ export class EmitNfseDto {
   codTribMunicipio?: string;
 
   // `cnae` já é declarado acima neste mesmo DTO.
+
+  @ApiPropertyOptional({
+    description: 'CST do IBS/CBS (ex.: 000 = tributação integral)',
+  })
+  @IsString()
+  @IsOptional()
+  cstIbsCbs?: string;
 
   @ApiPropertyOptional({
     description: 'Código de classificação tributária do IBS/CBS',
