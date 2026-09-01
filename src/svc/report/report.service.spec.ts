@@ -59,4 +59,56 @@ describe('ReportService', () => {
       });
     });
   });
+
+  describe('limites do período', () => {
+    const getDateRange = (filters: { startDate?: string; endDate?: string }) =>
+      (
+        service as unknown as {
+          getDateRange: (f: unknown) => { startDate: Date; endDate: Date };
+        }
+      ).getDateRange(filters);
+
+    const getFinancialDateRange = (filters: {
+      startDate?: string;
+      endDate?: string;
+    }) =>
+      (
+        service as unknown as {
+          getFinancialDateRange: (f: unknown) => {
+            startDate: Date;
+            endDate: Date;
+          };
+        }
+      ).getFinancialDateRange(filters);
+
+    it('cobre o dia inteiro nas pontas, no fuso da operação', () => {
+      const { startDate, endDate } = getDateRange({
+        startDate: '2026-08-01',
+        endDate: '2026-08-31',
+      });
+
+      expect(startDate.toISOString()).toBe('2026-08-01T03:00:00.000Z');
+      expect(endDate.toISOString()).toBe('2026-09-01T02:59:59.999Z');
+    });
+
+    it('inclui venda aprovada no último dia do período', () => {
+      const { startDate, endDate } = getDateRange({
+        startDate: '2026-08-01',
+        endDate: '2026-08-31',
+      });
+      const aprovadaEm31 = new Date('2026-08-31T12:00:00.000Z');
+
+      expect(aprovadaEm31 >= startDate && aprovadaEm31 <= endDate).toBe(true);
+    });
+
+    it('aplica os mesmos limites no relatório financeiro', () => {
+      const { startDate, endDate } = getFinancialDateRange({
+        startDate: '2026-08-01',
+        endDate: '2026-08-31',
+      });
+
+      expect(startDate.toISOString()).toBe('2026-08-01T03:00:00.000Z');
+      expect(endDate.toISOString()).toBe('2026-09-01T02:59:59.999Z');
+    });
+  });
 });

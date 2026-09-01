@@ -25,6 +25,7 @@ import { DfcReportFilterDto } from './dto/dfc-report.dto';
 import { CommissionReportFilterDto } from './dto/commission-report.dto';
 import { QuotationService } from '../../core/sale/quotation/quotation.service';
 import { OrderService } from '../../core/sale/order/order.service';
+import { parseProjectDayBoundary } from '../../core/fiscal/utils/project-date.util';
 import { PayableService } from '../../core/financial/payable/payable.service';
 import { ReceivableService } from '../../core/financial/receivable/receivable.service';
 import {
@@ -97,13 +98,21 @@ export class ReportService {
 
   // ============== SALES REPORT METHODS ==============
 
+  /**
+   * O filtro chega como 'YYYY-MM-DD' e `new Date()` lia isso como meia-noite
+   * UTC. Com `lte` na meia-noite, o último dia do período ficava inteiro de
+   * fora — uma venda aprovada em 31/08 não aparecia no relatório de agosto.
+   * `parseProjectDayBoundary` monta início/fim do dia no fuso da operação.
+   */
   private getDateRange(filters: SalesReportFilterDto) {
     const now = new Date();
     const startDate = filters.startDate
-      ? new Date(filters.startDate)
+      ? (parseProjectDayBoundary(filters.startDate, 'start') ??
+        new Date(filters.startDate))
       : startOfMonth(subMonths(now, 5));
     const endDate = filters.endDate
-      ? new Date(filters.endDate)
+      ? (parseProjectDayBoundary(filters.endDate, 'end') ??
+        new Date(filters.endDate))
       : endOfMonth(now);
     return { startDate, endDate };
   }
@@ -1323,16 +1332,19 @@ export class ReportService {
 
   // ============== FINANCIAL REPORT METHODS ==============
 
+  /** Mesma normalização de limites usada em `getDateRange`. */
   private getFinancialDateRange(filters: {
     startDate?: string;
     endDate?: string;
   }) {
     const now = new Date();
     const startDate = filters.startDate
-      ? new Date(filters.startDate)
+      ? (parseProjectDayBoundary(filters.startDate, 'start') ??
+        new Date(filters.startDate))
       : startOfMonth(now);
     const endDate = filters.endDate
-      ? new Date(filters.endDate)
+      ? (parseProjectDayBoundary(filters.endDate, 'end') ??
+        new Date(filters.endDate))
       : endOfMonth(now);
     return { startDate, endDate };
   }
