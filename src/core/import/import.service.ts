@@ -3175,10 +3175,10 @@ export class ImportService {
             companyId,
             firstItem.Natureza,
           );
-          if (!nature) {
-            throw new Error(`Natureza '${firstItem.Natureza}' não encontrada`);
-          }
-          natureId = nature.id;
+          // Sem classificação o lançamento ainda vale: perder o valor
+          // financeiro é pior do que perder a natureza, que o usuário
+          // reclassifica depois. O mesmo critério vale na validação.
+          natureId = nature?.id ?? null;
         }
 
         // Buscar subcategoria
@@ -3190,12 +3190,7 @@ export class ImportService {
             firstItem.SubCategoria,
             natureId,
           );
-          if (!subCategory) {
-            throw new Error(
-              `Subcategoria '${firstItem.SubCategoria}' não encontrada`,
-            );
-          }
-          subCategoryId = subCategory.id;
+          subCategoryId = subCategory?.id ?? null;
         }
 
         const totalAmount = this.toCents(firstItem.ValorTotal) || 0;
@@ -3210,9 +3205,14 @@ export class ImportService {
             : null;
 
           // Verificar se já existe Receivable similar (evitar duplicatas)
+          // A descrição entra na chave porque `clientId: undefined` remove o
+          // filtro em vez de exigir nulo: sem ela, dois lançamentos distintos
+          // sem cliente, de mesmo valor e mesma data, eram tratados como
+          // duplicata e o segundo sumia — contado como sucesso.
           const existingReceivable = await this.prisma.receivable.findFirst({
             where: {
               companyId,
+              description: firstItem.Descricao,
               clientId: clientId || undefined,
               totalAmount,
               subCategoryId: subCategoryId || undefined,

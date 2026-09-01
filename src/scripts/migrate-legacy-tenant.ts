@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import * as mysql from 'mysql2/promise';
 import { ImportService } from '../core/import/import.service';
+import { ProductFiscalService } from '../core/fiscal/product-fiscal/product-fiscal.service';
 import { resolveCompanyByEmail } from './preflight-financial-import';
 import {
   EXTRACTORS,
@@ -388,9 +389,16 @@ export async function migrateLegacyTenant(
   }
 }
 
-/** O MinioService e o ProductFiscalService não são usados neste caminho. */
+/**
+ * O MinioService não é usado nesta rota, mas o ProductFiscalService é: sem ele,
+ * todo produto importado fica sem dado fiscal e não serve para emitir nota.
+ */
 function service(prisma: PrismaClient) {
-  return new ImportService(prisma as any, null as any, null as any);
+  return new ImportService(
+    prisma as any,
+    null as any,
+    new ProductFiscalService(prisma as any),
+  );
 }
 
 async function main() {
