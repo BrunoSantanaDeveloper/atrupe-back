@@ -830,11 +830,19 @@ export class ImportService {
           allowOverride,
         );
         if (customError) {
+          // Validador pode devolver texto (reprova a linha) ou objeto com
+          // severidade, para o caso em que a divergência merece ser relatada
+          // sem impedir a importação.
+          const issue =
+            typeof customError === 'string'
+              ? { error: customError }
+              : customError;
+
           errors.push({
             row: rowNumber,
             field: field.name,
             value,
-            error: customError,
+            ...issue,
           });
         }
       }

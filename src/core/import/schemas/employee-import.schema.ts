@@ -50,7 +50,13 @@ const requireExisting =
       companyId,
       value,
     );
-    return found ? null : `${label} não encontrado. ${hint}`;
+    if (found) return null;
+
+    // Aviso, não reprovação: a migração traz o colaborador, mas não cria cargo,
+    // setor nem perfil de vendedor. Barrar a pessoa por causa de um vínculo que
+    // decidimos não importar perderia o colaborador — e com ele o histórico de
+    // vendas, que depende dele obrigatoriamente.
+    return { error: `${label} não encontrado. ${hint}`, severity: 'warning' };
   };
 
 export const EMPLOYEE_IMPORT_SCHEMA = {
@@ -124,7 +130,7 @@ export const EMPLOYEE_IMPORT_SCHEMA = {
       validate: requireExisting(
         'companySector',
         'Setor',
-        'Cadastre o setor antes de importar ou deixe a coluna vazia.',
+        'O colaborador entra sem setor.',
       ),
     },
     {
@@ -138,7 +144,7 @@ export const EMPLOYEE_IMPORT_SCHEMA = {
       validate: requireExisting(
         'role',
         'Cargo',
-        'Cadastre o cargo antes de importar ou deixe a coluna vazia.',
+        'O colaborador entra sem cargo.',
       ),
     },
     {
@@ -152,7 +158,7 @@ export const EMPLOYEE_IMPORT_SCHEMA = {
       validate: requireExisting(
         'sellerProfile',
         'Perfil de vendedor',
-        'Cadastre o perfil antes de importar ou deixe a coluna vazia.',
+        'O colaborador entra sem perfil de vendedor, e portanto sem comissão.',
       ),
     },
     {

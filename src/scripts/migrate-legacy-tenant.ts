@@ -37,11 +37,36 @@ import {
  *   LEGACY_DB_PASSWORD  obrigatória
  */
 
+/**
+ * Chaves que cada etapa criaria, para a simulação saber que uma referência
+ * "não encontrada" hoje será satisfeita pela etapa anterior na execução real.
+ */
+export interface SimulatedKeys {
+  client: Set<string>;
+  employee: Set<string>;
+  product: Set<string>;
+}
+
+/**
+ * Erros cuja causa é apenas a ordem de carga: o campo aponta para um registro
+ * que ainda não existe no banco, mas que a etapa anterior vai criar. Casamos
+ * pelo nome do campo, não pelo texto da mensagem.
+ */
+const RESOLVED_BY_LOAD_ORDER: Record<string, keyof SimulatedKeys> = {
+  ClienteCodigoLegado: 'client',
+  VendedorCodigoLegado: 'employee',
+  ProdutoCodigo: 'product',
+};
+
 export interface StepResult {
   label: string;
   extracted: number;
   imported: number;
   failed: number;
+  /** Divergências relatadas que não impedem a importação. */
+  warnings?: number;
+  /** Erros que somem sozinhos na execução real, por causa da ordem de carga. */
+  pending?: number;
   /** Documentos na origem, quando o extrator sabe contar. */
   expected?: number;
   /** Documentos distintos extraídos, quando uma linha não é um documento. */
@@ -94,6 +119,7 @@ async function runStep(
   companyId: string,
   userId: string,
   dryRun: boolean,
+  simulated: SimulatedKeys,
 ): Promise<StepResult> {
   const [rawRows] = await legacy.query(extractor.sql(base));
   const rows = (rawRows as any[]).map(extractor.map);
@@ -113,6 +139,15 @@ async function runStep(
   if (extractor.expectedSql) {
     const [countRows] = await legacy.query(extractor.expectedSql(base));
     result.expected = Number((countRows as any[])[0]?.total ?? 0);
+  }
+
+  // Registra o que esta etapa disponibiliza para as seguintes.
+  if (extractor.entity === 'client') {
+    rows.forEach((r) => simulated.client.add(r.codigoLegado));
+  } else if (extractor.entity === 'employee') {
+    rows.forEach((r) => simulated.employee.add(r.codigoLegado));
+  } else if (extractor.entity === 'product') {
+    rows.forEach((r) => simulated.product.add(r.codigo));
   }
 
   const internals = service as any;
@@ -150,18 +185,41 @@ async function runStep(
 
     try {
       if (dryRun) {
-        // Sem gravar: roda a mesma validação do servidor para antecipar as
-        // linhas que seriam recusadas.
+        // Roda a mesma validação do servidor, sem gravar. `allowOverride` fica
+        // ligado porque a migração atualiza o registro existente em vez de
+        // recusá-lo como duplicado.
         const schema = internals.getSchema(extractor.entity);
-        const errors = await internals.validateRow(
+        const issues = await internals.validateRow(
           row,
           schema,
           companyId,
           i + 2,
-          false,
+          true,
         );
-        if (errors.length > 0) {
-          throw new Error(errors.map((e: any) => e.error).join('; '));
+
+        const blocking = issues.filter((issue: any) => {
+          if (issue.severity === 'warning') return false;
+
+          // Referência que a etapa anterior vai criar: na execução real, a
+          // ordem de carga resolve. Contar como erro esconderia os problemas
+          // de verdade no meio do ruído.
+          const dependency = RESOLVED_BY_LOAD_ORDER[issue.field];
+          if (dependency && simulated[dependency].has(String(issue.value))) {
+            return false;
+          }
+
+          return true;
+        });
+
+        result.warnings =
+          (result.warnings ?? 0) +
+          issues.filter((issue: any) => issue.severity === 'warning').length;
+
+        result.pending =
+          (result.pending ?? 0) + (issues.length - blocking.length);
+
+        if (blocking.length > 0) {
+          throw new Error(blocking.map((e: any) => e.error).join('; '));
         }
       } else if (extractor.entity === 'employee') {
         await internals.importEmployee(row, companyId, userId);
@@ -263,6 +321,11 @@ export async function migrateLegacyTenant(
     );
 
     const results: StepResult[] = [];
+    const simulated: SimulatedKeys = {
+      client: new Set(),
+      employee: new Set(),
+      product: new Set(),
+    };
 
     for (const extractor of EXTRACTORS) {
       const result = await runStep(
@@ -273,10 +336,20 @@ export async function migrateLegacyTenant(
         companyId,
         user.id,
         dryRun,
+        simulated,
       );
       results.push(result);
 
-      const status = result.failed === 0 ? 'ok' : `${result.failed} com erro`;
+      const extras = [
+        result.warnings ? `${result.warnings} aviso(s)` : '',
+        result.pending
+          ? `${result.pending} resolvido(s) pela ordem de carga`
+          : '',
+      ].filter(Boolean);
+
+      const status =
+        (result.failed === 0 ? 'ok' : `${result.failed} com erro`) +
+        (extras.length ? ` · ${extras.join(' · ')}` : '');
       const unit = result.documents ?? result.extracted;
       console.log(
         `${result.label.padEnd(18)} origem ${String(result.expected ?? unit).padStart(6)} · ` +
