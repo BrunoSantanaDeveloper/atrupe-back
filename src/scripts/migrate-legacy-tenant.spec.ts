@@ -458,3 +458,45 @@ describe('PAYMENT_CONDITION_EXTRACTOR', () => {
     expect(row.ativo).toBe('SIM');
   });
 });
+
+describe('referências opcionais nas vendas e no financeiro', () => {
+  it('não referencia condição de pagamento inexistente na origem', () => {
+    // Venda com condição zerada ou apagada do cadastro: o campo sai vazio e o
+    // importador usa a padrão da empresa, em vez de reprovar a venda inteira.
+    const sql = ORDER_EXTRACTOR.sql('acn_1');
+
+    expect(sql).toContain('WHERE cp.idcondpag = v.venda_fkidcondpag');
+    expect(sql).toContain('CASE WHEN EXISTS');
+  });
+
+  it('cai para competência e cadastro quando falta a data de emissão', () => {
+    // DataReferencia é obrigatória; parte dos lançamentos traz emissão vazia
+    // ou com a sentinela de 1899.
+    const semEmissao = {
+      DataReferencia: '1899-11-30T03:06:28.000Z',
+      dataCompetencia: '2026-08-20T00:00:00.000Z',
+      dataCadastro: '2026-08-25T00:00:00.000Z',
+    };
+    expect(FINANCIAL_EXTRACTOR.map(semEmissao).DataReferencia).toBe(
+      '2026-08-20',
+    );
+
+    const semEmissaoNemCompetencia = {
+      DataReferencia: null,
+      dataCompetencia: null,
+      dataCadastro: '2026-08-25T00:00:00.000Z',
+    };
+    expect(
+      FINANCIAL_EXTRACTOR.map(semEmissaoNemCompetencia).DataReferencia,
+    ).toBe('2026-08-25');
+  });
+
+  it('mantém a data de emissão quando ela existe', () => {
+    expect(
+      FINANCIAL_EXTRACTOR.map({
+        DataReferencia: '2026-08-01T00:00:00.000Z',
+        dataCompetencia: '2026-08-20T00:00:00.000Z',
+      }).DataReferencia,
+    ).toBe('2026-08-01');
+  });
+});

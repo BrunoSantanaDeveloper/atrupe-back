@@ -319,7 +319,12 @@ const saleSql = (base: string, statusIn: string) => `
     v.cliente_fkidcliente       AS ClienteCodigoLegado,
     v.cliente_nome              AS ClienteNome,
     v.vendedor_fkidfuncionario  AS VendedorCodigoLegado,
-    v.venda_fkidcondpag         AS CondicaoPagamentoCodigoLegado,
+    -- Só referencia a condição quando ela existe de fato no cadastro do
+    -- legado. Venda com condição inexistente (ou zerada) deixa o campo vazio e
+    -- o importador usa a condição padrão da empresa, em vez de falhar.
+    CASE WHEN EXISTS (SELECT 1 FROM ${base}.sales_conf_cond_pag cp
+                       WHERE cp.idcondpag = v.venda_fkidcondpag)
+         THEN v.venda_fkidcondpag END       AS CondicaoPagamentoCodigoLegado,
     (SELECT MAX(e2.fkidtipoentrega) FROM ${base}.sales_entrega e2
       WHERE e2.fkidsale = v.idsale)          AS tipoEntregaLegado,
     (SELECT SUM(e2.entrega_custo) FROM ${base}.sales_entrega e2
@@ -434,6 +439,8 @@ export const FINANCIAL_EXTRACTOR: LegacyExtractor = {
       c.referencia              AS Referencia,
       c.observacao              AS Observacao,
       c.dtemissao               AS DataReferencia,
+      c.dtcompetencia           AS dataCompetencia,
+      c.dtcadastro_conta        AS dataCadastro,
       c.valor                   AS ValorTotal,
       cl.idcliente              AS ClienteCodigoLegado,
       nat.natureza              AS Natureza,
@@ -462,7 +469,13 @@ export const FINANCIAL_EXTRACTOR: LegacyExtractor = {
     Tipo: Number(row.tipoLegado) === 1 ? 'RECEITA' : 'DESPESA',
     Descricao: `${text(row.Referencia)} [${text(row.contaLegado)}]`,
     Referencia: text(row.Referencia),
-    DataReferencia: normalizeLegacyDate(row.DataReferencia),
+    // A data de emissão vem vazia ou com a sentinela de 1899 em parte dos
+    // lançamentos; o campo é obrigatório, então caímos para competência e,
+    // por último, para a data de cadastro.
+    DataReferencia:
+      normalizeLegacyDate(row.DataReferencia) ||
+      normalizeLegacyDate(row.dataCompetencia) ||
+      normalizeLegacyDate(row.dataCadastro),
     ValorTotal: text(row.ValorTotal),
     QuantidadeParcelas: text(row.QuantidadeParcelas),
     ClienteCodigoLegado: text(row.ClienteCodigoLegado),

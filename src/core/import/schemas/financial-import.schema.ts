@@ -208,7 +208,14 @@ export const FINANCIAL_IMPORT_SCHEMA = {
         );
 
         if (!nature) {
-          return 'Natureza não encontrada. Cadastre a natureza antes de importar';
+          // Aviso: o lançamento entra sem classificação em vez de ser
+          // descartado. Perder o valor financeiro é pior do que perder a
+          // natureza, que o usuário reclassifica depois.
+          return {
+            error:
+              'Natureza não encontrada; o lançamento entra sem classificação',
+            severity: 'warning',
+          };
         }
         return null;
       },
@@ -246,7 +253,11 @@ export const FINANCIAL_IMPORT_SCHEMA = {
         );
 
         if (!subCategory) {
-          return 'Subcategoria nao encontrada. Cadastre a subcategoria antes de importar';
+          return {
+            error:
+              'Subcategoria não encontrada; o lançamento entra sem classificação',
+            severity: 'warning',
+          };
         }
         return null;
       },
