@@ -4,7 +4,9 @@ import {
   CLIENT_EXTRACTOR,
   EMPLOYEE_EXTRACTOR,
   FINANCIAL_EXTRACTOR,
+  LEGACY_COST_TYPE,
   ORDER_EXTRACTOR,
+  PAYMENT_CONDITION_EXTRACTOR,
   PRODUCT_CODE_SQL,
   PRODUCT_EXTRACTOR,
   QUOTATION_EXTRACTOR,
@@ -398,5 +400,61 @@ describe('FINANCIAL_EXTRACTOR', () => {
     expect(FINANCIAL_EXTRACTOR.sql('acn_1')).toContain(
       'dtcancelamento IS NULL',
     );
+  });
+});
+
+describe('PAYMENT_CONDITION_EXTRACTOR', () => {
+  const legacyRow = {
+    codigoLegado: 3,
+    nome: 'À prazo',
+    formaPagamentoLegado: 5,
+    custoTipoLegado: 2,
+    custo: '3.90',
+    minParcelas: 1,
+    maxParcelas: 6,
+    intervaloDias: 28,
+    ativo: 1,
+  };
+
+  it('entra antes das vendas na ordem de carga', () => {
+    // A venda referencia a condição pelo código do legado: se a condição não
+    // existir antes, toda venda falha ao procurá-la.
+    const ordem = EXTRACTORS.map((e) => e.entity);
+
+    expect(ordem.indexOf('paymentCondition')).toBeLessThan(
+      ordem.indexOf('order'),
+    );
+    expect(ordem.indexOf('paymentCondition')).toBeLessThan(
+      ordem.indexOf('quotation'),
+    );
+  });
+
+  it('preserva o código do legado, que é a identidade real', () => {
+    // O legado repete nomes com custos diferentes ("À prazo" com 5,00% e com
+    // 3,90%), então o nome não serve como chave.
+    const row = PAYMENT_CONDITION_EXTRACTOR.map(legacyRow);
+
+    expect(row.codigoLegado).toBe('3');
+    expect(row.nome).toBe('À prazo');
+    expect(row.custo).toBe('3.90');
+  });
+
+  it('traduz o tipo de custo pelo mapa, não por adivinhação', () => {
+    expect(PAYMENT_CONDITION_EXTRACTOR.map(legacyRow).custoTipo).toBe(
+      LEGACY_COST_TYPE[2],
+    );
+    expect(
+      PAYMENT_CONDITION_EXTRACTOR.map({ ...legacyRow, custoTipoLegado: 1 })
+        .custoTipo,
+    ).toBe(LEGACY_COST_TYPE[1]);
+  });
+
+  it('leva as faixas de parcelamento', () => {
+    const row = PAYMENT_CONDITION_EXTRACTOR.map(legacyRow);
+
+    expect(row.minParcelas).toBe('1');
+    expect(row.maxParcelas).toBe('6');
+    expect(row.intervaloDias).toBe('28');
+    expect(row.ativo).toBe('SIM');
   });
 });

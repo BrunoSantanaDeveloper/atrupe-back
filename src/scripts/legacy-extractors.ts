@@ -481,6 +481,53 @@ export const FINANCIAL_EXTRACTOR: LegacyExtractor = {
 };
 
 /**
+ * Mapa do tipo de custo da condição de pagamento.
+ *
+ * O legado guarda 1 ou 2 em `condpag_custo_tipo`. A correspondência com
+ * PERCENT/VALUE precisa ser conferida na base antes da carga definitiva:
+ * trocar os dois lançaria percentual onde deveria ir valor em reais.
+ */
+export const LEGACY_COST_TYPE: Record<number, 'PERCENT' | 'VALUE'> = {
+  1: 'PERCENT',
+  2: 'VALUE',
+};
+
+export const PAYMENT_CONDITION_EXTRACTOR: LegacyExtractor = {
+  entity: 'paymentCondition',
+  label: 'Cond. pagamento',
+  sql: (base) => `
+    SELECT
+      c.idcondpag               AS codigoLegado,
+      c.condpag_descr           AS nome,
+      c.condpag_fkidformapag    AS formaPagamentoLegado,
+      c.condpag_custo_tipo      AS custoTipoLegado,
+      c.condpag_custo_parc      AS custo,
+      c.condpag_quant_min_parc  AS minParcelas,
+      c.condpag_quant_max_parc  AS maxParcelas,
+      c.condpag_interv_dias     AS intervaloDias,
+      c.condpag_fkidstatus      AS ativo
+    FROM ${base}.sales_conf_cond_pag c
+    ORDER BY c.idcondpag
+  `,
+  expectedSql: (base) => `
+    SELECT COUNT(*) AS total FROM ${base}.sales_conf_cond_pag
+  `,
+  map: (row) => ({
+    codigoLegado: text(row.codigoLegado),
+    nome: text(row.nome),
+    // A forma de pagamento do legado ainda não é traduzida para o cadastro
+    // global: sem o de-para, o importador usa a primeira forma ativa.
+    formaPagamento: '',
+    custoTipo: LEGACY_COST_TYPE[Number(row.custoTipoLegado)] || 'PERCENT',
+    custo: text(row.custo),
+    minParcelas: text(row.minParcelas),
+    maxParcelas: text(row.maxParcelas),
+    intervaloDias: text(row.intervaloDias),
+    ativo: toSimNao(row.ativo),
+  }),
+};
+
+/**
  * Ordem de carga. Cada etapa depende das anteriores: o importador procura o
  * registro relacionado por nome ou por código do legado.
  */
@@ -489,6 +536,7 @@ export const EXTRACTORS: LegacyExtractor[] = [
   CLIENT_EXTRACTOR,
   SUPPLIER_EXTRACTOR,
   PRODUCT_EXTRACTOR,
+  PAYMENT_CONDITION_EXTRACTOR,
   QUOTATION_EXTRACTOR,
   ORDER_EXTRACTOR,
   FINANCIAL_EXTRACTOR,

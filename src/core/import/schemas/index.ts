@@ -5,3 +5,4 @@ export * from './order-import.schema';
 export * from './financial-import.schema';
 export * from './supplier-import.schema';
 export * from './employee-import.schema';
+export * from './payment-condition-import.schema';

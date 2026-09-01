@@ -14,6 +14,7 @@ import {
   FINANCIAL_IMPORT_SCHEMA,
   SUPPLIER_IMPORT_SCHEMA,
   EMPLOYEE_IMPORT_SCHEMA,
+  PAYMENT_CONDITION_IMPORT_SCHEMA,
   findCompanyRecordByName,
 } from './schemas';
 import {
@@ -218,6 +219,7 @@ export class ImportService {
       'financial',
       'order',
       'employee',
+      'paymentCondition',
     ];
     if (!allowedEntities.includes(entity)) {
       throw new BadRequestException('Invalid entity type');
@@ -702,6 +704,7 @@ export class ImportService {
       financial: FINANCIAL_IMPORT_SCHEMA,
       supplier: SUPPLIER_IMPORT_SCHEMA,
       employee: EMPLOYEE_IMPORT_SCHEMA,
+      paymentCondition: PAYMENT_CONDITION_IMPORT_SCHEMA,
     };
 
     return schemas[entity];
@@ -999,6 +1002,8 @@ export class ImportService {
               await this.importProduct(row, importLog.companyId);
             } else if (importLog.entity === 'supplier') {
               shouldCount = await this.importSupplier(row, importLog.companyId);
+            } else if (importLog.entity === 'paymentCondition') {
+              await this.importPaymentCondition(row, importLog.companyId);
             } else if (importLog.entity === 'employee') {
               await this.importEmployee(
                 row,
@@ -1383,6 +1388,86 @@ export class ImportService {
       },
     });
     return true;
+  }
+
+  /**
+   * Importar uma condição de pagamento do legado.
+   *
+   * A empresa já nasce com condições próprias no cadastro inicial, mas elas não
+   * têm vínculo com o legado. Como as vendas referenciam a condição pelo código
+   * do sistema antigo, sem esta etapa toda venda importada falha ao procurá-la.
+   *
+   * Idempotente por (companyId, legacyId).
+   */
+  private async importPaymentCondition(
+    row: any,
+    companyId: string,
+  ): Promise<void> {
+    const legacyId = row.codigoLegado?.trim();
+    if (!legacyId) {
+      throw new Error("Campo 'codigoLegado' é obrigatório");
+    }
+
+    // Forma de pagamento é obrigatória no modelo e o cadastro é global, não por
+    // empresa. Quando o nome do legado não casa com nenhuma, usamos a primeira
+    // ativa: para histórico o que importa é a condição, não o meio.
+    const methodName = row.formaPagamento?.trim();
+
+    const method =
+      (methodName
+        ? await this.prisma.paymentMethod.findFirst({
+            where: { name: { equals: methodName, mode: 'insensitive' } },
+          })
+        : null) ||
+      (await this.prisma.paymentMethod.findFirst({
+        where: { isActive: true },
+        orderBy: { createdAt: 'asc' },
+      }));
+
+    if (!method) {
+      throw new Error(
+        'A empresa não tem forma de pagamento cadastrada; rode os cadastros base antes de importar',
+      );
+    }
+
+    const maxInstallments = parseInt(row.maxParcelas, 10);
+    const minInstallments = parseInt(row.minParcelas, 10);
+    const dayInterval = parseInt(row.intervaloDias, 10);
+
+    const data = {
+      name: row.nome?.trim(),
+      costType:
+        row.custoTipo?.trim().toUpperCase() === 'VALUE'
+          ? ('VALUE' as const)
+          : ('PERCENT' as const),
+      paymentMethodId: method.id,
+      minInstallments: isNaN(minInstallments) ? null : minInstallments,
+      maxInstallments: isNaN(maxInstallments) ? null : maxInstallments,
+      dayInterval: isNaN(dayInterval) ? null : dayInterval,
+      acceptInstallments: !isNaN(maxInstallments) && maxInstallments > 1,
+      isActive: row.ativo
+        ? ['SIM', 'S', 'TRUE', '1', 'YES'].includes(
+            row.ativo.trim().toUpperCase(),
+          )
+        : true,
+    };
+
+    const existing = await this.prisma.paymentCondition.findFirst({
+      where: { companyId, legacyId },
+      select: { id: true },
+    });
+
+    if (existing) {
+      await this.prisma.paymentCondition.update({
+        where: { id: existing.id },
+        data,
+      });
+      return;
+    }
+
+    await this.prisma.paymentCondition.create({
+      data: { ...data, companyId, legacyId },
+    });
   }
 
   /**

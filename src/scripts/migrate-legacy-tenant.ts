@@ -45,6 +45,7 @@ export interface SimulatedKeys {
   client: Set<string>;
   employee: Set<string>;
   product: Set<string>;
+  paymentCondition: Set<string>;
 }
 
 /**
@@ -56,6 +57,7 @@ const RESOLVED_BY_LOAD_ORDER: Record<string, keyof SimulatedKeys> = {
   ClienteCodigoLegado: 'client',
   VendedorCodigoLegado: 'employee',
   ProdutoCodigo: 'product',
+  CondicaoPagamentoCodigoLegado: 'paymentCondition',
 };
 
 export interface StepResult {
@@ -148,6 +150,8 @@ async function runStep(
     rows.forEach((r) => simulated.employee.add(r.codigoLegado));
   } else if (extractor.entity === 'product') {
     rows.forEach((r) => simulated.product.add(r.codigo));
+  } else if (extractor.entity === 'paymentCondition') {
+    rows.forEach((r) => simulated.paymentCondition.add(r.codigoLegado));
   }
 
   const internals = service as any;
@@ -229,6 +233,8 @@ async function runStep(
         await internals.importSupplier(row, companyId);
       } else if (extractor.entity === 'product') {
         await internals.importProduct(row, companyId);
+      } else if (extractor.entity === 'paymentCondition') {
+        await internals.importPaymentCondition(row, companyId);
       } else {
         throw new Error(`Entidade '${extractor.entity}' ainda não suportada`);
       }
@@ -325,6 +331,7 @@ export async function migrateLegacyTenant(
       client: new Set(),
       employee: new Set(),
       product: new Set(),
+      paymentCondition: new Set(),
     };
 
     for (const extractor of EXTRACTORS) {
