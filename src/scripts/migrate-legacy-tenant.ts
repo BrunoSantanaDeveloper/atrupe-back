@@ -70,6 +70,8 @@ export interface StepResult {
   warnings?: number;
   /** Erros que somem sozinhos na execução real, por causa da ordem de carga. */
   pending?: number;
+  /** Documentos já migrados numa execução anterior. */
+  skipped?: number;
   /** Documentos na origem, quando o extrator sabe contar. */
   expected?: number;
   /** Documentos distintos extraídos, quando uma linha não é um documento. */
@@ -177,6 +179,7 @@ async function runStep(
 
     result.imported = batch.successCount;
     result.failed = batch.failedCount;
+    result.skipped = batch.skippedCount ?? 0;
     result.errors = (batch.errors || []).map((e: any) => ({
       row: e.row,
       codigoLegado: '',
@@ -353,6 +356,7 @@ export async function migrateLegacyTenant(
         result.pending
           ? `${result.pending} resolvido(s) pela ordem de carga`
           : '',
+        result.skipped ? `${result.skipped} já migrado(s)` : '',
       ].filter(Boolean);
 
       const status =

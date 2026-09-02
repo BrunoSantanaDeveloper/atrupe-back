@@ -35,6 +35,8 @@
     "fiscal:nullify:dry": "node dist/src/scripts/nullify-legacy-fiscal-secrets.js --dry-run",
     "fiscal:nullify:dev": "ts-node src/scripts/nullify-legacy-fiscal-secrets.ts",
     "fiscal:nullify:dry:dev": "ts-node src/scripts/nullify-legacy-fiscal-secrets.ts --dry-run",
+    "migrate:legacy:reset": "node dist/src/scripts/reset-legacy-import.js",
+    "migrate:legacy:reset:dev": "ts-node src/scripts/reset-legacy-import.ts",
     "migrate:legacy": "node dist/src/scripts/migrate-legacy-tenant.js",
     "migrate:legacy:dry": "node dist/src/scripts/migrate-legacy-tenant.js --dry-run",
     "migrate:legacy:dev": "ts-node src/scripts/migrate-legacy-tenant.ts",

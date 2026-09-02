@@ -269,7 +269,18 @@ export const PRODUCT_EXTRACTOR: LegacyExtractor = {
       p.descricao               AS descricao,
       s.setor                   AS setor,
       cat.categoria             AS grupo,
-      sv.ser_un_comercial       AS unidadeMedida,
+      -- A unidade quase nunca está no cadastro do serviço (73 de 81 vazias no
+      -- piloto); quem a guarda é o item de venda. Sem isso todo produto entra
+      -- como unidade avulsa, e área vira "UN".
+      COALESCE(NULLIF(sv.ser_un_comercial, ''),
+        (SELECT i.vendaitem_un_com
+           FROM ${base}.sales_venda_item i
+          WHERE i.vendaitem_fkidproduto = p.idproduto
+            AND i.fkidtipovendaitem = ${REAL_ITEM_TYPE}
+            AND i.vendaitem_un_com <> ''
+          GROUP BY i.vendaitem_un_com
+          ORDER BY COUNT(*) DESC
+          LIMIT 1)) AS unidadeMedida,
       sv.valor                  AS valorUnitario
     FROM ${base}.est_produto p
     LEFT JOIN ${base}.emp_setor s             ON s.idsetor = p.fkidsetor
@@ -307,6 +318,7 @@ const REAL_ITEM_TYPE = 1;
  */
 const saleSql = (base: string, statusIn: string) => `
   SELECT
+    v.idsale                    AS VendaCodigoLegado,
     v.venda_numero              AS NumeroVenda,
     v.referencia                AS ReferenciaVenda,
     v.venda_serie               AS Serie,
@@ -356,6 +368,7 @@ const saleSql = (base: string, statusIn: string) => `
  * três, teto do arquivo de ordens.
  */
 const mapSale = (row: any) => ({
+  VendaCodigoLegado: text(row.VendaCodigoLegado),
   NumeroVenda: text(row.NumeroVenda),
   ReferenciaVenda: text(row.ReferenciaVenda),
   Serie: text(row.Serie),

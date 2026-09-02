@@ -1,6 +1,15 @@
 export const ORDER_IMPORT_SCHEMA = {
   fields: [
     {
+      name: 'VendaCodigoLegado',
+      required: false,
+      type: 'string',
+      maxLength: 60,
+      description:
+        'Identificador da venda no sistema legado. É o que torna a importação repetível: com ele, reprocessar reconhece o documento já migrado em vez de duplicá-lo.',
+      example: '2154',
+    },
+    {
       name: 'ReferenciaVenda',
       required: false,
       type: 'string',

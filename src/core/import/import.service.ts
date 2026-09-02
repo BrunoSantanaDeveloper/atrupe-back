@@ -2051,10 +2051,16 @@ export class ImportService {
   private async importQuotations(
     rows: any[],
     companyId: string,
-  ): Promise<{ successCount: number; failedCount: number; errors: any[] }> {
+  ): Promise<{
+    successCount: number;
+    failedCount: number;
+    skippedCount: number;
+    errors: any[];
+  }> {
     const errors: any[] = [];
     let successCount = 0;
     let failedCount = 0;
+    let skippedCount = 0;
 
     // Agrupar linhas por NumeroVenda + Serie
     const quotationsMap = new Map<string, any[]>();
@@ -2077,6 +2083,24 @@ export class ImportService {
     for (const [key, items] of quotationsMap.entries()) {
       try {
         const firstItem = items[0];
+
+        const legacyId = firstItem.VendaCodigoLegado?.trim() || null;
+
+        // Sem esta checagem a importação de vendas não é idempotente: rodar de
+        // novo cria documentos duplicados em vez de reconhecer os já migrados.
+        // Reimportar um documento exige apagá-lo antes, porque as relações
+        // filhas (itens, pagamento, entrega, ordem) não têm exclusão em cascata.
+        if (legacyId) {
+          const alreadyImported = await this.prisma.quotation.findFirst({
+            where: { companyId, legacyId },
+            select: { id: true },
+          });
+
+          if (alreadyImported) {
+            skippedCount++;
+            continue;
+          }
+        }
 
         // Buscar série
         const series = await this.prisma.saleSeries.findFirst({
@@ -2178,6 +2202,7 @@ export class ImportService {
               ? new Date(firstItem.DataValidade)
               : null,
             quotationNumber: parseInt(firstItem.NumeroVenda),
+            legacyId,
             totalValue: 0, // Será calculado depois
             isImported: true,
           },
@@ -2364,7 +2389,7 @@ export class ImportService {
 
     await this.syncSeriesBudgetNumbers(companyId);
 
-    return { successCount, failedCount, errors };
+    return { successCount, failedCount, skippedCount, errors };
   }
 
   /**
@@ -2385,6 +2410,7 @@ export class ImportService {
   ) {
     let successCount = 0;
     let failedCount = 0;
+    let skippedCount = 0;
     const errors: any[] = [];
 
     // Agrupar linhas por NumeroVenda-Serie
@@ -2412,6 +2438,24 @@ export class ImportService {
     for (const [key, items] of ordersMap) {
       try {
         const firstItem = items[0];
+
+        const legacyId = firstItem.VendaCodigoLegado?.trim() || null;
+
+        // Sem esta checagem a importação de vendas não é idempotente: rodar de
+        // novo cria documentos duplicados em vez de reconhecer os já migrados.
+        // Reimportar um documento exige apagá-lo antes, porque as relações
+        // filhas (itens, pagamento, entrega, ordem) não têm exclusão em cascata.
+        if (legacyId) {
+          const alreadyImported = await this.prisma.quotation.findFirst({
+            where: { companyId, legacyId },
+            select: { id: true },
+          });
+
+          if (alreadyImported) {
+            skippedCount++;
+            continue;
+          }
+        }
 
         // Buscar série
         const series = await this.prisma.saleSeries.findFirst({
@@ -2507,6 +2551,7 @@ export class ImportService {
             contactId,
             companyId,
             description: firstItem.ReferenciaVenda || null,
+            legacyId,
             totalValue: 0, // Será calculado depois
             isImported: true,
           },
@@ -2729,7 +2774,7 @@ export class ImportService {
 
     await this.syncSeriesBudgetNumbers(companyId);
 
-    return { successCount, failedCount, errors };
+    return { successCount, failedCount, skippedCount, errors };
   }
 
   /**
@@ -3087,6 +3132,7 @@ export class ImportService {
   private async importFinancial(rows: any[], companyId: string) {
     let successCount = 0;
     let failedCount = 0;
+    const skippedCount = 0;
     const errors: any[] = [];
 
     // Agrupar linhas por Tipo-Descricao-DataReferencia
@@ -3468,7 +3514,7 @@ export class ImportService {
       }
     }
 
-    return { successCount, failedCount, errors };
+    return { successCount, failedCount, skippedCount, errors };
   }
 
   /**

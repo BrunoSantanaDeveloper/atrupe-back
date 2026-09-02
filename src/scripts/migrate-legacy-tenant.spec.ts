@@ -524,3 +524,36 @@ describe('referência da venda', () => {
     ).toBe('');
   });
 });
+
+describe('idempotência das vendas', () => {
+  it('leva o identificador da venda no legado', () => {
+    // Sem ele a importação de vendas não é repetível: rodar de novo cria
+    // documentos duplicados em vez de reconhecer os já migrados.
+    const row = ORDER_EXTRACTOR.map({
+      VendaCodigoLegado: 4821,
+      NumeroVenda: 2154,
+      Serie: 'T1',
+      statusLegado: 3,
+    });
+
+    expect(row.VendaCodigoLegado).toBe('4821');
+  });
+
+  it('usa o id da venda, não o número do documento', () => {
+    // Número de venda se repete entre séries; o id da tabela não.
+    const sql = ORDER_EXTRACTOR.sql('acn_1');
+    expect(sql).toContain('v.idsale                    AS VendaCodigoLegado');
+  });
+});
+
+describe('unidade de medida do produto', () => {
+  it('cai para a unidade do item de venda quando o serviço não a informa', () => {
+    // No piloto, 73 dos 81 serviços não têm unidade cadastrada; quem a guarda
+    // é o item de venda. Sem isso, produto vendido em m² entrava como unidade.
+    const sql = PRODUCT_EXTRACTOR.sql('acn_1');
+
+    expect(sql).toContain("NULLIF(sv.ser_un_comercial, '')");
+    expect(sql).toContain('i.vendaitem_un_com');
+    expect(sql).toContain('ORDER BY COUNT(*) DESC');
+  });
+});

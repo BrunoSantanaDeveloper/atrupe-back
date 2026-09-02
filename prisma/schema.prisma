@@ -1023,6 +1023,7 @@ model Quotation {
   quickSale        Boolean            @default(false)
   isImported       Boolean            @default(false)
   quotationNumber  Int?
+  legacyId         String?
   finishedAt       DateTime?
   reasonId         String?
   subCompanyId     String?
@@ -1049,6 +1050,7 @@ model Quotation {
   nfses            Nfse[]
   nfces            Nfce[]
 
+  @@unique([companyId, legacyId])
   @@index([id, companyId])
   @@map("quotations")
 }
