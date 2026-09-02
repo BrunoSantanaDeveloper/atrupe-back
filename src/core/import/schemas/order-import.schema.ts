@@ -1,6 +1,15 @@
 export const ORDER_IMPORT_SCHEMA = {
   fields: [
     {
+      name: 'ReferenciaVenda',
+      required: false,
+      type: 'string',
+      maxLength: 255,
+      description:
+        'Texto que identifica a venda para o usuário. Aparece como "Referência" no resumo do documento.',
+      example: 'ADESIVOS FACHADA',
+    },
+    {
       name: 'ComissaoVendedorCodigoLegado',
       required: false,
       type: 'string',

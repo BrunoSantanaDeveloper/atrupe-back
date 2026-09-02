@@ -500,3 +500,27 @@ describe('referências opcionais nas vendas e no financeiro', () => {
     ).toBe('2026-08-01');
   });
 });
+
+describe('referência da venda', () => {
+  it('traz o texto que o usuário reconhece no resumo', () => {
+    // No resumo do orçamento, "Referência" é a descrição do documento. Sem
+    // este campo ela ficava vazia: o importador usava a observação do item,
+    // que quase sempre não existe.
+    const row = ORDER_EXTRACTOR.map({
+      NumeroVenda: 2154,
+      ReferenciaVenda: 'ADESIVOS FACHADA',
+      Serie: 'T1',
+      statusLegado: 3,
+      statusEntrega: 4,
+    });
+
+    expect(row.ReferenciaVenda).toBe('ADESIVOS FACHADA');
+  });
+
+  it('sai vazia quando a origem não tem referência', () => {
+    expect(
+      QUOTATION_EXTRACTOR.map({ NumeroVenda: 1, ReferenciaVenda: null })
+        .ReferenciaVenda,
+    ).toBe('');
+  });
+});

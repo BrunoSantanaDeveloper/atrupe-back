@@ -308,6 +308,7 @@ const REAL_ITEM_TYPE = 1;
 const saleSql = (base: string, statusIn: string) => `
   SELECT
     v.venda_numero              AS NumeroVenda,
+    v.referencia                AS ReferenciaVenda,
     v.venda_serie               AS Serie,
     v.venda_fkidstatus          AS statusLegado,
     (SELECT MAX(e2.entrega_fkidstatus) FROM ${base}.sales_entrega e2
@@ -356,6 +357,7 @@ const saleSql = (base: string, statusIn: string) => `
  */
 const mapSale = (row: any) => ({
   NumeroVenda: text(row.NumeroVenda),
+  ReferenciaVenda: text(row.ReferenciaVenda),
   Serie: text(row.Serie),
   DataVenda: normalizeLegacyDate(row.DataVenda),
   DataEntrega: normalizeLegacyDate(row.DataEntrega),

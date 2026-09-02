@@ -2170,7 +2170,10 @@ export class ImportService {
             sellerId: seller.id,
             contactId,
             status,
-            description: firstItem.ObservacaoItem || null,
+            // A referência da venda é o que o usuário reconhece no resumo;
+            // a observação do item é detalhe interno e quase sempre vazia.
+            description:
+              firstItem.ReferenciaVenda || firstItem.ObservacaoItem || null,
             dueDate: firstItem.DataValidade
               ? new Date(firstItem.DataValidade)
               : null,
@@ -2503,6 +2506,7 @@ export class ImportService {
             sellerId: employee.id,
             contactId,
             companyId,
+            description: firstItem.ReferenciaVenda || null,
             totalValue: 0, // Será calculado depois
             isImported: true,
           },
