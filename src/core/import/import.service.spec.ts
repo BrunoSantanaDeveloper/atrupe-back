@@ -776,3 +776,30 @@ describe('ImportService item measurements', () => {
     expect(toMm('abc')).toBeNull();
   });
 });
+
+describe('ImportService unit cost per line', () => {
+  const service = new ImportService({} as any, {} as any, {} as any);
+  const unitCost = (...args: any[]) =>
+    (service as any).unitCostForLine(...args);
+
+  it('em unidade avulsa, a taxa é o próprio valor da linha', () => {
+    // A tela recalcula unitCost = salePrice / medida ao abrir o item. Se o
+    // gravado divergir, abrir a linha troca o valor da venda pelo do catálogo.
+    expect(unitCost(419000, 'UNITY', {}, 1)).toBe(419000);
+  });
+
+  it('em área, a taxa é o valor dividido pela medida', () => {
+    // 10,71 m × 1,90 m = 20.349.000 mm²
+    const taxa = unitCost(193315, 'AREA', { width: 10710, height: 1900 }, 1);
+
+    expect(taxa! * 10710 * 1900).toBeCloseTo(193315, 6);
+  });
+
+  it('cai no valor da linha quando não há medida', () => {
+    expect(unitCost(50000, 'AREA', { width: 0, height: 0 }, 1)).toBe(50000);
+  });
+
+  it('preserva nulo', () => {
+    expect(unitCost(null, 'UNITY', {}, 1)).toBeNull();
+  });
+});

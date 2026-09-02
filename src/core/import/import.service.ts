@@ -118,6 +118,56 @@ export class ImportService {
    * lançar erro: atribuir a venda a outra pessoa é pior do que recusar a linha.
    */
   /**
+   * Medida bruta que multiplica o preço unitário da linha.
+   *
+   * A tela recalcula `unitCost = salePrice / medida` ao abrir o item. Se o
+   * `unitCost` gravado não seguir a mesma regra, abrir a linha sobrescreve o
+   * valor da venda pelo do catálogo — foi o que aconteceu na primeira carga.
+   */
+  private rawMeasure(
+    unitKind: string | null,
+    item: {
+      width?: number | null;
+      height?: number | null;
+      length?: number | null;
+      duration?: number | null;
+    },
+    quantity: number,
+  ): number {
+    switch (unitKind) {
+      case 'AREA':
+        return (item.width || 0) * (item.height || 0);
+      case 'LENGTH':
+        return item.width || item.length || 0;
+      case 'DURATION':
+        return item.duration || 0;
+      default:
+        return quantity;
+    }
+  }
+
+  /**
+   * Taxa por unidade bruta coerente com o valor da linha, para a tela não
+   * recalcular um valor diferente do que foi vendido.
+   */
+  private unitCostForLine(
+    salePriceInCents: number | null,
+    unitKind: string | null,
+    dimensions: {
+      width?: number | null;
+      height?: number | null;
+      length?: number | null;
+      duration?: number | null;
+    },
+    quantity: number,
+  ): number | null {
+    if (salePriceInCents === null) return null;
+
+    const measure = this.rawMeasure(unitKind, dimensions, quantity);
+    return measure > 0 ? salePriceInCents / measure : salePriceInCents;
+  }
+
+  /**
    * Converte medida do documento (metros) para a unidade do banco (milímetros).
    *
    * Devolve nulo quando a linha não informa medida, para o chamador cair na
@@ -2267,6 +2317,12 @@ export class ImportService {
           if (product.items && product.items.length > 0) {
             const productItem = product.items[0]; // Usar o primeiro item como padrão
 
+            // Medida da linha do documento; sem ela, cai na do produto.
+            const itemWidth =
+              this.toMillimeters(item.ItemLargura) ?? productItem.width;
+            const itemHeight =
+              this.toMillimeters(item.ItemComprimento) ?? productItem.height;
+
             await this.prisma.quotationProductItem.create({
               data: {
                 quotationId: quotation.id,
@@ -2276,7 +2332,17 @@ export class ImportService {
                 quantity: parseInt(item.Quantidade),
                 name: productItem.name,
                 salePrice: this.toCents(item.ValorUnitario),
-                unitCost: productItem.unitCost,
+                unitCost: this.unitCostForLine(
+                  this.toCents(item.ValorUnitario),
+                  productItem.unitKind,
+                  {
+                    width: itemWidth,
+                    height: itemHeight,
+                    length: productItem.length,
+                    duration: productItem.duration,
+                  },
+                  parseInt(item.Quantidade),
+                ),
                 totalValue: itemTotalValue,
                 width:
                   this.toMillimeters(item.ItemLargura) ?? productItem.width,
@@ -2623,6 +2689,12 @@ export class ImportService {
 
           // Criar itens do produto (se o produto tiver items)
           for (const productItem of product.items) {
+            // Medida da linha do documento; sem ela, cai na do produto.
+            const itemWidth =
+              this.toMillimeters(item.ItemLargura) ?? productItem.width;
+            const itemHeight =
+              this.toMillimeters(item.ItemComprimento) ?? productItem.height;
+
             await this.prisma.quotationProductItem.create({
               data: {
                 quotationProductId: quotationProduct.id,
@@ -2631,10 +2703,20 @@ export class ImportService {
                 productItemId: productItem.id,
                 name: productItem.name,
                 quantity,
-                unitCost: productItem.unitCost,
                 // Valor da venda, não o do catálogo: o preço praticado no
                 // documento histórico é o que o cliente reconhece, e pode ser
                 // bem diferente do preço atual do produto.
+                unitCost: this.unitCostForLine(
+                  this.toCents(item.ValorUnitario),
+                  productItem.unitKind,
+                  {
+                    width: itemWidth,
+                    height: itemHeight,
+                    length: productItem.length,
+                    duration: productItem.duration,
+                  },
+                  quantity,
+                ),
                 salePrice: this.toCents(item.ValorUnitario),
                 totalValue: itemTotalValue,
                 width:
