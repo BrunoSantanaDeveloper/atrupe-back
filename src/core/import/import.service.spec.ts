@@ -757,3 +757,22 @@ describe('ImportService commission payable', () => {
     expect(payable.expenseSource).toBe('SUPPLIER');
   });
 });
+
+describe('ImportService item measurements', () => {
+  const service = new ImportService({} as any, {} as any, {} as any);
+  const toMm = (v: any) => (service as any).toMillimeters(v);
+
+  it('converte metros do documento para milímetros do banco', () => {
+    // O legado mostra "( 10.71 x 1.9 )" em metros; o banco guarda milímetros.
+    expect(toMm('10,71')).toBeCloseTo(10710, 6);
+    expect(toMm('1.9')).toBeCloseTo(1900, 6);
+  });
+
+  it('devolve nulo quando a linha não informa medida', () => {
+    // Assim o chamador cai na dimensão cadastrada no produto.
+    expect(toMm('')).toBeNull();
+    expect(toMm(null)).toBeNull();
+    expect(toMm('0')).toBeNull();
+    expect(toMm('abc')).toBeNull();
+  });
+});

@@ -1,6 +1,22 @@
 export const QUOTATION_IMPORT_SCHEMA = {
   fields: [
     {
+      name: 'ItemLargura',
+      required: false,
+      type: 'string',
+      description:
+        'Largura da linha, em metros. Quando vazia, usa a dimensão cadastrada no produto.',
+      example: '10,71',
+    },
+    {
+      name: 'ItemComprimento',
+      required: false,
+      type: 'string',
+      description:
+        'Comprimento da linha, em metros. Quando vazio, usa a dimensão cadastrada no produto.',
+      example: '1,90',
+    },
+    {
       name: 'VendaCodigoLegado',
       required: false,
       type: 'string',

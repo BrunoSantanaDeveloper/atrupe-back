@@ -117,6 +117,19 @@ export class ImportService {
    * Se um identificador foi informado e não casou, devolve null para o chamador
    * lançar erro: atribuir a venda a outra pessoa é pior do que recusar a linha.
    */
+  /**
+   * Converte medida do documento (metros) para a unidade do banco (milímetros).
+   *
+   * Devolve nulo quando a linha não informa medida, para o chamador cair na
+   * dimensão cadastrada no produto.
+   */
+  private toMillimeters(value: string | number | null | undefined) {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = this.parseDecimal(value);
+    if (isNaN(parsed) || parsed <= 0) return null;
+    return parsed * 1000;
+  }
+
   private async findSeller(
     companyId: string,
     email?: string | null,
@@ -2240,7 +2253,12 @@ export class ImportService {
               quantity: parseInt(item.Quantidade),
               totalValue: itemTotalValue,
               finalValue: itemTotalValue,
-              description: item.ObservacaoItem || product.name,
+              // A referência da linha é o produto; a observação é detalhe e vai
+              // para as anotações. Antes a observação ocupava a descrição, e a
+              // coluna "Referência" da tela mostrava um texto longo no lugar do
+              // nome do produto — divergindo do legado e da importação de ordens.
+              description: item.ProdutoNome || product.name,
+              notes: item.ObservacaoItem || null,
               technicalDescription: product.technicalDescription,
             },
           });
@@ -2260,8 +2278,11 @@ export class ImportService {
                 salePrice: this.toCents(item.ValorUnitario),
                 unitCost: productItem.unitCost,
                 totalValue: itemTotalValue,
-                width: productItem.width,
-                height: productItem.height,
+                width:
+                  this.toMillimeters(item.ItemLargura) ?? productItem.width,
+                height:
+                  this.toMillimeters(item.ItemComprimento) ??
+                  productItem.height,
                 unitKind: productItem.unitKind,
               },
             });
@@ -2611,10 +2632,16 @@ export class ImportService {
                 name: productItem.name,
                 quantity,
                 unitCost: productItem.unitCost,
-                salePrice: productItem.salePrice,
-                totalValue: (productItem.salePrice || 0) * quantity,
-                width: productItem.width,
-                height: productItem.height,
+                // Valor da venda, não o do catálogo: o preço praticado no
+                // documento histórico é o que o cliente reconhece, e pode ser
+                // bem diferente do preço atual do produto.
+                salePrice: this.toCents(item.ValorUnitario),
+                totalValue: itemTotalValue,
+                width:
+                  this.toMillimeters(item.ItemLargura) ?? productItem.width,
+                height:
+                  this.toMillimeters(item.ItemComprimento) ??
+                  productItem.height,
                 length: productItem.length,
                 weight: productItem.weight,
                 volume: productItem.volume,
