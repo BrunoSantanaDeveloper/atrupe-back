@@ -1,5 +1,7 @@
 import { assertSameCompany, onlyDigits } from './migrate-legacy-tenant';
 import { EXTRACTORS } from './legacy-extractors';
+import { QUOTATION_IMPORT_SCHEMA } from '../core/import/schemas/quotation-import.schema';
+import { ORDER_IMPORT_SCHEMA } from '../core/import/schemas/order-import.schema';
 import {
   CLIENT_EXTRACTOR,
   EMPLOYEE_EXTRACTOR,
@@ -584,5 +586,26 @@ describe('decimais do legado', () => {
 
     expect(row.ItemLargura).toBe('3,500');
     expect(row.ItemComprimento).toBe('1,000');
+  });
+});
+
+describe('guarda de sanidade das medidas', () => {
+  const campo = (schema: any, nome: string) =>
+    schema.fields.find((f: any) => f.name === nome);
+
+  it('avisa quando a medida está fora de escala, sem reprovar a linha', async () => {
+    // Medida fora de escala não gera erro em lugar nenhum: entra como número
+    // válido e distorce área e preço em silêncio. Foi assim que uma carga
+    // inteira gravou 3,5 m como 3,5 km.
+    for (const schema of [QUOTATION_IMPORT_SCHEMA, ORDER_IMPORT_SCHEMA]) {
+      const largura = campo(schema, 'ItemLargura');
+
+      const fora = await largura.validate('3500');
+      expect(fora.severity).toBe('warning');
+      expect(fora.error).toMatch(/fora de escala/);
+
+      expect(await largura.validate('3,5')).toBeNull();
+      expect(await largura.validate('')).toBeNull();
+    }
   });
 });

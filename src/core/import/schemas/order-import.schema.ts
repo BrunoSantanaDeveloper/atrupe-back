@@ -7,6 +7,26 @@ export const ORDER_IMPORT_SCHEMA = {
       description:
         'Largura da linha, em metros. Quando vazia, usa a dimensão cadastrada no produto.',
       example: '10,71',
+      validate: async (value: string) => {
+        if (!value) return null;
+
+        const meters = Number(
+          value.trim().replace(/\s/g, '').replace(',', '.'),
+        );
+        if (isNaN(meters)) return 'Medida inválida';
+
+        // Guarda de sanidade. Uma peça com mais de 100 m de lado é implausível
+        // no ramo, e uma medida fora de escala não gera erro em lugar nenhum:
+        // entra como número válido e distorce área e preço em silêncio. Foi
+        // assim que 3,5 m virou 3,5 km numa carga inteira.
+        if (meters > 100) {
+          return {
+            error: `Medida de ${meters} m parece fora de escala; confira a unidade da origem`,
+            severity: 'warning',
+          };
+        }
+        return null;
+      },
     },
     {
       name: 'ItemComprimento',
@@ -15,6 +35,26 @@ export const ORDER_IMPORT_SCHEMA = {
       description:
         'Comprimento da linha, em metros. Quando vazio, usa a dimensão cadastrada no produto.',
       example: '1,90',
+      validate: async (value: string) => {
+        if (!value) return null;
+
+        const meters = Number(
+          value.trim().replace(/\s/g, '').replace(',', '.'),
+        );
+        if (isNaN(meters)) return 'Medida inválida';
+
+        // Guarda de sanidade. Uma peça com mais de 100 m de lado é implausível
+        // no ramo, e uma medida fora de escala não gera erro em lugar nenhum:
+        // entra como número válido e distorce área e preço em silêncio. Foi
+        // assim que 3,5 m virou 3,5 km numa carga inteira.
+        if (meters > 100) {
+          return {
+            error: `Medida de ${meters} m parece fora de escala; confira a unidade da origem`,
+            severity: 'warning',
+          };
+        }
+        return null;
+      },
     },
     {
       name: 'VendaCodigoLegado',
