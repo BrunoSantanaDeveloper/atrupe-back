@@ -51,11 +51,13 @@ type ClientRaw = {
   id: string;
   type: string;
   name: string;
+  corporateName: string | null;
   status: string;
   cnpj: string | null;
   cpf: string | null;
   email: string | null;
   phone: string | null;
+  address: AddressRaw[] | null;
 };
 
 type DeliveryInfoRaw = {
@@ -213,11 +215,19 @@ export function transformOrderClient(client: ClientRaw | null) {
     id: client.id,
     type: client.type,
     name: client.name,
+    // Razão social e endereço são os dados do tomador na emissão de NFS-e.
+    // Este transformer é uma segunda whitelist depois do select do Prisma:
+    // incluir os campos só no select não bastava, eles eram descartados aqui.
+    corporateName: client.corporateName,
     status: client.status,
     cnpj: client.cnpj,
     cpf: client.cpf,
     email: client.email,
     phoneNumber: client.phone,
+    // `phone` além de `phoneNumber`: a tela de emissão lê `phone`, e sem ele o
+    // telefone do tomador aparecia vazio.
+    phone: client.phone,
+    address: client.address ?? [],
   };
 }
 

@@ -120,15 +120,28 @@ describe('OrderTransformers', () => {
     });
 
     it('should transform client correctly with phone renamed to phoneNumber', () => {
+      const endereco = {
+        id: 'addr-1',
+        street: 'AV Coronel Clementino Goncalves',
+        number: '1880',
+        complement: null,
+        neighborhood: 'Chacara Peixe',
+        city: 'Santa Cruz do Rio Pardo',
+        state: 'SP',
+        zipcode: '18900488',
+        type: 'Principal',
+      };
       const client = {
         id: 'client-1',
         type: 'PJ',
         name: 'Cliente ABC',
+        corporateName: 'Cliente ABC LTDA',
         status: 'ACTIVE',
         cnpj: '12.345.678/0001-99',
         cpf: null,
         email: 'cliente@abc.com',
         phone: '11999999999',
+        address: [endereco],
       };
       const result = transformOrderClient(client);
 
@@ -136,12 +149,66 @@ describe('OrderTransformers', () => {
         id: 'client-1',
         type: 'PJ',
         name: 'Cliente ABC',
+        corporateName: 'Cliente ABC LTDA',
         status: 'ACTIVE',
         cnpj: '12.345.678/0001-99',
         cpf: null,
         email: 'cliente@abc.com',
         phoneNumber: '11999999999',
+        phone: '11999999999',
+        address: [endereco],
       });
+    });
+
+    it('mantém o endereço do cliente, usado como tomador na NFS-e', () => {
+      // Regressão: o transformer é uma segunda whitelist depois do select do
+      // Prisma. Ele descartava address/corporateName, e a emissão de NFS-e
+      // avisava "Tomador sem endereço cadastrado" para todo cliente.
+      const result = transformOrderClient({
+        id: 'client-1',
+        type: 'PJ',
+        name: 'Cliente ABC',
+        corporateName: 'Cliente ABC LTDA',
+        status: 'ACTIVE',
+        cnpj: '12.345.678/0001-99',
+        cpf: null,
+        email: null,
+        phone: null,
+        address: [
+          {
+            id: 'addr-1',
+            street: 'Rua Teste',
+            number: '100',
+            complement: null,
+            neighborhood: 'Centro',
+            city: 'São Paulo',
+            state: 'SP',
+            zipcode: '01310100',
+            type: 'Principal',
+          },
+        ],
+      });
+
+      expect(result?.address).toHaveLength(1);
+      expect(result?.address[0].street).toBe('Rua Teste');
+      expect(result?.corporateName).toBe('Cliente ABC LTDA');
+    });
+
+    it('devolve lista vazia quando o cliente não tem endereço', () => {
+      const result = transformOrderClient({
+        id: 'client-1',
+        type: 'PF',
+        name: 'Cliente Sem Endereço',
+        corporateName: null,
+        status: 'ACTIVE',
+        cnpj: null,
+        cpf: '12345678901',
+        email: null,
+        phone: null,
+        address: null,
+      });
+
+      expect(result?.address).toEqual([]);
     });
   });
 
