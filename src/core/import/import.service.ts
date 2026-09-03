@@ -142,6 +142,8 @@ export class ImportService {
       case 'DURATION':
         return item.duration || 0;
       default:
+        // Unidade avulsa não tem medida própria: a quantidade da linha é
+        // aplicada pelo chamador.
         return quantity;
     }
   }
@@ -151,7 +153,7 @@ export class ImportService {
    * recalcular um valor diferente do que foi vendido.
    */
   private unitCostForLine(
-    salePriceInCents: number | null,
+    lineTotalInCents: number | null,
     unitKind: string | null,
     dimensions: {
       width?: number | null;
@@ -161,10 +163,12 @@ export class ImportService {
     },
     quantity: number,
   ): number | null {
-    if (salePriceInCents === null) return null;
+    if (lineTotalInCents === null) return null;
 
-    const measure = this.rawMeasure(unitKind, dimensions, quantity);
-    return measure > 0 ? salePriceInCents / measure : salePriceInCents;
+    // A tela obtém a medida total multiplicando a medida unitária pela
+    // quantidade da linha; a taxa precisa sair da mesma base.
+    const measure = this.rawMeasure(unitKind, dimensions, 1) * (quantity || 1);
+    return measure > 0 ? lineTotalInCents / measure : lineTotalInCents;
   }
 
   /**
@@ -2329,11 +2333,16 @@ export class ImportService {
                 productId: product.id,
                 quotationProductId: quotationProduct.id,
                 productItemId: productItem.id,
-                quantity: parseInt(item.Quantidade),
+                // A tela multiplica a quantidade da composição pela da linha.
+                // Repetir a quantidade aqui elevava a medida ao quadrado: 250
+                // unidades viravam 62.500.
+                quantity: 1,
                 name: productItem.name,
-                salePrice: this.toCents(item.ValorUnitario),
+                // Total da linha, não o valor unitário: é o que a tela divide
+                // pela medida total para chegar à taxa.
+                salePrice: itemTotalValue,
                 unitCost: this.unitCostForLine(
-                  this.toCents(item.ValorUnitario),
+                  itemTotalValue,
                   productItem.unitKind,
                   {
                     width: itemWidth,
@@ -2702,12 +2711,12 @@ export class ImportService {
                 productId: product.id,
                 productItemId: productItem.id,
                 name: productItem.name,
-                quantity,
+                quantity: 1,
                 // Valor da venda, não o do catálogo: o preço praticado no
                 // documento histórico é o que o cliente reconhece, e pode ser
                 // bem diferente do preço atual do produto.
                 unitCost: this.unitCostForLine(
-                  this.toCents(item.ValorUnitario),
+                  itemTotalValue,
                   productItem.unitKind,
                   {
                     width: itemWidth,
@@ -2717,7 +2726,7 @@ export class ImportService {
                   },
                   quantity,
                 ),
-                salePrice: this.toCents(item.ValorUnitario),
+                salePrice: itemTotalValue,
                 totalValue: itemTotalValue,
                 width:
                   this.toMillimeters(item.ItemLargura) ?? productItem.width,

@@ -32,6 +32,20 @@ export function toSimNao(value: any): string {
   return Number(value) === 1 ? 'SIM' : 'NAO';
 }
 
+/**
+ * Decimal do MySQL em formato que o importador leia sem ambiguidade.
+ *
+ * O driver devolve DECIMAL como texto — "3.500" para 3,5 —, e o importador
+ * trata ponto seguido de três dígitos como separador de milhar, no formato
+ * brasileiro. Sem conversão, 3,5 m viraria 3500 m. Emitir com vírgula remove a
+ * ambiguidade. Só importa para colunas com três casas decimais: as de dinheiro
+ * têm duas e não caem nessa regra.
+ */
+export function decimal(value: any): string {
+  if (value === null || value === undefined || value === '') return '';
+  return String(value).trim().replace('.', ',');
+}
+
 /** Campo textual vazio no legado vem como '' ou null; normaliza para ''. */
 export function text(value: any): string {
   if (value === null || value === undefined) return '';
@@ -385,8 +399,8 @@ const mapSale = (row: any) => ({
   ItemID: text(row.ItemID),
   ProdutoCodigo: text(row.ProdutoCodigo),
   ProdutoNome: text(row.ProdutoNome),
-  ItemLargura: text(row.ItemLargura),
-  ItemComprimento: text(row.ItemComprimento),
+  ItemLargura: decimal(row.ItemLargura),
+  ItemComprimento: decimal(row.ItemComprimento),
   Quantidade: text(row.Quantidade),
   ValorUnitario: text(row.ValorUnitario),
   ValorTotal: text(row.ValorTotal),

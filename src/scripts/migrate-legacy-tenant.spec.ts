@@ -5,6 +5,7 @@ import {
   EMPLOYEE_EXTRACTOR,
   FINANCIAL_EXTRACTOR,
   LEGACY_COST_TYPE,
+  decimal,
   ORDER_EXTRACTOR,
   PAYMENT_CONDITION_EXTRACTOR,
   PRODUCT_CODE_SQL,
@@ -555,5 +556,33 @@ describe('unidade de medida do produto', () => {
     expect(sql).toContain("NULLIF(sv.ser_un_comercial, '')");
     expect(sql).toContain('i.vendaitem_un_com');
     expect(sql).toContain('ORDER BY COUNT(*) DESC');
+  });
+});
+
+describe('decimais do legado', () => {
+  it('não confunde a casa decimal com separador de milhar', () => {
+    // O driver devolve DECIMAL como texto: "3.500" é 3,5 e não 3500. O
+    // importador trata ponto seguido de três dígitos como milhar, no formato
+    // brasileiro, então 3,5 m viraria 3,5 km.
+    expect(decimal('3.500')).toBe('3,500');
+    expect(decimal('10.710')).toBe('10,710');
+    expect(decimal('0.100')).toBe('0,100');
+  });
+
+  it('trata vazio e nulo', () => {
+    expect(decimal(null)).toBe('');
+    expect(decimal('')).toBe('');
+  });
+
+  it('as medidas da linha usam a conversão sem ambiguidade', () => {
+    const row = ORDER_EXTRACTOR.map({
+      NumeroVenda: 2199,
+      ItemLargura: '3.500',
+      ItemComprimento: '1.000',
+      statusLegado: 3,
+    });
+
+    expect(row.ItemLargura).toBe('3,500');
+    expect(row.ItemComprimento).toBe('1,000');
   });
 });

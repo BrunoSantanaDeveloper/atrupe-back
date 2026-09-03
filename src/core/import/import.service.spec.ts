@@ -786,6 +786,17 @@ describe('ImportService unit cost per line', () => {
     // A tela recalcula unitCost = salePrice / medida ao abrir o item. Se o
     // gravado divergir, abrir a linha troca o valor da venda pelo do catálogo.
     expect(unitCost(419000, 'UNITY', {}, 1)).toBe(419000);
+    // 250 unidades a R$ 0,40 somam R$ 100,00 na linha
+    expect(unitCost(10000, 'UNITY', {}, 250)).toBe(40);
+  });
+
+  it('em área, a quantidade entra uma vez só na medida total', () => {
+    // A tela multiplica a medida unitária pela quantidade da linha. Gravar a
+    // quantidade também na composição elevava a medida ao quadrado: 250
+    // unidades viravam 62.500.
+    const taxa = unitCost(10000, 'AREA', { width: 100, height: 100 }, 250);
+
+    expect(taxa! * 100 * 100 * 250).toBeCloseTo(10000, 6);
   });
 
   it('em área, a taxa é o valor dividido pela medida', () => {
