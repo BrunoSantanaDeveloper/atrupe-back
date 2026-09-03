@@ -190,6 +190,7 @@ export class UserRegistrationService {
             signupEventId,
             signupOppref: createUserDto.oppref ?? null,
             signupUtm: createUserDto.utm ?? Prisma.JsonNull,
+            signupGclid: createUserDto.gclid ?? null,
           },
         });
 

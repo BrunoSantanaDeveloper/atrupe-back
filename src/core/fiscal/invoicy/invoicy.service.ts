@@ -196,7 +196,10 @@ export class InvoicyService {
         series:
           row?.[seriesColumn] ??
           legacySeries ??
-          (docType === 'NFSE' ? 'A1' : 1),
+          // A serie da NFS-e nacional entra no Id do DPS e precisa ser
+          // numerica (TSSerieDPS). "A1" era o padrao antigo e e' recusado
+          // pelos municipios no padrao nacional.
+          (docType === 'NFSE' ? '1' : 1),
         nextNumber: row?.[numberColumn] ?? legacyNumber ?? 1,
       };
     };

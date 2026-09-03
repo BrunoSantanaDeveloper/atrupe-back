@@ -762,10 +762,13 @@ describe('ImportService item measurements', () => {
   const service = new ImportService({} as any, {} as any, {} as any);
   const toMm = (v: any) => (service as any).toMillimeters(v);
 
-  it('converte metros do documento para milímetros do banco', () => {
-    // O legado mostra "( 10.71 x 1.9 )" em metros; o banco guarda milímetros.
-    expect(toMm('10,71')).toBeCloseTo(10710, 6);
-    expect(toMm('1.9')).toBeCloseTo(1900, 6);
+  it('mantém a medida do legado, que já vem em milímetros', () => {
+    // A tela do legado exibe "( 10.71 x 1.9 )" formatado em metros, mas a
+    // coluna guarda milímetros. Multiplicar por 1000 aqui inflava a medida:
+    // uma bobina de 1220 mm virava 1.220.000 e a área do PDF saía 1.000.000x
+    // maior, com o rótulo m² correto sobre um número absurdo.
+    expect(toMm('10710')).toBeCloseTo(10710, 6);
+    expect(toMm('1220')).toBeCloseTo(1220, 6);
   });
 
   it('devolve nulo quando a linha não informa medida', () => {

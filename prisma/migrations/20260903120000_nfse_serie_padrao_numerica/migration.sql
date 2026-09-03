@@ -1,0 +1,11 @@
+-- Padrao da serie da NFS-e passa de 'A1' para '1'.
+--
+-- A NFS-e nacional monta o Id do DPS a partir da serie e valida contra
+-- TSSerieDPS ([0-9]{1,4}|[0-8][0-9]{4}), que recusa alfanumerico: emissores
+-- com 'A1' recebem "Falha no esquema XML do DF-e" (E1235) da prefeitura.
+--
+-- Altera apenas o DEFAULT, nao os dados. Municipios em layout proprio ainda
+-- aceitam 'A1' — ha notas autorizadas com ela — entao trocar a serie de um
+-- emissor existente e' decisao de quem emite, e reinicia a numeracao daquela
+-- serie.
+ALTER TABLE "invoicy_configs" ALTER COLUMN "serieNfse" SET DEFAULT '1';

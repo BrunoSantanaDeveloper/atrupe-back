@@ -447,6 +447,7 @@ model User {
   signupEventId        String?             @unique
   signupOppref         String?
   signupUtm            Json?
+  signupGclid          String?
   employee             Employee[]
   userContract         UserContract[]
   userRole             UserRole[]
@@ -2181,7 +2182,11 @@ model InvoicyConfig {
   proximoNumeroNfce Int? @default(1)
 
   // Numeração NFS-e (RPS)
-  serieNfse      String? @default("A1")
+  // "1" e nao "A1": a NFS-e nacional monta o Id do DPS com a serie e valida
+  // contra TSSerieDPS ([0-9]{1,4}|[0-8][0-9]{4}), que recusa alfanumerico.
+  // Municipios em layout proprio ainda aceitam "A1", por isso o valor segue
+  // livre — o que muda e o padrao de quem nasce agora.
+  serieNfse      String? @default("1")
   proximoRpsNfse Int?    @default(1)
 
   // IBGE code (cached from CEP lookup to avoid external API calls on every emission)

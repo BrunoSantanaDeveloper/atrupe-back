@@ -104,6 +104,14 @@ export class CreateUserDto {
     required: false,
   })
   utm?: Record<string, string>;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'gclid (Google Ads click id) de atribuição',
+    required: false,
+  })
+  gclid?: string;
 }
 
 export class CreateUserByEmployeeDto {

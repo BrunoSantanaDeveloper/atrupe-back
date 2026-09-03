@@ -331,9 +331,10 @@ describe('UserRegistrationService', () => {
       mockPrisma.mailVerification.deleteMany.mockResolvedValueOnce({});
 
       const oppref = 'op_teste_123';
+      const gclid = 'gclid_teste_abc';
       const utm = { utm_source: 'chatgpt', utm_medium: 'cpc' };
       const result = await service.createPassword(
-        makeCreateUserDto({ oppref, utm }) as any,
+        makeCreateUserDto({ oppref, utm, gclid }) as any,
       );
 
       // Contrato §5.2: retorna um event_id (UUID) não vazio.
@@ -346,6 +347,7 @@ describe('UserRegistrationService', () => {
       expect(userData.signupEventId).toBe(result.eventId);
       expect(userData.signupOppref).toBe(oppref);
       expect(userData.signupUtm).toEqual(utm);
+      expect(userData.signupGclid).toBe(gclid);
     });
 
     it('deve lançar ConflictException se o email já foi cadastrado (P2002)', async () => {
