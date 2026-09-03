@@ -84,6 +84,8 @@ export class InvoicyService {
       data.ibsCbsEnviarValores = dto.ibsCbsEnviarValores;
     if (dto.reformaTributariaAtiva !== undefined)
       data.reformaTributariaAtiva = dto.reformaTributariaAtiva;
+    if (dto.indicadorOperacaoNfse !== undefined)
+      data.indicadorOperacaoNfse = dto.indicadorOperacaoNfse;
     if (dto.regApIbsCbsSn !== undefined) data.regApIbsCbsSn = dto.regApIbsCbsSn;
     if (dto.aliquotaIbsUf !== undefined) data.aliquotaIbsUf = dto.aliquotaIbsUf;
     if (dto.aliquotaIbsMun !== undefined)
@@ -275,6 +277,7 @@ export class InvoicyService {
       // a coluna estivesse ligada no banco.
       ibsCbsEnviarValores: config.ibsCbsEnviarValores ?? false,
       reformaTributariaAtiva: config.reformaTributariaAtiva ?? false,
+      indicadorOperacaoNfse: config.indicadorOperacaoNfse ?? null,
       regApIbsCbsSn: config.regApIbsCbsSn ?? null,
       aliquotaIbsUf: config.aliquotaIbsUf ?? null,
       aliquotaIbsMun: config.aliquotaIbsMun ?? null,

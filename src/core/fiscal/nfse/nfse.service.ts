@@ -1052,6 +1052,15 @@ export class NfseService {
      * Fora do Simples é sempre o regular. Sem configuração, o optante fica no
      * 1 (ambos pelo SN), que é o comportamento anterior.
      */
+    /**
+     * cIndOp: o da emissao vence o padrao do emissor. O campo e obrigatorio no
+     * layout da Reforma e nao muda de nota para nota na maioria dos emissores,
+     * por isso o padrao existe — mas quem emite pode sobrepor numa operacao
+     * especifica sem mexer na configuracao.
+     */
+    const indicadorOperacao =
+      dto.cIndOp || (config as any).indicadorOperacaoNfse || undefined;
+
     const optanteSimples = config.emitCrt === 1 || config.emitCrt === 2;
     const regimeApuracaoIbsCbs = optanteSimples
       ? ((config as any).regApIbsCbsSn ?? 1)
@@ -1301,7 +1310,7 @@ export class NfseService {
                 : {}),
               // Campos da Reforma Tributária (Layout NFS-e RT v4). Omitidos
               // quando não informados — a nota continua saindo como antes.
-              ...(dto.cIndOp ? { cIndOp: dto.cIndOp } : {}),
+              ...(indicadorOperacao ? { cIndOp: indicadorOperacao } : {}),
               ...(dto.indFinal !== undefined ? { indFinal: dto.indFinal } : {}),
               ...(dto.indDest !== undefined ? { indDest: dto.indDest } : {}),
               ...(dto.tpEnteGov !== undefined

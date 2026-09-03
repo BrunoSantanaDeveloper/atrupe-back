@@ -343,6 +343,61 @@ describe('NfseService', () => {
       expect(invoicyApiService.emitNfse).toHaveBeenCalledTimes(2);
     });
 
+    /**
+     * cIndOp e' obrigatorio no layout da Reforma e estavel para a maioria dos
+     * emissores — sem padrao, o usuario digitava a cada nota.
+     */
+    describe('indicador de operacao (cIndOp)', () => {
+      const rpsEnviado = () =>
+        mockInvoicyApiService.emitNfse.mock.calls.at(-1)[1][0].Documento.RPS[0];
+
+      const comIndicadorPadrao = async (indicadorOperacaoNfse: unknown) => {
+        const configBase = await mockInvoicyService.getConfig();
+        mockInvoicyService.getConfig.mockResolvedValue({
+          ...configBase,
+          indicadorOperacaoNfse,
+        });
+      };
+
+      it('usa o padrao do emissor quando a emissao nao informa', async () => {
+        await comIndicadorPadrao('100301');
+
+        await service.emitFromOrder(mockCompanyId, {
+          orderId: mockOrderId,
+          codigoServico: '1.05',
+          discriminacao: 'Servico de consultoria em TI',
+        });
+
+        expect(rpsEnviado().cIndOp).toBe('100301');
+      });
+
+      it('deixa a emissao sobrepor o padrao', async () => {
+        await comIndicadorPadrao('100301');
+
+        await service.emitFromOrder(mockCompanyId, {
+          orderId: mockOrderId,
+          codigoServico: '1.05',
+          discriminacao: 'Servico de consultoria em TI',
+          cIndOp: '100999',
+        });
+
+        expect(rpsEnviado().cIndOp).toBe('100999');
+      });
+
+      /** Emissor sem padrao segue como antes: o campo simplesmente nao vai. */
+      it('omite o campo quando nao ha padrao nem valor na emissao', async () => {
+        await comIndicadorPadrao(null);
+
+        await service.emitFromOrder(mockCompanyId, {
+          orderId: mockOrderId,
+          codigoServico: '1.05',
+          discriminacao: 'Servico de consultoria em TI',
+        });
+
+        expect(rpsEnviado()).not.toHaveProperty('cIndOp');
+      });
+    });
+
     describe('reenvio do E0166 (RegApuracao)', () => {
       const rejeicaoE0166 = [
         {

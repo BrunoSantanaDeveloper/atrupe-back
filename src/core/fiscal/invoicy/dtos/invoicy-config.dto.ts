@@ -9,6 +9,7 @@ import {
   IsInt,
   Min,
   Max,
+  Length,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
@@ -31,6 +32,14 @@ const parseNullableNumber = ({ value }) => {
   if (value === undefined) return undefined;
   const parsed = parseFloat(value);
   return isNaN(parsed) ? null : parsed;
+};
+
+/** Campo de texto onde vazio significa "limpar o padrao salvo", nao "nao mexer". */
+const emptyToNull = ({ value }) => {
+  if (value === undefined) return undefined;
+  if (value === null || String(value).trim() === '' || value === '$undefined')
+    return null;
+  return String(value).trim();
 };
 
 const parseNumber = ({ value }) => {
@@ -279,6 +288,19 @@ export class CreateInvoicyConfigDto {
   @IsBoolean()
   @IsOptional()
   reformaTributariaAtiva?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Código indicador da operação (cIndOp) padrão da NFS-e. Obrigatório no ' +
+      'layout da Reforma e estável para a maioria dos emissores; usado quando ' +
+      'a emissão não informa outro. Vazio limpa o padrão.',
+    example: '100301',
+  })
+  @IsString()
+  @IsOptional()
+  @Length(0, 6)
+  @Transform(emptyToNull)
+  indicadorOperacaoNfse?: string | null;
 
   @ApiPropertyOptional({
     description:
@@ -671,6 +693,19 @@ export class UpdateInvoicyConfigDto {
   @IsBoolean()
   @IsOptional()
   reformaTributariaAtiva?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Código indicador da operação (cIndOp) padrão da NFS-e. Obrigatório no ' +
+      'layout da Reforma e estável para a maioria dos emissores; usado quando ' +
+      'a emissão não informa outro. Vazio limpa o padrão.',
+    example: '100301',
+  })
+  @IsString()
+  @IsOptional()
+  @Length(0, 6)
+  @Transform(emptyToNull)
+  indicadorOperacaoNfse?: string | null;
 
   @ApiPropertyOptional({
     description:

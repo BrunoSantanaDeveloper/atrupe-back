@@ -2223,6 +2223,10 @@ model InvoicyConfig {
   // empresa. Desligado enquanto o provedor nao ativar: enviar antes disso e
   // campo ignorado em silencio.
   reformaTributariaAtiva Boolean @default(false)
+  // cIndOp da NFS-e: obrigatorio (1-1) no layout da Reforma e estavel para a
+  // maioria dos emissores, que prestam sempre o mesmo tipo de operacao. Fica
+  // como padrao do emissor e continua sobrescrivel na emissao.
+  indicadorOperacaoNfse String?
 
   // Envio fiscal por e-mail
   sendDanfeXmlAutomatically Boolean @default(false)
