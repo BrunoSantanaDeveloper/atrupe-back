@@ -172,13 +172,13 @@ export class ImportService {
   }
 
   /**
-   * Medida da linha do documento legado, na unidade do banco (milímetros).
+   * Converte a medida do documento (metros) para a unidade do banco
+   * (milímetros).
    *
-   * A coluna do legado já vem em milímetros. O "( 10.71 x 1.9 )" que a tela
-   * dele exibia era o valor formatado em metros, não o gravado — e a conversão
-   * por 1000 que se apoiava nessa leitura inflou 2.665 linhas do primeiro
-   * tenant migrado: uma bobina de 1220 mm virou 1.220.000, e como a área
-   * multiplica as duas medidas, o m² do PDF saiu 1.000.000x maior.
+   * A coluna do legado está em metros, com três casas decimais. O próprio PDF
+   * do sistema antigo comprova: imprime "( 0.100 x 0.100 - 0.01m² )", e só em
+   * metros 0,1 × 0,1 resulta em 0,01 m² — em milímetros daria praticamente
+   * zero.
    *
    * Devolve nulo quando a linha não informa medida, para o chamador cair na
    * dimensão cadastrada no produto.
@@ -187,7 +187,7 @@ export class ImportService {
     if (value === null || value === undefined || value === '') return null;
     const parsed = this.parseDecimal(value);
     if (isNaN(parsed) || parsed <= 0) return null;
-    return parsed;
+    return parsed * 1000;
   }
 
   private async findSeller(
