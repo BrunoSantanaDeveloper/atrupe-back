@@ -104,17 +104,6 @@ export const ORDER_COMPANY_SELECT = {
   cnpj: true,
 };
 
-export const ORDER_CLIENT_SELECT = {
-  id: true,
-  type: true,
-  name: true,
-  status: true,
-  cnpj: true,
-  cpf: true,
-  email: true,
-  phone: true,
-};
-
 export const ORDER_CLIENT_ADDRESS_SELECT = {
   id: true,
   street: true,
@@ -125,6 +114,26 @@ export const ORDER_CLIENT_ADDRESS_SELECT = {
   state: true,
   zipcode: true,
   type: true,
+};
+
+export const ORDER_CLIENT_SELECT = {
+  id: true,
+  type: true,
+  name: true,
+  corporateName: true,
+  status: true,
+  cnpj: true,
+  cpf: true,
+  email: true,
+  phone: true,
+  // O endereço do cliente é o do tomador na emissão de NFS-e. Sem ele a tela
+  // avisava "Tomador sem endereço cadastrado" para todo cliente, inclusive os
+  // que têm endereço — este select é whitelist e a relação ficava de fora.
+  // A emissão nunca dependeu disto (o backend carrega o endereço por conta
+  // própria em nfse.service.ts), então era um alarme falso.
+  address: {
+    select: ORDER_CLIENT_ADDRESS_SELECT,
+  },
 };
 
 export const ORDER_DELIVERY_INFO_INCLUDE = {
