@@ -10,13 +10,19 @@ import {
   ArrayMaxSize,
   IsUUID,
   Length,
+  IsBoolean,
+  IsEnum,
+  IsIn,
+  ValidateIf,
+  ValidateNested,
 } from 'class-validator';
+import { CategoryKind, ProductStatus, UnitKind } from '@prisma/client';
 import {
   IsCnae,
   IsCodigoServico,
 } from '../../../../helpers/validators/fiscal-servico';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 // Helper to parse numeric strings or undefined
 const parseNumber = ({ value }) => {
@@ -264,20 +270,99 @@ export class CreateProductFiscalDataDto {
   codClassificacao?: string;
 }
 
-/** Teto por requisição: mantém a transação curta e limita o estrago de um
- * envio acidental. A tela seleciona no máximo uma página de produtos. */
+/** Teto por requisição no escopo SELECTED, e tamanho do lote no escopo ALL:
+ * mantém cada transação curta e limita o estrago de um envio acidental. */
 export const BULK_NCM_MAX_PRODUCTS = 500;
 
+export type BulkNcmScope = 'SELECTED' | 'ALL';
+
+/**
+ * Filtros da listagem repetidos no corpo, para o escopo ALL atingir o mesmo
+ * conjunto que a tela mostra. Mesmos nomes de `ProductFilterDTO`, sem
+ * paginação e sem `companyId` — a empresa vem sempre do token.
+ */
+export class BulkNcmFiltersDto {
+  @ApiPropertyOptional({ description: 'Busca por nome, código ou descrição' })
+  @IsString()
+  @IsOptional()
+  search?: string;
+
+  @ApiPropertyOptional({ description: 'ID da categoria' })
+  @IsUUID()
+  @IsOptional()
+  categoryId?: string;
+
+  @ApiPropertyOptional({ description: 'ID do setor' })
+  @IsUUID()
+  @IsOptional()
+  sectorId?: string;
+
+  @ApiPropertyOptional({ enum: UnitKind })
+  @IsEnum(UnitKind)
+  @IsOptional()
+  unitKind?: UnitKind;
+
+  @ApiPropertyOptional({ enum: CategoryKind })
+  @IsEnum(CategoryKind)
+  @IsOptional()
+  categoryKind?: CategoryKind;
+
+  @ApiPropertyOptional({ enum: ProductStatus })
+  @IsEnum(ProductStatus)
+  @IsOptional()
+  status?: ProductStatus;
+
+  @ApiPropertyOptional({ description: 'Somente serviços ou somente produtos' })
+  @IsBoolean()
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  isService?: boolean;
+}
+
 export class BulkUpdateNcmDto {
-  @ApiProperty({
-    description: 'IDs dos produtos que receberão o NCM',
+  @ApiPropertyOptional({
+    description:
+      'SELECTED (padrão) aplica aos productIds informados; ALL aplica a todos ' +
+      'os produtos da empresa que atendem aos filtros.',
+    enum: ['SELECTED', 'ALL'],
+    default: 'SELECTED',
+  })
+  @IsIn(['SELECTED', 'ALL'])
+  @IsOptional()
+  scope?: BulkNcmScope;
+
+  @ApiPropertyOptional({
+    description:
+      'IDs dos produtos que receberão o NCM (obrigatório no escopo SELECTED)',
     type: [String],
   })
+  // Obrigatório fora do escopo ALL: assim o corpo antigo ({ productIds, ncm })
+  // continua válido e o front pode ir a produção antes ou depois do backend.
+  @ValidateIf((dto: BulkUpdateNcmDto) => dto.scope !== 'ALL')
   @IsArray()
   @ArrayNotEmpty()
   @ArrayMaxSize(BULK_NCM_MAX_PRODUCTS)
   @IsUUID(undefined, { each: true })
-  productIds: string[];
+  productIds?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Filtros da listagem, usados apenas no escopo ALL',
+    type: BulkNcmFiltersDto,
+  })
+  @ValidateNested()
+  @Type(() => BulkNcmFiltersDto)
+  @IsOptional()
+  filters?: BulkNcmFiltersDto;
+
+  @ApiPropertyOptional({
+    description:
+      'Aplica somente a produtos sem NCM próprio: sem cadastro fiscal, com NCM ' +
+      'vazio ou ainda com o NCM padrão do emissor. Preserva NCM ajustado à mão.',
+    default: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  onlyInheritedNcm?: boolean;
 
   @ApiProperty({ description: 'NCM de 8 dígitos aplicado a todos os produtos' })
   @IsString()

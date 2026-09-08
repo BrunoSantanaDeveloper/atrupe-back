@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import {
+  BULK_NCM_MAX_PRODUCTS,
+  BulkUpdateNcmDto,
   CreateProductFiscalDataDto,
   UpdateProductFiscalDataDto,
   ProductStRuleDto,
@@ -16,6 +18,8 @@ import {
   validateNcm,
   formatNcm,
 } from '../utils/fiscal-validators';
+import { defaultsCadastroFiscal } from '../utils/product-fiscal-defaults.util';
+import { buildProductListWhere } from '../../product/product-list-where.util';
 
 /** Pendência de cadastro que impede ou compromete a emissão de NFS-e. */
 export interface PendenciaFiscal {
@@ -237,26 +241,129 @@ export class ProductFiscalService {
    * migrada tem dezenas de produtos com o NCM padrão herdado que precisam do
    * código correto, e a emissão só falha quando a nota já foi montada.
    *
+   * Dois escopos: SELECTED aplica aos IDs informados (o caminho antigo);
+   * ALL aplica a todos os produtos da empresa que atendem aos filtros da
+   * listagem, para quem precisa corrigir uma base recém-migrada inteira sem
+   * paginar de 500 em 500.
+   *
    * Escopo por empresa: IDs de outra empresa (ou inexistentes) são ignorados em
    * silêncio e devolvidos apenas como contagem em `ignored` — o controller não
-   * tem TenantGuard e o filtro por companyId aqui é a única barreira.
+   * tem TenantGuard e o filtro por companyId aqui é a única barreira; no escopo
+   * ALL a empresa vem do token e nunca do corpo.
    *
-   * Produto sem cadastro fiscal recebe um registro novo com os mesmos defaults
-   * de getOrCreateWithDefaults, trocando só o NCM pelo informado. Produto que já
-   * tem cadastro tem SOMENTE o ncm alterado — CFOP, CSTs e alíquotas ajustados
+   * Produto sem cadastro fiscal recebe um registro novo com os defaults do
+   * regime do emissor, trocando só o NCM pelo informado. Produto que já tem
+   * cadastro tem SOMENTE o ncm alterado — CFOP, CSTs e alíquotas ajustados
    * pelo usuário são preservados.
    */
-  async bulkUpdateNcm(companyId: string, productIds: string[], ncm: string) {
-    const check = validateNcm(ncm);
+  async bulkUpdateNcm(companyId: string, dto: BulkUpdateNcmDto) {
+    const check = validateNcm(dto.ncm);
     if (!check.valid) {
       throw new BadRequestException(check.message);
     }
 
-    const cleanNcm = formatNcm(ncm);
+    const cleanNcm = formatNcm(dto.ncm);
+    const defaults = await this.getCompanyFiscalDefaults(companyId);
 
+    // Preserva NCM ajustado à mão: só entram produtos sem cadastro fiscal, com
+    // NCM vazio, ou ainda com o NCM padrão herdado do emissor.
+    const semNcmProprio = dto.onlyInheritedNcm
+      ? {
+          OR: [
+            { ncm: null },
+            { ncm: '' },
+            ...(defaults.defaultNcm
+              ? [{ ncm: formatNcm(defaults.defaultNcm) }]
+              : []),
+          ],
+        }
+      : {};
+
+    const { productWhere, ignored } =
+      dto.scope === 'ALL'
+        ? {
+            // companyId sempre do token, nunca do corpo.
+            productWhere: buildProductListWhere({
+              ...dto.filters,
+              companyId,
+            }),
+            ignored: 0,
+          }
+        : await this.resolverEscopoSelecionado(companyId, dto.productIds ?? []);
+
+    // Produto sem cadastro fiscal não tem NCM próprio: entra mesmo com o
+    // filtro "só sem NCM próprio" ligado.
+    const semCadastro = await this.prisma.product.findMany({
+      where: { ...productWhere, fiscalData: null },
+      select: { id: true },
+    });
+
+    // Sem transação única de propósito: no escopo ALL ela seguraria locks por
+    // toda a base de produtos da empresa. A operação é idempotente — aplicar o
+    // mesmo NCM duas vezes não muda nada —, então uma falha no meio pode ser
+    // simplesmente repetida.
+    const updateResult = await this.prisma.productFiscalData.updateMany({
+      where: { product: productWhere, ...semNcmProprio },
+      data: { ncm: cleanNcm },
+    });
+
+    let created = 0;
+    for (let i = 0; i < semCadastro.length; i += BULK_NCM_MAX_PRODUCTS) {
+      const lote = semCadastro.slice(i, i + BULK_NCM_MAX_PRODUCTS);
+      const { count } = await this.prisma.productFiscalData.createMany({
+        data: lote.map(({ id: productId }) => ({
+          productId,
+          ncm: cleanNcm,
+          cfopInState: defaults.defaultCfop || '5101',
+          // CST de ICMS conforme o regime do emissor: CSOSN em emissor do
+          // Regime Normal nasce bloqueado para emissão.
+          ...defaultsCadastroFiscal(defaults.emitCrt),
+        })),
+        skipDuplicates: true,
+      });
+      created += count;
+    }
+
+    const total = updateResult.count + created;
+    if (total === 0) {
+      throw new NotFoundException(
+        dto.onlyInheritedNcm
+          ? 'Nenhum produto para alterar: todos os selecionados já têm um NCM próprio.'
+          : 'Nenhum produto encontrado para aplicar o NCM.',
+      );
+    }
+
+    this.logger.log(
+      `Bulk NCM ${cleanNcm} na empresa ${companyId} (escopo ${dto.scope ?? 'SELECTED'}` +
+        `${dto.onlyInheritedNcm ? ', só sem NCM próprio' : ''}` +
+        `${dto.filters ? `, filtros ${JSON.stringify(dto.filters)}` : ''}): ` +
+        `${updateResult.count} atualizados, ${created} criados, ${ignored} ignorados.`,
+    );
+
+    return {
+      ncm: cleanNcm,
+      scope: dto.scope ?? 'SELECTED',
+      updated: updateResult.count,
+      created,
+      ignored,
+      total,
+    };
+  }
+
+  /**
+   * Escopo por seleção: confere quais IDs pertencem à empresa.
+   *
+   * IDs de outra empresa (ou inexistentes) são ignorados em silêncio e
+   * devolvidos apenas como contagem — este controller não passa pelo
+   * TenantGuard, e o filtro por companyId aqui é a única barreira.
+   */
+  private async resolverEscopoSelecionado(
+    companyId: string,
+    productIds: string[],
+  ) {
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds }, companyId },
-      select: { id: true, fiscalData: { select: { id: true } } },
+      select: { id: true },
     });
 
     if (products.length === 0) {
@@ -265,51 +372,50 @@ export class ProductFiscalService {
       );
     }
 
-    const idsWithFiscalData = products
-      .filter((product) => product.fiscalData)
-      .map((product) => product.id);
-    const idsWithoutFiscalData = products
-      .filter((product) => !product.fiscalData)
-      .map((product) => product.id);
+    return {
+      productWhere: { id: { in: products.map((p) => p.id) }, companyId },
+      ignored: productIds.length - products.length,
+    };
+  }
 
+  /**
+   * Quantos produtos a alteração em massa atingiria, sem alterar nada.
+   *
+   * A tela mostra "serão alterados N" antes de aplicar — principalmente com o
+   * filtro "só sem NCM próprio", em que N não é o total da listagem.
+   */
+  async contarAlvosBulkNcm(companyId: string, dto: BulkUpdateNcmDto) {
     const defaults = await this.getCompanyFiscalDefaults(companyId);
+    const productWhere =
+      dto.scope === 'ALL'
+        ? buildProductListWhere({ ...dto.filters, companyId })
+        : { id: { in: dto.productIds ?? [] }, companyId };
 
-    // Duas queries em lote em vez de uma operação por produto: a transação
-    // fecha rápido mesmo no teto de BULK_NCM_MAX_PRODUCTS itens.
-    const [updateResult, createResult] = await this.prisma.$transaction([
-      this.prisma.productFiscalData.updateMany({
-        where: { productId: { in: idsWithFiscalData } },
-        data: { ncm: cleanNcm },
+    const semNcmProprio = dto.onlyInheritedNcm
+      ? {
+          OR: [
+            { ncm: null },
+            { ncm: '' },
+            ...(defaults.defaultNcm
+              ? [{ ncm: formatNcm(defaults.defaultNcm) }]
+              : []),
+          ],
+        }
+      : {};
+
+    const [comCadastro, semCadastro] = await Promise.all([
+      this.prisma.productFiscalData.count({
+        where: { product: productWhere, ...semNcmProprio },
       }),
-      this.prisma.productFiscalData.createMany({
-        data: idsWithoutFiscalData.map((productId) => ({
-          productId,
-          ncm: cleanNcm,
-          cfopInState: defaults.defaultCfop || '5101',
-          cfopOutState: '6101',
-          commercialUnit: 'UN',
-          icmsOrigin: '0',
-          icmsCst: '102',
-          pisCst: '99',
-          cofinsCst: '99',
-        })),
-        skipDuplicates: true,
+      this.prisma.product.count({
+        where: { ...productWhere, fiscalData: null },
       }),
     ]);
 
-    const ignored = productIds.length - products.length;
-
-    this.logger.log(
-      `Bulk NCM ${cleanNcm} na empresa ${companyId}: ` +
-        `${updateResult.count} atualizados, ${createResult.count} criados, ` +
-        `${ignored} ignorados.`,
-    );
-
     return {
-      ncm: cleanNcm,
-      updated: updateResult.count,
-      created: createResult.count,
-      ignored,
+      total: comCadastro + semCadastro,
+      comCadastroFiscal: comCadastro,
+      semCadastroFiscal: semCadastro,
     };
   }
 
@@ -361,12 +467,9 @@ export class ProductFiscalService {
         product: { connect: { id: productId } },
         ncm: config.defaultNcm || '49119900',
         cfopInState: config.defaultCfop || '5101',
-        cfopOutState: '6101',
-        commercialUnit: 'UN',
-        icmsOrigin: '0',
-        icmsCst: '102',
-        pisCst: '99',
-        cofinsCst: '99',
+        // CST de ICMS conforme o regime: CSOSN em emissor do Regime Normal
+        // faz a emissão ser recusada.
+        ...defaultsCadastroFiscal(config.emitCrt),
       },
     });
 
@@ -384,10 +487,14 @@ export class ProductFiscalService {
   private async getCompanyFiscalDefaults(companyId: string): Promise<{
     defaultNcm: string | null;
     defaultCfop: string | null;
+    /** Regime do emissor; decide o CST de ICMS dos cadastros criados. */
+    emitCrt: number | null;
   }> {
+    const select = { defaultNcm: true, defaultCfop: true, emitCrt: true };
+
     const config = await this.prisma.invoicyConfig.findFirst({
       where: { companyId, isDefault: true },
-      select: { defaultNcm: true, defaultCfop: true },
+      select,
     });
 
     if (!config) {
@@ -395,18 +502,20 @@ export class ProductFiscalService {
       const firstConfig = await this.prisma.invoicyConfig.findFirst({
         where: { companyId },
         orderBy: { createdAt: 'asc' },
-        select: { defaultNcm: true, defaultCfop: true },
+        select,
       });
 
       return {
         defaultNcm: firstConfig?.defaultNcm || null,
         defaultCfop: firstConfig?.defaultCfop || null,
+        emitCrt: firstConfig?.emitCrt ?? null,
       };
     }
 
     return {
       defaultNcm: config.defaultNcm || null,
       defaultCfop: config.defaultCfop || null,
+      emitCrt: config.emitCrt ?? null,
     };
   }
 

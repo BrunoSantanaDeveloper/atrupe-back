@@ -13,11 +13,16 @@ describe('ProductFiscalService', () => {
 
   beforeEach(async () => {
     prisma = {
-      product: { findMany: jest.fn(), findUnique: jest.fn() },
+      product: {
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+        count: jest.fn(),
+      },
       productFiscalData: {
         updateMany: jest.fn(),
         createMany: jest.fn(),
         upsert: jest.fn(),
+        count: jest.fn(),
       },
       productStRule: {
         findMany: jest.fn(),
@@ -147,24 +152,44 @@ describe('ProductFiscalService', () => {
   describe('bulkUpdateNcm', () => {
     const COMPANY = 'company-1';
 
+    /**
+     * `product.findMany` é chamado duas vezes no escopo SELECTED: primeiro
+     * para resolver quais IDs pertencem à empresa, depois para achar quem
+     * ainda não tem cadastro fiscal.
+     */
     function mockProducts(products: { id: string; hasFiscal: boolean }[]) {
-      prisma.product.findMany.mockResolvedValue(
-        products.map((p) => ({
-          id: p.id,
-          fiscalData: p.hasFiscal ? { id: `fd-${p.id}` } : null,
-        })),
-      );
+      const daEmpresa = products.map(({ id }) => ({ id }));
+      const semCadastro = products
+        .filter((p) => !p.hasFiscal)
+        .map(({ id }) => ({ id }));
+
+      prisma.product.findMany
+        .mockResolvedValueOnce(daEmpresa)
+        .mockResolvedValueOnce(semCadastro);
       prisma.productFiscalData.updateMany.mockResolvedValue({
         count: products.filter((p) => p.hasFiscal).length,
       });
       prisma.productFiscalData.createMany.mockResolvedValue({
-        count: products.filter((p) => !p.hasFiscal).length,
+        count: semCadastro.length,
+      });
+    }
+
+    /** Escopo ALL não resolve IDs: a primeira busca já é a de quem não tem cadastro. */
+    function mockEscopoTodos(semCadastro: string[], atualizados: number) {
+      prisma.product.findMany.mockResolvedValue(
+        semCadastro.map((id) => ({ id })),
+      );
+      prisma.productFiscalData.updateMany.mockResolvedValue({
+        count: atualizados,
+      });
+      prisma.productFiscalData.createMany.mockResolvedValue({
+        count: semCadastro.length,
       });
     }
 
     it('rejeita NCM inválido antes de tocar o banco', async () => {
       await expect(
-        service.bulkUpdateNcm(COMPANY, ['p-1'], '123'),
+        service.bulkUpdateNcm(COMPANY, { productIds: ['p-1'], ncm: '123' }),
       ).rejects.toThrow(BadRequestException);
 
       expect(prisma.product.findMany).not.toHaveBeenCalled();
@@ -172,22 +197,24 @@ describe('ProductFiscalService', () => {
 
     it('rejeita o NCM genérico 00000000', async () => {
       await expect(
-        service.bulkUpdateNcm(COMPANY, ['p-1'], '00000000'),
+        service.bulkUpdateNcm(COMPANY, {
+          productIds: ['p-1'],
+          ncm: '00000000',
+        }),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('normaliza NCM com máscara antes de gravar', async () => {
       mockProducts([{ id: 'p-1', hasFiscal: true }]);
 
-      const result = await service.bulkUpdateNcm(
-        COMPANY,
-        ['p-1'],
-        '4911.10.10',
-      );
+      const result = await service.bulkUpdateNcm(COMPANY, {
+        productIds: ['p-1'],
+        ncm: '4911.10.10',
+      });
 
       expect(result.ncm).toBe('49111010');
       expect(prisma.productFiscalData.updateMany).toHaveBeenCalledWith({
-        where: { productId: { in: ['p-1'] } },
+        where: { product: { id: { in: ['p-1'] }, companyId: COMPANY } },
         data: { ncm: '49111010' },
       });
     });
@@ -195,18 +222,17 @@ describe('ProductFiscalService', () => {
     it('filtra por companyId e ignora ids de fora da empresa', async () => {
       mockProducts([{ id: 'p-1', hasFiscal: true }]);
 
-      const result = await service.bulkUpdateNcm(
-        COMPANY,
-        ['p-1', 'p-de-outra-empresa', 'p-inexistente'],
-        '49111010',
-      );
+      const result = await service.bulkUpdateNcm(COMPANY, {
+        productIds: ['p-1', 'p-de-outra-empresa', 'p-inexistente'],
+        ncm: '49111010',
+      });
 
-      expect(prisma.product.findMany).toHaveBeenCalledWith({
+      expect(prisma.product.findMany).toHaveBeenNthCalledWith(1, {
         where: {
           id: { in: ['p-1', 'p-de-outra-empresa', 'p-inexistente'] },
           companyId: COMPANY,
         },
-        select: { id: true, fiscalData: { select: { id: true } } },
+        select: { id: true },
       });
       expect(result.ignored).toBe(2);
     });
@@ -218,15 +244,9 @@ describe('ProductFiscalService', () => {
         { id: 'p-3', hasFiscal: false },
       ]);
 
-      const result = await service.bulkUpdateNcm(
-        COMPANY,
-        ['p-1', 'p-2', 'p-3'],
-        '49111010',
-      );
-
-      expect(prisma.productFiscalData.updateMany).toHaveBeenCalledWith({
-        where: { productId: { in: ['p-1'] } },
-        data: { ncm: '49111010' },
+      const result = await service.bulkUpdateNcm(COMPANY, {
+        productIds: ['p-1', 'p-2', 'p-3'],
+        ncm: '49111010',
       });
 
       const createArgs = prisma.productFiscalData.createMany.mock.calls[0][0];
@@ -241,16 +261,21 @@ describe('ProductFiscalService', () => {
 
       expect(result).toEqual({
         ncm: '49111010',
+        scope: 'SELECTED',
         updated: 1,
         created: 2,
         ignored: 0,
+        total: 3,
       });
     });
 
     it('só altera o ncm de quem já tem cadastro, preservando o resto', async () => {
       mockProducts([{ id: 'p-1', hasFiscal: true }]);
 
-      await service.bulkUpdateNcm(COMPANY, ['p-1'], '49111010');
+      await service.bulkUpdateNcm(COMPANY, {
+        productIds: ['p-1'],
+        ncm: '49111010',
+      });
 
       const updateArgs = prisma.productFiscalData.updateMany.mock.calls[0][0];
       expect(Object.keys(updateArgs.data)).toEqual(['ncm']);
@@ -263,7 +288,10 @@ describe('ProductFiscalService', () => {
       });
       mockProducts([{ id: 'p-1', hasFiscal: false }]);
 
-      await service.bulkUpdateNcm(COMPANY, ['p-1'], '49111010');
+      await service.bulkUpdateNcm(COMPANY, {
+        productIds: ['p-1'],
+        ncm: '49111010',
+      });
 
       const createArgs = prisma.productFiscalData.createMany.mock.calls[0][0];
       // O NCM vem do que o usuário escolheu, não do default do emissor
@@ -275,10 +303,199 @@ describe('ProductFiscalService', () => {
       prisma.product.findMany.mockResolvedValue([]);
 
       await expect(
-        service.bulkUpdateNcm(COMPANY, ['p-de-outra-empresa'], '49111010'),
+        service.bulkUpdateNcm(COMPANY, {
+          productIds: ['p-de-outra-empresa'],
+          ncm: '49111010',
+        }),
       ).rejects.toThrow(NotFoundException);
 
-      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.productFiscalData.updateMany).not.toHaveBeenCalled();
+    });
+
+    /**
+     * CSOSN em emissor do Regime Normal faz o cálculo de imposto recusar a
+     * emissão: o produto criado aqui nasceria bloqueado.
+     */
+    it('cria cadastro com CST 00 quando o emissor é do Regime Normal', async () => {
+      prisma.invoicyConfig.findFirst.mockResolvedValue({
+        defaultNcm: null,
+        defaultCfop: null,
+        emitCrt: 3,
+      });
+      mockProducts([{ id: 'p-1', hasFiscal: false }]);
+
+      await service.bulkUpdateNcm(COMPANY, {
+        productIds: ['p-1'],
+        ncm: '49111010',
+      });
+
+      expect(
+        prisma.productFiscalData.createMany.mock.calls[0][0].data[0].icmsCst,
+      ).toBe('00');
+    });
+
+    it('mantém CSOSN 102 no Simples e quando o emissor não tem CRT', async () => {
+      for (const emitCrt of [1, 2, null]) {
+        jest.clearAllMocks();
+        prisma.invoicyConfig.findFirst.mockResolvedValue({
+          defaultNcm: null,
+          defaultCfop: null,
+          emitCrt,
+        });
+        mockProducts([{ id: 'p-1', hasFiscal: false }]);
+
+        await service.bulkUpdateNcm(COMPANY, {
+          productIds: ['p-1'],
+          ncm: '49111010',
+        });
+
+        expect(
+          prisma.productFiscalData.createMany.mock.calls[0][0].data[0].icmsCst,
+        ).toBe('102');
+      }
+    });
+
+    describe("escopo 'todos os produtos'", () => {
+      it('aplica os filtros da listagem com a empresa vinda do token', async () => {
+        mockEscopoTodos([], 42);
+
+        const result = await service.bulkUpdateNcm(COMPANY, {
+          scope: 'ALL',
+          ncm: '49111010',
+          filters: { search: 'camisa', status: 'ACTIVE' } as any,
+        });
+
+        expect(prisma.productFiscalData.updateMany).toHaveBeenCalledWith({
+          where: {
+            product: expect.objectContaining({
+              companyId: COMPANY,
+              isActive: true,
+              AND: [
+                {
+                  OR: [
+                    { name: { contains: 'camisa', mode: 'insensitive' } },
+                    { code: { contains: 'camisa', mode: 'insensitive' } },
+                    {
+                      technicalDescription: {
+                        contains: 'camisa',
+                        mode: 'insensitive',
+                      },
+                    },
+                  ],
+                },
+              ],
+            }),
+          },
+          data: { ncm: '49111010' },
+        });
+        expect(result).toMatchObject({ scope: 'ALL', updated: 42, total: 42 });
+      });
+
+      it('ignora productIds do corpo e não resolve IDs', async () => {
+        mockEscopoTodos([], 7);
+
+        await service.bulkUpdateNcm(COMPANY, {
+          scope: 'ALL',
+          ncm: '49111010',
+          productIds: ['p-de-outra-empresa'],
+        });
+
+        // Só a busca de quem não tem cadastro fiscal.
+        expect(prisma.product.findMany).toHaveBeenCalledTimes(1);
+        expect(
+          prisma.productFiscalData.updateMany.mock.calls[0][0].where.product,
+        ).not.toHaveProperty('id');
+      });
+
+      it('cria cadastros em lotes de 500', async () => {
+        const ids = Array.from({ length: 1200 }, (_, i) => `p-${i}`);
+        prisma.product.findMany.mockResolvedValue(ids.map((id) => ({ id })));
+        prisma.productFiscalData.updateMany.mockResolvedValue({ count: 0 });
+        prisma.productFiscalData.createMany
+          .mockResolvedValueOnce({ count: 500 })
+          .mockResolvedValueOnce({ count: 500 })
+          .mockResolvedValueOnce({ count: 200 });
+
+        const result = await service.bulkUpdateNcm(COMPANY, {
+          scope: 'ALL',
+          ncm: '49111010',
+        });
+
+        expect(prisma.productFiscalData.createMany).toHaveBeenCalledTimes(3);
+        expect(
+          prisma.productFiscalData.createMany.mock.calls.map(
+            (c: any[]) => c[0].data.length,
+          ),
+        ).toEqual([500, 500, 200]);
+        expect(result.created).toBe(1200);
+      });
+    });
+
+    describe("filtro 'só sem NCM próprio'", () => {
+      it('preserva NCM ajustado à mão e inclui o padrão herdado do emissor', async () => {
+        prisma.invoicyConfig.findFirst.mockResolvedValue({
+          defaultNcm: '4911.99.00',
+          defaultCfop: null,
+          emitCrt: 1,
+        });
+        mockEscopoTodos([], 3);
+
+        await service.bulkUpdateNcm(COMPANY, {
+          scope: 'ALL',
+          ncm: '49111010',
+          onlyInheritedNcm: true,
+        });
+
+        expect(
+          prisma.productFiscalData.updateMany.mock.calls[0][0].where.OR,
+        ).toEqual([{ ncm: null }, { ncm: '' }, { ncm: '49119900' }]);
+      });
+
+      it('produto sem cadastro fiscal entra mesmo com o filtro ligado', async () => {
+        mockEscopoTodos(['p-novo'], 0);
+
+        const result = await service.bulkUpdateNcm(COMPANY, {
+          scope: 'ALL',
+          ncm: '49111010',
+          onlyInheritedNcm: true,
+        });
+
+        expect(result.created).toBe(1);
+      });
+
+      it('explica quando todos já têm NCM próprio', async () => {
+        mockEscopoTodos([], 0);
+
+        await expect(
+          service.bulkUpdateNcm(COMPANY, {
+            scope: 'ALL',
+            ncm: '49111010',
+            onlyInheritedNcm: true,
+          }),
+        ).rejects.toThrow(/já têm um NCM próprio/);
+      });
+    });
+  });
+
+  describe('contarAlvosBulkNcm', () => {
+    const COMPANY = 'company-1';
+
+    it('soma quem tem cadastro fiscal e quem ainda não tem, sem escrever', async () => {
+      prisma.productFiscalData.count.mockResolvedValue(8);
+      prisma.product.count.mockResolvedValue(5);
+
+      const result = await service.contarAlvosBulkNcm(COMPANY, {
+        scope: 'ALL',
+        ncm: '49111010',
+      });
+
+      expect(result).toEqual({
+        total: 13,
+        comCadastroFiscal: 8,
+        semCadastroFiscal: 5,
+      });
+      expect(prisma.productFiscalData.updateMany).not.toHaveBeenCalled();
+      expect(prisma.productFiscalData.createMany).not.toHaveBeenCalled();
     });
   });
 });

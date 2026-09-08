@@ -108,10 +108,18 @@ export class ProductFiscalController {
   async bulkUpdateNcm(@Req() req, @Body() dto: BulkUpdateNcmDto) {
     // companyId sai do token: o service usa esse escopo para recusar produtos
     // de outra empresa, já que este controller não passa pelo TenantGuard.
-    return this.productFiscalService.bulkUpdateNcm(
+    return this.productFiscalService.bulkUpdateNcm(req.user.companyId, dto);
+  }
+
+  @Post('bulk-ncm/count')
+  @HasPermission('edit', 'nota_fiscal:config')
+  @ApiOperation({
+    summary: 'Quantos produtos a alteração de NCM em massa atingiria',
+  })
+  async contarAlvosBulkNcm(@Req() req, @Body() dto: BulkUpdateNcmDto) {
+    return this.productFiscalService.contarAlvosBulkNcm(
       req.user.companyId,
-      dto.productIds,
-      dto.ncm,
+      dto,
     );
   }
 

@@ -32,6 +32,7 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { PrismaClient } from '@prisma/client';
+import { defaultsCadastroFiscal } from '../core/fiscal/utils/product-fiscal-defaults.util';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
@@ -55,6 +56,8 @@ export interface InvoicyConfigDefaults {
   createdAt: Date;
   defaultNcm: string | null;
   defaultCfop: string | null;
+  /** Regime do emissor; decide o CST de ICMS dos cadastros criados. */
+  emitCrt?: number | null;
 }
 
 /** "Sem NCM preenchido" = null ou string vazia/só espaços. NCM inválido
@@ -70,6 +73,7 @@ export function needsNcm(ncm: string | null | undefined): boolean {
 export function resolveCompanyDefaults(configs: InvoicyConfigDefaults[]): {
   ncm: string;
   cfopInState: string;
+  emitCrt: number | null;
 } {
   const byPreference =
     configs.find((c) => c.isDefault) ??
@@ -80,6 +84,7 @@ export function resolveCompanyDefaults(configs: InvoicyConfigDefaults[]): {
   return {
     ncm: byPreference?.defaultNcm || FALLBACK_NCM,
     cfopInState: byPreference?.defaultCfop || FALLBACK_CFOP_IN_STATE,
+    emitCrt: byPreference?.emitCrt ?? null,
   };
 }
 
@@ -142,6 +147,7 @@ async function main() {
             createdAt: true,
             defaultNcm: true,
             defaultCfop: true,
+            emitCrt: true,
           },
         },
       },
@@ -209,12 +215,7 @@ async function main() {
             product: { connect: { id: product.id } },
             ncm: defaults.ncm,
             cfopInState: defaults.cfopInState,
-            cfopOutState: '6101',
-            commercialUnit: 'UN',
-            icmsOrigin: '0',
-            icmsCst: '102',
-            pisCst: '99',
-            cofinsCst: '99',
+            ...defaultsCadastroFiscal(defaults.emitCrt),
           },
         }),
       );

@@ -12,6 +12,7 @@ import { JsonArray } from '@prisma/client/runtime/library';
 import * as fs from 'fs';
 import * as fastCsv from 'fast-csv';
 import { ProductFiscalService } from '../fiscal/product-fiscal/product-fiscal.service';
+import { buildProductListWhere } from './product-list-where.util';
 
 const EXPORT_LIMIT = '10000';
 
@@ -126,70 +127,10 @@ export class ProductService {
   async findAll(filter: ProductFilterDTO) {
     try {
       console.log('FindAll Product Filter:', JSON.stringify(filter));
-      let where = {};
-      if (filter.companyId) {
-        where = { ...where, companyId: filter.companyId };
-      }
-
-      if (filter.categoryId) {
-        where = { ...where, categoryId: filter.categoryId };
-      }
-
-      if (filter.unitKind) {
-        where = {
-          ...where,
-          items: {
-            some: {
-              unitKind: filter.unitKind,
-            },
-          },
-        };
-      }
-
-      if (filter.sectorId) {
-        where = { ...where, sectorId: filter.sectorId };
-      }
-
-      if (filter.categoryKind) {
-        where = {
-          ...where,
-          category: {
-            kind: filter.categoryKind,
-          },
-        };
-      }
-
-      if (filter.isService !== undefined) {
-        where = { ...where, isService: filter.isService };
-      }
-
-      // Se não informar status, mostra apenas ativos (isActive: true)
-      // Se informar status, filtra pelo isActive correspondente
-      if (filter.status) {
-        where = { ...where, isActive: filter.status === 'ACTIVE' };
-      } else {
-        where = { ...where, isActive: true };
-      }
-
-      if (filter.search) {
-        where = {
-          ...where,
-          AND: [
-            {
-              OR: [
-                { name: { contains: filter.search, mode: 'insensitive' } },
-                { code: { contains: filter.search, mode: 'insensitive' } },
-                {
-                  technicalDescription: {
-                    contains: filter.search,
-                    mode: 'insensitive',
-                  },
-                },
-              ],
-            },
-          ],
-        };
-      }
+      // Montagem do where extraída para função pura: a alteração de NCM em
+      // massa com escopo "todos os produtos" precisa atingir exatamente o
+      // mesmo conjunto que esta listagem mostra.
+      const where = buildProductListWhere(filter);
 
       const [total, products] = await Promise.all([
         this.prisma.product.count({ where }),

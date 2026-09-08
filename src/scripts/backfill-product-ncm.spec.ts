@@ -68,6 +68,16 @@ describe('backfill-product-ncm', () => {
       ]);
       expect(result.cfopInState).toBe('5102');
     });
+
+    /** O CST de ICMS do cadastro criado depende do regime do emissor. */
+    it('resolve o CRT da mesma config escolhida', () => {
+      expect(
+        resolveCompanyDefaults([config({ isDefault: true, emitCrt: 3 })])
+          .emitCrt,
+      ).toBe(3);
+      expect(resolveCompanyDefaults([]).emitCrt).toBeNull();
+      expect(resolveCompanyDefaults([config({})]).emitCrt).toBeNull();
+    });
   });
 
   describe('hasNotaFiscalFeature', () => {
