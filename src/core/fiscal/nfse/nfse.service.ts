@@ -586,9 +586,9 @@ export class NfseService {
       ...(dto.indDest !== undefined ? { indDest: dto.indDest } : {}),
       ...(dto.tpEnteGov !== undefined ? { tpEnteGov: dto.tpEnteGov } : {}),
       ...(dto.xTpEnteGov ? { xTpEnteGov: dto.xTpEnteGov } : {}),
-      ...(dto.tpEnteGov !== undefined && dto.tpOper !== undefined
-        ? { tpOper: dto.tpOper }
-        : {}),
+      // tpOper vale sozinho: e' 0-1 na raiz do RPS e cobre tambem "outros
+      // servicos sobre bens imoveis" (layout v8, C42), sem ente governamental.
+      ...(dto.tpOper !== undefined ? { tpOper: dto.tpOper } : {}),
       ...(dto.tribAproxFederal !== undefined
         ? { tribAproxFederal: dto.tribAproxFederal }
         : {}),
@@ -826,9 +826,9 @@ export class NfseService {
       ...(dto.indDest !== undefined ? { indDest: dto.indDest } : {}),
       ...(dto.tpEnteGov !== undefined ? { tpEnteGov: dto.tpEnteGov } : {}),
       ...(dto.xTpEnteGov ? { xTpEnteGov: dto.xTpEnteGov } : {}),
-      ...(dto.tpEnteGov !== undefined && dto.tpOper !== undefined
-        ? { tpOper: dto.tpOper }
-        : {}),
+      // tpOper vale sozinho: e' 0-1 na raiz do RPS e cobre tambem "outros
+      // servicos sobre bens imoveis" (layout v8, C42), sem ente governamental.
+      ...(dto.tpOper !== undefined ? { tpOper: dto.tpOper } : {}),
       ...(dto.tribAproxFederal !== undefined
         ? { tribAproxFederal: dto.tribAproxFederal }
         : {}),
@@ -1308,7 +1308,7 @@ export class NfseService {
               ...(optanteSimples
                 ? { regApIBSCBSSN: regimeApuracaoIbsCbs }
                 : {}),
-              // Campos da Reforma Tributária (Layout NFS-e RT v4). Omitidos
+              // Campos da Reforma Tributária (Layout NFS-e RT v8). Omitidos
               // quando não informados — a nota continua saindo como antes.
               ...(indicadorOperacao ? { cIndOp: indicadorOperacao } : {}),
               ...(dto.indFinal !== undefined ? { indFinal: dto.indFinal } : {}),
@@ -1319,12 +1319,12 @@ export class NfseService {
               ...(dto.tpEnteGov === 9 && dto.xTpEnteGov
                 ? { xTpEnteGov: dto.xTpEnteGov }
                 : {}),
-              // tpOper qualifica a operação com ente governamental; sem
-              // tpEnteGov seria um indicador órfão (o usuário desmarcou o
-              // ente e o valor ficaria fantasma).
-              ...(dto.tpEnteGov !== undefined && dto.tpOper !== undefined
-                ? { tpOper: dto.tpOper }
-                : {}),
+              // tpOper ("Operação com Entes Governamentais" no InvoiCy Web)
+              // vale sozinho: e' 0-1 na raiz do RPS e cobre tambem "outros
+              // servicos sobre bens imoveis" (layout v8, C42). O gate antigo
+              // (so' com tpEnteGov) escondia o campo e tornava impossivel o
+              // caso sem ente governamental.
+              ...(dto.tpOper !== undefined ? { tpOper: dto.tpOper } : {}),
               IncCult: 2, // 2 = NÃ£o
               Status: 1, // 1 = Normal
               tpAmb: environment === 'PRODUCAO' ? 1 : 2,
@@ -1366,7 +1366,7 @@ export class NfseService {
                   ...valoresIbsCbs,
                   ...(omitirAliquotaIss ? {} : { ValAliqISS: aliquotaIss }),
                   // Tributos aproximados por esfera (NFS-e Modelo Nacional) e
-                  // INSS. ValAliqINSS vai em decimal: 0,05 = 5% (layout RT v4).
+                  // INSS. ValAliqINSS vai em decimal: 0,05 = 5% (layout RT v8).
                   ...(dto.tribAproxFederal !== undefined
                     ? { ValRetFederais: this.money(dto.tribAproxFederal) }
                     : {}),

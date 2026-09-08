@@ -989,6 +989,53 @@ describe('NfseService', () => {
       }
     });
 
+    /**
+     * tpOper ("Operação com Entes Governamentais" no InvoiCy Web) e' 0-1 na
+     * raiz do RPS e cobre tambem "outros servicos sobre bens imoveis": vale
+     * sem ente governamental. O gate antigo (so' com tpEnteGov) descartava o
+     * valor nos tres caminhos de emissao.
+     */
+    describe('tpOper sem tpEnteGov', () => {
+      const rpsEnviado = () =>
+        invoicyApiService.emitNfse.mock.calls.at(-1)[1][0].Documento.RPS[0];
+
+      it('vai no RPS da emissão avulsa', async () => {
+        await service.emit(mockCompanyId, {
+          tomador: {
+            cnpj: '12345678901234',
+            razaoSocial: 'Cliente Teste LTDA',
+            endereco: 'Avenida Paulista',
+            numero: '1000',
+            bairro: 'Bela Vista',
+            cep: '01310100',
+            codigoMunicipio: '3550308',
+          },
+          codigoServico: '1.05',
+          codigoMunicipio: '4314902',
+          discriminacao: 'teste',
+          valorServicos: 100,
+          aliquotaIss: 2.5,
+          naturezaOperacao: 1,
+          tpOper: 3,
+        } as any);
+
+        expect(rpsEnviado().tpOper).toBe(3);
+        expect(rpsEnviado()).not.toHaveProperty('tpEnteGov');
+      });
+
+      it('vai no RPS da emissão por ordem', async () => {
+        await service.emitFromOrder(mockCompanyId, {
+          orderId: mockOrderId,
+          codigoServico: '1.05',
+          discriminacao: 'Servico de consultoria em TI',
+          tpOper: 3,
+        } as any);
+
+        expect(rpsEnviado().tpOper).toBe(3);
+        expect(rpsEnviado()).not.toHaveProperty('tpEnteGov');
+      });
+    });
+
     it('should throw if order not found', async () => {
       prisma.quotation.findFirst.mockResolvedValue(null);
 

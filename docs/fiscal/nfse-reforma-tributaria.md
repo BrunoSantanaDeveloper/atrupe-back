@@ -94,7 +94,8 @@ Se isso causar recusa, apagar o cadastro reverte sem deploy.
 A pedido dos clientes, os campos de emissão do InvoiCy Web foram trazidos para
 as duas telas de NFS-e (via O.S. e avulsa), na seção recolhível "Campos
 adicionais". Mapeamento verificado na planilha oficial
-`Layout_Recepcao_NFSe_Reforma_Tributaria - versão 4.xlsx` do repositório
+`Layout_Recepcao_NFSe_Reforma_Tributaria - versão 8.xlsx` (a vigente desde
+agosto/2026; a v4 citada antes tem os mesmos campos abaixo) do repositório
 `migrate-company/integracao-InvoiCy-BR` — não deduzido:
 
 | Rótulo (InvoiCy Web) | Campo InvoiCy | Valores |
@@ -102,8 +103,16 @@ adicionais". Mapeamento verificado na planilha oficial
 | Indicador de Operação | `cIndOp` (RPS) | Anexo VII, 6 dígitos |
 | Uso ou Consumo Pessoal | `indFinal` (RPS) | 0=Não, 1=Sim |
 | Destinatário dos serviços | `indDest` (RPS) | 0=tomador é o destinatário, 1=diverso |
-| Operação c/ Entes Governamentais | `tpEnteGov`+`xTpEnteGov` (RPS) | 1..4, 9=outro |
-| Tipo de operação (ente gov) | `tpOper` (RPS) | 1..5 |
+| Operação com Entes Governamentais | `tpOper` (RPS) | 1..5, **independe de `tpEnteGov`** (vale também para "outros serviços sobre bens imóveis") |
+| Ente Governamental | `tpEnteGov` (RPS) | 1..4 (União, Estado, DF, Município); `9`/`xTpEnteGov` só no padrão IPM |
+
+Correção de 08/09/2026: a tabela anterior mapeava o rótulo "Operação c/
+Entes Governamentais" para `tpEnteGov`, e o `tpOper` só era enviado junto do
+ente. O cliente notou que as opções não batiam com o InvoiCy Web — o campo
+dele é o `tpOper`. O XSD `InvoiCy_NFSe_Reforma_tributaria.xsd` mostra
+`tpOper` como `complexType` com `SubsNumero/SubsSerie/…`: é artefato de
+geração (na planilha v8 os filhos de `RPSSubs` apontam para o Seq C42, que é
+`tpOper`); os exemplos JSON oficiais enviam `tpOper` escalar na raiz do RPS.
 | Trib Aprox Fed/Est/Mun | `ValRetFederais/Estaduais/Municipais` | R$ (Modelo Nacional) |
 | % INSS | `ValAliqINSS` | **decimal**: 0,05 = 5% (conversão no backend) |
 | Valor INSS | `ValINSS` | R$ |

@@ -217,7 +217,10 @@ export class EmitNfseFromOrderDto {
   @Max(1)
   indDest?: number;
 
-  @ApiPropertyOptional({ description: 'Ente governamental (1..4, 9=outro)' })
+  @ApiPropertyOptional({
+    description:
+      'Ente governamental do tomador: 1=União, 2=Estado, 3=DF, 4=Município (9=outro só no padrão IPM)',
+  })
   @IsInt()
   @IsOptional()
   @Min(1)
@@ -229,7 +232,10 @@ export class EmitNfseFromOrderDto {
   @IsOptional()
   xTpEnteGov?: string;
 
-  @ApiPropertyOptional({ description: 'Tipo de operação com entes gov (1..5)' })
+  @ApiPropertyOptional({
+    description:
+      'Operação com entes governamentais ou serviços sobre bens imóveis (1..5); independe de tpEnteGov',
+  })
   @IsInt()
   @IsOptional()
   @Min(1)
@@ -473,7 +479,10 @@ export class EmitNfseFromOrdersDto {
   @Max(1)
   indDest?: number;
 
-  @ApiPropertyOptional({ description: 'Ente governamental (1..4, 9=outro)' })
+  @ApiPropertyOptional({
+    description:
+      'Ente governamental do tomador: 1=União, 2=Estado, 3=DF, 4=Município (9=outro só no padrão IPM)',
+  })
   @IsInt()
   @IsOptional()
   @Min(1)
@@ -485,7 +494,10 @@ export class EmitNfseFromOrdersDto {
   @IsOptional()
   xTpEnteGov?: string;
 
-  @ApiPropertyOptional({ description: 'Tipo de operação com entes gov (1..5)' })
+  @ApiPropertyOptional({
+    description:
+      'Operação com entes governamentais ou serviços sobre bens imóveis (1..5); independe de tpEnteGov',
+  })
   @IsInt()
   @IsOptional()
   @Min(1)
@@ -807,7 +819,7 @@ export class EmitNfseDto {
 
   @ApiPropertyOptional({
     description:
-      'Ente governamental: 1=União, 2=Estado, 3=DF, 4=Município, 9=outro',
+      'Ente governamental do tomador: 1=União, 2=Estado, 3=DF, 4=Município (9=outro só no padrão IPM)',
   })
   @IsInt()
   @IsOptional()
@@ -822,7 +834,7 @@ export class EmitNfseDto {
 
   @ApiPropertyOptional({
     description:
-      'Tipo de operação com entes governamentais (1..5, layout InvoiCy)',
+      'Operação com entes governamentais ou serviços sobre bens imóveis (1..5); independe de tpEnteGov',
   })
   @IsInt()
   @IsOptional()
