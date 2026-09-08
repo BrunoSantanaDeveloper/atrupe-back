@@ -14,6 +14,33 @@ import {
   INVOICY_SUCCESS_CODES,
 } from '../invoicy/invoicy.types';
 import { fetchCepData } from '../utils/cep.util';
+
+/**
+ * Pre-visualizacao da NFC-e: o mesmo payload que seria transmitido, sem
+ * reservar numero nem criar registro.
+ */
+export interface NfcePreview {
+  podeEmitir: boolean;
+  bloqueios: string[];
+  avisos: string[];
+  documento?: {
+    modelo: string;
+    ambiente: string;
+    /** Numero previsto; o definitivo e reservado na emissao. */
+    numeroPrevisto: number;
+    serie: string;
+    naturezaOperacao: string;
+    contingencia: boolean;
+  };
+  emitente?: Record<string, any>;
+  consumidor?: Record<string, any> | null;
+  itens?: Array<Record<string, any>>;
+  totais?: Record<string, any>;
+  pagamentos?: Array<Record<string, any>>;
+  /** Payload cru, para o painel tecnico e para os testes de equivalencia. */
+  payloadInvoicy?: InvoicyNfeRequest;
+}
+
 import {
   EmitNfceDto,
   CancelNfceDto,
@@ -189,7 +216,16 @@ export class NfceService {
     return nfce;
   }
 
-  async emit(companyId: string, dto: EmitNfceDto) {
+  /**
+   * Leituras, validações e cálculo de imposto que precedem qualquer efeito.
+   *
+   * Extraído de `emit` para a pré-visualização rodar as mesmas checagens sem
+   * reservar número nem criar registro.
+   */
+  private async resolveNfceEmissionContext(
+    companyId: string,
+    dto: EmitNfceDto,
+  ) {
     // Buscar configuração do Invoicy
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
@@ -374,6 +410,324 @@ export class NfceService {
       );
     }
 
+    return {
+      config,
+      environment,
+      emissorCredentials,
+      emitCmun,
+      parsedCmun,
+      isContingency,
+      fiscalDataMap,
+      impostosCalculados,
+      valorProdutos,
+      valorDesconto,
+      valorTotal,
+      valorTroco,
+    };
+  }
+
+  /**
+   * Monta o payload da NFC-e (modelo 65).
+   *
+   * Não toca o banco: mesmo sendo chamada de dentro da transação que reserva
+   * o número, nada aqui usa `tx`. É isso que permite à pré-visualização
+   * executar a mesma montagem com um número previsto.
+   */
+  private buildNfceInvoicyRequest(
+    dto: EmitNfceDto,
+    ctx: Awaited<ReturnType<NfceService['resolveNfceEmissionContext']>>,
+    numeracao: { numero: number; serie: number },
+  ): InvoicyNfeRequest {
+    const {
+      config,
+      environment,
+      emissorCredentials,
+      parsedCmun,
+      isContingency,
+      fiscalDataMap,
+      impostosCalculados,
+      valorProdutos,
+      valorDesconto,
+      valorTotal,
+    } = ctx;
+    const reservedNumber = numeracao.numero;
+    const series = numeracao.serie;
+
+    // Construir payload para o Invoicy (NFC-e usa modelo 65)
+    const now = new Date();
+    const consumidorDoc = (dto.cpfConsumidor || '').replace(/\D/g, '');
+    const dest =
+      consumidorDoc.length === 11 || consumidorDoc.length === 14
+        ? {
+            ...(consumidorDoc.length === 14
+              ? { CNPJ_dest: consumidorDoc }
+              : { CPF_dest: consumidorDoc }),
+            xNome_dest:
+              environment === 'HOMOLOGACAO'
+                ? 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
+                : dto.consumidorNome || 'CONSUMIDOR',
+            indIEDest: 9,
+          }
+        : undefined;
+
+    // IE: ISENTO ou dígitos
+    const rawIe = (config.company.stateRegistration || '').trim();
+    const emitIe =
+      rawIe.toUpperCase() === 'ISENTO' ? 'ISENTO' : rawIe.replace(/\D/g, '');
+
+    const invoicyRequest: InvoicyNfeRequest = {
+      Documento: {
+        ModeloDocumento: 'NFCe',
+        Versao: 4,
+        ide: {
+          cUF: this.getUfCode(config.company.address.state),
+          natOp: dto.naturezaOperacao || 'Venda de mercadoria',
+          mod: '65',
+          serie: series.toString(),
+          nNF: reservedNumber,
+          dhEmi: now.toISOString(),
+          fusoHorario: '-03:00',
+          tpNf: 1, // Saída
+          idDest: 1, // Operação interna
+          cMunFg: parsedCmun,
+          tpImp: 4, // DANFE NFC-e
+          tpEmis: isContingency ? 9 : 1, // 1=Normal, 9=Contingência Off-line
+          cDV: 0,
+          tpAmb: environment === 'PRODUCAO' ? 1 : 2,
+          finNFe: 1,
+          indFinal: 1, // Consumidor final
+          indPres: 1, // Presença do comprador
+          procEmi: 0,
+          verProc: 'Atrupe 1.0',
+          idCSC: emissorCredentials.cscId
+            ? parseInt(emissorCredentials.cscId, 10)
+            : undefined,
+          CSC: emissorCredentials.cscToken || undefined,
+          ...(isContingency
+            ? {
+                dhCont: (config.contingenciaNfceDataHora || now).toISOString(),
+                xJust:
+                  config.contingenciaNfceMotivo ||
+                  'Problemas tecnicos de conexao',
+              }
+            : {}),
+        },
+        emit: {
+          CNPJ_emit: (config.company.cnpj || '').replace(/\D/g, ''),
+          xNome: config.company.legalName || '',
+          IE: emitIe || undefined,
+          CRT: config.emitCrt || 1,
+          enderEmit: {
+            xLgr: config.company.address.street || '',
+            nro: config.company.address.number || 'S/N',
+            xBairro: config.company.address.neighborhood || '',
+            cMun: parsedCmun,
+            xMun: config.company.address.city || '',
+            UF: config.company.address.state || '',
+            CEP:
+              parseInt(
+                (config.company.address.zipcode || '').replace(/\D/g, ''),
+                10,
+              ) || 0,
+          },
+        },
+        ...(dest ? { dest } : {}),
+        det: dto.itens.map((item, index) => {
+          const fiscalData = item.productId
+            ? fiscalDataMap.get(item.productId)
+            : null;
+
+          const orig =
+            item.icmsOrigem !== undefined && item.icmsOrigem !== null
+              ? parseInt(item.icmsOrigem, 10)
+              : fiscalData?.icmsOrigin
+                ? parseInt(fiscalData.icmsOrigin, 10)
+                : 0;
+
+          const icmsCst = item.icmsCst || fiscalData?.icmsCst || '102';
+          const pisCst = item.pisCst || fiscalData?.pisCst || '49';
+          const cofinsCst = item.cofinsCst || fiscalData?.cofinsCst || '49';
+
+          return {
+            prod: {
+              cProd: item.codigo || `ITEM${index + 1}`,
+              cEAN: item.cean || fiscalData?.cean || 'SEM GTIN',
+              cEANTrib: item.cean || fiscalData?.cean || 'SEM GTIN',
+              xProd:
+                environment === 'HOMOLOGACAO' && index === 0
+                  ? 'NOTA FISCAL EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
+                  : item.descricao || `Produto ${index + 1}`,
+              NCM: (item.ncm || fiscalData?.ncm || '00000000').replace(
+                /\D/g,
+                '',
+              ),
+              CEST: item.cest || fiscalData?.cest || undefined,
+              CFOP: item.cfop
+                ? Number(item.cfop)
+                : fiscalData?.cfopInState
+                  ? Number(fiscalData.cfopInState)
+                  : 5102,
+              uCOM: item.unidade || fiscalData?.commercialUnit || 'UN',
+              qCOM: item.quantidade.toFixed(4),
+              vUnCom: item.valorUnitario.toFixed(10),
+              vProd: (item.quantidade * item.valorUnitario).toFixed(2),
+              uTrib: item.unidade || fiscalData?.commercialUnit || 'UN',
+              qTrib: item.quantidade.toFixed(4),
+              vUnTrib: item.valorUnitario.toFixed(10),
+              indTot: 1,
+            },
+            imposto: impostosCalculados?.impostos[index] ?? {
+              ICMS: {
+                orig,
+                CST: icmsCst,
+              },
+              PIS: {
+                CST_pis: pisCst,
+              },
+              COFINS: {
+                CST_cofins: cofinsCst,
+              },
+            },
+          };
+        }),
+        total: {
+          ICMStot: {
+            ...(impostosCalculados?.totais ?? {
+              vBC_ttlnfe: '0.00',
+              vICMS_ttlnfe: '0.00',
+              vBCST_ttlnfe: '0.00',
+            }),
+            vICMSDeson_ttlnfe: '0.00',
+            vProd_ttlnfe: valorProdutos.toFixed(2),
+            vFrete_ttlnfe: '0.00',
+            vSeg_ttlnfe: '0.00',
+            vDesc_ttlnfe: valorDesconto.toFixed(2),
+            vII_ttlnfe: '0.00',
+            vIPI_ttlnfe: '0.00',
+            vPIS_ttlnfe: '0.00',
+            vCOFINS_ttlnfe: '0.00',
+            vOutro: '0.00',
+            vNF: valorTotal.toFixed(2),
+          },
+          // Totalizador da Reforma; irmao de ICMStot, nao filho.
+          ...(impostosCalculados?.ibsCbsTotais
+            ? {
+                IBSCBSTot: impostosCalculados.ibsCbsTotais,
+                vNFIBScbsIS: calcularVNFIBScbsIS(
+                  valorTotal,
+                  impostosCalculados.ibsCbsTotais,
+                ),
+              }
+            : {}),
+        },
+        pag: dto.pagamentos.map((pag) => ({
+          tPag: pag.tipo,
+          vPag: pag.valor.toFixed(2),
+        })),
+        transp: {
+          modFrete: '9',
+        },
+      },
+    };
+
+    return invoicyRequest;
+  }
+
+  /**
+   * Pre-visualizacao da NFC-e antes de emitir.
+   *
+   * Roda o mesmo contexto e o mesmo montador da emissao — e o que garante que
+   * o cupom conferido seja o que sera transmitido. Nao reserva numero, nao
+   * cria registro, nao chama o provedor.
+   *
+   * Devolve 200 mesmo quando a nota nao pode sair: a previa existe para
+   * mostrar o que corrigir. Quem lanca e o `emit`.
+   */
+  async preview(companyId: string, dto: EmitNfceDto): Promise<NfcePreview> {
+    let ctx: Awaited<ReturnType<NfceService['resolveNfceEmissionContext']>>;
+    let payload: InvoicyNfeRequest;
+
+    try {
+      ctx = await this.resolveNfceEmissionContext(companyId, dto);
+      const numeracao = (ctx.config as any).activeNumbering?.nfce;
+      payload = this.buildNfceInvoicyRequest(dto, ctx, {
+        numero: numeracao?.nextNumber ?? ctx.config.proximoNumeroNfce ?? 1,
+        serie: Number(numeracao?.series ?? ctx.config.serieNfce ?? 1),
+      });
+    } catch (error) {
+      return {
+        podeEmitir: false,
+        bloqueios: String(error?.message ?? 'Nao foi possivel montar a nota.')
+          .split(String.fromCharCode(10))
+          .map((linha) => linha.trim())
+          .filter(Boolean),
+        avisos: [],
+      };
+    }
+
+    const doc = payload.Documento;
+    const avisos = [
+      'Numero previsto: o definitivo e reservado no momento da emissao.',
+    ];
+    if (ctx.environment !== 'PRODUCAO') {
+      avisos.push(
+        'Ambiente de homologacao: o cupom nao tem valor fiscal e o nome do consumidor e substituido pelo texto exigido pela SEFAZ.',
+      );
+    }
+    if (ctx.isContingency) {
+      avisos.push(
+        'Emissor em contingencia: o cupom sera transmitido offline e sincronizado com a SEFAZ depois.',
+      );
+    }
+    if (!ctx.impostosCalculados) {
+      avisos.push(
+        'Emissor no Simples Nacional: o cupom leva so os codigos de tributacao, sem destaque de imposto.',
+      );
+    }
+
+    return {
+      podeEmitir: true,
+      bloqueios: [],
+      avisos,
+      documento: {
+        modelo: doc.ide.mod,
+        ambiente: ctx.environment,
+        numeroPrevisto: doc.ide.nNF,
+        serie: doc.ide.serie,
+        naturezaOperacao: doc.ide.natOp,
+        contingencia: ctx.isContingency,
+      },
+      emitente: doc.emit,
+      consumidor: doc.dest ?? null,
+      itens: doc.det.map((item: any, index: number) => ({
+        sequencia: index + 1,
+        ...item.prod,
+        tributos: item.imposto,
+      })),
+      totais: {
+        ...doc.total,
+        valorProdutos: ctx.valorProdutos,
+        valorDesconto: ctx.valorDesconto,
+        valorNota: ctx.valorTotal,
+        valorTroco: ctx.valorTroco,
+        temImpostoCalculado: !!ctx.impostosCalculados,
+      },
+      pagamentos: doc.pag ?? [],
+      payloadInvoicy: payload,
+    };
+  }
+
+  async emit(companyId: string, dto: EmitNfceDto) {
+    const ctx = await this.resolveNfceEmissionContext(companyId, dto);
+    const {
+      config,
+      environment,
+      isContingency,
+      valorDesconto,
+      valorTotal,
+      valorTroco,
+    } = ctx;
+
     // TRANSAÇÃO ATÔMICA: Reservar número + criar registro NFC-e
     const { nfce, invoicyRequest } = await this.prisma.$transaction(
       async (tx) => {
@@ -384,186 +738,10 @@ export class NfceService {
             environment,
           );
 
-        // Construir payload para o Invoicy (NFC-e usa modelo 65)
-        const now = new Date();
-        const consumidorDoc = (dto.cpfConsumidor || '').replace(/\D/g, '');
-        const dest =
-          consumidorDoc.length === 11 || consumidorDoc.length === 14
-            ? {
-                ...(consumidorDoc.length === 14
-                  ? { CNPJ_dest: consumidorDoc }
-                  : { CPF_dest: consumidorDoc }),
-                xNome_dest:
-                  environment === 'HOMOLOGACAO'
-                    ? 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
-                    : dto.consumidorNome || 'CONSUMIDOR',
-                indIEDest: 9,
-              }
-            : undefined;
-
-        // IE: ISENTO ou dígitos
-        const rawIe = (config.company.stateRegistration || '').trim();
-        const emitIe =
-          rawIe.toUpperCase() === 'ISENTO'
-            ? 'ISENTO'
-            : rawIe.replace(/\D/g, '');
-
-        const invoicyRequest: InvoicyNfeRequest = {
-          Documento: {
-            ModeloDocumento: 'NFCe',
-            Versao: 4,
-            ide: {
-              cUF: this.getUfCode(config.company.address.state),
-              natOp: dto.naturezaOperacao || 'Venda de mercadoria',
-              mod: '65',
-              serie: series.toString(),
-              nNF: reservedNumber,
-              dhEmi: now.toISOString(),
-              fusoHorario: '-03:00',
-              tpNf: 1, // Saída
-              idDest: 1, // Operação interna
-              cMunFg: parsedCmun,
-              tpImp: 4, // DANFE NFC-e
-              tpEmis: isContingency ? 9 : 1, // 1=Normal, 9=Contingência Off-line
-              cDV: 0,
-              tpAmb: environment === 'PRODUCAO' ? 1 : 2,
-              finNFe: 1,
-              indFinal: 1, // Consumidor final
-              indPres: 1, // Presença do comprador
-              procEmi: 0,
-              verProc: 'Atrupe 1.0',
-              idCSC: emissorCredentials.cscId
-                ? parseInt(emissorCredentials.cscId, 10)
-                : undefined,
-              CSC: emissorCredentials.cscToken || undefined,
-              ...(isContingency
-                ? {
-                    dhCont: (
-                      config.contingenciaNfceDataHora || now
-                    ).toISOString(),
-                    xJust:
-                      config.contingenciaNfceMotivo ||
-                      'Problemas tecnicos de conexao',
-                  }
-                : {}),
-            },
-            emit: {
-              CNPJ_emit: (config.company.cnpj || '').replace(/\D/g, ''),
-              xNome: config.company.legalName || '',
-              IE: emitIe || undefined,
-              CRT: config.emitCrt || 1,
-              enderEmit: {
-                xLgr: config.company.address.street || '',
-                nro: config.company.address.number || 'S/N',
-                xBairro: config.company.address.neighborhood || '',
-                cMun: parsedCmun,
-                xMun: config.company.address.city || '',
-                UF: config.company.address.state || '',
-                CEP:
-                  parseInt(
-                    (config.company.address.zipcode || '').replace(/\D/g, ''),
-                    10,
-                  ) || 0,
-              },
-            },
-            ...(dest ? { dest } : {}),
-            det: dto.itens.map((item, index) => {
-              const fiscalData = item.productId
-                ? fiscalDataMap.get(item.productId)
-                : null;
-
-              const orig =
-                item.icmsOrigem !== undefined && item.icmsOrigem !== null
-                  ? parseInt(item.icmsOrigem, 10)
-                  : fiscalData?.icmsOrigin
-                    ? parseInt(fiscalData.icmsOrigin, 10)
-                    : 0;
-
-              const icmsCst = item.icmsCst || fiscalData?.icmsCst || '102';
-              const pisCst = item.pisCst || fiscalData?.pisCst || '49';
-              const cofinsCst = item.cofinsCst || fiscalData?.cofinsCst || '49';
-
-              return {
-                prod: {
-                  cProd: item.codigo || `ITEM${index + 1}`,
-                  cEAN: item.cean || fiscalData?.cean || 'SEM GTIN',
-                  cEANTrib: item.cean || fiscalData?.cean || 'SEM GTIN',
-                  xProd:
-                    environment === 'HOMOLOGACAO' && index === 0
-                      ? 'NOTA FISCAL EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
-                      : item.descricao || `Produto ${index + 1}`,
-                  NCM: (item.ncm || fiscalData?.ncm || '00000000').replace(
-                    /\D/g,
-                    '',
-                  ),
-                  CEST: item.cest || fiscalData?.cest || undefined,
-                  CFOP: item.cfop
-                    ? Number(item.cfop)
-                    : fiscalData?.cfopInState
-                      ? Number(fiscalData.cfopInState)
-                      : 5102,
-                  uCOM: item.unidade || fiscalData?.commercialUnit || 'UN',
-                  qCOM: item.quantidade.toFixed(4),
-                  vUnCom: item.valorUnitario.toFixed(10),
-                  vProd: (item.quantidade * item.valorUnitario).toFixed(2),
-                  uTrib: item.unidade || fiscalData?.commercialUnit || 'UN',
-                  qTrib: item.quantidade.toFixed(4),
-                  vUnTrib: item.valorUnitario.toFixed(10),
-                  indTot: 1,
-                },
-                imposto: impostosCalculados?.impostos[index] ?? {
-                  ICMS: {
-                    orig,
-                    CST: icmsCst,
-                  },
-                  PIS: {
-                    CST_pis: pisCst,
-                  },
-                  COFINS: {
-                    CST_cofins: cofinsCst,
-                  },
-                },
-              };
-            }),
-            total: {
-              ICMStot: {
-                ...(impostosCalculados?.totais ?? {
-                  vBC_ttlnfe: '0.00',
-                  vICMS_ttlnfe: '0.00',
-                  vBCST_ttlnfe: '0.00',
-                }),
-                vICMSDeson_ttlnfe: '0.00',
-                vProd_ttlnfe: valorProdutos.toFixed(2),
-                vFrete_ttlnfe: '0.00',
-                vSeg_ttlnfe: '0.00',
-                vDesc_ttlnfe: valorDesconto.toFixed(2),
-                vII_ttlnfe: '0.00',
-                vIPI_ttlnfe: '0.00',
-                vPIS_ttlnfe: '0.00',
-                vCOFINS_ttlnfe: '0.00',
-                vOutro: '0.00',
-                vNF: valorTotal.toFixed(2),
-              },
-              // Totalizador da Reforma; irmao de ICMStot, nao filho.
-              ...(impostosCalculados?.ibsCbsTotais
-                ? {
-                    IBSCBSTot: impostosCalculados.ibsCbsTotais,
-                    vNFIBScbsIS: calcularVNFIBScbsIS(
-                      valorTotal,
-                      impostosCalculados.ibsCbsTotais,
-                    ),
-                  }
-                : {}),
-            },
-            pag: dto.pagamentos.map((pag) => ({
-              tPag: pag.tipo,
-              vPag: pag.valor.toFixed(2),
-            })),
-            transp: {
-              modFrete: '9',
-            },
-          },
-        };
+        const invoicyRequest = this.buildNfceInvoicyRequest(dto, ctx, {
+          numero: reservedNumber,
+          serie: series,
+        });
 
         // Criar registro da NFC-e (numero já reservado atomicamente)
         const nfce = await tx.nfce.create({

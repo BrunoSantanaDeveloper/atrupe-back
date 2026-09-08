@@ -10,6 +10,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import {
@@ -57,6 +58,19 @@ export class NfceController {
   @ApiOperation({ summary: 'Obter NFC-e por ID' })
   async findById(@Req() req, @Param('id') id: string) {
     return this.nfceService.findById(id, req.user.companyId);
+  }
+
+  // Antes das rotas ':id/...' e com o MESMO DTO da emissão: um DTO paralelo
+  // viraria outra allowlist, e o ValidationPipe global derruba campo
+  // desconhecido com 400. Fora do throttle porque não fala com o provedor.
+  @Post('preview')
+  @SkipThrottle()
+  @HasPermission('view', 'nota_fiscal:emitir')
+  @ApiOperation({
+    summary: 'Pré-visualizar a NFC-e sem reservar número nem transmitir',
+  })
+  async preview(@Req() req, @Body() dto: EmitNfceDto) {
+    return this.nfceService.preview(req.user.companyId, dto);
   }
 
   @Post('emit')

@@ -277,6 +277,79 @@ describe('NfceService', () => {
     });
 
     /**
+     * A prévia roda o mesmo montador da emissão. Se alguém acrescentar uma
+     * regra só no caminho da emissão, o cupom passa a sair diferente do que o
+     * usuário conferiu — e é este teste que quebra.
+     */
+    describe('preview', () => {
+      const dtoPrevia = {
+        naturezaOperacao: 'Venda',
+        itens: [
+          {
+            productId: '1',
+            codigo: '001',
+            descricao: 'Produto',
+            ncm: '12345678',
+            cfop: '5102',
+            unidade: 'UN',
+            quantidade: 1,
+            valorUnitario: 100,
+          },
+        ],
+        pagamentos: [{ tipo: '01', valor: 100 }],
+      } as any;
+
+      beforeEach(() => {
+        // dhEmi vem de `new Date()`: sem relógio fixo, prévia e emissão
+        // diferem por milissegundos.
+        jest.useFakeTimers().setSystemTime(new Date('2026-09-08T12:00:00Z'));
+      });
+
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      it('gera payload idêntico ao da emissão', async () => {
+        const previa = await service.preview(mockCompanyId, dtoPrevia);
+        await service.emit(mockCompanyId, dtoPrevia);
+
+        expect(previa.payloadInvoicy).toEqual(
+          invoicyApiService.emitNfe.mock.calls.at(-1)[1][0],
+        );
+      });
+
+      it('não reserva número, não cria registro e não chama o provedor', async () => {
+        await service.preview(mockCompanyId, dtoPrevia);
+
+        expect(
+          mockFiscalCredentialResolver.reserveNfceNumber,
+        ).not.toHaveBeenCalled();
+        expect(prisma.nfce.create).not.toHaveBeenCalled();
+        expect(prisma.nfce.update).not.toHaveBeenCalled();
+        expect(invoicyApiService.emitNfe).not.toHaveBeenCalled();
+      });
+
+      it('usa o próximo número do emissor e avisa que ele é previsto', async () => {
+        const previa = await service.preview(mockCompanyId, dtoPrevia);
+
+        expect(previa.documento?.numeroPrevisto).toBe(1);
+        expect(previa.avisos.join(' ')).toMatch(/previsto/i);
+      });
+
+      /** A prévia abre mesmo com a nota inválida: é para isso que ela serve. */
+      it('devolve os bloqueios em vez de lançar', async () => {
+        const previa = await service.preview(mockCompanyId, {
+          ...dtoPrevia,
+          pagamentos: [{ tipo: '01', valor: 1 }],
+        });
+
+        expect(previa.podeEmitir).toBe(false);
+        expect(previa.bloqueios.join(' ')).toMatch(/pagamentos/i);
+        expect(previa.payloadInvoicy).toBeUndefined();
+      });
+    });
+
+    /**
      * Mesma ramificação da NF-e: o Simples segue enviando só os códigos, e ligar
      * o motor não altera nenhuma nota de quem emite hoje.
      */
