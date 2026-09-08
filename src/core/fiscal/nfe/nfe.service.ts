@@ -21,6 +21,7 @@ import {
   InvoicyDocumentResult,
   InvoicyDocumentEvent,
   InvoicyNfeRequest,
+  InvoicyResponse,
   INVOICY_SUCCESS_CODES,
 } from '../invoicy/invoicy.types';
 import { fetchCepData } from '../utils/cep.util';
@@ -53,6 +54,71 @@ import {
   UpdateNfeDraftDto,
 } from './dtos/nfe.dto';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
+
+/** Leituras e validações comuns a emitir e pré-visualizar. */
+interface NfeEmissionContext {
+  config: any;
+  environment: FiscalEnvironment;
+  isForeign: boolean;
+  cleanReferencedNfe: string;
+  now: Date;
+  dataSaida: Date;
+  destCmun: number;
+  destUfFromCep: string;
+  destMunFromCep: string;
+}
+
+/** Resultado da montagem do payload, antes de qualquer efeito. */
+interface NfeMontagem {
+  invoicyRequest: InvoicyNfeRequest;
+  impostosCalculados: ImpostosNfeMontados | null;
+  resolvedCfops: number[];
+  tipoDocumento: number;
+  valorProdutos: number;
+  valorTotal: number;
+  emitCmun?: string | null;
+  /** IBGE do emitente descoberto pelo CEP; quem chama decide se persiste. */
+  emitCmunResolvidoViaCep?: string;
+  avisos: string[];
+}
+
+/**
+ * Pré-visualização da NF-e: o mesmo payload que seria transmitido, sem
+ * reservar número nem criar registro.
+ */
+export interface NfePreview {
+  podeEmitir: boolean;
+  bloqueios: string[];
+  avisos: string[];
+  documento?: {
+    modelo: string;
+    ambiente: FiscalEnvironment;
+    /** Número previsto; o definitivo só é reservado na emissão. */
+    numeroPrevisto: number;
+    serie: string;
+    naturezaOperacao: string;
+    tipo: number;
+    finalidade: number;
+    idDest: number;
+    indFinal: number;
+    indPres: number;
+    dataEmissaoPrevista: string;
+    dataSaidaEntrada?: string;
+    nfeReferenciada?: string;
+  };
+  emitente?: Record<string, any>;
+  destinatario?: Record<string, any>;
+  entrega?: Record<string, any> | null;
+  itens?: Array<Record<string, any>>;
+  totais?: Record<string, any>;
+  transporte?: Record<string, any>;
+  pagamento?: Record<string, any>;
+  duplicatas?: Array<Record<string, any>>;
+  autXml?: Array<Record<string, any>>;
+  informacoesComplementares?: string | null;
+  /** Payload cru, para o painel técnico e para os testes de equivalência. */
+  payloadInvoicy?: InvoicyNfeRequest;
+}
 
 export interface ExportXmlResult {
   zip: Buffer;
@@ -1724,7 +1790,17 @@ export class NfeService {
     });
   }
 
-  async emit(companyId: string, dto: EmitNfeDto) {
+  /**
+   * Leituras e validações que precedem qualquer efeito da emissão.
+   *
+   * Extraído de `emit` para a pré-visualização poder rodar exatamente as
+   * mesmas checagens sem reservar número nem criar registro. Só lê: config,
+   * ambiente e o CEP do destinatário (ViaCEP).
+   */
+  private async resolveNfeEmissionContext(
+    companyId: string,
+    dto: EmitNfeDto,
+  ): Promise<NfeEmissionContext> {
     // Funil final da emissao: cobre tambem `emit-full`, que recebe o orderId
     // pronto do frontend sem passar pelos preparadores.
     await this.assertOrdersNotCanceled(companyId, [
@@ -1830,6 +1906,41 @@ export class NfeService {
       );
     }
 
+    return {
+      config,
+      environment,
+      isForeign: !!isForeign,
+      cleanReferencedNfe,
+      now,
+      dataSaida,
+      destCmun,
+      destUfFromCep,
+      destMunFromCep,
+    };
+  }
+
+  /**
+   * Valores da nota. `vProd` é bruto e o desconto entra só em `vDesc`, porque
+   * a SEFAZ valida vNF = vProd - vDesc + frete + seguro + outros.
+   */
+  private totaisDaNota(dto: EmitNfeDto) {
+    return {
+      valorProdutos: dto.items.reduce(
+        (acc, item) => acc + item.quantity * item.unitValue,
+        0,
+      ),
+      valorTotal: dto.items.reduce(
+        (acc, item) =>
+          acc + item.quantity * item.unitValue - (item.discount || 0),
+        0,
+      ),
+    };
+  }
+
+  async emit(companyId: string, dto: EmitNfeDto) {
+    const ctx = await this.resolveNfeEmissionContext(companyId, dto);
+    const { config, environment } = ctx;
+
     // Reserva ATÔMICA do número, antes de qualquer transmissão.
     //
     // Antes: lia `config.proximoNumeroNfe` sem lock e só incrementava após a
@@ -1845,20 +1956,7 @@ export class NfeService {
         ),
       );
 
-    // Valor bruto dos produtos (sem desconto) — alimenta det.vProd e vProd_ttlnfe.
-    // A SEFAZ valida vNF = vProd - vDesc + frete + seguro + outros, então vProd
-    // precisa ser bruto e o desconto entra apenas em vDesc.
-    const valorProdutos = dto.items.reduce(
-      (acc, item) => acc + item.quantity * item.unitValue,
-      0,
-    );
-
-    // Valor líquido da nota (após descontos) — alimenta vNF e vPag.
-    const valorTotal = dto.items.reduce(
-      (acc, item) =>
-        acc + item.quantity * item.unitValue - (item.discount || 0),
-      0,
-    );
+    const { valorTotal } = this.totaisDaNota(dto);
 
     // Criar ou atualizar registro da NF-e
     let nfe;
@@ -1968,6 +2066,167 @@ export class NfeService {
     try {
       this.logger.log(`Emitindo NF-e ${numero} para empresa ${companyId}`);
 
+      const montagem = await this.buildNfeInvoicyRequest(companyId, dto, ctx, {
+        numero,
+        serie: serieReservada,
+      });
+      const { invoicyRequest } = montagem;
+
+      // O cache do IBGE do emitente é o único efeito que a montagem produz;
+      // a pré-visualização o descobre igual, mas não grava.
+      if (montagem.emitCmunResolvidoViaCep) {
+        await this.prisma.invoicyConfig.update({
+          where: { id: config.id },
+          data: { emitCmun: montagem.emitCmunResolvidoViaCep },
+        });
+        this.logger.log(`IBGE do emitente persistido no InvoicyConfig`);
+      }
+
+      // Persistir o payload ANTES de transmitir: se a chamada falhar ou o
+      // processo cair, o snapshot do que seria enviado continua disponível
+      // para diagnóstico e para devolução/CC-e posteriores.
+      await this.prisma.nfe.update({
+        where: { id: nfe.id },
+        data: { invoicyPayloadEnvio: invoicyRequest as any },
+      });
+
+      // Chamar API do Invoicy
+      // O ambiente resolvido para o payload (ide.tpAmb) vai junto: sem ele o
+      // transporte resolveria de novo, pelo campo global activeEnvironment.
+      const invoicyResponses = await this.invoicyApiService.emitNfe(
+        companyId,
+        [invoicyRequest],
+        config.id,
+        environment,
+      );
+      return await this.processarRespostaEmissao({
+        dto,
+        nfe,
+        config,
+        environment,
+        numero,
+        invoicyResponses,
+      });
+    } catch (error) {
+      return await this.tratarFalhaEmissao({ nfe, numero, error });
+    }
+  }
+
+  /**
+   * Pré-visualização da NF-e antes de emitir.
+   *
+   * Roda o mesmo contexto e o mesmo montador da emissão — é o que garante que
+   * a prévia mostre o que será enviado, e não uma segunda versão da verdade
+   * que envelhece sozinha. Não reserva número, não cria registro, não chama o
+   * provedor. Cobre emissão por ordem, avulsa e consolidada, porque as três
+   * telas mandam o mesmo `EmitNfeDto`.
+   *
+   * Devolve 200 mesmo quando a nota não pode ser emitida: a prévia existe
+   * justamente para mostrar o que corrigir. Quem lança é o `emit`.
+   */
+  async preview(companyId: string, dto: EmitNfeDto): Promise<NfePreview> {
+    const ctx = await this.resolveNfeEmissionContext(companyId, dto);
+    const numeracao = ctx.config.activeNumbering?.nfe;
+
+    let montagem: NfeMontagem;
+    try {
+      montagem = await this.buildNfeInvoicyRequest(companyId, dto, ctx, {
+        numero: numeracao?.nextNumber ?? ctx.config.proximoNumeroNfe ?? 1,
+        serie: numeracao?.series ?? ctx.config.serieNfe ?? 1,
+      });
+    } catch (error) {
+      const mensagem = error?.message ?? 'Não foi possível montar a nota.';
+      return {
+        podeEmitir: false,
+        // As mensagens do montador já vêm em lista quando são várias.
+        bloqueios: String(mensagem)
+          .split(String.fromCharCode(10))
+          .map((linha) => linha.trim())
+          .filter(Boolean),
+        avisos: [],
+      };
+    }
+
+    const { invoicyRequest: payload, impostosCalculados } = montagem;
+    const doc = payload.Documento;
+
+    return {
+      podeEmitir: true,
+      bloqueios: [],
+      avisos: [
+        'Número previsto: o definitivo é reservado no momento da emissão.',
+        ...montagem.avisos,
+      ],
+      documento: {
+        modelo: doc.ide.mod,
+        ambiente: ctx.environment,
+        numeroPrevisto: doc.ide.nNF,
+        serie: doc.ide.serie,
+        naturezaOperacao: doc.ide.natOp,
+        tipo: doc.ide.tpNf,
+        finalidade: doc.ide.finNFe,
+        idDest: doc.ide.idDest,
+        indFinal: doc.ide.indFinal,
+        indPres: doc.ide.indPres,
+        dataEmissaoPrevista: doc.ide.dhEmi,
+        dataSaidaEntrada: doc.ide.dhSaiEnt,
+        nfeReferenciada: ctx.cleanReferencedNfe || undefined,
+      },
+      emitente: doc.emit,
+      destinatario: doc.dest,
+      entrega: doc.entrega ?? null,
+      itens: doc.det.map((item: any, index: number) => ({
+        sequencia: index + 1,
+        ...item.prod,
+        tributos: item.imposto,
+      })),
+      totais: {
+        ...doc.total,
+        // Repetidos fora do grupo do layout para a tela não ter de conhecê-lo.
+        valorProdutos: montagem.valorProdutos,
+        valorNota: montagem.valorTotal,
+        temImpostoCalculado: !!impostosCalculados,
+      },
+      transporte: doc.transp,
+      pagamento: doc.pag?.[0],
+      duplicatas: doc.cobr?.dup ?? [],
+      autXml: doc.autXML ?? [],
+      informacoesComplementares: doc.infAdic?.infCpl ?? null,
+      payloadInvoicy: payload,
+    };
+  }
+
+  /**
+   * Monta o payload do Invoicy a partir do DTO e do contexto.
+   *
+   * Puro em relação ao banco: lê cadastro fiscal e natureza de operação, mas
+   * não escreve nada — o único efeito que existia aqui (cache do IBGE do
+   * emitente) sai como `emitCmunResolvidoViaCep` para quem chamou decidir.
+   * É esta função que a pré-visualização executa, e é por isso que a prévia
+   * mostra exatamente o que seria transmitido.
+   */
+  private async buildNfeInvoicyRequest(
+    companyId: string,
+    dto: EmitNfeDto,
+    ctx: NfeEmissionContext,
+    numeracao: { numero: number; serie?: number | null },
+  ): Promise<NfeMontagem> {
+    const {
+      config,
+      environment,
+      isForeign,
+      cleanReferencedNfe,
+      now,
+      dataSaida,
+      destCmun,
+      destUfFromCep,
+      destMunFromCep,
+    } = ctx;
+    const { numero, serie: serieReservada } = numeracao;
+    const { valorProdutos, valorTotal } = this.totaisDaNota(dto);
+    let emitCmunResolvidoViaCep: string | undefined;
+
+    {
       // Ensure we have emitter IBGE code
       let emitCmun = config.ibgeCode;
       const emitCep = config.company.address.zipcode;
@@ -1983,12 +2242,9 @@ export class NfeService {
 
           // Cache IBGE code to avoid external API calls on subsequent emissions.
           // Escopado ao emissor desta emissão — emissores distintos podem ter
-          // endereços (e portanto municípios) diferentes.
-          await this.prisma.invoicyConfig.update({
-            where: { id: config.id },
-            data: { emitCmun },
-          });
-          this.logger.log(`IBGE do emitente persistido no InvoicyConfig`);
+          // endereços (e portanto municípios) diferentes. Quem chamou grava:
+          // a pré-visualização usa o valor e não escreve.
+          emitCmunResolvidoViaCep = emitCmun;
         } else {
           this.logger.warn(
             `NÃ£o foi possÃ­vel encontrar IBGE para CEP do emitente: ${emitCep}`,
@@ -2330,138 +2586,196 @@ export class NfeService {
         },
       };
 
-      // Persistir o payload ANTES de transmitir: se a chamada falhar ou o
-      // processo cair, o snapshot do que seria enviado continua disponível
-      // para diagnóstico e para devolução/CC-e posteriores.
-      await this.prisma.nfe.update({
-        where: { id: nfe.id },
-        data: { invoicyPayloadEnvio: invoicyRequest as any },
-      });
-
-      // Chamar API do Invoicy
-      // O ambiente resolvido para o payload (ide.tpAmb) vai junto: sem ele o
-      // transporte resolveria de novo, pelo campo global activeEnvironment.
-      const invoicyResponses = await this.invoicyApiService.emitNfe(
-        companyId,
-        [invoicyRequest],
-        config.id,
-        environment,
+      // Avisos: o que a nota faz e o usuário não pediu explicitamente. Não
+      // bloqueiam nada; existem para a pré-visualização explicar antes, em vez
+      // de o usuário descobrir depois de autorizar.
+      const avisos: string[] = [];
+      if (environment === 'HOMOLOGACAO') {
+        avisos.push(
+          'Ambiente de homologação: a nota não tem valor fiscal e o nome do destinatário é substituído pelo texto exigido pela SEFAZ.',
+        );
+      }
+      if (!regimeNormal) {
+        avisos.push(
+          'Emissor no Simples Nacional: a nota leva só os códigos de tributação, sem destaque de imposto — a apuração é no documento único de arrecadação.',
+        );
+      }
+      if (cfopDaNatureza && dto.items.some((item) => !item.cfop)) {
+        avisos.push(
+          `Itens sem CFOP próprio usam o ${cfopDaNatureza}, da natureza de operação.`,
+        );
+      }
+      if (tipoDocumento === 0 && (dto.tipo ?? 1) === 1) {
+        avisos.push(
+          'A nota sai como documento de entrada porque os CFOPs dos itens são de entrada.',
+        );
+      }
+      const semGtin = dto.items.filter(
+        (item, index) =>
+          !!item.ean &&
+          invoicyRequest.Documento.det[index]?.prod?.cEAN === 'SEM GTIN',
       );
-
-      // Processar resposta
-      const response = invoicyResponses[0];
-      if (!response) {
-        throw new Error('Nenhuma resposta recebida do Invoicy');
-      }
-
-      if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-        throw new Error(
-          response.Descricao || `Erro Invoicy: cÃ³digo ${response.Codigo}`,
+      if (semGtin.length > 0) {
+        avisos.push(
+          `${semGtin.length} item(ns) com código de barras fora do padrão GTIN: a nota sai com "SEM GTIN".`,
         );
       }
 
-      const doc = response.Documentos?.[0];
-      if (!doc) {
-        throw new Error('Documento nÃ£o retornado pelo Invoicy');
-      }
-
-      // Verificar situaÃ§Ã£o do documento
-      const situacao = doc.Situacao;
-      const isAuthorized =
-        situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150;
-
-      // Check for key collision before updating
-      if (doc.DocChaAcesso) {
-        const conflictingNfe = await this.prisma.nfe.findFirst({
-          where: {
-            chaveAcesso: doc.DocChaAcesso,
-            id: { not: nfe.id },
-          },
-        });
-
-        if (conflictingNfe) {
-          this.logger.warn(
-            `Conflito de chave de acesso detectado. NFe antiga: ${conflictingNfe.id}, Nova NFe: ${nfe.id}. Removendo chave da antiga para prosseguir.`,
-          );
-          // OpÃ§Ã£o: Limpar a chave da antiga ou deletÃ¡-la se for lixo/rejeitada.
-          // Como estamos em um novo processo, vamos limpar a chave da antiga para permitir a atualizaÃ§Ã£o.
-          await this.prisma.nfe.update({
-            where: { id: conflictingNfe.id },
-            data: { chaveAcesso: null },
-          });
-        }
-      }
-
-      // Atualizar NF-e com resposta
-      const updatedNfe = await this.prisma.nfe.update({
-        where: { id: nfe.id },
-        data: {
-          status: isAuthorized ? NfeStatus.AUTHORIZED : NfeStatus.REJECTED,
-          chaveAcesso: doc.DocChaAcesso || null,
-          protocolo: doc.DocProtocolo || null,
-          invoicyId: doc.DocIDUnico || null,
-          invoicyProtocol: doc.DocProtocolo || null,
-          dataEmissao: new Date(),
-          dataAutorizacao: isAuthorized ? new Date() : null,
-          danfeUrl: doc.DocPDFDownload || null,
-          xmlAutorizado: doc.DocXMLBase64
-            ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
-            : null,
-          motivoRejeicao: !isAuthorized ? situacao?.SitDescricao : null,
-        },
-      });
-
-      if (!isAuthorized) {
-        const orientacao = this.getRejectionHint(situacao?.SitCodigo);
-        // Resposta CONCLUSIVA da SEFAZ: a nota nao foi autorizada, entao o
-        // numero continua livre. Devolver aqui e o unico ponto seguro — no
-        // catch abaixo cai tambem falha de transporte, onde a nota PODE ter
-        // sido autorizada.
-        await this.releaseRejectedNfeNumber(config.id, environment, numero);
-
-        throw new BadRequestException(
-          `NF-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}` +
-            (orientacao ? ` — ${orientacao}` : ''),
-        );
-      }
-
-      await this.persistDanfePdf(nfe.id, doc).catch((danfeError) => {
-        this.logger.warn(
-          `Nao foi possivel armazenar a DANFE da NF-e ${nfe.id}: ${danfeError.message}`,
-        );
-      });
-
-      // O número já foi reservado atomicamente antes da transmissão
-      // (reserveNfeNumber). Incrementar aqui pularia um número a cada emissão.
-
-      await this.nfeEmailService
-        .sendAuthorizedNfeEmail({
-          nfe: updatedNfe,
-          config,
-          recipientEmail: dto.destEmail,
-          recipientName: dto.destNome,
-          automatic: true,
-        })
-        .catch((emailError) => {
-          this.logger.warn(
-            `Envio automatico de e-mail da NF-e ${updatedNfe.id} falhou: ${emailError.message}`,
-          );
-        });
-
-      return updatedNfe;
-    } catch (error) {
-      // Atualizar status para rejeitado em caso de erro
-      await this.prisma.nfe.update({
-        where: { id: nfe.id },
-        data: {
-          status: NfeStatus.REJECTED,
-          motivoRejeicao: error.message,
-        },
-      });
-
-      this.logger.error(`Erro ao emitir NF-e: ${error.message}`, error.stack);
-      throw new BadRequestException(`Erro ao emitir NF-e: ${error.message}`);
+      return {
+        invoicyRequest,
+        impostosCalculados,
+        resolvedCfops,
+        tipoDocumento,
+        valorProdutos,
+        valorTotal,
+        emitCmun,
+        emitCmunResolvidoViaCep,
+        avisos,
+      };
     }
+  }
+
+  /**
+   * Grava a resposta da SEFAZ na NF-e e devolve o registro atualizado.
+   * Rejeição conclusiva devolve o número reservado e vira 400.
+   */
+  private async processarRespostaEmissao(params: {
+    dto: EmitNfeDto;
+    nfe: any;
+    config: any;
+    environment: FiscalEnvironment;
+    numero: number;
+    invoicyResponses: InvoicyResponse[];
+  }) {
+    const { dto, nfe, config, environment, numero, invoicyResponses } = params;
+
+    // Processar resposta
+    const response = invoicyResponses[0];
+    if (!response) {
+      throw new Error('Nenhuma resposta recebida do Invoicy');
+    }
+
+    if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
+      throw new Error(
+        response.Descricao || `Erro Invoicy: cÃ³digo ${response.Codigo}`,
+      );
+    }
+
+    const doc = response.Documentos?.[0];
+    if (!doc) {
+      throw new Error('Documento nÃ£o retornado pelo Invoicy');
+    }
+
+    // Verificar situaÃ§Ã£o do documento
+    const situacao = doc.Situacao;
+    const isAuthorized =
+      situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150;
+
+    // Check for key collision before updating
+    if (doc.DocChaAcesso) {
+      const conflictingNfe = await this.prisma.nfe.findFirst({
+        where: {
+          chaveAcesso: doc.DocChaAcesso,
+          id: { not: nfe.id },
+        },
+      });
+
+      if (conflictingNfe) {
+        this.logger.warn(
+          `Conflito de chave de acesso detectado. NFe antiga: ${conflictingNfe.id}, Nova NFe: ${nfe.id}. Removendo chave da antiga para prosseguir.`,
+        );
+        // OpÃ§Ã£o: Limpar a chave da antiga ou deletÃ¡-la se for lixo/rejeitada.
+        // Como estamos em um novo processo, vamos limpar a chave da antiga para permitir a atualizaÃ§Ã£o.
+        await this.prisma.nfe.update({
+          where: { id: conflictingNfe.id },
+          data: { chaveAcesso: null },
+        });
+      }
+    }
+
+    // Atualizar NF-e com resposta
+    const updatedNfe = await this.prisma.nfe.update({
+      where: { id: nfe.id },
+      data: {
+        status: isAuthorized ? NfeStatus.AUTHORIZED : NfeStatus.REJECTED,
+        chaveAcesso: doc.DocChaAcesso || null,
+        protocolo: doc.DocProtocolo || null,
+        invoicyId: doc.DocIDUnico || null,
+        invoicyProtocol: doc.DocProtocolo || null,
+        dataEmissao: new Date(),
+        dataAutorizacao: isAuthorized ? new Date() : null,
+        danfeUrl: doc.DocPDFDownload || null,
+        xmlAutorizado: doc.DocXMLBase64
+          ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
+          : null,
+        motivoRejeicao: !isAuthorized ? situacao?.SitDescricao : null,
+      },
+    });
+
+    if (!isAuthorized) {
+      const orientacao = this.getRejectionHint(situacao?.SitCodigo);
+      // Resposta CONCLUSIVA da SEFAZ: a nota nao foi autorizada, entao o
+      // numero continua livre. Devolver aqui e o unico ponto seguro — no
+      // catch abaixo cai tambem falha de transporte, onde a nota PODE ter
+      // sido autorizada.
+      await this.releaseRejectedNfeNumber(config.id, environment, numero);
+
+      throw new BadRequestException(
+        `NF-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}` +
+          (orientacao ? ` — ${orientacao}` : ''),
+      );
+    }
+
+    await this.persistDanfePdf(nfe.id, doc).catch((danfeError) => {
+      this.logger.warn(
+        `Nao foi possivel armazenar a DANFE da NF-e ${nfe.id}: ${danfeError.message}`,
+      );
+    });
+
+    // O número já foi reservado atomicamente antes da transmissão
+    // (reserveNfeNumber). Incrementar aqui pularia um número a cada emissão.
+
+    await this.nfeEmailService
+      .sendAuthorizedNfeEmail({
+        nfe: updatedNfe,
+        config,
+        recipientEmail: dto.destEmail,
+        recipientName: dto.destNome,
+        automatic: true,
+      })
+      .catch((emailError) => {
+        this.logger.warn(
+          `Envio automatico de e-mail da NF-e ${updatedNfe.id} falhou: ${emailError.message}`,
+        );
+      });
+
+    return updatedNfe;
+  }
+
+  /**
+   * Marca a nota como rejeitada e propaga o erro.
+   *
+   * Cobre também falha de transporte, em que a nota PODE ter sido autorizada
+   * sem a resposta chegar — por isso NÃO devolve o número reservado aqui.
+   */
+  private async tratarFalhaEmissao(params: {
+    nfe: any;
+    numero: number;
+    error: any;
+  }): Promise<never> {
+    const { nfe, error } = params;
+
+    // Atualizar status para rejeitado em caso de erro
+    await this.prisma.nfe.update({
+      where: { id: nfe.id },
+      data: {
+        status: NfeStatus.REJECTED,
+        motivoRejeicao: error.message,
+      },
+    });
+
+    this.logger.error(`Erro ao emitir NF-e: ${error.message}`, error.stack);
+    throw new BadRequestException(`Erro ao emitir NF-e: ${error.message}`);
   }
 
   /**

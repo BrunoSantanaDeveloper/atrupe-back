@@ -363,6 +363,8 @@ export interface InvoicyNfeDocumento {
   };
   cobr?: InvoicyNfeCobr;
   autXML?: InvoicyNfeAut[];
+  /** Informações complementares (texto livre impresso na DANFE). */
+  infAdic?: { infCpl: string };
 }
 
 export interface InvoicyNfeRequest {

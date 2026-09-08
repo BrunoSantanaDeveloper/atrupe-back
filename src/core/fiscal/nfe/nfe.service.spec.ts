@@ -236,6 +236,8 @@ const mockPrismaService = {
   },
   invoicyConfig: {
     findFirst: jest.fn(),
+    // A emissão cacheia aqui o IBGE do emitente; a pré-visualização não pode.
+    update: jest.fn(),
   },
   operationNature: {
     findFirst: jest.fn().mockResolvedValue(null),
@@ -1192,6 +1194,114 @@ describe('NfeService', () => {
         mockFiscalCredentialResolver.reserveNfeNumber,
       ).toHaveBeenCalledWith(expect.anything(), 'config-id', 'HOMOLOGACAO');
       expect(invoicyService.incrementNfeNumber).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A prévia roda o mesmo montador da emissão. Se alguém acrescentar uma
+     * regra só no `emit`, a nota passa a sair diferente do que o usuário
+     * conferiu — e é este teste que quebra.
+     */
+    describe('preview', () => {
+      beforeEach(() => {
+        prisma.productFiscalData.findMany.mockResolvedValue([]);
+        prisma.productStRule.findMany.mockResolvedValue([]);
+        // dhEmi vem de `new Date()`: sem relógio fixo, prévia e emissão
+        // diferem por milissegundos e a comparação perde o sentido.
+        jest.useFakeTimers().setSystemTime(new Date('2026-09-08T12:00:00Z'));
+      });
+
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      const payloadEmitido = () =>
+        invoicyApiService.emitNfe.mock.calls.at(-1)[1][0];
+
+      it.each([
+        ['Simples Nacional', { emitCrt: 1 }],
+        ['Regime Normal', { emitCrt: 3 }],
+        [
+          'Reforma Tributária ativa',
+          { emitCrt: 3, reformaTributariaAtiva: true },
+        ],
+      ])(
+        'gera payload idêntico ao da emissão — %s',
+        async (_titulo, extraConfig) => {
+          invoicyService.getConfig.mockResolvedValue({
+            ...mockConfig,
+            ...extraConfig,
+          });
+          prisma.productFiscalData.findMany.mockResolvedValue([
+            {
+              productId: 'product-1',
+              ncm: '12345678',
+              icmsCst: '00',
+              icmsRate: 18,
+              pisCst: '01',
+              pisRate: 1.65,
+              cofinsCst: '01',
+              cofinsRate: 7.6,
+              // Exigidos quando a Reforma está ativa.
+              cstIbsCbs: '000',
+              codClassificacao: '000001',
+            },
+          ]);
+
+          const previa = await service.preview(mockCompanyId, mockEmitDto);
+          await service.emit(mockCompanyId, mockEmitDto);
+
+          expect(previa.payloadInvoicy).toEqual(payloadEmitido());
+        },
+      );
+
+      it('não reserva número, não cria registro e não chama o provedor', async () => {
+        await service.preview(mockCompanyId, mockEmitDto);
+
+        expect(
+          mockFiscalCredentialResolver.reserveNfeNumber,
+        ).not.toHaveBeenCalled();
+        expect(prisma.nfe.create).not.toHaveBeenCalled();
+        expect(prisma.nfe.update).not.toHaveBeenCalled();
+        expect(prisma.nfeOrder.createMany).not.toHaveBeenCalled();
+        expect(prisma.invoicyConfig.update).not.toHaveBeenCalled();
+        expect(invoicyApiService.emitNfe).not.toHaveBeenCalled();
+      });
+
+      it('usa o próximo número do emissor e avisa que ele é previsto', async () => {
+        const previa = await service.preview(mockCompanyId, mockEmitDto);
+
+        expect(previa.documento?.numeroPrevisto).toBe(
+          mockConfig.activeNumbering.nfe.nextNumber,
+        );
+        expect(previa.avisos.join(' ')).toMatch(/previsto/i);
+      });
+
+      /**
+       * A prévia abre mesmo com a nota inválida: é para isso que ela serve.
+       * Quem lança é o emit.
+       */
+      it('devolve os bloqueios em vez de lançar quando a nota não pode sair', async () => {
+        const semNcm = {
+          ...mockEmitDto,
+          items: [{ ...mockEmitDto.items[0], ncm: '' }],
+        };
+
+        const previa = await service.preview(mockCompanyId, semNcm);
+
+        expect(previa.podeEmitir).toBe(false);
+        expect(previa.bloqueios.join(' ')).toMatch(/NCM/i);
+        expect(previa.payloadInvoicy).toBeUndefined();
+
+        // O mesmo DTO continua sendo recusado na emissão.
+        await expect(service.emit(mockCompanyId, semNcm)).rejects.toThrow();
+      });
+
+      it('avisa sobre a substituição do destinatário em homologação', async () => {
+        const previa = await service.preview(mockCompanyId, mockEmitDto);
+
+        expect(previa.avisos.join(' ')).toMatch(/homologação/i);
+        expect(previa.destinatario?.xNome_dest).toMatch(/SEM VALOR FISCAL/);
+      });
     });
 
     /**

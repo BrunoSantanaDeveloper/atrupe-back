@@ -185,6 +185,20 @@ export class NfeController {
     return this.nfeService.emitFromOrder(req.user.companyId, dto);
   }
 
+  // Antes das rotas ':id/...' e com o MESMO DTO da emissão: um DTO paralelo
+  // viraria mais uma allowlist, e o ValidationPipe global derruba campo
+  // desconhecido com 400. Fora do throttle porque não fala com o provedor —
+  // duas prévias não podem consumir a cota da emissão seguinte.
+  @Post('preview')
+  @SkipThrottle()
+  @HasPermission('view', 'nota_fiscal:emitir')
+  @ApiOperation({
+    summary: 'Pré-visualizar a NF-e sem reservar número nem transmitir',
+  })
+  async preview(@Req() req, @Body() dto: EmitNfeDto) {
+    return this.nfeService.preview(req.user.companyId, dto);
+  }
+
   @Post('emit-full')
   @HasPermission('create', 'nota_fiscal:emitir')
   @RequireUnblocked()
