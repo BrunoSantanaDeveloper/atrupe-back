@@ -2204,6 +2204,11 @@ model InvoicyConfig {
   // NFC-e prazo de cancelamento (configurável por estado)
   prazoCancelamentoNfce Int @default(30) // minutos
 
+  // NF-e: teto para tentar o cancelamento por evento, em horas, contado da
+  // autorização de uso. Nulo usa o teto nacional conhecido — quem valida o
+  // prazo real é a SEFAZ da UF do emitente. Ver prazo-cancelamento.util.ts.
+  prazoCancelamentoNfeHoras Int?
+
   // ── Reforma Tributária (IBS/CBS) ──
   // O grupo de VALORES do IBS/CBS é opcional no layout do provedor, e o retorno
   // dele não devolve esses valores. Fica desligado por padrão: liga-se por

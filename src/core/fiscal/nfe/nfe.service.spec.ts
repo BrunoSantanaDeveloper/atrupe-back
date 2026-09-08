@@ -1801,6 +1801,106 @@ describe('NfeService', () => {
         }),
       ).rejects.toThrow();
     });
+
+    /**
+     * O prazo corre da AUTORIZAÇÃO e quem o valida é a SEFAZ da UF. A regra
+     * antiga barrava tudo em 24 horas contadas da emissão, e impedia o
+     * cancelamento extemporâneo que vários estados aceitam — São Paulo recebe
+     * o evento até 480 horas.
+     */
+    describe('prazo de cancelamento', () => {
+      const JUSTIFICATIVA = 'Cancelamento por erro de digitação no documento';
+      const horasAtras = (horas: number) =>
+        new Date(Date.now() - horas * 60 * 60 * 1000);
+
+      const comDatas = (
+        dados: Partial<{ dataEmissao: Date; dataAutorizacao: Date }>,
+        prazoConfigurado?: number | null,
+      ) => {
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...authorizedNfe,
+          invoicyConfigId: 'config-id',
+          ...dados,
+        });
+        prisma.invoicyConfig.findFirst.mockResolvedValue(
+          prazoConfigurado === undefined
+            ? null
+            : { prazoCancelamentoNfeHoras: prazoConfigurado },
+        );
+      };
+
+      it('deixa cancelar depois de 48 horas, sem limite configurado', async () => {
+        comDatas({
+          dataEmissao: horasAtras(50),
+          dataAutorizacao: horasAtras(48),
+        });
+
+        const result: any = await service.cancel(mockNfeId, mockCompanyId, {
+          justificativa: JUSTIFICATIVA,
+        });
+
+        expect(invoicyApiService.cancelNfe).toHaveBeenCalled();
+        // O usuário precisa saber que está fora do prazo regular.
+        expect(result.avisoPrazo).toMatch(/extempor/i);
+      });
+
+      it('conta da autorização, não da emissão', async () => {
+        comDatas({
+          dataEmissao: horasAtras(300),
+          dataAutorizacao: horasAtras(2),
+        });
+
+        const result: any = await service.cancel(mockNfeId, mockCompanyId, {
+          justificativa: JUSTIFICATIVA,
+        });
+
+        // Dentro das 24h da autorização: cancelamento comum, sem aviso.
+        expect(result.avisoPrazo).toBeUndefined();
+      });
+
+      it('respeita o limite configurado no emissor', async () => {
+        comDatas(
+          { dataEmissao: horasAtras(100), dataAutorizacao: horasAtras(100) },
+          48,
+        );
+
+        await expect(
+          service.cancel(mockNfeId, mockCompanyId, {
+            justificativa: JUSTIFICATIVA,
+          }),
+        ).rejects.toThrow(/pedido formal à SEFAZ/);
+
+        expect(invoicyApiService.cancelNfe).not.toHaveBeenCalled();
+      });
+
+      it('explica a rejeição 501 em vez de repetir o texto da SEFAZ', async () => {
+        comDatas({
+          dataEmissao: horasAtras(30),
+          dataAutorizacao: horasAtras(30),
+        });
+        invoicyApiService.cancelNfe.mockResolvedValue([
+          {
+            Codigo: 100,
+            Descricao: 'ok',
+            Documentos: [
+              {
+                Situacao: {
+                  SitCodigo: 501,
+                  SitDescricao:
+                    'Rejeicao: Prazo de cancelamento superior ao previsto na Legislacao',
+                },
+              },
+            ],
+          },
+        ]);
+
+        await expect(
+          service.cancel(mockNfeId, mockCompanyId, {
+            justificativa: JUSTIFICATIVA,
+          }),
+        ).rejects.toThrow(/posto fiscal/);
+      });
+    });
   });
 
   describe('getDanfeUrl', () => {

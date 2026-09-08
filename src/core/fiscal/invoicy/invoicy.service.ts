@@ -138,6 +138,10 @@ export class InvoicyService {
     if (dto.prazoCancelamentoNfce !== undefined)
       data.prazoCancelamentoNfce = dto.prazoCancelamentoNfce;
 
+    // Teto para tentar o cancelamento da NF-e (horas) — varia por UF
+    if (dto.prazoCancelamentoNfeHoras !== undefined)
+      data.prazoCancelamentoNfeHoras = dto.prazoCancelamentoNfeHoras;
+
     return data;
   }
 
@@ -271,6 +275,7 @@ export class InvoicyService {
       contingenciaNfceMotivo: config.contingenciaNfceMotivo,
       contingenciaNfceDataHora: config.contingenciaNfceDataHora,
       prazoCancelamentoNfce: config.prazoCancelamentoNfce,
+      prazoCancelamentoNfeHoras: config.prazoCancelamentoNfeHoras ?? null,
 
       // Reforma Tributaria. Sem estes campos na allowlist os servicos fiscais
       // liam `undefined` e o grupo de IBS/CBS jamais era enviado, por mais que

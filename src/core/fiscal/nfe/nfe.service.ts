@@ -35,6 +35,10 @@ import {
 import { aliquotaInterestadual as aliquotaInterestadualIcms } from '../utils/icms-interestadual.util';
 import { resolverMva } from '../utils/icms-st.util';
 import {
+  avaliarPrazoCancelamento,
+  orientacaoRejeicaoCancelamento,
+} from '../utils/prazo-cancelamento.util';
+import {
   montarImpostosNfe,
   type ImpostosNfeMontados,
   type ItemParaCalculo,
@@ -3061,12 +3065,35 @@ export class NfeService {
       );
     }
 
-    // Verificar se estÃ¡ dentro do prazo (24h)
-    const horasDaEmissao =
-      (Date.now() - new Date(nfe.dataEmissao).getTime()) / (1000 * 60 * 60);
-    if (horasDaEmissao > 24) {
-      throw new BadRequestException(
-        'O prazo para cancelamento de 24 horas foi excedido',
+    // O prazo corre da AUTORIZACAO DE USO, nao da emissao, e quem o valida e
+    // a SEFAZ da UF do emitente. A regra antiga barrava tudo em 24 horas e
+    // impedia o cancelamento extemporaneo que varios estados aceitam — Sao
+    // Paulo recebe o evento ate 480 horas. Aqui so barramos o que nenhuma UF
+    // aceita; entre o prazo regular e o teto, avisamos e deixamos a SEFAZ
+    // decidir.
+    const limiteConfigurado = nfe.invoicyConfigId
+      ? await this.prisma.invoicyConfig
+          .findFirst({
+            where: { id: nfe.invoicyConfigId, companyId },
+            select: { prazoCancelamentoNfeHoras: true },
+          })
+          .then((cfg) => cfg?.prazoCancelamentoNfeHoras ?? null)
+      : null;
+
+    const prazo = avaliarPrazoCancelamento({
+      autorizadaEm: nfe.dataAutorizacao,
+      emitidaEm: nfe.dataEmissao,
+      limiteConfiguradoHoras: limiteConfigurado,
+    });
+
+    if (!prazo.podeTentar) {
+      throw new BadRequestException(prazo.bloqueio);
+    }
+
+    if (prazo.aviso) {
+      this.logger.warn(
+        `Cancelamento fora do prazo regular da NF-e ${nfe.numero}: ` +
+          `${Math.floor(prazo.horasDecorridas)}h desde a autorizacao.`,
       );
     }
 
@@ -3106,8 +3133,10 @@ export class NfeService {
         situacao?.SitCodigo === 135 || situacao?.SitCodigo === 101;
 
       if (!isCancelled) {
+        const orientacao = orientacaoRejeicaoCancelamento(situacao?.SitCodigo);
         throw new Error(
-          situacao?.SitDescricao || 'Cancelamento nÃ£o autorizado pela SEFAZ',
+          (situacao?.SitDescricao || 'Cancelamento nao autorizado pela SEFAZ') +
+            (orientacao ? ` — ${orientacao}` : ''),
         );
       }
 
@@ -3121,7 +3150,11 @@ export class NfeService {
         },
       });
 
-      return updatedNfe;
+      // O aviso do prazo viaja junto: cancelamento extemporaneo foi aceito,
+      // mas pode gerar penalidade, e o usuario precisa saber disso.
+      return prazo.aviso
+        ? { ...updatedNfe, avisoPrazo: prazo.aviso }
+        : updatedNfe;
     } catch (error) {
       this.logger.error(`Erro ao cancelar NF-e: ${error.message}`, error.stack);
       throw new BadRequestException(`Erro ao cancelar NF-e: ${error.message}`);

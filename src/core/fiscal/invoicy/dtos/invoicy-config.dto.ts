@@ -265,6 +265,21 @@ export class CreateInvoicyConfigDto {
   @Max(1440)
   prazoCancelamentoNfce?: number;
 
+  @ApiPropertyOptional({
+    description:
+      'NF-e: teto em horas para TENTAR o cancelamento por evento, contado da ' +
+      'autorizacao de uso. Vazio usa o teto nacional conhecido. O prazo ' +
+      'regular e de 24 horas; acima disso a SEFAZ da UF decide se aceita o ' +
+      'cancelamento extemporaneo (Sao Paulo aceita ate 480 horas).',
+    example: 480,
+  })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  @Max(1440)
+  prazoCancelamentoNfeHoras?: number;
+
   // ── Reforma Tributária (IBS/CBS) ──
 
   @ApiPropertyOptional({
@@ -669,6 +684,21 @@ export class UpdateInvoicyConfigDto {
   @Min(1)
   @Max(1440)
   prazoCancelamentoNfce?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'NF-e: teto em horas para TENTAR o cancelamento por evento, contado da ' +
+      'autorizacao de uso. Vazio usa o teto nacional conhecido. O prazo ' +
+      'regular e de 24 horas; acima disso a SEFAZ da UF decide se aceita o ' +
+      'cancelamento extemporaneo (Sao Paulo aceita ate 480 horas).',
+    example: 480,
+  })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  @Max(1440)
+  prazoCancelamentoNfeHoras?: number;
 
   // ── Reforma Tributária (IBS/CBS) ──
 
