@@ -58,7 +58,11 @@
     "fiscal:ncm": "node dist/src/scripts/backfill-product-ncm.js",
     "fiscal:ncm:dry": "node dist/src/scripts/backfill-product-ncm.js --dry-run",
     "fiscal:ncm:dev": "ts-node src/scripts/backfill-product-ncm.ts",
-    "fiscal:ncm:dry:dev": "ts-node src/scripts/backfill-product-ncm.ts --dry-run"
+    "fiscal:ncm:dry:dev": "ts-node src/scripts/backfill-product-ncm.ts --dry-run",
+    "fiscal:xml:backfill": "node dist/src/scripts/backfill-nfe-xml.js",
+    "fiscal:xml:backfill:dry": "node dist/src/scripts/backfill-nfe-xml.js --dry-run",
+    "fiscal:xml:backfill:dev": "ts-node src/scripts/backfill-nfe-xml.ts",
+    "fiscal:xml:backfill:dry:dev": "ts-node src/scripts/backfill-nfe-xml.ts --dry-run"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",

@@ -25,6 +25,9 @@ async function bootstrap() {
     origin: corsOrigins ? corsOrigins.split(',').map((o) => o.trim()) : '*',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
+    // Sem isto o navegador esconde os headers customizados do front
+    // (exportacao de XML avisa notas faltantes por header).
+    exposedHeaders: ['Content-Disposition', 'X-Nfe-Total', 'X-Nfe-Missing-Xml'],
   });
 
   app.useGlobalFilters(new HttpExceptionFilter());

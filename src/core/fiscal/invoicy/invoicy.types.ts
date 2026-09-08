@@ -93,6 +93,13 @@ export interface InvoicyDocumentResult {
   DocDigestValue: string;
   DocXMLBase64: string;
   DocXMLDownload: string;
+  /**
+   * A consulta GET (type=Consulta) devolve o mesmo conteudo com outros nomes:
+   * DocXML (base64) e DocXMLLink. Tratados como sinonimos de DocXMLBase64 e
+   * DocXMLDownload.
+   */
+  DocXML?: string;
+  DocXMLLink?: string;
   DocImpressora: string;
   Situacao: InvoicyDocumentSituacao;
   Eventos?: InvoicyDocumentEvent[];

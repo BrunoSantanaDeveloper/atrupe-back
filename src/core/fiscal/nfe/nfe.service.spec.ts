@@ -260,6 +260,8 @@ const mockInvoicyApiService = {
   getStatusNfe: jest.fn(),
   sendCorrectionLetter: jest.fn(),
   consultDocumentEvents: jest.fn(),
+  consultDocumentXml: jest.fn(),
+  consultNfeSefaz: jest.fn(),
 };
 
 const mockProductFiscalService = {
@@ -1831,6 +1833,340 @@ describe('NfeService', () => {
       await expect(
         service.getCorrectionEventPdf(mockNfeId, eventId, mockCompanyId),
       ).rejects.toThrow(ServiceUnavailableException);
+    });
+  });
+
+  /**
+   * O XML so' era gravado na resposta sincrona da emissao. Nota autorizada
+   * depois por consulta, ou emissao respondida sem base64, ficava AUTHORIZED
+   * sem XML e sumia da exportacao ("Nenhuma NF-e com XML encontrada") — o
+   * relato do cliente em 04/09/2026.
+   */
+  describe('XML autorizado: exportacao, consulta de status e download', () => {
+    const xmlAutorizado =
+      '<nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe"><NFe></NFe></nfeProc>';
+    const xmlBase64 = Buffer.from(xmlAutorizado).toString('base64');
+    const chave1 = '35260912345678000123550010000000721000000723';
+    const chave2 = '35260912345678000123550010000000731000000734';
+    const emitidaEm = new Date('2026-09-02T19:13:15.837Z');
+
+    const notaComXml = {
+      id: 'nfe-1',
+      numero: 72,
+      serie: 1,
+      chaveAcesso: chave1,
+      ambiente: 1,
+      invoicyConfigId: 'cfg-1',
+      xmlAutorizado,
+      dataEmissao: emitidaEm,
+      dataAutorizacao: emitidaEm,
+      correctionEvents: [],
+    };
+    const notaSemXml = {
+      ...notaComXml,
+      id: 'nfe-2',
+      numero: 73,
+      chaveAcesso: chave2,
+      xmlAutorizado: null,
+    };
+
+    const respostaComXml = [
+      {
+        Codigo: 100,
+        Descricao: 'ok',
+        Documentos: [
+          { DocXMLBase64: xmlBase64, DocDhAut: '2026-09-02T16:13:15-03:00' },
+        ],
+      },
+    ];
+    const respostaSemXml = [{ Codigo: 100, Descricao: 'ok', Documentos: [{}] }];
+
+    const entradasDoZip = async (zip: Buffer): Promise<string[]> => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const JSZip = require('jszip');
+      const conteudo = await JSZip.loadAsync(zip);
+      return Object.keys(conteudo.files).sort();
+    };
+
+    beforeEach(() => {
+      prisma.nfe.update.mockResolvedValue({});
+      invoicyApiService.consultDocumentXml.mockResolvedValue(respostaSemXml);
+      invoicyApiService.consultNfeSefaz.mockResolvedValue(respostaSemXml);
+    });
+
+    describe('exportXml', () => {
+      it('rejeita periodo fora do formato AAAA-MM-DD', async () => {
+        await expect(
+          service.exportXml(mockCompanyId, '01/09/2026', '2026-09-30'),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('le o periodo no fuso da operacao, nao em UTC', async () => {
+        prisma.nfe.findMany.mockResolvedValue([notaComXml]);
+
+        await service.exportXml(mockCompanyId, '2026-09-01', '2026-09-30');
+
+        const where = prisma.nfe.findMany.mock.calls[0][0].where;
+        const periodo = where.OR[0].dataEmissao;
+        expect(periodo.gte.toISOString()).toBe('2026-09-01T03:00:00.000Z');
+        expect(periodo.lte.toISOString()).toBe('2026-10-01T02:59:59.999Z');
+      });
+
+      it('sem nota autorizada no periodo: 404 diz o periodo, nao "sem XML"', async () => {
+        prisma.nfe.findMany.mockResolvedValue([]);
+
+        await expect(
+          service.exportXml(mockCompanyId, '2026-09-01', '2026-09-30'),
+        ).rejects.toThrow(
+          /Nenhuma NF-e autorizada entre 01\/09\/2026 e 30\/09\/2026/,
+        );
+      });
+
+      it('nota autorizada sem XML: rebusca no provedor, grava e inclui no ZIP', async () => {
+        prisma.nfe.findMany.mockResolvedValue([notaComXml, notaSemXml]);
+        invoicyApiService.consultDocumentXml.mockResolvedValue(respostaComXml);
+
+        const { zip, total, faltantes } = await service.exportXml(
+          mockCompanyId,
+          '2026-09-01',
+          '2026-09-30',
+        );
+
+        expect(total).toBe(2);
+        expect(faltantes).toEqual([]);
+        expect(await entradasDoZip(zip)).toEqual([
+          `NFe_72_${chave1}.xml`,
+          `NFe_73_${chave2}.xml`,
+        ]);
+        expect(prisma.nfe.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'nfe-2' },
+            data: expect.objectContaining({ xmlAutorizado }),
+          }),
+        );
+      });
+
+      it('provedor devolve so o link: baixa o XML pelo link', async () => {
+        prisma.nfe.findMany.mockResolvedValue([notaSemXml]);
+        invoicyApiService.consultDocumentXml.mockResolvedValue([
+          {
+            Codigo: 100,
+            Descricao: 'ok',
+            Documentos: [
+              { DocXMLBase64: '', DocXMLDownload: 'https://invoicy.test/xml' },
+            ],
+          },
+        ]);
+        const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+          ok: true,
+          text: async () => xmlAutorizado,
+        } as any);
+
+        try {
+          const { faltantes } = await service.exportXml(
+            mockCompanyId,
+            '2026-09-01',
+            '2026-09-30',
+          );
+
+          expect(fetchSpy).toHaveBeenCalledWith(
+            'https://invoicy.test/xml',
+            expect.anything(),
+          );
+          expect(faltantes).toEqual([]);
+        } finally {
+          fetchSpy.mockRestore();
+        }
+      });
+
+      it('nenhum XML obtido: 404 com a contagem e as notas', async () => {
+        prisma.nfe.findMany.mockResolvedValue([notaSemXml]);
+        invoicyApiService.consultDocumentXml.mockRejectedValue(
+          new Error('timeout'),
+        );
+
+        await expect(
+          service.exportXml(mockCompanyId, '2026-09-01', '2026-09-30'),
+        ).rejects.toThrow(
+          /1 NF-e autorizada\(s\) no período, mas nenhum XML .* \(notas 73\/1\)/,
+        );
+      });
+
+      it('ZIP parcial lista as faltantes em FALTANTES.txt', async () => {
+        prisma.nfe.findMany.mockResolvedValue([notaComXml, notaSemXml]);
+
+        const { zip, faltantes } = await service.exportXml(
+          mockCompanyId,
+          '2026-09-01',
+          '2026-09-30',
+        );
+
+        expect(faltantes).toEqual([
+          { numero: 73, serie: 1, chaveAcesso: chave2 },
+        ]);
+        expect(await entradasDoZip(zip)).toEqual([
+          'FALTANTES.txt',
+          `NFe_72_${chave1}.xml`,
+        ]);
+      });
+    });
+
+    describe('consultStatus — autorizacao por consulta grava XML e datas', () => {
+      const notaRejeitadaPorTransporte = {
+        id: mockNfeId,
+        numero: 5,
+        serie: 1,
+        status: 'REJECTED',
+        chaveAcesso: chave1,
+        ambiente: 2,
+        invoicyConfigId: 'cfg-1',
+        xmlAutorizado: null,
+        dataEmissao: null,
+        dataAutorizacao: null,
+        protocolo: null,
+        danfeUrl: null,
+        invoicyId: null,
+      };
+
+      it('nota rejeitada por falha de transporte que a SEFAZ autorizou: grava XML, datas e protocolo', async () => {
+        prisma.nfe.findFirst.mockResolvedValue(notaRejeitadaPorTransporte);
+        invoicyApiService.consultNfeSefaz.mockResolvedValue([
+          {
+            Codigo: 100,
+            Descricao: 'ok',
+            Documentos: [
+              {
+                Situacao: {
+                  SitCodigo: 100,
+                  SitDescricao: 'Autorizado o uso da NF-e',
+                },
+                DocProtocolo: '135260000000001',
+                DocDhAut: '2026-09-02T16:13:15-03:00',
+                DocXMLBase64: xmlBase64,
+                DocPDFDownload: 'https://invoicy.test/danfe.pdf',
+                DocIDUnico: 'doc-1',
+              },
+            ],
+          },
+        ]);
+
+        const resultado = await service.consultStatus(mockNfeId, mockCompanyId);
+
+        expect(resultado.status).toBe('AUTHORIZED');
+        expect(resultado.statusChanged).toBe(true);
+        expect(resultado.xmlDisponivel).toBe(true);
+
+        const data = prisma.nfe.update.mock.calls[0][0].data;
+        expect(data).toEqual(
+          expect.objectContaining({
+            status: 'AUTHORIZED',
+            xmlAutorizado,
+            protocolo: '135260000000001',
+            danfeUrl: 'https://invoicy.test/danfe.pdf',
+            invoicyId: 'doc-1',
+          }),
+        );
+        expect(data.dataAutorizacao.toISOString()).toBe(
+          '2026-09-02T19:13:15.000Z',
+        );
+        expect(data.dataEmissao.toISOString()).toBe('2026-09-02T19:13:15.000Z');
+        // O XML veio na propria consulta: nao gasta outra chamada.
+        expect(invoicyApiService.consultDocumentXml).not.toHaveBeenCalled();
+      });
+
+      it('nota ja autorizada sem XML: a consulta recupera o XML mesmo sem mudanca de status', async () => {
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...notaRejeitadaPorTransporte,
+          status: 'AUTHORIZED',
+          dataEmissao: emitidaEm,
+          dataAutorizacao: emitidaEm,
+        });
+        invoicyApiService.consultNfeSefaz.mockResolvedValue([
+          {
+            Codigo: 100,
+            Descricao: 'ok',
+            Documentos: [{ Situacao: { SitCodigo: 100 } }],
+          },
+        ]);
+        invoicyApiService.consultDocumentXml.mockResolvedValue(respostaComXml);
+
+        const resultado = await service.consultStatus(mockNfeId, mockCompanyId);
+
+        expect(resultado.statusChanged).toBe(false);
+        expect(resultado.xmlDisponivel).toBe(true);
+        expect(prisma.nfe.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: mockNfeId },
+            data: expect.objectContaining({ xmlAutorizado }),
+          }),
+        );
+      });
+
+      it('nao sobrescreve XML, datas nem protocolo ja gravados ao registrar CC-e', async () => {
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...notaRejeitadaPorTransporte,
+          status: 'AUTHORIZED',
+          xmlAutorizado,
+          dataEmissao: emitidaEm,
+          dataAutorizacao: emitidaEm,
+          protocolo: 'P0',
+        });
+        invoicyApiService.consultNfeSefaz.mockResolvedValue([
+          {
+            Codigo: 100,
+            Descricao: 'ok',
+            Documentos: [
+              {
+                Situacao: { SitCodigo: 135 },
+                DocEveTp: 110110,
+                DocXMLBase64: Buffer.from('<nfeProc>outro</nfeProc>').toString(
+                  'base64',
+                ),
+                DocProtocolo: 'P9',
+              },
+            ],
+          },
+        ]);
+
+        const resultado = await service.consultStatus(mockNfeId, mockCompanyId);
+
+        expect(resultado.status).toBe('CORRECTION_SENT');
+        expect(prisma.nfe.update.mock.calls[0][0].data).toEqual({
+          status: 'CORRECTION_SENT',
+        });
+      });
+    });
+
+    describe('getXml', () => {
+      it('sem XML gravado, rebusca no provedor antes de negar', async () => {
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...notaSemXml,
+          id: mockNfeId,
+        });
+        invoicyApiService.consultDocumentXml.mockResolvedValue(respostaComXml);
+
+        await expect(service.getXml(mockNfeId, mockCompanyId)).resolves.toEqual(
+          { xml: xmlAutorizado },
+        );
+        expect(prisma.nfe.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ xmlAutorizado }),
+          }),
+        );
+      });
+
+      it('404 quando nem o provedor tem o XML', async () => {
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...notaSemXml,
+          id: mockNfeId,
+        });
+
+        await expect(service.getXml(mockNfeId, mockCompanyId)).rejects.toThrow(
+          NotFoundException,
+        );
+        expect(invoicyApiService.consultDocumentXml).toHaveBeenCalled();
+        expect(invoicyApiService.consultNfeSefaz).toHaveBeenCalled();
+      });
     });
   });
 });

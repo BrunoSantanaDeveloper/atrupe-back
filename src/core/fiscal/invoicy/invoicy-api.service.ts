@@ -696,6 +696,70 @@ export class InvoicyApiService {
       `Consultando eventos da NF-e ${chaveAcesso} para empresa ${companyId}`,
     );
 
+    return this.consultDocument(
+      companyId,
+      chaveAcesso,
+      ambiente,
+      invoicyConfigId,
+      {
+        ParmEventos: 'S',
+        ParmPDFBase64: 'S',
+        ParmPDFLink: 'S',
+        ParmXMLCompleto: 'N',
+        ParmXMLLink: 'N',
+      },
+    );
+  }
+
+  /**
+   * Consulta um documento trazendo o XML autorizado (base64 e link).
+   *
+   * O XML da NF-e so' era gravado na resposta sincrona da emissao. Quando ela
+   * vinha sem DocXMLBase64, ou quando a nota era autorizada depois pela
+   * consulta de status, a NF-e ficava AUTHORIZED sem XML e sumia da
+   * exportacao em ZIP. ParmXMLCompleto=S e' o caminho documentado para
+   * rebusca-lo (layout de consultas: "XMLCompleto — XML sera' retornado em
+   * base 64").
+   */
+  async consultDocumentXml(
+    companyId: string,
+    chaveAcesso: string,
+    ambiente?: number,
+    invoicyConfigId?: string,
+  ): Promise<InvoicyResponse[]> {
+    this.logger.log(
+      `Consultando XML da NF-e ${chaveAcesso} para empresa ${companyId}`,
+    );
+
+    return this.consultDocument(
+      companyId,
+      chaveAcesso,
+      ambiente,
+      invoicyConfigId,
+      {
+        ParmEventos: 'N',
+        ParmPDFBase64: 'N',
+        ParmPDFLink: 'N',
+        ParmXMLCompleto: 'S',
+        ParmXMLLink: 'S',
+      },
+    );
+  }
+
+  private async consultDocument(
+    companyId: string,
+    chaveAcesso: string,
+    ambiente: number | undefined,
+    invoicyConfigId: string | undefined,
+    retorno: Record<
+      | 'ParmEventos'
+      | 'ParmPDFBase64'
+      | 'ParmPDFLink'
+      | 'ParmXMLCompleto'
+      | 'ParmXMLLink',
+      'S' | 'N'
+    >,
+  ): Promise<InvoicyResponse[]> {
     const forceEnvironment = this.toFiscalEnvironment(ambiente);
 
     const credentials = await this.invoicyHttpService.getCompanyCredentials(
@@ -716,11 +780,7 @@ export class InvoicyApiService {
       tpAmb: String(ambiente ?? 2),
       DocumentosResumo: 'N',
       ParmSituacao: 'S',
-      ParmEventos: 'S',
-      ParmPDFBase64: 'S',
-      ParmPDFLink: 'S',
-      ParmXMLCompleto: 'N',
-      ParmXMLLink: 'N',
+      ...retorno,
     });
 
     return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(

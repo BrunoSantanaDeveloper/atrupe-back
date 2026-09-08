@@ -54,6 +54,23 @@ import {
 } from './dtos/nfe.dto';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 
+export interface ExportXmlResult {
+  zip: Buffer;
+  /** NF-e autorizadas no periodo, com ou sem XML. */
+  total: number;
+  /** Notas que ficaram fora do ZIP por nao ter XML nem no provedor. */
+  faltantes: Array<{
+    numero: number;
+    serie: number;
+    chaveAcesso: string | null;
+  }>;
+}
+
+/** AAAA-MM-DD → DD/MM/AAAA, para mensagens ao usuario. */
+function formatarDataBr(isoDate: string): string {
+  return isoDate.split('-').reverse().join('/');
+}
+
 @Injectable()
 export class NfeService {
   private readonly logger = new Logger(NfeService.name);
@@ -2829,6 +2846,7 @@ export class NfeService {
       );
 
       let currentStatus = nfe.status;
+      let xmlDisponivel = !!nfe.xmlAutorizado;
       if (
         newStatus &&
         newStatus !== nfe.status &&
@@ -2838,15 +2856,28 @@ export class NfeService {
           `Status NF-e ${nfe.numero} mudou: ${nfe.status} -> ${newStatus}`,
         );
 
+        // Ao autorizar por consulta, gravar o que a autorizacao sincrona
+        // grava. Sem isso a nota ficava AUTHORIZED sem XML nem datas e sumia
+        // da exportacao em ZIP.
+        const autorizacao = this.isStatusAutorizado(newStatus)
+          ? await this.dadosDeAutorizacao(nfe, doc)
+          : {};
         await this.prisma.nfe.update({
           where: { id: nfe.id },
-          data: { status: newStatus as any },
+          data: { status: newStatus as any, ...autorizacao },
         });
         currentStatus = newStatus as any;
+        xmlDisponivel = xmlDisponivel || !!autorizacao.xmlAutorizado;
       } else if (newStatus && newStatus !== nfe.status) {
         this.logger.warn(
           `Transicao de status ignorada para NF-e ${nfe.numero}: ${nfe.status} -> ${newStatus} (cStat ${situacao?.SitCodigo})`,
         );
+      }
+
+      // "Consultar status" e' o que o usuario faz ao ver uma nota autorizada
+      // sem XML; aproveitar para recupera-lo do provedor.
+      if (!xmlDisponivel && this.isStatusAutorizado(currentStatus)) {
+        xmlDisponivel = !!(await this.refreshXmlFromProvider(nfe, companyId));
       }
 
       return {
@@ -2855,6 +2886,7 @@ export class NfeService {
         serie: nfe.serie,
         status: currentStatus,
         statusChanged: currentStatus !== nfe.status,
+        xmlDisponivel,
         sefazCode: situacao?.SitCodigo,
         sefazDescription: situacao?.SitDescricao,
         chaveAcesso: nfe.chaveAcesso,
@@ -3030,6 +3062,180 @@ export class NfeService {
     return content.subarray(0, 5).toString('ascii') === '%PDF-';
   }
 
+  private isStatusAutorizado(status: string): boolean {
+    return (
+      status === NfeStatus.AUTHORIZED || status === NfeStatus.CORRECTION_SENT
+    );
+  }
+
+  /** Data devolvida pelo provedor (ISO com fuso); null quando ausente ou inválida. */
+  private parseProviderDate(value?: string): Date | null {
+    if (!value) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  private isNfeXml(content: string): boolean {
+    return content.startsWith('<') && /<(nfeProc|NFe)[\s>]/.test(content);
+  }
+
+  /** Aceita base64 ou XML puro; devolve o XML apenas se for de NF-e. */
+  private decodeXml(content: string): string | null {
+    const raw = content.trim();
+    if (!raw) return null;
+    if (this.isNfeXml(raw)) return raw;
+
+    const decoded = Buffer.from(raw, 'base64').toString('utf-8').trim();
+    return this.isNfeXml(decoded) ? decoded : null;
+  }
+
+  /**
+   * XML autorizado a partir de um documento devolvido pelo provedor.
+   *
+   * Emissao e consulta usam nomes diferentes para o mesmo conteudo
+   * (DocXMLBase64/DocXMLDownload na emissao, DocXML/DocXMLLink na consulta
+   * GET). Base64 primeiro, link em seguida; nunca lanca.
+   */
+  private async resolveXmlAutorizado(
+    doc?: Partial<InvoicyDocumentResult> | null,
+  ): Promise<string | null> {
+    if (!doc) return null;
+
+    const inline = doc.DocXMLBase64 || doc.DocXML;
+    if (inline) {
+      const xml = this.decodeXml(inline);
+      if (xml) return xml;
+    }
+
+    const link = doc.DocXMLDownload || doc.DocXMLLink;
+    if (!link) return null;
+
+    try {
+      const response = await fetch(link, {
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!response.ok) return null;
+      return this.decodeXml(await response.text());
+    } catch (error) {
+      this.logger.warn(
+        `Nao foi possivel baixar o XML retornado pelo Invoicy: ${error.message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Campos que a autorizacao sincrona grava e a consulta de status esquecia:
+   * XML, datas, protocolo, DANFE e id no provedor. Nunca sobrescreve o que ja'
+   * esta' gravado — a consulta devolve o documento no estado atual, e um XML
+   * bom nao pode ser trocado por vazio.
+   */
+  private async dadosDeAutorizacao(
+    nfe: {
+      xmlAutorizado?: string | null;
+      dataAutorizacao?: Date | null;
+      dataEmissao?: Date | null;
+      protocolo?: string | null;
+      danfeUrl?: string | null;
+      invoicyId?: string | null;
+    },
+    doc?: Partial<InvoicyDocumentResult> | null,
+  ): Promise<{
+    xmlAutorizado?: string;
+    dataAutorizacao?: Date;
+    dataEmissao?: Date;
+    protocolo?: string;
+    danfeUrl?: string;
+    invoicyId?: string;
+  }> {
+    const dataAutorizacao =
+      nfe.dataAutorizacao ??
+      this.parseProviderDate(doc?.DocDhAut) ??
+      new Date();
+    const xml = nfe.xmlAutorizado ? null : await this.resolveXmlAutorizado(doc);
+
+    return {
+      ...(xml ? { xmlAutorizado: xml } : {}),
+      ...(nfe.dataAutorizacao ? {} : { dataAutorizacao }),
+      ...(nfe.dataEmissao ? {} : { dataEmissao: dataAutorizacao }),
+      ...(!nfe.protocolo && doc?.DocProtocolo
+        ? { protocolo: doc.DocProtocolo }
+        : {}),
+      ...(!nfe.danfeUrl && doc?.DocPDFDownload
+        ? { danfeUrl: doc.DocPDFDownload }
+        : {}),
+      ...(!nfe.invoicyId && doc?.DocIDUnico
+        ? { invoicyId: doc.DocIDUnico }
+        : {}),
+    };
+  }
+
+  /**
+   * Rebusca o XML autorizado no provedor e o persiste.
+   *
+   * O XML so' era gravado na resposta sincrona da emissao. Quando ela vinha
+   * sem DocXMLBase64, ou quando a nota era autorizada depois pela consulta de
+   * status, a NF-e ficava AUTHORIZED sem XML: sumia da exportacao em ZIP e do
+   * "Baixar XML". Consulta o documento com ParmXMLCompleto=S e, se vier vazio,
+   * cai na consulta de sincronizacao, que devolve o mesmo documento.
+   *
+   * Nunca lanca: quem chama decide o que fazer sem XML.
+   */
+  async refreshXmlFromProvider(
+    nfe: {
+      id: string;
+      chaveAcesso?: string | null;
+      ambiente?: number | null;
+      invoicyConfigId?: string | null;
+      dataAutorizacao?: Date | null;
+    },
+    companyId: string,
+  ): Promise<string | null> {
+    if (!nfe?.chaveAcesso) return null;
+    const chaveAcesso = nfe.chaveAcesso;
+
+    const consultas = [
+      () =>
+        this.invoicyApiService.consultDocumentXml(
+          companyId,
+          chaveAcesso,
+          nfe.ambiente ?? undefined,
+          nfe.invoicyConfigId ?? undefined,
+        ),
+      () =>
+        this.invoicyApiService.consultNfeSefaz(
+          companyId,
+          chaveAcesso,
+          nfe.invoicyConfigId ?? undefined,
+        ),
+    ];
+
+    for (const consultar of consultas) {
+      try {
+        const responses = await consultar();
+        const doc = responses?.[0]?.Documentos?.[0];
+        const xml = await this.resolveXmlAutorizado(doc);
+        if (!xml) continue;
+
+        const dataAutorizacao = nfe.dataAutorizacao
+          ? undefined
+          : (this.parseProviderDate(doc?.DocDhAut) ?? undefined);
+        await this.prisma.nfe.update({
+          where: { id: nfe.id },
+          data: { xmlAutorizado: xml, dataAutorizacao },
+        });
+        this.logger.log(`XML da NF-e ${nfe.id} recuperado do provedor.`);
+        return xml;
+      } catch (error) {
+        this.logger.warn(
+          `Nao foi possivel recuperar o XML da NF-e ${nfe.id}: ${error.message}`,
+        );
+      }
+    }
+
+    return null;
+  }
+
   async getDanfeUrl(id: string, companyId: string) {
     const nfe = await this.findById(id, companyId);
     const danfeDocument = await this.prisma.nfeDanfeDocument.findUnique({
@@ -3050,12 +3256,15 @@ export class NfeService {
   async getXml(id: string, companyId: string) {
     const nfe = await this.findById(id, companyId);
 
-    if (!nfe.xmlAutorizado) {
-      // TODO: Buscar XML da API do Invoicy se nÃ£o estiver armazenado
-      throw new NotFoundException('XML nÃ£o disponÃ­vel para esta NF-e');
+    if (nfe.xmlAutorizado) return { xml: nfe.xmlAutorizado };
+
+    // Nota autorizada cujo XML nao veio na emissao: rebuscar antes de negar.
+    const xml = await this.refreshXmlFromProvider(nfe, companyId);
+    if (!xml) {
+      throw new NotFoundException('XML não disponível para esta NF-e');
     }
 
-    return { xml: nfe.xmlAutorizado };
+    return { xml };
   }
 
   async sendAuthorizedEmail(id: string, companyId: string) {
@@ -3745,18 +3954,35 @@ export class NfeService {
     }
   }
 
+  /**
+   * XMLs das NF-e autorizadas do periodo em ZIP, com as CC-e de cada nota.
+   *
+   * O periodo e' lido no fuso da operacao (America/Sao_Paulo): em UTC, uma
+   * nota das 22h caia no dia seguinte. Nota autorizada sem XML gravado
+   * (emissao respondida sem base64, ou autorizacao posterior por consulta) e'
+   * rebuscada no provedor aqui mesmo; a que ainda assim ficar sem XML vai
+   * listada em FALTANTES.txt e no retorno, em vez de sumir em silencio como
+   * "nenhuma nota no periodo".
+   */
   async exportXml(
     companyId: string,
     startDate: string,
     endDate: string,
-  ): Promise<Buffer> {
-    if (!startDate || !endDate) {
-      throw new BadRequestException('startDate e endDate sÃ£o obrigatÃ³rios');
+  ): Promise<ExportXmlResult> {
+    const start = startDate && parseProjectDayBoundary(startDate, 'start');
+    const end = endDate && parseProjectDayBoundary(endDate, 'end');
+    if (!start || !end) {
+      throw new BadRequestException(
+        'Informe o período no formato AAAA-MM-DD (startDate e endDate)',
+      );
+    }
+    if (start > end) {
+      throw new BadRequestException(
+        'A data inicial não pode ser maior que a final',
+      );
     }
 
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
+    const periodo = { gte: start, lte: end };
 
     // CORRECTION_SENT precisa entrar: uma NF-e que recebeu carta de correcao
     // continua sendo um documento autorizado e valido para a escrituracao.
@@ -3764,16 +3990,24 @@ export class NfeService {
       where: {
         companyId,
         status: { in: ['AUTHORIZED', 'CORRECTION_SENT'] },
-        dataEmissao: { gte: start, lte: end },
-        xmlAutorizado: { not: null },
+        // dataEmissao so' e' gravada na resposta sincrona da emissao; a nota
+        // autorizada depois por consulta pode nao te-la.
+        OR: [
+          { dataEmissao: periodo },
+          { dataEmissao: null, dataAutorizacao: periodo },
+          { dataEmissao: null, dataAutorizacao: null, createdAt: periodo },
+        ],
       },
       select: {
         id: true,
         numero: true,
         serie: true,
         chaveAcesso: true,
+        ambiente: true,
+        invoicyConfigId: true,
         xmlAutorizado: true,
         dataEmissao: true,
+        dataAutorizacao: true,
         correctionEvents: {
           where: {
             status: NfeCorrectionStatus.REGISTERED,
@@ -3786,9 +4020,41 @@ export class NfeService {
       orderBy: { numero: 'asc' },
     });
 
+    const periodoTexto = `${formatarDataBr(startDate)} e ${formatarDataBr(endDate)}`;
     if (nfes.length === 0) {
       throw new NotFoundException(
-        'Nenhuma NF-e autorizada com XML encontrada no perÃ­odo',
+        `Nenhuma NF-e autorizada entre ${periodoTexto}.`,
+      );
+    }
+
+    // Poucas por vez: cada consulta conta no limite do provedor, e o XML
+    // recuperado fica gravado — a proxima exportacao nao volta aqui.
+    const semXml = nfes.filter((nfe) => !nfe.xmlAutorizado);
+    const recuperados = new Map<string, string>();
+    for (let i = 0; i < semXml.length; i += 3) {
+      const lote = semXml.slice(i, i + 3);
+      const resultados = await Promise.allSettled(
+        lote.map((nfe) => this.refreshXmlFromProvider(nfe, companyId)),
+      );
+      resultados.forEach((resultado, index) => {
+        if (resultado.status === 'fulfilled' && resultado.value) {
+          recuperados.set(lote[index].id, resultado.value);
+        }
+      });
+    }
+
+    const faltantes = semXml
+      .filter((nfe) => !recuperados.has(nfe.id))
+      .map(({ numero, serie, chaveAcesso }) => ({
+        numero,
+        serie,
+        chaveAcesso,
+      }));
+
+    if (faltantes.length === nfes.length) {
+      const lista = faltantes.map((n) => `${n.numero}/${n.serie}`).join(', ');
+      throw new NotFoundException(
+        `${nfes.length} NF-e autorizada(s) no período, mas nenhum XML pôde ser obtido do provedor (notas ${lista}).`,
       );
     }
 
@@ -3798,8 +4064,11 @@ export class NfeService {
 
     let correctionCount = 0;
     for (const nfe of nfes) {
+      const xml = nfe.xmlAutorizado || recuperados.get(nfe.id);
+      if (!xml) continue;
+
       const identifier = nfe.chaveAcesso || nfe.id;
-      zip.file(`NFe_${nfe.numero}_${identifier}.xml`, nfe.xmlAutorizado);
+      zip.file(`NFe_${nfe.numero}_${identifier}.xml`, xml);
 
       // O XML do evento 110110 integra o documento fiscal e precisa ser
       // guardado junto da nota pelo mesmo prazo decadencial.
@@ -3812,12 +4081,27 @@ export class NfeService {
       }
     }
 
+    if (faltantes.length > 0) {
+      zip.file(
+        'FALTANTES.txt',
+        [
+          `NF-e autorizadas entre ${periodoTexto} cujo XML não pôde ser obtido do provedor:`,
+          ...faltantes.map(
+            (n) =>
+              `- Nº ${n.numero} série ${n.serie} chave ${n.chaveAcesso ?? '(sem chave)'}`,
+          ),
+          '',
+          'Use "Consultar status" na nota para tentar recuperar o XML.',
+        ].join('\n'),
+      );
+    }
+
     const buffer = await zip.generateAsync({ type: 'nodebuffer' });
     this.logger.log(
-      `Exportados ${nfes.length} XMLs de NF-e e ${correctionCount} XMLs de CC-e para ZIP - empresa ${companyId}`,
+      `Exportados ${nfes.length - faltantes.length} XMLs de NF-e (${recuperados.size} rebuscados no provedor, ${faltantes.length} faltantes) e ${correctionCount} XMLs de CC-e para ZIP - empresa ${companyId}`,
     );
 
-    return buffer;
+    return { zip: buffer, total: nfes.length, faltantes };
   }
 
   /**

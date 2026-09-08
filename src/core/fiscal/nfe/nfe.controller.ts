@@ -316,7 +316,7 @@ export class NfeController {
     @Query('endDate') endDate: string,
     @Res() res: Response,
   ) {
-    const zipBuffer = await this.nfeService.exportXml(
+    const { zip, total, faltantes } = await this.nfeService.exportXml(
       req.user.companyId,
       startDate,
       endDate,
@@ -326,8 +326,12 @@ export class NfeController {
     res.set({
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${filename}"`,
-      'Content-Length': zipBuffer.length.toString(),
+      'Content-Length': zip.length.toString(),
+      // Lidos pelo front para avisar quando o ZIP saiu parcial (ver
+      // exposedHeaders no CORS).
+      'X-Nfe-Total': String(total),
+      'X-Nfe-Missing-Xml': String(faltantes.length),
     });
-    res.end(zipBuffer);
+    res.end(zip);
   }
 }
