@@ -233,6 +233,85 @@ describe('InvoicyService', () => {
     });
   });
 
+  /**
+   * Gravação e leitura no mesmo teste: os campos do emissor passam por duas
+   * allowlists (mapDtoToDb e mapDbToResponse) e um campo fora de qualquer
+   * uma delas some em silêncio. Em 04/09/2026 o cliente perdeu cIndOp, regime
+   * IBS/CBS e NCM padrão por uma allowlist do frontend; este teste fecha o
+   * lado do backend.
+   */
+  describe('update — campos da Reforma e NCM padrão round-tripam', () => {
+    const configExistente = {
+      id: 'config-1',
+      companyId: 'company-1',
+      name: 'Matriz',
+      environmentConfigs: [],
+      company: {
+        id: 'company-1',
+        cnpj: '11222333000181',
+        address: [],
+        DigitalCertificate: null,
+        environmentCredentials: [],
+      },
+    };
+
+    const dataGravada = () =>
+      mockPrisma.invoicyConfig.update.mock.calls[0][0].data;
+
+    beforeEach(() => {
+      mockPrisma.invoicyConfig.findUnique.mockResolvedValue(configExistente);
+      // Devolve o que foi gravado, como o Prisma faria, para a leitura
+      // (mapDbToResponse) ser testada sobre o dado persistido e não sobre
+      // um mock estático.
+      mockPrisma.invoicyConfig.update.mockImplementation(({ data }: any) =>
+        Promise.resolve({ ...configExistente, ...data }),
+      );
+    });
+
+    it('grava cIndOp, regime IBS/CBS e NCM padrão e os devolve na resposta', async () => {
+      const resposta: any = await service.update('config-1', {
+        indicadorOperacaoNfse: '100301',
+        regApIbsCbsSn: 2,
+        defaultNcm: '49111010',
+      } as any);
+
+      expect(dataGravada()).toEqual(
+        expect.objectContaining({
+          indicadorOperacaoNfse: '100301',
+          regApIbsCbsSn: 2,
+          defaultNcm: '49111010',
+        }),
+      );
+      expect(resposta.indicadorOperacaoNfse).toBe('100301');
+      expect(resposta.regApIbsCbsSn).toBe(2);
+      expect(resposta.defaultNcm).toBe('49111010');
+    });
+
+    it('PATCH parcial só com o nome não toca os campos da Reforma', async () => {
+      await service.update('config-1', { name: 'Matriz SP' } as any);
+
+      expect(dataGravada()).not.toHaveProperty('indicadorOperacaoNfse');
+      expect(dataGravada()).not.toHaveProperty('regApIbsCbsSn');
+      expect(dataGravada()).not.toHaveProperty('defaultNcm');
+    });
+
+    it('null limpa cIndOp e o regime IBS/CBS', async () => {
+      const resposta: any = await service.update('config-1', {
+        indicadorOperacaoNfse: null,
+        regApIbsCbsSn: null,
+      } as any);
+
+      expect(dataGravada()).toEqual(
+        expect.objectContaining({
+          indicadorOperacaoNfse: null,
+          regApIbsCbsSn: null,
+        }),
+      );
+      expect(resposta.indicadorOperacaoNfse).toBeNull();
+      expect(resposta.regApIbsCbsSn).toBeNull();
+    });
+  });
+
   describe('increment numbers', () => {
     it('should increment nfe number and return the previous value', async () => {
       mockPrisma.invoicyConfig.update.mockResolvedValue({

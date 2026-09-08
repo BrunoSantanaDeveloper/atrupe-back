@@ -40,3 +40,53 @@ describe('CRT do emissor', () => {
     });
   }
 });
+
+/**
+ * O formulário manda '' para campo limpo e null para select "não informar".
+ * O DTO precisa distinguir "limpar" (null) de "não mexer" (undefined), senão
+ * um PATCH parcial apaga o que estava gravado.
+ */
+describe('campos da Reforma no UpdateInvoicyConfigDto', () => {
+  const instanciar = (dto: object) =>
+    plainToInstance(UpdateInvoicyConfigDto, dto);
+  const erroDe = async (dto: object, campo: string) =>
+    (await validate(instanciar(dto))).find((e) => e.property === campo);
+
+  it("'' em cIndOp vira null (limpa o padrão)", () => {
+    expect(
+      instanciar({ indicadorOperacaoNfse: '' }).indicadorOperacaoNfse,
+    ).toBeNull();
+  });
+
+  it('cIndOp ausente continua undefined (PATCH parcial não limpa)', () => {
+    expect(instanciar({ name: 'x' }).indicadorOperacaoNfse).toBeUndefined();
+  });
+
+  it('cIndOp com mais de 6 caracteres é recusado', async () => {
+    expect(
+      await erroDe(
+        { indicadorOperacaoNfse: '1003011' },
+        'indicadorOperacaoNfse',
+      ),
+    ).toBeDefined();
+  });
+
+  it("'2' em regApIbsCbsSn vira 2 e passa", async () => {
+    const inst = instanciar({ regApIbsCbsSn: '2' });
+    expect(inst.regApIbsCbsSn).toBe(2);
+    expect(
+      await erroDe({ regApIbsCbsSn: '2' }, 'regApIbsCbsSn'),
+    ).toBeUndefined();
+  });
+
+  it('null em regApIbsCbsSn é aceito e vira null', async () => {
+    expect(instanciar({ regApIbsCbsSn: null }).regApIbsCbsSn).toBeNull();
+    expect(
+      await erroDe({ regApIbsCbsSn: null }, 'regApIbsCbsSn'),
+    ).toBeUndefined();
+  });
+
+  it('regApIbsCbsSn fora de 1..3 é recusado', async () => {
+    expect(await erroDe({ regApIbsCbsSn: 4 }, 'regApIbsCbsSn')).toBeDefined();
+  });
+});
