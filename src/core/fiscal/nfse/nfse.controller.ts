@@ -9,6 +9,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import {
   BlockLevelGuard,
@@ -69,6 +70,36 @@ export class NfseController {
   @ApiOperation({ summary: 'Obter NFS-e por ID' })
   async findById(@Req() req, @Param('id') id: string) {
     return this.nfseService.findById(id, req.user.companyId);
+  }
+
+  // Previews antes das rotas ':id/...' e com os MESMOS DTOs da emissão: um
+  // DTO paralelo viraria outra allowlist, e o ValidationPipe global derruba
+  // campo desconhecido com 400. Fora do throttle porque não falam com o
+  // provedor.
+  @Post('preview')
+  @SkipThrottle()
+  @HasPermission('view', 'nota_fiscal:emitir')
+  @ApiOperation({
+    summary: 'Pré-visualizar a NFS-e de uma ordem, sem reservar RPS',
+  })
+  async preview(@Req() req, @Body() dto: EmitNfseFromOrderDto) {
+    return this.nfseService.previewFromOrder(req.user.companyId, dto);
+  }
+
+  @Post('preview-consolidated')
+  @SkipThrottle()
+  @HasPermission('view', 'nota_fiscal:emitir')
+  @ApiOperation({ summary: 'Pré-visualizar a NFS-e consolidada' })
+  async previewConsolidated(@Req() req, @Body() dto: EmitNfseFromOrdersDto) {
+    return this.nfseService.previewFromOrders(req.user.companyId, dto);
+  }
+
+  @Post('preview-full')
+  @SkipThrottle()
+  @HasPermission('view', 'nota_fiscal:emitir')
+  @ApiOperation({ summary: 'Pré-visualizar a NFS-e avulsa' })
+  async previewFull(@Req() req, @Body() dto: EmitNfseDto) {
+    return this.nfseService.preview(req.user.companyId, dto);
   }
 
   @Post('emit')

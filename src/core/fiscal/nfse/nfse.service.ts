@@ -21,6 +21,45 @@ import {
   NfseFilterDto,
 } from './dtos/nfse.dto';
 import { fetchCepData } from '../utils/cep.util';
+
+/**
+ * Pre-visualizacao da NFS-e: o mesmo RPS que seria transmitido, sem reservar
+ * numero nem criar registro.
+ */
+export interface NfsePreview {
+  podeEmitir: boolean;
+  bloqueios: string[];
+  avisos: string[];
+  documento?: {
+    modelo: string;
+    ambiente: 'HOMOLOGACAO' | 'PRODUCAO';
+    /** RPS previsto; o definitivo e reservado na emissao. */
+    rpsPrevisto: number;
+    rpsSerie: string;
+    /** A prefeitura numera a NFS-e no retorno da recepcao. */
+    numeroNfse: number | null;
+    dataEmissaoPrevista?: string;
+    dataCompetencia?: string;
+    naturezaOperacao?: number;
+    localPrestacao?: number;
+    optanteSimples?: number;
+    regimeEspecial?: number | null;
+    cIndOp?: string | null;
+    indFinal?: number | null;
+    indDest?: number | null;
+    tpEnteGov?: number | null;
+    tpOper?: number | null;
+    regApIbsCbsSn?: number | null;
+  };
+  prestador?: Record<string, any>;
+  tomador?: Record<string, any>;
+  servico?: Record<string, any>;
+  itens?: Array<Record<string, any>>;
+  valores?: Record<string, any>;
+  /** Payload cru, para o painel tecnico e para os testes de equivalencia. */
+  payloadInvoicy?: InvoicyNfseRequest;
+}
+
 import { aliquotasVigentes, calcularIbsCbs } from '../utils/ibs-cbs.util';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { MailService } from '../../mail/mail.service';
@@ -376,7 +415,16 @@ export class NfseService {
   }
 
   // Emitir NFS-e a partir de uma ordem de serviÃ§o (busca dados automaticamente)
-  async emitFromOrder(companyId: string, dto: EmitNfseFromOrderDto) {
+  /**
+   * Constrói o DTO completo da NFS-e a partir da ordem de serviço.
+   *
+   * Separado de `emitFromOrder` para a pré-visualização partir exatamente do
+   * mesmo documento que a emissão montaria.
+   */
+  private async buildNfseDtoFromOrder(
+    companyId: string,
+    dto: EmitNfseFromOrderDto,
+  ): Promise<EmitNfseDto> {
     // Buscar a ordem via quotation para garantir o filtro por companyId
     const quotation = await this.prisma.quotation.findFirst({
       where: {
@@ -655,11 +703,26 @@ export class NfseService {
       );
     }
 
-    return this.emit(companyId, fullDto);
+    return fullDto;
+  }
+
+  async emitFromOrder(companyId: string, dto: EmitNfseFromOrderDto) {
+    return this.emit(
+      companyId,
+      await this.buildNfseDtoFromOrder(companyId, dto),
+    );
   }
 
   // Emitir NFS-e consolidada a partir de mÃºltiplas ordens de serviÃ§o
-  async emitFromOrders(companyId: string, dto: EmitNfseFromOrdersDto) {
+  /** Como buildNfseDtoFromOrder, para a consolidada. */
+  private async buildNfseDtoFromOrders(
+    companyId: string,
+    dto: EmitNfseFromOrdersDto,
+  ): Promise<{
+    fullDto: EmitNfseDto;
+    uniqueOrderIds: string[];
+    orderCodes: any;
+  }> {
     const uniqueOrderIds = [...new Set(dto.orderIds.filter(Boolean))];
 
     if (uniqueOrderIds.length < 2) {
@@ -901,6 +964,13 @@ export class NfseService {
       );
     }
 
+    return { fullDto, uniqueOrderIds, orderCodes };
+  }
+
+  async emitFromOrders(companyId: string, dto: EmitNfseFromOrdersDto) {
+    const { fullDto, uniqueOrderIds, orderCodes } =
+      await this.buildNfseDtoFromOrders(companyId, dto);
+
     const nfse = await this.emit(companyId, fullDto);
 
     // Guardar todos os orderIds no draftData para referÃªncia
@@ -919,7 +989,17 @@ export class NfseService {
     return nfse;
   }
 
-  async emit(companyId: string, dto: EmitNfseDto) {
+  /**
+   * Leituras e validações que precedem qualquer efeito da emissão.
+   *
+   * Extraído de `emit` para a pré-visualização rodar as mesmas checagens sem
+   * reservar RPS nem criar registro. Resolve pelo CEP o município do local
+   * de prestação e o do tomador, preenchendo o próprio DTO como antes.
+   */
+  private async resolveNfseEmissionContext(
+    companyId: string,
+    dto: EmitNfseDto,
+  ) {
     if (dto.orderId) {
       const linkedOrder = await this.prisma.order.findFirst({
         where: {
@@ -1004,6 +1084,16 @@ export class NfseService {
       }
     }
 
+    return { config, environment };
+  }
+
+  /**
+   * Valores da NFS-e e os indicadores que dependem do regime do emissor.
+   *
+   * Puro: nada aqui toca o banco. É o que permite à pré-visualização mostrar
+   * base, alíquota, ISS e IBS/CBS exatamente como sairão na nota.
+   */
+  private computeNfseValores(dto: EmitNfseDto, config: any) {
     // Calcular valores. Tudo arredondado na origem para que banco e payload
     // compartilhem exatamente o mesmo número.
     const valorServicos = this.money(dto.valorServicos);
@@ -1135,6 +1225,30 @@ export class NfseService {
 
     this.assertNfsePayloadReady(dto, valorServicos, valorDeducoes, baseCalculo);
 
+    return {
+      valorServicos,
+      valorDeducoes,
+      baseCalculo,
+      aliquotaIss,
+      valorIss,
+      regimeEspecial,
+      indicadorOperacao,
+      optanteSimples,
+      regimeApuracaoIbsCbs,
+      valoresIbsCbs,
+      omitirAliquotaIss,
+    };
+  }
+
+  async emit(companyId: string, dto: EmitNfseDto) {
+    const { config, environment } = await this.resolveNfseEmissionContext(
+      companyId,
+      dto,
+    );
+    const valores = this.computeNfseValores(dto, config);
+    const { valorServicos, valorDeducoes, baseCalculo, aliquotaIss, valorIss } =
+      valores;
+
     const { nfse, rpsNumero, rpsSerie } = await this.prisma.$transaction(
       async (tx) => {
         // Reserva por (emissor, ambiente): antes era global, então emitir em
@@ -1188,311 +1302,13 @@ export class NfseService {
         `Emitindo NFS-e (RPS ${rpsNumero}) para empresa ${companyId}`,
       );
 
-      // FunÃ§Ã£o auxiliar para construir lista de itens
-      const listaItens = dto.itens?.map((item, index) => {
-        // Base arredondada uma vez e reaproveitada, para que ItemvIss fique
-        // aritmeticamente consistente com ItemBaseCalculo.
-        const itemBase = this.money(item.quantidade * item.valorUnitario);
-        // `??` e não `||`: alíquota 0 é legítima (serviço isento/imune).
-        const itemAliquota = this.rate(item.aliquotaIss ?? aliquotaIss);
-
-        return {
-          ItemSeq: index + 1,
-          ItemCod: item.codigo,
-          ItemDesc: item.descricao,
-          ItemQtde: item.quantidade,
-          ItemvUnit: this.money(item.valorUnitario),
-          ItemuMed: item.unidade || 'UN',
-          ItemvlDed: 0,
-          ItemTributavel: 'S',
-          // Município de incidência do ISS — NÃO é o código de serviço.
-          ItemTributMunicipio: parseInt(
-            dto.codigoMunicipio || config.ibgeCode || '0',
-            10,
-          ),
-          ItemvIss: this.money((itemBase * itemAliquota) / 100),
-          ...(omitirAliquotaIss ? {} : { ItemAliquota: itemAliquota }),
-          ItemVlrTotal: itemBase,
-          ItemBaseCalculo: itemBase,
-          ItemIssRetido: item.issRetido ? 1 : 2,
-          // Código da lista de serviços LC 116 do item; cai para o do emissor.
-          ItemIteListServico: parseInt(
-            (item.codigoServico || config.codigoServico || '').replace(
-              /\D/g,
-              '',
-            ) || '0',
-            10,
-          ),
-          ItemExigibilidadeISS: 1, // ExigÃ­vel
-          ItemcMunIncidencia: parseInt(
-            dto.codigoMunicipio || config.ibgeCode || '0',
-            10,
-          ),
-          // NBS do item; sem cadastro próprio herda o do serviço.
-          ...(item.nbs || dto.nbs ? { ItemNBS: item.nbs || dto.nbs } : {}),
-        };
-      }) || [
-        {
-          ItemSeq: 1,
-          ItemCod: 'SERV',
-          ItemDesc: dto.discriminacao.substring(0, 100), // Invoicy pode ter limite
-          ItemQtde: 1,
-          ItemvUnit: valorServicos,
-          ItemuMed: 'SV',
-          ItemvlDed: valorDeducoes,
-          ItemTributavel: 'S',
-          ItemTributMunicipio: parseInt(
-            dto.codigoMunicipio || config.ibgeCode || '0',
-            10,
-          ),
-          ItemvIss: valorIss,
-          ...(omitirAliquotaIss ? {} : { ItemAliquota: aliquotaIss }),
-          ItemVlrTotal: valorServicos,
-          ItemBaseCalculo: baseCalculo,
-          ItemIssRetido: dto.issRetido ? 1 : 2,
-          ItemIteListServico: parseInt(
-            dto.codigoServico.replace(/\D/g, ''),
-            10,
-          ),
-          ItemExigibilidadeISS: 1,
-          ItemcMunIncidencia: parseInt(
-            dto.codigoMunicipio || config.ibgeCode || '0',
-            10,
-          ),
-          ...(dto.nbs ? { ItemNBS: dto.nbs } : {}),
-        },
-      ];
-
-      const prestadorMunicipalRegistration =
-        this.getPrestadorMunicipalRegistration(config);
-
-      // Construir payload para o Invoicy
-      const invoicyRequest: InvoicyNfseRequest = {
-        Documento: {
-          ModeloDocumento: 'NFSE',
-          Versao: 1,
-          RPS: [
-            {
-              RPSNumero: rpsNumero.toString(),
-              RPSSerie: rpsSerie,
-              RPSTipo: 1, // 1 = RPS
-              dEmis: new Date().toISOString(),
-              // dataCompetencia é opcional no DTO (a emissão avulsa não envia);
-              // usa a data atual como padrão, igual ao registro no banco.
-              dCompetencia: new Date(
-                dto.dataCompetencia || new Date(),
-              ).toISOString(),
-              LocalPrestServ:
-                dto.entregaCodigoMunicipio &&
-                dto.entregaCodigoMunicipio !==
-                  (config.ibgeCode || config.emitCmun)
-                  ? 2
-                  : 1,
-              natOp: dto.naturezaOperacao || 1, // 1 = TributaÃ§Ã£o no municÃ­pio
-              Operacao: 1,
-              // RegEspTrib segue a enumeração ABRASF do Invoicy (6 = ME/EPP),
-              // que ele converte para o regEspTrib do layout nacional. Alguns
-              // municípios exigem um regime específico e outros recusam a tag,
-              // então o emissor pode configurar; o padrão cobre o caso comum.
-              ...(regimeEspecial !== undefined
-                ? { RegEspTrib: regimeEspecial }
-                : {}),
-              // OptSN: 1 = optante do Simples Nacional, 2 = não optante
-              OptSN: config.emitCrt === 1 ? 1 : 2,
-              // regApTribSN: obrigatório para ME/EPP optante do SN.
-              // 1 = tributos federais e municipais apurados pelo SN
-              ...(config.emitCrt === 1 ? { regApTribSN: 1 } : {}),
-              // regApIBSCBSSN: qual regime apura IBS e CBS do optante do
-              // Simples. 1 = ambos pelo SN, 2 = CBS pelo SN e IBS regular,
-              // 3 = ambos regulares. Fora do Simples nao se aplica.
-              ...(optanteSimples
-                ? { regApIBSCBSSN: regimeApuracaoIbsCbs }
-                : {}),
-              // Campos da Reforma Tributária (Layout NFS-e RT v8). Omitidos
-              // quando não informados — a nota continua saindo como antes.
-              ...(indicadorOperacao ? { cIndOp: indicadorOperacao } : {}),
-              ...(dto.indFinal !== undefined ? { indFinal: dto.indFinal } : {}),
-              ...(dto.indDest !== undefined ? { indDest: dto.indDest } : {}),
-              ...(dto.tpEnteGov !== undefined
-                ? { tpEnteGov: dto.tpEnteGov }
-                : {}),
-              ...(dto.tpEnteGov === 9 && dto.xTpEnteGov
-                ? { xTpEnteGov: dto.xTpEnteGov }
-                : {}),
-              // tpOper ("Operação com Entes Governamentais" no InvoiCy Web)
-              // vale sozinho: e' 0-1 na raiz do RPS e cobre tambem "outros
-              // servicos sobre bens imoveis" (layout v8, C42). O gate antigo
-              // (so' com tpEnteGov) escondia o campo e tornava impossivel o
-              // caso sem ente governamental.
-              ...(dto.tpOper !== undefined ? { tpOper: dto.tpOper } : {}),
-              IncCult: 2, // 2 = NÃ£o
-              Status: 1, // 1 = Normal
-              tpAmb: environment === 'PRODUCAO' ? 1 : 2,
-              Prestador: {
-                CNPJ_prest: (config.company.cnpj || '').replace(/\D/g, ''),
-                xNome: config.company.legalName || '',
-                xFant: config.company.name || '',
-                ...(prestadorMunicipalRegistration
-                  ? { IM: prestadorMunicipalRegistration }
-                  : {}),
-                enderPrest: {
-                  TPEnd: 'Rua', // Default
-                  xLgr: config.company.address.street || '',
-                  nro: config.company.address.number || 'S/N',
-                  xBairro: config.company.address.neighborhood || '',
-                  cMun: parseInt(config.ibgeCode || '0', 10),
-                  UF: config.company.address.state || '',
-                  CEP:
-                    parseInt(
-                      (config.company.address.zipcode || '').replace(/\D/g, ''),
-                      10,
-                    ) || 0,
-                },
-              },
-              ListaItens: listaItens,
-              Servico: {
-                Valores: {
-                  ValServicos: valorServicos,
-                  ValDeducoes: valorDeducoes,
-                  ValPIS: this.money(dto.valorPis || 0),
-                  ValCOFINS: this.money(dto.valorCofins || 0),
-                  ValINSS: this.money(dto.valorInss || 0),
-                  ValIR: this.money(dto.valorIr || 0),
-                  ValCSLL: this.money(dto.valorCsll || 0),
-                  ISSRetido: dto.issRetido ? 1 : 2, // 1 = Sim, 2 = NÃ£o
-                  ValISS: valorIss,
-                  ValOutrasRetencoes: 0,
-                  ValBaseCalculo: baseCalculo,
-                  ...valoresIbsCbs,
-                  ...(omitirAliquotaIss ? {} : { ValAliqISS: aliquotaIss }),
-                  // Tributos aproximados por esfera (NFS-e Modelo Nacional) e
-                  // INSS. ValAliqINSS vai em decimal: 0,05 = 5% (layout RT v8).
-                  ...(dto.tribAproxFederal !== undefined
-                    ? { ValRetFederais: this.money(dto.tribAproxFederal) }
-                    : {}),
-                  ...(dto.tribAproxEstadual !== undefined
-                    ? { ValRetEstaduais: this.money(dto.tribAproxEstadual) }
-                    : {}),
-                  ...(dto.tribAproxMunicipal !== undefined
-                    ? { ValRetMunicipais: this.money(dto.tribAproxMunicipal) }
-                    : {}),
-                  ...(dto.aliquotaInss !== undefined
-                    ? { ValAliqINSS: this.rate(dto.aliquotaInss / 100) }
-                    : {}),
-                },
-                IteListServico: parseInt(
-                  dto.codigoServico.replace(/\D/g, ''),
-                  10,
-                ),
-                Discriminacao: dto.discriminacao,
-                cMun: parseInt(
-                  dto.codigoMunicipio || config.ibgeCode || '0',
-                  10,
-                ),
-                // Código de tributação no município (000/001/...) quando
-                // cadastrado no serviço. Sem cadastro mantém o valor histórico
-                // — trocá-lo às cegas mudaria notas que hoje são autorizadas.
-                TributMunicipio: parseInt(
-                  dto.codTribMunicipio ||
-                    dto.codigoMunicipio ||
-                    config.ibgeCode ||
-                    '0',
-                  10,
-                ),
-                // Classificação fiscal do serviço, omitida quando não cadastrada.
-                ...(dto.nbs ? { CodigoNBS: dto.nbs } : {}),
-                ...(dto.codTribNacional
-                  ? { codTributNacional: dto.codTribNacional }
-                  : {}),
-                ...(dto.cnae
-                  ? { Cnae: parseInt(dto.cnae.replace(/\D/g, ''), 10) || 0 }
-                  : {}),
-                // Grupo IBSCBS: CSTIBSCBS e cClassTrib são ambos obrigatórios
-                // no schema do provedor (InvoiCy_NFSe_Reforma_tributaria.xsd).
-                // Enviar só a classificação produzia grupo incompleto — mesmo
-                // tipo de defeito que gerava a rejeição de schema em locPrest.
-                // Por isso o grupo só é montado quando os dois existem, e o
-                // cadastro fornece os dois por padrão ("000" / "000001").
-                ...(dto.cstIbsCbs && dto.codClassificacao
-                  ? {
-                      IBSCBS: {
-                        CSTIBSCBS: dto.cstIbsCbs,
-                        cClassTrib: dto.codClassificacao,
-                      },
-                    }
-                  : {}),
-                // LocalPrestacao é sempre enviado: sem ele o Invoicy gera
-                // <locPrest> vazio na DPS e a prefeitura rejeita com E1235
-                // (schema exige cLocPrestacao). Sem entrega informada, o local
-                // de prestação é o endereço do próprio prestador
-                // (LocalPrestServ: 1).
-                LocalPrestacao: dto.entregaEndereco
-                  ? {
-                      SerEndTpLgr: 'Rua',
-                      SerEndLgr: dto.entregaEndereco,
-                      SerEndNumero: dto.entregaNumero || 'S/N',
-                      SerEndBairro: dto.entregaBairro || '',
-                      SerEndxMun: dto.entregaMunicipio || '',
-                      // Fallback para o código IBGE do emissor quando o frontend
-                      // não informar (ex.: endereço do prestador pré-preenchido)
-                      SerEndcMun:
-                        parseInt(
-                          dto.entregaCodigoMunicipio ||
-                            config.ibgeCode ||
-                            config.emitCmun ||
-                            '0',
-                          10,
-                        ) || 0,
-                      SerEndCep:
-                        parseInt(
-                          (dto.entregaCep || '').replace(/\D/g, ''),
-                          10,
-                        ) || 0,
-                      SerEndSiglaUF: dto.entregaUf || '',
-                    }
-                  : {
-                      SerEndTpLgr: 'Rua',
-                      SerEndLgr: config.company.address.street || '',
-                      SerEndNumero: config.company.address.number || 'S/N',
-                      SerEndBairro: config.company.address.neighborhood || '',
-                      SerEndxMun: config.company.address.city || '',
-                      SerEndcMun:
-                        parseInt(
-                          config.ibgeCode || config.emitCmun || '0',
-                          10,
-                        ) || 0,
-                      SerEndCep:
-                        parseInt(
-                          (config.company.address.zipcode || '').replace(
-                            /\D/g,
-                            '',
-                          ),
-                          10,
-                        ) || 0,
-                      SerEndSiglaUF: config.company.address.state || '',
-                    },
-              },
-              Tomador: {
-                TomaCNPJ: dto.tomador.cnpj
-                  ? dto.tomador.cnpj.replace(/\D/g, '')
-                  : undefined,
-                TomaCPF: dto.tomador.cpf
-                  ? dto.tomador.cpf.replace(/\D/g, '')
-                  : undefined,
-                TomaRazaoSocial: dto.tomador.razaoSocial,
-                TomaEndereco: dto.tomador.endereco,
-                TomaNumero: dto.tomador.numero,
-                TomaBairro: dto.tomador.bairro,
-                TomacMun: parseInt(dto.tomador.codigoMunicipio || '0', 10),
-                TomaxMun: dto.tomador.municipio,
-                TomaUF: dto.tomador.uf,
-                TomaCEP:
-                  parseInt((dto.tomador.cep || '').replace(/\D/g, ''), 10) || 0,
-              },
-            },
-          ],
-        },
-      };
+      const invoicyRequest = this.buildNfseRps(
+        dto,
+        config,
+        environment,
+        valores,
+        { numero: rpsNumero, serie: rpsSerie },
+      );
 
       this.logger.debug(
         `[NFS-e] Payload enviado ao Invoicy: ${JSON.stringify(
@@ -1656,6 +1472,470 @@ export class NfseService {
 
       throw new BadRequestException(`Erro ao emitir NFS-e: ${motivoRejeicao}`);
     }
+  }
+
+  /**
+   * Monta o RPS que será enviado ao provedor.
+   *
+   * Não toca o banco: é esta função que a pré-visualização executa, e por
+   * isso a prévia mostra o mesmo documento que será transmitido. Os retries
+   * de E0120 e E0166 acontecem DEPOIS da resposta da prefeitura e mutam o
+   * payload; a prévia mostra a primeira tentativa e avisa sobre eles.
+   */
+  private buildNfseRps(
+    dto: EmitNfseDto,
+    config: any,
+    environment: string,
+    valores: ReturnType<NfseService['computeNfseValores']>,
+    rps: { numero: number; serie: string },
+  ): InvoicyNfseRequest {
+    const {
+      baseCalculo,
+      aliquotaIss,
+      valorIss,
+      valorServicos,
+      valorDeducoes,
+      regimeEspecial,
+      indicadorOperacao,
+      optanteSimples,
+      regimeApuracaoIbsCbs,
+      valoresIbsCbs,
+      omitirAliquotaIss,
+    } = valores;
+    const rpsNumero = rps.numero;
+    const rpsSerie = rps.serie;
+
+    // FunÃ§Ã£o auxiliar para construir lista de itens
+    const listaItens = dto.itens?.map((item, index) => {
+      // Base arredondada uma vez e reaproveitada, para que ItemvIss fique
+      // aritmeticamente consistente com ItemBaseCalculo.
+      const itemBase = this.money(item.quantidade * item.valorUnitario);
+      // `??` e não `||`: alíquota 0 é legítima (serviço isento/imune).
+      const itemAliquota = this.rate(item.aliquotaIss ?? aliquotaIss);
+
+      return {
+        ItemSeq: index + 1,
+        ItemCod: item.codigo,
+        ItemDesc: item.descricao,
+        ItemQtde: item.quantidade,
+        ItemvUnit: this.money(item.valorUnitario),
+        ItemuMed: item.unidade || 'UN',
+        ItemvlDed: 0,
+        ItemTributavel: 'S',
+        // Município de incidência do ISS — NÃO é o código de serviço.
+        ItemTributMunicipio: parseInt(
+          dto.codigoMunicipio || config.ibgeCode || '0',
+          10,
+        ),
+        ItemvIss: this.money((itemBase * itemAliquota) / 100),
+        ...(omitirAliquotaIss ? {} : { ItemAliquota: itemAliquota }),
+        ItemVlrTotal: itemBase,
+        ItemBaseCalculo: itemBase,
+        ItemIssRetido: item.issRetido ? 1 : 2,
+        // Código da lista de serviços LC 116 do item; cai para o do emissor.
+        ItemIteListServico: parseInt(
+          (item.codigoServico || config.codigoServico || '').replace(
+            /\D/g,
+            '',
+          ) || '0',
+          10,
+        ),
+        ItemExigibilidadeISS: 1, // ExigÃ­vel
+        ItemcMunIncidencia: parseInt(
+          dto.codigoMunicipio || config.ibgeCode || '0',
+          10,
+        ),
+        // NBS do item; sem cadastro próprio herda o do serviço.
+        ...(item.nbs || dto.nbs ? { ItemNBS: item.nbs || dto.nbs } : {}),
+      };
+    }) || [
+      {
+        ItemSeq: 1,
+        ItemCod: 'SERV',
+        ItemDesc: dto.discriminacao.substring(0, 100), // Invoicy pode ter limite
+        ItemQtde: 1,
+        ItemvUnit: valorServicos,
+        ItemuMed: 'SV',
+        ItemvlDed: valorDeducoes,
+        ItemTributavel: 'S',
+        ItemTributMunicipio: parseInt(
+          dto.codigoMunicipio || config.ibgeCode || '0',
+          10,
+        ),
+        ItemvIss: valorIss,
+        ...(omitirAliquotaIss ? {} : { ItemAliquota: aliquotaIss }),
+        ItemVlrTotal: valorServicos,
+        ItemBaseCalculo: baseCalculo,
+        ItemIssRetido: dto.issRetido ? 1 : 2,
+        ItemIteListServico: parseInt(dto.codigoServico.replace(/\D/g, ''), 10),
+        ItemExigibilidadeISS: 1,
+        ItemcMunIncidencia: parseInt(
+          dto.codigoMunicipio || config.ibgeCode || '0',
+          10,
+        ),
+        ...(dto.nbs ? { ItemNBS: dto.nbs } : {}),
+      },
+    ];
+
+    const prestadorMunicipalRegistration =
+      this.getPrestadorMunicipalRegistration(config);
+
+    // Construir payload para o Invoicy
+    const invoicyRequest: InvoicyNfseRequest = {
+      Documento: {
+        ModeloDocumento: 'NFSE',
+        Versao: 1,
+        RPS: [
+          {
+            RPSNumero: rpsNumero.toString(),
+            RPSSerie: rpsSerie,
+            RPSTipo: 1, // 1 = RPS
+            dEmis: new Date().toISOString(),
+            // dataCompetencia é opcional no DTO (a emissão avulsa não envia);
+            // usa a data atual como padrão, igual ao registro no banco.
+            dCompetencia: new Date(
+              dto.dataCompetencia || new Date(),
+            ).toISOString(),
+            LocalPrestServ:
+              dto.entregaCodigoMunicipio &&
+              dto.entregaCodigoMunicipio !==
+                (config.ibgeCode || config.emitCmun)
+                ? 2
+                : 1,
+            natOp: dto.naturezaOperacao || 1, // 1 = TributaÃ§Ã£o no municÃ­pio
+            Operacao: 1,
+            // RegEspTrib segue a enumeração ABRASF do Invoicy (6 = ME/EPP),
+            // que ele converte para o regEspTrib do layout nacional. Alguns
+            // municípios exigem um regime específico e outros recusam a tag,
+            // então o emissor pode configurar; o padrão cobre o caso comum.
+            ...(regimeEspecial !== undefined
+              ? { RegEspTrib: regimeEspecial }
+              : {}),
+            // OptSN: 1 = optante do Simples Nacional, 2 = não optante
+            OptSN: config.emitCrt === 1 ? 1 : 2,
+            // regApTribSN: obrigatório para ME/EPP optante do SN.
+            // 1 = tributos federais e municipais apurados pelo SN
+            ...(config.emitCrt === 1 ? { regApTribSN: 1 } : {}),
+            // regApIBSCBSSN: qual regime apura IBS e CBS do optante do
+            // Simples. 1 = ambos pelo SN, 2 = CBS pelo SN e IBS regular,
+            // 3 = ambos regulares. Fora do Simples nao se aplica.
+            ...(optanteSimples ? { regApIBSCBSSN: regimeApuracaoIbsCbs } : {}),
+            // Campos da Reforma Tributária (Layout NFS-e RT v8). Omitidos
+            // quando não informados — a nota continua saindo como antes.
+            ...(indicadorOperacao ? { cIndOp: indicadorOperacao } : {}),
+            ...(dto.indFinal !== undefined ? { indFinal: dto.indFinal } : {}),
+            ...(dto.indDest !== undefined ? { indDest: dto.indDest } : {}),
+            ...(dto.tpEnteGov !== undefined
+              ? { tpEnteGov: dto.tpEnteGov }
+              : {}),
+            ...(dto.tpEnteGov === 9 && dto.xTpEnteGov
+              ? { xTpEnteGov: dto.xTpEnteGov }
+              : {}),
+            // tpOper ("Operação com Entes Governamentais" no InvoiCy Web)
+            // vale sozinho: e' 0-1 na raiz do RPS e cobre tambem "outros
+            // servicos sobre bens imoveis" (layout v8, C42). O gate antigo
+            // (so' com tpEnteGov) escondia o campo e tornava impossivel o
+            // caso sem ente governamental.
+            ...(dto.tpOper !== undefined ? { tpOper: dto.tpOper } : {}),
+            IncCult: 2, // 2 = NÃ£o
+            Status: 1, // 1 = Normal
+            tpAmb: environment === 'PRODUCAO' ? 1 : 2,
+            Prestador: {
+              CNPJ_prest: (config.company.cnpj || '').replace(/\D/g, ''),
+              xNome: config.company.legalName || '',
+              xFant: config.company.name || '',
+              ...(prestadorMunicipalRegistration
+                ? { IM: prestadorMunicipalRegistration }
+                : {}),
+              enderPrest: {
+                TPEnd: 'Rua', // Default
+                xLgr: config.company.address.street || '',
+                nro: config.company.address.number || 'S/N',
+                xBairro: config.company.address.neighborhood || '',
+                cMun: parseInt(config.ibgeCode || '0', 10),
+                UF: config.company.address.state || '',
+                CEP:
+                  parseInt(
+                    (config.company.address.zipcode || '').replace(/\D/g, ''),
+                    10,
+                  ) || 0,
+              },
+            },
+            ListaItens: listaItens,
+            Servico: {
+              Valores: {
+                ValServicos: valorServicos,
+                ValDeducoes: valorDeducoes,
+                ValPIS: this.money(dto.valorPis || 0),
+                ValCOFINS: this.money(dto.valorCofins || 0),
+                ValINSS: this.money(dto.valorInss || 0),
+                ValIR: this.money(dto.valorIr || 0),
+                ValCSLL: this.money(dto.valorCsll || 0),
+                ISSRetido: dto.issRetido ? 1 : 2, // 1 = Sim, 2 = NÃ£o
+                ValISS: valorIss,
+                ValOutrasRetencoes: 0,
+                ValBaseCalculo: baseCalculo,
+                ...valoresIbsCbs,
+                ...(omitirAliquotaIss ? {} : { ValAliqISS: aliquotaIss }),
+                // Tributos aproximados por esfera (NFS-e Modelo Nacional) e
+                // INSS. ValAliqINSS vai em decimal: 0,05 = 5% (layout RT v8).
+                ...(dto.tribAproxFederal !== undefined
+                  ? { ValRetFederais: this.money(dto.tribAproxFederal) }
+                  : {}),
+                ...(dto.tribAproxEstadual !== undefined
+                  ? { ValRetEstaduais: this.money(dto.tribAproxEstadual) }
+                  : {}),
+                ...(dto.tribAproxMunicipal !== undefined
+                  ? { ValRetMunicipais: this.money(dto.tribAproxMunicipal) }
+                  : {}),
+                ...(dto.aliquotaInss !== undefined
+                  ? { ValAliqINSS: this.rate(dto.aliquotaInss / 100) }
+                  : {}),
+              },
+              IteListServico: parseInt(
+                dto.codigoServico.replace(/\D/g, ''),
+                10,
+              ),
+              Discriminacao: dto.discriminacao,
+              cMun: parseInt(dto.codigoMunicipio || config.ibgeCode || '0', 10),
+              // Código de tributação no município (000/001/...) quando
+              // cadastrado no serviço. Sem cadastro mantém o valor histórico
+              // — trocá-lo às cegas mudaria notas que hoje são autorizadas.
+              TributMunicipio: parseInt(
+                dto.codTribMunicipio ||
+                  dto.codigoMunicipio ||
+                  config.ibgeCode ||
+                  '0',
+                10,
+              ),
+              // Classificação fiscal do serviço, omitida quando não cadastrada.
+              ...(dto.nbs ? { CodigoNBS: dto.nbs } : {}),
+              ...(dto.codTribNacional
+                ? { codTributNacional: dto.codTribNacional }
+                : {}),
+              ...(dto.cnae
+                ? { Cnae: parseInt(dto.cnae.replace(/\D/g, ''), 10) || 0 }
+                : {}),
+              // Grupo IBSCBS: CSTIBSCBS e cClassTrib são ambos obrigatórios
+              // no schema do provedor (InvoiCy_NFSe_Reforma_tributaria.xsd).
+              // Enviar só a classificação produzia grupo incompleto — mesmo
+              // tipo de defeito que gerava a rejeição de schema em locPrest.
+              // Por isso o grupo só é montado quando os dois existem, e o
+              // cadastro fornece os dois por padrão ("000" / "000001").
+              ...(dto.cstIbsCbs && dto.codClassificacao
+                ? {
+                    IBSCBS: {
+                      CSTIBSCBS: dto.cstIbsCbs,
+                      cClassTrib: dto.codClassificacao,
+                    },
+                  }
+                : {}),
+              // LocalPrestacao é sempre enviado: sem ele o Invoicy gera
+              // <locPrest> vazio na DPS e a prefeitura rejeita com E1235
+              // (schema exige cLocPrestacao). Sem entrega informada, o local
+              // de prestação é o endereço do próprio prestador
+              // (LocalPrestServ: 1).
+              LocalPrestacao: dto.entregaEndereco
+                ? {
+                    SerEndTpLgr: 'Rua',
+                    SerEndLgr: dto.entregaEndereco,
+                    SerEndNumero: dto.entregaNumero || 'S/N',
+                    SerEndBairro: dto.entregaBairro || '',
+                    SerEndxMun: dto.entregaMunicipio || '',
+                    // Fallback para o código IBGE do emissor quando o frontend
+                    // não informar (ex.: endereço do prestador pré-preenchido)
+                    SerEndcMun:
+                      parseInt(
+                        dto.entregaCodigoMunicipio ||
+                          config.ibgeCode ||
+                          config.emitCmun ||
+                          '0',
+                        10,
+                      ) || 0,
+                    SerEndCep:
+                      parseInt((dto.entregaCep || '').replace(/\D/g, ''), 10) ||
+                      0,
+                    SerEndSiglaUF: dto.entregaUf || '',
+                  }
+                : {
+                    SerEndTpLgr: 'Rua',
+                    SerEndLgr: config.company.address.street || '',
+                    SerEndNumero: config.company.address.number || 'S/N',
+                    SerEndBairro: config.company.address.neighborhood || '',
+                    SerEndxMun: config.company.address.city || '',
+                    SerEndcMun:
+                      parseInt(config.ibgeCode || config.emitCmun || '0', 10) ||
+                      0,
+                    SerEndCep:
+                      parseInt(
+                        (config.company.address.zipcode || '').replace(
+                          /\D/g,
+                          '',
+                        ),
+                        10,
+                      ) || 0,
+                    SerEndSiglaUF: config.company.address.state || '',
+                  },
+            },
+            Tomador: {
+              TomaCNPJ: dto.tomador.cnpj
+                ? dto.tomador.cnpj.replace(/\D/g, '')
+                : undefined,
+              TomaCPF: dto.tomador.cpf
+                ? dto.tomador.cpf.replace(/\D/g, '')
+                : undefined,
+              TomaRazaoSocial: dto.tomador.razaoSocial,
+              TomaEndereco: dto.tomador.endereco,
+              TomaNumero: dto.tomador.numero,
+              TomaBairro: dto.tomador.bairro,
+              TomacMun: parseInt(dto.tomador.codigoMunicipio || '0', 10),
+              TomaxMun: dto.tomador.municipio,
+              TomaUF: dto.tomador.uf,
+              TomaCEP:
+                parseInt((dto.tomador.cep || '').replace(/\D/g, ''), 10) || 0,
+            },
+          },
+        ],
+      },
+    };
+
+    return invoicyRequest;
+  }
+
+  /**
+   * Pré-visualização da NFS-e antes de emitir.
+   *
+   * Roda o mesmo contexto, os mesmos cálculos e o mesmo montador do RPS que a
+   * emissão — é o que garante que a prévia mostre o documento que será
+   * transmitido. Não reserva RPS, não cria registro, não chama a prefeitura.
+   *
+   * Devolve 200 mesmo quando a nota não pode sair: a prévia existe para
+   * mostrar o que corrigir. Quem lança é o `emit`.
+   */
+  async preview(companyId: string, dto: EmitNfseDto): Promise<NfsePreview> {
+    const { config, environment } = await this.resolveNfseEmissionContext(
+      companyId,
+      dto,
+    );
+
+    let valores: ReturnType<NfseService['computeNfseValores']>;
+    let invoicyRequest: InvoicyNfseRequest;
+    const numeracao = (config as any).activeNumbering?.nfse;
+    const rps = {
+      numero: numeracao?.nextNumber ?? config.proximoRpsNfse ?? 1,
+      serie: String(numeracao?.series ?? config.serieNfse ?? '1'),
+    };
+
+    try {
+      valores = this.computeNfseValores(dto, config);
+      invoicyRequest = this.buildNfseRps(
+        dto,
+        config,
+        environment,
+        valores,
+        rps,
+      );
+    } catch (error) {
+      return {
+        podeEmitir: false,
+        bloqueios: String(error?.message ?? 'Não foi possível montar a nota.')
+          .split(String.fromCharCode(10))
+          .map((linha) => linha.trim())
+          .filter(Boolean),
+        avisos: [],
+      };
+    }
+
+    const rpsEnviado: any = invoicyRequest.Documento.RPS?.[0] ?? {};
+    const servico: any = rpsEnviado.Servico ?? {};
+
+    const avisos = [
+      'Número de RPS previsto: o definitivo é reservado no momento da emissão. O número da NFS-e quem define é a prefeitura.',
+      'Se a prefeitura recusar a inscrição municipal (E0120) ou exigir o regime de apuração (E0166), o sistema reenvia automaticamente com o ajuste — o payload transmitido pode diferir deste nesses dois campos.',
+    ];
+    if (environment !== 'PRODUCAO') {
+      avisos.push('Ambiente de homologação: a nota não tem valor fiscal.');
+    }
+    if (valores.omitirAliquotaIss) {
+      avisos.push(
+        'Alíquota de ISS omitida: prestador ME/EPP do Simples sem retenção recolhe pelo DAS (regra E0625 do provedor).',
+      );
+    }
+    if (!(config as any).ibsCbsEnviarValores) {
+      avisos.push(
+        'Valores de IBS/CBS não enviados: o emissor não habilitou o envio. Os códigos de CST e classificação continuam indo.',
+      );
+    }
+
+    return {
+      podeEmitir: true,
+      bloqueios: [],
+      avisos,
+      documento: {
+        modelo: 'NFSE',
+        ambiente: environment as 'HOMOLOGACAO' | 'PRODUCAO',
+        rpsPrevisto: rps.numero,
+        rpsSerie: rps.serie,
+        // A prefeitura é quem numera a NFS-e, no retorno da recepção.
+        numeroNfse: null,
+        dataEmissaoPrevista: rpsEnviado.dEmis,
+        dataCompetencia: rpsEnviado.dCompetencia,
+        naturezaOperacao: rpsEnviado.natOp,
+        localPrestacao: rpsEnviado.LocalPrestServ,
+        optanteSimples: rpsEnviado.OptSN,
+        regimeEspecial: rpsEnviado.RegEspTrib ?? null,
+        cIndOp: rpsEnviado.cIndOp ?? null,
+        indFinal: rpsEnviado.indFinal ?? null,
+        indDest: rpsEnviado.indDest ?? null,
+        tpEnteGov: rpsEnviado.tpEnteGov ?? null,
+        tpOper: rpsEnviado.tpOper ?? null,
+        regApIbsCbsSn: rpsEnviado.regApIBSCBSSN ?? null,
+      },
+      prestador: rpsEnviado.Prestador,
+      tomador: rpsEnviado.Tomador,
+      servico: {
+        codigoServico: servico.CodigoServico ?? dto.codigoServico,
+        discriminacao: servico.Discriminacao ?? dto.discriminacao,
+        codigoMunicipio: servico.cMunPrestacao ?? dto.codigoMunicipio,
+        nbs: dto.nbs ?? null,
+        codTribNacional: dto.codTribNacional ?? null,
+        codTribMunicipio: dto.codTribMunicipio ?? null,
+        cnae: dto.cnae ?? null,
+        cstIbsCbs: dto.cstIbsCbs ?? null,
+        codClassificacao: dto.codClassificacao ?? null,
+      },
+      itens: rpsEnviado.ListaItens ?? [],
+      valores: {
+        valorServicos: valores.valorServicos,
+        valorDeducoes: valores.valorDeducoes,
+        baseCalculo: valores.baseCalculo,
+        aliquotaIss: valores.omitirAliquotaIss ? null : valores.aliquotaIss,
+        valorIss: valores.valorIss,
+        issRetido: !!dto.issRetido,
+        ibsCbs: (valores.valoresIbsCbs as any)?.IBSCBS ?? null,
+      },
+      payloadInvoicy: invoicyRequest,
+    };
+  }
+
+  /** Pré-visualização a partir de uma ordem de serviço. */
+  async previewFromOrder(
+    companyId: string,
+    dto: EmitNfseFromOrderDto,
+  ): Promise<NfsePreview> {
+    return this.preview(
+      companyId,
+      await this.buildNfseDtoFromOrder(companyId, dto),
+    );
+  }
+
+  /** Pré-visualização da NFS-e consolidada. */
+  async previewFromOrders(
+    companyId: string,
+    dto: EmitNfseFromOrdersDto,
+  ): Promise<NfsePreview> {
+    const { fullDto } = await this.buildNfseDtoFromOrders(companyId, dto);
+    return this.preview(companyId, fullDto);
   }
 
   private orderFiscalInclude() {

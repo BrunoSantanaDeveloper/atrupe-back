@@ -347,6 +347,105 @@ describe('NfseService', () => {
      * cIndOp e' obrigatorio no layout da Reforma e estavel para a maioria dos
      * emissores — sem padrao, o usuario digitava a cada nota.
      */
+    /**
+     * A prévia roda o mesmo montador do RPS que a emissão. Se alguém
+     * acrescentar uma regra só no caminho da emissão, a nota passa a sair
+     * diferente do que o usuário conferiu — e é este teste que quebra.
+     */
+    describe('preview', () => {
+      const dtoDaOrdem = {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Servico de consultoria em TI',
+      };
+
+      beforeEach(() => {
+        // dEmis/dCompetencia usam `new Date()`: sem relógio fixo, prévia e
+        // emissão diferem por milissegundos.
+        jest.useFakeTimers().setSystemTime(new Date('2026-09-08T12:00:00Z'));
+      });
+
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      const rpsEnviado = () =>
+        invoicyApiService.emitNfse.mock.calls.at(-1)[1][0];
+
+      it('gera o mesmo RPS que a emissão a partir da ordem', async () => {
+        const previa = await service.previewFromOrder(
+          mockCompanyId,
+          dtoDaOrdem as any,
+        );
+        await service.emitFromOrder(mockCompanyId, dtoDaOrdem as any);
+
+        expect(previa.payloadInvoicy).toEqual(rpsEnviado());
+      });
+
+      it('não reserva RPS, não cria registro e não chama a prefeitura', async () => {
+        await service.previewFromOrder(mockCompanyId, dtoDaOrdem as any);
+
+        expect(
+          mockFiscalCredentialResolver.reserveNfseRpsNumber,
+        ).not.toHaveBeenCalled();
+        expect(prisma.nfse.create).not.toHaveBeenCalled();
+        expect(prisma.nfse.update).not.toHaveBeenCalled();
+        expect(invoicyApiService.emitNfse).not.toHaveBeenCalled();
+      });
+
+      it('usa o próximo RPS do emissor e diz que ele é previsto', async () => {
+        const previa = await service.previewFromOrder(
+          mockCompanyId,
+          dtoDaOrdem as any,
+        );
+
+        expect(previa.documento?.rpsPrevisto).toBe(1);
+        expect(previa.documento?.rpsSerie).toBe('A1');
+        // Quem numera a NFS-e é a prefeitura, no retorno da recepção.
+        expect(previa.documento?.numeroNfse).toBeNull();
+        expect(previa.avisos.join(' ')).toMatch(/previsto/i);
+      });
+
+      it('avisa que os reenvios automáticos podem alterar o payload', async () => {
+        const previa = await service.previewFromOrder(
+          mockCompanyId,
+          dtoDaOrdem as any,
+        );
+
+        expect(previa.avisos.join(' ')).toMatch(/E0120/);
+        expect(previa.avisos.join(' ')).toMatch(/E0166/);
+      });
+
+      /** A prévia abre mesmo com a nota inválida: é para isso que ela serve. */
+      it('devolve os bloqueios em vez de lançar', async () => {
+        mockInvoicyService.getConfig.mockResolvedValue({
+          ...(await mockInvoicyService.getConfig()),
+          aliquotaIss: null,
+        });
+
+        const previa = await service.preview(mockCompanyId, {
+          tomador: {
+            cnpj: '12345678901234',
+            razaoSocial: 'Cliente Teste LTDA',
+            endereco: 'Avenida Paulista',
+            numero: '1000',
+            bairro: 'Bela Vista',
+            cep: '01310100',
+            codigoMunicipio: '3550308',
+          },
+          codigoServico: '1.05',
+          codigoMunicipio: '4314902',
+          discriminacao: 'teste',
+          valorServicos: 100,
+          naturezaOperacao: 1,
+        } as any);
+
+        expect(previa.podeEmitir).toBe(false);
+        expect(previa.bloqueios.join(' ')).toMatch(/Alíquota de ISS/i);
+        expect(previa.payloadInvoicy).toBeUndefined();
+      });
+    });
+
     describe('indicador de operacao (cIndOp)', () => {
       const rpsEnviado = () =>
         mockInvoicyApiService.emitNfse.mock.calls.at(-1)[1][0].Documento.RPS[0];
