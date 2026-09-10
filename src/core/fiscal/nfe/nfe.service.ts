@@ -111,6 +111,12 @@ export interface NfePreview {
     nfeReferenciada?: string;
   };
   emitente?: Record<string, any>;
+  /** Logo e contato: aparecem na DANFE, mas não viajam no payload. */
+  emitenteContato?: {
+    logoUrl: string | null;
+    fone: string | null;
+    email: string | null;
+  };
   destinatario?: Record<string, any>;
   entrega?: Record<string, any> | null;
   itens?: Array<Record<string, any>>;
@@ -2152,6 +2158,24 @@ export class NfeService {
     }
 
     const { invoicyRequest: payload, impostosCalculados } = montagem;
+
+    // Logo, telefone e e-mail do emitente aparecem no quadro do emitente da
+    // DANFE, mas não fazem parte do payload nem do mapeamento do emissor. São
+    // lidos só aqui, para a prévia; a emissão não muda.
+    let empresa: {
+      logoUrl: string | null;
+      phone: string | null;
+      mobile: string | null;
+      email: string | null;
+    } | null = null;
+    try {
+      empresa = await this.prisma.company.findUnique({
+        where: { id: companyId },
+        select: { logoUrl: true, phone: true, mobile: true, email: true },
+      });
+    } catch {
+      empresa = null;
+    }
     const doc = payload.Documento;
 
     return {
@@ -2177,6 +2201,11 @@ export class NfeService {
         nfeReferenciada: ctx.cleanReferencedNfe || undefined,
       },
       emitente: doc.emit,
+      emitenteContato: {
+        logoUrl: empresa?.logoUrl ?? null,
+        fone: empresa?.phone || empresa?.mobile || null,
+        email: empresa?.email ?? null,
+      },
       destinatario: doc.dest,
       entrega: doc.entrega ?? null,
       itens: doc.det.map((item: any, index: number) => ({
