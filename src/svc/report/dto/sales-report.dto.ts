@@ -35,8 +35,14 @@ export class SalesReportFilterDto {
   groupBy?: 'none' | 'client' | 'seller';
 
   @IsOptional()
-  @IsEnum(['approvedDate', 'valueDesc', 'valueAsc'])
-  orderBy?: 'approvedDate' | 'valueDesc' | 'valueAsc';
+  @IsEnum(['approvedDate', 'deliveryDate', 'valueDesc', 'valueAsc'])
+  orderBy?: 'approvedDate' | 'deliveryDate' | 'valueDesc' | 'valueAsc';
+
+  // Qual data o período filtra na tabela/PDF/Excel de vendas. Os cards e
+  // gráficos continuam sempre pela aprovação.
+  @IsOptional()
+  @IsEnum(['approvedAt', 'deliveryDate'])
+  periodBy?: 'approvedAt' | 'deliveryDate';
 
   @IsOptional()
   @Type(() => Number)
@@ -110,9 +116,12 @@ export type SalePhase = 'em-producao' | 'entregue' | 'aguardando' | 'cancelada';
 
 export interface SaleRecordItem {
   id: string;
+  osNumber: string;
   clientName: string;
+  clientCity: string | null;
   serviceDescription: string;
   approvedDate: string | null;
+  deliveryDate: string | null;
   dueDate: string;
   value: number;
   phase: SalePhase;
@@ -135,10 +144,27 @@ export interface SalesSellerGroup {
   records: SaleRecordItem[];
 }
 
+// `totalValue` é o total do período inteiro (todas as páginas), base da
+// porcentagem exibida na tabela.
 export type SalesTableDataResponse =
-  | { grouped: false; records: SaleRecordItem[]; totalCount: number }
-  | { grouped: true; groups: SalesClientGroup[]; totalCount: number }
-  | { grouped: true; groups: SalesSellerGroup[]; totalCount: number };
+  | {
+      grouped: false;
+      records: SaleRecordItem[];
+      totalCount: number;
+      totalValue: number;
+    }
+  | {
+      grouped: true;
+      groups: SalesClientGroup[];
+      totalCount: number;
+      totalValue: number;
+    }
+  | {
+      grouped: true;
+      groups: SalesSellerGroup[];
+      totalCount: number;
+      totalValue: number;
+    };
 
 export interface SalesReportFullResponse {
   summary: SalesReportSummaryResponse;

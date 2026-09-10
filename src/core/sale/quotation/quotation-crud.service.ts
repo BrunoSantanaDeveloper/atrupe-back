@@ -20,6 +20,7 @@ import { FilterQuotationDto } from './dto/filter.dto';
 import { QUOTATION_FIND_ONE_INCLUDE } from './quotation.includes';
 import { transformQuotationToResponse } from './quotation.transformers';
 import { QuotationGroup } from './quotation.service';
+import { reassignQuotationSeries } from './quotation-series.util';
 
 const EXPORT_LIMIT = '10000';
 
@@ -557,6 +558,7 @@ export class QuotationCrudService {
     try {
       const existingQuotation = await this.prisma.quotation.findUnique({
         where: { id },
+        include: { series: { select: { code: true } } },
       });
 
       if (!existingQuotation) {
@@ -564,6 +566,16 @@ export class QuotationCrudService {
       }
 
       const updateData: any = { ...updateQuotationDto };
+
+      // O formulário reenvia a série atual em toda edição. Só a troca real
+      // renumera; sem ela o campo sai do update e do histórico.
+      const isSeriesChange =
+        !!updateQuotationDto.seriesId &&
+        updateQuotationDto.seriesId !== existingQuotation.seriesId;
+      if (!isSeriesChange) delete updateData.seriesId;
+      // `as` evita que o TS estreite para null: a atribuição acontece dentro
+      // do callback da transação, que a análise de fluxo não acompanha.
+      let seriesChange = null as { before: string; after: string } | null;
       const hasContactId = Object.prototype.hasOwnProperty.call(
         updateQuotationDto,
         'contactId',
@@ -625,6 +637,20 @@ export class QuotationCrudService {
 
       const updatedQuotation = await this.prisma.$transaction(
         async (prisma) => {
+          if (isSeriesChange) {
+            const reassigned = await reassignQuotationSeries(
+              prisma,
+              existingQuotation,
+              updateQuotationDto.seriesId as string,
+            );
+            updateData.seriesId = reassigned.seriesId;
+            updateData.quotationNumber = reassigned.quotationNumber;
+            seriesChange = {
+              before: `${existingQuotation.quotationNumber ?? ''}-${existingQuotation.series?.code ?? ''}`,
+              after: `${reassigned.quotationNumber}-${reassigned.code}`,
+            };
+          }
+
           const quotation = await prisma.quotation.update({
             where: { id },
             data: updateData,
@@ -682,18 +708,37 @@ export class QuotationCrudService {
               select: { name: true },
             });
 
-            const before = {};
-            const after = {};
+            const before: Record<string, unknown> = {};
+            const after: Record<string, unknown> = {};
             for (const field of changedFields) {
               before[field] = existingQuotation[field];
               after[field] = updateData[field];
+            }
+
+            // Série e número andam juntos: registra "38-T1 → 12-V1" em vez de
+            // um ID e um número soltos, que o histórico não saberia exibir.
+            let fieldNames = changedFields;
+            if (seriesChange) {
+              for (const field of ['seriesId', 'quotationNumber']) {
+                delete before[field];
+                delete after[field];
+              }
+              before.serie = seriesChange.before;
+              after.serie = seriesChange.after;
+              fieldNames = [
+                ...changedFields.filter(
+                  (field) =>
+                    field !== 'seriesId' && field !== 'quotationNumber',
+                ),
+                'serie',
+              ];
             }
 
             await this.prisma.quotationHistory.create({
               data: {
                 quotationId: id,
                 action: 'EDITED',
-                description: `Orçamento editado por ${user?.name || 'Usuário'} — campos: ${changedFields.join(', ')}`,
+                description: `Orçamento editado por ${user?.name || 'Usuário'} — campos: ${fieldNames.join(', ')}`,
                 changes: { before, after },
                 createdBy: userId,
                 createdByName: user?.name || null,

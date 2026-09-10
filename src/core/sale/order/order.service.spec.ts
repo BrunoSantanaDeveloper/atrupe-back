@@ -429,4 +429,75 @@ describe('OrderService', () => {
       expect(result.isActive).toBe(false);
     });
   });
+  describe('updateOrderInfo — série', () => {
+    const newSeriesId = 'series-uuid-nova';
+    const orderNaSerieAntiga = {
+      id: mockOrderId,
+      status: OrderStatus.PENDING,
+      quotation: {
+        id: mockQuotationId,
+        clientId: 'client-1',
+        sellerId: mockSellerId,
+        contactId: null,
+        companyId: mockCompanyId,
+        subCompanyId: null,
+        seriesId: 'series-uuid-antiga',
+        quotationNumber: 38,
+        series: { code: 'T1' },
+        client: { name: 'Corpori' },
+        seller: { name: 'Ana' },
+        contact: null,
+        deliveryInfo: null,
+      },
+    };
+
+    beforeEach(() => {
+      prisma.saleSeries = { findUnique: jest.fn(), update: jest.fn() };
+      prisma.quotation = { update: jest.fn() };
+      prisma.user = {
+        findUnique: jest.fn().mockResolvedValue({ name: 'Ana' }),
+      };
+      prisma.orderHistory = { create: jest.fn() };
+      prisma.order.findUnique.mockResolvedValue(orderNaSerieAntiga);
+      jest.spyOn(service, 'findOne').mockResolvedValue({} as any);
+    });
+
+    it('renumera a OS pela série nova e registra no histórico', async () => {
+      prisma.saleSeries.findUnique.mockResolvedValue({
+        id: newSeriesId,
+        code: 'V1',
+        companyId: mockCompanyId,
+        isActive: true,
+      });
+      prisma.saleSeries.update.mockResolvedValue({ currentBudgetNumber: 12 });
+
+      await service.updateOrderInfo(
+        mockOrderId,
+        { seriesId: newSeriesId },
+        'user-1',
+      );
+
+      expect(prisma.quotation.update).toHaveBeenCalledWith({
+        where: { id: mockQuotationId },
+        data: { seriesId: newSeriesId, quotationNumber: 12 },
+      });
+      const history = prisma.orderHistory.create.mock.calls[0][0].data;
+      expect(history.changes).toEqual({
+        before: { serie: '38-T1' },
+        after: { serie: '12-V1' },
+      });
+      expect(history.description).toContain('série');
+    });
+
+    it('não mexe na numeração quando a série não muda', async () => {
+      await service.updateOrderInfo(
+        mockOrderId,
+        { seriesId: 'series-uuid-antiga' },
+        'user-1',
+      );
+
+      expect(prisma.saleSeries.update).not.toHaveBeenCalled();
+      expect(prisma.quotation.update).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -42,6 +42,14 @@ export class UpdateOrderInfoDto {
   contactId?: string;
 
   @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description: 'Nova série de venda — somente admin; gera novo número',
+    required: false,
+  })
+  seriesId?: string;
+
+  @IsOptional()
   @IsString()
   @ApiProperty({
     description:

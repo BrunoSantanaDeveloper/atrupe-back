@@ -272,6 +272,112 @@ describe('QuotationCrudService', () => {
         service.update('invalid-id', { description: 'Updated' }),
       ).rejects.toThrow(NotFoundException);
     });
+
+    describe('troca de série', () => {
+      const newSeriesId = 'series-uuid-nova';
+      const quotationNaSerieAntiga = {
+        ...mockQuotation,
+        seriesId: mockSeriesId,
+        subCompanyId: null,
+        quotationNumber: 38,
+        series: { code: 'T1' },
+      };
+      const serieNova = {
+        id: newSeriesId,
+        code: 'V1',
+        companyId: mockCompanyId,
+        isActive: true,
+      };
+
+      it('renumera pelo contador da série nova', async () => {
+        prisma.quotation.findUnique.mockResolvedValue(quotationNaSerieAntiga);
+        prisma.saleSeries.findUnique.mockResolvedValue(serieNova);
+        prisma.saleSeries.update.mockResolvedValue({ currentBudgetNumber: 12 });
+        prisma.quotation.update.mockResolvedValue(quotationNaSerieAntiga);
+
+        await service.update(mockQuotationId, { seriesId: newSeriesId });
+
+        expect(prisma.saleSeries.update).toHaveBeenCalledWith({
+          where: { id: newSeriesId },
+          data: { currentBudgetNumber: { increment: 1 } },
+          select: { currentBudgetNumber: true },
+        });
+        expect(prisma.quotation.update).toHaveBeenCalledWith({
+          where: { id: mockQuotationId },
+          data: expect.objectContaining({
+            seriesId: newSeriesId,
+            quotationNumber: 12,
+          }),
+        });
+      });
+
+      it('não renumera quando o formulário reenvia a série atual', async () => {
+        prisma.quotation.findUnique.mockResolvedValue(quotationNaSerieAntiga);
+        prisma.quotation.update.mockResolvedValue(quotationNaSerieAntiga);
+
+        await service.update(mockQuotationId, {
+          seriesId: mockSeriesId,
+          description: 'Nova descrição',
+        });
+
+        expect(prisma.saleSeries.update).not.toHaveBeenCalled();
+        const { data } = prisma.quotation.update.mock.calls[0][0];
+        expect(data).not.toHaveProperty('seriesId');
+        expect(data).not.toHaveProperty('quotationNumber');
+      });
+
+      it('recusa série de outra empresa sem consumir número', async () => {
+        prisma.quotation.findUnique.mockResolvedValue(quotationNaSerieAntiga);
+        prisma.saleSeries.findUnique.mockResolvedValue({
+          ...serieNova,
+          companyId: 'outra-empresa',
+        });
+
+        await expect(
+          service.update(mockQuotationId, { seriesId: newSeriesId }),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.saleSeries.update).not.toHaveBeenCalled();
+        expect(prisma.quotation.update).not.toHaveBeenCalled();
+      });
+
+      it('recusa série inativa sem consumir número', async () => {
+        prisma.quotation.findUnique.mockResolvedValue(quotationNaSerieAntiga);
+        prisma.saleSeries.findUnique.mockResolvedValue({
+          ...serieNova,
+          isActive: false,
+        });
+
+        await expect(
+          service.update(mockQuotationId, { seriesId: newSeriesId }),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.saleSeries.update).not.toHaveBeenCalled();
+      });
+
+      it('registra no histórico a série legível, não os IDs', async () => {
+        const history = { create: jest.fn() };
+        (prisma as any).quotationHistory = history;
+        (prisma as any).user = {
+          findUnique: jest.fn().mockResolvedValue({ name: 'Ana' }),
+        };
+        prisma.quotation.findUnique.mockResolvedValue(quotationNaSerieAntiga);
+        prisma.saleSeries.findUnique.mockResolvedValue(serieNova);
+        prisma.saleSeries.update.mockResolvedValue({ currentBudgetNumber: 12 });
+        prisma.quotation.update.mockResolvedValue(quotationNaSerieAntiga);
+
+        await service.update(
+          mockQuotationId,
+          { seriesId: newSeriesId },
+          'user-1',
+        );
+
+        const { data } = history.create.mock.calls[0][0];
+        expect(data.changes).toEqual({
+          before: { serie: '38-T1' },
+          after: { serie: '12-V1' },
+        });
+        expect(data.description).toContain('campos: serie');
+      });
+    });
   });
 
   describe('remove', () => {

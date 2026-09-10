@@ -219,6 +219,8 @@ export class OrderController {
     @Body() dto: UpdateOrderInfoDto,
     @Req() req,
   ) {
+    // Trocar a série renumera a OS: restrito ao admin da conta, como no orçamento.
+    if (!req.user?.isAdmin) delete dto.seriesId;
     return this.orderService.updateOrderInfo(id, dto, req.user.userId);
   }
 

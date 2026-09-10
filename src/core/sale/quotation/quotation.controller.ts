@@ -550,6 +550,8 @@ export class QuotationController {
       delete updateQuotationDto.createdAt;
       delete updateQuotationDto.approvedAt;
       delete updateQuotationDto.quotationNumber;
+      // Trocar a série renumera o orçamento: só o admin da conta pode.
+      delete updateQuotationDto.seriesId;
     }
     await this.validateOwnership(id, req.user, 'edit');
     return await this.quotationService.update(

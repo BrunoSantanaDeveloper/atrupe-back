@@ -21,6 +21,7 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { ORDER_FIND_ONE_INCLUDE } from './order.includes';
 import { transformOrderToResponse } from './order.transformers';
 import { UpdateOrderInfoDto } from './dto/update-order.dto';
+import { reassignQuotationSeries } from '../quotation/quotation-series.util';
 
 const EXPORT_LIMIT = '10000';
 const ACTIVE_NFCE_STATUSES: NfceStatus[] = [
@@ -1164,6 +1165,11 @@ export class OrderService {
             clientId: true,
             sellerId: true,
             contactId: true,
+            companyId: true,
+            subCompanyId: true,
+            seriesId: true,
+            quotationNumber: true,
+            series: { select: { code: true } },
             client: { select: { name: true } },
             seller: { select: { name: true } },
             contact: { select: { name: true } },
@@ -1291,6 +1297,14 @@ export class OrderService {
       after.deliveryAddress = afterAddrText;
     }
 
+    const isSeriesChange =
+      !!dto.seriesId && dto.seriesId !== quotation.seriesId;
+    if (isSeriesChange) {
+      before.serie = `${quotation.quotationNumber ?? ''}-${quotation.series?.code ?? ''}`;
+      // O número novo só existe depois de reservado, dentro da transação.
+      after.serie = null;
+    }
+
     const changedFields = Object.keys(after);
     if (changedFields.length === 0) {
       return this.findOne(orderId);
@@ -1303,11 +1317,22 @@ export class OrderService {
 
     await this.prisma.$transaction(async (tx) => {
       // Update quotation fields
-      const quotationUpdate: Record<string, string | null> = {};
+      const quotationUpdate: Record<string, string | number | null> = {};
       if (dto.clientId !== undefined) quotationUpdate.clientId = dto.clientId;
       if (dto.sellerId !== undefined) quotationUpdate.sellerId = dto.sellerId;
       if (dto.contactId !== undefined)
         quotationUpdate.contactId = dto.contactId || null;
+
+      if (isSeriesChange) {
+        const reassigned = await reassignQuotationSeries(
+          tx,
+          quotation,
+          dto.seriesId as string,
+        );
+        quotationUpdate.seriesId = reassigned.seriesId;
+        quotationUpdate.quotationNumber = reassigned.quotationNumber;
+        after.serie = `${reassigned.quotationNumber}-${reassigned.code}`;
+      }
 
       if (Object.keys(quotationUpdate).length > 0) {
         await tx.quotation.update({
@@ -1383,6 +1408,7 @@ export class OrderService {
             after.sellerId ? 'vendedor' : null,
             after.contactId ? 'responsável' : null,
             after.deliveryAddress !== undefined ? 'endereço de entrega' : null,
+            after.serie !== undefined ? 'série' : null,
           ]
             .filter(Boolean)
             .join(', ')}`,

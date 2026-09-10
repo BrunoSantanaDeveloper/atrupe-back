@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
+import { Prisma } from '@prisma/client';
 import { ReportMenuDto } from './dto/menu.dto';
 import {
   SalesReportFilterDto,
@@ -25,7 +26,10 @@ import { DfcReportFilterDto } from './dto/dfc-report.dto';
 import { CommissionReportFilterDto } from './dto/commission-report.dto';
 import { QuotationService } from '../../core/sale/quotation/quotation.service';
 import { OrderService } from '../../core/sale/order/order.service';
-import { parseProjectDayBoundary } from '../../core/fiscal/utils/project-date.util';
+import {
+  parseProjectDayBoundary,
+  toProjectDateKey,
+} from '../../core/fiscal/utils/project-date.util';
 import { PayableService } from '../../core/financial/payable/payable.service';
 import { ReceivableService } from '../../core/financial/receivable/receivable.service';
 import {
@@ -72,6 +76,98 @@ const FALLBACK_COLORS = [
 
 function getOriginColor(name: string, index: number): string {
   return ORIGIN_COLORS[name] || FALLBACK_COLORS[index % FALLBACK_COLORS.length];
+}
+
+// Pedidos da tabela e do PDF/Excel de vendas, com o necessário para Nº da
+// O.S., cidade do cliente e data de entrega.
+const SALES_ORDER_INCLUDE = {
+  deliverySchedule: { select: { scheduledDate: true } },
+  quotation: {
+    include: {
+      client: {
+        select: {
+          id: true,
+          name: true,
+          address: {
+            where: { ownerType: 'CLIENT' },
+            select: { city: true, type: true },
+          },
+        },
+      },
+      seller: { select: { id: true, name: true } },
+      series: { select: { code: true } },
+      deliveryInfo: {
+        select: {
+          estimatedDate: true,
+          value: true,
+          clientAddress: { select: { city: true } },
+        },
+      },
+      // Desconto, comissão e taxas entram no valor exibido — ver
+      // computeQuotationCompositeValue.
+      quotationPayment: {
+        select: {
+          discountTotal: true,
+          downPaymentAdditionalFee: true,
+          commission: { select: { type: true, totalCommission: true } },
+          quotationInstallment: { select: { additionalFee: true } },
+        },
+      },
+    },
+  },
+} satisfies Prisma.OrderInclude;
+
+type SalesOrderRow = Prisma.OrderGetPayload<{
+  include: typeof SALES_ORDER_INCLUDE;
+}>;
+
+/**
+ * Data de entrega da O.S.: a da agenda quando existe agendamento (reagendar
+ * pela Agenda de Entrega só altera ela) e, sem agendamento, a previsão do
+ * orçamento.
+ */
+function resolveDeliveryDate(order: SalesOrderRow): Date | null {
+  return (
+    order.deliverySchedule?.scheduledDate ??
+    order.quotation.deliveryInfo?.estimatedDate ??
+    null
+  );
+}
+
+/**
+ * Cidade do endereço principal do cliente; sem endereço cadastrado, a do
+ * endereço de entrega do orçamento.
+ */
+function resolveClientCity(order: SalesOrderRow): string | null {
+  const addresses = order.quotation.client?.address ?? [];
+  const main =
+    addresses.find((a) => a.type === 'Principal' && a.city) ??
+    addresses.find((a) => a.city);
+  return (
+    main?.city || order.quotation.deliveryInfo?.clientAddress?.city || null
+  );
+}
+
+/** Nº da O.S. no formato das telas de venda: número-série (ex.: 123-VD). */
+function formatOsNumber(quotation: SalesOrderRow['quotation']): string {
+  return `${quotation.quotationNumber || ''}-${quotation.series?.code || ''}`;
+}
+
+/** dd/MM/yyyy no fuso da operação — a agenda grava a data com horário. */
+function formatProjectDate(date: Date | null): string | null {
+  if (!date) return null;
+  const [year, month, day] = toProjectDateKey(date).split('-');
+  return `${day}/${month}/${year}`;
+}
+
+/** Entrega mais próxima primeiro; O.S. sem data de entrega vão para o fim. */
+function sortByDeliveryDate(orders: SalesOrderRow[]): SalesOrderRow[] {
+  const time = (order: SalesOrderRow) =>
+    resolveDeliveryDate(order)?.getTime() ?? Infinity;
+  return [...orders].sort((a, b) => {
+    const diff = time(a) - time(b);
+    return Number.isNaN(diff) ? 0 : diff;
+  });
 }
 
 @Injectable()
@@ -137,6 +233,36 @@ export class ReportService {
   }
 
   /**
+   * Filtro de pedidos da tabela e do PDF/Excel de vendas. O período vale para
+   * a data de aprovação ou, com `periodBy=deliveryDate`, para a data de
+   * entrega — mesma regra de `resolveDeliveryDate`: agenda quando há
+   * agendamento, senão a previsão do orçamento.
+   */
+  private getSalesPeriodWhere(
+    companyId: string,
+    filters: SalesReportFilterDto,
+  ): Prisma.OrderWhereInput {
+    const { startDate, endDate } = this.getDateRange(filters);
+    const range = { gte: startDate, lte: endDate };
+    const quotationFilters = this.getSalesQuotationFilters(companyId, filters);
+
+    if (filters.periodBy !== 'deliveryDate') {
+      return { quotation: { ...quotationFilters, approvedAt: range } };
+    }
+
+    return {
+      quotation: quotationFilters,
+      OR: [
+        { deliverySchedule: { is: { scheduledDate: range } } },
+        {
+          deliverySchedule: { is: null },
+          quotation: { deliveryInfo: { is: { estimatedDate: range } } },
+        },
+      ],
+    };
+  }
+
+  /**
    * Calcula o valor composto de um orçamento, incluindo entrega, comissão e taxas.
    * Fórmula igual ao frontend (QuotationsData.tsx).
    */
@@ -195,6 +321,45 @@ export class ReportService {
       },
     },
   };
+
+  /**
+   * Ordena os pedidos pelo que o banco não consegue ordenar: a data de
+   * entrega (vem da agenda ou da previsão) e o valor exibido (que só existe
+   * depois de somar entrega/comissão/taxas e tirar o desconto).
+   */
+  private sortSalesOrders(
+    orders: SalesOrderRow[],
+    orderBy?: SalesReportFilterDto['orderBy'],
+  ): SalesOrderRow[] {
+    if (orderBy === 'deliveryDate') return sortByDeliveryDate(orders);
+    if (orderBy === 'valueDesc' || orderBy === 'valueAsc') {
+      const direction = orderBy === 'valueDesc' ? -1 : 1;
+      return [...orders].sort(
+        (a, b) =>
+          (this.computeQuotationCompositeValue(a.quotation) -
+            this.computeQuotationCompositeValue(b.quotation)) *
+          direction,
+      );
+    }
+    return orders;
+  }
+
+  /**
+   * Total do período inteiro (não só da página), base da porcentagem da
+   * tabela — a mesma que o PDF usa.
+   */
+  private async getSalesPeriodTotal(
+    where: Prisma.OrderWhereInput,
+  ): Promise<number> {
+    const orders = await this.prisma.order.findMany({
+      where,
+      select: { quotation: { select: this.quotationValueSelect } },
+    });
+    return orders.reduce(
+      (sum, o) => sum + this.computeQuotationCompositeValue(o.quotation),
+      0,
+    );
+  }
 
   async getSalesReportSummary(
     companyId: string,
@@ -821,8 +986,8 @@ export class ReportService {
       include: {
         quotation: {
           select: {
+            ...this.quotationValueSelect,
             clientId: true,
-            totalValue: true,
             client: { select: { name: true } },
           },
         },
@@ -841,7 +1006,9 @@ export class ReportService {
             value: 0,
           };
         }
-        clientTotals[clientId].value += o.quotation.totalValue || 0;
+        clientTotals[clientId].value += this.computeQuotationCompositeValue(
+          o.quotation,
+        );
       }
     });
 
@@ -908,19 +1075,13 @@ export class ReportService {
     companyId: string,
     filters: SalesReportFilterDto,
   ): Promise<SalesTableDataResponse & { pagination: any }> {
-    const { startDate, endDate } = this.getDateRange(filters);
     const page = filters.page || 1;
     const limit = filters.limit || 10;
     const groupBy = filters.groupBy || 'client';
     const orderBy = filters.orderBy || 'approvedDate';
 
     // Base where clause — include canceled orders
-    const whereClause = {
-      quotation: {
-        ...this.getSalesQuotationFilters(companyId, filters),
-        approvedAt: { gte: startDate, lte: endDate },
-      },
-    };
+    const whereClause = this.getSalesPeriodWhere(companyId, filters);
 
     // Get total count
     const totalCount = await this.prisma.order.count({ where: whereClause });
@@ -932,25 +1093,30 @@ export class ReportService {
     // then paginate at the group level.
     // When ungrouped, paginate at the record level.
     const isGrouped = groupBy === 'client' || groupBy === 'seller';
+    // Entrega e valor exibido não existem como coluna no banco, então essas
+    // ordenações (e a paginação junto) são feitas em memória.
+    const sortInMemory = orderBy !== 'approvedDate';
+    const paginateInQuery = !isGrouped && !sortInMemory;
 
-    const orders = await this.prisma.order.findMany({
+    const fetchedOrders = await this.prisma.order.findMany({
       where: whereClause,
-      include: {
-        quotation: {
-          include: {
-            client: { select: { id: true, name: true } },
-            seller: { select: { id: true, name: true } },
-            series: { select: { code: true } },
-          },
-        },
-      },
+      include: SALES_ORDER_INCLUDE,
       orderBy: orderByClause,
-      // Only paginate at query level when NOT grouped
-      ...(!isGrouped && { take: limit, skip: (page - 1) * limit }),
+      ...(paginateInQuery && { take: limit, skip: (page - 1) * limit }),
     });
+    const orders = this.sortSalesOrders(fetchedOrders, orderBy);
+
+    // Com todos os pedidos em mãos o total sai deles; paginando no banco,
+    // é preciso somar o período à parte.
+    const periodTotal = paginateInQuery
+      ? await this.getSalesPeriodTotal(whereClause)
+      : orders.reduce(
+          (sum, o) => sum + this.computeQuotationCompositeValue(o.quotation),
+          0,
+        );
 
     // Map to SaleRecordItem
-    const mapToRecord = (order: any): SaleRecordItem => {
+    const mapToRecord = (order: SalesOrderRow): SaleRecordItem => {
       const q = order.quotation;
       const phase: SalePhase =
         order.status === 'CANCELED'
@@ -965,11 +1131,14 @@ export class ReportService {
 
       return {
         id: order.id,
+        osNumber: formatOsNumber(q),
         clientName: q.client?.name || 'Cliente não informado',
-        serviceDescription: `${q.quotationNumber || ''}-${q.series?.code || ''} - ${q.description || ''}`,
+        clientCity: resolveClientCity(order),
+        serviceDescription: q.description || '',
         approvedDate: q.approvedAt ? format(q.approvedAt, 'dd/MM/yyyy') : null,
+        deliveryDate: formatProjectDate(resolveDeliveryDate(order)),
         dueDate: q.dueDate ? format(q.dueDate, 'dd/MM/yyyy') : '-',
-        value: q.totalValue || 0,
+        value: this.computeQuotationCompositeValue(q),
         phase,
         phasePercentage:
           phase === 'entregue' ? 100 : phase === 'em-producao' ? 50 : 0,
@@ -1013,7 +1182,13 @@ export class ReportService {
         totalRecords: totalGroups,
       };
 
-      return { grouped: true, groups, totalCount, pagination };
+      return {
+        grouped: true,
+        groups,
+        totalCount,
+        totalValue: periodTotal,
+        pagination,
+      };
     } else if (groupBy === 'seller') {
       // Group ALL records by seller
       const recordsBySeller: Record<
@@ -1052,15 +1227,30 @@ export class ReportService {
         totalRecords: totalGroups,
       };
 
-      return { grouped: true, groups, totalCount, pagination };
+      return {
+        grouped: true,
+        groups,
+        totalCount,
+        totalValue: periodTotal,
+        pagination,
+      };
     } else {
-      const records = orders.map(mapToRecord);
+      const pageOrders = paginateInQuery
+        ? orders
+        : orders.slice((page - 1) * limit, page * limit);
+      const records = pageOrders.map(mapToRecord);
       const pagination = {
         page,
         totalPages: Math.ceil(totalCount / limit),
         totalRecords: totalCount,
       };
-      return { grouped: false, records, totalCount, pagination };
+      return {
+        grouped: false,
+        records,
+        totalCount,
+        totalValue: periodTotal,
+        pagination,
+      };
     }
   }
 
@@ -1068,8 +1258,6 @@ export class ReportService {
     companyId: string,
     filters: SalesReportFilterDto,
   ) {
-    const { startDate, endDate } = this.getDateRange(filters);
-
     // Get company info
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
@@ -1079,29 +1267,19 @@ export class ReportService {
     });
 
     // Get all orders for the period (no pagination for PDF)
-    const orders = await this.prisma.order.findMany({
+    const fetchedOrders = await this.prisma.order.findMany({
       where: {
+        ...this.getSalesPeriodWhere(companyId, filters),
         status: { not: 'CANCELED' },
-        quotation: {
-          ...this.getSalesQuotationFilters(companyId, filters),
-          approvedAt: { gte: startDate, lte: endDate },
-        },
       },
-      include: {
-        quotation: {
-          include: {
-            client: { select: { id: true, name: true } },
-            seller: { select: { id: true, name: true } },
-            series: { select: { code: true } },
-          },
-        },
-      },
+      include: SALES_ORDER_INCLUDE,
       orderBy: this.getSalesOrderBy(filters.orderBy),
     });
+    const orders = this.sortSalesOrders(fetchedOrders, filters.orderBy);
 
     // Calculate total value
     const totalValue = orders.reduce(
-      (sum, o) => sum + (o.quotation.totalValue || 0),
+      (sum, o) => sum + this.computeQuotationCompositeValue(o.quotation),
       0,
     );
 
@@ -1150,7 +1328,7 @@ export class ReportService {
             ? 'Em produção'
             : 'Fase atual';
 
-      const value = q.totalValue || 0;
+      const value = this.computeQuotationCompositeValue(q);
       const percentage =
         totalValue > 0
           ? parseFloat(((value / totalValue) * 100).toFixed(1))
@@ -1158,10 +1336,12 @@ export class ReportService {
 
       groupsMap[groupId].records.push({
         id: order.id,
+        osNumber: formatOsNumber(q),
         clientName,
-        serviceCode: `${q.series?.code || ''}-${q.quotationNumber || ''}`,
+        clientCity: resolveClientCity(order),
         description: q.description || 'Descrição do serviço',
         approvedDate: q.approvedAt ? format(q.approvedAt, 'dd/MM/yyyy') : null,
+        deliveryDate: formatProjectDate(resolveDeliveryDate(order)),
         phase,
         value,
         percentage,
