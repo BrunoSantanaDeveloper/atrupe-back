@@ -144,7 +144,10 @@ export interface InvoicyNfeIde {
   indPres: number; // Indicador presença
   procEmi: number;
   verProc: string;
-  NFref?: Array<{ refNFe: string }>;
+  // Caixa do contrato do provedor (`NFRef`), nao a da tag XML da SEFAZ
+  // (`NFref`): com a grafia do XML a chave era ignorada. O `NFRefItem` do XSD
+  // fica implicito no array.
+  NFRef?: Array<{ refNFe: string }>;
   idCSC?: number;
   CSC?: string;
   dhCont?: string;

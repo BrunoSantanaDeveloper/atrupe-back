@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import {
   BadRequestException,
+  HttpException,
   Injectable,
+  InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/config/prisma/prisma.service';
@@ -13,6 +16,8 @@ import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class PaymentService {
+  private readonly logger = new Logger(PaymentService.name);
+
   constructor(private readonly prisma: PrismaService) {}
   async findOne(id: string) {
     return this.prisma.quotationPayment.findUnique({
@@ -83,6 +88,12 @@ export class PaymentService {
         ...rest
       } = updateData;
 
+      // Colunas NOT NULL no banco. O formulário manda `null` quando o campo é
+      // limpo — o zod e o `@IsOptional()` do DTO aceitam null, e a guarda
+      // `!== undefined` deixava o null chegar no Prisma, que recusava e virava
+      // "Internal server error" sem causa visível.
+      const orZero = (value?: number | null) => value ?? 0;
+
       // Prepare base payment data
       const paymentData: any = {
         ...(type && { type }),
@@ -107,7 +118,7 @@ export class PaymentService {
       // Handle down payment if exists
       if (hasDownPayment && downPayment) {
         if (downPayment.amount !== undefined) {
-          paymentData.downPayment = downPayment.amount;
+          paymentData.downPayment = orZero(downPayment.amount);
         }
         if (downPayment.paymentConditionId) {
           paymentData.downPaymentCondition = {
@@ -117,7 +128,9 @@ export class PaymentService {
           paymentData.downPaymentCondition = { disconnect: true };
         }
         if (downPayment.additionalFee !== undefined) {
-          paymentData.downPaymentAdditionalFee = downPayment.additionalFee;
+          paymentData.downPaymentAdditionalFee = orZero(
+            downPayment.additionalFee,
+          );
         }
         if (downPayment.dueDate) {
           paymentData.downPaymentDueDate = new Date(downPayment.dueDate);
@@ -135,10 +148,10 @@ export class PaymentService {
           paymentData.discountType = discount.discountType;
         }
         if (discount.discountValue !== undefined) {
-          paymentData.discountValue = discount.discountValue;
+          paymentData.discountValue = orZero(discount.discountValue);
         }
         if (discount.discountTotal !== undefined) {
-          paymentData.discountTotal = discount.discountTotal;
+          paymentData.discountTotal = orZero(discount.discountTotal);
         }
       }
 
@@ -231,8 +244,39 @@ export class PaymentService {
         return updatedPaymentData;
       });
     } catch (error) {
-      console.error(error);
-      throw new Error('Erro ao atualizar pagamento: ' + error.message);
+      // Antes tudo virava um Error genérico: o Nest respondia "Internal server
+      // error" e a causa só existia no log. Sem ela, o usuário só via o modal
+      // não fechar — e o fluxo de concluir orçamento parava sem explicação.
+      if (error instanceof HttpException) throw error;
+
+      const code = (error as { code?: string })?.code;
+      this.logger.error(
+        `Falha ao atualizar pagamento do orçamento ${quotationId}` +
+          (code ? ` (Prisma ${code})` : ''),
+        error instanceof Error ? error.stack : String(error),
+      );
+
+      if (code === 'P2003') {
+        throw new BadRequestException(
+          'Forma de pagamento inválida: ela não existe mais ou é de outra empresa. Selecione a forma de pagamento novamente.',
+        );
+      }
+
+      if (code === 'P2025') {
+        throw new BadRequestException(
+          'Um registro do pagamento foi removido enquanto a tela estava aberta. Recarregue o orçamento e tente de novo.',
+        );
+      }
+
+      if (code === 'P2028') {
+        throw new InternalServerErrorException(
+          'O salvamento demorou demais e foi cancelado. Tente novamente.',
+        );
+      }
+
+      throw new InternalServerErrorException(
+        'Não foi possível salvar as condições de pagamento. Tente novamente; se persistir, avise o suporte.',
+      );
     }
   }
 

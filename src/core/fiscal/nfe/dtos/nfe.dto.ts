@@ -246,6 +246,15 @@ export class NfeDuplicateDto {
 }
 
 export class EmitNfeDto {
+  @ApiPropertyOptional({
+    description:
+      'ID da NF-e rejeitada que esta sendo reemitida. Faz a emissao reaproveitar ' +
+      'aquela linha em vez de criar outra a cada tentativa.',
+  })
+  @IsString()
+  @IsOptional()
+  reissueOfNfeId?: string;
+
   @ApiPropertyOptional({ description: 'ID do orçamento' })
   @IsString()
   @IsOptional()

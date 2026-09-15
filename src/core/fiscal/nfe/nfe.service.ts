@@ -147,6 +147,15 @@ function formatarDataBr(isoDate: string): string {
   return isoDate.split('-').reverse().join('/');
 }
 
+/**
+ * Status que representam uma NF-e valida perante o fisco.
+ *
+ * CORRECTION_SENT e' uma nota AUTORIZADA que recebeu carta de correcao: a
+ * CC-e ajusta dados da nota, nao a substitui nem a anula. Filtros e guardas
+ * que olhavam so' para AUTHORIZED tratavam essas notas como inexistentes.
+ */
+const EMITIDA_NFE_STATUSES = [NfeStatus.AUTHORIZED, NfeStatus.CORRECTION_SENT];
+
 @Injectable()
 export class NfeService {
   private readonly logger = new Logger(NfeService.name);
@@ -650,7 +659,11 @@ export class NfeService {
         (nfe) =>
           nfe.id !== ignoredNfeId &&
           nfe.ambiente === activeEnvironmentNumber &&
-          [NfeStatus.AUTHORIZED, NfeStatus.DRAFT].includes(nfe.status),
+          // CORRECTION_SENT e' nota autorizada que recebeu CC-e. Fora desta
+          // lista a ordem era tratada como "sem nota" e entrava numa NF-e
+          // nova, gerando documento fiscal duplicado para a mesma O.S.
+          (nfe.status === NfeStatus.DRAFT ||
+            this.isStatusAutorizado(nfe.status)),
       );
 
       if (blockingNfe) {
@@ -981,6 +994,14 @@ export class NfeService {
    * draftData e sempre o DTO plano — tudo que o usuario tinha ajustado voltava
    * com o padrao do emissor ao clicar em "Corrigir e reemitir".
    */
+  /** Devolve a data de saida apenas quando ela ainda nao venceu. */
+  private dataSaidaSeAindaFutura(valor?: string): string | undefined {
+    if (!valor) return undefined;
+    const data = new Date(valor);
+    if (Number.isNaN(data.getTime())) return undefined;
+    return data > new Date() ? valor : undefined;
+  }
+
   private getEmissaoFromDraft(draftData: any): Record<string, any> {
     if (!draftData) return {};
     if (draftData.emissao) return draftData.emissao;
@@ -991,7 +1012,9 @@ export class NfeService {
       finalidade: draftData.finalidade,
       consumidorFinal: draftData.consumidorFinal,
       presencaConsumidor: draftData.presencaConsumidor,
-      dataSaida: draftData.dataSaida,
+      // So volta se ainda estiver no futuro: restaurar uma data vencida
+      // reintroduz a 505. Vazia, o prepare repoe o instante atual.
+      dataSaida: this.dataSaidaSeAindaFutura(draftData.dataSaida),
       nfeReferenciada: draftData.nfeReferenciada,
       modalidadeFrete: draftData.modalidadeFrete,
     };
@@ -1065,7 +1088,10 @@ export class NfeService {
       throw new NotFoundException('NF-e nÃ£o encontrada');
     }
 
-    if (originalNfe.status !== NfeStatus.AUTHORIZED) {
+    // CORRECTION_SENT continua sendo uma nota autorizada: a CC-e corrige dados
+    // da NF-e original e nao interfere na devolucao, que e' uma nota NOVA
+    // referenciando a de origem. Sao procedimentos independentes.
+    if (!this.isStatusAutorizado(originalNfe.status)) {
       throw new BadRequestException(
         'Apenas NF-e autorizadas podem ser devolvidas',
       );
@@ -1253,7 +1279,8 @@ export class NfeService {
       throw new NotFoundException('NF-e nÃ£o encontrada');
     }
 
-    if (originalNfe.status !== NfeStatus.AUTHORIZED) {
+    // Ver comentario em prepareDevolution: a CC-e nao consome a nota original.
+    if (!this.isStatusAutorizado(originalNfe.status)) {
       throw new BadRequestException(
         'Apenas NF-e autorizadas podem ser complementadas',
       );
@@ -1499,10 +1526,12 @@ export class NfeService {
       this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config, 'NFE');
 
     // Verificar se jÃ¡ existe NF-e autorizada para esta ordem
+    // Inclui CORRECTION_SENT: sem isso, uma nota que recebeu CC-e deixava de
+    // bloquear e a mesma O.S. podia receber uma segunda NF-e autorizada.
     const existingNfe = await this.prisma.nfe.findFirst({
       where: {
         orderId: dto.orderId,
-        status: NfeStatus.AUTHORIZED,
+        status: { in: EMITIDA_NFE_STATUSES },
         ambiente: environment === 'PRODUCAO' ? 1 : 2,
       },
     });
@@ -1644,7 +1673,7 @@ export class NfeService {
           WHERE a."companyId" = r."companyId"
             AND a.numero = r.numero
             AND a.serie = r.serie
-            AND a.status = 'AUTHORIZED'
+            AND a.status IN ('AUTHORIZED', 'CORRECTION_SENT')
             AND a."createdAt" > r."createdAt"
         )
     `;
@@ -1877,10 +1906,21 @@ export class NfeService {
     }
 
     const now = new Date();
-    const dataSaida = dto.dataSaida ? new Date(dto.dataSaida) : now;
-    if (Number.isNaN(dataSaida.getTime())) {
+    const dataSaidaInformada = dto.dataSaida ? new Date(dto.dataSaida) : now;
+    if (Number.isNaN(dataSaidaInformada.getTime())) {
       throw new BadRequestException('Data de saida/entrada invalida');
     }
+
+    // dhSaiEnt anterior a dhEmi e rejeicao 505 na SEFAZ.
+    //
+    // A data de saida e capturada quando a tela monta, mas dhEmi so nasce aqui,
+    // na hora de transmitir. Entre os dois instantes esta todo o tempo de
+    // preenchimento da nota — e o campo datetime-local ainda truncava os
+    // segundos, entao a saida ja nascia no passado mesmo sem demora nenhuma.
+    //
+    // Data futura e intencional ("sai amanha") e fica preservada; so o passado
+    // e puxado para o instante da emissao, que e o que "saida agora" significa.
+    const dataSaida = dataSaidaInformada < now ? now : dataSaidaInformada;
 
     // Buscar cÃ³digo IBGE do municÃ­pio do destinatÃ¡rio via CEP
     let destCmun = isForeign ? 9999999 : 0;
@@ -1974,8 +2014,42 @@ export class NfeService {
       ...new Set((dto.orderIds || []).filter(Boolean)),
     ];
 
+    // Tentativa anterior REJEITADA, informada pelo cliente ao reemitir.
+    //
+    // Nota rejeitada nunca existiu na SEFAZ, entao reaproveitar a linha e
+    // legitimo — e evita uma linha nova a cada tentativa, que era o que
+    // acontecia na emissao avulsa: sem orderId, o fluxo caia direto no create.
+    // O motivo da rejeicao anterior e sobrescrito de proposito: o que importa
+    // na tela e o da ultima tentativa.
+    if (dto.reissueOfNfeId) {
+      const anterior = await this.prisma.nfe.findFirst({
+        where: {
+          id: dto.reissueOfNfeId,
+          companyId,
+          status: NfeStatus.REJECTED,
+        },
+      });
+
+      if (anterior) {
+        nfe = await this.prisma.nfe.update({
+          where: { id: anterior.id },
+          data: {
+            numero,
+            serie: serieReservada,
+            status: NfeStatus.PROCESSING,
+            ambiente: environment === 'PRODUCAO' ? 1 : 2,
+            invoicyConfigId: config.id,
+            valorTotal,
+            motivoRejeicao: null,
+            chaveAcesso: null,
+            draftData: dto as any,
+          },
+        });
+      }
+    }
+
     // Se for vinculada a ordens consolidadas, buscar rascunho pela pivot
-    if (consolidatedOrderIds.length > 1) {
+    if (!nfe && consolidatedOrderIds.length > 1) {
       const draftNfes = (await this.prisma.nfe.findMany({
         where: {
           companyId,
@@ -2010,16 +2084,20 @@ export class NfeService {
             invoicyConfigId: config.id,
             valorTotal,
             motivoRejeicao: null,
+            draftData: dto as any,
           },
         });
       }
-    } else if (dto.orderId) {
+    } else if (!nfe && dto.orderId) {
+      // REJECTED entra junto com DRAFT: so o rascunho era reaproveitado, entao
+      // da segunda tentativa em diante a nota da ordem tambem virava linha nova.
       const draftNfe = await this.prisma.nfe.findFirst({
         where: {
           companyId,
           orderId: dto.orderId,
-          status: NfeStatus.DRAFT,
+          status: { in: [NfeStatus.DRAFT, NfeStatus.REJECTED] },
         },
+        orderBy: { createdAt: 'desc' },
       });
 
       if (draftNfe) {
@@ -2421,8 +2499,16 @@ export class NfeService {
             indPres: dto.presencaConsumidor ?? presencaNatureza ?? 1,
             procEmi: 0, // Aplicativo do contribuinte
             verProc: 'Atrupe 1.0',
+            // `NFRef`, com R maiusculo: e o nome no contrato do provedor
+            // (Envio_NFe-NFCe 4.0.xsd), que casa chaves com diferenca de caixa.
+            // Enviavamos `NFref` — a grafia da tag no XML da SEFAZ —, o provedor
+            // ignorava a chave desconhecida e a nota saia sem documento
+            // referenciado: rejeicao 321 em toda devolucao.
+            //
+            // O nivel `NFRefItem` do XSD fica implicito no array, como em
+            // det/detItem, dup/dupItem e pag/pagItem, que ja funcionam assim.
             ...(cleanReferencedNfe
-              ? { NFref: [{ refNFe: cleanReferencedNfe }] }
+              ? { NFRef: [{ refNFe: cleanReferencedNfe }] }
               : {}),
           },
           emit: {
@@ -3687,7 +3773,13 @@ export class NfeService {
     const existingLinkedNfe = await this.prisma.nfe.findFirst({
       where: {
         companyId,
-        status: { in: [NfeStatus.AUTHORIZED, NfeStatus.DRAFT] },
+        status: {
+          in: [
+            NfeStatus.AUTHORIZED,
+            NfeStatus.CORRECTION_SENT,
+            NfeStatus.DRAFT,
+          ],
+        },
         ambiente: ambienteAtivo,
         orders: {
           some: { orderId },
@@ -3701,7 +3793,7 @@ export class NfeService {
     if (
       existingLinkedNfe &&
       ((existingLinkedNfe as any).orders?.length > 1 ||
-        existingLinkedNfe.status === NfeStatus.AUTHORIZED)
+        this.isStatusAutorizado(existingLinkedNfe.status))
     ) {
       throw new BadRequestException(
         'Esta ordem ja esta vinculada a uma NF-e consolidada',
@@ -4738,7 +4830,7 @@ export class NfeService {
           WHERE a."companyId" = r."companyId"
             AND a.numero = r.numero
             AND a.serie = r.serie
-            AND a.status = 'AUTHORIZED'
+            AND a.status IN ('AUTHORIZED', 'CORRECTION_SENT')
             AND a."createdAt" > r."createdAt"
         )
     `;
@@ -4753,7 +4845,7 @@ export class NfeService {
           {
             nfes: {
               some: {
-                status: 'AUTHORIZED',
+                status: { in: EMITIDA_NFE_STATUSES },
                 ambiente: envNfe,
               },
             },
@@ -4762,7 +4854,7 @@ export class NfeService {
             nfeOrders: {
               some: {
                 nfe: {
-                  status: 'AUTHORIZED',
+                  status: { in: EMITIDA_NFE_STATUSES },
                   ambiente: envNfe,
                 },
               },
@@ -4810,7 +4902,7 @@ export class NfeService {
           {
             nfes: {
               none: {
-                status: 'AUTHORIZED',
+                status: { in: EMITIDA_NFE_STATUSES },
                 ambiente: envNfe,
               },
             },
@@ -4819,7 +4911,7 @@ export class NfeService {
             nfeOrders: {
               none: {
                 nfe: {
-                  status: 'AUTHORIZED',
+                  status: { in: EMITIDA_NFE_STATUSES },
                   ambiente: envNfe,
                 },
               },
@@ -4839,7 +4931,7 @@ export class NfeService {
           {
             nfes: {
               none: {
-                status: { in: ['AUTHORIZED', 'DRAFT'] },
+                status: { in: [...EMITIDA_NFE_STATUSES, 'DRAFT'] },
                 ambiente: envNfe,
               },
             },
@@ -4848,7 +4940,7 @@ export class NfeService {
             nfeOrders: {
               none: {
                 nfe: {
-                  status: { in: ['AUTHORIZED', 'DRAFT'] },
+                  status: { in: [...EMITIDA_NFE_STATUSES, 'DRAFT'] },
                   ambiente: envNfe,
                 },
               },
@@ -4942,7 +5034,8 @@ export class NfeService {
 
     if (recordType === 'TODOS' || recordType === 'NOTAS_AVULSAS') {
       if (includeNfe) {
-        if (status === 'EMITIDA') nfeWhere.status = 'AUTHORIZED';
+        if (status === 'EMITIDA')
+          nfeWhere.status = { in: EMITIDA_NFE_STATUSES };
         else if (status === 'EM_DIGITACAO') nfeWhere.status = 'DRAFT';
         else if (status === 'CANCELADA') nfeWhere.status = 'CANCELLED';
         else if (status === 'REJEITADA') nfeWhere.status = 'REJECTED';

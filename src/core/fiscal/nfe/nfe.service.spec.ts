@@ -562,7 +562,15 @@ describe('NfeService', () => {
         const { where } = prisma.order.findMany.mock.calls[0][0];
         expect(where.OR).toEqual(
           expect.arrayContaining([
-            { nfes: { some: { status: 'AUTHORIZED', ambiente: 2 } } },
+            {
+              nfes: {
+                some: {
+                  // "Emitida" inclui a nota que recebeu CC-e.
+                  status: { in: ['AUTHORIZED', 'CORRECTION_SENT'] },
+                  ambiente: 2,
+                },
+              },
+            },
           ]),
         );
       });
@@ -882,6 +890,42 @@ describe('NfeService', () => {
       expect(result.informacoesComplementares).toBe('Texto padrão do emissor');
     });
 
+    /**
+     * Restaurar a data de saida guardada trazia de volta um instante ja vencido
+     * e a nota era rejeitada de novo pela 505. O prepare repoe o instante atual.
+     */
+    it('nao restaura data de saida ja vencida', async () => {
+      const vencida = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      prisma.nfe.findFirst.mockResolvedValue(
+        rejeitadaCom({ dataSaida: vencida }),
+      );
+
+      const antesDaChamada = Date.now();
+      const result = await service.prepareReissue(
+        mockCompanyId,
+        'nfe-rejeitada',
+      );
+
+      expect(result.emissao.dataSaida).not.toBe(vencida);
+      expect(
+        new Date(result.emissao.dataSaida).getTime(),
+      ).toBeGreaterThanOrEqual(antesDaChamada);
+    });
+
+    it('preserva data de saida futura informada antes da rejeicao', async () => {
+      const futura = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      prisma.nfe.findFirst.mockResolvedValue(
+        rejeitadaCom({ dataSaida: futura }),
+      );
+
+      const result = await service.prepareReissue(
+        mockCompanyId,
+        'nfe-rejeitada',
+      );
+
+      expect(result.emissao.dataSaida).toBe(futura);
+    });
+
     it('continua lendo o rascunho aninhado', async () => {
       prisma.nfe.findFirst.mockResolvedValue(
         rejeitadaCom({
@@ -1001,6 +1045,44 @@ describe('NfeService', () => {
         service.prepareDevolution(mockCompanyId, mockNfeId),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('deve permitir devolucao de NF-e que recebeu carta de correcao', async () => {
+      // CC-e e devolucao sao procedimentos independentes: a carta corrige dados
+      // da nota original, a devolucao e' uma nota nova que a referencia.
+      prisma.nfe.findFirst.mockResolvedValue({
+        ...authorizedNfe,
+        status: NfeStatus.CORRECTION_SENT,
+      });
+
+      const result = await service.prepareDevolution(mockCompanyId, mockNfeId);
+
+      expect(result.originalNfeChave).toBe(authorizedNfe.chaveAcesso);
+    });
+
+    it('deve continuar recusando devolucao de NF-e cancelada', async () => {
+      prisma.nfe.findFirst.mockResolvedValue({
+        ...authorizedNfe,
+        status: NfeStatus.CANCELLED,
+      });
+
+      await expect(
+        service.prepareDevolution(mockCompanyId, mockNfeId),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('deve permitir NF-e complementar de nota que recebeu carta de correcao', async () => {
+      prisma.nfe.findFirst.mockResolvedValue({
+        ...authorizedNfe,
+        status: NfeStatus.CORRECTION_SENT,
+      });
+
+      const result = await service.prepareComplementary(
+        mockCompanyId,
+        mockNfeId,
+      );
+
+      expect(result.originalNfeChave).toBe(authorizedNfe.chaveAcesso);
+    });
   });
 
   describe('createOrGetDraft', () => {
@@ -1057,6 +1139,46 @@ describe('NfeService', () => {
           }),
         }),
       );
+    });
+
+    it('nao cria rascunho quando a ordem ja tem NF-e com carta de correcao', async () => {
+      // CORRECTION_SENT e' nota valida: liberar um rascunho novo aqui abriria
+      // caminho para uma segunda NF-e autorizada na mesma O.S.
+      prisma.nfe.findFirst.mockResolvedValue({
+        ...mockNfe,
+        status: NfeStatus.CORRECTION_SENT,
+        orders: [{ orderId: mockOrderId }],
+      });
+
+      await expect(
+        service.createOrGetDraft(mockCompanyId, mockOrderId),
+      ).rejects.toThrow('ja esta vinculada a uma NF-e consolidada');
+
+      expect(prisma.nfe.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('emitFromOrder', () => {
+    it('recusa emissao quando a ordem ja tem NF-e com carta de correcao', async () => {
+      prisma.quotation.findFirst.mockResolvedValue(mockQuotation);
+      invoicyService.getConfig.mockResolvedValue({
+        id: 'config-id',
+        ambiente: 2,
+        company: mockCompany,
+      });
+      // Guarda de duplicidade: a nota corrigida precisa continuar bloqueando.
+      prisma.nfe.findFirst.mockResolvedValue({
+        ...mockNfe,
+        numero: 7,
+        serie: 1,
+        status: NfeStatus.CORRECTION_SENT,
+      });
+
+      await expect(
+        service.emitFromOrder(mockCompanyId, { orderId: mockOrderId } as any),
+      ).rejects.toThrow(/existe uma NF-e autorizada para esta ordem/);
+
+      expect(mockInvoicyApiService.emitNfe).not.toHaveBeenCalled();
     });
   });
 
@@ -1586,6 +1708,140 @@ describe('NfeService', () => {
       await expect(service.emit(mockCompanyId, mockEmitDto)).rejects.toThrow(
         'NF-e rejeitada: Rejeicao: motivo especifico da SEFAZ',
       );
+    });
+
+    /**
+     * Toda devolucao era rejeitada com a 321 ("nao possui documento fiscal
+     * referenciado") mesmo com a chave preenchida na tela: o payload usava
+     * `NFref` (grafia da tag XML da SEFAZ) e o provedor so reconhece `NFRef`.
+     */
+    describe('documento referenciado', () => {
+      const CHAVE_REFERENCIADA = '35260212345678000123550010000000011123456789';
+
+      const enviado = () =>
+        invoicyApiService.emitNfe.mock.calls[0][1][0].Documento;
+
+      it('envia a chave em NFRef, com a caixa do contrato do provedor', async () => {
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          tipo: 0,
+          finalidade: 4,
+          nfeReferenciada: CHAVE_REFERENCIADA,
+        });
+
+        expect(enviado().ide.NFRef).toEqual([{ refNFe: CHAVE_REFERENCIADA }]);
+        // A grafia antiga era ignorada pelo provedor sem erro nenhum.
+        expect(enviado().ide.NFref).toBeUndefined();
+      });
+
+      it('limpa a mascara da chave antes de enviar', async () => {
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          finalidade: 4,
+          nfeReferenciada:
+            '3526 0212 3456 7800 0123 5500 1000 0000 0111 2345 6789',
+        });
+
+        expect(enviado().ide.NFRef).toEqual([{ refNFe: CHAVE_REFERENCIADA }]);
+      });
+
+      it('nao envia o grupo quando nao ha nota referenciada', async () => {
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        expect(enviado().ide.NFRef).toBeUndefined();
+      });
+    });
+
+    /**
+     * Cada tentativa criava uma linha nova. Na avulsa porque, sem orderId, o
+     * fluxo caia direto no create; na nota de ordem porque so DRAFT era
+     * reaproveitado, e a tentativa que falha deixa a linha em REJECTED.
+     */
+    describe('reaproveitamento da linha entre tentativas', () => {
+      it('reaproveita a nota rejeitada informada em vez de criar outra', async () => {
+        prisma.nfe.findFirst.mockResolvedValue({
+          id: 'nfe-rejeitada',
+          companyId: mockCompanyId,
+          status: NfeStatus.REJECTED,
+        });
+
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          reissueOfNfeId: 'nfe-rejeitada',
+        });
+
+        expect(prisma.nfe.create).not.toHaveBeenCalled();
+        expect(prisma.nfe.update).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: 'nfe-rejeitada' } }),
+        );
+      });
+
+      it('nao reaproveita linha de outra empresa nem ja autorizada', async () => {
+        // O findFirst filtra por companyId e status REJECTED: quando nao casa,
+        // a emissao segue e cria a linha normalmente.
+        prisma.nfe.findFirst.mockResolvedValue(null);
+
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          reissueOfNfeId: 'nota-de-outra-empresa',
+        });
+
+        expect(prisma.nfe.create).toHaveBeenCalled();
+      });
+
+      it('procura a linha da ordem tambem em REJECTED, nao so em DRAFT', async () => {
+        prisma.nfe.findFirst.mockResolvedValue(null);
+
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          orderId: mockOrderId,
+        });
+
+        expect(prisma.nfe.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              orderId: mockOrderId,
+              status: { in: [NfeStatus.DRAFT, NfeStatus.REJECTED] },
+            }),
+          }),
+        );
+      });
+    });
+
+    /**
+     * dhSaiEnt anterior a dhEmi e rejeicao 505. A data de saida vem da tela,
+     * montada antes; dhEmi nasce na transmissao. O intervalo entre os dois
+     * instantes — mais os segundos que o campo truncava — colocava a saida no
+     * passado e o cliente corrigia na mao a cada emissao.
+     */
+    describe('data de saida', () => {
+      const enviado = () =>
+        invoicyApiService.emitNfe.mock.calls[0][1][0].Documento;
+
+      it('nunca envia saida anterior a emissao', async () => {
+        const ontem = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          dataSaida: ontem.toISOString(),
+        });
+
+        const { dhEmi, dhSaiEnt } = enviado().ide;
+        expect(new Date(dhSaiEnt).getTime()).toBeGreaterThanOrEqual(
+          new Date(dhEmi).getTime(),
+        );
+      });
+
+      it('preserva data de saida futura, que e intencional', async () => {
+        const amanha = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          dataSaida: amanha.toISOString(),
+        });
+
+        expect(enviado().ide.dhSaiEnt).toBe(amanha.toISOString());
+      });
     });
 
     it('should handle Invoicy failure', async () => {

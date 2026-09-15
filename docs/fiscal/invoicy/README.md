@@ -59,3 +59,23 @@ tentativa é uma chamada externa real e o `606` não diz qual campo falhou.
 O lado da resposta (`Codigo`, `Descricao`, `Documentos[].Situacao`,
 `DocProtocolo`, `DocXMLBase64`) foi escrito com a documentação em mãos e está
 correto — ver `Retorno_evento.xsd`.
+
+## NF-e referenciada — `NFRef`, não `NFref` (11/09/2026)
+
+Toda NF-e de devolução era rejeitada com a **321** ("NF-e de devolução de
+mercadoria não possui documento fiscal referenciado"), mesmo com a chave
+preenchida na tela. O payload enviava `ide.NFref` — a grafia da tag no XML da
+SEFAZ —, mas o contrato do provedor usa **`NFRef`**, com R maiúsculo. O
+provedor casa chaves respeitando a caixa, ignorava a desconhecida sem erro e o
+XML saía sem o grupo.
+
+A forma certa é `ide.NFRef: [{ refNFe: "<44 dígitos>" }]`. O XSD declara um
+nível `NFRefItem`, mas no JSON ele fica implícito no array — é assim com
+`det`/`detItem`, `dup`/`dupItem`, `pag`/`pagItem` e `vol`/`volItem`, todos já
+funcionando em produção. O exemplo oficial `NF-e Devolução.json` mostra
+`"NFRef": [ "NFRefItem": {...} ]`, que não é JSON válido: não copiar.
+
+`Envio_NFe-NFCe_4.0.xsd` desta pasta **não cobre o corpo da NF-e** (não tem
+`NFRef`, nem `prod`). O schema completo do provedor está em
+`Envio_NFe-NFCe_4.0.oficial-completo.xsd` (Emissão/Schemas, 6.709 linhas) — é
+contra ele que se confere a emissão.
