@@ -944,6 +944,71 @@ describe('NfeService', () => {
     });
   });
 
+  /**
+   * A tela mostrava "1 - Operacao interna" em nota que saia interestadual no
+   * XML: a avulsa devolvia 1 fixo e o XML calculava pela UF. Agora a regra e
+   * uma so.
+   */
+  describe('destino da operacao', () => {
+    const configComEmitenteEmSP = () =>
+      invoicyService.getConfig.mockResolvedValue({
+        id: 'config-id',
+        serieNfe: 1,
+        proximoNumeroNfe: 1,
+        activeNumbering: {
+          nfe: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+          nfce: { environment: 'HOMOLOGACAO', series: 1, nextNumber: 1 },
+          nfse: { environment: 'HOMOLOGACAO', series: 'A1', nextNumber: 1 },
+        },
+        ambiente: 2,
+        company: mockCompany, // address.state = 'SP'
+      });
+
+    const clienteNaUf = (state: string) =>
+      prisma.client.findFirst.mockResolvedValue({
+        id: 'client-1',
+        name: 'Cliente Teste',
+        address: [
+          {
+            id: 'addr-1',
+            type: 'Principal',
+            street: 'Rua Teste',
+            number: '1',
+            neighborhood: 'Centro',
+            city: 'Cidade',
+            state,
+            zipcode: '01234567',
+          },
+        ],
+      });
+
+    it('avulsa para outra UF sai como interestadual, nao mais 1 fixo', async () => {
+      configComEmitenteEmSP();
+      clienteNaUf('RJ');
+
+      const result = await service.prepareStandalone(mockCompanyId, 'client-1');
+
+      expect(result.emissao.destinoOperacao).toBe(2);
+    });
+
+    it('avulsa para a mesma UF do emitente sai como interna', async () => {
+      configComEmitenteEmSP();
+      clienteNaUf('SP');
+
+      const result = await service.prepareStandalone(mockCompanyId, 'client-1');
+
+      expect(result.emissao.destinoOperacao).toBe(1);
+    });
+
+    it('sem destinatario assume interna, pois nao da para afirmar o contrario', async () => {
+      configComEmitenteEmSP();
+
+      const result = await service.prepareStandalone(mockCompanyId);
+
+      expect(result.emissao.destinoOperacao).toBe(1);
+    });
+  });
+
   describe('prepareDevolution', () => {
     const authorizedXml = `<?xml version="1.0" encoding="UTF-8"?>
 <nfeProc><NFe><infNFe><ide><natOp>Venda</natOp><indFinal>0</indFinal></ide>

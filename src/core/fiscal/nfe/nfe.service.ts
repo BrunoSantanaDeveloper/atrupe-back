@@ -444,8 +444,10 @@ export class NfeService {
         presencaConsumidor: 1, // 1 = OperaÃ§Ã£o presencial
         nfeReferenciada: null,
         dataSaida: new Date().toISOString(),
-        destinoOperacao:
-          clientAddress?.state === config.company.address.state ? 1 : 2, // 1 = Interna, 2 = Interestadual
+        destinoOperacao: this.resolveDestinoOperacao(
+          clientAddress?.state,
+          config.company.address.state,
+        ),
         // Se a OS tem entrega por transportadora, usar modalidade CIF (0); senÃ£o, Sem ocorrÃªncia (9)
         modalidadeFrete:
           quotation.deliveryInfo?.deliveryType === 'CARRIER' ? 0 : 9,
@@ -848,7 +850,12 @@ export class NfeService {
         presencaConsumidor: 1,
         nfeReferenciada: null,
         dataSaida: new Date().toISOString(),
-        destinoOperacao: 1,
+        // Era 1 fixo: a avulsa mostrava "operacao interna" para qualquer
+        // cliente, inclusive nas notas que saiam interestaduais no XML.
+        destinoOperacao: this.resolveDestinoOperacao(
+          destinatario.estado,
+          config.company.address.state,
+        ),
         modalidadeFrete: 9,
         ambiente: environment,
       },
@@ -1000,6 +1007,33 @@ export class NfeService {
     const data = new Date(valor);
     if (Number.isNaN(data.getTime())) return undefined;
     return data > new Date() ? valor : undefined;
+  }
+
+  /**
+   * `idDest`: 1 interna, 2 interestadual, 3 exterior.
+   *
+   * Regra unica para a tela e para o XML. Antes cada ponto calculava do seu
+   * jeito — a avulsa devolvia 1 fixo — e a tela dizia "operacao interna" numa
+   * nota que saia interestadual no XML.
+   *
+   * Nao depende do CFOP: e o contrario, o CFOP e que e escolhido conforme a
+   * operacao ser dentro ou fora do estado.
+   *
+   * Sem UF do destinatario nao da para afirmar interestadual, entao assume
+   * interna; a emissao recalcula com a UF do CEP antes de transmitir.
+   */
+  private resolveDestinoOperacao(
+    ufDestino?: string | null,
+    ufEmitente?: string | null,
+    isForeign = false,
+  ): number {
+    if (isForeign) return 3;
+
+    const destino = (ufDestino || '').trim().toUpperCase();
+    const emitente = (ufEmitente || '').trim().toUpperCase();
+    if (!destino || !emitente) return 1;
+
+    return destino === emitente ? 1 : 2;
   }
 
   private getEmissaoFromDraft(draftData: any): Record<string, any> {
@@ -2482,11 +2516,13 @@ export class NfeService {
             dhSaiEnt: dataSaida.toISOString(),
             fusoHorario: '-03:00',
             tpNf: tipoDocumento, // 0 = Entrada, 1 = Saida
-            idDest: isForeign
-              ? 3
-              : destUfFromCep === config.company.address.state
-                ? 1
-                : 2, // 1 = Interna, 2 = Interestadual, 3 = Exterior
+            // Mesma regra da tela; aqui a UF vem do CEP, que e o dado que
+            // tambem alimenta cMun.
+            idDest: this.resolveDestinoOperacao(
+              destUfFromCep,
+              config.company.address.state,
+              isForeign,
+            ),
             cMunFg: parseInt(emitCmun || '0', 10),
             tpImp: 1, // DANFE retrato
             tpEmis: 1, // EmissÃ£o normal
