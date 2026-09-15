@@ -883,7 +883,14 @@ export class QuotationWorkflowService {
       }
 
       const totalDiscount = originalValue - finalValue;
-      const discountPercentage = (totalDiscount / originalValue) * 100;
+      // Arredonda antes de comparar: 10% de R$ 1.163,73 dá 10.000000000000002
+      // em ponto flutuante, e o checkout recusava um desconto de exatamente
+      // 10% com a mensagem "10.00% excede 10%". O mesmo valor arredondado vai
+      // na mensagem, para o texto nunca contradizer a comparação.
+      const discountPercentage =
+        Math.round(
+          ((totalDiscount / originalValue) * 100 + Number.EPSILON) * 100,
+        ) / 100;
 
       if (discountPercentage > maxDiscount) {
         throw new BadRequestException(

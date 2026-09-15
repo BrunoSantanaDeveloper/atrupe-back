@@ -322,6 +322,55 @@ describe('QuotationWorkflowService', () => {
       });
     });
 
+    // Itens do orçamento #3352-V1, que reproduziu o defeito em produção.
+    const itensDeCemPorCento = [
+      { totalValue: 29970 },
+      { totalValue: 36000 },
+      { totalValue: 50403 },
+    ];
+
+    const mockFinishWithDiscount = (
+      maxDiscount: number,
+      finalValue: number,
+    ) => {
+      prisma.quotation.findUnique.mockResolvedValue({
+        ...mockQuotation,
+        status: QuotationStatus.OPEN,
+        seller: { sellerProfile: { minValue: 0, maxDiscount } },
+        quotationPayment: {
+          billing: 'ON_ORDER',
+          quotationInstallment: [{}],
+          finalValue,
+        },
+        quotationProduct: itensDeCemPorCento,
+        series: { proposalValidity: 30 },
+      });
+      prisma.quotation.update.mockResolvedValue({
+        ...mockQuotation,
+        status: QuotationStatus.DONE,
+        finishedAt: new Date(),
+      });
+    };
+
+    it('aceita desconto de exatamente o limite do vendedor', async () => {
+      // 10% de 116373 dá 10.000000000000002 em ponto flutuante: sem o
+      // arredondamento, o checkout recusava dizendo "10.00% excede 10%".
+      mockFinishWithDiscount(10, 104735.7);
+
+      const result = await service.finish(mockQuotationId, mockUserId);
+
+      expect(result.status).toBe(QuotationStatus.DONE);
+    });
+
+    it('continua recusando desconto acima do limite do vendedor', async () => {
+      // 116373 -> 103000 é 11,49% de desconto
+      mockFinishWithDiscount(10, 103000);
+
+      await expect(service.finish(mockQuotationId, mockUserId)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
     it('should throw BadRequestException if approved', async () => {
       prisma.quotation.findUnique.mockResolvedValue({
         ...mockQuotation,
