@@ -32,6 +32,7 @@ import { ActivityMonitorModule } from './activity-monitor/activity-monitor.modul
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ImportModule } from './import/import.module';
+import { MigrationModule } from './migration/migration.module';
 import { FiscalModule } from './fiscal/fiscal.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
 import { CouponsModule } from './coupons/coupons.module';
@@ -73,6 +74,7 @@ import { AiModule } from './ai/ai.module';
     WebhooksModule,
     PaymentsModule,
     ImportModule,
+    MigrationModule,
     FiscalModule,
     SystemSettingsModule,
     AiModule,

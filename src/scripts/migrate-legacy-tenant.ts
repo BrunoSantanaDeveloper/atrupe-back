@@ -257,13 +257,29 @@ async function runStep(
   return result;
 }
 
+/**
+ * Quem recebe a carga e quem responde por ela.
+ *
+ * Pela linha de comando o alvo chega como e-mail, que resolve a empresa pelo
+ * vínculo de colaborador. Pela tela do superadmin a empresa já vem escolhida,
+ * e o autor é o próprio administrador — que não tem vínculo com a empresa do
+ * cliente e não seria encontrado por e-mail.
+ */
+export interface MigrationTarget {
+  email?: string;
+  companyId?: string;
+  userId?: string;
+}
+
 export async function migrateLegacyTenant(
   prisma: PrismaClient,
-  email: string,
+  target: MigrationTarget | string,
   base: string,
   options: { dryRun?: boolean } = {},
 ) {
   const dryRun = options.dryRun ?? false;
+  const alvo: MigrationTarget =
+    typeof target === 'string' ? { email: target } : target;
 
   if (!/^acn_\d+$/.test(base)) {
     throw new Error(
@@ -271,13 +287,39 @@ export async function migrateLegacyTenant(
     );
   }
 
-  const { companyId, companyName } = await resolveCompanyByEmail(prisma, email);
+  let companyId: string;
+  let companyName: string;
+  let userId: string;
 
-  const user = await prisma.user.findFirst({
-    where: { email: email.toLowerCase().trim() },
-    select: { id: true },
-  });
-  if (!user) throw new Error(`Nenhum usuário com o e-mail ${email}`);
+  if (alvo.companyId) {
+    const destino = await prisma.company.findUnique({
+      where: { id: alvo.companyId },
+      select: { id: true, name: true },
+    });
+    if (!destino) {
+      throw new Error(`Empresa ${alvo.companyId} não encontrada`);
+    }
+    if (!alvo.userId) {
+      throw new Error('Informe o autor da migração junto da empresa');
+    }
+    companyId = destino.id;
+    companyName = destino.name;
+    userId = alvo.userId;
+  } else {
+    if (!alvo.email)
+      throw new Error('Informe o e-mail ou a empresa de destino');
+
+    const resolvido = await resolveCompanyByEmail(prisma, alvo.email);
+    companyId = resolvido.companyId;
+    companyName = resolvido.companyName;
+
+    const user = await prisma.user.findFirst({
+      where: { email: alvo.email.toLowerCase().trim() },
+      select: { id: true },
+    });
+    if (!user) throw new Error(`Nenhum usuário com o e-mail ${alvo.email}`);
+    userId = user.id;
+  }
 
   const company = await prisma.company.findUnique({
     where: { id: companyId },
@@ -345,7 +387,7 @@ export async function migrateLegacyTenant(
         base,
         extractor,
         companyId,
-        user.id,
+        userId,
         dryRun,
         simulated,
       );
@@ -405,22 +447,64 @@ function service(prisma: PrismaClient) {
   );
 }
 
+/** Valor de uma opção no formato --nome=valor. */
+function flagValue(args: string[], name: string): string | undefined {
+  const prefix = `--${name}=`;
+  return args.find((a) => a.startsWith(prefix))?.slice(prefix.length);
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
-  const [email, base] = args.filter((a) => !a.startsWith('--'));
+  const runId = flagValue(args, 'run-id');
+  const companyId = flagValue(args, 'company-id');
+  const userId = flagValue(args, 'user-id');
+  const posicionais = args.filter((a) => !a.startsWith('--'));
 
-  if (!email || !base) {
+  // Pela tela do superadmin a empresa vem escolhida e não há e-mail; pela
+  // linha de comando é o contrário.
+  const email = companyId ? undefined : posicionais[0];
+  const base = companyId ? posicionais[0] : posicionais[1];
+
+  const target: MigrationTarget = companyId ? { companyId, userId } : { email };
+
+  if (!base || (!companyId && !email)) {
     console.error(
-      'Uso: ts-node src/scripts/migrate-legacy-tenant.ts <email> <base> [--dry-run]',
+      'Uso: ts-node src/scripts/migrate-legacy-tenant.ts <email> <base> [--dry-run]\n' +
+        '     ou --company-id=<id> --user-id=<id> <base> [--dry-run] [--run-id=<id>]',
     );
     process.exit(1);
   }
 
   const prisma = new PrismaClient();
+
+  // Quem escreve o acompanhamento é este processo, não a API: assim o registro
+  // chega ao fim mesmo que a API reinicie durante a carga.
+  const registrar = async (data: any) => {
+    if (!runId) return;
+    try {
+      await prisma.migrationRun.update({ where: { id: runId }, data });
+    } catch (error: any) {
+      console.error(`Não foi possível atualizar a execução: ${error.message}`);
+    }
+  };
+
   try {
-    const results = await migrateLegacyTenant(prisma, email, base, { dryRun });
+    await registrar({ status: 'RUNNING', startedAt: new Date() });
+
+    const results = await migrateLegacyTenant(prisma, target, base, { dryRun });
     const failed = results.reduce((sum, r) => sum + r.failed, 0);
+
+    await registrar({
+      status: 'COMPLETED',
+      finishedAt: new Date(),
+      summary: results.map(({ errors: _ignorado, ...resumo }) => resumo) as any,
+      // Um recorte basta: o relatório existe para o suporte reconhecer o padrão
+      // do erro e encaminhar, não para carregar milhares de linhas na tela.
+      errors: results
+        .flatMap((r) => r.errors.map((e) => ({ etapa: r.label, ...e })))
+        .slice(0, 200) as any,
+    });
 
     console.log(
       failed === 0
@@ -429,6 +513,12 @@ async function main() {
     );
     process.exit(failed === 0 ? 0 : 1);
   } catch (error: any) {
+    await registrar({
+      status: 'FAILED',
+      finishedAt: new Date(),
+      failureReason: error.message,
+    });
+
     console.error(`\nFalhou: ${error.message}`);
     process.exit(1);
   } finally {

@@ -79,6 +79,7 @@ model Company {
   sectors               CompanySector[]           @relation("CompanyToCompanySector")
   history               CompanyHistory[]
   importLogs            ImportLog[]
+  migrationRuns         MigrationRun[]
   invoicyConfigs        InvoicyConfig[]
   fiscalOnboarding      FiscalOnboardingRequest[]
   environmentCredentials CompanyEnvironmentCredential[]
@@ -461,6 +462,7 @@ model User {
   userActivities       UserActivity[]
   userActivityEvents   UserActivityEvent[]
   importLogs           ImportLog[]
+  migrationRuns        MigrationRun[] @relation("MigrationRunStartedBy")
   aiConversations      AiConversation[]
   customer             Customer?           @relation(fields: [customerId], references: [id])
 
@@ -2072,6 +2074,52 @@ enum ExpenseSource {
   EMPLOYEE // Funcionário (salário)
   CLIENT // Cliente (reembolso, etc.)
   OTHER // Outros
+}
+
+enum MigrationRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+/// Execução da migração de um cliente do sistema legado.
+///
+/// A carga roda como processo separado, fora do ciclo da requisição: são
+/// milhares de gravações e minutos de execução, que não cabem num request. A
+/// API apenas dispara e devolve o identificador; quem escreve aqui é o próprio
+/// script, então o acompanhamento sobrevive a um reinício da API.
+model MigrationRun {
+  id         String    @id @default(uuid())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime? @updatedAt
+
+  companyId  String
+  company    Company   @relation(fields: [companyId], references: [id])
+
+  // Nome da base no legado, no formato acn_000000.
+  legacyBase String
+
+  // Simulação não grava nada; serve para conferir antes da carga.
+  dryRun     Boolean   @default(true)
+
+  status     MigrationRunStatus @default(QUEUED)
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  // Contagens por entidade, como o relatório do script.
+  summary    Json?
+  // Linhas recusadas, para o suporte encaminhar ao time.
+  errors     Json?
+  // Motivo de uma falha que interrompeu a execução inteira.
+  failureReason String?
+
+  startedById String
+  startedBy   User    @relation("MigrationRunStartedBy", fields: [startedById], references: [id])
+
+  @@index([companyId])
+  @@index([status])
+  @@map("migration_runs")
 }
 
 model IdempotencyKey {
