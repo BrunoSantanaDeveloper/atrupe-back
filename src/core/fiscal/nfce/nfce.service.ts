@@ -50,6 +50,7 @@ import {
 } from './dtos/nfce.dto';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { montarImpostosNfe } from '../utils/nfe-imposto-payload.util';
+import { isRegimeNormal } from '../utils/regime-tributario.util';
 import {
   aliquotasReformaTributaria,
   calcularVNFIBScbsIS,
@@ -364,42 +365,41 @@ export class NfceService {
      * os códigos. A NFC-e é venda presencial ao consumidor dentro do estado,
      * então não há operação interestadual nem DIFAL a considerar.
      */
-    const impostosCalculados =
-      (config.emitCrt ?? 1) >= 3
-        ? montarImpostosNfe(
-            dto.itens.map((item) => {
-              const fiscal: any = item.productId
-                ? fiscalDataMap.get(item.productId)
-                : undefined;
-              return {
-                valores: {
-                  valorProdutos: item.quantidade * item.valorUnitario,
-                  desconto: item.valorDesconto,
-                },
-                tributacao: {
-                  icmsCst: item.icmsCst || fiscal?.icmsCst || '',
-                  icmsOrigin: fiscal?.icmsOrigin,
-                  icmsRate: fiscal?.icmsRate,
-                  icmsReducao: fiscal?.icmsReducao,
-                  icmsBaseModality: fiscal?.icmsBaseModality,
-                  pisCst: item.pisCst || fiscal?.pisCst,
-                  pisRate: fiscal?.pisRate,
-                  cofinsCst: item.cofinsCst || fiscal?.cofinsCst,
-                  cofinsRate: fiscal?.cofinsRate,
-                },
-                ipiEnquadramento: fiscal?.ipiFramework,
-                cstIbsCbs: fiscal?.cstIbsCbs,
-                codClassificacao: fiscal?.codClassificacao,
-              };
-            }),
-            {
-              interestadual: false,
-              consumidorFinal: true,
-              contribuinte: false,
-              reformaTributaria: reformaNfce.aliquotas,
-            },
-          )
-        : null;
+    const impostosCalculados = isRegimeNormal(config.emitCrt)
+      ? montarImpostosNfe(
+          dto.itens.map((item) => {
+            const fiscal: any = item.productId
+              ? fiscalDataMap.get(item.productId)
+              : undefined;
+            return {
+              valores: {
+                valorProdutos: item.quantidade * item.valorUnitario,
+                desconto: item.valorDesconto,
+              },
+              tributacao: {
+                icmsCst: item.icmsCst || fiscal?.icmsCst || '',
+                icmsOrigin: fiscal?.icmsOrigin,
+                icmsRate: fiscal?.icmsRate,
+                icmsReducao: fiscal?.icmsReducao,
+                icmsBaseModality: fiscal?.icmsBaseModality,
+                pisCst: item.pisCst || fiscal?.pisCst,
+                pisRate: fiscal?.pisRate,
+                cofinsCst: item.cofinsCst || fiscal?.cofinsCst,
+                cofinsRate: fiscal?.cofinsRate,
+              },
+              ipiEnquadramento: fiscal?.ipiFramework,
+              cstIbsCbs: fiscal?.cstIbsCbs,
+              codClassificacao: fiscal?.codClassificacao,
+            };
+          }),
+          {
+            interestadual: false,
+            consumidorFinal: true,
+            contribuinte: false,
+            reformaTributaria: reformaNfce.aliquotas,
+          },
+        )
+      : null;
 
     if (impostosCalculados?.bloqueios.length) {
       throw new BadRequestException(

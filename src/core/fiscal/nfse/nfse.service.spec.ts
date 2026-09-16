@@ -571,6 +571,37 @@ describe('NfseService', () => {
         expect(enviado.OptSN).toBe(2);
         expect(enviado.regApTribSN).toBeUndefined();
       });
+
+      /**
+       * O reenvio acrescenta regApTribSN e RegEspTrib 6, que sao os campos de
+       * ME/EPP. Para um MEI isso trocaria o regime dele por outro so' para
+       * vencer a rejeicao — o payload dele ja' sai completo, com OptSN 1 e
+       * RegEspTrib 5, entao nao ha' o que reenviar.
+       */
+      it('nao reenvia declarando ME/EPP para emissor MEI', async () => {
+        const configBase = await mockInvoicyService.getConfig();
+        mockInvoicyService.getConfig.mockResolvedValue({
+          ...configBase,
+          emitCrt: 4,
+          regimeEspecialTributacao: null,
+        });
+        mockInvoicyApiService.emitNfse.mockResolvedValue(rejeicaoE0166);
+
+        await expect(
+          service.emitFromOrder(mockCompanyId, {
+            orderId: mockOrderId,
+            codigoServico: '1.05',
+            discriminacao: 'Servico de consultoria em TI',
+          }),
+        ).rejects.toThrow(/E0166/);
+
+        expect(invoicyApiService.emitNfse).toHaveBeenCalledTimes(1);
+        const enviado =
+          mockInvoicyApiService.emitNfse.mock.calls[0][1][0].Documento.RPS[0];
+        expect(enviado.OptSN).toBe(1);
+        expect(enviado.RegEspTrib).toBe(5);
+        expect(enviado.regApTribSN).toBeUndefined();
+      });
     });
 
     it('should only include service items', async () => {
@@ -814,6 +845,20 @@ describe('NfseService', () => {
       it('respeita o regime configurado no emissor', async () => {
         await emitirCom({ emitCrt: 3, regimeEspecialTributacao: 4 });
         expect(regimeEnviado().RegEspTrib).toBe(4);
+      });
+
+      /**
+       * MEI tem faixa propria na tabela do provedor (5), diferente do 6 de
+       * ME/EPP, e e' optante — mandar OptSN 2 contradiz o cadastro da empresa
+       * no Simples Nacional. Ja' o regApTribSN e' campo de quem ultrapassa
+       * sublimite, que o MEI nao tem.
+       */
+      it('declara MEI com regime 5, como optante e sem regApTribSN', async () => {
+        await emitirCom({ emitCrt: 4, regimeEspecialTributacao: null });
+        const rps = regimeEnviado();
+        expect(rps.RegEspTrib).toBe(5);
+        expect(rps.OptSN).toBe(1);
+        expect(rps).not.toHaveProperty('regApTribSN');
       });
     });
 

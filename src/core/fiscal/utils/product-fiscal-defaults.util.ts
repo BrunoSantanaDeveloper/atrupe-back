@@ -1,3 +1,5 @@
+import { isRegimeNormal } from './regime-tributario.util';
+
 /**
  * Valores iniciais do cadastro fiscal de um produto, conforme o regime do
  * emissor.
@@ -14,6 +16,9 @@
  * mensagem certa, que aponta a alíquota faltante em vez de mandar trocar o
  * CST. PIS e COFINS ficam em 99 ("outras operações") nos dois regimes, que
  * não exige alíquota e não bloqueia.
+ *
+ * O MEI entra pelo caminho do Simples: apura no DAS e não destaca ICMS, então
+ * nasce com CSOSN 102 (sem permissão de crédito) como os demais optantes.
  */
 export interface DefaultsCadastroFiscal {
   cfopOutState: string;
@@ -24,10 +29,7 @@ export interface DefaultsCadastroFiscal {
   cofinsCst: string;
 }
 
-/** CRT 3 (Lucro Real/Presumido) e acima são Regime Normal; 1 e 2 são Simples. */
-export function isRegimeNormal(emitCrt?: number | null): boolean {
-  return (emitCrt ?? 1) >= 3;
-}
+export { isRegimeNormal };
 
 export function defaultsCadastroFiscal(
   emitCrt?: number | null,

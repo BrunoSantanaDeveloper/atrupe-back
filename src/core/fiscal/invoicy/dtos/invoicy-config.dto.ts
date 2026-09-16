@@ -108,14 +108,14 @@ export class CreateInvoicyConfigDto {
   @IsNumber()
   @IsOptional()
   @Min(1)
-  // Teto em 3: CRT 3 (Regime Normal — Lucro Real e Presumido) esta' liberado
-  // porque o calculo de ICMS/ST/DIFAL/PIS/COFINS/IPI por item existe e barra
-  // a emissao quando falta dado, em vez de zerar imposto em silencio.
-  // CRT 4 (MEI) continua fora: nao tem apuracao propria implementada.
-  @Max(3, {
+  // Teto em 4, que e' a lista fechada do layout do provedor (campo CRT, tag
+  // B10): 1 e 2 Simples Nacional, 3 Regime Normal, 4 MEI. O MEI apura pelo DAS
+  // e percorre o mesmo caminho do Simples na montagem da nota; quem classifica
+  // o regime e' `regime-tributario.util`, nao comparacao numerica espalhada.
+  @Max(4, {
     message:
-      'MEI (CRT 4) ainda não é suportado: não há apuração própria ' +
-      'implementada para esse regime. Fale com o suporte.',
+      'Código de Regime Tributário inválido: use 1 (Simples Nacional), ' +
+      '2 (excesso de sublimite), 3 (Regime Normal) ou 4 (MEI).',
   })
   emitCrt?: number;
 
@@ -503,14 +503,14 @@ export class UpdateInvoicyConfigDto {
   @IsNumber()
   @IsOptional()
   @Min(1)
-  // Teto em 3: CRT 3 (Regime Normal — Lucro Real e Presumido) esta' liberado
-  // porque o calculo de ICMS/ST/DIFAL/PIS/COFINS/IPI por item existe e barra
-  // a emissao quando falta dado, em vez de zerar imposto em silencio.
-  // CRT 4 (MEI) continua fora: nao tem apuracao propria implementada.
-  @Max(3, {
+  // Teto em 4, que e' a lista fechada do layout do provedor (campo CRT, tag
+  // B10): 1 e 2 Simples Nacional, 3 Regime Normal, 4 MEI. O MEI apura pelo DAS
+  // e percorre o mesmo caminho do Simples na montagem da nota; quem classifica
+  // o regime e' `regime-tributario.util`, nao comparacao numerica espalhada.
+  @Max(4, {
     message:
-      'MEI (CRT 4) ainda não é suportado: não há apuração própria ' +
-      'implementada para esse regime. Fale com o suporte.',
+      'Código de Regime Tributário inválido: use 1 (Simples Nacional), ' +
+      '2 (excesso de sublimite), 3 (Regime Normal) ou 4 (MEI).',
   })
   emitCrt?: number;
 
