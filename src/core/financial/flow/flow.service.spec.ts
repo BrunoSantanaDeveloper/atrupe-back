@@ -11,11 +11,9 @@ describe('FlowService', () => {
     prismaMock = {
       receivableInstallment: {
         findMany: jest.fn(),
-        groupBy: jest.fn(),
       },
       payableInstallment: {
         findMany: jest.fn(),
-        groupBy: jest.fn(),
       },
       receivable: {
         findUnique: jest.fn(),
@@ -33,6 +31,44 @@ describe('FlowService', () => {
     }).compile();
 
     service = module.get<FlowService>(FlowService);
+  });
+
+  const receivableRow = (iso: string, overrides: any = {}) => ({
+    id: 'r-' + iso,
+    amount: 0,
+    additionalFee: 0,
+    paidAmount: 0,
+    status: 'PENDING',
+    dueDate: new Date(iso),
+    paidDate: null,
+    provisionDate: null,
+    ...overrides,
+    receivable: {
+      id: 'rec-' + iso,
+      description: '',
+      status: 'PENDING',
+      installmentQty: 1,
+      installments: [],
+    },
+  });
+
+  const payableRow = (iso: string, overrides: any = {}) => ({
+    id: 'p-' + iso,
+    amount: 0,
+    additionalFee: 0,
+    paidAmount: 0,
+    status: 'PENDING',
+    dueDate: new Date(iso),
+    paidDate: null,
+    provisionDate: null,
+    ...overrides,
+    payable: {
+      id: 'pay-' + iso,
+      description: '',
+      status: 'PENDING',
+      installmentQty: 1,
+      installments: [],
+    },
   });
 
   describe('findAllTotals', () => {
@@ -53,9 +89,32 @@ describe('FlowService', () => {
       });
 
       expect(result).toEqual({
-        receivables: { expected: 110, totalPaid: 50 },
-        payables: { expected: 220, totalPaid: 100 },
+        receivables: { expected: 110, totalPaid: 50, open: 60 },
+        payables: { expected: 220, totalPaid: 100, open: 120 },
       });
+    });
+
+    it('should not leave a residue in `open` when a settled installment was paid short', async () => {
+      prismaMock.receivableInstallment.findMany.mockResolvedValue([
+        { amount: 1858, additionalFee: 0, paidAmount: 1815, status: 'PAID' },
+        {
+          amount: 500,
+          additionalFee: 0,
+          paidAmount: 500,
+          status: 'PROVISIONED',
+        },
+      ]);
+      prismaMock.payableInstallment.findMany.mockResolvedValue([]);
+
+      const result = await service.findAllTotals({
+        companyId: 'comp-1',
+        dateType: 'paidDate',
+        page: '1',
+        limit: '10',
+      });
+
+      expect(result.receivables.open).toBe(0);
+      expect(result.receivables.totalPaid).toBe(2315);
     });
 
     it('should correctly filter by clientId', async () => {
@@ -77,6 +136,28 @@ describe('FlowService', () => {
         }),
       );
     });
+
+    it('should match provisionDate or paidDate when filtering by payment date', async () => {
+      prismaMock.receivableInstallment.findMany.mockResolvedValue([]);
+      prismaMock.payableInstallment.findMany.mockResolvedValue([]);
+
+      await service.findAllTotals({
+        companyId: 'comp-1',
+        dateType: 'paidDate',
+        startDate: new Date('2026-09-01T00:00:00.000Z'),
+        endDate: new Date('2026-10-31T00:00:00.000Z'),
+        page: '1',
+        limit: '10',
+      });
+
+      const where =
+        prismaMock.receivableInstallment.findMany.mock.calls[0][0].where;
+
+      expect(where.AND[0].OR).toEqual([
+        { provisionDate: expect.any(Object) },
+        { provisionDate: null, paidDate: expect.any(Object) },
+      ]);
+    });
   });
 
   describe('findAll', () => {
@@ -92,14 +173,9 @@ describe('FlowService', () => {
     });
 
     it('should fetch data grouped by due date', async () => {
-      prismaMock.receivableInstallment.groupBy.mockResolvedValue([
-        { dueDate: new Date() },
+      prismaMock.receivableInstallment.findMany.mockResolvedValue([
+        receivableRow('2026-08-05T00:00:00.000Z'),
       ]);
-      prismaMock.payableInstallment.groupBy.mockResolvedValue([
-        { dueDate: new Date() },
-      ]);
-
-      prismaMock.receivableInstallment.findMany.mockResolvedValue([]);
       prismaMock.payableInstallment.findMany.mockResolvedValue([]);
 
       const result = await service.findAll({
@@ -109,22 +185,61 @@ describe('FlowService', () => {
         limit: '10',
       });
 
-      expect(result.data).toBeDefined();
-      expect(prismaMock.receivableInstallment.groupBy).toHaveBeenCalled();
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].transactions).toHaveLength(1);
+    });
+
+    it('should group an installment with a time component on its own day', async () => {
+      prismaMock.receivableInstallment.findMany.mockResolvedValue([
+        receivableRow('2026-08-05T03:00:00.000Z'),
+      ]);
+      prismaMock.payableInstallment.findMany.mockResolvedValue([]);
+
+      const result = await service.findAll({
+        companyId: 'comp-1',
+        dateType: 'dueDate',
+        page: '1',
+        limit: '10',
+      });
+
+      expect(result.data[0].date.toISOString()).toBe(
+        '2026-08-05T00:00:00.000Z',
+      );
+      expect(result.data[0].transactions).toHaveLength(1);
+    });
+
+    it('should place a provisioned installment by provisionDate when grouping by payment date', async () => {
+      prismaMock.receivableInstallment.findMany.mockResolvedValue([
+        receivableRow('2026-08-30T00:00:00.000Z', {
+          status: 'PROVISIONED',
+          paidDate: null,
+          provisionDate: new Date('2026-08-05T00:00:00.000Z'),
+        }),
+      ]);
+      prismaMock.payableInstallment.findMany.mockResolvedValue([]);
+
+      const result = await service.findAll({
+        companyId: 'comp-1',
+        dateType: 'paidDate',
+        page: '1',
+        limit: '10',
+      });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].date.toISOString()).toBe(
+        '2026-08-05T00:00:00.000Z',
+      );
     });
 
     it('should order groups by date even when a date exists only in payables', async () => {
-      prismaMock.receivableInstallment.groupBy.mockResolvedValue([
-        { dueDate: new Date('2026-08-19T00:00:00.000Z') },
-        { dueDate: new Date('2026-08-09T00:00:00.000Z') },
-        { dueDate: new Date('2026-08-01T00:00:00.000Z') },
+      prismaMock.receivableInstallment.findMany.mockResolvedValue([
+        receivableRow('2026-08-19T00:00:00.000Z'),
+        receivableRow('2026-08-09T00:00:00.000Z'),
+        receivableRow('2026-08-01T00:00:00.000Z'),
       ]);
-      prismaMock.payableInstallment.groupBy.mockResolvedValue([
-        { dueDate: new Date('2026-08-05T00:00:00.000Z') },
+      prismaMock.payableInstallment.findMany.mockResolvedValue([
+        payableRow('2026-08-05T00:00:00.000Z'),
       ]);
-
-      prismaMock.receivableInstallment.findMany.mockResolvedValue([]);
-      prismaMock.payableInstallment.findMany.mockResolvedValue([]);
 
       const result = await service.findAll({
         companyId: 'comp-1',
@@ -142,16 +257,13 @@ describe('FlowService', () => {
     });
 
     it('should order groups ascending when sort is asc', async () => {
-      prismaMock.receivableInstallment.groupBy.mockResolvedValue([
-        { dueDate: new Date('2026-08-01T00:00:00.000Z') },
-        { dueDate: new Date('2026-08-19T00:00:00.000Z') },
+      prismaMock.receivableInstallment.findMany.mockResolvedValue([
+        receivableRow('2026-08-01T00:00:00.000Z'),
+        receivableRow('2026-08-19T00:00:00.000Z'),
       ]);
-      prismaMock.payableInstallment.groupBy.mockResolvedValue([
-        { dueDate: new Date('2026-08-05T00:00:00.000Z') },
+      prismaMock.payableInstallment.findMany.mockResolvedValue([
+        payableRow('2026-08-05T00:00:00.000Z'),
       ]);
-
-      prismaMock.receivableInstallment.findMany.mockResolvedValue([]);
-      prismaMock.payableInstallment.findMany.mockResolvedValue([]);
 
       const result = await service.findAll({
         companyId: 'comp-1',

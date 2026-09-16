@@ -28,7 +28,32 @@ export class FlowService {
     return installment.status;
   }
 
-  async findAllTotals(filter: FinancialFlowFilterDTO) {
+  /**
+   * Data que posiciona a parcela na linha do tempo do fluxo.
+   * No modo "data de pagamento" a parcela provisionada ainda nao tem
+   * paidDate (ele so e gravado na compensacao) e a tela exibe o
+   * provisionDate como data de pagamento - entao e ele que vale aqui.
+   */
+  private getFlowDate(installment: any, dateType: string): Date | null {
+    const raw =
+      dateType === 'paidDate'
+        ? (installment.provisionDate ?? installment.paidDate)
+        : installment.dueDate;
+    return raw ? new Date(raw) : null;
+  }
+
+  private getFlowDateKey(installment: any, dateType: string): string | null {
+    const date = this.getFlowDate(installment, dateType);
+    if (!date) return null;
+    date.setUTCHours(0, 0, 0, 0);
+    return date.toISOString();
+  }
+
+  /**
+   * Monta o where de recebiveis e pagaveis. Usado pela listagem e pelos
+   * totais, para que os dois nunca divirjam.
+   */
+  private buildFlowFilters(filter: FinancialFlowFilterDTO) {
     const {
       search,
       startDate,
@@ -42,16 +67,10 @@ export class FlowService {
     } = filter;
 
     const filtersReceivables: any = {
-      receivable: {
-        companyId: filter.companyId,
-        status: { not: 'CANCELED' },
-      },
+      receivable: { companyId: filter.companyId },
     };
     const filtersPayables: any = {
-      payable: {
-        companyId: filter.companyId,
-        status: { not: 'CANCELED' },
-      },
+      payable: { companyId: filter.companyId },
     };
 
     // Filtro de cliente
@@ -78,33 +97,41 @@ export class FlowService {
       };
     }
 
+    let dateRange: any = null;
     if (startDate || endDate) {
-      const dateFilter: any = {};
+      dateRange = {};
       if (startDate) {
         const start = new Date(startDate);
         start.setUTCHours(0, 0, 0, 0);
-        dateFilter.gte = start;
+        dateRange.gte = start;
       }
       if (endDate) {
         const end = new Date(endDate);
         end.setUTCHours(23, 59, 59, 999);
-        dateFilter.lte = end;
+        dateRange.lte = end;
       }
-
-      filtersReceivables[dateType] = dateFilter;
-      filtersPayables[dateType] = dateFilter;
     }
 
-    // Quando filtrando por paidDate, só considerar parcelas que foram pagas
+    const andReceivables: any[] = [];
+    const andPayables: any[] = [];
+
     if (dateType === 'paidDate') {
-      filtersReceivables.paidDate = {
-        ...filtersReceivables.paidDate,
-        not: null,
-      };
-      filtersPayables.paidDate = {
-        ...filtersPayables.paidDate,
-        not: null,
-      };
+      // Data efetiva de pagamento: provisionDate quando existir, senao
+      // paidDate. Sem isso a parcela provisionada (paidDate nulo) sumia da
+      // visao por data de pagamento, e a compensada era agrupada pela data
+      // da compensacao em vez da data exibida na linha.
+      const paidWindow = dateRange
+        ? [
+            { provisionDate: dateRange },
+            { provisionDate: null, paidDate: dateRange },
+          ]
+        : [{ provisionDate: { not: null } }, { paidDate: { not: null } }];
+
+      andReceivables.push({ OR: paidWindow });
+      andPayables.push({ OR: paidWindow });
+    } else if (dateRange) {
+      filtersReceivables.dueDate = dateRange;
+      filtersPayables.dueDate = dateRange;
     }
 
     // Filtro de status
@@ -130,7 +157,7 @@ export class FlowService {
       }
     }
 
-    // Filtro de condição de pagamento
+    // Filtro de condicao de pagamento
     if (paymentConditionId) {
       filtersReceivables.paymentConditionId = paymentConditionId;
       filtersPayables.paymentConditionId = paymentConditionId;
@@ -143,106 +170,108 @@ export class FlowService {
 
     // Filtro de busca
     if (search) {
-      filtersReceivables.OR = [
-        {
-          receivable: {
-            client: { name: { contains: search, mode: 'insensitive' } },
+      andReceivables.push({
+        OR: [
+          {
+            receivable: {
+              client: { name: { contains: search, mode: 'insensitive' } },
+            },
           },
-        },
-        {
-          receivable: {
-            description: { contains: search, mode: 'insensitive' },
+          {
+            receivable: {
+              description: { contains: search, mode: 'insensitive' },
+            },
           },
-        },
-        {
-          receivable: {
-            reference: { contains: search, mode: 'insensitive' },
+          {
+            receivable: {
+              reference: { contains: search, mode: 'insensitive' },
+            },
           },
-        },
-      ];
-      filtersPayables.OR = [
-        {
-          payable: {
-            supplier: { name: { contains: search, mode: 'insensitive' } },
+        ],
+      });
+      andPayables.push({
+        OR: [
+          {
+            payable: {
+              supplier: { name: { contains: search, mode: 'insensitive' } },
+            },
           },
-        },
-        {
-          payable: {
-            description: { contains: search, mode: 'insensitive' },
+          {
+            payable: {
+              description: { contains: search, mode: 'insensitive' },
+            },
           },
-        },
-        {
-          payable: {
-            reference: { contains: search, mode: 'insensitive' },
+          {
+            payable: {
+              reference: { contains: search, mode: 'insensitive' },
+            },
           },
-        },
-      ];
+        ],
+      });
     }
 
-    // Obter os detalhes dos recebíveis
-    const receivableDetails = await this.prisma.receivableInstallment.findMany({
-      where: {
-        ...filtersReceivables,
-      },
-    });
+    if (andReceivables.length) filtersReceivables.AND = andReceivables;
+    if (andPayables.length) filtersPayables.AND = andPayables;
 
-    // Obter os detalhes dos pagáveis
-    const payableDetails = await this.prisma.payableInstallment.findMany({
-      where: {
-        ...filtersPayables,
-      },
-    });
-    // Calcular totais para recebíveis
-    const totalReceivables = receivableDetails.reduce(
+    return { filtersReceivables, filtersPayables };
+  }
+
+  /**
+   * open (a receber / a pagar) e somado parcela a parcela e so conta parcela
+   * ainda em aberto. Antes a tela fazia expected - totalPaid sobre o conjunto
+   * inteiro, entao toda parcela quitada por valor diferente do previsto
+   * (pagamento com diferenca, juros lancado depois) deixava um residuo
+   * permanente em "A receber" - inclusive na visao por data de pagamento,
+   * onde tudo ja esta quitado e o valor tinha de ser zero.
+   */
+  private sumInstallmentTotals(installments: any[]) {
+    return installments.reduce(
       (acc, inst) => {
-        const expected =
-          inst.status !== 'CANCELED'
-            ? (inst.amount ?? 0) + (inst.additionalFee ?? 0)
-            : 0;
+        const isCanceled = inst.status === 'CANCELED';
+        const expected = isCanceled
+          ? 0
+          : (inst.amount ?? 0) + (inst.additionalFee ?? 0);
         const totalPaid = inst.paidAmount ?? 0;
+        const isSettled =
+          isCanceled || inst.status === 'PAID' || inst.status === 'PROVISIONED';
 
         return {
           expected: acc.expected + expected,
           totalPaid: acc.totalPaid + totalPaid,
+          open: acc.open + (isSettled ? 0 : Math.max(0, expected - totalPaid)),
         };
       },
-      { expected: 0, totalPaid: 0 },
+      { expected: 0, totalPaid: 0, open: 0 },
     );
+  }
 
-    // Calcular totais para pagáveis
-    const totalPayables = payableDetails.reduce(
-      (acc, inst) => {
-        const expected =
-          inst.status !== 'CANCELED'
-            ? (inst.amount ?? 0) + (inst.additionalFee ?? 0)
-            : 0;
-        const totalPaid = inst.paidAmount ?? 0;
+  async findAllTotals(filter: FinancialFlowFilterDTO) {
+    const { dateType = 'dueDate' } = filter;
 
-        return {
-          expected: acc.expected + expected,
-          totalPaid: acc.totalPaid + totalPaid,
-        };
-      },
-      { expected: 0, totalPaid: 0 },
-    );
+    if (!['dueDate', 'paidDate'].includes(dateType)) {
+      throw new BadRequestException(
+        'Invalid dateType. Use "dueDate" or "paidDate".',
+      );
+    }
+
+    const { filtersReceivables, filtersPayables } =
+      this.buildFlowFilters(filter);
+
+    const [receivableDetails, payableDetails] = await Promise.all([
+      this.prisma.receivableInstallment.findMany({ where: filtersReceivables }),
+      this.prisma.payableInstallment.findMany({ where: filtersPayables }),
+    ]);
 
     return {
-      receivables: totalReceivables,
-      payables: totalPayables,
+      receivables: this.sumInstallmentTotals(receivableDetails),
+      payables: this.sumInstallmentTotals(payableDetails),
     };
   }
+
   async findAll(paginationDto: FinancialFlowFilterDTO) {
     const {
       page = 1,
       limit = 10,
-      search,
-      startDate,
-      clientId,
-      supplierId,
-      endDate,
-      status,
-      paymentConditionId,
-      bankAccountId,
       sort = 'desc',
       dateType = 'dueDate',
       showValues = 'on',
@@ -253,176 +282,14 @@ export class FlowService {
         'Invalid dateType. Use "dueDate" or "paidDate".',
       );
     }
-    const filtersReceivables: any = {
-      receivable: {
-        companyId: paginationDto.companyId,
-      },
-    };
-    const filtersPayables: any = {
-      payable: {
-        companyId: paginationDto.companyId,
-      },
-    };
-    if (clientId) {
-      filtersReceivables.receivable = {
-        ...filtersReceivables.receivable,
-        clientId: clientId,
-      };
-      filtersPayables.payable = {
-        ...filtersPayables.payable,
-        clientId: { not: null },
-      };
-    }
-    if (supplierId) {
-      filtersReceivables.receivable = {
-        ...filtersReceivables.receivable,
-        supplierId: { not: null },
-      };
-      filtersPayables.payable = {
-        ...filtersPayables.payable,
-        supplierId: supplierId,
-      };
-    }
 
-    if (startDate || endDate) {
-      const dateFilter: any = {};
-      if (startDate) {
-        const start = new Date(startDate);
-        start.setUTCHours(0, 0, 0, 0);
-        dateFilter.gte = start;
-      }
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setUTCHours(23, 59, 59, 999);
-        dateFilter.lte = end;
-      }
+    const { filtersReceivables, filtersPayables } =
+      this.buildFlowFilters(paginationDto);
 
-      filtersReceivables[dateType] = dateFilter;
-      filtersPayables[dateType] = dateFilter;
-    }
-
-    // Filtro de status
-    if (status) {
-      if (status === 'OVERDUE') {
-        const today = new Date();
-        today.setUTCHours(0, 0, 0, 0);
-
-        filtersReceivables.status = 'PENDING';
-        filtersReceivables.dueDate = {
-          ...filtersReceivables.dueDate,
-          lt: today,
-        };
-
-        filtersPayables.status = 'PENDING';
-        filtersPayables.dueDate = {
-          ...filtersPayables.dueDate,
-          lt: today,
-        };
-      } else {
-        filtersReceivables.status = status;
-        filtersPayables.status = status;
-      }
-    }
-
-    // Filtro de condição de pagamento
-    if (paymentConditionId) {
-      filtersReceivables.paymentConditionId = paymentConditionId;
-      filtersPayables.paymentConditionId = paymentConditionId;
-    }
-
-    if (bankAccountId) {
-      filtersReceivables.bankAccountId = bankAccountId;
-      filtersPayables.bankAccountId = bankAccountId;
-    }
-
-    // Filtro de busca
-    if (search) {
-      filtersReceivables.OR = [
-        {
-          receivable: {
-            client: { name: { contains: search, mode: 'insensitive' } },
-          },
-        },
-        {
-          receivable: {
-            description: { contains: search, mode: 'insensitive' },
-          },
-        },
-        {
-          receivable: {
-            reference: { contains: search, mode: 'insensitive' },
-          },
-        },
-      ];
-      filtersPayables.OR = [
-        {
-          payable: {
-            supplier: { name: { contains: search, mode: 'insensitive' } },
-          },
-        },
-        {
-          payable: {
-            description: { contains: search, mode: 'insensitive' },
-          },
-        },
-        {
-          payable: {
-            reference: { contains: search, mode: 'insensitive' },
-          },
-        },
-      ];
-    }
     try {
-      // Buscar dados agrupados para recebíveis
-      const [receivablesGrouped, payablesGrouped] =
-        dateType === 'dueDate'
-          ? await this.fetchDataDueDate(
-              filtersReceivables,
-              filtersPayables,
-              showValues,
-              sort,
-            )
-          : await this.fetchDataPaidDate(
-              filtersReceivables,
-              filtersPayables,
-              showValues,
-              sort,
-            );
-
-      // Extrair as datas para busca detalhada
-      // Normalizar datas para o início do dia (00:00:00.000) para agrupar corretamente
-      // Cada groupBy vem ordenado individualmente, então a união precisa ser
-      // reordenada para que datas presentes só em recebíveis ou só em pagáveis
-      // não fiquem fora de ordem.
-      const dueDates = [
-        ...new Set([
-          ...receivablesGrouped.map((g) => {
-            if (!g[dateType]) return null;
-            const date = new Date(g[dateType]);
-            date.setUTCHours(0, 0, 0, 0);
-            return date.toISOString();
-          }),
-          ...payablesGrouped.map((g) => {
-            if (!g[dateType]) return null;
-            const date = new Date(g[dateType]);
-            date.setUTCHours(0, 0, 0, 0);
-            return date.toISOString();
-          }),
-        ]),
-      ]
-        .filter((d) => d !== null)
-        .sort((a, b) =>
-          sort.toLowerCase() === 'asc'
-            ? a.localeCompare(b)
-            : b.localeCompare(a),
-        );
-
-      const receivableDetails =
-        await this.prisma.receivableInstallment.findMany({
-          where: {
-            [dateType]: { in: dueDates.map((d) => new Date(d)) },
-            ...filtersReceivables,
-          },
+      const [receivableDetails, payableDetails] = await Promise.all([
+        this.prisma.receivableInstallment.findMany({
+          where: filtersReceivables,
           orderBy: { [dateType]: sort.toLowerCase() },
           include: {
             receivable: {
@@ -443,32 +310,48 @@ export class FlowService {
               },
             },
           },
-        });
-
-      const payableDetails = await this.prisma.payableInstallment.findMany({
-        where: {
-          [dateType]: { in: dueDates.map((d) => new Date(d)) },
-          ...filtersPayables,
-        },
-        orderBy: { [dateType]: sort.toLowerCase() },
-        include: {
-          payable: {
-            include: {
-              supplier: true,
-              employee: true,
-              nature: true,
-              subCategory: true,
-              installments: {
-                include: {
-                  paymentCondition: true,
-                  bankAccount: { include: { bank: true } },
+        }),
+        this.prisma.payableInstallment.findMany({
+          where: filtersPayables,
+          orderBy: { [dateType]: sort.toLowerCase() },
+          include: {
+            payable: {
+              include: {
+                supplier: true,
+                employee: true,
+                nature: true,
+                subCategory: true,
+                installments: {
+                  include: {
+                    paymentCondition: true,
+                    bankAccount: { include: { bank: true } },
+                  },
+                  orderBy: { [dateType]: 'desc' },
                 },
-                orderBy: { [dateType]: 'desc' },
               },
             },
           },
-        },
-      });
+        }),
+      ]);
+
+      // As datas dos grupos saem das proprias parcelas retornadas. Antes
+      // havia um groupBy seguido de uma segunda consulta com
+      // IN (datas zeradas na meia-noite), que perdia toda parcela gravada
+      // com hora: ela contava no card e nao tinha linha na lista.
+      const dueDates = [
+        ...new Set([
+          ...receivableDetails.map((inst) =>
+            this.getFlowDateKey(inst, dateType),
+          ),
+          ...payableDetails.map((inst) => this.getFlowDateKey(inst, dateType)),
+        ]),
+      ]
+        .filter((d): d is string => d !== null)
+        .sort((a, b) =>
+          sort.toLowerCase() === 'asc'
+            ? a.localeCompare(b)
+            : b.localeCompare(a),
+        );
 
       const groupedData = this.buildFlowGroupedData(
         dueDates,
@@ -529,23 +412,13 @@ export class FlowService {
   ) {
     return dueDates.map((date) => {
       const receivables = receivableDetails
-        .filter((inst) => {
-          if (!inst[dateType]) return false;
-          const instDate = new Date(inst[dateType]);
-          instDate.setUTCHours(0, 0, 0, 0);
-          return instDate.toISOString() === date;
-        })
+        .filter((inst) => this.getFlowDateKey(inst, dateType) === date)
         .map((inst) =>
           this.mapReceivableInstallment(inst, date, dateType, showValues),
         );
 
       const payables = payableDetails
-        .filter((inst) => {
-          if (!inst[dateType]) return false;
-          const instDate = new Date(inst[dateType]);
-          instDate.setUTCHours(0, 0, 0, 0);
-          return instDate.toISOString() === date;
-        })
+        .filter((inst) => this.getFlowDateKey(inst, dateType) === date)
         .map((inst) =>
           this.mapPayableInstallment(inst, date, dateType, showValues),
         );
@@ -581,12 +454,9 @@ export class FlowService {
     dateType: string,
     showValues: string,
   ) {
-    const relevantInstallments = inst.receivable.installments.filter((i) => {
-      if (!i[dateType]) return false;
-      const iDate = new Date(i[dateType]);
-      iDate.setUTCHours(0, 0, 0, 0);
-      return iDate.toISOString() === date;
-    });
+    const relevantInstallments = inst.receivable.installments.filter(
+      (i) => this.getFlowDateKey(i, dateType) === date,
+    );
 
     return {
       type: 'receivable',
@@ -646,12 +516,9 @@ export class FlowService {
     dateType: string,
     showValues: string,
   ) {
-    const relevantInstallments = inst.payable.installments.filter((i) => {
-      if (!i[dateType]) return false;
-      const iDate = new Date(i[dateType]);
-      iDate.setUTCHours(0, 0, 0, 0);
-      return iDate.toISOString() === date;
-    });
+    const relevantInstallments = inst.payable.installments.filter(
+      (i) => this.getFlowDateKey(i, dateType) === date,
+    );
 
     return {
       type: 'payable',
@@ -751,75 +618,6 @@ export class FlowService {
         : null,
       current: true,
     };
-  }
-
-  private async fetchDataDueDate(
-    filtersReceivables,
-    filtersPayables,
-    showValues,
-    sort,
-  ) {
-    const receivablesGrouped = await this.prisma.receivableInstallment.groupBy({
-      by: ['dueDate'],
-      where: filtersReceivables,
-      orderBy: { dueDate: sort },
-      _sum:
-        showValues === 'on'
-          ? { amount: true, additionalFee: true }
-          : { additionalFee: true },
-      _count: true,
-    });
-
-    const payablesGrouped = await this.prisma.payableInstallment.groupBy({
-      by: ['dueDate'], // Adiciona o campo de agrupamento conforme o `dateType`
-      where: filtersPayables,
-      orderBy: { dueDate: sort },
-      _sum:
-        showValues === 'on'
-          ? { amount: true, additionalFee: true }
-          : { additionalFee: true },
-      _count: true,
-    });
-
-    return [receivablesGrouped, payablesGrouped];
-  }
-  private async fetchDataPaidDate(
-    filtersReceivables,
-    filtersPayables,
-    showValues,
-    sort,
-  ) {
-    filtersReceivables = {
-      ...filtersReceivables,
-      paidDate: {
-        not: null,
-      },
-    };
-    filtersPayables = {
-      ...filtersPayables,
-      paidDate: {
-        not: null,
-      },
-    };
-    const receivablesGrouped = await this.prisma.receivableInstallment.groupBy({
-      by: ['paidDate'],
-      where: filtersReceivables,
-      orderBy: { paidDate: sort },
-      _sum:
-        showValues === 'on' ? { amount: true, additionalFee: true } : undefined,
-      _count: true,
-    });
-
-    const payablesGrouped = await this.prisma.payableInstallment.groupBy({
-      by: ['paidDate'], // Adiciona o campo de agrupamento conforme o `dateType`
-      where: filtersPayables,
-      orderBy: { paidDate: sort },
-      _sum:
-        showValues === 'on' ? { amount: true, additionalFee: true } : undefined,
-      _count: true,
-    });
-
-    return [receivablesGrouped, payablesGrouped];
   }
 
   async getReceivableDetails(id: string) {
