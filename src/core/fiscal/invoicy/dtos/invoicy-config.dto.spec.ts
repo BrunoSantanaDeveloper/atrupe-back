@@ -7,12 +7,10 @@ import {
 } from './invoicy-config.dto';
 
 /**
- * O CRT fica limitado ao Simples Nacional enquanto o cálculo de imposto por
- * item não existir. A montagem da nota destaca base e valor zerados: correto
- * para o Simples, subdeclarado para Lucro Real, Lucro Presumido e MEI.
- *
- * A trava vive no DTO, e não só na tela, porque a API é pública para o
- * frontend — bloquear apenas o select deixaria a porta aberta.
+ * O CRT aceito é a lista fechada do layout do provedor: 1, 2, 3 e 4. A trava
+ * vive no DTO, e não só na tela, porque a API é pública para o frontend —
+ * validar apenas o select deixaria a porta aberta a um código inexistente,
+ * que o provedor recusaria por schema depois de a nota já ter número.
  */
 describe('CRT do emissor', () => {
   const erroDeCrt = async (dto: object, Classe: any) => {
@@ -22,20 +20,25 @@ describe('CRT do emissor', () => {
 
   for (const Classe of [CreateInvoicyConfigDto, UpdateInvoicyConfigDto]) {
     describe(Classe.name, () => {
-      // 1 e 2 = Simples Nacional; 3 = Regime Normal (Lucro Real e Presumido).
-      it.each([1, 2, 3])('aceita CRT %i', async (crt) => {
+      // 1 e 2 = Simples Nacional; 3 = Regime Normal (Lucro Real e
+      // Presumido); 4 = MEI.
+      it.each([1, 2, 3, 4])('aceita CRT %i', async (crt) => {
         expect(await erroDeCrt({ emitCrt: crt }, Classe)).toBeUndefined();
       });
 
-      /** CRT 4 e' MEI, que nao tem apuracao propria implementada. */
-      it('recusa CRT 4 (MEI) com motivo explícito', async () => {
-        const erro = await erroDeCrt({ emitCrt: 4 }, Classe);
+      /**
+       * Acima de 4 nao existe codigo: o provedor recusaria por schema, e a
+       * mensagem precisa dizer qual e' a lista em vez de repetir "invalido".
+       */
+      it.each([0, 5])('recusa CRT %i listando os válidos', async (crt) => {
+        const erro = await erroDeCrt({ emitCrt: crt }, Classe);
         expect(erro).toBeDefined();
-        // Casa com o que o usuário precisa ler — o regime recusado e para
-        // onde ir —, não com a redação exata.
+      });
+
+      it('a mensagem do teto cita o MEI como opção válida', async () => {
+        const erro = await erroDeCrt({ emitCrt: 5 }, Classe);
         const mensagem = Object.values(erro!.constraints ?? {}).join(' ');
         expect(mensagem).toMatch(/MEI/);
-        expect(mensagem).toMatch(/suporte/i);
       });
     });
   }

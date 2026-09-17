@@ -9,6 +9,8 @@ describe('defaultsCadastroFiscal', () => {
     [null, '102'],
     [1, '102'],
     [2, '102'],
+    // MEI apura pelo DAS: CSOSN, como os demais optantes do Simples.
+    [4, '102'],
   ])('emitCrt %p (Simples) usa CSOSN %s', (emitCrt, esperado) => {
     expect(defaultsCadastroFiscal(emitCrt).icmsCst).toBe(esperado);
   });
@@ -47,6 +49,8 @@ describe('defaultsCadastroFiscal', () => {
     expect(isRegimeNormal(null)).toBe(false);
     expect(isRegimeNormal(2)).toBe(false);
     expect(isRegimeNormal(3)).toBe(true);
-    expect(isRegimeNormal(4)).toBe(true);
+    // O 4 é MEI, que apura pelo Simples. A classificação completa tem spec
+    // própria em regime-tributario.util.spec.ts.
+    expect(isRegimeNormal(4)).toBe(false);
   });
 });

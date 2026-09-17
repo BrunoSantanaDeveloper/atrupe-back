@@ -61,6 +61,11 @@ export interface NfsePreview {
 }
 
 import { aliquotasVigentes, calcularIbsCbs } from '../utils/ibs-cbs.util';
+import {
+  isMei,
+  isOptanteSimples,
+  regimeEspecialPadraoNfse,
+} from '../utils/regime-tributario.util';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { MailService } from '../../mail/mail.service';
 import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
@@ -1122,7 +1127,8 @@ export class NfseService {
      * pelos municípios que recusam a tag.
      */
     const regimeEspecial =
-      config.regimeEspecialTributacao ?? (config.emitCrt === 1 ? 6 : undefined);
+      config.regimeEspecialTributacao ??
+      regimeEspecialPadraoNfse(config.emitCrt);
 
     /**
      * Grupo de VALORES do IBS/CBS. Desligado por padrão: no layout do provedor
@@ -1151,7 +1157,15 @@ export class NfseService {
     const indicadorOperacao =
       dto.cIndOp || (config as any).indicadorOperacaoNfse || undefined;
 
-    const optanteSimples = config.emitCrt === 1 || config.emitCrt === 2;
+    /**
+     * Quem a nota declara como optante do Simples, e que decide se o grupo
+     * regApIBSCBSSN acompanha o RPS. Precisa acompanhar o OptSN mais abaixo:
+     * declarar "nao optante" e mandar o grupo do Simples junto e' payload
+     * contraditorio. Por isso o CRT nulo continua fora, como antes — para ele
+     * quem resolve e' o reenvio do E0166.
+     */
+    const optanteSimples =
+      config.emitCrt === 1 || config.emitCrt === 2 || isMei(config.emitCrt);
     const regimeApuracaoIbsCbs = optanteSimples
       ? ((config as any).regApIbsCbsSn ?? 1)
       : 3;
@@ -1221,7 +1235,13 @@ export class NfseService {
     // informar alíquota quando não há retenção (tpRetISSQN=1) — o ISS é
     // recolhido pelo DAS, não pela alíquota municipal. Só volta a ser
     // declarável quando o tomador retém.
-    const omitirAliquotaIss = config.emitCrt === 1 && !dto.issRetido;
+    //
+    // O MEI segue a mesma omissão: o ISS dele é valor fixo no DAS, então
+    // informar alíquota municipal é igualmente indevido. A rejeição E0625 é
+    // escrita para opSimpNac=3 (ME/EPP), então aqui a regra vale por coerência
+    // fiscal, não por recusa conhecida do provedor.
+    const omitirAliquotaIss =
+      (config.emitCrt === 1 || isMei(config.emitCrt)) && !dto.issRetido;
 
     this.assertNfsePayloadReady(dto, valorServicos, valorDeducoes, baseCalculo);
 
@@ -1604,17 +1624,23 @@ export class NfseService {
                 : 1,
             natOp: dto.naturezaOperacao || 1, // 1 = TributaÃ§Ã£o no municÃ­pio
             Operacao: 1,
-            // RegEspTrib segue a enumeração ABRASF do Invoicy (6 = ME/EPP),
-            // que ele converte para o regEspTrib do layout nacional. Alguns
-            // municípios exigem um regime específico e outros recusam a tag,
-            // então o emissor pode configurar; o padrão cobre o caso comum.
+            // RegEspTrib segue a enumeração ABRASF do Invoicy (5 = MEI,
+            // 6 = ME/EPP), que ele converte para o regEspTrib do layout
+            // nacional. Alguns municípios exigem um regime específico e outros
+            // recusam a tag, então o emissor pode configurar; o padrão cobre o
+            // caso comum.
             ...(regimeEspecial !== undefined
               ? { RegEspTrib: regimeEspecial }
               : {}),
-            // OptSN: 1 = optante do Simples Nacional, 2 = não optante
-            OptSN: config.emitCrt === 1 ? 1 : 2,
-            // regApTribSN: obrigatório para ME/EPP optante do SN.
-            // 1 = tributos federais e municipais apurados pelo SN
+            // OptSN: 1 = optante do Simples Nacional, 2 = não optante. O MEI
+            // é optante — o Ambiente Nacional ainda confere a condição na base
+            // do Simples Nacional na data de competência, mas mandar 2 numa
+            // nota de MEI contradiz esse cadastro. O CRT 2 (excesso de
+            // sublimite) continua saindo como 2, como antes.
+            OptSN: config.emitCrt === 1 || isMei(config.emitCrt) ? 1 : 2,
+            // regApTribSN: campo de ME/EPP optante que ultrapassa o sublimite.
+            // 1 = tributos federais e municipais apurados pelo SN. Não vale
+            // para o MEI, que não tem sublimite a ultrapassar.
             ...(config.emitCrt === 1 ? { regApTribSN: 1 } : {}),
             // regApIBSCBSSN: qual regime apura IBS e CBS do optante do
             // Simples. 1 = ambos pelo SN, 2 = CBS pelo SN e IBS regular,
@@ -2058,10 +2084,11 @@ export class NfseService {
   /**
    * Reenvio do E0166: declara a apuracao pelo Simples Nacional.
    *
-   * So' vale para quem E' optante. Para um emissor do Regime Normal isto
-   * declararia, numa nota fiscal, que a empresa e' ME/EPP optante do Simples —
-   * declaracao falsa. Nesse caso nao reenvia: a rejeicao da prefeitura sobe
-   * para o usuario, que e' quem sabe o que o municipio exige.
+   * So' vale para ME/EPP optante. Para um emissor do Regime Normal — ou para
+   * um MEI — isto declararia, numa nota fiscal, que a empresa e' ME/EPP
+   * optante do Simples: declaracao falsa. Nesse caso nao reenvia: a rejeicao
+   * da prefeitura sobe para o usuario, que e' quem sabe o que o municipio
+   * exige.
    *
    * `emitCrt` nulo segue tratado como Simples: era o comportamento antes de o
    * CRT 3 existir, e a prefeitura identifica a empresa pelos registros dela.
@@ -2072,8 +2099,11 @@ export class NfseService {
     invoicyRequest: InvoicyNfseRequest,
     config: any,
   ): boolean {
-    const optanteSimples = (config?.emitCrt ?? 1) <= 2;
-    if (!optanteSimples) return false;
+    // O reenvio declara ME/EPP optante: regApTribSN e RegEspTrib 6 sao os
+    // campos dessa faixa. O MEI fica de fora — ele ja' sai com OptSN 1 e
+    // RegEspTrib 5, e declara-lo ME/EPP para vencer a rejeicao seria falso.
+    const meEpp = isOptanteSimples(config?.emitCrt) && !isMei(config?.emitCrt);
+    if (!meEpp) return false;
 
     const rps = invoicyRequest.Documento.RPS?.[0] as any;
     if (!rps || rps.regApTribSN !== undefined) return false;

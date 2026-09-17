@@ -35,6 +35,10 @@ import {
 import { aliquotaInterestadual as aliquotaInterestadualIcms } from '../utils/icms-interestadual.util';
 import { resolverMva } from '../utils/icms-st.util';
 import {
+  isOptanteSimples,
+  isRegimeNormal,
+} from '../utils/regime-tributario.util';
+import {
   avaliarPrazoCancelamento,
   orientacaoRejeicaoCancelamento,
 } from '../utils/prazo-cancelamento.util';
@@ -2435,7 +2439,7 @@ export class NfeService {
        * Nacional segue o caminho antigo, que envia apenas os códigos — é o que
        * mantém inalteradas as notas de quem já emite hoje.
        */
-      const regimeNormal = (config.emitCrt ?? 1) >= 3;
+      const regimeNormal = isRegimeNormal(config.emitCrt);
       const impostosCalculados = regimeNormal
         ? await this.calcularImpostosRegimeNormal(dto, config, {
             ufOrigem: config.company.address.state,
@@ -4669,7 +4673,7 @@ export class NfeService {
     const aliquotaInternaDestino = await this.icmsAliquotaInterna.resolver(
       operacao.ufDestino,
     );
-    const optanteSimples = (config.emitCrt ?? 1) <= 2;
+    const optanteSimples = isOptanteSimples(config.emitCrt);
 
     const aliquotaInterestadual = operacao.interestadual
       ? aliquotaInterestadualIcms(
