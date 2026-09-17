@@ -12,6 +12,7 @@ import { GENERIC_BANK_CODE } from '../core/import/import-references';
 import {
   assertSameCompany,
   assertSingleDestination,
+  onlyDigits,
 } from './legacy-destination-guard';
 
 // Reexportados: a regra mora no módulo compartilhado com a API.
@@ -90,6 +91,133 @@ const comparableName = (value: unknown) =>
     .trim()
     .toLowerCase();
 
+/** Campos de documento por etapa, para achar quem a conta já tem cadastrado. */
+const ADOPTION_DOCUMENTS: Record<string, (row: any) => any[]> = {
+  client: (row) => [row.cnpj, row.cpf],
+  supplier: (row) => [row.cnpj, row.cpf],
+  employee: (row) => [row.cpf],
+};
+
+export interface StepPreparation {
+  /** Cadastros de apoio criados, ou a criar quando é simulação. */
+  created: string[];
+  /** Registros que a conta já tinha e a carga aproveita. */
+  adopted: number;
+  /** Decisões da etapa que mudam o resultado. */
+  notes: string[];
+  /** Linhas a processar, quando a etapa descarta alguma. */
+  rows: any[];
+  /** Cadastros por documento, para a carga adotar em vez de duplicar. */
+  adoptionIndex?: Map<string, string>;
+  /** A conta já tem documentos próprios: o histórico vai para série separada. */
+  historySeries?: boolean;
+}
+
+const dataBr = (iso: string) => iso.split('-').reverse().join('/');
+
+/**
+ * Decide o que a etapa faz antes de gravar, numa conta que pode não estar
+ * vazia: quais cadastros de apoio criar, quais registros existentes aproveitar,
+ * em que série o histórico entra e até onde o financeiro vem.
+ *
+ * Roda igual na simulação e na carga, menos pelo que grava: é o que permite ao
+ * relatório da simulação dizer de antemão o que a carga vai fazer.
+ */
+export async function prepareStep(
+  internals: any,
+  extractor: LegacyExtractor,
+  rows: any[],
+  companyId: string,
+  dryRun: boolean,
+): Promise<StepPreparation> {
+  const prep: StepPreparation = {
+    created: [],
+    adopted: 0,
+    notes: [],
+    rows,
+  };
+
+  const documents = ADOPTION_DOCUMENTS[extractor.entity];
+  if (documents) {
+    // Quem o cliente cadastrou à mão não tem código do legado: sem adoção, o
+    // mesmo cliente entraria de novo e a base ficaria com duas fichas.
+    const index = await internals.buildAdoptionIndex(
+      extractor.entity,
+      companyId,
+    );
+    prep.adoptionIndex = index;
+
+    const alvos = new Set<string>();
+    for (const row of rows) {
+      for (const value of documents(row)) {
+        const document = onlyDigits(value);
+        if (document && index.has(document)) {
+          alvos.add(index.get(document));
+          break;
+        }
+      }
+    }
+    prep.adopted = alvos.size;
+  }
+
+  if (extractor.entity === 'product') {
+    const { adopted, withoutItem } = await internals.findProductAdoptions(
+      rows,
+      companyId,
+    );
+    prep.adopted = adopted.length;
+
+    if (withoutItem.length > 0) {
+      prep.notes.push(
+        `${withoutItem.length} produto(s) da conta com o mesmo código não têm ` +
+          `item cadastrado, e a venda que os usa vai falhar: ` +
+          `${withoutItem.slice(0, 10).join(', ')}`,
+      );
+    }
+  }
+
+  if (extractor.entity === 'quotation' || extractor.entity === 'order') {
+    prep.historySeries = await internals.hasOwnDocuments(companyId);
+    if (prep.historySeries) {
+      prep.notes.push(
+        'A conta já tem documentos próprios: os migrados entram em série ' +
+          'separada (LEG-), com o número original do legado.',
+      );
+    }
+  }
+
+  if (extractor.entity === 'financial') {
+    const inicio = await internals.firstNonImportedActivity(companyId);
+
+    if (inicio) {
+      const limite = inicio.toISOString().slice(0, 10);
+      const anteriores = rows.filter(
+        (row) => !row.DataReferencia || row.DataReferencia < limite,
+      );
+      const descartadas = rows.length - anteriores.length;
+
+      if (descartadas > 0) {
+        prep.rows = anteriores;
+        prep.notes.push(
+          `${descartadas} lançamento(s) de ${dataBr(limite)} em diante não ` +
+            `migrados: a conta já estava em uso nessa data e eles duplicariam ` +
+            `o que o cliente lançou.`,
+        );
+      }
+    }
+  }
+
+  prep.created = await prepareReferences(
+    internals,
+    extractor,
+    prep.rows,
+    companyId,
+    dryRun,
+  );
+
+  return prep;
+}
+
 /**
  * Garante os cadastros de apoio de que a etapa depende.
  *
@@ -153,6 +281,10 @@ export interface StepResult {
   skipped?: number;
   /** Cadastros de apoio criados na etapa, ou a criar quando é simulação. */
   created?: string[];
+  /** Registros que a conta já tinha e a carga aproveita em vez de duplicar. */
+  adopted?: number;
+  /** Decisões da etapa: série do histórico, corte por data, riscos. */
+  notes?: string[];
   /** Documentos na origem, quando o extrator sabe contar. */
   expected?: number;
   /** Documentos distintos extraídos, quando uma linha não é um documento. */
@@ -203,17 +335,18 @@ async function runStep(
 
   const internals = service as any;
 
-  const preparados = await prepareReferences(
-    internals,
-    extractor,
-    rows,
-    companyId,
-    dryRun,
-  );
-  if (preparados.length > 0) {
-    result.created = preparados;
-    preparados.forEach((name) => simulated.reference.add(comparableName(name)));
+  const prep = await prepareStep(internals, extractor, rows, companyId, dryRun);
+  if (prep.created.length > 0) {
+    result.created = prep.created;
+    prep.created.forEach((name) =>
+      simulated.reference.add(comparableName(name)),
+    );
   }
+  if (prep.adopted > 0) result.adopted = prep.adopted;
+  if (prep.notes.length > 0) result.notes = prep.notes;
+
+  // O financeiro pode ter descartado linhas pelo corte por data.
+  const linhas = prep.rows;
 
   // Vendas e financeiro são processados em lote: o importador agrupa várias
   // linhas no mesmo documento, então não dá para tratar linha a linha.
@@ -228,8 +361,14 @@ async function runStep(
     // O contas a receber vem do financeiro do legado, com as parcelas reais.
     const args =
       extractor.entity === 'order'
-        ? [rows, companyId, { skipReceivable: true }]
-        : [rows, companyId];
+        ? [
+            linhas,
+            companyId,
+            { skipReceivable: true, historySeries: prep.historySeries },
+          ]
+        : extractor.entity === 'quotation'
+          ? [linhas, companyId, { historySeries: prep.historySeries }]
+          : [linhas, companyId];
 
     const batch = await internals[method](...args);
 
@@ -244,8 +383,8 @@ async function runStep(
     return result;
   }
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
+  for (let i = 0; i < linhas.length; i++) {
+    const row = linhas[i];
 
     try {
       if (dryRun) {
@@ -294,13 +433,18 @@ async function runStep(
           throw new Error(blocking.map((e: any) => e.error).join('; '));
         }
       } else if (extractor.entity === 'employee') {
-        await internals.importEmployee(row, companyId, userId);
+        await internals.importEmployee(
+          row,
+          companyId,
+          userId,
+          prep.adoptionIndex,
+        );
       } else if (extractor.entity === 'client') {
-        await internals.importClient(row, companyId);
+        await internals.importClient(row, companyId, prep.adoptionIndex);
       } else if (extractor.entity === 'supplier') {
-        await internals.importSupplier(row, companyId);
+        await internals.importSupplier(row, companyId, prep.adoptionIndex);
       } else if (extractor.entity === 'product') {
-        await internals.importProduct(row, companyId);
+        await internals.importProduct(row, companyId, { legacy: true });
       } else if (extractor.entity === 'paymentCondition') {
         await internals.importPaymentCondition(row, companyId);
       } else {
@@ -470,6 +614,7 @@ export async function migrateLegacyTenant(
         result.created?.length
           ? `${result.created.length} cadastro(s) ${dryRun ? 'a criar' : 'criado(s)'}`
           : '',
+        result.adopted ? `${result.adopted} já na conta` : '',
       ].filter(Boolean);
 
       const status =
@@ -493,6 +638,10 @@ export async function migrateLegacyTenant(
         console.log(
           `   ${dryRun ? 'seriam criados' : 'criados'}: ${result.created.join(', ')}`,
         );
+      }
+
+      for (const note of result.notes ?? []) {
+        console.log(`   ${note}`);
       }
 
       // Primeiras falhas, para o operador entender o padrão sem abrir o log

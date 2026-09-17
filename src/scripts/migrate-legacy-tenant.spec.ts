@@ -2,6 +2,7 @@ import {
   assertSameCompany,
   onlyDigits,
   prepareReferences,
+  prepareStep,
 } from './migrate-legacy-tenant';
 import { EXTRACTORS } from './legacy-extractors';
 import { QUOTATION_IMPORT_SCHEMA } from '../core/import/schemas/quotation-import.schema';
@@ -684,5 +685,148 @@ describe('prepareReferences', () => {
     ).resolves.toEqual([]);
     expect(service.findMissingSectors).not.toHaveBeenCalled();
     expect(service.findMissingReferences).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Preparação da etapa numa conta que já estava em uso: é ela que decide o que
+ * a carga vai aproveitar, em que série o histórico entra e até onde o
+ * financeiro vem — e que permite à simulação dizer isso antes de gravar.
+ */
+describe('prepareStep', () => {
+  const internals = (over: any = {}) => ({
+    buildAdoptionIndex: jest.fn().mockResolvedValue(new Map()),
+    findProductAdoptions: jest
+      .fn()
+      .mockResolvedValue({ adopted: [], withoutItem: [] }),
+    hasOwnDocuments: jest.fn().mockResolvedValue(false),
+    firstNonImportedActivity: jest.fn().mockResolvedValue(null),
+    findMissingSectors: jest.fn().mockResolvedValue([]),
+    ensureProductSectors: jest.fn().mockResolvedValue([]),
+    findMissingReferences: jest.fn().mockResolvedValue([]),
+    ensureFinancialReferences: jest
+      .fn()
+      .mockResolvedValue({ created: [], reactivated: [], skipped: [] }),
+    findGenericBank: jest.fn().mockResolvedValue({ id: 'bank-000' }),
+    ...over,
+  });
+
+  const etapa = (entity: string) => ({ entity }) as any;
+
+  it('conta os cadastros que a conta já tem, sem repetir o mesmo destino', async () => {
+    // Duas linhas do legado apontando para a mesma ficha contam uma adoção.
+    const service = internals({
+      buildAdoptionIndex: jest.fn().mockResolvedValue(
+        new Map([
+          ['11222333000181', 'cliente-1'],
+          ['12345678901', 'cliente-1'],
+        ]),
+      ),
+    });
+    const linhas = [
+      { cnpj: '11.222.333/0001-81' },
+      { cpf: '123.456.789-01' },
+      { cnpj: '99.888.777/0001-66' },
+    ];
+
+    const prep = await prepareStep(
+      service,
+      etapa('client'),
+      linhas,
+      'company-1',
+      true,
+    );
+
+    expect(prep.adopted).toBe(1);
+    expect(prep.adoptionIndex).toBeDefined();
+  });
+
+  it('avisa do produto adotado que não tem item cadastrado', async () => {
+    const service = internals({
+      findProductAdoptions: jest
+        .fn()
+        .mockResolvedValue({ adopted: ['10', '30'], withoutItem: ['30'] }),
+    });
+
+    const prep = await prepareStep(
+      service,
+      etapa('product'),
+      [],
+      'company-1',
+      true,
+    );
+
+    expect(prep.adopted).toBe(2);
+    expect(prep.notes.join(' ')).toMatch(/não têm item cadastrado.*30/s);
+  });
+
+  it('manda o histórico para série separada quando a conta tem documentos', async () => {
+    const service = internals({
+      hasOwnDocuments: jest.fn().mockResolvedValue(true),
+    });
+
+    const prep = await prepareStep(
+      service,
+      etapa('quotation'),
+      [],
+      'company-1',
+      true,
+    );
+
+    expect(prep.historySeries).toBe(true);
+    expect(prep.notes.join(' ')).toMatch(/série separada/);
+  });
+
+  it('mantém a série do legado na conta que ainda não foi usada', async () => {
+    const prep = await prepareStep(
+      internals(),
+      etapa('order'),
+      [],
+      'company-1',
+      true,
+    );
+
+    expect(prep.historySeries).toBe(false);
+    expect(prep.notes).toEqual([]);
+  });
+
+  it('corta o financeiro na data em que a conta passou a ser usada', async () => {
+    const service = internals({
+      firstNonImportedActivity: jest
+        .fn()
+        .mockResolvedValue(new Date('2026-02-01T00:00:00Z')),
+    });
+    const linhas = [
+      { DataReferencia: '2025-12-20' },
+      { DataReferencia: '2026-01-31' },
+      { DataReferencia: '2026-02-01' },
+      { DataReferencia: '2026-03-15' },
+    ];
+
+    const prep = await prepareStep(
+      service,
+      etapa('financial'),
+      linhas,
+      'company-1',
+      true,
+    );
+
+    expect(prep.rows).toHaveLength(2);
+    expect(prep.notes.join(' ')).toMatch(/2 lançamento\(s\) de 01\/02\/2026/);
+  });
+
+  it('sem uso anterior, traz o financeiro inteiro', async () => {
+    const linhas = [{ DataReferencia: '2026-03-15' }];
+
+    const prep = await prepareStep(
+      internals(),
+      etapa('financial'),
+      linhas,
+      'company-1',
+      true,
+    );
+
+    expect(prep.rows).toHaveLength(1);
+    expect(prep.notes).toEqual([]);
   });
 });

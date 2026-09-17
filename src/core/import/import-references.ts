@@ -62,6 +62,10 @@ export function collectSectorNames(rows: any[]): string[] {
   return distinctColumn(rows, 'setor');
 }
 
+export function collectProductCodes(rows: any[]): string[] {
+  return distinctColumn(rows, 'codigo');
+}
+
 /**
  * Subcategorias distintas com a natureza declarada na mesma linha. O par importa
  * porque a subcategoria só existe pendurada numa natureza.

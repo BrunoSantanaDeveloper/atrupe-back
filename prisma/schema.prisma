@@ -1287,6 +1287,9 @@ model Product {
   productionStages     Json?
   status               ProductStatus      @default(ACTIVE)
   isImported           Boolean            @default(false)
+  /// Código do produto no sistema legado. Distingue o que a migração criou do
+  /// que o cliente já tinha com o mesmo código.
+  legacyId             String?
   items                ProductItem[]
   category             Category           @relation(fields: [categoryId], references: [id])
   company              Company?           @relation(fields: [companyId], references: [id])
@@ -1297,6 +1300,7 @@ model Product {
   stRules              ProductStRule[]
 
   @@unique([code, companyId])
+  @@unique([companyId, legacyId])
   @@map("products")
 }
 

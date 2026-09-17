@@ -315,8 +315,44 @@ describe('ImportService employee import', () => {
     expect(history[0].action).toBe('CREATE');
   });
 
+  it('não sobrescreve o colaborador que a conta já tinha', async () => {
+    // Cadastro adotado numa carga anterior: o vínculo com o legado está lá,
+    // mas os dados são os que o cliente mantém desde que entrou no sistema.
+    existingEmployee = {
+      id: 'emp-do-cliente',
+      legacyId: '15',
+      isImported: false,
+    };
+
+    await (service as any).importEmployee(baseRow, 'company-1', 'import-user');
+
+    expect(created).toHaveLength(0);
+    expect(updated).toHaveLength(0);
+  });
+
+  it('adota o colaborador de mesmo CPF em vez de criar outro', async () => {
+    // Conta que já estava em uso: a pessoa pode já ter cadastro e acesso.
+    const adoption = new Map([['12345678901', 'emp-do-cliente']]);
+
+    await (service as any).importEmployee(
+      { ...baseRow, cpf: '123.456.789-01' },
+      'company-1',
+      'import-user',
+      adoption,
+    );
+
+    expect(created).toHaveLength(0);
+    expect(updated).toHaveLength(1);
+    expect(updated[0].where).toEqual({ id: 'emp-do-cliente' });
+    expect(updated[0].data).toEqual({ legacyId: '15' });
+  });
+
   it('atualiza em vez de duplicar quando o mesmo arquivo é reprocessado', async () => {
-    existingEmployee = { id: 'emp-existente', legacyId: '15' };
+    existingEmployee = {
+      id: 'emp-existente',
+      legacyId: '15',
+      isImported: true,
+    };
 
     await (service as any).importEmployee(baseRow, 'company-1', 'import-user');
 

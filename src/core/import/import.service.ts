@@ -23,6 +23,7 @@ import {
   ImportReference,
   collectBankAccountNames,
   collectNatureNames,
+  collectProductCodes,
   collectSectorNames,
   collectSubCategoryRefs,
   findActiveBankAccountByName,
@@ -753,6 +754,181 @@ export class ImportService {
     return missing;
   }
 
+  private documentDigits(value: string | null | undefined): string {
+    return String(value ?? '').replace(/[^\d]/g, '');
+  }
+
+  /**
+   * Cadastros que a conta já tem sem vínculo com o legado, por documento.
+   *
+   * Serve à migração numa conta que já estava em uso: sem isso, quem o cliente
+   * cadastrou à mão entra de novo pelo legado e a base fica com dois registros
+   * da mesma pessoa. O índice é montado uma vez por etapa — procurar por linha
+   * custaria uma varredura da base a cada registro.
+   */
+  async buildAdoptionIndex(
+    entity: 'client' | 'employee' | 'supplier',
+    companyId: string,
+  ): Promise<Map<string, string>> {
+    const where = { companyId, legacyId: null };
+
+    const records: any[] =
+      entity === 'client'
+        ? await this.prisma.client.findMany({
+            where,
+            select: { id: true, cpf: true, cnpj: true },
+          })
+        : entity === 'supplier'
+          ? await this.prisma.supplier.findMany({
+              where,
+              select: { id: true, cpf: true, cnpj: true },
+            })
+          : await this.prisma.employee.findMany({
+              where,
+              select: { id: true, cpf: true },
+            });
+
+    const index = new Map<string, string>();
+
+    for (const record of records) {
+      for (const value of [record.cnpj, record.cpf]) {
+        const document = this.documentDigits(value);
+        if (document && !index.has(document)) index.set(document, record.id);
+      }
+    }
+
+    return index;
+  }
+
+  /**
+   * Produtos que a conta já tem com o mesmo código e não vieram da migração.
+   *
+   * A carga usa esses cadastros como estão, então a venda migrada herda a
+   * unidade e as medidas que o cliente cadastrou. Produto sem item é relatado à
+   * parte: a venda que o usa não tem de onde tirar a unidade e falha.
+   */
+  async findProductAdoptions(
+    rows: any[],
+    companyId: string,
+  ): Promise<{ adopted: string[]; withoutItem: string[] }> {
+    const products = await this.prisma.product.findMany({
+      where: { companyId },
+      select: {
+        code: true,
+        legacyId: true,
+        items: { select: { id: true }, take: 1 },
+      },
+    });
+
+    const byCode = new Map(
+      products.map((product) => [product.code.trim().toLowerCase(), product]),
+    );
+
+    const adopted: string[] = [];
+    const withoutItem: string[] = [];
+
+    for (const code of collectProductCodes(rows)) {
+      const existing = byCode.get(code.trim().toLowerCase());
+      if (!existing || existing.legacyId === code.trim()) continue;
+
+      adopted.push(code);
+      if (existing.items.length === 0) withoutItem.push(code);
+    }
+
+    return { adopted, withoutItem };
+  }
+
+  /**
+   * Quando a conta passou a ser usada fora da migração.
+   *
+   * É a data de corte do financeiro: o histórico do legado a partir dela
+   * duplicaria o que o cliente já lançou no sistema novo.
+   */
+  async firstNonImportedActivity(companyId: string): Promise<Date | null> {
+    const [quotation, receivable] = await Promise.all([
+      this.prisma.quotation.findFirst({
+        where: { companyId, isImported: false },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+      }),
+      this.prisma.receivable.findFirst({
+        where: { companyId, isImported: false },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+      }),
+    ]);
+
+    const dates = [quotation?.createdAt, receivable?.createdAt].filter(
+      Boolean,
+    ) as Date[];
+
+    if (dates.length === 0) return null;
+    return new Date(Math.min(...dates.map((date) => date.getTime())));
+  }
+
+  /**
+   * Série em que o documento migrado é gravado.
+   *
+   * Numa conta que já tem documentos, o número que vem do legado colide com os
+   * que o cliente já emitiu: dois documentos com o mesmo número na mesma série,
+   * sem nada no banco que impeça. O histórico vai então para uma série própria,
+   * que preserva o número original e separa o que é do sistema antigo.
+   */
+  private async resolveImportSeries(
+    companyId: string,
+    code: string,
+    historySeries?: boolean,
+  ) {
+    const original = await this.prisma.saleSeries.findFirst({
+      where: { code, companyId, isActive: true },
+    });
+
+    if (!historySeries) {
+      if (!original) throw new Error(`Série '${code}' não encontrada`);
+      return original;
+    }
+
+    const historyCode = code ? `LEG-${code}` : 'LEG';
+
+    const existing = await this.prisma.saleSeries.findFirst({
+      where: { code: historyCode, companyId },
+    });
+    if (existing) return existing;
+
+    // Herda a apresentação da série que o cliente usa, para o documento
+    // migrado sair com a mesma cara dos demais.
+    const base =
+      original ??
+      (await this.prisma.saleSeries.findFirst({
+        where: { companyId, isDefault: true },
+      })) ??
+      (await this.prisma.saleSeries.findFirst({ where: { companyId } }));
+
+    return this.prisma.saleSeries.create({
+      data: {
+        companyId,
+        code: historyCode,
+        title: code ? `Histórico do legado ${code}` : 'Histórico do legado',
+        description: 'Documentos migrados do sistema legado',
+        deliveryDeadline: base?.deliveryDeadline ?? null,
+        proposalValidity: base?.proposalValidity ?? null,
+        textBeforeItems: base?.textBeforeItems ?? null,
+        textAfterItems: base?.textAfterItems ?? null,
+        billing: base?.billing,
+        productionStatus: base?.productionStatus,
+        sendToProduction: base?.sendToProduction,
+      },
+    });
+  }
+
+  /** A conta já tem documento criado fora da migração. */
+  async hasOwnDocuments(companyId: string): Promise<boolean> {
+    const count = await this.prisma.quotation.count({
+      where: { companyId, isImported: false },
+    });
+    return count > 0;
+  }
+
   /** Banco genérico de que a criação de conta bancária depende. */
   async findGenericBank() {
     return this.prisma.bank.findFirst({ where: { code: GENERIC_BANK_CODE } });
@@ -1198,7 +1374,12 @@ export class ImportService {
   /**
    * Importar um cliente do CSV
    */
-  private async importClient(row: any, companyId: string): Promise<void> {
+  private async importClient(
+    row: any,
+    companyId: string,
+    /** Cadastros sem vínculo com o legado, por documento. Só a migração passa. */
+    adoption?: Map<string, string>,
+  ): Promise<void> {
     // Normalizar tipo
     let type = row.tipo?.toUpperCase();
     if (type === 'F' || type === 'PESSOA' || type === 'CPF') type = 'PERSON';
@@ -1270,8 +1451,12 @@ export class ImportService {
     if (legacyId) {
       const existing = await this.prisma.client.findFirst({
         where: { companyId, legacyId },
-        select: { id: true },
+        select: { id: true, isImported: true },
       });
+
+      // Cadastro adotado numa carga anterior é do cliente, não da migração:
+      // atualizar sobrescreveria o que ele mantém desde que entrou no sistema.
+      if (existing && !existing.isImported) return;
 
       if (existing) {
         // Só os campos escalares: recriar endereço e contato duplicaria os
@@ -1297,6 +1482,21 @@ export class ImportService {
         });
         return;
       }
+    }
+
+    // Conta que já estava em uso: a pessoa pode já estar cadastrada. Adotar a
+    // ficha existente evita duas do mesmo cliente — e é ela que fica, porque o
+    // cadastro do cliente é mais recente que o do legado.
+    const document = cnpjNormalized || cpfNormalized;
+    if (legacyId && document && adoption?.has(document)) {
+      const adoptedId = adoption.get(document) as string;
+      adoption.delete(document);
+
+      await this.prisma.client.update({
+        where: { id: adoptedId },
+        data: { legacyId },
+      });
+      return;
     }
 
     // Criar cliente
@@ -1380,7 +1580,11 @@ export class ImportService {
   /**
    * Importar um fornecedor do CSV
    */
-  private async importSupplier(row: any, companyId: string): Promise<boolean> {
+  private async importSupplier(
+    row: any,
+    companyId: string,
+    adoption?: Map<string, string>,
+  ): Promise<boolean> {
     // Normalizar tipo
     let type = row.tipo?.toUpperCase();
     if (type === 'F' || type === 'PESSOA' || type === 'CPF') type = 'PERSON';
@@ -1434,10 +1638,13 @@ export class ImportService {
     if (legacyId) {
       const existing = await this.prisma.supplier.findFirst({
         where: { companyId, legacyId },
-        select: { id: true },
+        select: { id: true, isImported: true },
       });
 
       if (existing) {
+        // Cadastro adotado numa carga anterior é do cliente, não da migração.
+        if (!existing.isImported) return false;
+
         await this.prisma.supplier.update({
           where: { id: existing.id },
           data: {
@@ -1457,6 +1664,20 @@ export class ImportService {
         });
         return true;
       }
+    }
+
+    // Conta que já estava em uso: adotar o fornecedor existente dá ao cadastro
+    // dele o vínculo com o legado, que o "ignorar" abaixo deixava de fora.
+    const document = cnpjNormalized || cpfNormalized;
+    if (legacyId && document && adoption?.has(document)) {
+      const adoptedId = adoption.get(document) as string;
+      adoption.delete(document);
+
+      await this.prisma.supplier.update({
+        where: { id: adoptedId },
+        data: { legacyId },
+      });
+      return false;
     }
 
     // Ignorar se CNPJ ou CPF já está cadastrado
@@ -1620,6 +1841,7 @@ export class ImportService {
     row: any,
     companyId: string,
     userId?: string,
+    adoption?: Map<string, string>,
   ): Promise<void> {
     const legacyId = row.codigoLegado?.trim();
     if (!legacyId) {
@@ -1679,9 +1901,26 @@ export class ImportService {
     });
 
     if (existing) {
+      // Cadastro adotado numa carga anterior é do cliente, não da migração:
+      // sobrescrever apagaria o que ele mantém desde que entrou no sistema.
+      if (!existing.isImported) return;
+
       await this.prisma.employee.update({
         where: { id: existing.id },
         data,
+      });
+      return;
+    }
+
+    // Conta que já estava em uso: a pessoa pode já ter cadastro, e até acesso
+    // ao sistema. Adotar evita dois colaboradores para o mesmo CPF.
+    if (cpf && adoption?.has(cpf)) {
+      const adoptedId = adoption.get(cpf) as string;
+      adoption.delete(cpf);
+
+      await this.prisma.employee.update({
+        where: { id: adoptedId },
+        data: { legacyId },
       });
       return;
     }
@@ -1724,7 +1963,29 @@ export class ImportService {
   /**
    * Importar um produto do CSV
    */
-  private async importProduct(row: any, companyId: string): Promise<void> {
+  private async importProduct(
+    row: any,
+    companyId: string,
+    options: { legacy?: boolean } = {},
+  ): Promise<void> {
+    // O código do produto no legado é o próprio código do produto. Guardá-lo
+    // é o que distingue, numa recarga, o produto que esta migração criou do
+    // que o cliente já tinha com o mesmo código.
+    const legacyCode = options.legacy ? row.codigo?.trim() || null : null;
+
+    if (legacyCode) {
+      const sameCode = await this.prisma.product.findFirst({
+        where: { code: { equals: legacyCode, mode: 'insensitive' }, companyId },
+        select: { id: true, legacyId: true },
+      });
+
+      // Conta que já estava em uso: o código pertence a um produto que o
+      // cliente cadastrou. O histórico se pendura nele e nada é sobrescrito —
+      // o mesmo código pode descrever outro produto, e o cadastro do cliente é
+      // mais recente que o do legado.
+      if (sameCode && sameCode.legacyId !== legacyCode) return;
+    }
+
     // Buscar setor por nome case-insensitive (já validado, então deve existir)
     let sector = await this.prisma.companySector.findFirst({
       where: {
@@ -1824,6 +2085,7 @@ export class ImportService {
       product = await this.prisma.product.create({
         data: {
           companyId,
+          legacyId: legacyCode,
           code: row.codigo,
           name: row.nome,
           technicalDescription: row.descricao || null,
@@ -2186,6 +2448,7 @@ export class ImportService {
   private async importQuotations(
     rows: any[],
     companyId: string,
+    options: { historySeries?: boolean } = {},
   ): Promise<{
     successCount: number;
     failedCount: number;
@@ -2238,17 +2501,11 @@ export class ImportService {
         }
 
         // Buscar série
-        const series = await this.prisma.saleSeries.findFirst({
-          where: {
-            code: firstItem.Serie,
-            companyId,
-            isActive: true,
-          },
-        });
-
-        if (!series) {
-          throw new Error(`Série '${firstItem.Serie}' não encontrada`);
-        }
+        const series = await this.resolveImportSeries(
+          companyId,
+          firstItem.Serie,
+          options.historySeries,
+        );
 
         // Buscar cliente pelo código do legado ou pelo CPF/CNPJ
         const client = this.resolveClient(clientIndex, firstItem);
@@ -2570,7 +2827,7 @@ export class ImportService {
   private async importOrders(
     rows: any[],
     companyId: string,
-    options: { skipReceivable?: boolean } = {},
+    options: { skipReceivable?: boolean; historySeries?: boolean } = {},
   ) {
     let successCount = 0;
     let failedCount = 0;
@@ -2622,17 +2879,11 @@ export class ImportService {
         }
 
         // Buscar série
-        const series = await this.prisma.saleSeries.findFirst({
-          where: {
-            code: firstItem.Serie,
-            companyId,
-            isActive: true,
-          },
-        });
-
-        if (!series) {
-          throw new Error(`Série '${firstItem.Serie}' não encontrada`);
-        }
+        const series = await this.resolveImportSeries(
+          companyId,
+          firstItem.Serie,
+          options.historySeries,
+        );
 
         // Buscar cliente pelo código do legado ou pelo CPF/CNPJ
         const client = this.resolveClient(clientIndex, firstItem);
