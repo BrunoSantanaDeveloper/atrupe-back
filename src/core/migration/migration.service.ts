@@ -10,6 +10,13 @@ import { spawn } from 'child_process';
 import { join } from 'path';
 import * as mysql from 'mysql2/promise';
 import { LEGACY_COMPANY_SQL } from '../../scripts/legacy-extractors';
+import {
+  assertSameCompany,
+  companiesLoadedFrom,
+  CompanyRef,
+  findDestinationConflict,
+  onlyDigits,
+} from '../../scripts/legacy-destination-guard';
 
 /** Formato do nome de base no legado, que é um banco por cliente. */
 const LEGACY_BASE_PATTERN = /^acn_\d+$/;
@@ -18,8 +25,10 @@ export interface LegacyBase {
   base: string;
   razaoSocial: string | null;
   cnpj: string | null;
-  /** Empresa do Atrupe com o mesmo CNPJ, quando existe. */
+  /** Conta do Atrupe com o mesmo CNPJ, quando há exatamente uma. */
   empresaVinculada: { id: string; name: string } | null;
+  /** Por que a base não pode ser migrada agora, quando não pode. */
+  bloqueio: string | null;
 }
 
 @Injectable()
@@ -62,11 +71,27 @@ export class MigrationService {
 
       const empresas = await this.prisma.company.findMany({
         where: { cnpj: { not: null } },
-        select: { id: true, name: true, cnpj: true },
+        select: { id: true, name: true, cnpj: true, isActive: true },
       });
-      const porDocumento = new Map(
-        empresas.map((e) => [this.onlyDigits(e.cnpj), e]),
-      );
+      // Agrupado, não indexado: com duas contas no mesmo CNPJ, um mapa simples
+      // escolheria uma delas em silêncio.
+      const porDocumento = new Map<string, CompanyRef[]>();
+      for (const { cnpj, ...empresa } of empresas) {
+        const digits = onlyDigits(cnpj);
+        if (!digits) continue;
+        porDocumento.set(digits, [
+          ...(porDocumento.get(digits) ?? []),
+          empresa,
+        ]);
+      }
+
+      const cargas = await this.prisma.migrationRun.findMany({
+        where: { dryRun: false, startedAt: { not: null } },
+        select: {
+          legacyBase: true,
+          company: { select: { id: true, name: true, isActive: true } },
+        },
+      });
 
       const resultado: LegacyBase[] = [];
 
@@ -74,7 +99,12 @@ export class MigrationService {
         try {
           const [empresa] = await connection.query(LEGACY_COMPANY_SQL(base));
           const dados = (empresa as any[])[0];
-          const vinculada = porDocumento.get(this.onlyDigits(dados?.cnpj));
+          const contas = porDocumento.get(onlyDigits(dados?.cnpj)) ?? [];
+          const bloqueio = findDestinationConflict(
+            contas,
+            cargas.filter((c) => c.legacyBase === base).map((c) => c.company),
+          );
+          const vinculada = contas.length === 1 ? contas[0] : null;
 
           resultado.push({
             base,
@@ -83,6 +113,7 @@ export class MigrationService {
             empresaVinculada: vinculada
               ? { id: vinculada.id, name: vinculada.name }
               : null,
+            bloqueio,
           });
         } catch {
           // Base sem empresa cadastrada ainda aparece na lista: esconder a
@@ -92,6 +123,7 @@ export class MigrationService {
             razaoSocial: null,
             cnpj: null,
             empresaVinculada: null,
+            bloqueio: null,
           });
         }
       }
@@ -102,8 +134,58 @@ export class MigrationService {
     }
   }
 
-  private onlyDigits(value: string | null | undefined): string {
-    return String(value ?? '').replace(/[^\d]/g, '');
+  /** Empresa cadastrada na base legada, ou `null` se não houver. */
+  protected async legacyCompany(
+    base: string,
+  ): Promise<{ nome?: string; razao_social?: string; cnpj?: string } | null> {
+    if (!process.env.LEGACY_DB_HOST) {
+      throw new BadRequestException(
+        'Acesso ao sistema legado não configurado neste ambiente',
+      );
+    }
+    const connection = await this.legacyConnection();
+    try {
+      const [rows] = await connection.query(LEGACY_COMPANY_SQL(base));
+      return (rows as any[])[0] ?? null;
+    } finally {
+      await connection.end();
+    }
+  }
+
+  /**
+   * Confere o destino antes de registrar a execução.
+   *
+   * O script repete as mesmas conferências; aqui elas existem para o suporte
+   * receber a recusa no clique, e não minutos depois como execução com falha.
+   */
+  private async assertDestination(
+    company: { id: string; name: string; cnpj: string | null },
+    legacyBase: string,
+  ) {
+    const legado = await this.legacyCompany(legacyBase);
+    if (!legado) {
+      throw new BadRequestException(
+        `Base '${legacyBase}' não tem empresa cadastrada`,
+      );
+    }
+
+    try {
+      assertSameCompany(legado, company);
+    } catch (error: any) {
+      throw new BadRequestException(error.message);
+    }
+
+    const contas = await this.prisma.company.findMany({
+      where: { cnpj: { not: null } },
+      select: { id: true, name: true, cnpj: true, isActive: true },
+    });
+    const conflito = findDestinationConflict(
+      contas
+        .filter((c) => onlyDigits(c.cnpj) === onlyDigits(legado.cnpj))
+        .map(({ cnpj: _cnpj, ...c }) => c),
+      await companiesLoadedFrom(this.prisma, legacyBase),
+    );
+    if (conflito) throw new ConflictException(conflito);
   }
 
   /**
@@ -129,7 +211,7 @@ export class MigrationService {
 
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, cnpj: true },
     });
     if (!company) throw new NotFoundException('Empresa não encontrada');
 
@@ -144,6 +226,8 @@ export class MigrationService {
         `Já existe uma migração em andamento (${emAndamento.company.name}). Aguarde a conclusão.`,
       );
     }
+
+    await this.assertDestination(company, legacyBase);
 
     const run = await this.prisma.migrationRun.create({
       data: { companyId, legacyBase, dryRun, startedById },

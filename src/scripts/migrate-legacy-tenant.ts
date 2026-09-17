@@ -8,6 +8,13 @@ import {
   LEGACY_COMPANY_SQL,
   LegacyExtractor,
 } from './legacy-extractors';
+import {
+  assertSameCompany,
+  assertSingleDestination,
+} from './legacy-destination-guard';
+
+// Reexportados: a regra mora no módulo compartilhado com a API.
+export { assertSameCompany, onlyDigits } from './legacy-destination-guard';
 
 /**
  * Migra um cliente da versão legada para o Atrupe novo.
@@ -77,43 +84,6 @@ export interface StepResult {
   /** Documentos distintos extraídos, quando uma linha não é um documento. */
   documents?: number;
   errors: { row: number; codigoLegado: string; error: string }[];
-}
-
-/** Só dígitos, para comparar documento entre os dois sistemas. */
-export function onlyDigits(value: any): string {
-  return String(value ?? '').replace(/[^\d]/g, '');
-}
-
-/**
- * Impede a carga quando a base legada não é a do cliente que está na conta.
- *
- * É a proteção mais importante do script: sem ela, um nome de base trocado
- * despeja os dados de um cliente dentro da empresa de outro, e nada no
- * processo acusaria.
- */
-export function assertSameCompany(
-  legacyCompany: { nome?: string; razao_social?: string; cnpj?: string },
-  newCompany: { name: string; cnpj: string | null },
-): void {
-  const legacyDoc = onlyDigits(legacyCompany?.cnpj);
-  const newDoc = onlyDigits(newCompany?.cnpj);
-
-  if (!legacyDoc || !newDoc) {
-    throw new Error(
-      `Não foi possível conferir a identidade da empresa: CNPJ ausente ` +
-        `(legado: '${legacyCompany?.cnpj ?? ''}', novo: '${newCompany?.cnpj ?? ''}'). ` +
-        `Preencha o CNPJ nos dois lados antes de migrar.`,
-    );
-  }
-
-  if (legacyDoc !== newDoc) {
-    throw new Error(
-      `A base legada não corresponde à empresa da conta informada.\n` +
-        `  Legado: ${legacyCompany.razao_social || legacyCompany.nome} — ${legacyCompany.cnpj}\n` +
-        `  Novo:   ${newCompany.name} — ${newCompany.cnpj}\n` +
-        `Confira o nome da base e o e-mail da conta.`,
-    );
-  }
 }
 
 async function runStep(
@@ -361,6 +331,9 @@ export async function migrateLegacyTenant(
     }
 
     assertSameCompany(legacyCompany, company as any);
+    // Vale também para quem roda pela linha de comando, que não passa pela
+    // conferência da tela.
+    await assertSingleDestination(prisma, base, legacyCompany.cnpj);
 
     console.log(`Empresa de destino: ${companyName} (${companyId})`);
     console.log(
