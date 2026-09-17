@@ -284,4 +284,70 @@ describe('ImportService references', () => {
       );
     });
   });
+
+  /**
+   * O setor do produto não passa pelo mesmo fluxo de confirmação: a carga não
+   * recusa a linha quando ele falta, grava o produto sem setor. Por isso a
+   * migração cria o que o legado cita.
+   */
+  describe('setores do produto', () => {
+    const sectorService = (existentes: any[]) => {
+      const prisma: any = {
+        companySector: {
+          // O caminho case-insensitive é do banco; aqui exercitamos o de acento.
+          findFirst: jest.fn().mockResolvedValue(null),
+          findMany: jest.fn().mockResolvedValue(existentes),
+          create: jest.fn().mockResolvedValue({ id: 'setor-novo' }),
+        },
+      };
+      return {
+        prisma,
+        service: new ImportService(prisma, {} as any, {} as any),
+      };
+    };
+
+    const linhas = [
+      { codigo: '1', setor: 'Impressao' },
+      { codigo: '2', setor: 'IMPRESSÃO' },
+      { codigo: '3', setor: 'Corte' },
+      { codigo: '4', setor: '' },
+    ];
+
+    it('lista só o setor que a empresa não tem, ignorando caixa e acento', async () => {
+      const { service } = sectorService([{ id: 's1', name: 'Impressão' }]);
+
+      await expect(
+        service.findMissingSectors(linhas, 'company-1'),
+      ).resolves.toEqual(['Corte']);
+    });
+
+    it('cria o setor ausente como etapa de produção', async () => {
+      const { service, prisma } = sectorService([
+        { id: 's1', name: 'Impressão' },
+      ]);
+
+      await expect(
+        service.ensureProductSectors(linhas, 'company-1'),
+      ).resolves.toEqual(['Corte']);
+
+      expect(prisma.companySector.create).toHaveBeenCalledTimes(1);
+      expect(prisma.companySector.create).toHaveBeenCalledWith({
+        data: {
+          name: 'Corte',
+          companyId: 'company-1',
+          kind: 'PRODUCTION',
+          isProductionStage: true,
+        },
+      });
+    });
+
+    it('não cria nada quando o produto não declara setor', async () => {
+      const { service, prisma } = sectorService([]);
+
+      await expect(
+        service.ensureProductSectors([{ codigo: '1', setor: '' }], 'company-1'),
+      ).resolves.toEqual([]);
+      expect(prisma.companySector.create).not.toHaveBeenCalled();
+    });
+  });
 });

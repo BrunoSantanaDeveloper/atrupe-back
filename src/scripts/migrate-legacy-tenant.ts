@@ -8,6 +8,7 @@ import {
   LEGACY_COMPANY_SQL,
   LegacyExtractor,
 } from './legacy-extractors';
+import { GENERIC_BANK_CODE } from '../core/import/import-references';
 import {
   assertSameCompany,
   assertSingleDestination,
@@ -54,6 +55,8 @@ export interface SimulatedKeys {
   employee: Set<string>;
   product: Set<string>;
   paymentCondition: Set<string>;
+  /** Cadastros de apoio que a preparação da etapa cria antes da carga. */
+  reference: Set<string>;
 }
 
 /**
@@ -68,6 +71,75 @@ const RESOLVED_BY_LOAD_ORDER: Record<string, keyof SimulatedKeys> = {
   CondicaoPagamentoCodigoLegado: 'paymentCondition',
 };
 
+/**
+ * Campos que apontam para cadastro de apoio criado na preparação da etapa —
+ * setor do produto, natureza, subcategoria e conta bancária do financeiro.
+ */
+const RESOLVED_BY_PREPARATION = new Set([
+  'setor',
+  'Natureza',
+  'SubCategoria',
+  'ContaBancaria',
+]);
+
+/** Nome comparável: sem acento, sem caixa e sem espaço nas pontas. */
+const comparableName = (value: unknown) =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
+/**
+ * Garante os cadastros de apoio de que a etapa depende.
+ *
+ * A carga não recusa a linha quando o cadastro falta: grava o vínculo vazio, e
+ * o produto fica sem setor, a parcela sem conta bancária. Criar aqui, a partir
+ * dos nomes que a própria carga traz, é o que preserva esses vínculos.
+ *
+ * Na simulação nada é gravado — devolve o que seria criado, para a validação
+ * não acusar como erro o que a carga real resolve sozinha.
+ */
+export async function prepareReferences(
+  internals: any,
+  extractor: LegacyExtractor,
+  rows: any[],
+  companyId: string,
+  dryRun: boolean,
+): Promise<string[]> {
+  if (extractor.entity === 'product') {
+    return dryRun
+      ? internals.findMissingSectors(rows, companyId)
+      : internals.ensureProductSectors(rows, companyId);
+  }
+
+  if (extractor.entity !== 'financial') return [];
+
+  if (!dryRun) {
+    const { created, reactivated } = await internals.ensureFinancialReferences(
+      rows,
+      companyId,
+    );
+    return [...created, ...reactivated].map((ref: any) => ref.name);
+  }
+
+  const missing = await internals.findMissingReferences(rows, companyId);
+
+  // A conta bancária nasce vinculada ao banco genérico. Sem ele, a criação
+  // falharia só na carga real, depois de a simulação ter aprovado.
+  if (missing.some((ref: any) => ref.type === 'bankAccount')) {
+    const bank = await internals.findGenericBank();
+    if (!bank) {
+      throw new Error(
+        `Banco de código ${GENERIC_BANK_CODE} não encontrado: sem ele não dá ` +
+          'para criar as contas bancárias que o financeiro do legado cita.',
+      );
+    }
+  }
+
+  return missing.map((ref: any) => ref.name);
+}
+
 export interface StepResult {
   label: string;
   extracted: number;
@@ -79,6 +151,8 @@ export interface StepResult {
   pending?: number;
   /** Documentos já migrados numa execução anterior. */
   skipped?: number;
+  /** Cadastros de apoio criados na etapa, ou a criar quando é simulação. */
+  created?: string[];
   /** Documentos na origem, quando o extrator sabe contar. */
   expected?: number;
   /** Documentos distintos extraídos, quando uma linha não é um documento. */
@@ -128,6 +202,18 @@ async function runStep(
   }
 
   const internals = service as any;
+
+  const preparados = await prepareReferences(
+    internals,
+    extractor,
+    rows,
+    companyId,
+    dryRun,
+  );
+  if (preparados.length > 0) {
+    result.created = preparados;
+    preparados.forEach((name) => simulated.reference.add(comparableName(name)));
+  }
 
   // Vendas e financeiro são processados em lote: o importador agrupa várias
   // linhas no mesmo documento, então não dá para tratar linha a linha.
@@ -183,6 +269,14 @@ async function runStep(
           // de verdade no meio do ruído.
           const dependency = RESOLVED_BY_LOAD_ORDER[issue.field];
           if (dependency && simulated[dependency].has(String(issue.value))) {
+            return false;
+          }
+
+          // Cadastro de apoio que a preparação da etapa cria antes da carga.
+          if (
+            RESOLVED_BY_PREPARATION.has(issue.field) &&
+            simulated.reference.has(comparableName(issue.value))
+          ) {
             return false;
           }
 
@@ -351,6 +445,7 @@ export async function migrateLegacyTenant(
       employee: new Set(),
       product: new Set(),
       paymentCondition: new Set(),
+      reference: new Set(),
     };
 
     for (const extractor of EXTRACTORS) {
@@ -372,6 +467,9 @@ export async function migrateLegacyTenant(
           ? `${result.pending} resolvido(s) pela ordem de carga`
           : '',
         result.skipped ? `${result.skipped} já migrado(s)` : '',
+        result.created?.length
+          ? `${result.created.length} cadastro(s) ${dryRun ? 'a criar' : 'criado(s)'}`
+          : '',
       ].filter(Boolean);
 
       const status =
@@ -388,6 +486,12 @@ export async function migrateLegacyTenant(
       if (result.expected !== undefined && result.expected > unit) {
         console.log(
           `   ${result.expected - unit} documento(s) da origem não entraram na extração`,
+        );
+      }
+
+      if (result.created?.length) {
+        console.log(
+          `   ${dryRun ? 'seriam criados' : 'criados'}: ${result.created.join(', ')}`,
         );
       }
 

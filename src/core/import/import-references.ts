@@ -1,6 +1,6 @@
 /**
- * Resolução dos cadastros que o CSV cita por nome (conta bancária, natureza,
- * subcategoria).
+ * Resolução dos cadastros que a importação cita por nome (conta bancária,
+ * natureza, subcategoria, setor).
  *
  * Os nomes vêm digitados na planilha do cliente, então toda busca ignora espaços
  * nas pontas e diferença de caixa — uma maiúscula divergente derrubava a
@@ -13,7 +13,11 @@ export const GENERIC_BANK_CODE = '000';
 /** Natureza usada como pai quando a linha traz subcategoria sem natureza. */
 export const FALLBACK_NATURE_DESCRIPTION = 'Geral';
 
-export type ImportReferenceType = 'nature' | 'subCategory' | 'bankAccount';
+export type ImportReferenceType =
+  | 'nature'
+  | 'subCategory'
+  | 'bankAccount'
+  | 'sector';
 
 export interface ImportReference {
   type: ImportReferenceType;
@@ -52,6 +56,10 @@ export function collectBankAccountNames(rows: any[]): string[] {
 
 export function collectNatureNames(rows: any[]): string[] {
   return distinctColumn(rows, 'Natureza');
+}
+
+export function collectSectorNames(rows: any[]): string[] {
+  return distinctColumn(rows, 'setor');
 }
 
 /**
@@ -119,4 +127,35 @@ export async function findActiveSubCategoryByDescription(
       ...(natureId ? { natureId } : {}),
     },
   });
+}
+
+/** Nome comparável: sem acento, sem caixa e sem espaço nas pontas. */
+const comparable = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
+/**
+ * Setor pelo nome, com a mesma tolerância da importação de produto: ignora
+ * caixa e acento, então "Impressao" encontra "Impressão". Setor inativo conta
+ * como existente, igual ao que o produto faz ao resolver o vínculo.
+ */
+export async function findSectorByName(
+  prisma: any,
+  companyId: string,
+  name: string,
+) {
+  if (!name?.trim()) return null;
+
+  const direct = await prisma.companySector.findFirst({
+    where: { name: insensitive(name), companyId },
+  });
+  if (direct) return direct;
+
+  const sectors = await prisma.companySector.findMany({ where: { companyId } });
+  return (
+    sectors.find((s: any) => comparable(s.name) === comparable(name)) ?? null
+  );
 }

@@ -23,10 +23,12 @@ import {
   ImportReference,
   collectBankAccountNames,
   collectNatureNames,
+  collectSectorNames,
   collectSubCategoryRefs,
   findActiveBankAccountByName,
   findActiveNatureByDescription,
   findActiveSubCategoryByDescription,
+  findSectorByName,
 } from './import-references';
 import {
   resolveOptionalEmail,
@@ -525,7 +527,20 @@ export class ImportService {
       this.normalizeRow(r),
     );
 
-    const companyId = importLog.companyId;
+    return this.ensureFinancialReferences(rows, importLog.companyId);
+  }
+
+  /**
+   * Cria natureza, subcategoria e conta bancária citadas nas linhas.
+   *
+   * Serve às duas origens: o CSV da tela e a migração do legado, que chega com
+   * as linhas em memória em vez de um arquivo enviado.
+   *
+   * A ordem importa: subcategoria depende de uma natureza-pai, que pode ter
+   * sido criada agora mesmo. Registro inativo de mesmo nome é reativado em vez
+   * de duplicado, porque o validador filtra por `isActive`.
+   */
+  async ensureFinancialReferences(rows: any[], companyId: string) {
     const created: ImportReference[] = [];
     const reactivated: ImportReference[] = [];
     const skipped: ImportReference[] = [];
@@ -694,6 +709,53 @@ export class ImportService {
     }
 
     return { created, reactivated, skipped };
+  }
+
+  /** Setores citados nas linhas de produto que a empresa ainda não tem. */
+  async findMissingSectors(rows: any[], companyId: string): Promise<string[]> {
+    const missing: string[] = [];
+
+    for (const name of collectSectorNames(rows)) {
+      const sector = await findSectorByName(this.prisma, companyId, name);
+      if (!sector) missing.push(name);
+    }
+
+    return missing;
+  }
+
+  /**
+   * Cria os setores que os produtos citam e a empresa não tem.
+   *
+   * O produto guarda o setor, e a carga não recusa a linha por causa dele: sem
+   * o cadastro, o produto entraria com setor vazio e sumiria dos filtros da
+   * produção. Os nomes saem da própria carga, não de um payload arbitrário.
+   *
+   * Nasce como etapa de produção porque é assim que o setor de um produto é
+   * usado; setor de outra natureza o cliente ajusta depois no cadastro.
+   */
+  async ensureProductSectors(
+    rows: any[],
+    companyId: string,
+  ): Promise<string[]> {
+    const missing = await this.findMissingSectors(rows, companyId);
+
+    for (const name of missing) {
+      await this.prisma.companySector.create({
+        data: {
+          name,
+          companyId,
+          kind: 'PRODUCTION',
+          isProductionStage: true,
+        },
+      });
+    }
+
+    return missing;
+  }
+
+  /** Banco genérico de que a criação de conta bancária depende. */
+  async findGenericBank() {
+    return this.prisma.bank.findFirst({ where: { code: GENERIC_BANK_CODE } });
   }
 
   /**

@@ -1,4 +1,8 @@
-import { assertSameCompany, onlyDigits } from './migrate-legacy-tenant';
+import {
+  assertSameCompany,
+  onlyDigits,
+  prepareReferences,
+} from './migrate-legacy-tenant';
 import { EXTRACTORS } from './legacy-extractors';
 import { QUOTATION_IMPORT_SCHEMA } from '../core/import/schemas/quotation-import.schema';
 import { ORDER_IMPORT_SCHEMA } from '../core/import/schemas/order-import.schema';
@@ -607,5 +611,78 @@ describe('guarda de sanidade das medidas', () => {
       expect(await largura.validate('3,5')).toBeNull();
       expect(await largura.validate('')).toBeNull();
     }
+  });
+});
+
+/**
+ * Os cadastros de apoio não recusam a linha quando faltam: o produto entraria
+ * sem setor e a parcela sem conta bancária. A preparação da etapa é o que
+ * preserva esses vínculos, e a simulação precisa enxergar o que ela criaria.
+ */
+describe('prepareReferences', () => {
+  const internals = (over: any = {}) => ({
+    findMissingSectors: jest.fn().mockResolvedValue(['Corte']),
+    ensureProductSectors: jest.fn().mockResolvedValue(['Corte']),
+    findMissingReferences: jest.fn().mockResolvedValue([
+      { type: 'bankAccount', name: 'Sicredi CC 47204-3' },
+      { type: 'nature', name: 'Vendas' },
+    ]),
+    ensureFinancialReferences: jest.fn().mockResolvedValue({
+      created: [{ type: 'bankAccount', name: 'Sicredi CC 47204-3' }],
+      reactivated: [{ type: 'nature', name: 'Vendas' }],
+      skipped: [{ type: 'nature', name: 'Operacional' }],
+    }),
+    findGenericBank: jest.fn().mockResolvedValue({ id: 'bank-000' }),
+    ...over,
+  });
+
+  const etapa = (entity: string) => ({ entity }) as any;
+
+  it('na simulação, apenas lista os setores que faltam', async () => {
+    const service = internals();
+
+    await expect(
+      prepareReferences(service, etapa('product'), [], 'company-1', true),
+    ).resolves.toEqual(['Corte']);
+    expect(service.ensureProductSectors).not.toHaveBeenCalled();
+  });
+
+  it('na carga, cria os setores que faltam', async () => {
+    const service = internals();
+
+    await expect(
+      prepareReferences(service, etapa('product'), [], 'company-1', false),
+    ).resolves.toEqual(['Corte']);
+    expect(service.findMissingSectors).not.toHaveBeenCalled();
+  });
+
+  it('na carga do financeiro, relata criados e reativados', async () => {
+    const service = internals();
+
+    await expect(
+      prepareReferences(service, etapa('financial'), [], 'company-1', false),
+    ).resolves.toEqual(['Sicredi CC 47204-3', 'Vendas']);
+  });
+
+  it('na simulação do financeiro, confere o banco genérico', async () => {
+    // Sem ele a criação falharia só na carga real, depois de a simulação ter
+    // aprovado.
+    const service = internals({
+      findGenericBank: jest.fn().mockResolvedValue(null),
+    });
+
+    await expect(
+      prepareReferences(service, etapa('financial'), [], 'company-1', true),
+    ).rejects.toThrow(/Banco de código 000 não encontrado/);
+  });
+
+  it('etapa sem cadastro de apoio não consulta nada', async () => {
+    const service = internals();
+
+    await expect(
+      prepareReferences(service, etapa('client'), [], 'company-1', true),
+    ).resolves.toEqual([]);
+    expect(service.findMissingSectors).not.toHaveBeenCalled();
+    expect(service.findMissingReferences).not.toHaveBeenCalled();
   });
 });
