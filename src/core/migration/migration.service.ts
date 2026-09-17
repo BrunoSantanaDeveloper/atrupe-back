@@ -1,9 +1,11 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { spawn } from 'child_process';
@@ -12,14 +14,28 @@ import * as mysql from 'mysql2/promise';
 import { LEGACY_COMPANY_SQL } from '../../scripts/legacy-extractors';
 import {
   assertSameCompany,
-  companiesLoadedFrom,
-  CompanyRef,
+  companiesWithCnpj,
+  destinationConflict,
   findDestinationConflict,
   onlyDigits,
+  realLoads,
 } from '../../scripts/legacy-destination-guard';
+import { validCNPJ } from '../../helpers/validators/cnpj';
 
 /** Formato do nome de base no legado, que é um banco por cliente. */
 const LEGACY_BASE_PATTERN = /^acn_\d+$/;
+
+/** Consultas simultâneas ao legado durante a busca por CNPJ. */
+const LEGACY_SEARCH_CONCURRENCY = 5;
+
+const CONNECTION_ERRORS = [
+  'ETIMEDOUT',
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EHOSTUNREACH',
+];
+
+type LegacyCompany = { nome?: string; razao_social?: string; cnpj?: string };
 
 export interface LegacyBase {
   base: string;
@@ -31,124 +47,170 @@ export interface LegacyBase {
   bloqueio: string | null;
 }
 
+export interface LegacyBaseSearch {
+  /**
+   * Quantas bases de cliente o usuário do legado consegue ler. Com poucas, um
+   * "não encontrado" tende a ser base não liberada, e não CNPJ errado.
+   */
+  basesConsultadas: number;
+  encontradas: LegacyBase[];
+}
+
 @Injectable()
 export class MigrationService {
   private readonly logger = new Logger(MigrationService.name);
 
   constructor(private readonly prisma: PrismaService) {}
 
-  private legacyConnection() {
-    return mysql.createConnection({
+  protected legacyPool(): mysql.Pool {
+    if (!process.env.LEGACY_DB_HOST) {
+      throw new BadRequestException(
+        'Acesso ao sistema legado não configurado neste ambiente. Defina ' +
+          'LEGACY_DB_HOST, LEGACY_DB_PORT, LEGACY_DB_USER e LEGACY_DB_PASSWORD ' +
+          'no ambiente da API.',
+      );
+    }
+    return mysql.createPool({
       host: process.env.LEGACY_DB_HOST,
       port: Number(process.env.LEGACY_DB_PORT || 3306),
       user: process.env.LEGACY_DB_USER,
       password: process.env.LEGACY_DB_PASSWORD,
       connectTimeout: 20000,
+      connectionLimit: LEGACY_SEARCH_CONCURRENCY,
     });
   }
 
-  /**
-   * Bases liberadas no legado, já com a identidade da empresa.
-   *
-   * O suporte escolhe da lista em vez de digitar o nome da base: um nome
-   * trocado despejaria os dados de um cliente dentro da empresa de outro. A
-   * conferência de CNPJ na carga continua valendo como segunda barreira.
-   */
-  async listLegacyBases(): Promise<LegacyBase[]> {
-    if (!process.env.LEGACY_DB_HOST) {
-      throw new BadRequestException(
-        'Acesso ao sistema legado não configurado neste ambiente',
+  /** Falha de acesso ao legado em termos que o suporte consiga encaminhar. */
+  private legacyError(error: any): Error {
+    if (error instanceof HttpException) return error;
+
+    if (CONNECTION_ERRORS.includes(error?.code)) {
+      // O legado só é alcançável de dentro da rede da AWS: fora do servidor,
+      // esta é a falha esperada.
+      return new ServiceUnavailableException(
+        `Não foi possível conectar ao banco legado (${error.code}). ` +
+          'Confira LEGACY_DB_HOST e LEGACY_DB_PORT no ambiente da API.',
       );
     }
+    if (error?.code === 'ER_ACCESS_DENIED_ERROR') {
+      return new ServiceUnavailableException(
+        'O banco legado recusou o usuário configurado. Confira ' +
+          'LEGACY_DB_USER e LEGACY_DB_PASSWORD no ambiente da API.',
+      );
+    }
+    if (error?.sqlMessage) {
+      return new BadRequestException(
+        `O banco legado recusou a consulta: ${error.sqlMessage}`,
+      );
+    }
+    return error;
+  }
 
-    const connection = await this.legacyConnection();
+  /**
+   * Procura no legado a base do cliente pelo CNPJ.
+   *
+   * O pedido de migração chega do cliente com o CNPJ, não com o nome da base.
+   * A busca percorre as bases que o usuário do legado consegue ler: estar na
+   * mesma rede permite conectar ao servidor, mas quem decide quais bases são
+   * lidas é a permissão desse usuário no MySQL. Base sem permissão não aparece.
+   */
+  async findLegacyBases(cnpj: string | undefined): Promise<LegacyBaseSearch> {
+    const digits = onlyDigits(cnpj);
+    if (!digits) throw new BadRequestException('Informe o CNPJ do cliente');
+    if (!validCNPJ(digits)) {
+      throw new BadRequestException(`CNPJ inválido: ${cnpj}`);
+    }
+
+    const pool = this.legacyPool();
 
     try {
-      const [rows] = await connection.query('SHOW DATABASES');
-      const bases = (rows as any[])
-        .map((r) => Object.values(r)[0] as string)
-        .filter((name) => LEGACY_BASE_PATTERN.test(name));
-
-      const empresas = await this.prisma.company.findMany({
-        where: { cnpj: { not: null } },
-        select: { id: true, name: true, cnpj: true, isActive: true },
-      });
-      // Agrupado, não indexado: com duas contas no mesmo CNPJ, um mapa simples
-      // escolheria uma delas em silêncio.
-      const porDocumento = new Map<string, CompanyRef[]>();
-      for (const { cnpj, ...empresa } of empresas) {
-        const digits = onlyDigits(cnpj);
-        if (!digits) continue;
-        porDocumento.set(digits, [
-          ...(porDocumento.get(digits) ?? []),
-          empresa,
-        ]);
+      const bases = await this.readableBases(pool);
+      if (bases.length === 0) {
+        throw new BadRequestException(
+          'O usuário do legado não tem permissão de leitura em nenhuma base ' +
+            'de cliente. Peça ao time do legado o SELECT nas bases acn_.',
+        );
       }
 
-      const cargas = await this.prisma.migrationRun.findMany({
-        where: { dryRun: false, startedAt: { not: null } },
-        select: {
-          legacyBase: true,
-          company: { select: { id: true, name: true, isActive: true } },
-        },
-      });
+      const empresas = await Promise.all(
+        bases.map(async (base) => ({
+          base,
+          dados: await this.companyOf(pool, base),
+        })),
+      );
+      const achadas = empresas.filter(
+        (e) => onlyDigits(e.dados?.cnpj) === digits,
+      );
 
-      const resultado: LegacyBase[] = [];
-
-      for (const base of bases) {
-        try {
-          const [empresa] = await connection.query(LEGACY_COMPANY_SQL(base));
-          const dados = (empresa as any[])[0];
-          const contas = porDocumento.get(onlyDigits(dados?.cnpj)) ?? [];
-          const bloqueio = findDestinationConflict(
-            contas,
-            cargas.filter((c) => c.legacyBase === base).map((c) => c.company),
-          );
-          const vinculada = contas.length === 1 ? contas[0] : null;
-
-          resultado.push({
-            base,
-            razaoSocial: dados?.razao_social || dados?.nome || null,
-            cnpj: dados?.cnpj || null,
-            empresaVinculada: vinculada
-              ? { id: vinculada.id, name: vinculada.name }
-              : null,
-            bloqueio,
-          });
-        } catch {
-          // Base sem empresa cadastrada ainda aparece na lista: esconder a
-          // deixaria o suporte sem entender por que ela sumiu.
-          resultado.push({
-            base,
-            razaoSocial: null,
-            cnpj: null,
-            empresaVinculada: null,
-            bloqueio: null,
-          });
-        }
+      if (achadas.length === 0) {
+        return { basesConsultadas: bases.length, encontradas: [] };
       }
 
-      return resultado;
+      const contas = await companiesWithCnpj(this.prisma, digits);
+      const cargas = await realLoads(
+        this.prisma,
+        achadas.map((a) => a.base),
+        contas.map((c) => c.id),
+      );
+      const vinculada = contas.length === 1 ? contas[0] : null;
+
+      return {
+        basesConsultadas: bases.length,
+        encontradas: achadas.map(({ base, dados }) => ({
+          base,
+          razaoSocial: dados?.razao_social || dados?.nome || null,
+          cnpj: dados?.cnpj || null,
+          empresaVinculada: vinculada
+            ? { id: vinculada.id, name: vinculada.name }
+            : null,
+          bloqueio: findDestinationConflict({
+            base,
+            sameCnpj: contas,
+            loads: cargas,
+          }),
+        })),
+      };
+    } catch (error) {
+      throw this.legacyError(error);
     } finally {
-      await connection.end();
+      await pool.end().catch(() => undefined);
+    }
+  }
+
+  /** Bases de cliente que o usuário do legado consegue ler. */
+  private async readableBases(pool: mysql.Pool): Promise<string[]> {
+    // SHOW DATABASES só devolve as bases em que o usuário tem alguma permissão.
+    const [rows] = await pool.query('SHOW DATABASES');
+    return (rows as any[])
+      .map((r) => Object.values(r)[0] as string)
+      .filter((name) => LEGACY_BASE_PATTERN.test(name));
+  }
+
+  private async companyOf(
+    pool: mysql.Pool,
+    base: string,
+  ): Promise<LegacyCompany | null> {
+    try {
+      const [rows] = await pool.query(LEGACY_COMPANY_SQL(base));
+      return (rows as any[])[0] ?? null;
+    } catch (error: any) {
+      // Uma base sem as tabelas da empresa não pode derrubar a busca nas
+      // demais. Queda de conexão, sim: sem ela, a busca diria "não encontrado".
+      if (error?.fatal) throw error;
+      return null;
     }
   }
 
   /** Empresa cadastrada na base legada, ou `null` se não houver. */
-  protected async legacyCompany(
-    base: string,
-  ): Promise<{ nome?: string; razao_social?: string; cnpj?: string } | null> {
-    if (!process.env.LEGACY_DB_HOST) {
-      throw new BadRequestException(
-        'Acesso ao sistema legado não configurado neste ambiente',
-      );
-    }
-    const connection = await this.legacyConnection();
+  protected async legacyCompany(base: string): Promise<LegacyCompany | null> {
+    const pool = this.legacyPool();
     try {
-      const [rows] = await connection.query(LEGACY_COMPANY_SQL(base));
+      const [rows] = await pool.query(LEGACY_COMPANY_SQL(base));
       return (rows as any[])[0] ?? null;
+    } catch (error) {
+      throw this.legacyError(error);
     } finally {
-      await connection.end();
+      await pool.end().catch(() => undefined);
     }
   }
 
@@ -175,15 +237,10 @@ export class MigrationService {
       throw new BadRequestException(error.message);
     }
 
-    const contas = await this.prisma.company.findMany({
-      where: { cnpj: { not: null } },
-      select: { id: true, name: true, cnpj: true, isActive: true },
-    });
-    const conflito = findDestinationConflict(
-      contas
-        .filter((c) => onlyDigits(c.cnpj) === onlyDigits(legado.cnpj))
-        .map(({ cnpj: _cnpj, ...c }) => c),
-      await companiesLoadedFrom(this.prisma, legacyBase),
+    const conflito = await destinationConflict(
+      this.prisma,
+      legacyBase,
+      legado.cnpj,
     );
     if (conflito) throw new ConflictException(conflito);
   }

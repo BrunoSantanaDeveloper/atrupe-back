@@ -34,7 +34,7 @@ export class StartMigrationDto {
  * Migração de clientes do sistema legado, operada pelo suporte.
  *
  * Existe para que a migração não dependa de alguém com acesso ao servidor: o
- * suporte escolhe a empresa e a base, roda a simulação, confere o relatório e
+ * suporte procura o cliente pelo CNPJ, roda a simulação, confere o relatório e
  * só então grava.
  */
 @ApiTags('Admin — Migração')
@@ -45,10 +45,11 @@ export class MigrationController {
 
   @Get('bases')
   @ApiOperation({
-    summary: 'Bases liberadas no legado, com a empresa correspondente',
+    summary:
+      'Procura no legado a base do cliente pelo CNPJ, com a conta correspondente',
   })
-  async bases() {
-    return this.migrationService.listLegacyBases();
+  async bases(@Query('cnpj') cnpj?: string) {
+    return this.migrationService.findLegacyBases(cnpj);
   }
 
   @Post('runs')
