@@ -275,9 +275,43 @@ describe('MigrationService', () => {
       // estar liberada, e não que o CNPJ está errado.
       delete basesLegado.acn_001676;
 
-      await expect(service.findLegacyBases('11222333000181')).resolves.toEqual({
-        basesConsultadas: 1,
-        encontradas: [],
+      const busca = await service.findLegacyBases('11222333000181');
+
+      expect(busca.basesConsultadas).toBe(1);
+      expect(busca.encontradas).toEqual([]);
+    });
+
+    it('não encontrado mostra o que foi lido em cada base liberada', async () => {
+      // É a evidência para conferir com o time do legado: a base está entre as
+      // liberadas? com que documento ela está cadastrada?
+      delete basesLegado.acn_001676;
+
+      const busca = await service.findLegacyBases('11222333000181');
+
+      expect(busca.consultadas).toEqual([
+        {
+          base: 'acn_000001',
+          razaoSocial: 'Outro Cliente',
+          cnpj: '99888777000166',
+          cpf: null,
+        },
+      ]);
+    });
+
+    it('base liberada só no banco aparece com o motivo da recusa', async () => {
+      // Permissão no banco sem permissão nas tabelas: a base aparece em SHOW
+      // DATABASES, mas a leitura da empresa é negada.
+      basesLegado.acn_000001 = Object.assign(new Error('negado'), {
+        errno: 1142,
+        sqlMessage: "SELECT command denied to user 'migracao'",
+      });
+      delete basesLegado.acn_001676;
+
+      const busca = await service.findLegacyBases('11222333000181');
+
+      expect(busca.consultadas?.[0]).toMatchObject({
+        base: 'acn_000001',
+        erro: "SELECT command denied to user 'migracao'",
       });
     });
 

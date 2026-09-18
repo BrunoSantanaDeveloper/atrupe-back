@@ -35,7 +35,15 @@ const CONNECTION_ERRORS = [
   'EHOSTUNREACH',
 ];
 
-type LegacyCompany = { nome?: string; razao_social?: string; cnpj?: string };
+type LegacyCompany = {
+  nome?: string;
+  razao_social?: string;
+  cnpj?: string;
+  cpf?: string;
+};
+
+/** Teto da lista de conferência: com todas as bases liberadas, seriam centenas. */
+const MAX_LISTED_BASES = 50;
 
 export interface LegacyBase {
   base: string;
@@ -47,6 +55,17 @@ export interface LegacyBase {
   bloqueio: string | null;
 }
 
+/** O que a busca enxergou numa base, para conferir quando nada casa. */
+export interface LegacyBaseGlimpse {
+  base: string;
+  razaoSocial: string | null;
+  cnpj: string | null;
+  /** CPF, quando a empresa do legado está cadastrada como pessoa. */
+  cpf: string | null;
+  /** Por que não deu para ler a empresa desta base. */
+  erro?: string;
+}
+
 export interface LegacyBaseSearch {
   /**
    * Quantas bases de cliente o usuário do legado consegue ler. Com poucas, um
@@ -54,6 +73,12 @@ export interface LegacyBaseSearch {
    */
   basesConsultadas: number;
   encontradas: LegacyBase[];
+  /**
+   * Só quando nada casa: o que foi lido em cada base. É por aqui que se vê se
+   * a base do cliente está entre as liberadas e com que documento ela está
+   * cadastrada.
+   */
+  consultadas?: LegacyBaseGlimpse[];
 }
 
 @Injectable()
@@ -135,7 +160,7 @@ export class MigrationService {
       const empresas = await Promise.all(
         bases.map(async (base) => ({
           base,
-          dados: await this.companyOf(pool, base),
+          ...(await this.companyOf(pool, base)),
         })),
       );
       const achadas = empresas.filter(
@@ -143,7 +168,21 @@ export class MigrationService {
       );
 
       if (achadas.length === 0) {
-        return { basesConsultadas: bases.length, encontradas: [] };
+        // Sem isto, "não encontrado" não distingue base não liberada de base
+        // liberada com outro documento — e a conversa com o time do legado
+        // fica sem evidência.
+        return {
+          basesConsultadas: bases.length,
+          encontradas: [],
+          consultadas: empresas.slice(0, MAX_LISTED_BASES).map((empresa) => ({
+            base: empresa.base,
+            razaoSocial:
+              empresa.dados?.razao_social || empresa.dados?.nome || null,
+            cnpj: empresa.dados?.cnpj || null,
+            cpf: empresa.dados?.cpf || null,
+            ...(empresa.erro ? { erro: empresa.erro } : {}),
+          })),
+        };
       }
 
       const contas = await companiesWithCnpj(this.prisma, digits);
@@ -189,15 +228,18 @@ export class MigrationService {
   private async companyOf(
     pool: mysql.Pool,
     base: string,
-  ): Promise<LegacyCompany | null> {
+  ): Promise<{ dados: LegacyCompany | null; erro?: string }> {
     try {
       const [rows] = await pool.query(LEGACY_COMPANY_SQL(base));
-      return (rows as any[])[0] ?? null;
+      return { dados: (rows as any[])[0] ?? null };
     } catch (error: any) {
       // Uma base sem as tabelas da empresa não pode derrubar a busca nas
       // demais. Queda de conexão, sim: sem ela, a busca diria "não encontrado".
       if (error?.fatal) throw error;
-      return null;
+
+      // O motivo é o que interessa: permissão só no banco, sem as tabelas,
+      // aparece aqui como "SELECT command denied".
+      return { dados: null, erro: error?.sqlMessage || error?.message };
     }
   }
 
