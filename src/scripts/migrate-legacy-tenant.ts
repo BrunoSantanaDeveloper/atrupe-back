@@ -184,6 +184,16 @@ export async function prepareStep(
           'separada (LEG-), com o número original do legado.',
       );
     }
+
+    // A série que o legado indica pode não existir na conta. A carga cria, em
+    // vez de recusar a venda: o documento antigo precisa manter o número.
+    prep.created.push(
+      ...(await internals.findMissingImportSeries(
+        rows,
+        companyId,
+        prep.historySeries,
+      )),
+    );
   }
 
   if (extractor.entity === 'financial') {
@@ -207,12 +217,14 @@ export async function prepareStep(
     }
   }
 
-  prep.created = await prepareReferences(
-    internals,
-    extractor,
-    prep.rows,
-    companyId,
-    dryRun,
+  prep.created.push(
+    ...(await prepareReferences(
+      internals,
+      extractor,
+      prep.rows,
+      companyId,
+      dryRun,
+    )),
   );
 
   return prep;

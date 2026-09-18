@@ -700,6 +700,7 @@ describe('prepareStep', () => {
       .fn()
       .mockResolvedValue({ adopted: [], withoutItem: [] }),
     hasOwnDocuments: jest.fn().mockResolvedValue(false),
+    findMissingImportSeries: jest.fn().mockResolvedValue([]),
     firstNonImportedActivity: jest.fn().mockResolvedValue(null),
     findMissingSectors: jest.fn().mockResolvedValue([]),
     ensureProductSectors: jest.fn().mockResolvedValue([]),

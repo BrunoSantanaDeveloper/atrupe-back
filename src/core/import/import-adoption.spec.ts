@@ -1,4 +1,6 @@
 import { ImportService } from './import.service';
+import { CLIENT_IMPORT_SCHEMA } from './schemas/client-import.schema';
+import { QUOTATION_IMPORT_SCHEMA } from './schemas/quotation-import.schema';
 
 /**
  * Migração para uma conta que já estava em uso.
@@ -168,8 +170,24 @@ describe('ImportService — conta já em uso', () => {
       expect(db.saleSeries.create).not.toHaveBeenCalled();
     });
 
-    it('recusa quando a série do legado não existe na conta', async () => {
-      await expect(resolve(prisma([]))).rejects.toThrow(/Série '1' não/);
+    it('cria a série do legado que a conta não tem, mantendo o código', async () => {
+      // Recusar a venda por causa disso travava a migração inteira; o número
+      // do documento antigo precisa continuar valendo.
+      const db = prisma([{ id: 's-padrao', code: 'A', isDefault: true }]);
+
+      await expect(resolve(db)).resolves.toMatchObject({ code: '1' });
+      expect(db.saleSeries.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ code: '1', title: 'Série 1' }),
+      });
+    });
+
+    it('lista as séries que a carga vai criar', async () => {
+      const db = prisma([serieDoCliente]);
+      const linhas = [{ Serie: '1' }, { Serie: '2' }, { Serie: '1' }];
+
+      await expect(
+        build(db).findMissingImportSeries(linhas, 'company-1', true),
+      ).resolves.toEqual(['LEG-1', 'LEG-2']);
     });
 
     it('com conta em uso, cria a série do histórico herdando a apresentação', async () => {
@@ -196,6 +214,77 @@ describe('ImportService — conta já em uso', () => {
 
       await expect(resolve(db, true)).resolves.toMatchObject({ id: 's-leg' });
       expect(db.saleSeries.create).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * A simulação roda os mesmos validadores do CSV, que pressupõem conta vazia.
+   * Na migração, o que eles recusavam é justamente o que a carga resolve.
+   */
+  describe('validação na migração', () => {
+    const campo = (schema: any, name: string) =>
+      schema.fields.find((f: any) => f.name === name);
+
+    const cnpj = campo(CLIENT_IMPORT_SCHEMA, 'cnpj');
+    const serie = campo(QUOTATION_IMPORT_SCHEMA, 'Serie');
+
+    it('documento repetido é aviso na migração e erro no CSV', async () => {
+      const db = {
+        client: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValue({ name: 'MARCOS HENRIQUE', legacyId: null }),
+        },
+      };
+
+      await expect(
+        cnpj.validate(
+          '11222333000181',
+          'company-1',
+          db,
+          { codigoLegado: '1566' },
+          true,
+        ),
+      ).resolves.toMatchObject({ severity: 'warning' });
+
+      await expect(
+        cnpj.validate('11222333000181', 'company-1', db, {}, false),
+      ).resolves.toMatch(/já existe para o cliente/);
+    });
+
+    it('ficha que já pertence a outro registro do legado continua erro', async () => {
+      // Aí a carga criaria mesmo uma segunda ficha: o aviso esconderia isso.
+      const db = {
+        client: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValue({ name: 'OUTRO CLIENTE', legacyId: '99' }),
+        },
+      };
+
+      await expect(
+        cnpj.validate(
+          '11222333000181',
+          'company-1',
+          db,
+          { codigoLegado: '1566' },
+          true,
+        ),
+      ).resolves.toMatch(/já existe para o cliente/);
+    });
+
+    it('série ausente é aviso na migração, porque a carga cria', async () => {
+      const db = {
+        saleSeries: { findFirst: jest.fn().mockResolvedValue(null) },
+      };
+
+      await expect(
+        serie.validate('1', 'company-1', db, {}, true),
+      ).resolves.toMatchObject({ severity: 'warning' });
+
+      await expect(
+        serie.validate('1', 'company-1', db, {}, false),
+      ).resolves.toMatch(/Cadastre a série/);
     });
   });
 });

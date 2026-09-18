@@ -25,6 +25,7 @@ import {
   collectNatureNames,
   collectProductCodes,
   collectSectorNames,
+  collectSeriesCodes,
   collectSubCategoryRefs,
   findActiveBankAccountByName,
   findActiveNatureByDescription,
@@ -883,15 +884,12 @@ export class ImportService {
       where: { code, companyId, isActive: true },
     });
 
-    if (!historySeries) {
-      if (!original) throw new Error(`Série '${code}' não encontrada`);
-      return original;
-    }
+    if (original && !historySeries) return original;
 
-    const historyCode = code ? `LEG-${code}` : 'LEG';
+    const targetCode = this.importSeriesCode(code, historySeries);
 
     const existing = await this.prisma.saleSeries.findFirst({
-      where: { code: historyCode, companyId },
+      where: { code: targetCode, companyId },
     });
     if (existing) return existing;
 
@@ -907,9 +905,11 @@ export class ImportService {
     return this.prisma.saleSeries.create({
       data: {
         companyId,
-        code: historyCode,
-        title: code ? `Histórico do legado ${code}` : 'Histórico do legado',
-        description: 'Documentos migrados do sistema legado',
+        code: targetCode,
+        title: historySeries
+          ? `Histórico do legado ${code}`.trim()
+          : `Série ${code}`.trim(),
+        description: 'Criada pela migração do sistema legado',
         deliveryDeadline: base?.deliveryDeadline ?? null,
         proposalValidity: base?.proposalValidity ?? null,
         textBeforeItems: base?.textBeforeItems ?? null,
@@ -919,6 +919,37 @@ export class ImportService {
         sendToProduction: base?.sendToProduction,
       },
     });
+  }
+
+  /**
+   * Código da série que recebe o documento migrado.
+   *
+   * Numa conta em uso o histórico vai para série própria; numa conta vazia, o
+   * documento fica na série que o legado indica, criada se não existir — o
+   * número precisa ser o mesmo que o cliente tem nos papéis antigos.
+   */
+  private importSeriesCode(code: string, historySeries?: boolean): string {
+    if (!historySeries) return code || 'LEG';
+    return code ? `LEG-${code}` : 'LEG';
+  }
+
+  /** Séries que a carga vai criar para os documentos migrados. */
+  async findMissingImportSeries(
+    rows: any[],
+    companyId: string,
+    historySeries?: boolean,
+  ): Promise<string[]> {
+    const missing: string[] = [];
+
+    for (const code of collectSeriesCodes(rows)) {
+      const target = this.importSeriesCode(code, historySeries);
+      const existing = await this.prisma.saleSeries.findFirst({
+        where: { code: target, companyId },
+      });
+      if (!existing) missing.push(target);
+    }
+
+    return missing;
   }
 
   /** A conta já tem documento criado fora da migração. */
