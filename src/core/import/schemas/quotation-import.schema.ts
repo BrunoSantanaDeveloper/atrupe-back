@@ -128,7 +128,13 @@ export const QUOTATION_IMPORT_SCHEMA = {
       maxLength: 10,
       description: 'Série do orçamento',
       example: 'V1',
-      validate: async (value: string, companyId: string, prisma: any) => {
+      validate: async (
+        value: string,
+        companyId: string,
+        prisma: any,
+        row: any,
+        allowOverride: boolean = false,
+      ) => {
         const series = await prisma.saleSeries.findFirst({
           where: {
             code: value,
@@ -137,6 +143,14 @@ export const QUOTATION_IMPORT_SCHEMA = {
           },
         });
         if (!series) {
+          // Na migração a série é criada pela carga: o documento antigo
+          // precisa manter o número que tinha no legado.
+          if (allowOverride) {
+            return {
+              error: `Série '${value}' não existe na conta: a carga vai criá-la`,
+              severity: 'warning',
+            };
+          }
           return 'Série não encontrada. Cadastre a série antes de importar';
         }
         return null;

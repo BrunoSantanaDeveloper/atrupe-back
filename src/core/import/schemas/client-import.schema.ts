@@ -1,5 +1,32 @@
 import { PrismaService } from 'nestjs-prisma';
 
+/**
+ * Documento repetido: erro no CSV, aviso na migração.
+ *
+ * Na migração o cadastro que a conta já tem é adotado — recebe o vínculo com o
+ * legado em vez de virar uma segunda ficha da mesma pessoa. Só continua sendo
+ * erro quando a ficha existente já pertence a outro registro do legado, porque
+ * aí a carga criaria mesmo uma duplicata.
+ */
+function duplicateIssue(
+  label: string,
+  existing: { name: string; legacyId?: string | null },
+  row: any,
+  allowOverride: boolean,
+) {
+  const mesmaOrigem =
+    !existing.legacyId || existing.legacyId === row?.codigoLegado?.trim();
+
+  if (allowOverride && mesmaOrigem) {
+    return {
+      error: `${label} já cadastrado em '${existing.name}': a carga vai usar essa ficha em vez de criar outra`,
+      severity: 'warning',
+    };
+  }
+
+  return `${label} já existe para o cliente: ${existing.name}`;
+}
+
 export const CLIENT_IMPORT_SCHEMA = {
   fields: [
     {
@@ -60,6 +87,8 @@ export const CLIENT_IMPORT_SCHEMA = {
         value: string,
         companyId: string,
         prisma: PrismaService,
+        row: any,
+        allowOverride: boolean = false,
       ) => {
         if (!value) return null;
 
@@ -75,10 +104,11 @@ export const CLIENT_IMPORT_SCHEMA = {
         // Verificar duplicata
         const existing = await prisma.client.findFirst({
           where: { cpf: value, companyId },
+          select: { name: true, legacyId: true },
         });
 
         if (existing) {
-          return `CPF já existe para o cliente: ${existing.name}`;
+          return duplicateIssue('CPF', existing, row, allowOverride);
         }
 
         return null;
@@ -94,6 +124,8 @@ export const CLIENT_IMPORT_SCHEMA = {
         value: string,
         companyId: string,
         prisma: PrismaService,
+        row: any,
+        allowOverride: boolean = false,
       ) => {
         if (!value) return null;
 
@@ -109,10 +141,11 @@ export const CLIENT_IMPORT_SCHEMA = {
         // Verificar duplicata
         const existing = await prisma.client.findFirst({
           where: { cnpj: value, companyId },
+          select: { name: true, legacyId: true },
         });
 
         if (existing) {
-          return `CNPJ já existe para o cliente: ${existing.name}`;
+          return duplicateIssue('CNPJ', existing, row, allowOverride);
         }
 
         return null;
