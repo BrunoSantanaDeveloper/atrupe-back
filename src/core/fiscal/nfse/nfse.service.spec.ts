@@ -1253,6 +1253,151 @@ describe('NfseService', () => {
       expect(invoicyApiService.emitNfse).not.toHaveBeenCalled();
     });
 
+    it('libera a ordem quando o provedor não conhece o RPS em processamento', async () => {
+      // Emissão que falhou no transporte fica em PROCESSING e travava a ordem
+      // para sempre. Se o provedor não registrou o RPS, não há nota em voo.
+      prisma.quotation.findFirst.mockResolvedValueOnce({
+        id: 'quotation-1',
+        companyId: mockCompanyId,
+        order: {
+          ...mockOrder,
+          nfses: [{ id: 'nfse-presa', status: NfseStatus.PROCESSING }],
+        },
+        client: mockOrder.client,
+        quotationProduct: [
+          {
+            id: 'qp-1',
+            productId: 'service-1',
+            quantity: 1,
+            finalValue: 500,
+            totalValue: 500,
+            product: mockOrder.items[0].product,
+          },
+        ],
+      });
+
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        id: 'nfse-presa',
+        status: NfseStatus.PROCESSING,
+        rpsNumero: 7,
+        rpsSerie: 'A1',
+        ambiente: 2,
+      });
+      invoicyApiService.consultNfse.mockResolvedValue([
+        { Codigo: 100, Documentos: [] },
+      ]);
+      prisma.nfse.update.mockResolvedValue({ ...mockNfse });
+
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Teste',
+      });
+
+      expect(invoicyApiService.consultNfse).toHaveBeenCalled();
+      expect(invoicyApiService.emitNfse).toHaveBeenCalled();
+    });
+
+    it('mantém o bloqueio quando o provedor conhece o RPS em processamento', async () => {
+      prisma.quotation.findFirst.mockResolvedValueOnce({
+        id: 'quotation-1',
+        companyId: mockCompanyId,
+        order: {
+          ...mockOrder,
+          nfses: [{ id: 'nfse-presa', status: NfseStatus.PROCESSING }],
+        },
+        client: mockOrder.client,
+        quotationProduct: [
+          {
+            id: 'qp-1',
+            productId: 'service-1',
+            quantity: 1,
+            finalValue: 500,
+            totalValue: 500,
+            product: mockOrder.items[0].product,
+          },
+        ],
+      });
+
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        id: 'nfse-presa',
+        status: NfseStatus.PROCESSING,
+        rpsNumero: 7,
+        rpsSerie: 'A1',
+        ambiente: 2,
+      });
+      invoicyApiService.consultNfse.mockResolvedValue([
+        {
+          Codigo: 100,
+          Documentos: [
+            {
+              Situacao: { SitCodigo: 100, SitDescricao: 'NFS-e autorizada' },
+              NFSe: { NFSeNumero: 9, NFSeCodVerificacao: 'X' },
+            },
+          ],
+        },
+      ]);
+      prisma.nfse.update.mockImplementation(({ data }) =>
+        Promise.resolve({ ...mockNfse, ...data }),
+      );
+
+      await expect(
+        service.emitFromOrder(mockCompanyId, {
+          orderId: mockOrderId,
+          codigoServico: '1.05',
+          discriminacao: 'Teste',
+        }),
+      ).rejects.toThrow(ConflictException);
+
+      expect(invoicyApiService.emitNfse).not.toHaveBeenCalled();
+    });
+
+    it('não libera a ordem quando a consulta ao provedor falha', async () => {
+      // Sem saber o que aconteceu, bloquear é o lado seguro: nota duplicada
+      // na prefeitura é dano permanente.
+      prisma.quotation.findFirst.mockResolvedValueOnce({
+        id: 'quotation-1',
+        companyId: mockCompanyId,
+        order: {
+          ...mockOrder,
+          nfses: [{ id: 'nfse-presa', status: NfseStatus.PROCESSING }],
+        },
+        client: mockOrder.client,
+        quotationProduct: [
+          {
+            id: 'qp-1',
+            productId: 'service-1',
+            quantity: 1,
+            finalValue: 500,
+            totalValue: 500,
+            product: mockOrder.items[0].product,
+          },
+        ],
+      });
+
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        id: 'nfse-presa',
+        status: NfseStatus.PROCESSING,
+        rpsNumero: 7,
+        rpsSerie: 'A1',
+        ambiente: 2,
+      });
+      invoicyApiService.consultNfse.mockRejectedValue(new Error('timeout'));
+
+      await expect(
+        service.emitFromOrder(mockCompanyId, {
+          orderId: mockOrderId,
+          codigoServico: '1.05',
+          discriminacao: 'Teste',
+        }),
+      ).rejects.toThrow(ConflictException);
+
+      expect(invoicyApiService.emitNfse).not.toHaveBeenCalled();
+    });
+
     it('should reserve RPS number inside transaction before calling Invoicy', async () => {
       await service.emitFromOrder(mockCompanyId, {
         orderId: mockOrderId,

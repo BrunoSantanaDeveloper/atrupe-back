@@ -464,7 +464,7 @@ export class NfseService {
       throw new NotFoundException('Ordem de serviÃ§o nÃ£o encontrada');
     }
 
-    this.assertOrdersCanReceiveNfse([quotation.order as any]);
+    await this.assertOrdersCanReceiveNfse([quotation.order as any], companyId);
 
     const client = quotation.client;
     if (!client) {
@@ -757,8 +757,9 @@ export class NfseService {
       );
     }
 
-    this.assertOrdersCanReceiveNfse(
+    await this.assertOrdersCanReceiveNfse(
       quotations.map((quotation) => quotation.order as any),
+      companyId,
     );
 
     // Validar que todas as OS sÃ£o do mesmo cliente
@@ -1018,7 +1019,7 @@ export class NfseService {
         throw new NotFoundException('Ordem de serviÃ§o nÃ£o encontrada');
       }
 
-      this.assertOrdersCanReceiveNfse([linkedOrder as any]);
+      await this.assertOrdersCanReceiveNfse([linkedOrder as any], companyId);
 
       if (dto.quotationId && linkedOrder.quotationId !== dto.quotationId) {
         throw new BadRequestException(
@@ -2114,10 +2115,24 @@ export class NfseService {
     return true;
   }
 
-  private assertOrdersCanReceiveNfse(orders: any[]) {
+  /**
+   * Impede emitir NFS-e sobre uma ordem que já tem documento fiscal.
+   *
+   * Uma emissão que falha no transporte fica em PROCESSING — "resultado
+   * desconhecido", porque o provedor pode ter registrado a nota. Como
+   * PROCESSING conta como documento ativo, a ordem ficava travada para
+   * sempre, sem saída pela interface: a tela só dizia "já possui documento
+   * fiscal ativo ou autorizado", o que nem era verdade.
+   *
+   * Agora, antes de bloquear por um registro nesse estado, consulta o
+   * provedor pelo número do RPS. Se ele não conhece o RPS, a emissão nunca
+   * chegou lá e a ordem é liberada; se conhece, o bloqueio é legítimo e a
+   * mensagem diz qual é a situação real.
+   */
+  private async assertOrdersCanReceiveNfse(orders: any[], companyId: string) {
     for (const order of orders) {
       if (!order) {
-        throw new NotFoundException('Ordem de serviÃ§o nÃ£o encontrada');
+        throw new NotFoundException('Ordem de serviço não encontrada');
       }
 
       if (order.status === OrderStatus.CANCELED) {
@@ -2126,16 +2141,66 @@ export class NfseService {
         );
       }
 
-      if (
-        order.nfes?.length > 0 ||
-        order.nfeOrders?.length > 0 ||
-        order.nfses?.length > 0 ||
-        order.nfces?.length > 0
-      ) {
+      if (order.nfes?.length > 0 || order.nfeOrders?.length > 0) {
         throw new ConflictException(
-          'Esta ordem de serviÃ§o jÃ¡ possui documento fiscal ativo ou autorizado.',
+          'Esta ordem de serviço já possui NF-e emitida.',
         );
       }
+
+      if (order.nfces?.length > 0) {
+        throw new ConflictException(
+          'Esta ordem de serviço já possui NFC-e emitida.',
+        );
+      }
+
+      const nfseExistente = order.nfses?.[0];
+      if (!nfseExistente) continue;
+
+      if (nfseExistente.status === NfseStatus.PROCESSING) {
+        const liberada = await this.tentarLiberarNfseEmProcessamento(
+          nfseExistente.id,
+          companyId,
+        );
+        if (liberada) continue;
+
+        throw new ConflictException(
+          'Esta ordem tem uma NFS-e em processamento no provedor. Consulte o ' +
+            'status dela antes de emitir outra, para não duplicar a nota.',
+        );
+      }
+
+      if (nfseExistente.status === NfseStatus.AUTHORIZED) {
+        throw new ConflictException(
+          'Esta ordem de serviço já possui NFS-e autorizada.',
+        );
+      }
+
+      throw new ConflictException(
+        'Esta ordem de serviço já possui uma NFS-e em digitação ou pendente.',
+      );
+    }
+  }
+
+  /**
+   * Reconcilia uma NFS-e presa em PROCESSING. Devolve true quando o provedor
+   * não conhece o RPS — aí não há nota em voo e a ordem pode receber outra.
+   *
+   * Falha de consulta não libera: sem saber o que aconteceu, bloquear é o
+   * lado seguro do erro, porque nota duplicada na prefeitura é dano
+   * permanente.
+   */
+  private async tentarLiberarNfseEmProcessamento(
+    nfseId: string,
+    companyId: string,
+  ): Promise<boolean> {
+    try {
+      const resultado = await this.consultStatus(nfseId, companyId);
+      return resultado.encontradoNoProvedor === false;
+    } catch (error) {
+      this.logger.warn(
+        `Não foi possível reconciliar a NFS-e ${nfseId} antes de emitir: ${error.message}`,
+      );
+      return false;
     }
   }
 
