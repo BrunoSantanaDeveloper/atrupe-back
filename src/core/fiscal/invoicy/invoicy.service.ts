@@ -313,7 +313,7 @@ export class InvoicyService {
       // Nomes API-friendly (usados no frontend)
       nfeSeries: config.serieNfe?.toString() || '1',
       nfeNextNumber: config.proximoNumeroNfe || 1,
-      nfseSeries: config.serieNfse || 'A1',
+      nfseSeries: config.serieNfse || '1',
       nfseNextNumber: config.proximoRpsNfse || 1,
       nfceSeries: config.serieNfce?.toString() || '1',
       nfceNextNumber: config.proximoNumeroNfce || 1,
@@ -588,7 +588,7 @@ export class InvoicyService {
                       : {}),
                     ...(docType === 'NFSE'
                       ? {
-                          nfseSeries: data.serieNfse ?? 'A1',
+                          nfseSeries: data.serieNfse ?? '1',
                           nfseNextNumber: data.proximoRpsNfse ?? 1,
                         }
                       : {}),

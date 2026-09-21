@@ -186,7 +186,10 @@ describe('FiscalCredentialResolverService — reserva de numeração', () => {
       expect(result).toEqual({ reservedNumber: 12, series: 'B2' });
     });
 
-    it('cai no legado e usa A1 como série padrão', async () => {
+    // A série do RPS entra no Id do DPS e é validada contra TSSerieDPS
+    // ([0-9]{1,4}|[0-8][0-9]{4}): "A1", o padrão antigo, volta como
+    // "[#inv0357] - a série deve conter apenas números".
+    it('cai no legado e usa uma série numérica como padrão', async () => {
       tx.$queryRaw
         .mockResolvedValueOnce([
           { id: CONFIG_ID, proximoRpsNfse: null, serieNfse: null },
@@ -199,12 +202,12 @@ describe('FiscalCredentialResolverService — reserva de numeração', () => {
         FiscalEnvironment.HOMOLOGACAO,
       );
 
-      expect(result).toEqual({ reservedNumber: 1, series: 'A1' });
+      expect(result).toEqual({ reservedNumber: 1, series: '1' });
       expect(tx.invoicyEnvironmentConfig.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           docType: 'NFSE',
           nfseNextNumber: 2,
-          nfseSeries: 'A1',
+          nfseSeries: '1',
         }),
       });
     });

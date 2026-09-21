@@ -1400,9 +1400,17 @@ export class NfseService {
         data: { invoicyPayloadEnvio: invoicyRequest as any },
       });
 
+      // Código de lote diferente de 100 é o provedor respondendo que recusou
+      // o documento antes de enviá-lo à prefeitura — resultado conhecido, não
+      // falha de comunicação. Como Error puro, o catch não achava
+      // `error.response` e classificava como transporte: a NFS-e ia para
+      // PROCESSING e a tela dizia "Falha de comunicação com o Invoicy",
+      // escondendo mensagens acionáveis como "[#inv0357] a série deve conter
+      // apenas números". BadRequestException marca REJECTED com o motivo real.
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-        throw new Error(
-          response.Descricao || `Erro Invoicy: cÃ³digo ${response.Codigo}`,
+        throw new BadRequestException(
+          response.Descricao ||
+            `Recusada pelo provedor (código ${response.Codigo})`,
         );
       }
 

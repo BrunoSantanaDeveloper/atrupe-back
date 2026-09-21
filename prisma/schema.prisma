@@ -2984,7 +2984,8 @@ model InvoicyEnvironmentConfig {
   nfeSeries           Int?                    @default(1)
   nfeNextNumber       Int?                    @default(1)
 
-  nfseSeries          String?                 @default("A1")
+  // "1" e nao "A1": ver prisma/migrations/20260921120000_nfse_series_default_numeric
+  nfseSeries          String?                 @default("1")
   nfseNextNumber      Int?                    @default(1)
 
   status              FiscalEnvironmentStatus @default(DRAFT)

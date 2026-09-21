@@ -170,7 +170,7 @@ export class NfseDraftService {
     const rpsNumero =
       config.activeNumbering?.nfse?.nextNumber ?? config.proximoRpsNfse ?? 1;
     const rpsSerie =
-      config.activeNumbering?.nfse?.series ?? config.serieNfse ?? 'A1';
+      config.activeNumbering?.nfse?.series ?? config.serieNfse ?? '1';
 
     const draft = await this.prisma.nfse.create({
       data: {

@@ -1398,6 +1398,43 @@ describe('NfseService', () => {
       expect(invoicyApiService.emitNfse).not.toHaveBeenCalled();
     });
 
+    /**
+     * O provedor recusa o lote antes de mandar para a prefeitura devolvendo um
+     * Codigo diferente de 100 — resultado conhecido. Enquanto isso virava Error
+     * puro, o classificador do catch não achava `error.response` e tratava como
+     * transporte: a nota ficava PROCESSING travando a ordem e a tela dizia
+     * "Falha de comunicação", escondendo o motivo acionável (série A1).
+     */
+    it('recusa do provedor (Codigo != 100) vira REJECTED com o motivo real', async () => {
+      mockInvoicyApiService.emitNfse.mockResolvedValueOnce([
+        {
+          Codigo: 357,
+          Descricao:
+            '[#inv0357] - O valor informado no campo série é incorreto. A série deve conter apenas números.',
+          Documentos: [],
+        },
+      ]);
+
+      await expect(
+        service.emitFromOrder(mockCompanyId, {
+          orderId: mockOrderId,
+          codigoServico: '1.05',
+          discriminacao: 'Serviço de consultoria em TI',
+        }),
+      ).rejects.toThrow(/série deve conter apenas números/);
+
+      expect(prisma.nfse.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: NfseStatus.REJECTED }),
+        }),
+      );
+      expect(prisma.nfse.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: NfseStatus.PROCESSING }),
+        }),
+      );
+    });
+
     it('should reserve RPS number inside transaction before calling Invoicy', async () => {
       await service.emitFromOrder(mockCompanyId, {
         orderId: mockOrderId,

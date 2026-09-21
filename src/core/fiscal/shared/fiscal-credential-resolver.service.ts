@@ -504,7 +504,7 @@ export class FiscalCredentialResolverService {
 
     const reservedNumber =
       envConfig?.nfseNextNumber ?? config.proximoRpsNfse ?? 1;
-    const series = envConfig?.nfseSeries ?? config.serieNfse ?? 'A1';
+    const series = envConfig?.nfseSeries ?? config.serieNfse ?? '1';
     const nextNumber = reservedNumber + 1;
 
     if (envConfig) {
