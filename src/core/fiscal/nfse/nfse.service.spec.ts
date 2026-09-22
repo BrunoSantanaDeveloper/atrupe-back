@@ -778,8 +778,12 @@ describe('NfseService', () => {
         cClassTrib: '000001',
       });
       expect(servico.CodigoNBS).toBe('121012200');
-      // Código de tributação do município substitui o IBGE quando cadastrado.
-      expect(servico.TributMunicipio).toBe(1);
+      // Código de tributação do município vai como texto, com os zeros: o
+      // DPS nacional exige cTribMun de 3 dígitos. Como número (1) o InvoiCy
+      // o descartava e o Rio recusava 130501 com E0312.
+      expect(servico.TributMunicipio).toBe('001');
+      const [item] = documentos[0].Documento.RPS[0].ListaItens;
+      expect(item.ItemTributMunicipio).toBe('001');
     });
 
     it('omite a classificação fiscal quando o serviço não a cadastra', async () => {
@@ -797,6 +801,9 @@ describe('NfseService', () => {
       expect(servico).not.toHaveProperty('codTributNacional');
       expect(servico).not.toHaveProperty('IBSCBS');
       expect(servico.TributMunicipio).toBe(4314902);
+      expect(
+        documentos[0].Documento.RPS[0].ListaItens[0].ItemTributMunicipio,
+      ).toBe(4314902);
     });
 
     /**

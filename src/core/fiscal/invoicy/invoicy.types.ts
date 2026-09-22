@@ -421,7 +421,8 @@ export interface InvoicyNfseListaItem {
   ItemvlDed: number;
   ItemTributavel: string;
   ItemcCnae?: number;
-  ItemTributMunicipio: number;
+  /** Código de tributação no município (C(20), ex. "001"). */
+  ItemTributMunicipio: string | number;
   ItemvIss: number;
   /** Omitido para ME/EPP do Simples sem retenção de ISSQN — ver E0625. */
   ItemAliquota?: number;
@@ -470,7 +471,8 @@ export interface InvoicyNfseServico {
   IteListServico: number;
   Cnae?: number;
   fPagamento?: number;
-  TributMunicipio: number;
+  /** Código de tributação no município (C(20), ex. "001"). */
+  TributMunicipio: string | number;
   Discriminacao: string;
   cMun: number;
   /** Nomenclatura Brasileira de Serviços. */

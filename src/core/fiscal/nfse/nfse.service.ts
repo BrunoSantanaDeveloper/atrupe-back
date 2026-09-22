@@ -1534,6 +1534,17 @@ export class NfseService {
     const rpsNumero = rps.numero;
     const rpsSerie = rps.serie;
 
+    // Código de tributação no município (cTribMun, "001"...) — campo texto
+    // no layout do InvoiCy, tanto no serviço quanto no item. Ia como número:
+    // parseInt("001") virava 1 e o item levava o IBGE da cidade (a incidência
+    // é ItemcMunIncidencia). O DPS nacional exige exatamente 3 dígitos, então
+    // o InvoiCy descartava os dois e o Rio recusava 130501 sem o 001 (E0312).
+    // Sem código cadastrado mantém o valor histórico — trocá-lo às cegas
+    // mudaria notas que hoje são autorizadas.
+    const tributMunicipio: string | number =
+      dto.codTribMunicipio?.trim() ||
+      parseInt(dto.codigoMunicipio || config.ibgeCode || '0', 10);
+
     // FunÃ§Ã£o auxiliar para construir lista de itens
     const listaItens = dto.itens?.map((item, index) => {
       // Base arredondada uma vez e reaproveitada, para que ItemvIss fique
@@ -1551,11 +1562,7 @@ export class NfseService {
         ItemuMed: item.unidade || 'UN',
         ItemvlDed: 0,
         ItemTributavel: 'S',
-        // Município de incidência do ISS — NÃO é o código de serviço.
-        ItemTributMunicipio: parseInt(
-          dto.codigoMunicipio || config.ibgeCode || '0',
-          10,
-        ),
+        ItemTributMunicipio: tributMunicipio,
         ItemvIss: this.money((itemBase * itemAliquota) / 100),
         ...(omitirAliquotaIss ? {} : { ItemAliquota: itemAliquota }),
         ItemVlrTotal: itemBase,
@@ -1587,10 +1594,7 @@ export class NfseService {
         ItemuMed: 'SV',
         ItemvlDed: valorDeducoes,
         ItemTributavel: 'S',
-        ItemTributMunicipio: parseInt(
-          dto.codigoMunicipio || config.ibgeCode || '0',
-          10,
-        ),
+        ItemTributMunicipio: tributMunicipio,
         ItemvIss: valorIss,
         ...(omitirAliquotaIss ? {} : { ItemAliquota: aliquotaIss }),
         ItemVlrTotal: valorServicos,
@@ -1733,16 +1737,8 @@ export class NfseService {
               ),
               Discriminacao: dto.discriminacao,
               cMun: parseInt(dto.codigoMunicipio || config.ibgeCode || '0', 10),
-              // Código de tributação no município (000/001/...) quando
-              // cadastrado no serviço. Sem cadastro mantém o valor histórico
-              // — trocá-lo às cegas mudaria notas que hoje são autorizadas.
-              TributMunicipio: parseInt(
-                dto.codTribMunicipio ||
-                  dto.codigoMunicipio ||
-                  config.ibgeCode ||
-                  '0',
-                10,
-              ),
+              // Texto, com os zeros à esquerda — ver tributMunicipio.
+              TributMunicipio: tributMunicipio,
               // Classificação fiscal do serviço, omitida quando não cadastrada.
               ...(dto.nbs ? { CodigoNBS: dto.nbs } : {}),
               ...(dto.codTribNacional
