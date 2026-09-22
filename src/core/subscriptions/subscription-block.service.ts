@@ -19,7 +19,10 @@ export class SubscriptionBlockService {
 
   // Regras de bloqueio (dias de atraso)
   private readonly DAYS_FOR_PARTIAL_BLOCK = 3;
-  private readonly DAYS_FOR_FULL_BLOCK = 7;
+  // A conta fica inativa a partir do OITAVO dia (régua do protótipo): de 3 a
+  // 7 dias o bloqueio é parcial — fecha o que cria obrigação nova, mas a
+  // pessoa ainda entra e regulariza.
+  private readonly DAYS_FOR_FULL_BLOCK = 8;
 
   // Flag para ativar/desativar o cron de bloqueio
   private readonly isCronActive = true;
@@ -219,14 +222,29 @@ export class SubscriptionBlockService {
 
         // Encontrar pagamento OVERDUE ou PENDING vencido no Asaas
         const todayStr = today.toISOString().split('T')[0];
-        const overduePayment = asaasPayments.find(
-          (p) =>
-            p.status === 'OVERDUE' ||
-            (p.status === 'PENDING' && p.dueDate < todayStr),
-        );
+        // A MAIS ANTIGA entre as vencidas, não a primeira que a listagem
+        // devolver: pegando qualquer uma, o atraso saía subestimado e o
+        // bloqueio demorava mais do que devia. Datas vêm como "AAAA-MM-DD",
+        // então a ordenação de texto já é cronológica.
+        const overduePayment = asaasPayments
+          .filter(
+            (p) =>
+              p.status === 'OVERDUE' ||
+              (p.status === 'PENDING' && p.dueDate < todayStr),
+          )
+          .sort((a, b) =>
+            String(a.dueDate).localeCompare(String(b.dueDate)),
+          )[0];
 
         if (overduePayment) {
-          const dueDate = new Date(overduePayment.dueDate);
+          // "AAAA-MM-DD" lido por new Date() vira meia-noite UTC; nivelar isso
+          // para meia-noite local somava um dia inteiro ao atraso em fusos
+          // negativos, e as empresas eram bloqueadas um dia antes da regra.
+          // Montar a data pelas partes mantém a contagem exata.
+          const [ano, mes, dia] = String(overduePayment.dueDate)
+            .split('-')
+            .map(Number);
+          const dueDate = new Date(ano, mes - 1, dia);
           dueDate.setHours(0, 0, 0, 0);
           daysOverdue = Math.floor(
             (today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),

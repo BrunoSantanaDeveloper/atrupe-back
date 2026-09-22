@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ContractService } from './contract.service';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 import { Response, Request } from 'express';
 import { CreateContractDto } from './dtos';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -31,7 +32,9 @@ interface RequestWithUser extends Request {
 export class ContractController {
   constructor(private readonly contractService: ContractService) {}
 
-  @UseGuards(JwtAuthGuard)
+  // Criar versão de contrato define o texto que todos os clientes aceitam:
+  // é ato de admin do sistema, não de qualquer usuário autenticado.
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
   @Post()
   async createContract(@Body() createContractDto: CreateContractDto) {
     return this.contractService.createContract(createContractDto);

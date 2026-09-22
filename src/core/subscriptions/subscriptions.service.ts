@@ -11,8 +11,9 @@ import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { AsaasGatewayService } from './asaas-gateway.service';
 import { CouponsService } from '../coupons/coupons.service';
+import { SubscriptionBlockService } from './subscription-block.service';
+import { computeQuote } from './pricing/pricing.engine';
 import { v4 as uuidv4 } from 'uuid';
-import { SubscriptionStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 
 const TRIAL_DAYS_DEFAULT = 7;
@@ -27,6 +28,7 @@ export class SubscriptionsService {
     private customerService: CustomersService,
     private asaasGateway: AsaasGatewayService,
     private couponsService: CouponsService,
+    private subscriptionBlockService: SubscriptionBlockService,
   ) {}
 
   async findActiveByCompanyId(companyId: string) {
@@ -117,6 +119,54 @@ export class SubscriptionsService {
       page,
       lastPage: Math.ceil(total / limit) || 1,
     };
+  }
+
+  /**
+   * Desfaz o que a transação local já gravou quando a criação no Asaas falha:
+   * devolve o cupom e encerra a assinatura que ficaria pendurada como INACTIVE
+   * — é ela que faz a próxima tentativa do cliente esbarrar em
+   * "checkout já está em andamento".
+   */
+  private async compensateFailedCheckout(
+    subscriptionId: string,
+    couponId?: string | null,
+  ): Promise<void> {
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        if (couponId) {
+          const { count } = await tx.couponUsage.deleteMany({
+            where: { subscriptionId },
+          });
+
+          if (count > 0) {
+            await tx.coupon.update({
+              where: { id: couponId },
+              data: { currentUses: { decrement: count } },
+            });
+          }
+        }
+
+        await tx.subscription.update({
+          where: { id: subscriptionId },
+          data: { status: 'CANCELED' },
+        });
+
+        await tx.subscriptionHistory.create({
+          data: {
+            subscriptionId,
+            action: 'CHECKOUT_FAILED',
+            description:
+              'Contratação desfeita: o gateway não confirmou a criação da assinatura',
+            createdByName: 'Sistema',
+          },
+        });
+      });
+    } catch (compensationError) {
+      // A falha original é a que importa; esta só é registrada.
+      this.logger.error(
+        `Falha ao compensar a contratação ${subscriptionId}: ${compensationError.message}`,
+      );
+    }
   }
 
   async create(createSubscriptionDto: CreateSubscriptionDto, request) {
@@ -232,32 +282,11 @@ export class SubscriptionsService {
       finalCustomer = await this.customerService.create(customer);
     }
 
-    // Soma o preço das features adicionais selecionadas
-    const additionalFeaturesValue = additionalFeatures.reduce(
-      (acc, feature) => acc + (feature.price || 0),
-      0,
-    );
-    this.logger.debug(
-      `Valor total dos módulos adicionais: ${additionalFeaturesValue}`,
-    );
-
-    // Soma o preço da quantidade de usuários adicionais
-    const additionalUsersValue =
-      (plan.additionalUserPrice || 0) *
-      (createSubscriptionDto.additionalUsers || 0);
-    this.logger.debug(
-      `Valor total de usuários adicionais: ${additionalUsersValue}`,
-    );
-
-    const planPrice = plan.basePrice;
-    this.logger.debug(`Preço base do plano: ${planPrice}`);
-
-    const totalBaseValueCentavos =
-      planPrice + additionalFeaturesValue + additionalUsersValue;
-    let finalValueCentavos = totalBaseValueCentavos;
+    // O preço sai do motor (pricing.engine), a mesma fonte do orçamento
+    // exibido na tela. Esta contratação é mensal e aplica o cupom no valor da
+    // assinatura, exatamente como antes do motor existir; a regra de cupom só
+    // na primeira cobrança passa a valer com a contratação em três etapas.
     let coupon = null;
-    let discountAmount = 0;
-
     if (createSubscriptionDto.couponCode) {
       coupon = await this.couponsService.validateCoupon(
         createSubscriptionDto.couponCode,
@@ -265,21 +294,48 @@ export class SubscriptionsService {
         plan.id,
         false,
       );
+    }
 
-      const discountCalculation = this.couponsService.calculateDiscount(
-        coupon,
-        totalBaseValueCentavos,
-      );
-      discountAmount = discountCalculation.discountAmount;
-      finalValueCentavos = discountCalculation.finalValue;
-      this.logger.debug(
-        `Cupom aplicado: ${coupon.code}. Desconto: ${discountAmount} centavos.`,
+    const pricing = computeQuote({
+      plan: {
+        name: plan.name,
+        basePriceCents: Math.round(plan.basePrice),
+        additionalUserPriceCents: Math.round(plan.additionalUserPrice || 0),
+      },
+      modules: additionalFeatures.map((feature) => ({
+        key: feature.key,
+        name: feature.name,
+        priceCents: Math.round(feature.price || 0),
+      })),
+      additionalUsers: createSubscriptionDto.additionalUsers || 0,
+      cycle: 'MONTHLY',
+      coupon: coupon
+        ? {
+            code: coupon.code,
+            discountType: coupon.discountType,
+            discountValue: coupon.discountValue,
+            minPlanValueCents:
+              coupon.minPlanValue != null
+                ? Math.round(coupon.minPlanValue)
+                : null,
+          }
+        : null,
+    });
+
+    if (pricing.coupon?.reason === 'MIN_VALUE') {
+      throw new BadRequestException(
+        `O valor mínimo da contratação para este cupom é de R$ ${(
+          pricing.coupon.minPlanValueCents / 100
+        ).toFixed(2)}.`,
       );
     }
 
-    // Soma o valor total a ser cobrado em centavos e divide por 100
+    const totalBaseValueCentavos = pricing.grossMonthlyCents;
+    const finalValueCentavos = pricing.totalCents;
     const value = finalValueCentavos / 100;
-    this.logger.debug(`Valor final: ${value}`);
+    this.logger.debug(
+      `Valor final: ${value} (bruto ${totalBaseValueCentavos}, cupom ${pricing.couponDiscountCents})`,
+    );
 
     try {
       // Primeiro criar a subscription no banco para obter o ID
@@ -382,8 +438,15 @@ export class SubscriptionsService {
             status: 'INACTIVE', // Inativo até pagamento ser confirmado
             couponId: coupon ? coupon.id : null,
             couponCode: coupon ? coupon.code : null,
-            discountValue: coupon ? discountAmount : null,
+            discountValue: coupon ? pricing.couponDiscountCents : null,
             discountType: coupon ? coupon.discountType : null,
+            // O orçamento que gerou esta cobrança, como prova do que foi
+            // calculado — com a versão do motor, para leitura futura.
+            pricingSnapshot: {
+              engine: 'pricing.engine/v1',
+              source: 'legacy-create',
+              quote: pricing,
+            } as any,
           },
         });
 
@@ -484,6 +547,10 @@ export class SubscriptionsService {
             data: { asaasCustomerId: `invalid_${uuidv4()}` },
           });
         }
+        // A transação local já foi confirmada, então o cupom foi consumido
+        // antes de o Asaas responder. Sem devolvê-lo, o cliente que tenta de
+        // novo esbarra no limite de um uso por empresa e perde o desconto.
+        await this.compensateFailedCheckout(subscription.id, coupon?.id);
         throw error;
       }
 
@@ -513,6 +580,12 @@ export class SubscriptionsService {
       // Pegar a primeira cobrança (a mais recente)
       const firstAsaasPayment = asaasPayments[0];
 
+      // Só o Pix tem QR Code, e ele vem de um endpoint separado.
+      const pixQrCode =
+        firstAsaasPayment.billingType === 'PIX'
+          ? await this.asaasGateway.getPixQrCode(firstAsaasPayment.id)
+          : null;
+
       // Salvar a cobrança do Asaas no nosso banco
       const firstPayment = await this.prisma.payment.create({
         data: {
@@ -529,8 +602,9 @@ export class SubscriptionsService {
           ),
           invoiceUrl: firstAsaasPayment.invoiceUrl,
           bankSlipUrl: firstAsaasPayment.bankSlipUrl,
-          pixQrCode: firstAsaasPayment.pixQrCodeId,
-          pixCopyPaste: firstAsaasPayment.encodedImage,
+          // O QR do Pix vem de endpoint próprio; a cobrança não o traz.
+          pixQrCode: pixQrCode?.encodedImage ?? null,
+          pixCopyPaste: pixQrCode?.payload ?? null,
         },
       });
 
@@ -557,161 +631,6 @@ export class SubscriptionsService {
     }
   }
 
-  async upgrade(subscriptionId: string, newPlanId: string, request) {
-    // Buscar subscription atual
-    const currentSubscription = await this.prisma.subscription.findUnique({
-      where: { id: subscriptionId },
-      include: {
-        plan: true,
-        customer: true,
-        subscriptionFeatures: { include: { feature: true } },
-      },
-    });
-
-    if (!currentSubscription) {
-      throw new NotFoundException('Subscription not found');
-    }
-
-    // Verificar se a subscription pertence à empresa do usuário
-    if (currentSubscription.companyId !== request.user.companyId) {
-      throw new BadRequestException('Unauthorized access to this subscription');
-    }
-
-    // Buscar o novo plano
-    const newPlan = await this.prisma.plan.findUnique({
-      where: { id: newPlanId },
-    });
-
-    if (!newPlan) {
-      throw new NotFoundException('New plan not found');
-    }
-
-    if (!newPlan.isActive) {
-      throw new BadRequestException(
-        'Este plano não está disponível para contratação.',
-      );
-    }
-
-    // Calcular valor dos módulos extras da subscription atual
-    const featuresValue = (currentSubscription.subscriptionFeatures || [])
-      .filter((sf) => sf.isActive !== false)
-      .reduce((sum, sf) => sum + (sf.price || 0), 0);
-
-    // Calcular novo valor da subscription (converter centavos para reais)
-    const newValue =
-      (newPlan.basePrice +
-        featuresValue +
-        (newPlan.additionalUserPrice || 0) *
-          (currentSubscription.additionalUsers || 0)) /
-      100;
-
-    // Cancelar subscription atual no Asaas (se necessário)
-    try {
-      await this.asaasGateway.cancelAsaasSubscription(
-        currentSubscription.asaasSubscriptionId,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Failed to cancel old subscription in Asaas: ${error.message}`,
-      );
-    }
-
-    // Criar nova subscription no Asaas
-    const asaasData = {
-      billingType: currentSubscription.billingType,
-      cycle: currentSubscription.cycle,
-      customer: currentSubscription.customer.asaasCustomerId,
-      value: newValue,
-      nextDueDate: new Date(
-        Date.now() + 1000 * 60 * 60 * 24 * NEXT_DUE_DATE_DAYS_DEFAULT,
-      ),
-      description: `Upgrade para ${newPlan.name}`,
-      callback: {
-        successUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
-      },
-    };
-
-    const asaasSubscription =
-      await this.asaasGateway.createSubscription(asaasData);
-
-    // Desativar subscription atual
-    await this.prisma.subscription.update({
-      where: { id: subscriptionId },
-      data: { status: 'INACTIVE' },
-    });
-
-    // Criar nova subscription
-    const newSubscription = await this.prisma.subscription.create({
-      data: {
-        customerId: currentSubscription.customerId,
-        companyId: currentSubscription.companyId,
-        planId: newPlan.id,
-        additionalUsers: currentSubscription.additionalUsers,
-        asaasSubscriptionId: asaasSubscription.id,
-        // modules array foi removido - usar subscriptionFeatures
-        nextDueDate: new Date(asaasSubscription.nextDueDate),
-        cycle: currentSubscription.cycle,
-        billingType: currentSubscription.billingType,
-        value: newValue,
-        status: asaasSubscription.status as SubscriptionStatus,
-      },
-      include: {
-        plan: true,
-        customer: true,
-      },
-    });
-    // Copiar subscriptionFeatures da subscription antiga para a nova
-    const activeFeatures = (
-      currentSubscription.subscriptionFeatures || []
-    ).filter((sf) => sf.isActive !== false);
-
-    if (activeFeatures.length > 0) {
-      for (const sf of activeFeatures) {
-        await this.prisma.subscriptionFeature.create({
-          data: {
-            subscriptionId: newSubscription.id,
-            featureId: sf.featureId,
-            price: sf.price,
-            isActive: true,
-          },
-        });
-      }
-
-      this.logger.log(
-        `Copiadas ${activeFeatures.length} features para nova subscription ${newSubscription.id}`,
-      );
-    }
-
-    // Registrar o aceite do contrato
-    const latestContract = await this.prisma.contract.findFirst({
-      orderBy: { version: 'desc' },
-    });
-
-    if (latestContract) {
-      const existingAcceptance = await this.prisma.userContract.findUnique({
-        where: {
-          userId_contractId: {
-            userId: request.user.userId,
-            contractId: latestContract.id,
-          },
-        },
-      });
-
-      if (!existingAcceptance) {
-        await this.prisma.userContract.create({
-          data: {
-            userId: request.user.userId,
-            contractId: latestContract.id,
-            ipAddress: request.ip || '0.0.0.0',
-            userAgent: request.headers['user-agent'] || '',
-          },
-        });
-      }
-    }
-
-    return newSubscription;
-  }
-
   /** Formata data no padrão aceito pelo Asaas (YYYY-MM-DD) */
   private toAsaasDate(date: Date): string {
     return date.toISOString().split('T')[0];
@@ -734,9 +653,10 @@ export class SubscriptionsService {
    * Troca o plano da assinatura atual "in-place", sem cancelar/recriar a
    * assinatura no Asaas.
    *
-   * Por que in-place: o fluxo de `upgrade()` cancela a assinatura no Asaas e
-   * cria outra. Se a empresa está inadimplente, a cobrança vencida fica órfã da
-   * assinatura antiga e o bloqueio deixa de encontrá-la (débito perdido).
+   * Por que in-place: a antiga rota de upgrade (aposentada) cancelava a
+   * assinatura no Asaas e criava outra. Se a empresa estava inadimplente, a
+   * cobrança vencida ficava órfã da assinatura antiga e o bloqueio deixava de
+   * encontrá-la (débito perdido).
    *
    * Política de cobrança quando há inadimplência (conta bloqueada):
    * o cliente paga para usar — e durante o bloqueio ele não teve acesso. Por
@@ -930,285 +850,6 @@ export class SubscriptionsService {
     );
 
     return this.changePlan(companyId, newPlanId, { skipActiveCheck: true });
-  }
-
-  async addModule(
-    subscriptionId: string,
-    moduleId: string,
-    request,
-    couponCode?: string,
-  ) {
-    const subscription = await this.prisma.subscription.findUnique({
-      where: { id: subscriptionId },
-      include: {
-        customer: true,
-        subscriptionFeatures: { include: { feature: true } },
-      },
-    });
-
-    if (!subscription) {
-      throw new NotFoundException('Subscription not found');
-    }
-
-    if (subscription.companyId !== request.user.companyId) {
-      throw new BadRequestException('Unauthorized access to this subscription');
-    }
-
-    // Verificar se a feature existe
-    const feature = await this.prisma.feature.findUnique({
-      where: { key: moduleId },
-    });
-
-    if (!feature) {
-      throw new NotFoundException('Feature not found');
-    }
-
-    // Verificar se a feature já está incluída na subscription
-    if (
-      subscription.subscriptionFeatures.some(
-        (sf) => sf.feature.key === moduleId,
-      )
-    ) {
-      throw new BadRequestException('Module already included in subscription');
-    }
-
-    // Calcular valor sem features extras
-    const plan = await this.prisma.plan.findUnique({
-      where: { id: subscription.planId },
-    });
-
-    const modulesValue =
-      subscription.subscriptionFeatures.reduce(
-        (sum, sf) => sum + (sf.price || 0),
-        0,
-      ) + (feature.price || 0);
-
-    const newValueBase =
-      plan.basePrice +
-      modulesValue +
-      (plan.additionalUserPrice || 0) * (subscription.additionalUsers || 0);
-
-    let finalValueCentavos = newValueBase;
-    let coupon = null;
-    let discountAmount = 0;
-
-    if (couponCode) {
-      coupon = await this.couponsService.validateCoupon(
-        couponCode,
-        request.user.companyId,
-        undefined,
-        true,
-      );
-
-      // Desconto calculado sobre o valor do módulo contratado neste checkout,
-      // não sobre o total da assinatura (plano + módulos já existentes).
-      const discountCalculation = this.couponsService.calculateDiscount(
-        coupon,
-        feature.price || 0,
-      );
-      discountAmount = discountCalculation.discountAmount;
-      finalValueCentavos = newValueBase - discountAmount;
-    }
-
-    const newValue = finalValueCentavos / 100;
-
-    try {
-      await this.asaasGateway.updateAsaasSubscription(
-        subscription.asaasSubscriptionId,
-        {
-          value: newValue,
-        },
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Failed to update subscription in Asaas: ${error.message}`,
-      );
-    }
-
-    // Mutações atômicas — criar feature, atualizar subscription, registrar histórico
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.subscriptionFeature.create({
-        data: {
-          subscriptionId,
-          featureId: feature.id,
-          price: feature.price,
-        },
-      });
-
-      const result = await tx.subscription.update({
-        where: { id: subscriptionId },
-        data: {
-          value: newValue,
-          couponId: coupon ? coupon.id : undefined,
-          couponCode: coupon ? coupon.code : undefined,
-          discountValue: coupon ? discountAmount : undefined,
-          discountType: coupon ? coupon.discountType : undefined,
-        },
-        include: {
-          plan: true,
-          customer: true,
-        },
-      });
-
-      await tx.subscriptionHistory.create({
-        data: {
-          subscriptionId,
-          action: 'MODULE_ADDED',
-          description: coupon
-            ? `Módulo ${feature.name || moduleId} adicionado com cupom ${coupon.code}`
-            : `Módulo ${feature.name || moduleId} adicionado`,
-          changes: {
-            before: { value: subscription.value },
-            after: { value: newValue, moduleKey: moduleId },
-          },
-          metadata: {
-            featureId: feature.id,
-            featureKey: moduleId,
-            featurePrice: feature.price,
-            couponCode: coupon ? coupon.code : undefined,
-            discountApplied: coupon ? discountAmount : undefined,
-          },
-          createdByName: request.user?.name || 'Sistema',
-        },
-      });
-
-      if (coupon) {
-        const modulePrice = feature.price || 0;
-        await tx.couponUsage.create({
-          data: {
-            couponId: coupon.id,
-            companyId: request.user.companyId,
-            subscriptionId,
-            discountApplied: discountAmount,
-            originalValue: modulePrice,
-            finalValue: modulePrice - discountAmount,
-          },
-        });
-
-        await tx.coupon.update({
-          where: { id: coupon.id },
-          data: {
-            currentUses: { increment: 1 },
-          },
-        });
-      }
-
-      return result;
-    });
-
-    return updated;
-  }
-
-  async removeModule(subscriptionId: string, moduleId: string, request) {
-    const subscription = await this.prisma.subscription.findUnique({
-      where: { id: subscriptionId },
-      include: {
-        customer: true,
-        plan: true,
-        subscriptionFeatures: { include: { feature: true } },
-      },
-    });
-
-    if (!subscription) {
-      throw new NotFoundException('Subscription not found');
-    }
-
-    if (subscription.companyId !== request.user.companyId) {
-      throw new BadRequestException('Unauthorized access to this subscription');
-    }
-
-    // Verificar se a feature está na subscription
-    if (
-      !subscription.subscriptionFeatures.some(
-        (sf) => sf.feature.key === moduleId,
-      )
-    ) {
-      throw new BadRequestException('Module not found in subscription');
-    }
-
-    // Verificar se a feature é obrigatória do plano
-    const planHasFeature = await this.prisma.planFeature.findFirst({
-      where: { planId: subscription.planId, feature: { key: moduleId } },
-    });
-    if (planHasFeature) {
-      throw new BadRequestException(
-        'Cannot remove module that is required by the plan',
-      );
-    }
-
-    // Remover feature da subscription
-    // Remover feature da subscription
-    const subscriptionFeature = subscription.subscriptionFeatures.find(
-      (sf) => sf.feature.key === moduleId,
-    );
-    if (subscriptionFeature) {
-      await this.prisma.subscriptionFeature.delete({
-        where: { id: subscriptionFeature.id },
-      });
-    }
-
-    // Calcular valor sem features extras
-    // Calcular valor dos módulos extras (após remoção)
-    const remainingFeatures = await this.prisma.subscriptionFeature.findMany({
-      where: { subscriptionId, isActive: true },
-    });
-    const modulesValue = remainingFeatures.reduce(
-      (sum, sf) => sum + (sf.price || 0),
-      0,
-    );
-    const newValue =
-      (subscription.plan.basePrice +
-        modulesValue +
-        (subscription.plan.additionalUserPrice || 0) *
-          (subscription.additionalUsers || 0)) /
-      100;
-
-    // Atualizar subscription no Asaas
-    try {
-      await this.asaasGateway.updateAsaasSubscription(
-        subscription.asaasSubscriptionId,
-        {
-          value: newValue,
-        },
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Failed to update subscription in Asaas: ${error.message}`,
-      );
-    }
-
-    // Atualizar subscription local
-    const updated = await this.prisma.subscription.update({
-      where: { id: subscriptionId },
-      data: {
-        // modules array foi removido - agora usar subscriptionFeatures
-        value: newValue,
-      },
-      include: {
-        plan: true,
-        customer: true,
-      },
-    });
-
-    // Registrar no histórico
-    await this.prisma.subscriptionHistory.create({
-      data: {
-        subscriptionId,
-        action: 'MODULE_REMOVED',
-        description: `Módulo ${subscriptionFeature?.feature?.name || moduleId} removido`,
-        changes: {
-          before: { value: subscription.value, moduleKey: moduleId },
-          after: { value: newValue },
-        },
-        metadata: {
-          featureId: subscriptionFeature?.featureId,
-          featureKey: moduleId,
-        },
-        createdByName: request.user?.name || 'Sistema',
-      },
-    });
-
-    return updated;
   }
 
   async cancelSubscription(
@@ -1598,7 +1239,9 @@ export class SubscriptionsService {
       `Verificando status da subscription para empresa ${companyId}`,
     );
 
-    // Buscar a subscription mais recente da empresa que não seja TRIAL
+    // Buscar a subscription mais recente da empresa que não seja TRIAL — e
+    // que não seja uma contratação desfeita no meio: uma tentativa de evolução
+    // que falhou é mais nova que a assinatura que continua valendo.
     const subscription = await this.prisma.subscription.findFirst({
       where: {
         companyId,
@@ -1610,6 +1253,7 @@ export class SubscriptionsService {
             not: 'TRIAL',
           },
         },
+        OR: [{ endedReason: null }, { endedReason: { not: 'ABANDONED' } }],
       },
       orderBy: {
         createdAt: 'desc',
@@ -1650,8 +1294,33 @@ export class SubscriptionsService {
       return { status: 'not_found', subscription: null };
     }
 
-    // Se já está ativa, não precisa verificar
+    // Se já está ativa, não precisa reativar — mas ainda pode estar bloqueada.
+    // Quem pagou e continuava bloqueado saía daqui com "already_active" e só
+    // era desbloqueado pelo cron das 03:00, ficando horas fora do sistema
+    // depois de ter pago.
     if (subscription.status === 'ACTIVE') {
+      const company = await this.prisma.company.findUnique({
+        where: { id: companyId },
+        select: { blockLevel: true },
+      });
+
+      if (company && company.blockLevel !== 'NONE') {
+        const hasOverdue = await this.prisma.payment.findFirst({
+          where: {
+            subscriptionId: subscription.id,
+            status: 'OVERDUE',
+          },
+        });
+
+        if (!hasOverdue) {
+          await this.subscriptionBlockService.unblockCompany(companyId);
+          this.logger.log(
+            `Empresa ${companyId} desbloqueada: assinatura ativa e sem cobrança vencida`,
+          );
+          return { status: 'unblocked', subscription };
+        }
+      }
+
       return { status: 'already_active', subscription };
     }
 

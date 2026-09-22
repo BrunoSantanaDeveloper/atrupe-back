@@ -7,5 +7,6 @@ import { PrismaModule } from 'nestjs-prisma';
   imports: [PrismaModule],
   providers: [ContractService],
   controllers: [ContractController],
+  exports: [ContractService],
 })
 export class ContractModule {}

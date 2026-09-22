@@ -254,7 +254,9 @@ export const PLAN_CONFIGURATIONS = {
       planType: 'PRO' as const,
       name: 'Pro',
       description: '',
-      basePrice: 0, // preço pro
+      // Valores do protótipo. O plano segue desabilitado (isActive: false):
+      // o seed não sobrescreve a disponibilidade, que é do admin do sistema.
+      basePrice: 37000, // preço pro
       additionalUserPrice: 1500,
       order: 3,
       isActive: false,
@@ -293,7 +295,7 @@ export const PLAN_CONFIGURATIONS = {
       planType: 'ELITE' as const,
       name: 'Elite',
       description: '',
-      basePrice: 0, // preço elite
+      basePrice: 59000, // preço elite (valor do protótipo; plano desabilitado)
       additionalUserPrice: 1500,
       order: 4,
       isActive: false,
@@ -343,7 +345,7 @@ export const PLAN_CONFIGURATIONS = {
       planType: 'FULL' as const,
       name: 'Full',
       description: '',
-      basePrice: 0, // preço full
+      basePrice: 89000, // preço full (valor do protótipo; plano desabilitado)
       additionalUserPrice: 1500,
       order: 5,
       isActive: false,

@@ -30,6 +30,10 @@ model Company {
   textAfterItems        String?
   textBeforeItems       String?
   principalCompanyId    String?
+  // Titular da conta: quem responde por ela perante a Atrupe. Nasce com quem
+  // criou a conta e só muda por transferência de titularidade. Sem chave
+  // estrangeira de propósito: excluir o usuário não pode travar a empresa.
+  ownerUserId           String?
   facebook              String?
   instagram             String?
   linkedin              String?
@@ -1555,6 +1559,10 @@ model WebhookEvent {
   eventType    String
   payload      Json
   processed    Boolean  @default(false)
+  // Diagnóstico e nova tentativa automática de eventos que falharam.
+  attempts     Int      @default(0)
+  lastError    String?
+  resourceId   String? // id da cobrança ou assinatura a que o evento se refere
 
   @@map("webhook_events")
 }
@@ -1621,6 +1629,14 @@ model Subscription {
   couponCode           String? // Desnormalizado para display
   discountValue        Float? // Valor do desconto aplicado (centavos)
   discountType         DiscountType?
+  // Contratação e preço. Opcionais porque as assinaturas antigas não têm
+  // esses dados — e assinatura sem contractedAt não gera crédito de evolução.
+  contractedAt           DateTime? // quando a contratação foi registrada
+  recurringValueCents    Int? // valor da renovação: ciclo cheio, sem cupom e sem crédito
+  evolutionCreditCents   Int? // crédito de evolução aplicado nesta contratação
+  pricingSnapshot        Json? // o orçamento inteiro que gerou a cobrança, como prova
+  previousSubscriptionId String? // de qual assinatura esta evoluiu
+  endedReason            String? // EVOLVED | TRANSFERRED | CANCELED_BY_USER | ABANDONED
   Company              Company?              @relation(fields: [companyId], references: [id])
   customer             Customer              @relation(fields: [customerId], references: [id])
   plan                 Plan                  @relation(fields: [planId], references: [id])
@@ -1652,6 +1668,12 @@ model Payment {
   pixCopyPaste      String?
   confirmedDate     DateTime?
   paymentDate       DateTime?
+  // Período coberto e composição do valor: base do crédito proporcional.
+  periodStart       DateTime?
+  periodEnd         DateTime?
+  grossValue        Float? // valor do ciclo após mês grátis e cupom, antes do crédito (reais)
+  creditApplied     Float? // crédito de evolução abatido desta cobrança (reais)
+  kind              String? // CONTRACT | EVOLUTION (nulo: renovação gerada pelo Asaas)
 
   @@index([subscriptionId])
   @@index([asaasPaymentId])
@@ -1680,8 +1702,55 @@ model Contract {
   version       Int
   createdAt     DateTime       @default(now())
   acceptedUsers UserContract[]
+  acceptances   ContractAcceptance[]
 
   @@map("contracts")
+}
+
+enum ContractorType {
+  PF
+  PJ
+}
+
+/// O aceite do contrato na contratação: quem contratou, em nome de quem, e
+/// quem respondeu legalmente pela empresa.
+///
+/// UserContract registra só "este usuário aceitou esta versão", e o índice
+/// único (usuário, versão) impede registrar o aceite de novo numa evolução ou
+/// regularização — que a regra exige. Este registro é por contratação.
+///
+/// Sem chave estrangeira para usuário nem empresa, de propósito: é registro
+/// jurídico, e excluir um usuário ou uma conta não pode apagá-lo nem ser
+/// bloqueado por ele. Por isso nomes e documentos ficam desnormalizados aqui.
+model ContractAcceptance {
+  id                          String         @id @default(uuid())
+  createdAt                   DateTime       @default(now())
+  contractId                  String
+  contractVersion             Int
+  companyId                   String
+  subscriptionId              String?
+  context                     String // NEW_CONTRACT | REGULARIZATION | EVOLUTION | COMPLEMENTS | OWNERSHIP_TRANSFER
+  acceptedByUserId            String
+  acceptedByName              String
+  acceptedByEmail             String
+  contractorType              ContractorType
+  contractorDocument          String
+  contractorName              String
+  contractorTradeName         String?
+  contractorEmail             String
+  representativeCpf           String?
+  representativeName          String?
+  representativeVerified      Boolean?
+  representativeIsSessionUser Boolean        @default(false)
+  registrySnapshot            Json?
+  termsSha256                 String?
+  ipAddress                   String?
+  userAgent                   String?
+  contract                    Contract       @relation(fields: [contractId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([subscriptionId])
+  @@map("contract_acceptances")
 }
 
 model UserContract {

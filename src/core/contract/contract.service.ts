@@ -15,35 +15,57 @@ import { Response } from 'express';
 export class ContractService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Texto dos termos a partir do .docx — a fonte quando o contrato não tem
+   * conteúdo gravado. Tenta os caminhos de desenvolvimento e de build.
+   */
+  private async loadTermsDocxHtml(): Promise<string> {
+    const candidates = [
+      path.join(process.cwd(), 'src', 'assets', 'terms.docx'),
+      path.join(process.cwd(), 'dist', 'assets', 'terms.docx'),
+      path.join(__dirname, '..', '..', 'assets', 'terms.docx'),
+      path.join(__dirname, 'assets', 'terms.docx'),
+    ];
+    for (const filePath of candidates) {
+      try {
+        const fileBuffer = await fs.promises.readFile(filePath);
+        const result = await mammoth.convertToHtml({ buffer: fileBuffer });
+        return result.value;
+      } catch {
+        // tenta o próximo caminho
+      }
+    }
+    return '';
+  }
+
+  /**
+   * A versão VIGENTE dos termos — a de maior número — com o texto. Fixar na
+   * versão 1 fazia a tela oferecer uma versão e o aceite ser registrado
+   * contra outra.
+   */
+  async getCurrentTerms(): Promise<{
+    id: string;
+    version: number;
+    html: string;
+  } | null> {
+    const contract = await this.prisma.contract.findFirst({
+      orderBy: { version: 'desc' },
+    });
+    if (!contract) return null;
+    const html = contract.contentUrl || (await this.loadTermsDocxHtml());
+    return { id: contract.id, version: contract.version, html };
+  }
+
   async findContract(res: Response) {
     try {
-      const candidates = [
-        path.join(process.cwd(), 'src', 'assets', 'terms.docx'),
-        path.join(process.cwd(), 'dist', 'assets', 'terms.docx'),
-        path.join(__dirname, '..', '..', 'assets', 'terms.docx'),
-        path.join(__dirname, 'assets', 'terms.docx'),
-      ];
-
-      let html = '';
-      for (const filePath of candidates) {
-        try {
-          const fileBuffer = await fs.promises.readFile(filePath);
-          const result = await mammoth.convertToHtml({ buffer: fileBuffer });
-          html = result.value;
-          break;
-        } catch {
-          // tenta o próximo caminho
-        }
-      }
-
-      const contract = await this.prisma.contract.findFirst({
-        where: { version: 1 },
-      });
+      const terms = await this.getCurrentTerms();
+      const html = terms?.html ?? (await this.loadTermsDocxHtml());
 
       res.setHeader('Content-Type', 'application/json');
       res.send({
         html,
-        contractId: contract?.id,
+        contractId: terms?.id,
+        version: terms?.version,
       });
     } catch (readError) {
       console.error('Error reading or converting file:', readError);
@@ -194,23 +216,10 @@ export class ContractService {
 
       let html = userContract.contract.contentUrl;
 
-      if (!html && userContract.contract.version === 1) {
-        const candidates = [
-          path.join(process.cwd(), 'src', 'assets', 'terms.docx'),
-          path.join(process.cwd(), 'dist', 'assets', 'terms.docx'),
-          path.join(__dirname, '..', '..', 'assets', 'terms.docx'),
-          path.join(__dirname, 'assets', 'terms.docx'),
-        ];
-        for (const filePath of candidates) {
-          try {
-            const fileBuffer = await fs.promises.readFile(filePath);
-            const result = await mammoth.convertToHtml({ buffer: fileBuffer });
-            html = result.value;
-            break;
-          } catch {
-            // tenta o próximo caminho
-          }
-        }
+      // O .docx é a única fonte do texto quando o contrato não tem conteúdo
+      // gravado — não só na versão 1.
+      if (!html) {
+        html = await this.loadTermsDocxHtml();
       }
 
       return {

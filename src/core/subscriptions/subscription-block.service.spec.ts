@@ -95,7 +95,55 @@ describe('SubscriptionBlockService', () => {
       });
     });
 
-    it('should apply FULL block for company with 7+ days overdue in Asaas', async () => {
+    it('mede o atraso pela cobrança vencida mais antiga', async () => {
+      // A listagem do Asaas não vem ordenada. Pegando a primeira vencida, uma
+      // empresa com 10 dias de atraso podia ser medida por 1 e escapar do
+      // bloqueio: aqui a mais recente vem primeiro de propósito.
+      mockPrismaService.company.findMany.mockResolvedValue([
+        {
+          id: 'company-1',
+          name: 'Test Company',
+          blockLevel: 'NONE',
+          Subscription: [
+            { asaasSubscriptionId: 'sub_123', nextDueDate: new Date() },
+          ],
+        },
+      ]);
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { status: 'OVERDUE', dueDate: makeDueDate(1) },
+        { status: 'OVERDUE', dueDate: makeDueDate(10) },
+      ]);
+      mockPrismaService.company.update.mockResolvedValue({});
+
+      const results = await service.checkAndApplyBlocks();
+
+      expect(results[0].daysOverdue).toBe(10);
+      expect(results[0].newBlockLevel).toBe('FULL');
+    });
+
+    it('7 dias de atraso ainda é bloqueio parcial (inativa só a partir do 8º)', async () => {
+      mockPrismaService.company.findMany.mockResolvedValue([
+        {
+          id: 'company-7',
+          name: 'Sete dias',
+          blockLevel: 'NONE',
+          Subscription: [
+            { asaasSubscriptionId: 'sub_777', nextDueDate: new Date() },
+          ],
+        },
+      ]);
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { status: 'OVERDUE', dueDate: makeDueDate(7) },
+      ]);
+      mockPrismaService.company.update.mockResolvedValue({});
+
+      const results = await service.checkAndApplyBlocks();
+
+      expect(results[0].daysOverdue).toBe(7);
+      expect(results[0].newBlockLevel).toBe('PARTIAL');
+    });
+
+    it('should apply FULL block for company with 8+ days overdue in Asaas', async () => {
       mockPrismaService.company.findMany.mockResolvedValue([
         {
           id: 'company-2',
@@ -107,7 +155,7 @@ describe('SubscriptionBlockService', () => {
         },
       ]);
       mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
-        { status: 'OVERDUE', dueDate: makeDueDate(7) },
+        { status: 'OVERDUE', dueDate: makeDueDate(8) },
       ]);
       mockPrismaService.company.update.mockResolvedValue({});
 

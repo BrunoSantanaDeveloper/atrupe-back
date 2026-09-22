@@ -50,6 +50,8 @@ export interface QsaResponse {
   nome_socio: string;
   cnpj_cpf_do_socio: string;
   codigo_qualificacao_socio: number;
+  /** Texto da qualificação ("Sócio-Administrador"). */
+  qualificacao_socio?: string;
   percentual_capital_social: number;
   data_entrada_sociedade: string;
   cpf_representante_legal: any;

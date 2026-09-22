@@ -1,12 +1,19 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from 'src/config/prisma/prisma.service';
-import { AsaasWebhookDto, AsaasWebhookEvent } from './dto/asaas-webhook.dto';
+import {
+  AsaasWebhookPayload,
+  AsaasWebhookEvent,
+} from './dto/asaas-webhook.dto';
 import { SubscriptionBlockService } from '../subscriptions/subscription-block.service';
 import { AsaasGatewayService } from '../subscriptions/asaas-gateway.service';
 
 @Injectable()
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
+
+  private static readonly MAX_ATTEMPTS = 5;
+  private static readonly RETRY_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 
   constructor(
     private prisma: PrismaService,
@@ -15,51 +22,86 @@ export class WebhooksService {
     private readonly asaasGateway: AsaasGatewayService,
   ) {}
 
-  async handleAsaasWebhook(payload: AsaasWebhookDto) {
-    this.logger.log(`Recebido webhook: ${payload.event}`);
+  async handleAsaasWebhook(payload: AsaasWebhookPayload) {
+    this.logger.log(`Recebido webhook: ${payload?.event}`);
+
+    if (!payload?.event) {
+      this.logger.warn('Webhook sem evento no corpo; ignorado');
+      return { received: true, ignored: true };
+    }
+
+    const { event: webhookEvent, alreadyProcessed } =
+      await this.saveWebhookEvent(payload);
+
+    // Entrega repetida do mesmo evento não reprocessa: o Asaas reenvia quando
+    // não recebe 200, e reaplicar ativação/cancelamento a cada reenvio é o que
+    // torna o webhook perigoso.
+    if (alreadyProcessed) {
+      this.logger.warn(
+        `Evento ${webhookEvent.asaasEventId} já processado; ignorado`,
+      );
+      return { received: true, duplicate: true, eventId: webhookEvent.id };
+    }
 
     try {
-      // Salvar evento no banco de dados
-      const webhookEvent = await this.saveWebhookEvent(payload);
-
-      // Processar o evento baseado no tipo
       await this.processWebhookEvent(webhookEvent.id, payload);
-
       return { received: true, eventId: webhookEvent.id };
     } catch (error) {
-      this.logger.error(`Erro ao processar webhook: ${error.message}`, error);
-      throw error;
+      // Responder 200 mesmo em falha é deliberado: erro repetido faz o Asaas
+      // interromper a fila da conta inteira. O evento fica com processed=false
+      // e é reprocessável por POST /webhooks/events/:id/reprocess.
+      this.logger.error(
+        `Erro ao processar webhook ${webhookEvent.id}: ${error.message}`,
+        error,
+      );
+      await this.recordFailure(webhookEvent.id, error);
+      return { received: true, processed: false, eventId: webhookEvent.id };
     }
   }
 
-  private async saveWebhookEvent(payload: AsaasWebhookDto) {
-    // Gerar um ID único para o evento (usando timestamp + random)
+  private async saveWebhookEvent(payload: AsaasWebhookPayload) {
+    // A chave é o id do EVENTO. Usar o id do pagamento juntava eventos
+    // diferentes da mesma cobrança (criada, confirmada, vencida) num registro só.
     const asaasEventId =
-      payload.payment?.id ||
-      payload.subscription?.id ||
-      `evt_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      payload.id ||
+      [
+        payload.event,
+        payload.payment?.id || payload.subscription?.id || 'sem-recurso',
+        payload.dateCreated || '',
+      ].join(':');
 
-    // Verificar se o evento já foi processado (idempotência)
     const existingEvent = await this.prisma.webhookEvent.findUnique({
       where: { asaasEventId },
     });
 
     if (existingEvent) {
-      this.logger.warn(`Evento ${asaasEventId} já foi processado`);
-      return existingEvent;
+      return {
+        event: existingEvent,
+        alreadyProcessed: existingEvent.processed,
+      };
     }
 
-    return this.prisma.webhookEvent.create({
+    const created = await this.prisma.webhookEvent.create({
       data: {
         asaasEventId,
         eventType: payload.event,
         payload: payload as any,
         processed: false,
+        resourceId:
+          payload.payment?.id ||
+          payload.subscription?.id ||
+          payload.data?.id ||
+          null,
       },
     });
+
+    return { event: created, alreadyProcessed: false };
   }
 
-  private async processWebhookEvent(eventId: string, payload: AsaasWebhookDto) {
+  private async processWebhookEvent(
+    eventId: string,
+    payload: AsaasWebhookPayload,
+  ) {
     try {
       switch (payload.event) {
         case AsaasWebhookEvent.PAYMENT_CONFIRMED:
@@ -110,7 +152,7 @@ export class WebhooksService {
   /**
    * Handles PAYMENT_CREATED webhook — creates new payment record for monthly renewals
    */
-  private async handlePaymentCreated(payload: AsaasWebhookDto) {
+  private async handlePaymentCreated(payload: AsaasWebhookPayload) {
     const paymentData = payload.payment || payload.data;
     const asaasPaymentId = paymentData?.id;
     const subscriptionAsaasId = paymentData?.subscription;
@@ -174,7 +216,50 @@ export class WebhooksService {
     );
   }
 
-  private async handlePaymentConfirmed(payload: AsaasWebhookDto) {
+  /**
+   * O Asaas entrega datas como "AAAA-MM-DD". O Prisma recusa esse formato num
+   * campo DateTime, então toda data vinda do webhook passa por aqui.
+   */
+  private parseAsaasDate(value?: string | null): Date | null {
+    if (!value) return null;
+    const raw = String(value).trim();
+    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(raw);
+    const parsed = new Date(isDateOnly ? `${raw}T00:00:00.000Z` : raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  /** Avança uma data em um ciclo de cobrança. Ciclo desconhecido devolve null. */
+  private addCycle(date: Date | null, cycle?: string | null): Date | null {
+    if (!date || !cycle) return null;
+    const next = new Date(date);
+    switch (cycle) {
+      case 'WEEKLY':
+        next.setDate(next.getDate() + 7);
+        return next;
+      case 'BIWEEKLY':
+        next.setDate(next.getDate() + 14);
+        return next;
+      case 'MONTHLY':
+        next.setMonth(next.getMonth() + 1);
+        return next;
+      case 'BIMONTHLY':
+        next.setMonth(next.getMonth() + 2);
+        return next;
+      case 'QUARTERLY':
+        next.setMonth(next.getMonth() + 3);
+        return next;
+      case 'SEMIANNUALLY':
+        next.setMonth(next.getMonth() + 6);
+        return next;
+      case 'YEARLY':
+        next.setFullYear(next.getFullYear() + 1);
+        return next;
+      default:
+        return null;
+    }
+  }
+
+  private async handlePaymentConfirmed(payload: AsaasWebhookPayload) {
     this.logger.log(
       `Pagamento confirmado: ${payload.payment?.id || payload.data?.id}`,
     );
@@ -240,6 +325,20 @@ export class WebhooksService {
         where: { asaasSubscriptionId: effectiveSubscriptionId },
       });
 
+      // Assinatura cancelada ou expirada não ressuscita por webhook: uma
+      // entrega atrasada (ou o reenvio de uma fila acumulada) de um pagamento
+      // antigo reabriria um contrato que já foi encerrado.
+      if (
+        subscription &&
+        (subscription.status === 'CANCELED' ||
+          subscription.status === 'EXPIRED')
+      ) {
+        this.logger.warn(
+          `Assinatura ${subscription.id} está ${subscription.status}; o pagamento ${asaasPaymentId} não a reativa`,
+        );
+        return;
+      }
+
       if (subscription) {
         const previousStatus = subscription.status;
 
@@ -254,53 +353,73 @@ export class WebhooksService {
           },
         });
 
-        // Se existe uma subscription TRIAL ativa, desativá-la
-        if (trialSubscription) {
-          await this.prisma.subscription.update({
-            where: { id: trialSubscription.id },
-            data: { status: 'INACTIVE' },
-          });
+        // O Asaas manda a data como "AAAA-MM-DD", sem hora, e o Prisma recusa
+        // esse formato num campo DateTime. A próxima cobrança fica um ciclo à
+        // frente da que acabou de ser paga; sem ciclo conhecido, preserva a atual.
+        const paidDueDate = this.parseAsaasDate(
+          payload.payment?.dueDate || payload.data?.dueDate,
+        );
+        const nextDueDate =
+          this.addCycle(paidDueDate, subscription.cycle) ??
+          subscription.nextDueDate;
 
+        // Desativar o trial e ativar a paga são um ato só: quando isso rodava
+        // solto, uma falha no meio deixava a empresa sem nenhuma assinatura ativa.
+        await this.prisma.$transaction(async (tx) => {
+          if (trialSubscription) {
+            await tx.subscription.update({
+              where: { id: trialSubscription.id },
+              data: { status: 'INACTIVE' },
+            });
+
+            await tx.subscriptionHistory.create({
+              data: {
+                subscriptionId: trialSubscription.id,
+                action: 'DEACTIVATED',
+                description: 'Trial desativado após ativação de plano pago',
+                changes: {
+                  before: { status: 'ACTIVE' },
+                  after: { status: 'INACTIVE' },
+                },
+                metadata: {
+                  reason: 'Nova subscription ativada',
+                  newSubscriptionId: subscription.id,
+                },
+                createdByName: 'Sistema Asaas',
+              },
+            });
+          }
+
+          await tx.subscription.update({
+            where: { id: subscription.id },
+            data: {
+              status: 'ACTIVE',
+              nextDueDate,
+            },
+          });
+        });
+
+        if (trialSubscription) {
           this.logger.log(
             `Subscription TRIAL ${trialSubscription.id} desativada automaticamente`,
           );
-
-          // Registrar no histórico
-          await this.prisma.subscriptionHistory.create({
-            data: {
-              subscriptionId: trialSubscription.id,
-              action: 'DEACTIVATED',
-              description: 'Trial desativado após ativação de plano pago',
-              changes: {
-                before: { status: 'ACTIVE' },
-                after: { status: 'INACTIVE' },
-              },
-              metadata: {
-                reason: 'Nova subscription ativada',
-                newSubscriptionId: subscription.id,
-              },
-              createdByName: 'Sistema Asaas',
-            },
-          });
         }
-
-        await this.prisma.subscription.update({
-          where: { id: subscription.id },
-          data: {
-            status: 'ACTIVE',
-            nextDueDate:
-              payload.payment?.dueDate ||
-              payload.data?.dueDate ||
-              subscription.nextDueDate,
-          },
-        });
 
         this.logger.log(
           `Subscription ${subscription.id} atualizada para ACTIVE`,
         );
 
-        // Verificar se há cupom e gerenciar expiração do desconto (ONCE ou MONTHS)
-        if (subscription.couponId) {
+        // Expiração do desconto (ONCE ou MONTHS).
+        //
+        // Isto atende às assinaturas ANTIGAS, criadas quando o cupom era
+        // embutido no valor recorrente da assinatura no Asaas. A partir da
+        // fase do motor de preço o cupom abate só a primeira cobrança e a
+        // assinatura nasce com o valor cheio, o que torna esta rotina
+        // desnecessária para as novas.
+        // recurringValueCents só existe nas contratações novas, que já nascem
+        // no Asaas com o valor cheio: restaurar preço ali seria recalcular
+        // (e errar, no ciclo anual) um valor que já está certo.
+        if (subscription.couponId && subscription.recurringValueCents == null) {
           try {
             const coupon = await this.prisma.coupon.findUnique({
               where: { id: subscription.couponId },
@@ -312,10 +431,13 @@ export class WebhooksService {
               if (coupon.durationType === 'ONCE') {
                 shouldRestorePrice = true;
               } else if (coupon.durationType === 'MONTHS') {
+                // RECEIVED (liquidada) também conta: contar só CONFIRMED
+                // deixava de fora as cobranças que o Asaas já liquidou, e o
+                // desconto nunca expirava.
                 const confirmedCount = await this.prisma.payment.count({
                   where: {
                     subscriptionId: subscription.id,
-                    status: 'CONFIRMED',
+                    status: { in: ['CONFIRMED', 'RECEIVED'] },
                   },
                 });
 
@@ -435,7 +557,7 @@ export class WebhooksService {
     }
   }
 
-  private async handlePaymentOverdue(payload: AsaasWebhookDto) {
+  private async handlePaymentOverdue(payload: AsaasWebhookPayload) {
     this.logger.log(
       `Pagamento em atraso: ${payload.payment?.id || payload.data?.id}`,
     );
@@ -507,7 +629,7 @@ export class WebhooksService {
     }
   }
 
-  private async handleSubscriptionExpired(payload: AsaasWebhookDto) {
+  private async handleSubscriptionExpired(payload: AsaasWebhookPayload) {
     this.logger.log(
       `Assinatura expirada: ${payload.subscription?.id || payload.data?.id}`,
     );
@@ -534,7 +656,7 @@ export class WebhooksService {
     }
   }
 
-  private async handleSubscriptionUpdated(payload: AsaasWebhookDto) {
+  private async handleSubscriptionUpdated(payload: AsaasWebhookPayload) {
     this.logger.log(
       `Assinatura atualizada: ${payload.subscription?.id || payload.data?.id}`,
     );
@@ -551,10 +673,13 @@ export class WebhooksService {
         const updateData: any = {};
 
         if (subscriptionData.value) updateData.value = subscriptionData.value;
-        if (subscriptionData.nextDueDate)
-          updateData.nextDueDate = new Date(subscriptionData.nextDueDate);
-        if (subscriptionData.status)
-          updateData.status = subscriptionData.status;
+        if (subscriptionData.nextDueDate) {
+          const parsed = this.parseAsaasDate(subscriptionData.nextDueDate);
+          if (parsed) updateData.nextDueDate = parsed;
+        }
+        // O status NÃO é copiado do Asaas: lá "ACTIVE" quer dizer "assinatura
+        // viva", não "paga", e uma contratação ainda pendente viraria ativa sem
+        // ninguém ter pago. Quem ativa é a confirmação do pagamento.
         if (subscriptionData.cycle) updateData.cycle = subscriptionData.cycle;
         if (subscriptionData.billingType)
           updateData.billingType = subscriptionData.billingType;
@@ -571,7 +696,7 @@ export class WebhooksService {
     }
   }
 
-  private async handleSubscriptionDeleted(payload: AsaasWebhookDto) {
+  private async handleSubscriptionDeleted(payload: AsaasWebhookPayload) {
     this.logger.log(
       `Assinatura cancelada: ${payload.subscription?.id || payload.data?.id}`,
     );
@@ -583,6 +708,15 @@ export class WebhooksService {
       const subscription = await this.prisma.subscription.findFirst({
         where: { asaasSubscriptionId },
       });
+
+      // Já encerrada aqui — pela evolução de plano, pelo cancelamento ou pela
+      // contratação desfeita: o aviso do Asaas só confirma o que já foi feito.
+      if (subscription?.status === 'CANCELED') {
+        this.logger.log(
+          `Subscription ${subscription.id} já estava CANCELED; SUBSCRIPTION_DELETED sem efeito`,
+        );
+        return;
+      }
 
       if (subscription) {
         const previousStatus = subscription.status;
@@ -641,6 +775,63 @@ export class WebhooksService {
       throw new Error('Event not found');
     }
 
-    await this.processWebhookEvent(eventId, event.payload as any);
+    try {
+      await this.processWebhookEvent(eventId, event.payload as any);
+    } catch (error) {
+      await this.recordFailure(eventId, error);
+      throw error;
+    }
+  }
+
+  /** Registra a falha no próprio evento: é o que permite diagnosticar e tentar de novo. */
+  private async recordFailure(eventId: string, error: any): Promise<void> {
+    try {
+      await this.prisma.webhookEvent.update({
+        where: { id: eventId },
+        data: {
+          attempts: { increment: 1 },
+          lastError: String(error?.message ?? error).slice(0, 2000),
+        },
+      });
+    } catch (recordError) {
+      this.logger.error(
+        `Não foi possível registrar a falha do evento ${eventId}: ${recordError.message}`,
+      );
+    }
+  }
+
+  /**
+   * Nova tentativa automática dos eventos que falharam.
+   *
+   * O webhook responde 200 mesmo quando o processamento falha, para o Asaas
+   * não interromper a fila da conta; sem esta rotina, uma falha momentânea
+   * (banco indisponível, Asaas lento) virava um evento perdido até alguém
+   * reprocessar à mão.
+   *
+   * Limites deliberados: poucas tentativas, e só eventos recentes — eventos
+   * antigos não são reprocessados (decisão sobre o backlog da fila), e um
+   * evento que falha sempre não pode ficar em laço.
+   */
+  @Cron(CronExpression.EVERY_10_MINUTES, { name: 'webhook-retry' })
+  async retryFailedEvents(): Promise<void> {
+    const since = new Date(Date.now() - WebhooksService.RETRY_WINDOW_MS);
+    const pending = await this.prisma.webhookEvent.findMany({
+      where: {
+        processed: false,
+        attempts: { gt: 0, lt: WebhooksService.MAX_ATTEMPTS },
+        createdAt: { gte: since },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+    });
+
+    for (const event of pending) {
+      try {
+        await this.processWebhookEvent(event.id, event.payload as any);
+        this.logger.log(`Evento ${event.id} processado na nova tentativa`);
+      } catch (error) {
+        await this.recordFailure(event.id, error);
+      }
+    }
   }
 }

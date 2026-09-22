@@ -8,6 +8,7 @@ import {
 } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 import { PaymentResponseDto } from './dto/payment-response.dto';
 
 @ApiTags('payments')
@@ -88,7 +89,11 @@ export class PaymentsController {
     return this.paymentsService.getPaymentStatus(id);
   }
 
+  // Cancelar e estornar mexem em dinheiro e não recebem companyId: sem o guard,
+  // qualquer usuário autenticado estornava a cobrança de qualquer empresa
+  // passando o id — inclusive a própria, pagando e desfazendo em seguida.
   @Post(':id/cancel')
+  @UseGuards(SystemAdminGuard)
   @ApiOperation({ summary: 'Cancelar um pagamento pendente' })
   @ApiParam({
     name: 'id',
@@ -111,6 +116,7 @@ export class PaymentsController {
   }
 
   @Post(':id/refund')
+  @UseGuards(SystemAdminGuard)
   @ApiOperation({ summary: 'Estornar um pagamento confirmado' })
   @ApiParam({
     name: 'id',

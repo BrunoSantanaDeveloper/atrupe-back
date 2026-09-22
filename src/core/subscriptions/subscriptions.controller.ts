@@ -10,6 +10,9 @@ import {
   Delete,
   Query,
   UseInterceptors,
+  HttpCode,
+  HttpStatus,
+  GoneException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -36,6 +39,9 @@ import { SyncAddressDto } from './dto/sync-address.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
 import { CancelSubscriptionDto } from './dto/cancel-subscription.dto';
 import { ChangePlanAdminDto } from './dto/change-plan-admin.dto';
+import { QuoteSubscriptionDto } from './dto/quote-subscription.dto';
+import { SubscriptionQuoteService } from './pricing/subscription-quote.service';
+import { ComplementsService } from './checkout/complements.service';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
@@ -51,6 +57,8 @@ export class SubscriptionsController {
     private readonly adminDashboardService: AdminDashboardService,
     private readonly companyManagementService: CompanyManagementService,
     private readonly subscriptionBlockService: SubscriptionBlockService,
+    private readonly subscriptionQuoteService: SubscriptionQuoteService,
+    private readonly complementsService: ComplementsService,
   ) {}
 
   @Get('incomplete-registrations')
@@ -300,6 +308,27 @@ export class SubscriptionsController {
     );
   }
 
+  @Post('quote')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Orçamento da contratação',
+    description:
+      'Calcula o que seria cobrado (ciclo, módulos, usuários, cupom, crédito de evolução e parcelamento) sem criar nada. Usa o mesmo motor de preço da contratação.',
+  })
+  async quote(@Body() quoteDto: QuoteSubscriptionDto, @Req() req) {
+    return this.subscriptionQuoteService.quote(req.user.companyId, quoteDto);
+  }
+
+  @Get('plan-states')
+  @ApiOperation({
+    summary: 'Trilha de planos',
+    description:
+      'Estado de cada plano do Método para a empresa: concluído, atual, elegível, em breve ou bloqueado.',
+  })
+  async planStates(@Req() req) {
+    return this.subscriptionQuoteService.getPlanStates(req.user.companyId);
+  }
+
   @Get('active')
   @ApiOperation({ summary: 'Get active subscription for company' })
   @ApiResponse({
@@ -464,29 +493,32 @@ export class SubscriptionsController {
     );
   }
 
+  /**
+   * Aposentada: trocava de plano sem sequência e sem crédito, cancelava a
+   * assinatura no Asaas — levando junto a cobrança vencida — e dava 30 dias
+   * até a primeira cobrança. Nenhuma tela a usa; a evolução de plano é
+   * POST /subscriptions/evolution.
+   */
   @Patch(':id/upgrade')
-  @ApiOperation({ summary: 'Upgrade subscription to a new plan' })
-  @ApiParam({ name: 'id', description: 'Subscription ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Subscription upgraded successfully',
+  @ApiOperation({
+    summary: 'Aposentada: use POST /subscriptions/evolution',
+    deprecated: true,
   })
-  @ApiResponse({ status: 400, description: 'Bad request' })
-  @ApiResponse({ status: 404, description: 'Subscription or Plan not found' })
-  async upgrade(
-    @Param('id') subscriptionId: string,
-    @Body() upgradeDto: UpgradeSubscriptionDto,
-    @Req() req,
-  ) {
-    return await this.subscriptionsService.upgrade(
-      subscriptionId,
-      upgradeDto.planId,
-      req,
-    );
+  @ApiResponse({ status: 410, description: 'Rota aposentada' })
+  upgrade() {
+    throw new GoneException({
+      code: 'ENDPOINT_RETIRED',
+      message:
+        'A troca de plano por aqui foi desativada. Use a evolução de plano em Assinatura.',
+    });
   }
 
   @Patch(':id/modules/:moduleId')
-  @ApiOperation({ summary: 'Add module to subscription' })
+  @ApiOperation({
+    summary: 'Adiciona um módulo à assinatura',
+    description:
+      'Rota da tela anterior. O módulo é liberado na hora e cobrado a partir da próxima mensalidade; cupom não se aplica.',
+  })
   @ApiParam({ name: 'id', description: 'Subscription ID' })
   @ApiParam({ name: 'moduleId', description: 'Module ID to add' })
   @ApiQuery({
@@ -506,16 +538,20 @@ export class SubscriptionsController {
     @Query('couponCode') couponCode: string,
     @Req() req,
   ) {
-    return await this.subscriptionsService.addModule(
+    return await this.complementsService.legacyAddModule(
+      this.contractingUser(req),
       subscriptionId,
       moduleId,
-      req,
       couponCode,
     );
   }
 
   @Delete(':id/modules/:moduleId')
-  @ApiOperation({ summary: 'Remove module from subscription' })
+  @ApiOperation({
+    summary: 'Retira um módulo da assinatura',
+    description:
+      'O acesso sai na hora e o valor sai das mensalidades ainda não pagas.',
+  })
   @ApiParam({ name: 'id', description: 'Subscription ID' })
   @ApiParam({ name: 'moduleId', description: 'Module ID to remove' })
   @ApiResponse({
@@ -529,11 +565,19 @@ export class SubscriptionsController {
     @Param('moduleId') moduleId: string,
     @Req() req,
   ) {
-    return await this.subscriptionsService.removeModule(
+    return await this.complementsService.removeModule(
+      this.contractingUser(req),
       subscriptionId,
       moduleId,
-      req,
     );
+  }
+
+  private contractingUser(req) {
+    return {
+      userId: req.user.userId,
+      companyId: req.user.companyId,
+      isAdmin: !!req.user.isAdmin,
+    };
   }
 
   @Delete(':id/cancel')

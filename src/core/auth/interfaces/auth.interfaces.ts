@@ -1,3 +1,4 @@
+import type { BillingSituation } from '../../subscriptions/checkout/company-session.service';
 /**
  * Interfaces para tipar o AuthService — eliminando `any`
  */
@@ -75,10 +76,16 @@ export interface LoginResponse {
     logo?: string | null;
     favicon?: string | null;
     subscription: string;
+    /** Há assinatura paga ativa (contratação registrada). */
+    subscriptionActive?: boolean;
     trialEndsAt?: Date | null;
     blockLevel: string;
     features: string[];
     limits: Record<string, number> | null;
+    /** Situação da cobrança, para a faixa de aviso. */
+    billing?: BillingSituation | null;
+    /** Quem está logado é o titular da conta. */
+    isOwner?: boolean;
   } | null;
   access_token: string;
   refresh_token: string;

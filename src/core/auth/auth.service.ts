@@ -9,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import { PlanControlService } from '../plan/plan-control.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { CompanySessionService } from '../subscriptions/checkout/company-session.service';
 import * as argon2 from 'argon2';
 import { v4 as uuidv4 } from 'uuid';
 import { jwtConstants } from './constants';
@@ -30,6 +31,8 @@ export class AuthService {
     private planControlService: PlanControlService,
     @Inject(forwardRef(() => SubscriptionsService))
     private subscriptionsService: SubscriptionsService,
+    @Inject(forwardRef(() => CompanySessionService))
+    private companySessionService: CompanySessionService,
   ) {}
 
   /**
@@ -157,6 +160,20 @@ export class AuthService {
 
       const subscription = planInfo?.planType ?? 'TRIAL';
 
+      // Situação da cobrança e titularidade: a faixa de pagamento pendente e
+      // os atos do titular dependem disso desde o login. Falhar aqui não pode
+      // impedir a entrada.
+      const companySession = companyId
+        ? await this.companySessionService
+            .build(companyId, user.id)
+            .catch((error) => {
+              this.logger.warn(
+                `Sessão da empresa ${companyId} indisponível no login: ${error.message}`,
+              );
+              return null;
+            })
+        : null;
+
       const payload = {
         username: user.email,
         sub: user.id,
@@ -189,8 +206,12 @@ export class AuthService {
               logo: employee.company.logoUrl,
               favicon: employee.company.favIconUrl,
               subscription: subscription,
+              // O frontend lia este campo e sempre recebia false: nunca era enviado.
+              subscriptionActive: companySession?.plan.active ?? false,
               trialEndsAt: planInfo?.trialEndsAt ?? null,
               blockLevel: employee.company.blockLevel ?? 'NONE',
+              billing: companySession?.billing ?? null,
+              isOwner: companySession?.isOwner ?? false,
               features: await this.getPlanFeatures(employee.company.id),
               limits: planInfo?.limits || null, // Sistema dinâmico - todos os limites automaticamente
             }

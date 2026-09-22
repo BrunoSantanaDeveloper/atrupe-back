@@ -62,7 +62,10 @@ export class PlanService {
         select: {
           id: true,
           name: true,
+          planType: true,
+          order: true,
           basePrice: true,
+          additionalUserPrice: true,
           isActive: true,
           badge: true,
           concept: true,
@@ -78,7 +81,15 @@ export class PlanService {
       return plans.map((plan) => ({
         id: plan.id,
         name: plan.name,
+        // planType e order dão à tela a posição de cada plano na trilha do
+        // Método; a sequência em si é regra do motor de preço.
+        planType: plan.planType,
+        order: plan.order,
         basePrice: plan.isActive ? plan.basePrice : undefined,
+        // O preço do usuário adicional é do plano: a tela não o repete.
+        additionalUserPrice: plan.isActive
+          ? plan.additionalUserPrice
+          : undefined,
         isActive: plan.isActive,
         videoUrl: plan.videoUrl,
         badge: plan.badge as any,

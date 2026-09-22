@@ -291,10 +291,13 @@ export class UserRegistrationService {
         });
       }
 
+      // O CPF saiu do cadastro: passa a ser pedido na contratação (do
+      // representante legal, ou do próprio contratante pessoa física). O
+      // campo continua aceito no DTO até o frontend novo parar de enviá-lo —
+      // removê-lo antes faria a validação global recusar o cadastro.
       await this.companyService.createFirstAccess(
         createUserDto.email,
         company.id,
-        createUserDto.cpf,
       );
       this.logger.log('First access configured successfully');
 

@@ -7,9 +7,28 @@ import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import { PlanControlService } from '../plan/plan-control.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { CompanySessionService } from '../subscriptions/checkout/company-session.service';
 import * as argon2 from 'argon2';
 
 describe('AuthService', () => {
+  // Sessão da empresa no login: pagamento pendente e titularidade.
+  const companySessionBuild = jest.fn().mockResolvedValue({
+    plan: {
+      name: 'START',
+      active: true,
+      trialEndsAt: null,
+      features: [],
+      limits: {},
+    },
+    blockLevel: 'NONE',
+    billing: {
+      situation: 'EM_DIA',
+      daysOverdue: 0,
+      paymentPending: true,
+      chargeInFocus: null,
+    },
+    isOwner: true,
+  });
   let service: AuthService;
   let userService: jest.Mocked<UserService>;
   let jwtService: jest.Mocked<JwtService>;
@@ -96,6 +115,10 @@ describe('AuthService', () => {
             }),
           },
         },
+        {
+          provide: CompanySessionService,
+          useValue: { build: companySessionBuild },
+        },
       ],
     }).compile();
 
@@ -164,6 +187,24 @@ describe('AuthService', () => {
       expect(result).toHaveProperty('company');
       expect(result.isSystemAdmin).toBe(false);
       expect(jwtService.sign).toHaveBeenCalled();
+    });
+
+    it('devolve contratação ativa, situação da cobrança e titularidade', async () => {
+      const result = await service.login(mockUser);
+
+      expect(result.company.subscriptionActive).toBe(true);
+      expect(result.company.billing).toMatchObject({ paymentPending: true });
+      expect(result.company.isOwner).toBe(true);
+    });
+
+    it('não impede o login quando a sessão da empresa falha', async () => {
+      companySessionBuild.mockRejectedValueOnce(new Error('banco lento'));
+
+      const result = await service.login(mockUser);
+
+      expect(result).toHaveProperty('access_token');
+      expect(result.company.subscriptionActive).toBe(false);
+      expect(result.company.billing).toBeNull();
     });
 
     it('should return login response for system admin', async () => {

@@ -1,9 +1,11 @@
 import {
   IsString,
-  IsNumber,
   IsEnum,
   IsOptional,
   IsArray,
+  IsInt,
+  Min,
+  Max,
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
@@ -23,7 +25,11 @@ export class CreateSubscriptionDto {
   planId: string;
 
   @ApiProperty({ description: 'Número de usuários adicionais' })
-  @IsNumber()
+  // Inteiro e não negativo: com @IsNumber() sozinho, um valor negativo passava
+  // e ABATIA do preço, porque o total soma additionalUsers × preço unitário.
+  @IsInt()
+  @Min(0)
+  @Max(20)
   @IsOptional()
   additionalUsers?: number = 0;
 

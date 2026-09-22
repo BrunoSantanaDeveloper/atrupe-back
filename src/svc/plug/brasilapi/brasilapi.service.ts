@@ -68,6 +68,40 @@ export class BrasilApiService {
     return await firstValueFrom(response$);
   }
 
+  /**
+   * O registro completo do CNPJ, com quadro societário e situação cadastral.
+   * `company()` devolve só o resumo de cadastro; a contratação precisa do
+   * quadro para conferir o representante legal.
+   */
+  async companyRegistry(cnpj: string): Promise<CNPJResponse> {
+    const sanitizedCnpj = cnpj.replace(/\D/g, '');
+
+    if (sanitizedCnpj.length !== 14) {
+      throw new BadRequestException('CNPJ deve conter 14 dígitos');
+    }
+
+    const response$ = this.httpService
+      .get<CNPJResponse>(`${this.baseUrl}/cnpj/v1/${sanitizedCnpj}`, {
+        timeout: this.timeout,
+      })
+      .pipe(
+        map((response) => response.data),
+        catchError((error) => {
+          if (error.response?.status === 404) {
+            throw new NotFoundException('CNPJ não encontrado na base de dados');
+          }
+          if (error.response?.status === 400) {
+            throw new BadRequestException('CNPJ inválido');
+          }
+          throw new Error(
+            `Erro na consulta: ${error.message || 'Erro desconhecido'}`,
+          );
+        }),
+      );
+
+    return await firstValueFrom(response$);
+  }
+
   async banks(): Promise<BankResponse[]> {
     const response$ = this.httpService
       .get<BankResponse[]>(`${this.baseUrl}/banks/v1`, {

@@ -99,6 +99,37 @@ describe('PlanService', () => {
         sections: { concept: 'Basic plan', features: { limit: 10 } },
       });
     });
+
+    it('expõe tipo e ordem do plano, sem revelar o preço do desabilitado', async () => {
+      prismaMock.plan.findMany.mockResolvedValue([
+        {
+          id: 'p-start',
+          name: 'Atrupe Start',
+          planType: 'START',
+          order: 1,
+          basePrice: 14700,
+          isActive: true,
+        },
+        {
+          id: 'p-pro',
+          name: 'Atrupe Pro',
+          planType: 'PRO',
+          order: 3,
+          basePrice: 37000,
+          isActive: false,
+        },
+      ]);
+
+      const [start, pro] = await service.getPublicPlans();
+
+      expect(start).toMatchObject({
+        planType: 'START',
+        order: 1,
+        basePrice: 14700,
+      });
+      expect(pro).toMatchObject({ planType: 'PRO', order: 3, isActive: false });
+      expect(pro.basePrice).toBeUndefined();
+    });
   });
 
   describe('getPublicModules', () => {

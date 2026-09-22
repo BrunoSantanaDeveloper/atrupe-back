@@ -9,6 +9,7 @@ import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { AsaasGatewayService } from './asaas-gateway.service';
 import { CouponsService } from '../coupons/coupons.service';
+import { SubscriptionBlockService } from './subscription-block.service';
 
 // Mock argon2 globally
 jest.mock('argon2', () => ({
@@ -70,6 +71,10 @@ describe('SubscriptionsService', () => {
     calculateDiscount: jest.fn(),
   };
 
+  const mockSubscriptionBlockService = {
+    unblockCompany: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -78,6 +83,10 @@ describe('SubscriptionsService', () => {
         { provide: CustomersService, useValue: mockCustomersService },
         { provide: AsaasGatewayService, useValue: mockAsaasGatewayService },
         { provide: CouponsService, useValue: mockCouponsService },
+        {
+          provide: SubscriptionBlockService,
+          useValue: mockSubscriptionBlockService,
+        },
       ],
     }).compile();
 

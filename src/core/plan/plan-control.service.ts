@@ -84,7 +84,12 @@ export class PlanControlService {
       throw new BadRequestException('Empresa não encontrada');
     }
 
-    const subscription = company.Subscription[0];
+    // Com um trial ACTIVE e uma assinatura paga ACTIVE ao mesmo tempo, pegar o
+    // [0] era sorteio da ordem do banco — e o plano da sessão saía errado.
+    // A assinatura paga manda; o trial só vale quando é a única.
+    const subscription =
+      company.Subscription.find((s) => s.plan?.planType !== 'TRIAL') ??
+      company.Subscription[0];
     if (!subscription) {
       return null;
     }

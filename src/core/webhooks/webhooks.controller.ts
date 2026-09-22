@@ -9,7 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { WebhooksService } from './webhooks.service';
-import { AsaasWebhookDto } from './dto/asaas-webhook.dto';
+import { AsaasWebhookPayload } from './dto/asaas-webhook.dto';
 import {
   ApiTags,
   ApiOperation,
@@ -41,7 +41,7 @@ export class WebhooksController {
     status: 400,
     description: 'Dados inválidos',
   })
-  async handleAsaasWebhook(@Body() payload: AsaasWebhookDto) {
+  async handleAsaasWebhook(@Body() payload: AsaasWebhookPayload) {
     return this.webhooksService.handleAsaasWebhook(payload);
   }
 

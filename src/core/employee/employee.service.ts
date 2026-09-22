@@ -239,7 +239,7 @@ export class EmployeeService {
         };
       }
 
-      const [total, employees] = await Promise.all([
+      const [total, employees, company] = await Promise.all([
         this.prisma.employee.count({ where }),
         this.prisma.employee.findMany({
           where,
@@ -260,7 +260,15 @@ export class EmployeeService {
           skip: (+filter.page - 1) * +filter.limit,
           orderBy: orderBy,
         }),
+        this.prisma.company.findUnique({
+          where: { id: filter.companyId },
+          select: { ownerUserId: true },
+        }),
       ]);
+
+      // O titular é marcado na listagem: é quem responde pela conta (e o
+      // único que transfere a titularidade ou cancela a assinatura).
+      const ownerUserId = company?.ownerUserId ?? null;
 
       const groupedBySector = employees.reduce(
         (acc, employee) => {
@@ -274,7 +282,10 @@ export class EmployeeService {
               employees: [],
             };
           }
-          acc[sectorId].employees.push(employee);
+          acc[sectorId].employees.push({
+            ...employee,
+            isOwner: !!employee.userId && employee.userId === ownerUserId,
+          });
 
           return acc;
         },

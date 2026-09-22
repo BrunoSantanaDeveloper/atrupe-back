@@ -1,0 +1,173 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { PrismaService } from 'src/config/prisma/prisma.service';
+import { PlanControlService } from '../../plan/plan-control.service';
+import { SubscriptionQuoteService } from '../pricing/subscription-quote.service';
+import { CompanySessionService } from './company-session.service';
+
+// Meio-dia local de 25/08: as datas de vencimento são meia-noite UTC do dia.
+const HOJE = new Date(2026, 7, 25, 12, 0, 0);
+const dia = (d: string) => new Date(`${d}T00:00:00.000Z`);
+
+const payment = (status: string, dueDate: string) => ({
+  asaasPaymentId: `pay_${dueDate}`,
+  status,
+  dueDate: dia(dueDate),
+  value: 147,
+  billingType: 'BOLETO',
+  invoiceUrl: `https://asaas/i/${dueDate}`,
+});
+
+describe('CompanySessionService', () => {
+  let service: CompanySessionService;
+  const prisma = { company: { findUnique: jest.fn() } };
+  const planControl = { getCompanyPlanInfo: jest.fn() };
+  const quoteService = { getBillingContext: jest.fn() };
+
+  const context = (payments: any[], extra: Record<string, any> = {}) => ({
+    current: { payments },
+    hasOpenCharge: false,
+    hasOverdue: false,
+    firstChargePending: false,
+    confirmedPayment: null,
+    intent: 'EVOLUTION',
+    ...extra,
+  });
+
+  beforeEach(async () => {
+    jest.resetAllMocks();
+    planControl.getCompanyPlanInfo.mockResolvedValue({
+      planType: 'START',
+      trialEndsAt: null,
+      features: { nfe: true, crm: false },
+      limits: { max_users: 3 },
+    });
+    prisma.company.findUnique.mockResolvedValue({
+      blockLevel: 'NONE',
+      ownerUserId: 'user-1',
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        CompanySessionService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: PlanControlService, useValue: planControl },
+        { provide: SubscriptionQuoteService, useValue: quoteService },
+      ],
+    }).compile();
+    service = module.get(CompanySessionService);
+  });
+
+  it('plano pago ativo, só as features ligadas, e o titular', async () => {
+    quoteService.getBillingContext.mockResolvedValue(
+      context([payment('CONFIRMED', '2026-08-15')]),
+    );
+
+    const s = await service.build('company-1', 'user-1', HOJE);
+
+    expect(s.plan).toEqual({
+      name: 'START',
+      active: true,
+      trialEndsAt: null,
+      features: ['nfe'],
+      limits: { max_users: 3 },
+    });
+    expect(s.isOwner).toBe(true);
+    expect(s.billing).toEqual({
+      situation: 'EM_DIA',
+      daysOverdue: 0,
+      paymentPending: false,
+      chargeInFocus: null,
+    });
+  });
+
+  it('quem não é o titular não recebe isOwner', async () => {
+    quoteService.getBillingContext.mockResolvedValue(context([]));
+    const s = await service.build('company-1', 'user-2', HOJE);
+    expect(s.isOwner).toBe(false);
+  });
+
+  it('contratação com a primeira cobrança pendente: pagamento pendente, sem atraso', async () => {
+    quoteService.getBillingContext.mockResolvedValue(
+      context([payment('PENDING', '2026-08-27')], { firstChargePending: true }),
+    );
+
+    const s = await service.build('company-1', 'user-1', HOJE);
+
+    expect(s.billing.paymentPending).toBe(true);
+    expect(s.billing.situation).toBe('EM_DIA');
+    expect(s.billing.chargeInFocus?.asaasPaymentId).toBe('pay_2026-08-27');
+  });
+
+  it('renovação futura não é pendência nem entra em foco', async () => {
+    quoteService.getBillingContext.mockResolvedValue(
+      context([
+        payment('PENDING', '2026-09-15'),
+        payment('CONFIRMED', '2026-08-15'),
+      ]),
+    );
+    const s = await service.build('company-1', 'user-1', HOJE);
+    expect(s.billing.chargeInFocus).toBeNull();
+  });
+
+  it('conta o atraso em dias de calendário, pela vencida mais antiga', async () => {
+    quoteService.getBillingContext.mockResolvedValue(
+      context([
+        payment('OVERDUE', '2026-08-23'),
+        payment('OVERDUE', '2026-08-20'),
+      ]),
+    );
+
+    const s = await service.build('company-1', 'user-1', HOJE);
+
+    // 20/08 → 25/08: 5 dias, nem um a mais (o fuso não pode somar um dia).
+    expect(s.billing.daysOverdue).toBe(5);
+    expect(s.billing.situation).toBe('ATRASADA');
+    expect(s.billing.chargeInFocus?.asaasPaymentId).toBe('pay_2026-08-20');
+  });
+
+  it('cobrança pendente com vencimento passado também é atraso', async () => {
+    quoteService.getBillingContext.mockResolvedValue(
+      context([payment('PENDING', '2026-08-24')]),
+    );
+    const s = await service.build('company-1', 'user-1', HOJE);
+    expect(s.billing.daysOverdue).toBe(1);
+  });
+
+  it('o nível de bloqueio manda na situação', async () => {
+    quoteService.getBillingContext.mockResolvedValue(
+      context([payment('OVERDUE', '2026-08-20')]),
+    );
+
+    prisma.company.findUnique.mockResolvedValue({
+      blockLevel: 'PARTIAL',
+      ownerUserId: null,
+    });
+    expect(
+      (await service.build('company-1', undefined, HOJE)).billing.situation,
+    ).toBe('BLOQUEADA');
+
+    quoteService.getBillingContext.mockResolvedValue(
+      context([payment('OVERDUE', '2026-08-10')]),
+    );
+    prisma.company.findUnique.mockResolvedValue({
+      blockLevel: 'FULL',
+      ownerUserId: null,
+    });
+    expect(
+      (await service.build('company-1', undefined, HOJE)).billing.situation,
+    ).toBe('INATIVA');
+  });
+
+  it('plano indisponível não derruba a sessão: vira teste, sem features', async () => {
+    planControl.getCompanyPlanInfo.mockRejectedValue(new Error('falhou'));
+    quoteService.getBillingContext.mockResolvedValue(context([]));
+
+    const s = await service.build('company-1', 'user-1', HOJE);
+
+    expect(s.plan).toMatchObject({
+      name: 'TRIAL',
+      active: false,
+      features: [],
+    });
+  });
+});

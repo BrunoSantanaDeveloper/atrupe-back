@@ -78,6 +78,13 @@ export class CompanyService {
             }
             this.logger.log(`User found: ${user.id}`);
 
+            // Quem cria a conta é o titular: responde por ela perante a
+            // Atrupe, e só uma transferência de titularidade o muda.
+            await tx.company.updateMany({
+              where: { id: companyId, ownerUserId: null },
+              data: { ownerUserId: user.id },
+            });
+
             this.logger.log('Finding administration sector');
             const sector = await tx.companySector.findFirst({
               where: {

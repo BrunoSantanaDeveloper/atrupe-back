@@ -1,18 +1,23 @@
-import { IsString, IsObject, IsOptional } from 'class-validator';
-
-export class AsaasWebhookDto {
-  @IsString()
+/**
+ * O corpo do webhook do Asaas é uma INTERFACE, não uma classe com decorators.
+ *
+ * O ValidationPipe global roda com `whitelist` + `forbidNonWhitelisted`
+ * (src/app.module.ts). Com uma classe, todo campo não declarado — e o Asaas
+ * manda `id` e `dateCreated` no topo — derrubava a requisição com 400, e
+ * `payment`/`subscription` declarados como obrigatórios rejeitavam justamente
+ * os eventos que só trazem um dos dois. O resultado era 100% dos webhooks
+ * recusados. Sem metatype de classe, o pipe não valida e o serviço confere o
+ * que precisa — assim um campo novo do Asaas nunca mais derruba o endpoint.
+ */
+export interface AsaasWebhookPayload {
+  /** id do evento (evt_...), a chave de idempotência */
+  id?: string;
   event: string;
-
-  @IsObject()
+  dateCreated?: string;
   payment?: any;
-
-  @IsObject()
   subscription?: any;
-
-  @IsObject()
-  @IsOptional()
   data?: any;
+  [key: string]: any;
 }
 
 export enum AsaasWebhookEvent {

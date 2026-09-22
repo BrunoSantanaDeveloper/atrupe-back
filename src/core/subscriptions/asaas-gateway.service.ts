@@ -199,6 +199,33 @@ export class AsaasGatewayService {
   }
 
   /**
+   * Busca o QR Code Pix de uma cobrança.
+   *
+   * O objeto de cobrança do Asaas NÃO traz o QR Code: ele vem só deste
+   * endpoint. Antes, gravávamos `pixQrCodeId` (um id) como se fosse o QR e
+   * `encodedImage` (campo inexistente na cobrança) como copia-e-cola, então o
+   * Pix nunca chegou utilizável ao cliente.
+   */
+  async getPixQrCode(
+    paymentId: string,
+  ): Promise<{ encodedImage?: string; payload?: string } | null> {
+    try {
+      const api = await this.asaasApi();
+      const { data } = await api.get(`/payments/${paymentId}/pixQrCode`);
+      return { encodedImage: data?.encodedImage, payload: data?.payload };
+    } catch (error) {
+      // Pix indisponível não pode derrubar a contratação: a fatura continua
+      // pagável pelo invoiceUrl.
+      this.logger.warn(
+        `Não foi possível obter o QR Code Pix da cobrança ${paymentId}: ${JSON.stringify(
+          error.response?.data || error.message,
+        )}`,
+      );
+      return null;
+    }
+  }
+
+  /**
    * Mapeia status do payment do Asaas para nosso enum
    */
   mapAsaasPaymentStatus(asaasStatus: string): AsaasPaymentStatus {

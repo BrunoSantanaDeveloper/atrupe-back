@@ -93,6 +93,46 @@ describe('PlanControlService', () => {
       );
     });
 
+    it('prefere a assinatura paga quando o trial ainda está ACTIVE', async () => {
+      // Durante a virada do trial para o plano pago, as duas ficam ACTIVE por
+      // um instante. Pegar a primeira da lista fazia o plano da sessão sair
+      // errado — e é do plano da sessão que dependem o middleware e as features.
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        Subscription: [
+          {
+            id: 'sub-trial',
+            additionalUsers: 0,
+            nextDueDate: new Date(),
+            plan: {
+              id: 'plan-trial',
+              name: 'Trial',
+              planType: 'TRIAL',
+              planFeatures: [],
+              planLimits: [],
+            },
+            subscriptionFeatures: [],
+          },
+          {
+            id: 'sub-paga',
+            additionalUsers: 0,
+            nextDueDate: new Date(),
+            plan: {
+              id: 'plan-start',
+              name: 'Start',
+              planType: 'START',
+              planFeatures: [],
+              planLimits: [],
+            },
+            subscriptionFeatures: [],
+          },
+        ],
+      });
+
+      const result = await service.getCompanyPlanInfo('company-1');
+
+      expect(result.planType).toBe('START');
+    });
+
     it('should return null when company has no active subscription', async () => {
       mockPrismaService.company.findUnique.mockResolvedValue({
         Subscription: [],
