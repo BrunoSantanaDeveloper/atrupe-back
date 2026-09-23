@@ -5,11 +5,17 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { AsaasGatewayService } from '../asaas-gateway.service';
 import { SubscriptionQuoteService } from '../pricing/subscription-quote.service';
-import { CHECKOUT_BILLING_TYPES, RegularizationDto } from '../dto/checkout.dto';
+import {
+  CHECKOUT_BILLING_TYPES,
+  CheckoutBillingType,
+  RegularizationDto,
+} from '../dto/checkout.dto';
+import { isInstallmentBilling } from '../billing-mode';
 import { ContractAcceptanceService } from './contract-acceptance.service';
 import { CompanySessionService } from './company-session.service';
 import { CheckoutUser, RequestMeta } from './checkout.service';
@@ -85,10 +91,15 @@ export class RegularizationService {
         cycle: ctx.current.cycle,
         billingType: ctx.current.billingType,
         valueCents: Math.round(ctx.current.value * 100),
+        installmentCount: ctx.current.installmentCount ?? null,
       },
       contractor,
       chargeInFocus: session.billing.chargeInFocus,
-      allowedBillingTypes: [...CHECKOUT_BILLING_TYPES],
+      // O anual parcelado é pago no cartão: uma parcela em Pix deixaria as
+      // outras sem cartão para cobrar.
+      allowedBillingTypes: isInstallmentBilling(ctx.current)
+        ? (['CREDIT_CARD'] as CheckoutBillingType[])
+        : [...CHECKOUT_BILLING_TYPES],
       terms: { id: terms.id, version: terms.version },
       lastAcceptance,
     };
@@ -111,6 +122,13 @@ export class RegularizationService {
 
     const terms = await this.acceptance.currentTerms();
     assertTermsAccepted(dto.termsAcceptance, terms);
+
+    if (!view.allowedBillingTypes.includes(dto.billingType)) {
+      throw new UnprocessableEntityException({
+        code: 'BILLING_TYPE_NOT_ALLOWED',
+        message: 'O plano anual parcelado é pago no cartão de crédito.',
+      });
+    }
 
     const focus = view.chargeInFocus;
     const today = new Date().toISOString().split('T')[0];

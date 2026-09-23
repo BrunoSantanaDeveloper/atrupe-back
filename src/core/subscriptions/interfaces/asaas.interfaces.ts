@@ -16,6 +16,22 @@ export interface AsaasCreateSubscriptionPayload {
   };
 }
 
+/** Cobrança parcelada: o anual em até 12x no cartão. */
+export interface AsaasCreateInstallmentPayload {
+  customer: string;
+  billingType: string;
+  /** Vencimento da primeira parcela, AAAA-MM-DD; as demais vencem mês a mês. */
+  dueDate: string;
+  installmentCount: number;
+  /** O total; o Asaas divide pelas parcelas. */
+  totalValue: number;
+  description?: string;
+  externalReference?: string;
+  callback?: {
+    successUrl?: string;
+  };
+}
+
 export interface AsaasSubscriptionResponse {
   id: string;
   customer: string;
@@ -52,6 +68,10 @@ export interface AsaasPaymentResponse {
   status: string;
   value: number;
   dueDate: string;
+  /** Id do parcelamento, quando a cobrança é parcela de um. */
+  installment?: string;
+  installmentNumber?: number;
+  billingType?: string;
   description?: string;
   invoiceUrl?: string;
   bankSlipUrl?: string;

@@ -239,6 +239,30 @@ describe('SubscriptionsService', () => {
       ).not.toHaveBeenCalled();
     });
 
+    it('no anual, recusa: o valor calculado aqui é mensal', async () => {
+      mockPrismaService.subscription.findFirst.mockResolvedValue({
+        ...currentSubscription,
+        cycle: 'YEARLY',
+      });
+
+      await expect(
+        service.changePlan('company-1', 'plan-lite'),
+      ).rejects.toThrow(BadRequestException);
+      expect(
+        mockAsaasGatewayService.updateAsaasSubscription,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('no anual parcelado, que não tem assinatura no Asaas, também recusa', async () => {
+      mockPrismaService.subscription.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'sub-anual' });
+
+      await expect(
+        service.changePlan('company-1', 'plan-lite'),
+      ).rejects.toThrow('ciclo anual');
+    });
+
     it('deve lançar NotFoundException se o plano não existir', async () => {
       mockPrismaService.subscription.findFirst.mockResolvedValue(
         currentSubscription,
@@ -472,6 +496,31 @@ describe('SubscriptionsService', () => {
         }),
       );
       expect(result).toEqual({ id: 'sub-1', planId: 'plan-lite' });
+    });
+  });
+
+  describe('cancelSubscription', () => {
+    it('o anual não se cancela por aqui: cortaria o resto de um ano pago', async () => {
+      mockPrismaService.subscription.findUnique.mockResolvedValue({
+        id: 'sub-anual',
+        companyId: 'company-1',
+        status: 'ACTIVE',
+        cycle: 'YEARLY',
+        billingMode: 'ASAAS_INSTALLMENT',
+        asaasSubscriptionId: 'inst_sub-anual',
+        plan: { planType: 'START' },
+      });
+
+      await expect(
+        service.cancelSubscription(
+          'sub-anual',
+          { reason: 'Preço' } as any,
+          'company-1',
+        ),
+      ).rejects.toThrow('plano anual');
+      expect(
+        mockAsaasGatewayService.cancelAsaasSubscription,
+      ).not.toHaveBeenCalled();
     });
   });
 });

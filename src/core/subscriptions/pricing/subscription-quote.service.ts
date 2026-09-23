@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CouponsService } from '../../coupons/coupons.service';
 import { QuoteSubscriptionDto } from '../dto/quote-subscription.dto';
+import { annualCycleEnabled } from '../billing-mode';
 import {
   addCalendarCycle,
   computeEvolutionCredit,
@@ -27,6 +28,8 @@ export type QuoteIneligibility =
 export interface SubscriptionQuoteResponse {
   intent: ContractingIntent;
   eligible: boolean;
+  /** Se o ciclo anual pode ser contratado agora (chave ANNUAL_CYCLE_ENABLED). */
+  annualCycleAvailable: boolean;
   ineligibilityReason?: QuoteIneligibility;
   plan: { id: string; name: string; planType: string };
   /** Ausente quando o plano ainda não foi liberado: o preço não é exibido. */
@@ -149,6 +152,7 @@ export class SubscriptionQuoteService {
     return {
       intent: ctx.intent,
       hasOpenCharge: ctx.hasOpenCharge,
+      annualCycleAvailable: annualCycleEnabled(),
       currentPlanId: ctx.current?.planId ?? null,
       currentCycle: ctx.current?.cycle ?? null,
       plans: items.map((item) => {
@@ -201,6 +205,7 @@ export class SubscriptionQuoteService {
     ): SubscriptionQuoteResponse => ({
       intent: ctx.intent,
       eligible,
+      annualCycleAvailable: annualCycleEnabled(),
       ...(ineligibilityReason ? { ineligibilityReason } : {}),
       plan: { id: plan.id, name: plan.name, planType: plan.planType },
       quote,

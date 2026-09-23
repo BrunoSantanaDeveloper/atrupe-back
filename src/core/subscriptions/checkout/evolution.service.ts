@@ -10,7 +10,16 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { AsaasGatewayService } from '../asaas-gateway.service';
 import { SubscriptionQuoteService } from '../pricing/subscription-quote.service';
-import { addCalendarCycle, QuoteResult } from '../pricing/pricing.engine';
+import {
+  addCalendarCycle,
+  PricingCycle,
+  QuoteResult,
+} from '../pricing/pricing.engine';
+import {
+  billingModeOf,
+  INSTALLMENT_SUBSCRIPTION_PREFIX,
+  isBilledByGateway,
+} from '../billing-mode';
 import { EvolutionDto } from '../dto/checkout.dto';
 import {
   ContractAcceptanceService,
@@ -19,18 +28,21 @@ import {
 import { CompanySessionService } from './company-session.service';
 import { RequestMeta } from './checkout.service';
 import {
-  adjustFirstCharge,
   assertCanContract,
+  assertCycleAvailable,
+  assertInstallments,
   assertTermsAccepted,
   ContractingUser,
   ContractorOnFile,
   contractorOnFile,
   FIRST_DUE_DAYS,
+  GatewayContract,
   IN_FLIGHT_WINDOW_MS,
   MIN_CHARGE_CENTS,
+  openGatewayContract,
+  recordContractCharges,
   releaseReservation,
   representativeOnFile,
-  successUrl,
 } from './contracting-steps';
 
 type BillingContext = Awaited<
@@ -43,23 +55,24 @@ const DAY_MS = 86_400_000;
 /**
  * Evolução para o próximo plano da trilha, com crédito do tempo não usado.
  *
- * A evolução reinicia o ciclo: nasce uma assinatura nova no Asaas, com o valor
- * cheio do plano novo, e a primeira cobrança sai com o crédito abatido. Os
- * complementos seguem o que a pessoa escolheu — chegam marcados como estão na
- * assinatura em curso.
+ * A evolução reinicia o ciclo: nasce uma cobrança nova no Asaas — assinatura
+ * recorrente, ou parcelamento no anual no cartão — com o valor do plano novo,
+ * e a primeira cobrança sai com o crédito abatido. Os complementos seguem o
+ * que a pessoa escolheu: chegam marcados como estão na assinatura em curso.
+ * Do anual só se evolui para outro anual (regra do orçamento).
  *
- * A ordem dos passos no Asaas é a que nunca deixa duas assinaturas cobrando:
+ * A ordem dos passos no Asaas é a que nunca deixa duas cobranças correndo:
  * 1. reserva local, sob a trava da empresa;
- * 2. a assinatura nova no Asaas, com a primeira cobrança ajustada;
+ * 2. a cobrança nova no Asaas, com a primeira cobrança ajustada;
  * 3. a anterior encerrada no Asaas — as cobranças futuras dela apagadas antes;
  * 4. ativação local numa transação: a nova ACTIVE, a anterior CANCELED.
- * Falhando até o 3, a nova é cancelada e a reserva desfeita; a anterior segue
+ * Falhando até o 3, a nova é desfeita e a reserva também; a anterior segue
  * cobrando como antes.
  *
  * Crédito que cobre a primeira cobrança inteira (ou deixa menos que o mínimo
  * do Asaas) não gera cobrança: o ciclo coberto pelo crédito fica registrado
- * numa cobrança local de valor zero, e a assinatura nova começa a cobrar no
- * ciclo seguinte.
+ * numa cobrança local de valor zero, e a nova começa a cobrar no ciclo
+ * seguinte.
  */
 @Injectable()
 export class EvolutionService {
@@ -79,21 +92,18 @@ export class EvolutionService {
       'Somente administradores da empresa podem evoluir o plano.',
     );
 
-    // O anual chega com o parcelamento; até lá, a evolução é mensal.
-    if ((dto.cycle ?? 'MONTHLY') !== 'MONTHLY') {
-      throw new UnprocessableEntityException({
-        code: 'CYCLE_NOT_AVAILABLE',
-        message: 'O pagamento anual ainda não está disponível.',
-      });
-    }
+    const cycle: PricingCycle = dto.cycle ?? 'MONTHLY';
+    const installmentCount = dto.installmentCount ?? 1;
+    assertCycleAvailable(cycle);
 
     const now = new Date();
     const response = await this.quoteService.quote(
       user.companyId,
       {
         planId: dto.planId,
-        cycle: 'MONTHLY',
+        cycle,
         billingType: dto.billingType as any,
+        installmentCount,
         modules: dto.modules,
         additionalUsers: dto.additionalUsers,
         couponCode: dto.couponCode,
@@ -101,6 +111,7 @@ export class EvolutionService {
       now,
     );
     const quote = this.assertEvolvable(response, dto);
+    assertInstallments(quote, installmentCount);
 
     const terms = await this.acceptance.currentTerms();
     assertTermsAccepted(dto.termsAcceptance, terms);
@@ -159,13 +170,14 @@ export class EvolutionService {
     const chargesNow = quote.totalCents >= MIN_CHARGE_CENTS;
     const firstDueDate = chargesNow
       ? new Date(now.getTime() + FIRST_DUE_DAYS * DAY_MS)
-      : addCalendarCycle(now, 'MONTHLY');
+      : addCalendarCycle(now, cycle);
 
     // 1. Reserva
     const reserved = await this.reserve({
       user,
       dto,
       quote,
+      cycle,
       current,
       customerId: customer.id,
       planId: plan.id,
@@ -174,34 +186,22 @@ export class EvolutionService {
       firstDueDate,
     });
 
-    let newAsaasId: string | null = null;
+    let contract: GatewayContract | null = null;
     let previousClosed = false;
     let activated: Awaited<ReturnType<EvolutionService['activate']>>;
     try {
-      // 2. A assinatura nova, com o valor cheio da renovação
-      const asaasSubscription = await this.asaasGateway.createSubscription({
+      // 2. A cobrança nova, com o valor do plano novo
+      contract = await openGatewayContract(this.asaasGateway, this.logger, {
         customer: customer.asaasCustomerId,
         billingType: dto.billingType,
-        value: quote.recurringCents / 100,
-        nextDueDate: firstDueDate,
-        cycle: 'MONTHLY',
+        cycle,
+        installmentCount,
+        quote,
+        chargesNow,
+        firstDueDate,
         description: `Assinatura ${plan.name}`,
         externalReference: reserved.id,
-        callback: { successUrl: successUrl() },
       });
-      newAsaasId = asaasSubscription.id;
-
-      const firstCharge = chargesNow
-        ? await adjustFirstCharge(
-            this.asaasGateway,
-            asaasSubscription.id,
-            quote,
-          )
-        : null;
-      const pix =
-        firstCharge && dto.billingType === 'PIX'
-          ? await this.asaasGateway.getPixQrCode(firstCharge.id)
-          : null;
 
       // 3. A anterior deixa de cobrar
       await this.closePrevious(current, now);
@@ -213,6 +213,8 @@ export class EvolutionService {
         user,
         dto,
         quote,
+        cycle,
+        installmentCount,
         terms,
         contractor,
         representative,
@@ -220,11 +222,8 @@ export class EvolutionService {
         reservedId: reserved.id,
         current,
         planName: plan.name,
-        asaasSubscription,
-        firstCharge,
-        pix,
+        contract,
         asaasCustomerId: customer.asaasCustomerId,
-        firstDueDate,
         meta,
         now,
       };
@@ -243,7 +242,8 @@ export class EvolutionService {
       await releaseReservation(this.prisma, this.asaasGateway, this.logger, {
         subscriptionId: reserved.id,
         couponId: coupon?.id ?? null,
-        asaasSubscriptionId: newAsaasId,
+        asaasSubscriptionId: contract?.asaasSubscriptionId ?? null,
+        asaasInstallmentId: contract?.asaasInstallmentId ?? null,
       });
       if (error instanceof HttpException) throw error;
       this.logger.error(
@@ -266,16 +266,20 @@ export class EvolutionService {
         return null;
       });
 
-    const { payment, acceptance, asaasSubscription } = activated;
+    const { payment, acceptance } = activated;
     return {
       subscription: {
         id: reserved.id,
         status: 'ACTIVE' as const,
         planId: plan.id,
         planName: plan.name,
-        cycle: 'MONTHLY' as const,
+        cycle,
         billingType: dto.billingType,
-        nextDueDate: asaasSubscription.nextDueDate,
+        installmentCount:
+          contract.billingMode === 'ASAAS_INSTALLMENT'
+            ? installmentCount
+            : null,
+        nextDueDate: contract.nextDueDate,
       },
       payment: {
         id: payment.id,
@@ -314,7 +318,10 @@ export class EvolutionService {
       throw new UnprocessableEntityException({
         code: 'PLAN_NOT_AVAILABLE',
         reason: response.ineligibilityReason,
-        message: 'Este plano não está disponível para evolução.',
+        message:
+          response.ineligibilityReason === 'ANNUAL_TO_MONTHLY_NOT_ALLOWED'
+            ? 'Do plano anual, a evolução é para outro plano anual.'
+            : 'Este plano não está disponível para evolução.',
       });
     }
     const quote = response.quote;
@@ -343,6 +350,7 @@ export class EvolutionService {
     user: ContractingUser;
     dto: EvolutionDto;
     quote: QuoteResult;
+    cycle: PricingCycle;
     current: CurrentSubscription;
     customerId: string;
     planId: string;
@@ -391,7 +399,7 @@ export class EvolutionService {
           additionalUsers: dto.additionalUsers ?? 0,
           asaasSubscriptionId: `temp_${randomUUID()}`,
           nextDueDate: input.firstDueDate,
-          cycle: 'MONTHLY',
+          cycle: input.cycle,
           billingType: dto.billingType,
           value: quote.recurringCents / 100,
           status: 'INACTIVE',
@@ -444,19 +452,22 @@ export class EvolutionService {
   }
 
   /**
-   * Passo 3: a assinatura anterior deixa de cobrar.
+   * Passo 3: a cobrança anterior deixa de correr.
    *
    * As cobranças futuras que o Asaas já gerou são apagadas ANTES de encerrar a
-   * assinatura: com ela viva, apagar não tem ambiguidade. Quem responde se há
-   * cobrança em aberto é o Asaas — uma vencida que o banco não viu seria
-   * apagada junto, e isso seria perdoar a dívida.
+   * assinatura: com ela viva, apagar não tem ambiguidade. No parcelado não há
+   * assinatura a encerrar — só as parcelas ainda não pagas, como a renovação
+   * do ano seguinte, já criada. Quem responde se há cobrança em aberto é o
+   * Asaas: uma vencida que o banco não viu seria apagada junto, e isso seria
+   * perdoar a dívida.
    */
   private async closePrevious(current: CurrentSubscription, now: Date) {
-    const asaasId = current.asaasSubscriptionId;
-    if (!asaasId?.startsWith('sub_')) return;
+    // Atribuída à mão, teste, ou parcelado cujo ano o crédito pagou: não há
+    // cobrança no Asaas a encerrar.
+    if (!isBilledByGateway(current)) return;
+    const mode = billingModeOf(current);
 
-    const payments =
-      await this.asaasGateway.getAsaasSubscriptionPayments(asaasId);
+    const payments = await this.asaasGateway.getChargesOf(current);
     const today = now.toISOString().slice(0, 10);
     const open = payments.some(
       (p) =>
@@ -478,13 +489,17 @@ export class EvolutionService {
         await this.asaasGateway.deleteAsaasPayment(payment.id);
         deleted.push(payment.id);
       }
-      await this.asaasGateway.cancelAsaasSubscription(asaasId);
+      if (mode === 'ASAAS_SUBSCRIPTION') {
+        await this.asaasGateway.cancelAsaasSubscription(
+          current.asaasSubscriptionId,
+        );
+      }
     } catch (error) {
       // A evolução vai ser desfeita e a anterior segue valendo — sem as
-      // renovações já apagadas, que o Asaas não gera de novo.
+      // cobranças já apagadas, que o Asaas não gera de novo.
       if (deleted.length > 0) {
         this.logger.error(
-          `RECONCILIAR: evolução não concluída; as cobranças ${deleted.join(', ')} da assinatura ${asaasId}, que segue valendo, foram apagadas: ${error.message}`,
+          `RECONCILIAR: evolução não concluída; as cobranças ${deleted.join(', ')} da assinatura ${current.id}, que segue valendo, foram apagadas: ${error.message}`,
         );
       }
       throw error;
@@ -496,6 +511,8 @@ export class EvolutionService {
     user: ContractingUser;
     dto: EvolutionDto;
     quote: QuoteResult;
+    cycle: PricingCycle;
+    installmentCount: number;
     terms: CurrentTerms;
     contractor: ContractorOnFile;
     representative: ReturnType<typeof representativeOnFile>;
@@ -503,11 +520,8 @@ export class EvolutionService {
     reservedId: string;
     current: CurrentSubscription;
     planName: string;
-    asaasSubscription: { id: string; nextDueDate: string };
-    firstCharge: any | null;
-    pix: { encodedImage?: string; payload?: string } | null;
+    contract: GatewayContract;
     asaasCustomerId: string;
-    firstDueDate: Date;
     meta: RequestMeta;
     now: Date;
   }) {
@@ -518,19 +532,25 @@ export class EvolutionService {
       current,
       reservedId,
       sessionUser,
-      firstCharge,
+      contract,
       now,
     } = input;
-    const grossValue = (quote.totalCents + quote.creditCents) / 100;
-    const creditApplied = quote.creditCents ? quote.creditCents / 100 : null;
+    const installment = contract.billingMode === 'ASAAS_INSTALLMENT';
+    const chargedNow = contract.charges.length > 0;
 
     const { payment, acceptance } = await this.prisma.$transaction(
       async (tx) => {
         await tx.subscription.update({
           where: { id: reservedId },
           data: {
-            asaasSubscriptionId: input.asaasSubscription.id,
-            nextDueDate: new Date(input.asaasSubscription.nextDueDate),
+            // O parcelado não tem assinatura no Asaas: o id local o marca.
+            asaasSubscriptionId:
+              contract.asaasSubscriptionId ??
+              `${INSTALLMENT_SUBSCRIPTION_PREFIX}${reservedId}`,
+            asaasInstallmentId: contract.asaasInstallmentId,
+            billingMode: contract.billingMode,
+            installmentCount: installment ? input.installmentCount : null,
+            nextDueDate: contract.nextDueDate,
             status: 'ACTIVE',
             contractedAt: now,
           },
@@ -540,7 +560,7 @@ export class EvolutionService {
           where: { id: current.id },
           data: { status: 'CANCELED', endedReason: 'EVOLVED' },
         });
-        // As renovações futuras da anterior foram apagadas no Asaas.
+        // As cobranças futuras da anterior foram apagadas no Asaas.
         await tx.payment.updateMany({
           where: { subscriptionId: current.id, status: 'PENDING' },
           data: { status: 'CANCELED' },
@@ -560,71 +580,39 @@ export class EvolutionService {
           },
         });
 
-        const payment = firstCharge
-          ? await tx.payment.create({
-              data: {
-                subscriptionId: reservedId,
-                asaasPaymentId: firstCharge.id,
-                asaasCustomerId: input.asaasCustomerId,
-                value: firstCharge.value,
-                dueDate: new Date(firstCharge.dueDate),
-                billingType: dto.billingType,
-                description: firstCharge.description,
-                externalReference: firstCharge.id,
-                status: this.asaasGateway.mapAsaasPaymentStatus(
-                  firstCharge.status,
-                ),
-                invoiceUrl: firstCharge.invoiceUrl,
-                bankSlipUrl: firstCharge.bankSlipUrl,
-                pixQrCode: input.pix?.encodedImage ?? null,
-                pixCopyPaste: input.pix?.payload ?? null,
-                periodStart: now,
-                periodEnd: addCalendarCycle(
-                  new Date(firstCharge.dueDate),
-                  'MONTHLY',
-                ),
-                grossValue,
-                creditApplied,
-                kind: 'EVOLUTION',
-              },
-            })
-          : // O Asaas não emite cobrança de R$ 0: o ciclo pago pelo crédito
-            // fica registrado aqui, para "o período está pago?" ter resposta.
-            await tx.payment.create({
-              data: {
-                subscriptionId: reservedId,
-                asaasPaymentId: `credit_${reservedId}`,
-                asaasCustomerId: input.asaasCustomerId,
-                value: 0,
-                dueDate: now,
-                billingType: dto.billingType,
-                description: 'Primeiro ciclo coberto pelo crédito da evolução',
-                status: 'CONFIRMED',
-                confirmedDate: now,
-                paymentDate: now,
-                periodStart: now,
-                periodEnd: input.firstDueDate,
-                grossValue,
-                creditApplied,
-                kind: 'EVOLUTION',
-              },
-            });
+        const [payment] = await recordContractCharges(tx, this.asaasGateway, {
+          subscriptionId: reservedId,
+          asaasCustomerId: input.asaasCustomerId,
+          billingType: dto.billingType,
+          cycle: input.cycle,
+          quote,
+          contract,
+          kind: 'EVOLUTION',
+          now,
+        });
 
         await tx.subscriptionHistory.create({
           data: {
             subscriptionId: reservedId,
             action: 'EVOLUTION_CONTRACTED',
-            description: firstCharge
+            description: chargedNow
               ? `Evolução do ${current.plan.name} para o ${input.planName} registrada; acesso liberado com o pagamento em aberto`
               : `Evolução do ${current.plan.name} para o ${input.planName} registrada; o crédito cobriu o primeiro ciclo`,
             metadata: {
               fromSubscriptionId: current.id,
               fromPlan: current.plan.name,
+              cycle: input.cycle,
               creditCents: quote.creditCents,
               totalCents: quote.totalCents,
               recurringCents: quote.recurringCents,
-              ...(firstCharge
-                ? { paymentId: firstCharge.id }
+              ...(installment
+                ? {
+                    installmentCount: input.installmentCount,
+                    asaasInstallmentId: contract.asaasInstallmentId,
+                  }
+                : {}),
+              ...(chargedNow
+                ? { paymentId: payment.asaasPaymentId }
                 : // Abaixo do mínimo do Asaas, o que sobrou não é cobrado.
                   { waivedCents: quote.totalCents }),
             },
@@ -665,6 +653,6 @@ export class EvolutionService {
       },
     );
 
-    return { payment, acceptance, asaasSubscription: input.asaasSubscription };
+    return { payment, acceptance };
   }
 }

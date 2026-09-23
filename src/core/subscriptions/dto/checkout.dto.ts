@@ -18,7 +18,10 @@ import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsCpf } from 'src/helpers/validators/cpf';
 import { IsCnpj } from 'src/helpers/validators/cnpj';
-import { MAX_ADDITIONAL_USERS } from '../pricing/pricing.engine';
+import {
+  CARD_MAX_INSTALLMENTS,
+  MAX_ADDITIONAL_USERS,
+} from '../pricing/pricing.engine';
 
 export const CHECKOUT_BILLING_TYPES = ['CREDIT_CARD', 'PIX', 'BOLETO'] as const;
 export type CheckoutBillingType = (typeof CHECKOUT_BILLING_TYPES)[number];
@@ -119,6 +122,16 @@ export class CheckoutDto {
   @IsIn(['MONTHLY', 'YEARLY'])
   cycle?: 'MONTHLY' | 'YEARLY';
 
+  @ApiProperty({
+    required: false,
+    description: 'Parcelas do anual no cartão (1 a 12); 1 é à vista',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(CARD_MAX_INSTALLMENTS)
+  installmentCount?: number;
+
   @ApiProperty({ enum: CHECKOUT_BILLING_TYPES })
   @IsIn(CHECKOUT_BILLING_TYPES)
   billingType: CheckoutBillingType;
@@ -183,6 +196,16 @@ export class EvolutionDto {
   @IsOptional()
   @IsIn(['MONTHLY', 'YEARLY'])
   cycle?: 'MONTHLY' | 'YEARLY';
+
+  @ApiProperty({
+    required: false,
+    description: 'Parcelas do anual no cartão (1 a 12); 1 é à vista',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(CARD_MAX_INSTALLMENTS)
+  installmentCount?: number;
 
   @ApiProperty({ enum: CHECKOUT_BILLING_TYPES })
   @IsIn(CHECKOUT_BILLING_TYPES)

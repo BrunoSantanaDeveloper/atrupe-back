@@ -3,6 +3,7 @@ import axios from 'axios';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { AsaasPaymentStatus } from '@prisma/client';
 import {
+  AsaasCreateInstallmentPayload,
   AsaasCreateSubscriptionPayload,
   AsaasSubscriptionResponse,
   AsaasUpdateSubscriptionPayload,
@@ -135,6 +136,116 @@ export class AsaasGatewayService {
       throw new Error(
         `Falha ao buscar cobranças da assinatura no Asaas: ${error.message}`,
       );
+    }
+  }
+
+  /**
+   * Cria uma cobrança parcelada: o anual em até 12x no cartão. A assinatura do
+   * Asaas não parcela — o parcelamento é uma cobrança com várias parcelas, e a
+   * resposta é a primeira delas, com o id do parcelamento em `installment`.
+   * O Asaas divide o total pelo número de parcelas (onde cai o centavo que
+   * sobra é um dos pontos a confirmar no sandbox).
+   */
+  async createInstallmentCharge(
+    data: AsaasCreateInstallmentPayload,
+  ): Promise<AsaasPaymentResponse> {
+    const route = '/payments';
+    try {
+      const api = await this.asaasApi();
+      const response = await api.post(route, data);
+      return response.data;
+    } catch (error) {
+      const errorResponse = error.response?.data?.errors;
+      const errorDescription = errorResponse
+        ?.map((err) => err.description)
+        .join(', ');
+      this.logger.error(
+        'Erro ao criar cobrança parcelada no Asaas:',
+        JSON.stringify({
+          message: error.message,
+          response: errorResponse,
+          status: error.response?.status,
+          route,
+          data,
+        }),
+      );
+      throw new Error(
+        errorDescription ||
+          error.message ||
+          'Falha ao criar cobrança parcelada no Asaas',
+      );
+    }
+  }
+
+  /** As parcelas de um parcelamento, em ordem de vencimento. */
+  async getInstallmentPayments(installmentId: string): Promise<any[]> {
+    try {
+      const api = await this.asaasApi();
+      const response = await api.get('/payments', {
+        params: { installment: installmentId, limit: 100 },
+      });
+      const payments: any[] = response.data?.data || [];
+      return payments.sort((a, b) =>
+        String(a.dueDate).localeCompare(String(b.dueDate)),
+      );
+    } catch (error) {
+      this.logger.error('Erro ao buscar as parcelas no Asaas:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
+      throw new Error(
+        `Falha ao buscar as parcelas do parcelamento no Asaas: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * As cobranças de uma assinatura local, qualquer que seja o modo: as da
+   * assinatura recorrente do Asaas, ou as parcelas do parcelamento em curso.
+   */
+  async getChargesOf(subscription: {
+    asaasSubscriptionId: string;
+    asaasInstallmentId?: string | null;
+  }): Promise<any[]> {
+    return subscription.asaasInstallmentId
+      ? this.getInstallmentPayments(subscription.asaasInstallmentId)
+      : this.getAsaasSubscriptionPayments(subscription.asaasSubscriptionId);
+  }
+
+  /** Cobranças criadas com esta referência: é o que torna a renovação idempotente. */
+  async findPaymentsByExternalReference(
+    externalReference: string,
+  ): Promise<any[]> {
+    try {
+      const api = await this.asaasApi();
+      const response = await api.get('/payments', {
+        params: { externalReference, limit: 100 },
+      });
+      return response.data?.data || [];
+    } catch (error) {
+      this.logger.error('Erro ao buscar cobranças por referência no Asaas:', {
+        message: error.message,
+        status: error.response?.status,
+      });
+      throw new Error(
+        `Falha ao buscar cobranças por referência no Asaas: ${error.message}`,
+      );
+    }
+  }
+
+  /** Remove um parcelamento: as parcelas ainda não pagas deixam de existir. */
+  async deleteInstallment(installmentId: string): Promise<void> {
+    try {
+      const api = await this.asaasApi();
+      await api.delete(`/installments/${installmentId}`);
+    } catch (error) {
+      this.logger.error(
+        `Erro ao remover o parcelamento ${installmentId} no Asaas: ${JSON.stringify(
+          error.response?.data || error.message,
+        )}`,
+      );
+      throw new Error('Falha ao remover o parcelamento no Asaas');
     }
   }
 

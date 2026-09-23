@@ -29,6 +29,16 @@ describe('SubscriptionBlockService', () => {
   const mockAsaasGatewayService = {
     getAsaasSubscriptionPayments: jest.fn(),
     getSubscriptionPayments: jest.fn(),
+    getInstallmentPayments: jest.fn(),
+    // O serviço pede as cobranças pelo modo; o mock responde como o gateway:
+    // parcelas do parcelamento, ou cobranças da assinatura.
+    getChargesOf: jest.fn((sub: any) =>
+      sub.asaasInstallmentId
+        ? mockAsaasGatewayService.getInstallmentPayments(sub.asaasInstallmentId)
+        : mockAsaasGatewayService.getAsaasSubscriptionPayments(
+            sub.asaasSubscriptionId,
+          ),
+    ),
   };
 
   beforeEach(async () => {
@@ -92,6 +102,41 @@ describe('SubscriptionBlockService', () => {
         data: expect.objectContaining({
           blockLevel: 'PARTIAL',
         }),
+      });
+    });
+
+    it('anual parcelado: o atraso vem das parcelas, não de uma assinatura do Asaas', async () => {
+      mockPrismaService.company.findMany.mockResolvedValue([
+        {
+          id: 'company-1',
+          name: 'Test Company',
+          blockLevel: 'NONE',
+          Subscription: [
+            {
+              asaasSubscriptionId: 'inst_sub-1',
+              asaasInstallmentId: 'ins_1',
+              billingMode: 'ASAAS_INSTALLMENT',
+              nextDueDate: new Date(),
+            },
+          ],
+        },
+      ]);
+      mockAsaasGatewayService.getInstallmentPayments.mockResolvedValue([
+        { status: 'OVERDUE', dueDate: makeDueDate(4) },
+      ]);
+      mockPrismaService.company.update.mockResolvedValue({});
+
+      const results = await service.checkAndApplyBlocks();
+
+      expect(
+        mockAsaasGatewayService.getInstallmentPayments,
+      ).toHaveBeenCalledWith('ins_1');
+      expect(
+        mockAsaasGatewayService.getAsaasSubscriptionPayments,
+      ).not.toHaveBeenCalled();
+      expect(results[0]).toMatchObject({
+        newBlockLevel: 'PARTIAL',
+        action: 'blocked',
       });
     });
 

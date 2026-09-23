@@ -10,7 +10,8 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { AsaasGatewayService } from '../asaas-gateway.service';
 import { SubscriptionQuoteService } from '../pricing/subscription-quote.service';
-import { addCalendarCycle, QuoteResult } from '../pricing/pricing.engine';
+import { PricingCycle, QuoteResult } from '../pricing/pricing.engine';
+import { INSTALLMENT_SUBSCRIPTION_PREFIX } from '../billing-mode';
 import { CheckoutDto } from '../dto/checkout.dto';
 import { CompanyRegistryService } from './company-registry.service';
 import {
@@ -20,15 +21,18 @@ import {
 import { CompanySessionService } from './company-session.service';
 import { verifyRepresentative } from './representatives';
 import {
-  adjustFirstCharge,
   assertCanContract,
+  assertCycleAvailable,
+  assertInstallments,
   assertTermsAccepted,
   ContractingUser,
   FIRST_DUE_DAYS,
+  GatewayContract,
   IN_FLIGHT_WINDOW_MS,
   MIN_CHARGE_CENTS,
+  openGatewayContract,
+  recordContractCharges,
   releaseReservation,
-  successUrl,
 } from './contracting-steps';
 
 export type CheckoutUser = ContractingUser;
@@ -87,23 +91,21 @@ export class CheckoutService {
   async checkout(user: CheckoutUser, dto: CheckoutDto, meta: RequestMeta) {
     assertCanContract(user);
 
-    // O anual chega com o parcelamento; até lá, só o mensal é contratável.
-    if ((dto.cycle ?? 'MONTHLY') !== 'MONTHLY') {
-      throw new UnprocessableEntityException({
-        code: 'CYCLE_NOT_AVAILABLE',
-        message: 'O pagamento anual ainda não está disponível.',
-      });
-    }
+    const cycle = dto.cycle ?? 'MONTHLY';
+    const installmentCount = dto.installmentCount ?? 1;
+    assertCycleAvailable(cycle);
 
     const response = await this.quoteService.quote(user.companyId, {
       planId: dto.planId,
-      cycle: 'MONTHLY',
+      cycle,
       billingType: dto.billingType as any,
+      installmentCount,
       modules: dto.modules,
       additionalUsers: dto.additionalUsers,
       couponCode: dto.couponCode,
     });
     const quote = this.assertQuotable(response, dto);
+    assertInstallments(quote, installmentCount);
 
     const terms = await this.acceptance.currentTerms();
     assertTermsAccepted(dto.termsAcceptance, terms);
@@ -140,6 +142,7 @@ export class CheckoutService {
       user,
       dto,
       quote,
+      cycle,
       customerId: customer.id,
       planId: plan.id,
       features,
@@ -147,46 +150,36 @@ export class CheckoutService {
       firstDueDate,
     });
 
-    // 2. Asaas
-    let asaasSubscriptionId: string | null = null;
+    // 2. Asaas: a assinatura recorrente, ou o parcelamento do anual no cartão.
+    // A assinatura nasce com o valor CHEIO da renovação; cupom e crédito abatem
+    // só a primeira cobrança.
+    let contract: GatewayContract | null = null;
     let activated: Awaited<ReturnType<CheckoutService['activate']>>;
     try {
-      const asaasSubscription = await this.asaasGateway.createSubscription({
+      contract = await openGatewayContract(this.asaasGateway, this.logger, {
         customer: customer.asaasCustomerId,
         billingType: dto.billingType,
-        // A assinatura nasce com o valor CHEIO da renovação; cupom e crédito
-        // abatem só a primeira cobrança, ajustada logo abaixo.
-        value: quote.recurringCents / 100,
-        nextDueDate: firstDueDate,
-        cycle: 'MONTHLY',
+        cycle,
+        installmentCount,
+        quote,
+        chargesNow: true,
+        firstDueDate,
         description: `Assinatura ${plan.name}`,
         externalReference: reserved.id,
-        callback: { successUrl: successUrl() },
       });
-      asaasSubscriptionId = asaasSubscription.id;
-
-      const firstCharge = await adjustFirstCharge(
-        this.asaasGateway,
-        asaasSubscription.id,
-        quote,
-      );
-      const pix =
-        dto.billingType === 'PIX'
-          ? await this.asaasGateway.getPixQrCode(firstCharge.id)
-          : null;
 
       // 3. Ativação
       activated = await this.activate({
         user,
         dto,
         quote,
+        cycle,
+        installmentCount,
         terms,
         contractor,
         sessionUser,
         reservedId: reserved.id,
-        asaasSubscription,
-        firstCharge,
-        pix,
+        contract,
         asaasCustomerId: customer.asaasCustomerId,
         meta,
       });
@@ -194,7 +187,8 @@ export class CheckoutService {
       await releaseReservation(this.prisma, this.asaasGateway, this.logger, {
         subscriptionId: reserved.id,
         couponId: coupon?.id ?? null,
-        asaasSubscriptionId,
+        asaasSubscriptionId: contract?.asaasSubscriptionId ?? null,
+        asaasInstallmentId: contract?.asaasInstallmentId ?? null,
       });
       this.logger.error(
         `Contratação da empresa ${user.companyId} falhou: ${error.message}`,
@@ -217,16 +211,20 @@ export class CheckoutService {
         return null;
       });
 
-    const { payment, acceptance, asaasSubscription } = activated;
+    const { payment, acceptance } = activated;
     return {
       subscription: {
         id: reserved.id,
         status: 'ACTIVE' as const,
         planId: plan.id,
         planName: plan.name,
-        cycle: 'MONTHLY' as const,
+        cycle,
         billingType: dto.billingType,
-        nextDueDate: asaasSubscription.nextDueDate,
+        installmentCount:
+          contract.billingMode === 'ASAAS_INSTALLMENT'
+            ? installmentCount
+            : null,
+        nextDueDate: contract.nextDueDate,
       },
       payment: {
         id: payment.id,
@@ -247,30 +245,20 @@ export class CheckoutService {
     user: CheckoutUser;
     dto: CheckoutDto;
     quote: QuoteResult;
+    cycle: PricingCycle;
+    installmentCount: number;
     terms: CurrentTerms;
     contractor: ResolvedContractor;
     sessionUser: { id: string; name: string; email: string };
     reservedId: string;
-    asaasSubscription: { id: string; nextDueDate: string };
-    firstCharge: any;
-    pix: { encodedImage?: string; payload?: string } | null;
+    contract: GatewayContract;
     asaasCustomerId: string;
     meta: RequestMeta;
   }) {
-    const {
-      user,
-      dto,
-      quote,
-      terms,
-      contractor,
-      sessionUser,
-      asaasSubscription,
-      firstCharge,
-      pix,
-      meta,
-    } = input;
+    const { user, dto, quote, terms, contractor, sessionUser, contract, meta } =
+      input;
     const reserved = { id: input.reservedId };
-    const customer = { asaasCustomerId: input.asaasCustomerId };
+    const installment = contract.billingMode === 'ASAAS_INSTALLMENT';
 
     const { payment, acceptance } = await this.prisma.$transaction(
       async (tx) => {
@@ -278,8 +266,14 @@ export class CheckoutService {
         await tx.subscription.update({
           where: { id: reserved.id },
           data: {
-            asaasSubscriptionId: asaasSubscription.id,
-            nextDueDate: new Date(asaasSubscription.nextDueDate),
+            // O parcelado não tem assinatura no Asaas: o id local o marca.
+            asaasSubscriptionId:
+              contract.asaasSubscriptionId ??
+              `${INSTALLMENT_SUBSCRIPTION_PREFIX}${reserved.id}`,
+            asaasInstallmentId: contract.asaasInstallmentId,
+            billingMode: contract.billingMode,
+            installmentCount: installment ? input.installmentCount : null,
+            nextDueDate: contract.nextDueDate,
             status: 'ACTIVE',
             contractedAt: now,
           },
@@ -313,32 +307,15 @@ export class CheckoutService {
           });
         }
 
-        const payment = await tx.payment.create({
-          data: {
-            subscriptionId: reserved.id,
-            asaasPaymentId: firstCharge.id,
-            asaasCustomerId: customer.asaasCustomerId,
-            value: firstCharge.value,
-            dueDate: new Date(firstCharge.dueDate),
-            billingType: dto.billingType,
-            description: firstCharge.description,
-            externalReference: firstCharge.id,
-            status: this.asaasGateway.mapAsaasPaymentStatus(firstCharge.status),
-            invoiceUrl: firstCharge.invoiceUrl,
-            bankSlipUrl: firstCharge.bankSlipUrl,
-            pixQrCode: pix?.encodedImage ?? null,
-            pixCopyPaste: pix?.payload ?? null,
-            // Vai da contratação até a renovação seguinte: um ciclo depois do
-            // vencimento desta cobrança, que é quando o Asaas cobra de novo.
-            periodStart: now,
-            periodEnd: addCalendarCycle(
-              new Date(firstCharge.dueDate),
-              'MONTHLY',
-            ),
-            grossValue: (quote.totalCents + quote.creditCents) / 100,
-            creditApplied: quote.creditCents ? quote.creditCents / 100 : null,
-            kind: 'CONTRACT',
-          },
+        const [payment] = await recordContractCharges(tx, this.asaasGateway, {
+          subscriptionId: reserved.id,
+          asaasCustomerId: input.asaasCustomerId,
+          billingType: dto.billingType,
+          cycle: input.cycle,
+          quote,
+          contract,
+          kind: 'CONTRACT',
+          now,
         });
 
         await tx.subscriptionHistory.create({
@@ -348,9 +325,16 @@ export class CheckoutService {
             description:
               'Contratação registrada; acesso liberado com o pagamento em aberto',
             metadata: {
-              paymentId: firstCharge.id,
+              paymentId: payment.asaasPaymentId,
+              cycle: input.cycle,
               totalCents: quote.totalCents,
               recurringCents: quote.recurringCents,
+              ...(installment
+                ? {
+                    installmentCount: input.installmentCount,
+                    asaasInstallmentId: contract.asaasInstallmentId,
+                  }
+                : {}),
             },
             createdBy: user.userId,
             createdByName: sessionUser.name,
@@ -398,7 +382,7 @@ export class CheckoutService {
       },
     );
 
-    return { payment, acceptance, asaasSubscription };
+    return { payment, acceptance };
   }
 
   private assertQuotable(
@@ -638,6 +622,7 @@ export class CheckoutService {
     user: CheckoutUser;
     dto: CheckoutDto;
     quote: QuoteResult;
+    cycle: PricingCycle;
     customerId: string;
     planId: string;
     features: { id: string; price: number }[];
@@ -683,7 +668,7 @@ export class CheckoutService {
           additionalUsers: dto.additionalUsers ?? 0,
           asaasSubscriptionId: `temp_${randomUUID()}`,
           nextDueDate: input.firstDueDate,
-          cycle: 'MONTHLY',
+          cycle: input.cycle,
           billingType: dto.billingType,
           // O valor da assinatura é o da renovação; o desconto da primeira
           // cobrança fica registrado em discountValue.

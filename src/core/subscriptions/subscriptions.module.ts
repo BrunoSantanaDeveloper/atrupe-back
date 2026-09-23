@@ -20,6 +20,7 @@ import { CompanySessionService } from './checkout/company-session.service';
 import { ContractAcceptanceService } from './checkout/contract-acceptance.service';
 import { EvolutionService } from './checkout/evolution.service';
 import { ComplementsService } from './checkout/complements.service';
+import { InstallmentRenewalService } from './installment-renewal.service';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { ComplementsService } from './checkout/complements.service';
     ContractAcceptanceService,
     EvolutionService,
     ComplementsService,
+    InstallmentRenewalService,
   ],
   exports: [
     SubscriptionsService,

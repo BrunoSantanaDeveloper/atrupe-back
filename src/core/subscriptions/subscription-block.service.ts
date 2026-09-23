@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { BlockLevel, AsaasPaymentStatus, BillingType } from '@prisma/client';
 import { AsaasGatewayService } from './asaas-gateway.service';
+import { isBilledByGateway, isInstallmentBilling } from './billing-mode';
 
 export interface BlockCheckResult {
   companyId: string;
@@ -98,12 +99,18 @@ export class SubscriptionBlockService {
 
     const subscriptions = await this.prisma.subscription.findMany({
       where: {
-        asaasSubscriptionId: { startsWith: 'sub_' },
+        OR: [
+          { asaasSubscriptionId: { startsWith: 'sub_' } },
+          // O anual parcelado não tem assinatura no Asaas: as cobranças são as
+          // parcelas do parcelamento em curso.
+          { asaasInstallmentId: { not: null } },
+        ],
         status: { in: ['ACTIVE', 'EXPIRED', 'BLOCKED', 'INACTIVE'] },
       },
       select: {
         id: true,
         asaasSubscriptionId: true,
+        asaasInstallmentId: true,
         Company: { select: { name: true } },
       },
     });
@@ -117,10 +124,7 @@ export class SubscriptionBlockService {
 
     for (const sub of subscriptions) {
       try {
-        const asaasPayments =
-          await this.asaasGateway.getAsaasSubscriptionPayments(
-            sub.asaasSubscriptionId!,
-          );
+        const asaasPayments = await this.asaasGateway.getChargesOf(sub);
 
         if (asaasPayments.length > 0) {
           await this.syncMissingPayments(
@@ -171,6 +175,8 @@ export class SubscriptionBlockService {
           where: { status: 'ACTIVE' },
           select: {
             asaasSubscriptionId: true,
+            asaasInstallmentId: true,
+            billingMode: true,
             nextDueDate: true,
           },
         },
@@ -182,10 +188,7 @@ export class SubscriptionBlockService {
       if (!subscription) continue;
 
       // Pular subscriptions sem vínculo real com Asaas (manual, trial, test)
-      if (
-        !subscription.asaasSubscriptionId ||
-        !subscription.asaasSubscriptionId.startsWith('sub_')
-      ) {
+      if (!isBilledByGateway(subscription)) {
         results.push({
           companyId: company.id,
           companyName: company.name,
@@ -201,9 +204,7 @@ export class SubscriptionBlockService {
       let daysOverdue = 0;
       try {
         const asaasPayments =
-          await this.asaasGateway.getAsaasSubscriptionPayments(
-            subscription.asaasSubscriptionId,
-          );
+          await this.asaasGateway.getChargesOf(subscription);
 
         if (!asaasPayments || asaasPayments.length === 0) {
           this.logger.warn(
@@ -352,6 +353,8 @@ export class SubscriptionBlockService {
           select: {
             id: true,
             asaasSubscriptionId: true,
+            asaasInstallmentId: true,
+            billingMode: true,
             nextDueDate: true,
             status: true,
           },
@@ -396,10 +399,7 @@ export class SubscriptionBlockService {
       }
 
       // Pular subscriptions sem vínculo real com Asaas
-      if (
-        !subscription.asaasSubscriptionId ||
-        !subscription.asaasSubscriptionId.startsWith('sub_')
-      ) {
+      if (!isBilledByGateway(subscription)) {
         results.push({
           companyId: company.id,
           companyName: company.name,
@@ -413,9 +413,7 @@ export class SubscriptionBlockService {
 
       try {
         const asaasPayments =
-          await this.asaasGateway.getAsaasSubscriptionPayments(
-            subscription.asaasSubscriptionId,
-          );
+          await this.asaasGateway.getChargesOf(subscription);
 
         if (!asaasPayments || asaasPayments.length === 0) {
           results.push({
@@ -462,10 +460,14 @@ export class SubscriptionBlockService {
           asaasPayments,
         );
 
-        // Atualizar nextDueDate com o próximo pagamento PENDING
-        const nextPending = asaasPayments.find(
-          (p) => p.status === 'PENDING' && p.dueDate >= todayStr,
-        );
+        // Atualizar nextDueDate com o próximo pagamento PENDING. No anual
+        // parcelado, a próxima parcela não é o próximo vencimento: ele é a
+        // renovação, que já está na assinatura.
+        const nextPending = isInstallmentBilling(subscription)
+          ? null
+          : asaasPayments.find(
+              (p) => p.status === 'PENDING' && p.dueDate >= todayStr,
+            );
         if (nextPending) {
           await this.prisma.subscription.update({
             where: { id: subscription.id },
@@ -597,6 +599,8 @@ export class SubscriptionBlockService {
           description: asaasPayment.description || 'Assinatura',
           invoiceUrl: asaasPayment.invoiceUrl,
           bankSlipUrl: asaasPayment.bankSlipUrl,
+          asaasInstallmentId: asaasPayment.installment ?? null,
+          installmentNumber: asaasPayment.installmentNumber ?? null,
           confirmedDate: asaasPayment.confirmedDate
             ? new Date(asaasPayment.confirmedDate)
             : null,
@@ -743,10 +747,13 @@ export class SubscriptionBlockService {
     const subscription = await this.prisma.subscription.findFirst({
       where: {
         companyId,
-        asaasSubscriptionId: { startsWith: 'sub_' },
+        OR: [
+          { asaasSubscriptionId: { startsWith: 'sub_' } },
+          { asaasInstallmentId: { not: null } },
+        ],
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, asaasSubscriptionId: true },
+      select: { id: true, asaasSubscriptionId: true, asaasInstallmentId: true },
     });
 
     if (!subscription?.asaasSubscriptionId) {
@@ -758,10 +765,7 @@ export class SubscriptionBlockService {
 
     // Buscar payments DIRETAMENTE do Asaas (source of truth)
     try {
-      const asaasPayments =
-        await this.asaasGateway.getAsaasSubscriptionPayments(
-          subscription.asaasSubscriptionId,
-        );
+      const asaasPayments = await this.asaasGateway.getChargesOf(subscription);
 
       // Encontrar o payment pendente/overdue mais antigo
       const pendingPayment = asaasPayments

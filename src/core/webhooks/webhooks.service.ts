@@ -7,6 +7,7 @@ import {
 } from './dto/asaas-webhook.dto';
 import { SubscriptionBlockService } from '../subscriptions/subscription-block.service';
 import { AsaasGatewayService } from '../subscriptions/asaas-gateway.service';
+import { isInstallmentBilling } from '../subscriptions/billing-mode';
 
 @Injectable()
 export class WebhooksService {
@@ -359,9 +360,12 @@ export class WebhooksService {
         const paidDueDate = this.parseAsaasDate(
           payload.payment?.dueDate || payload.data?.dueDate,
         );
-        const nextDueDate =
-          this.addCycle(paidDueDate, subscription.cycle) ??
-          subscription.nextDueDate;
+        // No anual parcelado, a parcela paga não diz quando vem a próxima
+        // cobrança: ela é a renovação, que já está na assinatura.
+        const nextDueDate = isInstallmentBilling(subscription)
+          ? subscription.nextDueDate
+          : (this.addCycle(paidDueDate, subscription.cycle) ??
+            subscription.nextDueDate);
 
         // Desativar o trial e ativar a paga são um ato só: quando isso rodava
         // solto, uma falha no meio deixava a empresa sem nenhuma assinatura ativa.

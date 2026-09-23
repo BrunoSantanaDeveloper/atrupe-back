@@ -13,6 +13,7 @@ import { AsaasGatewayService } from './asaas-gateway.service';
 import { CouponsService } from '../coupons/coupons.service';
 import { SubscriptionBlockService } from './subscription-block.service';
 import { computeQuote } from './pricing/pricing.engine';
+import { isInstallmentBilling } from './billing-mode';
 import { v4 as uuidv4 } from 'uuid';
 import * as argon2 from 'argon2';
 
@@ -673,11 +674,13 @@ export class SubscriptionsService {
     newPlanId: string,
     options?: { skipActiveCheck?: boolean },
   ) {
-    // Assinatura real no Asaas (mesmo critério usado pelo fluxo de bloqueio)
+    // Assinatura real no Asaas (mesmo critério usado pelo fluxo de bloqueio) —
+    // a em curso, não uma anterior encerrada por evolução.
     const currentSubscription = await this.prisma.subscription.findFirst({
       where: {
         companyId,
         asaasSubscriptionId: { startsWith: 'sub_' },
+        status: { notIn: ['CANCELED', 'EXPIRED'] },
       },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -685,6 +688,25 @@ export class SubscriptionsService {
         subscriptionFeatures: { include: { feature: true } },
       },
     });
+
+    // O valor abaixo é mensal: aplicado a um anual, cobraria um mês pelo ano.
+    // No anual parcelado nem há assinatura no Asaas para alterar.
+    const annual =
+      currentSubscription?.cycle === 'YEARLY' ||
+      (!currentSubscription &&
+        !!(await this.prisma.subscription.findFirst({
+          where: {
+            companyId,
+            asaasInstallmentId: { not: null },
+            status: { notIn: ['CANCELED', 'EXPIRED'] },
+          },
+          select: { id: true },
+        })));
+    if (annual) {
+      throw new BadRequestException(
+        'A troca de plano no ciclo anual não está disponível por aqui. Fale com a Atrupe.',
+      );
+    }
 
     if (!currentSubscription) {
       throw new NotFoundException(
@@ -879,6 +901,14 @@ export class SubscriptionsService {
     if (subscription.plan.planType === 'TRIAL') {
       throw new BadRequestException(
         'Assinaturas trial não podem ser canceladas por este fluxo.',
+      );
+    }
+
+    // O cancelamento corta o acesso na hora. No anual, isso jogaria fora o que
+    // resta de um ano já pago — até haver regra para ele, é feito pela Atrupe.
+    if (subscription.cycle === 'YEARLY' || isInstallmentBilling(subscription)) {
+      throw new BadRequestException(
+        'Para cancelar o plano anual, fale com a Atrupe.',
       );
     }
 
@@ -1085,10 +1115,7 @@ export class SubscriptionsService {
         `Buscando pagamentos no Asaas para subscription ID: ${subscription.asaasSubscriptionId}`,
       );
 
-      const asaasPayments =
-        await this.asaasGateway.getAsaasSubscriptionPayments(
-          subscription.asaasSubscriptionId,
-        );
+      const asaasPayments = await this.asaasGateway.getChargesOf(subscription);
 
       if (!asaasPayments || asaasPayments.length === 0) {
         return {
@@ -1349,10 +1376,7 @@ export class SubscriptionsService {
 
     try {
       // Buscar os pagamentos da subscription no Asaas
-      const asaasPayments =
-        await this.asaasGateway.getAsaasSubscriptionPayments(
-          subscription.asaasSubscriptionId,
-        );
+      const asaasPayments = await this.asaasGateway.getChargesOf(subscription);
 
       if (!asaasPayments || asaasPayments.length === 0) {
         this.logger.warn(
@@ -1482,9 +1506,12 @@ export class SubscriptionsService {
           where: { id: subscription.id },
           data: {
             status: 'ACTIVE',
-            nextDueDate: latestPayment.dueDate
-              ? new Date(latestPayment.dueDate)
-              : subscription.nextDueDate,
+            // No anual parcelado, o vencimento é o da renovação, não o de uma
+            // parcela.
+            nextDueDate:
+              latestPayment.dueDate && !isInstallmentBilling(subscription)
+                ? new Date(latestPayment.dueDate)
+                : subscription.nextDueDate,
           },
           include: {
             plan: {

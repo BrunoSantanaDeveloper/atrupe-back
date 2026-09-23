@@ -86,9 +86,18 @@ describe('EvolutionService', () => {
   };
   const gateway = {
     createSubscription: jest.fn(),
+    createInstallmentCharge: jest.fn(),
     getAsaasSubscriptionPayments: jest.fn(),
+    getInstallmentPayments: jest.fn(),
+    // Como o gateway: parcelas do parcelamento, ou cobranças da assinatura.
+    getChargesOf: jest.fn((sub: any) =>
+      sub.asaasInstallmentId
+        ? gateway.getInstallmentPayments(sub.asaasInstallmentId)
+        : gateway.getAsaasSubscriptionPayments(sub.asaasSubscriptionId),
+    ),
     updateAsaasPayment: jest.fn(),
     deleteAsaasPayment: jest.fn(),
+    deleteInstallment: jest.fn(),
     cancelAsaasSubscription: jest.fn(),
     getPixQrCode: jest.fn(),
     mapAsaasPaymentStatus: jest.fn(() => 'PENDING'),
@@ -423,6 +432,119 @@ describe('EvolutionService', () => {
         'sub_new',
       );
       expect(acceptance.record).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('ciclo anual', () => {
+    const original = process.env.ANNUAL_CYCLE_ENABLED;
+    beforeEach(() => {
+      process.env.ANNUAL_CYCLE_ENABLED = 'true';
+    });
+    afterEach(() => {
+      process.env.ANNUAL_CYCLE_ENABLED = original;
+    });
+
+    // Anual parcelado em curso: sem assinatura no Asaas, com a renovação do
+    // ano seguinte já criada e ainda não paga.
+    const anualParcelado = {
+      ...CURRENT,
+      asaasSubscriptionId: 'inst_sub-start',
+      asaasInstallmentId: 'ins_renovacao',
+      billingMode: 'ASAAS_INSTALLMENT',
+      cycle: 'YEARLY',
+    };
+    const liteAnualEm12x = () => ({
+      ...evolutionQuote(),
+      quote: computeQuote({
+        plan: LITE,
+        cycle: 'YEARLY',
+        billingType: 'CREDIT_CARD',
+        installmentCount: 12,
+        evolutionCredit: CREDITO_DO_START,
+      }),
+    });
+
+    beforeEach(() => {
+      quoteService.getBillingContext.mockResolvedValue({
+        intent: 'EVOLUTION',
+        hasOpenCharge: false,
+        current: anualParcelado,
+      });
+      quoteService.quote.mockResolvedValue(liteAnualEm12x());
+      gateway.getInstallmentPayments.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'ins_renovacao'
+            ? [
+                {
+                  id: 'pay_renov_1',
+                  value: 134.75,
+                  dueDate: '2099-01-15',
+                  status: 'PENDING',
+                },
+              ]
+            : Array.from({ length: 12 }, (_, i) => ({
+                id: 'pay_novo_' + (i + 1),
+                value: 200,
+                dueDate: '2026-09-24',
+                status: 'PENDING',
+                installment: 'ins_novo',
+                installmentNumber: i + 1,
+                invoiceUrl: 'https://asaas/i/novo',
+              })),
+        ),
+      );
+      gateway.createInstallmentCharge.mockResolvedValue({
+        id: 'pay_novo_1',
+        installment: 'ins_novo',
+      });
+    });
+
+    it('do anual parcelado para o anual em 12x: a renovação não paga some, e não há assinatura a cancelar', async () => {
+      const result = await service.evolve(
+        ADMIN,
+        dto({
+          cycle: 'YEARLY',
+          billingType: 'CREDIT_CARD',
+          installmentCount: 12,
+        }),
+        META,
+      );
+
+      expect(gateway.createInstallmentCharge).toHaveBeenCalledWith(
+        expect.objectContaining({ installmentCount: 12 }),
+      );
+      expect(gateway.deleteAsaasPayment).toHaveBeenCalledWith('pay_renov_1');
+      expect(gateway.cancelAsaasSubscription).not.toHaveBeenCalled();
+      expect(tx.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sub-local-1' },
+          data: expect.objectContaining({
+            billingMode: 'ASAAS_INSTALLMENT',
+            asaasInstallmentId: 'ins_novo',
+            installmentCount: 12,
+          }),
+        }),
+      );
+      expect(tx.payment.create).toHaveBeenCalledTimes(12);
+      expect(result.subscription).toMatchObject({
+        cycle: 'YEARLY',
+        installmentCount: 12,
+      });
+    });
+
+    it('do anual não se evolui para o mensal', async () => {
+      quoteService.quote.mockResolvedValue({
+        ...evolutionQuote(),
+        eligible: false,
+        ineligibilityReason: 'ANNUAL_TO_MONTHLY_NOT_ALLOWED',
+      });
+      await expect(service.evolve(ADMIN, dto(), META)).rejects.toMatchObject({
+        response: {
+          code: 'PLAN_NOT_AVAILABLE',
+          reason: 'ANNUAL_TO_MONTHLY_NOT_ALLOWED',
+        },
+      });
+      expect(gateway.createInstallmentCharge).not.toHaveBeenCalled();
     });
   });
 });

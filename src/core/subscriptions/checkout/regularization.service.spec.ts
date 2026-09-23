@@ -186,6 +186,34 @@ describe('RegularizationService', () => {
     expect(acceptance.record).not.toHaveBeenCalled();
   });
 
+  it('anual parcelado se regulariza no cartão: parcela em Pix deixaria as outras sem cartão', async () => {
+    withOpenCharge('2026-01-10', 'CREDIT_CARD');
+    quoteService.getBillingContext.mockResolvedValue({
+      hasOpenCharge: true,
+      hasOverdue: true,
+      firstChargePending: false,
+      current: {
+        id: 'sub-1',
+        customerId: 'cust-1',
+        cycle: 'YEARLY',
+        billingType: 'CREDIT_CARD',
+        billingMode: 'ASAAS_INSTALLMENT',
+        installmentCount: 12,
+        value: 1617,
+        plan: { name: 'Atrupe Start' },
+      },
+    });
+
+    const view: any = await service.view('company-1');
+    expect(view.allowedBillingTypes).toEqual(['CREDIT_CARD']);
+    expect(view.subscription).toMatchObject({ installmentCount: 12 });
+
+    await expect(
+      service.pay(ADMIN, { billingType: 'PIX', termsAcceptance: ACCEPT }, META),
+    ).rejects.toMatchObject({ response: { code: 'BILLING_TYPE_NOT_ALLOWED' } });
+    expect(gateway.updateAsaasPayment).not.toHaveBeenCalled();
+  });
+
   it('termos desatualizados são recusados', async () => {
     withOpenCharge('2026-01-10');
     await expect(

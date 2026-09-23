@@ -649,7 +649,12 @@ export class CompanyManagementService {
     // Buscar customer IDs das subscriptions
     const subscriptions = await this.prisma.subscription.findMany({
       where: { companyId },
-      select: { id: true, customerId: true, asaasSubscriptionId: true },
+      select: {
+        id: true,
+        customerId: true,
+        asaasSubscriptionId: true,
+        asaasInstallmentId: true,
+      },
     });
     const subscriptionIds = subscriptions.map((s) => s.id);
     const customerIds = [...new Set(subscriptions.map((s) => s.customerId))];
@@ -660,6 +665,18 @@ export class CompanyManagementService {
 
     // Cancelar subscriptions no Asaas ANTES de deletar do banco
     for (const sub of subscriptions) {
+      // Anual parcelado: não há assinatura no Asaas; o que ainda não foi pago
+      // do parcelamento deixa de existir.
+      if (sub.asaasInstallmentId) {
+        try {
+          await this.asaasGateway.deleteInstallment(sub.asaasInstallmentId);
+        } catch (error) {
+          this.logger.warn(
+            `Falha ao remover o parcelamento ${sub.asaasInstallmentId}: ${error.message}`,
+          );
+        }
+        continue;
+      }
       if (sub.asaasSubscriptionId) {
         try {
           await this.asaasGateway.cancelAsaasSubscription(

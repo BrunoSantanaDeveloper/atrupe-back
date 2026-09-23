@@ -95,6 +95,10 @@ describe('CheckoutService', () => {
     getPixQrCode: jest.fn(),
     mapAsaasPaymentStatus: jest.fn(() => 'PENDING'),
     cancelAsaasSubscription: jest.fn(),
+    createInstallmentCharge: jest.fn(),
+    getInstallmentPayments: jest.fn(),
+    deleteInstallment: jest.fn(),
+    deleteAsaasPayment: jest.fn(),
   };
   const quoteService = { quote: jest.fn() };
   const registry = { lookup: jest.fn() };
@@ -429,6 +433,137 @@ describe('CheckoutService', () => {
     await expect(service.checkout(ADMIN, baseDto(), META)).rejects.toThrow(
       UnprocessableEntityException,
     );
+    expect(tx.subscription.create).not.toHaveBeenCalled();
+  });
+
+  describe('ciclo anual', () => {
+    const original = process.env.ANNUAL_CYCLE_ENABLED;
+    beforeEach(() => {
+      process.env.ANNUAL_CYCLE_ENABLED = 'true';
+    });
+    afterEach(() => {
+      process.env.ANNUAL_CYCLE_ENABLED = original;
+    });
+
+    // Start anual: 147 × 11 = 1.617.
+    const anual = (billingType: string, installmentCount = 1) => ({
+      ...eligible(),
+      quote: computeQuote({
+        plan: START,
+        cycle: 'YEARLY',
+        billingType,
+        installmentCount,
+      }),
+    });
+    const dozeParcelas = () =>
+      Array.from({ length: 12 }, (_, i) => ({
+        id: 'pay_' + (i + 1),
+        value: 134.75,
+        dueDate: '2026-09-24',
+        status: 'PENDING',
+        installment: 'ins_1',
+        installmentNumber: i + 1,
+        invoiceUrl: 'https://asaas/i/' + (i + 1),
+      }));
+    const anualEm12x = () =>
+      baseDto({
+        cycle: 'YEARLY',
+        billingType: 'CREDIT_CARD',
+        installmentCount: 12,
+      });
+
+    it('anual à vista vira assinatura anual, com um ano de período', async () => {
+      quoteService.quote.mockResolvedValue(anual('PIX'));
+      gateway.getAsaasSubscriptionPayments.mockResolvedValue([
+        {
+          id: 'pay_1',
+          value: 1617,
+          dueDate: '2026-09-24',
+          status: 'PENDING',
+          invoiceUrl: 'https://asaas/i/1',
+        },
+      ]);
+
+      await service.checkout(
+        ADMIN,
+        baseDto({ cycle: 'YEARLY', billingType: 'PIX' }),
+        META,
+      );
+
+      expect(gateway.createSubscription).toHaveBeenCalledWith(
+        expect.objectContaining({ cycle: 'YEARLY', value: 1617 }),
+      );
+      expect(tx.subscription.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ cycle: 'YEARLY' }),
+      });
+      const payment = tx.payment.create.mock.calls[0][0].data;
+      expect(payment.periodEnd.toISOString().slice(0, 10)).toBe('2027-09-24');
+    });
+
+    it('anual em 12x no cartão vira parcelamento, com uma cobrança por parcela', async () => {
+      quoteService.quote.mockResolvedValue(anual('CREDIT_CARD', 12));
+      gateway.createInstallmentCharge.mockResolvedValue({
+        id: 'pay_1',
+        installment: 'ins_1',
+      });
+      gateway.getInstallmentPayments.mockResolvedValue(dozeParcelas());
+
+      const result = await service.checkout(ADMIN, anualEm12x(), META);
+
+      expect(gateway.createSubscription).not.toHaveBeenCalled();
+      expect(gateway.createInstallmentCharge).toHaveBeenCalledWith(
+        expect.objectContaining({ installmentCount: 12, totalValue: 1617 }),
+      );
+      expect(tx.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sub-local-1' },
+          data: expect.objectContaining({
+            asaasSubscriptionId: 'inst_sub-local-1',
+            asaasInstallmentId: 'ins_1',
+            billingMode: 'ASAAS_INSTALLMENT',
+            installmentCount: 12,
+            status: 'ACTIVE',
+          }),
+        }),
+      );
+      expect(tx.payment.create).toHaveBeenCalledTimes(12);
+      expect(result.paymentUrl).toBe('https://asaas/i/1');
+      expect(result.subscription).toMatchObject({
+        cycle: 'YEARLY',
+        installmentCount: 12,
+      });
+    });
+
+    it('falha ao registrar desfaz o parcelamento no Asaas', async () => {
+      quoteService.quote.mockResolvedValue(anual('CREDIT_CARD', 12));
+      gateway.createInstallmentCharge.mockResolvedValue({
+        id: 'pay_1',
+        installment: 'ins_1',
+      });
+      gateway.getInstallmentPayments.mockResolvedValue(dozeParcelas());
+      acceptance.record.mockRejectedValue(new Error('banco fora'));
+
+      await expect(service.checkout(ADMIN, anualEm12x(), META)).rejects.toThrow(
+        BadGatewayException,
+      );
+      expect(gateway.deleteInstallment).toHaveBeenCalledWith('ins_1');
+      expect(gateway.cancelAsaasSubscription).not.toHaveBeenCalled();
+    });
+
+    it('com a chave desligada, o anual não é contratável', async () => {
+      process.env.ANNUAL_CYCLE_ENABLED = 'false';
+      await expect(
+        service.checkout(ADMIN, anualEm12x(), META),
+      ).rejects.toMatchObject({ response: { code: 'CYCLE_NOT_AVAILABLE' } });
+    });
+  });
+
+  it('parcelas no mensal são recusadas antes de criar qualquer coisa', async () => {
+    await expect(
+      service.checkout(ADMIN, baseDto({ installmentCount: 3 }), META),
+    ).rejects.toMatchObject({
+      response: { code: 'INSTALLMENTS_NOT_AVAILABLE' },
+    });
     expect(tx.subscription.create).not.toHaveBeenCalled();
   });
 });

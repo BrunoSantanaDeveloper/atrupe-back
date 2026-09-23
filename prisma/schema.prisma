@@ -1637,6 +1637,12 @@ model Subscription {
   pricingSnapshot        Json? // o orçamento inteiro que gerou a cobrança, como prova
   previousSubscriptionId String? // de qual assinatura esta evoluiu
   endedReason            String? // EVOLVED | TRANSFERRED | CANCELED_BY_USER | ABANDONED
+  // Como o Asaas cobra: ASAAS_SUBSCRIPTION (assinatura recorrente) ou
+  // ASAAS_INSTALLMENT (anual em parcelas no cartão, renovado por nós). Nulo nas
+  // antigas: vale o prefixo de asaasSubscriptionId.
+  billingMode            String?
+  installmentCount       Int? // em quantas vezes o anual é parcelado
+  asaasInstallmentId     String? // o parcelamento do período em curso
   Company              Company?              @relation(fields: [companyId], references: [id])
   customer             Customer              @relation(fields: [customerId], references: [id])
   plan                 Plan                  @relation(fields: [planId], references: [id])
@@ -1673,10 +1679,13 @@ model Payment {
   periodEnd         DateTime?
   grossValue        Float? // valor do ciclo após mês grátis e cupom, antes do crédito (reais)
   creditApplied     Float? // crédito de evolução abatido desta cobrança (reais)
-  kind              String? // CONTRACT | EVOLUTION (nulo: renovação gerada pelo Asaas)
+  kind              String? // CONTRACT | EVOLUTION | RENEWAL (nulo: renovação gerada pelo Asaas)
+  asaasInstallmentId String? // o parcelamento de que esta cobrança é parcela
+  installmentNumber  Int? // 1..N dentro do parcelamento
 
   @@index([subscriptionId])
   @@index([asaasPaymentId])
+  @@index([asaasInstallmentId])
   @@index([status])
   @@map("payments")
 }

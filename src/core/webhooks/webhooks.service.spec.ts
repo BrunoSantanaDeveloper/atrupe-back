@@ -181,6 +181,47 @@ describe('WebhooksService', () => {
         }),
       );
     });
+
+    it('parcela do anual parcelado paga não muda o vencimento da renovação', async () => {
+      const renovacao = new Date('2027-09-24T12:00:00.000Z');
+      mockPrismaService.payment.findFirst.mockResolvedValue({
+        id: 'local-parcela-3',
+        subscriptionId: 'sub-local-1',
+        value: 134.75,
+        billingType: 'CREDIT_CARD',
+        subscription: { asaasSubscriptionId: 'inst_sub-local-1' },
+      });
+      mockPrismaService.payment.update.mockResolvedValue({});
+      mockPrismaService.subscriptionHistory.create.mockResolvedValue({});
+      mockPrismaService.subscription.findFirst
+        .mockResolvedValueOnce({
+          id: 'sub-local-1',
+          companyId: 'company-1',
+          status: 'ACTIVE',
+          cycle: 'YEARLY',
+          billingMode: 'ASAAS_INSTALLMENT',
+          asaasSubscriptionId: 'inst_sub-local-1',
+          asaasInstallmentId: 'ins_1',
+          nextDueDate: renovacao,
+        })
+        .mockResolvedValueOnce(null);
+      mockPrismaService.subscription.update.mockResolvedValue({});
+
+      // Parcela não traz `subscription`: pertence a um parcelamento.
+      await service.handleAsaasWebhook({
+        event: AsaasWebhookEvent.PAYMENT_CONFIRMED,
+        payment: {
+          id: 'pay_parcela_3',
+          installment: 'ins_1',
+          dueDate: '2026-11-24',
+        },
+      } as any);
+
+      expect(mockPrismaService.subscription.update).toHaveBeenCalledWith({
+        where: { id: 'sub-local-1' },
+        data: { status: 'ACTIVE', nextDueDate: renovacao },
+      });
+    });
   });
 
   describe('handlePaymentOverdue (via handleAsaasWebhook)', () => {
