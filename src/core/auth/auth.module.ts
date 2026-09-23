@@ -14,6 +14,7 @@ import { PrismaModule } from 'nestjs-prisma';
 import { PlanControlModule } from '../plan/plan-control.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { ActivityMonitorModule } from '../activity-monitor/activity-monitor.module';
+import { SessionAccessService } from './session-access.service';
 
 @Module({
   imports: [
@@ -37,7 +38,8 @@ import { ActivityMonitorModule } from '../activity-monitor/activity-monitor.modu
     JwtStrategy,
     JwtRefreshStrategy,
     LocalStrategy,
+    SessionAccessService,
   ],
-  exports: [AuthService, AbacService, TenantGuard],
+  exports: [AuthService, AbacService, TenantGuard, SessionAccessService],
 })
 export class AuthModule {}

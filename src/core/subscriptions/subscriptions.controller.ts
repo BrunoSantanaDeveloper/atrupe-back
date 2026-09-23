@@ -612,6 +612,7 @@ export class SubscriptionsController {
       subscriptionId,
       cancelDto,
       req.user.companyId,
+      req.user.userId,
     );
   }
 

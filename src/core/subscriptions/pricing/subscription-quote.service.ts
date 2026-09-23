@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { AsaasPaymentStatus, Payment } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CouponsService } from '../../coupons/coupons.service';
 import { QuoteSubscriptionDto } from '../dto/quote-subscription.dto';
@@ -88,7 +89,10 @@ export class SubscriptionQuoteService {
           include,
         });
 
-    const current = active ?? pendingCheckout;
+    const found = active ?? pendingCheckout;
+    const current = found?.previousSubscriptionId
+      ? { ...found, payments: await this.withTransferredPayments(found) }
+      : found;
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
 
@@ -125,6 +129,50 @@ export class SubscriptionQuoteService {
       confirmedPayment,
       intent,
     };
+  }
+
+  /**
+   * Uma assinatura que chegou por transferência de titularidade continua a
+   * contratação de antes: o que foi pago nela segue pago. As cobranças PAGAS
+   * das anteriores encerradas como TRANSFERRED entram na conta — são elas que
+   * dizem se o ciclo em curso está pago e quanto crédito ele gera. As em
+   * aberto, não: dívida de quem transferiu não passa a quem recebeu (e a
+   * transferência nem corre com cobrança em aberto). Uma anterior encerrada
+   * por evolução encerra a cadeia: o crédito dela já foi aproveitado.
+   */
+  private async withTransferredPayments<
+    T extends {
+      id: string;
+      previousSubscriptionId: string | null;
+      payments: Payment[];
+    },
+  >(subscription: T): Promise<Payment[]> {
+    const inherited: Payment[] = [];
+    const seen = new Set<string>([subscription.id]);
+    let previousId = subscription.previousSubscriptionId;
+
+    while (previousId && !seen.has(previousId)) {
+      seen.add(previousId);
+      const previous = await this.prisma.subscription.findUnique({
+        where: { id: previousId },
+        select: {
+          endedReason: true,
+          previousSubscriptionId: true,
+          payments: {
+            where: { status: { in: PAID as AsaasPaymentStatus[] } },
+            orderBy: { dueDate: 'desc' },
+          },
+        },
+      });
+      if (!previous || previous.endedReason !== 'TRANSFERRED') break;
+      inherited.push(...previous.payments);
+      previousId = previous.previousSubscriptionId;
+    }
+
+    if (inherited.length === 0) return subscription.payments;
+    return [...subscription.payments, ...inherited].sort(
+      (a, b) => b.dueDate.getTime() - a.dueDate.getTime(),
+    );
   }
 
   private async globalPlans() {

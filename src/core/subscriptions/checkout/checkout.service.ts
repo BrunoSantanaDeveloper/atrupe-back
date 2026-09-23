@@ -19,7 +19,7 @@ import {
   CurrentTerms,
 } from './contract-acceptance.service';
 import { CompanySessionService } from './company-session.service';
-import { verifyRepresentative } from './representatives';
+import { resolveCompanyContractor, ResolvedContractor } from './contractor';
 import {
   assertCanContract,
   assertCycleAvailable,
@@ -40,21 +40,6 @@ export type CheckoutUser = ContractingUser;
 export interface RequestMeta {
   ip?: string | null;
   userAgent?: string | null;
-}
-
-interface ResolvedContractor {
-  type: 'PF' | 'PJ';
-  document: string;
-  name: string;
-  tradeName: string | null;
-  email: string;
-  representative: {
-    cpf: string;
-    name: string;
-    verified: boolean;
-    isSessionUser: boolean;
-  } | null;
-  registrySnapshot: Record<string, any> | null;
 }
 
 /**
@@ -441,13 +426,9 @@ export class CheckoutService {
   }
 
   /**
-   * Quem contrata e quem responde pela empresa.
-   *
-   * Empresa: o CNPJ é confirmado pela consulta pública, e o CPF do
-   * representante é conferido contra o quadro societário quando ele existe —
-   * não conferindo, a contratação não segue. Sem quadro para conferir, o CPF
-   * é aceito com o nome informado, e o aceite registra que não houve
-   * conferência.
+   * Quem contrata e quem responde pela empresa. Pessoa física responde por
+   * si; empresa passa pela consulta do CNPJ e pela conferência do
+   * representante (resolveCompanyContractor).
    */
   private async resolveContractor(
     user: CheckoutUser,
@@ -468,90 +449,28 @@ export class CheckoutService {
       };
     }
 
-    const cnpj = String(c.cnpj).replace(/\D/g, '');
-    const rep = dto.representative;
-    if (!rep) {
-      throw new UnprocessableEntityException({
-        code: 'REPRESENTATIVE_REQUIRED',
-        message: 'Informe o CPF de quem responde legalmente pela empresa.',
-      });
-    }
-
-    let record = null;
-    try {
-      record = await this.registry.lookup(cnpj);
-    } catch (error) {
-      // Base pública fora do ar não impede a contratação: segue com os dados
-      // informados, sem conferência.
-      this.logger.warn(`CNPJ ${cnpj} sem consulta: ${error.message}`);
-    }
-
-    const legalName = record?.legalName ?? c.legalName?.trim();
-    if (!legalName) {
-      throw new UnprocessableEntityException({
-        code: 'LEGAL_NAME_REQUIRED',
-        message: 'Informe a razão social da empresa.',
-      });
-    }
-
-    const cpf = rep.cpf.replace(/\D/g, '');
-    const verdict = record
-      ? verifyRepresentative(record.partners, cpf)
-      : ({ status: 'UNVERIFIABLE' } as const);
-
-    if (verdict.status === 'NOT_IN_REGISTRY') {
-      throw new UnprocessableEntityException({
-        code: 'REPRESENTATIVE_NOT_IN_REGISTRY',
-        message:
-          'Este CPF não consta como representante legal desta empresa no registro público.',
-      });
-    }
-
-    let representativeName: string;
-    if (verdict.status === 'VERIFIED') {
-      // O nome é o que o registro publica, não o que a pessoa digitaria.
-      representativeName = verdict.name;
-    } else {
-      representativeName = rep.name?.trim() ?? '';
-      if (representativeName.length < 2) {
-        throw new UnprocessableEntityException({
-          code: 'REPRESENTATIVE_NAME_REQUIRED',
-          message: 'Informe o nome de quem responde legalmente pela empresa.',
-        });
-      }
-    }
-
-    return {
-      type: 'PJ',
-      document: cnpj,
-      name: legalName,
-      tradeName: record?.tradeName ?? c.tradeName?.trim() ?? null,
-      email,
-      representative: {
-        cpf,
-        name: representativeName,
-        verified: verdict.status === 'VERIFIED',
-        isSessionUser: rep.isSelf,
+    const { contractor } = await resolveCompanyContractor(
+      this.registry,
+      this.logger,
+      {
+        cnpj: String(c.cnpj),
+        email,
+        legalName: c.legalName,
+        tradeName: c.tradeName,
+        representative: dto.representative,
       },
-      // Só o que sustentou a conferência — não o quadro inteiro.
-      registrySnapshot: record
-        ? {
-            source: 'brasilapi',
-            fetchedAt: record.fetchedAt,
-            legalName: record.legalName,
-            registrationStatus: record.registrationStatus,
-            verification: verdict.status,
-            ...(verdict.status === 'VERIFIED'
-              ? { qualification: verdict.qualification }
-              : {}),
-          }
-        : { source: 'none', verification: 'UNVERIFIABLE' },
-    };
+    );
+    return contractor;
   }
 
   /**
    * O cliente de cobrança acompanha quem contrata: se a empresa já tem um no
    * Asaas, seus dados são atualizados para o contratante atual.
+   *
+   * Depois de uma transferência de titularidade a empresa tem mais de um —
+   * o de cada titular, que as cobranças antigas continuam citando. Vale o do
+   * mesmo documento e, sem ele, o mais recente: reescrever o do titular
+   * anterior poria o nome de outra empresa nas cobranças que ele pagou.
    */
   private async provisionCustomer(
     companyId: string,
@@ -562,9 +481,14 @@ export class CheckoutService {
       cpfCnpj: contractor.document,
       email: contractor.email,
     };
-    const existing = await this.prisma.customer.findFirst({
-      where: { companyId },
-    });
+    const existing =
+      (await this.prisma.customer.findFirst({
+        where: { companyId, document: contractor.document },
+      })) ??
+      (await this.prisma.customer.findFirst({
+        where: { companyId },
+        orderBy: { createdAt: 'desc' },
+      }));
 
     try {
       if (existing?.asaasCustomerId?.startsWith('cus_')) {

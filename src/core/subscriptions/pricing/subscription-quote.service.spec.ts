@@ -47,7 +47,7 @@ describe('SubscriptionQuoteService', () => {
   let service: SubscriptionQuoteService;
 
   const prisma = {
-    subscription: { findFirst: jest.fn() },
+    subscription: { findFirst: jest.fn(), findUnique: jest.fn() },
     plan: { findFirst: jest.fn(), findMany: jest.fn() },
     feature: { findMany: jest.fn() },
   };
@@ -78,6 +78,49 @@ describe('SubscriptionQuoteService', () => {
       ],
     }).compile();
     service = module.get(SubscriptionQuoteService);
+  });
+
+  describe('assinatura recebida por transferência de titularidade', () => {
+    // A primeira cobrança da assinatura nova, ainda por vencer.
+    const received = subscription({
+      id: 'sub-2',
+      previousSubscriptionId: 'sub-1',
+      payments: [
+        payment('PENDING', { dueDate: new Date('2026-09-15T00:00:00.000Z') }),
+      ],
+    });
+
+    it('o que foi pago antes da transferência segue pago: não vira regularização', async () => {
+      withSubscriptions(received);
+      prisma.subscription.findUnique.mockResolvedValueOnce({
+        endedReason: 'TRANSFERRED',
+        previousSubscriptionId: null,
+        payments: [payment('CONFIRMED')],
+      });
+
+      const ctx = await service.getBillingContext('company-1', AGORA);
+
+      expect(prisma.subscription.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'sub-1' } }),
+      );
+      expect(ctx.intent).toBe('EVOLUTION');
+      expect(ctx.firstChargePending).toBe(false);
+      expect(ctx.confirmedPayment).toMatchObject({ status: 'CONFIRMED' });
+    });
+
+    it('a anterior encerrada por evolução não é herdada: o crédito dela já foi usado', async () => {
+      withSubscriptions(received);
+      prisma.subscription.findUnique.mockResolvedValueOnce({
+        endedReason: 'EVOLVED',
+        previousSubscriptionId: null,
+        payments: [payment('CONFIRMED')],
+      });
+
+      const ctx = await service.getBillingContext('company-1', AGORA);
+
+      expect(ctx.confirmedPayment).toBeNull();
+      expect(ctx.intent).toBe('REGULARIZATION');
+    });
   });
 
   describe('sem contratação em curso', () => {

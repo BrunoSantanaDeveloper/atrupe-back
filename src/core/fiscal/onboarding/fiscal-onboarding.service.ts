@@ -47,6 +47,7 @@ export class FiscalOnboardingService {
       where: {
         companyId,
         status: { in: ['ACTIVE', 'PROVISIONING'] },
+        ...(await this.sinceFiscalReset(companyId)),
       },
     });
 
@@ -593,9 +594,26 @@ export class FiscalOnboardingService {
     }
   }
 
+  /**
+   * Depois de uma transferência de titularidade que trocou o CNPJ, o que foi
+   * configurado antes é do CNPJ anterior: o onboarding recomeça, e só conta o
+   * que veio depois da troca.
+   */
+  private async sinceFiscalReset(
+    companyId: string,
+  ): Promise<{ createdAt?: { gt: Date } }> {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { fiscalResetAt: true },
+    });
+    return company?.fiscalResetAt
+      ? { createdAt: { gt: company.fiscalResetAt } }
+      : {};
+  }
+
   async getStatus(companyId: string) {
     const request = await this.prisma.fiscalOnboardingRequest.findFirst({
-      where: { companyId },
+      where: { companyId, ...(await this.sinceFiscalReset(companyId)) },
       select: {
         id: true,
         status: true,

@@ -17,6 +17,9 @@ describe('NfceContingencySyncService', () => {
       count: jest.fn(),
       groupBy: jest.fn(),
     },
+    // Sem transferência que trocou o CNPJ: nada é histórico.
+    company: { findUnique: jest.fn() },
+    invoicyConfig: { findMany: jest.fn() },
   };
 
   const mockInvoicyService = {

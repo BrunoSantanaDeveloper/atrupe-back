@@ -56,6 +56,8 @@ import { InstallmentRenewalService } from './installment-renewal.service';
     CompanyManagementService,
     SubscriptionQuoteService,
     CompanySessionService,
+    CompanyRegistryService,
+    ContractAcceptanceService,
   ],
 })
 export class SubscriptionsModule {}

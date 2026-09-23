@@ -34,6 +34,10 @@ model Company {
   // criou a conta e só muda por transferência de titularidade. Sem chave
   // estrangeira de propósito: excluir o usuário não pode travar a empresa.
   ownerUserId           String?
+  // Quando uma transferência de titularidade trocou o CNPJ: os emissores e as
+  // notas de antes pertencem ao CNPJ anterior — ficam como histórico, sem
+  // manipulação, e a configuração fiscal recomeça do zero.
+  fiscalResetAt         DateTime?
   facebook              String?
   instagram             String?
   linkedin              String?
@@ -1760,6 +1764,52 @@ model ContractAcceptance {
   @@index([companyId, createdAt])
   @@index([subscriptionId])
   @@map("contract_acceptances")
+}
+
+/// Transferência de titularidade: o titular convida um e-mail, e quem recebe
+/// cria uma conta nova, informa a empresa e aceita os Termos. A expiração (14
+/// dias) é derivada de createdAt, não gravada: uma pendente vencida já é
+/// expirada, mesmo que ninguém tenha aberto a tela.
+model OwnershipTransfer {
+  id               String    @id @default(uuid())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime? @updatedAt
+  companyId        String
+  /// O nome do ambiente no envio: é o que o convite e o aviso a quem saiu citam.
+  companyName      String
+  fromUserId       String
+  fromUserName     String
+  targetEmail      String
+  /// SHA-256 do token do convite: o token em si nunca é guardado.
+  tokenHash        String    @unique
+  status           String    @default("PENDING") // PENDING | CANCELED | ACCEPTED
+  canceledAt       DateTime?
+  acceptedAt       DateTime?
+  acceptedByUserId String?
+  previousCnpj     String?
+  newCnpj          String?
+
+  @@index([companyId, status])
+  @@map("ownership_transfers")
+}
+
+/// Quem respondeu pela conta, de quando a quando. O período aberto (endedAt
+/// nulo) é o titular atual; uma transferência fecha um e abre outro na mesma
+/// data.
+model OwnershipPeriod {
+  id         String    @id @default(uuid())
+  createdAt  DateTime  @default(now())
+  companyId  String
+  userId     String?
+  holderName String
+  document   String?
+  email      String?
+  startedAt  DateTime
+  endedAt    DateTime?
+  transferId String?
+
+  @@index([companyId, endedAt])
+  @@map("ownership_periods")
 }
 
 model UserContract {

@@ -37,6 +37,7 @@ import { FiscalModule } from './fiscal/fiscal.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { AiModule } from './ai/ai.module';
+import { OwnershipModule } from './ownership/ownership.module';
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { AiModule } from './ai/ai.module';
     FiscalModule,
     SystemSettingsModule,
     AiModule,
+    OwnershipModule,
   ],
 })
 export class CoreModule {}

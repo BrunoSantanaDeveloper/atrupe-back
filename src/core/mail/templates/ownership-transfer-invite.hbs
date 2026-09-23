@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Transferência de titularidade</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .container {
+      background-color: #f9f9f9;
+      border-radius: 5px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+    .button {
+      display: inline-block;
+      background-color: #4CAF50;
+      color: white;
+      padding: 10px 20px;
+      text-decoration: none;
+      border-radius: 5px;
+      margin-top: 20px;
+    }
+    .footer {
+      margin-top: 30px;
+      font-size: 12px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Você recebeu um ambiente na Atrupe</h2>
+    <p>{{senderName}} quer transferir para você a titularidade do ambiente <strong>{{companyName}}</strong> — colaboradores, usuários, orçamentos, histórico e a assinatura.</p>
+    <p>Para aceitar, crie a sua conta pelo link abaixo, informe o CNPJ da sua empresa e aceite os Termos de Contratação. O ambiente passa a ser seu na hora.</p>
+    <a href="{{inviteLink}}" class="button">Ver a transferência</a>
+    <p>O convite vale por {{deadlineDays}} dias, até {{expiresAt}}.</p>
+    <p>Se o botão não funcionar, copie e cole o link abaixo no seu navegador:</p>
+    <p>{{inviteLink}}</p>
+    <p>Se você não esperava este convite, pode ignorar este e-mail: nada muda sem o seu aceite.</p>
+    <div class="footer">
+      <p>Este é um email automático, por favor não responda.</p>
+    </div>
+  </div>
+</body>
+</html>

@@ -8,9 +8,13 @@ import { UserService } from '../user/user.service';
 import { PlanControlService } from '../plan/plan-control.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { CompanySessionService } from '../subscriptions/checkout/company-session.service';
+import { SessionAccessService } from './session-access.service';
 import * as argon2 from 'argon2';
 
 describe('AuthService', () => {
+  // Conta desativada por transferência: o login diz o motivo.
+  const transferredAccess = jest.fn().mockResolvedValue(null);
+
   // Sessão da empresa no login: pagamento pendente e titularidade.
   const companySessionBuild = jest.fn().mockResolvedValue({
     plan: {
@@ -119,6 +123,10 @@ describe('AuthService', () => {
           provide: CompanySessionService,
           useValue: { build: companySessionBuild },
         },
+        {
+          provide: SessionAccessService,
+          useValue: { transferredAccess: transferredAccess },
+        },
       ],
     }).compile();
 
@@ -174,6 +182,41 @@ describe('AuthService', () => {
       );
 
       expect(result).toBeNull();
+    });
+
+    it('quem transferiu o ambiente é informado do motivo, e não de dados inválidos', async () => {
+      userService.findByEmail.mockResolvedValue(null);
+      transferredAccess.mockResolvedValueOnce({
+        companyName: 'Marcenaria Horizonte',
+        acceptedAt: new Date('2026-09-20T15:00:00.000Z'),
+      });
+
+      await expect(
+        service.validateUser('Saiu@Exemplo.com ', 'senha-certa'),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'ACCESS_TRANSFERRED',
+          message: expect.stringContaining('Marcenaria Horizonte'),
+        },
+      });
+      expect(transferredAccess).toHaveBeenCalledWith(
+        'saiu@exemplo.com',
+        'senha-certa',
+      );
+    });
+
+    it('conta ativa com senha errada não consulta transferência', async () => {
+      transferredAccess.mockClear();
+      const hashedPassword = await argon2.hash('correct-password');
+      userService.findByEmail.mockResolvedValue({
+        ...mockUser,
+        password: hashedPassword,
+      } as any);
+
+      await expect(
+        service.validateUser('test@example.com', 'wrong-password'),
+      ).resolves.toBeNull();
+      expect(transferredAccess).not.toHaveBeenCalled();
     });
   });
 

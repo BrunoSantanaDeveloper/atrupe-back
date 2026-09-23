@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -107,6 +108,9 @@ export class SubscriptionsService {
             select: {
               additionalUsers: true,
               plan: { select: { name: true, basePrice: true } },
+              // Depois de uma transferência de titularidade, a cobrança
+              // continua no nome de quem a gerou.
+              customer: { select: { name: true, document: true } },
             },
           },
         },
@@ -878,6 +882,7 @@ export class SubscriptionsService {
     subscriptionId: string,
     cancelDto: CancelSubscriptionDto,
     companyId: string,
+    userId: string,
   ) {
     const subscription = await this.prisma.subscription.findUnique({
       where: { id: subscriptionId },
@@ -890,6 +895,19 @@ export class SubscriptionsService {
 
     if (subscription.companyId !== companyId) {
       throw new BadRequestException('Acesso não autorizado a esta assinatura.');
+    }
+
+    // Cancelar a assinatura é ato do titular: é ele quem responde pela conta
+    // perante a Atrupe. Conta antiga sem titular registrado segue como antes.
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { ownerUserId: true },
+    });
+    if (company?.ownerUserId && company.ownerUserId !== userId) {
+      throw new ForbiddenException({
+        code: 'OWNER_ONLY',
+        message: 'Somente o titular da conta cancela a assinatura.',
+      });
     }
 
     if (subscription.status !== 'ACTIVE') {

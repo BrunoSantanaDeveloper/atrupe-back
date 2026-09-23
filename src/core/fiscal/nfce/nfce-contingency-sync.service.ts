@@ -5,6 +5,10 @@ import { NfceStatus } from '@prisma/client';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { INVOICY_SUCCESS_CODES } from '../invoicy/invoicy.types';
+import {
+  isHistoricalDocument,
+  loadFiscalHistoryLock,
+} from '../shared/fiscal-history-lock';
 
 /**
  * NfceContingencySyncService - Sincronização de NFC-e em contingência
@@ -98,9 +102,17 @@ export class NfceContingencySyncService {
    */
   private async processCompanyNfces(
     companyId: string,
-    nfces: any[],
+    todas: any[],
   ): Promise<void> {
     try {
+      // NFC-e do CNPJ anterior a uma transferência de titularidade não é
+      // transmitida: as credenciais de hoje são do CNPJ novo.
+      const historico = await loadFiscalHistoryLock(this.prisma, companyId);
+      const nfces = todas.filter(
+        (nfce) => !isHistoricalDocument(nfce, historico),
+      );
+      if (nfces.length === 0) return;
+
       // Verificar se a empresa tem configuração ativa
       const config = await this.invoicyService.getConfig(companyId);
       if (!config || !config.isActive) {

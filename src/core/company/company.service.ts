@@ -85,6 +85,37 @@ export class CompanyService {
               data: { ownerUserId: user.id },
             });
 
+            // O primeiro período de titularidade nasce com a conta: sem ele,
+            // a primeira transferência não teria o que fechar, e o histórico
+            // começaria pelo segundo titular.
+            const openPeriod = await tx.ownershipPeriod.findFirst({
+              where: { companyId, endedAt: null },
+              select: { id: true },
+            });
+            if (!openPeriod) {
+              const company = await tx.company.findUnique({
+                where: { id: companyId },
+                select: {
+                  name: true,
+                  legalName: true,
+                  cnpj: true,
+                  ownerUserId: true,
+                },
+              });
+              if (company?.ownerUserId === user.id) {
+                await tx.ownershipPeriod.create({
+                  data: {
+                    companyId,
+                    userId: user.id,
+                    holderName: company.legalName || company.name,
+                    document: company.cnpj,
+                    email: user.email,
+                    startedAt: new Date(),
+                  },
+                });
+              }
+            }
+
             this.logger.log('Finding administration sector');
             const sector = await tx.companySector.findFirst({
               where: {

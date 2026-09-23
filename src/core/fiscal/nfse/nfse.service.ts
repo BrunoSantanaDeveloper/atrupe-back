@@ -21,6 +21,10 @@ import {
   NfseFilterDto,
 } from './dtos/nfse.dto';
 import { fetchCepData } from '../utils/cep.util';
+import {
+  isHistoricalDocument,
+  loadFiscalHistoryLock,
+} from '../shared/fiscal-history-lock';
 
 /**
  * Pre-visualizacao da NFS-e: o mesmo RPS que seria transmitido, sem reservar
@@ -2488,18 +2492,30 @@ export class NfseService {
    *   nota autorizada ficou invisível para o sistema.
    */
   async reconcilePending(companyId: string, limite = 25) {
-    const candidatas = await this.prisma.nfse.findMany({
-      where: {
-        companyId,
-        OR: [
-          { status: NfseStatus.PROCESSING },
-          { status: NfseStatus.REJECTED, numero: 0 },
-        ],
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limite,
-      select: { id: true, rpsNumero: true, rpsSerie: true, status: true },
-    });
+    // Nota do CNPJ anterior a uma transferência de titularidade não é
+    // consultada: as credenciais de hoje são do CNPJ novo.
+    const historico = await loadFiscalHistoryLock(this.prisma, companyId);
+    const candidatas = (
+      await this.prisma.nfse.findMany({
+        where: {
+          companyId,
+          OR: [
+            { status: NfseStatus.PROCESSING },
+            { status: NfseStatus.REJECTED, numero: 0 },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limite,
+        select: {
+          id: true,
+          rpsNumero: true,
+          rpsSerie: true,
+          status: true,
+          createdAt: true,
+          invoicyConfigId: true,
+        },
+      })
+    ).filter((nota) => !isHistoricalDocument(nota, historico));
 
     const resultados: any[] = [];
 

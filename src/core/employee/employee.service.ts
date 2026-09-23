@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { PrismaService } from 'nestjs-prisma';
@@ -321,6 +325,49 @@ export class EmployeeService {
     return `This action returns a #${id} employee`;
   }
 
+  /**
+   * O colaborador do titular da conta não é inativado nem deixa de ser
+   * administrador: a titularidade sai só por transferência, e o titular é
+   * administrador em tudo que administradores fazem.
+   */
+  private async assertOwnerStays(
+    tx: Prisma.TransactionClient,
+    id: string,
+    change: { deactivating: boolean; roleId?: string | null },
+  ) {
+    const employee = await tx.employee.findUnique({
+      where: { id },
+      select: { userId: true, company: { select: { ownerUserId: true } } },
+    });
+    const ownerUserId = employee?.company?.ownerUserId;
+    if (!employee?.userId || !ownerUserId || employee.userId !== ownerUserId) {
+      return;
+    }
+
+    if (change.deactivating) {
+      throw new UnprocessableEntityException({
+        code: 'OWNER_CANNOT_BE_DEACTIVATED',
+        message:
+          'Este colaborador é o titular da conta e não pode ser inativado. Para isso, transfira a titularidade antes.',
+      });
+    }
+    if (change.roleId !== undefined) {
+      const role = change.roleId
+        ? await tx.role.findUnique({
+            where: { id: change.roleId },
+            select: { isAdmin: true },
+          })
+        : null;
+      if (!role?.isAdmin) {
+        throw new UnprocessableEntityException({
+          code: 'OWNER_MUST_BE_ADMIN',
+          message:
+            'O titular da conta é sempre administrador. Para mudar o cargo dele, transfira a titularidade antes.',
+        });
+      }
+    }
+  }
+
   async update(
     id: string,
     updateEmployeeDto: UpdateEmployeeDto,
@@ -330,6 +377,11 @@ export class EmployeeService {
     const { isActive, address, ...rest } = updateEmployeeDto;
 
     return this.prisma.$transaction(async (tx) => {
+      await this.assertOwnerStays(tx, id, {
+        deactivating: isActive === false,
+        roleId: rest.roleId,
+      });
+
       // Capturar estado antes da atualização
       // IMPORTANTE: Ao adicionar novos campos editáveis no Employee,
       // inclua-os neste select para que sejam rastreados no histórico
@@ -462,6 +514,8 @@ export class EmployeeService {
 
   async remove(id: string, userId?: string, userName?: string) {
     return this.prisma.$transaction(async (tx) => {
+      await this.assertOwnerStays(tx, id, { deactivating: true });
+
       const employee = await tx.employee.findUnique({
         where: { id },
         select: { userId: true, name: true },

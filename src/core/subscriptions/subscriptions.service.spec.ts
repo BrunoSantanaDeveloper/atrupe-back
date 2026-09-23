@@ -510,14 +510,44 @@ describe('SubscriptionsService', () => {
         asaasSubscriptionId: 'inst_sub-anual',
         plan: { planType: 'START' },
       });
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        ownerUserId: 'user-1',
+      });
 
       await expect(
         service.cancelSubscription(
           'sub-anual',
           { reason: 'Preço' } as any,
           'company-1',
+          'user-1',
         ),
       ).rejects.toThrow('plano anual');
+      expect(
+        mockAsaasGatewayService.cancelAsaasSubscription,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('só o titular cancela: outro administrador é recusado', async () => {
+      mockPrismaService.subscription.findUnique.mockResolvedValue({
+        id: 'sub-1',
+        companyId: 'company-1',
+        status: 'ACTIVE',
+        cycle: 'MONTHLY',
+        asaasSubscriptionId: 'sub_123',
+        plan: { planType: 'START' },
+      });
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        ownerUserId: 'titular',
+      });
+
+      await expect(
+        service.cancelSubscription(
+          'sub-1',
+          { reason: 'Preço' } as any,
+          'company-1',
+          'outro-admin',
+        ),
+      ).rejects.toMatchObject({ response: { code: 'OWNER_ONLY' } });
       expect(
         mockAsaasGatewayService.cancelAsaasSubscription,
       ).not.toHaveBeenCalled();

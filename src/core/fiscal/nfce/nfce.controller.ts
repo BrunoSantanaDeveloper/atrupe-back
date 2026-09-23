@@ -14,6 +14,10 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import {
+  ActsOnIssuedDocument,
+  FiscalHistoryLockGuard,
+} from '../shared/fiscal-history-lock.guard';
+import {
   BlockLevelGuard,
   RequireUnblocked,
 } from '../../auth/guards/block-level.guard';
@@ -31,7 +35,12 @@ import {
 
 @ApiTags('Fiscal - NFC-e')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionsGuard, BlockLevelGuard)
+@UseGuards(
+  JwtAuthGuard,
+  PermissionsGuard,
+  BlockLevelGuard,
+  FiscalHistoryLockGuard,
+)
 @Controller('fiscal/nfce')
 export class NfceController {
   constructor(
@@ -82,6 +91,7 @@ export class NfceController {
   }
 
   @Post(':id/cancel')
+  @ActsOnIssuedDocument('nfce')
   @HasPermission('delete', 'nota_fiscal:cancelar')
   @ApiOperation({ summary: 'Cancelar NFC-e' })
   async cancel(
@@ -93,6 +103,7 @@ export class NfceController {
   }
 
   @Post(':id/reprocess')
+  @ActsOnIssuedDocument('nfce')
   @HasPermission('create', 'nota_fiscal:emitir')
   @RequireUnblocked()
   @ApiOperation({ summary: 'Reprocessar NFC-e (status UNKNOWN ou PROCESSING)' })
@@ -117,6 +128,7 @@ export class NfceController {
   }
 
   @Get(':id/status')
+  @ActsOnIssuedDocument('nfce')
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Consultar status da NFC-e' })
   async consultStatus(@Req() req, @Param('id') id: string) {
@@ -131,6 +143,7 @@ export class NfceController {
   }
 
   @Get(':id/thermal')
+  @ActsOnIssuedDocument('nfce')
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Obter DANFE NFC-e termico em HTML 80mm' })
   async getThermalDanfe(

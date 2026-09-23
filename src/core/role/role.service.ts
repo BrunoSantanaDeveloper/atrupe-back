@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { PrismaService } from 'nestjs-prisma';
@@ -135,6 +139,20 @@ export class RoleService {
   }
   async remove(id: string) {
     return this.prisma.$transaction(async (tx) => {
+      // O titular da conta é sempre administrador: o cargo dele não sai
+      // debaixo dele.
+      const members = await tx.employee.findMany({
+        where: { roleId: id, userId: { not: null } },
+        select: { userId: true, company: { select: { ownerUserId: true } } },
+      });
+      if (members.some((m) => m.userId === m.company?.ownerUserId)) {
+        throw new UnprocessableEntityException({
+          code: 'OWNER_ROLE',
+          message:
+            'Este é o cargo do titular da conta, que é sempre administrador, e não pode ser excluído.',
+        });
+      }
+
       // Atualiza os employees
       await tx.employee.updateMany({
         where: {

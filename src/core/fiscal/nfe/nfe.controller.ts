@@ -17,6 +17,10 @@ import { FiscalThrottlerGuard } from './guards/fiscal-throttler.guard';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import {
+  ActsOnIssuedDocument,
+  FiscalHistoryLockGuard,
+} from '../shared/fiscal-history-lock.guard';
+import {
   BlockLevelGuard,
   RequireUnblocked,
 } from '../../auth/guards/block-level.guard';
@@ -43,6 +47,7 @@ import {
   PermissionsGuard,
   BlockLevelGuard,
   FiscalThrottlerGuard,
+  FiscalHistoryLockGuard,
 )
 @Controller('fiscal/nfe')
 export class NfeController {
@@ -92,6 +97,7 @@ export class NfeController {
   }
 
   @Get(':id/prepare-devolution')
+  @ActsOnIssuedDocument('nfe')
   @SkipThrottle()
   @HasPermission('create', 'nota_fiscal:emitir')
   @ApiOperation({ summary: 'Preparar dados para emissão de NF-e de devolução' })
@@ -100,6 +106,7 @@ export class NfeController {
   }
 
   @Get(':id/prepare-complementary')
+  @ActsOnIssuedDocument('nfe')
   @SkipThrottle()
   @HasPermission('create', 'nota_fiscal:emitir')
   @ApiOperation({ summary: 'Preparar dados para emissão de NF-e complementar' })
@@ -108,6 +115,7 @@ export class NfeController {
   }
 
   @Get(':id/prepare-reissue')
+  @ActsOnIssuedDocument('nfe')
   @SkipThrottle()
   @HasPermission('create', 'nota_fiscal:emitir')
   @ApiOperation({ summary: 'Preparar dados para reemissão de NF-e rejeitada' })
@@ -200,6 +208,7 @@ export class NfeController {
   }
 
   @Post('emit-full')
+  @ActsOnIssuedDocument('nfe', { body: 'reissueOfNfeId' })
   @HasPermission('create', 'nota_fiscal:emitir')
   @RequireUnblocked()
   @ApiOperation({ summary: 'Emitir NF-e com todos os dados (manual)' })
@@ -216,6 +225,7 @@ export class NfeController {
   }
 
   @Post(':id/cancel')
+  @ActsOnIssuedDocument('nfe')
   @HasPermission('delete', 'nota_fiscal:cancelar')
   @ApiOperation({ summary: 'Cancelar NF-e' })
   async cancel(@Req() req, @Param('id') id: string, @Body() dto: CancelNfeDto) {
@@ -224,6 +234,7 @@ export class NfeController {
   }
 
   @Post(':id/correction-letter')
+  @ActsOnIssuedDocument('nfe')
   @HasPermission('edit', 'nota_fiscal:carta_correcao')
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: 'Enviar carta de correção' })
@@ -292,6 +303,7 @@ export class NfeController {
   }
 
   @Get(':id/status')
+  @ActsOnIssuedDocument('nfe')
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Consultar status da NF-e' })
   async consultStatus(@Req() req, @Param('id') id: string) {
@@ -315,6 +327,7 @@ export class NfeController {
   }
 
   @Post(':id/send-email')
+  @ActsOnIssuedDocument('nfe')
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Enviar DANFE/XML da NF-e por e-mail' })
   async sendEmail(@Req() req, @Param('id') id: string) {

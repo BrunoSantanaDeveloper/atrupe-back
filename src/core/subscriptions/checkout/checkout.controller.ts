@@ -28,8 +28,7 @@ import { CompanySessionService } from './company-session.service';
 import { ComplementsService } from './complements.service';
 import { EvolutionService } from './evolution.service';
 import { RegularizationService } from './regularization.service';
-import { verifyRepresentative } from './representatives';
-import { UnprocessableEntityException } from '@nestjs/common';
+import { checkRepresentative } from './contractor';
 
 /**
  * Contratação em três etapas, evolução de plano, complementos, regularização
@@ -70,28 +69,7 @@ export class CheckoutController {
     summary: 'Confere o CPF do representante legal contra o quadro societário',
   })
   async representativeCheck(@Body() dto: RepresentativeCheckDto) {
-    const record = await this.registry.lookup(dto.cnpj).catch(() => null);
-    if (!record) {
-      return { registryAvailable: false, verified: false, requiresName: true };
-    }
-    const verdict = verifyRepresentative(record.partners, dto.cpf);
-    if (verdict.status === 'NOT_IN_REGISTRY') {
-      throw new UnprocessableEntityException({
-        code: 'REPRESENTATIVE_NOT_IN_REGISTRY',
-        message:
-          'Este CPF não consta como representante legal desta empresa no registro público.',
-      });
-    }
-    if (verdict.status === 'VERIFIED') {
-      return {
-        registryAvailable: true,
-        verified: true,
-        requiresName: false,
-        representativeName: verdict.name,
-        qualification: verdict.qualification,
-      };
-    }
-    return { registryAvailable: true, verified: false, requiresName: true };
+    return checkRepresentative(this.registry, dto.cnpj, dto.cpf);
   }
 
   @Post('checkout')

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Ambiente transferido</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .container {
+      background-color: #f9f9f9;
+      border-radius: 5px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+    .footer {
+      margin-top: 30px;
+      font-size: 12px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Olá {{name}},</h2>
+    <p>A transferência de titularidade que você enviou foi aceita em {{acceptedAt}}. O ambiente <strong>{{companyName}}</strong> passou a pertencer a <strong>{{newHolderName}}</strong>.</p>
+    <p>Como foi declarado no envio, a sua conta não tem mais acesso a esse ambiente. O que você fez nele — orçamentos, acessos e histórico — continua lá, no seu nome.</p>
+    <p>A transferência não pode ser desfeita. Se o ambiente precisar voltar, isso é feito com uma nova transferência, no sentido contrário.</p>
+    <div class="footer">
+      <p>Este é um email automático, por favor não responda.</p>
+    </div>
+  </div>
+</body>
+</html>

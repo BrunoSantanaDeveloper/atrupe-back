@@ -4,12 +4,14 @@ import {
   forwardRef,
   Logger,
   HttpException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import { PlanControlService } from '../plan/plan-control.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { CompanySessionService } from '../subscriptions/checkout/company-session.service';
+import { SessionAccessService } from './session-access.service';
 import * as argon2 from 'argon2';
 import { v4 as uuidv4 } from 'uuid';
 import { jwtConstants } from './constants';
@@ -33,6 +35,7 @@ export class AuthService {
     private subscriptionsService: SubscriptionsService,
     @Inject(forwardRef(() => CompanySessionService))
     private companySessionService: CompanySessionService,
+    private readonly sessionAccess: SessionAccessService,
   ) {}
 
   /**
@@ -73,13 +76,30 @@ export class AuthService {
   }
 
   async validateUser(email: string, pass: string): Promise<AuthUser | null> {
-    const user = await this.usersService.findByEmail(
-      email.toLowerCase().trim(),
-    );
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await this.usersService.findByEmail(normalizedEmail);
 
     if (user && (await argon2.verify(user.password, pass))) {
       const { ...result } = user;
       return result;
+    }
+
+    // Conta desativada por ter transferido o ambiente: quem saiu é informado
+    // do motivo (com a senha certa), em vez de um login que só falha.
+    if (!user) {
+      const transferred = await this.sessionAccess.transferredAccess(
+        normalizedEmail,
+        pass,
+      );
+      if (transferred) {
+        const date = transferred.acceptedAt.toLocaleDateString('pt-BR', {
+          timeZone: 'America/Sao_Paulo',
+        });
+        throw new UnauthorizedException({
+          code: 'ACCESS_TRANSFERRED',
+          message: `O ambiente ${transferred.companyName} foi transferido em ${date}, e esta conta não tem mais acesso a ele.`,
+        });
+      }
     }
 
     return null;

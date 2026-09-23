@@ -12,6 +12,10 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import {
+  ActsOnIssuedDocument,
+  FiscalHistoryLockGuard,
+} from '../shared/fiscal-history-lock.guard';
+import {
   BlockLevelGuard,
   RequireUnblocked,
 } from '../../auth/guards/block-level.guard';
@@ -28,7 +32,12 @@ import {
 
 @ApiTags('Fiscal - NFS-e')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionsGuard, BlockLevelGuard)
+@UseGuards(
+  JwtAuthGuard,
+  PermissionsGuard,
+  BlockLevelGuard,
+  FiscalHistoryLockGuard,
+)
 @Controller('fiscal/nfse')
 export class NfseController {
   constructor(private readonly nfseService: NfseService) {}
@@ -129,6 +138,7 @@ export class NfseController {
   }
 
   @Post(':id/cancel')
+  @ActsOnIssuedDocument('nfse')
   @HasPermission('delete', 'nota_fiscal:cancelar')
   @ApiOperation({ summary: 'Cancelar NFS-e' })
   async cancel(
@@ -150,6 +160,7 @@ export class NfseController {
   }
 
   @Get(':id/status')
+  @ActsOnIssuedDocument('nfse')
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({
     summary: 'Consultar status da NFS-e no provedor e reconciliar o registro',
@@ -173,6 +184,7 @@ export class NfseController {
   }
 
   @Post(':id/send-email')
+  @ActsOnIssuedDocument('nfse')
   @HasPermission('view', 'nota_fiscal:emitidas')
   @ApiOperation({ summary: 'Enviar PDF/XML da NFS-e por e-mail ao tomador' })
   async sendEmail(@Req() req, @Param('id') id: string) {

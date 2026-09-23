@@ -2,6 +2,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { UserResponseDto } from './dto/response.dto';
@@ -162,8 +163,52 @@ export class UserCrudService {
     }
   }
 
+  /**
+   * O usuário do titular da conta: não é inativado (a titularidade sai só
+   * por transferência), e o e-mail de acesso dele só ele muda.
+   */
+  private async assertOwnerRules(
+    id: string,
+    updateUserDto: UpdateUserDto,
+    actor?: any,
+  ) {
+    const owns = await this.prisma.company.findFirst({
+      where: { ownerUserId: id },
+      select: { id: true },
+    });
+    if (!owns) return;
+
+    if (updateUserDto.isActive === false) {
+      throw new UnprocessableEntityException({
+        code: 'OWNER_CANNOT_BE_DEACTIVATED',
+        message:
+          'Este usuário é o titular da conta e não pode ser inativado. Para isso, transfira a titularidade antes.',
+      });
+    }
+
+    if (
+      updateUserDto.email !== undefined &&
+      actor &&
+      !actor.isSystemAdmin &&
+      actor.userId !== id
+    ) {
+      const current = await this.prisma.user.findUnique({
+        where: { id },
+        select: { email: true },
+      });
+      const next = String(updateUserDto.email).trim().toLowerCase();
+      if (current && current.email.trim().toLowerCase() !== next) {
+        throw new ForbiddenException({
+          code: 'OWNER_ONLY',
+          message: 'Só o titular da conta altera o próprio e-mail de acesso.',
+        });
+      }
+    }
+  }
+
   async update(id: string, updateUserDto: UpdateUserDto, actor?: any) {
     await this.assertCanUpdateUser(id, actor);
+    await this.assertOwnerRules(id, updateUserDto, actor);
 
     const { isActive, password, ...rest } = updateUserDto;
 

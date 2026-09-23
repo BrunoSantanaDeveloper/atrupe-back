@@ -33,6 +33,8 @@ describe('FiscalOnboardingService', () => {
     },
     company: {
       update: jest.fn(),
+      // Sem transferência que trocou o CNPJ: nada é histórico.
+      findUnique: jest.fn(),
     },
     invoicyConfig: {
       findFirst: jest.fn(),
