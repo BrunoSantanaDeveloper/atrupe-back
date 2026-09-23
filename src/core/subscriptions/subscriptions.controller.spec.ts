@@ -7,12 +7,10 @@ import { SubscriptionBlockService } from './subscription-block.service';
 import { SubscriptionQuoteService } from './pricing/subscription-quote.service';
 import { ComplementsService } from './checkout/complements.service';
 import { PrismaService } from 'src/config/prisma/prisma.service';
-import { GoneException } from '@nestjs/common';
 
 describe('SubscriptionsController', () => {
   let controller: SubscriptionsController;
   const complements = {
-    legacyAddModule: jest.fn(),
     removeModule: jest.fn(),
   };
 
@@ -75,24 +73,23 @@ describe('SubscriptionsController', () => {
     expect(controller).toBeDefined();
   });
 
-  it('a troca de plano antiga está aposentada', () => {
-    expect(() => controller.upgrade()).toThrow(GoneException);
+  it('as rotas da tela antiga de assinatura foram aposentadas', () => {
+    const routes = controller as unknown as Record<string, unknown>;
+    // Contratação antiga, troca livre de plano e "adicionar módulo" avulso:
+    // a contratação, a evolução e os complementos da tela nova substituem.
+    expect(routes.create).toBeUndefined();
+    expect(routes.changePlan).toBeUndefined();
+    expect(routes.upgrade).toBeUndefined();
+    expect(routes.addModule).toBeUndefined();
   });
 
-  it('adicionar e retirar módulo passam pela regra dos complementos', async () => {
+  it('retirar módulo passa pela regra dos complementos', async () => {
     const req = {
       user: { userId: 'user-1', companyId: 'company-1', isAdmin: true },
     };
-    await controller.addModule('sub-1', 'nota_fiscal', undefined as any, req);
     await controller.removeModule('sub-1', 'nota_fiscal', req);
 
     const user = { userId: 'user-1', companyId: 'company-1', isAdmin: true };
-    expect(complements.legacyAddModule).toHaveBeenCalledWith(
-      user,
-      'sub-1',
-      'nota_fiscal',
-      undefined,
-    );
     expect(complements.removeModule).toHaveBeenCalledWith(
       user,
       'sub-1',

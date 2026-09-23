@@ -58,7 +58,7 @@ export class CompanyService {
     private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
     private readonly invoicyCompanyRegistration: InvoicyCompanyRegistrationService,
   ) {}
-  async createFirstAccess(email: string, companyId: string, cpf?: string) {
+  async createFirstAccess(email: string, companyId: string) {
     try {
       this.logger.log(`Starting createFirstAccess process for email: ${email}`);
 
@@ -168,7 +168,6 @@ export class CompanyService {
                 userId: user.id,
                 sectorId: sector.id,
                 sellerProfileId: sellerProfile.id,
-                ...(cpf ? { cpf } : {}),
               },
             });
             this.logger.log('Employee record created successfully');

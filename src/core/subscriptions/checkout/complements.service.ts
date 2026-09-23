@@ -242,37 +242,6 @@ export class ComplementsService {
   }
 
   /**
-   * A rota antiga de "adicionar módulo", que a tela anterior ainda usa: a
-   * mesma regra da inclusão pela contratação nova. O aceite a tela antiga
-   * registra à parte.
-   */
-  async legacyAddModule(
-    user: ContractingUser,
-    subscriptionId: string,
-    moduleKey: string,
-    couponCode?: string,
-  ) {
-    assertCanContract(
-      user,
-      'Somente administradores da empresa podem contratar módulos.',
-    );
-    if (couponCode?.trim()) {
-      throw new UnprocessableEntityException({
-        code: 'COUPON_NOT_APPLICABLE',
-        message:
-          'Cupom não se aplica à inclusão de módulo: o módulo entra na próxima mensalidade, sem cobrança agora.',
-      });
-    }
-    const actor = await this.actor(user.userId);
-    const { subscription } = await this.change(
-      user,
-      { addModules: [moduleKey], removeModules: [] },
-      { subscriptionId, requireNoOpenCharge: true, actor },
-    );
-    return subscription;
-  }
-
-  /**
    * Retirar um módulo: o acesso sai na hora, e o valor sai das mensalidades
    * ainda não pagas. Com cobrança em aberto também é permitido — a vencida
    * não é alterada, só as renovações futuras.

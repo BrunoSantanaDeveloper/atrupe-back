@@ -6,9 +6,7 @@ import {
 } from '@nestjs/common';
 import { SubscriptionsService } from './subscriptions.service';
 import { PrismaService } from 'src/config/prisma/prisma.service';
-import { CustomersService } from '../customers/customers.service';
 import { AsaasGatewayService } from './asaas-gateway.service';
-import { CouponsService } from '../coupons/coupons.service';
 import { SubscriptionBlockService } from './subscription-block.service';
 
 // Mock argon2 globally
@@ -53,22 +51,12 @@ describe('SubscriptionsService', () => {
     $transaction: jest.fn(),
   };
 
-  const mockCustomersService = {
-    createCustomer: jest.fn(),
-    findCustomerByEmail: jest.fn(),
-  };
-
   const mockAsaasGatewayService = {
     cancelAsaasSubscription: jest.fn(),
     updateAsaasSubscription: jest.fn(),
     getAsaasSubscriptionPayments: jest.fn(),
     updateAsaasPayment: jest.fn(),
     deleteAsaasPayment: jest.fn(),
-  };
-
-  const mockCouponsService = {
-    validateCoupon: jest.fn(),
-    calculateDiscount: jest.fn(),
   };
 
   const mockSubscriptionBlockService = {
@@ -80,9 +68,7 @@ describe('SubscriptionsService', () => {
       providers: [
         SubscriptionsService,
         { provide: PrismaService, useValue: mockPrismaService },
-        { provide: CustomersService, useValue: mockCustomersService },
         { provide: AsaasGatewayService, useValue: mockAsaasGatewayService },
-        { provide: CouponsService, useValue: mockCouponsService },
         {
           provide: SubscriptionBlockService,
           useValue: mockSubscriptionBlockService,

@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from 'nestjs-prisma';
 import { SubscriptionsService } from './subscriptions.service';
 import { SubscriptionsController } from './subscriptions.controller';
-import { CustomersModule } from '../customers/customers.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { ContractModule } from '../contract/contract.module';
 import { PlanControlModule } from '../plan/plan-control.module';
@@ -24,7 +23,6 @@ import { InstallmentRenewalService } from './installment-renewal.service';
 
 @Module({
   imports: [
-    CustomersModule,
     PrismaModule,
     CouponsModule,
     ContractModule,

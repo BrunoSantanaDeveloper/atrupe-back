@@ -83,15 +83,6 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   @ApiProperty({
-    description: 'CPF do responsável principal da conta (admin)',
-    example: '123.456.789-00',
-    required: false,
-  })
-  cpf?: string;
-
-  @IsOptional()
-  @IsString()
-  @ApiProperty({
     description: 'Parâmetro de atribuição oppref (OpenAI Ads)',
     required: false,
   })

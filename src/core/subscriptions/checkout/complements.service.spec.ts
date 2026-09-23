@@ -1,9 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  BadGatewayException,
-  BadRequestException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { BadGatewayException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { AsaasGatewayService } from '../asaas-gateway.service';
 import { SubscriptionQuoteService } from '../pricing/subscription-quote.service';
@@ -462,33 +458,7 @@ describe('ComplementsService', () => {
     });
   });
 
-  describe('rotas da tela anterior', () => {
-    it('adicionar módulo segue a mesma regra, sem cupom', async () => {
-      await expect(
-        service.legacyAddModule(ADMIN, 'sub-1', 'nota_fiscal', 'NF10'),
-      ).rejects.toMatchObject({ response: { code: 'COUPON_NOT_APPLICABLE' } });
-
-      const updated = await service.legacyAddModule(
-        ADMIN,
-        'sub-1',
-        'nota_fiscal',
-      );
-      expect(updated).toEqual({ id: 'sub-1' });
-      expect(gateway.updateAsaasSubscription).toHaveBeenCalledWith('sub_1', {
-        value: 217,
-        updatePendingPayments: false,
-      });
-      // A tela antiga registra o aceite à parte.
-      expect(acceptance.record).not.toHaveBeenCalled();
-    });
-
-    it('não altera assinatura que não é a em curso', async () => {
-      await expect(
-        service.legacyAddModule(ADMIN, 'sub-outra', 'nota_fiscal'),
-      ).rejects.toThrow(BadRequestException);
-      expect(gateway.updateAsaasSubscription).not.toHaveBeenCalled();
-    });
-
+  describe('retirar módulo', () => {
     it('retirar módulo tira o valor das mensalidades não pagas e o acesso', async () => {
       withSubscription(startSubscription(comNotaFiscal));
       withGatewayPayments([

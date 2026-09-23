@@ -9,10 +9,8 @@ import {
   Patch,
   Delete,
   Query,
-  UseInterceptors,
   HttpCode,
   HttpStatus,
-  GoneException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -27,10 +25,8 @@ import { SubscriptionsService } from './subscriptions.service';
 import { AdminDashboardService } from './admin-dashboard.service';
 import { CompanyManagementService } from './company-management.service';
 import { SubscriptionBlockService } from './subscription-block.service';
-import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { AssignSubscriptionDto } from './dto/assign-subscription.dto';
 import { ExtendTrialDto } from './dto/extend-trial.dto';
-import { UpgradeSubscriptionDto } from './dto/upgrade-subscription.dto';
 import { ListTrialCompaniesDto } from './dto/list-trial-companies.dto';
 import { ListIncompleteRegistrationsDto } from './dto/list-incomplete-registrations.dto';
 import { ListActiveClientsDto } from './dto/list-active-clients.dto';
@@ -44,7 +40,6 @@ import { SubscriptionQuoteService } from './pricing/subscription-quote.service';
 import { ComplementsService } from './checkout/complements.service';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
-import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
 import { BlockLevel } from '@prisma/client';
 
 @ApiTags('subscriptions')
@@ -411,27 +406,6 @@ export class SubscriptionsController {
     );
   }
 
-  @Post()
-  @UseInterceptors(IdempotencyInterceptor)
-  @ApiOperation({ summary: 'Create a new subscription' })
-  @ApiResponse({
-    status: 201,
-    description: 'Subscription created successfully',
-  })
-  @ApiResponse({ status: 400, description: 'Bad request' })
-  @ApiResponse({ status: 404, description: 'Customer or Plan not found' })
-  @ApiResponse({
-    status: 409,
-    description: 'Request already being processed (duplicate idempotency key)',
-  })
-  async create(
-    @Body() createSubscriptionDto: CreateSubscriptionDto,
-    @Req() req,
-  ) {
-    createSubscriptionDto.companyId = req.user.companyId;
-    return await this.subscriptionsService.create(createSubscriptionDto, req);
-  }
-
   @Patch(':id/extend-trial')
   @UseGuards(JwtAuthGuard, SystemAdminGuard)
   @ApiOperation({
@@ -469,80 +443,6 @@ export class SubscriptionsController {
       subscriptionId,
       extendTrialDto.password,
       req.user.userId,
-    );
-  }
-
-  @Patch('change-plan')
-  @ApiOperation({
-    summary:
-      'Troca o plano da assinatura atual da empresa (in-place). Disponível mesmo com a conta bloqueada por inadimplência — a cobrança em aberto é preservada e continua sendo o que restaura o acesso.',
-  })
-  @ApiResponse({ status: 200, description: 'Plano alterado com sucesso' })
-  @ApiResponse({
-    status: 400,
-    description: 'Plano indisponível, sem preço ou igual ao atual',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Assinatura ou plano não encontrado',
-  })
-  async changePlan(@Body() changePlanDto: UpgradeSubscriptionDto, @Req() req) {
-    return await this.subscriptionsService.changePlan(
-      req.user.companyId,
-      changePlanDto.planId,
-    );
-  }
-
-  /**
-   * Aposentada: trocava de plano sem sequência e sem crédito, cancelava a
-   * assinatura no Asaas — levando junto a cobrança vencida — e dava 30 dias
-   * até a primeira cobrança. Nenhuma tela a usa; a evolução de plano é
-   * POST /subscriptions/evolution.
-   */
-  @Patch(':id/upgrade')
-  @ApiOperation({
-    summary: 'Aposentada: use POST /subscriptions/evolution',
-    deprecated: true,
-  })
-  @ApiResponse({ status: 410, description: 'Rota aposentada' })
-  upgrade() {
-    throw new GoneException({
-      code: 'ENDPOINT_RETIRED',
-      message:
-        'A troca de plano por aqui foi desativada. Use a evolução de plano em Assinatura.',
-    });
-  }
-
-  @Patch(':id/modules/:moduleId')
-  @ApiOperation({
-    summary: 'Adiciona um módulo à assinatura',
-    description:
-      'Rota da tela anterior. O módulo é liberado na hora e cobrado a partir da próxima mensalidade; cupom não se aplica.',
-  })
-  @ApiParam({ name: 'id', description: 'Subscription ID' })
-  @ApiParam({ name: 'moduleId', description: 'Module ID to add' })
-  @ApiQuery({
-    name: 'couponCode',
-    required: false,
-    description: 'Código do cupom de desconto',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Module added successfully',
-  })
-  @ApiResponse({ status: 400, description: 'Bad request' })
-  @ApiResponse({ status: 404, description: 'Subscription or Module not found' })
-  async addModule(
-    @Param('id') subscriptionId: string,
-    @Param('moduleId') moduleId: string,
-    @Query('couponCode') couponCode: string,
-    @Req() req,
-  ) {
-    return await this.complementsService.legacyAddModule(
-      this.contractingUser(req),
-      subscriptionId,
-      moduleId,
-      couponCode,
     );
   }
 
