@@ -86,17 +86,17 @@ describe('contracting-steps', () => {
       process.env.ANNUAL_CYCLE_ENABLED = original;
     });
 
-    it('o anual só passa com a chave ligada', () => {
+    it('o anual vale por padrão; a chave em "false" o desliga', () => {
       delete process.env.ANNUAL_CYCLE_ENABLED;
+      expect(() => assertCycleAvailable('YEARLY')).not.toThrow();
+
+      process.env.ANNUAL_CYCLE_ENABLED = 'false';
       expect(() => assertCycleAvailable('YEARLY')).toThrow(
         expect.objectContaining({
           response: expect.objectContaining({ code: 'CYCLE_NOT_AVAILABLE' }),
         }),
       );
       expect(() => assertCycleAvailable('MONTHLY')).not.toThrow();
-
-      process.env.ANNUAL_CYCLE_ENABLED = 'true';
-      expect(() => assertCycleAvailable('YEARLY')).not.toThrow();
     });
   });
 

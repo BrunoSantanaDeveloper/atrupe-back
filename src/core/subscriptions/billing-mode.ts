@@ -56,10 +56,11 @@ export function isBilledByGateway(subscription: WithBillingMode): boolean {
 }
 
 /**
- * O ciclo anual só é oferecido com ANNUAL_CYCLE_ENABLED=true. Desligado por
- * padrão: o parcelamento depende de comportamentos do Asaas que precisam ser
- * confirmados no sandbox antes de chegar a cliente.
+ * O ciclo anual é oferecido, como no protótipo. ANNUAL_CYCLE_ENABLED=false o
+ * desliga sem deploy — o parcelamento no cartão depende de comportamentos do
+ * Asaas (divisão do total, confirmação das parcelas) que, se falharem em
+ * produção, pedem a chave desligada enquanto se corrige.
  */
 export function annualCycleEnabled(): boolean {
-  return process.env.ANNUAL_CYCLE_ENABLED === 'true';
+  return process.env.ANNUAL_CYCLE_ENABLED !== 'false';
 }

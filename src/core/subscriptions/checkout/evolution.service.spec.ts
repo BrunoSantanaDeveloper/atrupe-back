@@ -226,10 +226,13 @@ describe('EvolutionService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('o anual ainda não está disponível', async () => {
+    it('com a chave em "false", o anual não é oferecido', async () => {
+      const original = process.env.ANNUAL_CYCLE_ENABLED;
+      process.env.ANNUAL_CYCLE_ENABLED = 'false';
       await expect(
         service.evolve(ADMIN, dto({ cycle: 'YEARLY' }), META),
       ).rejects.toMatchObject({ response: { code: 'CYCLE_NOT_AVAILABLE' } });
+      process.env.ANNUAL_CYCLE_ENABLED = original;
     });
 
     it('com cobrança em aberto, pede regularização', async () => {
