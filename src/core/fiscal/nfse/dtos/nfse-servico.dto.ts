@@ -59,6 +59,11 @@ export class NfseServicoDto {
   @IsOptional()
   codClassificacao?: string;
 
+  @ApiPropertyOptional({ description: 'CST do IBS/CBS' })
+  @IsString()
+  @IsOptional()
+  cstIbsCbs?: string;
+
   @ApiPropertyOptional({ description: 'Serviço padrão da empresa' })
   @IsBoolean()
   @IsOptional()

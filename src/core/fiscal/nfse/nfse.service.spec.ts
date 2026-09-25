@@ -458,6 +458,10 @@ describe('NfseService', () => {
         });
       };
 
+      // cIndOp mora no grupo IBSCBS, que so' e' valido com os valores: os
+      // testes informam CST e cClassTrib como o cadastro faz.
+      const grupo = { cstIbsCbs: '000', codClassificacao: '000001' };
+
       it('usa o padrao do emissor quando a emissao nao informa', async () => {
         await comIndicadorPadrao('100301');
 
@@ -465,7 +469,8 @@ describe('NfseService', () => {
           orderId: mockOrderId,
           codigoServico: '1.05',
           discriminacao: 'Servico de consultoria em TI',
-        });
+          ...grupo,
+        } as any);
 
         expect(rpsEnviado().cIndOp).toBe('100301');
       });
@@ -478,9 +483,30 @@ describe('NfseService', () => {
           codigoServico: '1.05',
           discriminacao: 'Servico de consultoria em TI',
           cIndOp: '100999',
-        });
+          ...grupo,
+        } as any);
 
         expect(rpsEnviado().cIndOp).toBe('100999');
+      });
+
+      /**
+       * Este e' o caso que a Clapp bateu: emissor com indicador padrao e
+       * servico sem CST (o cadastro nao salvava). O provedor montava
+       * <IBSCBS> so' com o cabecalho e a prefeitura recusava o esquema
+       * (E1235 — "The element IBSCBS ... has incomplete content").
+       */
+      it('nao envia o indicador quando o servico nao tem CST nem cClassTrib', async () => {
+        await comIndicadorPadrao('100301');
+
+        await service.emitFromOrder(mockCompanyId, {
+          orderId: mockOrderId,
+          codigoServico: '1.05',
+          discriminacao: 'Servico de consultoria em TI',
+        });
+
+        const rps = rpsEnviado();
+        expect(rps).not.toHaveProperty('cIndOp');
+        expect(rps.Servico).not.toHaveProperty('IBSCBS');
       });
 
       /** Emissor sem padrao segue como antes: o campo simplesmente nao vai. */
@@ -1071,6 +1097,10 @@ describe('NfseService', () => {
         valorServicos: 100,
         aliquotaIss: 2.5,
         naturezaOperacao: 1,
+        // O grupo IBSCBS e' tudo ou nada: sem CST e cClassTrib estes campos
+        // nao vao (a DPS sairia com <IBSCBS> sem <valores>).
+        cstIbsCbs: '000',
+        codClassificacao: '000001',
         cIndOp: '100301',
         indFinal: 0,
         indDest: 0,
@@ -1167,6 +1197,8 @@ describe('NfseService', () => {
           valorServicos: 100,
           aliquotaIss: 2.5,
           naturezaOperacao: 1,
+          cstIbsCbs: '000',
+          codClassificacao: '000001',
           tpOper: 3,
         } as any);
 
@@ -1179,6 +1211,8 @@ describe('NfseService', () => {
           orderId: mockOrderId,
           codigoServico: '1.05',
           discriminacao: 'Servico de consultoria em TI',
+          cstIbsCbs: '000',
+          codClassificacao: '000001',
           tpOper: 3,
         } as any);
 

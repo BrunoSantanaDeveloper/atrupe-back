@@ -1545,6 +1545,11 @@ export class NfseService {
     // o InvoiCy descartava os dois e o Rio recusava 130501 sem o 001 (E0312).
     // Sem código cadastrado mantém o valor histórico — trocá-lo às cegas
     // mudaria notas que hoje são autorizadas.
+    // O grupo IBSCBS da DPS precisa sair inteiro ou não sair: CST e
+    // cClassTrib formam os <valores>, e sem eles o provedor monta o grupo só
+    // com o cabeçalho (cIndOp e afins) e a prefeitura rejeita com E1235.
+    const grupoIbsCbsCompleto = Boolean(dto.cstIbsCbs && dto.codClassificacao);
+
     const tributMunicipio: string | number =
       dto.codTribMunicipio?.trim() ||
       parseInt(dto.codigoMunicipio || config.ibgeCode || '0', 10);
@@ -1665,21 +1670,33 @@ export class NfseService {
             ...(optanteSimples ? { regApIBSCBSSN: regimeApuracaoIbsCbs } : {}),
             // Campos da Reforma Tributária (Layout NFS-e RT v8). Omitidos
             // quando não informados — a nota continua saindo como antes.
-            ...(indicadorOperacao ? { cIndOp: indicadorOperacao } : {}),
-            ...(dto.indFinal !== undefined ? { indFinal: dto.indFinal } : {}),
-            ...(dto.indDest !== undefined ? { indDest: dto.indDest } : {}),
-            ...(dto.tpEnteGov !== undefined
-              ? { tpEnteGov: dto.tpEnteGov }
+            // Todos moram no grupo <IBSCBS> da DPS, que só é válido com
+            // <valores> dentro. Sem CST e cClassTrib no serviço, mandar só
+            // estes gera <IBSCBS> sem valores e a prefeitura rejeita o
+            // esquema (E1235) — por isso o grupo é tudo ou nada.
+            ...(grupoIbsCbsCompleto
+              ? {
+                  ...(indicadorOperacao ? { cIndOp: indicadorOperacao } : {}),
+                  ...(dto.indFinal !== undefined
+                    ? { indFinal: dto.indFinal }
+                    : {}),
+                  ...(dto.indDest !== undefined
+                    ? { indDest: dto.indDest }
+                    : {}),
+                  ...(dto.tpEnteGov !== undefined
+                    ? { tpEnteGov: dto.tpEnteGov }
+                    : {}),
+                  ...(dto.tpEnteGov === 9 && dto.xTpEnteGov
+                    ? { xTpEnteGov: dto.xTpEnteGov }
+                    : {}),
+                  // tpOper ("Operação com Entes Governamentais" no InvoiCy
+                  // Web) e' 0-1 e cobre tambem "outros servicos sobre bens
+                  // imoveis" (layout v8, C42). O gate antigo (so' com
+                  // tpEnteGov) tornava impossivel o caso sem ente
+                  // governamental.
+                  ...(dto.tpOper !== undefined ? { tpOper: dto.tpOper } : {}),
+                }
               : {}),
-            ...(dto.tpEnteGov === 9 && dto.xTpEnteGov
-              ? { xTpEnteGov: dto.xTpEnteGov }
-              : {}),
-            // tpOper ("Operação com Entes Governamentais" no InvoiCy Web)
-            // vale sozinho: e' 0-1 na raiz do RPS e cobre tambem "outros
-            // servicos sobre bens imoveis" (layout v8, C42). O gate antigo
-            // (so' com tpEnteGov) escondia o campo e tornava impossivel o
-            // caso sem ente governamental.
-            ...(dto.tpOper !== undefined ? { tpOper: dto.tpOper } : {}),
             IncCult: 2, // 2 = NÃ£o
             Status: 1, // 1 = Normal
             tpAmb: environment === 'PRODUCAO' ? 1 : 2,
@@ -1757,7 +1774,7 @@ export class NfseService {
               // tipo de defeito que gerava a rejeição de schema em locPrest.
               // Por isso o grupo só é montado quando os dois existem, e o
               // cadastro fornece os dois por padrão ("000" / "000001").
-              ...(dto.cstIbsCbs && dto.codClassificacao
+              ...(grupoIbsCbsCompleto
                 ? {
                     IBSCBS: {
                       CSTIBSCBS: dto.cstIbsCbs,

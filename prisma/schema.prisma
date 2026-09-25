@@ -2800,6 +2800,10 @@ model NfseServico {
   nbs              String?
   codTribNacional  String?
   codClassificacao String? // cClassTrib IBS/CBS
+  // CSTIBSCBS: o provedor exige CST e cClassTrib juntos no grupo IBSCBS, e
+  // sem coluna o formulario mandava o campo que o DTO recusava — o cadastro
+  // inteiro voltava 400 e o servico ficava sem classificacao nenhuma.
+  cstIbsCbs        String?
   isDefault        Boolean @default(false)
 
   @@index([companyId])
