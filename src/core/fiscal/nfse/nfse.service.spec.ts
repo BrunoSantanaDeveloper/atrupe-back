@@ -406,6 +406,47 @@ describe('NfseService', () => {
         expect(previa.avisos.join(' ')).toMatch(/previsto/i);
       });
 
+      /**
+       * O grupo IBSCBS e' tudo ou nada, entao os indicadores da Reforma sao
+       * descartados quando o servico nao tem CST e cClassTrib. O descarte
+       * evita o E1235, mas passaria despercebido: a conferencia precisa
+       * dizer, inclusive quando o valor vinha do padrao do emissor.
+       */
+      it('avisa quando os indicadores da Reforma serao descartados', async () => {
+        const configBase = await mockInvoicyService.getConfig();
+        mockInvoicyService.getConfig.mockResolvedValue({
+          ...configBase,
+          indicadorOperacaoNfse: '100301',
+        });
+
+        const previa = await service.previewFromOrder(
+          mockCompanyId,
+          dtoDaOrdem as any,
+        );
+
+        expect(previa.avisos.join(' ')).toMatch(
+          /não serão enviados.*CST e Classificação/i,
+        );
+        expect(previa.documento?.cIndOp).toBeNull();
+      });
+
+      it('nao avisa quando o servico tem CST e classificacao', async () => {
+        const configBase = await mockInvoicyService.getConfig();
+        mockInvoicyService.getConfig.mockResolvedValue({
+          ...configBase,
+          indicadorOperacaoNfse: '100301',
+        });
+
+        const previa = await service.previewFromOrder(mockCompanyId, {
+          ...(dtoDaOrdem as any),
+          cstIbsCbs: '000',
+          codClassificacao: '000001',
+        });
+
+        expect(previa.avisos.join(' ')).not.toMatch(/não serão enviados/i);
+        expect(previa.documento?.cIndOp).toBe('100301');
+      });
+
       it('avisa que os reenvios automáticos podem alterar o payload', async () => {
         const previa = await service.previewFromOrder(
           mockCompanyId,

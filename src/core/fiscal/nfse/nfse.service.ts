@@ -1913,6 +1913,23 @@ export class NfseService {
         'Alíquota de ISS omitida: prestador ME/EPP do Simples sem retenção recolhe pelo DAS (regra E0625 do provedor).',
       );
     }
+    // O grupo IBSCBS e' tudo ou nada: sem CST e cClassTrib no servico, os
+    // indicadores da Reforma sao descartados para nao gerar <IBSCBS> sem
+    // <valores> (E1235). O descarte e' silencioso no payload — a conferencia
+    // e' onde ele precisa aparecer, inclusive quando o valor vinha do padrao
+    // do emissor e o usuario nao digitou nada.
+    const indicadoresReforma = [
+      dto.cIndOp || (config as any).indicadorOperacaoNfse,
+      dto.indFinal,
+      dto.indDest,
+      dto.tpEnteGov,
+      dto.tpOper,
+    ].some((valor) => valor !== undefined && valor !== null && valor !== '');
+    if (indicadoresReforma && !(dto.cstIbsCbs && dto.codClassificacao)) {
+      avisos.push(
+        'Indicadores da Reforma (Indicador de Operação, uso e consumo pessoal, destinatário, entes governamentais) não serão enviados: o serviço escolhido não tem CST e Classificação Tributária IBS/CBS. Cadastre os dois na Lista de Serviços para que eles saiam na nota.',
+      );
+    }
     if (!(config as any).ibsCbsEnviarValores) {
       avisos.push(
         'Valores de IBS/CBS não enviados: o emissor não habilitou o envio. Os códigos de CST e classificação continuam indo.',
