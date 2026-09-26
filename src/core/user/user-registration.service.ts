@@ -171,6 +171,8 @@ export class UserRegistrationService {
     }
 
     let createdCompanyId: string | null = null;
+    let createdUserId: string | null = null;
+    let createdCustomerId: string | null = null;
 
     // Identificador único da conversão de cadastro (§5.2). Gerado no backend,
     // gravado contra o usuário e retornado ao frontend para uso no OpenAI Pixel
@@ -180,7 +182,7 @@ export class UserRegistrationService {
     try {
       const hashedPassword = await argon2.hash(createUserDto.password);
 
-      const { customer } = await this.prisma.$transaction(async (tx) => {
+      const { user, customer } = await this.prisma.$transaction(async (tx) => {
         const newUser = await tx.user.create({
           data: {
             name: createUserDto.name,
@@ -251,6 +253,8 @@ export class UserRegistrationService {
 
         return { user: newUser, customer: newCustomer };
       });
+      createdUserId = user.id;
+      createdCustomerId = customer?.id ?? null;
 
       const createCompany: CreateCompanyDto = {
         general: {
@@ -310,10 +314,16 @@ export class UserRegistrationService {
     } catch (error) {
       this.logger.error('Erro ao criar usuário:', error);
 
+      // Desfaz tudo o que o cadastro criou, não só a empresa: um usuário que
+      // sobra sem empresa trava o e-mail — a próxima tentativa cai em "E-mail
+      // já cadastrado" e a pessoa só consegue seguir com outro endereço.
       if (createdCompanyId) {
         await this.prisma.company
           .delete({ where: { id: createdCompanyId } })
           .catch(() => {});
+      }
+      if (createdUserId) {
+        await this.discardSignup(createdUserId, createdCustomerId);
       }
 
       if (error instanceof PrismaClientKnownRequestError) {
@@ -322,6 +332,25 @@ export class UserRegistrationService {
         }
       }
       throw error;
+    }
+  }
+
+  /**
+   * Apaga o usuário, a assinatura de teste e o cliente de um cadastro que não
+   * chegou ao fim. Nessa ordem: o usuário aponta para o cliente, e a
+   * assinatura também.
+   */
+  private async discardSignup(userId: string, customerId: string | null) {
+    try {
+      await this.prisma.user.delete({ where: { id: userId } });
+      if (customerId) {
+        await this.prisma.subscription.deleteMany({ where: { customerId } });
+        await this.prisma.customer.delete({ where: { id: customerId } });
+      }
+    } catch (error) {
+      this.logger.error(
+        `RECONCILIAR: cadastro incompleto do usuário ${userId} não foi desfeito; o e-mail fica preso até a limpeza manual: ${error?.message}`,
+      );
     }
   }
 

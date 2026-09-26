@@ -20,10 +20,11 @@ export class SubscriptionBlockService {
 
   // Regras de bloqueio (dias de atraso)
   private readonly DAYS_FOR_PARTIAL_BLOCK = 3;
-  // A conta fica inativa a partir do OITAVO dia (régua do protótipo): de 3 a
-  // 7 dias o bloqueio é parcial — fecha o que cria obrigação nova, mas a
-  // pessoa ainda entra e regulariza.
-  private readonly DAYS_FOR_FULL_BLOCK = 8;
+  // Contrato 1.1, cláusula 7.4: bloqueio total "após 6 (seis) dias corridos do
+  // vencimento" — a partir do 7º dia de atraso. De 3 a 6 dias o bloqueio é
+  // parcial: fecha o que cria obrigação nova, mas a pessoa ainda entra e
+  // regulariza.
+  private readonly DAYS_FOR_FULL_BLOCK = 7;
 
   // Flag para ativar/desativar o cron de bloqueio
   private readonly isCronActive = true;

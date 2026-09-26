@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Logger,
   UnauthorizedException,
@@ -364,6 +365,50 @@ export class SubscriptionsService {
     return this.changePlan(companyId, newPlanId, { skipActiveCheck: true });
   }
 
+  /**
+   * Se a assinatura tem mensalidade vencida. Quem responde é o Asaas — o banco
+   * pode não ter visto uma que venceu —; sem resposta dele, o nosso registro.
+   */
+  private async hasOverdueCharge(subscription: {
+    id: string;
+    asaasSubscriptionId: string;
+    asaasInstallmentId?: string | null;
+  }): Promise<boolean> {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const today = startOfToday.toISOString().slice(0, 10);
+
+    const billedByGateway =
+      subscription.asaasSubscriptionId.startsWith('sub_') ||
+      !!subscription.asaasInstallmentId;
+    if (billedByGateway) {
+      try {
+        const charges = await this.asaasGateway.getChargesOf(subscription);
+        return charges.some(
+          (p) =>
+            p.status === 'OVERDUE' ||
+            (p.status === 'PENDING' && String(p.dueDate) < today),
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Cobranças da assinatura ${subscription.id} não consultadas no Asaas; valendo o registro local: ${error.message}`,
+        );
+      }
+    }
+
+    const overdue = await this.prisma.payment.findFirst({
+      where: {
+        subscriptionId: subscription.id,
+        OR: [
+          { status: 'OVERDUE' },
+          { status: 'PENDING', dueDate: { lt: startOfToday } },
+        ],
+      },
+      select: { id: true },
+    });
+    return !!overdue;
+  }
+
   async cancelSubscription(
     subscriptionId: string,
     cancelDto: CancelSubscriptionDto,
@@ -383,16 +428,18 @@ export class SubscriptionsService {
       throw new BadRequestException('Acesso não autorizado a esta assinatura.');
     }
 
-    // Cancelar a assinatura é ato do titular: é ele quem responde pela conta
-    // perante a Atrupe. Conta antiga sem titular registrado segue como antes.
+    // Cancelar é poder exclusivo do Administrador Principal da Conta, o
+    // Usuário nº 1 (contrato 1.1, 4.2 e 8.1). Conta antiga sem ele registrado
+    // segue como antes.
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
-      select: { ownerUserId: true },
+      select: { ownerUserId: true, blockLevel: true },
     });
     if (company?.ownerUserId && company.ownerUserId !== userId) {
       throw new ForbiddenException({
         code: 'OWNER_ONLY',
-        message: 'Somente o titular da conta cancela a assinatura.',
+        message:
+          'Somente o administrador principal da conta (Usuário nº 1) pode cancelar a assinatura.',
       });
     }
 
@@ -414,6 +461,17 @@ export class SubscriptionsService {
       throw new BadRequestException(
         'Para cancelar o plano anual, fale com a Atrupe.',
       );
+    }
+
+    // Contrato 1.1, 7.5 e 8.1: o cancelamento só é concluído sem mensalidade
+    // vencida. Bloqueio não é cancelamento (7.6) — a cobrança continua.
+    const blocked = !!company?.blockLevel && company.blockLevel !== 'NONE';
+    if (blocked || (await this.hasOverdueCharge(subscription))) {
+      throw new ConflictException({
+        code: 'OPEN_CHARGE',
+        message:
+          'Há mensalidade vencida. Regularize a cobrança para cancelar a assinatura.',
+      });
     }
 
     // Cancelar no Asaas
@@ -449,6 +507,9 @@ export class SubscriptionsService {
           metadata: {
             reason: cancelDto.reason,
             feedback: cancelDto.feedback || null,
+            // Contrato 1.1, 5.10 e 9.2: a confirmação de que as exportações
+            // necessárias foram feitas antes do cancelamento.
+            exportsConfirmed: cancelDto.exportsConfirmed ?? null,
             canceledAt: new Date().toISOString(),
           },
           createdByName: 'Usuário',

@@ -11,6 +11,13 @@ import * as fs from 'fs';
 import * as mammoth from 'mammoth';
 import { Response } from 'express';
 
+/** CPF de terceiro na tela: só os dígitos do meio, como no registro público. */
+function maskCpf(cpf: string | null): string | null {
+  const digits = (cpf ?? '').replace(/\D/g, '');
+  if (digits.length !== 11) return null;
+  return `***.${digits.slice(3, 6)}.${digits.slice(6, 9)}-**`;
+}
+
 @Injectable()
 export class ContractService {
   constructor(private readonly prisma: PrismaService) {}
@@ -45,6 +52,7 @@ export class ContractService {
    */
   async getCurrentTerms(): Promise<{
     id: string;
+    name: string;
     version: number;
     html: string;
   } | null> {
@@ -53,7 +61,12 @@ export class ContractService {
     });
     if (!contract) return null;
     const html = contract.contentUrl || (await this.loadTermsDocxHtml());
-    return { id: contract.id, version: contract.version, html };
+    return {
+      id: contract.id,
+      name: contract.name,
+      version: contract.version,
+      html,
+    };
   }
 
   async findContract(res: Response) {
@@ -65,6 +78,7 @@ export class ContractService {
       res.send({
         html,
         contractId: terms?.id,
+        name: terms?.name,
         version: terms?.version,
       });
     } catch (readError) {
@@ -150,7 +164,63 @@ export class ContractService {
     return contract;
   }
 
+  /**
+   * O contrato que rege a assinatura da empresa: o aceite mais recente, com o
+   * texto da versão aceita e as partes. É da empresa, não de quem aceitou —
+   * qualquer pessoa que vê a assinatura vê o contrato dela.
+   */
+  async getCompanyAcceptance(companyId: string) {
+    const acceptance = await this.prisma.contractAcceptance.findFirst({
+      where: { companyId },
+      orderBy: { createdAt: 'desc' },
+      include: { contract: true },
+    });
+    if (!acceptance) return null;
+
+    const html =
+      acceptance.contract.contentUrl || (await this.loadTermsDocxHtml());
+    return {
+      html,
+      contractId: acceptance.contractId,
+      name: acceptance.contract.name,
+      version: acceptance.contractVersion,
+      acceptedAt: acceptance.createdAt,
+      ipAddress: acceptance.ipAddress,
+      acceptedBy: {
+        name: acceptance.acceptedByName,
+        email: acceptance.acceptedByEmail,
+      },
+      contractor: {
+        type: acceptance.contractorType,
+        document: acceptance.contractorDocument,
+        name: acceptance.contractorName,
+        tradeName: acceptance.contractorTradeName,
+        email: acceptance.contractorEmail,
+      },
+      representative: acceptance.representativeName
+        ? {
+            name: acceptance.representativeName,
+            cpf: maskCpf(acceptance.representativeCpf),
+            verified: acceptance.representativeVerified,
+          }
+        : null,
+      principalAdmin: acceptance.principalAdminName
+        ? {
+            name: acceptance.principalAdminName,
+            email: acceptance.principalAdminEmail,
+          }
+        : null,
+    };
+  }
+
   async getAcceptedContract(userId: string, req?: any) {
+    const companyId: string | undefined = req?.user?.companyId;
+    if (companyId) {
+      const acceptance = await this.getCompanyAcceptance(companyId);
+      if (acceptance) return acceptance;
+    }
+
+    // Assinaturas anteriores ao aceite com as partes: o registro por usuário.
     try {
       let userContract = await this.prisma.userContract.findFirst({
         where: { userId },
@@ -188,15 +258,22 @@ export class ContractService {
           });
 
           if (activeSubscription && isAdmin) {
-            const latestContract = await this.prisma.contract.findFirst({
-              orderBy: { version: 'desc' },
-            });
+            // A versão vigente quando a assinatura foi feita, não a de hoje:
+            // quem contratou antes de uma versão nova não a aceitou.
+            const contractAtTheTime =
+              (await this.prisma.contract.findFirst({
+                where: { createdAt: { lte: activeSubscription.createdAt } },
+                orderBy: { version: 'desc' },
+              })) ??
+              (await this.prisma.contract.findFirst({
+                orderBy: { version: 'asc' },
+              }));
 
-            if (latestContract) {
+            if (contractAtTheTime) {
               userContract = await this.prisma.userContract.create({
                 data: {
                   userId,
-                  contractId: latestContract.id,
+                  contractId: contractAtTheTime.id,
                   acceptedAt: activeSubscription.createdAt,
                   ipAddress: req?.ip || '0.0.0.0',
                   userAgent: `${req?.headers?.['user-agent'] || 'Unknown'} (JIT Fallback)`,
@@ -225,6 +302,7 @@ export class ContractService {
       return {
         html: html || '',
         contractId: userContract.contractId,
+        name: userContract.contract.name,
         version: userContract.contract.version,
         acceptedAt: userContract.acceptedAt,
         ipAddress: userContract.ipAddress,

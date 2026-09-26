@@ -1,4 +1,10 @@
-import { IsString, IsOptional, MinLength, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsString,
+  IsOptional,
+  MinLength,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CancelSubscriptionDto {
@@ -19,4 +25,12 @@ export class CancelSubscriptionDto {
   @IsOptional()
   @MaxLength(1000, { message: 'O feedback deve ter no máximo 1000 caracteres' })
   feedback?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Confirma que as exportações necessárias foram feitas e que os dados deixam de estar disponíveis após o cancelamento (contrato 1.1, 5.10 e 9.2).',
+  })
+  @IsBoolean()
+  @IsOptional()
+  exportsConfirmed?: boolean;
 }

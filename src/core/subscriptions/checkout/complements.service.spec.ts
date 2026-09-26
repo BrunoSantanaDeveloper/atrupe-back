@@ -86,6 +86,7 @@ describe('ComplementsService', () => {
     feature: { findMany: jest.fn() },
     contractAcceptance: { findFirst: jest.fn() },
     user: { findUniqueOrThrow: jest.fn() },
+    company: { findUnique: jest.fn() },
   };
   const gateway = {
     getAsaasSubscriptionPayments: jest.fn(),
@@ -122,6 +123,8 @@ describe('ComplementsService', () => {
     tx.subscription.update.mockResolvedValue({ id: 'sub-1' });
     tx.contractAcceptance.findFirst.mockResolvedValue(LAST_ACCEPTANCE);
     prisma.feature.findMany.mockResolvedValue([NOTA_FISCAL]);
+    // O ADMIN é o administrador principal da conta (Usuário nº 1).
+    prisma.company.findUnique.mockResolvedValue({ ownerUserId: 'user-1' });
     prisma.contractAcceptance.findFirst.mockResolvedValue(LAST_ACCEPTANCE);
     prisma.user.findUniqueOrThrow.mockResolvedValue({
       id: 'user-1',
@@ -216,6 +219,17 @@ describe('ComplementsService', () => {
   });
 
   describe('inclusão', () => {
+    it('contratar complementos é do Usuário nº 1: outro administrador é recusado (contrato, 4.2)', async () => {
+      await expect(
+        service.apply(
+          { ...ADMIN, userId: 'outro-admin' },
+          { modules: ['nota_fiscal'], termsAcceptance: ACCEPT } as any,
+          META,
+        ),
+      ).rejects.toMatchObject({ response: { code: 'OWNER_ONLY' } });
+      expect(gateway.updateAsaasSubscription).not.toHaveBeenCalled();
+    });
+
     it('orça: nada agora, e a mensalidade passa de 147 para 217', async () => {
       const quote = await service.quote('company-1', {
         modules: ['nota_fiscal'],

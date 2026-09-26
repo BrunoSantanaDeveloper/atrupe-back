@@ -85,6 +85,19 @@ export class CheckoutController {
     );
   }
 
+  @Get('checkout/principal-admin')
+  @ApiOperation({
+    summary: 'Quem pode ser indicado Administrador Principal da Conta',
+    description:
+      'Os administradores ativos da empresa, com o atual marcado. A contratante indica o Usuário nº 1 ao contratar (contrato 1.1, 1.5 e 4.1).',
+  })
+  async principalAdmin(@Req() req) {
+    return this.checkoutService.principalAdminOptions(
+      req.user.companyId,
+      req.user.userId,
+    );
+  }
+
   @Get('contracting/current')
   @ApiOperation({
     summary: 'O que está contratado hoje',

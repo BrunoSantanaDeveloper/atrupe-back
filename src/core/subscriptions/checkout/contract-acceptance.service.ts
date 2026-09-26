@@ -12,6 +12,7 @@ export type AcceptanceContext =
 
 export interface CurrentTerms {
   id: string;
+  name: string;
   version: number;
   html: string;
   sha256: string;
@@ -36,6 +37,11 @@ export interface AcceptanceInput {
     verified: boolean;
     isSessionUser: boolean;
   } | null;
+  /**
+   * O Administrador Principal da Conta (Usuário nº 1) que a contratante indica
+   * ao aceitar (contrato 1.1, 1.5 e 4.1). Só na contratação nova.
+   */
+  principalAdmin?: { userId: string; name: string; email: string } | null;
   /** O mínimo do registro público que sustentou a conferência. */
   registrySnapshot?: Record<string, any> | null;
   ipAddress?: string | null;
@@ -93,6 +99,9 @@ export class ContractAcceptanceService {
           : null,
         representativeIsSessionUser:
           input.representative?.isSessionUser ?? false,
+        principalAdminUserId: input.principalAdmin?.userId ?? null,
+        principalAdminName: input.principalAdmin?.name ?? null,
+        principalAdminEmail: input.principalAdmin?.email ?? null,
         registrySnapshot: (input.registrySnapshot ?? undefined) as any,
         ipAddress: input.ipAddress ?? null,
         userAgent: input.userAgent ?? null,

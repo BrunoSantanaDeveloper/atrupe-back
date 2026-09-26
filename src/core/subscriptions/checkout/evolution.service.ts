@@ -30,6 +30,7 @@ import { RequestMeta } from './checkout.service';
 import {
   assertCanContract,
   assertCycleAvailable,
+  assertPrincipalAdmin,
   assertInstallments,
   assertTermsAccepted,
   ContractingUser,
@@ -90,6 +91,11 @@ export class EvolutionService {
     assertCanContract(
       user,
       'Somente administradores da empresa podem evoluir o plano.',
+    );
+    await assertPrincipalAdmin(
+      this.prisma,
+      user,
+      'Somente o administrador principal da conta (Usuário nº 1) pode alterar o plano.',
     );
 
     const cycle: PricingCycle = dto.cycle ?? 'MONTHLY';

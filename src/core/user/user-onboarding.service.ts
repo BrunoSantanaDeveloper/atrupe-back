@@ -128,10 +128,9 @@ export class UserOnboardingService {
       createdCompanyId = company.id;
       this.logger.log('Company created successfully');
 
-      await this.companyService.createFirstAccess(
-        completeRegistrationDto.email,
-        company.id,
-      );
+      // O usuário foi gravado com o e-mail normalizado, e o primeiro acesso o
+      // procura pelo e-mail exato.
+      await this.companyService.createFirstAccess(normalizedEmail, company.id);
       this.logger.log('First access configured successfully');
 
       await this.prisma.$transaction(async (tx) => {

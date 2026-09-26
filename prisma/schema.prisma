@@ -1755,6 +1755,11 @@ model ContractAcceptance {
   representativeName          String?
   representativeVerified      Boolean?
   representativeIsSessionUser Boolean        @default(false)
+  /// O Administrador Principal da Conta (Usuário nº 1) indicado pela
+  /// contratante no aceite (contrato 1.1, 1.5 e 4.1).
+  principalAdminUserId        String?
+  principalAdminName          String?
+  principalAdminEmail         String?
   registrySnapshot            Json?
   termsSha256                 String?
   ipAddress                   String?

@@ -176,6 +176,16 @@ export class CheckoutDto {
   @Type(() => CheckoutRepresentativeDto)
   representative?: CheckoutRepresentativeDto;
 
+  @ApiProperty({
+    required: false,
+    description:
+      'O Administrador Principal da Conta (Usuário nº 1) indicado pela contratante, entre os administradores ativos da empresa. Sem ele, fica o atual.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  principalAdminUserId?: string;
+
   @ApiProperty({ type: () => CheckoutTermsDto })
   @ValidateNested()
   @Type(() => CheckoutTermsDto)

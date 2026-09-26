@@ -49,6 +49,26 @@ export function assertCanContract(
   }
 }
 
+/**
+ * Alterar o plano e contratar, ativar ou remover módulos e serviços adicionais
+ * são poderes exclusivos do Administrador Principal da Conta, o Usuário nº 1
+ * (contrato 1.1, cláusula 4.2) — além de ser administrador. Conta antiga sem
+ * ele registrado segue só a regra de administrador.
+ */
+export async function assertPrincipalAdmin(
+  prisma: Pick<PrismaService, 'company'>,
+  user: ContractingUser,
+  message: string,
+) {
+  const company = await prisma.company.findUnique({
+    where: { id: user.companyId },
+    select: { ownerUserId: true },
+  });
+  if (company?.ownerUserId && company.ownerUserId !== user.userId) {
+    throw new ForbiddenException({ code: 'OWNER_ONLY', message });
+  }
+}
+
 /** O anual só é contratável com a chave ligada (ver billing-mode.ts). */
 export function assertCycleAvailable(cycle: PricingCycle) {
   if (cycle === 'YEARLY' && !annualCycleEnabled()) {

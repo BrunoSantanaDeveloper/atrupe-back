@@ -47,7 +47,7 @@ describe('SubscriptionsService', () => {
     plan: { findUnique: jest.fn() },
     feature: { findUnique: jest.fn() },
     planFeature: { findFirst: jest.fn() },
-    payment: { deleteMany: jest.fn() },
+    payment: { deleteMany: jest.fn(), findFirst: jest.fn() },
     $transaction: jest.fn(),
   };
 
@@ -55,6 +55,7 @@ describe('SubscriptionsService', () => {
     cancelAsaasSubscription: jest.fn(),
     updateAsaasSubscription: jest.fn(),
     getAsaasSubscriptionPayments: jest.fn(),
+    getChargesOf: jest.fn(),
     updateAsaasPayment: jest.fn(),
     deleteAsaasPayment: jest.fn(),
   };
@@ -513,7 +514,7 @@ describe('SubscriptionsService', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('só o titular cancela: outro administrador é recusado', async () => {
+    it('só o administrador principal (Usuário nº 1) cancela: outro administrador é recusado', async () => {
       mockPrismaService.subscription.findUnique.mockResolvedValue({
         id: 'sub-1',
         companyId: 'company-1',
@@ -537,6 +538,91 @@ describe('SubscriptionsService', () => {
       expect(
         mockAsaasGatewayService.cancelAsaasSubscription,
       ).not.toHaveBeenCalled();
+    });
+
+    const mensal = {
+      id: 'sub-1',
+      companyId: 'company-1',
+      status: 'ACTIVE',
+      cycle: 'MONTHLY',
+      asaasSubscriptionId: 'sub_123',
+      plan: { planType: 'START' },
+    };
+
+    it('com mensalidade vencida no Asaas, não cancela (contrato, 7.5 e 8.1)', async () => {
+      mockPrismaService.subscription.findUnique.mockResolvedValue(mensal);
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        ownerUserId: 'user-1',
+        blockLevel: 'NONE',
+      });
+      mockAsaasGatewayService.getChargesOf.mockResolvedValue([
+        { status: 'OVERDUE', dueDate: '2026-09-01' },
+      ]);
+
+      await expect(
+        service.cancelSubscription(
+          'sub-1',
+          { reason: 'Preço' } as any,
+          'company-1',
+          'user-1',
+        ),
+      ).rejects.toMatchObject({ response: { code: 'OPEN_CHARGE' } });
+      expect(
+        mockAsaasGatewayService.cancelAsaasSubscription,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('com a conta bloqueada por atraso, não cancela — bloqueio não é cancelamento', async () => {
+      mockPrismaService.subscription.findUnique.mockResolvedValue(mensal);
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        ownerUserId: 'user-1',
+        blockLevel: 'PARTIAL',
+      });
+
+      await expect(
+        service.cancelSubscription(
+          'sub-1',
+          { reason: 'Preço' } as any,
+          'company-1',
+          'user-1',
+        ),
+      ).rejects.toMatchObject({ response: { code: 'OPEN_CHARGE' } });
+    });
+
+    it('em dia, cancela e registra a confirmação das exportações', async () => {
+      mockPrismaService.subscription.findUnique.mockResolvedValue(mensal);
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        ownerUserId: 'user-1',
+        blockLevel: 'NONE',
+      });
+      mockAsaasGatewayService.getChargesOf.mockResolvedValue([
+        { status: 'RECEIVED', dueDate: '2026-09-01' },
+      ]);
+      const history = jest.fn();
+      mockPrismaService.$transaction.mockImplementation(async (cb) =>
+        cb({
+          subscription: {
+            update: jest.fn().mockResolvedValue({ id: 'sub-1' }),
+          },
+          subscriptionHistory: { create: history },
+        }),
+      );
+
+      await service.cancelSubscription(
+        'sub-1',
+        { reason: 'Preço', exportsConfirmed: true } as any,
+        'company-1',
+        'user-1',
+      );
+
+      expect(
+        mockAsaasGatewayService.cancelAsaasSubscription,
+      ).toHaveBeenCalledWith('sub_123');
+      expect(history).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({ exportsConfirmed: true }),
+        }),
+      });
     });
   });
 });

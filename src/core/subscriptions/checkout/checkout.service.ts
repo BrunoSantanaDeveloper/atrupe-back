@@ -7,6 +7,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { AsaasGatewayService } from '../asaas-gateway.service';
 import { SubscriptionQuoteService } from '../pricing/subscription-quote.service';
@@ -36,6 +37,13 @@ import {
 } from './contracting-steps';
 
 export type CheckoutUser = ContractingUser;
+
+/** O Administrador Principal da Conta, o Usuário nº 1 do contrato. */
+export interface PrincipalAdmin {
+  userId: string;
+  name: string;
+  email: string;
+}
 
 export interface RequestMeta {
   ip?: string | null;
@@ -96,6 +104,10 @@ export class CheckoutService {
     assertTermsAccepted(dto.termsAcceptance, terms);
 
     const contractor = await this.resolveContractor(user, dto);
+    const principalAdmin = await this.resolvePrincipalAdmin(
+      user,
+      dto.principalAdminUserId,
+    );
 
     const [plan, features, sessionUser, coupon] = await Promise.all([
       this.prisma.plan.findUniqueOrThrow({ where: { id: dto.planId } }),
@@ -162,6 +174,7 @@ export class CheckoutService {
         installmentCount,
         terms,
         contractor,
+        principalAdmin,
         sessionUser,
         reservedId: reserved.id,
         contract,
@@ -234,14 +247,24 @@ export class CheckoutService {
     installmentCount: number;
     terms: CurrentTerms;
     contractor: ResolvedContractor;
+    principalAdmin: PrincipalAdmin;
     sessionUser: { id: string; name: string; email: string };
     reservedId: string;
     contract: GatewayContract;
     asaasCustomerId: string;
     meta: RequestMeta;
   }) {
-    const { user, dto, quote, terms, contractor, sessionUser, contract, meta } =
-      input;
+    const {
+      user,
+      dto,
+      quote,
+      terms,
+      contractor,
+      principalAdmin,
+      sessionUser,
+      contract,
+      meta,
+    } = input;
     const reserved = { id: input.reservedId };
     const installment = contract.billingMode === 'ASAAS_INSTALLMENT';
 
@@ -338,6 +361,7 @@ export class CheckoutService {
           },
           contractor,
           representative: contractor.representative,
+          principalAdmin,
           registrySnapshot: contractor.registrySnapshot,
           ipAddress: meta.ip ?? null,
           userAgent: meta.userAgent ?? null,
@@ -357,17 +381,134 @@ export class CheckoutService {
           });
         }
 
-        // Contas antigas sem titular: quem contrata passa a sê-lo.
-        await tx.company.updateMany({
-          where: { id: user.companyId, ownerUserId: null },
-          data: { ownerUserId: user.userId },
-        });
+        await this.assignPrincipalAdmin(
+          tx,
+          user.companyId,
+          principalAdmin,
+          contractor,
+        );
 
         return { payment, acceptance };
       },
     );
 
     return { payment, acceptance };
+  }
+
+  /**
+   * Quem pode ser indicado Administrador Principal da Conta (Usuário nº 1):
+   * os administradores ativos da empresa. É a contratante que indica, ao
+   * contratar — quem cadastrou a conta ou conduz a contratação não o é
+   * automaticamente (contrato 1.1, 1.5, 4.1 e 4.8). Vem marcado o atual.
+   */
+  async principalAdminOptions(companyId: string, userId: string) {
+    const [company, candidates] = await Promise.all([
+      this.prisma.company.findUnique({
+        where: { id: companyId },
+        select: { ownerUserId: true },
+      }),
+      this.principalAdminCandidates(companyId),
+    ]);
+    const isCandidate = (id?: string | null) =>
+      !!id && candidates.some((c) => c.userId === id);
+    const currentUserId = isCandidate(company?.ownerUserId)
+      ? company!.ownerUserId
+      : isCandidate(userId)
+        ? userId
+        : (candidates[0]?.userId ?? null);
+    return { currentUserId, candidates };
+  }
+
+  private async principalAdminCandidates(
+    companyId: string,
+  ): Promise<PrincipalAdmin[]> {
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        companyId,
+        isActive: true,
+        role: { isAdmin: true },
+        user: { isActive: true },
+      },
+      select: { user: { select: { id: true, name: true, email: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    const byUser = new Map<string, PrincipalAdmin>();
+    for (const { user } of employees) {
+      if (user && !byUser.has(user.id)) {
+        byUser.set(user.id, {
+          userId: user.id,
+          name: user.name,
+          email: user.email,
+        });
+      }
+    }
+    return [...byUser.values()];
+  }
+
+  private async resolvePrincipalAdmin(
+    user: CheckoutUser,
+    chosenUserId?: string,
+  ): Promise<PrincipalAdmin> {
+    const { currentUserId, candidates } = await this.principalAdminOptions(
+      user.companyId,
+      user.userId,
+    );
+    const id = chosenUserId ?? currentUserId ?? user.userId;
+    const chosen = candidates.find((c) => c.userId === id);
+    if (chosen) return chosen;
+
+    // Quem contrata já passou pela regra de administrador: na falta do
+    // cadastro de colaborador, é ele mesmo — nunca outra pessoa não conferida.
+    if (id === user.userId) {
+      const self = await this.prisma.user.findUniqueOrThrow({
+        where: { id: user.userId },
+        select: { id: true, name: true, email: true },
+      });
+      return { userId: self.id, name: self.name, email: self.email };
+    }
+    throw new UnprocessableEntityException({
+      code: 'PRINCIPAL_ADMIN_NOT_ELIGIBLE',
+      message:
+        'O administrador principal da conta precisa ser um administrador ativo da empresa.',
+    });
+  }
+
+  /**
+   * O indicado passa a ser o Administrador Principal da Conta. Trocar de
+   * pessoa fecha o período de titularidade aberto e abre o do indicado, com a
+   * contratante que acabou de ser identificada.
+   */
+  private async assignPrincipalAdmin(
+    tx: Prisma.TransactionClient,
+    companyId: string,
+    principal: PrincipalAdmin,
+    contractor: ResolvedContractor,
+  ) {
+    const company = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { ownerUserId: true },
+    });
+    if (company?.ownerUserId === principal.userId) return;
+
+    const now = new Date();
+    await tx.company.update({
+      where: { id: companyId },
+      data: { ownerUserId: principal.userId },
+    });
+    await tx.ownershipPeriod.updateMany({
+      where: { companyId, endedAt: null },
+      data: { endedAt: now },
+    });
+    await tx.ownershipPeriod.create({
+      data: {
+        companyId,
+        userId: principal.userId,
+        holderName: contractor.name,
+        document: contractor.document,
+        email: principal.email,
+        startedAt: now,
+      },
+    });
   }
 
   private assertQuotable(

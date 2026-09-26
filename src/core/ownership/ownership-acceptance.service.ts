@@ -158,7 +158,12 @@ export class OwnershipAcceptanceService {
       daysLeft: transferDaysLeft(transfer, now),
       emailHasAccount,
       blocked,
-      terms: { contractId: terms.id, version: terms.version, html: terms.html },
+      terms: {
+        contractId: terms.id,
+        name: terms.name,
+        version: terms.version,
+        html: terms.html,
+      },
     };
   }
 

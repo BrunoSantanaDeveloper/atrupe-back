@@ -166,29 +166,29 @@ describe('SubscriptionBlockService', () => {
       expect(results[0].newBlockLevel).toBe('FULL');
     });
 
-    it('7 dias de atraso ainda é bloqueio parcial (inativa só a partir do 8º)', async () => {
+    it('6 dias de atraso ainda é bloqueio parcial (o total vem depois de passados 6 dias)', async () => {
       mockPrismaService.company.findMany.mockResolvedValue([
         {
-          id: 'company-7',
-          name: 'Sete dias',
+          id: 'company-6',
+          name: 'Seis dias',
           blockLevel: 'NONE',
           Subscription: [
-            { asaasSubscriptionId: 'sub_777', nextDueDate: new Date() },
+            { asaasSubscriptionId: 'sub_666', nextDueDate: new Date() },
           ],
         },
       ]);
       mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
-        { status: 'OVERDUE', dueDate: makeDueDate(7) },
+        { status: 'OVERDUE', dueDate: makeDueDate(6) },
       ]);
       mockPrismaService.company.update.mockResolvedValue({});
 
       const results = await service.checkAndApplyBlocks();
 
-      expect(results[0].daysOverdue).toBe(7);
+      expect(results[0].daysOverdue).toBe(6);
       expect(results[0].newBlockLevel).toBe('PARTIAL');
     });
 
-    it('should apply FULL block for company with 8+ days overdue in Asaas', async () => {
+    it('aplica o bloqueio total a partir do 7º dia de atraso (contrato, 7.4)', async () => {
       mockPrismaService.company.findMany.mockResolvedValue([
         {
           id: 'company-2',
@@ -200,7 +200,7 @@ describe('SubscriptionBlockService', () => {
         },
       ]);
       mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
-        { status: 'OVERDUE', dueDate: makeDueDate(8) },
+        { status: 'OVERDUE', dueDate: makeDueDate(7) },
       ]);
       mockPrismaService.company.update.mockResolvedValue({});
 

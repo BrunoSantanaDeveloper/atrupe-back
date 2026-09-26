@@ -76,7 +76,12 @@ describe('CheckoutService', () => {
     payment: { create: jest.fn() },
     subscriptionHistory: { create: jest.fn() },
     employee: { updateMany: jest.fn() },
-    company: { updateMany: jest.fn() },
+    company: {
+      updateMany: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+    ownershipPeriod: { updateMany: jest.fn(), create: jest.fn() },
   };
   const prisma = {
     $transaction: jest.fn((cb: any) => cb(tx)),
@@ -85,6 +90,8 @@ describe('CheckoutService', () => {
     user: { findUniqueOrThrow: jest.fn() },
     coupon: { findUnique: jest.fn() },
     customer: { findFirst: jest.fn(), update: jest.fn(), create: jest.fn() },
+    company: { findUnique: jest.fn() },
+    employee: { findMany: jest.fn() },
   };
   const gateway = {
     updateAsaasCustomer: jest.fn(),
@@ -121,6 +128,13 @@ describe('CheckoutService', () => {
       Promise.resolve({ id: 'pay-local-1', ...data }),
     );
     tx.couponUsage.deleteMany.mockResolvedValue({ count: 1 });
+    // Dois administradores ativos; o ADMIN é o Usuário nº 1 de hoje.
+    prisma.company.findUnique.mockResolvedValue({ ownerUserId: 'user-1' });
+    tx.company.findUnique.mockResolvedValue({ ownerUserId: 'user-1' });
+    prisma.employee.findMany.mockResolvedValue([
+      { user: { id: 'user-1', name: 'Marcos', email: 'marcos@studio.com' } },
+      { user: { id: 'user-2', name: 'Ana', email: 'ana@studio.com' } },
+    ]);
     prisma.plan.findUniqueOrThrow.mockResolvedValue({
       id: 'plan-start',
       name: 'Atrupe Start',
@@ -273,6 +287,60 @@ describe('CheckoutService', () => {
         verified: false,
         isSessionUser: false,
       });
+    });
+  });
+
+  describe('administrador principal da conta (Usuário nº 1)', () => {
+    it('sem indicação, fica o atual: o aceite o registra e nada muda na empresa', async () => {
+      await service.checkout(ADMIN, baseDto(), META);
+
+      const [, input] = acceptance.record.mock.calls[0];
+      expect(input.principalAdmin).toEqual({
+        userId: 'user-1',
+        name: 'Marcos',
+        email: 'marcos@studio.com',
+      });
+      expect(tx.company.update).not.toHaveBeenCalled();
+      expect(tx.ownershipPeriod.create).not.toHaveBeenCalled();
+    });
+
+    it('a contratante indica outro administrador: ele passa a ser o Usuário nº 1 (contrato, 1.5 e 4.1)', async () => {
+      await service.checkout(
+        ADMIN,
+        { ...baseDto(), principalAdminUserId: 'user-2' } as any,
+        META,
+      );
+
+      const [, input] = acceptance.record.mock.calls[0];
+      expect(input.principalAdmin).toMatchObject({ userId: 'user-2' });
+      expect(tx.company.update).toHaveBeenCalledWith({
+        where: { id: 'company-1' },
+        data: { ownerUserId: 'user-2' },
+      });
+      // Fecha o período aberto e abre o do indicado.
+      expect(tx.ownershipPeriod.updateMany).toHaveBeenCalledWith({
+        where: { companyId: 'company-1', endedAt: null },
+        data: { endedAt: expect.any(Date) },
+      });
+      expect(tx.ownershipPeriod.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          userId: 'user-2',
+          email: 'ana@studio.com',
+        }),
+      });
+    });
+
+    it('quem não é administrador ativo da empresa não pode ser indicado', async () => {
+      await expect(
+        service.checkout(
+          ADMIN,
+          { ...baseDto(), principalAdminUserId: 'estranho' } as any,
+          META,
+        ),
+      ).rejects.toMatchObject({
+        response: { code: 'PRINCIPAL_ADMIN_NOT_ELIGIBLE' },
+      });
+      expect(gateway.createSubscription).not.toHaveBeenCalled();
     });
   });
 

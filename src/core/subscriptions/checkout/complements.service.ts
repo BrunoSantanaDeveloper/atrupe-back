@@ -21,6 +21,7 @@ import { CompanySessionService } from './company-session.service';
 import { RequestMeta } from './checkout.service';
 import {
   assertCanContract,
+  assertPrincipalAdmin,
   assertTermsAccepted,
   ContractingUser,
   contractorOnFile,
@@ -188,6 +189,11 @@ export class ComplementsService {
       user,
       'Somente administradores da empresa podem contratar complementos.',
     );
+    await assertPrincipalAdmin(
+      this.prisma,
+      user,
+      'Somente o administrador principal da conta (Usuário nº 1) pode contratar complementos.',
+    );
     const terms = await this.acceptance.currentTerms();
     assertTermsAccepted(dto.termsAcceptance, terms);
     const actor = await this.actor(user.userId);
@@ -254,6 +260,11 @@ export class ComplementsService {
     assertCanContract(
       user,
       'Somente administradores da empresa podem retirar módulos.',
+    );
+    await assertPrincipalAdmin(
+      this.prisma,
+      user,
+      'Somente o administrador principal da conta (Usuário nº 1) pode retirar módulos.',
     );
     const actor = await this.actor(user.userId);
     const { subscription } = await this.change(

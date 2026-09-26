@@ -49,15 +49,18 @@ const mockPrisma = {
     findFirst: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    delete: jest.fn(),
   },
   customer: {
     findFirst: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    delete: jest.fn(),
   },
   subscription: {
     create: jest.fn(),
     updateMany: jest.fn(),
+    deleteMany: jest.fn(),
   },
   plan: {
     findFirst: jest.fn(),
@@ -295,6 +298,60 @@ describe('UserRegistrationService', () => {
       expect(result.message).toBe(
         'Usuário criado com sucesso com plano TRIAL.',
       );
+    });
+
+    it('desfaz usuário, teste e cliente quando o primeiro acesso falha, para o e-mail poder tentar de novo', async () => {
+      mockPrisma.mailVerification.findFirst.mockResolvedValueOnce(
+        makeVerification({ verified: true }),
+      );
+      mockPrisma.$transaction.mockImplementationOnce(async (cb) =>
+        cb({
+          user: {
+            create: jest.fn().mockResolvedValue({ id: 'user-1' }),
+            update: jest.fn(),
+          },
+          customer: { create: jest.fn().mockResolvedValue({ id: 'cust-1' }) },
+          subscription: { create: jest.fn() },
+          plan: {
+            findFirst: jest.fn().mockResolvedValue({
+              id: 'plan-trial',
+              planType: 'TRIAL',
+              planLimits: [],
+            }),
+          },
+        }),
+      );
+      mockCompanyService.createMainCompany.mockResolvedValueOnce({
+        id: 'company-1',
+      });
+      mockPrisma.customer.update.mockResolvedValueOnce({});
+      mockPrisma.subscription.updateMany.mockResolvedValueOnce({});
+      mockCompanyService.createFirstAccess.mockRejectedValueOnce(
+        new Error('User not found'),
+      );
+      mockPrisma.company.delete.mockResolvedValueOnce({});
+      mockPrisma.user.delete.mockResolvedValueOnce({});
+      mockPrisma.subscription.deleteMany.mockResolvedValueOnce({});
+      mockPrisma.customer.delete.mockResolvedValueOnce({});
+
+      await expect(
+        service.createPassword(makeCreateUserDto() as any),
+      ).rejects.toThrow('User not found');
+
+      expect(mockPrisma.company.delete).toHaveBeenCalledWith({
+        where: { id: 'company-1' },
+      });
+      expect(mockPrisma.user.delete).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+      });
+      expect(mockPrisma.subscription.deleteMany).toHaveBeenCalledWith({
+        where: { customerId: 'cust-1' },
+      });
+      expect(mockPrisma.customer.delete).toHaveBeenCalledWith({
+        where: { id: 'cust-1' },
+      });
+      // A verificação do e-mail continua valendo para a nova tentativa.
+      expect(mockPrisma.mailVerification.deleteMany).not.toHaveBeenCalled();
     });
 
     it('deve gerar event_id e persistir a atribuição (oppref/utm) no usuário', async () => {

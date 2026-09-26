@@ -83,6 +83,7 @@ describe('EvolutionService', () => {
     coupon: { findUnique: jest.fn() },
     customer: { findUnique: jest.fn() },
     contractAcceptance: { findFirst: jest.fn() },
+    company: { findUnique: jest.fn() },
   };
   const gateway = {
     createSubscription: jest.fn(),
@@ -205,6 +206,8 @@ describe('EvolutionService', () => {
     acceptance.currentTerms.mockResolvedValue(TERMS);
     acceptance.record.mockResolvedValue({ id: 'acc-1', version: 2 });
     session.build.mockResolvedValue({ plan: { name: 'LITE', active: true } });
+    // O ADMIN é o administrador principal da conta (Usuário nº 1).
+    prisma.company.findUnique.mockResolvedValue({ ownerUserId: 'user-1' });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -224,6 +227,13 @@ describe('EvolutionService', () => {
       await expect(
         service.evolve({ ...ADMIN, isAdmin: false }, dto(), META),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('alterar o plano é do Usuário nº 1: outro administrador é recusado (contrato, 4.2)', async () => {
+      await expect(
+        service.evolve({ ...ADMIN, userId: 'outro-admin' }, dto(), META),
+      ).rejects.toMatchObject({ response: { code: 'OWNER_ONLY' } });
+      expect(gateway.createSubscription).not.toHaveBeenCalled();
     });
 
     it('com a chave em "false", o anual não é oferecido', async () => {
