@@ -855,3 +855,27 @@ describe('ImportService unit cost per line', () => {
     expect(unitCost(null, 'UNITY', {}, 1)).toBeNull();
   });
 });
+
+/**
+ * Data que veio do legado ou da planilha: o documento migrado tem que aparecer
+ * no dia em que a venda aconteceu, não no dia da migração — e o mesmo dia na
+ * lista, na tela do documento e no PDF.
+ */
+describe('ImportService legacy dates', () => {
+  const service = new ImportService({} as any, {} as any, {} as any);
+  const toDayDate = (value: string) => (service as any).toDayDate(value);
+
+  it('grava a data de um dia só ao meio-dia UTC', () => {
+    // Meia-noite UTC é o dia anterior às 21h no fuso do Brasil: a tela do
+    // documento e o PDF mostravam um dia a menos que a lista, que lê em UTC.
+    expect(toDayDate('2024-05-10').toISOString()).toBe(
+      '2024-05-10T12:00:00.000Z',
+    );
+  });
+
+  it('não mexe no valor que já traz horário', () => {
+    expect(toDayDate('2024-05-10T08:30:00.000Z').toISOString()).toBe(
+      '2024-05-10T08:30:00.000Z',
+    );
+  });
+});

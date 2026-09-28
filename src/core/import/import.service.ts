@@ -755,6 +755,22 @@ export class ImportService {
     return missing;
   }
 
+  /**
+   * Data de um dia só (planilha ou legado), gravada ao meio-dia UTC.
+   *
+   * O valor chega como 'AAAA-MM-DD' e `new Date` o lê como meia-noite UTC —
+   * que no fuso do Brasil é o dia anterior às 21h. As listas leem a data em
+   * UTC e mostram o dia certo, mas a tela do documento e o PDF convertem para
+   * São Paulo e mostravam um dia a menos. Meio-dia cai no mesmo dia nos dois.
+   */
+  private toDayDate(value: string): Date {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value).trim());
+    if (!match) return new Date(value);
+
+    const [, year, month, day] = match;
+    return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12));
+  }
+
   private documentDigits(value: string | null | undefined): string {
     return String(value ?? '').replace(/[^\d]/g, '');
   }
@@ -2622,8 +2638,18 @@ export class ImportService {
             description:
               firstItem.ReferenciaVenda || firstItem.ObservacaoItem || null,
             dueDate: firstItem.DataValidade
-              ? new Date(firstItem.DataValidade)
+              ? this.toDayDate(firstItem.DataValidade)
               : null,
+            // O documento migrado guarda a data que tinha no legado: as telas
+            // agrupam e filtram por ela, e é ela que sai no PDF. Sem isto, todo
+            // o histórico do cliente aparece no dia em que a migração rodou.
+            createdAt: firstItem.DataVenda
+              ? this.toDayDate(firstItem.DataVenda)
+              : new Date(),
+            approvedAt:
+              ['APPROVED', 'DONE'].includes(status) && firstItem.DataVenda
+                ? this.toDayDate(firstItem.DataVenda)
+                : null,
             quotationNumber: parseInt(firstItem.NumeroVenda),
             legacyId,
             totalValue: 0, // Será calculado depois
@@ -2761,7 +2787,7 @@ export class ImportService {
             value: freteValor,
             supplierId: transportadorId,
             estimatedDate: firstItem.DataEntrega
-              ? new Date(firstItem.DataEntrega)
+              ? this.toDayDate(firstItem.DataEntrega)
               : null,
           },
         });
@@ -2984,13 +3010,13 @@ export class ImportService {
             seriesId: series.id,
             status: 'APPROVED', // Orçamento aprovado que virou ordem
             approvedAt: firstItem.DataVenda
-              ? new Date(firstItem.DataVenda)
+              ? this.toDayDate(firstItem.DataVenda)
               : new Date(),
             createdAt: firstItem.DataVenda
-              ? new Date(firstItem.DataVenda)
+              ? this.toDayDate(firstItem.DataVenda)
               : new Date(),
             dueDate: firstItem.DataValidade
-              ? new Date(firstItem.DataValidade)
+              ? this.toDayDate(firstItem.DataValidade)
               : null,
             clientId: client.id,
             sellerId: employee.id,
@@ -3108,7 +3134,7 @@ export class ImportService {
             cost: this.toCents(firstItem.FreteCusto),
             value: this.toCents(firstItem.FreteValor),
             estimatedDate: firstItem.DataEntrega
-              ? new Date(firstItem.DataEntrega)
+              ? this.toDayDate(firstItem.DataEntrega)
               : null,
           },
         });
@@ -3221,9 +3247,14 @@ export class ImportService {
           data: {
             quotationId: quotation.id,
             status: orderStatus,
+            // A lista de O.S. agrupa por esta data. Sem ela, a ordem migrada
+            // cai no dia da migração, e não no dia em que a venda aconteceu.
+            createdAt: firstItem.DataVenda
+              ? this.toDayDate(firstItem.DataVenda)
+              : new Date(),
             deliveredAt:
               firstItem.DataEntrega && orderStatus === 'FINISHED'
-                ? new Date(firstItem.DataEntrega)
+                ? this.toDayDate(firstItem.DataEntrega)
                 : null,
             isImported: true,
           },
@@ -3291,6 +3322,7 @@ export class ImportService {
       const receivableDownPayment = await this.prisma.receivable.create({
         data: {
           referenceDate: quotation.createdAt,
+          createdAt: quotation.createdAt,
           description: `Entrada da venda ${quotation.quotationNumber}-${series.code}`,
           totalAmount: entradaValor,
           totalValue: entradaValor,
@@ -3348,6 +3380,7 @@ export class ImportService {
     const receivable = await this.prisma.receivable.create({
       data: {
         referenceDate: quotation.createdAt,
+        createdAt: quotation.createdAt,
         description: `Venda ${quotation.quotationNumber}-${series.code}`,
         totalAmount,
         totalValue: totalAmount,
@@ -3442,6 +3475,7 @@ export class ImportService {
     const payable = await this.prisma.payable.create({
       data: {
         referenceDate: quotation.createdAt,
+        createdAt: quotation.createdAt,
         description: `Frete da venda ${quotation.quotationNumber}-${series.code}`,
         totalAmount: freteCusto,
         totalValue: freteCusto,
@@ -3560,6 +3594,7 @@ export class ImportService {
     const payable = await this.prisma.payable.create({
       data: {
         referenceDate: quotation.createdAt,
+        createdAt: quotation.createdAt,
         description: `Comissão da venda ${quotation.quotationNumber}-${series.code}`,
         totalAmount: comissaoValor,
         totalValue: comissaoValor,
@@ -3713,7 +3748,7 @@ export class ImportService {
 
         const totalAmount = this.toCents(firstItem.ValorTotal) || 0;
         const referenceDate = firstItem.DataReferencia
-          ? new Date(firstItem.DataReferencia)
+          ? this.toDayDate(firstItem.DataReferencia)
           : new Date();
 
         if (isReceivable) {
@@ -3755,6 +3790,7 @@ export class ImportService {
               description: firstItem.Descricao,
               reference: firstItem.Referencia || null,
               referenceDate,
+              createdAt: referenceDate,
               totalAmount,
               totalValue: totalAmount,
               companyId,
@@ -3772,7 +3808,7 @@ export class ImportService {
           for (const item of installments) {
             const installmentAmount = this.toCents(item.ValorParcela) || 0;
             const dueDate = item.DataVencimento
-              ? new Date(item.DataVencimento)
+              ? this.toDayDate(item.DataVencimento)
               : new Date();
 
             // Validar status
@@ -3822,7 +3858,7 @@ export class ImportService {
                 status,
                 paidDate:
                   status === 'PAID' && item.DataPagamento
-                    ? new Date(item.DataPagamento)
+                    ? this.toDayDate(item.DataPagamento)
                     : null,
                 paidAmount:
                   status === 'PAID' && item.ValorPago
@@ -3879,6 +3915,7 @@ export class ImportService {
               description: firstItem.Descricao,
               reference: firstItem.Referencia || null,
               referenceDate,
+              createdAt: referenceDate,
               totalAmount,
               totalValue: totalAmount,
               companyId,
@@ -3897,7 +3934,7 @@ export class ImportService {
           for (const item of installments) {
             const installmentAmount = this.toCents(item.ValorParcela) || 0;
             const dueDate = item.DataVencimento
-              ? new Date(item.DataVencimento)
+              ? this.toDayDate(item.DataVencimento)
               : new Date();
 
             // Validar status
@@ -3947,7 +3984,7 @@ export class ImportService {
                 status,
                 paidDate:
                   status === 'PAID' && item.DataPagamento
-                    ? new Date(item.DataPagamento)
+                    ? this.toDayDate(item.DataPagamento)
                     : null,
                 paidAmount:
                   status === 'PAID' && item.ValorPago
