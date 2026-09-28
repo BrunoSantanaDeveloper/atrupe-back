@@ -879,3 +879,94 @@ describe('ImportService legacy dates', () => {
     );
   });
 });
+
+/**
+ * Produto na migração: o vínculo com o legado é o que identifica o registro
+ * criado pela carga. Procurar só pelo código quebrava quando o cliente mudava
+ * o código depois — a carga tentava criar de novo e batia na chave do legado.
+ */
+describe('ImportService product legacy link', () => {
+  let prisma: any;
+  let service: ImportService;
+
+  const row = { codigo: 'TEL', nome: 'TELHA T25', setor: 'ALMOXARIFADO' };
+
+  const buildService = (produtos: any[]) => {
+    prisma = {
+      companySector: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'sector-1' }),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      category: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'cat-1' }),
+      },
+      product: {
+        findFirst: jest.fn().mockImplementation(({ where }) => {
+          if (where.legacyId) {
+            return Promise.resolve(
+              produtos.find((p) => p.legacyId === where.legacyId) ?? null,
+            );
+          }
+          const code = where.code?.equals ?? where.code;
+          return Promise.resolve(
+            produtos.find(
+              (p) => p.code.toLowerCase() === String(code).toLowerCase(),
+            ) ?? null,
+          );
+        }),
+        create: jest.fn().mockResolvedValue({ id: 'prod-novo' }),
+        update: jest.fn().mockResolvedValue({ id: 'prod-1' }),
+      },
+      defaultUnitOfMeasure: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'uom-un', kind: 'UNITY' }),
+      },
+      productItem: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({}),
+      },
+    };
+
+    service = new ImportService(
+      prisma as any,
+      {} as any,
+      { getOrCreateWithDefaults: jest.fn().mockResolvedValue({}) } as any,
+    );
+  };
+
+  const importar = () =>
+    (service as any).importProduct(row, 'company-1', { legacy: true });
+
+  it('acha o produto da migração pelo código do legado, mesmo com o código trocado', async () => {
+    // O cliente renomeou o código depois da carga anterior. Sem o vínculo, a
+    // carga criava de novo e estourava a chave (companyId, legacyId).
+    buildService([{ id: 'prod-1', code: 'TEL-NOVO', legacyId: 'TEL' }]);
+
+    await importar();
+
+    expect(prisma.product.create).not.toHaveBeenCalled();
+    expect(prisma.product.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'prod-1' } }),
+    );
+  });
+
+  it('adota o produto do cliente que tem o mesmo código, sem tocar nele', async () => {
+    buildService([{ id: 'prod-cliente', code: 'tel', legacyId: null }]);
+
+    await importar();
+
+    expect(prisma.product.create).not.toHaveBeenCalled();
+    expect(prisma.product.update).not.toHaveBeenCalled();
+  });
+
+  it('cria com o código do legado quando a conta não tem o produto', async () => {
+    buildService([]);
+
+    await importar();
+
+    expect(prisma.product.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ code: 'TEL', legacyId: 'TEL' }),
+      }),
+    );
+  });
+});

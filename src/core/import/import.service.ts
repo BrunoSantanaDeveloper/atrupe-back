@@ -2027,17 +2027,31 @@ export class ImportService {
     // que o cliente já tinha com o mesmo código.
     const legacyCode = options.legacy ? row.codigo?.trim() || null : null;
 
+    // Produto que esta migração criou. O vínculo vale mais que o código: se o
+    // cliente mudou o código depois, procurar só por código não acha o
+    // registro e a criação esbarra na chave do legado.
+    let mine: any = null;
+
     if (legacyCode) {
-      const sameCode = await this.prisma.product.findFirst({
-        where: { code: { equals: legacyCode, mode: 'insensitive' }, companyId },
-        select: { id: true, legacyId: true },
+      mine = await this.prisma.product.findFirst({
+        where: { companyId, legacyId: legacyCode },
       });
 
-      // Conta que já estava em uso: o código pertence a um produto que o
-      // cliente cadastrou. O histórico se pendura nele e nada é sobrescrito —
-      // o mesmo código pode descrever outro produto, e o cadastro do cliente é
-      // mais recente que o do legado.
-      if (sameCode && sameCode.legacyId !== legacyCode) return;
+      if (!mine) {
+        const sameCode = await this.prisma.product.findFirst({
+          where: {
+            code: { equals: legacyCode, mode: 'insensitive' },
+            companyId,
+          },
+          select: { id: true },
+        });
+
+        // Conta que já estava em uso: o código pertence a um produto que o
+        // cliente cadastrou. O histórico se pendura nele e nada é sobrescrito
+        // — o mesmo código pode descrever outro produto, e o cadastro do
+        // cliente é mais recente que o do legado.
+        if (sameCode) return;
+      }
     }
 
     // Buscar setor por nome case-insensitive (já validado, então deve existir)
@@ -2126,12 +2140,14 @@ export class ImportService {
     const isService = false;
 
     // Verificar se produto já existe (case-insensitive)
-    const existingProduct = await this.prisma.product.findFirst({
-      where: {
-        code: { equals: row.codigo, mode: 'insensitive' },
-        companyId,
-      },
-    });
+    const existingProduct =
+      mine ??
+      (await this.prisma.product.findFirst({
+        where: {
+          code: { equals: row.codigo, mode: 'insensitive' },
+          companyId,
+        },
+      }));
 
     let product = existingProduct;
     if (!product) {
@@ -2140,7 +2156,9 @@ export class ImportService {
         data: {
           companyId,
           legacyId: legacyCode,
-          code: row.codigo,
+          // O espaço nas pontas do código do legado faria a busca por código
+          // falhar na recarga, e a criação repetida bateria na chave.
+          code: legacyCode ?? row.codigo,
           name: row.nome,
           technicalDescription: row.descricao || null,
           categoryId: category?.id,
