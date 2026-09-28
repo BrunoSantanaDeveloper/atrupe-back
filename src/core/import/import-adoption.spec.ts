@@ -123,6 +123,25 @@ describe('ImportService — conta já em uso', () => {
         build(prisma(null, null)).firstNonImportedActivity('company-1'),
       ).resolves.toBeNull();
     });
+
+    it('não conta o financeiro que veio de documento migrado', async () => {
+      // A entrada da venda, o frete e a comissão nasciam sem a marca de
+      // importado: a data da migração anterior virava a data de corte, e o
+      // período que a nova carga precisa trazer ficava de fora.
+      const db = prisma(null, null);
+
+      await build(db).firstNonImportedActivity('company-1');
+
+      expect(db.receivable.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            companyId: 'company-1',
+            isImported: false,
+            OR: [{ quotationId: null }, { quotation: { isImported: false } }],
+          },
+        }),
+      );
+    });
   });
 
   describe('resolveImportSeries', () => {

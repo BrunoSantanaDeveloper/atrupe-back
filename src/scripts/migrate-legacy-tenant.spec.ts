@@ -816,6 +816,30 @@ describe('prepareStep', () => {
     expect(prep.notes.join(' ')).toMatch(/2 lançamento\(s\) de 01\/02\/2026/);
   });
 
+  it('conta marcada como não usada ignora o corte por data', async () => {
+    // A conta criada só para migrar pode ter um documento de teste, e a data
+    // dele barrava justamente o período que o cliente ainda produziu no legado.
+    const service = internals({
+      firstNonImportedActivity: jest
+        .fn()
+        .mockResolvedValue(new Date('2026-02-01T00:00:00Z')),
+    });
+    const linhas = [{ DataReferencia: '2026-03-15' }];
+
+    const prep = await prepareStep(
+      service,
+      etapa('financial'),
+      linhas,
+      'company-1',
+      true,
+      true,
+    );
+
+    expect(prep.rows).toHaveLength(1);
+    expect(service.firstNonImportedActivity).not.toHaveBeenCalled();
+    expect(prep.notes.join(' ')).toMatch(/Corte por data desligado/);
+  });
+
   it('sem uso anterior, traz o financeiro inteiro', async () => {
     const linhas = [{ DataReferencia: '2026-03-15' }];
 

@@ -28,6 +28,15 @@ export class StartMigrationDto {
   @IsOptional()
   @IsBoolean()
   dryRun?: boolean;
+
+  /**
+   * Conta criada só para receber a migração e nunca usada pelo cliente: o
+   * financeiro entra inteiro, sem o corte na data em que a conta começou a ser
+   * usada.
+   */
+  @IsOptional()
+  @IsBoolean()
+  fullHistory?: boolean;
 }
 
 /**
@@ -61,6 +70,7 @@ export class MigrationController {
       // A simulação é o padrão: gravar precisa ser escolha explícita.
       dryRun: dto.dryRun ?? true,
       startedById: req.user.userId,
+      fullHistory: dto.fullHistory ?? false,
     });
   }
 

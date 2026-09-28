@@ -137,6 +137,34 @@ export async function findActiveSubCategoryByDescription(
   });
 }
 
+/**
+ * Data de um dia só ('AAAA-MM-DD'), ao meio-dia UTC.
+ *
+ * `new Date('2024-05-10')` é meia-noite UTC, que no fuso do Brasil é o dia 9 às
+ * 21h: as listas leem a data em UTC e mostram o dia certo, mas a tela do
+ * documento e o PDF convertem para São Paulo e mostram um dia a menos.
+ * Meio-dia cai no mesmo dia dos dois lados.
+ */
+export function dayDate(value: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value).trim());
+  if (!match) return new Date(value);
+
+  const [, year, month, day] = match;
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12));
+}
+
+/** Meio-dia UTC do mesmo dia, para data já gravada à meia-noite UTC. */
+export function atMiddayUtc(value: Date): Date {
+  return new Date(
+    Date.UTC(
+      value.getUTCFullYear(),
+      value.getUTCMonth(),
+      value.getUTCDate(),
+      12,
+    ),
+  );
+}
+
 /** Nome comparável: sem acento, sem caixa e sem espaço nas pontas. */
 const comparable = (value: string) =>
   value

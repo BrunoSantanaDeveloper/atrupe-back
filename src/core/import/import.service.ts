@@ -26,6 +26,7 @@ import {
   collectProductCodes,
   collectSectorNames,
   collectSeriesCodes,
+  dayDate,
   collectSubCategoryRefs,
   findActiveBankAccountByName,
   findActiveNatureByDescription,
@@ -764,11 +765,7 @@ export class ImportService {
    * São Paulo e mostravam um dia a menos. Meio-dia cai no mesmo dia nos dois.
    */
   private toDayDate(value: string): Date {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value).trim());
-    if (!match) return new Date(value);
-
-    const [, year, month, day] = match;
-    return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12));
+    return dayDate(value);
   }
 
   private documentDigits(value: string | null | undefined): string {
@@ -860,6 +857,12 @@ export class ImportService {
    *
    * É a data de corte do financeiro: o histórico do legado a partir dela
    * duplicaria o que o cliente já lançou no sistema novo.
+   *
+   * Uma carga anterior não pode contar como uso: até esta versão, a entrada da
+   * venda, o frete e a comissão nasciam sem a marca de importado, e a data da
+   * migração anterior virava a data de corte — justamente o período que a nova
+   * carga precisa trazer. Por isso o vínculo com o documento também é
+   * conferido, e não só a marca.
    */
   async firstNonImportedActivity(companyId: string): Promise<Date | null> {
     const [quotation, receivable] = await Promise.all([
@@ -869,7 +872,11 @@ export class ImportService {
         select: { createdAt: true },
       }),
       this.prisma.receivable.findFirst({
-        where: { companyId, isImported: false },
+        where: {
+          companyId,
+          isImported: false,
+          OR: [{ quotationId: null }, { quotation: { isImported: false } }],
+        },
         orderBy: { createdAt: 'asc' },
         select: { createdAt: true },
       }),
@@ -3324,6 +3331,7 @@ export class ImportService {
           referenceDate: quotation.createdAt,
           createdAt: quotation.createdAt,
           description: `Entrada da venda ${quotation.quotationNumber}-${series.code}`,
+          isImported: true,
           totalAmount: entradaValor,
           totalValue: entradaValor,
           installmentQty: 1,
@@ -3477,6 +3485,7 @@ export class ImportService {
         referenceDate: quotation.createdAt,
         createdAt: quotation.createdAt,
         description: `Frete da venda ${quotation.quotationNumber}-${series.code}`,
+        isImported: true,
         totalAmount: freteCusto,
         totalValue: freteCusto,
         installmentQty: 1,
@@ -3596,6 +3605,7 @@ export class ImportService {
         referenceDate: quotation.createdAt,
         createdAt: quotation.createdAt,
         description: `Comissão da venda ${quotation.quotationNumber}-${series.code}`,
+        isImported: true,
         totalAmount: comissaoValor,
         totalValue: comissaoValor,
         installmentQty: 1,

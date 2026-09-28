@@ -299,8 +299,10 @@ export class MigrationService {
     legacyBase: string;
     dryRun: boolean;
     startedById: string;
+    /** Conta criada só para a migração: traz o histórico inteiro, sem corte. */
+    fullHistory?: boolean;
   }) {
-    const { companyId, legacyBase, dryRun, startedById } = params;
+    const { companyId, legacyBase, dryRun, startedById, fullHistory } = params;
 
     if (!LEGACY_BASE_PATTERN.test(legacyBase)) {
       throw new BadRequestException(
@@ -332,7 +334,13 @@ export class MigrationService {
       data: { companyId, legacyBase, dryRun, startedById },
     });
 
-    this.spawnRun(run.id, { companyId, legacyBase, dryRun, startedById });
+    this.spawnRun(run.id, {
+      companyId,
+      legacyBase,
+      dryRun,
+      startedById,
+      fullHistory,
+    });
 
     return run;
   }
@@ -344,6 +352,7 @@ export class MigrationService {
       legacyBase: string;
       dryRun: boolean;
       startedById: string;
+      fullHistory?: boolean;
     },
   ) {
     // A imagem carrega apenas o build; os fontes não vão para o contêiner.
@@ -363,6 +372,7 @@ export class MigrationService {
       `--run-id=${runId}`,
     ];
     if (params.dryRun) args.push('--dry-run');
+    if (params.fullHistory) args.push('--full-history');
 
     const child = spawn(process.execPath, args, {
       // Desacoplado do ciclo da requisição: a carga continua mesmo que o

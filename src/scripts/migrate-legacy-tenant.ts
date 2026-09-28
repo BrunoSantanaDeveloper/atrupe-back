@@ -129,6 +129,8 @@ export async function prepareStep(
   rows: any[],
   companyId: string,
   dryRun: boolean,
+  /** Conta criada só para a migração: traz o histórico inteiro, sem corte. */
+  fullHistory = false,
 ): Promise<StepPreparation> {
   const prep: StepPreparation = {
     created: [],
@@ -197,7 +199,16 @@ export async function prepareStep(
   }
 
   if (extractor.entity === 'financial') {
-    const inicio = await internals.firstNonImportedActivity(companyId);
+    const inicio = fullHistory
+      ? null
+      : await internals.firstNonImportedActivity(companyId);
+
+    if (fullHistory) {
+      prep.notes.push(
+        'Corte por data desligado: o histórico financeiro entra inteiro, ' +
+          'porque a conta foi marcada como não usada pelo cliente.',
+      );
+    }
 
     if (inicio) {
       const limite = inicio.toISOString().slice(0, 10);
@@ -313,6 +324,7 @@ async function runStep(
   userId: string,
   dryRun: boolean,
   simulated: SimulatedKeys,
+  fullHistory: boolean,
 ): Promise<StepResult> {
   const [rawRows] = await legacy.query(extractor.sql(base));
   const rows = (rawRows as any[]).map(extractor.map);
@@ -347,7 +359,14 @@ async function runStep(
 
   const internals = service as any;
 
-  const prep = await prepareStep(internals, extractor, rows, companyId, dryRun);
+  const prep = await prepareStep(
+    internals,
+    extractor,
+    rows,
+    companyId,
+    dryRun,
+    fullHistory,
+  );
   if (prep.created.length > 0) {
     result.created = prep.created;
     prep.created.forEach((name) =>
@@ -495,9 +514,10 @@ export async function migrateLegacyTenant(
   prisma: PrismaClient,
   target: MigrationTarget | string,
   base: string,
-  options: { dryRun?: boolean } = {},
+  options: { dryRun?: boolean; fullHistory?: boolean } = {},
 ) {
   const dryRun = options.dryRun ?? false;
+  const fullHistory = options.fullHistory ?? false;
   const alvo: MigrationTarget =
     typeof target === 'string' ? { email: target } : target;
 
@@ -614,6 +634,7 @@ export async function migrateLegacyTenant(
         userId,
         dryRun,
         simulated,
+        fullHistory,
       );
       results.push(result);
 
@@ -694,6 +715,7 @@ function flagValue(args: string[], name: string): string | undefined {
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
+  const fullHistory = args.includes('--full-history');
   const runId = flagValue(args, 'run-id');
   const companyId = flagValue(args, 'company-id');
   const userId = flagValue(args, 'user-id');
@@ -730,7 +752,10 @@ async function main() {
   try {
     await registrar({ status: 'RUNNING', startedAt: new Date() });
 
-    const results = await migrateLegacyTenant(prisma, target, base, { dryRun });
+    const results = await migrateLegacyTenant(prisma, target, base, {
+      dryRun,
+      fullHistory,
+    });
     const failed = results.reduce((sum, r) => sum + r.failed, 0);
 
     await registrar({
