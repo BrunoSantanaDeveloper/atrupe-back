@@ -126,6 +126,7 @@ describe('CompanyManagementService', () => {
 
   const mockAsaasGateway = {
     cancelAsaasSubscription: jest.fn(),
+    getAsaasSubscription: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -141,6 +142,8 @@ describe('CompanyManagementService', () => {
     jest.clearAllMocks();
     // Restore $transaction mock after clearAllMocks
     mockPrismaService.$transaction.mockImplementation((cb) => cb(mockTx));
+    // Sem assinatura cobrada pelo Asaas, salvo quando o teste diz o contrário.
+    mockPrismaService.subscription.findMany.mockResolvedValue([]);
   });
 
   it('should be defined', () => {
@@ -333,6 +336,43 @@ describe('CompanyManagementService', () => {
       );
     });
 
+    it('com cobrança viva no Asaas, recusa o plano manual — o Asaas seguiria cobrando por fora', async () => {
+      mockPrismaService.user.findFirst.mockResolvedValue({
+        id: 'admin-1',
+        password: 'hashed',
+      });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        id: 'company-1',
+        name: 'Test',
+        customer: [],
+      });
+      mockPrismaService.plan.findFirst.mockResolvedValue({
+        id: 'plan-start',
+        name: 'Start',
+        planType: 'START',
+        basePrice: 14700,
+        isActive: true,
+      });
+      // Inativa no sistema (o pagamento não foi visto), viva no Asaas.
+      mockPrismaService.subscription.findMany.mockResolvedValue([
+        {
+          id: 'sub-paga',
+          asaasSubscriptionId: 'sub_viva',
+          plan: { name: 'Atrupe Start' },
+        },
+      ]);
+      mockAsaasGateway.getAsaasSubscription.mockResolvedValue({
+        status: 'ACTIVE',
+        value: 217,
+      });
+
+      await expect(
+        service.assignManual(assignDto as any, 'admin-1'),
+      ).rejects.toMatchObject({ response: { code: 'GATEWAY_BILLING_ACTIVE' } });
+      expect(mockPrismaService.subscription.create).not.toHaveBeenCalled();
+    });
+
     it('should use existing customer when available', async () => {
       mockPrismaService.user.findFirst.mockResolvedValue({
         id: 'admin-1',
@@ -375,6 +415,38 @@ describe('CompanyManagementService', () => {
   // ─── updateActiveClient ────────────────────────────────────────────────
 
   describe('updateActiveClient', () => {
+    it('reativar assinatura cuja cobrança foi removida no Asaas é recusado', async () => {
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        id: 'company-1',
+        name: 'Test',
+        address: [],
+        customer: [],
+      });
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        id: 'admin-1',
+        password: 'hashed',
+      });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      mockPrismaService.employee.findFirst.mockResolvedValue(null);
+      mockPrismaService.subscription.findFirst.mockResolvedValue({
+        asaasSubscriptionId: 'sub_removida',
+        asaasInstallmentId: null,
+      });
+      mockAsaasGateway.getAsaasSubscription.mockResolvedValue({
+        status: 'ACTIVE',
+        value: 147,
+        deleted: true,
+      });
+
+      await expect(
+        service.updateActiveClient(
+          'company-1',
+          { password: 'admin-pass', status: 'ACTIVE' } as any,
+          'admin-1',
+        ),
+      ).rejects.toMatchObject({ response: { code: 'GATEWAY_BILLING_ENDED' } });
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+    });
     const updateDto = {
       password: 'admin-pass',
       companyName: 'New Name',

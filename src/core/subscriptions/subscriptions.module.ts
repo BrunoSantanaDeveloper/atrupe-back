@@ -7,6 +7,7 @@ import { ContractModule } from '../contract/contract.module';
 import { PlanControlModule } from '../plan/plan-control.module';
 import { BrasilApiModule } from '../../svc/plug/brasilapi/brasilapi.module';
 import { SubscriptionBlockService } from './subscription-block.service';
+import { CouponExpiryService } from './coupon-expiry.service';
 import { AsaasGatewayService } from './asaas-gateway.service';
 import { AdminDashboardService } from './admin-dashboard.service';
 import { CompanyManagementService } from './company-management.service';
@@ -33,6 +34,7 @@ import { InstallmentRenewalService } from './installment-renewal.service';
   providers: [
     SubscriptionsService,
     SubscriptionBlockService,
+    CouponExpiryService,
     AsaasGatewayService,
     AdminDashboardService,
     CompanyManagementService,
@@ -49,6 +51,7 @@ import { InstallmentRenewalService } from './installment-renewal.service';
   exports: [
     SubscriptionsService,
     SubscriptionBlockService,
+    CouponExpiryService,
     AsaasGatewayService,
     AdminDashboardService,
     CompanyManagementService,

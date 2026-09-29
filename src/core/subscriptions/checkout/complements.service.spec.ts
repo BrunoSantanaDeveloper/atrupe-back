@@ -89,6 +89,7 @@ describe('ComplementsService', () => {
     company: { findUnique: jest.fn() },
   };
   const gateway = {
+    getAsaasSubscription: jest.fn(),
     getAsaasSubscriptionPayments: jest.fn(),
     updateAsaasSubscription: jest.fn(),
     updateAsaasPayment: jest.fn(),
@@ -102,6 +103,11 @@ describe('ComplementsService', () => {
     ctx: Record<string, any> = {},
   ) => {
     prisma.subscription.findUniqueOrThrow.mockResolvedValue(sub);
+    // No Asaas, a mesma mensalidade que o banco registra.
+    gateway.getAsaasSubscription.mockResolvedValue({
+      status: 'ACTIVE',
+      value: sub.value,
+    });
     quoteService.getBillingContext.mockResolvedValue({
       intent: 'EVOLUTION',
       hasOpenCharge: false,
@@ -219,6 +225,40 @@ describe('ComplementsService', () => {
   });
 
   describe('inclusão', () => {
+    it('o Asaas cobra outro valor que o registrado: recusa sem mexer em nada', async () => {
+      // O banco diz 147, o Asaas cobra 217: somar a NF sobre 147 erraria.
+      gateway.getAsaasSubscription.mockResolvedValue({
+        status: 'ACTIVE',
+        value: 217,
+      });
+
+      await expect(
+        service.apply(
+          ADMIN,
+          { modules: ['nota_fiscal'], termsAcceptance: ACCEPT } as any,
+          META,
+        ),
+      ).rejects.toMatchObject({ response: { code: 'BILLING_OUT_OF_SYNC' } });
+      expect(gateway.updateAsaasSubscription).not.toHaveBeenCalled();
+      expect(gateway.updateAsaasPayment).not.toHaveBeenCalled();
+      expect(tx.subscription.update).not.toHaveBeenCalled();
+    });
+
+    it('assinatura removida no Asaas: recusa', async () => {
+      gateway.getAsaasSubscription.mockResolvedValue({
+        status: 'ACTIVE',
+        value: 147,
+        deleted: true,
+      });
+
+      await expect(
+        service.apply(
+          ADMIN,
+          { modules: ['nota_fiscal'], termsAcceptance: ACCEPT } as any,
+          META,
+        ),
+      ).rejects.toMatchObject({ response: { code: 'BILLING_OUT_OF_SYNC' } });
+    });
     it('contratar complementos é do Usuário nº 1: outro administrador é recusado (contrato, 4.2)', async () => {
       await expect(
         service.apply(

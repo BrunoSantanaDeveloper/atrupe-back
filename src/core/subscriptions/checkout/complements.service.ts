@@ -500,6 +500,34 @@ export class ComplementsService {
     const asaasId = prepared.sub.asaasSubscriptionId;
     const deltaCents = prepared.change.deltaCycleCents;
 
+    // A conta parte do valor registrado; se o Asaas cobra outro, somar ou
+    // tirar o complemento dele erraria a mensalidade — cobrando um módulo
+    // que já não era cobrado, ou descontando um que nunca foi.
+    let remote: Awaited<
+      ReturnType<AsaasGatewayService['getAsaasSubscription']>
+    >;
+    try {
+      remote = await this.asaasGateway.getAsaasSubscription(asaasId);
+    } catch (error) {
+      throw this.gatewayError(error, asaasId);
+    }
+    const remoteCents = remote ? Math.round(Number(remote.value) * 100) : null;
+    if (
+      !remote ||
+      remote.deleted ||
+      remote.status !== 'ACTIVE' ||
+      Math.abs(remoteCents - prepared.change.currentRecurringCents) > 1
+    ) {
+      this.logger.error(
+        `RECONCILIAR: complementos da assinatura ${prepared.sub.id} recusados — registrado ${prepared.change.currentRecurringCents} centavos, Asaas ${remote ? `${remoteCents} centavos (${remote.deleted ? 'removida' : remote.status})` : 'sem a assinatura'}.`,
+      );
+      throw new ConflictException({
+        code: 'BILLING_OUT_OF_SYNC',
+        message:
+          'A cobrança desta assinatura está diferente do registrado. Fale com a Atrupe para ajustar antes de alterar os complementos.',
+      });
+    }
+
     let payments: any[];
     try {
       payments = await this.asaasGateway.getAsaasSubscriptionPayments(asaasId);

@@ -23,11 +23,15 @@ describe('SubscriptionBlockService', () => {
     },
     subscription: {
       findFirst: jest.fn(),
+      update: jest.fn(),
     },
+    subscriptionHistory: { create: jest.fn() },
+    $transaction: jest.fn(),
   };
 
   const mockAsaasGatewayService = {
     getAsaasSubscriptionPayments: jest.fn(),
+    getAsaasSubscription: jest.fn(),
     getSubscriptionPayments: jest.fn(),
     getInstallmentPayments: jest.fn(),
     // O serviço pede as cobranças pelo modo; o mock responde como o gateway:
@@ -60,6 +64,11 @@ describe('SubscriptionBlockService', () => {
 
     // Reset mocks
     jest.clearAllMocks();
+    // A assinatura segue viva no Asaas, salvo quando o teste diz o contrário.
+    mockAsaasGatewayService.getAsaasSubscription.mockResolvedValue({
+      status: 'ACTIVE',
+      deleted: false,
+    });
   });
 
   it('should be defined', () => {
@@ -75,6 +84,114 @@ describe('SubscriptionBlockService', () => {
       date.setDate(date.getDate() - daysAgo);
       return date.toISOString().split('T')[0];
     };
+
+    it('assinatura removida no Asaas é encerrada, com as mensalidades locais em aberto', async () => {
+      mockPrismaService.company.findMany.mockResolvedValue([
+        {
+          id: 'company-r',
+          name: 'Removida',
+          blockLevel: 'NONE',
+          Subscription: [
+            {
+              id: 'sub-local-r',
+              asaasSubscriptionId: 'sub_rem',
+              nextDueDate: new Date(),
+            },
+          ],
+        },
+      ]);
+      mockAsaasGatewayService.getAsaasSubscription.mockResolvedValue({
+        status: 'ACTIVE',
+        deleted: true,
+      });
+      // A de uma assinatura removida ainda lista as já pagas.
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { status: 'RECEIVED', dueDate: makeDueDate(90) },
+      ]);
+      const tx = {
+        subscription: { update: jest.fn() },
+        payment: { updateMany: jest.fn() },
+        subscriptionHistory: { create: jest.fn() },
+      };
+      mockPrismaService.$transaction.mockImplementation(async (cb) => cb(tx));
+
+      const results = await service.checkAndApplyBlocks();
+
+      expect(results[0].action).toBe('ended');
+      expect(tx.subscription.update).toHaveBeenCalledWith({
+        where: { id: 'sub-local-r' },
+        data: { status: 'CANCELED', endedReason: 'GATEWAY_REMOVED' },
+      });
+      expect(tx.payment.updateMany).toHaveBeenCalledWith({
+        where: {
+          subscriptionId: 'sub-local-r',
+          status: { in: ['PENDING', 'OVERDUE'] },
+        },
+        data: { status: 'CANCELED' },
+      });
+      expect(mockPrismaService.company.update).not.toHaveBeenCalled();
+    });
+
+    it('falha ao consultar a assinatura no Asaas não encerra nada', async () => {
+      mockPrismaService.company.findMany.mockResolvedValue([
+        {
+          id: 'company-f',
+          name: 'Falha',
+          blockLevel: 'NONE',
+          Subscription: [
+            {
+              id: 'sub-local-f',
+              asaasSubscriptionId: 'sub_f',
+              nextDueDate: new Date(),
+            },
+          ],
+        },
+      ]);
+      mockAsaasGatewayService.getAsaasSubscription.mockRejectedValue(
+        new Error('timeout'),
+      );
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { status: 'RECEIVED', dueDate: makeDueDate(10) },
+      ]);
+
+      const results = await service.checkAndApplyBlocks();
+
+      expect(results[0].action).not.toBe('ended');
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('confere a assinatura paga, não o teste gratuito que ficou ativo', async () => {
+      mockPrismaService.company.findMany.mockResolvedValue([
+        {
+          id: 'company-t',
+          name: 'Teste e paga',
+          blockLevel: 'NONE',
+          Subscription: [
+            {
+              id: 'trial-1',
+              asaasSubscriptionId: 'trial_sub_1',
+              nextDueDate: new Date(),
+            },
+            {
+              id: 'paga-1',
+              asaasSubscriptionId: 'sub_paga',
+              nextDueDate: new Date(),
+            },
+          ],
+        },
+      ]);
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { status: 'OVERDUE', dueDate: makeDueDate(4) },
+      ]);
+      mockPrismaService.company.update.mockResolvedValue({});
+
+      const results = await service.checkAndApplyBlocks();
+
+      expect(results[0].newBlockLevel).toBe('PARTIAL');
+      expect(
+        mockAsaasGatewayService.getAsaasSubscriptionPayments,
+      ).toHaveBeenCalledWith('sub_paga');
+    });
 
     it('should apply PARTIAL block for company with 3+ days overdue in Asaas', async () => {
       mockPrismaService.company.findMany.mockResolvedValue([

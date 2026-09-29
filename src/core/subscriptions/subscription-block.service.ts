@@ -11,7 +11,13 @@ export interface BlockCheckResult {
   daysOverdue: number;
   previousBlockLevel: BlockLevel;
   newBlockLevel: BlockLevel;
-  action: 'blocked' | 'upgraded' | 'unchanged' | 'skipped' | 'unblocked';
+  action:
+    | 'blocked'
+    | 'upgraded'
+    | 'unchanged'
+    | 'skipped'
+    | 'unblocked'
+    | 'ended';
 }
 
 @Injectable()
@@ -33,6 +39,89 @@ export class SubscriptionBlockService {
     private readonly prisma: PrismaService,
     private readonly asaasGateway: AsaasGatewayService,
   ) {}
+
+  /**
+   * Encerra a assinatura local quando a do Asaas foi removida, inativada ou
+   * expirou: sem ela, nada cobra, e a conta seguiria liberada de graça. As
+   * mensalidades locais em aberto vão junto — elas não existem mais no Asaas,
+   * e deixá-las pedindo regularização travaria uma recontratação.
+   *
+   * Só a assinatura recorrente; o anual parcelado não tem assinatura no
+   * Asaas. Falha na consulta não encerra nada.
+   */
+  async endIfRemovedFromGateway(subscription: {
+    id: string;
+    asaasSubscriptionId: string;
+    asaasInstallmentId?: string | null;
+  }): Promise<boolean> {
+    if (
+      subscription.asaasInstallmentId ||
+      !subscription.asaasSubscriptionId.startsWith('sub_')
+    ) {
+      return false;
+    }
+
+    let remote: Awaited<
+      ReturnType<AsaasGatewayService['getAsaasSubscription']>
+    >;
+    try {
+      remote = await this.asaasGateway.getAsaasSubscription(
+        subscription.asaasSubscriptionId,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Assinatura ${subscription.asaasSubscriptionId} não consultada no Asaas: ${error.message}`,
+      );
+      return false;
+    }
+    const gone =
+      !remote ||
+      remote.deleted === true ||
+      remote.status === 'INACTIVE' ||
+      remote.status === 'EXPIRED';
+    if (!gone) return false;
+
+    const reason = !remote
+      ? 'não existe no Asaas'
+      : remote.deleted
+        ? 'foi removida no Asaas'
+        : `está ${remote.status} no Asaas`;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.subscription.update({
+        where: { id: subscription.id },
+        data: { status: 'CANCELED', endedReason: 'GATEWAY_REMOVED' },
+      });
+      await tx.payment.updateMany({
+        where: {
+          subscriptionId: subscription.id,
+          status: { in: ['PENDING', 'OVERDUE'] },
+        },
+        data: { status: 'CANCELED' },
+      });
+      await tx.subscriptionHistory.create({
+        data: {
+          subscriptionId: subscription.id,
+          action: 'CANCELED',
+          description: `Assinatura encerrada: a cobrança ${reason}, e a conta não pode seguir liberada sem cobrança.`,
+          changes: {
+            before: { status: 'ACTIVE' },
+            after: { status: 'CANCELED' },
+          },
+          metadata: {
+            reason: 'GATEWAY_REMOVED',
+            asaasSubscriptionId: subscription.asaasSubscriptionId,
+            asaasStatus: remote ? remote.status : null,
+            asaasDeleted: remote ? !!remote.deleted : null,
+          },
+          createdByName: 'Sistema',
+        },
+      });
+    });
+    this.logger.warn(
+      `Assinatura ${subscription.id} encerrada: a ${subscription.asaasSubscriptionId} ${reason}.`,
+    );
+    return true;
+  }
 
   /**
    * Cron job executado diariamente às 3h para verificar atrasos
@@ -175,6 +264,7 @@ export class SubscriptionBlockService {
         Subscription: {
           where: { status: 'ACTIVE' },
           select: {
+            id: true,
             asaasSubscriptionId: true,
             asaasInstallmentId: true,
             billingMode: true,
@@ -185,7 +275,12 @@ export class SubscriptionBlockService {
     });
 
     for (const company of companiesWithSubscriptions) {
-      const subscription = company.Subscription[0];
+      // A assinatura cobrada pelo Asaas, não a primeira da lista: com um teste
+      // gratuito esquecido como ativo, pegar o [0] deixava a paga sem
+      // conferência.
+      const subscription =
+        company.Subscription.find((s) => isBilledByGateway(s)) ??
+        company.Subscription[0];
       if (!subscription) continue;
 
       // Pular subscriptions sem vínculo real com Asaas (manual, trial, test)
@@ -197,6 +292,22 @@ export class SubscriptionBlockService {
           previousBlockLevel: company.blockLevel,
           newBlockLevel: company.blockLevel,
           action: 'skipped',
+        });
+        continue;
+      }
+
+      // Assinatura removida no Asaas: nada cobra, e a conta ficaria liberada
+      // sem pagar. O aviso de remoção encerra pelo webhook; isto cobre o que
+      // ele não trouxe. A lista de cobranças não basta para saber — a de uma
+      // assinatura removida ainda traz as já pagas.
+      if (await this.endIfRemovedFromGateway(subscription)) {
+        results.push({
+          companyId: company.id,
+          companyName: company.name,
+          daysOverdue: 0,
+          previousBlockLevel: company.blockLevel,
+          newBlockLevel: company.blockLevel,
+          action: 'ended',
         });
         continue;
       }

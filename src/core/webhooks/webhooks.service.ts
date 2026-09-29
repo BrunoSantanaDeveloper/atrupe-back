@@ -7,6 +7,7 @@ import {
 } from './dto/asaas-webhook.dto';
 import { SubscriptionBlockService } from '../subscriptions/subscription-block.service';
 import { AsaasGatewayService } from '../subscriptions/asaas-gateway.service';
+import { CouponExpiryService } from '../subscriptions/coupon-expiry.service';
 import { isInstallmentBilling } from '../subscriptions/billing-mode';
 
 @Injectable()
@@ -21,6 +22,7 @@ export class WebhooksService {
     @Inject(forwardRef(() => SubscriptionBlockService))
     private readonly subscriptionBlockService: SubscriptionBlockService,
     private readonly asaasGateway: AsaasGatewayService,
+    private readonly couponExpiry: CouponExpiryService,
   ) {}
 
   async handleAsaasWebhook(payload: AsaasWebhookPayload) {
@@ -340,6 +342,26 @@ export class WebhooksService {
         return;
       }
 
+      // Desativada à mão pelo superadmin também não volta por pagamento: foi
+      // decisão de quem administra — por exemplo, a cobrança mantida no Asaas
+      // para um plano que o cliente usa fora do sistema. O pagamento acima
+      // fica registrado.
+      if (subscription?.status === 'INACTIVE') {
+        const lastStatusChange =
+          await this.prisma.subscriptionHistory.findFirst({
+            where: { subscriptionId: subscription.id, action: 'STATUS_CHANGE' },
+            orderBy: { createdAt: 'desc' },
+            select: { metadata: true },
+          });
+        const newStatus = (lastStatusChange?.metadata as any)?.newStatus;
+        if (newStatus === 'INACTIVE') {
+          this.logger.warn(
+            `Assinatura ${subscription.id} foi desativada manualmente; o pagamento ${asaasPaymentId} não a reativa`,
+          );
+          return;
+        }
+      }
+
       if (subscription) {
         const previousStatus = subscription.status;
 
@@ -413,98 +435,14 @@ export class WebhooksService {
           `Subscription ${subscription.id} atualizada para ACTIVE`,
         );
 
-        // Expiração do desconto (ONCE ou MONTHS).
-        //
-        // Isto atende às assinaturas ANTIGAS, criadas quando o cupom era
-        // embutido no valor recorrente da assinatura no Asaas. A partir da
-        // fase do motor de preço o cupom abate só a primeira cobrança e a
-        // assinatura nasce com o valor cheio, o que torna esta rotina
-        // desnecessária para as novas.
-        // recurringValueCents só existe nas contratações novas, que já nascem
-        // no Asaas com o valor cheio: restaurar preço ali seria recalcular
-        // (e errar, no ciclo anual) um valor que já está certo.
-        if (subscription.couponId && subscription.recurringValueCents == null) {
-          try {
-            const coupon = await this.prisma.coupon.findUnique({
-              where: { id: subscription.couponId },
-            });
-
-            if (coupon) {
-              let shouldRestorePrice = false;
-
-              if (coupon.durationType === 'ONCE') {
-                shouldRestorePrice = true;
-              } else if (coupon.durationType === 'MONTHS') {
-                // RECEIVED (liquidada) também conta: contar só CONFIRMED
-                // deixava de fora as cobranças que o Asaas já liquidou, e o
-                // desconto nunca expirava.
-                const confirmedCount = await this.prisma.payment.count({
-                  where: {
-                    subscriptionId: subscription.id,
-                    status: { in: ['CONFIRMED', 'RECEIVED'] },
-                  },
-                });
-
-                if (confirmedCount >= (coupon.durationMonths || 1)) {
-                  shouldRestorePrice = true;
-                }
-              }
-
-              if (shouldRestorePrice) {
-                const plan = await this.prisma.plan.findUnique({
-                  where: { id: subscription.planId },
-                });
-                const activeFeatures =
-                  await this.prisma.subscriptionFeature.findMany({
-                    where: { subscriptionId: subscription.id, isActive: true },
-                  });
-                const featuresSum = activeFeatures.reduce(
-                  (sum, f) => sum + (f.price || 0),
-                  0,
-                );
-                const usersSum =
-                  (plan.additionalUserPrice || 0) *
-                  (subscription.additionalUsers || 0);
-                const fullPrice =
-                  (plan.basePrice + featuresSum + usersSum) / 100;
-
-                this.logger.log(
-                  `Expirando cupom ${coupon.code} da Subscription ${subscription.id}. Restaurando preço cheio: R$ ${fullPrice}`,
-                );
-
-                await this.asaasGateway.updateAsaasSubscription(
-                  subscription.asaasSubscriptionId,
-                  { value: fullPrice },
-                );
-
-                await this.prisma.subscription.update({
-                  where: { id: subscription.id },
-                  data: {
-                    value: fullPrice,
-                    couponId: null,
-                  },
-                });
-
-                await this.prisma.subscriptionHistory.create({
-                  data: {
-                    subscriptionId: subscription.id,
-                    action: 'COUPON_EXPIRED',
-                    description: `Cupom ${coupon.code} expirado. Valor restaurado para R$ ${fullPrice}.`,
-                    metadata: {
-                      couponCode: coupon.code,
-                      originalValue: subscription.value,
-                      newValue: fullPrice,
-                    },
-                    createdByName: 'Sistema Asaas',
-                  },
-                });
-              }
-            }
-          } catch (couponError) {
-            this.logger.error(
-              `Erro ao gerenciar expiração do cupom para a subscription ${subscription.id}: ${couponError.message}`,
-            );
-          }
+        // Fim do desconto das assinaturas antigas: pela data, na rotina de
+        // cupons — a mesma que roda todo dia.
+        try {
+          await this.couponExpiry.expireIfDue(subscription.id);
+        } catch (couponError) {
+          this.logger.error(
+            `Erro ao gerenciar expiração do cupom para a subscription ${subscription.id}: ${couponError.message}`,
+          );
         }
 
         // Registrar ativação no histórico se o status mudou

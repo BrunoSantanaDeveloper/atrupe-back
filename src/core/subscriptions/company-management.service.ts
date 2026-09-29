@@ -24,6 +24,33 @@ export class CompanyManagementService {
     private asaasGateway: AsaasGatewayService,
   ) {}
 
+  /**
+   * A assinatura da empresa que o Asaas ainda cobra — ativa no sistema ou
+   * não: a que ficou inativa aqui (pagamento que o sistema não viu, por
+   * exemplo) também segue gerando cobranças lá.
+   */
+  private async liveGatewaySubscription(companyId: string) {
+    const candidates = await this.prisma.subscription.findMany({
+      where: {
+        companyId,
+        status: { in: ['ACTIVE', 'INACTIVE'] },
+        asaasSubscriptionId: { startsWith: 'sub_' },
+        asaasInstallmentId: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      include: { plan: { select: { name: true } } },
+    });
+    for (const subscription of candidates) {
+      const remote = await this.asaasGateway.getAsaasSubscription(
+        subscription.asaasSubscriptionId,
+      );
+      if (remote && !remote.deleted && remote.status === 'ACTIVE') {
+        return { ...subscription, remoteValue: Number(remote.value) };
+      }
+    }
+    return null;
+  }
+
   async assignManual(assignDto: AssignSubscriptionDto, adminUserId: string) {
     // Validar senha do administrador
     const adminUser = await this.prisma.user.findFirst({
@@ -77,6 +104,16 @@ export class CompanyManagementService {
 
     if (!plan.basePrice || plan.basePrice <= 0) {
       throw new BadRequestException('Este plano não possui preço definido.');
+    }
+
+    // Plano manual não é cobrado. Com uma cobrança viva no Asaas, ele deixaria
+    // o Asaas cobrando por fora de uma assinatura que o sistema não acompanha.
+    const charging = await this.liveGatewaySubscription(assignDto.companyId);
+    if (charging) {
+      throw new ConflictException({
+        code: 'GATEWAY_BILLING_ACTIVE',
+        message: `A empresa tem uma cobrança ativa no Asaas (${charging.plan.name}, R$ ${charging.remoteValue.toFixed(2).replace('.', ',')}). Reative essa assinatura em vez de atribuir um plano manual, ou cancele a cobrança antes.`,
+      });
     }
 
     // Calcular valor base do plano (sem features ou usuários adicionais)
@@ -273,6 +310,31 @@ export class CompanyManagementService {
     if (updateDto.document) {
       companyUpdateData.cnpj = updateDto.document;
       changes.after.document = updateDto.document;
+    }
+
+    // Reativar à mão uma assinatura cuja cobrança não existe mais no Asaas
+    // libera o acesso sem nada cobrando. Cortesia é plano manual.
+    if (updateDto.status === 'ACTIVE') {
+      const target = await this.prisma.subscription.findFirst({
+        where: { companyId: company.id },
+        orderBy: { createdAt: 'desc' },
+        select: { asaasSubscriptionId: true, asaasInstallmentId: true },
+      });
+      if (
+        target?.asaasSubscriptionId.startsWith('sub_') &&
+        !target.asaasInstallmentId
+      ) {
+        const remote = await this.asaasGateway.getAsaasSubscription(
+          target.asaasSubscriptionId,
+        );
+        if (!remote || remote.deleted || remote.status !== 'ACTIVE') {
+          throw new BadRequestException({
+            code: 'GATEWAY_BILLING_ENDED',
+            message:
+              'A cobrança desta assinatura não está mais ativa no Asaas: reativá-la liberaria o acesso sem nada cobrando. Para uma cortesia, atribua um plano manual.',
+          });
+        }
+      }
     }
 
     // Todas as mutações dentro de uma transaction para atomicidade

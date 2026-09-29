@@ -3,6 +3,7 @@ import { WebhooksService } from './webhooks.service';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { SubscriptionBlockService } from '../subscriptions/subscription-block.service';
 import { AsaasGatewayService } from '../subscriptions/asaas-gateway.service';
+import { CouponExpiryService } from '../subscriptions/coupon-expiry.service';
 import { AsaasWebhookEvent } from './dto/asaas-webhook.dto';
 
 describe('WebhooksService', () => {
@@ -28,6 +29,7 @@ describe('WebhooksService', () => {
     },
     subscriptionHistory: {
       create: jest.fn(),
+      findFirst: jest.fn(),
     },
     company: {
       findUnique: jest.fn().mockResolvedValue(null),
@@ -48,6 +50,8 @@ describe('WebhooksService', () => {
       typeof arg === 'function' ? arg(mockPrismaService) : Promise.all(arg),
     ),
   };
+
+  const mockCouponExpiry = { expireIfDue: jest.fn() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -70,6 +74,7 @@ describe('WebhooksService', () => {
             updateAsaasSubscription: jest.fn(),
           },
         },
+        { provide: CouponExpiryService, useValue: mockCouponExpiry },
       ],
     }).compile();
 
@@ -176,6 +181,44 @@ describe('WebhooksService', () => {
       );
 
       expect(mockPrismaService.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'ACTIVE' }),
+        }),
+      );
+    });
+
+    it('ativa e passa pela rotina de fim de cupom', async () => {
+      mockPrismaService.payment.findFirst.mockResolvedValue(null);
+      mockPrismaService.subscription.findFirst.mockResolvedValue({
+        id: 'sub-local-1',
+        companyId: 'company-1',
+        status: 'ACTIVE',
+      });
+      mockPrismaService.subscription.update.mockResolvedValue({});
+
+      await service.handleAsaasWebhook(
+        makePayload('pay_123', 'sub_asaas_1') as any,
+      );
+
+      expect(mockCouponExpiry.expireIfDue).toHaveBeenCalledWith('sub-local-1');
+    });
+
+    it('assinatura desativada à mão pelo superadmin não volta por pagamento', async () => {
+      mockPrismaService.payment.findFirst.mockResolvedValue(null);
+      mockPrismaService.subscription.findFirst.mockResolvedValue({
+        id: 'sub-local-1',
+        companyId: 'company-1',
+        status: 'INACTIVE',
+      });
+      mockPrismaService.subscriptionHistory.findFirst.mockResolvedValueOnce({
+        metadata: { previousStatus: 'ACTIVE', newStatus: 'INACTIVE' },
+      });
+
+      await service.handleAsaasWebhook(
+        makePayload('pay_123', 'sub_asaas_1') as any,
+      );
+
+      expect(mockPrismaService.subscription.update).not.toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ status: 'ACTIVE' }),
         }),

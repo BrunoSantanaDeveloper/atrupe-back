@@ -162,8 +162,27 @@ describe('AsaasGatewayService', () => {
 
       expect(mockApi.get).toHaveBeenCalledWith(
         '/subscriptions/sub_123/payments',
+        { params: { limit: 100, offset: 0 } },
       );
       expect(result).toEqual(payments);
+    });
+
+    it('lê todas as páginas: sem isso, a cobrança vencida de uma assinatura longa ficava de fora', async () => {
+      mockApi.get
+        .mockResolvedValueOnce({
+          data: { data: [{ id: 'pay_1' }], hasMore: true },
+        })
+        .mockResolvedValueOnce({
+          data: { data: [{ id: 'pay_2' }], hasMore: false },
+        });
+
+      const result = await service.getAsaasSubscriptionPayments('sub_123');
+
+      expect(mockApi.get).toHaveBeenLastCalledWith(
+        '/subscriptions/sub_123/payments',
+        { params: { limit: 100, offset: 100 } },
+      );
+      expect(result).toEqual([{ id: 'pay_1' }, { id: 'pay_2' }]);
     });
 
     it('should return empty array when no payments', async () => {

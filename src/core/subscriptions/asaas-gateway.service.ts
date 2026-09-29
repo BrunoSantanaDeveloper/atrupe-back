@@ -118,6 +118,29 @@ export class AsaasGatewayService {
   /**
    * Busca os pagamentos de uma subscription no Asaas
    */
+  /**
+   * A assinatura como o Asaas a vê — valor, situação e se foi removida.
+   * `null` quando ela não existe lá.
+   */
+  async getAsaasSubscription(
+    asaasSubscriptionId: string,
+  ): Promise<(AsaasSubscriptionResponse & { deleted?: boolean }) | null> {
+    try {
+      const api = await this.asaasApi();
+      const response = await api.get(`/subscriptions/${asaasSubscriptionId}`);
+      return response.data;
+    } catch (error) {
+      if (error.response?.status === 404) return null;
+      this.logger.error('Erro ao buscar assinatura no Asaas:', {
+        message: error.message,
+        status: error.response?.status,
+      });
+      throw new Error(
+        `Falha ao buscar a assinatura no Asaas: ${error.message}`,
+      );
+    }
+  }
+
   async getAsaasSubscriptionPayments(
     asaasSubscriptionId: string,
   ): Promise<any[]> {
@@ -125,8 +148,17 @@ export class AsaasGatewayService {
 
     try {
       const api = await this.asaasApi();
-      const response = await api.get(route);
-      return response.data.data || [];
+      // Sem `limit`, o Asaas devolve 10 por página: numa assinatura com mais
+      // de 10 meses, a cobrança vencida podia ficar de fora.
+      const payments: any[] = [];
+      for (let offset = 0; ; offset += 100) {
+        const response = await api.get(route, {
+          params: { limit: 100, offset },
+        });
+        payments.push(...(response.data.data || []));
+        if (!response.data.hasMore) break;
+      }
+      return payments;
     } catch (error) {
       this.logger.error('Erro ao buscar payments da subscription no Asaas:', {
         message: error.message,
