@@ -778,11 +778,12 @@ export class ImportService {
    */
   private async refreshImportedSale(
     quotationId: string,
-    expected: { hasOrder: boolean; totalValue: number },
+    expected: { hasOrder: boolean; totalValue: number; status?: string },
   ): Promise<'unchanged' | 'refreshed' | 'blocked'> {
     const atual = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
       select: {
+        status: true,
         totalValue: true,
         order: {
           select: {
@@ -798,7 +799,8 @@ export class ImportService {
 
     const mudou =
       !!atual.order !== expected.hasOrder ||
-      Math.round(atual.totalValue) !== Math.round(expected.totalValue);
+      Math.round(atual.totalValue) !== Math.round(expected.totalValue) ||
+      (!!expected.status && atual.status !== expected.status);
 
     if (!mudou) return 'unchanged';
 
@@ -2635,6 +2637,28 @@ export class ImportService {
 
         const legacyId = firstItem.VendaCodigoLegado?.trim() || null;
 
+        // Mapear status
+        let status:
+          | 'OPEN'
+          | 'APPROVED'
+          | 'DONE'
+          | 'REJECTED'
+          | 'CANCELED'
+          | 'OVERDUE' = 'OPEN';
+        const statusUpper = (firstItem.Status || 'OPEN').toUpperCase();
+
+        if (statusUpper === 'APPROVED' || statusUpper === 'APROVADO') {
+          status = 'APPROVED';
+        } else if (statusUpper === 'DONE' || statusUpper === 'CONCLUIDO') {
+          status = 'DONE';
+        } else if (statusUpper === 'REJECTED' || statusUpper === 'REJEITADO') {
+          status = 'REJECTED';
+        } else if (statusUpper === 'CANCELED' || statusUpper === 'CANCELADO') {
+          status = 'CANCELED';
+        } else if (statusUpper === 'OVERDUE' || statusUpper === 'VENCIDO') {
+          status = 'OVERDUE';
+        }
+
         // Sem esta checagem a importação de vendas não é idempotente: rodar de
         // novo cria documentos duplicados em vez de reconhecer os já migrados.
         // Reimportar um documento exige apagá-lo antes, porque as relações
@@ -2649,6 +2673,7 @@ export class ImportService {
             const estado = await this.refreshImportedSale(alreadyImported.id, {
               hasOrder: false,
               totalValue: this.expectedSaleTotal(items),
+              status,
             });
 
             if (estado === 'blocked') {
@@ -2693,28 +2718,6 @@ export class ImportService {
 
         if (!seller) {
           throw new Error(this.sellerNotFoundMessage(firstItem));
-        }
-
-        // Mapear status
-        let status:
-          | 'OPEN'
-          | 'APPROVED'
-          | 'DONE'
-          | 'REJECTED'
-          | 'CANCELED'
-          | 'OVERDUE' = 'OPEN';
-        const statusUpper = (firstItem.Status || 'OPEN').toUpperCase();
-
-        if (statusUpper === 'APPROVED' || statusUpper === 'APROVADO') {
-          status = 'APPROVED';
-        } else if (statusUpper === 'DONE' || statusUpper === 'CONCLUIDO') {
-          status = 'DONE';
-        } else if (statusUpper === 'REJECTED' || statusUpper === 'REJEITADO') {
-          status = 'REJECTED';
-        } else if (statusUpper === 'CANCELED' || statusUpper === 'CANCELADO') {
-          status = 'CANCELED';
-        } else if (statusUpper === 'OVERDUE' || statusUpper === 'VENCIDO') {
-          status = 'OVERDUE';
         }
 
         // Buscar contato/responsável se informado (por nome ou email)
@@ -2769,10 +2772,15 @@ export class ImportService {
             createdAt: firstItem.DataVenda
               ? this.toDayDate(firstItem.DataVenda)
               : new Date(),
+            // "Concluído" aqui é o orçamento fechado, que no Atrupe fica
+            // aguardando aprovação — não é venda aprovada.
             approvedAt:
-              ['APPROVED', 'DONE'].includes(status) && firstItem.DataVenda
+              status === 'APPROVED' && firstItem.DataVenda
                 ? this.toDayDate(firstItem.DataVenda)
                 : null,
+            finishedAt: firstItem.DataConclusao
+              ? this.toDayDate(firstItem.DataConclusao)
+              : null,
             quotationNumber: parseInt(firstItem.NumeroVenda),
             legacyId,
             totalValue: 0, // Será calculado depois

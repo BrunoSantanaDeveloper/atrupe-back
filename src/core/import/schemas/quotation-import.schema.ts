@@ -162,7 +162,7 @@ export const QUOTATION_IMPORT_SCHEMA = {
       type: 'string',
       maxLength: 50,
       description:
-        'Status do orçamento: OPEN, APPROVED, DONE, REJECTED, CANCELED',
+        'Status do orçamento: OPEN, APPROVED, DONE, REJECTED, CANCELED, OVERDUE. Aceita também APROVADO, CONCLUIDO, REJEITADO, CANCELADO e VENCIDO.',
       example: 'OPEN',
     },
     {
@@ -171,6 +171,14 @@ export const QUOTATION_IMPORT_SCHEMA = {
       type: 'date',
       description: 'Data de criação',
       example: '2024-01-15',
+    },
+    {
+      name: 'DataConclusao',
+      required: false,
+      type: 'string',
+      description:
+        'Data em que o orçamento foi fechado no sistema de origem. Preenche "Concluído em".',
+      example: '2024-11-16',
     },
     {
       name: 'DataValidade',

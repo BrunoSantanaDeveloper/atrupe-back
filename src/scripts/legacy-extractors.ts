@@ -337,6 +337,8 @@ const saleSql = (base: string, statusIn: string) => `
     v.referencia                AS ReferenciaVenda,
     v.venda_serie               AS Serie,
     v.venda_fkidstatus          AS statusLegado,
+    v.venda_fkidsubstatus       AS substatusLegado,
+    v.venda_data_fechamento     AS dataFechamento,
     (SELECT MAX(e2.entrega_fkidstatus) FROM ${base}.sales_entrega e2
       WHERE e2.fkidsale = v.idsale)          AS statusEntrega,
     v.cadastro_dt               AS DataVenda,
@@ -390,6 +392,7 @@ const mapSale = (row: any) => ({
   Serie: text(row.Serie),
   DataVenda: normalizeLegacyDate(row.DataVenda),
   DataEntrega: normalizeLegacyDate(row.DataEntrega),
+  DataConclusao: normalizeLegacyDate(row.dataFechamento),
   ClienteCodigoLegado: text(row.ClienteCodigoLegado),
   ClienteNome: text(row.ClienteNome),
   ClienteCpfCnpj: '',
@@ -449,7 +452,16 @@ export const QUOTATION_EXTRACTOR: LegacyExtractor = {
   documentKey: saleDocumentKey,
   map: (row) => ({
     ...mapSale(row),
-    Status: Number(row.statusLegado) === 2 ? 'CANCELADO' : 'OPEN',
+    // O legado chama de "Orçamento Cancelado" (status 2) o que a tela dele
+    // lista em Rejeitados: os substatus são motivos de perda — concorrência,
+    // valor acima do esperado, validade expirada. No orçamento em aberto,
+    // substatus 1 é Digitação e 2 é Fechado, que é o "Aguardando" do Atrupe.
+    Status:
+      Number(row.statusLegado) === 2
+        ? 'REJEITADO'
+        : Number(row.substatusLegado) === 2
+          ? 'CONCLUIDO'
+          : 'OPEN',
   }),
 };
 

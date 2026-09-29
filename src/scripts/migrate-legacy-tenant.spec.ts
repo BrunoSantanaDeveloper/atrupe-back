@@ -337,6 +337,45 @@ describe('extratores de venda', () => {
     expect(ORDER_EXTRACTOR.sql('acn_1')).toContain('IN (3, 4)');
   });
 
+  it('traduz a situação do orçamento pelo substatus do legado', () => {
+    // No legado: status 1 substatus 1 = Digitação, substatus 2 = Fechado (que
+    // a tela dele lista como Aguardando). Tudo virava digitação no Atrupe.
+    const digitacao = QUOTATION_EXTRACTOR.map({
+      ...saleRow,
+      statusLegado: 1,
+      substatusLegado: 1,
+    });
+    const fechado = QUOTATION_EXTRACTOR.map({
+      ...saleRow,
+      statusLegado: 1,
+      substatusLegado: 2,
+    });
+
+    expect(digitacao.Status).toBe('OPEN');
+    expect(fechado.Status).toBe('CONCLUIDO');
+  });
+
+  it('trata o "orçamento cancelado" do legado como rejeitado', () => {
+    // Os substatus do status 2 são motivos de perda — concorrência, valor
+    // acima do esperado, validade expirada —, que é o Rejeitados da tela.
+    const perdido = QUOTATION_EXTRACTOR.map({
+      ...saleRow,
+      statusLegado: 2,
+      substatusLegado: 34,
+    });
+
+    expect(perdido.Status).toBe('REJEITADO');
+  });
+
+  it('traz a data de fechamento do orçamento', () => {
+    const row = QUOTATION_EXTRACTOR.map({
+      ...saleRow,
+      dataFechamento: '2024-11-16T14:32:00.000Z',
+    });
+
+    expect(row.DataConclusao).toBe('2024-11-16');
+  });
+
   it('lê a entrega por subconsulta, não por junção', () => {
     // Há um registro de entrega por item: juntar multiplicaria as linhas.
     const sql = ORDER_EXTRACTOR.sql('acn_1');
