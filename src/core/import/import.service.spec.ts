@@ -1004,3 +1004,121 @@ describe('ImportService line discount', () => {
     });
   });
 });
+
+/**
+ * O cliente segue trabalhando no legado entre a primeira carga e a virada: o
+ * orçamento vira ordem de serviço, o valor muda. A recarga pulava o documento
+ * por já existir, e a conta nova ficava congelada no estado da primeira carga.
+ */
+describe('ImportService refresh of migrated sales', () => {
+  let prisma: any;
+  let service: ImportService;
+
+  const build = (quotation: any) => {
+    prisma = {
+      quotation: {
+        findUnique: jest.fn().mockResolvedValue(quotation),
+        deleteMany: jest.fn().mockResolvedValue({}),
+      },
+      quotationPayment: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({}),
+      },
+      receivable: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({}),
+      },
+      payable: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({}),
+      },
+      order: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({}),
+      },
+      receivableHistory: { deleteMany: jest.fn().mockResolvedValue({}) },
+      receivableInstallment: { deleteMany: jest.fn().mockResolvedValue({}) },
+      payableHistory: { deleteMany: jest.fn().mockResolvedValue({}) },
+      payableInstallment: { deleteMany: jest.fn().mockResolvedValue({}) },
+      commission: { deleteMany: jest.fn().mockResolvedValue({}) },
+      orderHistory: { deleteMany: jest.fn().mockResolvedValue({}) },
+      quotationInstallment: { deleteMany: jest.fn().mockResolvedValue({}) },
+      quotationProductItem: { deleteMany: jest.fn().mockResolvedValue({}) },
+      quotationProduct: { deleteMany: jest.fn().mockResolvedValue({}) },
+      deliveryInfo: { deleteMany: jest.fn().mockResolvedValue({}) },
+      deliverySchedule: { deleteMany: jest.fn().mockResolvedValue({}) },
+      quotationHistory: { deleteMany: jest.fn().mockResolvedValue({}) },
+    };
+
+    service = new ImportService(prisma as any, {} as any, {} as any);
+  };
+
+  const semNotas = { nfes: 0, nfces: 0, nfses: 0 };
+
+  const refresh = (expected: any) =>
+    (service as any).refreshImportedSale('quotation-1', expected);
+
+  it('pula o documento que não mudou', async () => {
+    build({ totalValue: 40000, order: null, _count: semNotas });
+
+    await expect(refresh({ hasOrder: false, totalValue: 40000 })).resolves.toBe(
+      'unchanged',
+    );
+    expect(prisma.quotation.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('atualiza o orçamento que virou ordem de serviço no legado', async () => {
+    build({ totalValue: 40000, order: null, _count: semNotas });
+
+    await expect(refresh({ hasOrder: true, totalValue: 40000 })).resolves.toBe(
+      'refreshed',
+    );
+    expect(prisma.quotation.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ['quotation-1'] } },
+    });
+  });
+
+  it('atualiza o documento cujo valor mudou', async () => {
+    // É o caso do desconto: a carga antiga gravou o valor cheio.
+    build({ totalValue: 50000, order: null, _count: semNotas });
+
+    await expect(refresh({ hasOrder: false, totalValue: 40000 })).resolves.toBe(
+      'refreshed',
+    );
+  });
+
+  it('recusa quando já há nota fiscal no documento', async () => {
+    // Apagar para reimportar levaria a nota junto.
+    build({
+      totalValue: 50000,
+      order: null,
+      _count: { nfes: 1, nfces: 0, nfses: 0 },
+    });
+
+    await expect(refresh({ hasOrder: false, totalValue: 40000 })).resolves.toBe(
+      'blocked',
+    );
+    expect(prisma.quotation.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('recusa quando a nota está na ordem de serviço', async () => {
+    build({
+      totalValue: 50000,
+      order: { id: 'order-1', _count: { nfes: 0, nfces: 2, nfses: 0 } },
+      _count: semNotas,
+    });
+
+    await expect(refresh({ hasOrder: true, totalValue: 40000 })).resolves.toBe(
+      'blocked',
+    );
+  });
+
+  it('soma o valor esperado do documento com o desconto das linhas', () => {
+    const total = (service as any).expectedSaleTotal([
+      { ValorTotal: '500,00', Desconto: '100,00' },
+      { ValorTotal: '250,00', Desconto: '' },
+    ]);
+
+    expect(total).toBe(65000);
+  });
+});

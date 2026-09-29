@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { resolveCompanyByEmail } from './preflight-financial-import';
+import { deleteImportedSales } from '../core/import/imported-sale-cleanup';
 
 /**
  * Apaga tudo o que a migração do legado gravou numa empresa, para permitir
@@ -45,12 +46,6 @@ export async function resetLegacyImport(
   };
 
   if (quotationIds.length > 0) {
-    const payments = await prisma.quotationPayment.findMany({
-      where: { quotationId: { in: quotationIds } },
-      select: { id: true },
-    });
-    const paymentIds = payments.map((p) => p.id);
-
     const receivables = await prisma.receivable.findMany({
       where: { quotationId: { in: quotationIds } },
       select: { id: true },
@@ -75,61 +70,7 @@ export async function resetLegacyImport(
     await count('Contas a pagar', payableIds.length);
 
     if (apply) {
-      // Ordem de dependência: filho antes do pai.
-      await prisma.receivableHistory.deleteMany({
-        where: { receivableId: { in: receivableIds } },
-      });
-      await prisma.receivableInstallment.deleteMany({
-        where: { receivableId: { in: receivableIds } },
-      });
-      await prisma.receivable.deleteMany({
-        where: { id: { in: receivableIds } },
-      });
-
-      await prisma.payableHistory.deleteMany({
-        where: { payableId: { in: payableIds } },
-      });
-      await prisma.payableInstallment.deleteMany({
-        where: { payableId: { in: payableIds } },
-      });
-      await prisma.commission.deleteMany({
-        where: { payableId: { in: payableIds } },
-      });
-      await prisma.payable.deleteMany({ where: { id: { in: payableIds } } });
-
-      await prisma.orderHistory.deleteMany({
-        where: { orderId: { in: orderIds } },
-      });
-      await prisma.order.deleteMany({ where: { id: { in: orderIds } } });
-
-      await prisma.quotationInstallment.deleteMany({
-        where: { quotationPaymentId: { in: paymentIds } },
-      });
-      await prisma.commission.deleteMany({
-        where: { quotationPayment: { quotationId: { in: quotationIds } } },
-      });
-      await prisma.quotationPayment.deleteMany({
-        where: { id: { in: paymentIds } },
-      });
-
-      await prisma.quotationProductItem.deleteMany({
-        where: { quotationId: { in: quotationIds } },
-      });
-      await prisma.quotationProduct.deleteMany({
-        where: { quotationId: { in: quotationIds } },
-      });
-      await prisma.deliveryInfo.deleteMany({
-        where: { quotationId: { in: quotationIds } },
-      });
-      await prisma.deliverySchedule.deleteMany({
-        where: { quotationId: { in: quotationIds } },
-      });
-      await prisma.quotationHistory.deleteMany({
-        where: { quotationId: { in: quotationIds } },
-      });
-      await prisma.quotation.deleteMany({
-        where: { id: { in: quotationIds } },
-      });
+      await deleteImportedSales(prisma, quotationIds);
     }
   } else {
     await count('Orçamentos e ordens', 0);

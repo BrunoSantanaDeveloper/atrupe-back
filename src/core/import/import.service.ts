@@ -37,6 +37,7 @@ import {
   resolveOptionalEmail,
   sanitizeOptionalEmail,
 } from './optional-value-sanitizers';
+import { deleteImportedSales } from './imported-sale-cleanup';
 
 /**
  * Unidades cujo preço total depende de uma medida (área, comprimento, peso…).
@@ -764,6 +765,65 @@ export class ImportService {
    * UTC e mostram o dia certo, mas a tela do documento e o PDF convertem para
    * São Paulo e mostravam um dia a menos. Meio-dia cai no mesmo dia nos dois.
    */
+  /**
+   * O documento já migrado ainda corresponde ao que o legado mostra hoje?
+   *
+   * Entre a primeira carga e a virada o cliente continua trabalhando no
+   * legado: o orçamento vira ordem de serviço, o valor muda. Pular o documento
+   * por já existir congelava a conta nova no estado da primeira carga.
+   *
+   * Atualizar exige apagar e reimportar, porque as relações filhas não têm
+   * exclusão em cascata. Daí a recusa quando já há nota fiscal no documento:
+   * apagar levaria a nota junto.
+   */
+  private async refreshImportedSale(
+    quotationId: string,
+    expected: { hasOrder: boolean; totalValue: number },
+  ): Promise<'unchanged' | 'refreshed' | 'blocked'> {
+    const atual = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      select: {
+        totalValue: true,
+        order: {
+          select: {
+            id: true,
+            _count: { select: { nfes: true, nfces: true, nfses: true } },
+          },
+        },
+        _count: { select: { nfes: true, nfces: true, nfses: true } },
+      },
+    });
+
+    if (!atual) return 'unchanged';
+
+    const mudou =
+      !!atual.order !== expected.hasOrder ||
+      Math.round(atual.totalValue) !== Math.round(expected.totalValue);
+
+    if (!mudou) return 'unchanged';
+
+    const notas =
+      atual._count.nfes +
+      atual._count.nfces +
+      atual._count.nfses +
+      (atual.order?._count.nfes ?? 0) +
+      (atual.order?._count.nfces ?? 0) +
+      (atual.order?._count.nfses ?? 0);
+
+    if (notas > 0) return 'blocked';
+
+    await deleteImportedSales(this.prisma, [quotationId]);
+    return 'refreshed';
+  }
+
+  /** Valor do documento no legado, já com o desconto das linhas. */
+  private expectedSaleTotal(items: any[]): number {
+    return items.reduce(
+      (sum, item) => sum + this.lineValues(item).finalValue,
+      0,
+    );
+  }
+
   /**
    * Valores da linha do documento, em centavos.
    *
@@ -2586,8 +2646,27 @@ export class ImportService {
           });
 
           if (alreadyImported) {
-            skippedCount++;
-            continue;
+            const estado = await this.refreshImportedSale(alreadyImported.id, {
+              hasOrder: false,
+              totalValue: this.expectedSaleTotal(items),
+            });
+
+            if (estado === 'blocked') {
+              failedCount++;
+              errors.push({
+                row: firstItem.rowNumber,
+                error: `Orçamento ${key}: mudou no legado, mas já tem nota fiscal emitida no Atrupe. Ajuste manual.`,
+              });
+              continue;
+            }
+
+            if (estado === 'unchanged') {
+              skippedCount++;
+              continue;
+            }
+
+            // 'refreshed': o documento antigo foi apagado e é recriado abaixo
+            // com o que o legado mostra hoje.
           }
         }
 
@@ -2980,8 +3059,27 @@ export class ImportService {
           });
 
           if (alreadyImported) {
-            skippedCount++;
-            continue;
+            const estado = await this.refreshImportedSale(alreadyImported.id, {
+              hasOrder: true,
+              totalValue: this.expectedSaleTotal(items),
+            });
+
+            if (estado === 'blocked') {
+              failedCount++;
+              errors.push({
+                row: firstItem.rowNumber,
+                error: `Ordem ${key}: mudou no legado, mas já tem nota fiscal emitida no Atrupe. Ajuste manual.`,
+              });
+              continue;
+            }
+
+            if (estado === 'unchanged') {
+              skippedCount++;
+              continue;
+            }
+
+            // 'refreshed': o documento antigo foi apagado e é recriado abaixo
+            // com o que o legado mostra hoje.
           }
         }
 
