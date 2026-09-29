@@ -2948,7 +2948,7 @@ export class ImportService {
               billing: 'ON_ORDER',
               downPayment: entradaValor,
               downPaymentDueDate: firstItem.EntradaVencimento
-                ? new Date(firstItem.EntradaVencimento)
+                ? this.toDayDate(firstItem.EntradaVencimento)
                 : null,
               downPaymentConditionId:
                 entradaValor > 0 ? paymentCondition.id : null,
@@ -2966,7 +2966,7 @@ export class ImportService {
                 quotationPaymentId: quotationPayment.id,
                 paymentConditionId: paymentCondition.id,
                 value: valor,
-                dueDate: new Date(vencimento),
+                dueDate: this.toDayDate(vencimento),
               });
             }
           }
@@ -3317,7 +3317,7 @@ export class ImportService {
               billing: 'ON_ORDER',
               downPayment: entradaValor,
               downPaymentDueDate: firstItem.EntradaVencimento
-                ? new Date(firstItem.EntradaVencimento)
+                ? this.toDayDate(firstItem.EntradaVencimento)
                 : null,
               downPaymentConditionId:
                 entradaValor > 0 ? paymentCondition.id : null,
@@ -3335,7 +3335,7 @@ export class ImportService {
                 quotationPaymentId: quotationPayment.id,
                 paymentConditionId: paymentCondition.id,
                 value: valor,
-                dueDate: new Date(vencimento),
+                dueDate: this.toDayDate(vencimento),
               });
             }
           }
@@ -3502,7 +3502,7 @@ export class ImportService {
           receivableId: receivableDownPayment.id,
           installmentNumber: 1,
           dueDate: entradaVencimento
-            ? new Date(entradaVencimento)
+            ? this.toDayDate(entradaVencimento)
             : quotation.createdAt,
           amount: entradaValor,
           paymentConditionId: paymentCondition?.id || null,
@@ -3915,8 +3915,11 @@ export class ImportService {
 
         if (isReceivable) {
           // Obter primeiro vencimento para verificação de duplicata
+          // Mesma conversão da gravação: procurar à meia-noite não
+          // encontrava a parcela gravada ao meio-dia, e a carga recriava o
+          // lançamento inteiro a cada execução.
           const firstDueDate = installments[0]?.DataVencimento
-            ? new Date(installments[0].DataVencimento)
+            ? this.toDayDate(installments[0].DataVencimento)
             : null;
 
           // Verificar se já existe Receivable similar (evitar duplicatas)
@@ -4044,8 +4047,11 @@ export class ImportService {
           }
         } else {
           // Obter primeiro vencimento para verificação de duplicata
+          // Mesma conversão da gravação: procurar à meia-noite não
+          // encontrava a parcela gravada ao meio-dia, e a carga recriava o
+          // lançamento inteiro a cada execução.
           const firstDueDate = installments[0]?.DataVencimento
-            ? new Date(installments[0].DataVencimento)
+            ? this.toDayDate(installments[0].DataVencimento)
             : null;
 
           // Verificar se já existe Payable similar (evitar duplicatas)
