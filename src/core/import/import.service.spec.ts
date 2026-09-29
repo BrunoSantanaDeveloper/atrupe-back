@@ -970,3 +970,37 @@ describe('ImportService product legacy link', () => {
     );
   });
 });
+
+/**
+ * Desconto do item no documento migrado: o legado guarda o valor cheio e o
+ * desconto em colunas separadas. O orçamento ignorava o desconto e a ordem o
+ * lia em reais, tirando R$ 1,00 de um desconto de R$ 100,00.
+ */
+describe('ImportService line discount', () => {
+  const service = new ImportService({} as any, {} as any, {} as any);
+  const lineValues = (item: any) => (service as any).lineValues(item);
+
+  it('desconta o valor do item, em centavos', () => {
+    expect(lineValues({ ValorTotal: '500,00', Desconto: '100,00' })).toEqual({
+      totalValue: 50000,
+      discount: 10000,
+      finalValue: 40000,
+    });
+  });
+
+  it('mantém o valor cheio quando não há desconto', () => {
+    expect(lineValues({ ValorTotal: '500,00', Desconto: '' })).toEqual({
+      totalValue: 50000,
+      discount: 0,
+      finalValue: 50000,
+    });
+  });
+
+  it('aceita o decimal com ponto que vem do legado', () => {
+    expect(lineValues({ ValorTotal: '1690.50', Desconto: '250.50' })).toEqual({
+      totalValue: 169050,
+      discount: 25050,
+      finalValue: 144000,
+    });
+  });
+});

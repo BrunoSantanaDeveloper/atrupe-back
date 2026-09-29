@@ -764,6 +764,25 @@ export class ImportService {
    * UTC e mostram o dia certo, mas a tela do documento e o PDF convertem para
    * São Paulo e mostravam um dia a menos. Meio-dia cai no mesmo dia nos dois.
    */
+  /**
+   * Valores da linha do documento, em centavos.
+   *
+   * O legado guarda o desconto por item, separado do valor total: sem ele o
+   * documento migrado fecha pelo valor cheio. E o desconto tem que vir na
+   * mesma unidade do valor — lido em reais, um desconto de R$ 100,00 tirava
+   * R$ 1,00 do total.
+   */
+  private lineValues(item: any): {
+    totalValue: number;
+    discount: number;
+    finalValue: number;
+  } {
+    const totalValue = this.toCents(item.ValorTotal) || 0;
+    const discount = this.toCents(item.Desconto) || 0;
+
+    return { totalValue, discount, finalValue: totalValue - discount };
+  }
+
   private toDayDate(value: string): Date {
     return dayDate(value);
   }
@@ -2703,8 +2722,13 @@ export class ImportService {
             throw new Error(`Produto '${item.ProdutoCodigo}' não encontrado`);
           }
 
-          const itemTotalValue = this.toCents(item.ValorTotal) || 0;
-          quotationTotalValue += itemTotalValue;
+          const {
+            totalValue: itemTotalValue,
+            discount,
+            finalValue: itemFinalValue,
+          } = this.lineValues(item);
+
+          quotationTotalValue += itemFinalValue;
 
           // Criar QuotationProduct
           const quotationProduct = await this.prisma.quotationProduct.create({
@@ -2713,7 +2737,8 @@ export class ImportService {
               productId: product.id,
               quantity: parseInt(item.Quantidade),
               totalValue: itemTotalValue,
-              finalValue: itemTotalValue,
+              finalValue: itemFinalValue,
+              discount,
               // A referência da linha é o produto; a observação é detalhe e vai
               // para as anotações. Antes a observação ocupava a descrição, e a
               // coluna "Referência" da tela mostrava um texto longo no lugar do
@@ -3078,10 +3103,13 @@ export class ImportService {
           }
 
           const quantity = this.parseDecimal(item.Quantidade) || 0;
-          const itemTotalValue = this.toCents(item.ValorTotal) || 0;
-          const discount = this.parseDecimal(item.Desconto) || 0;
+          const {
+            totalValue: itemTotalValue,
+            discount,
+            finalValue: itemFinalValue,
+          } = this.lineValues(item);
 
-          quotationTotalValue += itemTotalValue;
+          quotationTotalValue += itemFinalValue;
 
           // Criar produto do orçamento
           const quotationProduct = await this.prisma.quotationProduct.create({
@@ -3091,7 +3119,7 @@ export class ImportService {
               description: item.ProdutoNome || product.name,
               quantity,
               totalValue: itemTotalValue,
-              finalValue: itemTotalValue - discount,
+              finalValue: itemFinalValue,
               discount,
               notes: item.ObservacaoItem || null,
             },
