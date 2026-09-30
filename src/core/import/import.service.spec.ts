@@ -1061,18 +1061,23 @@ describe('ImportService refresh of migrated sales', () => {
   it('pula o documento que não mudou', async () => {
     build({ totalValue: 40000, order: null, _count: semNotas });
 
-    await expect(refresh({ hasOrder: false, totalValue: 40000 })).resolves.toBe(
-      'unchanged',
-    );
+    await expect(
+      refresh({ hasOrder: false, totalValue: 40000 }),
+    ).resolves.toMatchObject({ estado: 'unchanged' });
     expect(prisma.quotation.deleteMany).not.toHaveBeenCalled();
   });
 
   it('atualiza o orçamento que virou ordem de serviço no legado', async () => {
     build({ totalValue: 40000, order: null, _count: semNotas });
 
-    await expect(refresh({ hasOrder: true, totalValue: 40000 })).resolves.toBe(
-      'refreshed',
-    );
+    await expect(
+      refresh({ hasOrder: true, totalValue: 40000 }),
+    ).resolves.toMatchObject({
+      estado: 'refreshed',
+      // O documento é recriado com o mesmo id: quem está com a tela aberta
+      // continua olhando para o mesmo documento.
+      reuse: { quotationId: 'quotation-1', orderId: null },
+    });
     expect(prisma.quotation.deleteMany).toHaveBeenCalledWith({
       where: { id: { in: ['quotation-1'] } },
     });
@@ -1082,9 +1087,9 @@ describe('ImportService refresh of migrated sales', () => {
     // É o caso do desconto: a carga antiga gravou o valor cheio.
     build({ totalValue: 50000, order: null, _count: semNotas });
 
-    await expect(refresh({ hasOrder: false, totalValue: 40000 })).resolves.toBe(
-      'refreshed',
-    );
+    await expect(
+      refresh({ hasOrder: false, totalValue: 40000 }),
+    ).resolves.toMatchObject({ estado: 'refreshed' });
   });
 
   it('recusa quando já há nota fiscal no documento', async () => {
@@ -1095,9 +1100,9 @@ describe('ImportService refresh of migrated sales', () => {
       _count: { nfes: 1, nfces: 0, nfses: 0 },
     });
 
-    await expect(refresh({ hasOrder: false, totalValue: 40000 })).resolves.toBe(
-      'blocked',
-    );
+    await expect(
+      refresh({ hasOrder: false, totalValue: 40000 }),
+    ).resolves.toMatchObject({ estado: 'blocked' });
     expect(prisma.quotation.deleteMany).not.toHaveBeenCalled();
   });
 
@@ -1108,9 +1113,26 @@ describe('ImportService refresh of migrated sales', () => {
       _count: semNotas,
     });
 
-    await expect(refresh({ hasOrder: true, totalValue: 40000 })).resolves.toBe(
-      'blocked',
-    );
+    await expect(
+      refresh({ hasOrder: true, totalValue: 40000 }),
+    ).resolves.toMatchObject({ estado: 'blocked' });
+  });
+
+  it('reaproveita o id da ordem de serviço', () => {
+    // A lista e o link da O.S. apontam para o id da ordem; trocá-lo deixaria a
+    // tela aberta do usuário apontando para um documento que não existe mais.
+    build({
+      totalValue: 50000,
+      order: { id: 'order-1', _count: { nfes: 0, nfces: 0, nfses: 0 } },
+      _count: semNotas,
+    });
+
+    return expect(
+      refresh({ hasOrder: true, totalValue: 40000 }),
+    ).resolves.toMatchObject({
+      estado: 'refreshed',
+      reuse: { quotationId: 'quotation-1', orderId: 'order-1' },
+    });
   });
 
   it('soma o valor esperado do documento com o desconto das linhas', () => {

@@ -779,7 +779,11 @@ export class ImportService {
   private async refreshImportedSale(
     quotationId: string,
     expected: { hasOrder: boolean; totalValue: number; status?: string },
-  ): Promise<'unchanged' | 'refreshed' | 'blocked'> {
+  ): Promise<{
+    estado: 'unchanged' | 'refreshed' | 'blocked';
+    /** Ids a reaproveitar na recriação, para o documento não trocar de endereço. */
+    reuse?: { quotationId: string; orderId: string | null };
+  }> {
     const atual = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
       select: {
@@ -795,14 +799,14 @@ export class ImportService {
       },
     });
 
-    if (!atual) return 'unchanged';
+    if (!atual) return { estado: 'unchanged' };
 
     const mudou =
       !!atual.order !== expected.hasOrder ||
       Math.round(atual.totalValue) !== Math.round(expected.totalValue) ||
       (!!expected.status && atual.status !== expected.status);
 
-    if (!mudou) return 'unchanged';
+    if (!mudou) return { estado: 'unchanged' };
 
     const notas =
       atual._count.nfes +
@@ -812,10 +816,14 @@ export class ImportService {
       (atual.order?._count.nfces ?? 0) +
       (atual.order?._count.nfses ?? 0);
 
-    if (notas > 0) return 'blocked';
+    if (notas > 0) return { estado: 'blocked' };
+
+    // O documento é recriado com o mesmo id: quem está com a tela aberta, ou
+    // guardou o link, continua olhando para o mesmo documento.
+    const reuse = { quotationId, orderId: atual.order?.id ?? null };
 
     await deleteImportedSales(this.prisma, [quotationId]);
-    return 'refreshed';
+    return { estado: 'refreshed', reuse };
   }
 
   /** Valor do documento no legado, já com o desconto das linhas. */
@@ -2636,6 +2644,9 @@ export class ImportService {
         const firstItem = items[0];
 
         const legacyId = firstItem.VendaCodigoLegado?.trim() || null;
+        // Preenchido quando o documento é reimportado por ter mudado no legado.
+        let reuseIds: { quotationId: string; orderId: string | null } | null =
+          null;
 
         // Mapear status
         let status:
@@ -2670,11 +2681,15 @@ export class ImportService {
           });
 
           if (alreadyImported) {
-            const estado = await this.refreshImportedSale(alreadyImported.id, {
-              hasOrder: false,
-              totalValue: this.expectedSaleTotal(items),
-              status,
-            });
+            const { estado, reuse } = await this.refreshImportedSale(
+              alreadyImported.id,
+              {
+                hasOrder: false,
+                totalValue: this.expectedSaleTotal(items),
+                status,
+              },
+            );
+            reuseIds = reuse ?? null;
 
             if (estado === 'blocked') {
               failedCount++;
@@ -2753,6 +2768,7 @@ export class ImportService {
         // Criar orçamento
         const quotation = await this.prisma.quotation.create({
           data: {
+            ...(reuseIds ? { id: reuseIds.quotationId } : {}),
             companyId,
             seriesId: series.id,
             clientId: client.id,
@@ -3059,6 +3075,9 @@ export class ImportService {
         const firstItem = items[0];
 
         const legacyId = firstItem.VendaCodigoLegado?.trim() || null;
+        // Preenchido quando o documento é reimportado por ter mudado no legado.
+        let reuseIds: { quotationId: string; orderId: string | null } | null =
+          null;
 
         // Sem esta checagem a importação de vendas não é idempotente: rodar de
         // novo cria documentos duplicados em vez de reconhecer os já migrados.
@@ -3071,10 +3090,14 @@ export class ImportService {
           });
 
           if (alreadyImported) {
-            const estado = await this.refreshImportedSale(alreadyImported.id, {
-              hasOrder: true,
-              totalValue: this.expectedSaleTotal(items),
-            });
+            const { estado, reuse } = await this.refreshImportedSale(
+              alreadyImported.id,
+              {
+                hasOrder: true,
+                totalValue: this.expectedSaleTotal(items),
+              },
+            );
+            reuseIds = reuse ?? null;
 
             if (estado === 'blocked') {
               failedCount++;
@@ -3166,6 +3189,7 @@ export class ImportService {
         // Criar orçamento primeiro (pois Order depende de Quotation)
         const quotation = await this.prisma.quotation.create({
           data: {
+            ...(reuseIds ? { id: reuseIds.quotationId } : {}),
             quotationNumber: parseInt(firstItem.NumeroVenda),
             seriesId: series.id,
             status: 'APPROVED', // Orçamento aprovado que virou ordem
@@ -3412,6 +3436,7 @@ export class ImportService {
         // Criar ordem de serviço vinculada ao orçamento
         await this.prisma.order.create({
           data: {
+            ...(reuseIds?.orderId ? { id: reuseIds.orderId } : {}),
             quotationId: quotation.id,
             status: orderStatus,
             // A lista de O.S. agrupa por esta data. Sem ela, a ordem migrada
