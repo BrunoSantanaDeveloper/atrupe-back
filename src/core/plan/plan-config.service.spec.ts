@@ -551,4 +551,148 @@ describe('PlanConfigService', () => {
       expect(result).toEqual({ changed: true, affected: 1 });
     });
   });
+
+  describe('preço', () => {
+    it('o Trial não tem preço', async () => {
+      prisma.plan.findUnique.mockResolvedValue({ ...LITE, planType: 'TRIAL' });
+      await expect(
+        service.setPricing(actor, LITE.id, {
+          basePrice: 1000,
+          additionalUserPrice: 0,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('plano liberado não fica com mensalidade zero', async () => {
+      await expect(
+        service.setPricing(actor, LITE.id, {
+          basePrice: 0,
+          additionalUserPrice: 1500,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('com assinaturas pede senha, grava e registra antes e depois', async () => {
+      prisma.plan.findUnique.mockResolvedValue({
+        ...LITE,
+        additionalUserPrice: 1500,
+      });
+      prisma.plan.update = jest.fn();
+      currentSubscriptions(prisma, ['s1', 's2']);
+
+      await expect(
+        service.setPricing(actor, LITE.id, {
+          basePrice: 25000,
+          additionalUserPrice: 1500,
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      const result = await service.setPricing(actor, LITE.id, {
+        basePrice: 25000,
+        additionalUserPrice: 1500,
+        password: 'certa',
+      });
+
+      expect(result).toEqual({ changed: true, affected: 2 });
+      expect(prisma.plan.update).toHaveBeenCalledWith({
+        where: { id: LITE.id },
+        data: { basePrice: 25000, additionalUserPrice: 1500 },
+      });
+      expect(prisma.planConfigHistory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'PRICE_CHANGED',
+            changes: {
+              before: { basePrice: 23000, additionalUserPrice: 1500 },
+              after: { basePrice: 25000, additionalUserPrice: 1500 },
+            },
+          }),
+        }),
+      );
+    });
+
+    it('preço igual não grava', async () => {
+      prisma.plan.findUnique.mockResolvedValue({
+        ...LITE,
+        additionalUserPrice: 1500,
+      });
+      const result = await service.setPricing(actor, LITE.id, {
+        basePrice: 23000,
+        additionalUserPrice: 1500,
+      });
+      expect(result.changed).toBe(false);
+    });
+  });
+
+  describe('textos da trilha e tabela comparativa', () => {
+    it('grava os textos sem senha e ignora itens vazios', async () => {
+      prisma.plan.update = jest.fn();
+      await service.setPresentation(actor, LITE.id, {
+        pitch: '  Para quem quer previsibilidade.  ',
+        actions: ['Contas a receber', '  ', 'Limite de crédito'],
+      });
+      expect(argon2.verify).not.toHaveBeenCalled();
+      expect(prisma.plan.update).toHaveBeenCalledWith({
+        where: { id: LITE.id },
+        data: {
+          presentation: {
+            pitch: 'Para quem quer previsibilidade.',
+            actions: ['Contas a receber', 'Limite de crédito'],
+          },
+        },
+      });
+    });
+
+    it('sem tabela salva, vale o padrão', async () => {
+      prisma.systemSetting = { findUnique: jest.fn().mockResolvedValue(null) };
+      const comparison = await service.getComparison();
+      expect(comparison.isDefault).toBe(true);
+      expect(comparison.groups.length).toBeGreaterThan(0);
+    });
+
+    it('tabela sem nenhuma linha é recusada', async () => {
+      prisma.systemSetting = { findUnique: jest.fn().mockResolvedValue(null) };
+      await expect(
+        service.setComparison(actor, {
+          groups: [{ group: 'Financeiro', rows: [] }],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('salva a tabela no system_settings e registra', async () => {
+      prisma.systemSetting = {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn(),
+      };
+      await service.setComparison(actor, {
+        groups: [
+          {
+            group: ' Financeiro ',
+            rows: [{ label: 'Contas a pagar', since: 'LITE' }],
+          },
+        ],
+      });
+      expect(prisma.systemSetting.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { key: 'plan_comparison' },
+          update: {
+            value: {
+              groups: [
+                {
+                  group: 'Financeiro',
+                  rows: [{ label: 'Contas a pagar', since: 'LITE' }],
+                },
+              ],
+            },
+          },
+        }),
+      );
+      expect(prisma.planConfigHistory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'COMPARISON_CHANGED' }),
+        }),
+      );
+    });
+  });
 });

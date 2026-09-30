@@ -14,7 +14,6 @@ export const PLAN_FEATURE_KEYS = [
   'service_order_current_phase',
   'quotation_quick_sale',
   'quotation_rejection_reasons',
-  'quotation_require_rejection_reason',
   'service_order_cancellation_reason',
   'quotation_status_configuration',
   'quotation_status_column',
@@ -60,7 +59,6 @@ export const FEATURE_DEPENDENCIES: Partial<
   // O switch só tem efeito com o controle de caixa.
   bank_account_cash_control_switch: ['cash_control'],
   // Os motivos usados ao rejeitar e cancelar vêm do mesmo cadastro.
-  quotation_require_rejection_reason: ['quotation_rejection_reasons'],
   service_order_cancellation_reason: ['quotation_rejection_reasons'],
   // A coluna mostra os status personalizados.
   quotation_status_column: ['quotation_status_configuration'],
@@ -101,16 +99,11 @@ export const FEATURE_ENFORCEMENT: Record<
   quotation_quick_sale: {
     level: 'api',
     detail:
-      'Criar orçamento como venda rápida. Ainda não há botão de entrada na tela.',
+      'Venda rápida (orçamento sem cliente obrigatório): botão em Orçamentos e no menu Vendas.',
   },
   quotation_rejection_reasons: {
     level: 'api',
     detail: 'Cadastro de motivos e motivo ao rejeitar orçamento.',
-  },
-  quotation_require_rejection_reason: {
-    level: 'nenhum',
-    detail:
-      'Ainda não muda nada: o motivo continua opcional ao rejeitar (decisão pendente).',
   },
   service_order_cancellation_reason: {
     level: 'api',

@@ -74,6 +74,7 @@ export class PlanService {
           concept: true,
           features: true,
           videoUrl: true,
+          presentation: true,
         },
         orderBy: {
           order: 'asc', // Order by the new 'order' field
@@ -95,6 +96,8 @@ export class PlanService {
           : undefined,
         isActive: plan.isActive,
         videoUrl: plan.videoUrl,
+        // Card do plano na trilha, editável no painel (nulo = texto padrão).
+        presentation: plan.presentation as any,
         badge: plan.badge as any,
         sections: {
           concept: plan.concept as any,
@@ -106,6 +109,12 @@ export class PlanService {
         'Error fetching public plans: ' + error.message,
       );
     }
+  }
+
+  /** A tabela comparativa da trilha: a salva no painel ou o padrão. */
+  async getPublicComparison() {
+    const { groups } = await this.planConfig.getComparison();
+    return groups;
   }
 
   /**

@@ -6,6 +6,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -24,8 +25,11 @@ import {
   PlanFeaturePreviewQueryDto,
   RestorePlanDefaultsDto,
   SetCompanyFeatureDto,
+  SetPlanComparisonDto,
   SetPlanFeatureDto,
   SetPlanLimitDto,
+  SetPlanPresentationDto,
+  SetPlanPricingDto,
 } from './dtos/plan-config.dto';
 
 /**
@@ -94,6 +98,45 @@ export class PlanConfigController {
     @Body() dto: SetPlanLimitDto,
   ) {
     return this.planConfig.setLimit({ userId: req.user.userId }, planId, dto);
+  }
+
+  @Patch(':planId/pricing')
+  @ApiOperation({
+    summary:
+      'Altera a mensalidade e o preço do usuário adicional (vale para contratações novas)',
+  })
+  setPricing(
+    @Req() req,
+    @Param('planId', ParseUUIDPipe) planId: string,
+    @Body() dto: SetPlanPricingDto,
+  ) {
+    return this.planConfig.setPricing({ userId: req.user.userId }, planId, dto);
+  }
+
+  @Patch(':planId/presentation')
+  @ApiOperation({ summary: 'Altera os textos do card do plano na trilha' })
+  setPresentation(
+    @Req() req,
+    @Param('planId', ParseUUIDPipe) planId: string,
+    @Body() dto: SetPlanPresentationDto,
+  ) {
+    return this.planConfig.setPresentation(
+      { userId: req.user.userId },
+      planId,
+      dto,
+    );
+  }
+
+  @Get('comparison')
+  @ApiOperation({ summary: 'Tabela comparativa da trilha (salva e padrão)' })
+  getComparison() {
+    return this.planConfig.getComparison();
+  }
+
+  @Put('comparison')
+  @ApiOperation({ summary: 'Salva a tabela comparativa da trilha' })
+  setComparison(@Req() req, @Body() dto: SetPlanComparisonDto) {
+    return this.planConfig.setComparison({ userId: req.user.userId }, dto);
   }
 
   @Get(':planId/defaults-diff')

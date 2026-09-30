@@ -10,6 +10,10 @@ import type { PrismaClient } from '@prisma/client';
  * código entra ligado, com o valor do código) e nunca toca na existente: o
  * que o superadmin desligou continua desligado; o limite que ele mudou
  * continua mudado. O que diverge do padrão é só relatado (drift).
+ *
+ * Desde 30/09/2026 o mesmo vale para preço e textos da trilha: o painel os
+ * edita, então o seed só os grava na criação do plano (e preenche o texto da
+ * trilha uma vez, quando estiver vazio).
  */
 
 export interface PlanDefaultsConfig {
@@ -25,6 +29,8 @@ export interface PlanDefaultsConfig {
   badge: any;
   concept: any;
   featuresList: any;
+  /** Card do plano na trilha de contratação. */
+  presentation?: { pitch: string; actions: string[] } | null;
   features: string[];
   limits: Record<string, number>;
 }
@@ -41,6 +47,7 @@ export interface PlanDrift {
 
 export interface ApplyPlanDefaultsResult {
   plans: number;
+  presentationsFilled: number;
   featuresCreated: number;
   limitsCreated: number;
   unknownFeatureKeys: string[];
@@ -55,17 +62,21 @@ type SeedClient = Pick<
 >;
 
 /** A composição padrão de cada tipo de plano, pelo `planType`. */
+export interface PlanDefaults {
+  features: string[];
+  limits: Record<string, number>;
+  presentation: { pitch: string; actions: string[] } | null;
+}
+
 export function planDefaultsByType(
   configs: Record<string, PlanDefaultsConfig>,
-): Map<string, { features: string[]; limits: Record<string, number> }> {
-  const byType = new Map<
-    string,
-    { features: string[]; limits: Record<string, number> }
-  >();
+): Map<string, PlanDefaults> {
+  const byType = new Map<string, PlanDefaults>();
   for (const config of Object.values(configs)) {
     byType.set(config.plan.planType, {
       features: [...new Set(config.features)],
       limits: { ...config.limits },
+      presentation: config.presentation ?? null,
     });
   }
   return byType;
@@ -77,6 +88,7 @@ export async function applyPlanDefaults(
 ): Promise<ApplyPlanDefaultsResult> {
   const result: ApplyPlanDefaultsResult = {
     plans: 0,
+    presentationsFilled: 0,
     featuresCreated: 0,
     limitsCreated: 0,
     unknownFeatureKeys: [],
@@ -88,28 +100,32 @@ export async function applyPlanDefaults(
   for (const config of Object.values(configs)) {
     const planType = config.plan.planType;
     try {
-      // Os dados do plano seguem como antes: nome, preço, ordem e textos vêm
-      // do código; disponibilidade (isActive) e selo são do painel e não são
-      // sobrescritos.
+      // Só tipo e ordem vêm do código. Preço, textos, disponibilidade e selo
+      // são do painel: o código os define na criação e não os sobrescreve.
       const plan = await prisma.plan.upsert({
         where: { name: config.plan.name },
         update: {
-          description: config.plan.description,
-          basePrice: config.plan.basePrice,
-          additionalUserPrice: config.plan.additionalUserPrice,
           planType: config.plan.planType as any,
           order: config.plan.order,
-          concept: config.concept || null,
-          features: config.featuresList || null,
         },
         create: {
           ...(config.plan as any),
           badge: config.badge || null,
           concept: config.concept || null,
           features: config.featuresList || null,
+          presentation: config.presentation || null,
         },
       });
       result.plans += 1;
+
+      // O texto da trilha chegou depois dos planos: preenche uma vez.
+      if (!plan.presentation && config.presentation) {
+        await prisma.plan.update({
+          where: { id: plan.id },
+          data: { presentation: config.presentation as any },
+        });
+        result.presentationsFilled += 1;
+      }
 
       const defaultKeys = [...new Set(config.features)];
       const catalog = defaultKeys.length
@@ -175,8 +191,9 @@ export async function applyPlanDefaults(
         }
       }
 
+      // Recurso aposentado (inativo no catálogo) não conta como diferença.
       const rows = await prisma.planFeature.findMany({
-        where: { planId: plan.id },
+        where: { planId: plan.id, feature: { isActive: true } },
         select: { isActive: true, feature: { select: { key: true } } },
       });
       const enabledOutsideDefault = rows
@@ -232,6 +249,9 @@ export function describePlanDefaultsResult(
   return (
     `[seed] planos: ${result.plans} processados, ` +
     `${result.featuresCreated} recursos e ${result.limitsCreated} limites criados, ` +
+    (result.presentationsFilled
+      ? `${result.presentationsFilled} textos da trilha preenchidos, `
+      : '') +
     `${result.errors.length} erros` +
     (result.unknownFeatureKeys.length
       ? `, recursos fora do catálogo: ${result.unknownFeatureKeys.join(',')}`

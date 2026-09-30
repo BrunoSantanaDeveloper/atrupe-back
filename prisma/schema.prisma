@@ -1490,6 +1490,9 @@ model Plan {
   concept             Json? // {description, objective, mainActions, expectedResults, footer?}
   features            Json? // [{title, items: string[], videoUrl}]
   videoUrl            String? // URL do vídeo principal do plano
+  // Textos do card do plano na trilha de contratação ({ pitch, actions }),
+  // editados pelo superadmin. Nulo = o texto padrão do código.
+  presentation        Json?
   Company             Company?       @relation(fields: [companyId], references: [id])
   subscriptions       Subscription[]
   planFeatures        PlanFeature[]

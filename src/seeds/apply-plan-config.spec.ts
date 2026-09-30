@@ -15,8 +15,12 @@ function memoryDb(seed: {
   planFeatures?: { planName: string; key: string; isActive: boolean }[];
   planLimits?: { planName: string; key: string; value: number }[];
   failOnPlan?: string;
+  existingPlans?: { name: string; basePrice: number; presentation?: any }[];
 }) {
-  const plans: any[] = [];
+  const plans: any[] = (seed.existingPlans ?? []).map((p) => ({
+    id: `p-${p.name}`,
+    ...p,
+  }));
   const features = seed.features.map((key) => ({ id: `f-${key}`, key }));
   const limits = seed.limits.map((key) => ({ id: `l-${key}`, key }));
   const planFeatures: any[] = [];
@@ -48,6 +52,11 @@ function memoryDb(seed: {
           plan = { id: planId(where.name), ...create };
           plans.push(plan);
         }
+        return plan;
+      }),
+      update: jest.fn(async ({ where, data }) => {
+        const plan = plans.find((p) => p.id === where.id);
+        Object.assign(plan, data);
         return plan;
       }),
     },
@@ -97,7 +106,7 @@ function memoryDb(seed: {
       }),
     },
   };
-  return { prisma, planFeatures, planLimits };
+  return { prisma, planFeatures, planLimits, plans };
 }
 
 const config = (
@@ -208,6 +217,31 @@ describe('applyPlanDefaults', () => {
     expect(describePlanDefaultsResult(result)).toContain('1 erros');
   });
 
+  it('não regrava o preço que o painel mudou e preenche o texto da trilha uma vez', async () => {
+    const db = memoryDb({
+      features: [],
+      limits: [],
+      existingPlans: [{ name: 'Lite', basePrice: 26000, presentation: null }],
+    });
+    const lite = config('LITE', 'Lite', [], {});
+    lite.presentation = {
+      pitch: 'Para quem quer previsibilidade.',
+      actions: ['A'],
+    };
+
+    const result = await applyPlanDefaults(db.prisma as any, { LITE: lite });
+
+    const plan = db.plans.find((p) => p.name === 'Lite');
+    expect(plan.basePrice).toBe(26000);
+    expect(plan.presentation).toEqual(lite.presentation);
+    expect(result.presentationsFilled).toBe(1);
+
+    plan.presentation = { pitch: 'Editado no painel', actions: [] };
+    const again = await applyPlanDefaults(db.prisma as any, { LITE: lite });
+    expect(plan.presentation.pitch).toBe('Editado no painel');
+    expect(again.presentationsFilled).toBe(0);
+  });
+
   it('planDefaultsByType indexa o padrão pelo tipo do plano', () => {
     const byType = planDefaultsByType({
       START: config('START', 'Start', ['a', 'a'], { max_users: 3 }),
@@ -215,6 +249,7 @@ describe('applyPlanDefaults', () => {
     expect(byType.get('START')).toEqual({
       features: ['a'],
       limits: { max_users: 3 },
+      presentation: null,
     });
   });
 });

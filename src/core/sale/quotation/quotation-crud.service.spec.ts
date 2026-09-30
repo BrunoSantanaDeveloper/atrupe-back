@@ -157,6 +157,34 @@ describe('QuotationCrudService', () => {
       expect(prisma.quotation.create).toHaveBeenCalled();
     });
 
+    it('grava a venda rápida sem cliente', async () => {
+      prisma.saleSeries.findUnique.mockResolvedValue(mockSeries);
+      prisma.company.findUnique.mockResolvedValue(mockCompany);
+      prisma.quotation.create.mockResolvedValue(mockQuotation);
+      prisma.saleSeries.update.mockResolvedValue(mockSeries);
+      prisma.deliveryInfo.create.mockResolvedValue({});
+      prisma.paymentCondition.findFirst.mockResolvedValue(mockPaymentCondition);
+      prisma.quotationPayment.create.mockResolvedValue({});
+
+      await service.create({
+        companyId: mockCompanyId,
+        sellerId: mockSellerId,
+        seriesId: mockSeriesId,
+        subCompanyId: null,
+        quickSale: true,
+      });
+
+      // Antes o create descartava o quickSale e a venda saía como orçamento.
+      expect(prisma.quotation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            quickSale: true,
+            clientId: undefined,
+          }),
+        }),
+      );
+    });
+
     it('should throw BadRequestException if seriesId is missing', async () => {
       await expect(
         service.create({

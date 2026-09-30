@@ -13,6 +13,10 @@ import { PrismaService } from 'src/config/prisma/prisma.service';
 import { PLAN_CONFIGURATIONS } from '../../seeds/plans-complete';
 import { planDefaultsByType } from '../../seeds/apply-plan-config';
 import {
+  DEFAULT_PLAN_COMPARISON,
+  PlanComparisonGroup,
+} from '../../seeds/plan-comparison-base';
+import {
   CURRENT_SUBSCRIPTION_STATUSES,
   dependentsOf,
   FEATURE_CATEGORY_LABELS,
@@ -27,8 +31,11 @@ import {
   PlanConfigHistoryQueryDto,
   RestorePlanDefaultsDto,
   SetCompanyFeatureDto,
+  SetPlanComparisonDto,
   SetPlanFeatureDto,
   SetPlanLimitDto,
+  SetPlanPresentationDto,
+  SetPlanPricingDto,
 } from './dtos/plan-config.dto';
 
 type Tx = Prisma.TransactionClient;
@@ -75,6 +82,21 @@ const LIMIT_RULES: Record<
     detail: 'Duração dos próximos testes gratuitos (vale para o plano Trial).',
   },
 };
+
+/** Card do plano na trilha de contratação. */
+export interface PlanPresentation {
+  pitch: string;
+  actions: string[];
+}
+
+/** Tabela comparativa da trilha, editada no painel (system_settings). */
+const COMPARISON_SETTING_KEY = 'plan_comparison';
+
+const brl = (cents: number | null | undefined) =>
+  ((cents ?? 0) / 100).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  });
 
 const DAY_FORMAT = new Intl.DateTimeFormat('pt-BR', {
   timeZone: 'America/Sao_Paulo',
@@ -144,12 +166,16 @@ export class PlanConfigService {
           order: plan.order,
           isActive: plan.isActive,
           basePrice: plan.basePrice,
+          additionalUserPrice: plan.additionalUserPrice ?? 0,
+          presentation:
+            (plan.presentation as unknown as PlanPresentation | null) ?? null,
           currentSubscriptions,
           features,
           limits: limitValues,
           defaults: {
             features: defaults?.features ?? [],
             limits: defaults?.limits ?? {},
+            presentation: defaults?.presentation ?? null,
           },
         };
       }),
@@ -909,6 +935,201 @@ export class PlanConfigService {
             after: null,
           },
           metadata: { featureKey: feature.key },
+          createdBy: actor.userId,
+          createdByName: actorName,
+        },
+      });
+    });
+    return { changed: true };
+  }
+
+  // ---------------------------------------------------------------------
+  // Preço e textos da trilha
+  // ---------------------------------------------------------------------
+
+  /**
+   * Mensalidade e usuário adicional do plano. Vale para contratações,
+   * evoluções e usuários adicionais comprados daqui em diante; a mensalidade
+   * de quem já assina (a cobrança no Asaas) não muda.
+   */
+  async setPricing(actor: Actor, planId: string, dto: SetPlanPricingDto) {
+    const plan = await this.loadPlan(planId);
+    if (plan.planType === 'TRIAL') {
+      throw new BadRequestException({
+        code: 'TRIAL_HAS_NO_PRICE',
+        message: 'O Trial não tem preço.',
+      });
+    }
+    if (plan.isActive && dto.basePrice <= 0) {
+      throw new BadRequestException({
+        code: 'INVALID_PRICE',
+        message:
+          'Um plano disponível para contratação precisa de mensalidade maior que zero.',
+      });
+    }
+
+    const before = {
+      basePrice: Math.round(plan.basePrice),
+      additionalUserPrice: Math.round(plan.additionalUserPrice ?? 0),
+    };
+    const after = {
+      basePrice: dto.basePrice,
+      additionalUserPrice: dto.additionalUserPrice,
+    };
+    if (
+      before.basePrice === after.basePrice &&
+      before.additionalUserPrice === after.additionalUserPrice
+    ) {
+      return { changed: false, affected: 0 };
+    }
+
+    // Quem já assina não tem a mensalidade alterada, mas passa a pagar o preço
+    // novo pelo usuário adicional que comprar: por isso conta como atingido.
+    const current = await this.countCurrentSubscriptions(plan.id);
+    await this.assertPreview(dto.expectedAffected, current);
+    await this.assertPassword(actor, current, dto.password);
+    const actorName = await this.actorName(actor.userId);
+
+    const parts: string[] = [];
+    if (before.basePrice !== after.basePrice) {
+      parts.push(
+        `mensalidade de ${brl(before.basePrice)} para ${brl(after.basePrice)}`,
+      );
+    }
+    if (before.additionalUserPrice !== after.additionalUserPrice) {
+      parts.push(
+        `usuário adicional de ${brl(before.additionalUserPrice)} para ${brl(after.additionalUserPrice)}`,
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.plan.update({ where: { id: plan.id }, data: after });
+      await tx.planConfigHistory.create({
+        data: {
+          entityType: 'PLAN',
+          planId: plan.id,
+          planType: plan.planType,
+          action: 'PRICE_CHANGED',
+          description: `Preço do plano ${plan.name}: ${parts.join('; ')}`,
+          changes: { before, after },
+          metadata: {
+            source: dto.source ?? 'PANEL',
+            revertOf: dto.revertOf ?? null,
+            currentSubscriptions: current,
+          },
+          createdBy: actor.userId,
+          createdByName: actorName,
+        },
+      });
+    });
+
+    this.logger.log(
+      `Plano ${plan.name}: ${parts.join('; ')} por ${actorName ?? actor.userId}`,
+    );
+    return { changed: true, affected: current };
+  }
+
+  /** Frase e itens do card do plano na trilha de contratação. */
+  async setPresentation(
+    actor: Actor,
+    planId: string,
+    dto: SetPlanPresentationDto,
+  ) {
+    const plan = await this.loadPlan(planId);
+    if (plan.planType === 'TRIAL') {
+      throw new BadRequestException({
+        code: 'TRIAL_NOT_IN_TRAIL',
+        message: 'O Trial não aparece na trilha de contratação.',
+      });
+    }
+    const next: PlanPresentation = {
+      pitch: dto.pitch.trim(),
+      actions: dto.actions.map((a) => a.trim()).filter(Boolean),
+    };
+    if (!next.pitch) {
+      throw new BadRequestException({
+        code: 'PITCH_REQUIRED',
+        message: 'Escreva a frase do plano.',
+      });
+    }
+    const before =
+      (plan.presentation as unknown as PlanPresentation | null) ?? null;
+    if (JSON.stringify(before) === JSON.stringify(next)) {
+      return { changed: false };
+    }
+
+    const actorName = await this.actorName(actor.userId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.plan.update({
+        where: { id: plan.id },
+        data: { presentation: next as any },
+      });
+      await tx.planConfigHistory.create({
+        data: {
+          entityType: 'PLAN',
+          planId: plan.id,
+          planType: plan.planType,
+          action: 'PRESENTATION_CHANGED',
+          description: `Textos da trilha do plano ${plan.name} alterados`,
+          changes: { before, after: next } as any,
+          metadata: { source: 'PANEL' },
+          createdBy: actor.userId,
+          createdByName: actorName,
+        },
+      });
+    });
+    return { changed: true };
+  }
+
+  /** A tabela "Compare todos os planos" da trilha: a salva ou o padrão. */
+  async getComparison() {
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { key: COMPARISON_SETTING_KEY },
+    });
+    const stored = (setting?.value as { groups?: PlanComparisonGroup[] } | null)
+      ?.groups;
+    const valid = Array.isArray(stored) && stored.length > 0;
+    return {
+      groups: valid ? stored : DEFAULT_PLAN_COMPARISON,
+      isDefault: !valid,
+      defaults: DEFAULT_PLAN_COMPARISON,
+    };
+  }
+
+  async setComparison(actor: Actor, dto: SetPlanComparisonDto) {
+    const groups: PlanComparisonGroup[] = dto.groups
+      .map((g) => ({
+        group: g.group.trim(),
+        rows: g.rows
+          .map((r) => ({ label: r.label.trim(), since: r.since }))
+          .filter((r) => r.label),
+      }))
+      .filter((g) => g.group && g.rows.length > 0);
+    if (groups.length === 0) {
+      throw new BadRequestException({
+        code: 'COMPARISON_EMPTY',
+        message: 'A tabela precisa de ao menos um grupo com uma linha.',
+      });
+    }
+
+    const current = await this.getComparison();
+    if (JSON.stringify(current.groups) === JSON.stringify(groups)) {
+      return { changed: false };
+    }
+    const actorName = await this.actorName(actor.userId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.systemSetting.upsert({
+        where: { key: COMPARISON_SETTING_KEY },
+        create: { key: COMPARISON_SETTING_KEY, value: { groups } as any },
+        update: { value: { groups } as any },
+      });
+      await tx.planConfigHistory.create({
+        data: {
+          entityType: 'COMPARISON',
+          action: 'COMPARISON_CHANGED',
+          description: 'Tabela comparativa dos planos alterada',
+          changes: { before: current.groups, after: groups } as any,
+          metadata: { source: 'PANEL' },
           createdBy: actor.userId,
           createdByName: actorName,
         },

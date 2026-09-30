@@ -15,7 +15,6 @@ const liteFeatures = [
   'service_order_current_phase',
   'quotation_quick_sale',
   'quotation_rejection_reasons',
-  'quotation_require_rejection_reason',
   'service_order_cancellation_reason',
   'quotation_status_configuration',
   'quotation_status_column',
@@ -64,6 +63,8 @@ export const PLAN_CONFIGURATIONS = {
     features: startFeatures,
     videoUrl: null,
     featuresList: null,
+    // O Trial não aparece na trilha de contratação.
+    presentation: null,
     limits: {
       max_users: 3,
       max_companies: 1,
@@ -98,6 +99,19 @@ export const PLAN_CONFIGURATIONS = {
     },
     features: startFeatures,
     videoUrl: 'https://youtu.be/kGTQD84QJ1U',
+    // Card do plano na trilha de contratação (editável no painel de planos).
+    presentation: {
+      pitch: 'Para quem precisa sair do improviso.',
+      actions: [
+        'Cadastro inicial de clientes, fornecedores, colaboradores e produtos',
+        'Organização financeira básica',
+        'Criação do plano de contas',
+        'Controle de despesas, folha de pagamento e receitas',
+        'Vendas realizadas',
+        'Orçamentos enviados',
+        'Pagamentos recebidos/pendências financeiras',
+      ],
+    },
     featuresList: [
       {
         title: 'Empresa e sistema',
@@ -190,6 +204,22 @@ export const PLAN_CONFIGURATIONS = {
     },
     features: liteFeatures,
     videoUrl: 'https://youtu.be/phhbVqmLWdM',
+    // Card do plano na trilha de contratação (editável no painel de planos).
+    presentation: {
+      pitch: 'Para quem quer previsibilidade financeira.',
+      actions: [
+        'Cadastro de produtos com composições básicas',
+        'Controle financeiro avançado',
+        'Separação por contas bancárias',
+        'Definição de limites de crédito para clientes',
+        'Opção para repasse automático das taxas financeiras',
+        'Introdução ao CRM (Gestão Comercial)',
+        'Status das negociações em andamento',
+        'Motivos dos cancelamentos registrados no sistema',
+        'Gerenciador de Produção e Entrega',
+        'Histórico completo dos clientes',
+      ],
+    },
     featuresList: [
       {
         title: 'Empresa e sistema',
@@ -295,6 +325,16 @@ export const PLAN_CONFIGURATIONS = {
     },
     features: proFeatures,
     videoUrl: 'https://youtu.be/dEn2hnlz0tk',
+    // Card do plano na trilha de contratação (editável no painel de planos).
+    presentation: {
+      pitch: 'Para quem precisa conhecer os custos.',
+      actions: [
+        'Cadastro detalhado de custos: mão de obra, materiais e equipamentos',
+        'Identificação de trabalhos mais lucrativos e eliminação de serviços deficitários',
+        'Padronização de processos de trabalho, criando fluxos claros para orçamentos e produção',
+        'Delegação de funções antes centralizadas no dono da empresa baseada nesses processos',
+      ],
+    },
     featuresList: null,
     limits: {
       max_users: 10,
@@ -345,6 +385,17 @@ export const PLAN_CONFIGURATIONS = {
     },
     features: eliteFeatures,
     videoUrl: 'https://youtu.be/Xr2Yxrsg2sw',
+    // Card do plano na trilha de contratação (editável no painel de planos).
+    presentation: {
+      pitch: 'Para quem precisa integrar a produção.',
+      actions: [
+        'Implementação do gerenciador de produção, adaptável à estrutura específica da empresa',
+        'Gerenciador baseado nas composições detalhadas dos produtos criadas na Etapa 3',
+        'Treinamento direcionado: cada setor aprende como usar o sistema dentro das suas funções específicas',
+        'Análise avançada da produtividade, com medição precisa por setor',
+        'Avaliação individual dos colaboradores com base nos tempos estimados versus realizados',
+      ],
+    },
     featuresList: null,
     limits: {
       max_users: 20,
@@ -384,6 +435,16 @@ export const PLAN_CONFIGURATIONS = {
     },
     features: fullFeatures,
     videoUrl: 'https://youtu.be/NkHw5AVLblg',
+    // Card do plano na trilha de contratação (editável no painel de planos).
+    presentation: {
+      pitch: 'Para quem quer controlar o estoque.',
+      actions: [
+        'Entrada de materiais correta no sistema',
+        'Composição detalhada dos trabalhos, considerando aproveitamento e substituição de materiais na produção',
+        'Integração com o gerenciamento de produção para rastrear o uso real de materiais',
+        'Análise de custos estimados versus realizados, com ajustes nos processos para melhorias futuras',
+      ],
+    },
     featuresList: null,
     limits: {
       max_users: -1, // ilimitado

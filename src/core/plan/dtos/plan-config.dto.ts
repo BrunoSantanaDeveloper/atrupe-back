@@ -1,6 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsIn,
@@ -13,6 +16,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 
 const toBoolean = ({ value }: { value: unknown }) =>
@@ -188,4 +192,74 @@ export class SetCompanyFeatureDto {
     required: false,
   })
   password?: string;
+}
+
+export class SetPlanPricingDto extends GuardedChangeDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100000000)
+  @ApiProperty({ description: 'Mensalidade do plano, em centavos' })
+  basePrice: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100000000)
+  @ApiProperty({ description: 'Preço do usuário adicional, em centavos' })
+  additionalUserPrice: number;
+}
+
+export class SetPlanPresentationDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  @ApiProperty({
+    description: 'Frase do card do plano na trilha ("para quem é")',
+    example: 'Para quem quer previsibilidade financeira.',
+  })
+  pitch: string;
+
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(200, { each: true })
+  @ApiProperty({ description: 'O que o plano entrega, um item por linha' })
+  actions: string[];
+}
+
+export class PlanComparisonRowDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  label: string;
+
+  @IsIn(['START', 'LITE', 'PRO', 'ELITE', 'FULL'])
+  since: 'START' | 'LITE' | 'PRO' | 'ELITE' | 'FULL';
+}
+
+export class PlanComparisonGroupDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  group: string;
+
+  @IsArray()
+  @ArrayMaxSize(40)
+  @ValidateNested({ each: true })
+  @Type(() => PlanComparisonRowDto)
+  rows: PlanComparisonRowDto[];
+}
+
+export class SetPlanComparisonDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => PlanComparisonGroupDto)
+  @ApiProperty({
+    description:
+      'Grupos da tabela comparativa, cada linha com o plano que a introduz',
+  })
+  groups: PlanComparisonGroupDto[];
 }

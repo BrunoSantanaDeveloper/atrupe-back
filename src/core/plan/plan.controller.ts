@@ -75,6 +75,14 @@ export class PlanController {
     return this.planService.getPublicModules();
   }
 
+  @Get('public/comparison')
+  @ApiOperation({
+    summary: 'Tabela comparativa dos planos exibida na trilha de contratação',
+  })
+  getPublicComparison() {
+    return this.planService.getPublicComparison();
+  }
+
   @Get('manage')
   @UseGuards(JwtAuthGuard, SystemAdminGuard)
   @ApiBearerAuth()

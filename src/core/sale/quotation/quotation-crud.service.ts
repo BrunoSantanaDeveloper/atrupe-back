@@ -130,6 +130,9 @@ export class QuotationCrudService {
           clientId,
           contactId,
           seriesId: seriesId || undefined,
+          // Venda rápida: orçamento que pode não ter cliente. O controller já
+          // conferiu que o plano inclui o recurso.
+          quickSale: createQuotationDto.quickSale === true,
           quotationNumber:
             createQuotationDto.quotationNumber ??
             updatedSeries.currentBudgetNumber,
@@ -834,6 +837,9 @@ export class QuotationCrudService {
       seriesId: quotation.seriesId,
       companyId: quotation.companyId,
       subCompanyId: quotation.subCompanyId,
+      // A cópia de uma venda rápida continua venda rápida (pode seguir sem
+      // cliente).
+      quickSale: quotation.quickSale,
       quotationNumber: updatedSerie.currentBudgetNumber,
     };
 

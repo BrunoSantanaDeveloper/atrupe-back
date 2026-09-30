@@ -17,9 +17,10 @@ import {
  * nos dois lados, e todo bloqueio no código precisa usar uma chave que exista.
  */
 describe('plan-feature-rules', () => {
-  const planFeaturesInCatalog = BASE_FEATURES.filter((f) => f.price === 0).map(
-    (f) => f.key,
-  );
+  // Só os ativos: um recurso aposentado fica no catálogo como inativo.
+  const planFeaturesInCatalog = BASE_FEATURES.filter(
+    (f) => f.price === 0 && f.isActive,
+  ).map((f) => f.key);
   const allCatalogKeys = BASE_FEATURES.map((f) => f.key);
 
   it('as chaves de plano do código são as do catálogo (preço zero)', () => {

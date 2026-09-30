@@ -41,13 +41,16 @@ export const BASE_FEATURES = [
     price: 0,
     isActive: true,
   },
+  // Aposentado em 30/09/2026: o PO decidiu que o motivo ao rejeitar não é
+  // obrigatório. Fica inativo (o seed não apaga recurso do catálogo) e fora da
+  // matriz dos planos.
   {
     key: 'quotation_require_rejection_reason',
     name: 'Solicitar Motivo de Rejeição',
     description: 'Solicitar motivo ao rejeitar orçamento',
     category: 'quotations',
     price: 0,
-    isActive: true,
+    isActive: false,
   },
   {
     key: 'service_order_cancellation_reason',
