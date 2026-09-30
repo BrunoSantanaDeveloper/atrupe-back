@@ -4,6 +4,10 @@ import { BASE_BANKS } from '../src/seeds/banks-base';
 import { BASE_FEATURES } from '../src/seeds/features-base';
 import { BASE_LIMITS } from '../src/seeds/limits-base';
 import { PLAN_CONFIGURATIONS } from '../src/seeds/plans-complete';
+import {
+  applyPlanDefaults,
+  describePlanDefaultsResult,
+} from '../src/seeds/apply-plan-config';
 import { ACADEMY_ITEMS } from '../src/seeds/academy-base';
 import { BASE_PAYMENT_METHODS } from '../src/seeds/payment-methods-base';
 import { BASE_CONTACT_SOURCES } from '../src/seeds/contact-sources-base';
@@ -116,78 +120,17 @@ async function createDefaultPaymentMethods() {
 async function createDefaultPlans() {
   console.log('Criando planos padrão...');
 
-  for (const [planKey, config] of Object.entries(PLAN_CONFIGURATIONS)) {
-    try {
-      // Criar ou atualizar o plano
-      const plan = await prisma.plan.upsert({
-        where: { name: config.plan.name },
-        update: {
-          description: config.plan.description,
-          basePrice: config.plan.basePrice,
-          additionalUserPrice: config.plan.additionalUserPrice,
-          planType: config.plan.planType,
-          order: config.plan.order,
-          // isActive e badge NÃO são sobrescritos no update: a disponibilidade
-          // para contratação é responsabilidade do SystemAdmin (painel de
-          // planos). O seed define apenas o valor inicial na criação.
-          concept: config.concept || null,
-          features: config.featuresList || null,
-        },
-        create: {
-          ...config.plan,
-          badge: config.badge || null,
-          concept: config.concept || null,
-          features: config.featuresList || null,
-        },
-      });
-
-      // Limpar features e limits antigos
-      await prisma.planFeature.deleteMany({
-        where: { planId: plan.id },
-      });
-      await prisma.planLimit.deleteMany({
-        where: { planId: plan.id },
-      });
-
-      // Associar features ao plano
-      for (const featureKey of config.features) {
-        const feature = await prisma.feature.findUnique({
-          where: { key: featureKey },
-        });
-
-        if (feature) {
-          await prisma.planFeature.create({
-            data: {
-              planId: plan.id,
-              featureId: feature.id,
-              isActive: true,
-            },
-          });
-        }
-      }
-
-      // Associar limits ao plano
-      for (const [limitKey, value] of Object.entries(config.limits)) {
-        const limit = await prisma.limit.findUnique({
-          where: { key: limitKey },
-        });
-
-        if (limit) {
-          await prisma.planLimit.create({
-            data: {
-              planId: plan.id,
-              limitId: limit.id,
-              value: value as number,
-              isActive: true,
-            },
-          });
-        }
-      }
-
-      console.log(`Plano criado/atualizado: ${config.plan.name}`);
-    } catch (error) {
-      console.error(`Erro ao criar plano ${planKey}:`, error);
-    }
+  // Não destrutivo: cria o recurso/limite que falta e nunca desliga nem
+  // sobrescreve o que o superadmin configurou no painel de planos.
+  const result = await applyPlanDefaults(prisma, PLAN_CONFIGURATIONS as any);
+  console.log(describePlanDefaultsResult(result));
+  for (const error of result.errors) {
+    console.error(`Erro ao criar plano ${error.planType}: ${error.message}`);
+  }
+  if (result.errors.length > 0) {
+    // O start.sh só avisa quando o seed falha; o código de saída deixa o
+    // erro visível no log sem impedir a subida da API.
+    process.exitCode = 1;
   }
 }
 

@@ -24,6 +24,10 @@ interface PlanInfo {
   trialEndsAt?: Date | null;
 }
 
+/** Corpo do 403 de recurso fora do plano: a tela reconhece pelo `code`. */
+export const FEATURE_NOT_AVAILABLE = 'FEATURE_NOT_AVAILABLE';
+export const PLAN_LIMIT_REACHED = 'PLAN_LIMIT_REACHED';
+
 @Injectable()
 export class PlanControlService {
   constructor(private prisma: PrismaService) {}
@@ -39,9 +43,18 @@ export class PlanControlService {
   }
 
   /**
-   * Obter informações completas do plano da empresa
+   * Obter informações completas do plano da empresa.
+   *
+   * Um recurso vale para a empresa quando:
+   * - o plano da assinatura o inclui (`plan_features.isActive`) — é o que o
+   *   superadmin liga e desliga no painel; ou
+   * - a assinatura o tem à parte (`subscription_features.isActive`): módulo
+   *   contratado, recurso mantido ao sair do plano ou cortesia — esta, só
+   *   dentro da validade.
+   * Recurso desativado no catálogo (`features.isActive`) não vale para ninguém.
    */
   async getCompanyPlanInfo(companyId: string): Promise<PlanInfo | null> {
+    const now = new Date();
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
       select: {
@@ -59,11 +72,13 @@ export class PlanControlService {
                 name: true,
                 planType: true,
                 planFeatures: {
+                  where: { isActive: true, feature: { isActive: true } },
                   include: {
                     feature: true,
                   },
                 },
                 planLimits: {
+                  where: { isActive: true },
                   include: {
                     limit: true,
                   },
@@ -71,6 +86,11 @@ export class PlanControlService {
               },
             },
             subscriptionFeatures: {
+              where: {
+                isActive: true,
+                feature: { isActive: true },
+                OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+              },
               include: {
                 feature: true,
               },
@@ -122,7 +142,11 @@ export class PlanControlService {
         let value = pl.value;
 
         // Adicionar usuários extras para o limite de usuários
-        if (limitKey === 'max_users' && subscription.additionalUsers > 0) {
+        if (
+          limitKey === 'max_users' &&
+          value !== -1 &&
+          subscription.additionalUsers > 0
+        ) {
           value += subscription.additionalUsers;
         }
 
@@ -150,12 +174,24 @@ export class PlanControlService {
   }
 
   /**
-   * Verificar se empresa tem uma feature específica
+   * Verificar se empresa tem uma feature específica. Com uma lista, basta
+   * ter uma delas.
    */
-  async hasFeature(companyId: string, featureKey: string): Promise<boolean> {
+  async hasFeature(
+    companyId: string,
+    featureKey: string | string[],
+  ): Promise<boolean> {
     const planInfo = await this.getCompanyPlanInfo(companyId);
+    return this.includesAny(planInfo, featureKey);
+  }
+
+  private includesAny(
+    planInfo: PlanInfo | null,
+    featureKey: string | string[],
+  ) {
     if (!planInfo) return false;
-    return !!planInfo.features[featureKey];
+    const keys = Array.isArray(featureKey) ? featureKey : [featureKey];
+    return keys.some((key) => !!planInfo.features[key]);
   }
 
   /**
@@ -167,6 +203,14 @@ export class PlanControlService {
     currentUsage: number,
   ): Promise<boolean> {
     const planInfo = await this.getCompanyPlanInfo(companyId);
+    return this.withinLimit(planInfo, limitKey, currentUsage);
+  }
+
+  private withinLimit(
+    planInfo: PlanInfo | null,
+    limitKey: string,
+    currentUsage: number,
+  ): boolean {
     if (!planInfo) return false;
 
     // Sistema dinâmico - buscar limite pelo key
@@ -180,59 +224,98 @@ export class PlanControlService {
     // -1 significa ilimitado
     if (limit === -1) return true;
 
-    return currentUsage < limit;
+    return currentUsage <= limit;
   }
 
   /**
-   * Enforçar limite - lança exceção se excedido
+   * Enforçar limite - lança exceção se excedido. `currentUsage` é o uso
+   * DEPOIS da ação (quem cria passa o atual + 1).
    */
   async enforceLimit(
     companyId: string,
     limitKey: string,
     currentUsage: number,
   ): Promise<void> {
-    const canProceed = await this.checkLimit(companyId, limitKey, currentUsage);
+    const planInfo = await this.getCompanyPlanInfo(companyId);
+    if (this.withinLimit(planInfo, limitKey, currentUsage)) return;
 
-    if (!canProceed) {
-      const planInfo = await this.getCompanyPlanInfo(companyId);
-
-      // Buscar informações do limite dinamicamente
-      const limitInfo = await this.getLimitInfo(limitKey);
-      const limitName = limitInfo?.name || 'recursos';
-      const limitValue = planInfo.limits[limitKey] || 0;
-
-      throw new ForbiddenException(
-        `Limite do plano ${planInfo.planName} excedido. ` +
-          `Máximo permitido: ${limitValue} ${limitName}. ` +
-          `Upgrade seu plano para aumentar este limite.`,
-      );
+    if (!planInfo) {
+      throw new ForbiddenException({
+        code: PLAN_LIMIT_REACHED,
+        limit: limitKey,
+        message: 'A empresa não tem uma assinatura ativa.',
+      });
     }
+
+    // Buscar informações do limite dinamicamente
+    const limitInfo = await this.getLimitInfo(limitKey);
+    const limitName = limitInfo?.name || 'recursos';
+    const limitValue = planInfo.limits[limitKey] || 0;
+
+    throw new ForbiddenException({
+      code: PLAN_LIMIT_REACHED,
+      limit: limitKey,
+      value: limitValue,
+      planType: planInfo.planType,
+      message:
+        `Limite do plano ${planInfo.planName} atingido: ${limitName} ` +
+        `(máximo ${limitValue}). Evolua o plano ou contrate adicionais para aumentar.`,
+    });
   }
 
   /**
-   * Enforçar feature - lança exceção se não disponível
+   * Enforçar feature - lança 403 se o plano não a inclui. Com uma lista,
+   * basta ter uma delas.
    */
-  async enforceFeature(companyId: string, featureKey: string): Promise<void> {
-    const hasFeature = await this.hasFeature(companyId, featureKey);
+  async enforceFeature(
+    companyId: string,
+    featureKey: string | string[],
+  ): Promise<void> {
+    const planInfo = await this.getCompanyPlanInfo(companyId);
+    if (this.includesAny(planInfo, featureKey)) return;
 
-    if (!hasFeature) {
-      const planInfo = await this.getCompanyPlanInfo(companyId);
+    const keys = Array.isArray(featureKey) ? featureKey : [featureKey];
+    const catalog = await this.prisma.feature.findMany({
+      where: { key: { in: keys } },
+      select: { key: true, name: true },
+    });
+    const names = keys.map((k) => catalog.find((f) => f.key === k)?.name ?? k);
+    const label = names.map((n) => `"${n}"`).join(' ou ');
 
-      throw new ForbiddenException(
-        `Feature não disponível no plano ${planInfo.planName}. ` +
-          `Upgrade seu plano para acessar esta funcionalidade.`,
-      );
-    }
+    throw new ForbiddenException({
+      code: FEATURE_NOT_AVAILABLE,
+      feature: keys.length === 1 ? keys[0] : keys,
+      planType: planInfo?.planType ?? null,
+      message: planInfo
+        ? `O recurso ${label} não faz parte do plano ${planInfo.planName}.`
+        : `O recurso ${label} depende de uma assinatura ativa.`,
+    });
   }
 
   /**
-   * Obter uso atual de usuários da empresa
+   * Limite de usuários: ao dar acesso a mais uma pessoa (criar o usuário de
+   * um colaborador ou reativar um usuário), o total de usuários ativos da
+   * empresa não pode passar do plano mais os usuários adicionais.
    */
-  async getCurrentUserCount(companyId: string): Promise<number> {
+  async enforceUserLimit(companyId: string, excludeUserId?: string) {
+    const current = await this.getCurrentUserCount(companyId, excludeUserId);
+    await this.enforceLimit(companyId, 'max_users', current + 1);
+  }
+
+  /**
+   * Usuários ativos da empresa: colaboradores ativos com acesso (usuário
+   * ativo). É a mesma conta da tela de colaboradores e usuários.
+   */
+  async getCurrentUserCount(
+    companyId: string,
+    excludeUserId?: string,
+  ): Promise<number> {
     return this.prisma.employee.count({
       where: {
         companyId,
         isActive: true,
+        userId: excludeUserId ? { not: excludeUserId } : { not: null },
+        user: { isActive: true },
       },
     });
   }

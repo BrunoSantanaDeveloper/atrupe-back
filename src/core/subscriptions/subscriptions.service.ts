@@ -362,7 +362,40 @@ export class SubscriptionsService {
       `SystemAdmin ${adminUserId} solicitou troca de plano da empresa ${companyId}`,
     );
 
-    return this.changePlan(companyId, newPlanId, { skipActiveCheck: true });
+    const before = await this.prisma.subscription.findFirst({
+      where: {
+        companyId,
+        asaasSubscriptionId: { startsWith: 'sub_' },
+        status: { notIn: ['CANCELED', 'EXPIRED'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { plan: { select: { name: true } }, value: true },
+    });
+    const updated = await this.changePlan(companyId, newPlanId, {
+      skipActiveCheck: true,
+    });
+
+    // A troca feita pelo suporte fica na trilha da assinatura, como as demais.
+    try {
+      await this.prisma.subscriptionHistory.create({
+        data: {
+          subscriptionId: updated.id,
+          action: 'PLAN_CHANGED_BY_ADMIN',
+          description: `Plano trocado pelo suporte: ${before?.plan?.name ?? '?'} → ${updated.plan?.name}`,
+          changes: {
+            before: { plan: before?.plan?.name ?? null, value: before?.value },
+            after: { plan: updated.plan?.name, value: updated.value },
+          },
+          createdBy: adminUserId,
+          createdByName: adminUser.name,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Histórico da troca de plano da empresa ${companyId} não gravado: ${error.message}`,
+      );
+    }
+    return updated;
   }
 
   /**

@@ -18,6 +18,9 @@ import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
 import { AbacService } from 'src/core/auth/abac/abac.service';
 import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
+import { FeatureGuard } from 'src/core/plan/guards/feature.guard';
+import { RequiresFeature } from 'src/core/plan/decorators/requires-feature.decorator';
+import { PlanControlService } from 'src/core/plan/plan-control.service';
 import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 import {
   ApiTags,
@@ -49,6 +52,7 @@ const GROUP = 'financial';
 @Controller(`${GROUP}/${RESOURCE}`)
 export class PayableController {
   constructor(
+    private readonly planControl: PlanControlService,
     private readonly payableService: PayableService,
     private readonly abacService: AbacService,
   ) {}
@@ -87,6 +91,10 @@ export class PayableController {
     description: 'Lista de contas a pagar retornada com sucesso.',
     isArray: true,
   })
+  // A lista é a tela "A pagar" do plano; as ações sobre um lançamento
+  // (pagar, cancelar, editar) servem também ao fluxo financeiro e ficam livres.
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('accounts_payable')
   async findAll(@Req() req, @Query() paginationDto: PayableFilterDto) {
     paginationDto.companyId = req.user.companyId;
     return await this.payableService.findAll(paginationDto);
@@ -311,6 +319,18 @@ export class PayableController {
     @Param('installmentId') installmentId: string,
     @Body() payInstallmentDto: PayInstallmentDto,
   ) {
+    // Registrar a diferença (valor pago diferente da parcela) é do plano.
+    if (
+      (payInstallmentDto.difference != null &&
+        Number(payInstallmentDto.difference) !== 0) ||
+      payInstallmentDto.differenceNatureId ||
+      payInstallmentDto.differenceCategoryId
+    ) {
+      await this.planControl.enforceFeature(
+        req.user.companyId,
+        'payment_difference',
+      );
+    }
     return this.payableService.payInstallment(
       installmentId,
       payInstallmentDto,

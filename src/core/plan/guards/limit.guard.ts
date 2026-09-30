@@ -1,4 +1,9 @@
-import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PlanControlService } from '../plan-control.service';
 
@@ -52,7 +57,12 @@ export class LimitGuard implements CanActivate {
       );
       return true;
     } catch (error) {
-      return false; // Guard retorna false, a exceção será tratada pelo service
+      // O 403 do limite leva a mensagem do plano; engoli-lo virava um 403
+      // genérico sem explicação.
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      return false;
     }
   }
 }

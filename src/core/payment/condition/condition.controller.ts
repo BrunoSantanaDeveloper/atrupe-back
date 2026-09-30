@@ -14,6 +14,8 @@ import { ConditionService } from './condition.service';
 import { CreateConditionDto } from './dto/create-condition.dto';
 import { UpdateConditionDto } from './dto/update-condition.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { PlanControlService } from 'src/core/plan/plan-control.service';
+import { PrismaService } from 'src/config/prisma/prisma.service';
 import { ConditionFilterDto } from './dto/filter.dto';
 import {
   ApiTags,
@@ -29,7 +31,53 @@ import {
 @ApiBearerAuth()
 @Controller('payment-condition')
 export class ConditionController {
-  constructor(private readonly conditionService: ConditionService) {}
+  constructor(
+    private readonly conditionService: ConditionService,
+    private readonly planControl: PlanControlService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  /**
+   * Taxa da operadora e repasse são recurso de plano. Só vale para taxa
+   * informada (diferente de zero) que muda o que está gravado na parcela: uma
+   * condição com taxa antiga segue editável sem o recurso.
+   */
+  private async enforceOperatorFee(
+    companyId: string,
+    installments:
+      | { operatorFeeRate?: number; operatorFeeTransfer?: number }[]
+      | undefined,
+    conditionId?: string,
+  ) {
+    const list = installments ?? [];
+    const withFee = (i: {
+      operatorFeeRate?: number;
+      operatorFeeTransfer?: number;
+    }) =>
+      Number(i?.operatorFeeRate || 0) !== 0 ||
+      Number(i?.operatorFeeTransfer || 0) !== 0;
+    if (!list.some(withFee)) return;
+
+    if (conditionId) {
+      const stored = await this.prisma.installment.findMany({
+        where: { paymentConditionId: conditionId },
+      });
+      const changed = list.some((item, index) => {
+        if (!withFee(item)) return false;
+        const before = stored.find((s) => s.installment === index + 1);
+        return (
+          !before ||
+          before.operatorFeeRate !== Number(item.operatorFeeRate || 0) ||
+          before.operatorFeeTransfer !== Number(item.operatorFeeTransfer || 0)
+        );
+      });
+      if (!changed) return;
+    }
+    await this.planControl.enforceFeature(
+      companyId,
+      'payment_condition_operator_fee',
+    );
+  }
 
   @Post()
   @ApiOperation({ summary: 'Cria uma nova condição de pagamento' })
@@ -41,8 +89,12 @@ export class ConditionController {
     status: 201,
     description: 'Condição de pagamento criada com sucesso.',
   })
-  create(@Req() req, @Body() createConditionDto: CreateConditionDto) {
+  async create(@Req() req, @Body() createConditionDto: CreateConditionDto) {
     createConditionDto.companyId = req.user.companyId;
+    await this.enforceOperatorFee(
+      req.user.companyId,
+      createConditionDto.installments,
+    );
     return this.conditionService.create(createConditionDto);
   }
 
@@ -142,10 +194,16 @@ export class ConditionController {
     status: 404,
     description: 'Condição de pagamento não encontrada.',
   })
-  update(
+  async update(
+    @Req() req,
     @Param('id') id: string,
     @Body() updateConditionDto: UpdateConditionDto,
   ) {
+    await this.enforceOperatorFee(
+      req.user.companyId,
+      updateConditionDto.installments,
+      id,
+    );
     return this.conditionService.update(id, updateConditionDto);
   }
 

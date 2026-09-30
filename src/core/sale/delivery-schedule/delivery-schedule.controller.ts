@@ -1,4 +1,5 @@
 import {
+  NotFoundException,
   Controller,
   Get,
   Post,
@@ -20,17 +21,40 @@ import { DeliveryScheduleService } from './delivery-schedule.service';
 import { CreateDeliveryScheduleDto } from './dto/create-delivery-schedule.dto';
 import { UpdateDeliveryScheduleDto } from './dto/update-delivery-schedule.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { PlanControlService } from 'src/core/plan/plan-control.service';
+import { PrismaService } from 'src/config/prisma/prisma.service';
 import { DeliveryScheduleFitlerDto } from './dto/filter.dto';
 const RESOURCE = 'delivery-schedule';
 
 @ApiTags('Agenda de entrega')
-// @UseGuards(JwtAuthGuard)
-// @ApiBearerAuth()
+// Todas as rotas exigem login: criar, ler, editar, excluir e finalizar um
+// agendamento estavam abertas.
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 @Controller(`sale/${RESOURCE}`)
 export class DeliveryScheduleController {
   constructor(
     private readonly deliveryScheduleService: DeliveryScheduleService,
+    private readonly planControl: PlanControlService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  /** O agendamento precisa ser da empresa de quem pede. */
+  private async assertOwnership(id: string, companyId: string) {
+    const found = await this.prisma.deliverySchedule.findFirst({
+      where: {
+        id,
+        OR: [
+          { companyId },
+          { companyId: null, order: { quotation: { companyId } } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!found) {
+      throw new NotFoundException('Agendamento de entrega não encontrado.');
+    }
+  }
 
   @Post()
   @ApiOperation({ summary: 'Criar um agendamento de entrega' })
@@ -40,8 +64,6 @@ export class DeliveryScheduleController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Obtém a lista de todos os agendamentos de entrega',
   })
@@ -52,12 +74,18 @@ export class DeliveryScheduleController {
   })
   async findAll(@Req() req, @Query() query: DeliveryScheduleFitlerDto) {
     query.companyId = req.user.companyId;
+    // As abas "Produção" (IN_PRODUCTION) e "Todos" (sem status) são recurso
+    // de plano; entrega, faturamento e finalizados são livres.
+    if (!query.status || query.status === 'IN_PRODUCTION') {
+      await this.planControl.enforceFeature(
+        req.user.companyId,
+        'delivery_production_tabs',
+      );
+    }
     return await this.deliveryScheduleService.findAll(query);
   }
 
   @Get('quantity')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Obtém a quantidade de todos os status de orçamentos',
   })
@@ -72,22 +100,26 @@ export class DeliveryScheduleController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Buscar um agendamento de entrega pelo ID' })
-  findOne(@Param('id') id: string) {
+  async findOne(@Req() req, @Param('id') id: string) {
+    await this.assertOwnership(id, req.user.companyId);
     return this.deliveryScheduleService.findOne(id);
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Atualizar um agendamento de entrega' })
-  update(
+  async update(
+    @Req() req,
     @Param('id') id: string,
     @Body() updateDeliveryScheduleDto: UpdateDeliveryScheduleDto,
   ) {
+    await this.assertOwnership(id, req.user.companyId);
     return this.deliveryScheduleService.update(id, updateDeliveryScheduleDto);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Excluir um agendamento de entrega' })
-  remove(@Param('id') id: string) {
+  async remove(@Req() req, @Param('id') id: string) {
+    await this.assertOwnership(id, req.user.companyId);
     return this.deliveryScheduleService.remove(id);
   }
 
@@ -105,7 +137,11 @@ export class DeliveryScheduleController {
     status: 500,
     description: 'Erro interno ao finalizar agendamento',
   })
-  async finish(@Param('deliveryScheduleId') deliveryScheduleId: string) {
+  async finish(
+    @Req() req,
+    @Param('deliveryScheduleId') deliveryScheduleId: string,
+  ) {
+    await this.assertOwnership(deliveryScheduleId, req.user.companyId);
     return await this.deliveryScheduleService.finishDeliverySchedule(
       deliveryScheduleId,
     );

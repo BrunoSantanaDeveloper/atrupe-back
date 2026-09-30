@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ReceivableController } from './receivable.controller';
 import { ReceivableService } from './receivable.service';
 import { AbacService } from 'src/core/auth/abac/abac.service';
+import { PlanControlService } from 'src/core/plan/plan-control.service';
 import { ForbiddenException } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 
@@ -9,6 +10,7 @@ describe('ReceivableController', () => {
   let controller: ReceivableController;
   let serviceMock: any;
   let abacMock: any;
+  let planControlMock: any;
 
   beforeEach(async () => {
     serviceMock = {
@@ -30,6 +32,9 @@ describe('ReceivableController', () => {
     abacMock = {
       hasPermission: jest.fn(),
     };
+    planControlMock = {
+      enforceFeature: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ReceivableController],
@@ -37,6 +42,7 @@ describe('ReceivableController', () => {
         { provide: ReceivableService, useValue: serviceMock },
         { provide: AbacService, useValue: abacMock },
         { provide: PrismaService, useValue: {} },
+        { provide: PlanControlService, useValue: planControlMock },
       ],
     }).compile();
 

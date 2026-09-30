@@ -710,9 +710,19 @@ export class OwnershipAcceptanceService {
       },
     });
 
+    // Módulos contratados e recursos concedidos (mantidos ao sair do plano ou
+    // cortesia) seguem com a assinatura nova, com a origem de cada um.
     const features = await tx.subscriptionFeature.findMany({
       where: { subscriptionId: current.id, isActive: true },
-      select: { featureId: true, price: true },
+      select: {
+        featureId: true,
+        price: true,
+        grantSource: true,
+        grantedBy: true,
+        grantedByName: true,
+        grantReason: true,
+        expiresAt: true,
+      },
     });
     if (features.length > 0) {
       await tx.subscriptionFeature.createMany({
@@ -721,6 +731,11 @@ export class OwnershipAcceptanceService {
           featureId: f.featureId,
           price: f.price,
           isActive: true,
+          grantSource: f.grantSource,
+          grantedBy: f.grantedBy,
+          grantedByName: f.grantedByName,
+          grantReason: f.grantReason,
+          expiresAt: f.expiresAt,
         })),
       });
     }

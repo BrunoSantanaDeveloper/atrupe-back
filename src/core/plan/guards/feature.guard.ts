@@ -19,12 +19,12 @@ export class FeatureGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // Handler tem precedência sobre o controller, permitindo declarar a feature
     // uma única vez na classe e sobrescrever em endpoints específicos
-    const requiredFeature = this.reflector.getAllAndOverride<string>(
+    const requiredFeature = this.reflector.getAllAndOverride<string | string[]>(
       REQUIRED_FEATURE_KEY,
       [context.getHandler(), context.getClass()],
     );
 
-    if (!requiredFeature) {
+    if (!requiredFeature || requiredFeature.length === 0) {
       return true; // Se não há feature requerida, permite acesso
     }
 
@@ -42,8 +42,8 @@ export class FeatureGuard implements CanActivate {
       );
       return true;
     } catch (error) {
-      // Propaga a mensagem do plano ("Feature não disponível no plano X") em vez
-      // do 403 genérico do Nest; qualquer outra falha nega o acesso
+      // Propaga o 403 do plano (code FEATURE_NOT_AVAILABLE, com o nome do
+      // recurso) em vez do 403 genérico do Nest; qualquer outra falha nega.
       if (error instanceof ForbiddenException) {
         throw error;
       }

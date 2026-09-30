@@ -60,6 +60,22 @@ export class ClientController {
     }
   }
 
+  /**
+   * Limite de crédito por cliente é recurso de plano. A tela só envia o
+   * bloco `creditLimit` quando o plano o inclui.
+   */
+  private async enforceCreditLimitFeature(
+    companyId: string,
+    creditLimit?: unknown,
+  ) {
+    if (creditLimit !== undefined && creditLimit !== null) {
+      await this.planControlService.enforceFeature(
+        companyId,
+        'credit_limit_configuration',
+      );
+    }
+  }
+
   @Post()
   @HasPermission('create', 'register:client')
   @ApiOperation({ summary: 'Cria um novo cliente' })
@@ -79,6 +95,10 @@ export class ClientController {
     await this.enforceResponsibleFeature(
       req.user.companyId,
       createClientDto.responsibleId,
+    );
+    await this.enforceCreditLimitFeature(
+      req.user.companyId,
+      createClientDto.creditLimit,
     );
     return this.clientService.create(createClientDto);
   }
@@ -280,6 +300,10 @@ export class ClientController {
     await this.enforceResponsibleFeature(
       req.user.companyId,
       updateClientDto.responsibleId,
+    );
+    await this.enforceCreditLimitFeature(
+      req.user.companyId,
+      updateClientDto.creditLimit,
     );
     return this.clientService.update(id, updateClientDto);
   }

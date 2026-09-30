@@ -3,6 +3,10 @@ import { PrismaService } from 'nestjs-prisma';
 import { BASE_FEATURES } from './features-base';
 import { BASE_LIMITS } from './limits-base';
 import { PLAN_CONFIGURATIONS } from './plans-complete';
+import {
+  applyPlanDefaults,
+  describePlanDefaultsResult,
+} from './apply-plan-config';
 
 @Injectable()
 export class SeedPlansService {
@@ -65,81 +69,18 @@ export class SeedPlansService {
   private async seedPlans() {
     console.log('📋 Seeding Plans...');
 
-    // eslint-disable-next-line
-    for (const [planKey, config] of Object.entries(PLAN_CONFIGURATIONS)) {
-      // Criar ou atualizar o plano
-      const plan = await this.prisma.plan.upsert({
-        where: { name: config.plan.name },
-        update: {
-          description: config.plan.description,
-          basePrice: config.plan.basePrice,
-          additionalUserPrice: config.plan.additionalUserPrice,
-          planType: config.plan.planType,
-          // isActive e badge NÃO são sobrescritos no update: a disponibilidade
-          // para contratação é responsabilidade do SystemAdmin (painel de
-          // planos). O seed define apenas o valor inicial na criação.
-          concept: config.concept || null,
-          features: config.featuresList || null,
-          videoUrl: config.videoUrl || null,
-        },
-        create: {
-          ...config.plan,
-          badge: config.badge || null,
-          concept: config.concept || null,
-          features: config.featuresList || null,
-          videoUrl: config.videoUrl || null,
-        },
-      });
-
-      // Limpar features e limits antigos
-      await this.prisma.planFeature.deleteMany({
-        where: { planId: plan.id },
-      });
-      await this.prisma.planLimit.deleteMany({
-        where: { planId: plan.id },
-      });
-
-      // Associar features ao plano
-      for (const featureKey of config.features) {
-        const feature = await this.prisma.feature.findUnique({
-          where: { key: featureKey },
-        });
-
-        if (feature) {
-          await this.prisma.planFeature.create({
-            data: {
-              planId: plan.id,
-              featureId: feature.id,
-              isActive: true,
-            },
-          });
-        }
-      }
-
-      // Associar limits ao plano
-      for (const [limitKey, value] of Object.entries(config.limits)) {
-        const limit = await this.prisma.limit.findUnique({
-          where: { key: limitKey },
-        });
-
-        if (limit) {
-          await this.prisma.planLimit.create({
-            data: {
-              planId: plan.id,
-              limitId: limit.id,
-              value: value as number,
-              isActive: true,
-            },
-          });
-        }
-      }
-
-      console.log(`✓ Plano ${config.plan.name} processado`);
-    }
-
-    console.log(
-      `✓ ${Object.keys(PLAN_CONFIGURATIONS).length} planos processados`,
+    // Mesmo caminho do prisma/seed.ts: não destrutivo, preserva o que o
+    // superadmin configurou no painel de planos.
+    const result = await applyPlanDefaults(
+      this.prisma,
+      PLAN_CONFIGURATIONS as any,
     );
+    console.log(describePlanDefaultsResult(result));
+    if (result.errors.length > 0) {
+      throw new Error(
+        result.errors.map((e) => `${e.planType}: ${e.message}`).join('; '),
+      );
+    }
   }
 
   async getPlansWithFeaturesAndLimits() {

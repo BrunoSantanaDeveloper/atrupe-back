@@ -142,7 +142,7 @@ export class EvolutionService {
                 isActive: true,
                 price: { gt: 0 },
                 // O que o plano novo já inclui não vira módulo pago.
-                planFeatures: { none: { planId: dto.planId } },
+                planFeatures: { none: { planId: dto.planId, isActive: true } },
               },
             })
           : Promise.resolve([]),
@@ -433,6 +433,37 @@ export class EvolutionService {
             price: feature.price,
             isActive: true,
           },
+        });
+      }
+
+      // O que a empresa tem sem cobrança — mantido quando o recurso saiu do
+      // plano, ou cortesia — segue com a evolução, a não ser que o plano novo
+      // já o inclua.
+      const grants = await tx.subscriptionFeature.findMany({
+        where: {
+          subscriptionId: current.id,
+          isActive: true,
+          grantSource: { not: null },
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          feature: {
+            planFeatures: { none: { planId: input.planId, isActive: true } },
+          },
+        },
+      });
+      if (grants.length > 0) {
+        await tx.subscriptionFeature.createMany({
+          data: grants.map((grant) => ({
+            subscriptionId: subscription.id,
+            featureId: grant.featureId,
+            price: 0,
+            isActive: true,
+            grantSource: grant.grantSource,
+            grantedBy: grant.grantedBy,
+            grantedByName: grant.grantedByName,
+            grantReason: grant.grantReason,
+            expiresAt: grant.expiresAt,
+          })),
+          skipDuplicates: true,
         });
       }
 

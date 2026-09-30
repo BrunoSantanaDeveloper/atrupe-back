@@ -1,12 +1,11 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   Param,
   Post,
   Patch,
-  Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -131,34 +130,13 @@ export class PlanController {
   })
   @ApiResponse({ status: 404, description: 'Plano não encontrado' })
   setPlanAvailability(
+    @Req() req,
     @Param('id') id: string,
     @Body() dto: SetPlanAvailabilityDTO,
   ) {
-    return this.planService.setPlanAvailability(id, dto.isActive);
-  }
-
-  @Delete(':id')
-  @UseGuards(JwtAuthGuard, SystemAdminGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Remove um plano' })
-  @ApiResponse({
-    status: 200,
-    description: 'Plano removido com sucesso',
-  })
-  deletePlan(@Param('id') id: string) {
-    return this.planService.deletePlan(id);
-  }
-
-  @Post('seed')
-  @UseGuards(JwtAuthGuard, SystemAdminGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Cria os planos padrão do sistema' })
-  @ApiResponse({
-    status: 201,
-    description: 'Planos padrão criados com sucesso',
-  })
-  async seedDefaultPlans(@Query('companyId') companyId?: string) {
-    return this.planService.createDefaultPlans(companyId);
+    return this.planService.setPlanAvailability(id, dto.isActive, {
+      userId: req.user.userId,
+    });
   }
 
   // Keep existing subscription endpoints...

@@ -5,10 +5,13 @@ import {
 } from '@nestjs/common';
 import { CreatePlanDTO, UpdatePlanDTO } from './dtos/plan';
 import { PrismaService } from 'nestjs-prisma';
-import { PLAN_CONFIGURATIONS } from '../../seeds/plans-complete';
+import { PlanConfigService } from './plan-config.service';
 @Injectable()
 export class PlanService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private planConfig: PlanConfigService,
+  ) {}
 
   // Plan CRUD Operations
   async createPlan(createPlanDTO: CreatePlanDTO) {
@@ -221,10 +224,20 @@ export class PlanService {
    * Responsabilidade exclusiva do SystemAdmin. Ao ativar, remove o selo
    * "Em breve"; ao desativar, reaplica o selo automaticamente.
    */
-  async setPlanAvailability(id: string, isActive: boolean) {
+  async setPlanAvailability(
+    id: string,
+    isActive: boolean,
+    actor?: { userId: string },
+  ) {
     const plan = await this.prisma.plan.findUnique({
       where: { id },
-      select: { id: true, basePrice: true },
+      select: {
+        id: true,
+        name: true,
+        planType: true,
+        basePrice: true,
+        isActive: true,
+      },
     });
 
     if (!plan) {
@@ -237,72 +250,19 @@ export class PlanService {
       );
     }
 
-    return this.prisma.plan.update({
+    const updated = await this.prisma.plan.update({
       where: { id },
       data: {
         isActive,
         badge: isActive ? null : { text: 'Em breve', variant: 'orangeLight' },
       },
     });
-  }
 
-  async deletePlan(id: string) {
-    try {
-      return await this.prisma.plan.delete({
-        where: { id },
-      });
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new BadRequestException('Error deleting plan: ' + error.message);
+    if (actor) {
+      await this.planConfig
+        .recordAvailability(actor, plan, plan.isActive, isActive)
+        .catch(() => undefined);
     }
-  }
-
-  async createDefaultPlans(companyId?: string) {
-    const defaultPlans = Object.values(PLAN_CONFIGURATIONS).map((config) => ({
-      ...config.plan,
-      companyId,
-    }));
-
-    // Se companyId for fornecido, verifica se já existem planos para a empresa
-    if (companyId) {
-      const plans = await this.prisma.plan.findMany({
-        where: {
-          companyId,
-        },
-      });
-
-      if (plans.length > 0) {
-        return {
-          message: 'Plans already exist for this company',
-          existing: plans.length,
-        };
-      }
-    } else {
-      // Se não for fornecido companyId, verifica se já existem planos globais
-      const globalPlans = await this.prisma.plan.findMany({
-        where: {
-          companyId: null,
-        },
-      });
-
-      if (globalPlans.length > 0) {
-        return {
-          message: 'Global plans already exist',
-          existing: globalPlans.length,
-        };
-      }
-    }
-
-    const createdPlans = await Promise.all(
-      defaultPlans.map((plan) => this.prisma.plan.create({ data: plan })),
-    );
-
-    return {
-      message: 'Default plans created successfully',
-      created: createdPlans.length,
-      plans: createdPlans,
-    };
+    return updated;
   }
 }

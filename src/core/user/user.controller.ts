@@ -31,6 +31,8 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { PlanControlService } from '../plan/plan-control.service';
+import { PrismaService } from 'src/config/prisma/prisma.service';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
 import { HasAnyPermission } from '../auth/abac/has-any-permission.decorator';
@@ -42,7 +44,11 @@ import { AdminPasswordResetDto } from './dto/admin-password-reset.dto';
 @ApiTags('Usuário')
 @Controller('user')
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly planControl: PlanControlService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Get('teste')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -94,6 +100,9 @@ export class UserController {
   })
   async createEmployee(@Req() req, @Body() body: CreateUserByEmployeeDto) {
     body.company = req.user.companyId;
+    // Dar acesso a mais uma pessoa respeita o limite de usuários do plano
+    // (mais os usuários adicionais contratados).
+    await this.planControl.enforceUserLimit(req.user.companyId);
     return await this.userService.createUserForEmployee(
       body,
       req.user?.userId,
@@ -282,7 +291,21 @@ export class UserController {
     status: 400,
     description: 'Dados inválidos.',
   })
-  update(@Param('id') id: string, @Req() req, @Body() body: UpdateUserDto) {
+  async update(
+    @Param('id') id: string,
+    @Req() req,
+    @Body() body: UpdateUserDto,
+  ) {
+    // Reativar um usuário também conta no limite de usuários do plano.
+    if (body.isActive === true && req.user?.companyId) {
+      const target = await this.prisma.user.findUnique({
+        where: { id },
+        select: { isActive: true },
+      });
+      if (target && !target.isActive) {
+        await this.planControl.enforceUserLimit(req.user.companyId, id);
+      }
+    }
     return this.userService.update(id, body, req.user);
   }
 

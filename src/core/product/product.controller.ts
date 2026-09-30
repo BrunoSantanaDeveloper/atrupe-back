@@ -20,6 +20,8 @@ import { HasPermission } from '../auth/abac/has-permission.decorator';
 import { TenantGuard } from '../auth/guards/tenant.guard';
 import { TenantResource } from '../auth/guards/tenant-resource.decorator';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { PlanControlService } from '../plan/plan-control.service';
+import { PrismaService } from 'src/config/prisma/prisma.service';
 import { ToggleStatusDto } from './dto/toggle-status.dto';
 import {
   ApiTags,
@@ -38,7 +40,50 @@ const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
 @ApiBearerAuth()
 @Controller(RESOURCE)
 export class ProductController {
-  constructor(private readonly productService: ProductService) {}
+  constructor(
+    private readonly productService: ProductService,
+    private readonly planControl: PlanControlService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  /**
+   * Composição (mais de um item) e etapas de produção são recursos de plano.
+   * Só a INCLUSÃO é verificada: um produto que já tem composição ou etapas
+   * segue editável em qualquer plano.
+   */
+  private async enforceProductFeatures(
+    companyId: string,
+    dto: { items?: unknown[]; productionStages?: { isActive?: boolean }[] },
+    productId?: string,
+  ) {
+    const stored = productId
+      ? await this.prisma.product.findUnique({
+          where: { id: productId },
+          select: {
+            productionStages: true,
+            _count: { select: { items: true } },
+          },
+        })
+      : null;
+
+    if ((dto.items?.length ?? 0) > 1 && (stored?._count.items ?? 0) <= 1) {
+      await this.planControl.enforceFeature(companyId, 'product_composition');
+    }
+
+    const hasStages = (dto.productionStages ?? []).some(
+      (stage) => stage?.isActive !== false,
+    );
+    const storedStages = Array.isArray(stored?.productionStages)
+      ? (stored.productionStages as { isActive?: boolean }[])
+      : [];
+    const hadStages = storedStages.some((stage) => stage?.isActive !== false);
+    if (hasStages && !hadStages) {
+      await this.planControl.enforceFeature(
+        companyId,
+        'product_production_stages',
+      );
+    }
+  }
 
   @Post()
   @HasPermission('create', 'product_settings:products')
@@ -49,6 +94,7 @@ export class ProductController {
   })
   async create(@Req() req, @Body() createProductDto: CreateProductDto) {
     createProductDto.companyId = req.user.companyId;
+    await this.enforceProductFeatures(req.user.companyId, createProductDto);
     return await this.productService.create(createProductDto);
   }
 
@@ -127,9 +173,15 @@ export class ProductController {
     description: 'Produto não encontrado.',
   })
   async update(
+    @Req() req,
     @Param('id') id: string,
     @Body() updateProductDto: UpdateProductDto,
   ) {
+    await this.enforceProductFeatures(
+      req.user.companyId,
+      updateProductDto as any,
+      id,
+    );
     return await this.productService.update(id, updateProductDto);
   }
 

@@ -61,7 +61,12 @@ interface GatewayChange {
 }
 
 const SUBSCRIPTION_INCLUDE = {
-  plan: { include: { planFeatures: { include: { feature: true } } } },
+  plan: {
+    include: {
+      // Só o que o plano inclui hoje: o superadmin liga e desliga no painel.
+      planFeatures: { where: { isActive: true }, include: { feature: true } },
+    },
+  },
   subscriptionFeatures: { include: { feature: true } },
   customer: true,
 } satisfies Prisma.SubscriptionInclude;
@@ -772,14 +777,20 @@ export class ComplementsService {
     return upcoming?.dueDate ?? sub.nextDueDate;
   }
 
+  /**
+   * Módulos contratados. Recurso concedido sem cobrança (mantido ao sair do
+   * plano ou cortesia, `grantSource`) não é módulo: não aparece, não se
+   * retira por aqui e não entra na conta.
+   */
   private contractedModules(sub: LoadedSubscription) {
     return sub.subscriptionFeatures.filter(
-      (sf) => sf.isActive !== false && !!sf.feature?.key,
+      (sf) => sf.isActive !== false && !!sf.feature?.key && !sf.grantSource,
     );
   }
 
   private planFeatureKeys(sub: LoadedSubscription): string[] {
     return (sub.plan.planFeatures ?? [])
+      .filter((pf) => pf.isActive && pf.feature?.isActive !== false)
       .map((pf) => pf.feature?.key)
       .filter((key): key is string => !!key);
   }

@@ -68,7 +68,11 @@ describe('EvolutionService', () => {
       create: jest.fn(),
       update: jest.fn(),
     },
-    subscriptionFeature: { create: jest.fn() },
+    subscriptionFeature: {
+      create: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+      createMany: jest.fn(),
+    },
     couponUsage: { create: jest.fn(), deleteMany: jest.fn() },
     coupon: { update: jest.fn() },
     payment: { create: jest.fn(), updateMany: jest.fn() },

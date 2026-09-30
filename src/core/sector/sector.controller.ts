@@ -15,6 +15,10 @@ import { SectorService } from './sector.service';
 import { CreateSectorDto } from './dto/create-sector.dto';
 import { UpdateSectorDto } from './dto/update-sector.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { FeatureGuard } from '../plan/guards/feature.guard';
+import { RequiresFeature } from '../plan/decorators/requires-feature.decorator';
+import { PlanControlService } from '../plan/plan-control.service';
+import { PrismaService } from 'src/config/prisma/prisma.service';
 import { SectorFilterDto } from './dto/filter.dto';
 import {
   ApiTags,
@@ -32,9 +36,18 @@ const RESOURCE = 'sector';
 @ApiBearerAuth()
 @Controller(RESOURCE)
 export class SectorController {
-  constructor(private readonly sectorService: SectorService) {}
+  constructor(
+    private readonly sectorService: SectorService,
+    private readonly planControl: PlanControlService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  // Listar setores é livre: produtos, colaboradores e a agenda usam. Criar,
+  // editar e excluir é o recurso "Configurar Setores" do plano.
 
   @Post()
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('sectors_configuration')
   @ApiOperation({ summary: 'Cria um novo setor' })
   @ApiBody({
     description: 'Dados do novo setor',
@@ -89,6 +102,8 @@ export class SectorController {
   }
 
   @Patch(':id')
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('sectors_configuration')
   @ApiOperation({ summary: 'Atualiza um setor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do setor' })
   @ApiResponse({
@@ -99,11 +114,30 @@ export class SectorController {
     status: 404,
     description: 'Setor não encontrado.',
   })
-  update(@Param('id') id: string, @Body() updateSectorDto: UpdateSectorDto) {
+  async update(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() updateSectorDto: UpdateSectorDto,
+  ) {
+    // Marcar um setor como etapa de produção é o recurso "Etapas de produção".
+    if (updateSectorDto.isProductionStage === true) {
+      const sector = await this.prisma.companySector.findUnique({
+        where: { id },
+        select: { isProductionStage: true },
+      });
+      if (sector && !sector.isProductionStage) {
+        await this.planControl.enforceFeature(
+          req.user.companyId,
+          'product_production_stages',
+        );
+      }
+    }
     return this.sectorService.update(id, updateSectorDto);
   }
 
   @Delete(':id')
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('sectors_configuration')
   @ApiOperation({ summary: 'Remove um setor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do setor' })
   @ApiResponse({

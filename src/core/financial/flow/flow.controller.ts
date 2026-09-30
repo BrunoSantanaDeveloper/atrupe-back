@@ -4,6 +4,7 @@ import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
 import { FinancialFlowFilterDTO } from './dto/filter.dto';
+import { PlanControlService } from 'src/core/plan/plan-control.service';
 import {
   ApiTags,
   ApiOperation,
@@ -20,7 +21,32 @@ const GROUP = 'financial';
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class FlowController {
-  constructor(private readonly flowService: FlowService) {}
+  constructor(
+    private readonly flowService: FlowService,
+    private readonly planControl: PlanControlService,
+  ) {}
+
+  /**
+   * O fluxo filtrado por cliente ou fornecedor é a aba Financeiro do
+   * cadastro, recurso de plano. O fluxo da empresa (sem esse filtro) é livre.
+   */
+  private async enforceEntityTabs(
+    companyId: string,
+    filter: FinancialFlowFilterDTO,
+  ) {
+    if (filter.clientId) {
+      await this.planControl.enforceFeature(
+        companyId,
+        'client_additional_tabs',
+      );
+    }
+    if (filter.supplierId) {
+      await this.planControl.enforceFeature(
+        companyId,
+        'supplier_additional_tabs',
+      );
+    }
+  }
 
   @Get()
   @HasAnyPermission({ action: 'view', resource: 'financial:flow' })
@@ -30,8 +56,9 @@ export class FlowController {
     description: 'Lista de fluxos financeiros retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Req() req, @Query() filter: FinancialFlowFilterDTO) {
+  async findAll(@Req() req, @Query() filter: FinancialFlowFilterDTO) {
     filter.companyId = req.user.companyId;
+    await this.enforceEntityTabs(req.user.companyId, filter);
     return this.flowService.findAll(filter);
   }
 
@@ -45,8 +72,9 @@ export class FlowController {
     description:
       'Lista de fluxos financeiros para exportaÃ§Ã£o retornada com sucesso.',
   })
-  export(@Req() req, @Query() filter: FinancialFlowFilterDTO) {
+  async export(@Req() req, @Query() filter: FinancialFlowFilterDTO) {
     filter.companyId = req.user.companyId;
+    await this.enforceEntityTabs(req.user.companyId, filter);
     return this.flowService.findAllForExport(filter);
   }
 
@@ -61,8 +89,9 @@ export class FlowController {
     description: 'Valores totais de fluxos financeiros retornada com sucesso.',
     isArray: true,
   })
-  findAllTotals(@Req() req, @Query() filter: FinancialFlowFilterDTO) {
+  async findAllTotals(@Req() req, @Query() filter: FinancialFlowFilterDTO) {
     filter.companyId = req.user.companyId;
+    await this.enforceEntityTabs(req.user.companyId, filter);
     return this.flowService.findAllTotals(filter);
   }
 

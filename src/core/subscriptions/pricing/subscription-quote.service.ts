@@ -334,7 +334,12 @@ export class SubscriptionQuoteService {
     const unique = [...new Set(keys)];
     const features = await this.prisma.feature.findMany({
       where: { key: { in: unique }, isActive: true, price: { gt: 0 } },
-      include: { planFeatures: { where: { planId }, select: { id: true } } },
+      include: {
+        planFeatures: {
+          where: { planId, isActive: true },
+          select: { id: true },
+        },
+      },
     });
     const missing = unique.filter((k) => !features.some((f) => f.key === k));
     if (missing.length > 0) {

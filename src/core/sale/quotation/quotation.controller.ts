@@ -141,10 +141,17 @@ export class QuotationController {
     status: 201,
     description: 'Orçamento criado com sucesso.',
   })
-  create(@Body() createQuotationDto: CreateQuotationDto, @Req() req) {
+  async create(@Body() createQuotationDto: CreateQuotationDto, @Req() req) {
     if (!req.user?.isAdmin) {
       delete createQuotationDto.createdAt;
       delete createQuotationDto.quotationNumber;
+    }
+    // Venda rápida é recurso de plano.
+    if (createQuotationDto.quickSale === true) {
+      await this.planControlService.enforceFeature(
+        req.user.companyId,
+        'quotation_quick_sale',
+      );
     }
     return this.quotationService.create(createQuotationDto, req.user?.userId);
   }
@@ -443,6 +450,14 @@ export class QuotationController {
       throw new BadRequestException('Invalid id');
     }
     await this.validateOwnership(id, req.user, 'edit');
+    // Rejeitar com motivo (cadastro de motivos) é recurso de plano; sem motivo
+    // é livre.
+    if (dto.reasonId) {
+      await this.planControlService.enforceFeature(
+        req.user.companyId,
+        'quotation_rejection_reasons',
+      );
+    }
     return this.quotationService.reject(id, dto, req.user?.userId);
   }
 
@@ -554,6 +569,20 @@ export class QuotationController {
       delete updateQuotationDto.seriesId;
     }
     await this.validateOwnership(id, req.user, 'edit');
+    // Transformar um orçamento em venda rápida é recurso de plano (o que já é
+    // venda rápida segue editável).
+    if (updateQuotationDto.quickSale === true) {
+      const current = await this.prisma.quotation.findUnique({
+        where: { id },
+        select: { quickSale: true },
+      });
+      if (current && !current.quickSale) {
+        await this.planControlService.enforceFeature(
+          req.user.companyId,
+          'quotation_quick_sale',
+        );
+      }
+    }
     return await this.quotationService.update(
       id,
       updateQuotationDto,

@@ -1542,6 +1542,30 @@ model PlanFeature {
   @@map("plan_features")
 }
 
+/// Trilha da configuração dos planos feita pelo superadmin: um registro por
+/// par (plano, recurso ou limite) alterado. Sem FK de propósito, para o
+/// histórico sobreviver à exclusão de um plano ou recurso.
+model PlanConfigHistory {
+  id            String   @id @default(uuid())
+  entityType    String // PLAN_FEATURE | PLAN_LIMIT | PLAN
+  planId        String?
+  planType      String?
+  featureKey    String?
+  limitKey      String?
+  action        String // ENABLED | DISABLED | VALUE_CHANGED | AVAILABILITY_CHANGED
+  description   String
+  changes       Json? // { before, after }
+  metadata      Json? // { affectedSubscriptions, keepCurrentSubscriptions, cascade, source }
+  createdBy     String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+
+  @@index([planId])
+  @@index([featureKey])
+  @@index([createdAt])
+  @@map("plan_config_history")
+}
+
 model PlanLimit {
   id        String   @id @default(uuid())
   planId    String
@@ -1701,6 +1725,14 @@ model SubscriptionFeature {
   isActive       Boolean      @default(true)
   price          Float        @default(0) // preço adicional desta feature
   createdAt      DateTime     @default(now())
+  // Recurso concedido sem cobrança, fora do plano. Nulo = módulo contratado.
+  // PLAN_RETAINED: mantido quando o superadmin retirou o recurso do plano sem
+  // atingir as assinaturas atuais. COURTESY: cortesia dada a uma empresa.
+  grantSource    String?
+  grantedBy      String?
+  grantedByName  String?
+  grantReason    String?
+  expiresAt      DateTime? // cortesia com validade; nulo = sem prazo
   subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   feature        Feature      @relation(fields: [featureId], references: [id], onDelete: Cascade)
 

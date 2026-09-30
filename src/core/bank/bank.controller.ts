@@ -18,6 +18,10 @@ import { CreateBankAccountDto } from './dto/create-account.dto';
 import { AccountService } from './account.service';
 import { BankAccountFilterDTO } from './dto/filter-account.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { FeatureGuard } from '../plan/guards/feature.guard';
+import { RequiresFeature } from '../plan/decorators/requires-feature.decorator';
+import { PlanControlService } from '../plan/plan-control.service';
+import { PrismaService } from 'src/config/prisma/prisma.service';
 import {
   ApiTags,
   ApiOperation,
@@ -37,7 +41,64 @@ export class BankController {
   constructor(
     private readonly bankService: BankService,
     private readonly accountService: AccountService,
+    private readonly planControl: PlanControlService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  /**
+   * O controle de caixa da conta e o tipo "provisionar" são recursos de
+   * plano. Só a MUDANÇA é verificada: sem o recurso, a conta continua
+   * editável (nome, descrição, condições aceitas) com o que já tinha.
+   */
+  private async enforceAccountFeatures(
+    companyId: string,
+    dto: UpdateBankAccountDto,
+    accountId?: string,
+  ) {
+    const stored = accountId
+      ? await this.prisma.bankAccount.findFirst({
+          where: { id: accountId },
+          include: { bankAccountCashControl: true },
+        })
+      : null;
+
+    if (
+      dto.cashControl !== undefined &&
+      dto.cashControl !== null &&
+      !!dto.cashControl !== (stored?.cashControl ?? false)
+    ) {
+      const allowed = await this.planControl.hasFeature(
+        companyId,
+        'bank_account_cash_control_switch',
+      );
+      if (!allowed) {
+        // Sem o recurso, a mudança é ignorada e a conta mantém o que tinha. A
+        // tela antiga mandava sempre "true" ao editar; recusar (403) quebraria
+        // a edição da conta no Start.
+        delete dto.cashControl;
+      }
+    }
+
+    const provisionAdded = (dto.bankAccountCashControl ?? []).some((entry) => {
+      const before = stored?.bankAccountCashControl.find(
+        (c) =>
+          (entry.id && c.id === entry.id) ||
+          c.paymentConditionId === entry.paymentConditionId,
+      );
+      return (
+        (entry.incomeType === 'PROVISION' &&
+          before?.incomeType !== 'PROVISION') ||
+        (entry.paymentType === 'PROVISION' &&
+          before?.paymentType !== 'PROVISION')
+      );
+    });
+    if (provisionAdded) {
+      await this.planControl.enforceFeature(
+        companyId,
+        'bank_account_provision',
+      );
+    }
+  }
 
   //---------------------------------------------------------------------------------
   // Bank
@@ -108,10 +169,13 @@ export class BankController {
     status: 201,
     description: 'Conta bancária criada com sucesso.',
   })
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('bank_account_creation')
   async createAccount(@Req() req, @Body() dto: CreateBankAccountDto) {
     if (req.user.companyId === null) {
       throw new BadGatewayException('Usuário não possui empresa vinculada');
     }
+    await this.enforceAccountFeatures(req.user.companyId, dto);
     dto.companyId = req.user.companyId;
     return await this.accountService.create(dto);
   }
@@ -148,9 +212,15 @@ export class BankController {
     description: 'Conta bancária não encontrada.',
   })
   async updateAccount(
+    @Req() req,
     @Param('accountId') accountId: string,
     @Body() updateBankAccountDto: UpdateBankAccountDto,
   ) {
+    await this.enforceAccountFeatures(
+      req.user.companyId,
+      updateBankAccountDto,
+      accountId,
+    );
     return await this.accountService.update(accountId, updateBankAccountDto);
   }
 
@@ -169,6 +239,8 @@ export class BankController {
     status: 404,
     description: 'Conta bancária não encontrada.',
   })
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('bank_account_delete')
   async removeAccount(@Param('accountId') accountId: string) {
     return await this.accountService.remove(accountId);
   }

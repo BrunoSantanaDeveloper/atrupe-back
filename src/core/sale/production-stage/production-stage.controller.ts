@@ -11,6 +11,8 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ProductionStageService } from './production-stage.service';
 import { UpdateProductionStageDto } from './dto/update-production-stage.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { FeatureGuard } from 'src/core/plan/guards/feature.guard';
+import { RequiresFeature } from 'src/core/plan/decorators/requires-feature.decorator';
 
 const RESOURCE = 'production-stage';
 
@@ -43,6 +45,9 @@ export class ProductionStageController {
   }
 
   @Patch(':id')
+  // Mudar o status das etapas na agenda é recurso de plano.
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('delivery_stage_status_change')
   @ApiOperation({ summary: 'Atualizar um estágio de produção' })
   update(
     @Param('id') id: string,
@@ -52,12 +57,18 @@ export class ProductionStageController {
   }
 
   @Get('schedule/:id')
+  // Mudar o status das etapas na agenda é recurso de plano.
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('delivery_stage_status_change')
   @ApiOperation({ summary: 'Atualizar um estágio de produção' })
   async updateSchedule(@Param('id') id: string) {
     return await this.productionStageService.updateStatusIfAllStagesAreDone(id);
   }
 
   @Delete(':id')
+  // Mudar o status das etapas na agenda é recurso de plano.
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('delivery_stage_status_change')
   @ApiOperation({ summary: 'Excluir um estágio de produção' })
   remove(@Param('id') id: string) {
     return this.productionStageService.remove(id);

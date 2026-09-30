@@ -12,6 +12,8 @@ import {
 import { CreditLimitService } from './credit-limit.service';
 import { ApiTags, ApiBearerAuth, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { FeatureGuard } from 'src/core/plan/guards/feature.guard';
+import { RequiresFeature } from 'src/core/plan/decorators/requires-feature.decorator';
 import { UpdateCreditLimitDefaultDto } from './dto/update-credit-limit.dto';
 
 const RESOURCE = 'credit-limit';
@@ -46,7 +48,10 @@ export class CreditLimitController {
     return creditLimitDefaults;
   }
 
+  // Ler o padrão é livre (o cadastro de cliente consulta); alterar é do plano.
   @Patch('')
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('credit_limit_configuration')
   @ApiBody({
     type: UpdateCreditLimitDefaultDto,
     description: 'The updated credit limit defaults for the company.',

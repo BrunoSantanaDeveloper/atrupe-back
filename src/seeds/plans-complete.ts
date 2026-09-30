@@ -1,6 +1,17 @@
+/**
+ * Composição PADRÃO de cada plano ("padrão de fábrica").
+ *
+ * Desde 29/09/2026 a composição real mora no banco (`plan_features` e
+ * `plan_limits`) e é o superadmin quem a altera, em Super Admin › Sistema ›
+ * Planos. O seed só CRIA o que falta — uma chave nova listada aqui entra
+ * ligada no próximo deploy —, nunca desliga nem sobrescreve o que o painel
+ * decidiu. Estas listas também são o alvo do "Restaurar padrão" do painel.
+ */
+const startFeatures = ['sectors_configuration'];
+
 const liteFeatures = [
+  ...startFeatures,
   'pdf_show_item_details',
-  'sectors_configuration',
   'service_order_current_phase',
   'quotation_quick_sale',
   'quotation_rejection_reasons',
@@ -48,7 +59,9 @@ export const PLAN_CONFIGURATIONS = {
     },
     badge: null,
     concept: null,
-    features: [],
+    // O teste gratuito começa com o que o Start tem; o superadmin pode
+    // incluir outros recursos na coluna Trial da matriz.
+    features: startFeatures,
     videoUrl: null,
     featuresList: null,
     limits: {
@@ -83,7 +96,7 @@ export const PLAN_CONFIGURATIONS = {
         text: 'A empresa sai do improviso, garantindo que nenhum trabalho seja esquecido, com informações organizadas e uma imagem mais profissional.',
       },
     },
-    features: [],
+    features: startFeatures,
     videoUrl: 'https://youtu.be/kGTQD84QJ1U',
     featuresList: [
       {

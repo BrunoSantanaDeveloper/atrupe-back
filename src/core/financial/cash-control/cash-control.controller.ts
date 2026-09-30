@@ -15,6 +15,8 @@ import {
   CreateCashRegisterDto,
 } from './dto/create-cash-control.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { FeatureGuard } from 'src/core/plan/guards/feature.guard';
+import { RequiresFeature } from 'src/core/plan/decorators/requires-feature.decorator';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -32,7 +34,9 @@ const RESOURCE = 'cash-control';
 const GROUP = 'financial';
 
 @ApiTags('Controle de Caixa')
-@UseGuards(JwtAuthGuard)
+// O controle de caixa inteiro é recurso de plano.
+@UseGuards(JwtAuthGuard, FeatureGuard)
+@RequiresFeature('cash_control')
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class CashControlController {

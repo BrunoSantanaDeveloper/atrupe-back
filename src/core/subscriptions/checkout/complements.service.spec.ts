@@ -55,7 +55,9 @@ const startSubscription = (overrides: Record<string, any> = {}) => ({
     name: 'Atrupe Start',
     planType: 'START',
     additionalUserPrice: 1500,
-    planFeatures: [{ feature: { key: 'orcamentos' } }],
+    planFeatures: [
+      { isActive: true, feature: { key: 'orcamentos', isActive: true } },
+    ],
   },
   subscriptionFeatures: [],
   ...overrides,

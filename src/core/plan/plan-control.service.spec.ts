@@ -16,6 +16,9 @@ describe('PlanControlService', () => {
     limit: {
       findUnique: jest.fn(),
     },
+    feature: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   };
 
   beforeEach(async () => {
@@ -170,6 +173,37 @@ describe('PlanControlService', () => {
       expect(result.limits.max_users).toBe(8); // 3 + 5
     });
 
+    it('só conta o que o plano inclui hoje e as concessões dentro da validade', async () => {
+      mockCompanyWithPlan({ features: [] });
+
+      await service.getCompanyPlanInfo('company-1');
+
+      const query = mockPrismaService.company.findUnique.mock.calls[0][0];
+      const sub = query.select.Subscription.select;
+      expect(sub.plan.select.planFeatures.where).toEqual({
+        isActive: true,
+        feature: { isActive: true },
+      });
+      expect(sub.plan.select.planLimits.where).toEqual({ isActive: true });
+      expect(sub.subscriptionFeatures.where).toEqual(
+        expect.objectContaining({
+          isActive: true,
+          feature: { isActive: true },
+          OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
+        }),
+      );
+    });
+
+    it('limite ilimitado (-1) continua ilimitado com usuários adicionais', async () => {
+      mockCompanyWithPlan({
+        limits: [{ key: 'max_users', value: -1 }],
+        additionalUsers: 4,
+      });
+
+      const result = await service.getCompanyPlanInfo('company-1');
+      expect(result.limits.max_users).toBe(-1);
+    });
+
     it('should detect trial as active when TRIAL + future date', async () => {
       mockCompanyWithPlan({
         planType: 'TRIAL',
@@ -218,10 +252,19 @@ describe('PlanControlService', () => {
       expect(result).toBe(true);
     });
 
-    it('should return false when usage equals limit', async () => {
+    it('aceita o uso igual ao limite: o valor é o total depois da ação', async () => {
+      // Com limite 5, criar o 5º usuário (uso depois = 5) é permitido. Antes o
+      // LimitGuard somava 1 e a conta usava "<": o 5º era recusado.
       mockCompanyWithPlan({ limits: [{ key: 'max_users', value: 5 }] });
 
       const result = await service.checkLimit('company-1', 'max_users', 5);
+      expect(result).toBe(true);
+    });
+
+    it('recusa o uso acima do limite', async () => {
+      mockCompanyWithPlan({ limits: [{ key: 'max_users', value: 5 }] });
+
+      const result = await service.checkLimit('company-1', 'max_users', 6);
       expect(result).toBe(false);
     });
 
@@ -282,6 +325,51 @@ describe('PlanControlService', () => {
         ForbiddenException,
       );
     });
+
+    it('o 403 leva o code FEATURE_NOT_AVAILABLE e o nome do recurso', async () => {
+      mockCompanyWithPlan({ planName: 'Start', features: [] });
+      mockPrismaService.feature.findMany.mockResolvedValue([
+        { key: 'cash_control', name: 'Controle de Caixa' },
+      ]);
+
+      const error = await service
+        .enforceFeature('company-1', 'cash_control')
+        .catch((e) => e);
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({
+          code: 'FEATURE_NOT_AVAILABLE',
+          feature: 'cash_control',
+          planType: 'START',
+          message:
+            'O recurso "Controle de Caixa" não faz parte do plano Start.',
+        }),
+      );
+    });
+
+    it('com uma lista, basta um dos recursos', async () => {
+      mockCompanyWithPlan({ features: [{ key: 'b' }] });
+
+      await expect(
+        service.enforceFeature('company-1', ['a', 'b']),
+      ).resolves.not.toThrow();
+      await expect(service.hasFeature('company-1', ['a', 'c'])).resolves.toBe(
+        false,
+      );
+    });
+
+    it('sem assinatura ativa, nenhum recurso vale', async () => {
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        Subscription: [],
+      });
+
+      const error = await service
+        .enforceFeature('company-1', 'cash_control')
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect(error.getResponse().planType).toBeNull();
+    });
   });
 
   describe('isTrialExpired', () => {
@@ -338,15 +426,40 @@ describe('PlanControlService', () => {
   });
 
   describe('getCurrentUserCount', () => {
-    it('should return count of active employees', async () => {
+    it('conta colaboradores ativos com acesso (usuário ativo)', async () => {
       mockPrismaService.employee.count.mockResolvedValue(5);
 
       const result = await service.getCurrentUserCount('company-1');
 
       expect(result).toBe(5);
       expect(mockPrismaService.employee.count).toHaveBeenCalledWith({
-        where: { companyId: 'company-1', isActive: true },
+        where: {
+          companyId: 'company-1',
+          isActive: true,
+          userId: { not: null },
+          user: { isActive: true },
+        },
       });
+    });
+
+    it('enforceUserLimit soma a pessoa nova ao uso atual', async () => {
+      mockPrismaService.employee.count.mockResolvedValue(3);
+      mockCompanyWithPlan({
+        planName: 'Start',
+        limits: [{ key: 'max_users', value: 3 }],
+      });
+      mockPrismaService.limit.findUnique.mockResolvedValue({
+        name: 'Máximo de Usuários',
+      });
+
+      const error = await service.enforceUserLimit('company-1').catch((e) => e);
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect(error.getResponse().code).toBe('PLAN_LIMIT_REACHED');
+
+      mockPrismaService.employee.count.mockResolvedValue(2);
+      await expect(
+        service.enforceUserLimit('company-1'),
+      ).resolves.toBeUndefined();
     });
   });
 });

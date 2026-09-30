@@ -1,11 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PlanService } from './plan.service';
 import { PrismaService } from 'nestjs-prisma';
+import { PlanConfigService } from './plan-config.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 describe('PlanService', () => {
   let service: PlanService;
   let prismaMock: any;
+  let planConfigMock: { recordAvailability: jest.Mock };
 
   beforeEach(async () => {
     prismaMock = {
@@ -21,10 +23,15 @@ describe('PlanService', () => {
       },
     };
 
+    planConfigMock = {
+      recordAvailability: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PlanService,
         { provide: PrismaService, useValue: prismaMock },
+        { provide: PlanConfigService, useValue: planConfigMock },
       ],
     }).compile();
 
@@ -176,19 +183,6 @@ describe('PlanService', () => {
     });
   });
 
-  describe('deletePlan', () => {
-    it('deve deletar plano com sucesso', async () => {
-      prismaMock.plan.delete.mockResolvedValue({ id: 'p1' });
-
-      const result = await service.deletePlan('p1');
-
-      expect(prismaMock.plan.delete).toHaveBeenCalledWith({
-        where: { id: 'p1' },
-      });
-      expect(result).toEqual({ id: 'p1' });
-    });
-  });
-
   describe('getManageablePlans', () => {
     it('deve listar planos globais não-TRIAL ordenados', async () => {
       prismaMock.plan.findMany.mockResolvedValue([
@@ -240,6 +234,26 @@ describe('PlanService', () => {
         data: { isActive: true, badge: null },
       });
       expect(result).toEqual({ id: 'p1', isActive: true });
+    });
+
+    it('registra a troca no histórico da configuração quando há quem fez', async () => {
+      prismaMock.plan.findUnique.mockResolvedValue({
+        id: 'p1',
+        name: 'Lite',
+        planType: 'LITE',
+        basePrice: 23000,
+        isActive: false,
+      });
+      prismaMock.plan.update.mockResolvedValue({ id: 'p1', isActive: true });
+
+      await service.setPlanAvailability('p1', true, { userId: 'admin-1' });
+
+      expect(planConfigMock.recordAvailability).toHaveBeenCalledWith(
+        { userId: 'admin-1' },
+        expect.objectContaining({ id: 'p1', name: 'Lite' }),
+        false,
+        true,
+      );
     });
 
     it('deve desativar plano e reaplicar o selo "Em breve"', async () => {

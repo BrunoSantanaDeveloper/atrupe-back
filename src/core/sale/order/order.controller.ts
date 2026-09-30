@@ -238,6 +238,13 @@ export class OrderController {
     @Body() dto: CancelOrderDto,
     @Req() req,
   ) {
+    // Cancelar com motivo é recurso de plano; sem motivo é livre.
+    if (dto.reasonId) {
+      await this.planControlService.enforceFeature(
+        req.user.companyId,
+        'service_order_cancellation_reason',
+      );
+    }
     return this.orderService.cancelOrder(id, dto, req.user.userId);
   }
 

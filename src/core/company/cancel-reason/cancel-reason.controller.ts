@@ -21,9 +21,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { FeatureGuard } from 'src/core/plan/guards/feature.guard';
+import { RequiresFeature } from 'src/core/plan/decorators/requires-feature.decorator';
 import { CancelReasonFilterDto } from './dto/cancel-reason-filters.dto';
 
 const RESOURCE = 'cancel-reason';
+// Listar é livre; o cadastro de motivos é recurso de plano.
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 @Controller(RESOURCE)
@@ -35,6 +38,8 @@ export class CancelReasonController {
   @ApiResponse({ status: 201, description: 'Motivo criado com sucesso' })
   @ApiResponse({ status: 400, description: 'Requisição inválida' })
   @Post()
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('quotation_rejection_reasons')
   create(@Req() req, @Body() createReasonDto: CreateReasonDto) {
     createReasonDto.companyId = req.user.companyId;
     return this.cancelReasonService.create(createReasonDto);
@@ -56,6 +61,8 @@ export class CancelReasonController {
   @ApiResponse({ status: 400, description: 'Requisição inválida' })
   @ApiParam({ name: 'id', description: 'ID do motivo' })
   @Patch(':id')
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('quotation_rejection_reasons')
   update(@Param('id') id: string, @Body() updateReasonDto: UpdateReasonDto) {
     return this.cancelReasonService.update(id, updateReasonDto);
   }
@@ -64,6 +71,8 @@ export class CancelReasonController {
   @ApiResponse({ status: 200, description: 'Motivo removido com sucesso' })
   @ApiParam({ name: 'id', description: 'ID do motivo' })
   @Delete(':id')
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('quotation_rejection_reasons')
   remove(@Param('id') id: string) {
     return this.cancelReasonService.remove(id);
   }
