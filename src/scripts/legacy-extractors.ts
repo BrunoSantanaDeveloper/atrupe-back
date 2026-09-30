@@ -330,6 +330,12 @@ const REAL_ITEM_TYPE = 1;
  * A entrega vem por subconsulta, não por junção: o legado grava um registro de
  * entrega por item, e juntar multiplicaria as linhas da venda.
  */
+/** Linha de pagamento da venda no legado; a observação dela sai no impresso. */
+const PAYMENT_ITEM_TYPE = 98;
+
+/** Linha de entrega da venda no legado. */
+const DELIVERY_ITEM_TYPE = 99;
+
 const saleSql = (base: string, statusIn: string) => `
   SELECT
     v.idsale                    AS VendaCodigoLegado,
@@ -369,7 +375,18 @@ const saleSql = (base: string, statusIn: string) => `
     i.vendaitem_valor_unitario  AS ValorUnitario,
     i.vendaitem_valor_total     AS ValorTotal,
     i.vendaitem_valor_desconto  AS Desconto,
-    i.vendaitem_observacao      AS ObservacaoItem
+    i.vendaitem_observacao      AS ObservacaoItem,
+    -- O legado guarda pagamento e entrega como linhas próprias da venda, dos
+    -- tipos 98 e 99, e é na observação delas que ficam recados como
+    -- "R$ 302 Thiago" — que saem no orçamento impresso.
+    (SELECT i2.vendaitem_observacao FROM ${base}.sales_venda_item i2
+      WHERE i2.fkidsalesvenda = v.idsale
+        AND i2.fkidtipovendaitem = ${PAYMENT_ITEM_TYPE}
+      LIMIT 1)                  AS ObservacaoPagamento,
+    (SELECT i2.vendaitem_observacao FROM ${base}.sales_venda_item i2
+      WHERE i2.fkidsalesvenda = v.idsale
+        AND i2.fkidtipovendaitem = ${DELIVERY_ITEM_TYPE}
+      LIMIT 1)                  AS ObservacaoEntrega
   FROM ${base}.sales_venda v
   JOIN ${base}.sales_venda_item i ON i.fkidsalesvenda = v.idsale
                                  AND i.fkidtipovendaitem = ${REAL_ITEM_TYPE}
@@ -409,6 +426,8 @@ const mapSale = (row: any) => ({
   ValorTotal: text(row.ValorTotal),
   Desconto: text(row.Desconto),
   ObservacaoItem: text(row.ObservacaoItem),
+  ObservacaoPagamento: text(row.ObservacaoPagamento),
+  ObservacaoEntrega: text(row.ObservacaoEntrega),
   // fkidtipoentrega 2 = transportadora; 1 = retirada
   TipoEntrega: Number(row.tipoEntregaLegado) === 2 ? 'CARRIER' : 'PICKUP',
   FreteCusto: text(row.FreteCusto),

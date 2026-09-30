@@ -367,6 +367,24 @@ describe('extratores de venda', () => {
     expect(perdido.Status).toBe('REJEITADO');
   });
 
+  it('traz as observações de pagamento e entrega da venda', () => {
+    // O legado guarda pagamento e entrega como linhas próprias (tipos 98 e 99)
+    // e é na observação delas que ficam os recados do orçamento impresso.
+    const sql = QUOTATION_EXTRACTOR.sql('acn_1');
+
+    expect(sql).toContain('AND i2.fkidtipovendaitem = 98');
+    expect(sql).toContain('AND i2.fkidtipovendaitem = 99');
+
+    const row = QUOTATION_EXTRACTOR.map({
+      ...saleRow,
+      ObservacaoPagamento: 'R$ 302 Thiago',
+      ObservacaoEntrega: 'Retirar após as 14h',
+    });
+
+    expect(row.ObservacaoPagamento).toBe('R$ 302 Thiago');
+    expect(row.ObservacaoEntrega).toBe('Retirar após as 14h');
+  });
+
   it('traz a data de fechamento do orçamento', () => {
     const row = QUOTATION_EXTRACTOR.map({
       ...saleRow,

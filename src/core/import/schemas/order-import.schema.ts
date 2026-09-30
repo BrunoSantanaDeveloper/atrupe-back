@@ -478,6 +478,20 @@ export const ORDER_IMPORT_SCHEMA = {
     },
     // === CAMPOS FINANCEIROS (opcionais, apenas na primeira linha de cada ordem) ===
     {
+      name: 'ObservacaoPagamento',
+      required: false,
+      type: 'string',
+      description: 'Observação da condição de pagamento, impressa na proposta',
+      example: 'R$ 302 com o Thiago',
+    },
+    {
+      name: 'ObservacaoEntrega',
+      required: false,
+      type: 'string',
+      description: 'Observação da entrega, impressa na proposta',
+      example: 'Retirar após as 14h',
+    },
+    {
       name: 'CondicaoPagamento',
       required: false,
       type: 'string',

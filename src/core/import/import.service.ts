@@ -2923,6 +2923,7 @@ export class ImportService {
             cost: freteCusto,
             value: freteValor,
             supplierId: transportadorId,
+            notes: firstItem.ObservacaoEntrega || null,
             estimatedDate: firstItem.DataEntrega
               ? this.toDayDate(firstItem.DataEntrega)
               : null,
@@ -2943,6 +2944,9 @@ export class ImportService {
             data: {
               quotationId: quotation.id,
               paymentConditionId: paymentCondition.id,
+              // Recado escrito na proposta do legado: sai no orçamento
+              // impresso, abaixo da forma de pagamento.
+              description: firstItem.ObservacaoPagamento || null,
               totalValue: quotationTotalValue,
               finalValue: quotationTotalValue,
               billing: 'ON_ORDER',
@@ -3292,6 +3296,7 @@ export class ImportService {
             deliveryType: tipoEntrega === 'CARRIER' ? 'CARRIER' : 'PICKUP',
             cost: this.toCents(firstItem.FreteCusto),
             value: this.toCents(firstItem.FreteValor),
+            notes: firstItem.ObservacaoEntrega || null,
             estimatedDate: firstItem.DataEntrega
               ? this.toDayDate(firstItem.DataEntrega)
               : null,
@@ -3312,6 +3317,9 @@ export class ImportService {
             data: {
               quotationId: quotation.id,
               paymentConditionId: paymentCondition.id,
+              // Recado escrito na proposta do legado: sai no orçamento
+              // impresso, abaixo da forma de pagamento.
+              description: firstItem.ObservacaoPagamento || null,
               totalValue: quotationTotalValue,
               finalValue: quotationTotalValue,
               billing: 'ON_ORDER',
