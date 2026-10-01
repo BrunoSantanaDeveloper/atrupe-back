@@ -304,7 +304,29 @@ describe('extratores de venda', () => {
     expect(row.VendedorEmail).toBe('');
   });
 
-  it('deriva o status da ordem pela entrega, com o cancelamento vencendo', () => {
+  it('conclui a ordem que o legado deixou na entrega', () => {
+    // A esteira do legado é 1 Stand by, 2 Em Produção, 3 Entrega e 4
+    // Finalizado, e quase ninguém marca o último passo: as ordens param em
+    // Entrega, com produção e financeiro concluídos. Entravam em produção.
+    const etapa = (cod: number) =>
+      ORDER_EXTRACTOR.map({ ...saleRow, etapaLegado: cod, statusEntrega: 2 })
+        .StatusOrdem;
+
+    expect(etapa(1)).toBe('IN_PRODUCTION');
+    expect(etapa(2)).toBe('IN_PRODUCTION');
+    expect(etapa(3)).toBe('FINISHED');
+    expect(etapa(4)).toBe('FINISHED');
+  });
+
+  it('lê a etapa pelo código do substatus, que é igual em toda base', () => {
+    // O id do substatus é por base; o código é a posição na esteira.
+    expect(ORDER_EXTRACTOR.sql('acn_1')).toContain('sub.confsubstatus_cod');
+    expect(ORDER_EXTRACTOR.sql('acn_1')).toContain(
+      'acn_1.sales_conf_substatus sub',
+    );
+  });
+
+  it('deriva o status da ordem pela entrega quando a etapa não vem', () => {
     expect(ORDER_EXTRACTOR.map(saleRow).StatusOrdem).toBe('FINISHED');
     expect(
       ORDER_EXTRACTOR.map({ ...saleRow, statusEntrega: 2 }).StatusOrdem,
@@ -312,6 +334,10 @@ describe('extratores de venda', () => {
     // Ordem cancelada continua cancelada mesmo com entrega finalizada
     expect(
       ORDER_EXTRACTOR.map({ ...saleRow, statusLegado: 4 }).StatusOrdem,
+    ).toBe('CANCELED');
+    expect(
+      ORDER_EXTRACTOR.map({ ...saleRow, statusLegado: 4, etapaLegado: 4 })
+        .StatusOrdem,
     ).toBe('CANCELED');
   });
 
@@ -353,6 +379,20 @@ describe('extratores de venda', () => {
 
     expect(digitacao.Status).toBe('OPEN');
     expect(fechado.Status).toBe('CONCLUIDO');
+  });
+
+  it('prefere a etapa ao id do substatus no orçamento', () => {
+    // O id 2 é "Fechado" só na base piloto; o código 2 é em qualquer uma.
+    const porEtapa = (cod: number) =>
+      QUOTATION_EXTRACTOR.map({
+        ...saleRow,
+        statusLegado: 1,
+        substatusLegado: 907,
+        etapaLegado: cod,
+      }).Status;
+
+    expect(porEtapa(1)).toBe('OPEN');
+    expect(porEtapa(2)).toBe('CONCLUIDO');
   });
 
   it('trata o "orçamento cancelado" do legado como rejeitado', () => {

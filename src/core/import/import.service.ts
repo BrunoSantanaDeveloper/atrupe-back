@@ -778,7 +778,12 @@ export class ImportService {
    */
   private async refreshImportedSale(
     quotationId: string,
-    expected: { hasOrder: boolean; totalValue: number; status?: string },
+    expected: {
+      hasOrder: boolean;
+      totalValue: number;
+      status?: string;
+      orderStatus?: string;
+    },
   ): Promise<{
     estado: 'unchanged' | 'refreshed' | 'blocked';
     /** Ids a reaproveitar na recriação, para o documento não trocar de endereço. */
@@ -792,6 +797,7 @@ export class ImportService {
         order: {
           select: {
             id: true,
+            status: true,
             _count: { select: { nfes: true, nfces: true, nfses: true } },
           },
         },
@@ -804,7 +810,10 @@ export class ImportService {
     const mudou =
       !!atual.order !== expected.hasOrder ||
       Math.round(atual.totalValue) !== Math.round(expected.totalValue) ||
-      (!!expected.status && atual.status !== expected.status);
+      (!!expected.status && atual.status !== expected.status) ||
+      (!!expected.orderStatus &&
+        !!atual.order &&
+        atual.order.status !== expected.orderStatus);
 
     if (!mudou) return { estado: 'unchanged' };
 
@@ -3079,6 +3088,21 @@ export class ImportService {
         let reuseIds: { quotationId: string; orderId: string | null } | null =
           null;
 
+        // Validar status da ordem. Fica aqui, antes da checagem do que já foi
+        // migrado, porque a etapa da ordem entra na comparação: o cliente
+        // termina no legado uma ordem que a primeira carga trouxe em produção.
+        let orderStatus: 'IN_PRODUCTION' | 'FINISHED' | 'CANCELED' =
+          'IN_PRODUCTION';
+        if (firstItem.StatusOrdem) {
+          const validStatuses = ['IN_PRODUCTION', 'FINISHED', 'CANCELED'];
+          if (validStatuses.includes(firstItem.StatusOrdem)) {
+            orderStatus = firstItem.StatusOrdem as
+              | 'IN_PRODUCTION'
+              | 'FINISHED'
+              | 'CANCELED';
+          }
+        }
+
         // Sem esta checagem a importação de vendas não é idempotente: rodar de
         // novo cria documentos duplicados em vez de reconhecer os já migrados.
         // Reimportar um documento exige apagá-lo antes, porque as relações
@@ -3095,6 +3119,7 @@ export class ImportService {
               {
                 hasOrder: true,
                 totalValue: this.expectedSaleTotal(items),
+                orderStatus,
               },
             );
             reuseIds = reuse ?? null;
@@ -3141,19 +3166,6 @@ export class ImportService {
 
         if (!employee) {
           throw new Error(this.sellerNotFoundMessage(firstItem));
-        }
-
-        // Validar status da ordem
-        let orderStatus: 'IN_PRODUCTION' | 'FINISHED' | 'CANCELED' =
-          'IN_PRODUCTION';
-        if (firstItem.StatusOrdem) {
-          const validStatuses = ['IN_PRODUCTION', 'FINISHED', 'CANCELED'];
-          if (validStatuses.includes(firstItem.StatusOrdem)) {
-            orderStatus = firstItem.StatusOrdem as
-              | 'IN_PRODUCTION'
-              | 'FINISHED'
-              | 'CANCELED';
-          }
         }
 
         // Buscar contato/responsável se informado (por nome ou email)

@@ -344,6 +344,10 @@ const saleSql = (base: string, statusIn: string) => `
     v.venda_serie               AS Serie,
     v.venda_fkidstatus          AS statusLegado,
     v.venda_fkidsubstatus       AS substatusLegado,
+    -- O id do substatus é por base; o código é a etapa dentro do status, e é
+    -- por ele que dá para saber em que ponto da esteira o documento está.
+    (SELECT sub.confsubstatus_cod FROM ${base}.sales_conf_substatus sub
+      WHERE sub.idconf_substatus = v.venda_fkidsubstatus) AS etapaLegado,
     v.venda_data_fechamento     AS dataFechamento,
     (SELECT MAX(e2.entrega_fkidstatus) FROM ${base}.sales_entrega e2
       WHERE e2.fkidsale = v.idsale)          AS statusEntrega,
@@ -442,6 +446,46 @@ const saleCountSql = (base: string, statusIn: string) => `
 const saleDocumentKey = (row: Record<string, string>) =>
   `${row.NumeroVenda}-${row.Serie}`;
 
+/** O que diz em que ponto da esteira o legado deixou a venda. */
+export interface LegacyStageRow {
+  /** Código do substatus: a etapa dentro do status. */
+  etapaLegado?: unknown;
+  /** Id do substatus, que é por base. */
+  substatusLegado?: unknown;
+  /** Maior status de entrega entre os itens da venda. */
+  statusEntrega?: unknown;
+}
+
+/**
+ * Etapa do documento dentro do status, pelo código do substatus do legado.
+ *
+ * O id do substatus é por base; o código é a posição na esteira e se repete
+ * entre as bases. Quando ele não vem, cai na regra antiga.
+ */
+const etapa = (row: LegacyStageRow): number => Number(row.etapaLegado) || 0;
+
+/** Orçamento na etapa 2 (Fechado) espera aprovação: é o "Aguardando". */
+export const orcamentoFechado = (row: LegacyStageRow): boolean => {
+  const cod = etapa(row);
+  if (cod) return cod === 2;
+  return Number(row.substatusLegado) === 2;
+};
+
+/**
+ * Ordem concluída: etapa 3 (Entrega) ou 4 (Finalizado).
+ *
+ * O legado move a O.S. por 1 Stand by, 2 Em Produção, 3 Entrega e 4
+ * Finalizado, e boa parte dos clientes não marca o último passo. Na base do
+ * primeiro cliente, 8.243 das 8.615 ordens param em Entrega com produção e
+ * financeiro concluídos: são vendas prontas, não produção em aberto. Ler só o
+ * status da entrega deixava todas elas em produção.
+ */
+export const ordemConcluida = (row: LegacyStageRow): boolean => {
+  const cod = etapa(row);
+  if (cod) return cod >= 3;
+  return Number(row.statusEntrega) === 4;
+};
+
 export const ORDER_EXTRACTOR: LegacyExtractor = {
   entity: 'order',
   label: 'Ordens de serviço',
@@ -451,12 +495,11 @@ export const ORDER_EXTRACTOR: LegacyExtractor = {
   documentKey: saleDocumentKey,
   map: (row) => ({
     ...mapSale(row),
-    // Entrega status 4 = finalizada; 2 = pendente. A ordem cancelada vence
-    // qualquer status de entrega.
+    // A ordem cancelada vence a etapa em que o legado a deixou.
     StatusOrdem:
       Number(row.statusLegado) === 4
         ? 'CANCELED'
-        : Number(row.statusEntrega) === 4
+        : ordemConcluida(row)
           ? 'FINISHED'
           : 'IN_PRODUCTION',
   }),
@@ -478,7 +521,7 @@ export const QUOTATION_EXTRACTOR: LegacyExtractor = {
     Status:
       Number(row.statusLegado) === 2
         ? 'REJEITADO'
-        : Number(row.substatusLegado) === 2
+        : orcamentoFechado(row)
           ? 'CONCLUIDO'
           : 'OPEN',
   }),
