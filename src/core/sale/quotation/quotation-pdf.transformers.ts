@@ -246,6 +246,10 @@ export function transformPdfQuotationItem(qp: any) {
         originalCompositionId: item.productItemId,
         name: item.name,
         unitOfMeasure: null,
+        // Sem isto o PDF deduz a unidade pelas dimensões e trata como área o
+        // item cobrado por unidade: a proposta saía em m² e por m², enquanto a
+        // tela mostrava "un" e o valor por unidade.
+        unitKind: item.unitKind ?? null,
         quantity: item.quantity,
         originalQuantity: item.originalQuantity,
         unitValue: item.unitCost || 0,

@@ -323,6 +323,52 @@ describe('QuotationPdfTransformers', () => {
       expect(result.product.compositions).toHaveLength(2);
     });
 
+    it('leva a unidade do item para o PDF', () => {
+      // Sem ela o PDF deduz a unidade pelas dimensões e trata como área o item
+      // cobrado por unidade: a proposta saía em m² e por m², enquanto a tela
+      // mostrava "un" e o valor por unidade.
+      const item = {
+        id: 'qp-id',
+        productId: 'product-id',
+        quantity: 1,
+        totalValue: 750,
+        finalValue: 750,
+        product: { name: 'Adesivo', image: null },
+        items: [
+          {
+            id: 'item-1',
+            productItemId: 'pi-1',
+            name: 'Adesivo',
+            quantity: 1,
+            originalQuantity: 1,
+            unitCost: 750,
+            totalValue: 750,
+            width: 1000,
+            height: 100,
+            unitKind: 'UNITY',
+          },
+          {
+            id: 'item-2',
+            productItemId: 'pi-2',
+            name: 'Lona',
+            quantity: 1,
+            originalQuantity: 1,
+            unitCost: 0,
+            totalValue: 0,
+            width: 2000,
+            height: 1000,
+            unitKind: null,
+          },
+        ],
+      };
+
+      const result = transformPdfQuotationItem(item);
+
+      expect(result.product.compositions[0].unitKind).toBe('UNITY');
+      // Documento antigo, sem unidade gravada: o PDF deduz pelas dimensões.
+      expect(result.product.compositions[1].unitKind).toBeNull();
+    });
+
     it('should detect non-original image', () => {
       const item = {
         id: 'qp-id',
