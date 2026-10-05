@@ -101,12 +101,12 @@ export class OrderController {
 
   @Get('export')
   @ApiOperation({
-    summary: 'ObtÃ©m as ordens de serviÃ§o filtradas para exportaÃ§Ã£o',
+    summary: 'Obtém as ordens de serviço filtradas para exportação',
   })
   @ApiResponse({
     status: 200,
     description:
-      'Lista de ordens de serviÃ§o para exportaÃ§Ã£o retornada com sucesso.',
+      'Lista de ordens de serviço para exportação retornada com sucesso.',
   })
   async export(@Req() req, @Query() query: FilterOrderDto) {
     const canExport = await this.abacService.hasPermission(
@@ -117,7 +117,7 @@ export class OrderController {
 
     if (!canExport) {
       throw new ForbiddenException(
-        'Sem permissÃ£o para exportar ordens de serviÃ§o',
+        'Sem permissão para exportar ordens de serviço',
       );
     }
 

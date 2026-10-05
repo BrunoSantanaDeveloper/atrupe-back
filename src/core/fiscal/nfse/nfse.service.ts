@@ -285,19 +285,19 @@ export class NfseService {
     });
 
     if (!nfse) {
-      throw new NotFoundException('NFS-e nÃ£o encontrada');
+      throw new NotFoundException('NFS-e não encontrada');
     }
 
     return nfse;
   }
 
-  // Preparar dados para emissÃ£o de NFS-e avulsa (sem ordem de serviÃ§o)
+  // Preparar dados para emissão de NFS-e avulsa (sem ordem de serviço)
   async prepareStandalone(companyId: string, clientId?: string) {
-    // Buscar configuraÃ§Ã£o do Invoicy
+    // Buscar configuração do Invoicy
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
       throw new BadRequestException(
-        'ConfiguraÃ§Ã£o do Invoicy nÃ£o encontrada. Configure a integraÃ§Ã£o primeiro.',
+        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
       );
     }
 
@@ -312,7 +312,7 @@ export class NfseService {
       'NFSE',
     );
 
-    // Dados do tomador (vazio por padrÃ£o)
+    // Dados do tomador (vazio por padrão)
     let tomador: Record<string, any> = {
       cnpj: undefined,
       cpf: undefined,
@@ -339,7 +339,7 @@ export class NfseService {
       });
 
       if (!client) {
-        throw new NotFoundException('Cliente nÃ£o encontrado');
+        throw new NotFoundException('Cliente não encontrado');
       }
 
       const clientAddress = (client as any).address?.[0];
@@ -367,7 +367,7 @@ export class NfseService {
         complemento: clientAddress?.complement || '',
         bairro: clientAddress?.neighborhood || '',
         cep: clientAddress?.zipcode || '',
-        codigoMunicipio: '', // SerÃ¡ preenchido pelo usuÃ¡rio ou na emissÃ£o
+        codigoMunicipio: '', // Será preenchido pelo usuário ou na emissão
         municipio: clientAddress?.city || '',
         uf: clientAddress?.state || '',
         email: client.email || '',
@@ -423,7 +423,7 @@ export class NfseService {
     };
   }
 
-  // Emitir NFS-e a partir de uma ordem de serviÃ§o (busca dados automaticamente)
+  // Emitir NFS-e a partir de uma ordem de serviço (busca dados automaticamente)
   /**
    * Constrói o DTO completo da NFS-e a partir da ordem de serviço.
    *
@@ -465,31 +465,31 @@ export class NfseService {
     });
 
     if (!quotation || !quotation.order) {
-      throw new NotFoundException('Ordem de serviÃ§o nÃ£o encontrada');
+      throw new NotFoundException('Ordem de serviço não encontrada');
     }
 
     await this.assertOrdersCanReceiveNfse([quotation.order as any], companyId);
 
     const client = quotation.client;
     if (!client) {
-      throw new BadRequestException('Cliente nÃ£o encontrado no orÃ§amento');
+      throw new BadRequestException('Cliente não encontrado no orçamento');
     }
 
-    // Buscar configuraÃ§Ã£o do Invoicy para defaults
+    // Buscar configuração do Invoicy para defaults
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
       throw new BadRequestException(
-        'ConfiguraÃ§Ã£o do Invoicy nÃ£o encontrada. Configure a integraÃ§Ã£o primeiro.',
+        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
       );
     }
 
-    // Garantir cÃ³digo IBGE do PRESTADOR (empresa emissora)
+    // Garantir código IBGE do PRESTADOR (empresa emissora)
     let prestadorCmun = config.ibgeCode || '';
     const emitCep = config.company?.address?.zipcode;
 
     if (!prestadorCmun && emitCep) {
       this.logger.log(
-        `Prestador sem cÃ³digo IBGE configurado. Buscando via CEP: ${emitCep}`,
+        `Prestador sem código IBGE configurado. Buscando via CEP: ${emitCep}`,
       );
       const cepData = await fetchCepData(emitCep);
       if (cepData) {
@@ -504,7 +504,7 @@ export class NfseService {
         this.logger.log(`IBGE do prestador persistido no InvoicyConfig`);
       } else {
         this.logger.warn(
-          `NÃ£o foi possÃ­vel encontrar IBGE para CEP do prestador: ${emitCep}`,
+          `Não foi possível encontrar IBGE para CEP do prestador: ${emitCep}`,
         );
       }
     }
@@ -527,30 +527,30 @@ export class NfseService {
     // Tomador: sempre o principal cadastral do cliente
     const clientAddress = client.address?.[0];
 
-    // Local de prestaÃ§Ã£o / entrega
+    // Local de prestação / entrega
     const selectedEntregaAddress = dto.addressId
       ? client.address?.find((a: any) => a.id === dto.addressId)
       : null;
-    // Se o usuÃ¡rio especificou addressId ou manual, usamos. Caso contrÃ¡rio, usamos a entrega da OS se existente
+    // Se o usuário especificou addressId ou manual, usamos. Caso contrário, usamos a entrega da OS se existente
     const entregaAddress =
       selectedEntregaAddress ||
       (dto.entregaEndereco
         ? null
         : (quotation as any).deliveryInfo?.clientAddress);
 
-    // Campos do tomador: usa override do DTO quando fornecido, senÃ£o usa cadastro do cliente
+    // Campos do tomador: usa override do DTO quando fornecido, senão usa cadastro do cliente
     const tomadorCepFinal = dto.tomadorCep || clientAddress?.zipcode || '';
     const tomadorEnderecoFinal =
       dto.tomadorEndereco ?? clientAddress?.street ?? '';
 
-    // Buscar cÃ³digo IBGE do municÃ­pio do tomador via CEP
+    // Buscar código IBGE do município do tomador via CEP
     let tomadorCmun = '';
     let tomadorMunicipio = dto.tomadorMunicipio || clientAddress?.city || '';
     let tomadorUf = dto.tomadorUf || clientAddress?.state || '';
 
     if (tomadorCepFinal) {
       this.logger.log(
-        `Buscando cÃ³digo IBGE para CEP do tomador: ${tomadorCepFinal}`,
+        `Buscando código IBGE para CEP do tomador: ${tomadorCepFinal}`,
       );
       const cepData = await fetchCepData(tomadorCepFinal);
       if (cepData) {
@@ -558,16 +558,16 @@ export class NfseService {
         if (!dto.tomadorMunicipio) tomadorMunicipio = cepData.cidade;
         if (!dto.tomadorUf) tomadorUf = cepData.uf;
         this.logger.log(
-          `CÃ³digo IBGE do tomador: ${tomadorCmun} (${tomadorMunicipio}/${tomadorUf})`,
+          `Código IBGE do tomador: ${tomadorCmun} (${tomadorMunicipio}/${tomadorUf})`,
         );
       } else {
-        this.logger.warn(`CEP do tomador nÃ£o encontrado: ${tomadorCepFinal}`);
+        this.logger.warn(`CEP do tomador não encontrado: ${tomadorCepFinal}`);
       }
     } else {
       this.logger.warn('Tomador sem CEP cadastrado');
     }
 
-    // Buscar cÃ³digo IBGE do local de prestaÃ§Ã£o (entrega) se aplicÃ¡vel
+    // Buscar código IBGE do local de prestação (entrega) se aplicável
     let entregaCmun = '';
     let entregaMunicipio = dto.entregaMunicipio || entregaAddress?.city || '';
     let entregaUf = dto.entregaUf || entregaAddress?.state || '';
@@ -582,7 +582,7 @@ export class NfseService {
     if (entregaEndereco) {
       if (entregaCep) {
         this.logger.log(
-          `Buscando cÃ³digo IBGE para CEP de prestaÃ§Ã£o: ${entregaCep}`,
+          `Buscando código IBGE para CEP de prestação: ${entregaCep}`,
         );
         const cepData = await fetchCepData(entregaCep);
         if (cepData) {
@@ -606,7 +606,7 @@ export class NfseService {
       orderId: dto.orderId,
       quotationId: quotation.id,
       dataCompetencia: new Date().toISOString().split('T')[0],
-      naturezaOperacao: 1, // TributaÃ§Ã£o no municÃ­pio
+      naturezaOperacao: 1, // Tributação no município
       codigoServico:
         dto.codigoServico ||
         (quotation.quotationProduct[0]?.product as any)?.fiscalData
@@ -697,18 +697,18 @@ export class NfseService {
         : {}),
     };
 
-    // Validar dados obrigatÃ³rios
+    // Validar dados obrigatórios
     if (!fullDto.tomador.razaoSocial) {
-      throw new BadRequestException('Cliente nÃ£o possui nome cadastrado');
+      throw new BadRequestException('Cliente não possui nome cadastrado');
     }
     if (!fullDto.codigoMunicipio) {
       throw new BadRequestException(
-        'CÃ³digo do municÃ­pio do prestador nÃ£o configurado. Verifique a configuraÃ§Ã£o fiscal do emissor.',
+        'Código do município do prestador não configurado. Verifique a configuração fiscal do emissor.',
       );
     }
     if (!fullDto.tomador.codigoMunicipio) {
       throw new BadRequestException(
-        'CÃ³digo do municÃ­pio do tomador nÃ£o encontrado. Verifique o CEP cadastrado para o cliente.',
+        'Código do município do tomador não encontrado. Verifique o CEP cadastrado para o cliente.',
       );
     }
 
@@ -722,7 +722,7 @@ export class NfseService {
     );
   }
 
-  // Emitir NFS-e consolidada a partir de mÃºltiplas ordens de serviÃ§o
+  // Emitir NFS-e consolidada a partir de múltiplas ordens de serviço
   /** Como buildNfseDtoFromOrder, para a consolidada. */
   private async buildNfseDtoFromOrders(
     companyId: string,
@@ -740,7 +740,7 @@ export class NfseService {
       );
     }
 
-    // Buscar todas as cotaÃ§Ãµes de uma vez
+    // Buscar todas as cotações de uma vez
     const quotations = await this.prisma.quotation.findMany({
       where: {
         companyId,
@@ -757,7 +757,7 @@ export class NfseService {
 
     if (quotations.length !== uniqueOrderIds.length) {
       throw new NotFoundException(
-        'Uma ou mais ordens de serviÃ§o nÃ£o foram encontradas',
+        'Uma ou mais ordens de serviço não foram encontradas',
       );
     }
 
@@ -766,7 +766,7 @@ export class NfseService {
       companyId,
     );
 
-    // Validar que todas as OS sÃ£o do mesmo cliente
+    // Validar que todas as OS são do mesmo cliente
     const clientIds = [...new Set(quotations.map((q) => q.clientId))];
     if (clientIds.length > 1) {
       throw new BadRequestException(
@@ -774,15 +774,15 @@ export class NfseService {
       );
     }
 
-    // Buscar configuraÃ§Ã£o do Invoicy
+    // Buscar configuração do Invoicy
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
       throw new BadRequestException(
-        'ConfiguraÃ§Ã£o do Invoicy nÃ£o encontrada. Configure a integraÃ§Ã£o primeiro.',
+        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
       );
     }
 
-    // CÃ³digo IBGE do prestador
+    // Código IBGE do prestador
     let prestadorCmun = config.ibgeCode || '';
     const emitCep = config.company?.address?.zipcode;
     if (!prestadorCmun && emitCep) {
@@ -841,12 +841,12 @@ export class NfseService {
         if (!dto.tomadorUf) tomadorUf = cepData.uf;
       } else {
         this.logger.warn(
-          `CEP do tomador nÃ£o encontrado na NFS-e consolidada: ${tomadorCepFinal}`,
+          `CEP do tomador não encontrado na NFS-e consolidada: ${tomadorCepFinal}`,
         );
       }
     }
 
-    // Local de entrega/prestaÃ§Ã£o
+    // Local de entrega/prestação
     let entregaCmun = '';
     let entregaMunicipio = dto.entregaMunicipio || '';
     let entregaUf = dto.entregaUf || '';
@@ -865,7 +865,7 @@ export class NfseService {
       }
     }
 
-    // CÃ³digos das OS para anotaÃ§Ã£o
+    // Códigos das OS para anotação
     const orderCodes = quotations
       .map(
         (q) =>
@@ -972,16 +972,16 @@ export class NfseService {
     };
 
     if (!fullDto.tomador.razaoSocial) {
-      throw new BadRequestException('Cliente nÃ£o possui nome cadastrado');
+      throw new BadRequestException('Cliente não possui nome cadastrado');
     }
     if (!fullDto.codigoMunicipio) {
       throw new BadRequestException(
-        'CÃ³digo do municÃ­pio do prestador nÃ£o configurado. Verifique a configuraÃ§Ã£o fiscal do emissor.',
+        'Código do município do prestador não configurado. Verifique a configuração fiscal do emissor.',
       );
     }
     if (!fullDto.tomador.codigoMunicipio) {
       throw new BadRequestException(
-        'CÃ³digo do municÃ­pio do tomador nÃ£o encontrado. Verifique o CEP cadastrado para o cliente.',
+        'Código do município do tomador não encontrado. Verifique o CEP cadastrado para o cliente.',
       );
     }
 
@@ -994,7 +994,7 @@ export class NfseService {
 
     const nfse = await this.emit(companyId, fullDto);
 
-    // Guardar todos os orderIds no draftData para referÃªncia
+    // Guardar todos os orderIds no draftData para referência
     if (nfse?.id) {
       await this.prisma.nfse.update({
         where: { id: nfse.id },
@@ -1031,30 +1031,28 @@ export class NfseService {
       });
 
       if (!linkedOrder) {
-        throw new NotFoundException('Ordem de serviÃ§o nÃ£o encontrada');
+        throw new NotFoundException('Ordem de serviço não encontrada');
       }
 
       await this.assertOrdersCanReceiveNfse([linkedOrder as any], companyId);
 
       if (dto.quotationId && linkedOrder.quotationId !== dto.quotationId) {
         throw new BadRequestException(
-          'A ordem de serviÃ§o informada nÃ£o pertence ao orÃ§amento enviado.',
+          'A ordem de serviço informada não pertence ao orçamento enviado.',
         );
       }
     }
 
-    // Buscar configuraÃ§Ã£o do Invoicy
+    // Buscar configuração do Invoicy
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
       throw new BadRequestException(
-        'ConfiguraÃ§Ã£o do Invoicy nÃ£o encontrada. Configure a integraÃ§Ã£o primeiro.',
+        'Configuração do Invoicy não encontrada. Configure a integração primeiro.',
       );
     }
 
     if (!config.isActive) {
-      throw new BadRequestException(
-        'IntegraÃ§Ã£o com Invoicy estÃ¡ desativada.',
-      );
+      throw new BadRequestException('Integração com Invoicy está desativada.');
     }
 
     const environment =
@@ -1068,27 +1066,27 @@ export class NfseService {
       'NFSE',
     );
 
-    // Se houver endereÃ§o de entrega (local de prestaÃ§Ã£o) e nÃ£o houver cÃ³digo de municÃ­pio, resolver via CEP
+    // Se houver endereço de entrega (local de prestação) e não houver código de município, resolver via CEP
     if (dto.entregaEndereco && !dto.entregaCodigoMunicipio) {
       if (!dto.entregaCep) {
         throw new BadRequestException(
-          'CEP de entrega Ã© obrigatÃ³rio quando o endereÃ§o de entrega (local de prestaÃ§Ã£o) Ã© informado.',
+          'CEP de entrega é obrigatório quando o endereço de entrega (local de prestação) é informado.',
         );
       }
       this.logger.log(
-        `Buscando cÃ³digo IBGE do local de prestaÃ§Ã£o/entrega via CEP: ${dto.entregaCep}`,
+        `Buscando código IBGE do local de prestação/entrega via CEP: ${dto.entregaCep}`,
       );
       const cepData = await fetchCepData(dto.entregaCep);
       if (!cepData || !cepData.codigoIbge) {
         throw new BadRequestException(
-          `NÃ£o foi possÃ­vel localizar o cÃ³digo IBGE para o CEP de entrega/prestaÃ§Ã£o informado: ${dto.entregaCep}. Verifique o CEP ou digite o cÃ³digo do municÃ­pio manualmente.`,
+          `Não foi possível localizar o código IBGE para o CEP de entrega/prestação informado: ${dto.entregaCep}. Verifique o CEP ou digite o código do município manualmente.`,
         );
       }
       dto.entregaCodigoMunicipio = cepData.codigoIbge;
       if (!dto.entregaMunicipio) dto.entregaMunicipio = cepData.cidade;
       if (!dto.entregaUf) dto.entregaUf = cepData.uf;
       this.logger.log(
-        `IBGE do local de prestaÃ§Ã£o resolvido: ${dto.entregaCodigoMunicipio}`,
+        `IBGE do local de prestação resolvido: ${dto.entregaCodigoMunicipio}`,
       );
     }
 
@@ -1303,7 +1301,7 @@ export class NfseService {
             invoicyConfigId: config.id,
             orderId: dto.orderId,
             quotationId: dto.quotationId,
-            numero: 0, // SerÃ¡ preenchido apÃ³s retorno da prefeitura
+            numero: 0, // Será preenchido após retorno da prefeitura
             serie: reserved.rpsSerie,
             rpsNumero: reserved.rpsNumero,
             rpsSerie: reserved.rpsSerie,
@@ -1431,7 +1429,7 @@ export class NfseService {
 
       const doc = response.Documentos?.[0];
       if (!doc) {
-        throw new Error('Documento nÃ£o retornado pelo Invoicy');
+        throw new Error('Documento não retornado pelo Invoicy');
       }
 
       const situacao = doc.Situacao;
@@ -1510,7 +1508,7 @@ export class NfseService {
 
       if (isUnknownOutcome) {
         throw new BadRequestException(
-          'Falha de comunicaÃ§Ã£o com o Invoicy. A NFS-e ficou em processamento com resultado desconhecido; consulte o status antes de reemitir.',
+          'Falha de comunicação com o Invoicy. A NFS-e ficou em processamento com resultado desconhecido; consulte o status antes de reemitir.',
         );
       }
 
@@ -1565,7 +1563,7 @@ export class NfseService {
       dto.codTribMunicipio?.trim() ||
       parseInt(dto.codigoMunicipio || config.ibgeCode || '0', 10);
 
-    // FunÃ§Ã£o auxiliar para construir lista de itens
+    // Função auxiliar para construir lista de itens
     const listaItens = dto.itens?.map((item, index) => {
       // Base arredondada uma vez e reaproveitada, para que ItemvIss fique
       // aritmeticamente consistente com ItemBaseCalculo.
@@ -1596,7 +1594,7 @@ export class NfseService {
           ) || '0',
           10,
         ),
-        ItemExigibilidadeISS: 1, // ExigÃ­vel
+        ItemExigibilidadeISS: 1, // Exigível
         ItemcMunIncidencia: parseInt(
           dto.codigoMunicipio || config.ibgeCode || '0',
           10,
@@ -1655,7 +1653,7 @@ export class NfseService {
                 (config.ibgeCode || config.emitCmun)
                 ? 2
                 : 1,
-            natOp: dto.naturezaOperacao || 1, // 1 = TributaÃ§Ã£o no municÃ­pio
+            natOp: dto.naturezaOperacao || 1, // 1 = Tributação no município
             Operacao: 1,
             // RegEspTrib segue a enumeração ABRASF do Invoicy (5 = MEI,
             // 6 = ME/EPP), que ele converte para o regEspTrib do layout
@@ -1708,7 +1706,7 @@ export class NfseService {
                   ...(dto.tpOper !== undefined ? { tpOper: dto.tpOper } : {}),
                 }
               : {}),
-            IncCult: 2, // 2 = NÃ£o
+            IncCult: 2, // 2 = Não
             Status: 1, // 1 = Normal
             tpAmb: environment === 'PRODUCAO' ? 1 : 2,
             Prestador: {
@@ -1742,7 +1740,7 @@ export class NfseService {
                 ValINSS: this.money(dto.valorInss || 0),
                 ValIR: this.money(dto.valorIr || 0),
                 ValCSLL: this.money(dto.valorCsll || 0),
-                ISSRetido: dto.issRetido ? 1 : 2, // 1 = Sim, 2 = NÃ£o
+                ISSRetido: dto.issRetido ? 1 : 2, // 1 = Sim, 2 = Não
                 ValISS: valorIss,
                 ValOutrasRetencoes: 0,
                 ValBaseCalculo: baseCalculo,
@@ -2190,7 +2188,7 @@ export class NfseService {
 
       if (order.status === OrderStatus.CANCELED) {
         throw new BadRequestException(
-          'NÃ£o Ã© possÃ­vel emitir NFS-e para uma ordem de serviÃ§o cancelada.',
+          'Não é possível emitir NFS-e para uma ordem de serviço cancelada.',
         );
       }
 
@@ -2274,38 +2272,36 @@ export class NfseService {
 
     if (valorServicos <= 0) {
       throw new BadRequestException(
-        'Valor dos serviÃ§os deve ser maior que zero.',
+        'Valor dos serviços deve ser maior que zero.',
       );
     }
 
     if (valorDeducoes < 0 || baseCalculo < 0) {
       throw new BadRequestException(
-        'Valor das deduÃ§Ãµes nÃ£o pode exceder o valor dos serviÃ§os.',
+        'Valor das deduções não pode exceder o valor dos serviços.',
       );
     }
 
     if (!codigoServicoDigits || Number(codigoServicoDigits) <= 0) {
       throw new BadRequestException(
-        'CÃ³digo do serviÃ§o municipal Ã© obrigatÃ³rio para emitir NFS-e.',
+        'Código do serviço municipal é obrigatório para emitir NFS-e.',
       );
     }
 
     if (!prestadorMunicipio || Number(prestadorMunicipio) <= 0) {
       throw new BadRequestException(
-        'CÃ³digo IBGE do municÃ­pio do prestador Ã© obrigatÃ³rio para emitir NFS-e.',
+        'Código IBGE do município do prestador é obrigatório para emitir NFS-e.',
       );
     }
 
     if (!tomadorMunicipio || Number(tomadorMunicipio) <= 0) {
       throw new BadRequestException(
-        'CÃ³digo IBGE do municÃ­pio do tomador Ã© obrigatÃ³rio para emitir NFS-e.',
+        'Código IBGE do município do tomador é obrigatório para emitir NFS-e.',
       );
     }
 
     if (!dto.tomador?.razaoSocial?.trim()) {
-      throw new BadRequestException(
-        'RazÃ£o social do tomador Ã© obrigatÃ³ria.',
-      );
+      throw new BadRequestException('Razão social do tomador é obrigatória.');
     }
 
     if (
@@ -2314,7 +2310,7 @@ export class NfseService {
       cpf.length !== 11
     ) {
       throw new BadRequestException(
-        'Informe CPF ou CNPJ vÃ¡lido para o tomador da NFS-e.',
+        'Informe CPF ou CNPJ válido para o tomador da NFS-e.',
       );
     }
   }
@@ -2344,7 +2340,7 @@ export class NfseService {
 
     if (dto.justificativa.length < 15) {
       throw new BadRequestException(
-        'A justificativa deve ter no mÃ­nimo 15 caracteres',
+        'A justificativa deve ter no mínimo 15 caracteres',
       );
     }
 
@@ -2370,7 +2366,7 @@ export class NfseService {
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
         throw new Error(
-          response.Descricao || `Erro Invoicy: cÃ³digo ${response.Codigo}`,
+          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
         );
       }
 
@@ -2381,7 +2377,7 @@ export class NfseService {
       if (!isCancelled) {
         throw new Error(
           situacao?.SitDescricao ||
-            'Cancelamento nÃ£o autorizado pela Prefeitura',
+            'Cancelamento não autorizado pela Prefeitura',
         );
       }
 
@@ -2685,8 +2681,8 @@ export class NfseService {
     const nfse = await this.findById(id, companyId);
 
     if (!nfse.pdfUrl) {
-      // TODO: Buscar PDF da API do Invoicy se nÃ£o estiver armazenado
-      throw new NotFoundException('PDF nÃ£o disponÃ­vel para esta NFS-e');
+      // TODO: Buscar PDF da API do Invoicy se não estiver armazenado
+      throw new NotFoundException('PDF não disponível para esta NFS-e');
     }
 
     return { url: nfse.pdfUrl };

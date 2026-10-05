@@ -298,12 +298,11 @@ export class QuotationController {
 
   @Get('export')
   @ApiOperation({
-    summary: 'ObtÃ©m os orÃ§amentos filtrados para exportaÃ§Ã£o',
+    summary: 'Obtém os orçamentos filtrados para exportação',
   })
   @ApiResponse({
     status: 200,
-    description:
-      'Lista de orÃ§amentos para exportaÃ§Ã£o retornada com sucesso.',
+    description: 'Lista de orçamentos para exportação retornada com sucesso.',
   })
   async export(@Req() req, @Query() query: FilterQuotationDto) {
     const canExport = await this.abacService.hasPermission(
@@ -313,7 +312,7 @@ export class QuotationController {
     );
 
     if (!canExport) {
-      throw new ForbiddenException('Sem permissÃ£o para exportar orÃ§amentos');
+      throw new ForbiddenException('Sem permissão para exportar orçamentos');
     }
 
     query.companyId = req.user.companyId;

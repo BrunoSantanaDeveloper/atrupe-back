@@ -116,10 +116,10 @@ export class ProductController {
 
   @Get('export')
   @HasPermission('export', 'product_settings:products')
-  @ApiOperation({ summary: 'ObtÃ©m os produtos filtrados para exportaÃ§Ã£o' })
+  @ApiOperation({ summary: 'Obtém os produtos filtrados para exportação' })
   @ApiResponse({
     status: 200,
-    description: 'Lista de produtos para exportaÃ§Ã£o retornada com sucesso.',
+    description: 'Lista de produtos para exportação retornada com sucesso.',
   })
   async export(@Req() req, @Query() filter: ProductFilterDTO) {
     filter.companyId = req.user.companyId;

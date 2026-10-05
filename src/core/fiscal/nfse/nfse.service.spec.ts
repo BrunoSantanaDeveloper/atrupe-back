@@ -1521,7 +1521,7 @@ describe('NfseService', () => {
       await service.emitFromOrder(mockCompanyId, {
         orderId: mockOrderId,
         codigoServico: '1.05',
-        discriminacao: 'ServiÃ§o de consultoria em TI',
+        discriminacao: 'Serviço de consultoria em TI',
       });
 
       expect(prisma.$transaction).toHaveBeenCalled();

@@ -210,10 +210,10 @@ export class ClientController {
 
   @Get('export')
   @HasPermission('export', 'register:client')
-  @ApiOperation({ summary: 'ObtÃ©m os clientes filtrados para exportaÃ§Ã£o' })
+  @ApiOperation({ summary: 'Obtém os clientes filtrados para exportação' })
   @ApiResponse({
     status: 200,
-    description: 'Lista de clientes para exportaÃ§Ã£o retornada com sucesso.',
+    description: 'Lista de clientes para exportação retornada com sucesso.',
   })
   async export(@Req() req, @Query() filter: ClientFilterDTO) {
     filter.companyId = req.user.companyId;

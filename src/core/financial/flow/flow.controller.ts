@@ -65,12 +65,12 @@ export class FlowController {
   @Get('export')
   @HasAnyPermission({ action: 'export', resource: 'financial:flow' })
   @ApiOperation({
-    summary: 'ObtÃ©m os fluxos financeiros filtrados para exportaÃ§Ã£o',
+    summary: 'Obtém os fluxos financeiros filtrados para exportação',
   })
   @ApiResponse({
     status: 200,
     description:
-      'Lista de fluxos financeiros para exportaÃ§Ã£o retornada com sucesso.',
+      'Lista de fluxos financeiros para exportação retornada com sucesso.',
   })
   async export(@Req() req, @Query() filter: FinancialFlowFilterDTO) {
     filter.companyId = req.user.companyId;
