@@ -119,7 +119,7 @@ const mockInvoicyResponse = [
 const mockPrismaService = {
   order: { findUnique: jest.fn(), findFirst: jest.fn() },
   company: { findUnique: jest.fn() },
-  quotation: { findFirst: jest.fn() },
+  quotation: { findFirst: jest.fn(), findMany: jest.fn() },
   nfse: {
     findMany: jest.fn(),
     findUnique: jest.fn(),
@@ -1530,6 +1530,96 @@ describe('NfseService', () => {
         mockFiscalCredentialResolver.reserveNfseRpsNumber,
       ).toHaveBeenCalledWith(expect.anything(), 'config-1', 'HOMOLOGACAO');
       expect(mockInvoicyService.incrementNfseRpsNumber).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * O findMany das cotacoes nao tem orderBy: o banco devolve na ordem dele,
+   * nao na da selecao. Com uma O.S. so' isso nunca aparecia (este caminho
+   * exige duas), mas com duas o fullDto saia com o orderId de uma e o
+   * quotationId de outra, e a propria emissao recusava o par.
+   */
+  describe('emitFromOrders', () => {
+    const quotationDe = (id: string, orderId: string) => ({
+      id,
+      companyId: mockCompanyId,
+      clientId: 'client-1',
+      client: mockOrder.client,
+      order: { ...mockOrder, id: orderId, quotationId: id },
+      quotationProduct: [
+        {
+          id: `qp-${orderId}`,
+          productId: 'service-1',
+          quantity: 1,
+          finalValue: 500,
+          totalValue: 500,
+          product: mockOrder.items[0].product,
+        },
+      ],
+    });
+
+    beforeEach(() => {
+      const quotA = quotationDe('quot-A', 'order-A');
+      const quotB = quotationDe('quot-B', 'order-B');
+      // Ordem invertida de proposito: e' o que o banco pode devolver.
+      prisma.quotation.findMany.mockResolvedValue([quotB, quotA]);
+      prisma.order.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id === 'order-A' ? quotA.order : quotB.order),
+      );
+      prisma.company.findUnique.mockResolvedValue(mockOrder.company);
+      invoicyApiService.emitNfse.mockResolvedValue(mockInvoicyResponse);
+      prisma.nfse.create.mockResolvedValue(mockNfse);
+      prisma.nfse.update.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.AUTHORIZED,
+      });
+      mockInvoicyService.getConfig.mockResolvedValue({
+        id: 'config-1',
+        serieNfse: '1',
+        proximoRpsNfse: 1,
+        ambiente: 2,
+        isActive: true,
+        ibgeCode: '4314902',
+        aliquotaIss: 5,
+        codigoServico: '1.05',
+        emitCrt: 1,
+        company: {
+          cnpj: '12345678000123',
+          legalName: 'Empresa Teste LTDA',
+          name: 'Empresa Teste',
+          municipalRegistration: '12345',
+          address: {
+            street: 'Rua Teste',
+            number: '100',
+            neighborhood: 'Centro',
+            city: 'Porto Alegre',
+            state: 'RS',
+            zipcode: '90000000',
+          },
+        },
+      });
+    });
+
+    it('casa o orcamento com a primeira ordem selecionada', async () => {
+      await expect(
+        service.emitFromOrders(mockCompanyId, {
+          orderIds: ['order-A', 'order-B'],
+          codigoServico: '1.05',
+          discriminacao: 'Crachas',
+        } as any),
+      ).resolves.toBeDefined();
+
+      expect(invoicyApiService.emitNfse).toHaveBeenCalled();
+      // As duas O.S. continuam na nota consolidada.
+      expect(prisma.nfse.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            draftData: expect.objectContaining({
+              consolidatedOrderIds: ['order-A', 'order-B'],
+            }),
+          }),
+        }),
+      );
     });
   });
 

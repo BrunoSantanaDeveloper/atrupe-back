@@ -812,8 +812,17 @@ export class NfseService {
         );
       }, 0) / 100;
 
+    // A ordem do findMany e' a do banco, nao a da selecao: sem casar a
+    // cotacao com uniqueOrderIds[0], o fullDto saia com o orderId de uma O.S.
+    // e o quotationId de outra, e a propria emissao recusava o par ("A ordem
+    // de servico informada nao pertence ao orcamento enviado"). Acontecia so'
+    // com duas ou mais O.S., que e' justamente quando este caminho roda.
+    const quotationPrincipal =
+      quotations.find((q) => q.order?.id === uniqueOrderIds[0]) ??
+      quotations[0];
+
     // Tomador: cliente da primeira ordem (ou overrides do DTO)
-    const client = quotations[0].client;
+    const client = quotationPrincipal.client;
     const clientAddress = client?.address?.[0];
 
     const tomadorCepFinal = dto.tomadorCep || clientAddress?.zipcode || '';
@@ -869,8 +878,8 @@ export class NfseService {
       .join(', ');
 
     const fullDto: EmitNfseDto = {
-      orderId: uniqueOrderIds[0],
-      quotationId: quotations[0].id,
+      orderId: quotationPrincipal.order?.id ?? uniqueOrderIds[0],
+      quotationId: quotationPrincipal.id,
       dataCompetencia: new Date().toISOString().split('T')[0],
       naturezaOperacao: 1,
       codigoServico: dto.codigoServico || config.codigoServico || '',
@@ -879,8 +888,10 @@ export class NfseService {
       valorServicos,
       aliquotaIss: dto.aliquotaIss ?? config.aliquotaIss ?? 0,
       issRetido: dto.issRetido || false,
+      // Mesma cotacao de referencia: pela ordem do banco, a classificacao
+      // fiscal da nota mudava conforme a O.S. que viesse primeiro.
       ...this.classificacaoFiscalDoServico(
-        (quotations[0]?.quotationProduct[0]?.product as any)?.fiscalData,
+        (quotationPrincipal?.quotationProduct[0]?.product as any)?.fiscalData,
       ),
       // Classificação escolhida na lista de serviços vence a do produto.
       ...(dto.nbs ? { nbs: dto.nbs } : {}),
