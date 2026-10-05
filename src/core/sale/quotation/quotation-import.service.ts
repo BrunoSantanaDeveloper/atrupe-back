@@ -284,6 +284,8 @@ export class QuotationImportService {
           const quotation = await this.prisma.quotation.create({
             data: {
               companyId,
+              // A tela lê "Empresa" e monta a edição pela subempresa fiscal.
+              subCompanyId: companyId,
               sellerId: adminSeller.id,
               clientId,
               seriesId: series.id,

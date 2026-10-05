@@ -2779,6 +2779,10 @@ export class ImportService {
           data: {
             ...(reuseIds ? { id: reuseIds.quotationId } : {}),
             companyId,
+            // O documento nativo sempre tem a subempresa fiscal (a própria
+            // empresa, em conta simples), e é dela que a tela lê "Empresa" e
+            // monta o formulário de edição. Sem ela a edição não salvava.
+            subCompanyId: companyId,
             seriesId: series.id,
             clientId: client.id,
             sellerId: seller.id,
@@ -3218,6 +3222,8 @@ export class ImportService {
             sellerId: employee.id,
             contactId,
             companyId,
+            // Mesma regra do orçamento: a tela edita pela subempresa fiscal.
+            subCompanyId: companyId,
             description: firstItem.ReferenciaVenda || null,
             legacyId,
             totalValue: 0, // Será calculado depois
