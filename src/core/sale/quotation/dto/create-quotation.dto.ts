@@ -277,6 +277,12 @@ export class CreateQuotationDto {
   })
   seriesId?: string;
 
+  // A tela reenvia o cabeçalho inteiro e manda '' no atendimento que o
+  // documento não tem — caso de todo documento migrado. `@IsOptional` só
+  // ignora null e undefined, então o '' caía no `@IsUUID` e nada salvava.
+  // Vazio vira nulo, como o `contactId` acaba ficando: documento sem
+  // atendimento, e não "campo não enviado".
+  @Transform(({ value }) => (value === '' ? null : value))
   @IsOptional()
   @IsUUID()
   @ApiProperty({
