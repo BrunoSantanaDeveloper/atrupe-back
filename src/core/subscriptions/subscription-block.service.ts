@@ -20,6 +20,15 @@ export interface BlockCheckResult {
     | 'ended';
 }
 
+export type ChargeRefreshResult =
+  /** Removida ou inexistente no Asaas: a pendência local foi baixada. */
+  | 'canceled'
+  /** Status e links alinhados ao Asaas. */
+  | 'updated'
+  | 'unchanged'
+  /** Sem registro aqui: a conta do Asaas é compartilhada com o sistema antigo. */
+  | 'not_local';
+
 @Injectable()
 export class SubscriptionBlockService {
   private readonly logger = new Logger(SubscriptionBlockService.name);
@@ -124,6 +133,102 @@ export class SubscriptionBlockService {
   }
 
   /**
+   * Alinha uma cobrança local ao que o Asaas diz dela, consultando-a pelo id.
+   *
+   * A listagem de cobranças da assinatura não traz as removidas: uma
+   * mensalidade cancelada no Asaas (ex.: perdoada numa reativação) sumia da
+   * listagem, nunca mais era revisitada e ficava OVERDUE aqui para sempre. A
+   * rotina de bloqueio olha o Asaas ao vivo e não bloqueava — mas a sessão, a
+   * regularização, a evolução e a transferência leem o banco e viam um débito
+   * que não existe.
+   *
+   * Removida ou inexistente no Asaas, a pendência local vira CANCELED (cobrança
+   * paga nunca é tocada). Com `onlyIfRemoved`, é só isso; sem ele, vale o
+   * status do Asaas — o que reabre uma cobrança restaurada lá. Falha na
+   * consulta lança erro e não altera nada.
+   */
+  async refreshLocalCharge(
+    asaasPaymentId: string,
+    options: { onlyIfRemoved?: boolean } = {},
+  ): Promise<ChargeRefreshResult> {
+    const local = await this.prisma.payment.findUnique({
+      where: { asaasPaymentId },
+    });
+    if (!local) return 'not_local';
+
+    const remote = await this.asaasGateway.getAsaasPayment(asaasPaymentId);
+
+    if (!remote || remote.deleted === true) {
+      if (local.status !== 'PENDING' && local.status !== 'OVERDUE') {
+        return 'unchanged';
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.payment.update({
+          where: { id: local.id },
+          data: { status: 'CANCELED' },
+        });
+        if (local.subscriptionId) {
+          await tx.subscriptionHistory.create({
+            data: {
+              subscriptionId: local.subscriptionId,
+              action: 'PAYMENT_CANCELED',
+              description: `Cobrança de ${this.formatDay(local.dueDate)} (R$ ${local.value.toFixed(2).replace('.', ',')}) ${remote ? 'foi removida' : 'não existe'} no Asaas; a pendência local foi baixada.`,
+              changes: {
+                before: { status: local.status },
+                after: { status: 'CANCELED' },
+              },
+              metadata: {
+                reason: 'GATEWAY_REMOVED',
+                asaasPaymentId,
+                asaasDeleted: remote ? true : null,
+              },
+              createdByName: 'Sistema',
+            },
+          });
+        }
+      });
+      this.logger.warn(
+        `Cobrança ${asaasPaymentId} (${this.formatDay(local.dueDate)}) ${remote ? 'removida' : 'inexistente'} no Asaas: pendência local ${local.status} → CANCELED`,
+      );
+      return 'canceled';
+    }
+
+    if (options.onlyIfRemoved) return 'unchanged';
+
+    const status = this.mapAsaasStatus(remote.status);
+    const needsUpdate =
+      local.status !== status ||
+      (!local.invoiceUrl && !!remote.invoiceUrl) ||
+      (!local.bankSlipUrl && !!remote.bankSlipUrl);
+    if (!needsUpdate) return 'unchanged';
+
+    await this.prisma.payment.update({
+      where: { id: local.id },
+      data: {
+        status,
+        confirmedDate: remote.confirmedDate
+          ? new Date(remote.confirmedDate)
+          : local.confirmedDate,
+        paymentDate: remote.paymentDate
+          ? new Date(remote.paymentDate)
+          : local.paymentDate,
+        invoiceUrl: remote.invoiceUrl || local.invoiceUrl,
+        bankSlipUrl: remote.bankSlipUrl || local.bankSlipUrl,
+      },
+    });
+    this.logger.log(
+      `Cobrança ${asaasPaymentId} alinhada ao Asaas: ${local.status} → ${status}`,
+    );
+    return 'updated';
+  }
+
+  /** Vencimento gravado à meia-noite UTC do dia: lido em UTC, sem trocar de dia. */
+  private formatDay(date: Date): string {
+    return date.toISOString().slice(0, 10).split('-').reverse().join('/');
+  }
+
+  /**
    * Cron job executado diariamente às 3h para verificar atrasos
    */
   @Cron('0 3 * * *', {
@@ -216,14 +321,14 @@ export class SubscriptionBlockService {
       try {
         const asaasPayments = await this.asaasGateway.getChargesOf(sub);
 
-        if (asaasPayments.length > 0) {
-          await this.syncMissingPayments(
-            sub.id,
-            sub.asaasSubscriptionId!,
-            asaasPayments,
-          );
-          totalSynced++;
-        }
+        // Mesmo com a listagem vazia: as cobranças locais em aberto podem ter
+        // sido removidas no Asaas, e é o sync que as confere.
+        await this.syncMissingPayments(
+          sub.id,
+          sub.asaasSubscriptionId!,
+          asaasPayments,
+        );
+        totalSynced++;
       } catch (error) {
         totalErrors++;
         this.logger.warn(
@@ -725,6 +830,41 @@ export class SubscriptionBlockService {
       this.logger.log(
         `Payment criado localmente: ${asaasPayment.id} (${mappedStatus}, due: ${asaasPayment.dueDate})`,
       );
+    }
+
+    await this.reconcileUnlistedOpenCharges(localSubscriptionId, asaasPayments);
+  }
+
+  /**
+   * As cobranças locais em aberto que a listagem do Asaas não trouxe são
+   * consultadas uma a uma. "Não veio na listagem" não basta para baixar nada:
+   * a listagem da assinatura também não traz cobranças avulsas (a primeira de
+   * uma contratação, a de uma evolução). Só a resposta do Asaas sobre aquela
+   * cobrança decide — e só a removida ou inexistente é baixada.
+   */
+  private async reconcileUnlistedOpenCharges(
+    localSubscriptionId: string,
+    listedPayments: { id: string }[],
+  ): Promise<void> {
+    const listed = new Set(listedPayments.map((p) => p.id));
+    const open = await this.prisma.payment.findMany({
+      where: {
+        subscriptionId: localSubscriptionId,
+        status: { in: ['PENDING', 'OVERDUE'] },
+        asaasPaymentId: { startsWith: 'pay_' },
+      },
+      select: { asaasPaymentId: true },
+    });
+
+    for (const { asaasPaymentId } of open) {
+      if (listed.has(asaasPaymentId)) continue;
+      try {
+        await this.refreshLocalCharge(asaasPaymentId, { onlyIfRemoved: true });
+      } catch (error) {
+        this.logger.warn(
+          `Cobrança ${asaasPaymentId} não conferida no Asaas: ${error.message}`,
+        );
+      }
     }
   }
 

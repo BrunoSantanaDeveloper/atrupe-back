@@ -121,6 +121,12 @@ export class WebhooksService {
           await this.handlePaymentOverdue(payload);
           break;
 
+        case AsaasWebhookEvent.PAYMENT_DELETED:
+        case AsaasWebhookEvent.PAYMENT_RESTORED:
+        case AsaasWebhookEvent.PAYMENT_REFUNDED:
+          await this.handlePaymentChangedAtGateway(payload);
+          break;
+
         case AsaasWebhookEvent.SUBSCRIPTION_EXPIRED:
           await this.handleSubscriptionExpired(payload);
           break;
@@ -152,6 +158,29 @@ export class WebhooksService {
       throw error;
     }
   }
+  /**
+   * Cobrança removida, restaurada ou estornada no Asaas. Nada é decidido pelo
+   * payload: a cobrança é consultada no Asaas e o registro local passa a
+   * refletir o que ele diz — o endpoint aceita qualquer chamada enquanto o
+   * token do webhook não estiver definido. Na remoção, só uma cobrança que o
+   * Asaas confirma como removida é baixada.
+   *
+   * Asaas indisponível: o erro sobe e o evento volta na fila de retentativa.
+   */
+  private async handlePaymentChangedAtGateway(payload: AsaasWebhookPayload) {
+    const asaasPaymentId = (payload.payment || payload.data)?.id;
+    if (!asaasPaymentId) {
+      this.logger.warn(`${payload.event} sem id de cobrança; ignorado`);
+      return;
+    }
+
+    const result = await this.subscriptionBlockService.refreshLocalCharge(
+      asaasPaymentId,
+      { onlyIfRemoved: payload.event === AsaasWebhookEvent.PAYMENT_DELETED },
+    );
+    this.logger.log(`${payload.event} ${asaasPaymentId}: ${result}`);
+  }
+
   /**
    * Handles PAYMENT_CREATED webhook — creates new payment record for monthly renewals
    */

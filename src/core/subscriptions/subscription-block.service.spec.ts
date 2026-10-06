@@ -19,10 +19,14 @@ describe('SubscriptionBlockService', () => {
     },
     payment: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
       update: jest.fn(),
+      create: jest.fn(),
     },
     subscription: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
     },
     subscriptionHistory: { create: jest.fn() },
@@ -32,8 +36,10 @@ describe('SubscriptionBlockService', () => {
   const mockAsaasGatewayService = {
     getAsaasSubscriptionPayments: jest.fn(),
     getAsaasSubscription: jest.fn(),
+    getAsaasPayment: jest.fn(),
     getSubscriptionPayments: jest.fn(),
     getInstallmentPayments: jest.fn(),
+    mapAsaasPaymentStatus: jest.fn((status: string) => status),
     // O serviço pede as cobranças pelo modo; o mock responde como o gateway:
     // parcelas do parcelamento, ou cobranças da assinatura.
     getChargesOf: jest.fn((sub: any) =>
@@ -69,6 +75,8 @@ describe('SubscriptionBlockService', () => {
       status: 'ACTIVE',
       deleted: false,
     });
+    // Nenhuma cobrança local em aberto fora da listagem, salvo quando o teste diz.
+    mockPrismaService.payment.findMany.mockResolvedValue([]);
   });
 
   it('should be defined', () => {
@@ -695,6 +703,281 @@ describe('SubscriptionBlockService', () => {
       const result = await service.getPendingPaymentUrl('company-1');
 
       expect(result.paymentUrl).toBeNull();
+    });
+  });
+
+  describe('cobrança removida no Asaas', () => {
+    const tx = {
+      payment: { update: jest.fn() },
+      subscriptionHistory: { create: jest.fn() },
+    };
+
+    const local = (asaasPaymentId: string, status = 'OVERDUE') => ({
+      id: `local-${asaasPaymentId}`,
+      subscriptionId: 'sub-local',
+      asaasPaymentId,
+      status,
+      dueDate: new Date('2026-04-04T00:00:00Z'),
+      value: 147,
+      invoiceUrl: null,
+      bankSlipUrl: null,
+      confirmedDate: null,
+      paymentDate: null,
+    });
+
+    beforeEach(() => {
+      tx.payment.update.mockReset();
+      tx.subscriptionHistory.create.mockReset();
+      mockPrismaService.$transaction.mockImplementation((fn: any) => fn(tx));
+    });
+
+    describe('refreshLocalCharge', () => {
+      it('baixa a pendência quando o Asaas diz que a cobrança foi removida', async () => {
+        mockPrismaService.payment.findUnique.mockResolvedValue(
+          local('pay_abril'),
+        );
+        // O Asaas mantém o status de antes da remoção: quem decide é `deleted`.
+        mockAsaasGatewayService.getAsaasPayment.mockResolvedValue({
+          id: 'pay_abril',
+          status: 'OVERDUE',
+          deleted: true,
+        });
+
+        const result = await service.refreshLocalCharge('pay_abril');
+
+        expect(result).toBe('canceled');
+        expect(tx.payment.update).toHaveBeenCalledWith({
+          where: { id: 'local-pay_abril' },
+          data: { status: 'CANCELED' },
+        });
+        expect(tx.subscriptionHistory.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              subscriptionId: 'sub-local',
+              action: 'PAYMENT_CANCELED',
+              description: expect.stringContaining('04/04/2026'),
+            }),
+          }),
+        );
+      });
+
+      it('baixa a pendência quando a cobrança não existe no Asaas', async () => {
+        mockPrismaService.payment.findUnique.mockResolvedValue(
+          local('pay_abril'),
+        );
+        mockAsaasGatewayService.getAsaasPayment.mockResolvedValue(null);
+
+        expect(await service.refreshLocalCharge('pay_abril')).toBe('canceled');
+        expect(tx.payment.update).toHaveBeenCalledWith({
+          where: { id: 'local-pay_abril' },
+          data: { status: 'CANCELED' },
+        });
+      });
+
+      it('nunca mexe numa cobrança paga, mesmo removida no Asaas', async () => {
+        mockPrismaService.payment.findUnique.mockResolvedValue(
+          local('pay_abril', 'RECEIVED'),
+        );
+        mockAsaasGatewayService.getAsaasPayment.mockResolvedValue({
+          id: 'pay_abril',
+          status: 'RECEIVED',
+          deleted: true,
+        });
+
+        expect(await service.refreshLocalCharge('pay_abril')).toBe('unchanged');
+        expect(tx.payment.update).not.toHaveBeenCalled();
+        expect(mockPrismaService.payment.update).not.toHaveBeenCalled();
+      });
+
+      it('com onlyIfRemoved, não mexe numa cobrança que segue viva no Asaas', async () => {
+        mockPrismaService.payment.findUnique.mockResolvedValue(
+          local('pay_avulsa', 'PENDING'),
+        );
+        mockAsaasGatewayService.getAsaasPayment.mockResolvedValue({
+          id: 'pay_avulsa',
+          status: 'RECEIVED',
+          deleted: false,
+        });
+
+        expect(
+          await service.refreshLocalCharge('pay_avulsa', {
+            onlyIfRemoved: true,
+          }),
+        ).toBe('unchanged');
+        expect(tx.payment.update).not.toHaveBeenCalled();
+        expect(mockPrismaService.payment.update).not.toHaveBeenCalled();
+      });
+
+      it('reabre a cobrança restaurada no Asaas', async () => {
+        mockPrismaService.payment.findUnique.mockResolvedValue(
+          local('pay_abril', 'CANCELED'),
+        );
+        mockAsaasGatewayService.getAsaasPayment.mockResolvedValue({
+          id: 'pay_abril',
+          status: 'OVERDUE',
+          deleted: false,
+        });
+
+        expect(await service.refreshLocalCharge('pay_abril')).toBe('updated');
+        expect(mockPrismaService.payment.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'local-pay_abril' },
+            data: expect.objectContaining({ status: 'OVERDUE' }),
+          }),
+        );
+      });
+
+      it('ignora cobrança que não é deste sistema (conta compartilhada com o legado)', async () => {
+        mockPrismaService.payment.findUnique.mockResolvedValue(null);
+
+        expect(await service.refreshLocalCharge('pay_legado')).toBe(
+          'not_local',
+        );
+        expect(mockAsaasGatewayService.getAsaasPayment).not.toHaveBeenCalled();
+      });
+
+      it('não altera nada quando o Asaas não responde', async () => {
+        mockPrismaService.payment.findUnique.mockResolvedValue(
+          local('pay_abril'),
+        );
+        mockAsaasGatewayService.getAsaasPayment.mockRejectedValue(
+          new Error('timeout'),
+        );
+
+        await expect(service.refreshLocalCharge('pay_abril')).rejects.toThrow(
+          'timeout',
+        );
+        expect(tx.payment.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('sync: cobranças locais em aberto fora da listagem', () => {
+      it('confere pelo id só as que não vieram na listagem e baixa só as removidas', async () => {
+        // A listagem do Asaas não traz as removidas: só a de outubro vem.
+        const listed = [
+          {
+            id: 'pay_outubro',
+            status: 'OVERDUE',
+            dueDate: '2026-10-04',
+            value: 147,
+            customer: 'cus_1',
+          },
+        ];
+        mockPrismaService.payment.findFirst.mockResolvedValue(
+          local('pay_outubro'),
+        );
+        mockPrismaService.payment.findMany.mockResolvedValue([
+          { asaasPaymentId: 'pay_outubro' },
+          { asaasPaymentId: 'pay_abril' },
+          { asaasPaymentId: 'pay_avulsa' },
+        ]);
+        mockPrismaService.payment.findUnique.mockImplementation(({ where }) =>
+          Promise.resolve(
+            local(
+              where.asaasPaymentId,
+              where.asaasPaymentId === 'pay_avulsa' ? 'PENDING' : 'OVERDUE',
+            ),
+          ),
+        );
+        mockAsaasGatewayService.getAsaasPayment.mockImplementation((id) =>
+          Promise.resolve(
+            id === 'pay_abril'
+              ? { id, status: 'OVERDUE', deleted: true }
+              : { id, status: 'PENDING', deleted: false },
+          ),
+        );
+
+        await (service as any).syncMissingPayments(
+          'sub-local',
+          'sub_asaas',
+          listed,
+        );
+
+        expect(mockPrismaService.payment.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              subscriptionId: 'sub-local',
+              status: { in: ['PENDING', 'OVERDUE'] },
+              asaasPaymentId: { startsWith: 'pay_' },
+            },
+          }),
+        );
+        expect(
+          mockAsaasGatewayService.getAsaasPayment,
+        ).not.toHaveBeenCalledWith('pay_outubro');
+        expect(mockAsaasGatewayService.getAsaasPayment).toHaveBeenCalledWith(
+          'pay_abril',
+        );
+        // A avulsa existe no Asaas: a rotina não a baixa nem a altera.
+        expect(mockAsaasGatewayService.getAsaasPayment).toHaveBeenCalledWith(
+          'pay_avulsa',
+        );
+        expect(tx.payment.update).toHaveBeenCalledTimes(1);
+        expect(tx.payment.update).toHaveBeenCalledWith({
+          where: { id: 'local-pay_abril' },
+          data: { status: 'CANCELED' },
+        });
+        expect(mockPrismaService.payment.update).not.toHaveBeenCalled();
+      });
+
+      it('uma falha ao conferir uma cobrança não impede as demais', async () => {
+        mockPrismaService.payment.findMany.mockResolvedValue([
+          { asaasPaymentId: 'pay_a' },
+          { asaasPaymentId: 'pay_b' },
+        ]);
+        mockPrismaService.payment.findUnique.mockImplementation(({ where }) =>
+          Promise.resolve(local(where.asaasPaymentId)),
+        );
+        mockAsaasGatewayService.getAsaasPayment.mockImplementation((id) =>
+          id === 'pay_a'
+            ? Promise.reject(new Error('timeout'))
+            : Promise.resolve({ id, status: 'OVERDUE', deleted: true }),
+        );
+
+        await (service as any).syncMissingPayments(
+          'sub-local',
+          'sub_asaas',
+          [],
+        );
+
+        expect(tx.payment.update).toHaveBeenCalledTimes(1);
+        expect(tx.payment.update).toHaveBeenCalledWith({
+          where: { id: 'local-pay_b' },
+          data: { status: 'CANCELED' },
+        });
+      });
+
+      it('a rotina diária confere mesmo quando a listagem do Asaas vem vazia', async () => {
+        mockPrismaService.subscription.findMany.mockResolvedValue([
+          {
+            id: 'sub-local',
+            asaasSubscriptionId: 'sub_asaas',
+            asaasInstallmentId: null,
+            Company: { name: 'Empresa' },
+          },
+        ]);
+        mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue(
+          [],
+        );
+        mockPrismaService.payment.findMany.mockResolvedValue([
+          { asaasPaymentId: 'pay_abril' },
+        ]);
+        mockPrismaService.payment.findUnique.mockResolvedValue(
+          local('pay_abril'),
+        );
+        mockAsaasGatewayService.getAsaasPayment.mockResolvedValue({
+          id: 'pay_abril',
+          status: 'OVERDUE',
+          deleted: true,
+        });
+
+        await (service as any).syncAllCompanyPayments();
+
+        expect(tx.payment.update).toHaveBeenCalledWith({
+          where: { id: 'local-pay_abril' },
+          data: { status: 'CANCELED' },
+        });
+      });
     });
   });
 });

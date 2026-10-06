@@ -75,4 +75,13 @@ export interface AsaasPaymentResponse {
   description?: string;
   invoiceUrl?: string;
   bankSlipUrl?: string;
+  /** Id da assinatura do Asaas a que a cobrança pertence. */
+  subscription?: string;
+  /**
+   * Cobrança removida no Asaas. Ela continua respondendo pelo id, com o
+   * `status` de antes da remoção — uma vencida removida segue "OVERDUE".
+   */
+  deleted?: boolean;
+  confirmedDate?: string;
+  paymentDate?: string;
 }

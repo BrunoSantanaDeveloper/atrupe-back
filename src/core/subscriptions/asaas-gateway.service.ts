@@ -141,6 +141,30 @@ export class AsaasGatewayService {
     }
   }
 
+  /**
+   * A cobrança como o Asaas a vê. `null` quando ela não existe lá.
+   *
+   * É a única forma de saber de uma cobrança removida: a listagem da
+   * assinatura deixa de trazê-la, mas a consulta pelo id ainda responde, com
+   * `deleted: true`.
+   */
+  async getAsaasPayment(
+    paymentId: string,
+  ): Promise<AsaasPaymentResponse | null> {
+    try {
+      const api = await this.asaasApi();
+      const response = await api.get(`/payments/${paymentId}`);
+      return response.data;
+    } catch (error) {
+      if (error.response?.status === 404) return null;
+      this.logger.error('Erro ao buscar cobrança no Asaas:', {
+        message: error.message,
+        status: error.response?.status,
+      });
+      throw new Error(`Falha ao buscar a cobrança no Asaas: ${error.message}`);
+    }
+  }
+
   async getAsaasSubscriptionPayments(
     asaasSubscriptionId: string,
   ): Promise<any[]> {

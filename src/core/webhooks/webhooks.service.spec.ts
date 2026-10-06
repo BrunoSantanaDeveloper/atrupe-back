@@ -66,6 +66,7 @@ describe('WebhooksService', () => {
           useValue: {
             checkAndApplyBlocks: jest.fn(),
             unblockCompany: jest.fn(),
+            refreshLocalCharge: jest.fn(),
           },
         },
         {
@@ -395,6 +396,60 @@ describe('WebhooksService', () => {
             cycle: 'MONTHLY',
           }),
         }),
+      );
+    });
+  });
+
+  describe('cobrança removida, restaurada ou estornada no Asaas', () => {
+    const fire = (event: AsaasWebhookEvent, id = 'pay_abril') => {
+      mockPrismaService.webhookEvent.findUnique.mockResolvedValue(null);
+      mockPrismaService.webhookEvent.create.mockResolvedValue({
+        id: 'evt-pay',
+      });
+      mockPrismaService.webhookEvent.update.mockResolvedValue({});
+      return service.handleAsaasWebhook({ event, payment: { id } } as any);
+    };
+    const blockService = () => (service as any).subscriptionBlockService;
+
+    it('PAYMENT_DELETED confere no Asaas e só baixa a cobrança removida', async () => {
+      blockService().refreshLocalCharge.mockResolvedValue('canceled');
+
+      const result = await fire(AsaasWebhookEvent.PAYMENT_DELETED);
+
+      expect(blockService().refreshLocalCharge).toHaveBeenCalledWith(
+        'pay_abril',
+        { onlyIfRemoved: true },
+      );
+      expect(result).not.toHaveProperty('processed', false);
+      expect(mockPrismaService.webhookEvent.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { processed: true } }),
+      );
+    });
+
+    it('PAYMENT_RESTORED e PAYMENT_REFUNDED alinham o status ao Asaas', async () => {
+      blockService().refreshLocalCharge.mockResolvedValue('updated');
+
+      await fire(AsaasWebhookEvent.PAYMENT_RESTORED);
+      await fire(AsaasWebhookEvent.PAYMENT_REFUNDED, 'pay_estornada');
+
+      expect(blockService().refreshLocalCharge).toHaveBeenCalledWith(
+        'pay_abril',
+        { onlyIfRemoved: false },
+      );
+      expect(blockService().refreshLocalCharge).toHaveBeenCalledWith(
+        'pay_estornada',
+        { onlyIfRemoved: false },
+      );
+    });
+
+    it('Asaas indisponível: o evento fica pendente para a retentativa', async () => {
+      blockService().refreshLocalCharge.mockRejectedValue(new Error('timeout'));
+
+      const result = await fire(AsaasWebhookEvent.PAYMENT_DELETED);
+
+      expect(result).toHaveProperty('processed', false);
+      expect(mockPrismaService.webhookEvent.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: { processed: true } }),
       );
     });
   });
