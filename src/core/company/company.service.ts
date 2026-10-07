@@ -997,7 +997,48 @@ export class CompanyService {
       const ieChanged =
         data.stateRegistration !== undefined &&
         data.stateRegistration !== fiscalSnapshot?.stateRegistration;
-      if (cnpjChanged || ieChanged || !!address) {
+
+      /**
+       * Endereço: comparar campo a campo, e não a presença do bloco no corpo
+       * da requisição.
+       *
+       * A condição era `!!address`, e o formulário da empresa envia o endereço
+       * inteiro em todo "Salvar". Qualquer gravação da empresa — trocar o
+       * telefone, o logo, um texto — rebaixava para DRAFT os ambientes de
+       * TODOS os emissores: a ativação de produção se perdia e o usuário tinha
+       * de refazer o assistente sem ter mexido em endereço nenhum. Um cliente
+       * acumulou 13 reativações de produção em três semanas por isso, e o
+       * rebaixamento não deixa registro no histórico fiscal, então nada
+       * apontava para cá.
+       *
+       * `updatedCompany.address` ainda é a lista anterior: o update da empresa
+       * não toca as linhas de endereço, que só mudam no handleAddressUpdate
+       * mais acima. A comparação cobre exatamente os campos que ele grava.
+       */
+      const enderecosAnteriores = (
+        (updatedCompany.address as any[] | undefined) ?? []
+      ).filter((a) => a.ownerType === 'COMPANY');
+      const mesmoTexto = (a: unknown, b: unknown) =>
+        String(a ?? '').trim() === String(b ?? '').trim();
+      const camposDoEnderecoFiscal = [
+        'street',
+        'number',
+        'complement',
+        'neighborhood',
+        'city',
+        'state',
+        'zipcode',
+      ] as const;
+      const addressChanged =
+        !!address &&
+        (enderecosAnteriores.length === 0 ||
+          enderecosAnteriores.some((anterior) =>
+            camposDoEnderecoFiscal.some(
+              (campo) => !mesmoTexto((address as any)[campo], anterior[campo]),
+            ),
+          ));
+
+      if (cnpjChanged || ieChanged || addressChanged) {
         await this.prisma.invoicyEnvironmentConfig.updateMany({
           where: { invoicyConfig: { companyId: id } },
           data: {
@@ -1014,7 +1055,7 @@ export class CompanyService {
       const registrationChanged =
         cnpjChanged ||
         ieChanged ||
-        !!address ||
+        addressChanged ||
         (data.legalName !== undefined &&
           data.legalName !== fiscalSnapshot?.legalName) ||
         (data.name !== undefined && data.name !== fiscalSnapshot?.name) ||

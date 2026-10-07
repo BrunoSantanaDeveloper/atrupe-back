@@ -707,6 +707,79 @@ describe('CompanyService', () => {
       expect(prisma.address.create).toHaveBeenCalled();
     });
 
+    /**
+     * O gatilho do rebaixamento era `!!address`, e o formulario da empresa
+     * manda o endereco inteiro em todo "Salvar". Trocar o telefone ou o logo
+     * derrubava para DRAFT os ambientes de todos os emissores: a ativacao de
+     * producao se perdia e o usuario tinha de refazer o assistente. Como o
+     * rebaixamento nao grava historico fiscal, nada apontava para a causa.
+     */
+    describe('ambientes fiscais x gravacao da empresa', () => {
+      const enderecoDoCadastro = {
+        street: 'Rua Teste',
+        number: '123',
+        complement: 'Sala 1',
+        neighborhood: 'Centro',
+        city: 'São Paulo',
+        state: 'SP',
+        zipcode: '01234567',
+      };
+
+      it('nao rebaixa quando o endereco enviado e igual ao gravado', async () => {
+        await service.update(mockCompanyId, {
+          ...mockUpdateCompanyDto,
+          address: enderecoDoCadastro,
+        } as any);
+
+        expect(
+          prisma.invoicyEnvironmentConfig.updateMany,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('nao rebaixa por diferenca de espacos em branco', async () => {
+        await service.update(mockCompanyId, {
+          ...mockUpdateCompanyDto,
+          address: {
+            ...enderecoDoCadastro,
+            street: '  Rua Teste ',
+            number: '123 ',
+          },
+        } as any);
+
+        expect(
+          prisma.invoicyEnvironmentConfig.updateMany,
+        ).not.toHaveBeenCalled();
+      });
+
+      /** O endereco compoe o XML: mudanca real exige nova validacao. */
+      it('rebaixa para DRAFT quando o endereco muda de verdade', async () => {
+        await service.update(mockCompanyId, mockUpdateCompanyDto);
+
+        expect(prisma.invoicyEnvironmentConfig.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              status: 'DRAFT',
+              lastValidationAt: null,
+            }),
+          }),
+        );
+      });
+
+      it('rebaixa quando a empresa ainda nao tem endereco gravado', async () => {
+        prisma.company.update.mockResolvedValue({
+          ...mockCompanyRaw,
+          address: [],
+        });
+
+        await service.update(mockCompanyId, {
+          ...mockUpdateCompanyDto,
+          address: enderecoDoCadastro,
+        } as any);
+
+        expect(prisma.invoicyEnvironmentConfig.updateMany).toHaveBeenCalled();
+      });
+    });
+
     it('should not delete certificate when type and file are set to null', async () => {
       const updateWithNullCert = {
         ...mockUpdateCompanyDto,
