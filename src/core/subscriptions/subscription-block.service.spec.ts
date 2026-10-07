@@ -712,12 +712,16 @@ describe('SubscriptionBlockService', () => {
       subscriptionHistory: { create: jest.fn() },
     };
 
-    const local = (asaasPaymentId: string, status = 'OVERDUE') => ({
+    const local = (
+      asaasPaymentId: string,
+      status = 'OVERDUE',
+      dueDate = '2026-04-04',
+    ) => ({
       id: `local-${asaasPaymentId}`,
       subscriptionId: 'sub-local',
       asaasPaymentId,
       status,
-      dueDate: new Date('2026-04-04T00:00:00Z'),
+      dueDate: new Date(`${dueDate}T00:00:00Z`),
       value: 147,
       invoiceUrl: null,
       bankSlipUrl: null,
@@ -864,21 +868,13 @@ describe('SubscriptionBlockService', () => {
           },
         ];
         mockPrismaService.payment.findFirst.mockResolvedValue(
-          local('pay_outubro'),
+          local('pay_outubro', 'OVERDUE', '2026-10-04'),
         );
         mockPrismaService.payment.findMany.mockResolvedValue([
-          { asaasPaymentId: 'pay_outubro' },
-          { asaasPaymentId: 'pay_abril' },
-          { asaasPaymentId: 'pay_avulsa' },
+          local('pay_outubro', 'OVERDUE', '2026-10-04'),
+          local('pay_abril'),
+          local('pay_avulsa', 'PENDING'),
         ]);
-        mockPrismaService.payment.findUnique.mockImplementation(({ where }) =>
-          Promise.resolve(
-            local(
-              where.asaasPaymentId,
-              where.asaasPaymentId === 'pay_avulsa' ? 'PENDING' : 'OVERDUE',
-            ),
-          ),
-        );
         mockAsaasGatewayService.getAsaasPayment.mockImplementation((id) =>
           Promise.resolve(
             id === 'pay_abril'
@@ -887,11 +883,13 @@ describe('SubscriptionBlockService', () => {
           ),
         );
 
-        await (service as any).syncMissingPayments(
+        const counts = await (service as any).syncMissingPayments(
           'sub-local',
           'sub_asaas',
           listed,
         );
+
+        expect(counts).toEqual({ created: 0, updated: 0, canceled: 1 });
 
         expect(mockPrismaService.payment.findMany).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -922,12 +920,9 @@ describe('SubscriptionBlockService', () => {
 
       it('uma falha ao conferir uma cobrança não impede as demais', async () => {
         mockPrismaService.payment.findMany.mockResolvedValue([
-          { asaasPaymentId: 'pay_a' },
-          { asaasPaymentId: 'pay_b' },
+          local('pay_a'),
+          local('pay_b'),
         ]);
-        mockPrismaService.payment.findUnique.mockImplementation(({ where }) =>
-          Promise.resolve(local(where.asaasPaymentId)),
-        );
         mockAsaasGatewayService.getAsaasPayment.mockImplementation((id) =>
           id === 'pay_a'
             ? Promise.reject(new Error('timeout'))
@@ -960,11 +955,8 @@ describe('SubscriptionBlockService', () => {
           [],
         );
         mockPrismaService.payment.findMany.mockResolvedValue([
-          { asaasPaymentId: 'pay_abril' },
-        ]);
-        mockPrismaService.payment.findUnique.mockResolvedValue(
           local('pay_abril'),
-        );
+        ]);
         mockAsaasGatewayService.getAsaasPayment.mockResolvedValue({
           id: 'pay_abril',
           status: 'OVERDUE',
@@ -977,6 +969,153 @@ describe('SubscriptionBlockService', () => {
           where: { id: 'local-pay_abril' },
           data: { status: 'CANCELED' },
         });
+      });
+    });
+
+    describe('superadmin: prévia e sincronização das cobranças da empresa', () => {
+      const listed = [
+        // Atrasada no Asaas, pendente aqui: atualizar.
+        {
+          id: 'pay_outubro',
+          status: 'OVERDUE',
+          dueDate: '2026-10-04',
+          value: 147,
+          customer: 'cus_1',
+        },
+        // Igual nos dois; só o link falta aqui: não é divergência.
+        {
+          id: 'pay_novembro',
+          status: 'PENDING',
+          dueDate: '2026-11-04',
+          value: 147,
+          customer: 'cus_1',
+          invoiceUrl: 'https://asaas/i/nov',
+        },
+        // Só no Asaas: criar.
+        {
+          id: 'pay_dezembro',
+          status: 'PENDING',
+          dueDate: '2026-12-04',
+          value: 147,
+          customer: 'cus_1',
+        },
+      ];
+
+      beforeEach(() => {
+        mockPrismaService.subscription.findMany.mockResolvedValue([
+          {
+            id: 'sub-local',
+            asaasSubscriptionId: 'sub_asaas',
+            asaasInstallmentId: null,
+          },
+        ]);
+        mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue(
+          listed,
+        );
+        mockPrismaService.payment.findFirst.mockImplementation(({ where }) =>
+          Promise.resolve(
+            where.asaasPaymentId === 'pay_outubro'
+              ? local('pay_outubro', 'PENDING', '2026-10-04')
+              : where.asaasPaymentId === 'pay_novembro'
+                ? local('pay_novembro', 'PENDING', '2026-11-04')
+                : null,
+          ),
+        );
+        // Em aberto aqui: abril (removida no Asaas), outubro e novembro.
+        mockPrismaService.payment.findMany.mockResolvedValue([
+          local('pay_abril'),
+          local('pay_outubro', 'PENDING', '2026-10-04'),
+          local('pay_novembro', 'PENDING', '2026-11-04'),
+        ]);
+        mockAsaasGatewayService.getAsaasPayment.mockResolvedValue({
+          id: 'pay_abril',
+          status: 'OVERDUE',
+          deleted: true,
+        });
+      });
+
+      it('a prévia lista só o que diverge e não grava nada', async () => {
+        const divergences = await service.previewCompanyCharges('company-1');
+
+        expect(divergences).toEqual([
+          expect.objectContaining({
+            asaasPaymentId: 'pay_abril',
+            dueDate: '2026-04-04',
+            localStatus: 'OVERDUE',
+            asaasStatus: 'REMOVED',
+            action: 'cancel',
+          }),
+          expect.objectContaining({
+            asaasPaymentId: 'pay_outubro',
+            dueDate: '2026-10-04',
+            localStatus: 'PENDING',
+            asaasStatus: 'OVERDUE',
+            action: 'update',
+          }),
+          expect.objectContaining({
+            asaasPaymentId: 'pay_dezembro',
+            dueDate: '2026-12-04',
+            localStatus: null,
+            asaasStatus: 'PENDING',
+            action: 'create',
+          }),
+        ]);
+        expect(mockPrismaService.subscription.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ companyId: 'company-1' }),
+          }),
+        );
+        expect(mockPrismaService.payment.update).not.toHaveBeenCalled();
+        expect(mockPrismaService.payment.create).not.toHaveBeenCalled();
+        expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+      });
+
+      it('a sincronização aplica o mesmo plano e registra quem disparou', async () => {
+        const counts = await service.syncCompanyCharges('company-1', {
+          id: 'admin-1',
+          name: 'Ana (Sincronizar com Asaas)',
+        });
+
+        // Atualizadas: outubro (status) e novembro (link).
+        expect(counts).toEqual({ created: 1, updated: 2, canceled: 1 });
+        expect(mockPrismaService.payment.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'local-pay_outubro' },
+            data: expect.objectContaining({ status: 'OVERDUE' }),
+          }),
+        );
+        expect(mockPrismaService.payment.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              asaasPaymentId: 'pay_dezembro',
+              subscriptionId: 'sub-local',
+            }),
+          }),
+        );
+        expect(tx.payment.update).toHaveBeenCalledWith({
+          where: { id: 'local-pay_abril' },
+          data: { status: 'CANCELED' },
+        });
+        expect(tx.subscriptionHistory.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              createdBy: 'admin-1',
+              createdByName: 'Ana (Sincronizar com Asaas)',
+            }),
+          }),
+        );
+      });
+
+      it('Asaas sem resposta interrompe a sincronização com erro', async () => {
+        mockAsaasGatewayService.getAsaasSubscriptionPayments.mockRejectedValue(
+          new Error('timeout'),
+        );
+
+        await expect(service.syncCompanyCharges('company-1')).rejects.toThrow(
+          'timeout',
+        );
+        expect(mockPrismaService.payment.update).not.toHaveBeenCalled();
+        expect(tx.payment.update).not.toHaveBeenCalled();
       });
     });
   });

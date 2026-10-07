@@ -153,9 +153,10 @@ export class SubscriptionsController {
   @Post('active-clients/:companyId/sync-asaas')
   @UseGuards(JwtAuthGuard, SystemAdminGuard)
   @ApiOperation({
-    summary: 'Sincroniza status da subscription com Asaas (apenas SystemAdmin)',
+    summary:
+      'Sincroniza cobranças e status da subscription com o Asaas (apenas SystemAdmin)',
     description:
-      'Verifica o status do pagamento diretamente no Asaas e atualiza a subscription local se necessário. Útil quando webhook ou cronjob falham.',
+      'Alinha as cobranças da empresa ao Asaas (cria as que faltam, atualiza status e baixa as removidas lá) e depois reavalia ativação e bloqueio. Devolve, em `charges`, quantas foram criadas, atualizadas e baixadas.',
   })
   @ApiParam({ name: 'companyId', description: 'Company ID' })
   @ApiResponse({
@@ -170,9 +171,10 @@ export class SubscriptionsController {
     status: 403,
     description: 'Acesso negado. Apenas administradores do sistema',
   })
-  async syncWithAsaas(@Param('companyId') companyId: string) {
-    return await this.subscriptionsService.checkAndSyncSubscriptionStatus(
+  async syncWithAsaas(@Param('companyId') companyId: string, @Req() req) {
+    return await this.subscriptionsService.syncCompanyWithAsaas(
       companyId,
+      req.user.userId,
     );
   }
 

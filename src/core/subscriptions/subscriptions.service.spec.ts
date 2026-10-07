@@ -21,7 +21,7 @@ describe('SubscriptionsService', () => {
   let service: SubscriptionsService;
 
   const mockPrismaService = {
-    user: { findFirst: jest.fn() },
+    user: { findFirst: jest.fn(), findUnique: jest.fn() },
     subscription: {
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -62,6 +62,8 @@ describe('SubscriptionsService', () => {
 
   const mockSubscriptionBlockService = {
     unblockCompany: jest.fn(),
+    previewCompanyCharges: jest.fn(),
+    syncCompanyCharges: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -623,6 +625,112 @@ describe('SubscriptionsService', () => {
           metadata: expect.objectContaining({ exportsConfirmed: true }),
         }),
       });
+    });
+  });
+
+  describe('Sincronizar com Asaas (superadmin)', () => {
+    const activeSubscription = {
+      id: 'sub-1',
+      companyId: 'company-1',
+      status: 'ACTIVE',
+      asaasSubscriptionId: 'sub_asaas',
+      asaasInstallmentId: null,
+      plan: { name: 'Start' },
+      payments: [],
+    };
+    const removedCharge = {
+      asaasPaymentId: 'pay_abril',
+      dueDate: '2026-04-04',
+      value: 147,
+      localStatus: 'OVERDUE',
+      asaasStatus: 'REMOVED',
+      action: 'cancel',
+    };
+    const paidInAsaas = [
+      {
+        id: 'pay_setembro',
+        status: 'RECEIVED',
+        dueDate: '2026-09-04',
+        value: 147,
+      },
+    ];
+
+    it('a verificação oferece sincronizar uma assinatura ativa quando as cobranças divergem', async () => {
+      mockPrismaService.subscription.findFirst.mockResolvedValue(
+        activeSubscription,
+      );
+      mockSubscriptionBlockService.previewCompanyCharges.mockResolvedValue([
+        removedCharge,
+      ]);
+      mockAsaasGatewayService.getChargesOf.mockResolvedValue(paidInAsaas);
+
+      const result: any = await service.checkAsaasStatus('company-1');
+
+      expect(result.hasPendingSync).toBe(true);
+      expect(result.divergences).toEqual([removedCharge]);
+      expect(result.message).toContain('divergem');
+    });
+
+    it('sem divergência, assinatura ativa e paga não oferece sincronizar', async () => {
+      mockPrismaService.subscription.findFirst.mockResolvedValue(
+        activeSubscription,
+      );
+      mockSubscriptionBlockService.previewCompanyCharges.mockResolvedValue([]);
+      mockAsaasGatewayService.getChargesOf.mockResolvedValue(paidInAsaas);
+
+      const result: any = await service.checkAsaasStatus('company-1');
+
+      expect(result.hasPendingSync).toBe(false);
+      expect(result.message).toContain('Tudo certo');
+    });
+
+    it('o botão alinha as cobranças antes de reavaliar ativação e bloqueio', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({ name: 'Ana' });
+      mockSubscriptionBlockService.syncCompanyCharges.mockResolvedValue({
+        created: 0,
+        updated: 1,
+        canceled: 2,
+      });
+      mockPrismaService.subscription.findFirst.mockResolvedValue(
+        activeSubscription,
+      );
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        blockLevel: 'NONE',
+      });
+
+      const result = await service.syncCompanyWithAsaas('company-1', 'admin-1');
+
+      expect(
+        mockSubscriptionBlockService.syncCompanyCharges,
+      ).toHaveBeenCalledWith('company-1', {
+        id: 'admin-1',
+        name: 'Ana (Sincronizar com Asaas)',
+      });
+      expect(result).toEqual(
+        expect.objectContaining({
+          status: 'already_active',
+          charges: { created: 0, updated: 1, canceled: 2 },
+        }),
+      );
+      // A reavaliação lê o banco já alinhado.
+      expect(
+        mockSubscriptionBlockService.syncCompanyCharges.mock
+          .invocationCallOrder[0],
+      ).toBeLessThan(
+        mockPrismaService.subscription.findFirst.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('Asaas sem resposta: erro claro e nada é reavaliado', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({ name: 'Ana' });
+      mockSubscriptionBlockService.syncCompanyCharges.mockRejectedValue(
+        new Error('timeout'),
+      );
+
+      await expect(
+        service.syncCompanyWithAsaas('company-1', 'admin-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrismaService.subscription.findFirst).not.toHaveBeenCalled();
     });
   });
 });

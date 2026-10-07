@@ -914,6 +914,11 @@ describe('ImportService product legacy link', () => {
             ) ?? null,
           );
         }),
+        // Candidatos à adoção por nome: só os que ainda não têm vínculo com
+        // o legado, como faz findProductToAdoptByName.
+        findMany: jest
+          .fn()
+          .mockResolvedValue(produtos.filter((p: any) => !p.legacyId)),
         create: jest.fn().mockResolvedValue({ id: 'prod-novo' }),
         update: jest.fn().mockResolvedValue({ id: 'prod-1' }),
       },

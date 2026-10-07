@@ -951,6 +951,43 @@ export class ImportService {
   }
 
   /**
+   * Produto que a conta já tem para o nome informado e que ainda não tem
+   * vínculo com o legado, para a carga adotá-lo em vez de criar outro.
+   *
+   * Devolve nulo quando o nome não identifica um só cadastro: a mesma conta
+   * pode ter dois produtos de mesmo nome de propósito — um para locação e
+   * outro para venda — e adotar no escuro juntaria os dois.
+   *
+   * A comparação ignora acento e caixa.
+   */
+  async findProductToAdoptByName(
+    name: string,
+    companyId: string,
+  ): Promise<{ id: string } | null> {
+    const squash = (value: string | null | undefined) =>
+      (value || '').replace(/\s+/g, ' ').trim();
+
+    const wanted = squash(name);
+    if (!wanted) return null;
+
+    const collator = new Intl.Collator('pt-BR', {
+      sensitivity: 'base',
+      usage: 'search',
+    });
+
+    const candidates = await this.prisma.product.findMany({
+      where: { companyId, legacyId: null },
+      select: { id: true, name: true },
+    });
+
+    const matches = candidates.filter(
+      (product) => collator.compare(squash(product.name), wanted) === 0,
+    );
+
+    return matches.length === 1 ? { id: matches[0].id } : null;
+  }
+
+  /**
    * Quando a conta passou a ser usada fora da migração.
    *
    * É a data de corte do financeiro: o histórico do legado a partir dela
@@ -2149,6 +2186,26 @@ export class ImportService {
         // — o mesmo código pode descrever outro produto, e o cadastro do
         // cliente é mais recente que o do legado.
         if (sameCode) return;
+
+        // Mesmo produto, código diferente. PRODUCT_CODE_SQL devolve `cod`
+        // quando ele é único na base legada e `cod-idproduto` quando repete,
+        // então uma carga anterior pode ter gravado "ACM" onde esta traz
+        // "ACM-34". Sem vínculo o produto nasce de novo: foi assim que uma
+        // conta migrada três vezes acumulou 37 nomes repetidos.
+        const adopted = await this.findProductToAdoptByName(
+          row.nome,
+          companyId,
+        );
+
+        if (adopted) {
+          // Só grava o vínculo. O cadastro do cliente não é sobrescrito, e a
+          // próxima carga acha por `legacyId` mesmo que o código mude de novo.
+          await this.prisma.product.update({
+            where: { id: adopted.id },
+            data: { legacyId: legacyCode },
+          });
+          return;
+        }
       }
     }
 
@@ -2822,17 +2879,25 @@ export class ImportService {
         // Processar cada item do orçamento
         for (const item of items) {
           // Buscar produto
-          const product = await this.prisma.product.findUnique({
-            where: {
-              code_companyId: {
-                code: item.ProdutoCodigo,
-                companyId,
+          // A carga de produtos pode ter adotado um produto que a conta já
+          // tinha, preservando o código do cliente — nesse caso o código do
+          // legado vive em `legacyId`, e procurar só por `code` não acha.
+          const product =
+            (await this.prisma.product.findUnique({
+              where: {
+                code_companyId: {
+                  code: item.ProdutoCodigo,
+                  companyId,
+                },
               },
-            },
-            include: {
-              items: true,
-            },
-          });
+              include: {
+                items: true,
+              },
+            })) ??
+            (await this.prisma.product.findFirst({
+              where: { companyId, legacyId: item.ProdutoCodigo },
+              include: { items: true },
+            }));
 
           if (!product) {
             throw new Error(`Produto '${item.ProdutoCodigo}' não encontrado`);
@@ -3236,17 +3301,25 @@ export class ImportService {
         // Criar produtos do orçamento
         for (const item of items) {
           // Buscar produto
-          const product = await this.prisma.product.findUnique({
-            where: {
-              code_companyId: {
-                code: item.ProdutoCodigo,
-                companyId,
+          // A carga de produtos pode ter adotado um produto que a conta já
+          // tinha, preservando o código do cliente — nesse caso o código do
+          // legado vive em `legacyId`, e procurar só por `code` não acha.
+          const product =
+            (await this.prisma.product.findUnique({
+              where: {
+                code_companyId: {
+                  code: item.ProdutoCodigo,
+                  companyId,
+                },
               },
-            },
-            include: {
-              items: true,
-            },
-          });
+              include: {
+                items: true,
+              },
+            })) ??
+            (await this.prisma.product.findFirst({
+              where: { companyId, legacyId: item.ProdutoCodigo },
+              include: { items: true },
+            }));
 
           if (!product) {
             throw new Error(

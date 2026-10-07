@@ -1,8 +1,15 @@
 import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from 'src/config/prisma/prisma.service';
-import { BlockLevel, AsaasPaymentStatus, BillingType } from '@prisma/client';
+import {
+  BlockLevel,
+  AsaasPaymentStatus,
+  BillingType,
+  Payment,
+  Prisma,
+} from '@prisma/client';
 import { AsaasGatewayService } from './asaas-gateway.service';
+import { AsaasPaymentResponse } from './interfaces/asaas.interfaces';
 import { isBilledByGateway, isInstallmentBilling } from './billing-mode';
 
 export interface BlockCheckResult {
@@ -28,6 +35,47 @@ export type ChargeRefreshResult =
   | 'unchanged'
   /** Sem registro aqui: a conta do Asaas é compartilhada com o sistema antigo. */
   | 'not_local';
+
+/** Quem disparou a sincronização — vai para o histórico da assinatura. */
+export interface SyncActor {
+  id: string | null;
+  name: string;
+}
+
+const SYSTEM_ACTOR: SyncActor = { id: null, name: 'Sistema' };
+
+/** O que alinhar entre as cobranças locais de uma assinatura e o Asaas. */
+interface ChargeSyncPlan {
+  /** No Asaas e não aqui. */
+  create: any[];
+  /** Aqui com status ou link diferente do Asaas. */
+  update: { local: Payment; remote: any; status: AsaasPaymentStatus }[];
+  /** Em aberto aqui, removida ou inexistente no Asaas. */
+  cancel: { local: Payment; remote: AsaasPaymentResponse | null }[];
+}
+
+export interface ChargeSyncCounts {
+  created: number;
+  updated: number;
+  canceled: number;
+}
+
+/**
+ * Uma cobrança em que o banco e o Asaas discordam, como o superadmin a vê
+ * antes de sincronizar. Link que só falta aqui não conta como divergência:
+ * é preenchido na sincronização, mas não muda nada para o cliente.
+ */
+export interface ChargeDivergence {
+  asaasPaymentId: string;
+  /** YYYY-MM-DD */
+  dueDate: string;
+  value: number;
+  /** Nulo quando a cobrança só existe no Asaas. */
+  localStatus: AsaasPaymentStatus | null;
+  /** No vocabulário local; REMOVED quando removida ou inexistente no Asaas. */
+  asaasStatus: AsaasPaymentStatus | 'REMOVED';
+  action: 'create' | 'update' | 'cancel';
+}
 
 @Injectable()
 export class SubscriptionBlockService {
@@ -162,35 +210,7 @@ export class SubscriptionBlockService {
       if (local.status !== 'PENDING' && local.status !== 'OVERDUE') {
         return 'unchanged';
       }
-
-      await this.prisma.$transaction(async (tx) => {
-        await tx.payment.update({
-          where: { id: local.id },
-          data: { status: 'CANCELED' },
-        });
-        if (local.subscriptionId) {
-          await tx.subscriptionHistory.create({
-            data: {
-              subscriptionId: local.subscriptionId,
-              action: 'PAYMENT_CANCELED',
-              description: `Cobrança de ${this.formatDay(local.dueDate)} (R$ ${local.value.toFixed(2).replace('.', ',')}) ${remote ? 'foi removida' : 'não existe'} no Asaas; a pendência local foi baixada.`,
-              changes: {
-                before: { status: local.status },
-                after: { status: 'CANCELED' },
-              },
-              metadata: {
-                reason: 'GATEWAY_REMOVED',
-                asaasPaymentId,
-                asaasDeleted: remote ? true : null,
-              },
-              createdByName: 'Sistema',
-            },
-          });
-        }
-      });
-      this.logger.warn(
-        `Cobrança ${asaasPaymentId} (${this.formatDay(local.dueDate)}) ${remote ? 'removida' : 'inexistente'} no Asaas: pendência local ${local.status} → CANCELED`,
-      );
+      await this.cancelRemovedCharge(local, remote, SYSTEM_ACTOR);
       return 'canceled';
     }
 
@@ -221,6 +241,46 @@ export class SubscriptionBlockService {
       `Cobrança ${asaasPaymentId} alinhada ao Asaas: ${local.status} → ${status}`,
     );
     return 'updated';
+  }
+
+  /**
+   * Baixa a pendência local de uma cobrança removida (ou inexistente) no
+   * Asaas, deixando no histórico da assinatura o motivo e quem disparou.
+   */
+  private async cancelRemovedCharge(
+    local: Payment,
+    remote: AsaasPaymentResponse | null,
+    actor: SyncActor,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.payment.update({
+        where: { id: local.id },
+        data: { status: 'CANCELED' },
+      });
+      if (local.subscriptionId) {
+        await tx.subscriptionHistory.create({
+          data: {
+            subscriptionId: local.subscriptionId,
+            action: 'PAYMENT_CANCELED',
+            description: `Cobrança de ${this.formatDay(local.dueDate)} (R$ ${local.value.toFixed(2).replace('.', ',')}) ${remote ? 'foi removida' : 'não existe'} no Asaas; a pendência local foi baixada.`,
+            changes: {
+              before: { status: local.status },
+              after: { status: 'CANCELED' },
+            },
+            metadata: {
+              reason: 'GATEWAY_REMOVED',
+              asaasPaymentId: local.asaasPaymentId,
+              asaasDeleted: remote ? true : null,
+            },
+            createdBy: actor.id,
+            createdByName: actor.name,
+          },
+        });
+      }
+    });
+    this.logger.warn(
+      `Cobrança ${local.asaasPaymentId} (${this.formatDay(local.dueDate)}) ${remote ? 'removida' : 'inexistente'} no Asaas: pendência local ${local.status} → CANCELED (${actor.name})`,
+    );
   }
 
   /** Vencimento gravado à meia-noite UTC do dia: lido em UTC, sem trocar de dia. */
@@ -293,15 +353,7 @@ export class SubscriptionBlockService {
     this.logger.log('Iniciando sync de TODOS os payments do Asaas...');
 
     const subscriptions = await this.prisma.subscription.findMany({
-      where: {
-        OR: [
-          { asaasSubscriptionId: { startsWith: 'sub_' } },
-          // O anual parcelado não tem assinatura no Asaas: as cobranças são as
-          // parcelas do parcelamento em curso.
-          { asaasInstallmentId: { not: null } },
-        ],
-        status: { in: ['ACTIVE', 'EXPIRED', 'BLOCKED', 'INACTIVE'] },
-      },
+      where: this.syncableSubscriptions(),
       select: {
         id: true,
         asaasSubscriptionId: true,
@@ -748,13 +800,184 @@ export class SubscriptionBlockService {
   }
 
   /**
-   * Sincroniza payments do Asaas que não existem no DB local.
+   * As assinaturas que o sync confere: vinculadas ao Asaas (a recorrente, ou o
+   * anual parcelado, cujas cobranças são as parcelas do parcelamento em curso)
+   * e não encerradas. É o mesmo conjunto na rotina das 03:00 e no
+   * "Sincronizar com Asaas" do superadmin.
+   */
+  private syncableSubscriptions(
+    companyId?: string,
+  ): Prisma.SubscriptionWhereInput {
+    return {
+      ...(companyId ? { companyId } : {}),
+      OR: [
+        { asaasSubscriptionId: { startsWith: 'sub_' } },
+        { asaasInstallmentId: { not: null } },
+      ],
+      status: { in: ['ACTIVE', 'EXPIRED', 'BLOCKED', 'INACTIVE'] },
+    };
+  }
+
+  private syncableSubscriptionsOf(companyId: string) {
+    return this.prisma.subscription.findMany({
+      where: this.syncableSubscriptions(companyId),
+      select: { id: true, asaasSubscriptionId: true, asaasInstallmentId: true },
+    });
+  }
+
+  /**
+   * O que o "Sincronizar com Asaas" mudaria nas cobranças da empresa — o mesmo
+   * plano que `syncCompanyCharges` aplica. Só lê.
+   */
+  async previewCompanyCharges(companyId: string): Promise<ChargeDivergence[]> {
+    const divergences: ChargeDivergence[] = [];
+
+    for (const sub of await this.syncableSubscriptionsOf(companyId)) {
+      const listed = await this.asaasGateway.getChargesOf(sub);
+      const plan = await this.planChargeSync(sub.id, listed);
+
+      for (const remote of plan.create) {
+        divergences.push({
+          asaasPaymentId: remote.id,
+          dueDate: String(remote.dueDate).slice(0, 10),
+          value: remote.value,
+          localStatus: null,
+          asaasStatus: this.mapAsaasStatus(remote.status),
+          action: 'create',
+        });
+      }
+      for (const { local, status } of plan.update) {
+        if (local.status === status) continue; // só um link a preencher
+        divergences.push({
+          asaasPaymentId: local.asaasPaymentId,
+          dueDate: local.dueDate.toISOString().slice(0, 10),
+          value: local.value,
+          localStatus: local.status,
+          asaasStatus: status,
+          action: 'update',
+        });
+      }
+      for (const { local } of plan.cancel) {
+        divergences.push({
+          asaasPaymentId: local.asaasPaymentId,
+          dueDate: local.dueDate.toISOString().slice(0, 10),
+          value: local.value,
+          localStatus: local.status,
+          asaasStatus: 'REMOVED',
+          action: 'cancel',
+        });
+      }
+    }
+
+    return divergences.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  }
+
+  /**
+   * O alinhamento da rotina das 03:00, na hora, para uma empresa. Asaas sem
+   * resposta interrompe com erro; o que já foi alinhado fica (cada assinatura
+   * é alinhada por inteiro, e repetir é seguro).
+   */
+  async syncCompanyCharges(
+    companyId: string,
+    actor: SyncActor = SYSTEM_ACTOR,
+  ): Promise<ChargeSyncCounts> {
+    const total: ChargeSyncCounts = { created: 0, updated: 0, canceled: 0 };
+
+    for (const sub of await this.syncableSubscriptionsOf(companyId)) {
+      const listed = await this.asaasGateway.getChargesOf(sub);
+      const counts = await this.syncMissingPayments(
+        sub.id,
+        sub.asaasSubscriptionId,
+        listed,
+        actor,
+      );
+      total.created += counts.created;
+      total.updated += counts.updated;
+      total.canceled += counts.canceled;
+    }
+
+    return total;
+  }
+
+  /**
+   * Alinha as cobranças locais da assinatura ao Asaas: cria as que faltam,
+   * atualiza status e links, e baixa as que foram removidas lá.
    */
   private async syncMissingPayments(
     localSubscriptionId: string,
     asaasSubscriptionId: string,
     asaasPayments: any[],
-  ): Promise<void> {
+    actor: SyncActor = SYSTEM_ACTOR,
+  ): Promise<ChargeSyncCounts> {
+    const plan = await this.planChargeSync(localSubscriptionId, asaasPayments);
+    return this.applyChargeSyncPlan(localSubscriptionId, plan, actor);
+  }
+
+  /**
+   * O que a sincronização faria com as cobranças da assinatura. Só lê.
+   *
+   * As cobranças locais em aberto que a listagem do Asaas não trouxe são
+   * consultadas uma a uma. "Não veio na listagem" não basta para baixar nada:
+   * a listagem da assinatura também não traz cobranças avulsas (a primeira de
+   * uma contratação, a de uma evolução). Só a resposta do Asaas sobre aquela
+   * cobrança decide — e só a removida ou inexistente é baixada.
+   */
+  private async planChargeSync(
+    localSubscriptionId: string,
+    asaasPayments: any[],
+  ): Promise<ChargeSyncPlan> {
+    const plan: ChargeSyncPlan = { create: [], update: [], cancel: [] };
+
+    for (const asaasPayment of asaasPayments) {
+      const exists = await this.prisma.payment.findFirst({
+        where: { asaasPaymentId: asaasPayment.id },
+      });
+      if (!exists) {
+        plan.create.push(asaasPayment);
+        continue;
+      }
+      const status = this.mapAsaasStatus(asaasPayment.status);
+      if (
+        exists.status !== status ||
+        (!exists.invoiceUrl && asaasPayment.invoiceUrl) ||
+        (!exists.bankSlipUrl && asaasPayment.bankSlipUrl)
+      ) {
+        plan.update.push({ local: exists, remote: asaasPayment, status });
+      }
+    }
+
+    const listed = new Set(asaasPayments.map((p) => p.id));
+    const open = await this.prisma.payment.findMany({
+      where: {
+        subscriptionId: localSubscriptionId,
+        status: { in: ['PENDING', 'OVERDUE'] },
+        asaasPaymentId: { startsWith: 'pay_' },
+      },
+    });
+    for (const local of open) {
+      if (listed.has(local.asaasPaymentId)) continue;
+      try {
+        const remote = await this.asaasGateway.getAsaasPayment(
+          local.asaasPaymentId,
+        );
+        if (!remote || remote.deleted === true) {
+          plan.cancel.push({ local, remote });
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Cobrança ${local.asaasPaymentId} não conferida no Asaas: ${error.message}`,
+        );
+      }
+    }
+
+    return plan;
+  }
+
+  private async applyChargeSyncPlan(
+    localSubscriptionId: string,
+    plan: ChargeSyncPlan,
+    actor: SyncActor,
+  ): Promise<ChargeSyncCounts> {
     const validBillingTypes = [
       'CREDIT_CARD',
       'BOLETO',
@@ -766,43 +989,27 @@ export class SubscriptionBlockService {
     const mapBillingType = (type: string): BillingType =>
       (validBillingTypes.includes(type) ? type : 'PIX') as BillingType;
 
-    for (const asaasPayment of asaasPayments) {
-      // Verificar se já existe no DB local
-      const exists = await this.prisma.payment.findFirst({
-        where: { asaasPaymentId: asaasPayment.id },
+    for (const { local, remote, status } of plan.update) {
+      await this.prisma.payment.update({
+        where: { id: local.id },
+        data: {
+          status,
+          confirmedDate: remote.confirmedDate
+            ? new Date(remote.confirmedDate)
+            : local.confirmedDate,
+          paymentDate: remote.paymentDate
+            ? new Date(remote.paymentDate)
+            : local.paymentDate,
+          invoiceUrl: remote.invoiceUrl || local.invoiceUrl,
+          bankSlipUrl: remote.bankSlipUrl || local.bankSlipUrl,
+        },
       });
+      this.logger.log(
+        `Payment ${local.id} atualizado: status=${status}, invoiceUrl=${remote.invoiceUrl ? 'YES' : 'kept'}`,
+      );
+    }
 
-      if (exists) {
-        // Sempre atualizar: status, invoiceUrl, bankSlipUrl
-        const mappedStatus = this.mapAsaasStatus(asaasPayment.status);
-        const needsUpdate =
-          exists.status !== mappedStatus ||
-          (!exists.invoiceUrl && asaasPayment.invoiceUrl) ||
-          (!exists.bankSlipUrl && asaasPayment.bankSlipUrl);
-
-        if (needsUpdate) {
-          await this.prisma.payment.update({
-            where: { id: exists.id },
-            data: {
-              status: mappedStatus,
-              confirmedDate: asaasPayment.confirmedDate
-                ? new Date(asaasPayment.confirmedDate)
-                : exists.confirmedDate,
-              paymentDate: asaasPayment.paymentDate
-                ? new Date(asaasPayment.paymentDate)
-                : exists.paymentDate,
-              invoiceUrl: asaasPayment.invoiceUrl || exists.invoiceUrl,
-              bankSlipUrl: asaasPayment.bankSlipUrl || exists.bankSlipUrl,
-            },
-          });
-          this.logger.log(
-            `Payment ${exists.id} atualizado: status=${mappedStatus}, invoiceUrl=${asaasPayment.invoiceUrl ? 'YES' : 'kept'}`,
-          );
-        }
-        continue;
-      }
-
-      // Criar payment que não existe
+    for (const asaasPayment of plan.create) {
       const mappedStatus = this.mapAsaasStatus(asaasPayment.status);
       await this.prisma.payment.create({
         data: {
@@ -826,46 +1033,20 @@ export class SubscriptionBlockService {
             : null,
         },
       });
-
       this.logger.log(
         `Payment criado localmente: ${asaasPayment.id} (${mappedStatus}, due: ${asaasPayment.dueDate})`,
       );
     }
 
-    await this.reconcileUnlistedOpenCharges(localSubscriptionId, asaasPayments);
-  }
-
-  /**
-   * As cobranças locais em aberto que a listagem do Asaas não trouxe são
-   * consultadas uma a uma. "Não veio na listagem" não basta para baixar nada:
-   * a listagem da assinatura também não traz cobranças avulsas (a primeira de
-   * uma contratação, a de uma evolução). Só a resposta do Asaas sobre aquela
-   * cobrança decide — e só a removida ou inexistente é baixada.
-   */
-  private async reconcileUnlistedOpenCharges(
-    localSubscriptionId: string,
-    listedPayments: { id: string }[],
-  ): Promise<void> {
-    const listed = new Set(listedPayments.map((p) => p.id));
-    const open = await this.prisma.payment.findMany({
-      where: {
-        subscriptionId: localSubscriptionId,
-        status: { in: ['PENDING', 'OVERDUE'] },
-        asaasPaymentId: { startsWith: 'pay_' },
-      },
-      select: { asaasPaymentId: true },
-    });
-
-    for (const { asaasPaymentId } of open) {
-      if (listed.has(asaasPaymentId)) continue;
-      try {
-        await this.refreshLocalCharge(asaasPaymentId, { onlyIfRemoved: true });
-      } catch (error) {
-        this.logger.warn(
-          `Cobrança ${asaasPaymentId} não conferida no Asaas: ${error.message}`,
-        );
-      }
+    for (const { local, remote } of plan.cancel) {
+      await this.cancelRemovedCharge(local, remote, actor);
     }
+
+    return {
+      created: plan.create.length,
+      updated: plan.update.length,
+      canceled: plan.cancel.length,
+    };
   }
 
   /**

@@ -101,6 +101,88 @@ describe('ImportService — conta já em uso', () => {
     });
   });
 
+  describe('findProductToAdoptByName', () => {
+    const prisma = (produtos: any[]) => ({
+      product: { findMany: jest.fn().mockResolvedValue(produtos) },
+    });
+
+    it('adota o único produto de mesmo nome, ignorando acento e caixa', async () => {
+      const db = prisma([
+        { id: 'p1', name: 'FACHADA ACRILICO' },
+        { id: 'p2', name: 'Banner' },
+      ]);
+
+      const achado = await build(db).findProductToAdoptByName(
+        'Fachada Acrílico',
+        'company-1',
+      );
+
+      expect(achado).toEqual({ id: 'p1' });
+    });
+
+    it('só considera produto ainda sem vínculo com o legado', async () => {
+      const db = prisma([]);
+
+      await build(db).findProductToAdoptByName('Banner', 'company-1');
+
+      expect(db.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { companyId: 'company-1', legacyId: null },
+        }),
+      );
+    });
+
+    it('não adota quando o nome não identifica um só produto', async () => {
+      // O cliente mantém dois cadastros de mesmo nome de propósito — um para
+      // locação e outro para venda. Adotar no escuro juntaria os dois.
+      const db = prisma([
+        { id: 'p1', name: 'BALCAO ILHA' },
+        { id: 'p2', name: 'Balcão Ilha' },
+      ]);
+
+      expect(
+        await build(db).findProductToAdoptByName('BALCAO ILHA', 'company-1'),
+      ).toBeNull();
+    });
+
+    it('não consulta o banco com nome vazio', async () => {
+      const db = prisma([]);
+
+      expect(
+        await build(db).findProductToAdoptByName('   ', 'company-1'),
+      ).toBeNull();
+      expect(db.product.findMany).not.toHaveBeenCalled();
+    });
+
+    it('a carga grava o vínculo no adotado em vez de criar outro produto', async () => {
+      const db = {
+        product: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce(null) // não achou por legacyId
+            .mockResolvedValueOnce(null), // nem por código
+          findMany: jest
+            .fn()
+            .mockResolvedValue([{ id: 'p1', name: 'Fachada ACM' }]),
+          update: jest.fn().mockResolvedValue({ id: 'p1' }),
+          create: jest.fn(),
+        },
+      };
+
+      await (build(db) as any).importProduct(
+        { codigo: 'ACM-34', nome: 'FACHADA ACM', setor: 'Producao' },
+        'company-1',
+        { legacy: true },
+      );
+
+      expect(db.product.update).toHaveBeenCalledWith({
+        where: { id: 'p1' },
+        data: { legacyId: 'ACM-34' },
+      });
+      expect(db.product.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('firstNonImportedActivity', () => {
     const prisma = (quotation: any, receivable: any) => ({
       quotation: { findFirst: jest.fn().mockResolvedValue(quotation) },

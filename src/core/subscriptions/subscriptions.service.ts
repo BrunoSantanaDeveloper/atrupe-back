@@ -16,6 +16,9 @@ import * as argon2 from 'argon2';
 
 const TRIAL_DAYS_DEFAULT = 7;
 
+const DIVERGENCE_MESSAGE =
+  'O sistema e o Asaas divergem em cobranças desta empresa. Sincronize para alinhar.';
+
 @Injectable()
 export class SubscriptionsService {
   private readonly logger = new Logger(SubscriptionsService.name);
@@ -708,6 +711,12 @@ export class SubscriptionsService {
     }
 
     try {
+      // Cobranças em que o banco e o Asaas discordam: é o que a sincronização
+      // vai alinhar, e o que o superadmin vê antes de sincronizar.
+      const divergences =
+        await this.subscriptionBlockService.previewCompanyCharges(companyId);
+      const hasDivergence = divergences.length > 0;
+
       // Buscar os pagamentos da subscription no Asaas
       this.logger.log(
         `Buscando pagamentos no Asaas para subscription ID: ${subscription.asaasSubscriptionId}`,
@@ -719,14 +728,17 @@ export class SubscriptionsService {
         return {
           found: true,
           hasAsaasLink: true,
-          hasPendingSync: false,
-          message: 'Nenhum pagamento encontrado no Asaas',
+          hasPendingSync: hasDivergence,
+          message: hasDivergence
+            ? DIVERGENCE_MESSAGE
+            : 'Nenhum pagamento encontrado no Asaas',
           localStatus: subscription.status,
           asaasSubscriptionId: subscription.asaasSubscriptionId,
           subscription: {
             id: subscription.id,
             plan: subscription.plan?.name,
           },
+          divergences,
         };
       }
 
@@ -786,11 +798,15 @@ export class SubscriptionsService {
         relevantPayment.status === 'RECEIVED' ||
         relevantPayment.status === 'RECEIVED_IN_CASH';
 
-      // Só permite sincronização se NÃO houver inadimplência E pagamento confirmado
-      const hasPendingSync =
+      // Ativação pendente: pago no Asaas, sem atraso, e ainda não ativa aqui.
+      const activationPending =
         isPaymentConfirmed &&
         !hasOverduePayment &&
         subscription.status !== 'ACTIVE';
+      // Há o que sincronizar quando falta ativar ou quando as cobranças
+      // divergem. A divergência vale também com a assinatura ativa — antes, o
+      // botão nunca aparecia para ela.
+      const hasPendingSync = activationPending || hasDivergence;
 
       // Calcular dias de atraso
       let daysOverdue = 0;
@@ -811,9 +827,11 @@ export class SubscriptionsService {
           daysOverdue > 0
             ? `Cliente inadimplente! Pagamento vencido há ${daysOverdue} dia${daysOverdue !== 1 ? 's' : ''}.`
             : 'Cliente inadimplente! Há pagamento vencido ou em atraso.';
-      } else if (hasPendingSync) {
+      } else if (activationPending) {
         message =
           'Pagamento confirmado no Asaas! A subscription local pode ser ativada.';
+      } else if (hasDivergence) {
+        message = DIVERGENCE_MESSAGE;
       } else if (subscription.status === 'ACTIVE' && isPaymentConfirmed) {
         message = 'Tudo certo! Subscription ativa e pagamento confirmado.';
       } else if (relevantPayment.status === 'PENDING') {
@@ -836,6 +854,7 @@ export class SubscriptionsService {
           id: subscription.id,
           plan: subscription.plan?.name,
         },
+        divergences,
       };
     } catch (error) {
       this.logger.error(
@@ -846,6 +865,43 @@ export class SubscriptionsService {
         `Erro ao verificar status no Asaas: ${error.message}`,
       );
     }
+  }
+
+  /**
+   * "Sincronizar com Asaas" do superadmin. Primeiro alinha as cobranças da
+   * empresa ao Asaas — cria as que faltam, atualiza status e baixa as que
+   * foram removidas lá —, e só então reavalia ativação e bloqueio, já sobre o
+   * banco alinhado. Antes só fazia a segunda parte, que para assinatura ativa
+   * não faz nada: uma cobrança removida no Asaas seguia em aberto aqui.
+   */
+  async syncCompanyWithAsaas(companyId: string, adminUserId: string) {
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminUserId },
+      select: { name: true },
+    });
+
+    let charges: Awaited<
+      ReturnType<SubscriptionBlockService['syncCompanyCharges']>
+    >;
+    try {
+      charges = await this.subscriptionBlockService.syncCompanyCharges(
+        companyId,
+        {
+          id: adminUserId,
+          name: `${admin?.name ?? 'Superadmin'} (Sincronizar com Asaas)`,
+        },
+      );
+    } catch (error) {
+      this.logger.error(
+        `Sincronização das cobranças da empresa ${companyId} falhou: ${error.message}`,
+      );
+      throw new BadRequestException(
+        `Não foi possível consultar o Asaas agora: ${error.message}. O que já foi alinhado fica; tente de novo.`,
+      );
+    }
+
+    const result = await this.checkAndSyncSubscriptionStatus(companyId);
+    return { ...result, charges };
   }
 
   /**
