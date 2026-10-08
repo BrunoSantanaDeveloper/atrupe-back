@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 /**
  * Como uma assinatura é cobrada.
  *
@@ -34,6 +36,29 @@ export function billingModeOf(subscription: WithBillingMode): BillingMode {
     return 'ASAAS_INSTALLMENT';
   if (id.startsWith('trial_')) return 'TRIAL';
   return 'MANUAL';
+}
+
+/**
+ * O filtro do banco equivalente a `billingModeOf`: o modo gravado ou, nas
+ * assinaturas que não o gravam, o prefixo do id no Asaas.
+ */
+export function billingModeWhere(
+  mode: BillingMode,
+): Prisma.SubscriptionWhereInput {
+  const prefixes: Record<Exclude<BillingMode, 'MANUAL'>, string> = {
+    ASAAS_SUBSCRIPTION: 'sub_',
+    ASAAS_INSTALLMENT: INSTALLMENT_SUBSCRIPTION_PREFIX,
+    TRIAL: 'trial_',
+  };
+  const byPrefix: Prisma.SubscriptionWhereInput =
+    mode === 'MANUAL'
+      ? {
+          NOT: Object.values(prefixes).map((prefix) => ({
+            asaasSubscriptionId: { startsWith: prefix },
+          })),
+        }
+      : { asaasSubscriptionId: { startsWith: prefixes[mode] } };
+  return { OR: [{ billingMode: mode }, { billingMode: null, ...byPrefix }] };
 }
 
 export function isInstallmentBilling(subscription: WithBillingMode): boolean {

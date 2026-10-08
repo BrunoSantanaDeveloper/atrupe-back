@@ -387,4 +387,31 @@ export class ReportController {
     const companyId = (req as any).user?.companyId;
     return this.reportService.getCommissionTable(companyId, filters);
   }
+
+  // ============== PRODUCTS SOLD REPORT ==============
+  // Usa a permissão do relatório de vendas: é a mesma base de dados e assim
+  // quem já vê vendas passa a ver produtos sem configurar cargo.
+
+  @Get('products-sold')
+  @HasAnyPermission({ action: 'view', resource: 'reports:sales' })
+  async getProductsSold(
+    @Query() filters: SalesReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    await this.enforceSalesPermission(req, filters);
+    return this.reportService.getProductsSold(companyId, filters);
+  }
+
+  @Get('products-sold/pdf-data')
+  @HasAnyPermission({ action: 'view', resource: 'reports:sales' })
+  @RequireUnblocked()
+  async getProductsSoldPdfData(
+    @Query() filters: SalesReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    await this.enforceSalesPermission(req, filters);
+    return this.reportService.getProductsSoldPdfData(companyId, filters);
+  }
 }

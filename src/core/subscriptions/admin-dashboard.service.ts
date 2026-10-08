@@ -1,5 +1,99 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BlockLevel,
+  PlanType,
+  Prisma,
+  SubscriptionStatus,
+} from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
+import {
+  ACCOUNT_SUBSCRIPTION_WHERE,
+  CONTRACTED_MODULE_WHERE,
+  currentAccountSubscription,
+} from './account-subscription';
+import { BillingMode, billingModeOf, billingModeWhere } from './billing-mode';
+
+/** As abas de Gerenciar contas, na ordem dos totais. */
+const ACCOUNT_TABS = ['ativas', 'bloqueadas', 'inativas', 'canceladas'];
+
+/** Paginação e filtros de Gerenciar contas (`ListActiveClientsDto`). */
+export interface AccountListQuery {
+  page?: number;
+  limit?: number;
+  /** A aba: ativas, bloqueadas, inativas ou canceladas. */
+  status?: string;
+  search?: string;
+  sort?: 'name' | 'updated_at' | 'created_at';
+  /** Chave do módulo, `any` (algum módulo) ou `none` (nenhum). */
+  module?: string;
+  additionalUsers?: 'with' | 'without';
+  plan?: PlanType;
+  billingMode?: BillingMode;
+  /** UF do endereço principal. */
+  state?: string;
+  groupBy?: 'date' | 'none';
+}
+
+/**
+ * O que cada linha de Gerenciar contas carrega: as assinaturas de plano pago
+ * (a em vigor sai delas), com o limite de usuários do plano e os módulos
+ * contratados, e o endereço principal.
+ */
+const ACCOUNT_INCLUDE = {
+  Subscription: {
+    where: ACCOUNT_SUBSCRIPTION_WHERE,
+    orderBy: { createdAt: 'desc' },
+    include: {
+      plan: {
+        include: {
+          planLimits: {
+            where: { isActive: true, limit: { key: 'max_users' } },
+            select: { value: true },
+          },
+        },
+      },
+      subscriptionFeatures: {
+        where: CONTRACTED_MODULE_WHERE,
+        include: { feature: { select: { key: true, name: true } } },
+        orderBy: { createdAt: 'asc' },
+      },
+    },
+  },
+  address: { where: { type: 'Principal' }, take: 1 },
+} satisfies Prisma.CompanyInclude;
+
+type AccountCompany = Prisma.CompanyGetPayload<{
+  include: typeof ACCOUNT_INCLUDE;
+}>;
+
+/**
+ * Usuário em uso: colaborador ativo com acesso ativo. É a conta do limite de
+ * usuários do plano (`PlanControlService.getCurrentUserCount`).
+ */
+const USER_IN_USE_WHERE = {
+  isActive: true,
+  userId: { not: null },
+  user: { isActive: true },
+} satisfies Prisma.EmployeeWhereInput;
+
+/** Os eventos do histórico que mudam o que a conta paga. */
+const BILLING_CHANGE_ACTIONS = [
+  'CONTRACTED',
+  'EVOLUTION_CONTRACTED',
+  'COMPLEMENTS_ADDED',
+  'MODULE_REMOVED',
+  'PLAN_CHANGED_BY_ADMIN',
+  'TRANSFER_RECEIVED',
+];
+
+/** A situação que Gerenciar contas mostra: o bloqueio pesa mais que o status. */
+function accountStatus(blockLevel: BlockLevel, status: SubscriptionStatus) {
+  if (blockLevel === 'PARTIAL') return 'BLOCKED';
+  if (blockLevel === 'FULL') return 'INACTIVE';
+  if (status === 'CANCELED') return 'CANCELED';
+  if (status === 'INACTIVE') return 'INACTIVE';
+  return 'ACTIVE';
+}
 
 @Injectable()
 export class AdminDashboardService {
@@ -201,52 +295,11 @@ export class AdminDashboardService {
   }
 
   async getActiveTotals() {
-    const nonTrialSub = { plan: { planType: { not: 'TRIAL' as const } } };
-
-    const [active, blocked, inactive, canceled] = await Promise.all([
-      // Ativas: blockLevel = NONE + tem sub ACTIVE não-TRIAL
-      this.prisma.company.count({
-        where: {
-          blockLevel: 'NONE',
-          Subscription: { some: { status: 'ACTIVE', ...nonTrialSub } },
-        },
-      }),
-      // Bloqueadas: blockLevel = PARTIAL + tem sub não-TRIAL
-      this.prisma.company.count({
-        where: {
-          blockLevel: 'PARTIAL',
-          Subscription: { some: nonTrialSub },
-        },
-      }),
-      // Inativas: blockLevel = FULL OU (NONE + sub INACTIVE sem sub ACTIVE)
-      this.prisma.company.count({
-        where: {
-          OR: [
-            {
-              blockLevel: 'FULL',
-              Subscription: { some: nonTrialSub },
-            },
-            {
-              blockLevel: 'NONE',
-              Subscription: {
-                some: { status: 'INACTIVE', ...nonTrialSub },
-                none: { status: 'ACTIVE', ...nonTrialSub },
-              },
-            },
-          ],
-        },
-      }),
-      // Canceladas: blockLevel = NONE + sub CANCELED sem ACTIVE
-      this.prisma.company.count({
-        where: {
-          blockLevel: 'NONE',
-          Subscription: {
-            some: { status: 'CANCELED', ...nonTrialSub },
-            none: { status: 'ACTIVE', ...nonTrialSub },
-          },
-        },
-      }),
-    ]);
+    const [active, blocked, inactive, canceled] = await Promise.all(
+      ACCOUNT_TABS.map((tab) =>
+        this.prisma.company.count({ where: this.accountTabWhere(tab) }),
+      ),
+    );
 
     return {
       data: {
@@ -377,217 +430,485 @@ export class AdminDashboardService {
     return descriptions[status] || 'Evento de pagamento';
   }
 
-  async listActiveClients(
-    page: number = 1,
-    limit: number = 10,
-    statusFilter?: string,
-    search?: string,
-    sort: 'name' | 'updated_at' | 'created_at' = 'name',
-  ) {
-    const skip = (page - 1) * limit;
-    const nonTrialSub = { plan: { planType: { not: 'TRIAL' as const } } };
+  /**
+   * Gerenciar contas: as empresas com plano pago e o que a cobrança precisa
+   * ver de cada uma — módulos, usuários, valor e forma de cobrança.
+   *
+   * Sem `groupBy`, a resposta sai em grupos por data de contratação, como a
+   * tela anterior espera; a tela atual pede `groupBy: 'none'`.
+   */
+  async listActiveClients(query: AccountListQuery = {}) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const where = this.accountsWhere(query);
 
-    // Construir where baseado em Company (não mais Subscription)
-    const companyWhere: any = {};
-
-    if (statusFilter === 'bloqueadas') {
-      companyWhere.blockLevel = 'PARTIAL';
-      companyWhere.Subscription = { some: nonTrialSub };
-    } else if (statusFilter === 'inativas') {
-      companyWhere.OR = [
-        {
-          blockLevel: 'FULL',
-          Subscription: { some: nonTrialSub },
-        },
-        {
-          blockLevel: 'NONE',
-          Subscription: {
-            some: { status: 'INACTIVE', ...nonTrialSub },
-            none: { status: 'ACTIVE', ...nonTrialSub },
-          },
-        },
-      ];
-    } else if (statusFilter === 'ativas') {
-      companyWhere.blockLevel = 'NONE';
-      companyWhere.Subscription = {
-        some: { status: 'ACTIVE', ...nonTrialSub },
-      };
-    } else if (statusFilter === 'canceladas') {
-      companyWhere.blockLevel = 'NONE';
-      companyWhere.Subscription = {
-        some: { status: 'CANCELED', ...nonTrialSub },
-        none: { status: 'ACTIVE', ...nonTrialSub },
-      };
-    } else {
-      // Sem filtro: todas as empresas com subscription não-TRIAL
-      companyWhere.Subscription = { some: nonTrialSub };
-    }
-
-    // Adicionar filtro de busca em campos da Company
-    if (search) {
-      const searchLower = search.toLowerCase();
-      const searchConditions = [
-        { name: { contains: searchLower, mode: 'insensitive' as const } },
-        { legalName: { contains: searchLower, mode: 'insensitive' as const } },
-        { email: { contains: searchLower, mode: 'insensitive' as const } },
-        { phone: { contains: search } },
-        { mobile: { contains: search } },
-        { cnpj: { contains: search } },
-      ];
-
-      // Combinar busca com os filtros de status existentes
-      if (companyWhere.OR) {
-        // Se já tem OR (inativas), wrappear tudo em AND
-        const existingOr = companyWhere.OR;
-        delete companyWhere.OR;
-        companyWhere.AND = [{ OR: existingOr }, { OR: searchConditions }];
-      } else {
-        companyWhere.OR = searchConditions;
-      }
-    }
-
-    // Mapear ordenação para campo do Company
-    let orderByConfig: any;
-    if (sort === 'name') {
-      orderByConfig = { name: 'asc' };
-    } else if (sort === 'updated_at') {
-      orderByConfig = { updatedAt: 'desc' };
-    } else {
-      orderByConfig = { createdAt: 'desc' };
-    }
-
-    // Query por Company com a subscription mais recente não-TRIAL
     const [companies, total] = await Promise.all([
       this.prisma.company.findMany({
-        where: companyWhere,
-        include: {
-          Subscription: {
-            where: nonTrialSub,
-            orderBy: { createdAt: 'desc' },
-            take: 1,
-            include: { plan: true },
-          },
-          address: {
-            where: { type: 'Principal' },
-            take: 1,
-          },
-        },
-        orderBy: orderByConfig,
-        skip,
+        where,
+        include: ACCOUNT_INCLUDE,
+        orderBy: this.accountOrderBy(query.sort),
+        skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prisma.company.count({ where: companyWhere }),
+      this.prisma.company.count({ where }),
     ]);
 
-    // Buscar informações dos usuários (primeiro employee com user)
-    const companiesWithUsers = await Promise.all(
-      companies.map(async (company) => {
-        const subscription = company.Subscription[0];
-        if (!subscription) return null;
-
-        const employee = await this.prisma.employee.findFirst({
-          where: {
-            companyId: company.id,
-            userId: { not: null },
-          },
-          include: { user: true },
-          orderBy: { createdAt: 'asc' },
-        });
-
-        const address = company.address[0];
-
-        // Período de assinatura
-        const subscriptionStart = new Date(subscription.createdAt);
-        const nextDue = new Date(subscription.nextDueDate);
-
-        const formatDate = (date: Date) => {
-          return date.toLocaleDateString('pt-BR', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-          });
-        };
-
-        return {
-          company,
-          subscription,
-          employee,
-          address,
-          subscriptionPeriod: `${formatDate(subscriptionStart)} - ${formatDate(nextDue)}`,
-        };
-      }),
-    );
-
-    // Agrupar por data de criação (da subscription)
-    const groupedByDate = companiesWithUsers
-      .filter((item) => item !== null)
-      .reduce(
-        (acc, item) => {
-          const dateKey = new Date(item.subscription.createdAt)
-            .toISOString()
-            .split('T')[0];
-
-          if (!acc[dateKey]) {
-            acc[dateKey] = [];
-          }
-
-          const { company, subscription, employee, address } = item;
-          const user = employee?.user;
-
-          const companyData = {
-            id: company.id,
-            avatar: company.favIconUrl || '',
-            companyName: company.legalName || company.name,
-            code: `#${company.id.slice(0, 4).toUpperCase()}`,
-            document: company.cnpj || '',
-            userId: user?.id || '',
-            userName: user?.name || '',
-            userDocument: employee?.cpf || '',
-            phone: user?.phone || company.phone || company.mobile || '',
-            email: user?.email || company.email || '',
-            createdAt: subscription.createdAt,
-            plan: subscription.plan.name,
-            planType: subscription.plan.planType,
-            status:
-              company.blockLevel === 'PARTIAL'
-                ? 'BLOCKED'
-                : company.blockLevel === 'FULL'
-                  ? 'INACTIVE'
-                  : subscription.status === 'CANCELED'
-                    ? 'CANCELED'
-                    : subscription.status === 'INACTIVE'
-                      ? 'INACTIVE'
-                      : 'ACTIVE',
-            state: address?.state
-              ? { id: address.state, name: address.state }
-              : { id: '', name: '' },
-            city: address?.city
-              ? { id: address.city, name: address.city }
-              : { id: '', name: '' },
-          };
-
-          acc[dateKey].push(companyData);
-          return acc;
-        },
-        {} as Record<string, any[]>,
-      );
-
-    // Formatar resposta
-    const data = Object.entries(groupedByDate)
-      .filter(([, items]) => items.length > 0)
-      .map(([date, items]) => ({
-        date,
-        data: items,
-      }))
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
+    const rows = await this.accountRows(companies);
     const lastPage = Math.ceil(total / limit);
 
+    if (query.groupBy === 'none') {
+      return { data: rows, total, page, lastPage };
+    }
+
+    const groups: Record<string, typeof rows> = {};
+    for (const row of rows) {
+      const date = row.createdAt.toISOString().split('T')[0];
+      (groups[date] ??= []).push(row);
+    }
+    const data = Object.entries(groups)
+      .map(([date, items]) => ({ date, data: items }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+    return { data, total, lastPage };
+  }
+
+  /** A lista filtrada inteira, sem paginação, para a planilha da cobrança. */
+  async exportActiveClients(query: AccountListQuery = {}) {
+    const companies = await this.prisma.company.findMany({
+      where: this.accountsWhere(query),
+      include: ACCOUNT_INCLUDE,
+      orderBy: this.accountOrderBy(query.sort),
+    });
+    return { data: await this.accountRows(companies) };
+  }
+
+  /** As opções dos filtros de Gerenciar contas: os módulos e as UFs que existem. */
+  async getAccountFilterOptions() {
+    const [modules, addresses] = await Promise.all([
+      // Módulo é recurso pago: o vendido hoje e o que saiu de venda, mas
+      // continua contratado em alguma assinatura.
+      this.prisma.feature.findMany({
+        where: {
+          OR: [
+            { price: { gt: 0 } },
+            { subscriptionFeatures: { some: CONTRACTED_MODULE_WHERE } },
+          ],
+        },
+        select: { key: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.address.findMany({
+        where: {
+          type: 'Principal',
+          state: { not: null },
+          company: { Subscription: { some: ACCOUNT_SUBSCRIPTION_WHERE } },
+        },
+        select: { state: true },
+        distinct: ['state'],
+        orderBy: { state: 'asc' },
+      }),
+    ]);
+
+    const states = addresses
+      .map((address) => address.state?.trim())
+      .filter((state): state is string => !!state);
+    return { modules, states: [...new Set(states)] };
+  }
+
+  /**
+   * O detalhe de uma conta para a cobrança: o resumo da linha de Gerenciar
+   * contas, quem usa o sistema, as últimas cobranças e as mudanças de plano e
+   * de complementos.
+   */
+  async getAccountDetails(companyId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      include: ACCOUNT_INCLUDE,
+    });
+    if (!company) {
+      throw new NotFoundException('Empresa não encontrada');
+    }
+    const [account] = await this.accountRows([company]);
+    if (!account) {
+      throw new NotFoundException('A empresa não tem assinatura de plano pago');
+    }
+
+    const subscription = currentAccountSubscription(company.Subscription);
+    const subscriptionIds = company.Subscription.map((s) => s.id);
+    const [employees, payments, changes] = await Promise.all([
+      this.prisma.employee.findMany({
+        where: { companyId, ...USER_IN_USE_WHERE },
+        select: {
+          role: { select: { name: true, isAdmin: true } },
+          user: { select: { id: true, name: true, email: true } },
+        },
+        orderBy: { user: { name: 'asc' } },
+      }),
+      this.prisma.payment.findMany({
+        where: { subscriptionId: { in: subscriptionIds } },
+        orderBy: { dueDate: 'desc' },
+        take: 12,
+      }),
+      this.prisma.subscriptionHistory.findMany({
+        where: {
+          subscriptionId: { in: subscriptionIds },
+          action: { in: BILLING_CHANGE_ACTIONS },
+        },
+        select: {
+          id: true,
+          action: true,
+          description: true,
+          createdAt: true,
+          createdByName: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+      }),
+    ]);
+
+    const users = employees.flatMap(({ role, user }) =>
+      user ? [{ role, user }] : [],
+    );
+    const lastAccess = users.length
+      ? await this.prisma.userActivity.groupBy({
+          by: ['userId'],
+          where: { companyId, userId: { in: users.map((u) => u.user.id) } },
+          _max: { lastActive: true },
+        })
+      : [];
+    const lastAccessByUser = new Map(
+      lastAccess.map((row) => [row.userId, row._max.lastActive]),
+    );
+
     return {
-      data,
-      total,
-      lastPage,
+      account,
+      company: {
+        name: company.name,
+        legalName: company.legalName,
+        email: company.email,
+        phone: company.phone || company.mobile || null,
+        createdAt: company.createdAt,
+        blockedAt: company.blockedAt,
+        blockReason: company.blockReason,
+      },
+      subscription: {
+        id: subscription.id,
+        status: subscription.status,
+        billingType: subscription.billingType,
+        contractedAt: subscription.contractedAt ?? subscription.createdAt,
+        couponCode: subscription.couponCode,
+      },
+      users: users.map(({ role, user }) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: role?.name ?? null,
+        isAdmin: !!role?.isAdmin,
+        isOwner: user.id === company.ownerUserId,
+        lastAccessAt: lastAccessByUser.get(user.id) ?? null,
+      })),
+      payments: payments.map((payment) => ({
+        id: payment.id,
+        dueDate: payment.dueDate,
+        valueCents: Math.round(payment.value * 100),
+        status: payment.status,
+        paidAt: payment.paymentDate ?? payment.confirmedDate,
+        billingType: payment.billingType,
+        description: payment.description,
+        invoiceUrl: payment.invoiceUrl,
+      })),
+      changes,
     };
+  }
+
+  /**
+   * Em que aba de Gerenciar contas a empresa cai. A mesma regra conta as abas
+   * e filtra a lista, para os números baterem.
+   */
+  private accountTabWhere(tab?: string): Prisma.CompanyWhereInput {
+    const sub = (
+      where: Prisma.SubscriptionWhereInput = {},
+    ): Prisma.SubscriptionWhereInput => ({
+      AND: [ACCOUNT_SUBSCRIPTION_WHERE, where],
+    });
+
+    switch (tab) {
+      case 'ativas':
+        return {
+          blockLevel: 'NONE',
+          Subscription: { some: sub({ status: 'ACTIVE' }) },
+        };
+      case 'bloqueadas':
+        return { blockLevel: 'PARTIAL', Subscription: { some: sub() } };
+      case 'inativas':
+        return {
+          OR: [
+            { blockLevel: 'FULL', Subscription: { some: sub() } },
+            {
+              blockLevel: 'NONE',
+              Subscription: {
+                some: sub({ status: 'INACTIVE' }),
+                none: sub({ status: 'ACTIVE' }),
+              },
+            },
+          ],
+        };
+      case 'canceladas':
+        return {
+          blockLevel: 'NONE',
+          Subscription: {
+            some: sub({ status: 'CANCELED' }),
+            none: sub({ status: 'ACTIVE' }),
+          },
+        };
+      default:
+        return { Subscription: { some: sub() } };
+    }
+  }
+
+  /** O filtro de Gerenciar contas: a aba, a busca e os filtros da cobrança. */
+  private accountsWhere(query: AccountListQuery): Prisma.CompanyWhereInput {
+    const and: Prisma.CompanyWhereInput[] = [
+      this.accountTabWhere(query.status),
+    ];
+
+    const search = query.search?.trim();
+    if (search) {
+      // O CNPJ fica gravado só com números; a busca também aceita com máscara.
+      const digits = search.replace(/\D/g, '');
+      and.push({
+        OR: [
+          { name: { contains: search, mode: 'insensitive' } },
+          { legalName: { contains: search, mode: 'insensitive' } },
+          { email: { contains: search, mode: 'insensitive' } },
+          { phone: { contains: search } },
+          { mobile: { contains: search } },
+          { cnpj: { contains: search } },
+          ...(digits.length >= 3 && digits !== search
+            ? [{ cnpj: { contains: digits } }]
+            : []),
+        ],
+      });
+    }
+
+    if (query.module) {
+      and.push(
+        this.onCurrentSubscription(
+          query.module === 'none'
+            ? { subscriptionFeatures: { none: CONTRACTED_MODULE_WHERE } }
+            : {
+                subscriptionFeatures: {
+                  some:
+                    query.module === 'any'
+                      ? CONTRACTED_MODULE_WHERE
+                      : {
+                          ...CONTRACTED_MODULE_WHERE,
+                          feature: { key: query.module },
+                        },
+                },
+              },
+        ),
+      );
+    }
+    if (query.additionalUsers) {
+      and.push(
+        this.onCurrentSubscription({
+          additionalUsers: query.additionalUsers === 'with' ? { gt: 0 } : 0,
+        }),
+      );
+    }
+    if (query.plan) {
+      and.push(this.onCurrentSubscription({ plan: { planType: query.plan } }));
+    }
+    if (query.billingMode) {
+      and.push(this.onCurrentSubscription(billingModeWhere(query.billingMode)));
+    }
+    if (query.state) {
+      and.push({
+        address: {
+          some: {
+            type: 'Principal',
+            state: { equals: query.state, mode: 'insensitive' },
+          },
+        },
+      });
+    }
+
+    return { AND: and };
+  }
+
+  /**
+   * Condição sobre a assinatura em vigor: a ACTIVE ou, sem nenhuma ativa,
+   * alguma das outras — a escolha de `currentAccountSubscription`, até onde o
+   * filtro do banco alcança.
+   */
+  private onCurrentSubscription(
+    condition: Prisma.SubscriptionWhereInput,
+  ): Prisma.CompanyWhereInput {
+    const active: Prisma.SubscriptionWhereInput = {
+      AND: [ACCOUNT_SUBSCRIPTION_WHERE, { status: 'ACTIVE' }],
+    };
+    return {
+      OR: [
+        { Subscription: { some: { AND: [active, condition] } } },
+        {
+          Subscription: {
+            none: active,
+            some: { AND: [ACCOUNT_SUBSCRIPTION_WHERE, condition] },
+          },
+        },
+      ],
+    };
+  }
+
+  private accountOrderBy(
+    sort: AccountListQuery['sort'] = 'name',
+  ): Prisma.CompanyOrderByWithRelationInput[] {
+    // O id desempata: sem ele, contas de mesmo nome trocam de página.
+    if (sort === 'updated_at') return [{ updatedAt: 'desc' }, { id: 'asc' }];
+    if (sort === 'created_at') return [{ createdAt: 'desc' }, { id: 'asc' }];
+    return [{ name: 'asc' }, { id: 'asc' }];
+  }
+
+  /** As linhas de Gerenciar contas, com o que a cobrança precisa ver. */
+  private async accountRows(companies: AccountCompany[], now = new Date()) {
+    const accounts = companies.flatMap((company) => {
+      const subscription = currentAccountSubscription(company.Subscription);
+      return subscription ? [{ company, subscription }] : [];
+    });
+    if (accounts.length === 0) return [];
+
+    const companyIds = accounts.map(({ company }) => company.id);
+    const ownerIds = accounts
+      .map(({ company }) => company.ownerUserId)
+      .filter((id): id is string => !!id);
+
+    const [employees, usersInUse, owners, openCharges] = await Promise.all([
+      // A linha segue mostrando o primeiro colaborador com acesso: é ele que
+      // Editar e Redefinir senha alteram.
+      this.prisma.employee.findMany({
+        where: { companyId: { in: companyIds }, userId: { not: null } },
+        select: {
+          companyId: true,
+          cpf: true,
+          user: { select: { id: true, name: true, email: true, phone: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.employee.groupBy({
+        by: ['companyId'],
+        where: { companyId: { in: companyIds }, ...USER_IN_USE_WHERE },
+        _count: { _all: true },
+      }),
+      this.prisma.user.findMany({
+        where: { id: { in: ownerIds } },
+        select: { id: true, name: true, email: true, phone: true },
+      }),
+      this.prisma.payment.findMany({
+        where: {
+          subscriptionId: {
+            in: accounts.map(({ subscription }) => subscription.id),
+          },
+          status: { in: ['PENDING', 'OVERDUE'] },
+        },
+        select: { subscriptionId: true, status: true, dueDate: true },
+        orderBy: { dueDate: 'asc' },
+      }),
+    ]);
+
+    const firstEmployee = new Map<string, (typeof employees)[number]>();
+    for (const employee of employees) {
+      if (!firstEmployee.has(employee.companyId)) {
+        firstEmployee.set(employee.companyId, employee);
+      }
+    }
+    const inUse = new Map(
+      usersInUse.map((group) => [group.companyId, group._count._all]),
+    );
+    const ownersById = new Map(owners.map((owner) => [owner.id, owner]));
+    const chargesBySubscription = new Map<string, typeof openCharges>();
+    for (const charge of openCharges) {
+      const list = chargesBySubscription.get(charge.subscriptionId) ?? [];
+      chargesBySubscription.set(charge.subscriptionId, [...list, charge]);
+    }
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    return accounts.map(({ company, subscription }) => {
+      const employee = firstEmployee.get(company.id);
+      const user = employee?.user;
+      const address = company.address[0];
+      const billingMode = billingModeOf(subscription);
+      const charges = chargesBySubscription.get(subscription.id) ?? [];
+      const upcoming = charges.find(
+        (charge) =>
+          charge.status === 'PENDING' && charge.dueDate >= startOfToday,
+      );
+      const includedUsers = subscription.plan.planLimits[0]?.value;
+      // Sem o limite no plano, ou com -1, o plano não limita usuários.
+      const unlimited = includedUsers == null || includedUsers === -1;
+
+      return {
+        id: company.id,
+        avatar: company.favIconUrl || '',
+        companyName: company.legalName || company.name,
+        code: `#${company.id.slice(0, 4).toUpperCase()}`,
+        document: company.cnpj || '',
+        userId: user?.id || '',
+        userName: user?.name || '',
+        userDocument: employee?.cpf || '',
+        phone: user?.phone || company.phone || company.mobile || '',
+        email: user?.email || company.email || '',
+        createdAt: subscription.createdAt,
+        plan: subscription.plan.name,
+        planType: subscription.plan.planType,
+        status: accountStatus(company.blockLevel, subscription.status),
+        state: address?.state
+          ? { id: address.state, name: address.state }
+          : { id: '', name: '' },
+        city: address?.city
+          ? { id: address.city, name: address.city }
+          : { id: '', name: '' },
+        // Titular (Usuário nº 1): quem responde pela conta perante a Atrupe.
+        owner: ownersById.get(company.ownerUserId) ?? null,
+        subscriptionId: subscription.id,
+        cycle: subscription.cycle,
+        billingMode,
+        installmentCount: subscription.installmentCount,
+        // O valor de cada renovação como o Asaas cobra: por mês ou, no
+        // anual, pelo ano.
+        valueCents: Math.round(subscription.value * 100),
+        // Assinatura manual não tem cobrança: a data gravada nela não é
+        // vencimento de nada.
+        nextChargeDate:
+          billingMode === 'MANUAL'
+            ? null
+            : (upcoming?.dueDate ?? subscription.nextDueDate),
+        hasOverdueCharge: charges.some(
+          (charge) =>
+            charge.status === 'OVERDUE' ||
+            (charge.status === 'PENDING' && charge.dueDate < startOfToday),
+        ),
+        modules: subscription.subscriptionFeatures.map((module) => ({
+          key: module.feature.key,
+          name: module.feature.name,
+          priceCents: Math.round(module.price),
+          since: module.createdAt,
+        })),
+        users: {
+          inUse: inUse.get(company.id) ?? 0,
+          included: unlimited ? null : includedUsers,
+          additional: subscription.additionalUsers,
+          limit: unlimited
+            ? null
+            : includedUsers + subscription.additionalUsers,
+          // Preço de hoje no plano: a assinatura guarda só a quantidade.
+          additionalUserPriceCents: Math.round(
+            subscription.plan.additionalUserPrice ?? 0,
+          ),
+        },
+      };
+    });
   }
 
   async listTrialCompanies(

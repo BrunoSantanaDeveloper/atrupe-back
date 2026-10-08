@@ -7,11 +7,13 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { CancelSubscriptionDto } from './dto/cancel-subscription.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { AsaasGatewayService } from './asaas-gateway.service';
 import { SubscriptionBlockService } from './subscription-block.service';
 import { isInstallmentBilling } from './billing-mode';
+import { ACCOUNT_SUBSCRIPTION_WHERE } from './account-subscription';
 import * as argon2 from 'argon2';
 
 const TRIAL_DAYS_DEFAULT = 7;
@@ -664,29 +666,28 @@ export class SubscriptionsService {
       `Verificando status no Asaas para empresa ${companyId} (apenas leitura)`,
     );
 
-    // Buscar a subscription mais recente da empresa que não seja TRIAL
-    const subscription = await this.prisma.subscription.findFirst({
-      where: {
-        companyId,
-        plan: {
-          planType: {
-            not: 'TRIAL',
-          },
+    // A assinatura em vigor: a ACTIVE ou, sem ela, a mais recente — nunca uma
+    // contratação desfeita, que é mais nova que a ativa quando uma evolução
+    // falha no gateway.
+    const include = {
+      plan: true,
+      payments: { orderBy: { createdAt: 'desc' }, take: 1 },
+    } satisfies Prisma.SubscriptionInclude;
+    const subscription =
+      (await this.prisma.subscription.findFirst({
+        where: {
+          companyId,
+          status: 'ACTIVE',
+          AND: [ACCOUNT_SUBSCRIPTION_WHERE],
         },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      include: {
-        plan: true,
-        payments: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 1,
-        },
-      },
-    });
+        orderBy: { createdAt: 'desc' },
+        include,
+      })) ??
+      (await this.prisma.subscription.findFirst({
+        where: { companyId, AND: [ACCOUNT_SUBSCRIPTION_WHERE] },
+        orderBy: { createdAt: 'desc' },
+        include,
+      }));
 
     if (!subscription) {
       return {

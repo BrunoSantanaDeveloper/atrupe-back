@@ -62,7 +62,9 @@
     "fiscal:xml:backfill": "node dist/src/scripts/backfill-nfe-xml.js",
     "fiscal:xml:backfill:dry": "node dist/src/scripts/backfill-nfe-xml.js --dry-run",
     "fiscal:xml:backfill:dev": "ts-node src/scripts/backfill-nfe-xml.ts",
-    "fiscal:xml:backfill:dry:dev": "ts-node src/scripts/backfill-nfe-xml.ts --dry-run"
+    "fiscal:xml:backfill:dry:dev": "ts-node src/scripts/backfill-nfe-xml.ts --dry-run",
+    "produtos:dedup": "node dist/src/scripts/deactivate-duplicate-legacy-products.js",
+    "produtos:dedup:dev": "ts-node src/scripts/deactivate-duplicate-legacy-products.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",

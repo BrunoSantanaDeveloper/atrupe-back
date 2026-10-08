@@ -101,14 +101,41 @@ describe('ReportService', () => {
       expect(aprovadaEm31 >= startDate && aprovadaEm31 <= endDate).toBe(true);
     });
 
-    it('aplica os mesmos limites no relatório financeiro', () => {
+    // O relatório financeiro filtra `dueDate`/`paidDate`, que são datas de
+    // calendário gravadas à meia-noite UTC — e não instantes como o
+    // `approvedAt` das vendas. Por isso a janela aqui fecha em UTC.
+    it('fecha a janela do relatório financeiro em UTC', () => {
       const { startDate, endDate } = getFinancialDateRange({
         startDate: '2026-08-01',
         endDate: '2026-08-31',
       });
 
-      expect(startDate.toISOString()).toBe('2026-08-01T03:00:00.000Z');
-      expect(endDate.toISOString()).toBe('2026-09-01T02:59:59.999Z');
+      expect(startDate.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+      expect(endDate.toISOString()).toBe('2026-08-31T23:59:59.999Z');
+    });
+
+    it('inclui a parcela do dia 1º e deixa de fora a do mês seguinte', () => {
+      const { startDate, endDate } = getFinancialDateRange({
+        startDate: '2026-08-01',
+        endDate: '2026-08-31',
+      });
+      const venceNoDia1 = new Date('2026-08-01T00:00:00.000Z');
+      const venceNoDia1DeSetembro = new Date('2026-09-01T00:00:00.000Z');
+
+      expect(venceNoDia1 >= startDate && venceNoDia1 <= endDate).toBe(true);
+      expect(
+        venceNoDia1DeSetembro >= startDate && venceNoDia1DeSetembro <= endDate,
+      ).toBe(false);
+    });
+
+    it('normaliza para o dia inteiro quando vem data com hora', () => {
+      const { startDate, endDate } = getFinancialDateRange({
+        startDate: '2026-08-01T03:00:00.000Z',
+        endDate: '2026-08-31T03:00:00.000Z',
+      });
+
+      expect(startDate.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+      expect(endDate.toISOString()).toBe('2026-08-31T23:59:59.999Z');
     });
   });
 
@@ -315,6 +342,97 @@ describe('ReportService', () => {
       }
       expect(result.records.map((r) => r.id)).toEqual(['depois']);
       expect(result.pagination.totalPages).toBe(2);
+    });
+  });
+
+  describe('relatório de produtos vendidos', () => {
+    const getPrisma = () =>
+      (
+        service as unknown as {
+          prisma: { quotationProduct: { findMany: jest.Mock } };
+        }
+      ).prisma;
+
+    // 1m x 1m por peça, salvo em milímetros
+    const areaItem = (overrides: Record<string, unknown> = {}) => ({
+      quantity: 1,
+      originalQuantity: 1,
+      unitKind: 'AREA',
+      width: 1000,
+      height: 1000,
+      length: null,
+      volume: null,
+      weight: null,
+      distance: null,
+      duration: null,
+      ...overrides,
+    });
+
+    const buildProduct = (
+      overrides: Record<string, unknown> = {},
+      items: unknown[] = [areaItem()],
+    ) => ({
+      productId: 'p1',
+      quantity: 1,
+      finalValue: 100,
+      totalValue: 100,
+      product: { id: 'p1', name: 'Adesivo impresso' },
+      items,
+      ...overrides,
+    });
+
+    it('soma quantidade e valor por produto, com a unidade comercial', async () => {
+      getPrisma().quotationProduct.findMany.mockResolvedValue([
+        buildProduct({ quantity: 2, finalValue: 500 }, [
+          areaItem({ width: 2000 }),
+        ]),
+        buildProduct({ quantity: 1, finalValue: 250 }),
+      ]);
+
+      const result = await service.getProductsSold('company-1', {});
+
+      // 2 peças de 2m² + 1 peça de 1m²
+      expect(result.products).toEqual([
+        {
+          productId: 'p1',
+          name: 'Adesivo impresso',
+          unit: 'M2',
+          quantity: 5,
+          value: 750,
+        },
+      ]);
+      expect(result.totalValue).toBe(750);
+    });
+
+    it('separa a linha quando o mesmo produto sai como unidade montada', async () => {
+      getPrisma().quotationProduct.findMany.mockResolvedValue([
+        buildProduct({ quantity: 1, finalValue: 300 }),
+        // Produto composto (duas composições) é vendido como peça montada
+        buildProduct({ quantity: 3, finalValue: 900 }, [
+          areaItem(),
+          areaItem({ unitKind: 'WEIGHT', weight: 1_000_000 }),
+        ]),
+      ]);
+
+      const result = await service.getProductsSold('company-1', {});
+
+      expect(result.products.map((p) => [p.unit, p.quantity, p.value])).toEqual(
+        [
+          ['UN', 3, 900],
+          ['M2', 1, 300],
+        ],
+      );
+      expect(result.totalValue).toBe(1200);
+    });
+
+    it('usa o valor do item quando a venda antiga não gravou finalValue', async () => {
+      getPrisma().quotationProduct.findMany.mockResolvedValue([
+        buildProduct({ finalValue: null, totalValue: 400 }),
+      ]);
+
+      const result = await service.getProductsSold('company-1', {});
+
+      expect(result.products[0].value).toBe(400);
     });
   });
 });

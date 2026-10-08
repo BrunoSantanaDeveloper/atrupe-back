@@ -18,6 +18,10 @@ import {
   SalePhase,
 } from './dto/sales-report.dto';
 import {
+  ProductSoldItem,
+  ProductsSoldResponse,
+} from './dto/products-report.dto';
+import {
   FinancialReportFilterDto,
   AdvancedFinancialReportFilterDto,
 } from './dto/financial-report.dto';
@@ -30,6 +34,7 @@ import {
   parseProjectDayBoundary,
   toProjectDateKey,
 } from '../../core/fiscal/utils/project-date.util';
+import { resolveCommercialQuantity } from '../../core/fiscal/utils/commercial-quantity.util';
 import { PayableService } from '../../core/financial/payable/payable.service';
 import { ReceivableService } from '../../core/financial/receivable/receivable.service';
 import {
@@ -958,7 +963,7 @@ export class ReportService {
           value: 0,
         };
       }
-      productTotals[productId].value += qp.finalValue || 0;
+      productTotals[productId].value += qp.finalValue ?? qp.totalValue ?? 0;
     });
 
     return Object.values(productTotals)
@@ -1512,20 +1517,32 @@ export class ReportService {
 
   // ============== FINANCIAL REPORT METHODS ==============
 
-  /** Mesma normalização de limites usada em `getDateRange`. */
+  /**
+   * Limites do dia em UTC — os mesmos do fluxo financeiro.
+   *
+   * Diferente de `getDateRange`, que fecha a janela no fuso da operação
+   * porque compara instantes reais (`approvedAt`, por exemplo). Aqui as
+   * colunas são `dueDate` e `paidDate`, que são datas de calendário
+   * gravadas à meia-noite UTC. Fechar em -03:00 deslocava o período em
+   * três horas: a parcela do dia 1º (00:00Z) ficava antes do início e a
+   * do dia 1º do mês seguinte entrava no fim.
+   */
   private getFinancialDateRange(filters: {
     startDate?: string;
     endDate?: string;
   }) {
     const now = new Date();
+
     const startDate = filters.startDate
-      ? (parseProjectDayBoundary(filters.startDate, 'start') ??
-        new Date(filters.startDate))
-      : startOfMonth(now);
+      ? new Date(filters.startDate)
+      : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    startDate.setUTCHours(0, 0, 0, 0);
+
     const endDate = filters.endDate
-      ? (parseProjectDayBoundary(filters.endDate, 'end') ??
-        new Date(filters.endDate))
-      : endOfMonth(now);
+      ? new Date(filters.endDate)
+      : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+    endDate.setUTCHours(23, 59, 59, 999);
+
     return { startDate, endDate };
   }
 
@@ -4083,6 +4100,125 @@ export class ReportService {
         page,
         totalPages: Math.ceil(totalCount / limit),
       },
+    };
+  }
+
+  // ============== PRODUCTS SOLD REPORT ==============
+
+  /**
+   * Produtos vendidos no período, com quantidade e unidade comercial.
+   *
+   * Mesma base do gráfico "Produtos mais vendidos" — orçamentos aprovados no
+   * período cuja O.S. não está cancelada — porém sem o corte de top 10. A
+   * quantidade sai de `resolveCommercialQuantity`, a mesma regra que a NF-e
+   * usa em qCOM/uCOM, para o sistema não ganhar um terceiro jeito de contar.
+   */
+  async getProductsSold(
+    companyId: string,
+    filters: SalesReportFilterDto,
+  ): Promise<ProductsSoldResponse> {
+    const { startDate, endDate } = this.getDateRange(filters);
+
+    const quotationProducts = await this.prisma.quotationProduct.findMany({
+      where: {
+        quotation: {
+          ...this.getSalesQuotationFilters(companyId, filters),
+          approvedAt: { gte: startDate, lte: endDate },
+          order: { status: { not: 'CANCELED' } },
+        },
+      },
+      include: {
+        product: { select: { id: true, name: true } },
+        items: {
+          select: {
+            quantity: true,
+            originalQuantity: true,
+            unitKind: true,
+            width: true,
+            height: true,
+            length: true,
+            volume: true,
+            weight: true,
+            distance: true,
+            duration: true,
+          },
+        },
+      },
+    });
+
+    const totals = new Map<string, ProductSoldItem>();
+
+    quotationProducts.forEach((qp) => {
+      const { quantity, unit } = resolveCommercialQuantity(
+        qp.quantity,
+        qp.items,
+      );
+      const key = `${qp.productId}|${unit}`;
+      const current = totals.get(key) ?? {
+        productId: qp.productId,
+        name: qp.product?.name || 'Produto',
+        unit,
+        quantity: 0,
+        value: 0,
+      };
+
+      current.quantity += quantity;
+      // finalValue já traz o desconto do item; totalValue cobre os registros
+      // antigos que nunca gravaram finalValue.
+      current.value += qp.finalValue ?? qp.totalValue ?? 0;
+      totals.set(key, current);
+    });
+
+    const products = [...totals.values()].sort((a, b) => b.value - a.value);
+    const totalValue = products.reduce((sum, p) => sum + p.value, 0);
+
+    return { products, totalValue };
+  }
+
+  async getProductsSoldPdfData(
+    companyId: string,
+    filters: SalesReportFilterDto,
+  ) {
+    const [{ products, totalValue }, company] = await Promise.all([
+      this.getProductsSold(companyId, filters),
+      this.prisma.company.findUnique({
+        where: { id: companyId },
+        include: { address: true },
+      }),
+    ]);
+
+    const { startDate, endDate } = this.getDateRange(filters);
+    const companyAddress = company?.address?.[0];
+
+    return {
+      company: {
+        name: company?.name,
+        cnpj: company?.cnpj,
+        logoUrl: company?.logoUrl,
+        email: company?.email,
+        siteUrl: company?.siteUrl,
+        phone: company?.phone,
+        address: companyAddress
+          ? {
+              street: companyAddress.street,
+              number: companyAddress.number,
+              neighborhood: companyAddress.neighborhood,
+              city: companyAddress.city,
+              state: companyAddress.state,
+            }
+          : undefined,
+        socialNetworks: {
+          instagram: company?.instagram,
+          facebook: company?.facebook,
+          linkedin: company?.linkedin,
+        },
+      },
+      period: {
+        start: formatProjectDate(startDate) ?? '',
+        end: formatProjectDate(endDate) ?? '',
+      },
+      products,
+      totalValue,
     };
   }
 }

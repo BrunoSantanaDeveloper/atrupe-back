@@ -125,13 +125,48 @@ export class SubscriptionsController {
     description: 'List of companies with active subscriptions',
   })
   async listActiveClients(@Query() query: ListActiveClientsDto) {
-    return await this.adminDashboardService.listActiveClients(
-      query.page,
-      query.limit,
-      query.status,
-      query.search,
-      query.sort,
-    );
+    return await this.adminDashboardService.listActiveClients(query);
+  }
+
+  @Get('active-clients/export')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary: 'Lista de Gerenciar contas para exportar (apenas SystemAdmin)',
+    description:
+      'As mesmas contas e filtros da listagem, sem paginação: a planilha da equipe de cobrança.',
+  })
+  @ApiResponse({ status: 200, description: 'Contas filtradas' })
+  async exportActiveClients(@Query() query: ListActiveClientsDto) {
+    return await this.adminDashboardService.exportActiveClients(query);
+  }
+
+  @Get('active-clients/filters')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary: 'Opções dos filtros de Gerenciar contas (apenas SystemAdmin)',
+    description:
+      'Os módulos pagos (inclusive os que saíram de venda e seguem contratados) e as UFs dos endereços principais.',
+  })
+  @ApiResponse({ status: 200, description: 'Módulos e UFs' })
+  async getAccountFilterOptions() {
+    return await this.adminDashboardService.getAccountFilterOptions();
+  }
+
+  @Get('active-clients/:companyId/details')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
+  @ApiOperation({
+    summary: 'Detalhe de uma conta para a cobrança (apenas SystemAdmin)',
+    description:
+      'Plano, módulos e usuários contratados, usuários em uso, últimas cobranças e mudanças de plano e de complementos.',
+  })
+  @ApiParam({ name: 'companyId', description: 'Company ID' })
+  @ApiResponse({ status: 200, description: 'Detalhe da conta' })
+  @ApiResponse({
+    status: 404,
+    description: 'Empresa não encontrada ou sem assinatura de plano pago',
+  })
+  async getAccountDetails(@Param('companyId') companyId: string) {
+    return await this.adminDashboardService.getAccountDetails(companyId);
   }
 
   @Get('active-clients/:companyId/check-asaas')

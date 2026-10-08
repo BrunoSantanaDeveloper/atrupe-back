@@ -225,6 +225,9 @@ export class FlowService {
    * onde tudo ja esta quitado e o valor tinha de ser zero.
    */
   private sumInstallmentTotals(installments: any[]) {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
     return installments.reduce(
       (acc, inst) => {
         const isCanceled = inst.status === 'CANCELED';
@@ -234,14 +237,29 @@ export class FlowService {
         const totalPaid = inst.paidAmount ?? 0;
         const isSettled =
           isCanceled || inst.status === 'PAID' || inst.status === 'PROVISIONED';
+        const open = isSettled ? 0 : Math.max(0, expected - totalPaid);
+        // Vencido e o proprio `open` que ja passou da data. Fica sempre
+        // contido no "a realizar", em vez de vir de outra consulta.
+        const isOverdue =
+          open > 0 && !!inst.dueDate && new Date(inst.dueDate) < today;
 
         return {
           expected: acc.expected + expected,
           totalPaid: acc.totalPaid + totalPaid,
-          open: acc.open + (isSettled ? 0 : Math.max(0, expected - totalPaid)),
+          open: acc.open + open,
+          paidCount: acc.paidCount + (totalPaid > 0 ? 1 : 0),
+          overdue: acc.overdue + (isOverdue ? open : 0),
+          overdueCount: acc.overdueCount + (isOverdue ? 1 : 0),
         };
       },
-      { expected: 0, totalPaid: 0, open: 0 },
+      {
+        expected: 0,
+        totalPaid: 0,
+        open: 0,
+        paidCount: 0,
+        overdue: 0,
+        overdueCount: 0,
+      },
     );
   }
 

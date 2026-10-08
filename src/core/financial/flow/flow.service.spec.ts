@@ -89,8 +89,18 @@ describe('FlowService', () => {
       });
 
       expect(result).toEqual({
-        receivables: { expected: 110, totalPaid: 50, open: 60 },
-        payables: { expected: 220, totalPaid: 100, open: 120 },
+        receivables: expect.objectContaining({
+          expected: 110,
+          totalPaid: 50,
+          open: 60,
+          paidCount: 1,
+        }),
+        payables: expect.objectContaining({
+          expected: 220,
+          totalPaid: 100,
+          open: 120,
+          paidCount: 1,
+        }),
       });
     });
 
@@ -115,6 +125,51 @@ describe('FlowService', () => {
 
       expect(result.receivables.open).toBe(0);
       expect(result.receivables.totalPaid).toBe(2315);
+    });
+
+    it('should report overdue as the slice of `open` already past due', async () => {
+      const past = new Date();
+      past.setUTCDate(past.getUTCDate() - 10);
+      past.setUTCHours(0, 0, 0, 0);
+      const future = new Date();
+      future.setUTCDate(future.getUTCDate() + 10);
+      future.setUTCHours(0, 0, 0, 0);
+
+      prismaMock.receivableInstallment.findMany.mockResolvedValue([
+        {
+          amount: 300,
+          additionalFee: 0,
+          paidAmount: null,
+          status: 'PENDING',
+          dueDate: past,
+        },
+        {
+          amount: 700,
+          additionalFee: 0,
+          paidAmount: null,
+          status: 'PENDING',
+          dueDate: future,
+        },
+        {
+          amount: 500,
+          additionalFee: 0,
+          paidAmount: 500,
+          status: 'PAID',
+          dueDate: past,
+        },
+      ]);
+      prismaMock.payableInstallment.findMany.mockResolvedValue([]);
+
+      const result = await service.findAllTotals({
+        companyId: 'comp-1',
+        page: '1',
+        limit: '10',
+      });
+
+      expect(result.receivables.open).toBe(1000);
+      expect(result.receivables.overdue).toBe(300);
+      expect(result.receivables.overdueCount).toBe(1);
+      expect(result.receivables.paidCount).toBe(1);
     });
 
     it('should correctly filter by clientId', async () => {
