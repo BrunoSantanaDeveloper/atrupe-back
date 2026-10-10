@@ -853,6 +853,49 @@ describe('NfseService', () => {
       expect(item.ItemTributMunicipio).toBe('001');
     });
 
+    /**
+     * A Fenix cadastrou "24.01.02", que e' como a lista de servicos exibe o
+     * codigo. O campo e' C(6) no provedor: ele cortou em "24.01." e a
+     * prefeitura recebeu um cTribNac sem sentido.
+     */
+    it('manda o codigo de tributacao nacional sem pontuacao', async () => {
+      prisma.quotation.findFirst.mockResolvedValue({
+        id: 'quotation-1',
+        companyId: mockCompanyId,
+        order: mockOrder,
+        client: mockOrder.client,
+        quotationProduct: [
+          {
+            id: 'qp-1',
+            productId: 'service-1',
+            quantity: 1,
+            finalValue: 500,
+            totalValue: 500,
+            product: {
+              ...mockOrder.items[0].product,
+              fiscalData: {
+                codigoServico: '24.01',
+                aliquotaIss: 5,
+                discriminacao: 'Comunicação visual',
+                codTribNacional: '24.01.02',
+              },
+            },
+          },
+        ],
+      });
+
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '24.01',
+        discriminacao: 'Comunicação visual',
+      });
+
+      const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+      expect(documentos[0].Documento.RPS[0].Servico.codTributNacional).toBe(
+        '240102',
+      );
+    });
+
     it('omite a classificação fiscal quando o serviço não a cadastra', async () => {
       // Sem cadastro o payload não pode mudar: quem emite hoje continua igual.
       await service.emitFromOrder(mockCompanyId, {

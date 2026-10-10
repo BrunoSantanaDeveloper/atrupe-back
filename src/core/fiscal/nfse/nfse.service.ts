@@ -1559,6 +1559,8 @@ export class NfseService {
     // com o cabeçalho (cIndOp e afins) e a prefeitura rejeita com E1235.
     const grupoIbsCbsCompleto = Boolean(dto.cstIbsCbs && dto.codClassificacao);
 
+    const codTribNacionalDigitos = dto.codTribNacional?.replace(/\D/g, '');
+
     const tributMunicipio: string | number =
       dto.codTribMunicipio?.trim() ||
       parseInt(dto.codigoMunicipio || config.ibgeCode || '0', 10);
@@ -1771,8 +1773,11 @@ export class NfseService {
               TributMunicipio: tributMunicipio,
               // Classificação fiscal do serviço, omitida quando não cadastrada.
               ...(dto.nbs ? { CodigoNBS: dto.nbs } : {}),
-              ...(dto.codTribNacional
-                ? { codTributNacional: dto.codTribNacional }
+              // Só dígitos: o cadastro aceita "24.01.02" (como a lista de
+              // serviços exibe), mas o campo é C(6) no provedor, que corta em
+              // "24.01." — e a prefeitura recebe um cTribNac sem sentido.
+              ...(codTribNacionalDigitos
+                ? { codTributNacional: codTribNacionalDigitos }
                 : {}),
               ...(dto.cnae
                 ? { Cnae: parseInt(dto.cnae.replace(/\D/g, ''), 10) || 0 }
