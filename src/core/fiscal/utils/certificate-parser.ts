@@ -209,7 +209,7 @@ function findFirstCnpj(value: string): string | null {
     if (clean.length === 14) return clean;
   }
 
-  const candidates = value.match(/\d{14}/g) || [];
+  const candidates: string[] = value.match(/\d{14}/g) || [];
   return candidates.find((candidate) => candidate.length === 14) || null;
 }
 
