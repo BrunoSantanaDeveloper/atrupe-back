@@ -3,6 +3,7 @@ import * as path from 'path';
 import { BASE_FEATURES } from '../../seeds/features-base';
 import { PLAN_CONFIGURATIONS } from '../../seeds/plans-complete';
 import {
+  cumulativeViolations,
   dependentsOf,
   FEATURE_CATEGORY_LABELS,
   FEATURE_CATEGORY_ORDER,
@@ -145,6 +146,31 @@ describe('plan-feature-rules', () => {
     expect(PLAN_CONFIGURATIONS.TRIAL.features).toEqual(
       PLAN_CONFIGURATIONS.START.features,
     );
+  });
+
+  it('a conferência da regra cumulativa: vizinhos pela ordem, Trial fora', () => {
+    const plan = (planType: string, order: number) => ({ planType, order });
+    const trial = plan('TRIAL', 0);
+    const start = plan('START', 1);
+    const lite = plan('LITE', 2);
+    const pro = plan('PRO', 3);
+
+    expect(
+      cumulativeViolations([
+        { plan: pro, keys: ['a'] },
+        { plan: trial, keys: ['x', 'y'] },
+        { plan: start, keys: ['a'] },
+        { plan: lite, keys: ['a', 'b', 'c'] },
+      ]),
+    ).toEqual([{ lowerPlan: lite, higherPlan: pro, keys: ['b', 'c'] }]);
+    expect(
+      cumulativeViolations(
+        cumulativeChain().map((config) => ({
+          plan: config.plan,
+          keys: config.features,
+        })),
+      ),
+    ).toEqual([]);
   });
 
   it('as chaves de 10/10/2026 nascem no plano do contrato', () => {

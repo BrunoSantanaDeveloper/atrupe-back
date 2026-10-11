@@ -295,6 +295,44 @@ export const FEATURE_CATEGORY_ORDER = [
 ];
 
 /**
+ * Regra cumulativa (10/10/2026): nos planos globais, fora o Trial, as chaves
+ * ativas de um plano estão contidas nas do plano seguinte, pela `order`
+ * (START < LITE < PRO < ELITE < FULL). O Trial é coluna livre da matriz.
+ */
+export const isCumulativePlanType = (planType: string) => planType !== 'TRIAL';
+
+export interface CumulativeViolation<P> {
+  /** O plano de baixo, que tem as chaves. */
+  lowerPlan: P;
+  /** O plano logo acima, que não as tem. */
+  higherPlan: P;
+  keys: string[];
+}
+
+/**
+ * Confere a regra na matriz: cada par de planos vizinhos em que o de cima não
+ * tem o que o de baixo tem. Vazio = matriz cumulativa.
+ */
+export function cumulativeViolations<
+  P extends { planType: string; order: number },
+>(plans: { plan: P; keys: Iterable<string> }[]): CumulativeViolation<P>[] {
+  const chain = plans
+    .filter((p) => isCumulativePlanType(p.plan.planType))
+    .map((p) => ({ plan: p.plan, keys: new Set(p.keys) }))
+    .sort((a, b) => a.plan.order - b.plan.order);
+  const violations: CumulativeViolation<P>[] = [];
+  for (let i = 1; i < chain.length; i++) {
+    const lower = chain[i - 1];
+    const higher = chain[i];
+    const keys = [...lower.keys].filter((k) => !higher.keys.has(k)).sort();
+    if (keys.length) {
+      violations.push({ lowerPlan: lower.plan, higherPlan: higher.plan, keys });
+    }
+  }
+  return violations;
+}
+
+/**
  * Assinaturas "atuais" de um plano, para contar quem é atingido por uma
  * mudança e quem mantém um recurso retirado do plano: ativas ou bloqueadas
  * (o bloqueio é temporário). Reservas de contratação (`temp_`) ficam fora.

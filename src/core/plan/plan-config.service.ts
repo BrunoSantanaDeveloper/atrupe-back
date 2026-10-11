@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Feature, Plan, Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { PLAN_CONFIGURATIONS } from '../../seeds/plans-complete';
@@ -18,12 +18,14 @@ import {
 } from '../../seeds/plan-comparison-base';
 import {
   CURRENT_SUBSCRIPTION_STATUSES,
+  cumulativeViolations,
   dependentsOf,
   FEATURE_CATEGORY_LABELS,
   FEATURE_CATEGORY_ORDER,
   FEATURE_DEPENDENCIES,
   FEATURE_ENFORCEMENT,
   GRANT_SOURCE,
+  isCumulativePlanType,
   isPlanFeatureKey,
   PlanFeatureKey,
 } from './plan-feature-rules';
@@ -49,9 +51,57 @@ interface FeatureChange {
   name: string;
   featureId: string;
   enabled: boolean;
-  /** Entrou por dependência de outra chave, não pelo pedido. */
+  /**
+   * Não foi o pedido: entrou por dependência de outra chave ou, num plano de
+   * cima, pela regra cumulativa.
+   */
   cascade: boolean;
+  /** Mudança num plano acima do pedido, pela regra cumulativa. */
+  crossPlan: boolean;
 }
+
+/** O que um pedido muda num plano. */
+interface PlanChanges {
+  plan: Plan;
+  changes: FeatureChange[];
+}
+
+/** O efeito de incluir ou retirar um recurso, na matriz inteira. */
+interface MatrixChanges {
+  /** As mudanças do plano pedido (podem ser nenhuma). */
+  changes: FeatureChange[];
+  /** Só os planos com mudança: o pedido primeiro, depois os de cima. */
+  plans: PlanChanges[];
+  /** Retirada recusada: os planos de baixo que ainda têm o recurso. */
+  blockedBy: Plan[] | null;
+}
+
+/** Referência de plano nas respostas de erro e na prévia. */
+const planRef = (plan: Plan) => ({
+  planId: plan.id,
+  planName: plan.name,
+  planType: plan.planType,
+});
+
+const changeView = (change: FeatureChange) => ({
+  key: change.key,
+  name: change.name,
+  enabled: change.enabled,
+  cascade: change.cascade,
+});
+
+/** Um plano com mudança, na prévia, no 422 de cascata e na resposta. */
+export interface PlanChangeView extends ReturnType<typeof planRef> {
+  order: number;
+  currentSubscriptions: number;
+  changes: (ReturnType<typeof changeView> & { crossPlan: boolean })[];
+}
+
+const sum = (values: Iterable<number>) => {
+  let total = 0;
+  for (const value of values) total += value;
+  return total;
+};
 
 /**
  * O que o painel pode mudar em cada limite. `enforced` diz se o sistema de
@@ -113,6 +163,11 @@ const DAY_FORMAT = new Intl.DateTimeFormat('pt-BR', {
  *   atuais do plano ou só as novas contratações (as atuais o mantêm como
  *   recurso concedido, `grantSource = PLAN_RETAINED`);
  * - a senha gerencial só é pedida quando a alteração atinge assinaturas.
+ *
+ * Regra cumulativa (10/10/2026): nos planos globais, fora o Trial, cada plano
+ * tem tudo o que o anterior tem. Incluir um recurso num plano o leva também
+ * aos planos de cima; retirar só vale depois de retirá-lo dos de baixo; o
+ * Trial muda sozinho. Restaurar o padrão confere a matriz inteira.
  */
 @Injectable()
 export class PlanConfigService {
@@ -213,8 +268,12 @@ export class PlanConfigService {
     const plan = await this.loadPlan(planId);
     const catalog = await this.matrixCatalog();
     const feature = this.catalogFeature(catalog, featureKey);
-    const state = await this.planFeatureState(plan.id, catalog);
-    const changes = this.computeChanges(catalog, state, feature.key, enabled);
+    const { changes, plans, blockedBy } = await this.matrixChanges(
+      plan,
+      catalog,
+      feature.key,
+      enabled,
+    );
     const currentSubscriptions = await this.countCurrentSubscriptions(plan.id);
     const keys = changes.map((c) => c.featureId);
     const [retainedGrants, courtesyGrants] = keys.length
@@ -223,6 +282,11 @@ export class PlanConfigService {
           this.countGrants(plan.id, keys, GRANT_SOURCE.COURTESY),
         ])
       : [0, 0];
+    const planViews = await this.planChangeViews(
+      plans,
+      plan.id,
+      currentSubscriptions,
+    );
 
     return {
       planId: plan.id,
@@ -231,23 +295,24 @@ export class PlanConfigService {
       featureKey: feature.key,
       featureName: feature.name,
       enabled,
-      noChange: changes.length === 0,
-      changes: changes.map((c) => ({
-        key: c.key,
-        name: c.name,
-        enabled: c.enabled,
-        cascade: c.cascade,
-      })),
-      requiresCascade: changes.some((c) => c.cascade),
+      noChange: plans.length === 0,
+      // Só as do plano pedido; as de todos os planos estão em `plans`.
+      changes: changes.map(changeView),
+      requiresCascade: plans.some((p) => p.changes.some((c) => c.cascade)),
       currentSubscriptions,
-      // Quem perde o recurso ao retirar sem manter nas atuais, ou quem o
-      // ganha ao incluir. Retirar mantendo nas atuais não atinge ninguém.
-      affectedIfApplied: currentSubscriptions,
+      // Quem ganha o recurso ao incluir (as assinaturas de todos os planos
+      // que mudam), ou quem o perde ao retirar sem manter nas atuais.
+      // Retirar mantendo nas atuais não atinge ninguém.
+      affectedIfApplied: enabled
+        ? sum(planViews.map((p) => p.currentSubscriptions))
+        : currentSubscriptions,
       affectedIfKept: 0,
       retainedGrants,
       courtesyGrants,
       requiresChoice: !enabled && currentSubscriptions > 0,
       enforcement: FEATURE_ENFORCEMENT[feature.key as PlanFeatureKey],
+      plans: planViews,
+      blockedBy: blockedBy ? blockedBy.map(planRef) : null,
     };
   }
 
@@ -259,135 +324,168 @@ export class PlanConfigService {
     const plan = await this.loadPlan(planId);
     const catalog = await this.matrixCatalog();
     const feature = this.catalogFeature(catalog, dto.featureKey);
-    const state = await this.planFeatureState(plan.id, catalog);
-    const changes = this.computeChanges(
+    const { changes, plans, blockedBy } = await this.matrixChanges(
+      plan,
       catalog,
-      state,
       feature.key,
       dto.enabled,
     );
 
-    if (changes.length === 0) {
-      return { changed: false, changes: [], affected: 0 };
+    if (plans.length === 0) {
+      return { changed: false, changes: [], affected: 0, plans: [] };
     }
-    if (changes.some((c) => c.cascade) && !dto.cascade) {
+    if (blockedBy) {
       throw new UnprocessableEntityException({
-        code: 'DEPENDENCY_REQUIRED',
-        message: dto.enabled
-          ? `Para incluir "${feature.name}", inclua também: ${this.names(changes.filter((c) => c.cascade))}.`
-          : `Para retirar "${feature.name}", retire também: ${this.names(changes.filter((c) => c.cascade))}.`,
-        changes: changes.map((c) => ({
-          key: c.key,
-          name: c.name,
-          enabled: c.enabled,
-          cascade: c.cascade,
-        })),
+        code: 'LOWER_PLAN_HAS_FEATURE',
+        feature: feature.key,
+        plans: blockedBy.map(planRef),
+        message: `Retire primeiro "${feature.name}" ${this.inPlans(blockedBy, 'do')}.`,
       });
     }
 
     const current = await this.currentSubscriptionIds(plan.id);
+    const planViews = await this.planChangeViews(
+      plans,
+      plan.id,
+      current.length,
+    );
+    if (plans.some((p) => p.changes.some((c) => c.cascade)) && !dto.cascade) {
+      throw new UnprocessableEntityException({
+        code: 'DEPENDENCY_REQUIRED',
+        message: this.cascadeMessage(feature.name, dto.enabled, plan, plans),
+        changes: changes.map(changeView),
+        plans: planViews,
+      });
+    }
+
     const keepCurrent = this.resolveKeepChoice(
       !dto.enabled,
       current.length,
       dto.keepCurrentSubscriptions,
     );
-    const affected = dto.enabled || !keepCurrent ? current.length : 0;
+    // Ao incluir, ganham o recurso as assinaturas atuais de todos os planos
+    // que mudam. Ao retirar (só do plano pedido), as do plano, a não ser que
+    // o mantenham. A prévia e a senha valem sobre a soma.
+    const affectedByPlan = new Map(
+      planViews.map((p) => [
+        p.planId,
+        dto.enabled || !keepCurrent ? p.currentSubscriptions : 0,
+      ]),
+    );
+    const affected = sum(affectedByPlan.values());
     await this.assertPreview(dto.expectedAffected, affected);
     await this.assertPassword(actor, affected, dto.password);
 
     const actorName = await this.actorName(actor.userId);
-    const featureIds = changes.map((c) => c.featureId);
     const result = await this.prisma.$transaction(async (tx) => {
-      for (const change of changes) {
-        await tx.planFeature.upsert({
-          where: {
-            planId_featureId: { planId: plan.id, featureId: change.featureId },
-          },
-          create: {
-            planId: plan.id,
-            featureId: change.featureId,
-            isActive: change.enabled,
-          },
-          update: { isActive: change.enabled },
-        });
-      }
-
       let retainedCreated = 0;
       let retainedRemoved = 0;
-      if (dto.enabled || !keepCurrent) {
-        // Incluído no plano, o recurso mantido fica redundante; retirado de
-        // todas, o mantido também sai. A cortesia individual fica.
-        retainedRemoved = await this.removeRetainedGrants(
-          tx,
-          plan.id,
-          featureIds,
-        );
-      } else if (current.length > 0) {
-        retainedCreated = await this.createRetainedGrants(
-          tx,
-          current,
-          changes,
-          plan.name,
-          actor.userId,
-          actorName,
-        );
-      }
+      for (const { plan: target, changes: planChanges } of plans) {
+        for (const change of planChanges) {
+          await tx.planFeature.upsert({
+            where: {
+              planId_featureId: {
+                planId: target.id,
+                featureId: change.featureId,
+              },
+            },
+            create: {
+              planId: target.id,
+              featureId: change.featureId,
+              isActive: change.enabled,
+            },
+            update: { isActive: change.enabled },
+          });
+        }
 
-      for (const change of changes) {
-        await tx.planConfigHistory.create({
-          data: {
-            entityType: 'PLAN_FEATURE',
-            planId: plan.id,
-            planType: plan.planType,
-            featureKey: change.key,
-            action: change.enabled ? 'ENABLED' : 'DISABLED',
-            description: this.describeFeatureChange(
-              plan.name,
-              change,
-              keepCurrent,
-              current.length,
-              feature.name,
-            ),
-            changes: {
-              before: { enabled: !change.enabled },
-              after: { enabled: change.enabled },
+        let created = 0;
+        let removed = 0;
+        if (dto.enabled || !keepCurrent) {
+          // Incluído no plano, o recurso mantido fica redundante; retirado de
+          // todas, o mantido também sai. A cortesia individual fica.
+          removed = await this.removeRetainedGrants(
+            tx,
+            target.id,
+            planChanges.map((c) => c.featureId),
+          );
+        } else if (current.length > 0) {
+          // Retirada: só o plano pedido muda, e as atuais dele o mantêm.
+          created = await this.createRetainedGrants(
+            tx,
+            current,
+            planChanges,
+            target.name,
+            actor.userId,
+            actorName,
+          );
+        }
+        retainedCreated += created;
+        retainedRemoved += removed;
+
+        const targetSubscriptions =
+          planViews.find((p) => p.planId === target.id)?.currentSubscriptions ??
+          0;
+        for (const change of planChanges) {
+          await tx.planConfigHistory.create({
+            data: {
+              entityType: 'PLAN_FEATURE',
+              planId: target.id,
+              planType: target.planType,
+              featureKey: change.key,
+              action: change.enabled ? 'ENABLED' : 'DISABLED',
+              description: this.describeFeatureChange(
+                target.name,
+                change,
+                keepCurrent,
+                targetSubscriptions,
+                { key: feature.key, name: feature.name, planName: plan.name },
+              ),
+              changes: {
+                before: { enabled: !change.enabled },
+                after: { enabled: change.enabled },
+              },
+              metadata: {
+                source: dto.source ?? 'PANEL',
+                revertOf: dto.revertOf ?? null,
+                requestedPlanId: plan.id,
+                requestedKey: feature.key,
+                cascade: change.cascade,
+                crossPlan: change.crossPlan,
+                currentSubscriptions: targetSubscriptions,
+                affectedSubscriptions: affectedByPlan.get(target.id) ?? 0,
+                keepCurrentSubscriptions: dto.enabled ? null : keepCurrent,
+                retainedGrantsCreated: created,
+                retainedGrantsRemoved: removed,
+              },
+              createdBy: actor.userId,
+              createdByName: actorName,
             },
-            metadata: {
-              source: dto.source ?? 'PANEL',
-              revertOf: dto.revertOf ?? null,
-              requestedKey: feature.key,
-              cascade: change.cascade,
-              currentSubscriptions: current.length,
-              affectedSubscriptions: affected,
-              keepCurrentSubscriptions: dto.enabled ? null : keepCurrent,
-              retainedGrantsCreated: retainedCreated,
-              retainedGrantsRemoved: retainedRemoved,
-            },
-            createdBy: actor.userId,
-            createdByName: actorName,
-          },
-        });
+          });
+        }
       }
       return { retainedCreated, retainedRemoved };
     });
 
+    const summary = plans
+      .map(
+        ({ plan: target, changes: planChanges }) =>
+          `${target.name} ${planChanges.map((c) => `${c.enabled ? '+' : '-'}${c.key}`).join(' ')}`,
+      )
+      .join('; ');
     this.logger.log(
-      `Plano ${plan.name}: ${changes.map((c) => `${c.enabled ? '+' : '-'}${c.key}`).join(' ')} ` +
+      `Plano ${plan.name}, pedido ${dto.enabled ? '+' : '-'}${feature.key}: ${summary} ` +
         `por ${actorName ?? actor.userId} (${affected} assinaturas atingidas, ` +
         `${result.retainedCreated} mantidas, ${result.retainedRemoved} retenções removidas)`,
     );
 
     return {
       changed: true,
-      changes: changes.map((c) => ({
-        key: c.key,
-        name: c.name,
-        enabled: c.enabled,
-        cascade: c.cascade,
-      })),
+      // Só as do plano pedido; o que mudou em cada plano está em `plans`.
+      changes: changes.map(changeView),
       affected,
       retainedGrantsCreated: result.retainedCreated,
       retainedGrantsRemoved: result.retainedRemoved,
+      plans: planViews,
     };
   }
 
@@ -546,6 +644,7 @@ export class PlanConfigService {
           featureId: f.id,
           enabled,
           cascade: false,
+          crossPlan: false,
         };
       });
     const enables = toChange(diff.enable, true);
@@ -648,6 +747,13 @@ export class PlanConfigService {
             createdByName: actorName,
           },
         });
+      }
+
+      // Regra cumulativa: o padrão de um plano não pode deixar a matriz fora
+      // dela. Lançar aqui desfaz a transação inteira (nada fica gravado). O
+      // Trial está fora da regra: restaurá-lo não muda a conta.
+      if (isCumulativePlanType(plan.planType)) {
+        await this.assertCumulative(tx, catalog, plan);
       }
     });
 
@@ -1195,8 +1301,9 @@ export class PlanConfigService {
   private async planFeatureState(
     planId: string,
     catalog: Awaited<ReturnType<PlanConfigService['matrixCatalog']>>,
+    client: Pick<Tx, 'planFeature'> = this.prisma,
   ) {
-    const rows = await this.prisma.planFeature.findMany({
+    const rows = await client.planFeature.findMany({
       where: { planId },
       select: { isActive: true, feature: { select: { key: true } } },
     });
@@ -1209,8 +1316,100 @@ export class PlanConfigService {
   }
 
   /**
-   * As mudanças que o pedido provoca: o próprio recurso e, por dependência,
-   * o que ele exige (ao incluir) ou o que depende dele (ao retirar).
+   * As mudanças que o pedido provoca na matriz.
+   *
+   * Incluir: no plano pedido, o recurso e o que ele exige (o que faltar); pela
+   * regra cumulativa, o mesmo em cada plano de cima que não o tenha. Retirar:
+   * o recurso e o que depende dele, só no plano pedido — e recusado enquanto
+   * um plano de baixo o tiver. O Trial está fora da regra e muda sozinho.
+   */
+  private async matrixChanges(
+    plan: Plan,
+    catalog: Feature[],
+    key: string,
+    enabled: boolean,
+  ): Promise<MatrixChanges> {
+    const state = await this.planFeatureState(plan.id, catalog);
+    const chain = isCumulativePlanType(plan.planType)
+      ? (await this.globalPlans()).filter((p) =>
+          isCumulativePlanType(p.planType),
+        )
+      : [];
+
+    if (enabled) {
+      const changes = this.inclusionChanges(catalog, state, key, false);
+      const plans: PlanChanges[] = changes.length ? [{ plan, changes }] : [];
+      for (const above of chain.filter((p) => p.order > plan.order)) {
+        const aboveState = await this.planFeatureState(above.id, catalog);
+        const aboveChanges = this.inclusionChanges(
+          catalog,
+          aboveState,
+          key,
+          true,
+        );
+        if (aboveChanges.length) {
+          plans.push({ plan: above, changes: aboveChanges });
+        }
+      }
+      return { changes, plans, blockedBy: null };
+    }
+
+    const changes = this.computeChanges(catalog, state, key, false);
+    if (changes.length === 0) {
+      return { changes, plans: [], blockedBy: null };
+    }
+    const blockedBy: Plan[] = [];
+    for (const below of chain.filter((p) => p.order < plan.order)) {
+      const belowState = await this.planFeatureState(below.id, catalog);
+      if (changes.some((c) => belowState.get(c.key))) blockedBy.push(below);
+    }
+    return {
+      changes,
+      plans: [{ plan, changes }],
+      blockedBy: blockedBy.length ? blockedBy : null,
+    };
+  }
+
+  /**
+   * Ao incluir: o recurso e tudo o que ele exige, o que faltar no plano. Num
+   * plano de cima (`crossPlan`), tudo entra como cascata.
+   */
+  private inclusionChanges(
+    catalog: Feature[],
+    state: Map<string, boolean>,
+    key: string,
+    crossPlan: boolean,
+  ): FeatureChange[] {
+    const byKey = new Map(catalog.map((f) => [f.key, f]));
+    const changes: FeatureChange[] = [];
+    const seen = new Set<string>();
+    const visit = (k: string) => {
+      const f = byKey.get(k);
+      if (!f || seen.has(k)) return;
+      seen.add(k);
+      if (!state.get(k)) {
+        changes.push({
+          key: k as PlanFeatureKey,
+          name: f.name,
+          featureId: f.id,
+          enabled: true,
+          cascade: crossPlan || k !== key,
+          crossPlan,
+        });
+      }
+      // Segue pelas dependências mesmo de um recurso já ligado: o plano de
+      // cima precisa ter tudo o que o de baixo vai ter.
+      for (const dep of FEATURE_DEPENDENCIES[k as PlanFeatureKey] ?? []) {
+        visit(dep);
+      }
+    };
+    visit(key);
+    return changes;
+  }
+
+  /**
+   * As mudanças dentro de um plano: o próprio recurso e, por dependência, o
+   * que ele exige (ao incluir) ou o que depende dele (ao retirar).
    */
   private computeChanges(
     catalog: Awaited<ReturnType<PlanConfigService['matrixCatalog']>>,
@@ -1230,6 +1429,7 @@ export class PlanConfigService {
         featureId: f.id,
         enabled,
         cascade,
+        crossPlan: false,
       });
       const next = enabled
         ? (FEATURE_DEPENDENCIES[k as PlanFeatureKey] ?? [])
@@ -1238,6 +1438,112 @@ export class PlanConfigService {
     };
     visit(key, false);
     return changes;
+  }
+
+  /** Cada plano com mudança, com as assinaturas atuais dele (formato da prévia). */
+  private async planChangeViews(
+    plans: PlanChanges[],
+    requestedPlanId: string,
+    requestedSubscriptions: number,
+  ): Promise<PlanChangeView[]> {
+    const views: PlanChangeView[] = [];
+    for (const { plan, changes } of plans) {
+      views.push({
+        ...planRef(plan),
+        order: plan.order,
+        currentSubscriptions:
+          plan.id === requestedPlanId
+            ? requestedSubscriptions
+            : await this.countCurrentSubscriptions(plan.id),
+        changes: changes.map((c) => ({
+          ...changeView(c),
+          crossPlan: c.crossPlan,
+        })),
+      });
+    }
+    return views;
+  }
+
+  /**
+   * Confere a regra cumulativa na matriz inteira, lida dentro da transação
+   * (já com o que ela gravou). Fora da regra, recusa com 422 — o que desfaz a
+   * transação.
+   */
+  private async assertCumulative(tx: Tx, catalog: Feature[], restored: Plan) {
+    const plans = await tx.plan.findMany({
+      where: { companyId: null },
+      orderBy: { order: 'asc' },
+    });
+    const matrix: { plan: Plan; keys: string[] }[] = [];
+    for (const plan of plans.filter((p) => isCumulativePlanType(p.planType))) {
+      const state = await this.planFeatureState(plan.id, catalog, tx);
+      matrix.push({
+        plan,
+        keys: [...state].filter(([, on]) => on).map(([key]) => key),
+      });
+    }
+    const violations = cumulativeViolations(matrix);
+    if (violations.length === 0) return;
+
+    const name = (key: string) =>
+      `"${catalog.find((f) => f.key === key)?.name ?? key}"`;
+    const detail = violations
+      .map(
+        (v) =>
+          `o ${v.higherPlan.name} não tem ${v.keys.map(name).join(', ')}, que o ${v.lowerPlan.name} tem`,
+      )
+      .join('; ');
+    throw new UnprocessableEntityException({
+      code: 'NOT_CUMULATIVE',
+      violations: violations.map((v) => ({
+        lowerPlan: planRef(v.lowerPlan),
+        higherPlan: planRef(v.higherPlan),
+        keys: v.keys,
+      })),
+      message: `Restaurar o padrão do plano ${restored.name} deixaria a matriz fora da regra cumulativa: ${detail}. Nada foi alterado.`,
+    });
+  }
+
+  /** O 422 de cascata: as dependências no plano e os planos de cima. */
+  private cascadeMessage(
+    featureName: string,
+    enabled: boolean,
+    requested: Plan,
+    plans: PlanChanges[],
+  ) {
+    const own =
+      plans
+        .find((p) => p.plan.id === requested.id)
+        ?.changes.filter((c) => c.cascade) ?? [];
+    const above = plans
+      .filter((p) => p.plan.id !== requested.id)
+      .map((p) => p.plan);
+    const parts: string[] = [];
+    if (own.length) {
+      parts.push(
+        enabled
+          ? `Para incluir "${featureName}", inclua também: ${this.names(own)}.`
+          : `Para retirar "${featureName}", retire também: ${this.names(own)}.`,
+      );
+    }
+    if (above.length) {
+      parts.push(
+        `Pela regra cumulativa, "${featureName}" também entra ${this.inPlans(above, 'no')}.`,
+      );
+    }
+    return parts.join(' ');
+  }
+
+  /** "no plano Pro" / "nos planos Pro, Elite e Full" (ou "do"/"dos"). */
+  private inPlans(plans: Plan[], preposition: 'no' | 'do') {
+    const names = plans.map((p) => p.name);
+    const list =
+      names.length > 1
+        ? `${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`
+        : names[0];
+    return names.length > 1
+      ? `${preposition}s planos ${list}`
+      : `${preposition} plano ${list}`;
   }
 
   private resolveKeepChoice(
@@ -1410,7 +1716,7 @@ export class PlanConfigService {
     change: FeatureChange,
     keepCurrent: boolean,
     currentCount: number,
-    requestedName: string,
+    requested: { key: string; name: string; planName: string },
   ) {
     const verb = change.enabled ? 'incluído no' : 'retirado do';
     const scope = change.enabled
@@ -1420,10 +1726,17 @@ export class PlanConfigService {
         : keepCurrent
           ? ' (mantido nas assinaturas atuais; vale para novas contratações)'
           : ' (retirado também das assinaturas atuais)';
-    const cascade = change.cascade
-      ? ` — por dependência de "${requestedName}"`
-      : '';
-    return `"${change.name}" ${verb} plano ${planName}${scope}${cascade}`;
+    const reasons: string[] = [];
+    if (change.key !== requested.key) {
+      reasons.push(`por dependência de "${requested.name}"`);
+    }
+    if (change.crossPlan) {
+      reasons.push(
+        `pela regra cumulativa, ao incluir "${requested.name}" no plano ${requested.planName}`,
+      );
+    }
+    const why = reasons.length ? ` — ${reasons.join('; ')}` : '';
+    return `"${change.name}" ${verb} plano ${planName}${scope}${why}`;
   }
 
   private assertLimitValue(key: string, value: number) {

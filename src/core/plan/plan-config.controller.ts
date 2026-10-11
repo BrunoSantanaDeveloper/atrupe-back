@@ -80,7 +80,7 @@ export class PlanConfigController {
   @ApiResponse({
     status: 422,
     description:
-      'Falta a escolha sobre as assinaturas atuais (CHOICE_REQUIRED) ou a confirmação da cascata de dependências (DEPENDENCY_REQUIRED)',
+      'Falta a escolha sobre as assinaturas atuais (CHOICE_REQUIRED), a confirmação da cascata — dependências ou planos de cima pela regra cumulativa (DEPENDENCY_REQUIRED, com `plans`) — ou a retirada exige tirar antes dos planos de baixo (LOWER_PLAN_HAS_FEATURE)',
   })
   setFeature(
     @Req() req,
@@ -149,6 +149,11 @@ export class PlanConfigController {
 
   @Post(':planId/restore-default')
   @ApiOperation({ summary: 'Restaura a composição padrão do plano' })
+  @ApiResponse({
+    status: 422,
+    description:
+      'O padrão deixaria a matriz fora da regra cumulativa (NOT_CUMULATIVE, com `violations`); nada é gravado',
+  })
   restoreDefault(
     @Req() req,
     @Param('planId', ParseUUIDPipe) planId: string,

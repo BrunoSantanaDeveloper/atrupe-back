@@ -1,4 +1,9 @@
 import type { PrismaClient } from '@prisma/client';
+import {
+  cumulativeViolations,
+  isCumulativePlanType,
+  isPlanFeatureKey,
+} from '../core/plan/plan-feature-rules';
 
 /**
  * Aplica a composição PADRÃO dos planos (src/seeds/plans-complete.ts) sem
@@ -45,6 +50,13 @@ export interface PlanDrift {
   limitsChanged: { key: string; value: number; defaultValue: number }[];
 }
 
+/** Par de planos vizinhos em que o de cima não tem o que o de baixo tem. */
+export interface CumulativeDrift {
+  lowerPlan: string;
+  higherPlan: string;
+  keys: string[];
+}
+
 export interface ApplyPlanDefaultsResult {
   plans: number;
   presentationsFilled: number;
@@ -53,6 +65,11 @@ export interface ApplyPlanDefaultsResult {
   unknownFeatureKeys: string[];
   unknownLimitKeys: string[];
   drift: PlanDrift[];
+  /**
+   * Regra cumulativa conferida no banco depois do seed: só relatada, o seed
+   * não liga nem desliga nada por ela. Nulo quando não deu para conferir.
+   */
+  cumulativeViolations: CumulativeDrift[] | null;
   errors: { planType: string; message: string }[];
 }
 
@@ -94,6 +111,7 @@ export async function applyPlanDefaults(
     unknownFeatureKeys: [],
     unknownLimitKeys: [],
     drift: [],
+    cumulativeViolations: null,
     errors: [],
   };
 
@@ -224,7 +242,48 @@ export async function applyPlanDefaults(
     }
   }
 
+  // Um relatório não derruba o seed: sem conseguir conferir, fica nulo.
+  result.cumulativeViolations = await matrixCumulativeViolations(prisma).catch(
+    () => null,
+  );
+
   return result;
+}
+
+/**
+ * A regra cumulativa no banco: planos globais fora o Trial, pela `order`,
+ * com as chaves de plano que o código conhece (as que o painel mostra).
+ */
+async function matrixCumulativeViolations(
+  prisma: SeedClient,
+): Promise<CumulativeDrift[]> {
+  const plans = await prisma.plan.findMany({
+    where: { companyId: null },
+    orderBy: { order: 'asc' },
+    select: { id: true, planType: true, order: true },
+  });
+  const matrix: {
+    plan: { planType: string; order: number };
+    keys: string[];
+  }[] = [];
+  for (const plan of plans) {
+    if (!isCumulativePlanType(plan.planType)) continue;
+    const rows = await prisma.planFeature.findMany({
+      where: { planId: plan.id, feature: { isActive: true } },
+      select: { isActive: true, feature: { select: { key: true } } },
+    });
+    matrix.push({
+      plan,
+      keys: rows
+        .filter((r) => r.isActive && isPlanFeatureKey(r.feature.key))
+        .map((r) => r.feature.key),
+    });
+  }
+  return cumulativeViolations(matrix).map((v) => ({
+    lowerPlan: v.lowerPlan.planType,
+    higherPlan: v.higherPlan.planType,
+    keys: v.keys,
+  }));
 }
 
 /** A linha de resumo que vai para o log do container. */
@@ -246,6 +305,17 @@ export function describePlanDefaultsResult(
       return `${d.planType}[${parts.join(' ')}]`;
     })
     .join(' ');
+  const cumulative =
+    result.cumulativeViolations === null
+      ? 'não conferidas'
+      : result.cumulativeViolations.length
+        ? result.cumulativeViolations
+            .map(
+              (v) =>
+                `${v.higherPlan} sem ${v.keys.join(',')} (o ${v.lowerPlan} tem)`,
+            )
+            .join('; ')
+        : 'nenhuma';
   return (
     `[seed] planos: ${result.plans} processados, ` +
     `${result.featuresCreated} recursos e ${result.limitsCreated} limites criados, ` +
@@ -259,6 +329,7 @@ export function describePlanDefaultsResult(
     (result.unknownLimitKeys.length
       ? `, limites fora do catálogo: ${result.unknownLimitKeys.join(',')}`
       : '') +
-    (drift ? `; configurado pelo painel (difere do padrão): ${drift}` : '')
+    (drift ? `; configurado pelo painel (difere do padrão): ${drift}` : '') +
+    `; violações de cumulatividade (só relatadas): ${cumulative}`
   );
 }

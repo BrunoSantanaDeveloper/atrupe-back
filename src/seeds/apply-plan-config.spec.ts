@@ -61,6 +61,12 @@ function memoryDb(seed: {
         Object.assign(plan, data);
         return plan;
       }),
+      // Os planos globais pela ordem (a conferência da regra cumulativa).
+      findMany: jest.fn(async () =>
+        plans
+          .filter((p) => !p.companyId)
+          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+      ),
     },
     feature: {
       findMany: jest.fn(async ({ where }) =>
@@ -283,6 +289,46 @@ describe('applyPlanDefaults', () => {
     expect(plansWith('invoice_entry')).toEqual(['Full']);
     expect(plansWith('can_bill_on_delivery_and_checkout')).toEqual([]);
     expect(plansWith('cash_control')).toEqual(['Elite', 'Full', 'Lite']);
+    // O Pro sem o caixa que o Lite tem fere a regra cumulativa: o seed só
+    // relata, não liga.
+    expect(result.cumulativeViolations).toEqual([
+      { lowerPlan: 'LITE', higherPlan: 'PRO', keys: ['cash_control'] },
+    ]);
+    expect(describePlanDefaultsResult(result)).toContain(
+      'violações de cumulatividade (só relatadas): PRO sem cash_control (o LITE tem)',
+    );
+  });
+
+  it('com a matriz cumulativa, o relatório diz que não há violação', async () => {
+    const db = memoryDb({
+      features: BASE_FEATURES.map((f) => f.key),
+      limits: [],
+    });
+
+    const result = await applyPlanDefaults(
+      db.prisma as any,
+      PLAN_CONFIGURATIONS as any,
+    );
+
+    expect(result.cumulativeViolations).toEqual([]);
+    expect(describePlanDefaultsResult(result)).toContain(
+      'violações de cumulatividade (só relatadas): nenhuma',
+    );
+  });
+
+  it('sem conseguir conferir a regra, o seed segue e o relatório avisa', async () => {
+    const db = memoryDb({ features: ['a'], limits: [] });
+    db.prisma.plan.findMany.mockRejectedValue(new Error('fora do ar'));
+
+    const result = await applyPlanDefaults(db.prisma as any, {
+      START: config('START', 'Start', ['a'], {}),
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.cumulativeViolations).toBeNull();
+    expect(describePlanDefaultsResult(result)).toContain(
+      'violações de cumulatividade (só relatadas): não conferidas',
+    );
   });
 
   it('planDefaultsByType indexa o padrão pelo tipo do plano', () => {

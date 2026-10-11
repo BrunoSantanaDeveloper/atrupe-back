@@ -77,9 +77,58 @@ const LITE = {
   companyId: null,
 };
 
+/** Os planos globais, para a regra cumulativa (o Trial fica fora dela). */
+const PLANS = {
+  TRIAL: {
+    ...LITE,
+    id: 'plan-trial',
+    name: 'Trial',
+    planType: 'TRIAL',
+    order: 0,
+    basePrice: 0,
+  },
+  START: {
+    ...LITE,
+    id: 'plan-start',
+    name: 'Start',
+    planType: 'START',
+    order: 1,
+    basePrice: 14700,
+  },
+  LITE,
+  PRO: {
+    ...LITE,
+    id: 'plan-pro',
+    name: 'Pro',
+    planType: 'PRO',
+    order: 3,
+    isActive: false,
+  },
+  ELITE: {
+    ...LITE,
+    id: 'plan-elite',
+    name: 'Elite',
+    planType: 'ELITE',
+    order: 4,
+    isActive: false,
+  },
+  FULL: {
+    ...LITE,
+    id: 'plan-full',
+    name: 'Full',
+    planType: 'FULL',
+    order: 5,
+    isActive: false,
+  },
+};
+
 function buildPrisma() {
   const prisma: any = {
-    plan: { findUnique: jest.fn(), findMany: jest.fn() },
+    // Sem dizer o contrário, a matriz só tem o Lite.
+    plan: {
+      findUnique: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([LITE]),
+    },
     feature: { findMany: jest.fn().mockResolvedValue(FEATURES) },
     planFeature: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -136,6 +185,60 @@ const planState = (prisma: any, enabled: Record<string, boolean>) =>
 const currentSubscriptions = (prisma: any, ids: string[]) => {
   prisma.subscription.count.mockResolvedValue(ids.length);
   prisma.subscription.findMany.mockResolvedValue(ids.map((id) => ({ id })));
+};
+
+/**
+ * A matriz em memória, plano a plano (só os planos listados entram nela). O
+ * upsert altera a matriz e a transação desfaz tudo quando lança, como o banco.
+ */
+const useMatrix = (
+  prisma: any,
+  matrix: Record<string, Record<string, boolean>>,
+  subscriptions: Record<string, string[]> = {},
+) => {
+  const plans = Object.values(PLANS);
+  prisma.plan.findMany.mockImplementation(async () =>
+    plans.filter((p) => p.id in matrix).sort((a, b) => a.order - b.order),
+  );
+  prisma.plan.findUnique.mockImplementation(
+    async ({ where }) => plans.find((p) => p.id === where.id) ?? null,
+  );
+  prisma.planFeature.findMany.mockImplementation(async ({ where }) =>
+    Object.entries(matrix[where.planId] ?? {}).map(([key, isActive]) => ({
+      isActive,
+      feature: { key },
+    })),
+  );
+  prisma.planFeature.upsert.mockImplementation(async ({ where, update }) => {
+    const { planId, featureId } = where.planId_featureId;
+    const key = FEATURES.find((f) => f.id === featureId).key;
+    matrix[planId] = { ...matrix[planId], [key]: update.isActive };
+  });
+  const ofPlan = (where: any) => subscriptions[where.planId] ?? [];
+  prisma.subscription.count.mockImplementation(
+    async ({ where }) => ofPlan(where).length,
+  );
+  prisma.subscription.findMany.mockImplementation(async ({ where }) =>
+    ofPlan(where).map((id) => ({ id })),
+  );
+  const history: any[] = [];
+  prisma.planConfigHistory.create.mockImplementation(async ({ data }) => {
+    history.push(data);
+    return data;
+  });
+  prisma.$transaction.mockImplementation(async (fn: any) => {
+    const snapshot = JSON.stringify(matrix);
+    const written = history.length;
+    try {
+      return await fn(prisma);
+    } catch (error) {
+      for (const planId of Object.keys(matrix)) delete matrix[planId];
+      Object.assign(matrix, JSON.parse(snapshot));
+      history.length = written;
+      throw error;
+    }
+  });
+  return { matrix, history };
 };
 
 describe('PlanConfigService', () => {
@@ -406,6 +509,333 @@ describe('PlanConfigService', () => {
     });
   });
 
+  describe('regra cumulativa', () => {
+    const cash = (cascade: boolean, crossPlan: boolean) => ({
+      key: 'cash_control',
+      name: 'Controle de Caixa',
+      enabled: true,
+      cascade,
+      crossPlan,
+    });
+
+    it('incluir no Lite leva o recurso a Pro, Elite e Full que não o têm', async () => {
+      useMatrix(
+        prisma,
+        {
+          'plan-start': {},
+          'plan-lite': {},
+          'plan-pro': {},
+          'plan-elite': { cash_control: true },
+          'plan-full': {},
+        },
+        {
+          'plan-lite': ['s1', 's2'],
+          'plan-pro': ['s3'],
+          'plan-elite': ['s4', 's5'],
+        },
+      );
+
+      const preview = await service.previewFeature(
+        LITE.id,
+        'cash_control',
+        true,
+      );
+
+      expect(preview.plans).toEqual([
+        {
+          planId: 'plan-lite',
+          planName: 'Lite',
+          planType: 'LITE',
+          order: 2,
+          currentSubscriptions: 2,
+          changes: [cash(false, false)],
+        },
+        {
+          planId: 'plan-pro',
+          planName: 'Pro',
+          planType: 'PRO',
+          order: 3,
+          currentSubscriptions: 1,
+          changes: [cash(true, true)],
+        },
+        {
+          planId: 'plan-full',
+          planName: 'Full',
+          planType: 'FULL',
+          order: 5,
+          currentSubscriptions: 0,
+          changes: [cash(true, true)],
+        },
+      ]);
+      // O campo antigo continua só com o plano pedido.
+      expect(preview.changes).toEqual([
+        {
+          key: 'cash_control',
+          name: 'Controle de Caixa',
+          enabled: true,
+          cascade: false,
+        },
+      ]);
+      expect(preview.currentSubscriptions).toBe(2);
+      expect(preview.affectedIfApplied).toBe(3);
+      expect(preview.requiresCascade).toBe(true);
+      expect(preview.blockedBy).toBeNull();
+      expect(preview.noChange).toBe(false);
+    });
+
+    it('a dependência também sobe: o de cima recebe o que faltar dela', async () => {
+      useMatrix(prisma, {
+        'plan-lite': {},
+        'plan-pro': { delivery_production_tabs: true },
+        'plan-elite': {},
+      });
+
+      const preview = await service.previewFeature(
+        LITE.id,
+        'delivery_stage_status_change',
+        true,
+      );
+
+      expect(
+        preview.plans.map((p) => [
+          p.planType,
+          p.changes.map((c) => [c.key, c.cascade, c.crossPlan]),
+        ]),
+      ).toEqual([
+        [
+          'LITE',
+          [
+            ['delivery_stage_status_change', false, false],
+            ['delivery_production_tabs', true, false],
+          ],
+        ],
+        ['PRO', [['delivery_stage_status_change', true, true]]],
+        [
+          'ELITE',
+          [
+            ['delivery_stage_status_change', true, true],
+            ['delivery_production_tabs', true, true],
+          ],
+        ],
+      ]);
+    });
+
+    it('aplicar pede a cascata e grava em cada plano, com o histórico por plano', async () => {
+      const { matrix, history } = useMatrix(
+        prisma,
+        {
+          'plan-lite': {},
+          'plan-pro': {},
+          'plan-elite': { cash_control: true },
+          'plan-full': {},
+        },
+        { 'plan-lite': ['s1'] },
+      );
+
+      const missing = await service
+        .setFeature(actor, LITE.id, {
+          featureKey: 'cash_control',
+          enabled: true,
+        })
+        .catch((e) => e);
+      expect(missing).toBeInstanceOf(UnprocessableEntityException);
+      expect(missing.getResponse()).toEqual(
+        expect.objectContaining({
+          code: 'DEPENDENCY_REQUIRED',
+          message:
+            'Pela regra cumulativa, "Controle de Caixa" também entra nos planos Pro e Full.',
+          changes: [
+            {
+              key: 'cash_control',
+              name: 'Controle de Caixa',
+              enabled: true,
+              cascade: false,
+            },
+          ],
+          plans: [
+            expect.objectContaining({ planType: 'LITE' }),
+            expect.objectContaining({ planType: 'PRO' }),
+            expect.objectContaining({ planType: 'FULL' }),
+          ],
+        }),
+      );
+      expect(prisma.planFeature.upsert).not.toHaveBeenCalled();
+
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      const result = await service.setFeature(actor, LITE.id, {
+        featureKey: 'cash_control',
+        enabled: true,
+        cascade: true,
+        expectedAffected: 1,
+        password: 'certa',
+      });
+
+      expect(result).toEqual(
+        expect.objectContaining({ changed: true, affected: 1 }),
+      );
+      expect(result.plans.map((p) => p.planType)).toEqual([
+        'LITE',
+        'PRO',
+        'FULL',
+      ]);
+      expect(matrix).toEqual({
+        'plan-lite': { cash_control: true },
+        'plan-pro': { cash_control: true },
+        'plan-elite': { cash_control: true },
+        'plan-full': { cash_control: true },
+      });
+      // A retenção redundante sai em cada plano que ganhou o recurso.
+      expect(
+        prisma.subscriptionFeature.deleteMany.mock.calls.map(
+          ([arg]) => arg.where.subscription.planId,
+        ),
+      ).toEqual(['plan-lite', 'plan-pro', 'plan-full']);
+      expect(
+        history.map((h) => [h.planType, h.featureKey, h.metadata.crossPlan]),
+      ).toEqual([
+        ['LITE', 'cash_control', false],
+        ['PRO', 'cash_control', true],
+        ['FULL', 'cash_control', true],
+      ]);
+      for (const row of history) {
+        expect(row.metadata).toEqual(
+          expect.objectContaining({
+            requestedPlanId: 'plan-lite',
+            requestedKey: 'cash_control',
+            cascade: row.planType !== 'LITE',
+          }),
+        );
+      }
+      expect(history[1].description).toBe(
+        '"Controle de Caixa" incluído no plano Pro — pela regra cumulativa, ao incluir "Controle de Caixa" no plano Lite',
+      );
+    });
+
+    it('a senha e a prévia valem sobre a soma: o Lite sem assinaturas, o Pro com', async () => {
+      useMatrix(
+        prisma,
+        { 'plan-lite': {}, 'plan-pro': {} },
+        { 'plan-pro': ['s1', 's2'] },
+      );
+
+      const preview = await service.previewFeature(
+        LITE.id,
+        'cash_control',
+        true,
+      );
+      expect(preview.currentSubscriptions).toBe(0);
+      expect(preview.affectedIfApplied).toBe(2);
+
+      const error = await service
+        .setFeature(actor, LITE.id, {
+          featureKey: 'cash_control',
+          enabled: true,
+          cascade: true,
+        })
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(UnauthorizedException);
+      expect(error.getResponse().code).toBe('PASSWORD_REQUIRED');
+
+      await expect(
+        service.setFeature(actor, LITE.id, {
+          featureKey: 'cash_control',
+          enabled: true,
+          cascade: true,
+          expectedAffected: 0,
+          password: 'certa',
+        }),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.planFeature.upsert).not.toHaveBeenCalled();
+    });
+
+    it('retirar do Pro o que o Lite tem é recusado: retire primeiro do Lite', async () => {
+      useMatrix(prisma, {
+        'plan-start': {},
+        'plan-lite': { cash_control: true },
+        'plan-pro': { cash_control: true },
+      });
+
+      const preview = await service.previewFeature(
+        'plan-pro',
+        'cash_control',
+        false,
+      );
+      expect(preview.blockedBy).toEqual([
+        { planId: 'plan-lite', planName: 'Lite', planType: 'LITE' },
+      ]);
+
+      const error = await service
+        .setFeature(actor, 'plan-pro', {
+          featureKey: 'cash_control',
+          enabled: false,
+          keepCurrentSubscriptions: true,
+        })
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(UnprocessableEntityException);
+      expect(error.getResponse()).toEqual({
+        code: 'LOWER_PLAN_HAS_FEATURE',
+        feature: 'cash_control',
+        plans: [{ planId: 'plan-lite', planName: 'Lite', planType: 'LITE' }],
+        message: 'Retire primeiro "Controle de Caixa" do plano Lite.',
+      });
+      expect(prisma.planFeature.upsert).not.toHaveBeenCalled();
+    });
+
+    it('retirar do plano mais baixo que tem o recurso vale só para ele', async () => {
+      const { matrix } = useMatrix(prisma, {
+        'plan-start': {},
+        'plan-lite': { cash_control: true },
+        'plan-pro': { cash_control: true },
+      });
+
+      const result = await service.setFeature(actor, LITE.id, {
+        featureKey: 'cash_control',
+        enabled: false,
+      });
+
+      expect(result.plans.map((p) => p.planType)).toEqual(['LITE']);
+      expect(matrix['plan-lite'].cash_control).toBe(false);
+      expect(matrix['plan-pro'].cash_control).toBe(true);
+    });
+
+    it('o Trial muda sozinho: não leva o recurso a ninguém nem é barrado pelos de baixo', async () => {
+      const { matrix } = useMatrix(prisma, {
+        'plan-trial': { cash_control: true },
+        'plan-start': { cash_control: true },
+        'plan-lite': { cash_control: true },
+      });
+
+      const removal = await service.previewFeature(
+        'plan-trial',
+        'cash_control',
+        false,
+      );
+      expect(removal.blockedBy).toBeNull();
+      await service.setFeature(actor, 'plan-trial', {
+        featureKey: 'cash_control',
+        enabled: false,
+      });
+
+      const inclusion = await service.previewFeature(
+        'plan-trial',
+        'sectors_configuration',
+        true,
+      );
+      expect(inclusion.plans.map((p) => p.planType)).toEqual(['TRIAL']);
+      expect(inclusion.requiresCascade).toBe(false);
+      await service.setFeature(actor, 'plan-trial', {
+        featureKey: 'sectors_configuration',
+        enabled: true,
+      });
+
+      expect(matrix).toEqual({
+        'plan-trial': { cash_control: false, sectors_configuration: true },
+        'plan-start': { cash_control: true },
+        'plan-lite': { cash_control: true },
+      });
+    });
+  });
+
   describe('limites', () => {
     beforeEach(() => {
       prisma.limit.findUnique.mockResolvedValue({
@@ -549,6 +979,63 @@ describe('PlanConfigService', () => {
         password: 'certa',
       });
       expect(result).toEqual({ changed: true, affected: 1 });
+    });
+
+    it('restaurar um padrão que deixaria a matriz fora da regra cumulativa é recusado e nada é gravado', async () => {
+      // O padrão do Start tem Setores; o Lite foi configurado sem.
+      const { matrix, history } = useMatrix(prisma, {
+        'plan-start': {},
+        'plan-lite': { cash_control: true },
+        'plan-pro': { cash_control: true, sectors_configuration: true },
+      });
+      const before = JSON.parse(JSON.stringify(matrix));
+
+      const error = await service
+        .restoreDefaults(actor, 'plan-start', {})
+        .catch((e) => e);
+
+      expect(error).toBeInstanceOf(UnprocessableEntityException);
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({
+          code: 'NOT_CUMULATIVE',
+          violations: [
+            {
+              lowerPlan: {
+                planId: 'plan-start',
+                planName: 'Start',
+                planType: 'START',
+              },
+              higherPlan: {
+                planId: 'plan-lite',
+                planName: 'Lite',
+                planType: 'LITE',
+              },
+              keys: ['sectors_configuration'],
+            },
+          ],
+        }),
+      );
+      expect(error.getResponse().message).toContain(
+        'o Lite não tem "Configurar Setores", que o Start tem',
+      );
+      // A transação foi desfeita: a matriz e o histórico ficam como estavam.
+      expect(prisma.planFeature.upsert).toHaveBeenCalled();
+      expect(matrix).toEqual(before);
+      expect(history).toEqual([]);
+    });
+
+    it('restaurar o Trial não confere a regra (ele está fora dela)', async () => {
+      useMatrix(prisma, {
+        'plan-trial': {},
+        'plan-start': { sectors_configuration: true },
+        // Violação que já existia entre Lite e Pro não trava o Trial.
+        'plan-lite': { sectors_configuration: true, cash_control: true },
+        'plan-pro': { sectors_configuration: true },
+      });
+
+      const result = await service.restoreDefaults(actor, 'plan-trial', {});
+
+      expect(result).toEqual({ changed: true, affected: 0 });
     });
   });
 

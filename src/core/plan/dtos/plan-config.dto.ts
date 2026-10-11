@@ -101,7 +101,7 @@ export class SetPlanFeatureDto extends GuardedChangeDto {
   @IsBoolean()
   @ApiProperty({
     description:
-      'Aplica junto as dependências (ligar o que o recurso exige, ou desligar o que depende dele).',
+      'Aplica junto a cascata: as dependências (ligar o que o recurso exige, ou desligar o que depende dele) e, ao incluir, os planos de cima (regra cumulativa).',
     required: false,
   })
   cascade?: boolean;
