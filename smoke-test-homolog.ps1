@@ -48,7 +48,7 @@ try {
 # --- Teste 3: Rota de recuperação de senha existe? ---
 Write-Host "[3] Verificando rota POST /user/forgot-password..." -ForegroundColor Yellow
 try {
-    $body = '{"email":"smoke@test.com"}'
+    $body = '{"email":"smoke@atrupe.invalid"}'
     $forgotTest = Invoke-RestMethod -Uri "$API_BASE/user/forgot-password" -Method Post -Body $body -ContentType "application/json" -TimeoutSec 10
     Write-Host "    PASS - Rota /user/forgot-password respondeu (smoke OK)" -ForegroundColor Green
 } catch {
@@ -82,7 +82,7 @@ try {
 # --- Teste 5: Rota de cadastro de nova conta existe? ---
 Write-Host "[5] Verificando rota POST /user (Cadastro de conta)..." -ForegroundColor Yellow
 try {
-    $body = '{"email":"smoke-test-new-account@test.com","name":"Smoke Test","companyName":"Smoke Test Inc","phone":"11999999999"}'
+    $body = '{"email":"smoke-test-new-account@atrupe.invalid","name":"Smoke Test","companyName":"Smoke Test Inc","phone":"11999999999"}'
     $registerTest = Invoke-RestMethod -Uri "$API_BASE/user" -Method Post -Body $body -ContentType "application/json" -TimeoutSec 10
     Write-Host "    PASS - Rota /user respondeu com sucesso (smoke OK)" -ForegroundColor Green
 } catch {
