@@ -242,7 +242,7 @@ export class CompanyManagementService {
     );
 
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Senha incorreta');
+      throw new UnauthorizedException('Senha do administrador incorreta.');
     }
 
     // Buscar o employee/user principal da empresa
@@ -605,7 +605,7 @@ export class CompanyManagementService {
       dto.password,
     );
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Senha incorreta');
+      throw new UnauthorizedException('Senha do administrador incorreta.');
     }
 
     const customer = await this.prisma.customer.findFirst({

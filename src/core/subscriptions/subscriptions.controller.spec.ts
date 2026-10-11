@@ -13,6 +13,11 @@ describe('SubscriptionsController', () => {
   const complements = {
     removeModule: jest.fn(),
   };
+  const companyManagement = {
+    getCompanyDetails: jest.fn(),
+    updatePlan: jest.fn(),
+    syncCustomerAddressToAsaas: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -32,13 +37,7 @@ describe('SubscriptionsController', () => {
             getDashboardSummary: jest.fn(),
           },
         },
-        {
-          provide: CompanyManagementService,
-          useValue: {
-            getCompanyDetails: jest.fn(),
-            updatePlan: jest.fn(),
-          },
-        },
+        { provide: CompanyManagementService, useValue: companyManagement },
         {
           provide: SubscriptionBlockService,
           useValue: {
@@ -94,6 +93,23 @@ describe('SubscriptionsController', () => {
       user,
       'sub-1',
       'nota_fiscal',
+    );
+  });
+
+  it('o endereço do Asaas confere a senha do superadmin logado', async () => {
+    // A estratégia JWT põe o id do usuário em `userId`; com `req.user.id`
+    // o serviço buscava o administrador por id indefinido e a rota falhava
+    // com qualquer senha.
+    const req = {
+      user: { userId: 'admin-1', companyId: 'company-1', isAdmin: true },
+    };
+    const dto = { password: 'senha', postalCode: '89201-000' };
+    await controller.syncAddressToAsaas('company-2', dto as never, req);
+
+    expect(companyManagement.syncCustomerAddressToAsaas).toHaveBeenCalledWith(
+      'company-2',
+      dto,
+      'admin-1',
     );
   });
 });

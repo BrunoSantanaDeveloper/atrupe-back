@@ -240,7 +240,7 @@ export class SubscriptionsController {
     return await this.companyManagementService.syncCustomerAddressToAsaas(
       companyId,
       dto,
-      req.user.id,
+      req.user.userId,
     );
   }
 
