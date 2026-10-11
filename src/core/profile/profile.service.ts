@@ -11,6 +11,9 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
+const PROFILE_NOT_FOUND = 'Perfil de vendedor não encontrado.';
+const EMPLOYEE_NOT_FOUND = 'Colaborador não encontrado.';
+
 @Injectable()
 export class ProfileService {
   constructor(private readonly prisma: PrismaService) {}
@@ -116,22 +119,29 @@ export class ProfileService {
     }
   }
 
-  findOne(id: string) {
-    return this.prisma.sellerProfile.findUnique({
-      where: {
-        id: id,
-      },
-    });
-  }
-
-  async update(id: string, updateProfileDto: UpdateProfileDto) {
-    const profile = await this.prisma.sellerProfile.findUnique({
-      where: { id },
+  /**
+   * Toda operação por id confere a empresa da sessão: sem isso, um id de
+   * outra empresa era lido, alterado ou removido. O id de outra empresa
+   * responde 404, como um id que não existe.
+   */
+  async findOne(id: string, companyId: string) {
+    const profile = await this.prisma.sellerProfile.findFirst({
+      where: { id, companyId },
     });
 
     if (!profile) {
-      throw new NotFoundException(`Profile with id ${id} not found`);
+      throw new NotFoundException(PROFILE_NOT_FOUND);
     }
+
+    return profile;
+  }
+
+  async update(
+    id: string,
+    companyId: string,
+    updateProfileDto: UpdateProfileDto,
+  ) {
+    await this.findOne(id, companyId);
 
     return await this.prisma.sellerProfile.update({
       where: { id },
@@ -139,9 +149,11 @@ export class ProfileService {
     });
   }
 
-  async remove(id: string) {
+  async remove(id: string, companyId: string) {
+    await this.findOne(id, companyId);
+
     await this.prisma.employee.updateMany({
-      where: { sellerProfileId: id },
+      where: { sellerProfileId: id, companyId },
       data: { sellerProfileId: null },
     });
     return await this.prisma.sellerProfile.update({
@@ -188,7 +200,9 @@ export class ProfileService {
     return data;
   }
 
-  async removeEmployee(employeeId: string) {
+  async removeEmployee(employeeId: string, companyId: string) {
+    await this.findEmployee(employeeId, companyId);
+
     try {
       return await this.prisma.employee.update({
         where: { id: employeeId },
@@ -198,8 +212,24 @@ export class ProfileService {
       throw new BadRequestException(error.message);
     }
   }
-  async addEmployee(profileId: string, dto: AddEmployeeOnProfileDto) {
+
+  async addEmployee(
+    profileId: string,
+    companyId: string,
+    dto: AddEmployeeOnProfileDto,
+  ) {
     const { employeeId } = dto;
+
+    // O perfil precisa estar ativo: o removido não aparece na tela
+    const profile = await this.prisma.sellerProfile.findFirst({
+      where: { id: profileId, companyId, isActive: true },
+      select: { id: true },
+    });
+    if (!profile) {
+      throw new NotFoundException(PROFILE_NOT_FOUND);
+    }
+    await this.findEmployee(employeeId, companyId);
+
     try {
       return await this.prisma.employee.update({
         where: { id: employeeId },
@@ -208,5 +238,18 @@ export class ProfileService {
     } catch (error) {
       throw new BadRequestException(error.message);
     }
+  }
+
+  private async findEmployee(employeeId: string, companyId: string) {
+    const employee = await this.prisma.employee.findFirst({
+      where: { id: employeeId, companyId },
+      select: { id: true },
+    });
+
+    if (!employee) {
+      throw new NotFoundException(EMPLOYEE_NOT_FOUND);
+    }
+
+    return employee;
   }
 }
