@@ -15,6 +15,18 @@ import * as argon2 from 'argon2';
 
 const prisma = new PrismaClient();
 
+/**
+ * Senha de uma conta criada pelo seed, lida do ambiente.
+ *
+ * O seed roda em todo ambiente a cada subida (start.sh), então a senha não
+ * pode morar no código: cada ambiente define a sua ou não define nenhuma, e
+ * aí a conta não é criada. O valor nunca vai para o log.
+ */
+function passwordFromEnv(variable: string): string | null {
+  const value = process.env[variable];
+  return value && value.trim() !== '' ? value : null;
+}
+
 async function createDefaultBanks() {
   console.log('Criando bancos padrão...');
 
@@ -225,7 +237,6 @@ async function createSystemAdminUser() {
   console.log('Criando usuário administrador do sistema...');
 
   const adminEmail = 'sistema@atrupe.com.br';
-  const adminPassword = 'fkD31=b5y&1$';
 
   try {
     // Verifica se o usuário já existe
@@ -234,8 +245,17 @@ async function createSystemAdminUser() {
     });
 
     if (adminUser) {
+      // A senha de quem já existe não é regravada: trocá-la é pelo sistema.
       console.log(`Usuário administrador já existe: ${adminEmail}`);
     } else {
+      const adminPassword = passwordFromEnv('SEED_SYSTEM_ADMIN_PASSWORD');
+      if (!adminPassword) {
+        console.log(
+          `SEED_SYSTEM_ADMIN_PASSWORD não definida: o administrador do sistema (${adminEmail}) não foi criado.`,
+        );
+        return;
+      }
+
       // Hash da senha usando argon2
       const hashedPassword = await argon2.hash(adminPassword);
 
@@ -325,10 +345,19 @@ async function createSystemAdminUser() {
 }
 
 async function createCommonUser() {
-  console.log('Criando usuário comum para testes...');
-
   const commonEmail = 'bruno@atrupe.com.br';
-  const commonPassword = 'fkD31=b5y&1$';
+
+  // A conta de teste inteira (empresa, cliente e assinatura
+  // sub_local_test_bruno) só existe onde o ambiente define a senha dela.
+  const commonPassword = passwordFromEnv('SEED_TEST_USER_PASSWORD');
+  if (!commonPassword) {
+    console.log(
+      `SEED_TEST_USER_PASSWORD não definida: o usuário comum de testes (${commonEmail}), a empresa e a assinatura dele não foram criados.`,
+    );
+    return;
+  }
+
+  console.log('Criando usuário comum para testes...');
 
   try {
     // 1. Criar Empresa
