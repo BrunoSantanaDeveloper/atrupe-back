@@ -83,6 +83,20 @@ export class PlanController {
     return this.planService.getPublicComparison();
   }
 
+  @Get('public/feature-map')
+  @ApiOperation({
+    summary:
+      'De qual plano em diante cada recurso está disponível (mesma regra do 403 FEATURE_NOT_AVAILABLE), sem dado de empresa',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      '{ features: [{ key, name, category, availableFrom: { planType, name, isActive } | null, module }] }',
+  })
+  getPublicFeatureMap() {
+    return this.planService.getPublicFeatureMap();
+  }
+
   @Get('manage')
   @UseGuards(JwtAuthGuard, SystemAdminGuard)
   @ApiBearerAuth()

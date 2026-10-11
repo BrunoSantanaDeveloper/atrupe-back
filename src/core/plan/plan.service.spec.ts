@@ -2,12 +2,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PlanService } from './plan.service';
 import { PrismaService } from 'nestjs-prisma';
 import { PlanConfigService } from './plan-config.service';
+import { PlanControlService } from './plan-control.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 describe('PlanService', () => {
   let service: PlanService;
   let prismaMock: any;
   let planConfigMock: { recordAvailability: jest.Mock };
+  let planControlMock: { getFeatureAvailability: jest.Mock };
 
   beforeEach(async () => {
     prismaMock = {
@@ -26,12 +28,16 @@ describe('PlanService', () => {
     planConfigMock = {
       recordAvailability: jest.fn().mockResolvedValue(undefined),
     };
+    planControlMock = {
+      getFeatureAvailability: jest.fn().mockResolvedValue([]),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PlanService,
         { provide: PrismaService, useValue: prismaMock },
         { provide: PlanConfigService, useValue: planConfigMock },
+        { provide: PlanControlService, useValue: planControlMock },
       ],
     }).compile();
 
@@ -136,6 +142,34 @@ describe('PlanService', () => {
       });
       expect(pro).toMatchObject({ planType: 'PRO', order: 3, isActive: false });
       expect(pro.basePrice).toBeUndefined();
+    });
+  });
+
+  describe('getPublicFeatureMap', () => {
+    it('devolve cada chave com o plano de onde fica disponível, sem dado de empresa', async () => {
+      const features = [
+        {
+          key: 'cost_base',
+          name: 'Base de custos',
+          category: 'costs',
+          availableFrom: { planType: 'PRO', name: 'Pro', isActive: false },
+          module: false,
+        },
+        {
+          key: 'nota_fiscal',
+          name: 'Nota Fiscal',
+          category: 'fiscal',
+          availableFrom: null,
+          module: true,
+        },
+      ];
+      planControlMock.getFeatureAvailability.mockResolvedValue(features);
+
+      const result = await service.getPublicFeatureMap();
+
+      expect(result).toEqual({ features });
+      // A mesma conta do 403, sobre o catálogo inteiro (nenhuma chave filtrada).
+      expect(planControlMock.getFeatureAvailability).toHaveBeenCalledWith();
     });
   });
 

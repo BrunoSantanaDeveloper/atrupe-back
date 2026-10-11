@@ -6,11 +6,13 @@ import {
 import { CreatePlanDTO, UpdatePlanDTO } from './dtos/plan';
 import { PrismaService } from 'nestjs-prisma';
 import { PlanConfigService } from './plan-config.service';
+import { PlanControlService } from './plan-control.service';
 @Injectable()
 export class PlanService {
   constructor(
     private prisma: PrismaService,
     private planConfig: PlanConfigService,
+    private planControl: PlanControlService,
   ) {}
 
   // Plan CRUD Operations
@@ -115,6 +117,17 @@ export class PlanService {
   async getPublicComparison() {
     const { groups } = await this.planConfig.getComparison();
     return groups;
+  }
+
+  /**
+   * Mapa público das chaves: de qual plano em diante cada recurso está
+   * disponível, com a mesma regra do 403 (`availableFrom`, `module`). Todas
+   * as chaves ativas do catálogo, módulos pagos inclusive; nada de empresa.
+   * A tela o usa para dizer "disponível a partir do Pro" sem ter um 403.
+   */
+  async getPublicFeatureMap() {
+    const features = await this.planControl.getFeatureAvailability();
+    return { features };
   }
 
   /**
