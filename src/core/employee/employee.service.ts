@@ -9,12 +9,14 @@ import { PrismaService } from 'nestjs-prisma';
 import { FilterEmployeeDto } from './dto/filter-employee.dto';
 import { Prisma } from '@prisma/client';
 import { EmployeeHistoryService } from './history/history.service';
+import { PlanControlService } from '../plan/plan-control.service';
 
 @Injectable()
 export class EmployeeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly historyService: EmployeeHistoryService,
+    private readonly planControl: PlanControlService,
   ) {}
 
   async create(
@@ -124,10 +126,21 @@ export class EmployeeService {
     // Calcula o total
     const total = statusCount.actives + statusCount.inactives;
 
+    // Cota de usuários do plano: quem tem acesso (a mesma conta do limite) e
+    // o limite, já com os usuários adicionais. -1 = ilimitado; nulo = o
+    // plano não limita ou a empresa está sem assinatura ativa.
+    const [used, planInfo] = companyId
+      ? await Promise.all([
+          this.planControl.getCurrentUserCount(companyId),
+          this.planControl.getCompanyPlanInfo(companyId),
+        ])
+      : [0, null];
+
     return {
       ACTIVES: statusCount.actives,
       INACTIVES: statusCount.inactives,
       TOTAL: total,
+      USERS: { used, limit: planInfo?.limits.max_users ?? null },
     };
   }
 

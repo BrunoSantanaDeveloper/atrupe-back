@@ -25,7 +25,8 @@ describe('EmployeeService — titular da conta', () => {
     };
     const prisma: any = { $transaction: jest.fn(async (fn) => fn(tx)) };
     const history: any = { createEmployeeHistory: jest.fn() };
-    service = new EmployeeService(prisma, history);
+    const planControl: any = {};
+    service = new EmployeeService(prisma, history, planControl);
   });
 
   it('inativar o titular é recusado, com o caminho: transferir antes', async () => {
