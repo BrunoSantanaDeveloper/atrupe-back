@@ -37,13 +37,22 @@ const liteFeatures = [
   'bank_account_delete',
   'bank_account_provision',
   'payment_difference',
+  'multiple_companies',
+  'transaction_cancel_reasons',
 ];
 
-const proFeatures = [...liteFeatures];
+// Cada plano tem tudo o que o anterior tem (regra cumulativa, 10/10/2026).
+// `can_bill_on_delivery_and_checkout` não está em nenhuma lista até o PO
+// decidir o plano.
+const proFeatures = [...liteFeatures, 'cost_base', 'pricing_center'];
 
-const eliteFeatures = [...proFeatures];
+const eliteFeatures = [
+  ...proFeatures,
+  'production_manager',
+  'productivity_tracking',
+];
 
-const fullFeatures = [...eliteFeatures];
+const fullFeatures = [...eliteFeatures, 'stock_control', 'invoice_entry'];
 
 export const PLAN_CONFIGURATIONS = {
   TRIAL: {

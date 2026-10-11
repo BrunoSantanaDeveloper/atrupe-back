@@ -233,6 +233,87 @@ export const BASE_FEATURES = [
     price: 0,
     isActive: true,
   },
+  // Chaves de 10/10/2026 (contrato da camada de planos). As do LITE já têm
+  // gate na API; as de PRO, ELITE e FULL protegem telas até a API de cada
+  // módulo nascer. "Faturar na entrega" fica fora de todo plano até o PO
+  // decidir (acompanha a Agenda de entrega).
+  {
+    key: 'multiple_companies',
+    name: 'Mais de uma empresa',
+    description:
+      'Cadastrar outras empresas (filiais, outro CNPJ) na mesma conta.',
+    category: 'configuration',
+    price: 0,
+    isActive: true,
+  },
+  {
+    key: 'transaction_cancel_reasons',
+    name: 'Motivo ao cancelar lançamento',
+    description:
+      'Informar motivo e observação ao cancelar contas a pagar e a receber.',
+    category: 'financial',
+    price: 0,
+    isActive: true,
+  },
+  {
+    key: 'can_bill_on_delivery_and_checkout',
+    name: 'Faturar na entrega e na frente de caixa',
+    description:
+      'Opções de faturamento "na entrega" e "na frente de caixa" nas séries e condições.',
+    category: 'quotations',
+    price: 0,
+    isActive: true,
+  },
+  {
+    key: 'cost_base',
+    name: 'Base de custos',
+    description:
+      'Base de custos, patrimônios, materiais, processos e composição com custo.',
+    category: 'costs',
+    price: 0,
+    isActive: true,
+  },
+  {
+    key: 'pricing_center',
+    name: 'Precificação',
+    description:
+      'Central de precificação: preço sugerido, margem e parâmetros.',
+    category: 'costs',
+    price: 0,
+    isActive: true,
+  },
+  {
+    key: 'production_manager',
+    name: 'Gerenciador de produção',
+    description: 'Gerenciador, projetos, configurações de produção e frota.',
+    category: 'production',
+    price: 0,
+    isActive: true,
+  },
+  {
+    key: 'productivity_tracking',
+    name: 'Produtividade',
+    description: 'Produtividade por setor e por pessoa.',
+    category: 'production',
+    price: 0,
+    isActive: true,
+  },
+  {
+    key: 'stock_control',
+    name: 'Estoque',
+    description: 'Saldo e movimentação de estoque.',
+    category: 'stock',
+    price: 0,
+    isActive: true,
+  },
+  {
+    key: 'invoice_entry',
+    name: 'Entrada de nota',
+    description: 'Entrada de nota fiscal de compra com conciliação.',
+    category: 'stock',
+    price: 0,
+    isActive: true,
+  },
   // Módulos adicionais pagos (aparecem na página de assinatura)
   {
     key: 'nota_fiscal',

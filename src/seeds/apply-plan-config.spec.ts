@@ -4,6 +4,8 @@ import {
   planDefaultsByType,
   PlanDefaultsConfig,
 } from './apply-plan-config';
+import { BASE_FEATURES } from './features-base';
+import { PLAN_CONFIGURATIONS } from './plans-complete';
 
 /**
  * Banco em memória com o mínimo que o seed usa: planos por nome, catálogo de
@@ -240,6 +242,47 @@ describe('applyPlanDefaults', () => {
     const again = await applyPlanDefaults(db.prisma as any, { LITE: lite });
     expect(plan.presentation.pitch).toBe('Editado no painel');
     expect(again.presentationsFilled).toBe(0);
+  });
+
+  it('no deploy, as chaves novas entram ligadas do plano delas para cima, sem religar o que o painel desligou', async () => {
+    const db = memoryDb({
+      features: BASE_FEATURES.map((f) => f.key),
+      limits: [],
+      // O superadmin tinha tirado o controle de caixa do Pro.
+      planFeatures: [{ planName: 'Pro', key: 'cash_control', isActive: false }],
+    });
+
+    const result = await applyPlanDefaults(
+      db.prisma as any,
+      PLAN_CONFIGURATIONS as any,
+    );
+
+    const plansWith = (key: string) =>
+      db.planFeatures
+        .filter((r) => r.featureId === `f-${key}` && r.isActive)
+        .map((r) => r.planId.replace('p-', ''))
+        .sort();
+    expect(result.unknownFeatureKeys).toEqual([]);
+    expect(plansWith('multiple_companies')).toEqual([
+      'Elite',
+      'Full',
+      'Lite',
+      'Pro',
+    ]);
+    expect(plansWith('transaction_cancel_reasons')).toEqual([
+      'Elite',
+      'Full',
+      'Lite',
+      'Pro',
+    ]);
+    expect(plansWith('cost_base')).toEqual(['Elite', 'Full', 'Pro']);
+    expect(plansWith('pricing_center')).toEqual(['Elite', 'Full', 'Pro']);
+    expect(plansWith('production_manager')).toEqual(['Elite', 'Full']);
+    expect(plansWith('productivity_tracking')).toEqual(['Elite', 'Full']);
+    expect(plansWith('stock_control')).toEqual(['Full']);
+    expect(plansWith('invoice_entry')).toEqual(['Full']);
+    expect(plansWith('can_bill_on_delivery_and_checkout')).toEqual([]);
+    expect(plansWith('cash_control')).toEqual(['Elite', 'Full', 'Lite']);
   });
 
   it('planDefaultsByType indexa o padrão pelo tipo do plano', () => {

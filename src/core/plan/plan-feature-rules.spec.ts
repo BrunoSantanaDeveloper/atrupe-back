@@ -5,11 +5,18 @@ import { PLAN_CONFIGURATIONS } from '../../seeds/plans-complete';
 import {
   dependentsOf,
   FEATURE_CATEGORY_LABELS,
+  FEATURE_CATEGORY_ORDER,
   FEATURE_DEPENDENCIES,
   FEATURE_ENFORCEMENT,
   PLAN_FEATURE_KEYS,
   PlanFeatureKey,
 } from './plan-feature-rules';
+
+/** Os planos da regra cumulativa (o Trial fica fora), do menor ao maior. */
+const cumulativeChain = () =>
+  Object.values(PLAN_CONFIGURATIONS)
+    .filter((config) => config.plan.planType !== 'TRIAL')
+    .sort((a, b) => a.plan.order - b.plan.order);
 
 /**
  * A chave de recurso é o contrato entre o código (o que ela libera) e o dado
@@ -36,10 +43,24 @@ describe('plan-feature-rules', () => {
     }
   });
 
-  it('toda categoria do catálogo tem rótulo', () => {
+  it('toda categoria do catálogo tem rótulo e lugar na ordem da matriz', () => {
     for (const feature of BASE_FEATURES.filter((f) => f.price === 0)) {
       expect(FEATURE_CATEGORY_LABELS[feature.category]).toBeDefined();
+      expect(FEATURE_CATEGORY_ORDER).toContain(feature.category);
     }
+  });
+
+  it('basic_* não existem e o motivo obrigatório de rejeição segue aposentado', () => {
+    expect(allCatalogKeys.filter((key) => key.startsWith('basic_'))).toEqual(
+      [],
+    );
+    const retired = BASE_FEATURES.find(
+      (f) => f.key === 'quotation_require_rejection_reason',
+    );
+    expect(retired?.isActive).toBe(false);
+    expect(PLAN_FEATURE_KEYS).not.toContain(
+      'quotation_require_rejection_reason',
+    );
   });
 
   it('as dependências usam chaves conhecidas, sem dependência de si mesma', () => {
@@ -100,6 +121,63 @@ describe('plan-feature-rules', () => {
     );
     expect(PLAN_CONFIGURATIONS.LITE.features).toContain(
       'sectors_configuration',
+    );
+  });
+
+  it('o padrão de fábrica é cumulativo: cada plano tem tudo o que o anterior tem', () => {
+    const chain = cumulativeChain();
+    expect(chain.map((c) => c.plan.planType)).toEqual([
+      'START',
+      'LITE',
+      'PRO',
+      'ELITE',
+      'FULL',
+    ]);
+    for (let i = 1; i < chain.length; i++) {
+      const lower = chain[i - 1];
+      const higher = new Set<string>(chain[i].features);
+      expect({
+        lower: lower.plan.planType,
+        missing: lower.features.filter((key) => !higher.has(key)),
+      }).toEqual({ lower: lower.plan.planType, missing: [] });
+    }
+    // O teste gratuito começa com o que o Start tem.
+    expect(PLAN_CONFIGURATIONS.TRIAL.features).toEqual(
+      PLAN_CONFIGURATIONS.START.features,
+    );
+  });
+
+  it('as chaves de 10/10/2026 nascem no plano do contrato', () => {
+    const firstPlan = (key: string) =>
+      cumulativeChain().find((c) => c.features.includes(key))?.plan.planType ??
+      null;
+
+    expect({
+      multiple_companies: firstPlan('multiple_companies'),
+      transaction_cancel_reasons: firstPlan('transaction_cancel_reasons'),
+      cost_base: firstPlan('cost_base'),
+      pricing_center: firstPlan('pricing_center'),
+      production_manager: firstPlan('production_manager'),
+      productivity_tracking: firstPlan('productivity_tracking'),
+      stock_control: firstPlan('stock_control'),
+      invoice_entry: firstPlan('invoice_entry'),
+      // Fora de todo plano até o PO decidir (acompanha a Agenda de entrega).
+      can_bill_on_delivery_and_checkout: firstPlan(
+        'can_bill_on_delivery_and_checkout',
+      ),
+    }).toEqual({
+      multiple_companies: 'LITE',
+      transaction_cancel_reasons: 'LITE',
+      cost_base: 'PRO',
+      pricing_center: 'PRO',
+      production_manager: 'ELITE',
+      productivity_tracking: 'ELITE',
+      stock_control: 'FULL',
+      invoice_entry: 'FULL',
+      can_bill_on_delivery_and_checkout: null,
+    });
+    expect(PLAN_CONFIGURATIONS.TRIAL.features).not.toContain(
+      'can_bill_on_delivery_and_checkout',
     );
   });
 

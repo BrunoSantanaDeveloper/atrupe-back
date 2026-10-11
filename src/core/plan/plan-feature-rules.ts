@@ -36,6 +36,17 @@ export const PLAN_FEATURE_KEYS = [
   'bank_account_delete',
   'bank_account_provision',
   'payment_difference',
+  // 10/10/2026: as do LITE que faltavam, as de PRO, ELITE e FULL e a de
+  // faturar na entrega (fora de todo plano até o PO decidir).
+  'multiple_companies',
+  'transaction_cancel_reasons',
+  'can_bill_on_delivery_and_checkout',
+  'cost_base',
+  'pricing_center',
+  'production_manager',
+  'productivity_tracking',
+  'stock_control',
+  'invoice_entry',
 ] as const;
 
 export type PlanFeatureKey = (typeof PLAN_FEATURE_KEYS)[number];
@@ -62,6 +73,16 @@ export const FEATURE_DEPENDENCIES: Partial<
   service_order_cancellation_reason: ['quotation_rejection_reasons'],
   // A coluna mostra os status personalizados.
   quotation_status_column: ['quotation_status_configuration'],
+  // A base de custos e o gerenciador partem da composição do produto.
+  cost_base: ['product_composition'],
+  production_manager: ['product_composition'],
+  // A precificação e o estoque leem os custos prontos.
+  pricing_center: ['cost_base'],
+  stock_control: ['cost_base'],
+  // A produtividade mede o que o gerenciador registra.
+  productivity_tracking: ['production_manager'],
+  // A entrada de nota alimenta o estoque.
+  invoice_entry: ['stock_control'],
 };
 
 /** Quem depende de `key` (inverso de FEATURE_DEPENDENCIES). */
@@ -196,6 +217,49 @@ export const FEATURE_ENFORCEMENT: Record<
     level: 'api',
     detail: 'Registrar a diferença no recebimento ou pagamento.',
   },
+  multiple_companies: {
+    level: 'api',
+    detail: 'Criar outra empresa (POST /company).',
+  },
+  transaction_cancel_reasons: {
+    level: 'api',
+    detail:
+      'Motivo e observação no cancelamento de contas a pagar e a receber.',
+  },
+  can_bill_on_delivery_and_checkout: {
+    level: 'tela',
+    detail: 'O servidor passa a exigir quando o plano for decidido.',
+  },
+  cost_base: {
+    level: 'api',
+    detail:
+      'Patrimônios (/asset) já exige; materiais, processos, composição e base de custos exigem quando a API de cada módulo nascer.',
+  },
+  pricing_center: {
+    level: 'tela',
+    detail:
+      'Telas em implantação; o servidor passa a exigir quando a API da precificação nascer (módulo 4).',
+  },
+  production_manager: {
+    level: 'tela',
+    detail:
+      'Telas em implantação; o servidor passa a exigir quando a API do gerenciador de produção nascer (módulo 3).',
+  },
+  productivity_tracking: {
+    level: 'tela',
+    detail:
+      'Telas em implantação; o servidor passa a exigir quando a API da produtividade nascer (módulo 3).',
+  },
+  stock_control: {
+    level: 'tela',
+    detail:
+      'Telas em implantação; o servidor passa a exigir quando a API do estoque nascer (módulo 5).',
+  },
+  invoice_entry: {
+    level: 'tela',
+    detail:
+      'Telas em implantação; o servidor passa a exigir quando a API da entrada de nota nascer (módulo 5).',
+  },
 };
 
 /** Rótulos das categorias do catálogo (`Feature.category` é texto livre). */
@@ -208,6 +272,9 @@ export const FEATURE_CATEGORY_LABELS: Record<string, string> = {
   pdf: 'Impressão',
   delivery: 'Produção e entrega',
   products: 'Produtos',
+  costs: 'Custos e preços',
+  production: 'Gerenciador de produção',
+  stock: 'Estoque',
   financial: 'Financeiro',
 };
 
@@ -221,6 +288,9 @@ export const FEATURE_CATEGORY_ORDER = [
   'pdf',
   'delivery',
   'products',
+  'costs',
+  'production',
+  'stock',
   'financial',
 ];
 
