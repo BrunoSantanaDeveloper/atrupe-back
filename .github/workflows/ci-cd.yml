@@ -24,8 +24,79 @@ jobs:
       - run: npm run build
       - run: npm run test
 
+  # Schema sem migration derruba a API: o Prisma passa a ler uma coluna que o
+  # banco não tem, e o deploy sai como sucesso. Este job gera, num Postgres
+  # descartável, o SQL que falta para as migrations chegarem ao schema.prisma
+  # e o compara com a linha de base versionada (prisma/migrate-diff-baseline.sql:
+  # os desvios antigos e conhecidos). Linha a mais é migration faltando.
+  #
+  # AVISO: a linha de base ainda não existe. Até ela ser versionada (a partir do
+  # diff completo que este job imprime), o job só avisa; e o continue-on-error
+  # mantém qualquer falha dele sem barrar o pipeline. Com a linha de base no
+  # repositório, tire o continue-on-error para o job barrar o build da imagem.
+  migrate-diff:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: shadow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow
+      # O schema.prisma lê o DATABASE_URL; aqui só o banco descartável existe.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - run: npm ci
+      - name: Diff das migrations contra o schema.prisma
+        run: |
+          npx prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "$SHADOW_DATABASE_URL" \
+            --script > migrate-diff.sql
+          echo "----- diff completo (migrations -> schema.prisma), base para prisma/migrate-diff-baseline.sql -----"
+          cat migrate-diff.sql
+          echo "----- fim do diff -----"
+          {
+            echo '### prisma migrate diff (migrations -> schema.prisma)'
+            echo '```sql'
+            cat migrate-diff.sql
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Comparar com a linha de base
+        run: |
+          BASELINE=prisma/migrate-diff-baseline.sql
+          if [ ! -f "$BASELINE" ]; then
+            echo "::warning title=migrate diff sem linha de base::$BASELINE ainda não existe: este job só avisa. Gere a linha de base com o diff completo impresso no passo anterior (só os desvios antigos e conhecidos), versione o arquivo e tire o continue-on-error do job migrate-diff."
+            exit 0
+          fi
+          # Compara sem CR, espaço no fim de linha nem linhas vazias.
+          normalize() { sed -e 's/\r$//' -e 's/[[:space:]]*$//' "$1" | grep -v '^$' || true; }
+          if diff -u <(normalize "$BASELINE") <(normalize migrate-diff.sql); then
+            echo "Sem desvio além da linha de base."
+          else
+            echo "::error title=Schema sem migration::o schema.prisma difere das migrations além da linha de base ($BASELINE). Crie a migration que falta; se o desvio for conhecido e aceito, atualize a linha de base no mesmo commit."
+            exit 1
+          fi
+
   build-image-homolog:
-    needs: build-and-test
+    needs: [build-and-test, migrate-diff]
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     permissions:
@@ -79,6 +150,11 @@ jobs:
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     environment: Test
+    # Os deploys de dev e de main fazem checkout na mesma pasta da VPS
+    # (/home/ubuntu/atrupe-back): um de cada vez, sem cancelar o que começou.
+    concurrency:
+      group: vps-deploy
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: read
@@ -196,7 +272,7 @@ jobs:
           if ($exitCode -ne 0) { exit $exitCode }
 
   build-image-prod:
-    needs: build-and-test
+    needs: [build-and-test, migrate-diff]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -239,6 +315,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
+    # Mesmo grupo do deploy de homolog: a pasta da VPS é a mesma.
+    concurrency:
+      group: vps-deploy
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: read
