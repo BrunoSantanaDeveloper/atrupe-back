@@ -43,3 +43,59 @@ describe('ReportController', () => {
     expect(controller).toBeDefined();
   });
 });
+
+describe('ReportController: comissão de outros vendedores (EC-25)', () => {
+  const service = {
+    getCommissionSummary: jest.fn(),
+    getCommissionTable: jest.fn(),
+  };
+  const abac = { canAccessOtherSellers: jest.fn() };
+  const controller = new ReportController(service as any, abac as any);
+  const seller = {
+    user: { companyId: 'c-1', employeeId: 'e-1', isAdmin: false, role: 'r' },
+  };
+  const routes = ['getCommissionSummary', 'getCommissionTable'] as const;
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it.each(routes)(
+    '%s fixa o vendedor de quem não vê outros vendedores',
+    async (method) => {
+      abac.canAccessOtherSellers.mockResolvedValue(false);
+      await controller[method]({ sellerId: 'e-2' }, seller as any);
+      expect(abac.canAccessOtherSellers).toHaveBeenCalledWith(seller.user);
+      expect(service[method]).toHaveBeenCalledWith('c-1', {
+        sellerId: 'e-1',
+      });
+    },
+  );
+
+  it.each(routes)(
+    '%s sem vendedor no filtro também fica só no próprio',
+    async (method) => {
+      abac.canAccessOtherSellers.mockResolvedValue(false);
+      await controller[method]({}, seller as any);
+      expect(service[method]).toHaveBeenCalledWith('c-1', {
+        sellerId: 'e-1',
+      });
+    },
+  );
+
+  it.each(routes)(
+    '%s mantém o filtro de quem vê outros vendedores',
+    async (method) => {
+      abac.canAccessOtherSellers.mockResolvedValue(true);
+      await controller[method]({ sellerId: 'e-2' }, seller as any);
+      expect(service[method]).toHaveBeenCalledWith('c-1', {
+        sellerId: 'e-2',
+      });
+    },
+  );
+
+  it.each(routes)('%s não restringe o administrador', async (method) => {
+    abac.canAccessOtherSellers.mockResolvedValue(false);
+    const admin = { user: { ...seller.user, isAdmin: true } };
+    await controller[method]({}, admin as any);
+    expect(service[method]).toHaveBeenCalledWith('c-1', {});
+  });
+});

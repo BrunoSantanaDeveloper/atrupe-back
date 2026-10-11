@@ -28,10 +28,11 @@ export class ReportController {
     private readonly abacService: AbacService,
   ) {}
 
-  // Helper: enforce seller permission on sales endpoints
+  // Helper: enforce seller permission on sales endpoints. Quem não vê
+  // outros vendedores tem o filtro de vendedor fixado em si mesmo.
   private async enforceSalesPermission(
     req: any,
-    filters: SalesReportFilterDto,
+    filters: { sellerId?: string },
   ) {
     const canSeeOtherSellers = await this.abacService.canAccessOtherSellers(
       req.user,
@@ -375,6 +376,8 @@ export class ReportController {
     @Req() req: Request,
   ) {
     const companyId = (req as any).user?.companyId;
+    // Comissão de outro vendedor exige ver outros vendedores (EC-25)
+    await this.enforceSalesPermission(req, filters);
     return this.reportService.getCommissionSummary(companyId, filters);
   }
 
@@ -385,6 +388,8 @@ export class ReportController {
     @Req() req: Request,
   ) {
     const companyId = (req as any).user?.companyId;
+    // Comissão de outro vendedor exige ver outros vendedores (EC-25)
+    await this.enforceSalesPermission(req, filters);
     return this.reportService.getCommissionTable(companyId, filters);
   }
 
