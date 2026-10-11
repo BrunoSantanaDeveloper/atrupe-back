@@ -150,10 +150,14 @@ jobs:
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     environment: Test
-    # Os deploys de dev e de main fazem checkout na mesma pasta da VPS
-    # (/home/ubuntu/atrupe-back): um de cada vez, sem cancelar o que começou.
+    # Um deploy de homolog por vez, sem cancelar o que começou. Cada ambiente
+    # tem o seu grupo: num grupo cabem um job rodando e um pendente, e o job
+    # que chega cancela o pendente. Com um grupo só para os dois, um push em
+    # dev cancelaria o deploy de produção que estava na fila. Homolog e
+    # produção fazem checkout na mesma pasta da VPS (/home/ubuntu/atrupe-back):
+    # quem põe um depois do outro é a trava (flock) no começo do script.
     concurrency:
-      group: vps-deploy
+      group: vps-deploy-homolog
       cancel-in-progress: false
     permissions:
       contents: read
@@ -172,9 +176,20 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script_stop: true
+          # O padrão da action é 10m; aqui cabem a espera pela trava (até
+          # 15 min) e o próprio deploy.
+          command_timeout: 30m
           envs: GHCR_PAT,GHCR_USER,GHCR_IMAGE
           script: |
             set -Eeuo pipefail
+
+            # === UM DEPLOY POR VEZ NA VPS ===
+            # Homolog e produção fazem checkout na mesma pasta (dev e main). A
+            # trava fica na VPS, fora do repositório, e é solta quando este
+            # shell e os processos abertos por ele terminam.
+            exec 9>/home/ubuntu/atrupe-back.deploy.lock
+            flock -n 9 || echo "Outro deploy está usando a pasta da VPS: esperando a vez (até 15 min)."
+            flock -w 900 9 || { echo "A pasta da VPS continuou ocupada por 15 min: deploy interrompido."; exit 1; }
 
             wait_for_service() {
               SERVICE_NAME="$1"
@@ -315,9 +330,12 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
-    # Mesmo grupo do deploy de homolog: a pasta da VPS é a mesma.
+    # Grupo só de produção (ver deploy-homolog): o pendente que um deploy novo
+    # cancela é outro de produção, e o novo publica do mesmo jeito o :latest e
+    # a ponta de main. A pasta da VPS, dividida com homolog, fica com a trava
+    # (flock) no começo do script.
     concurrency:
-      group: vps-deploy
+      group: vps-deploy-prod
       cancel-in-progress: false
     permissions:
       contents: read
@@ -336,9 +354,20 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script_stop: true
+          # O padrão da action é 10m; aqui cabem a espera pela trava (até
+          # 15 min) e o próprio deploy.
+          command_timeout: 30m
           envs: GHCR_PAT,GHCR_USER,GHCR_IMAGE
           script: |
             set -Eeuo pipefail
+
+            # === UM DEPLOY POR VEZ NA VPS ===
+            # Homolog e produção fazem checkout na mesma pasta (dev e main). A
+            # trava fica na VPS, fora do repositório, e é solta quando este
+            # shell e os processos abertos por ele terminam.
+            exec 9>/home/ubuntu/atrupe-back.deploy.lock
+            flock -n 9 || echo "Outro deploy está usando a pasta da VPS: esperando a vez (até 15 min)."
+            flock -w 900 9 || { echo "A pasta da VPS continuou ocupada por 15 min: deploy interrompido."; exit 1; }
 
             wait_for_service() {
               SERVICE_NAME="$1"
