@@ -173,6 +173,27 @@ describe('plan-feature-rules', () => {
     ).toEqual([]);
   });
 
+  it('3 usuários em todos os planos (10/10/2026), e o texto do Lite diz 3', () => {
+    expect(
+      Object.values(PLAN_CONFIGURATIONS).map((config) => [
+        config.plan.planType,
+        config.limits.max_users,
+      ]),
+    ).toEqual([
+      ['TRIAL', 3],
+      ['START', 3],
+      ['LITE', 3],
+      ['PRO', 3],
+      ['ELITE', 3],
+      ['FULL', 3],
+    ]);
+    const liteTexts = PLAN_CONFIGURATIONS.LITE.featuresList.flatMap(
+      (group) => group.items,
+    );
+    expect(liteTexts).toContain('3 usuários');
+    expect(liteTexts).not.toContain('5 usuários');
+  });
+
   it('as chaves de 10/10/2026 nascem no plano do contrato', () => {
     const firstPlan = (key: string) =>
       cumulativeChain().find((c) => c.features.includes(key))?.plan.planType ??

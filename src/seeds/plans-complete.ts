@@ -233,7 +233,7 @@ export const PLAN_CONFIGURATIONS = {
       {
         title: 'Empresa e sistema',
         items: [
-          '5 usuários',
+          '3 usuários',
           'Cadastro de 1 CNPJ',
           'Padrões de medida',
           'Cadastro de colaboradores',
@@ -294,8 +294,10 @@ export const PLAN_CONFIGURATIONS = {
         videoUrl: '',
       },
     ],
+    // 3 usuários em todos os planos (10/10/2026); mais que isso, só com
+    // usuários adicionais.
     limits: {
-      max_users: 5,
+      max_users: 3,
       max_companies: 1,
       trial_days: 0,
     },
@@ -346,7 +348,7 @@ export const PLAN_CONFIGURATIONS = {
     },
     featuresList: null,
     limits: {
-      max_users: 10,
+      max_users: 3,
       max_companies: 1,
       trial_days: 0,
     },
@@ -407,7 +409,7 @@ export const PLAN_CONFIGURATIONS = {
     },
     featuresList: null,
     limits: {
-      max_users: 20,
+      max_users: 3,
       max_companies: 1,
       trial_days: 0,
     },
@@ -456,7 +458,7 @@ export const PLAN_CONFIGURATIONS = {
     },
     featuresList: null,
     limits: {
-      max_users: -1, // ilimitado
+      max_users: 3,
       max_companies: -1, // ilimitado
       trial_days: 0,
     },
