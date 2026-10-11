@@ -19,7 +19,23 @@ describe('PlanControlService', () => {
     feature: {
       findMany: jest.fn().mockResolvedValue([]),
     },
+    plan: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   };
+
+  /** Planos globais (fora o Trial) com as chaves que cada um inclui. */
+  const globalPlan = (
+    planType: string,
+    name: string,
+    isActive: boolean,
+    keys: string[],
+  ) => ({
+    planType,
+    name,
+    isActive,
+    planFeatures: keys.map((key) => ({ feature: { key } })),
+  });
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -326,24 +342,134 @@ describe('PlanControlService', () => {
       );
     });
 
-    it('o 403 leva o code FEATURE_NOT_AVAILABLE e o nome do recurso', async () => {
+    it('o 403 diz a partir de qual plano o recurso está disponível', async () => {
       mockCompanyWithPlan({ planName: 'Start', features: [] });
       mockPrismaService.feature.findMany.mockResolvedValue([
-        { key: 'cash_control', name: 'Controle de Caixa' },
+        {
+          key: 'cost_base',
+          name: 'Base de custos',
+          category: 'costs',
+          price: 0,
+        },
+      ]);
+      mockPrismaService.plan.findMany.mockResolvedValue([
+        globalPlan('START', 'Start', true, []),
+        globalPlan('LITE', 'Lite', true, ['cash_control']),
+        globalPlan('PRO', 'Pro', false, ['cash_control', 'cost_base']),
+        globalPlan('ELITE', 'Elite', false, ['cash_control', 'cost_base']),
       ]);
 
       const error = await service
-        .enforceFeature('company-1', 'cash_control')
+        .enforceFeature('company-1', 'cost_base')
         .catch((e) => e);
 
       expect(error).toBeInstanceOf(ForbiddenException);
+      expect(error.getResponse()).toEqual({
+        code: 'FEATURE_NOT_AVAILABLE',
+        feature: 'cost_base',
+        planType: 'START',
+        availableFrom: { planType: 'PRO', name: 'Pro', isActive: false },
+        module: false,
+        message:
+          'O recurso "Base de custos" está disponível a partir do plano Pro.',
+      });
+    });
+
+    it('a disponibilidade só olha planos globais fora o Trial, com plano e catálogo ativos', async () => {
+      mockCompanyWithPlan({ features: [] });
+
+      await service.enforceFeature('company-1', 'cost_base').catch((e) => e);
+
+      const query = mockPrismaService.plan.findMany.mock.calls[0][0];
+      expect(query.where).toEqual({
+        companyId: null,
+        planType: { not: 'TRIAL' },
+      });
+      expect(query.orderBy).toEqual({ order: 'asc' });
+      expect(query.select.planFeatures.where).toEqual({
+        isActive: true,
+        feature: { isActive: true, key: { in: ['cost_base'] } },
+      });
+    });
+
+    it('módulo pago: o 403 diz que é contratado à parte', async () => {
+      mockCompanyWithPlan({ planName: 'Lite', planType: 'LITE' });
+      mockPrismaService.feature.findMany.mockResolvedValue([
+        {
+          key: 'nota_fiscal',
+          name: 'Nota Fiscal',
+          category: 'fiscal',
+          price: 7000,
+        },
+      ]);
+      mockPrismaService.plan.findMany.mockResolvedValue([
+        globalPlan('LITE', 'Lite', true, ['cash_control']),
+      ]);
+
+      const error = await service
+        .enforceFeature('company-1', 'nota_fiscal')
+        .catch((e) => e);
+
       expect(error.getResponse()).toEqual(
         expect.objectContaining({
-          code: 'FEATURE_NOT_AVAILABLE',
-          feature: 'cash_control',
-          planType: 'START',
+          availableFrom: null,
+          module: true,
+          message: 'O recurso "Nota Fiscal" é um módulo contratado à parte.',
+        }),
+      );
+    });
+
+    it('recurso que nenhum plano tem: o 403 diz que não está disponível', async () => {
+      mockCompanyWithPlan({ planName: 'Start' });
+      mockPrismaService.feature.findMany.mockResolvedValue([
+        {
+          key: 'can_bill_on_delivery_and_checkout',
+          name: 'Faturar na entrega e na frente de caixa',
+          category: 'quotations',
+          price: 0,
+        },
+      ]);
+      mockPrismaService.plan.findMany.mockResolvedValue([
+        globalPlan('START', 'Start', true, []),
+        globalPlan('LITE', 'Lite', true, ['cash_control']),
+      ]);
+
+      const error = await service
+        .enforceFeature('company-1', 'can_bill_on_delivery_and_checkout')
+        .catch((e) => e);
+
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({
+          availableFrom: null,
+          module: false,
           message:
-            'O recurso "Controle de Caixa" não faz parte do plano Start.',
+            'O recurso "Faturar na entrega e na frente de caixa" não está disponível nos planos atuais.',
+        }),
+      );
+    });
+
+    it('com uma lista, vale o plano mais baixo que tem alguma das chaves', async () => {
+      mockCompanyWithPlan({ planName: 'Start' });
+      mockPrismaService.feature.findMany.mockResolvedValue([
+        { key: 'a', name: 'A', category: 'costs', price: 0 },
+        { key: 'b', name: 'B', category: 'costs', price: 0 },
+      ]);
+      mockPrismaService.plan.findMany.mockResolvedValue([
+        globalPlan('LITE', 'Lite', true, []),
+        globalPlan('PRO', 'Pro', false, ['b']),
+        globalPlan('ELITE', 'Elite', false, ['a', 'b']),
+      ]);
+
+      const error = await service
+        .enforceFeature('company-1', ['a', 'b'])
+        .catch((e) => e);
+
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({
+          feature: ['a', 'b'],
+          availableFrom: { planType: 'PRO', name: 'Pro', isActive: false },
+          message:
+            'O recurso "A" ou "B" está disponível a partir do plano Pro.',
         }),
       );
     });
@@ -363,12 +489,69 @@ describe('PlanControlService', () => {
       mockPrismaService.company.findUnique.mockResolvedValue({
         Subscription: [],
       });
+      mockPrismaService.feature.findMany.mockResolvedValue([
+        {
+          key: 'cash_control',
+          name: 'Controle de Caixa',
+          category: 'financial',
+          price: 0,
+        },
+      ]);
 
       const error = await service
         .enforceFeature('company-1', 'cash_control')
         .catch((e) => e);
       expect(error).toBeInstanceOf(ForbiddenException);
       expect(error.getResponse().planType).toBeNull();
+      expect(error.getResponse().message).toBe(
+        'O recurso "Controle de Caixa" depende de uma assinatura ativa.',
+      );
+    });
+  });
+
+  describe('getFeatureAvailability', () => {
+    it('sem chaves, lista o catálogo ativo com o plano de onde cada uma fica disponível', async () => {
+      mockPrismaService.feature.findMany.mockResolvedValue([
+        {
+          key: 'cash_control',
+          name: 'Controle de Caixa',
+          category: 'financial',
+          price: 0,
+        },
+        {
+          key: 'nota_fiscal',
+          name: 'Nota Fiscal',
+          category: 'fiscal',
+          price: 7000,
+        },
+      ]);
+      mockPrismaService.plan.findMany.mockResolvedValue([
+        globalPlan('START', 'Start', true, []),
+        globalPlan('LITE', 'Lite', true, ['cash_control']),
+        globalPlan('PRO', 'Pro', false, ['cash_control']),
+      ]);
+
+      const result = await service.getFeatureAvailability();
+
+      expect(result).toEqual([
+        {
+          key: 'cash_control',
+          name: 'Controle de Caixa',
+          category: 'financial',
+          availableFrom: { planType: 'LITE', name: 'Lite', isActive: true },
+          module: false,
+        },
+        {
+          key: 'nota_fiscal',
+          name: 'Nota Fiscal',
+          category: 'fiscal',
+          availableFrom: null,
+          module: true,
+        },
+      ]);
+      expect(mockPrismaService.feature.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { isActive: true } }),
+      );
     });
   });
 

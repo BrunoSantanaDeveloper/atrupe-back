@@ -28,6 +28,24 @@ interface PlanInfo {
 export const FEATURE_NOT_AVAILABLE = 'FEATURE_NOT_AVAILABLE';
 export const PLAN_LIMIT_REACHED = 'PLAN_LIMIT_REACHED';
 
+/** O plano a partir do qual um recurso está disponível. */
+export interface AvailableFrom {
+  planType: string;
+  name: string;
+  /** Se o plano pode ser contratado hoje. */
+  isActive: boolean;
+}
+
+/** De qual plano em diante um recurso está disponível (403 e mapa público). */
+export interface FeatureAvailability {
+  key: string;
+  name: string;
+  category: string | null;
+  availableFrom: AvailableFrom | null;
+  /** Módulo contratado à parte (preço no catálogo): não vem com plano. */
+  module: boolean;
+}
+
 @Injectable()
 export class PlanControlService {
   constructor(private prisma: PrismaService) {}
@@ -265,7 +283,8 @@ export class PlanControlService {
 
   /**
    * Enforçar feature - lança 403 se o plano não a inclui. Com uma lista,
-   * basta ter uma delas.
+   * basta ter uma delas. O 403 diz a partir de qual plano o recurso está
+   * disponível (`availableFrom`) ou se é um módulo contratado à parte.
    */
   async enforceFeature(
     companyId: string,
@@ -275,21 +294,99 @@ export class PlanControlService {
     if (this.includesAny(planInfo, featureKey)) return;
 
     const keys = Array.isArray(featureKey) ? featureKey : [featureKey];
-    const catalog = await this.prisma.feature.findMany({
-      where: { key: { in: keys } },
-      select: { key: true, name: true },
-    });
-    const names = keys.map((k) => catalog.find((f) => f.key === k)?.name ?? k);
-    const label = names.map((n) => `"${n}"`).join(' ou ');
+    const { catalog, plans } = await this.availabilitySources(keys);
+    const label = keys
+      .map((k) => `"${catalog.find((f) => f.key === k)?.name ?? k}"`)
+      .join(' ou ');
+    // Com uma lista, vale o plano mais baixo que tem alguma delas; é módulo
+    // só se todas forem.
+    const availableFrom = this.firstPlanWith(plans, keys);
+    const isModule = keys.every(
+      (k) => (catalog.find((f) => f.key === k)?.price ?? 0) > 0,
+    );
 
     throw new ForbiddenException({
       code: FEATURE_NOT_AVAILABLE,
       feature: keys.length === 1 ? keys[0] : keys,
       planType: planInfo?.planType ?? null,
-      message: planInfo
-        ? `O recurso ${label} não faz parte do plano ${planInfo.planName}.`
-        : `O recurso ${label} depende de uma assinatura ativa.`,
+      availableFrom,
+      module: isModule,
+      message: !planInfo
+        ? `O recurso ${label} depende de uma assinatura ativa.`
+        : isModule
+          ? `O recurso ${label} é um módulo contratado à parte.`
+          : availableFrom
+            ? `O recurso ${label} está disponível a partir do plano ${availableFrom.name}.`
+            : `O recurso ${label} não está disponível nos planos atuais.`,
     });
+  }
+
+  /**
+   * De qual plano em diante cada recurso está disponível: o plano global,
+   * fora o Trial, de menor `order` que o inclui (`plan_features` e catálogo
+   * ativos). Com a regra cumulativa esse plano é único. Sem `keys`, todas as
+   * chaves ativas do catálogo (módulos pagos inclusive).
+   */
+  async getFeatureAvailability(
+    keys?: string[],
+  ): Promise<FeatureAvailability[]> {
+    const { catalog, plans } = await this.availabilitySources(keys);
+    return (keys ?? catalog.map((f) => f.key)).map((key) => {
+      const feature = catalog.find((f) => f.key === key);
+      return {
+        key,
+        name: feature?.name ?? key,
+        category: feature?.category ?? null,
+        availableFrom: this.firstPlanWith(plans, [key]),
+        module: (feature?.price ?? 0) > 0,
+      };
+    });
+  }
+
+  /** O catálogo e os planos globais fora o Trial, pela ordem. */
+  private async availabilitySources(keys?: string[]) {
+    const [catalog, plans] = await Promise.all([
+      this.prisma.feature.findMany({
+        where: keys ? { key: { in: keys } } : { isActive: true },
+        select: { key: true, name: true, category: true, price: true },
+        orderBy: { key: 'asc' },
+      }),
+      this.prisma.plan.findMany({
+        where: { companyId: null, planType: { not: 'TRIAL' } },
+        orderBy: { order: 'asc' },
+        select: {
+          name: true,
+          planType: true,
+          isActive: true,
+          planFeatures: {
+            where: {
+              isActive: true,
+              feature: {
+                isActive: true,
+                ...(keys ? { key: { in: keys } } : {}),
+              },
+            },
+            select: { feature: { select: { key: true } } },
+          },
+        },
+      }),
+    ]);
+    return { catalog, plans };
+  }
+
+  /** O primeiro plano, pela ordem, que inclui alguma das chaves. */
+  private firstPlanWith(
+    plans: Awaited<
+      ReturnType<PlanControlService['availabilitySources']>
+    >['plans'],
+    keys: string[],
+  ): AvailableFrom | null {
+    const plan = plans.find((p) =>
+      p.planFeatures.some((pf) => keys.includes(pf.feature.key)),
+    );
+    return plan
+      ? { planType: plan.planType, name: plan.name, isActive: plan.isActive }
+      : null;
   }
 
   /**
