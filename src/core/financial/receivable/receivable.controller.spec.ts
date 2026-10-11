@@ -145,6 +145,51 @@ describe('ReceivableController', () => {
     });
   });
 
+  describe('cancel (motivo e observação são recurso de plano)', () => {
+    const mockReq = {
+      user: { companyId: 'c1', userId: 'u1', name: 'User 1' },
+    };
+
+    it('sem motivo nem observação (texto vazio) não confere o plano', async () => {
+      const dto = { cancelReason: '', cancelNotes: '   ' };
+
+      await controller.cancel(mockReq, 'r1', dto);
+
+      expect(planControlMock.enforceFeature).not.toHaveBeenCalled();
+      expect(serviceMock.cancel).toHaveBeenCalledWith(
+        'r1',
+        dto,
+        'u1',
+        'User 1',
+      );
+    });
+
+    it('com motivo ou só com observação, exige transaction_cancel_reasons', async () => {
+      await controller.cancel(mockReq, 'r1', {
+        cancelReason: 'Cliente desistiu',
+      });
+      await controller.cancel(mockReq, 'r1', { cancelNotes: 'Duplicado' });
+
+      expect(planControlMock.enforceFeature).toHaveBeenCalledTimes(2);
+      expect(planControlMock.enforceFeature).toHaveBeenCalledWith(
+        'c1',
+        'transaction_cancel_reasons',
+      );
+      expect(serviceMock.cancel).toHaveBeenCalledTimes(2);
+    });
+
+    it('sem o recurso no plano, o 403 sobe e nada é cancelado', async () => {
+      planControlMock.enforceFeature.mockRejectedValueOnce(
+        new ForbiddenException({ code: 'FEATURE_NOT_AVAILABLE' }),
+      );
+
+      await expect(
+        controller.cancel(mockReq, 'r1', { cancelReason: 'Erro de digitação' }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(serviceMock.cancel).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateNotes (inline permission check)', () => {
     it('deve lançar ForbiddenException se não tiver permissão', async () => {
       const mockReq = { user: { userId: 'u1' } };

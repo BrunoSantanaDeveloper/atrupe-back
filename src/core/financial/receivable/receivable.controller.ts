@@ -296,6 +296,17 @@ export class ReceivableController {
     @Param('id') id: string,
     @Body() cancelReceivableDto: CancelReceivableDto,
   ) {
+    // Motivo e observação ao cancelar são do plano; cancelar sem eles é livre.
+    // Texto vazio conta como não informado (a tela sem o recurso manda '').
+    if (
+      cancelReceivableDto.cancelReason?.trim() ||
+      cancelReceivableDto.cancelNotes?.trim()
+    ) {
+      await this.planControl.enforceFeature(
+        req.user.companyId,
+        'transaction_cancel_reasons',
+      );
+    }
     return await this.receivableService.cancel(
       id,
       cancelReceivableDto,

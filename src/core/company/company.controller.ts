@@ -16,6 +16,8 @@ import { UpdateCompanyDto } from './dto/update-company.dto';
 import { CreateCompanyHistoryDto } from './dto/create-company-history.dto';
 import { ListCompanyHistoryDto } from './dto/list-company-history.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { FeatureGuard } from '../plan/guards/feature.guard';
+import { RequiresFeature } from '../plan/decorators/requires-feature.decorator';
 import {
   ApiBody,
   ApiOperation,
@@ -34,7 +36,11 @@ const RESOURCE = 'company';
 export class CompanyController {
   constructor(private readonly companyService: CompanyService) {}
 
+  // Outra empresa na mesma conta (filial, outro CNPJ) é recurso de plano. A
+  // empresa principal, criada no cadastro (`POST /company/main`), nunca.
   @Post()
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('multiple_companies')
   @ApiOperation({ summary: 'Cria uma empresa' })
   @ApiResponse({
     status: 201,

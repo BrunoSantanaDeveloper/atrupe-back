@@ -246,6 +246,17 @@ export class PayableController {
     @Param('id') id: string,
     @Body() cancelPayableDto: CancelPayableDto,
   ) {
+    // Motivo e observação ao cancelar são do plano; cancelar sem eles é livre.
+    // Texto vazio conta como não informado (a tela sem o recurso manda '').
+    if (
+      cancelPayableDto.cancelReason?.trim() ||
+      cancelPayableDto.cancelNotes?.trim()
+    ) {
+      await this.planControl.enforceFeature(
+        req.user.companyId,
+        'transaction_cancel_reasons',
+      );
+    }
     return await this.payableService.cancel(
       id,
       cancelPayableDto,
