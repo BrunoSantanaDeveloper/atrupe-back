@@ -1,0 +1,89 @@
+{
+  "$comment": [
+    "Rotas GET sem efeito colateral com gate de plano: smoke-test-homolog.ps1, passo [11], com SMOKE_PLAN_ACCOUNTS.",
+    "Abaixo de minPlan, a conta espera 403 com userMessage.code FEATURE_NOT_AVAILABLE e userMessage.feature igual a feature; de minPlan para cima (o plano dono e os seguintes, pela regra cumulativa), 2xx.",
+    "planOrder é a ordem da trilha; o TRIAL fica abaixo do START (padrão de fábrica igual ao START).",
+    "Os filtros de query precisam existir no DTO da rota: o ValidationPipe (forbidNonWhitelisted) responde 400 a parâmetro desconhecido. O UUID dos filtros é um v4 qualquer: a lista do plano dono volta vazia.",
+    "Cada rota nova de módulo com gate entra aqui no mesmo PR (plano abaixo: 403; plano dono: 2xx)."
+  ],
+  "planOrder": ["TRIAL", "START", "LITE", "PRO", "ELITE", "FULL"],
+  "gates": [
+    {
+      "method": "GET",
+      "path": "/financial/receivable?page=1&limit=1",
+      "feature": "accounts_receivable",
+      "minPlan": "LITE",
+      "where": "src/core/financial/receivable/receivable.controller.ts (findAll, FeatureGuard)"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/payable?page=1&limit=1",
+      "feature": "accounts_payable",
+      "minPlan": "LITE",
+      "where": "src/core/financial/payable/payable.controller.ts (findAll, FeatureGuard)"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/cash-control/quantity",
+      "feature": "cash_control",
+      "minPlan": "LITE",
+      "where": "src/core/financial/cash-control/cash-control.controller.ts (classe, FeatureGuard)"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/cash-control?page=1&limit=1",
+      "feature": "cash_control",
+      "minPlan": "LITE",
+      "where": "src/core/financial/cash-control/cash-control.controller.ts (classe, FeatureGuard)"
+    },
+    {
+      "method": "GET",
+      "path": "/sale/delivery-schedule?status=IN_PRODUCTION&page=1&limit=1",
+      "feature": "delivery_production_tabs",
+      "minPlan": "LITE",
+      "where": "src/core/sale/delivery-schedule/delivery-schedule.controller.ts (findAll: aba Produção, gate inline)"
+    },
+    {
+      "method": "GET",
+      "path": "/sale/quotation?page=1&limit=1&clientId=00000000-0000-4000-8000-000000000000",
+      "feature": "client_additional_tabs",
+      "minPlan": "LITE",
+      "where": "src/core/sale/quotation/quotation.controller.ts (findAll com clientId, gate inline)"
+    },
+    {
+      "method": "GET",
+      "path": "/sale/order?page=1&limit=1&clientId=00000000-0000-4000-8000-000000000000",
+      "feature": "client_additional_tabs",
+      "minPlan": "LITE",
+      "where": "src/core/sale/order/order.controller.ts (findAll com clientId, gate inline)"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/flow?page=1&limit=1&clientId=00000000-0000-4000-8000-000000000000",
+      "feature": "client_additional_tabs",
+      "minPlan": "LITE",
+      "where": "src/core/financial/flow/flow.controller.ts (findAll com clientId, gate inline)"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/flow?page=1&limit=1&supplierId=00000000-0000-4000-8000-000000000000",
+      "feature": "supplier_additional_tabs",
+      "minPlan": "LITE",
+      "where": "src/core/financial/flow/flow.controller.ts (findAll com supplierId, gate inline)"
+    },
+    {
+      "method": "GET",
+      "path": "/asset",
+      "feature": "cost_base",
+      "minPlan": "PRO",
+      "where": "src/core/asset/asset.controller.ts (classe, FeatureGuard)"
+    },
+    {
+      "method": "GET",
+      "path": "/asset/types",
+      "feature": "cost_base",
+      "minPlan": "PRO",
+      "where": "src/core/asset/asset.controller.ts (classe, FeatureGuard)"
+    }
+  ]
+}

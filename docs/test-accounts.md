@@ -150,3 +150,34 @@ cada fatia traz a sua fixture, copiada do mock que a rota substitui, e sobe
   todos. Reativar um usuário respeita o limite do plano, como na tela.
 
 Rodar duas vezes seguidas não grava nada na segunda.
+
+## Smoke por plano
+
+`smoke-test-homolog.ps1`, passos [10] e [11], rodam só com a variável
+`SMOKE_PLAN_ACCOUNTS`: um JSON com e-mail e senha do administrador de cada
+conta `e2e-<plano>`.
+
+```json
+{"START":{"email":"admin.e2e-start@<domínio>","password":"<senha>"},
+ "LITE":{"email":"admin.e2e-lite@<domínio>","password":"<senha>"}}
+```
+
+- **[10]** faz login em cada conta e confere `company.subscription` (o plano),
+  `company.blockLevel` = `NONE`, as chaves-sentinela de
+  `scripts/smoke/plan-expectations.json` em `company.features` (as do plano e
+  dos anteriores presentes, as do plano seguinte ausentes) e
+  `company.limits.max_users` = 3 do plano + usuários adicionais da conta;
+- **[11]** chama cada rota de `scripts/smoke/plan-gates.json` com cada conta:
+  abaixo do plano mínimo, espera 403 com `userMessage.code`
+  `FEATURE_NOT_AVAILABLE` e `userMessage.feature` igual à chave; do plano
+  mínimo para cima, 2xx. Só rotas GET sem efeito colateral.
+
+Sem a variável, os dois passos dão SKIP, como os outros; plano que não está no
+JSON fica de fora. O login tem limite por IP (10 por minuto): se o smoke tomar
+429, espera 61 s e tenta de novo uma vez.
+
+`src/scripts/test-accounts/smoke-matrix.spec.ts` confere os dois JSON contra o
+padrão de fábrica (`src/seeds/plans-complete.ts`) e as fixtures: mudar uma
+chave de plano no catálogo sem acompanhar o JSON quebra no CI, não no smoke de
+homolog. Cada rota nova com gate entra em `plan-gates.json` no mesmo PR (o
+filtro de query precisa existir no DTO da rota: parâmetro desconhecido dá 400).

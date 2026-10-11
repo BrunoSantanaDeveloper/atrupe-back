@@ -1,0 +1,100 @@
+{
+  "$comment": [
+    "O que o login (POST /auth/login) de cada conta de teste por plano devolve: smoke-test-homolog.ps1, passo [10], com SMOKE_PLAN_ACCOUNTS.",
+    "has: chaves-sentinela que precisam estar em company.features (cumulativas: cada plano leva as do anterior); hasNot: as do plano seguinte, que não podem estar.",
+    "maxUsers: o max_users do plano, 3 em todos (padrão de fábrica). O login devolve company.limits.max_users já somado aos usuários adicionais da assinatura; additionalUsers é o das contas de teste (1 do LITE para cima: o Caixa).",
+    "Atualize no mesmo commit que mudar o catálogo ou o padrão de fábrica (src/seeds/plans-complete.ts) ou as contas de teste (src/scripts/test-accounts/fixtures)."
+  ],
+  "plans": {
+    "TRIAL": {
+      "has": ["sectors_configuration"],
+      "hasNot": [
+        "accounts_receivable",
+        "accounts_payable",
+        "cash_control",
+        "quotation_quick_sale"
+      ],
+      "maxUsers": 3,
+      "additionalUsers": 0
+    },
+    "START": {
+      "has": ["sectors_configuration"],
+      "hasNot": [
+        "accounts_receivable",
+        "accounts_payable",
+        "cash_control",
+        "quotation_quick_sale"
+      ],
+      "maxUsers": 3,
+      "additionalUsers": 0
+    },
+    "LITE": {
+      "has": [
+        "sectors_configuration",
+        "accounts_receivable",
+        "accounts_payable",
+        "cash_control",
+        "quotation_quick_sale",
+        "multiple_companies",
+        "transaction_cancel_reasons"
+      ],
+      "hasNot": ["cost_base", "pricing_center"],
+      "maxUsers": 3,
+      "additionalUsers": 1
+    },
+    "PRO": {
+      "has": [
+        "sectors_configuration",
+        "accounts_receivable",
+        "accounts_payable",
+        "cash_control",
+        "quotation_quick_sale",
+        "multiple_companies",
+        "transaction_cancel_reasons",
+        "cost_base",
+        "pricing_center"
+      ],
+      "hasNot": ["production_manager", "productivity_tracking"],
+      "maxUsers": 3,
+      "additionalUsers": 1
+    },
+    "ELITE": {
+      "has": [
+        "sectors_configuration",
+        "accounts_receivable",
+        "accounts_payable",
+        "cash_control",
+        "quotation_quick_sale",
+        "multiple_companies",
+        "transaction_cancel_reasons",
+        "cost_base",
+        "pricing_center",
+        "production_manager",
+        "productivity_tracking"
+      ],
+      "hasNot": ["stock_control", "invoice_entry"],
+      "maxUsers": 3,
+      "additionalUsers": 1
+    },
+    "FULL": {
+      "has": [
+        "sectors_configuration",
+        "accounts_receivable",
+        "accounts_payable",
+        "cash_control",
+        "quotation_quick_sale",
+        "multiple_companies",
+        "transaction_cancel_reasons",
+        "cost_base",
+        "pricing_center",
+        "production_manager",
+        "productivity_tracking",
+        "stock_control",
+        "invoice_entry"
+      ],
+      "hasNot": [],
+      "maxUsers": 3,
+      "additionalUsers": 1
+    }
+  }
+}
