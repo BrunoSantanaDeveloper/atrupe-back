@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsNumber, IsString, IsUUID } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 
 export class CreateAssetDto {
   @IsNotEmpty()
@@ -25,7 +31,9 @@ export class CreateAssetDto {
   @IsUUID()
   sectorId: string;
 
-  @IsNotEmpty()
+  // Ignorado: o patrimônio é sempre da empresa da sessão. Continua aceito
+  // para não recusar (400) quem ainda o envia.
+  @IsOptional()
   @IsUUID()
-  companyId: string;
+  companyId?: string;
 }

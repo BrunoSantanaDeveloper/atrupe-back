@@ -8,55 +8,68 @@ import {
   Delete,
   UseGuards,
   Query,
+  Req,
 } from '@nestjs/common';
 import { AssetService } from './asset.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
+import { FeatureGuard } from '../plan/guards/feature.guard';
+import { RequiresFeature } from '../plan/decorators/requires-feature.decorator';
 
 const RESOURCE = 'asset';
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+// Patrimônios são da base de custos (plano PRO). A empresa é sempre a da
+// sessão: o id de outra empresa responde 404. A reescrita completa
+// (permissões, filtros) é do módulo 4.
+@UseGuards(JwtAuthGuard, PermissionsGuard, FeatureGuard)
+@RequiresFeature('cost_base')
 @Controller(RESOURCE)
 export class AssetController {
   constructor(private readonly assetService: AssetService) {}
 
   @Post()
   // @HasPermission(AbacAction.Create, RESOURCE)
-  create(@Body() createAssetDto: CreateAssetDto) {
-    return this.assetService.create(createAssetDto);
+  create(@Req() req, @Body() createAssetDto: CreateAssetDto) {
+    return this.assetService.create(req.user.companyId, createAssetDto);
   }
 
   @Get()
   // @HasPermission(AbacAction.List, RESOURCE)
   findAll(
+    @Req() req,
     @Query('pageSize') pageSize: number = 10,
     @Query('page') page: number = 1,
   ) {
-    return this.assetService.findAll(pageSize, page);
+    return this.assetService.findAll(req.user.companyId, pageSize, page);
   }
 
+  // Antes de `:id`, para não ser lido como um id.
   @Get('/types')
   // @HasPermission(AbacAction.List, RESOURCE)
-  allTypes() {
-    return this.assetService.findAllTypes();
+  allTypes(@Req() req) {
+    return this.assetService.findAllTypes(req.user.companyId);
   }
 
   @Get(':id')
   // @HasPermission(AbacAction.Get, RESOURCE)
-  findOne(@Param('id') id: string) {
-    return this.assetService.findOne(id);
+  findOne(@Req() req, @Param('id') id: string) {
+    return this.assetService.findOne(req.user.companyId, id);
   }
 
   @Patch(':id')
   // @HasPermission(AbacAction.Update, RESOURCE)
-  update(@Param('id') id: string, @Body() updateAssetDto: UpdateAssetDto) {
-    return this.assetService.update(id, updateAssetDto);
+  update(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() updateAssetDto: UpdateAssetDto,
+  ) {
+    return this.assetService.update(req.user.companyId, id, updateAssetDto);
   }
 
   @Delete(':id')
   // @HasPermission(AbacAction.Delete, RESOURCE)
-  remove(@Param('id') id: string) {
-    return this.assetService.remove(id);
+  remove(@Req() req, @Param('id') id: string) {
+    return this.assetService.remove(req.user.companyId, id);
   }
 }
