@@ -10,6 +10,8 @@ import { UpdatePayrollSetupDto } from './dto/update-payroll-setup.dto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 
+const PAYROLL_SETUP_NOT_FOUND = 'Item da folha não encontrado.';
+
 @Injectable()
 export class SalariesService {
   private readonly logger = new Logger(SalariesService.name);
@@ -257,14 +259,22 @@ export class SalariesService {
     }
   }
 
-  async update(id: string, updatePayrollSetupDto: UpdatePayrollSetupDto) {
+  async update(
+    id: string,
+    companyId: string,
+    updatePayrollSetupDto: UpdatePayrollSetupDto,
+  ) {
     try {
-      const payrollSetup = await this.prisma.payrollSetup.findUnique({
-        where: { id },
-      });
+      await this.findOwn(id, companyId);
 
-      if (!payrollSetup) {
-        throw new NotFoundException(`Payroll setup with ID ${id} not found`);
+      if (updatePayrollSetupDto.employeeId !== undefined) {
+        const employee = await this.prisma.employee.findFirst({
+          where: { id: updatePayrollSetupDto.employeeId, companyId },
+          select: { id: true },
+        });
+        if (!employee) {
+          throw new NotFoundException('Colaborador não encontrado.');
+        }
       }
 
       const updateData: Prisma.PayrollSetupUpdateInput = {};
@@ -327,10 +337,28 @@ export class SalariesService {
     }
   }
 
-  async getSalaryDetails(id: string) {
+  /**
+   * Toda operação por id confere a empresa da sessão: sem isso, o salário de
+   * um colaborador de outra empresa era lido, alterado ou apagado pelo id. O
+   * id de outra empresa responde 404, como um id que não existe.
+   */
+  private async findOwn(id: string, companyId: string) {
+    const payrollSetup = await this.prisma.payrollSetup.findFirst({
+      where: { id, companyId },
+      select: { id: true },
+    });
+
+    if (!payrollSetup) {
+      throw new NotFoundException(PAYROLL_SETUP_NOT_FOUND);
+    }
+
+    return payrollSetup;
+  }
+
+  async getSalaryDetails(id: string, companyId: string) {
     try {
-      const payrollSetup = await this.prisma.payrollSetup.findUnique({
-        where: { id },
+      const payrollSetup = await this.prisma.payrollSetup.findFirst({
+        where: { id, companyId },
         include: {
           employee: {
             include: {
@@ -341,7 +369,7 @@ export class SalariesService {
       });
 
       if (!payrollSetup) {
-        throw new NotFoundException(`Payroll setup with ID ${id} not found`);
+        throw new NotFoundException(PAYROLL_SETUP_NOT_FOUND);
       }
 
       return payrollSetup;
@@ -355,15 +383,9 @@ export class SalariesService {
     }
   }
 
-  async delete(id: string) {
+  async delete(id: string, companyId: string) {
     try {
-      const payrollSetup = await this.prisma.payrollSetup.findUnique({
-        where: { id },
-      });
-
-      if (!payrollSetup) {
-        throw new NotFoundException(`Payroll setup with ID ${id} not found`);
-      }
+      await this.findOwn(id, companyId);
 
       await this.prisma.payrollSetup.delete({
         where: { id },

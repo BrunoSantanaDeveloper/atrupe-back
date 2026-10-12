@@ -16,14 +16,19 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
 import { SalaryTemplatesService } from './salary-templates.service';
+import { PAYROLL_SETTINGS_PERMISSION } from './salaries.controller';
 import { UpdatePayrollTemplateDto } from './dto/update-payroll-template.dto';
 
 const RESOURCE = 'payroll-templates';
 const GROUP = 'financial';
 
+// Mesma regra do payroll-setup: view para ler e renomear, como a tela
+// libera; excluir pede delete, que é a trava que a tela tem
 @ApiTags('Itens de custo da folha de pagamento')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class PayrollTemplatesController {
@@ -37,6 +42,7 @@ export class PayrollTemplatesController {
   })
   @ApiResponse({ status: 200, description: 'Returns the cost items' })
   @Get()
+  @HasPermission('view', PAYROLL_SETTINGS_PERMISSION)
   findAll(@Req() req) {
     return this.salaryTemplatesService.getCompanyTemplatesWithUsage(
       req.user.companyId,
@@ -51,6 +57,7 @@ export class PayrollTemplatesController {
   @ApiResponse({ status: 404, description: 'Cost item not found' })
   @ApiResponse({ status: 409, description: 'Another cost item has this name' })
   @Patch(':id')
+  @HasPermission('view', PAYROLL_SETTINGS_PERMISSION)
   update(
     @Req() req,
     @Param('id') id: string,
@@ -74,6 +81,7 @@ export class PayrollTemplatesController {
     description: 'The cost item is still linked to employees',
   })
   @Delete(':id')
+  @HasPermission('delete', PAYROLL_SETTINGS_PERMISSION)
   remove(@Req() req, @Param('id') id: string) {
     return this.salaryTemplatesService.removeTemplate(req.user.companyId, id);
   }
