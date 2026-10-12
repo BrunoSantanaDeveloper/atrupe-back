@@ -462,14 +462,15 @@ export class ProductService {
       const itemsWithId = items?.filter((item) => item.id);
       const itemsWithoutId = items?.filter((item) => !item.id);
 
-      // Identificar IDs dos itens presentes no banco e não enviados no body
+      // Identificar IDs dos itens presentes no banco e não enviados no body.
+      // Sem `items` no corpo, a edição é parcial (descritivo, permissões):
+      // nenhum item sai. Antes, o PATCH sem a lista apagava todos os itens
+      // e as referências deles nos itens de orçamento
       const existingItemIds = product.items.map((item) => item.id);
       const incomingItemIds = itemsWithId?.map((item) => item.id) || [];
-      const itemsToRemove = existingItemIds.filter(
-        (id) => !incomingItemIds.includes(id),
-      );
-
-      const productionStages = updateProductDto.productionStages || [];
+      const itemsToRemove = updateProductDto.items
+        ? existingItemIds.filter((id) => !incomingItemIds.includes(id))
+        : [];
 
       // Remover itens que não foram enviados no body
       if (itemsToRemove.length > 0) {
@@ -542,7 +543,12 @@ export class ProductService {
             })),
             create: itemsWithoutId?.map((item) => ({ ...item })),
           },
-          productionStages: JSON.parse(JSON.stringify(productionStages)),
+          // Sem `productionStages` no corpo, as etapas ficam como estão
+          ...(updateProductDto.productionStages !== undefined && {
+            productionStages: JSON.parse(
+              JSON.stringify(updateProductDto.productionStages || []),
+            ),
+          }),
         },
       });
     } catch (error) {
