@@ -25,12 +25,34 @@ const createMockPrismaService = () => {
     saleSeries: {
       create: jest.fn(),
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
     },
+    sellerProfile: { count: jest.fn() },
+    transaction: { findMany: jest.fn(), deleteMany: jest.fn() },
+    cashRegister: { update: jest.fn() },
   };
+  // O expurgo apaga, em ordem, tudo o que pende da série
+  for (const model of [
+    'productionStage',
+    'deliverySchedule',
+    'order',
+    'deliveryInfo',
+    'quotationInstallment',
+    'quotationPayment',
+    'quotationProductItem',
+    'quotationProduct',
+    'payableInstallment',
+    'receivableInstallment',
+    'payable',
+    'receivable',
+    'quotation',
+  ]) {
+    mock[model] = { deleteMany: jest.fn() };
+  }
   mock.$transaction = jest.fn((cb: (tx: any) => Promise<any>) => cb(mock));
   return mock;
 };
@@ -130,10 +152,15 @@ describe('SaleSeriesService', () => {
 
   describe('findOne', () => {
     it('should return formatted series by id', async () => {
-      prisma.saleSeries.findUnique.mockResolvedValue(mockSeries);
+      prisma.saleSeries.findFirst.mockResolvedValue(mockSeries);
 
-      const result = await service.findOne(mockSeriesId);
+      const result = await service.findOne(mockSeriesId, mockCompanyId);
 
+      expect(prisma.saleSeries.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: mockSeriesId, companyId: mockCompanyId, isActive: true },
+        }),
+      );
       expect(result.billing).toEqual({
         value: 'ON_ORDER',
         label: 'Faturar no pedido',
@@ -148,16 +175,23 @@ describe('SaleSeriesService', () => {
       });
     });
 
-    it('should throw NotFoundException when not found', async () => {
-      prisma.saleSeries.findUnique.mockResolvedValue(null);
+    it('should throw NotFoundException when not found (ou de outra empresa)', async () => {
+      prisma.saleSeries.findFirst.mockResolvedValue(null);
 
-      await expect(service.findOne('nonexistent')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.findOne('nonexistent', mockCompanyId),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('update', () => {
+    beforeEach(() => {
+      prisma.saleSeries.findFirst.mockResolvedValue({
+        id: mockSeriesId,
+        isTraining: false,
+      });
+    });
+
     it('should update a sale series', async () => {
       const dto = { description: 'Updated' } as any;
       prisma.saleSeries.update.mockResolvedValue({
@@ -165,23 +199,56 @@ describe('SaleSeriesService', () => {
         description: 'Updated',
       });
 
-      const result = await service.update(mockSeriesId, dto);
+      const result = await service.update(mockSeriesId, mockCompanyId, dto);
 
       expect(result.description).toBe('Updated');
     });
 
+    it('não altera a série de outra empresa', async () => {
+      prisma.saleSeries.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.update('series-de-outra', mockCompanyId, {
+          description: 'x',
+        } as any),
+      ).rejects.toThrow(
+        new NotFoundException('Série de venda não encontrada.'),
+      );
+      expect(prisma.saleSeries.findFirst).toHaveBeenCalledWith({
+        where: { id: 'series-de-outra', companyId: mockCompanyId },
+        select: { id: true, isTraining: true },
+      });
+      expect(prisma.saleSeries.update).not.toHaveBeenCalled();
+    });
+
+    it('não restringe a série a perfil de vendedor de outra empresa', async () => {
+      prisma.sellerProfile.count.mockResolvedValue(1);
+
+      await expect(
+        service.update(mockSeriesId, mockCompanyId, {
+          allowedProfileIds: ['perfil-1', 'perfil-de-outra'],
+        } as any),
+      ).rejects.toThrow(
+        new NotFoundException('Perfil de vendedor não encontrado.'),
+      );
+      expect(prisma.sellerProfile.count).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['perfil-1', 'perfil-de-outra'] },
+          companyId: mockCompanyId,
+        },
+      });
+      expect(prisma.saleSeries.update).not.toHaveBeenCalled();
+    });
+
     it('should clear other defaults when setting isDefault=true', async () => {
       const dto = { isDefault: true } as any;
-      prisma.saleSeries.findUnique.mockResolvedValue({
-        companyId: mockCompanyId,
-      });
       prisma.saleSeries.updateMany.mockResolvedValue({ count: 2 });
       prisma.saleSeries.update.mockResolvedValue({
         ...mockSeries,
         isDefault: true,
       });
 
-      await service.update(mockSeriesId, dto);
+      await service.update(mockSeriesId, mockCompanyId, dto);
 
       expect(prisma.saleSeries.updateMany).toHaveBeenCalledWith({
         where: { companyId: mockCompanyId, id: { not: mockSeriesId } },
@@ -196,7 +263,7 @@ describe('SaleSeriesService', () => {
         description: 'Changed',
       });
 
-      await service.update(mockSeriesId, dto);
+      await service.update(mockSeriesId, mockCompanyId, dto);
 
       expect(prisma.saleSeries.updateMany).not.toHaveBeenCalled();
     });
@@ -204,12 +271,16 @@ describe('SaleSeriesService', () => {
 
   describe('remove', () => {
     it('should soft-delete by setting isActive to false', async () => {
+      prisma.saleSeries.findFirst.mockResolvedValue({
+        id: mockSeriesId,
+        isTraining: false,
+      });
       prisma.saleSeries.update.mockResolvedValue({
         ...mockSeries,
         isActive: false,
       });
 
-      const result = await service.remove(mockSeriesId);
+      const result = await service.remove(mockSeriesId, mockCompanyId);
 
       expect(result.isActive).toBe(false);
       expect(prisma.saleSeries.update).toHaveBeenCalledWith({
@@ -217,16 +288,102 @@ describe('SaleSeriesService', () => {
         data: { isActive: false },
       });
     });
+
+    it('não inativa a série de outra empresa', async () => {
+      prisma.saleSeries.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.remove('series-de-outra', mockCompanyId),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.saleSeries.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('removeTrainingSerieData (apagar os dados de treinamento)', () => {
+    it('não toca a série de outra empresa', async () => {
+      prisma.saleSeries.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.removeTrainingSerieData('series-de-outra', mockCompanyId),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('recusa série que não é de treinamento', async () => {
+      prisma.saleSeries.findFirst.mockResolvedValue({
+        id: mockSeriesId,
+        isTraining: false,
+      });
+
+      await expect(
+        service.removeTrainingSerieData(mockSeriesId, mockCompanyId),
+      ).rejects.toMatchObject({ response: { code: 'NOT_TRAINING_SERIES' } });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('só pega as transações que pagam apenas parcelas da série, e apaga exatamente essas', async () => {
+      prisma.saleSeries.findFirst.mockResolvedValue({
+        id: mockSeriesId,
+        isTraining: true,
+      });
+      prisma.transaction.findMany.mockResolvedValue([
+        {
+          id: 't-1',
+          type: 'INCOME',
+          amount: 100,
+          cashRegister: { id: 'cx-1', status: 'OPEN' },
+        },
+        {
+          id: 't-2',
+          type: 'OUTCOME',
+          amount: 30,
+          cashRegister: { id: 'cx-1', status: 'CLOSED' },
+        },
+      ]);
+
+      await service.removeTrainingSerieData(mockSeriesId, mockCompanyId);
+
+      const where = prisma.transaction.findMany.mock.calls[0][0].where;
+      const ofSeries = {
+        receivable: { quotation: { series: { id: mockSeriesId } } },
+      };
+      // `every` sozinho casava toda transação sem parcela desse lado
+      expect(where.OR[0].receivableInstallment).toEqual({
+        some: ofSeries,
+        every: ofSeries,
+      });
+      expect(where.OR[1].payableInstallment.some).toEqual({
+        payable: { quotation: { series: { id: mockSeriesId } } },
+      });
+
+      expect(prisma.cashRegister.update).toHaveBeenCalledWith({
+        where: { id: 'cx-1' },
+        data: { totalIncomes: { decrement: 100 } },
+      });
+      expect(prisma.cashRegister.update).toHaveBeenCalledWith({
+        where: { id: 'cx-1' },
+        data: {
+          totalOutcomes: { decrement: 30 },
+          closingBalance: { increment: 30 },
+        },
+      });
+      expect(prisma.transaction.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: ['t-1', 't-2'] } },
+      });
+      expect(prisma.quotation.deleteMany).toHaveBeenCalledWith({
+        where: { series: { id: mockSeriesId } },
+      });
+    });
   });
 
   describe('formatSeries', () => {
     it('should map billing to label', async () => {
-      prisma.saleSeries.findUnique.mockResolvedValue({
+      prisma.saleSeries.findFirst.mockResolvedValue({
         ...mockSeries,
         billing: 'ON_DELIVERY',
       });
 
-      const result = await service.findOne(mockSeriesId);
+      const result = await service.findOne(mockSeriesId, mockCompanyId);
 
       expect(result.billing).toEqual({
         value: 'ON_DELIVERY',
@@ -235,12 +392,12 @@ describe('SaleSeriesService', () => {
     });
 
     it('should pass through unknown enum values as labels', async () => {
-      prisma.saleSeries.findUnique.mockResolvedValue({
+      prisma.saleSeries.findFirst.mockResolvedValue({
         ...mockSeries,
         billing: 'UNKNOWN_VALUE',
       });
 
-      const result = await service.findOne(mockSeriesId);
+      const result = await service.findOne(mockSeriesId, mockCompanyId);
 
       expect(result.billing).toEqual({
         value: 'UNKNOWN_VALUE',

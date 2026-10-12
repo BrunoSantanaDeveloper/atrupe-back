@@ -23,18 +23,28 @@ import { CreateSaleSeriesDto } from './dto/create-series.dto';
 import { SaleSeriesService } from './series.service';
 import { UpdateSaleSeriesDto } from './dto/update-serie.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
 import { SeriesFilterDTO } from './dto/series-filter.dto';
+
+/**
+ * Configurações > Vendas > Séries de venda: a tela pede edit para criar,
+ * alterar, inativar e apagar os dados de treinamento. As leituras ficam sem
+ * permissão, porque o orçamento lista as séries para qualquer vendedor.
+ */
+const PERMISSION = 'sales_settings:series';
 
 @ApiTags('Série de vendas')
 @Controller('sale/series')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SaleSeriesController {
   constructor(private readonly saleSeriesService: SaleSeriesService) {}
 
   @ApiOperation({ summary: 'Create a new sale series' })
   @ApiResponse({ status: 201, description: 'Sale series created successfully' })
   @Post()
+  @HasPermission('edit', PERMISSION)
   async create(@Req() req, @Body() createSaleSeriesDto: CreateSaleSeriesDto) {
     createSaleSeriesDto.companyId = req.user.companyId;
     return await this.saleSeriesService.create(createSaleSeriesDto);
@@ -54,14 +64,15 @@ export class SaleSeriesController {
   @ApiParam({ name: 'id', description: 'ID of the sale series' })
   @ApiResponse({ status: 200, description: 'Sale series details' })
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return await this.saleSeriesService.findOne(id);
+  async findOne(@Req() req, @Param('id') id: string) {
+    return await this.saleSeriesService.findOne(id, req.user.companyId);
   }
 
   @ApiOperation({ summary: 'Update a sale series by ID' })
   @ApiParam({ name: 'id', description: 'ID of the sale series' })
   @ApiResponse({ status: 200, description: 'Sale series updated successfully' })
   @Patch(':id')
+  @HasPermission('edit', PERMISSION)
   update(
     @Param('id') id: string,
     @Body() updateSaleSeriesDto: UpdateSaleSeriesDto,
@@ -78,6 +89,7 @@ export class SaleSeriesController {
 
     return this.saleSeriesService.update(
       id,
+      req.user.companyId,
       updateSaleSeriesDto,
       req.user?.isAdmin,
     );
@@ -90,15 +102,20 @@ export class SaleSeriesController {
     description: 'Sale series inactivated successfully',
   })
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.saleSeriesService.remove(id);
+  @HasPermission('edit', PERMISSION)
+  remove(@Req() req, @Param('id') id: string) {
+    return this.saleSeriesService.remove(id, req.user.companyId);
   }
 
   @ApiOperation({ summary: 'Delete a sale series by ID and purge data' })
   @ApiParam({ name: 'id', description: 'ID of the sale series' })
   @ApiResponse({ status: 200, description: 'Sale series deleted successfully' })
   @Delete('purge/:id')
-  async purge(@Param('id') id: string) {
-    return this.saleSeriesService.removeTrainingSerieData(id);
+  @HasPermission('edit', PERMISSION)
+  async purge(@Req() req, @Param('id') id: string) {
+    return this.saleSeriesService.removeTrainingSerieData(
+      id,
+      req.user.companyId,
+    );
   }
 }

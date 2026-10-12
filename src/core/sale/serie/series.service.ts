@@ -4,12 +4,49 @@ import {
   HttpException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CreateSaleSeriesDto } from './dto/create-series.dto';
 import { UpdateSaleSeriesDto } from './dto/update-serie.dto';
 import { SeriesFilterDTO } from './dto/series-filter.dto';
 import { Prisma } from '@prisma/client';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
+
+const SERIES_NOT_FOUND = 'Série de venda não encontrada.';
+
+/**
+ * A transação que só paga parcelas da série: tem parcela dela, e todas as
+ * parcelas que tem são dela. Só `every` casava toda transação sem parcela
+ * desse lado (lista vazia satisfaz `every`): o expurgo descontava os caixas
+ * e apagava as transações de todas as empresas.
+ */
+function transactionsOnlyOfSeries(
+  serieId: string,
+): Prisma.TransactionWhereInput {
+  const receivableOfSeries: Prisma.ReceivableInstallmentWhereInput = {
+    receivable: { quotation: { series: { id: serieId } } },
+  };
+  const payableOfSeries: Prisma.PayableInstallmentWhereInput = {
+    payable: { quotation: { series: { id: serieId } } },
+  };
+  return {
+    OR: [
+      {
+        receivableInstallment: {
+          some: receivableOfSeries,
+          every: receivableOfSeries,
+        },
+      },
+      {
+        payableInstallment: {
+          some: payableOfSeries,
+          every: payableOfSeries,
+        },
+      },
+    ],
+  };
+}
 
 @Injectable()
 export class SaleSeriesService {
@@ -80,14 +117,14 @@ export class SaleSeriesService {
     }
   }
 
-  async findOne(id: string) {
-    const series = await this.prisma.saleSeries.findUnique({
-      where: { id, isActive: true },
+  async findOne(id: string, companyId: string) {
+    const series = await this.prisma.saleSeries.findFirst({
+      where: { id, companyId, isActive: true },
       include: { allowedProfiles: { select: { id: true, name: true } } },
     });
 
     if (!series) {
-      throw new NotFoundException(`Sale series not found`);
+      throw new NotFoundException(SERIES_NOT_FOUND);
     }
 
     return this.formatSeries(series);
@@ -131,11 +168,36 @@ export class SaleSeriesService {
     };
   }
 
+  /**
+   * Toda operação por id confere a empresa da sessão: sem isso, a série de
+   * outra empresa era lida, alterada, inativada ou expurgada pelo id. O id de
+   * outra empresa responde 404, como um id que não existe.
+   */
+  private async findOwn(id: string, companyId: string) {
+    const series = await this.prisma.saleSeries.findFirst({
+      where: { id, companyId },
+      select: { id: true, isTraining: true },
+    });
+    if (!series) {
+      throw new NotFoundException(SERIES_NOT_FOUND);
+    }
+    return series;
+  }
+
   async update(
     id: string,
+    companyId: string,
     updateSaleSeriesDto: UpdateSaleSeriesDto,
     isAdmin = false,
   ) {
+    await this.findOwn(id, companyId);
+    await assertBelongsToCompany(
+      this.prisma.sellerProfile,
+      updateSaleSeriesDto.allowedProfileIds,
+      { companyId },
+      'Perfil de vendedor não encontrado.',
+    );
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         const isUpdatingCurrentBudgetNumber =
@@ -197,20 +259,13 @@ export class SaleSeriesService {
 
         // Se estiver definindo como padrão, primeiro remover o padrão de outras séries
         if (updateSaleSeriesDto.isDefault === true) {
-          const currentSeries = await tx.saleSeries.findUnique({
-            where: { id },
-            select: { companyId: true },
+          await tx.saleSeries.updateMany({
+            where: {
+              companyId,
+              id: { not: id },
+            },
+            data: { isDefault: false },
           });
-
-          if (currentSeries) {
-            await tx.saleSeries.updateMany({
-              where: {
-                companyId: currentSeries.companyId,
-                id: { not: id },
-              },
-              data: { isDefault: false },
-            });
-          }
         }
 
         const { allowedProfileIds, ...rest } = updateSaleSeriesDto;
@@ -240,45 +295,35 @@ export class SaleSeriesService {
     }
   }
 
-  remove(id: string) {
+  async remove(id: string, companyId: string) {
+    await this.findOwn(id, companyId);
+
     return this.prisma.saleSeries.update({
       where: { id },
       data: { isActive: false },
     });
   }
 
-  async removeTrainingSerieData(serieId: string) {
-    try {
-      const serie = await this.prisma.saleSeries.findUnique({
-        where: { id: serieId },
+  /**
+   * Apaga orçamentos, O.S., agendas e o financeiro da série de treinamento.
+   * Só da empresa da sessão e só de série de treinamento: a rota apagava
+   * qualquer série pelo id.
+   */
+  async removeTrainingSerieData(serieId: string, companyId: string) {
+    const serie = await this.findOwn(serieId, companyId);
+    if (!serie.isTraining) {
+      throw new UnprocessableEntityException({
+        code: 'NOT_TRAINING_SERIES',
+        message: 'Só a série de treinamento pode ter os dados apagados.',
       });
+    }
 
-      if (!serie) {
-        throw new NotFoundException(`Serie nao encontrada`);
-      }
-
+    try {
       //deletar orçamento/agenda de entrega/pedido/financeiro
       return await this.prisma.$transaction(async (tx) => {
         // First find all transactions that will be deleted
         const transactions = await tx.transaction.findMany({
-          where: {
-            OR: [
-              {
-                receivableInstallment: {
-                  every: {
-                    receivable: { quotation: { series: { id: serieId } } },
-                  },
-                },
-              },
-              {
-                payableInstallment: {
-                  every: {
-                    payable: { quotation: { series: { id: serieId } } },
-                  },
-                },
-              },
-            ],
-          },
+          where: transactionsOnlyOfSeries(serieId),
           include: {
             cashRegister: true,
           },
@@ -397,25 +442,9 @@ export class SaleSeriesService {
           },
         });
 
+        // As mesmas transações cujo valor saiu dos caixas acima
         await tx.transaction.deleteMany({
-          where: {
-            OR: [
-              {
-                receivableInstallment: {
-                  every: {
-                    receivable: { quotation: { series: { id: serieId } } },
-                  },
-                },
-              },
-              {
-                payableInstallment: {
-                  every: {
-                    payable: { quotation: { series: { id: serieId } } },
-                  },
-                },
-              },
-            ],
-          },
+          where: { id: { in: transactions.map((t) => t.id) } },
         });
 
         await tx.payableInstallment.deleteMany({
