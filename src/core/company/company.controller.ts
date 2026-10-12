@@ -16,6 +16,7 @@ import { UpdateCompanyDto } from './dto/update-company.dto';
 import { CreateCompanyHistoryDto } from './dto/create-company-history.dto';
 import { ListCompanyHistoryDto } from './dto/list-company-history.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 import { FeatureGuard } from '../plan/guards/feature.guard';
 import { RequiresFeature } from '../plan/decorators/requires-feature.decorator';
 import {
@@ -72,7 +73,9 @@ export class CompanyController {
     );
   }
 
+  // Ferramenta de suporte: completa os cadastros padrão de qualquer empresa
   @Post('missing-default-items/:companyId')
+  @UseGuards(SystemAdminGuard)
   @ApiOperation({
     summary: 'Cria itens padrão ausentes para uma empresa existente',
   })
@@ -128,7 +131,8 @@ export class CompanyController {
     status: 404,
     description: 'Empresa não encontrada.',
   })
-  findOne(@Param('id') id: string) {
+  async findOne(@Param('id') id: string, @Req() req) {
+    await this.companyService.assertInAccount(id, req.user);
     return this.companyService.findOne(id);
   }
 
@@ -147,7 +151,9 @@ export class CompanyController {
   async update(
     @Param('id') id: string,
     @Body() updateCompanyDto: UpdateCompanyDto,
+    @Req() req,
   ) {
+    await this.companyService.assertInAccount(id, req.user);
     return await this.companyService.update(id, updateCompanyDto);
   }
 
@@ -162,11 +168,14 @@ export class CompanyController {
     status: 404,
     description: 'Empresa não encontrada.',
   })
-  remove(@Param('id') id: string) {
+  async remove(@Param('id') id: string, @Req() req) {
+    await this.companyService.assertInAccount(id, req.user);
     return this.companyService.remove(id);
   }
 
+  // O histórico da conta é do superadmin (tela de contas em teste)
   @Get(':id/history')
+  @UseGuards(SystemAdminGuard)
   @ApiOperation({ summary: 'Lista o histórico de uma empresa' })
   @ApiParam({ name: 'id', required: true, description: 'ID da empresa' })
   @ApiResponse({
@@ -181,6 +190,7 @@ export class CompanyController {
   }
 
   @Post(':id/history')
+  @UseGuards(SystemAdminGuard)
   @ApiOperation({ summary: 'Adiciona um registro ao histórico da empresa' })
   @ApiParam({ name: 'id', required: true, description: 'ID da empresa' })
   @ApiBody({ type: CreateCompanyHistoryDto })

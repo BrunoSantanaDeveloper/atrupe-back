@@ -4,7 +4,7 @@ import { PrismaService } from 'src/config/prisma/prisma.service';
 import { PlugService } from '../../svc/plug/plug.service';
 import { CompanySeedsService } from './company-seeds.service';
 import { CompanyHistoryService } from './company-history.service';
-import { Logger } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { EncryptionService } from 'src/shared/services/encryption.service';
 import { FiscalRolloutPolicyService } from '../fiscal/shared/fiscal-rollout-policy.service';
 import { FiscalCredentialResolverService } from '../fiscal/shared/fiscal-credential-resolver.service';
@@ -409,6 +409,42 @@ describe('CompanyService', () => {
 
       const result = await service.findOne('invalid-id');
       expect(result).toBeNull();
+    });
+  });
+
+  // ============================================
+  // assertInAccount Tests
+  // ============================================
+  describe('assertInAccount', () => {
+    const user = { companyId: mockCompanyId };
+
+    it('a empresa da sessão e as filiais dela passam', async () => {
+      prisma.company.count.mockResolvedValue(1);
+
+      await expect(
+        service.assertInAccount('filial-1', user),
+      ).resolves.toBeUndefined();
+      expect(prisma.company.count).toHaveBeenCalledWith({
+        where: {
+          id: 'filial-1',
+          OR: [{ id: mockCompanyId }, { principalCompanyId: mockCompanyId }],
+        },
+      });
+    });
+
+    it('empresa de outra conta responde 404', async () => {
+      prisma.company.count.mockResolvedValue(0);
+
+      await expect(service.assertInAccount('outra', user)).rejects.toThrow(
+        new NotFoundException('Empresa não encontrada.'),
+      );
+    });
+
+    it('o superadmin passa sem consultar', async () => {
+      await expect(
+        service.assertInAccount('outra', { ...user, isSystemAdmin: true }),
+      ).resolves.toBeUndefined();
+      expect(prisma.company.count).not.toHaveBeenCalled();
     });
   });
 

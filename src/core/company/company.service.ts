@@ -1,4 +1,8 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { PlugService } from '../../svc/plug/plug.service';
@@ -857,6 +861,27 @@ export class CompanyService {
     });
     if (!company) return null;
     return this.formatCompany(company as any);
+  }
+
+  /**
+   * As empresas da conta: a da sessão e as filiais dela (as que `GET /company`
+   * lista). Outra empresa responde 404, como um id que não existe; o
+   * superadmin passa, como no TenantGuard.
+   */
+  async assertInAccount(
+    id: string,
+    user: { companyId: string; isSystemAdmin?: boolean },
+  ): Promise<void> {
+    if (user.isSystemAdmin) return;
+    const found = await this.prisma.company.count({
+      where: {
+        id,
+        OR: [{ id: user.companyId }, { principalCompanyId: user.companyId }],
+      },
+    });
+    if (!found) {
+      throw new NotFoundException('Empresa não encontrada.');
+    }
   }
 
   async update(id: string, updateCompanyDto: UpdateCompanyDto) {
