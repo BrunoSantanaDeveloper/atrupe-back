@@ -591,6 +591,24 @@ describe('QuotationWorkflowService', () => {
   });
 
   describe('reject', () => {
+    it('motivo de outra empresa: 404 com a mensagem, sem rejeitar', async () => {
+      prisma.quotation.findUnique.mockResolvedValue({
+        ...mockQuotation,
+        status: QuotationStatus.DONE,
+      });
+      prisma.reasons.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.reject(mockQuotationId, { reasonId: 'reason-b' }, mockUserId),
+      ).rejects.toThrow(
+        new NotFoundException('Motivo de cancelamento não encontrado.'),
+      );
+      expect(prisma.reasons.findFirst).toHaveBeenCalledWith({
+        where: { id: 'reason-b', companyId: mockCompanyId },
+      });
+      expect(prisma.quotation.update).not.toHaveBeenCalled();
+    });
+
     it('should reject quotation successfully', async () => {
       prisma.quotation.findUnique.mockResolvedValue({
         ...mockQuotation,

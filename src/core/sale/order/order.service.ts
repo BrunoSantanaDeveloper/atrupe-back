@@ -22,6 +22,7 @@ import { ORDER_FIND_ONE_INCLUDE } from './order.includes';
 import { transformOrderToResponse } from './order.transformers';
 import { UpdateOrderInfoDto } from './dto/update-order.dto';
 import { reassignQuotationSeries } from '../quotation/quotation-series.util';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 const EXPORT_LIMIT = '10000';
 const ACTIVE_NFCE_STATUSES: NfceStatus[] = [
@@ -704,6 +705,7 @@ export class OrderService {
         quotation: {
           select: {
             id: true,
+            companyId: true,
           },
         },
       },
@@ -712,10 +714,10 @@ export class OrderService {
       throw new NotFoundException('Ordem de serviço não encontrada.');
     }
 
-    // Validate reason before transaction
+    // Validate reason before transaction (o motivo é da empresa da O.S.)
     if (dto.reasonId) {
       const reason = await this.prisma.reasons.findFirst({
-        where: { id: dto.reasonId },
+        where: { id: dto.reasonId, companyId: order.quotation.companyId },
       });
 
       if (!reason) {
@@ -1162,6 +1164,43 @@ export class OrderService {
     };
   }
 
+  /**
+   * Cliente, vendedor, responsável e endereço de entrega do corpo precisam
+   * ser da empresa da O.S.: antes eram buscados só pelo id e gravados na
+   * venda, mesmo sendo de outra empresa.
+   */
+  private async assertOrderInfoRefsOfCompany(
+    companyId: string,
+    dto: UpdateOrderInfoDto,
+  ) {
+    await assertBelongsToCompany(
+      this.prisma.client,
+      dto.clientId,
+      { companyId },
+      'Cliente não encontrado.',
+    );
+    await assertBelongsToCompany(
+      this.prisma.employee,
+      dto.sellerId,
+      { companyId },
+      'Vendedor não encontrado.',
+    );
+    await assertBelongsToCompany(
+      this.prisma.contact,
+      dto.contactId,
+      { OR: [{ client: { companyId } }, { supplier: { companyId } }] },
+      'Responsável não encontrado.',
+    );
+    await assertBelongsToCompany(
+      this.prisma.address,
+      dto.deliveryClientAddressId === 'custom'
+        ? null
+        : dto.deliveryClientAddressId,
+      { client: { companyId } },
+      'Endereço não encontrado.',
+    );
+  }
+
   async updateOrderInfo(
     orderId: string,
     dto: UpdateOrderInfoDto,
@@ -1205,6 +1244,7 @@ export class OrderService {
     }
 
     const { quotation } = order;
+    await this.assertOrderInfoRefsOfCompany(quotation.companyId, dto);
 
     // Snapshot "before" for history
     const before: Record<string, string | null> = {};

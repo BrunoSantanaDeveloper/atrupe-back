@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  HttpException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
@@ -865,7 +866,7 @@ export class QuotationWorkflowService {
   ): Promise<Quotation> {
     const quotation = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
-      select: { status: true },
+      select: { status: true, companyId: true },
     });
 
     if (!quotation) {
@@ -904,8 +905,9 @@ export class QuotationWorkflowService {
     }
 
     try {
+      // O motivo é da empresa do orçamento
       const reason = await this.prisma.reasons.findFirst({
-        where: { id: dto.reasonId },
+        where: { id: dto.reasonId, companyId: quotation.companyId },
       });
 
       if (!reason) {
@@ -938,6 +940,8 @@ export class QuotationWorkflowService {
 
       return updatedQuotation;
     } catch (error) {
+      // O motivo não encontrado chegava como "Erro interno ao cancelar a ordem."
+      if (error instanceof HttpException) throw error;
       if (error instanceof PrismaClientKnownRequestError) {
         throw new BadRequestException(
           'Erro na base de dados ao cancelar a ordem.',

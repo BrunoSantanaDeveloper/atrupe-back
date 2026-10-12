@@ -321,6 +321,27 @@ describe('OrderService', () => {
       prisma.order.findUnique.mockResolvedValue(mockOrderWithQuotation);
     });
 
+    it('motivo de outra empresa: 404, sem cancelar nada', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        quotation: { id: mockQuotationId, companyId: mockCompanyId },
+      });
+      prisma.reasons.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.cancelOrder(
+          mockOrderId,
+          { reasonId: 'reason-b' },
+          mockSellerId,
+        ),
+      ).rejects.toThrow(
+        new NotFoundException('Motivo de cancelamento não encontrado.'),
+      );
+      expect(prisma.reasons.findFirst).toHaveBeenCalledWith({
+        where: { id: 'reason-b', companyId: mockCompanyId },
+      });
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
     it('should throw ForbiddenException if seller cannot cancel', async () => {
       prisma.sellerProfile.findFirst.mockResolvedValue({
         id: 'profile-1',
@@ -518,6 +539,90 @@ describe('OrderService', () => {
 
       expect(prisma.saleSeries.update).not.toHaveBeenCalled();
       expect(prisma.quotation.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateOrderInfo — ids do corpo', () => {
+    // Antes, cliente, vendedor, responsável e endereço eram buscados só pelo
+    // id e gravados na venda, mesmo sendo de outra empresa
+    beforeEach(() => {
+      for (const model of ['client', 'employee', 'contact', 'address']) {
+        prisma[model] = { count: jest.fn(), findUnique: jest.fn() };
+      }
+      prisma.quotation = { update: jest.fn() };
+      prisma.order.findUnique.mockResolvedValue({
+        id: mockOrderId,
+        status: OrderStatus.PENDING,
+        quotation: {
+          id: mockQuotationId,
+          clientId: 'client-1',
+          sellerId: mockSellerId,
+          contactId: null,
+          companyId: mockCompanyId,
+          deliveryInfo: null,
+        },
+      });
+    });
+
+    it.each([
+      [
+        'cliente',
+        { clientId: 'client-b' },
+        'client',
+        'Cliente não encontrado.',
+        { companyId: mockCompanyId },
+      ],
+      [
+        'vendedor',
+        { sellerId: 'seller-b' },
+        'employee',
+        'Vendedor não encontrado.',
+        { companyId: mockCompanyId },
+      ],
+      [
+        'responsável',
+        { contactId: 'contact-b' },
+        'contact',
+        'Responsável não encontrado.',
+        {
+          OR: [
+            { client: { companyId: mockCompanyId } },
+            { supplier: { companyId: mockCompanyId } },
+          ],
+        },
+      ],
+      [
+        'endereço de entrega',
+        { deliveryClientAddressId: 'address-b' },
+        'address',
+        'Endereço não encontrado.',
+        { client: { companyId: mockCompanyId } },
+      ],
+    ])(
+      '%s de outra empresa: 404, sem gravar nada',
+      async (_label, dto: any, model: string, message: string, scope) => {
+        prisma[model].count.mockResolvedValue(0);
+
+        await expect(
+          service.updateOrderInfo(mockOrderId, dto, 'user-1'),
+        ).rejects.toThrow(new NotFoundException(message));
+        expect(prisma[model].count).toHaveBeenCalledWith({
+          where: { id: { in: Object.values(dto) }, ...scope },
+        });
+        expect(prisma.quotation.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it('endereço personalizado não é id de endereço e não é conferido', async () => {
+      await service
+        .updateOrderInfo(
+          mockOrderId,
+          { deliveryClientAddressId: 'custom' } as any,
+          'user-1',
+        )
+        .catch(() => undefined);
+
+      expect(prisma.address.count).not.toHaveBeenCalled();
     });
   });
 });

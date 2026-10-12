@@ -18,6 +18,8 @@ import { CancelOrderDto, CreateOrderDto } from './dto/create-order.dto';
 import { FilterOrderDto } from './dto/filter.dto';
 import { UpdateOrderInfoDto } from './dto/update-order.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
+import { TenantGuard } from '../../auth/guards/tenant.guard';
+import { TenantResource } from '../../auth/guards/tenant-resource.decorator';
 import {
   ApiTags,
   ApiOperation,
@@ -213,6 +215,8 @@ export class OrderController {
   }
 
   @Patch(':id/info')
+  @UseGuards(TenantGuard)
+  @TenantResource('order', 'id', 'quotation')
   @ApiOperation({
     summary:
       'Editar informações da OS (cliente, vendedor, responsável, endereço)',
@@ -231,6 +235,8 @@ export class OrderController {
   }
 
   @Post(':id/cancel')
+  @UseGuards(TenantGuard)
+  @TenantResource('order', 'id', 'quotation')
   @ApiOperation({ summary: 'Cancelar uma ordem de serviço' })
   @ApiResponse({ status: 200, description: 'Ordem cancelada com sucesso.' })
   @ApiResponse({ status: 404, description: 'Motivo ou ordem não encontrada.' })
@@ -255,6 +261,8 @@ export class OrderController {
   }
 
   @Delete(':id')
+  @UseGuards(TenantGuard)
+  @TenantResource('order', 'id', 'quotation')
   @ApiOperation({ summary: 'Remove uma ordem de serviço pelo ID' })
   @ApiParam({
     name: 'id',
