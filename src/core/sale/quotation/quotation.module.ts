@@ -8,6 +8,7 @@ import { DeliveryModule } from './delivery/delivery.module';
 import { PaymentModule } from './payment/payment.module';
 import { DeliveryScheduleModule } from '../delivery-schedule/delivery-schedule.module';
 import { PlanControlModule } from '../../plan/plan-control.module';
+import { AssemblyModule } from '../../assembly/assembly.module';
 
 // Sub-services
 import { QuotationCrudService } from './quotation-crud.service';
@@ -26,6 +27,8 @@ import { QuotationImportService } from './quotation-import.service';
     PaymentModule,
     DeliveryScheduleModule,
     PlanControlModule,
+    // A composição escolhida no item e o retrato da venda (ORC-10)
+    AssemblyModule,
   ],
   controllers: [QuotationController],
   providers: [

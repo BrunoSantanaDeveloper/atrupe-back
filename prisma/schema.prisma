@@ -1109,9 +1109,21 @@ model QuotationProduct {
   finalValue           Float?
   createdAt            DateTime               @default(now())
   updatedAt            DateTime?              @updatedAt
+  /// De onde veio o item: produto do cadastro, montado na hora ou material
+  origin               QuotationItemOrigin    @default(PRODUCT)
+  /// A variação escolhida (PV-3, PV-6)
+  variationId          String?
+  /// As escolhas do vendedor na composição (IP-36), com o resumo
+  composition          Json?
+  /// O retrato da composição na venda (ORC-10): custo e preço por etapa.
+  /// Tem custo: nunca sai para a tela do orçamento (ORC-7)
+  snapshot             Json?
+  /// Acréscimo em centavos (ALT-25): fica fora do limite de desconto
+  addition             Int                    @default(0)
   items                QuotationProductItem[]
   product              Product                @relation(fields: [productId], references: [id])
   quotation            Quotation              @relation(fields: [quotationId], references: [id])
+  variation            ProductVariation?      @relation(fields: [variationId], references: [id], onDelete: SetNull)
 
   @@map("quotation_products")
 }
@@ -1452,17 +1464,18 @@ model MaterialImportLink {
 /// Variação simples do produto (PV-6, já no START): nome e preço por
 /// unidade comercial. No PRO, a mesma variação ganha composição própria.
 model ProductVariation {
-  id         String             @id @default(uuid())
-  productId  String
-  name       String
+  id             String             @id @default(uuid())
+  productId      String
+  name           String
   /// Centavos por unidade comercial; nulo vale o preço do produto
-  unitPrice  Int?
-  position   Int                @default(0)
-  createdAt  DateTime           @default(now())
-  updatedAt  DateTime           @updatedAt
-  product    Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
-  priceTiers ProductPriceTier[]
-  assemblies ProductAssembly[]
+  unitPrice      Int?
+  position       Int                @default(0)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  product        Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  priceTiers     ProductPriceTier[]
+  assemblies     ProductAssembly[]
+  quotationItems QuotationProduct[]
 
   @@index([productId])
   @@map("product_variations")
@@ -2390,6 +2403,12 @@ enum AssemblyLineMode {
   SINGLE
   CHOOSE
   LIST
+}
+
+enum QuotationItemOrigin {
+  PRODUCT
+  COMPOSED
+  MATERIAL
 }
 
 enum MaterialUnit {

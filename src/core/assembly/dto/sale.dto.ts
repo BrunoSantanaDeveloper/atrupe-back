@@ -106,19 +106,12 @@ export class SaleNoteDto {
   text: string;
 }
 
-/** As escolhas do vendedor para o relatório da composição (IP-36). */
-export class SaleCompositionDto {
-  @IsOptional()
-  @IsUUID('all', { message: 'Variação não encontrada' })
-  @ApiProperty({ required: false, nullable: true })
-  variationId?: string | null;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => SaleMeasureDto)
-  @ApiProperty({ required: false, type: SaleMeasureDto })
-  measure?: SaleMeasureDto;
-
+/**
+ * As escolhas do vendedor na composição (IP-36): os campos, os tempos, as
+ * escolhas, as opcionais, as listas e as observações por etapa. O item do
+ * orçamento guarda isso; o relatório recebe o mesmo.
+ */
+export class SaleChoicesDto {
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(MAX_ENTRIES)
@@ -166,4 +159,18 @@ export class SaleCompositionDto {
   @Type(() => SaleNoteDto)
   @ApiProperty({ required: false, type: [SaleNoteDto] })
   notes?: SaleNoteDto[];
+}
+
+/** As escolhas do vendedor para o relatório da composição (IP-36). */
+export class SaleCompositionDto extends SaleChoicesDto {
+  @IsOptional()
+  @IsUUID('all', { message: 'Variação não encontrada' })
+  @ApiProperty({ required: false, nullable: true })
+  variationId?: string | null;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SaleMeasureDto)
+  @ApiProperty({ required: false, type: SaleMeasureDto })
+  measure?: SaleMeasureDto;
 }

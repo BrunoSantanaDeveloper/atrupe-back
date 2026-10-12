@@ -3,12 +3,32 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  HttpException,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { Prisma } from '@prisma/client';
+import { ProductSaleService } from '../../assembly/product-sale.service';
+import { SaleChoicesDto } from '../../assembly/dto/sale.dto';
 import { AddItemDto } from './dto/create-quotation.dto';
 import { UpdateItemDto } from './dto/update-quotation.dto';
 import { calculateFinalValue, DEFAULT_IMAGE_SIZE } from './quotation.utils';
+
+/** O valor do item: o desconto sobre o total e o acréscimo por fora (ALT-25). */
+export const itemFinalValue = (
+  totalValue: number,
+  discount: number | null,
+  discountType: string | null,
+  addition: number | null | undefined,
+) => calculateFinalValue(totalValue, discount, discountType) + (addition || 0);
+
+// As escolhas vêm de classes de DTO: no banco vão como JSON simples
+const asJson = (value: unknown) =>
+  JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+
+type ItemMeasureSource = {
+  width?: number | null;
+  height?: number | null;
+};
 
 /**
  * QuotationItemsService
@@ -18,7 +38,85 @@ import { calculateFinalValue, DEFAULT_IMAGE_SIZE } from './quotation.utils';
 export class QuotationItemsService {
   private readonly logger = new Logger(QuotationItemsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private productSale: ProductSaleService,
+  ) {}
+
+  /**
+   * A variação do item (PV-3, PV-6): precisa ser do produto. Na inclusão,
+   * o produto com variações exige uma.
+   */
+  private async variationFor(
+    productId: string,
+    variationId: string | null | undefined,
+    required: boolean,
+  ) {
+    const variations = await this.prisma.productVariation.findMany({
+      where: { productId },
+      select: { id: true },
+    });
+    if (variationId) {
+      if (!variations.some((item) => item.id === variationId)) {
+        throw new NotFoundException('Variação não encontrada');
+      }
+      return variationId;
+    }
+    if (required && variations.length) {
+      throw new BadRequestException('Escolha a variação do produto');
+    }
+    return null;
+  }
+
+  /**
+   * A composição escolhida e o retrato da venda (ORC-10). Com escolhas, o
+   * erro delas volta para a tela; sem escolhas, o produto com composição
+   * liberada ganha o retrato com as escolhas padrão, e uma falha aqui não
+   * impede a venda.
+   */
+  private async compositionFor(
+    companyId: string,
+    productId: string,
+    variationId: string | null,
+    quantity: number,
+    items: ItemMeasureSource[],
+    choices: SaleChoicesDto | undefined,
+  ) {
+    const first = items[0];
+    const measure = {
+      quantity,
+      width: first?.width || undefined,
+      height: first?.height || undefined,
+    };
+    if (choices) {
+      return this.productSale.itemComposition(
+        companyId,
+        productId,
+        variationId,
+        measure,
+        choices,
+      );
+    }
+    const released = await this.prisma.productAssembly.findFirst({
+      where: { productId, status: 'RELEASED', blocks: { some: {} } },
+      select: { id: true },
+    });
+    if (!released) return null;
+    try {
+      return await this.productSale.itemComposition(
+        companyId,
+        productId,
+        variationId,
+        measure,
+        {},
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Retrato da composição do produto ${productId} não calculado: ${error.message}`,
+      );
+      return null;
+    }
+  }
 
   /**
    * Returns the quotationId for a given quotation product ID.
@@ -60,6 +158,23 @@ export class QuotationItemsService {
       if (!product) {
         throw new NotFoundException('Produto não encontrado');
       }
+      // Produto inativo não entra no orçamento (PAD-7)
+      if (!product.isActive) {
+        throw new BadRequestException('Produto inativo não entra no orçamento');
+      }
+      const variationId = await this.variationFor(
+        product.id,
+        data.variationId,
+        true,
+      );
+      const composed = await this.compositionFor(
+        product.companyId ?? quotation.companyId,
+        product.id,
+        variationId,
+        data.quantity,
+        data.items,
+        data.composition,
+      );
 
       // Usar o valor total calculado do frontend, ou calcular se não fornecido
       const totalValue =
@@ -86,6 +201,13 @@ export class QuotationItemsService {
           notes: data.notes || undefined,
           allowEditDescription: product.allowEditDescription,
           allowEditValues: product.allowEditValues,
+          variationId,
+          ...(composed
+            ? {
+                composition: asJson(composed.composition),
+                snapshot: asJson(composed.snapshot),
+              }
+            : {}),
         },
       });
 
@@ -139,7 +261,10 @@ export class QuotationItemsService {
         },
       });
     } catch (error) {
-      this.logger.error('Error adding product to quotation:', error.stack);
+      // A validação (4xx) volta para a tela; só a falha inesperada vai ao log
+      if (!(error instanceof HttpException)) {
+        this.logger.error('Error adding product to quotation:', error.stack);
+      }
       throw error;
     }
   }
@@ -171,6 +296,54 @@ export class QuotationItemsService {
         throw new NotFoundException('Item não encontrado no produto.');
       }
 
+      const variationId =
+        data.variationId !== undefined
+          ? await this.variationFor(product.productId, data.variationId, false)
+          : product.variationId;
+
+      // A composição escolhida é refeita com a medida nova: a venda ainda
+      // não aconteceu (AB-4 vale depois)
+      const measureChanged =
+        data.quantity !== undefined ||
+        (data.items ?? []).some(
+          (item) => item.width !== undefined || item.height !== undefined,
+        );
+      const storedChoices = product.composition as SaleChoicesDto | null;
+      const choices = data.composition ?? storedChoices ?? undefined;
+      const refresh =
+        data.composition !== undefined ||
+        data.variationId !== undefined ||
+        (measureChanged && !!(product.composition || product.snapshot));
+      let composed: Awaited<ReturnType<typeof this.compositionFor>> = null;
+      if (refresh) {
+        const current = product.items[0];
+        const incoming = (data.items ?? []).find(
+          (item) => !item.id || item.id === current?.id,
+        );
+        try {
+          composed = await this.compositionFor(
+            product.product.companyId ?? product.quotation.companyId,
+            product.productId,
+            variationId,
+            data.quantity ?? product.quantity,
+            [
+              {
+                width: incoming?.width ?? current?.width,
+                height: incoming?.height ?? current?.height,
+              },
+            ],
+            choices,
+          );
+        } catch (error) {
+          // Só a escolha enviada agora recusa; a guardada que deixou de
+          // valer (a composição mudou) mantém o retrato anterior
+          if (data.composition !== undefined) throw error;
+          this.logger.warn(
+            `Retrato do item ${productId} não refeito: ${error.message}`,
+          );
+        }
+      }
+
       // Atualiza o produto dentro do orçamento com valores do frontend
       const updatedQuotationProduct = await this.prisma.quotationProduct.update(
         {
@@ -195,6 +368,12 @@ export class QuotationItemsService {
             }),
             ...(data.finalValue !== undefined && {
               finalValue: data.finalValue,
+            }),
+            ...(data.addition !== undefined && { addition: data.addition }),
+            ...(data.variationId !== undefined && { variationId }),
+            ...(composed && {
+              composition: asJson(composed.composition),
+              snapshot: asJson(composed.snapshot),
             }),
           },
         },
@@ -368,11 +547,34 @@ export class QuotationItemsService {
         });
       }
 
+      // O acréscimo entra por fora do desconto (ALT-25). Sem acréscimo, o
+      // valor fica como as contas acima deixaram
+      const addition = data.addition ?? product.addition;
+      if (data.addition !== undefined || addition) {
+        const current = await this.prisma.quotationProduct.findUnique({
+          where: { id: productId },
+        });
+        if (current) {
+          await this.prisma.quotationProduct.update({
+            where: { id: productId },
+            data: {
+              finalValue: itemFinalValue(
+                current.totalValue || 0,
+                current.discount,
+                current.discountType,
+                current.addition,
+              ),
+            },
+          });
+        }
+      }
+
       // Atualizar o valor total do orçamento sem recalcular os itens
       await this.recalculateQuotationTotalValue(product.quotationId);
 
       return updatedQuotationProduct;
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       this.logger.error('Error updating product in quotation:', error.stack);
       throw new BadRequestException(
         'Falha ao atualizar produto no orçamento',
@@ -414,6 +616,11 @@ export class QuotationItemsService {
           discountType: originalQuotationProduct.discountType,
           allowEditDescription: originalQuotationProduct.allowEditDescription,
           allowEditValues: originalQuotationProduct.allowEditValues,
+          origin: originalQuotationProduct.origin,
+          variationId: originalQuotationProduct.variationId,
+          addition: originalQuotationProduct.addition,
+          composition: originalQuotationProduct.composition ?? Prisma.DbNull,
+          snapshot: originalQuotationProduct.snapshot ?? Prisma.DbNull,
         },
       });
 
@@ -526,10 +733,11 @@ export class QuotationItemsService {
       0,
     );
 
-    const finalValue = calculateFinalValue(
+    const finalValue = itemFinalValue(
       totalValue,
       quotationProduct.discount,
       quotationProduct.discountType,
+      quotationProduct.addition,
     );
 
     await this.prisma.quotationProduct.update({

@@ -35,6 +35,12 @@ import { ProductSaleService } from './product-sale.service';
     ProductSaleService,
     ProductCatalogService,
   ],
-  exports: [AssemblyResourceService, ProcessService, ProductAssemblyService],
+  exports: [
+    AssemblyResourceService,
+    ProcessService,
+    ProductAssemblyService,
+    // O item do orçamento guarda a composição escolhida e o retrato (ORC-10)
+    ProductSaleService,
+  ],
 })
 export class AssemblyModule {}

@@ -181,6 +181,13 @@ export class QuotationController {
     @Req() req,
   ) {
     await this.validateOwnership(id, req.user, 'edit');
+    // A composição escolhida é recurso de plano (contrato, módulo 2)
+    if (addItemDto.composition) {
+      await this.planControlService.enforceFeature(
+        req.user.companyId,
+        'product_composition',
+      );
+    }
     return this.quotationService.addProductToQuotation(id, addItemDto);
   }
 
@@ -217,6 +224,12 @@ export class QuotationController {
       throw new NotFoundException('Produto ou orçamento não encontrados.');
     }
     await this.validateOwnership(quotationId, req.user, 'edit');
+    if (updateQuotationProductDto.composition) {
+      await this.planControlService.enforceFeature(
+        req.user.companyId,
+        'product_composition',
+      );
+    }
 
     const updatedProduct = await this.quotationService.updateProductInQuotation(
       productId,

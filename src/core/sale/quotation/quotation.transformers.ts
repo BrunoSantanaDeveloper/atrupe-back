@@ -251,10 +251,17 @@ export function transformQuotationItem(qp: any) {
     totalValue,
     originalValue,
     finalValue: qp.finalValue,
+    // Acréscimo em centavos, fora do desconto (ALT-25)
+    addition: qp.addition ?? 0,
+    origin: qp.origin ?? 'PRODUCT',
+    variation: qp.variation ?? null,
+    composition: qp.composition ?? null,
     image: getImage(),
     product: {
       originalProductId: qp.productId,
       name: qp.product.name,
+      isActive: qp.product.isActive ?? true,
+      hasComposition: !!qp.product.assemblies?.[0]?._count?.blocks,
       quantity: qp.quantity,
       unitValue,
       finalValue: totalValue,

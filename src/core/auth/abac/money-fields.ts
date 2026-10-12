@@ -16,7 +16,7 @@ export const MONEY_COLUMNS = {
     'variableTotalMonthlyCost',
   ],
   Quotation: ['totalValue'],
-  QuotationProduct: ['totalValue', 'discount', 'finalValue'],
+  QuotationProduct: ['totalValue', 'discount', 'finalValue', 'addition'],
   QuotationProductItem: ['totalValue', 'salePrice', 'unitCost'],
   QuotationPayment: [
     'totalValue',

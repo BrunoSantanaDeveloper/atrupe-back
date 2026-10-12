@@ -12,6 +12,7 @@ import {
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { SaleChoicesDto } from '../../../assembly/dto/sale.dto';
 
 export class QuotationProductItemDto {
   @IsUUID()
@@ -566,4 +567,18 @@ export class AddItemDto {
   @Type(() => AddProductItemDto)
   @ApiProperty({ description: 'Itens do produto', type: [AddProductItemDto] })
   items: AddProductItemDto[];
+
+  // A variação escolhida (PV-3, PV-6): o produto com variações exige uma
+  @IsOptional()
+  @IsUUID('all', { message: 'Variação não encontrada' })
+  @ApiProperty({ required: false, description: 'A variação do produto' })
+  variationId?: string;
+
+  // As escolhas do vendedor na composição (IP-36): exige o recurso de
+  // composição do plano
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SaleChoicesDto)
+  @ApiProperty({ required: false, type: SaleChoicesDto })
+  composition?: SaleChoicesDto;
 }

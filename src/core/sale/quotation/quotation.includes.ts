@@ -198,9 +198,20 @@ export const QUOTATION_PRODUCT_SELECT = {
       id: true,
       name: true,
       imageUrl: true,
+      // Produto inativo no orçamento aberto (PAD-7) e a marca da composição
+      isActive: true,
+      assemblies: {
+        where: { variationKey: '' },
+        select: { status: true, _count: { select: { blocks: true } } },
+      },
     },
   },
   productId: true,
+  origin: true,
+  addition: true,
+  // As escolhas da composição; o retrato (snapshot) tem custo e fica fora
+  composition: true,
+  variation: { select: { id: true, name: true } },
   description: true,
   quantity: true,
   totalValue: true,

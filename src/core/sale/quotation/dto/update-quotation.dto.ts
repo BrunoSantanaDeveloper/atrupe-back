@@ -7,6 +7,7 @@ import {
 } from './create-quotation.dto';
 import {
   IsDateString,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -155,4 +156,16 @@ export class UpdateItemDto extends PartialType(AddItemDto) {
     required: false,
   })
   discountType?: string;
+
+  // O acréscimo (ALT-25), em centavos: fica fora do limite de desconto.
+  // Substitui o desconto negativo que a janela Valores manda hoje
+  @IsOptional()
+  @IsInt({ message: 'O acréscimo vai em centavos' })
+  @Min(0, { message: 'O acréscimo não pode ser negativo' })
+  @ApiProperty({
+    description: 'Acréscimo ao valor do item, em centavos',
+    example: 2500,
+    required: false,
+  })
+  addition?: number;
 }

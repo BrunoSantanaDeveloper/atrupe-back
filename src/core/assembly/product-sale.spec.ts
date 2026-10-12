@@ -235,4 +235,61 @@ describe('ProductSaleService', () => {
       }),
     ).rejects.toThrow(new NotFoundException('Opção não encontrada'));
   });
+
+  it('o item do orçamento guarda as escolhas, o resumo e o retrato com custo (ORC-10)', async () => {
+    const { composition, snapshot } = await service.itemComposition(
+      'c-1',
+      'pr-1',
+      null,
+      { quantity: 2 },
+      {
+        choices: [
+          { blockId: 'b-1', lineId: 'Material', optionId: 'Material-o1' },
+        ],
+        optionals: [{ blockId: 'b-1', lineId: 'Cordão', included: true }],
+      },
+    );
+    expect(composition.summary).toEqual(['Lona', 'Cordão']);
+    // A medida que faltou vem do padrão do produto (900 × 1200 mm)
+    expect(snapshot.measure).toEqual({ quantity: 2, width: 900, height: 1200 });
+    const stage = snapshot.stages[0];
+    expect(stage.lines.map((line) => line.name)).toEqual([
+      'Material',
+      'Cordão',
+    ]);
+    // 2 × 0,9 × 1,2 m² a R$ 1,00 o m²
+    expect(stage.lines[0]).toMatchObject({
+      resource: 'Lona',
+      quantity: 2.16,
+      unitCost: 100,
+      cost: 216,
+      actualQuantity: null,
+    });
+    expect(snapshot.cost).toBe(stage.cost);
+  });
+
+  it('o item só leva composição de produto liberado e com lista preenchida', async () => {
+    assemblies.assemblyRow.mockResolvedValueOnce(assembly('DRAFT'));
+    await expect(
+      service.itemComposition('c-1', 'pr-1', null, { quantity: 1 }, {}),
+    ).rejects.toThrow('Este produto não está liberado para venda');
+    await expect(
+      service.itemComposition(
+        'c-1',
+        'pr-1',
+        null,
+        { quantity: 1 },
+        {
+          lists: [
+            {
+              blockId: 'b-1',
+              lineId: 'Material',
+              optionId: 'Material-o1',
+              quantity: 0,
+            },
+          ],
+        },
+      ),
+    ).rejects.toThrow('Informe a quantidade de cada item da lista');
+  });
 });

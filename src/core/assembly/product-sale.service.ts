@@ -19,7 +19,7 @@ import {
   LINE_NOT_FOUND,
   OPTION_NOT_FOUND,
 } from './composition-lines';
-import { SaleCompositionDto } from './dto/sale.dto';
+import { SaleChoicesDto, SaleCompositionDto } from './dto/sale.dto';
 import { computeAssembly, orderBlocks } from './engine/compute';
 import { formulaUsesName, normalizeName } from './engine/formula';
 import {
@@ -316,6 +316,157 @@ export class ProductSaleService {
           })),
         };
       }),
+    };
+  }
+
+  /**
+   * A composição escolhida no item do orçamento (IP-36) e o retrato da
+   * venda (ORC-10): aplica as escolhas na medida do item e guarda o custo
+   * e a venda de cada etapa e de cada linha. O retrato tem custo: fica no
+   * item e nunca sai para a tela do orçamento (ORC-7).
+   */
+  async itemComposition(
+    companyId: string,
+    productId: string,
+    variationId: string | null | undefined,
+    // A medida do item em mm; a que faltar vem do padrão do produto
+    itemMeasure: { quantity: number; width?: number; height?: number },
+    choices: SaleChoicesDto,
+  ) {
+    const { product, variation, assembly, builder, graph } = await this.load(
+      companyId,
+      productId,
+      variationId ?? undefined,
+    );
+    if (
+      !assembly?.blocks.length ||
+      assembly.status !== 'RELEASED' ||
+      !product.isActive
+    ) {
+      bad(NOT_FOR_SALE);
+    }
+    // Na lista, o vendedor informa quanto vai de cada item (IP-8)
+    if ((choices.lists ?? []).some((entry) => !(entry.quantity > 0))) {
+      bad('Informe a quantidade de cada item da lista');
+    }
+
+    const standard = productPricing(product).measure;
+    const measure: Measure = {
+      quantity: itemMeasure.quantity || 1,
+      width: itemMeasure.width || standard.width,
+      height: itemMeasure.height || standard.height,
+    };
+    const engine = builder.build(product, assembly, measure);
+    // Os nomes antes de a cópia perder a opcional desmarcada
+    const lines = new Map(
+      engine.blocks.flatMap((block) =>
+        block.lines.map((line) => [`${block.id}:${line.id}`, line] as const),
+      ),
+    );
+    this.applyChoices(engine, choices);
+    const computed = computeAssembly(
+      engine,
+      {
+        referenceMarkup: await this.pricing.referenceMarkupOf(companyId),
+        partOf: builder.partOf,
+        resourceName: (id) => graph.resources.get(id)?.name,
+      },
+      engineVariation(variation),
+    );
+
+    const optionName = (blockId: string, lineId: string, optionId: string) =>
+      lines
+        .get(`${blockId}:${lineId}`)
+        ?.options.find((option) => option.id === optionId)?.name;
+    // O resumo do que foi escolhido, para a lista de itens (IP-36)
+    const summary = [
+      ...(choices.choices ?? []).map((item) =>
+        optionName(item.blockId, item.lineId, item.optionId),
+      ),
+      ...(choices.lists ?? []).map((item) => {
+        const name = optionName(item.blockId, item.lineId, item.optionId);
+        return name ? `${name}: ${numberText(item.quantity)}` : null;
+      }),
+      ...(choices.optionals ?? [])
+        .filter((item) => item.included)
+        .map((item) => lines.get(`${item.blockId}:${item.lineId}`)?.name),
+    ].filter((item): item is string => !!item);
+
+    // As entradas da lista entram no retrato pelo custo do recurso
+    const listEntries = (blockId: string, lineId: string) =>
+      (choices.lists ?? [])
+        .filter((item) => item.blockId === blockId && item.lineId === lineId)
+        .map((item) => {
+          const option = lines
+            .get(`${blockId}:${lineId}`)
+            ?.options.find((entry) => entry.id === item.optionId);
+          const unitCost = option?.unitCost ?? 0;
+          return {
+            optionId: item.optionId,
+            resourceId: option?.resourceId ?? null,
+            name: option?.name ?? '',
+            unit: option?.unit ?? '',
+            quantity: item.quantity,
+            unitCost,
+            cost: Math.round(unitCost * item.quantity),
+          };
+        });
+    const stages = computed.blocks.map((block) => {
+      const stageLines = [...block.partLines, ...block.lines].map((line) => {
+        const entries =
+          line.mode === 'LIST' ? listEntries(block.id, line.id) : null;
+        return {
+          lineId: line.id,
+          name: line.name,
+          kind: line.kind,
+          resourceId: line.selected?.resourceId ?? null,
+          resource: line.selected?.name ?? null,
+          quantity: line.quantity,
+          unit: line.selected?.unit ?? line.options[0]?.unit ?? '',
+          unitCost: line.selected?.unitCost ?? null,
+          cost: entries
+            ? entries.reduce((sum, entry) => sum + entry.cost, 0)
+            : line.cost,
+          sale: line.sale,
+          entries,
+          // O apontamento da produção preenche depois (ORC-9)
+          actualQuantity: null,
+          actualCost: null,
+        };
+      });
+      const listCost = stageLines
+        .filter((line) => line.entries)
+        .reduce((sum, line) => sum + (line.cost ?? 0), 0);
+      return {
+        blockId: block.id,
+        name: stageOf(block),
+        sector: block.sector,
+        setupMinutes: block.setupMinutes + block.partSetupMinutes,
+        setupCost: block.setupCost,
+        cost: block.cost + listCost,
+        sale: block.sale,
+        lines: stageLines,
+      };
+    });
+
+    return {
+      composition: {
+        extras: choices.extras ?? [],
+        times: choices.times ?? [],
+        choices: choices.choices ?? [],
+        optionals: choices.optionals ?? [],
+        lists: choices.lists ?? [],
+        notes: choices.notes ?? [],
+        summary,
+      },
+      snapshot: {
+        computedAt: new Date().toISOString(),
+        measure,
+        variationId: variation?.id ?? null,
+        cost: stages.reduce((sum, stage) => sum + stage.cost, 0),
+        suggestedPrice: computed.suggestedPrice,
+        stages,
+      },
     };
   }
 

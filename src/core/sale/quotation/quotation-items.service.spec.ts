@@ -3,6 +3,7 @@ import { QuotationItemsService } from './quotation-items.service';
 import { PrismaService } from 'nestjs-prisma';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { QuotationStatus } from '@prisma/client';
+import { ProductSaleService } from '../../assembly/product-sale.service';
 
 const mockQuotationId = 'quotation-uuid-456';
 const mockProductId = 'product-uuid-123';
@@ -11,6 +12,8 @@ const mockQuotationProductId = 'quotation-product-uuid-789';
 const mockProduct = {
   id: mockProductId,
   name: 'Test Product',
+  isActive: true,
+  companyId: 'company-uuid-1',
   price: 10000,
   productItem: [
     { id: 'item-1', price: 5000, value: 5000 },
@@ -85,15 +88,28 @@ const createMockPrismaService = () => ({
   quotationPayment: {
     update: jest.fn(),
   },
+  productVariation: {
+    findMany: jest.fn().mockResolvedValue([]),
+  },
+  productAssembly: {
+    findFirst: jest.fn().mockResolvedValue(null),
+  },
 });
 
 describe('QuotationItemsService', () => {
   let service: QuotationItemsService;
   let prisma: ReturnType<typeof createMockPrismaService>;
+  let productSale: { itemComposition: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     prisma = createMockPrismaService();
+    productSale = {
+      itemComposition: jest.fn().mockResolvedValue({
+        composition: { choices: [], summary: ['Lona 440'] },
+        snapshot: { cost: 1500, stages: [] },
+      }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -102,6 +118,7 @@ describe('QuotationItemsService', () => {
           provide: PrismaService,
           useValue: prisma,
         },
+        { provide: ProductSaleService, useValue: productSale },
       ],
     }).compile();
 
@@ -110,6 +127,109 @@ describe('QuotationItemsService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('item com variação, composição e acréscimo (Fase 4.1)', () => {
+    const add = (extra: Record<string, unknown> = {}) =>
+      service.addProductToQuotation(mockQuotationId, {
+        productId: mockProductId,
+        quantity: 2,
+        items: [{ id: 'item-1', salePrice: 5000, width: 900, height: 1200 }],
+        ...extra,
+      } as any);
+
+    beforeEach(() => {
+      prisma.quotation.findUnique.mockResolvedValue(mockQuotation);
+      prisma.product.findFirst.mockResolvedValue({
+        ...mockProduct,
+        items: mockProduct.productItem,
+      });
+      prisma.quotationProduct.create.mockResolvedValue(mockQuotationProduct);
+      prisma.quotationProduct.findMany.mockResolvedValue([]);
+    });
+
+    it('produto inativo não entra (PAD-7)', async () => {
+      prisma.product.findFirst.mockResolvedValue({
+        ...mockProduct,
+        isActive: false,
+        items: [],
+      });
+      await expect(add()).rejects.toThrow(
+        'Produto inativo não entra no orçamento',
+      );
+    });
+
+    it('o produto com variações exige uma, e ela é dele (PV-6)', async () => {
+      prisma.productVariation.findMany.mockResolvedValue([{ id: 'v-1' }]);
+      await expect(add()).rejects.toThrow('Escolha a variação do produto');
+      await expect(add({ variationId: 'v-9' })).rejects.toThrow(
+        new NotFoundException('Variação não encontrada'),
+      );
+      await add({ variationId: 'v-1' });
+      expect(prisma.quotationProduct.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ variationId: 'v-1' }),
+      });
+    });
+
+    it('a composição escolhida e o retrato vão no item (ORC-10)', async () => {
+      const composition = {
+        choices: [{ blockId: 'b', lineId: 'l', optionId: 'o' }],
+      };
+      await add({ composition });
+      expect(productSale.itemComposition).toHaveBeenCalledWith(
+        'company-uuid-1',
+        mockProductId,
+        null,
+        { quantity: 2, width: 900, height: 1200 },
+        composition,
+      );
+      expect(prisma.quotationProduct.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          composition: { choices: [], summary: ['Lona 440'] },
+          snapshot: { cost: 1500, stages: [] },
+        }),
+      });
+    });
+
+    it('sem escolhas, o produto com composição liberada ganha o retrato padrão', async () => {
+      prisma.productAssembly.findFirst.mockResolvedValue({ id: 'a-1' });
+      await add();
+      expect(productSale.itemComposition.mock.calls[0][4]).toEqual({});
+
+      productSale.itemComposition.mockClear();
+      prisma.productAssembly.findFirst.mockResolvedValue(null);
+      await add();
+      expect(productSale.itemComposition).not.toHaveBeenCalled();
+    });
+
+    it('o acréscimo soma por fora do desconto (ALT-25)', async () => {
+      prisma.quotationProduct.findUnique
+        .mockResolvedValueOnce({
+          ...mockQuotationProduct,
+          addition: 0,
+          composition: null,
+          snapshot: null,
+          variationId: null,
+          product: { ...mockProduct },
+        })
+        .mockResolvedValue({
+          ...mockQuotationProduct,
+          totalValue: 10000,
+          discount: 1000,
+          discountType: 'VALUE',
+          addition: 2500,
+        });
+      prisma.quotationProduct.update.mockResolvedValue(mockQuotationProduct);
+
+      await service.updateProductInQuotation(mockQuotationProductId, {
+        addition: 2500,
+      } as any);
+
+      expect(prisma.quotationProduct.update).toHaveBeenCalledWith({
+        where: { id: mockQuotationProductId },
+        data: { finalValue: 11500 },
+      });
+    });
   });
 
   describe('addProductToQuotation', () => {
@@ -205,7 +325,9 @@ describe('QuotationItemsService', () => {
         service.updateProductInQuotation(mockQuotationProductId, {
           items: [{ id: 'item-de-outro-orcamento', quantity: 9 }],
         } as any),
-      ).rejects.toThrow(BadRequestException);
+        // O erro de validação chega à tela com a mensagem dele (antes, todo
+        // erro virava "Falha ao atualizar produto no orçamento")
+      ).rejects.toThrow(NotFoundException);
       expect(prisma.quotationProduct.update).not.toHaveBeenCalled();
       expect(prisma.quotationProductItem.update).not.toHaveBeenCalled();
     });
@@ -238,12 +360,12 @@ describe('QuotationItemsService', () => {
       expect(result).toBeDefined();
     });
 
-    it('should throw BadRequestException if product not found', async () => {
+    it('produto do orçamento inexistente: 404 com a mensagem', async () => {
       prisma.quotationProduct.findUnique.mockResolvedValue(null);
 
       await expect(
         service.updateProductInQuotation('invalid-id', { quantity: 2 }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(new NotFoundException('Produto não encontrado'));
     });
   });
 
