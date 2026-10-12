@@ -91,11 +91,37 @@ describe('Security Regression Tests (T-019)', () => {
       expect(guard.canActivate(context)).toBe(true);
     });
 
-    it('should allow request when WEBHOOK_ACCESS_TOKEN is not configured (dev mode)', () => {
-      configService.get.mockReturnValue(undefined);
-      const context = createMockExecutionContext({ headers: {} });
+    describe('sem WEBHOOK_ACCESS_TOKEN configurado', () => {
+      const original = process.env.APP_ENV;
 
-      expect(guard.canActivate(context)).toBe(true);
+      afterEach(() => {
+        if (original === undefined) delete process.env.APP_ENV;
+        else process.env.APP_ENV = original;
+      });
+
+      it('passa em ambiente de teste declarado (homolog, local)', () => {
+        process.env.APP_ENV = 'development';
+        configService.get.mockReturnValue(undefined);
+        const context = createMockExecutionContext({ headers: {} });
+
+        expect(guard.canActivate(context)).toBe(true);
+      });
+
+      // O corpo do webhook ativa, desbloqueia e cancela assinaturas: sem o
+      // token, qualquer um chamava a rota
+      it.each([['production'], [undefined]])(
+        'em produção (APP_ENV=%s) recusa',
+        (appEnv) => {
+          if (appEnv === undefined) delete process.env.APP_ENV;
+          else process.env.APP_ENV = appEnv;
+          configService.get.mockReturnValue(undefined);
+          const context = createMockExecutionContext({
+            headers: { 'asaas-access-token': 'qualquer-coisa' },
+          });
+
+          expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+        },
+      );
     });
 
     it('should reject empty string token', () => {

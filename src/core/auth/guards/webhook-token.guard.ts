@@ -6,6 +6,15 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { timingSafeEqual } from 'crypto';
+import { isDeclaredTestEnv } from 'src/shared/utils/app-env';
+
+/** Comparação em tempo constante: o tempo de resposta não revela o token. */
+function sameToken(received: string, expected: string): boolean {
+  const a = Buffer.from(String(received));
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 @Injectable()
 export class WebhookTokenGuard implements CanActivate {
@@ -20,8 +29,17 @@ export class WebhookTokenGuard implements CanActivate {
       'WEBHOOK_ACCESS_TOKEN',
     );
 
-    // If no token configured, allow (dev mode) but log warning
+    // Sem token configurado, só passa em ambiente de teste declarado
+    // (APP_ENV definida e diferente de production). Em produção recusa: o
+    // corpo do webhook ativa, desbloqueia e cancela assinaturas pelos ids
+    // do Asaas, e sem o token qualquer um chamava a rota.
     if (!expectedToken) {
+      if (!isDeclaredTestEnv()) {
+        this.logger.error(
+          'WEBHOOK_ACCESS_TOKEN não configurado: webhook recusado. Defina o token na API e no painel do Asaas.',
+        );
+        throw new ForbiddenException('Webhook token not configured');
+      }
       this.logger.warn(
         'WEBHOOK_ACCESS_TOKEN not configured — webhook endpoint is unprotected',
       );
@@ -30,7 +48,7 @@ export class WebhookTokenGuard implements CanActivate {
 
     const receivedToken = request.headers['asaas-access-token'] as string;
 
-    if (!receivedToken || receivedToken !== expectedToken) {
+    if (!receivedToken || !sameToken(receivedToken, expectedToken)) {
       this.logger.warn(`Webhook rejected: invalid token from ${request.ip}`);
       throw new ForbiddenException('Invalid webhook token');
     }
