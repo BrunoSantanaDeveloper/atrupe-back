@@ -10,6 +10,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import { BlockLevelGuard } from '../../auth/guards/block-level.guard';
 import { PermissionsGuard } from '../../auth/abac/permissions.guard';
 import { FiscalHistoryLockGuard } from '../shared/fiscal-history-lock.guard';
+import { FeatureGuard } from '../../plan/guards/feature.guard';
 
 /**
  * A listagem da tela de emissao e refeita a cada troca de aba/filtro. O teto de
@@ -58,6 +59,8 @@ describe('NfeController — throttle das leituras', () => {
       .overrideGuard(BlockLevelGuard)
       .useValue(allowAll)
       .overrideGuard(FiscalHistoryLockGuard)
+      .useValue(allowAll)
+      .overrideGuard(FeatureGuard)
       .useValue(allowAll)
       .compile();
 

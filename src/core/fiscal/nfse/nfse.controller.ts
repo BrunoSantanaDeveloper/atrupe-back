@@ -11,6 +11,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
+import { RequiresFiscalModule } from '../requires-fiscal-module.decorator';
 import {
   ActsOnIssuedDocument,
   FiscalHistoryLockGuard,
@@ -112,6 +113,7 @@ export class NfseController {
   }
 
   @Post('emit')
+  @RequiresFiscalModule()
   @HasPermission('create', 'nota_fiscal:emitir')
   @RequireUnblocked()
   @ApiOperation({ summary: 'Emitir NFS-e a partir de uma ordem de serviço' })
@@ -120,6 +122,7 @@ export class NfseController {
   }
 
   @Post('emit-consolidated')
+  @RequiresFiscalModule()
   @HasPermission('create', 'nota_fiscal:emitir')
   @RequireUnblocked()
   @ApiOperation({
@@ -130,6 +133,7 @@ export class NfseController {
   }
 
   @Post('emit-full')
+  @RequiresFiscalModule()
   @HasPermission('create', 'nota_fiscal:emitir')
   @RequireUnblocked()
   @ApiOperation({ summary: 'Emitir NFS-e com todos os dados (manual)' })

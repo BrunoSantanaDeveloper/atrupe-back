@@ -13,6 +13,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
+import { RequiresFiscalModule } from '../requires-fiscal-module.decorator';
 import {
   ActsOnIssuedDocument,
   FiscalHistoryLockGuard,
@@ -83,6 +84,7 @@ export class NfceController {
   }
 
   @Post('emit')
+  @RequiresFiscalModule()
   @HasPermission('create', 'nota_fiscal:emitir')
   @RequireUnblocked()
   @ApiOperation({ summary: 'Emitir NFC-e' })

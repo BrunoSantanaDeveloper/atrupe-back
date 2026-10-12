@@ -16,6 +16,7 @@ import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { FiscalThrottlerGuard } from './guards/fiscal-throttler.guard';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
+import { RequiresFiscalModule } from '../requires-fiscal-module.decorator';
 import {
   ActsOnIssuedDocument,
   FiscalHistoryLockGuard,
@@ -126,6 +127,7 @@ export class NfeController {
   // ==================== Draft Endpoints ====================
 
   @Post('draft/consolidated')
+  @RequiresFiscalModule()
   @HasPermission('create', 'nota_fiscal:emitir')
   @ApiOperation({
     summary: 'Criar ou obter rascunho consolidado de NF-e para varias ordens',
@@ -141,6 +143,7 @@ export class NfeController {
   }
 
   @Post('draft/:orderId')
+  @RequiresFiscalModule()
   @HasPermission('create', 'nota_fiscal:emitir')
   @ApiOperation({
     summary: 'Criar ou obter rascunho de NF-e para uma ordem',
@@ -186,6 +189,7 @@ export class NfeController {
   }
 
   @Post('emit')
+  @RequiresFiscalModule()
   @HasPermission('create', 'nota_fiscal:emitir')
   @RequireUnblocked()
   @ApiOperation({ summary: 'Emitir NF-e a partir de uma ordem de serviço' })
@@ -208,6 +212,7 @@ export class NfeController {
   }
 
   @Post('emit-full')
+  @RequiresFiscalModule()
   @ActsOnIssuedDocument('nfe', { body: 'reissueOfNfeId' })
   @HasPermission('create', 'nota_fiscal:emitir')
   @RequireUnblocked()
@@ -217,6 +222,7 @@ export class NfeController {
   }
 
   @Post('emit-consolidated')
+  @RequiresFiscalModule()
   @HasPermission('create', 'nota_fiscal:emitir')
   @RequireUnblocked()
   @ApiOperation({ summary: 'Emitir NF-e consolidada para varias ordens' })
