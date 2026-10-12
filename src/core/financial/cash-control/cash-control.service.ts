@@ -15,6 +15,7 @@ import {
 import { ListCashRegistersDto } from './dto/cash-control-filters.dto';
 import { startOfDay, endOfDay } from 'date-fns';
 import { CashRegisterStatus, Prisma } from '@prisma/client';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 @Injectable()
 export class CashControlService {
@@ -49,6 +50,15 @@ export class CashControlService {
     };
   }
   async openCashRegister(createCashRegisterDto: CreateCashRegisterDto) {
+    // Com a conta de outra empresa, o caixa abria sobre ela, com o saldo de
+    // fechamento dela, e religava os controles dela a este caixa
+    await assertBelongsToCompany(
+      this.prisma.bankAccount,
+      createCashRegisterDto.bankAccountId,
+      { companyId: createCashRegisterDto.companyId },
+      'Conta bancária não encontrada.',
+    );
+
     try {
       const { companyId, openingDate, bankAccountId } = createCashRegisterDto;
       const date = openingDate
@@ -196,7 +206,16 @@ export class CashControlService {
     ]);
   }
 
-  async transferFunds(transferDto: TransferDto) {
+  async transferFunds(transferDto: TransferDto, companyId: string) {
+    // As duas contas precisam ser da empresa: com a de outra, a saída ou a
+    // entrada da transferência caía no caixa aberto dela
+    await assertBelongsToCompany(
+      this.prisma.bankAccount,
+      [transferDto.sourceBankAccountId, transferDto.targetBankAccountId],
+      { companyId },
+      'Conta bancária não encontrada.',
+    );
+
     const {
       sourceBankAccountId,
       targetBankAccountId,

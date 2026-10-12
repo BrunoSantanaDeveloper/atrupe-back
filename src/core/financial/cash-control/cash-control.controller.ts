@@ -15,6 +15,8 @@ import {
   CreateCashRegisterDto,
 } from './dto/create-cash-control.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
+import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 import { FeatureGuard } from 'src/core/plan/guards/feature.guard';
 import { RequiresFeature } from 'src/core/plan/decorators/requires-feature.decorator';
 import {
@@ -35,7 +37,9 @@ const GROUP = 'financial';
 
 @ApiTags('Controle de Caixa')
 // O controle de caixa inteiro é recurso de plano.
-@UseGuards(JwtAuthGuard, FeatureGuard)
+// O TenantGuard confere que o caixa da rota é da empresa da sessão: as rotas
+// por id fechavam, reabriam, liam e lançavam no caixa de outra empresa
+@UseGuards(JwtAuthGuard, FeatureGuard, TenantGuard)
 @RequiresFeature('cash_control')
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
@@ -51,6 +55,7 @@ export class CashControlController {
   }
 
   @Patch('close/:cashRegisterId')
+  @TenantResource('cashRegister', 'cashRegisterId')
   async closeCashRegister(
     @Param('cashRegisterId') cashRegisterId: string,
     @Body() closeCashRegisterDto: CloseCashRegisterDto,
@@ -85,11 +90,13 @@ export class CashControlController {
     description: 'ID do caixa',
     example: 'cashRegisterId123',
   })
+  @TenantResource('cashRegister')
   async findOneCashRegister(@Param('id') id: string) {
     return this.cashControlService.findOneCashRegister(id);
   }
 
   @Patch(':cashRegisterId')
+  @TenantResource('cashRegister', 'cashRegisterId')
   async editCashRegister(
     @Param('cashRegisterId') cashRegisterId: string,
     @Body() editDto: EditCashRegisterDto,
@@ -99,11 +106,15 @@ export class CashControlController {
   }
 
   @Post('transfer')
-  async transferFunds(@Body() transferDto: TransferDto) {
-    return this.cashControlService.transferFunds(transferDto);
+  async transferFunds(@Req() req, @Body() transferDto: TransferDto) {
+    return this.cashControlService.transferFunds(
+      transferDto,
+      req.user.companyId,
+    );
   }
 
   @Post('reopen/:id')
+  @TenantResource('cashRegister')
   async reopenCashRegister(@Req() req, @Param('id') id: string) {
     return this.cashControlService.reopenCashRegister(id);
   }

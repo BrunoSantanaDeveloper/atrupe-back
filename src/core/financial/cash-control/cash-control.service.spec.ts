@@ -23,6 +23,10 @@ const createMockPrismaService = () => ({
   transaction: {
     create: jest.fn(),
   },
+  // As contas do corpo são da empresa, salvo quando o teste diz o contrário
+  bankAccount: {
+    count: jest.fn(async ({ where }: any) => where.id.in.length),
+  },
   $transaction: jest.fn(),
 });
 
@@ -344,17 +348,46 @@ describe('CashControlService', () => {
   // ─── transferFunds ────────────────────────────────────────────────
 
   describe('transferFunds', () => {
+    it('recusa conta de outra empresa antes de lançar qualquer coisa', async () => {
+      prisma.bankAccount.count.mockResolvedValueOnce(1);
+
+      await expect(
+        service.transferFunds(
+          {
+            sourceBankAccountId: 'src-bank',
+            targetBankAccountId: 'conta-de-outra',
+            amount: 100,
+            transferMethod: 'PIX',
+            transferDate: '2026-03-09',
+          } as any,
+          mockCompanyId,
+        ),
+      ).rejects.toThrow(
+        new NotFoundException('Conta bancária não encontrada.'),
+      );
+      expect(prisma.bankAccount.count).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['src-bank', 'conta-de-outra'] },
+          companyId: mockCompanyId,
+        },
+      });
+      expect(prisma.cashRegister.findFirst).not.toHaveBeenCalled();
+    });
+
     it('should throw when source register not found or closed', async () => {
       prisma.cashRegister.findFirst.mockResolvedValueOnce(null);
 
       await expect(
-        service.transferFunds({
-          sourceBankAccountId: 'src-bank',
-          targetBankAccountId: 'tgt-bank',
-          amount: 100,
-          transferMethod: 'PIX',
-          transferDate: '2026-03-09',
-        } as any),
+        service.transferFunds(
+          {
+            sourceBankAccountId: 'src-bank',
+            targetBankAccountId: 'tgt-bank',
+            amount: 100,
+            transferMethod: 'PIX',
+            transferDate: '2026-03-09',
+          } as any,
+          mockCompanyId,
+        ),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -373,13 +406,16 @@ describe('CashControlService', () => {
       });
       prisma.$transaction.mockResolvedValue([]);
 
-      await service.transferFunds({
-        sourceBankAccountId: 'src-bank',
-        targetBankAccountId: 'tgt-bank',
-        amount: 500,
-        transferMethod: 'PIX',
-        transferDate: '2026-03-09',
-      } as any);
+      await service.transferFunds(
+        {
+          sourceBankAccountId: 'src-bank',
+          targetBankAccountId: 'tgt-bank',
+          amount: 500,
+          transferMethod: 'PIX',
+          transferDate: '2026-03-09',
+        } as any,
+        mockCompanyId,
+      );
 
       expect(prisma.cashRegister.create).toHaveBeenCalled();
       expect(prisma.$transaction).toHaveBeenCalled();
