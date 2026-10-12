@@ -401,13 +401,22 @@ export class UserRegistrationService {
       };
 
       if (createUserDto.employeeId) {
+        // O colaborador precisa ser da empresa de quem cria o acesso. Antes,
+        // o id de um colaborador de outra empresa ligava o login novo a ele,
+        // e o login entrava na outra empresa com o cargo dele.
+        if (!createUserDto.company) {
+          throw new BadRequestException('Empresa não informada.');
+        }
         const employee = await this.prisma.employee.findFirst({
-          where: { id: createUserDto.employeeId },
+          where: {
+            id: createUserDto.employeeId,
+            companyId: createUserDto.company,
+          },
           select: { id: true },
         });
 
         if (!employee) {
-          throw new NotFoundException('Employee not found');
+          throw new NotFoundException('Colaborador não encontrado.');
         }
 
         data.employee = {

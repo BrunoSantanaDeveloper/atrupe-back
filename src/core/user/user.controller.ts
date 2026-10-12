@@ -309,8 +309,9 @@ export class UserController {
     return this.userService.update(id, body, req.user);
   }
 
+  // Todos os usuários do sistema, com e-mail: só o superadmin
   @Get()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtém a lista de todos os usuários' })
   @ApiResponse({
@@ -337,8 +338,12 @@ export class UserController {
     status: 404,
     description: 'Usuário não encontrado.',
   })
-  async findOne(@Param('id') id: string): Promise<UserResponseDto | null> {
-    const user = await this.userService.findOne(id);
+  async findOne(
+    @Param('id') id: string,
+    @Req() req,
+  ): Promise<UserResponseDto | null> {
+    // O próprio usuário, o superadmin ou alguém da mesma empresa
+    const user = await this.userService.findOneForActor(id, req.user);
 
     if (!user) {
       throw new NotFoundException('User not found');

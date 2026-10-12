@@ -11,6 +11,20 @@ import { PlugService } from 'src/svc/plug/plug.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import * as argon2 from 'argon2';
 
+/**
+ * A empresa vai na resposta do /user/me, que toda sessão lê: sem as
+ * chaves do provedor fiscal, que o modo legado grava em texto puro.
+ */
+function companyWithoutKeys<T extends object | null | undefined>(
+  company: T,
+): T {
+  if (!company) return company;
+  const rest: any = { ...company };
+  delete rest.accessKey;
+  delete rest.partnerKey;
+  return rest;
+}
+
 @Injectable()
 export class UserCrudService {
   constructor(
@@ -83,7 +97,7 @@ export class UserCrudService {
       avatar: user.avatar,
       employee: user.employee?.[0]
         ? {
-            company: user.employee[0].company,
+            company: companyWithoutKeys(user.employee[0].company),
             role: user.employee[0]?.role?.name,
             isAdmin: user.employee[0]?.role?.isAdmin,
           }
@@ -94,6 +108,12 @@ export class UserCrudService {
     await this.cache.set(`user:${id}`, response);
 
     return response;
+  }
+
+  /** GET /user/:id: só o próprio usuário, o superadmin e a mesma empresa */
+  async findOneForActor(id: string, actor: any) {
+    await this.assertCanAccessUser(id, actor);
+    return this.findOne(id);
   }
 
   check(doc: string) {
@@ -132,7 +152,10 @@ export class UserCrudService {
     });
   }
 
-  private async assertCanUpdateUser(id: string, actor?: any) {
+  /**
+   * O próprio usuário, o superadmin ou alguém da mesma empresa do alvo.
+   */
+  private async assertCanAccessUser(id: string, actor?: any) {
     if (!actor || actor.isSystemAdmin) return;
 
     if (actor.userId === id) return;
@@ -207,7 +230,7 @@ export class UserCrudService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto, actor?: any) {
-    await this.assertCanUpdateUser(id, actor);
+    await this.assertCanAccessUser(id, actor);
     await this.assertOwnerRules(id, updateUserDto, actor);
 
     const { isActive, password, ...rest } = updateUserDto;
@@ -230,14 +253,20 @@ export class UserCrudService {
         });
 
         if (isActive) {
-          const user = await tx.user.findUnique({
-            where: { id },
-            select: { employee: { select: { id: true } } },
+          // Reativa o vínculo da empresa de quem reativa: com o usuário em
+          // duas empresas, o primeiro vínculo podia ser o da outra
+          const scope =
+            actor?.companyId && !actor.isSystemAdmin
+              ? { companyId: actor.companyId }
+              : {};
+          const employee = await tx.employee.findFirst({
+            where: { userId: id, ...scope },
+            select: { id: true },
           });
 
-          if (user?.employee) {
+          if (employee) {
             await tx.employee.update({
-              where: { id: user.employee[0].id },
+              where: { id: employee.id },
               data: { isActive: true },
             });
           }

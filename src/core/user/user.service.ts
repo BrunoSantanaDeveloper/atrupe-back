@@ -81,6 +81,10 @@ export class UserService {
     return this.crud.findOne(id);
   }
 
+  findOneForActor(id: string, actor: any) {
+    return this.crud.findOneForActor(id, actor);
+  }
+
   check(doc: string) {
     return this.crud.check(doc);
   }
