@@ -13,6 +13,9 @@ import { MethodService } from './method.service';
 import { CreateMethodDto } from './dto/create-method.dto';
 import { UpdateMethodDto } from './dto/update-method.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { SystemAdminGuard } from 'src/core/auth/guards/system-admin.guard';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
 import {
   ApiTags,
   ApiOperation,
@@ -23,14 +26,27 @@ import {
 } from '@nestjs/swagger';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
+/**
+ * A forma de pagamento não é da empresa: o cadastro é um só para todas.
+ * Renomear ou desativar muda a forma de todas as empresas, então fica com o
+ * superadmin; nenhuma tela das empresas faz isso. Criar segue aberto a quem
+ * cuida das condições de pagamento, porque o formulário da condição cria a
+ * forma que falta (ao criar e ao editar a condição).
+ */
+const CONDITIONS_PERMISSION = 'financial_settings:payment_methods';
+
 @ApiTags('Métodos de Pagamento')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 @Controller('payment-method')
 export class MethodController {
   constructor(private readonly methodService: MethodService) {}
 
   @Post()
+  @HasAnyPermission(
+    { action: 'create', resource: CONDITIONS_PERMISSION },
+    { action: 'edit', resource: CONDITIONS_PERMISSION },
+  )
   @ApiOperation({ summary: 'Cria um novo método de pagamento' })
   @ApiBody({
     description: 'Dados do novo método de pagamento',
@@ -75,6 +91,7 @@ export class MethodController {
   }
 
   @Patch(':id')
+  @UseGuards(SystemAdminGuard)
   @ApiOperation({ summary: 'Atualiza um método de pagamento pelo ID' })
   @ApiParam({
     name: 'id',
@@ -98,6 +115,7 @@ export class MethodController {
   }
 
   @Delete(':id')
+  @UseGuards(SystemAdminGuard)
   @ApiOperation({ summary: 'Remove um método de pagamento pelo ID' })
   @ApiParam({
     name: 'id',

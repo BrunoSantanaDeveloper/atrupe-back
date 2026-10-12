@@ -14,6 +14,9 @@ import { ConditionService } from './condition.service';
 import { CreateConditionDto } from './dto/create-condition.dto';
 import { UpdateConditionDto } from './dto/update-condition.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
 import { PlanControlService } from 'src/core/plan/plan-control.service';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { ConditionFilterDto } from './dto/filter.dto';
@@ -26,8 +29,15 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 
+/**
+ * Configurações > Financeiro > Condições de pagamento, com as chaves que a
+ * tela usa. As leituras ficam sem permissão: o orçamento e os formulários
+ * financeiros leem as condições para qualquer vendedor.
+ */
+const PERMISSION = 'financial_settings:payment_methods';
+
 @ApiTags('Condições de Pagamento')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 @Controller('payment-condition')
 export class ConditionController {
@@ -80,6 +90,7 @@ export class ConditionController {
   }
 
   @Post()
+  @HasPermission('create', PERMISSION)
   @ApiOperation({ summary: 'Cria uma nova condição de pagamento' })
   @ApiBody({
     description: 'Dados da nova condição de pagamento',
@@ -171,11 +182,12 @@ export class ConditionController {
     status: 404,
     description: 'Condição de pagamento não encontrada.',
   })
-  findOne(@Param('id') id: string) {
-    return this.conditionService.findOne(id);
+  findOne(@Req() req, @Param('id') id: string) {
+    return this.conditionService.findOne(id, req.user.companyId);
   }
 
   @Patch(':id')
+  @HasPermission('edit', PERMISSION)
   @ApiOperation({ summary: 'Atualiza uma condição de pagamento pelo ID' })
   @ApiParam({
     name: 'id',
@@ -199,15 +211,26 @@ export class ConditionController {
     @Param('id') id: string,
     @Body() updateConditionDto: UpdateConditionDto,
   ) {
+    // Antes da taxa: a conferência dela lê as parcelas gravadas pelo id
+    await this.conditionService.findOne(id, req.user.companyId);
     await this.enforceOperatorFee(
       req.user.companyId,
       updateConditionDto.installments,
       id,
     );
-    return this.conditionService.update(id, updateConditionDto);
+    return this.conditionService.update(
+      id,
+      req.user.companyId,
+      updateConditionDto,
+    );
   }
 
   @Delete(':id')
+  // A tela mostra "Desativar" para quem edita; delete também vale
+  @HasAnyPermission(
+    { action: 'edit', resource: PERMISSION },
+    { action: 'delete', resource: PERMISSION },
+  )
   @ApiOperation({ summary: 'Remove uma condição de pagamento pelo ID' })
   @ApiParam({
     name: 'id',
@@ -222,7 +245,7 @@ export class ConditionController {
     status: 404,
     description: 'Condição de pagamento não encontrada.',
   })
-  remove(@Param('id') id: string) {
-    return this.conditionService.remove(id);
+  remove(@Req() req, @Param('id') id: string) {
+    return this.conditionService.remove(id, req.user.companyId);
   }
 }

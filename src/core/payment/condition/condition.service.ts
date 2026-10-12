@@ -1,9 +1,15 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateConditionDto } from './dto/create-condition.dto';
 import { UpdateConditionDto } from './dto/update-condition.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { ConditionFilterDto } from './dto/filter.dto';
 import { Prisma } from '@prisma/client';
+
+const CONDITION_NOT_FOUND = 'Condição de pagamento não encontrada.';
 
 @Injectable()
 export class ConditionService {
@@ -274,18 +280,43 @@ export class ConditionService {
     }
   }
 
-  async findOne(id: string) {
-    return this.prisma.paymentCondition.findUnique({
+  /**
+   * Toda operação por id confere a empresa da sessão: sem isso, um id de
+   * outra empresa era lido, alterado ou desativado. O id de outra empresa
+   * responde 404, como um id que não existe.
+   */
+  async findOne(id: string, companyId: string) {
+    const condition = await this.prisma.paymentCondition.findFirst({
       where: {
         id,
+        companyId,
       },
       include: {
         installments: true,
       },
     });
+
+    if (!condition) {
+      throw new NotFoundException(CONDITION_NOT_FOUND);
+    }
+
+    return condition;
   }
 
-  async update(id: string, dto: UpdateConditionDto) {
+  private async assertOfCompany(id: string, companyId: string) {
+    const condition = await this.prisma.paymentCondition.findFirst({
+      where: { id, companyId },
+      select: { id: true },
+    });
+
+    if (!condition) {
+      throw new NotFoundException(CONDITION_NOT_FOUND);
+    }
+  }
+
+  async update(id: string, companyId: string, dto: UpdateConditionDto) {
+    await this.assertOfCompany(id, companyId);
+
     try {
       const { installments, ...conditionData } = dto;
 
@@ -315,7 +346,9 @@ export class ConditionService {
     }
   }
 
-  async remove(id: string) {
+  async remove(id: string, companyId: string) {
+    await this.assertOfCompany(id, companyId);
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         const updatedCondition = await tx.paymentCondition.update({
