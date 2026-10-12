@@ -2,6 +2,8 @@ import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
 import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { MoneyFields } from 'src/core/auth/abac/money-fields.decorator';
+import { QUOTATION_MONEY_FIELDS } from 'src/core/auth/abac/money-fields';
 import {
   Body,
   Controller,
@@ -117,6 +119,7 @@ export class PaymentController {
   }
 
   @Get(':id')
+  @MoneyFields(...QUOTATION_MONEY_FIELDS)
   @HasPermission('view', 'sale:quotation')
   @ApiOperation({
     summary: 'Buscar informações de pagamento de um orçamento pelo ID',

@@ -15,6 +15,8 @@ import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
+import { MoneyFields } from '../auth/abac/money-fields.decorator';
+import { ASSET_MONEY_FIELDS } from '../auth/abac/money-fields';
 import { FeatureGuard } from '../plan/guards/feature.guard';
 import { RequiresFeature } from '../plan/decorators/requires-feature.decorator';
 
@@ -35,6 +37,7 @@ export class AssetController {
   }
 
   @Get()
+  @MoneyFields(...ASSET_MONEY_FIELDS)
   // @HasPermission(AbacAction.List, RESOURCE)
   findAll(
     @Req() req,
@@ -52,6 +55,7 @@ export class AssetController {
   }
 
   @Get(':id')
+  @MoneyFields(...ASSET_MONEY_FIELDS)
   // @HasPermission(AbacAction.Get, RESOURCE)
   findOne(@Req() req, @Param('id') id: string) {
     return this.assetService.findOne(req.user.companyId, id);

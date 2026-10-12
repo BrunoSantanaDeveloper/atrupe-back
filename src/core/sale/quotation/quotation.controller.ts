@@ -2,6 +2,8 @@ import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decor
 import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
 import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { MoneyFields } from 'src/core/auth/abac/money-fields.decorator';
+import { QUOTATION_MONEY_FIELDS } from 'src/core/auth/abac/money-fields';
 import {
   Controller,
   Get,
@@ -303,6 +305,7 @@ export class QuotationController {
   }
 
   @Get()
+  @MoneyFields(...QUOTATION_MONEY_FIELDS)
   @HasPermission('view', 'sale:quotation')
   @ApiOperation({ summary: 'Obtém a lista de todos os orçamentos' })
   @ApiResponse({
@@ -324,6 +327,7 @@ export class QuotationController {
   }
 
   @Get('export')
+  @MoneyFields(...QUOTATION_MONEY_FIELDS)
   @ApiOperation({
     summary: 'Obtém os orçamentos filtrados para exportação',
   })
@@ -573,6 +577,7 @@ export class QuotationController {
   }
 
   @Get(UUID_ROUTE)
+  @MoneyFields(...QUOTATION_MONEY_FIELDS)
   @HasPermission('view', 'sale:quotation')
   @ApiOperation({ summary: 'Obtém um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
@@ -714,6 +719,7 @@ export class QuotationController {
   }
 
   @Get(':id/pdf-data')
+  @MoneyFields(...QUOTATION_MONEY_FIELDS)
   @HasAnyPermission(
     { action: 'view', resource: 'sale:quotation' },
     { action: 'view', resource: 'sale:order' },

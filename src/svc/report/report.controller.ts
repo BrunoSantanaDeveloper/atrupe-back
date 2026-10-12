@@ -2,6 +2,11 @@ import { Controller, Get, Query, UseGuards, Req } from '@nestjs/common';
 import { ReportService } from './report.service';
 import { JwtAuthGuard } from '../../core/auth/guards/jwt.guard';
 import { PermissionsGuard } from '../../core/auth/abac/permissions.guard';
+import {
+  MoneyFields,
+  ValuesOnly,
+} from '../../core/auth/abac/money-fields.decorator';
+import { DASHBOARD_SALES_MONEY_FIELDS } from '../../core/auth/abac/money-fields';
 import { HasAnyPermission } from '../../core/auth/abac/has-any-permission.decorator';
 import {
   BlockLevelGuard,
@@ -21,6 +26,10 @@ import { Request } from 'express';
 const RESOURCE = 'report';
 
 @UseGuards(JwtAuthGuard, PermissionsGuard, BlockLevelGuard)
+// Relatório é valor: sem values:values:view a rota é recusada (por
+// enquanto só observa, ver ValuesVisibilityInterceptor). O menu e as
+// permissões da sessão ficam de fora
+@ValuesOnly()
 @Controller(RESOURCE)
 export class ReportController {
   constructor(
@@ -44,6 +53,7 @@ export class ReportController {
   }
 
   @Get('menu')
+  @ValuesOnly(false)
   findAll(@Req() req: Request) {
     const companyId = (req as any).user?.companyId;
     return this.reportService.menu(companyId);
@@ -117,6 +127,7 @@ export class ReportController {
   // ============== SALES REPORT ENDPOINTS ==============
 
   @Get('sales/permissions')
+  @ValuesOnly(false)
   async getSalesPermissions(@Req() req: Request) {
     const user = (req as any).user;
     const canSeeOtherSellers =
@@ -125,6 +136,9 @@ export class ReportController {
   }
 
   @Get('sales/summary')
+  // Também do painel inicial, que mostra as contagens a quem não vê valores:
+  // sem values:values:view saem só os valores
+  @MoneyFields(...DASHBOARD_SALES_MONEY_FIELDS)
   @HasAnyPermission(
     { action: 'view', resource: 'reports:sales' },
     { action: 'view', resource: 'dashboard:sales' },
@@ -140,6 +154,9 @@ export class ReportController {
   }
 
   @Get('sales/evolution')
+  // Também do painel inicial, que mostra as contagens a quem não vê valores:
+  // sem values:values:view saem só os valores
+  @MoneyFields(...DASHBOARD_SALES_MONEY_FIELDS)
   @HasAnyPermission(
     { action: 'view', resource: 'reports:sales' },
     { action: 'view', resource: 'dashboard:rankings' },
@@ -187,6 +204,9 @@ export class ReportController {
   }
 
   @Get('sales/top-products')
+  // Também do painel inicial, que mostra as contagens a quem não vê valores:
+  // sem values:values:view saem só os valores
+  @MoneyFields(...DASHBOARD_SALES_MONEY_FIELDS)
   @HasAnyPermission(
     { action: 'view', resource: 'reports:sales' },
     { action: 'view', resource: 'dashboard:rankings' },
@@ -201,6 +221,9 @@ export class ReportController {
   }
 
   @Get('sales/top-clients')
+  // Também do painel inicial, que mostra as contagens a quem não vê valores:
+  // sem values:values:view saem só os valores
+  @MoneyFields(...DASHBOARD_SALES_MONEY_FIELDS)
   @HasAnyPermission(
     { action: 'view', resource: 'reports:sales' },
     { action: 'view', resource: 'dashboard:rankings' },
@@ -215,6 +238,9 @@ export class ReportController {
   }
 
   @Get('sales/by-seller')
+  // Também do painel inicial, que mostra as contagens a quem não vê valores:
+  // sem values:values:view saem só os valores
+  @MoneyFields(...DASHBOARD_SALES_MONEY_FIELDS)
   @HasAnyPermission(
     { action: 'view', resource: 'reports:sales' },
     { action: 'view', resource: 'dashboard:rankings' },

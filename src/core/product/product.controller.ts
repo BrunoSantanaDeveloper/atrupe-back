@@ -18,6 +18,8 @@ import { ProductFilterDTO } from './dto/filter.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
+import { MoneyFields } from '../auth/abac/money-fields.decorator';
+import { PRODUCT_MONEY_FIELDS } from '../auth/abac/money-fields';
 import { TenantGuard } from '../auth/guards/tenant.guard';
 import { TenantResource } from '../auth/guards/tenant-resource.decorator';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -100,6 +102,7 @@ export class ProductController {
   }
 
   @Get()
+  @MoneyFields(...PRODUCT_MONEY_FIELDS)
   // Listagem de produtos é uma operação OPERACIONAL necessária para qualquer usuário
   // autenticado da empresa (ex: vendedores criando orçamentos). A permissão
   // product_settings:products aplica-se apenas a operações de escrita (create/edit/delete).
@@ -116,6 +119,7 @@ export class ProductController {
   }
 
   @Get('export')
+  @MoneyFields(...PRODUCT_MONEY_FIELDS)
   @HasPermission('export', 'product_settings:products')
   @ApiOperation({ summary: 'Obtém os produtos filtrados para exportação' })
   @ApiResponse({
@@ -141,6 +145,7 @@ export class ProductController {
   }
 
   @Get(UUID_ROUTE)
+  @MoneyFields(...PRODUCT_MONEY_FIELDS)
   @TenantResource('product')
   @ApiOperation({ summary: 'Obtém um produto pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do produto' })

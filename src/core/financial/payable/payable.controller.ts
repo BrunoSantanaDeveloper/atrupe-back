@@ -16,6 +16,7 @@ import { PayableService } from './payable.service';
 
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ValuesOnly } from 'src/core/auth/abac/money-fields.decorator';
 import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
 import { AbacService } from 'src/core/auth/abac/abac.service';
 import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
@@ -50,6 +51,9 @@ const GROUP = 'financial';
 @ApiTags('Contas a Pagar')
 @UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
 @ApiBearerAuth()
+// Tudo aqui é valor: sem values:values:view a rota é recusada (por
+// enquanto só observa, ver ValuesVisibilityInterceptor)
+@ValuesOnly()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class PayableController {
   constructor(

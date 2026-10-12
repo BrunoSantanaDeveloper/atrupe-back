@@ -2,6 +2,8 @@ import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
 import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { MoneyFields } from 'src/core/auth/abac/money-fields.decorator';
+import { ORDER_MONEY_FIELDS } from 'src/core/auth/abac/money-fields';
 import {
   Controller,
   Get,
@@ -92,6 +94,7 @@ export class OrderController {
   }
 
   @Get()
+  @MoneyFields(...ORDER_MONEY_FIELDS)
   @HasPermission('view', 'sale:order')
   @ApiOperation({ summary: 'Obtém a lista de todas as ordens de serviço' })
   @ApiResponse({
@@ -117,6 +120,7 @@ export class OrderController {
   }
 
   @Get('export')
+  @MoneyFields(...ORDER_MONEY_FIELDS)
   @ApiOperation({
     summary: 'Obtém as ordens de serviço filtradas para exportação',
   })
@@ -179,6 +183,7 @@ export class OrderController {
   }
 
   @Get(UUID_ROUTE)
+  @MoneyFields(...ORDER_MONEY_FIELDS)
   @HasAnyPermission(
     { action: 'view', resource: 'sale:order' },
     { action: 'create', resource: 'nota_fiscal:emitir' },

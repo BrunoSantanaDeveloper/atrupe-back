@@ -2,6 +2,11 @@ import { Controller, Get, UseGuards, Query, Req, Param } from '@nestjs/common';
 import { FlowService } from './flow.service';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import {
+  MoneyFields,
+  ValuesOnly,
+} from 'src/core/auth/abac/money-fields.decorator';
+import { FLOW_TOTALS_MONEY_FIELDS } from 'src/core/auth/abac/money-fields';
 import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
 import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
 import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
@@ -21,6 +26,9 @@ const GROUP = 'financial';
 @ApiTags('Fluxo Financeiro')
 @UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
 @ApiBearerAuth()
+// Tudo aqui é valor: sem values:values:view a rota é recusada (por
+// enquanto só observa, ver ValuesVisibilityInterceptor)
+@ValuesOnly()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class FlowController {
   constructor(
@@ -81,6 +89,9 @@ export class FlowController {
   }
 
   @Get('totals')
+  // O resumo financeiro do painel inicial mostra as contagens a quem não
+  // vê valores: sem values:values:view saem só os valores
+  @MoneyFields(...FLOW_TOTALS_MONEY_FIELDS)
   @HasAnyPermission(
     { action: 'view', resource: 'financial:flow' },
     { action: 'view', resource: 'dashboard:financial' },

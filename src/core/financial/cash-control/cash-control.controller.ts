@@ -1,5 +1,6 @@
 import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ValuesOnly } from 'src/core/auth/abac/money-fields.decorator';
 import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
@@ -49,6 +50,9 @@ const GROUP = 'financial';
 // sem recusar, até a semana de log limpo; handler com
 // @ObservePermissions(false) já recusa.
 @ObservePermissions()
+// Tudo aqui é valor: sem values:values:view a rota é recusada (por
+// enquanto só observa, ver ValuesVisibilityInterceptor)
+@ValuesOnly()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class CashControlController {
   constructor(private readonly cashControlService: CashControlService) {}
@@ -74,6 +78,8 @@ export class CashControlController {
   }
 
   @Get('quantity')
+  // Só a contagem de caixas por situação
+  @ValuesOnly(false)
   @HasPermission('view', 'financial:cash_control')
   @ApiOperation({
     summary:

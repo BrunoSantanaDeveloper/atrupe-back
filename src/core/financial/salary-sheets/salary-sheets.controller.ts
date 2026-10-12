@@ -25,6 +25,7 @@ import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
 import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ValuesOnly } from 'src/core/auth/abac/money-fields.decorator';
 
 import { GetSalarySheetsDto } from './dto/salaries-filters.dto';
 import { SalarySheetsService } from './salary-sheets.service';
@@ -48,6 +49,9 @@ const GROUP = 'financial';
 // sem recusar, até a semana de log limpo; handler com
 // @ObservePermissions(false) já recusa.
 @ObservePermissions()
+// Tudo aqui é valor: sem values:values:view a rota é recusada (por
+// enquanto só observa, ver ValuesVisibilityInterceptor)
+@ValuesOnly()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class SalarySheetsController {
   constructor(private readonly salaryService: SalarySheetsService) {}

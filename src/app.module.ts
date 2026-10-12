@@ -24,6 +24,8 @@ import { ActivityMonitorService } from './core/activity-monitor/activity-monitor
 import { PrismaService } from './config/prisma/prisma.service';
 import { PageLimitMiddleware } from './common/pagination/page-limit.middleware';
 import { AccountThrottlerGuard } from './common/throttler/account-throttler.guard';
+import { AuthModule } from './core/auth/auth.module';
+import { ValuesVisibilityInterceptor } from './core/auth/abac/values-visibility.interceptor';
 
 @Module({
   imports: [
@@ -36,6 +38,7 @@ import { AccountThrottlerGuard } from './common/throttler/account-throttler.guar
     ThrottlerModule.forRoot([]),
     PrismaModule,
     CoreModule,
+    AuthModule,
     ReportModule,
     PlugModule,
     CacheModule,
@@ -56,6 +59,13 @@ import { AccountThrottlerGuard } from './common/throttler/account-throttler.guar
     {
       provide: APP_INTERCEPTOR,
       useClass: ActivityTrackingInterceptor,
+    },
+    // Dinheiro só para quem tem values:values:view, nas rotas marcadas com
+    // @MoneyFields ou @ValuesOnly: observa por padrão
+    // (VALUES_VISIBILITY_ENFORCE=true omite os campos e recusa as rotas)
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ValuesVisibilityInterceptor,
     },
     // Requisições por conta e por minuto: observa por padrão
     // (ACCOUNT_RATE_LIMIT_ENFORCE=true recusa com 429)

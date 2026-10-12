@@ -23,6 +23,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ValuesOnly } from 'src/core/auth/abac/money-fields.decorator';
 import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
 
 const RESOURCE = 'payroll-setup';
@@ -41,6 +42,9 @@ export const PAYROLL_SETTINGS_PERMISSION = 'financial_settings:payroll';
 @ApiTags('Configurações de Folha de Pagamento')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
+// Tudo aqui é valor: sem values:values:view a rota é recusada (por
+// enquanto só observa, ver ValuesVisibilityInterceptor)
+@ValuesOnly()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class SalariesController {
   constructor(private readonly salariesService: SalariesService) {}
