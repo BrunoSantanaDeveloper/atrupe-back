@@ -3,9 +3,11 @@ import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsEnum,
+  IsInt,
   IsOptional,
   IsString,
   Matches,
+  Min,
 } from 'class-validator';
 import { SectorNature, SectorSaleUnit } from '@prisma/client';
 import {
@@ -67,4 +69,29 @@ export class UpdateSectorDto {
     required: false,
   })
   nature?: SectorNature;
+
+  // Custo e venda da hora: a composição custeia a mão de obra e o preparo
+  // por eles. Informados até a base de custos calcular (módulo 4); só
+  // quem vê valores lê e grava
+  @IsOptional()
+  @IsInt({ message: 'O custo da hora vai em centavos' })
+  @Min(0, { message: 'O custo da hora não pode ser negativo' })
+  @ApiProperty({
+    description: 'Custo da hora de mão de obra do setor, em centavos',
+    example: 4500,
+    nullable: true,
+    required: false,
+  })
+  hourCost?: number | null;
+
+  @IsOptional()
+  @IsInt({ message: 'A hora vendida vai em centavos' })
+  @Min(0, { message: 'A hora vendida não pode ser negativa' })
+  @ApiProperty({
+    description: 'A hora vendida do setor, em centavos (IP-25)',
+    example: 12000,
+    nullable: true,
+    required: false,
+  })
+  hourSale?: number | null;
 }

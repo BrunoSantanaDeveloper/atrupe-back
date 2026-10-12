@@ -91,6 +91,20 @@
       "feature": "cost_base",
       "minPlan": "PRO",
       "where": "src/core/material/material.controller.ts (findAll, gate inline: a busca com directSale=true responde lista vazia, não 403)"
+    },
+    {
+      "method": "GET",
+      "path": "/process/quantity",
+      "feature": "cost_base",
+      "minPlan": "PRO",
+      "where": "src/core/assembly/process.controller.ts (@RequiresFeature na classe)"
+    },
+    {
+      "method": "GET",
+      "path": "/product/assembly-resource?page=1&limit=1",
+      "feature": "cost_base",
+      "minPlan": "PRO",
+      "where": "src/core/assembly/assembly-resource.controller.ts (@RequiresFeature na classe)"
     }
   ]
 }

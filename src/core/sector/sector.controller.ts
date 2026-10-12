@@ -1,6 +1,15 @@
 import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
 import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
-import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import {
+  PermissionsGuard,
+  permissionDenied,
+} from 'src/core/auth/abac/permissions.guard';
+import { AbacService } from 'src/core/auth/abac/abac.service';
+import {
+  VALUES_PERMISSION,
+  canViewValues,
+  omitMoneyFields,
+} from 'src/core/auth/abac/values-visibility.interceptor';
 import {
   Controller,
   Get,
@@ -35,6 +44,9 @@ import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
 import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 
 const RESOURCE = 'sector';
+// Custo e venda da hora do setor (composição): campos novos, a regra de
+// valores vale já, sem modo observar
+const SECTOR_MONEY_FIELDS = new Set(['hourCost', 'hourSale']);
 
 @ApiTags('Setores')
 @UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
@@ -49,7 +61,14 @@ export class SectorController {
     private readonly sectorService: SectorService,
     private readonly planControl: PlanControlService,
     private readonly prisma: PrismaService,
+    private readonly abacService: AbacService,
   ) {}
+
+  private async withValues<T>(req: any, body: T): Promise<T> {
+    return (await canViewValues(req, this.abacService))
+      ? body
+      : omitMoneyFields(body, SECTOR_MONEY_FIELDS);
+  }
 
   // Listar setores é livre: produtos, colaboradores e a agenda usam. Criar,
   // editar e excluir é o recurso "Configurar Setores" do plano.
@@ -67,9 +86,12 @@ export class SectorController {
     status: 201,
     description: 'Setor criado com sucesso.',
   })
-  create(@Request() req, @Body() createSectorDto: CreateSectorDto) {
+  async create(@Request() req, @Body() createSectorDto: CreateSectorDto) {
     createSectorDto.companyId = req.user.companyId;
-    return this.sectorService.create(createSectorDto);
+    return this.withValues(
+      req,
+      await this.sectorService.create(createSectorDto),
+    );
   }
 
   @Get()
@@ -79,9 +101,9 @@ export class SectorController {
     description: 'Lista de setores retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Req() req, @Query() filter: SectorFilterDto) {
+  async findAll(@Req() req, @Query() filter: SectorFilterDto) {
     filter.companyId = req.user.companyId;
-    return this.sectorService.findAll(filter);
+    return this.withValues(req, await this.sectorService.findAll(filter));
   }
 
   @Get('with-products')
@@ -110,8 +132,8 @@ export class SectorController {
     status: 404,
     description: 'Setor não encontrado.',
   })
-  findOne(@Param('id') id: string) {
-    return this.sectorService.findOne(id);
+  async findOne(@Req() req, @Param('id') id: string) {
+    return this.withValues(req, await this.sectorService.findOne(id));
   }
 
   @Patch(':id')
@@ -147,7 +169,18 @@ export class SectorController {
         );
       }
     }
-    return this.sectorService.update(id, updateSectorDto);
+    // Gravar custo ou venda da hora pede a permissão de ver valores
+    if (
+      (updateSectorDto.hourCost !== undefined ||
+        updateSectorDto.hourSale !== undefined) &&
+      !(await canViewValues(req, this.abacService))
+    ) {
+      throw permissionDenied([VALUES_PERMISSION]);
+    }
+    return this.withValues(
+      req,
+      await this.sectorService.update(id, updateSectorDto),
+    );
   }
 
   @Delete(':id')

@@ -14,6 +14,7 @@ import { BankModule } from './bank/bank.module';
 import { AssetModule } from './asset/asset.module';
 import { MaterialModule } from './material/material.module';
 import { ProductVariationModule } from './product-variation/product-variation.module';
+import { AssemblyModule } from './assembly/assembly.module';
 import { SaleModule } from './sale/sale.module';
 import { EmployeeModule } from './employee/employee.module';
 import { FinancialModule } from './financial/financial.module';
@@ -58,6 +59,7 @@ import { OwnershipModule } from './ownership/ownership.module';
     AssetModule,
     MaterialModule,
     ProductVariationModule,
+    AssemblyModule,
     SaleModule,
     EmployeeModule,
     FinancialModule,

@@ -17,4 +17,14 @@ export class PricingParametersService {
   async chargesOf(_companyId: string): Promise<PricingCharges> {
     return { taxation: 0, financialCost: 0, commission: 0 };
   }
+
+  /**
+   * O markup de referência (PR-1): multiplica o custo do recurso que não tem
+   * preço de venda próprio (IP-25). Nasce dos encargos e do lucro da
+   * Precificação; até o módulo 4, vale 1 e a venda desse recurso é o custo.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async referenceMarkupOf(_companyId: string): Promise<number> {
+    return 1;
+  }
 }

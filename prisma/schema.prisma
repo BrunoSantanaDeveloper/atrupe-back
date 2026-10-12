@@ -9,99 +9,101 @@ datasource db {
 }
 
 model Company {
-  id                    String                    @id @default(uuid())
-  name                  String // Nome Fantasia
-  createdAt             DateTime                  @default(now())
-  isActive              Boolean                   @default(true)
-  updatedAt             DateTime?                 @updatedAt
-  blockLevel            BlockLevel                @default(NONE)
-  blockedAt             DateTime?
-  blockReason           String?
-  cnpj                  String?
-  legalName             String? // Razão Social
-  municipalRegistration String?
-  stateRegistration     String?
-  email                 String?
-  favIconUrl            String?
-  logoUrl               String?
-  mobile                String?
-  phone                 String?
-  siteUrl               String?
-  textAfterItems        String?
-  textBeforeItems       String?
-  principalCompanyId    String?
+  id                     String                         @id @default(uuid())
+  name                   String // Nome Fantasia
+  createdAt              DateTime                       @default(now())
+  isActive               Boolean                        @default(true)
+  updatedAt              DateTime?                      @updatedAt
+  blockLevel             BlockLevel                     @default(NONE)
+  blockedAt              DateTime?
+  blockReason            String?
+  cnpj                   String?
+  legalName              String? // Razão Social
+  municipalRegistration  String?
+  stateRegistration      String?
+  email                  String?
+  favIconUrl             String?
+  logoUrl                String?
+  mobile                 String?
+  phone                  String?
+  siteUrl                String?
+  textAfterItems         String?
+  textBeforeItems        String?
+  principalCompanyId     String?
   // Titular da conta: quem responde por ela perante a Atrupe. Nasce com quem
   // criou a conta e só muda por transferência de titularidade. Sem chave
   // estrangeira de propósito: excluir o usuário não pode travar a empresa.
-  ownerUserId           String?
+  ownerUserId            String?
   // Quando uma transferência de titularidade trocou o CNPJ: os emissores e as
   // notas de antes pertencem ao CNPJ anterior — ficam como histórico, sem
   // manipulação, e a configuração fiscal recomeça do zero.
-  fiscalResetAt         DateTime?
-  facebook              String?
-  instagram             String?
-  linkedin              String?
-  unitDefaults          Json?
-  cnae                  String?
-  partnerKey            String?
-  accessKey             String?
-  deliveryType          DeliveryType[]
-  DigitalCertificate    DigitalCertificate?
-  AcademyProgress       AcademyProgress[]
-  address               Address[]
-  assetTypes            AssetType[]
-  materials             Material[]
-  materialImportLinks   MaterialImportLink[]
-  assets                Asset[]
-  bankAccounts          BankAccount[]
-  cashControls          CashRegister[]
-  categories            Category[]
-  clients               Client[]
-  creditLimitDefault    CreditLimitDefault[]
-  customer              Customer[]
-  deliverySchedule      DeliverySchedule[]
-  employees             Employee[]
-  financialFlows        FinancialFlow[]
-  invoices              Invoice[]
-  language              Language[]
-  nature                Nature[]
-  payables              Payable[]
-  paymentConditions     PaymentCondition[]
-  Plan                  Plan[]
-  products              Product[]
-  reasons               Reasons[]
-  receivables           Receivable[]
-  roles                 Role[]
-  PayrollSetup          PayrollSetup[]
-  payrollTemplates      PayrollTemplate[]
-  payroll               Payroll[]
-  saleSeries            SaleSeries[]
-  scheduledExpenses     ScheduledExpense[]
-  sellerProfile         SellerProfile[]
-  quotationTag          QuotationTag[]
-  subCategory           SubCategory[]
-  Subscription          Subscription[]
-  suppliers             Supplier[]
-  parentCompany         Company?                  @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
-  subsidiaries          Company[]                 @relation("CompanyHierarchy")
-  mainQuotations        Quotation[]               @relation("MainCompany")
-  fiscalQuotations      Quotation[]               @relation("FiscalSubCompany")
-  sectors               CompanySector[]           @relation("CompanyToCompanySector")
-  history               CompanyHistory[]
-  importLogs            ImportLog[]
-  migrationRuns         MigrationRun[]
-  invoicyConfigs        InvoicyConfig[]
-  fiscalOnboarding      FiscalOnboardingRequest[]
+  fiscalResetAt          DateTime?
+  facebook               String?
+  instagram              String?
+  linkedin               String?
+  unitDefaults           Json?
+  cnae                   String?
+  partnerKey             String?
+  accessKey              String?
+  deliveryType           DeliveryType[]
+  DigitalCertificate     DigitalCertificate?
+  AcademyProgress        AcademyProgress[]
+  address                Address[]
+  assetTypes             AssetType[]
+  materials              Material[]
+  processes              Process[]
+  productAssemblies      ProductAssembly[]
+  materialImportLinks    MaterialImportLink[]
+  assets                 Asset[]
+  bankAccounts           BankAccount[]
+  cashControls           CashRegister[]
+  categories             Category[]
+  clients                Client[]
+  creditLimitDefault     CreditLimitDefault[]
+  customer               Customer[]
+  deliverySchedule       DeliverySchedule[]
+  employees              Employee[]
+  financialFlows         FinancialFlow[]
+  invoices               Invoice[]
+  language               Language[]
+  nature                 Nature[]
+  payables               Payable[]
+  paymentConditions      PaymentCondition[]
+  Plan                   Plan[]
+  products               Product[]
+  reasons                Reasons[]
+  receivables            Receivable[]
+  roles                  Role[]
+  PayrollSetup           PayrollSetup[]
+  payrollTemplates       PayrollTemplate[]
+  payroll                Payroll[]
+  saleSeries             SaleSeries[]
+  scheduledExpenses      ScheduledExpense[]
+  sellerProfile          SellerProfile[]
+  quotationTag           QuotationTag[]
+  subCategory            SubCategory[]
+  Subscription           Subscription[]
+  suppliers              Supplier[]
+  parentCompany          Company?                       @relation("CompanyHierarchy", fields: [principalCompanyId], references: [id])
+  subsidiaries           Company[]                      @relation("CompanyHierarchy")
+  mainQuotations         Quotation[]                    @relation("MainCompany")
+  fiscalQuotations       Quotation[]                    @relation("FiscalSubCompany")
+  sectors                CompanySector[]                @relation("CompanyToCompanySector")
+  history                CompanyHistory[]
+  importLogs             ImportLog[]
+  migrationRuns          MigrationRun[]
+  invoicyConfigs         InvoicyConfig[]
+  fiscalOnboarding       FiscalOnboardingRequest[]
   environmentCredentials CompanyEnvironmentCredential[]
-  nfes                  Nfe[]
-  nfses                 Nfse[]
-  nfseServicos          NfseServico[]
-  nfces                 Nfce[]
-  cfopConfigs           CfopConfig[]
-  operationNatures      OperationNature[]
-  aiConversations       AiConversation[]
-  contactSources              ContactSource[]
-  hiddenContactSources        CompanyHiddenContactSource[]
+  nfes                   Nfe[]
+  nfses                  Nfse[]
+  nfseServicos           NfseServico[]
+  nfces                  Nfce[]
+  cfopConfigs            CfopConfig[]
+  operationNatures       OperationNature[]
+  aiConversations        AiConversation[]
+  contactSources         ContactSource[]
+  hiddenContactSources   CompanyHiddenContactSource[]
 
   @@map("companies")
 }
@@ -153,20 +155,20 @@ model Address {
 }
 
 model CompanySector {
-  id                String            @id @default(uuid())
-  name              String
-  icon              String?
-  companyId         String
-  isActive          Boolean           @default(true)
-  kind              SectorKind        @default(PRODUCTION)
-  isProductionStage Boolean           @default(true)
-  isSystem          Boolean           @default(false)
+  id                          String                     @id @default(uuid())
+  name                        String
+  icon                        String?
+  companyId                   String
+  isActive                    Boolean                    @default(true)
+  kind                        SectorKind                 @default(PRODUCTION)
+  isProductionStage           Boolean                    @default(true)
+  isSystem                    Boolean                    @default(false)
   /// Como o setor vende: por hora ou pela unidade do equipamento (composição)
-  saleUnit          SectorSaleUnit    @default(HOUR)
+  saleUnit                    SectorSaleUnit             @default(HOUR)
   /// #RRGGBB em maiúsculas; nulo = padrão do ícone, resolvido na tela
-  color             String?
+  color                       String?
   /// Produtivo ou administrativo na base de custos
-  nature            SectorNature      @default(PRODUCTIVE)
+  nature                      SectorNature               @default(PRODUCTIVE)
   /// Rateio entre os equipamentos do setor: só muda por /cost-base/sector/:id/allocation
   allocationCriterion         SectorAllocationCriterion  @default(ACQUISITION_VALUE)
   /// [{ assetId, percentage }], só no rateio manual
@@ -175,14 +177,21 @@ model CompanySector {
   allocationPreviousCriterion SectorAllocationCriterion?
   /// No manual, a lista de equipamentos mudou e o rateio precisa ser salvo de novo
   allocationOutdated          Boolean                    @default(false)
-  asset             Asset[]
-  materials         Material[]
-  Category          Category[]
-  employees         Employee[]
-  productionStage   ProductionStage[]
-  product           Product[]
-  role              Role[]
-  company           Company           @relation("CompanyToCompanySector", fields: [companyId], references: [id])
+  /// Custo da hora de mão de obra do setor, em centavos. Informado até a
+  /// base de custos calcular (módulo 4); a composição custeia por ele
+  hourCost                    Int?
+  /// A hora vendida do setor, em centavos (IP-25)
+  hourSale                    Int?
+  asset                       Asset[]
+  materials                   Material[]
+  processes                   Process[]
+  assemblyBlocks              AssemblyBlock[]
+  Category                    Category[]
+  employees                   Employee[]
+  productionStage             ProductionStage[]
+  product                     Product[]
+  role                        Role[]
+  company                     Company                    @relation("CompanyToCompanySector", fields: [companyId], references: [id])
 
   @@map("sectors")
 }
@@ -204,17 +213,17 @@ model Role {
 }
 
 model SellerProfile {
-  id                        String     @id @default(uuid())
+  id                        String       @id @default(uuid())
   name                      String
-  isActive                  Boolean    @default(true)
+  isActive                  Boolean      @default(true)
   companyId                 String
   commission                Float?
   maxDiscount               Float?
   minValue                  Float?
-  canApprovePreRegistration Boolean    @default(false)
-  canCancelSale             Boolean    @default(false)
+  canApprovePreRegistration Boolean      @default(false)
+  canCancelSale             Boolean      @default(false)
   employees                 Employee[]
-  company                   Company    @relation(fields: [companyId], references: [id])
+  company                   Company      @relation(fields: [companyId], references: [id])
   allowedSeries             SaleSeries[] @relation("SeriesAllowedProfiles")
 
   @@map("seller_profile")
@@ -257,11 +266,11 @@ model Contact {
 }
 
 model ContactSource {
-  id              String                         @id @default(uuid())
-  name            String
-  companyId       String?
-  company         Company?                       @relation(fields: [companyId], references: [id])
-  quotations      Quotation[]
+  id                String                       @id @default(uuid())
+  name              String
+  companyId         String?
+  company           Company?                     @relation(fields: [companyId], references: [id])
+  quotations        Quotation[]
   hiddenByCompanies CompanyHiddenContactSource[]
 
   @@map("contact_sources")
@@ -457,39 +466,39 @@ model EmployeeHistory {
 }
 
 model User {
-  id                   String              @id @default(uuid())
+  id                   String                 @id @default(uuid())
   password             String
-  email                String              @unique
+  email                String                 @unique
   name                 String
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime?           @updatedAt
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime?              @updatedAt
   avatar               String?
-  isActive             Boolean             @default(true)
+  isActive             Boolean                @default(true)
   resetPasswordExpires DateTime?
   resetPasswordToken   String?
   phone                String?
-  isVerified           Boolean             @default(false)
+  isVerified           Boolean                @default(false)
   customerId           String?
-  signupEventId        String?             @unique
+  signupEventId        String?                @unique
   signupOppref         String?
   signupUtm            Json?
   signupGclid          String?
   employee             Employee[]
   userContract         UserContract[]
   userRole             UserRole[]
-  receivableHistory    ReceivableHistory[] @relation("ReceivableHistoryUser")
-  payableHistory       PayableHistory[]    @relation("PayableHistoryUser")
-  employeeHistory      EmployeeHistory[]   @relation("EmployeeHistoryUser")
-  quotationHistory     QuotationHistory[]  @relation("QuotationHistoryUser")
-  orderHistory         OrderHistory[]      @relation("OrderHistoryUser")
-  companyHistory       CompanyHistory[]    @relation("CompanyHistoryUser")
+  receivableHistory    ReceivableHistory[]    @relation("ReceivableHistoryUser")
+  payableHistory       PayableHistory[]       @relation("PayableHistoryUser")
+  employeeHistory      EmployeeHistory[]      @relation("EmployeeHistoryUser")
+  quotationHistory     QuotationHistory[]     @relation("QuotationHistoryUser")
+  orderHistory         OrderHistory[]         @relation("OrderHistoryUser")
+  companyHistory       CompanyHistory[]       @relation("CompanyHistoryUser")
   fiscalHistory        InvoicyConfigHistory[] @relation("FiscalHistoryUser")
   userActivities       UserActivity[]
   userActivityEvents   UserActivityEvent[]
   importLogs           ImportLog[]
-  migrationRuns        MigrationRun[] @relation("MigrationRunStartedBy")
+  migrationRuns        MigrationRun[]         @relation("MigrationRunStartedBy")
   aiConversations      AiConversation[]
-  customer             Customer?           @relation(fields: [customerId], references: [id])
+  customer             Customer?              @relation(fields: [customerId], references: [id])
 
   @@index([email])
   @@map("users")
@@ -970,12 +979,11 @@ model PaymentCondition {
   payableInstallments         PayableInstallment[]
   receivableInstallments      ReceivableInstallment[]
   quotationInstallments       QuotationInstallment[]
+  // Fiscal: generate invoice on approval
+  generateInvoice             Boolean                       @default(false) // Auto-generate NF on order approval?
+  invoiceType                 InvoiceType? // NFE, NFSE, NFCE, or null
 
   @@unique([companyId, legacyId])
-  // Fiscal: generate invoice on approval
-  generateInvoice Boolean      @default(false) // Auto-generate NF on order approval?
-  invoiceType     InvoiceType? // NFE, NFSE, NFCE, or null
-
   @@map("payment_conditions")
 }
 
@@ -1212,7 +1220,7 @@ model DeliveryInfo {
   quotationId         String            @unique
   daysAfterApproval   Int?
   estimatedDate       DateTime?
-  deliveryTime        String?           // HH:MM — horário de entrega exibido no PDF
+  deliveryTime        String? // HH:MM — horário de entrega exibido no PDF
   deliveryDisplayMode String?           @default("DAYS") // DAYS | DATE
   modality            String            @default("Indefinida")
   cost                Float?
@@ -1325,6 +1333,8 @@ model Product {
   stRules              ProductStRule[]
   variations           ProductVariation[]
   priceTiers           ProductPriceTier[]
+  assemblies           ProductAssembly[]
+  partOfBlocks         AssemblyBlock[]    @relation("AssemblyPart")
 
   @@unique([code, companyId])
   @@unique([companyId, legacyId])
@@ -1356,7 +1366,7 @@ model ProductItem {
 /// Insumo do PRO (contrato, módulo 1, parte B). Dinheiro em centavos
 /// inteiros (política das tabelas novas); medidas em milímetros.
 model Material {
-  id                 String              @id @default(uuid())
+  id                 String               @id @default(uuid())
   companyId          String
   /// Sequencial por empresa: o código é MAT-nn
   number             Int
@@ -1365,18 +1375,18 @@ model Material {
   /// Nome sem acento e sem caixa: busca e conciliação da importação
   searchName         String
   sectorId           String
-  subcategory        String              @default("")
+  subcategory        String               @default("")
   unit               MaterialUnit
-  directSale         Boolean             @default(false)
-  productionMaterial Boolean             @default(true)
-  priceRule          MaterialPriceRule   @default(FIXED)
+  directSale         Boolean              @default(false)
+  productionMaterial Boolean              @default(true)
+  priceRule          MaterialPriceRule    @default(FIXED)
   /// Nulos quando há variação: custo e preço vivem em cada marca × cor
   cost               Int?
   price              Int?
   /// Lucro informado no preço variável, em décimos de ponto (300 = 30,0 %)
   desiredMargin      Int?
   costUpdatedAt      DateTime?
-  active             Boolean             @default(true)
+  active             Boolean              @default(true)
   /// Configuração avançada: nula = sem configuração
   shape              MaterialShape?
   /// Perfil: lados e comprimento da barra, em mm
@@ -1387,13 +1397,13 @@ model Material {
   sheetWidth         Float?
   sheetHeight        Float?
   /// Chapa: cobrar a folha inteira ou só a fração aproveitada
-  wholeSheets        Boolean             @default(true)
+  wholeSheets        Boolean              @default(true)
   /// Quilos por unidade de venda do material
   weight             Float?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  company            Company             @relation(fields: [companyId], references: [id])
-  sector             CompanySector       @relation(fields: [sectorId], references: [id])
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  company            Company              @relation(fields: [companyId], references: [id])
+  sector             CompanySector        @relation(fields: [sectorId], references: [id])
   variations         MaterialVariation[]
   importLinks        MaterialImportLink[]
 
@@ -1452,6 +1462,7 @@ model ProductVariation {
   updatedAt  DateTime           @updatedAt
   product    Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
   priceTiers ProductPriceTier[]
+  assemblies ProductAssembly[]
 
   @@index([productId])
   @@map("product_variations")
@@ -1473,6 +1484,206 @@ model ProductPriceTier {
 
   @@index([productId, variationId])
   @@map("product_price_tiers")
+}
+
+/// Processo (MS-11): uma etapa reutilizável de um setor, guardada no
+/// formato da etapa da composição. Nunca é excluído, só inativado (PAD-7).
+model Process {
+  id                 String             @id @default(uuid())
+  companyId          String
+  name               String
+  sectorId           String
+  afterBase          ProcessAfterBase   @default(INHERIT)
+  setupMinutes       Int                @default(0)
+  taskType           String
+  sellerInstructions String             @default("")
+  /// Regras de venda (MS-3 a MS-6)
+  rules              Json
+  isActive           Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  company            Company            @relation(fields: [companyId], references: [id])
+  sector             CompanySector      @relation(fields: [sectorId], references: [id])
+  lines              AssemblyLine[]
+  fields             AssemblyField[]
+  formulas           AssemblyFormula[]
+  blocks             AssemblyBlock[]
+  usualAfter         ProcessUsualNext[] @relation("UsualFrom")
+  usualBefore        ProcessUsualNext[] @relation("UsualTo")
+
+  @@index([companyId, isActive])
+  @@map("processes")
+}
+
+/// "Costuma vir depois de" (FL-7): o par é guardado uma vez.
+model ProcessUsualNext {
+  id            String   @id @default(uuid())
+  fromProcessId String
+  toProcessId   String
+  createdAt     DateTime @default(now())
+  from          Process  @relation("UsualFrom", fields: [fromProcessId], references: [id], onDelete: Cascade)
+  to            Process  @relation("UsualTo", fields: [toProcessId], references: [id], onDelete: Cascade)
+
+  @@unique([fromProcessId, toProcessId])
+  @@map("process_usual_next")
+}
+
+/// A composição do produto (CP-17), ou a própria de uma variação.
+model ProductAssembly {
+  id                String            @id @default(uuid())
+  companyId         String
+  productId         String
+  variationId       String?
+  /// O id da variação, ou vazio na composição padrão: a chave única
+  variationKey      String            @default("")
+  status            AssemblyStatus    @default(DRAFT)
+  dimension         AssemblyDimension @default(SALE)
+  allowRenameStages Boolean           @default(false)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  company           Company           @relation(fields: [companyId], references: [id])
+  product           Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variation         ProductVariation? @relation(fields: [variationId], references: [id], onDelete: Cascade)
+  blocks            AssemblyBlock[]
+  fields            AssemblyField[]
+  formulas          AssemblyFormula[]
+
+  @@unique([productId, variationKey])
+  @@index([companyId])
+  @@map("product_assemblies")
+}
+
+/// A etapa do produto (IP-29): montada ali (OWN), preenchida por um
+/// processo (PROCESS, vínculo CP-21) ou outro produto (PART, IP-9).
+model AssemblyBlock {
+  id                   String            @id @default(uuid())
+  assemblyId           String
+  type                 AssemblyBlockType
+  processId            String?
+  partProductId        String?
+  /// Nome, setor, preparo, tipo de tarefa e regras da etapa própria
+  name                 String            @default("")
+  sectorId             String?
+  setupMinutes         Int               @default(0)
+  taskType             String            @default("")
+  rules                Json?
+  /// O fluxo (FL-1): ids das etapas de que esta depende, e a base (MS-5)
+  dependsOn            String[]
+  baseBlockId          String?
+  /// Ajustes deste produto sobre o processo (IP-18, IP-23, IP-30)
+  localName            String?
+  localTaskType        String?
+  localRules           Json?
+  /// Linhas do processo tiradas só deste produto (CP-21)
+  removedSourceLineIds String[]
+  position             Int               @default(0)
+  createdAt            DateTime          @default(now())
+  assembly             ProductAssembly   @relation(fields: [assemblyId], references: [id], onDelete: Cascade)
+  process              Process?          @relation(fields: [processId], references: [id])
+  partProduct          Product?          @relation("AssemblyPart", fields: [partProductId], references: [id])
+  sector               CompanySector?    @relation(fields: [sectorId], references: [id])
+  lines                AssemblyLine[]
+
+  @@index([assemblyId])
+  @@index([processId])
+  @@index([partProductId])
+  @@map("assembly_blocks")
+}
+
+/// Uma linha: do processo (processId) ou da etapa do produto (blockId).
+/// Na etapa de processo, a linha que acompanha o processo (overridden =
+/// false) guarda só a ligação (sourceLineId) e a opção escolhida; o resto
+/// é lido do processo (CP-21).
+model AssemblyLine {
+  id                String               @id @default(uuid())
+  processId         String?
+  blockId           String?
+  sourceLineId      String?
+  overridden        Boolean              @default(false)
+  addedHere         Boolean              @default(false)
+  name              String               @default("")
+  kind              AssemblyLineKind     @default(MATERIAL)
+  mode              AssemblyLineMode     @default(SINGLE)
+  /// Uma das FormulaKey do motor
+  formula           String               @default("FIXED")
+  perUnit           Float                @default(1)
+  lossPercent       Float                @default(0)
+  minimum           Float?
+  optional          Boolean              @default(false)
+  optionalDefault   Boolean              @default(true)
+  fieldName         String?
+  formulaId         String?
+  people            Int?
+  /// Aproveitamento de folha, em mm (AP-3, AP-4)
+  sheetMargin       Float?
+  sheetGap          Float?
+  chargeWholeSheets Boolean?
+  selectedOptionId  String?
+  position          Int                  @default(0)
+  createdAt         DateTime             @default(now())
+  process           Process?             @relation(fields: [processId], references: [id], onDelete: Cascade)
+  block             AssemblyBlock?       @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  options           AssemblyLineOption[]
+
+  @@index([processId])
+  @@index([blockId])
+  @@index([sourceLineId])
+  @@map("assembly_lines")
+}
+
+/// A opção guarda só a referência ao recurso (CP-21): custo e venda vêm
+/// do cadastro dele. Consumo, perda e mínimo próprios são opcionais (IP-26).
+model AssemblyLineOption {
+  id          String       @id @default(uuid())
+  lineId      String
+  /// material:<id>[:<variação>], labor:<setor>, …
+  resourceId  String
+  configName  String?
+  perUnit     Float?
+  lossPercent Float?
+  minimum     Float?
+  position    Int          @default(0)
+  line        AssemblyLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@index([lineId])
+  @@index([resourceId])
+  @@map("assembly_line_options")
+}
+
+/// Campo do orçamento (IP-4, IP-19), do processo ou do produto.
+model AssemblyField {
+  id             String           @id @default(uuid())
+  processId      String?
+  assemblyId     String?
+  name           String
+  defaultValue   Float            @default(0)
+  allowsFraction Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+  process        Process?         @relation(fields: [processId], references: [id], onDelete: Cascade)
+  assembly       ProductAssembly? @relation(fields: [assemblyId], references: [id], onDelete: Cascade)
+
+  @@index([processId])
+  @@index([assemblyId])
+  @@map("assembly_fields")
+}
+
+/// Fórmula (IP-2), do processo ou do produto. A cópia que veio do processo
+/// guarda a de origem e acompanha a dela (CP-21).
+model AssemblyFormula {
+  id              String           @id @default(uuid())
+  processId       String?
+  assemblyId      String?
+  name            String
+  expression      String
+  sourceFormulaId String?
+  sourceProcessId String?
+  createdAt       DateTime         @default(now())
+  process         Process?         @relation(fields: [processId], references: [id], onDelete: Cascade)
+  assembly        ProductAssembly? @relation(fields: [assemblyId], references: [id], onDelete: Cascade)
+
+  @@index([processId])
+  @@index([assemblyId])
+  @@map("assembly_formulas")
 }
 
 model DefaultUnitOfMeasure {
@@ -1784,23 +1995,23 @@ model SubscriptionHistory {
 }
 
 model Subscription {
-  id                   String                @id @default(uuid())
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime?             @updatedAt
-  companyId            String?
-  additionalUsers      Int                   @default(0)
-  asaasSubscriptionId  String                @unique
-  customerId           String                @map("customer_id")
-  nextDueDate          DateTime
-  planId               String                @map("plan_id")
-  value                Float
-  status               SubscriptionStatus    @default(ACTIVE)
-  billingType          BillingType           @default(CREDIT_CARD)
-  cycle                Cycle                 @default(MONTHLY)
-  couponId             String?
-  couponCode           String? // Desnormalizado para display
-  discountValue        Float? // Valor do desconto aplicado (centavos)
-  discountType         DiscountType?
+  id                     String                @id @default(uuid())
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime?             @updatedAt
+  companyId              String?
+  additionalUsers        Int                   @default(0)
+  asaasSubscriptionId    String                @unique
+  customerId             String                @map("customer_id")
+  nextDueDate            DateTime
+  planId                 String                @map("plan_id")
+  value                  Float
+  status                 SubscriptionStatus    @default(ACTIVE)
+  billingType            BillingType           @default(CREDIT_CARD)
+  cycle                  Cycle                 @default(MONTHLY)
+  couponId               String?
+  couponCode             String? // Desnormalizado para display
+  discountValue          Float? // Valor do desconto aplicado (centavos)
+  discountType           DiscountType?
   // Contratação e preço. Opcionais porque as assinaturas antigas não têm
   // esses dados — e assinatura sem contractedAt não gera crédito de evolução.
   contractedAt           DateTime? // quando a contratação foi registrada
@@ -1815,43 +2026,43 @@ model Subscription {
   billingMode            String?
   installmentCount       Int? // em quantas vezes o anual é parcelado
   asaasInstallmentId     String? // o parcelamento do período em curso
-  Company              Company?              @relation(fields: [companyId], references: [id])
-  customer             Customer              @relation(fields: [customerId], references: [id])
-  plan                 Plan                  @relation(fields: [planId], references: [id])
-  coupon               Coupon?               @relation(fields: [couponId], references: [id])
-  subscriptionFeatures SubscriptionFeature[]
-  payments             Payment[]
-  history              SubscriptionHistory[]
+  Company                Company?              @relation(fields: [companyId], references: [id])
+  customer               Customer              @relation(fields: [customerId], references: [id])
+  plan                   Plan                  @relation(fields: [planId], references: [id])
+  coupon                 Coupon?               @relation(fields: [couponId], references: [id])
+  subscriptionFeatures   SubscriptionFeature[]
+  payments               Payment[]
+  history                SubscriptionHistory[]
 
   @@map("subscriptions")
 }
 
 model Payment {
-  id                String             @id @default(uuid())
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime?          @updatedAt
-  subscriptionId    String?
-  subscription      Subscription?      @relation(fields: [subscriptionId], references: [id])
-  asaasPaymentId    String             @unique
-  asaasCustomerId   String
-  value             Float
-  dueDate           DateTime
-  billingType       BillingType
-  status            AsaasPaymentStatus @default(PENDING)
-  description       String?
-  externalReference String? // TODO: Remover, este é o próprio id do payment
-  invoiceUrl        String?
-  bankSlipUrl       String?
-  pixQrCode         String?
-  pixCopyPaste      String?
-  confirmedDate     DateTime?
-  paymentDate       DateTime?
+  id                 String             @id @default(uuid())
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime?          @updatedAt
+  subscriptionId     String?
+  subscription       Subscription?      @relation(fields: [subscriptionId], references: [id])
+  asaasPaymentId     String             @unique
+  asaasCustomerId    String
+  value              Float
+  dueDate            DateTime
+  billingType        BillingType
+  status             AsaasPaymentStatus @default(PENDING)
+  description        String?
+  externalReference  String? // TODO: Remover, este é o próprio id do payment
+  invoiceUrl         String?
+  bankSlipUrl        String?
+  pixQrCode          String?
+  pixCopyPaste       String?
+  confirmedDate      DateTime?
+  paymentDate        DateTime?
   // Período coberto e composição do valor: base do crédito proporcional.
-  periodStart       DateTime?
-  periodEnd         DateTime?
-  grossValue        Float? // valor do ciclo após mês grátis e cupom, antes do crédito (reais)
-  creditApplied     Float? // crédito de evolução abatido desta cobrança (reais)
-  kind              String? // CONTRACT | EVOLUTION | RENEWAL (nulo: renovação gerada pelo Asaas)
+  periodStart        DateTime?
+  periodEnd          DateTime?
+  grossValue         Float? // valor do ciclo após mês grátis e cupom, antes do crédito (reais)
+  creditApplied      Float? // crédito de evolução abatido desta cobrança (reais)
+  kind               String? // CONTRACT | EVOLUTION | RENEWAL (nulo: renovação gerada pelo Asaas)
   asaasInstallmentId String? // o parcelamento de que esta cobrança é parcela
   installmentNumber  Int? // 1..N dentro do parcelamento
 
@@ -1885,11 +2096,11 @@ model SubscriptionFeature {
 }
 
 model Contract {
-  id            String         @id @default(uuid())
+  id            String               @id @default(uuid())
   name          String
   contentUrl    String
   version       Int
-  createdAt     DateTime       @default(now())
+  createdAt     DateTime             @default(now())
   acceptedUsers UserContract[]
   acceptances   ContractAcceptance[]
 
@@ -2144,6 +2355,41 @@ enum SectorKind {
   CLEANING
   OTHER
   SYSTEM
+}
+
+enum ProcessAfterBase {
+  INHERIT
+  OWN
+}
+
+enum AssemblyStatus {
+  DRAFT
+  RELEASED
+  PART
+}
+
+enum AssemblyDimension {
+  SALE
+  FIXED
+}
+
+enum AssemblyBlockType {
+  OWN
+  PROCESS
+  PART
+}
+
+enum AssemblyLineKind {
+  MACHINE
+  MATERIAL
+  LABOR
+  OUTSOURCED
+}
+
+enum AssemblyLineMode {
+  SINGLE
+  CHOOSE
+  LIST
 }
 
 enum MaterialUnit {
@@ -2443,32 +2689,32 @@ enum MigrationRunStatus {
 /// API apenas dispara e devolve o identificador; quem escreve aqui é o próprio
 /// script, então o acompanhamento sobrevive a um reinício da API.
 model MigrationRun {
-  id         String    @id @default(uuid())
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime? @updatedAt
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
 
-  companyId  String
-  company    Company   @relation(fields: [companyId], references: [id])
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
 
   // Nome da base no legado, no formato acn_000000.
   legacyBase String
 
   // Simulação não grava nada; serve para conferir antes da carga.
-  dryRun     Boolean   @default(true)
+  dryRun Boolean @default(true)
 
   status     MigrationRunStatus @default(QUEUED)
   startedAt  DateTime?
   finishedAt DateTime?
 
   // Contagens por entidade, como o relatório do script.
-  summary    Json?
+  summary       Json?
   // Linhas recusadas, para o suporte encaminhar ao time.
-  errors     Json?
+  errors        Json?
   // Motivo de uma falha que interrompeu a execução inteira.
   failureReason String?
 
   startedById String
-  startedBy   User    @relation("MigrationRunStartedBy", fields: [startedById], references: [id])
+  startedBy   User   @relation("MigrationRunStartedBy", fields: [startedById], references: [id])
 
   @@index([companyId])
   @@index([status])
@@ -2560,19 +2806,19 @@ model InvoicyConfig {
   emitCrt Int? @default(1) // 1=Simples Nacional, 2=SN Excesso, 3=Regime Normal
 
   // Configurações fiscais padrão
-  defaultNcm             String? // NCM padrão para novos produtos (ex: 49119900)
-  codigoServico          String?
-  aliquotaIss            Float?
+  defaultNcm               String? // NCM padrão para novos produtos (ex: 49119900)
+  codigoServico            String?
+  aliquotaIss              Float?
   // Regime Especial de Tributação (NFS-e). 1..6 é a enumeração ABRASF
   // (1=Microempresa municipal, 2=Estimativa, 3=Sociedade de profissionais,
   // 4=Cooperativa, 5=MEI, 6=ME/EPP); 7..16 são valores exclusivos do provedor
   // da prefeitura (Elotech/GLC, E&L, Digifred, SEMFAZ, NF-Eletrônica,
   // PRODEVAL). Alguns municípios exigem, outros recusam; nulo omite a tag.
   regimeEspecialTributacao Int?
-  defaultCfop            String?
-  defaultOperationNature String?
-  taxInfoText            String? @db.Text
-  isActive               Boolean @default(true)
+  defaultCfop              String?
+  defaultOperationNature   String?
+  taxInfoText              String? @db.Text
+  isActive                 Boolean @default(true)
 
   // Numeração NF-e
   serieNfe         Int? @default(1)
@@ -2614,15 +2860,15 @@ model InvoicyConfig {
   // O grupo de VALORES do IBS/CBS é opcional no layout do provedor, e o retorno
   // dele não devolve esses valores. Fica desligado por padrão: liga-se por
   // emissor conforme cada prefeitura passar a exigir, sem afetar quem já emite.
-  ibsCbsEnviarValores Boolean @default(false)
+  ibsCbsEnviarValores    Boolean @default(false)
   // Regime de apuração do IBS/CBS no Simples Nacional:
   // 1 = IBS e CBS pelo SN, 2 = CBS pelo SN e IBS regular, 3 = ambos regulares.
-  regApIbsCbsSn Int?
+  regApIbsCbsSn          Int?
   // Alíquotas; nulo cai no padrão nacional da fase vigente. A municipal é
   // definida por cada município, por isso vive no emissor.
-  aliquotaIbsUf  Float?
-  aliquotaIbsMun Float?
-  aliquotaCbs    Float?
+  aliquotaIbsUf          Float?
+  aliquotaIbsMun         Float?
+  aliquotaCbs            Float?
   // NF-e/NFC-e: o grupo IBS/CBS existe apenas no layout paralelo da Reforma no
   // provedor, ativado por ele empresa a empresa e modulo a modulo. Espelha o
   // campo AtivacaoReformaTributaria, devolvido na consulta de cadastro de
@@ -2632,7 +2878,7 @@ model InvoicyConfig {
   // cIndOp da NFS-e: obrigatorio (1-1) no layout da Reforma e estavel para a
   // maioria dos emissores, que prestam sempre o mesmo tipo de operacao. Fica
   // como padrao do emissor e continua sobrescrivel na emissao.
-  indicadorOperacaoNfse String?
+  indicadorOperacaoNfse  String?
 
   // Envio fiscal por e-mail
   sendDanfeXmlAutomatically Boolean @default(false)
@@ -2640,16 +2886,16 @@ model InvoicyConfig {
   sendXmlAutomatically      Boolean @default(true)
   sendFiscalEmailCopyTo     String?
 
-  activeEnvironment    FiscalEnvironment?
+  activeEnvironment     FiscalEnvironment?
   activeEnvironmentNfe  FiscalEnvironment?
   activeEnvironmentNfse FiscalEnvironment?
   activeEnvironmentNfce FiscalEnvironment?
-  environmentConfigs InvoicyEnvironmentConfig[]
-  history            InvoicyConfigHistory[]
-  activationAttempts FiscalActivationAttempt[]
-  nfces              Nfce[]
-  nfes               Nfe[]
-  nfses              Nfse[]
+  environmentConfigs    InvoicyEnvironmentConfig[]
+  history               InvoicyConfigHistory[]
+  activationAttempts    FiscalActivationAttempt[]
+  nfces                 Nfce[]
+  nfes                  Nfe[]
+  nfses                 Nfse[]
 
   @@index([companyId])
   @@map("invoicy_configs")
@@ -2718,30 +2964,30 @@ enum NfeStatus {
 }
 
 model Nfe {
-  id                    String     @id @default(uuid())
-  createdAt             DateTime   @default(now())
-  updatedAt             DateTime   @updatedAt
+  id                    String    @id @default(uuid())
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
   companyId             String
   orderId               String?
   quotationId           String?
   numero                Int
   serie                 Int
-  chaveAcesso           String?    @unique
+  chaveAcesso           String?   @unique
   protocolo             String?
-  status                NfeStatus  @default(PENDING)
+  status                NfeStatus @default(PENDING)
   ambiente              Int // 1 = Produção, 2 = Homologação
   dataEmissao           DateTime?
   dataAutorizacao       DateTime?
   valorTotal            Float
-  xmlEnvio              String?    @db.Text
-  xmlRetorno            String?    @db.Text
-  xmlAutorizado         String?    @db.Text
+  xmlEnvio              String?   @db.Text
+  xmlRetorno            String?   @db.Text
+  xmlAutorizado         String?   @db.Text
   danfeUrl              String?
   motivoRejeicao        String?
   motivoCancelamento    String?
   dataCancelamento      DateTime?
   protocoloCancelamento String?
-  cartaCorrecao         String?    @db.Text
+  cartaCorrecao         String?   @db.Text
   dataCorrecao          DateTime?
   protocoloCorrecao     String?
   sequenciaCorrecao     Int?
@@ -2749,20 +2995,20 @@ model Nfe {
   invoicyProtocol       String?
   emailSentAt           DateTime?
   emailSentTo           String?
-  emailSendError        String?    @db.Text
+  emailSendError        String?   @db.Text
   draftData             Json? // Dados do rascunho (destinatário, itens, etc.)
 
   // Rastreabilidade: qual emissor gerou o documento e com que payload.
   // Sem isso, devolução e CC-e re-derivam CFOP/natureza da config ATUAL, que
   // pode ter mudado desde a emissão. Espelha o que Nfce já fazia.
-  invoicyConfigId       String?
-  invoicyPayloadEnvio   Json? // Snapshot do payload enviado ao Invoicy
+  invoicyConfigId     String?
+  invoicyPayloadEnvio Json? // Snapshot do payload enviado ao Invoicy
 
-  company               Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order                 Order?         @relation(fields: [orderId], references: [id])
-  quotation             Quotation?     @relation(fields: [quotationId], references: [id])
-  invoicyConfig         InvoicyConfig? @relation(fields: [invoicyConfigId], references: [id], onDelete: Restrict)
-  orders                NfeOrder[]
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order         Order?         @relation(fields: [orderId], references: [id])
+  quotation     Quotation?     @relation(fields: [quotationId], references: [id])
+  invoicyConfig InvoicyConfig? @relation(fields: [invoicyConfigId], references: [id], onDelete: Restrict)
+  orders        NfeOrder[]
 
   correctionEvents NfeCorrectionEvent[]
   danfeDocument    NfeDanfeDocument?
@@ -2905,13 +3151,13 @@ model ProductFiscalData {
 /// linha para a UF, o cálculo cai nos campos de ST do próprio ProductFiscalData,
 /// que passam a valer como padrão.
 model ProductStRule {
-  id              String  @id @default(uuid())
+  id              String @id @default(uuid())
   productId       String
-  ufDestino       String  // Sigla da UF de destino (2 letras)
-  mva             Float?  // MVA-ST original do protocolo (%)
-  aliquotaInterna Float?  // ALQ intra: alíquota interna na UF de destino (%)
-  reducaoBase     Float?  // Redução da base de cálculo da ST (%)
-  fcpStRate       Float?  // FCP retido por ST na UF de destino (%)
+  ufDestino       String // Sigla da UF de destino (2 letras)
+  mva             Float? // MVA-ST original do protocolo (%)
+  aliquotaInterna Float? // ALQ intra: alíquota interna na UF de destino (%)
+  reducaoBase     Float? // Redução da base de cálculo da ST (%)
+  fcpStRate       Float? // FCP retido por ST na UF de destino (%)
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
@@ -2977,17 +3223,17 @@ model Nfse {
   draftData             Json? // Dados do rascunho (tomador, itens, etc.)
 
   // Rastreabilidade: ver comentário equivalente em Nfe.
-  invoicyConfigId       String?
-  invoicyPayloadEnvio   Json? // Snapshot do payload enviado ao Invoicy
+  invoicyConfigId     String?
+  invoicyPayloadEnvio Json? // Snapshot do payload enviado ao Invoicy
   // Envelope da resposta do provedor (Codigo/Descricao/Situacao), com blobs
   // elididos. Sem ele a rejeição guardava só SitDescricao e o motivo real
   // ficava indiagnosticável — mesmo buraco que travou o 606 da CC-e.
-  invoicyRetornoBruto   Json?
+  invoicyRetornoBruto Json?
 
-  company               Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order                 Order?         @relation(fields: [orderId], references: [id])
-  quotation             Quotation?     @relation(fields: [quotationId], references: [id])
-  invoicyConfig         InvoicyConfig? @relation(fields: [invoicyConfigId], references: [id], onDelete: Restrict)
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order         Order?         @relation(fields: [orderId], references: [id])
+  quotation     Quotation?     @relation(fields: [quotationId], references: [id])
+  invoicyConfig InvoicyConfig? @relation(fields: [invoicyConfigId], references: [id], onDelete: Restrict)
 
   @@index([companyId])
   @@index([orderId])
@@ -3011,7 +3257,7 @@ model NfseServico {
   updatedAt DateTime @updatedAt
 
   companyId String
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   codigo           String // LC 116, ex "13.05"
   descricao        String
@@ -3035,43 +3281,43 @@ model NfseServico {
 enum NfceStatus {
   PENDING
   PROCESSING
-  UNKNOWN      // Emissão tentada, resultado desconhecido (timeout/rede)
+  UNKNOWN // Emissão tentada, resultado desconhecido (timeout/rede)
   AUTHORIZED
   REJECTED
   CANCELLED
-  CONTINGENCY  // Contingência offline
+  CONTINGENCY // Contingência offline
 }
 
 // NFC-e Model - Nota Fiscal de Consumidor Eletrônica
 model Nfce {
-  id                        String     @id @default(uuid())
-  createdAt                 DateTime   @default(now())
-  updatedAt                 DateTime   @updatedAt
+  id                        String         @id @default(uuid())
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
   companyId                 String
   orderId                   String?
   quotationId               String?
-  invoicyConfigId           String?    // Emissor (InvoicyConfig) usado na tentativa
+  invoicyConfigId           String? // Emissor (InvoicyConfig) usado na tentativa
   numero                    Int
   serie                     Int
-  chaveAcesso               String?    @unique
+  chaveAcesso               String?        @unique
   protocolo                 String?
-  status                    NfceStatus @default(PENDING)
+  status                    NfceStatus     @default(PENDING)
   ambiente                  Int // 1 = Produção, 2 = Homologação
   dataEmissao               DateTime?
   dataAutorizacao           DateTime?
   valorTotal                Float
-  valorDesconto             Float?     @default(0)
-  valorTroco                Float?     @default(0)
+  valorDesconto             Float?         @default(0)
+  valorTroco                Float?         @default(0)
   cpfConsumidor             String?
   consumidorNome            String?
-  informacoesComplementares String?    @db.Text
+  informacoesComplementares String?        @db.Text
   itensSnapshot             Json?
   pagamentosSnapshot        Json?
-  invoicyPayloadEnvio       Json?      // Payload Invoicy exato usado/reusado no reprocessamento
+  invoicyPayloadEnvio       Json? // Payload Invoicy exato usado/reusado no reprocessamento
   formaPagamento            String? // Código da forma de pagamento
-  xmlEnvio                  String?    @db.Text
-  xmlRetorno                String?    @db.Text
-  xmlAutorizado             String?    @db.Text
+  xmlEnvio                  String?        @db.Text
+  xmlRetorno                String?        @db.Text
+  xmlAutorizado             String?        @db.Text
   qrCodeUrl                 String? // URL do QR Code
   urlConsulta               String? // URL para consulta pública
   danfeUrl                  String?
@@ -3079,17 +3325,17 @@ model Nfce {
   motivoCancelamento        String?
   dataCancelamento          DateTime?
   protocoloCancelamento     String?
-  contingencia              Boolean    @default(false)
+  contingencia              Boolean        @default(false)
   dataContingencia          DateTime?
   motivoContingencia        String?
   invoicyId                 String?
   invoicyProtocol           String?
-  company                   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company                   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   // Restrict e nao SetNull: excluir um emissor nao pode apagar a atribuicao
   // de NFC-e ja autorizadas — isso destroi a trilha fiscal do documento.
   invoicyConfig             InvoicyConfig? @relation(fields: [invoicyConfigId], references: [id], onDelete: Restrict)
-  order                     Order?     @relation(fields: [orderId], references: [id])
-  quotation                 Quotation? @relation(fields: [quotationId], references: [id])
+  order                     Order?         @relation(fields: [orderId], references: [id])
+  quotation                 Quotation?     @relation(fields: [quotationId], references: [id])
 
   @@unique([companyId, numero, serie, ambiente], name: "nfce_unique_emission")
   @@index([companyId])
@@ -3305,41 +3551,41 @@ model CompanyEnvironmentCredential {
   environment                FiscalEnvironment
   providerAccessKeyEncrypted String?
 
-  createdAt                  DateTime          @default(now())
-  updatedAt                  DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([companyId, environment])
   @@map("company_environment_credentials")
 }
 
 model InvoicyEnvironmentConfig {
-  id                  String                  @id @default(uuid())
-  invoicyConfigId     String
-  invoicyConfig       InvoicyConfig           @relation(fields: [invoicyConfigId], references: [id], onDelete: Cascade)
+  id              String        @id @default(uuid())
+  invoicyConfigId String
+  invoicyConfig   InvoicyConfig @relation(fields: [invoicyConfigId], references: [id], onDelete: Cascade)
 
-  environment         FiscalEnvironment
+  environment FiscalEnvironment
   // @default(NFCE) alinha o schema ao banco: a migration
   // 20260701130000 criou a coluna com DEFAULT 'NFCE'. Sem isso o Prisma e o
   // banco divergiam e linhas criadas sem docType explicito viravam NFCE em
   // silencio.
-  docType             FiscalDocType           @default(NFCE)
+  docType     FiscalDocType     @default(NFCE)
 
-  cscId               String?
-  cscTokenEncrypted   String?
+  cscId             String?
+  cscTokenEncrypted String?
 
   // Numeracao por (emissor, ambiente, docType). Cada linha usa apenas o par
   // correspondente ao seu docType. Sao colunas separadas em vez de um par
   // generico porque a serie da NFS-e e alfanumerica e a de NF-e/NFC-e e
   // inteira — um unico par nao tipa as duas.
-  nfceSeries          Int?                    @default(1)
-  nfceNextNumber      Int?                    @default(1)
+  nfceSeries     Int? @default(1)
+  nfceNextNumber Int? @default(1)
 
-  nfeSeries           Int?                    @default(1)
-  nfeNextNumber       Int?                    @default(1)
+  nfeSeries     Int? @default(1)
+  nfeNextNumber Int? @default(1)
 
   // "1" e nao "A1": ver prisma/migrations/20260921120000_nfse_series_default_numeric
-  nfseSeries          String?                 @default("1")
-  nfseNextNumber      Int?                    @default(1)
+  nfseSeries     String? @default("1")
+  nfseNextNumber Int?    @default(1)
 
   status              FiscalEnvironmentStatus @default(DRAFT)
   lastValidationAt    DateTime?
@@ -3354,25 +3600,25 @@ model InvoicyEnvironmentConfig {
 }
 
 model InvoicyConfigHistory {
-  id              String                    @id @default(uuid())
+  id              String         @id @default(uuid())
   invoicyConfigId String?
-  invoicyConfig   InvoicyConfig?            @relation(fields: [invoicyConfigId], references: [id], onDelete: SetNull)
+  invoicyConfig   InvoicyConfig? @relation(fields: [invoicyConfigId], references: [id], onDelete: SetNull)
   companyId       String
   emissorName     String
 
-  action          FiscalConfigAction
-  actorType       ActorType
-  createdByName   String
-  environment     FiscalEnvironment?
-  result          FiscalConfigHistoryResult
-  correlationId   String
-  description     String
-  changes         Json?
-  metadata        Json?
+  action        FiscalConfigAction
+  actorType     ActorType
+  createdByName String
+  environment   FiscalEnvironment?
+  result        FiscalConfigHistoryResult
+  correlationId String
+  description   String
+  changes       Json?
+  metadata      Json?
 
-  createdBy       String?
-  user            User?                     @relation("FiscalHistoryUser", fields: [createdBy], references: [id], onDelete: SetNull)
-  createdAt       DateTime                  @default(now())
+  createdBy String?
+  user      User?    @relation("FiscalHistoryUser", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
 
   @@index([invoicyConfigId])
   @@index([companyId])
@@ -3404,13 +3650,13 @@ model FiscalActivationAttempt {
 
 model FiscalSecretMigrationState {
   id             String                      @id @default(uuid())
-  version        Int                         @default(1) @unique // @unique garante apenas um estado por versão de migração
+  version        Int                         @unique @default(1) // @unique garante apenas um estado por versão de migração
   status         FiscalSecretMigrationStatus @default(PENDING)
   totalRecords   Int                         @default(0)
   processedOk    Int                         @default(0)
   processedError Int                         @default(0)
-  cursors        Json?                       @default("{}")      // Cursores de retomada compostos por tabela: { "Company": { "createdAt": "...", "id": "..." }, ... }
-  snapshotTime   DateTime?                   // High-water mark persistido e reutilizado em todas as retomadas da versão
+  cursors        Json?                       @default("{}") // Cursores de retomada compostos por tabela: { "Company": { "createdAt": "...", "id": "..." }, ... }
+  snapshotTime   DateTime? // High-water mark persistido e reutilizado em todas as retomadas da versão
   errorSanitized String?                     @db.Text
   startedAt      DateTime?
   completedAt    DateTime?
@@ -3425,8 +3671,8 @@ model FiscalSecretRekeyJob {
   oldKeyId    String
   newKeyId    String
   status      FiscalSecretMigrationStatus @default(PENDING)
-  cursors     Json                        @default("{}")      // Cursores de retomada por tabela e campo: { "CompanyEnvironmentCredential.providerAccessKeyEncrypted": { "createdAt": "...", "id": "..." } }
-  errorCode   String?                     // Código seguro/estruturado; nunca recebe error.message bruto
+  cursors     Json                        @default("{}") // Cursores de retomada por tabela e campo: { "CompanyEnvironmentCredential.providerAccessKeyEncrypted": { "createdAt": "...", "id": "..." } }
+  errorCode   String? // Código seguro/estruturado; nunca recebe error.message bruto
   startedAt   DateTime?
   completedAt DateTime?
   createdAt   DateTime                    @default(now())
