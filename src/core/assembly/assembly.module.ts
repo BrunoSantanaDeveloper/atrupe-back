@@ -8,6 +8,8 @@ import { ProcessController } from './process.controller';
 import { ProcessService } from './process.service';
 import { ProductAssemblyController } from './product-assembly.controller';
 import { ProductAssemblyService } from './product-assembly.service';
+import { ProductSaleController } from './product-sale.controller';
+import { ProductSaleService } from './product-sale.service';
 
 /**
  * Processos e composição do produto (módulo 1, parte A): o mesmo formato de
@@ -20,8 +22,14 @@ import { ProductAssemblyService } from './product-assembly.service';
     AssemblyResourceController,
     ProcessController,
     ProductAssemblyController,
+    ProductSaleController,
   ],
-  providers: [AssemblyResourceService, ProcessService, ProductAssemblyService],
+  providers: [
+    AssemblyResourceService,
+    ProcessService,
+    ProductAssemblyService,
+    ProductSaleService,
+  ],
   exports: [AssemblyResourceService, ProcessService, ProductAssemblyService],
 })
 export class AssemblyModule {}

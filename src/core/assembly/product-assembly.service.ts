@@ -1296,7 +1296,7 @@ export class ProductAssemblyService {
 
   /* ================================================================== apoio */
 
-  private async product(ctx: Ctx): Promise<ProductRow> {
+  async product(ctx: Ctx): Promise<ProductRow> {
     const product = await this.prisma.product.findFirst({
       where: { id: ctx.productId, companyId: ctx.companyId },
       select: PRODUCT_SELECT,
@@ -1305,7 +1305,7 @@ export class ProductAssemblyService {
     return product;
   }
 
-  private variationOf(product: ProductRow, variationId?: string | null) {
+  variationOf(product: ProductRow, variationId?: string | null) {
     if (!variationId) return undefined;
     const variation = product.variations.find(
       (item) => item.id === variationId,
@@ -1314,7 +1314,7 @@ export class ProductAssemblyService {
     return variation;
   }
 
-  private assemblyRow(productId: string, variationKey: string) {
+  assemblyRow(productId: string, variationKey: string) {
     return this.prisma.productAssembly.findUnique({
       where: { productId_variationKey: { productId, variationKey } },
       include: ASSEMBLY_INCLUDE,
@@ -1603,7 +1603,7 @@ export class ProductAssemblyService {
    * As partes (até três níveis) e os recursos de todas as linhas, lidos de
    * uma vez para o motor.
    */
-  private async loadGraph(
+  async loadGraph(
     companyId: string,
     roots: (AssemblyRow | null)[],
   ): Promise<AssemblyGraph> {
