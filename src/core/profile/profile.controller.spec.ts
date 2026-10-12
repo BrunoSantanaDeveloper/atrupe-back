@@ -36,7 +36,6 @@ describe('ProfileController', () => {
   it.each([
     ['listEmployess', 'edit'],
     ['addEmployee', 'edit'],
-    ['removeEmployee', 'delete'],
     ['create', 'create'],
     ['findOne', 'view'],
     ['update', 'edit'],
@@ -47,6 +46,15 @@ describe('ProfileController', () => {
       action,
       resource: PERMISSION,
     });
+  });
+
+  it('desvincular o colaborador aceita edit (regra do time) ou delete (o que a tela pede)', () => {
+    const handler = ProfileController.prototype.removeEmployee;
+    expect(Reflect.getMetadata(HAS_PERMISSION_KEY, handler)).toBeUndefined();
+    expect(Reflect.getMetadata(HAS_ANY_PERMISSION_KEY, handler)).toEqual([
+      { action: 'edit', resource: PERMISSION },
+      { action: 'delete', resource: PERMISSION },
+    ]);
   });
 
   it('a lista aceita quem vê o perfil de vendedor ou edita a série de venda', () => {

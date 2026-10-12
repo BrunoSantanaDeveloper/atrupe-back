@@ -72,7 +72,12 @@ export class ProfileController {
 
   @ApiTags('Gerenciamento dos perfis')
   @Delete('employees/:employeeId')
-  @HasPermission('delete', PERMISSION)
+  // Desvincular é linha de dentro do perfil, que pela regra do time pede
+  // edit; a tela mostra o botão para quem tem delete. Aceita as duas.
+  @HasAnyPermission(
+    { action: 'edit', resource: PERMISSION },
+    { action: 'delete', resource: PERMISSION },
+  )
   @ApiOperation({ summary: 'Remove um perfil do funcionário' })
   async removeEmployee(@Req() req, @Param('employeeId') employeeId: string) {
     return this.profileService.removeEmployee(employeeId, req.user.companyId);
