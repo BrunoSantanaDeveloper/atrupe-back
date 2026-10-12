@@ -21,6 +21,7 @@ import { MailerService } from '@nestjs-modules/mailer';
 import { CompanyService } from '../company/company.service';
 import { CreateCompanyDto } from '../company/dto/create-company.dto';
 import { EmployeeHistoryService } from '../employee/history/history.service';
+import { isDeclaredTestEnv } from 'src/shared/utils/app-env';
 
 @Injectable()
 export class UserRegistrationService {
@@ -60,10 +61,10 @@ export class UserRegistrationService {
         message: 'Email já possui um token de validação.',
         canResendIn: timeUntilExpiry,
       };
-      if (
-        process.env.APP_ENV !== 'production' ||
-        email.endsWith('@atrupe-test.com')
-      ) {
+      // Só em ambiente de teste declarado. Antes também em produção para
+      // todo e-mail @atrupe-test.com: quem cadastrasse um desses pulava a
+      // verificação do e-mail
+      if (isDeclaredTestEnv()) {
         response.devToken = existToken.token;
       }
       return response;
@@ -121,10 +122,7 @@ export class UserRegistrationService {
       message: 'Email de validação enviado com sucesso.',
     };
 
-    if (
-      process.env.APP_ENV !== 'production' ||
-      email.endsWith('@atrupe-test.com')
-    ) {
+    if (isDeclaredTestEnv()) {
       response.devToken = token;
     }
 

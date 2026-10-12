@@ -192,6 +192,58 @@ describe('UserRegistrationService', () => {
       expect(result).not.toHaveProperty('devToken');
       process.env.APP_ENV = originalEnv;
     });
+
+    it('NÃO expõe o devToken em produção nem para e-mail @atrupe-test.com', async () => {
+      const originalEnv = process.env.APP_ENV;
+      process.env.APP_ENV = 'production';
+      mockPrisma.mailVerification.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+      mockPrisma.mailVerification.upsert.mockResolvedValueOnce({});
+
+      const result = await service.sendEmailValidation(
+        'qualquer@atrupe-test.com',
+      );
+
+      expect(result).not.toHaveProperty('devToken');
+      process.env.APP_ENV = originalEnv;
+    });
+
+    it('NÃO expõe o devToken com APP_ENV ausente (responde como produção)', async () => {
+      const originalEnv = process.env.APP_ENV;
+      delete process.env.APP_ENV;
+      mockPrisma.mailVerification.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+      mockPrisma.mailVerification.upsert.mockResolvedValueOnce({});
+
+      const result = await service.sendEmailValidation('usuario@empresa.com');
+
+      expect(result).not.toHaveProperty('devToken');
+      if (originalEnv !== undefined) process.env.APP_ENV = originalEnv;
+    });
+
+    it('token ainda válido: devolve o mesmo código só em ambiente de teste', async () => {
+      const originalEnv = process.env.APP_ENV;
+      const existing = {
+        token: '1234',
+        expiresAt: new Date(Date.now() + 60_000),
+      };
+
+      process.env.APP_ENV = 'homolog';
+      mockPrisma.mailVerification.findFirst.mockResolvedValueOnce(existing);
+      await expect(
+        service.sendEmailValidation('usuario@empresa.com'),
+      ).resolves.toHaveProperty('devToken', '1234');
+
+      process.env.APP_ENV = 'production';
+      mockPrisma.mailVerification.findFirst.mockResolvedValueOnce(existing);
+      await expect(
+        service.sendEmailValidation('qualquer@atrupe-test.com'),
+      ).resolves.not.toHaveProperty('devToken');
+
+      process.env.APP_ENV = originalEnv;
+    });
   });
 
   // ───────────────────────────────────────────────────────────────────────────

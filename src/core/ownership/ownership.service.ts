@@ -10,6 +10,7 @@ import { MailerService } from '@nestjs-modules/mailer';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { SubscriptionQuoteService } from '../subscriptions/pricing/subscription-quote.service';
 import { SendOwnershipTransferDto } from './dto/ownership.dto';
+import { isDeclaredTestEnv } from 'src/shared/utils/app-env';
 import {
   ACCEPTANCE_LEASE_MS,
   newInviteToken,
@@ -417,5 +418,7 @@ export function inviteUrlOf(token: string): string {
 }
 
 function exposesInviteUrl(): boolean {
-  return process.env.APP_ENV !== 'production';
+  // O link do convite vale a titularidade: com APP_ENV ausente, a resposta é
+  // a de produção (antes, ausente expunha o link)
+  return isDeclaredTestEnv();
 }

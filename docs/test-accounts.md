@@ -32,7 +32,7 @@ gravado. Com o ambiente recusado, nem o código da API é carregado.
 | Variável | Obrigatória | O que é |
 |---|---|---|
 | `TEST_ACCOUNTS_ENABLED` | sim | `true` só em homolog (guarda 1) |
-| `TEST_ACCOUNTS_EMAIL_DOMAIN` | sim | domínio dos e-mails das contas. Use um domínio (ou subdomínio) da Atrupe **sem caixa postal**. O backend devolve o código de verificação para `@atrupe-test.com` até em produção: só use esse se o domínio for da Atrupe |
+| `TEST_ACCOUNTS_EMAIL_DOMAIN` | sim | domínio dos e-mails das contas. Use um domínio (ou subdomínio) da Atrupe **sem caixa postal**. O script cria as contas sem a verificação de e-mail; o código de verificação só volta na resposta do cadastro com `APP_ENV` definida e diferente de `production`, para qualquer domínio |
 | `TEST_ACCOUNTS_PASSWORD` | sim | senha de todos os usuários das contas (mínimo 8 caracteres). Guarde no cofre da equipe e nos segredos do GitHub; nunca no código, e o script nunca a imprime |
 
 `APP_ENV` e `DATABASE_URL` já existem no ambiente do container.
