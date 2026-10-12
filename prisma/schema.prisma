@@ -50,6 +50,8 @@ model Company {
   AcademyProgress       AcademyProgress[]
   address               Address[]
   assetTypes            AssetType[]
+  materials             Material[]
+  materialImportLinks   MaterialImportLink[]
   assets                Asset[]
   bankAccounts          BankAccount[]
   cashControls          CashRegister[]
@@ -174,6 +176,7 @@ model CompanySector {
   /// No manual, a lista de equipamentos mudou e o rateio precisa ser salvo de novo
   allocationOutdated          Boolean                    @default(false)
   asset             Asset[]
+  materials         Material[]
   Category          Category[]
   employees         Employee[]
   productionStage   ProductionStage[]
@@ -1348,6 +1351,92 @@ model ProductItem {
   @@map("product_items")
 }
 
+/// Insumo do PRO (contrato, módulo 1, parte B). Dinheiro em centavos
+/// inteiros (política das tabelas novas); medidas em milímetros.
+model Material {
+  id                 String              @id @default(uuid())
+  companyId          String
+  /// Sequencial por empresa: o código é MAT-nn
+  number             Int
+  code               String
+  name               String
+  /// Nome sem acento e sem caixa: busca e conciliação da importação
+  searchName         String
+  sectorId           String
+  subcategory        String              @default("")
+  unit               MaterialUnit
+  directSale         Boolean             @default(false)
+  productionMaterial Boolean             @default(true)
+  priceRule          MaterialPriceRule   @default(FIXED)
+  /// Nulos quando há variação: custo e preço vivem em cada marca × cor
+  cost               Int?
+  price              Int?
+  /// Lucro informado no preço variável, em décimos de ponto (300 = 30,0 %)
+  desiredMargin      Int?
+  costUpdatedAt      DateTime?
+  active             Boolean             @default(true)
+  /// Configuração avançada: nula = sem configuração
+  shape              MaterialShape?
+  /// Perfil: lados e comprimento da barra, em mm
+  profileX           Float?
+  profileY           Float?
+  barLength          Float?
+  /// Chapa: largura e altura, em mm
+  sheetWidth         Float?
+  sheetHeight        Float?
+  /// Chapa: cobrar a folha inteira ou só a fração aproveitada
+  wholeSheets        Boolean             @default(true)
+  /// Quilos por unidade de venda do material
+  weight             Float?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  company            Company             @relation(fields: [companyId], references: [id])
+  sector             CompanySector       @relation(fields: [sectorId], references: [id])
+  variations         MaterialVariation[]
+  importLinks        MaterialImportLink[]
+
+  @@unique([companyId, number])
+  @@index([companyId, active])
+  @@map("materials")
+}
+
+/// Marca × cor do material. Com variação, a venda e a composição apontam
+/// para ela.
+model MaterialVariation {
+  id            String    @id @default(uuid())
+  materialId    String
+  brand         String
+  color         String
+  /// marca|cor sem acento e sem caixa: a combinação é única no material
+  matchKey      String
+  cost          Int?
+  price         Int?
+  desiredMargin Int?
+  costUpdatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  material      Material  @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@unique([materialId, matchKey])
+  @@map("material_variations")
+}
+
+/// De-para aprendido na importação: o nome como veio de fora → material
+model MaterialImportLink {
+  id           String   @id @default(uuid())
+  companyId    String
+  /// Normalizado: minúsculas, sem acento, espaços colapsados
+  externalName String
+  materialId   String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  company      Company  @relation(fields: [companyId], references: [id])
+  material     Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, externalName])
+  @@map("material_import_links")
+}
+
 model DefaultUnitOfMeasure {
   id                   String                 @id @default(uuid())
   name                 String
@@ -2017,6 +2106,27 @@ enum SectorKind {
   CLEANING
   OTHER
   SYSTEM
+}
+
+enum MaterialUnit {
+  HR
+  M2
+  M
+  KM
+  UN
+  KG
+  LT
+}
+
+enum MaterialPriceRule {
+  FIXED
+  VARIABLE
+}
+
+enum MaterialShape {
+  PROFILE
+  SHEET
+  OTHER
 }
 
 enum SectorSaleUnit {

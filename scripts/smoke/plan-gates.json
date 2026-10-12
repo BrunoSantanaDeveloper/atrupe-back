@@ -84,6 +84,13 @@
       "feature": "cost_base",
       "minPlan": "PRO",
       "where": "src/core/asset/asset.controller.ts (classe, FeatureGuard)"
+    },
+    {
+      "method": "GET",
+      "path": "/material?page=1&limit=1",
+      "feature": "cost_base",
+      "minPlan": "PRO",
+      "where": "src/core/material/material.controller.ts (findAll, gate inline: a busca com directSale=true responde lista vazia, não 403)"
     }
   ]
 }
