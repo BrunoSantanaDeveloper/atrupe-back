@@ -186,7 +186,8 @@ describe('QuotationItemsService', () => {
       expect(prisma.quotationProduct.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           composition: { choices: [], summary: ['Lona 440'] },
-          snapshot: { cost: 1500, stages: [] },
+          // O retrato vai para a tabela própria (ORC-7)
+          snapshot: { create: { data: { cost: 1500, stages: [] } } },
         }),
       });
     });

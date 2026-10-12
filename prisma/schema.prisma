@@ -1115,17 +1115,28 @@ model QuotationProduct {
   variationId          String?
   /// As escolhas do vendedor na composição (IP-36), com o resumo
   composition          Json?
-  /// O retrato da composição na venda (ORC-10): custo e preço por etapa.
-  /// Tem custo: nunca sai para a tela do orçamento (ORC-7)
-  snapshot             Json?
   /// Acréscimo em centavos (ALT-25): fica fora do limite de desconto
   addition             Int                    @default(0)
   items                QuotationProductItem[]
   product              Product                @relation(fields: [productId], references: [id])
   quotation            Quotation              @relation(fields: [quotationId], references: [id])
   variation            ProductVariation?      @relation(fields: [variationId], references: [id], onDelete: SetNull)
+  /// O retrato da composição na venda (ORC-10), em tabela própria
+  snapshot             QuotationItemSnapshot?
 
   @@map("quotation_products")
+}
+
+/// O retrato da venda do item (ORC-10): custo e preço por etapa e por linha,
+/// na medida e com as escolhas do item. Fica fora da linha do item para
+/// nenhum include do orçamento (O.S., fiscal, PDF) levar custo à tela (ORC-7)
+model QuotationItemSnapshot {
+  quotationProductId String           @id
+  data               Json
+  computedAt         DateTime         @default(now())
+  quotationProduct   QuotationProduct @relation(fields: [quotationProductId], references: [id], onDelete: Cascade)
+
+  @@map("quotation_item_snapshots")
 }
 
 model QuotationProductItem {

@@ -205,7 +205,8 @@ export class QuotationItemsService {
           ...(composed
             ? {
                 composition: asJson(composed.composition),
-                snapshot: asJson(composed.snapshot),
+                // O retrato tem custo: tabela própria, fora das leituras
+                snapshot: { create: { data: asJson(composed.snapshot) } },
               }
             : {}),
         },
@@ -280,6 +281,7 @@ export class QuotationItemsService {
           quotation: true,
           product: true,
           items: true,
+          snapshot: { select: { quotationProductId: true } },
         },
       });
 
@@ -373,7 +375,15 @@ export class QuotationItemsService {
             ...(data.variationId !== undefined && { variationId }),
             ...(composed && {
               composition: asJson(composed.composition),
-              snapshot: asJson(composed.snapshot),
+              snapshot: {
+                upsert: {
+                  create: { data: asJson(composed.snapshot) },
+                  update: {
+                    data: asJson(composed.snapshot),
+                    computedAt: new Date(),
+                  },
+                },
+              },
             }),
           },
         },
@@ -590,7 +600,11 @@ export class QuotationItemsService {
     const originalQuotationProduct =
       await this.prisma.quotationProduct.findFirst({
         where: { id: productId },
-        include: { quotation: true, items: true },
+        include: {
+          quotation: true,
+          items: true,
+          snapshot: { select: { data: true } },
+        },
       });
 
     if (!originalQuotationProduct) {
@@ -620,7 +634,14 @@ export class QuotationItemsService {
           variationId: originalQuotationProduct.variationId,
           addition: originalQuotationProduct.addition,
           composition: originalQuotationProduct.composition ?? Prisma.DbNull,
-          snapshot: originalQuotationProduct.snapshot ?? Prisma.DbNull,
+          ...(originalQuotationProduct.snapshot && {
+            snapshot: {
+              create: {
+                data: originalQuotationProduct.snapshot
+                  .data as Prisma.InputJsonValue,
+              },
+            },
+          }),
         },
       });
 
