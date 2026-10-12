@@ -1239,14 +1239,18 @@ export class PayableService {
         // NOVO: Cancelar lançamentos de diferença criados para essa parcela
         const originalPayable = await tx.payable.findUnique({
           where: { id: installmentData.payableId },
-          select: { description: true },
+          select: { description: true, companyId: true },
         });
 
         const differenceDescriptionPattern = `Diferença no pagamento da parcela ${installmentData.installmentNumber} - ${originalPayable?.description || 'Sem descrição'}`;
 
+        // Os lançamentos de diferença são achados pela descrição: só os da
+        // mesma empresa. Sem a empresa, estornar aqui cancelava os de outra
+        // empresa com a mesma descrição ("Aluguel", por exemplo)
         // Encontrar e cancelar payables de diferença
         await tx.payable.updateMany({
           where: {
+            companyId: originalPayable?.companyId,
             description: differenceDescriptionPattern,
             status: { not: 'CANCELED' },
           },
@@ -1256,6 +1260,7 @@ export class PayableService {
         // Encontrar e cancelar receivables de diferença
         await tx.receivable.updateMany({
           where: {
+            companyId: originalPayable?.companyId,
             description: differenceDescriptionPattern,
             status: { not: 'CANCELED' },
           },

@@ -44,8 +44,21 @@ type Usage = {
   label: string;
   model: string;
   paramName: string;
+  via?: string;
   paths: string[];
 };
+
+// O model que tem a companyId: o próprio, ou o dono pela relação (via)
+function ownerOf(usage: Usage) {
+  const model = models.get(usage.model);
+  if (!model || !usage.via) return model;
+  const relation = model.fields.find(
+    (field) => field.name === usage.via && field.kind === 'object',
+  );
+  return relation
+    ? Prisma.dmmf.datamodel.models.find((m) => m.name === relation.type)
+    : undefined;
+}
 
 const usages: Usage[] = files.flatMap((file) => {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -64,6 +77,7 @@ const usages: Usage[] = files.flatMap((file) => {
             label: `${relative(SRC, file)} ${klass.name}.${name}`,
             model: config.model,
             paramName: config.paramName,
+            via: config.via,
             paths: (Array.isArray(path) ? path : [path]).map(String),
           };
         })
@@ -85,10 +99,18 @@ describe('@TenantResource nos controllers', () => {
         model: usage.model,
         exists: true,
       });
+      const owner = ownerOf(usage);
       expect({
         model: usage.model,
-        hasCompanyId: model.fields.some((field) => field.name === 'companyId'),
-      }).toEqual({ model: usage.model, hasCompanyId: true });
+        via: usage.via ?? null,
+        ownerHasCompanyId: !!owner?.fields.some(
+          (field) => field.name === 'companyId',
+        ),
+      }).toEqual({
+        model: usage.model,
+        via: usage.via ?? null,
+        ownerHasCompanyId: true,
+      });
       expect({
         paramName: usage.paramName,
         inRoute: usage.paths.some((path) =>

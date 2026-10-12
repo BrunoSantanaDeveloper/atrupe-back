@@ -101,6 +101,10 @@ export class ReceivableController {
   }
 
   @Get('batch-receipt-data')
+  @HasAnyPermission(
+    { action: 'view', resource: 'financial:receivable' },
+    { action: 'view', resource: 'financial:flow' },
+  )
   @ApiOperation({
     summary:
       'Retorna dados para gerar um recibo agrupado de múltiplas parcelas',
@@ -117,10 +121,19 @@ export class ReceivableController {
     const ids = Array.isArray(installmentIds)
       ? installmentIds
       : (installmentIds || '').split(',').filter(Boolean);
-    return this.receivableService.getBatchReceiptData(ids, req.user.userId);
+    return this.receivableService.getBatchReceiptData(
+      ids,
+      req.user.userId,
+      req.user.companyId,
+    );
   }
 
   @Get('installment/:installmentId/receipt-data')
+  @TenantResource('receivableInstallment', 'installmentId', 'receivable')
+  @HasAnyPermission(
+    { action: 'view', resource: 'financial:receivable' },
+    { action: 'view', resource: 'financial:flow' },
+  )
   @ApiOperation({
     summary: 'Retorna os dados formatados para gerar um recibo de uma parcela',
   })
@@ -168,6 +181,11 @@ export class ReceivableController {
   }
 
   @Get(':id/history')
+  @TenantResource('receivable')
+  @HasAnyPermission(
+    { action: 'view', resource: 'financial:receivable' },
+    { action: 'view', resource: 'financial:flow' },
+  )
   @ApiOperation({
     summary: 'Obtém o histórico de alterações de uma conta a receber',
   })
@@ -185,6 +203,11 @@ export class ReceivableController {
   }
 
   @Get(':id/details')
+  @TenantResource('receivable')
+  @HasAnyPermission(
+    { action: 'view', resource: 'financial:receivable' },
+    { action: 'view', resource: 'financial:flow' },
+  )
   @ApiOperation({
     summary:
       'Obtém detalhes completos de uma conta a receber com todas as parcelas',
@@ -231,6 +254,7 @@ export class ReceivableController {
   }
 
   @Patch(':id/upsert-installments')
+  @TenantResource('receivable')
   @ApiResponse({
     status: 200,
     description: 'Parcelas adicionadas, editadas ou removidas com sucesso',
@@ -316,6 +340,7 @@ export class ReceivableController {
   }
 
   @Post(':id/undo-cancel')
+  @TenantResource('receivable')
   @ApiOperation({
     summary: 'Desfaz o cancelamento de uma conta a receber',
   })
@@ -362,6 +387,11 @@ export class ReceivableController {
   }
 
   @Patch('pay-installment/:installmentId')
+  @TenantResource('receivableInstallment', 'installmentId', 'receivable')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:receivable' },
+    { action: 'edit', resource: 'financial:flow' },
+  )
   @ApiResponse({
     status: 200,
     description: 'Parcela paga com sucesso',
@@ -401,6 +431,11 @@ export class ReceivableController {
   }
 
   @Patch('compensate/:installmentId')
+  @TenantResource('receivableInstallment', 'installmentId', 'receivable')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:receivable' },
+    { action: 'edit', resource: 'financial:flow' },
+  )
   async compensateInstallment(
     @Param('installmentId') installmentId: string,
     @Body() compensateDto: CompensateDto,
@@ -413,6 +448,11 @@ export class ReceivableController {
   }
 
   @Patch('unpay-installment/:installmentId')
+  @TenantResource('receivableInstallment', 'installmentId', 'receivable')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:receivable' },
+    { action: 'edit', resource: 'financial:flow' },
+  )
   @ApiResponse({
     status: 200,
     description: 'Parcela paga com sucesso',

@@ -118,6 +118,11 @@ export class PayableController {
   }
 
   @Get(':id/history')
+  @TenantResource('payable')
+  @HasAnyPermission(
+    { action: 'view', resource: 'financial:payable' },
+    { action: 'view', resource: 'financial:flow' },
+  )
   @ApiOperation({
     summary: 'Obtém o histórico de alterações de uma conta a pagar',
   })
@@ -135,6 +140,11 @@ export class PayableController {
   }
 
   @Get(':id/details')
+  @TenantResource('payable')
+  @HasAnyPermission(
+    { action: 'view', resource: 'financial:payable' },
+    { action: 'view', resource: 'financial:flow' },
+  )
   @ApiOperation({
     summary:
       'Obtém detalhes completos de uma conta a pagar com todas as parcelas',
@@ -181,6 +191,7 @@ export class PayableController {
   }
 
   @Patch(':id/upsert-installments')
+  @TenantResource('payable')
   @ApiResponse({
     status: 200,
     description: 'Parcelas adicionadas, editadas ou removidas com sucesso',
@@ -266,6 +277,7 @@ export class PayableController {
   }
 
   @Post(':id/undo-cancel')
+  @TenantResource('payable')
   @ApiOperation({
     summary: 'Desfaz o cancelamento de uma conta a pagar',
   })
@@ -312,6 +324,11 @@ export class PayableController {
   }
 
   @Patch('pay-installment/:installmentId')
+  @TenantResource('payableInstallment', 'installmentId', 'payable')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:payable' },
+    { action: 'edit', resource: 'financial:flow' },
+  )
   @ApiResponse({
     status: 200,
     description: 'Parcela paga com sucesso',
@@ -351,6 +368,11 @@ export class PayableController {
   }
 
   @Patch('compensate/:installmentId')
+  @TenantResource('payableInstallment', 'installmentId', 'payable')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:payable' },
+    { action: 'edit', resource: 'financial:flow' },
+  )
   async compensateInstallment(
     @Param('installmentId') installmentId: string,
     @Body() compensateDto: CompensateDto,
@@ -363,6 +385,11 @@ export class PayableController {
   }
 
   @Patch('unpay-installment/:installmentId')
+  @TenantResource('payableInstallment', 'installmentId', 'payable')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:payable' },
+    { action: 'edit', resource: 'financial:flow' },
+  )
   @ApiResponse({
     status: 200,
     description: 'Parcela paga com sucesso',

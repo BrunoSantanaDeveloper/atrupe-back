@@ -101,6 +101,48 @@ describe('TenantGuard', () => {
     await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
 
+  describe('com a relação até o dono (via)', () => {
+    const config = {
+      model: 'payableInstallment',
+      paramName: 'installmentId',
+      via: 'payable',
+    };
+
+    it('lê a empresa pela relação e libera a da mesma empresa', async () => {
+      reflector.get.mockReturnValue(config);
+      prisma.payableInstallment = {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ payable: { companyId: 'c-1' } }),
+      };
+      const ctx = makeCtx(
+        { companyId: 'c-1', isSystemAdmin: false },
+        { installmentId: 'parc-1' },
+      );
+
+      expect(await guard.canActivate(ctx)).toBe(true);
+      expect(prisma.payableInstallment.findUnique).toHaveBeenCalledWith({
+        where: { id: 'parc-1' },
+        select: { payable: { select: { companyId: true } } },
+      });
+    });
+
+    it('recusa a parcela de outra empresa', async () => {
+      reflector.get.mockReturnValue(config);
+      prisma.payableInstallment = {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ payable: { companyId: 'outra-empresa' } }),
+      };
+      const ctx = makeCtx(
+        { companyId: 'c-1', isSystemAdmin: false, userId: 'u-1' },
+        { installmentId: 'parc-9' },
+      );
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+    });
+  });
+
   it('falha fechada com model desconhecido no @TenantResource', async () => {
     reflector.get.mockReturnValue({ model: 'quotaton', paramName: 'id' });
     const ctx = makeCtx(

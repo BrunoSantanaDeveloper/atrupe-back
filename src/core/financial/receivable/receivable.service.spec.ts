@@ -550,6 +550,87 @@ describe('ReceivableService', () => {
     });
   });
 
+  // ─── getBatchReceiptData ──────────────────────────────────────────
+
+  describe('getBatchReceiptData', () => {
+    it('só lê parcelas da empresa da sessão: as de outra contam como não encontradas', async () => {
+      prisma.receivableInstallment.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.getBatchReceiptData(
+          ['parc-de-outra'],
+          mockUserId,
+          mockCompanyId,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.receivableInstallment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            id: { in: ['parc-de-outra'] },
+            receivable: { companyId: mockCompanyId },
+          },
+        }),
+      );
+    });
+  });
+
+  // ─── undoPaymentInstallment ───────────────────────────────────────
+
+  describe('undoPaymentInstallment', () => {
+    it('cancela os lançamentos de diferença só da mesma empresa', async () => {
+      prisma.receivableInstallment.findFirst.mockResolvedValue({
+        id: mockInstallmentId,
+        receivableId: mockReceivableId,
+        installmentNumber: 1,
+        status: 'PROVISIONED',
+        paidAmount: 100,
+        paidDate: null,
+      });
+      // O registro de origem é lido no lado da parcela; os dois lados
+      // recebem o cancelamento dos lançamentos de diferença
+      const findOriginal = jest.fn().mockResolvedValue({
+        description: 'Aluguel',
+        companyId: mockCompanyId,
+      });
+      const tx = {
+        payable: { findUnique: findOriginal, updateMany: jest.fn() },
+        receivable: { findUnique: findOriginal, updateMany: jest.fn() },
+        receivableInstallment: { update: jest.fn() },
+      };
+      prisma.$transaction.mockImplementation((cb: any) => cb(tx));
+      jest
+        .spyOn(service as any, 'updateReceivableStatus')
+        .mockResolvedValue(undefined);
+      prisma.receivableInstallment.findUnique.mockResolvedValue({
+        id: mockInstallmentId,
+        installmentNumber: 1,
+        status: 'PENDING',
+        amount: 100,
+        paidAmount: null,
+        dueDate: new Date('2030-01-01'),
+        paidDate: null,
+        bankAccount: null,
+        paymentCondition: null,
+      });
+
+      await service.undoPaymentInstallment(mockInstallmentId);
+
+      const where = {
+        companyId: mockCompanyId,
+        description: 'Diferença no pagamento da parcela 1 - Aluguel',
+        status: { not: 'CANCELED' },
+      };
+      expect(tx.payable.updateMany).toHaveBeenCalledWith({
+        where,
+        data: { status: 'CANCELED' },
+      });
+      expect(tx.receivable.updateMany).toHaveBeenCalledWith({
+        where,
+        data: { status: 'CANCELED' },
+      });
+    });
+  });
+
   // ─── undoCancel ───────────────────────────────────────────────────
 
   describe('undoCancel', () => {

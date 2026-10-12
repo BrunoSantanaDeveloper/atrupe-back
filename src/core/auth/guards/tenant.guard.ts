@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from 'nestjs-prisma';
-import { TENANT_RESOURCE_KEY } from './tenant-resource.decorator';
+import {
+  TENANT_RESOURCE_KEY,
+  TenantResourceConfig,
+} from './tenant-resource.decorator';
 
 /**
  * Guard that validates cross-tenant access.
@@ -29,10 +32,10 @@ export class TenantGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const tenantConfig = this.reflector.get<{
-      model: string;
-      paramName: string;
-    }>(TENANT_RESOURCE_KEY, context.getHandler());
+    const tenantConfig = this.reflector.get<TenantResourceConfig>(
+      TENANT_RESOURCE_KEY,
+      context.getHandler(),
+    );
 
     if (!tenantConfig) return true;
 
@@ -59,9 +62,13 @@ export class TenantGuard implements CanActivate {
       throw new ForbiddenException('Acesso negado.');
     }
 
+    // Sem companyId no model, a empresa vem do dono pela relação (via)
+    const { via } = tenantConfig;
     const resource = await delegate.findUnique({
       where: { id: resourceId },
-      select: { companyId: true },
+      select: via
+        ? { [via]: { select: { companyId: true } } }
+        : { companyId: true },
     });
 
     if (!resource) {
@@ -69,9 +76,10 @@ export class TenantGuard implements CanActivate {
       return true;
     }
 
-    if (resource.companyId !== user.companyId) {
+    const ownerCompanyId = via ? resource[via]?.companyId : resource.companyId;
+    if (ownerCompanyId !== user.companyId) {
       this.logger.warn(
-        `Tenant violation: user ${user.userId} (company ${user.companyId}) tried to access ${tenantConfig.model} ${resourceId} (company ${resource.companyId})`,
+        `Tenant violation: user ${user.userId} (company ${user.companyId}) tried to access ${tenantConfig.model} ${resourceId} (company ${ownerCompanyId})`,
       );
       throw new ForbiddenException('Acesso negado.');
     }

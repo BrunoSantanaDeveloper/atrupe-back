@@ -1204,14 +1204,18 @@ export class ReceivableService {
         // NOVO: Cancelar lançamentos de diferença criados para essa parcela
         const originalReceivable = await tx.receivable.findUnique({
           where: { id: installmentData.receivableId },
-          select: { description: true },
+          select: { description: true, companyId: true },
         });
 
         const differenceDescriptionPattern = `Diferença no pagamento da parcela ${installmentData.installmentNumber} - ${originalReceivable?.description || 'Sem descrição'}`;
 
+        // Os lançamentos de diferença são achados pela descrição: só os da
+        // mesma empresa. Sem a empresa, estornar aqui cancelava os de outra
+        // empresa com a mesma descrição ("Aluguel", por exemplo)
         // Encontrar e cancelar payables de diferença
         await tx.payable.updateMany({
           where: {
+            companyId: originalReceivable?.companyId,
             description: differenceDescriptionPattern,
             status: { not: 'CANCELED' },
           },
@@ -1221,6 +1225,7 @@ export class ReceivableService {
         // Encontrar e cancelar receivables de diferença
         await tx.receivable.updateMany({
           where: {
+            companyId: originalReceivable?.companyId,
             description: differenceDescriptionPattern,
             status: { not: 'CANCELED' },
           },
@@ -1664,14 +1669,17 @@ export class ReceivableService {
 
   async getBatchReceiptData(
     installmentIds: string[],
-    userId?: string,
+    userId: string | undefined,
+    companyId: string,
   ): Promise<ReceiptDataResponseDto> {
     if (!installmentIds || installmentIds.length === 0) {
       throw new BadRequestException('Nenhuma parcela informada.');
     }
 
+    // Só parcelas da empresa da sessão: as de outra empresa contam como não
+    // encontradas (o recibo trazia o cliente e os valores dela)
     const installments = await this.prisma.receivableInstallment.findMany({
-      where: { id: { in: installmentIds } },
+      where: { id: { in: installmentIds }, receivable: { companyId } },
       include: {
         paymentCondition: true,
         receivable: { include: { client: true } },
