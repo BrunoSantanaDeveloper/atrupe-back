@@ -213,6 +213,15 @@ export class ProductService {
                 discriminacao: true,
               },
             },
+            // A marca da composição na lista (CP-17)
+            assemblies: {
+              where: { variationKey: '' },
+              select: {
+                status: true,
+                _count: { select: { blocks: true } },
+              },
+            },
+            _count: { select: { variations: true } },
           },
           take: +filter.limit,
           skip: (+filter.page - 1) * +filter.limit,
@@ -231,7 +240,10 @@ export class ProductService {
           category,
           items,
           fiscalData,
+          assemblies,
+          _count,
         } = product;
+        const composition = assemblies[0];
 
         // Calculando os totais
         const unitCost = items.reduce(
@@ -256,6 +268,11 @@ export class ProductService {
           unitCost,
           salePrice,
           fiscalData: fiscalData || null,
+          hasComposition: !!composition?._count.blocks,
+          compositionStatus: composition?._count.blocks
+            ? composition.status
+            : null,
+          hasVariations: _count.variations > 0,
           items: items.map((item) => ({
             unitCost: item.unitCost,
             salePrice: item.salePrice,

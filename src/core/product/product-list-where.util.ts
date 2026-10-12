@@ -16,7 +16,17 @@ export interface ProductListFilter {
   /** 'ACTIVE' | 'INACTIVE'; ausente mostra só ativos. */
   status?: string;
   search?: string;
+  /** Com composição (etapas na composição padrão), ou sem (CP-17) */
+  hasComposition?: boolean;
+  /** A lista do orçamento: sem o inativo, o em edição e a parte (IP-14) */
+  forSale?: boolean;
 }
+
+/** A composição padrão com ao menos uma etapa. */
+const COMPOSED = {
+  variationKey: '',
+  blocks: { some: {} },
+} satisfies Prisma.ProductAssemblyWhereInput;
 
 /**
  * `where` da listagem de produtos.
@@ -93,6 +103,32 @@ export function buildProductListWhere(
         },
       ],
     };
+  }
+
+  const extra: Prisma.ProductWhereInput[] = [];
+  if (filter.hasComposition === true) {
+    extra.push({ assemblies: { some: COMPOSED } });
+  } else if (filter.hasComposition === false) {
+    extra.push({ NOT: { assemblies: { some: COMPOSED } } });
+  }
+  if (filter.forSale) {
+    // O produto sem composição continua vendável (START)
+    where = { ...where, isActive: true };
+    extra.push({
+      NOT: {
+        assemblies: {
+          some: { ...COMPOSED, status: { in: ['DRAFT', 'PART'] } },
+        },
+      },
+    });
+  }
+  if (extra.length) {
+    const current = where.AND
+      ? Array.isArray(where.AND)
+        ? where.AND
+        : [where.AND]
+      : [];
+    where = { ...where, AND: [...current, ...extra] };
   }
 
   return where;

@@ -115,6 +115,10 @@ export class ProductController {
   })
   async findAll(@Req() req, @Query() filter: ProductFilterDTO) {
     filter.companyId = req.user.companyId;
+    // O filtro da composição é da base de custos (contrato, módulo 1)
+    if (filter.hasComposition !== undefined) {
+      await this.planControl.enforceFeature(req.user.companyId, 'cost_base');
+    }
     return await this.productService.findAll(filter);
   }
 

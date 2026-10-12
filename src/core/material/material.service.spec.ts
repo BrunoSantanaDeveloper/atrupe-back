@@ -79,6 +79,13 @@ describe('MaterialService', () => {
       companySector: {
         findFirst: jest.fn().mockResolvedValue({ id: 's-3' }),
       },
+      assemblyLine: {
+        findMany: jest.fn().mockResolvedValue([]),
+        delete: jest.fn(),
+        update: jest.fn(),
+      },
+      assemblyLineOption: { deleteMany: jest.fn() },
+      assemblyBlock: { findMany: jest.fn().mockResolvedValue([]) },
     };
     prisma.$executeRaw = jest.fn().mockResolvedValue(1);
     prisma.$transaction = jest.fn(async (arg: any) =>
@@ -716,18 +723,59 @@ describe('MaterialService', () => {
   });
 
   describe('situação', () => {
-    it('inativa e reativa; nenhuma composição é tocada ainda', async () => {
+    it('inativar tira o material das composições, na mesma transação', async () => {
       prisma.material.findFirst.mockResolvedValue(material());
+      prisma.assemblyLine.findMany.mockResolvedValue([
+        // Escolha com outra opção: a escolhida passa para ela
+        {
+          id: 'l-1',
+          selectedOptionId: 'o-1',
+          options: [
+            { id: 'o-1', resourceId: 'material:m-1:v-1' },
+            { id: 'o-2', resourceId: 'material:m-2' },
+          ],
+        },
+        // Só com o material: a linha sai
+        {
+          id: 'l-2',
+          selectedOptionId: 'o-3',
+          options: [{ id: 'o-3', resourceId: 'material:m-1' }],
+        },
+      ]);
 
       const result = await service.toggleStatus('c-1', 'm-1', false, VALUES);
 
+      expect(prisma.assemblyLine.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [
+              { process: { companyId: 'c-1' } },
+              { block: { assembly: { companyId: 'c-1' } } },
+            ],
+          }),
+        }),
+      );
+      expect(prisma.assemblyLine.update).toHaveBeenCalledWith({
+        where: { id: 'l-1' },
+        data: { selectedOptionId: 'o-2' },
+      });
+      expect(prisma.assemblyLine.delete).toHaveBeenCalledWith({
+        where: { id: 'l-2' },
+      });
       expect(prisma.material.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'm-1' },
           data: { active: false },
         }),
       );
-      expect(result).toMatchObject({ active: false, removedFrom: 0 });
+      expect(result).toMatchObject({ active: false, removedFrom: 2 });
+    });
+
+    it('reativar não recoloca nada', async () => {
+      prisma.material.findFirst.mockResolvedValue(material({ active: false }));
+      const result = await service.toggleStatus('c-1', 'm-1', true, VALUES);
+      expect(prisma.assemblyLine.findMany).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ removedFrom: 0 });
     });
 
     it('recusa a situação que já é a atual', async () => {
@@ -746,6 +794,32 @@ describe('MaterialService', () => {
 
       prisma.material.findFirst.mockResolvedValue(material());
       expect(await service.usage('c-1', 'm-1')).toEqual({ data: [] });
+
+      // O processo que usa, e o produto que acompanha esse processo
+      prisma.assemblyLine.findMany.mockResolvedValue([
+        {
+          process: {
+            id: 'p-1',
+            name: 'Impressão',
+            sector: { name: 'Gráfica' },
+          },
+          block: null,
+        },
+      ]);
+      prisma.assemblyBlock.findMany.mockResolvedValue([
+        {
+          name: '',
+          localName: null,
+          process: { name: 'Impressão' },
+          assembly: { product: { id: 'pr-1', name: 'Banner' } },
+        },
+      ]);
+      expect(await service.usage('c-1', 'm-1')).toEqual({
+        data: [
+          { kind: 'PROCESS', id: 'p-1', name: 'Impressão', stage: 'Gráfica' },
+          { kind: 'PRODUCT', id: 'pr-1', name: 'Banner', stage: 'Impressão' },
+        ],
+      });
     });
   });
 });

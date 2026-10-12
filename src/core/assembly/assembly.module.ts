@@ -2,12 +2,15 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from 'nestjs-prisma';
 import { AuthModule } from '../auth/auth.module';
 import { PricingModule } from '../pricing/pricing.module';
+import { ProductModule } from '../product/product.module';
 import { AssemblyResourceController } from './assembly-resource.controller';
 import { AssemblyResourceService } from './assembly-resource.service';
 import { ProcessController } from './process.controller';
 import { ProcessService } from './process.service';
 import { ProductAssemblyController } from './product-assembly.controller';
 import { ProductAssemblyService } from './product-assembly.service';
+import { ProductCatalogController } from './product-catalog.controller';
+import { ProductCatalogService } from './product-catalog.service';
 import { ProductSaleController } from './product-sale.controller';
 import { ProductSaleService } from './product-sale.service';
 
@@ -17,18 +20,20 @@ import { ProductSaleService } from './product-sale.service';
  * servidor (SEG-1).
  */
 @Module({
-  imports: [AuthModule, PrismaModule, PricingModule],
+  imports: [AuthModule, PrismaModule, PricingModule, ProductModule],
   controllers: [
     AssemblyResourceController,
     ProcessController,
     ProductAssemblyController,
     ProductSaleController,
+    ProductCatalogController,
   ],
   providers: [
     AssemblyResourceService,
     ProcessService,
     ProductAssemblyService,
     ProductSaleService,
+    ProductCatalogService,
   ],
   exports: [AssemblyResourceService, ProcessService, ProductAssemblyService],
 })

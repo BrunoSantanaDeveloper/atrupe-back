@@ -108,6 +108,26 @@ function advancedColumns(advanced: MaterialAdvancedDto | null | undefined) {
   };
 }
 
+/** As opções que usam o material, em qualquer variação. */
+const usesMaterial = (materialId: string) =>
+  ({
+    OR: [
+      { resourceId: `material:${materialId}` },
+      { resourceId: { startsWith: `material:${materialId}:` } },
+    ],
+  }) satisfies Prisma.AssemblyLineOptionWhereInput;
+
+const USAGE_BLOCK = {
+  name: true,
+  localName: true,
+  process: { select: { name: true } },
+  assembly: { select: { product: { select: { id: true, name: true } } } },
+} satisfies Prisma.AssemblyBlockSelect;
+
+type UsageBlock = Prisma.AssemblyBlockGetPayload<{
+  select: typeof USAGE_BLOCK;
+}>;
+
 /**
  * Materiais da empresa da sessão. Toda leitura e escrita filtra pela
  * empresa: o id de outra responde como inexistente (404).
@@ -441,19 +461,76 @@ export class MaterialService {
   }
 
   /**
-   * Os produtos e processos cuja composição usa o material. As composições
-   * ainda não existem no servidor (fatia seguinte do módulo 1): até lá,
-   * nenhum material está em uso.
+   * Os produtos e processos cuja composição usa o material (qualquer
+   * variação), com a etapa. O produto cuja etapa acompanha um processo que
+   * usa o material também entra (CP-21).
    */
   async usage(companyId: string, id: string) {
     await this.find(companyId, id);
-    return { data: [] };
+    const lines = await this.prisma.assemblyLine.findMany({
+      where: {
+        options: { some: usesMaterial(id) },
+        OR: [
+          { process: { companyId } },
+          { block: { assembly: { companyId } } },
+        ],
+      },
+      select: {
+        process: {
+          select: { id: true, name: true, sector: { select: { name: true } } },
+        },
+        block: { select: USAGE_BLOCK },
+      },
+    });
+    const processIds = [
+      ...new Set(
+        lines.flatMap((line) => (line.process ? [line.process.id] : [])),
+      ),
+    ];
+    const linked = processIds.length
+      ? await this.prisma.assemblyBlock.findMany({
+          where: { processId: { in: processIds }, assembly: { companyId } },
+          select: USAGE_BLOCK,
+        })
+      : [];
+
+    const data = new Map<
+      string,
+      { kind: 'PRODUCT' | 'PROCESS'; id: string; name: string; stage: string }
+    >();
+    const add = (entry: {
+      kind: 'PRODUCT' | 'PROCESS';
+      id: string;
+      name: string;
+      stage: string;
+    }) => data.set(`${entry.kind}:${entry.id}:${entry.stage}`, entry);
+    const addBlock = (block: UsageBlock) =>
+      add({
+        kind: 'PRODUCT',
+        id: block.assembly.product.id,
+        name: block.assembly.product.name,
+        stage: block.localName || block.process?.name || block.name,
+      });
+    for (const line of lines) {
+      if (line.process) {
+        add({
+          kind: 'PROCESS',
+          id: line.process.id,
+          name: line.process.name,
+          stage: line.process.sector.name,
+        });
+      }
+      if (line.block) addBlock(line.block);
+    }
+    linked.forEach(addBlock);
+    return { data: [...data.values()] };
   }
 
   /**
-   * Inativa ou reativa. Ao inativar, o material sai das composições na mesma
-   * transação; `removedFrom` conta as linhas alteradas. Como `usage`, isso
-   * passa a valer quando as composições existirem no servidor.
+   * Inativa ou reativa. Ao inativar, o material (todas as variações) sai
+   * das opções das linhas de produtos e processos na mesma transação: a
+   * escolhida passa para a próxima opção e a linha que fica sem opção sai.
+   * `removedFrom` conta as linhas alteradas. Reativar não recoloca nada.
    */
   async toggleStatus(
     companyId: string,
@@ -468,12 +545,64 @@ export class MaterialService {
       );
     }
 
-    const updated = await this.prisma.material.update({
-      where: { id },
-      data: { active },
-      include: MATERIAL_INCLUDE,
+    return this.prisma.$transaction(async (tx) => {
+      const removedFrom = active
+        ? 0
+        : await this.removeFromCompositions(tx, companyId, id);
+      const updated = await tx.material.update({
+        where: { id },
+        data: { active },
+        include: MATERIAL_INCLUDE,
+      });
+      return { ...toMaterialResponse(updated, view), removedFrom };
     });
-    return { ...toMaterialResponse(updated, view), removedFrom: 0 };
+  }
+
+  private async removeFromCompositions(
+    tx: Prisma.TransactionClient,
+    companyId: string,
+    materialId: string,
+  ) {
+    const lines = await tx.assemblyLine.findMany({
+      where: {
+        options: { some: usesMaterial(materialId) },
+        OR: [
+          { process: { companyId } },
+          { block: { assembly: { companyId } } },
+        ],
+      },
+      select: {
+        id: true,
+        selectedOptionId: true,
+        options: {
+          orderBy: [{ position: 'asc' }, { id: 'asc' }],
+          select: { id: true, resourceId: true },
+        },
+      },
+    });
+    const isMaterial = (resourceId: string) =>
+      resourceId === `material:${materialId}` ||
+      resourceId.startsWith(`material:${materialId}:`);
+    for (const line of lines) {
+      const rest = line.options.filter((o) => !isMaterial(o.resourceId));
+      if (!rest.length) {
+        await tx.assemblyLine.delete({ where: { id: line.id } });
+        continue;
+      }
+      await tx.assemblyLineOption.deleteMany({
+        where: { lineId: line.id, ...usesMaterial(materialId) },
+      });
+      if (
+        line.selectedOptionId &&
+        !rest.some((option) => option.id === line.selectedOptionId)
+      ) {
+        await tx.assemblyLine.update({
+          where: { id: line.id },
+          data: { selectedOptionId: rest[0].id },
+        });
+      }
+    }
+    return lines.length;
   }
 
   private async find(

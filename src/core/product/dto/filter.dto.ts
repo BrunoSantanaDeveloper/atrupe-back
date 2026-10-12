@@ -1,4 +1,10 @@
-import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ApiProperty } from '@nestjs/swagger';
@@ -69,4 +75,30 @@ export class ProductFilterDTO extends BaseFilterDTO {
   })
   @Transform(({ value }) => value === 'true' || value === true)
   isService?: boolean;
+
+  // Com ou sem composição (CP-17); só com a base de custos
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === 'true' || value === true
+      ? true
+      : value === 'false' || value === false
+        ? false
+        : value,
+  )
+  @IsBoolean()
+  @ApiProperty({
+    description: 'Com composição (true) ou sem (false)',
+    required: false,
+  })
+  hasComposition?: boolean;
+
+  // A lista do orçamento: sem o inativo, o em edição e a parte (IP-14)
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @ApiProperty({
+    description:
+      'Só os vendáveis: ativos e com composição liberada ou sem composição',
+    required: false,
+  })
+  forSale?: boolean;
 }

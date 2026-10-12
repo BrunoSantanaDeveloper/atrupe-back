@@ -9,5 +9,6 @@ import { ProductFiscalModule } from '../fiscal/product-fiscal/product-fiscal.mod
   imports: [AuthModule, PrismaModule, forwardRef(() => ProductFiscalModule)],
   controllers: [ProductController],
   providers: [ProductService],
+  exports: [ProductService],
 })
 export class ProductModule {}
