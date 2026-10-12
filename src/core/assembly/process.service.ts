@@ -864,6 +864,28 @@ export class ProcessService {
     ) {
       bad(FORMULA_IN_USE([row.name]));
     }
+    // A linha que um produto ajustou guarda a fórmula do processo (CP-21)
+    const adjusted = await this.prisma.assemblyLine.findMany({
+      where: {
+        formula: 'CUSTOM',
+        formulaId,
+        block: { processId: id, assembly: { companyId } },
+      },
+      select: {
+        block: {
+          select: {
+            assembly: { select: { product: { select: { name: true } } } },
+          },
+        },
+      },
+    });
+    if (adjusted.length) {
+      bad(
+        FORMULA_IN_USE([
+          ...new Set(adjusted.map((line) => line.block!.assembly.product.name)),
+        ]),
+      );
+    }
     await this.prisma.assemblyFormula.delete({ where: { id: formulaId } });
   }
 

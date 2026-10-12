@@ -19,7 +19,7 @@ const VARIATION_SELECT = {
   id: true,
   name: true,
   unitPrice: true,
-  _count: { select: { priceTiers: true } },
+  _count: { select: { priceTiers: true, assemblies: true } },
 } satisfies Prisma.ProductVariationSelect;
 
 type VariationRow = Prisma.ProductVariationGetPayload<{
@@ -30,8 +30,7 @@ const toVariation = (variation: VariationRow) => ({
   id: variation.id,
   name: variation.name,
   unitPrice: variation.unitPrice,
-  // A composição própria da variação chega com a composição (fatia 3.4)
-  hasOwnAssembly: false,
+  hasOwnAssembly: variation._count.assemblies > 0,
   hasOwnTiers: variation._count.priceTiers > 0,
 });
 

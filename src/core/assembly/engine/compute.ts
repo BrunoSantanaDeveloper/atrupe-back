@@ -33,6 +33,12 @@ const MAX_PART_DEPTH = 3;
 export const round = (value: number, digits = 2) =>
   Math.round(value * 10 ** digits) / 10 ** digits;
 
+/**
+ * Arredonda para cima sem o resto do ponto flutuante: 4,2 ÷ 0,3 dá
+ * 14,000000000000002 e não pode virar 15 ilhoses.
+ */
+export const ceilCount = (value: number) => Math.ceil(round(value, 9));
+
 export const lineQuantity = (
   line: Pick<EngineLine, 'formula' | 'perUnit'>,
   measure: Measure,
@@ -67,7 +73,7 @@ export const lineQuantity = (
       return time === null ? k * n : time * n;
     case 'PER_PERIMETER_DIV_EXTRA':
       // Quantos cabem no perímetro: nunca fração de ilhós
-      return extra > 0 ? Math.ceil(perimeter / extra) * k * n : null;
+      return extra > 0 ? ceilCount(perimeter / extra) * k * n : null;
     case 'TIME_TIMES_EXTRA':
       return time === null ? k * extra : k * time * extra;
     case 'EQUAL_TIME':
@@ -131,7 +137,7 @@ export const sheetYieldOf = (
   const firstFit = fitCount(width, height, pieceW, pieceH, margin, gap);
   const secondFit = fitCount(width, height, pieceH, pieceW, margin, gap);
   const perSheet = Math.max(firstFit, secondFit);
-  const sheets = perSheet ? Math.ceil(pieces / perSheet) : 0;
+  const sheets = perSheet ? ceilCount(pieces / perSheet) : 0;
   return {
     sheetName: option.name,
     firstFit,

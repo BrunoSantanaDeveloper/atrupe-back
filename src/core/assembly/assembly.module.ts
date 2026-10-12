@@ -6,6 +6,8 @@ import { AssemblyResourceController } from './assembly-resource.controller';
 import { AssemblyResourceService } from './assembly-resource.service';
 import { ProcessController } from './process.controller';
 import { ProcessService } from './process.service';
+import { ProductAssemblyController } from './product-assembly.controller';
+import { ProductAssemblyService } from './product-assembly.service';
 
 /**
  * Processos e composição do produto (módulo 1, parte A): o mesmo formato de
@@ -14,8 +16,12 @@ import { ProcessService } from './process.service';
  */
 @Module({
   imports: [AuthModule, PrismaModule, PricingModule],
-  controllers: [AssemblyResourceController, ProcessController],
-  providers: [AssemblyResourceService, ProcessService],
-  exports: [AssemblyResourceService, ProcessService],
+  controllers: [
+    AssemblyResourceController,
+    ProcessController,
+    ProductAssemblyController,
+  ],
+  providers: [AssemblyResourceService, ProcessService, ProductAssemblyService],
+  exports: [AssemblyResourceService, ProcessService, ProductAssemblyService],
 })
 export class AssemblyModule {}

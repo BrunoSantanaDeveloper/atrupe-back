@@ -128,6 +128,17 @@ describe('motor da composição: peças', () => {
     );
   });
 
+  it('a conta que dá inteiro não sobe por resto do ponto flutuante', () => {
+    // 4,2 m de perímetro, um ilhós a cada 0,3 m: 14, não 15
+    expect(
+      lineQuantity(
+        { formula: 'PER_PERIMETER_DIV_EXTRA', perUnit: 1 },
+        { quantity: 1, width: 0.9, height: 1.2 },
+        0.3,
+      ),
+    ).toBe(14);
+  });
+
   it('o vendedor informa: sem conta', () => {
     expect(lineQuantity({ formula: 'SELLER', perUnit: 1 }, measure, 0)).toBe(
       null,
