@@ -17,6 +17,7 @@ import { AiService } from './ai.service';
 import { AiChatRequestDto } from './dto/ai-chat.dto';
 import { UpdateAiModelConfigDto } from './dto/ai-model-config.dto';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
+import { AiChatThrottlerGuard } from './guards/ai-chat-throttler.guard';
 
 @Controller('ai')
 @UseGuards(JwtAuthGuard)
@@ -33,6 +34,7 @@ export class AiController {
   }
 
   @Post('chat')
+  @UseGuards(AiChatThrottlerGuard)
   chat(@Body() dto: AiChatRequestDto, @Req() req: Request) {
     return this.aiService.chat(dto, (req as any).user);
   }
