@@ -1,4 +1,5 @@
 import {
+  INVOICY_COMPANY_ALREADY_REGISTERED_MESSAGE,
   INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE,
   InvoicyHttpService,
 } from './invoicy-http.service';
@@ -182,5 +183,66 @@ describe('InvoicyHttpService response parsing', () => {
         environment: 'HOMOLOGACAO',
       }),
     ).rejects.toThrow(INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE);
+  });
+
+  /**
+   * O CNPJ do onboarding é digitado pelo usuário e é público. Sem exigir o
+   * certificado, quem digitasse o CNPJ de outra empresa já cadastrada no
+   * provedor recebia a chave de acesso dela.
+   */
+  describe('CNPJ que já tem cadastro no provedor', () => {
+    const dados = {
+      cnpj: '12345678000199',
+      razaoSocial: 'Empresa Teste',
+      environment: 'HOMOLOGACAO' as const,
+    };
+
+    function serviceComCadastro() {
+      const service = makeService();
+      service.ensureCertificateMatchesCnpj = jest.fn();
+      service.consultCompany = jest.fn().mockResolvedValue({});
+      service.extractCompanyAccessKey = jest
+        .fn()
+        .mockReturnValue({ accessKey: 'chave-da-empresa' });
+      service.updateCompanyCertificate = jest.fn();
+      return service;
+    }
+
+    it('com a exigência, só entrega a chave junto com o certificado', async () => {
+      const service = serviceComCadastro();
+
+      await expect(
+        service.registerCompany({
+          ...dados,
+          requireCertificateForExisting: true,
+        }),
+      ).rejects.toThrow(INVOICY_COMPANY_ALREADY_REGISTERED_MESSAGE);
+
+      await expect(
+        service.registerCompany({
+          ...dados,
+          certificate: 'pfx-em-base64',
+          certificatePassword: 'senha',
+          requireCertificateForExisting: true,
+        }),
+      ).resolves.toEqual({
+        accessKey: 'chave-da-empresa',
+        environment: 'HOMOLOGACAO',
+      });
+      expect(service.ensureCertificateMatchesCnpj).toHaveBeenCalledWith(
+        'pfx-em-base64',
+        'senha',
+        dados.cnpj,
+      );
+    });
+
+    it('sem a exigência (ativação de emissor já conferido), segue entregando', async () => {
+      const service = serviceComCadastro();
+
+      await expect(service.registerCompany(dados)).resolves.toEqual({
+        accessKey: 'chave-da-empresa',
+        environment: 'HOMOLOGACAO',
+      });
+    });
   });
 });

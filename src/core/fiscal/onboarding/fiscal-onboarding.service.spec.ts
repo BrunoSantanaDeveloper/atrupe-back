@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { FiscalOnboardingService } from './fiscal-onboarding.service';
 import { PrismaService } from 'nestjs-prisma';
 import {
+  INVOICY_COMPANY_ALREADY_REGISTERED_MESSAGE,
   INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE,
   InvoicyHttpService,
 } from '../invoicy/invoicy-http.service';
@@ -202,6 +203,26 @@ describe('FiscalOnboardingService', () => {
           data: expect.objectContaining({ status: 'PENDING_REVIEW' }),
         }),
       );
+    });
+
+    it('CNPJ que já tem cadastro no provedor, sem certificado: não ativa e explica', async () => {
+      mockPrisma.fiscalOnboardingRequest.findFirst.mockResolvedValue(null);
+      mockPrisma.fiscalOnboardingRequest.create.mockResolvedValue({
+        id: 'request-1',
+        companyId: 'company-1',
+      });
+      mockInvoicyHttpService.registerCompany.mockRejectedValue(
+        new BadRequestException(INVOICY_COMPANY_ALREADY_REGISTERED_MESSAGE),
+      );
+
+      const result = await service.submitOnboarding('company-1', dto);
+
+      expect(mockInvoicyHttpService.registerCompany).toHaveBeenCalledWith(
+        expect.objectContaining({ requireCertificateForExisting: true }),
+      );
+      expect(result.status).toBe('PENDING_REVIEW');
+      expect(result.message).toBe(INVOICY_COMPANY_ALREADY_REGISTERED_MESSAGE);
+      expect(mockPrisma.company.update).not.toHaveBeenCalled();
     });
 
     it('should explain when the company is linked to another Invoicy partner', async () => {

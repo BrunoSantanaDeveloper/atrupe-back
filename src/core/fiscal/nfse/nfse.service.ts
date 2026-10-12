@@ -1,4 +1,5 @@
-﻿import {
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
+import {
   Injectable,
   NotFoundException,
   BadRequestException,
@@ -1021,6 +1022,15 @@ export class NfseService {
     companyId: string,
     dto: EmitNfseDto,
   ) {
+    // O orçamento do corpo precisa ser da empresa também quando vem sem a
+    // ordem (com a ordem, a conferência está logo abaixo)
+    await assertBelongsToCompany(
+      this.prisma.quotation,
+      dto.quotationId,
+      { companyId },
+      'Orçamento não encontrado.',
+    );
+
     if (dto.orderId) {
       const linkedOrder = await this.prisma.order.findFirst({
         where: {

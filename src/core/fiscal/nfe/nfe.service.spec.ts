@@ -181,6 +181,11 @@ const mockCancelResponse = [
 ];
 
 // Mock implementations
+// As conferências de empresa (assertBelongsToCompany) acham todos os ids
+// pedidos, salvo quando o teste diz o contrário
+const allFound = () =>
+  jest.fn(async (args: any) => args?.where?.id?.in?.length ?? 0);
+
 const mockPrismaService = {
   $queryRaw: jest.fn().mockResolvedValue([]),
   $executeRaw: jest.fn().mockResolvedValue(1),
@@ -191,7 +196,7 @@ const mockPrismaService = {
     findMany: jest.fn().mockResolvedValue([]),
     findUnique: jest.fn(),
     findFirst: jest.fn(),
-    count: jest.fn(),
+    count: allFound(),
   },
   company: {
     findUnique: jest.fn(),
@@ -230,6 +235,7 @@ const mockPrismaService = {
   quotation: {
     findFirst: jest.fn(),
     findUnique: jest.fn(),
+    count: allFound(),
   },
   client: {
     findFirst: jest.fn(),
@@ -377,7 +383,11 @@ describe('NfeService', () => {
       prisma.nfce.findMany.mockResolvedValue([]);
       prisma.nfce.count.mockResolvedValue(0);
       prisma.order.findMany.mockResolvedValue([]);
-      prisma.order.count.mockResolvedValue(0);
+      // Zero para as listagens e "achei todos" para a conferência de empresa
+      // das ordens do corpo (assertBelongsToCompany)
+      prisma.order.count.mockImplementation(
+        async (args: any) => args?.where?.id?.in?.length ?? 0,
+      );
       // clearAllMocks preserva implementações, então um teste que troque o
       // ambiente do emissor vazaria para os seguintes sem este reset.
       mockFiscalCredentialResolver.resolveEnvironmentFromConfig.mockReturnValue(
@@ -1367,6 +1377,40 @@ describe('NfeService', () => {
         chaveAcesso: mockInvoicyResponse[0].Documentos[0].DocChaAcesso,
       });
     });
+
+    it.each([
+      [
+        'ordem',
+        { orderId: 'ordem-de-outra-empresa' },
+        'order',
+        'Ordem de serviço não encontrada.',
+      ],
+      [
+        'orçamento',
+        { quotationId: 'orcamento-de-outra-empresa' },
+        'quotation',
+        'Orçamento não encontrado.',
+      ],
+    ])(
+      '%s de outra empresa no corpo: 404 antes de reservar número',
+      async (_label, extra, model, message) => {
+        prisma[model].count.mockResolvedValueOnce(0);
+
+        await expect(
+          service.emit(mockCompanyId, {
+            ...mockEmitDto,
+            orderId: undefined,
+            orderIds: undefined,
+            quotationId: undefined,
+            ...extra,
+          } as any),
+        ).rejects.toThrow(new NotFoundException(message));
+        expect(
+          mockFiscalCredentialResolver.reserveNfeNumber,
+        ).not.toHaveBeenCalled();
+        expect(prisma.nfe.create).not.toHaveBeenCalled();
+      },
+    );
 
     it('should emit NFe successfully', async () => {
       const result = await service.emit(mockCompanyId, mockEmitDto);

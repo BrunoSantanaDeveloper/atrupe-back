@@ -17,6 +17,9 @@ import { validatePfxCertificateCnpj } from '../utils/certificate-parser';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { FiscalEnvironment } from '@prisma/client';
 
+export const INVOICY_COMPANY_ALREADY_REGISTERED_MESSAGE =
+  'Este CNPJ já tem cadastro no provedor fiscal. Para ativar agora, envie junto o certificado digital A1 do CNPJ; sem ele, a equipe Atrupe conclui a configuração.';
+
 export const INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE =
   'O CNPJ ja esta cadastrado no Invoicy, mas nao esta vinculado à Atrupe. Entre em contato com o suporte para solicitar a transferencia ou liberacao da empresa junto a Migrate/Invoicy.';
 
@@ -1146,6 +1149,13 @@ export class InvoicyHttpService {
     certificateType?: string;
     environment?: InvoicyEnvironment;
     signal?: AbortSignal;
+    /**
+     * Só entrega a chave de um CNPJ já cadastrado no provedor com o
+     * certificado dele. Usado onde o CNPJ é digitado pelo usuário (o
+     * onboarding): sem essa prova de posse, o CNPJ de outra empresa trazia
+     * a chave dela.
+     */
+    requireCertificateForExisting?: boolean;
   }): Promise<{
     accessKey: string;
     cryptoKey?: string;
@@ -1174,6 +1184,11 @@ export class InvoicyHttpService {
       );
       const existingCredentials = this.extractCompanyAccessKey(existing);
       if (existingCredentials) {
+        if (data.requireCertificateForExisting && !data.certificate) {
+          throw new BadRequestException(
+            INVOICY_COMPANY_ALREADY_REGISTERED_MESSAGE,
+          );
+        }
         this.logger.log(
           'Company already registered in Invoicy, returning existing key',
         );

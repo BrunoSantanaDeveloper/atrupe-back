@@ -1,3 +1,4 @@
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 import {
   Injectable,
   NotFoundException,
@@ -227,6 +228,15 @@ export class NfceService {
     companyId: string,
     dto: EmitNfceDto,
   ) {
+    // O orçamento do corpo precisa ser da empresa também quando vem sem a
+    // ordem (com a ordem, a conferência está em assertOrderCanReceiveNfce)
+    await assertBelongsToCompany(
+      this.prisma.quotation,
+      dto.quotationId,
+      { companyId },
+      'Orçamento não encontrado.',
+    );
+
     // Buscar configuração do Invoicy
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
@@ -341,8 +351,9 @@ export class NfceService {
 
     // Buscar dados fiscais dos produtos (antes da transação)
     const productIds = dto.itens.map((item) => item.productId).filter(Boolean);
+    // Só o cadastro fiscal dos produtos da empresa (o productId vem do corpo)
     const fiscalDataList = await this.prisma.productFiscalData.findMany({
-      where: { productId: { in: productIds } },
+      where: { productId: { in: productIds }, product: { companyId } },
     });
     const fiscalDataMap = new Map(
       fiscalDataList.map((fd) => [fd.productId, fd]),

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import {
+  INVOICY_COMPANY_ALREADY_REGISTERED_MESSAGE,
   INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE,
   InvoicyHttpService,
 } from '../invoicy/invoicy-http.service';
@@ -112,6 +113,9 @@ export class FiscalOnboardingService {
     ) {
       return INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE;
     }
+    if (errorMessage.includes(INVOICY_COMPANY_ALREADY_REGISTERED_MESSAGE)) {
+      return INVOICY_COMPANY_ALREADY_REGISTERED_MESSAGE;
+    }
 
     return 'Dados recebidos com sucesso. A configuracao sera concluida pela equipe Atrupe em breve.';
   }
@@ -136,6 +140,9 @@ export class FiscalOnboardingService {
       certificatePassword: dto.certificatePassword,
       certificateType: dto.certificateType,
       environment: 'HOMOLOGACAO',
+      // O CNPJ é digitado pelo usuário: a chave de um CNPJ já cadastrado
+      // só vem com o certificado dele
+      requireCertificateForExisting: true,
     });
 
     // 2. Save accessKey on the Company record + create InvoicyConfig
@@ -575,6 +582,9 @@ export class FiscalOnboardingService {
         cidade: request.cidade,
         complemento: request.complemento,
         environment: 'HOMOLOGACAO',
+        // Acionado pela consulta de situação do usuário, sem certificado:
+        // o CNPJ que já tem cadastro no provedor espera a equipe aprovar
+        requireCertificateForExisting: true,
       });
 
       await this.activateModule(

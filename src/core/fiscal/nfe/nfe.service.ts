@@ -1,4 +1,5 @@
-﻿import {
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
+import {
   Injectable,
   NotFoundException,
   BadRequestException,
@@ -1878,6 +1879,22 @@ export class NfeService {
     companyId: string,
     dto: EmitNfeDto,
   ): Promise<NfeEmissionContext> {
+    // A ordem e o orçamento do corpo precisam ser da empresa. Antes, a nota
+    // ficava ligada à venda de outra empresa: os dados dela voltavam na
+    // consulta da nota, e ela ficava impedida de emitir para a própria O.S.
+    await assertBelongsToCompany(
+      this.prisma.order,
+      [dto.orderId, ...(dto.orderIds || [])],
+      { quotation: { companyId } },
+      'Ordem de serviço não encontrada.',
+    );
+    await assertBelongsToCompany(
+      this.prisma.quotation,
+      dto.quotationId,
+      { companyId },
+      'Orçamento não encontrado.',
+    );
+
     // Funil final da emissao: cobre tambem `emit-full`, que recebe o orderId
     // pronto do frontend sem passar pelos preparadores.
     await this.assertOrdersNotCanceled(companyId, [
@@ -2437,11 +2454,16 @@ export class NfeService {
        */
       const regimeNormal = isRegimeNormal(config.emitCrt);
       const impostosCalculados = regimeNormal
-        ? await this.calcularImpostosRegimeNormal(dto, config, {
-            ufOrigem: config.company.address.state,
-            ufDestino: destUfFromCep,
-            interestadual: isInterestadual,
-          })
+        ? await this.calcularImpostosRegimeNormal(
+            dto,
+            config,
+            {
+              ufOrigem: config.company.address.state,
+              ufDestino: destUfFromCep,
+              interestadual: isInterestadual,
+            },
+            companyId,
+          )
         : null;
 
       if (impostosCalculados?.bloqueios.length) {
@@ -4637,14 +4659,18 @@ export class NfeService {
     dto: EmitNfeDto,
     config: any,
     operacao: { ufOrigem: string; ufDestino: string; interestadual: boolean },
+    companyId: string,
   ): Promise<ImpostosNfeMontados> {
     const productIds = [
       ...new Set(dto.items.map((i) => i.productId).filter(Boolean)),
     ] as string[];
 
+    // Só o cadastro fiscal dos produtos da empresa: o productId do item vem
+    // do corpo e pode ser código livre (nota avulsa), então filtra em vez
+    // de recusar
     const fiscais = productIds.length
       ? await this.prisma.productFiscalData.findMany({
-          where: { productId: { in: productIds } },
+          where: { productId: { in: productIds }, product: { companyId } },
         })
       : [];
     const porProduto = new Map(fiscais.map((f) => [f.productId, f]));
@@ -4656,6 +4682,7 @@ export class NfeService {
           where: {
             productId: { in: productIds },
             ufDestino: operacao.ufDestino,
+            product: { companyId },
           },
         })
       : [];

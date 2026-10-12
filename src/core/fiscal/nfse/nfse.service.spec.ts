@@ -119,7 +119,11 @@ const mockInvoicyResponse = [
 const mockPrismaService = {
   order: { findUnique: jest.fn(), findFirst: jest.fn() },
   company: { findUnique: jest.fn() },
-  quotation: { findFirst: jest.fn(), findMany: jest.fn() },
+  quotation: {
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    count: jest.fn(async (args: any) => args?.where?.id?.in?.length ?? 0),
+  },
   nfse: {
     findMany: jest.fn(),
     findUnique: jest.fn(),
@@ -702,6 +706,28 @@ describe('NfseService', () => {
         'config-1',
         'HOMOLOGACAO',
       );
+    });
+
+    it('orçamento de outra empresa no corpo, sem a ordem: 404 antes de emitir', async () => {
+      prisma.quotation.count.mockResolvedValueOnce(0);
+
+      await expect(
+        service.emit(mockCompanyId, {
+          quotationId: 'orcamento-de-outra-empresa',
+          codigoServico: '1.05',
+          codigoMunicipio: '4314902',
+          discriminacao: 'teste',
+          valorServicos: 10,
+          naturezaOperacao: 1,
+        } as any),
+      ).rejects.toThrow(new NotFoundException('Orçamento não encontrado.'));
+      expect(prisma.quotation.count).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['orcamento-de-outra-empresa'] },
+          companyId: mockCompanyId,
+        },
+      });
+      expect(invoicyApiService.emitNfse).not.toHaveBeenCalled();
     });
 
     it('arredonda valores monetários antes de enviar ao Invoicy', async () => {

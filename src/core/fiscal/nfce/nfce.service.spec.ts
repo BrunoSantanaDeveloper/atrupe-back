@@ -50,9 +50,15 @@ const mockInvoicyResponse = {
   },
 };
 
+// As conferências de empresa (assertBelongsToCompany) acham todos os ids
+// pedidos, salvo quando o teste diz o contrário
+const allFound = () =>
+  jest.fn(async (args: any) => args?.where?.id?.in?.length ?? 0);
+
 const mockPrismaService = {
   company: { findUnique: jest.fn() },
   order: { findFirst: jest.fn() },
+  quotation: { count: allFound() },
   nfce: {
     findMany: jest.fn(),
     findFirst: jest.fn(),
@@ -454,6 +460,37 @@ describe('NfceService', () => {
 
       expect(result.status).toBe(NfceStatus.AUTHORIZED);
       expect(result.chaveAcesso).toBeDefined();
+    });
+
+    it('orçamento de outra empresa no corpo, sem a ordem: 404 antes de emitir', async () => {
+      prisma.quotation.count.mockResolvedValueOnce(0);
+
+      await expect(
+        service.emit(mockCompanyId, {
+          quotationId: 'orcamento-de-outra-empresa',
+          naturezaOperacao: 'Venda ao consumidor final',
+          itens: [
+            {
+              productId: '1',
+              codigo: '001',
+              descricao: 'Produto',
+              ncm: '12345678',
+              cfop: '5102',
+              unidade: 'UN',
+              quantidade: 1,
+              valorUnitario: 100,
+            },
+          ],
+          pagamentos: [{ tipo: '01', valor: 100 }],
+        } as any),
+      ).rejects.toThrow(new NotFoundException('Orçamento não encontrado.'));
+      expect(prisma.quotation.count).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['orcamento-de-outra-empresa'] },
+          companyId: mockCompanyId,
+        },
+      });
+      expect(prisma.nfce.create).not.toHaveBeenCalled();
     });
 
     it('should persist orderId when emitting from an order', async () => {
