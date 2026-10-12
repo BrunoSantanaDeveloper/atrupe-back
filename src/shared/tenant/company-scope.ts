@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 type CountDelegate = { count(args: { where: any }): Promise<number> };
 
@@ -13,6 +13,11 @@ type MaybeIds = string | null | undefined | (string | null | undefined)[];
  * empresa no model: `{ companyId }` quando ele tem a coluna, ou pela relação
  * (`{ client: { companyId } }`). Ids vazios são ignorados; id de outra
  * empresa responde 404, como um id que não existe.
+ *
+ * Valor presente que não é texto é recusado (400): um objeto como
+ * `{ "set": "<id>" }` passava pelo campo sem validação de tipo, era
+ * ignorado aqui e o Prisma o aceitava no update, gravando o id de outra
+ * empresa.
  */
 export async function assertBelongsToCompany(
   delegate: CountDelegate,
@@ -20,6 +25,15 @@ export async function assertBelongsToCompany(
   scope: Record<string, unknown>,
   notFoundMessage: string,
 ): Promise<void> {
+  const values: unknown[] = Array.isArray(ids) ? ids : [ids];
+  if (
+    values.some(
+      (id) => id !== null && id !== undefined && typeof id !== 'string',
+    )
+  ) {
+    throw new BadRequestException('Identificador inválido.');
+  }
+
   const list = Array.from(
     new Set(
       (Array.isArray(ids) ? ids : [ids]).filter(

@@ -7,6 +7,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { UpdateProductionStageDto } from './dto/update-production-stage.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 const STAGE_NOT_FOUND = 'Etapa de produção nao encontrada';
 
@@ -55,6 +56,14 @@ export class ProductionStageService {
     companyId: string,
   ) {
     const productionStage = await this.findOne(id, companyId);
+    // O setor da etapa (stageId) precisa ser da empresa: antes, o de outra
+    // empresa era gravado e aparecia, com nome e ícone, na agenda
+    await assertBelongsToCompany(
+      this.prisma.companySector,
+      updateProductionStageDto.stageId,
+      { companyId },
+      'Setor não encontrado.',
+    );
 
     updateProductionStageDto.prevStatus = productionStage.status;
 

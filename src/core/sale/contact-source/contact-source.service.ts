@@ -74,7 +74,11 @@ export class ContactSourceService {
     const source = await this.prisma.contactSource.findUnique({
       where: { id },
     });
-    if (!source) throw new NotFoundException('Origem não encontrada.');
+    // Só a origem global ou a da própria empresa: ocultar a origem privada
+    // de outra empresa gravava um vínculo que impedia a dona de excluí-la
+    if (!source || (source.companyId && source.companyId !== companyId)) {
+      throw new NotFoundException('Origem não encontrada.');
+    }
     return this.prisma.companyHiddenContactSource.upsert({
       where: { companyId_contactSourceId: { companyId, contactSourceId: id } },
       create: { companyId, contactSourceId: id },

@@ -26,6 +26,7 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
         findUnique: jest.fn().mockResolvedValue(null),
         update: jest.fn(),
       },
+      companySector: { count: jest.fn().mockResolvedValue(1) },
     };
     service = new ProductionStageService(prisma);
   });
@@ -53,6 +54,23 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
     });
     expect(prisma.productionStage.update).not.toHaveBeenCalled();
     expect(prisma.productionStage.delete).not.toHaveBeenCalled();
+  });
+
+  it('o setor de outra empresa na etapa responde 404, sem gravar', async () => {
+    prisma.productionStage.findFirst.mockResolvedValue({
+      id: 'st-1',
+      status: 'PENDING',
+      scheduleId: 'ag-1',
+    });
+    prisma.companySector.count.mockResolvedValue(0);
+
+    await expect(
+      service.update('st-1', { stageId: 'setor-b' } as any, 'c-1'),
+    ).rejects.toThrow(new NotFoundException('Setor não encontrado.'));
+    expect(prisma.companySector.count).toHaveBeenCalledWith({
+      where: { id: { in: ['setor-b'] }, companyId: 'c-1' },
+    });
+    expect(prisma.productionStage.update).not.toHaveBeenCalled();
   });
 
   it('alterar a etapa da empresa passa e recalcula a agenda dela', async () => {

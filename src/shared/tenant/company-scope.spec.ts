@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { assertBelongsToCompany } from './company-scope';
 
 describe('assertBelongsToCompany', () => {
@@ -43,6 +43,16 @@ describe('assertBelongsToCompany', () => {
       where: { id: { in: ['x'] }, client: { companyId: 'c-1' } },
     });
   });
+
+  it.each([{ set: 'id-de-outra-empresa' }, ['x', { set: 'y' }], 42])(
+    'valor presente que não é texto (%p) é recusado, sem consultar',
+    async (ids) => {
+      await expect(
+        assertBelongsToCompany(delegate, ids as any, {}, 'x'),
+      ).rejects.toThrow(new BadRequestException('Identificador inválido.'));
+      expect(delegate.count).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([undefined, null, '', [], [null, '']])(
     'sem id (%p) não consulta',
