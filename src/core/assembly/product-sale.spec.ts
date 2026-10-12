@@ -236,6 +236,13 @@ describe('ProductSaleService', () => {
     ).rejects.toThrow(new NotFoundException('Opção não encontrada'));
   });
 
+  it('vendido por unidade: a quantidade informada na medida padrão (AP-5)', async () => {
+    const report = await service.saleComposition('c-1', 'pr-1', {
+      measure: { quantity: 3, width: 0, height: 0 },
+    });
+    expect(report.measure).toEqual({ quantity: 3, width: 900, height: 1200 });
+  });
+
   it('o item do orçamento guarda as escolhas, o resumo e o retrato com custo (ORC-10)', async () => {
     const { composition, snapshot } = await service.itemComposition(
       'c-1',
@@ -247,9 +254,14 @@ describe('ProductSaleService', () => {
           { blockId: 'b-1', lineId: 'Material', optionId: 'Material-o1' },
         ],
         optionals: [{ blockId: 'b-1', lineId: 'Cordão', included: true }],
+        times: [{ blockId: 'b-1', minutes: 90 }],
       },
     );
-    expect(composition.summary).toEqual(['Lona', 'Cordão']);
+    expect(composition.summary).toEqual([
+      'Tempo · Impressão: 1h30',
+      'Lona',
+      'Cordão',
+    ]);
     // A medida que faltou vem do padrão do produto (900 × 1200 mm)
     expect(snapshot.measure).toEqual({ quantity: 2, width: 900, height: 1200 });
     const stage = snapshot.stages[0];

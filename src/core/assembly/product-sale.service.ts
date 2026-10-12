@@ -211,10 +211,21 @@ export class ProductSaleService {
       dto.variationId ?? undefined,
     );
     if (!assembly?.blocks.length) bad('Este produto não tem composição');
-    if (!dto.measure && this.requiresMeasure(product)) {
+    if (
+      this.requiresMeasure(product) &&
+      !(dto.measure?.width && dto.measure?.height)
+    ) {
       bad('Informe a medida do item');
     }
-    const measure: Measure = dto.measure ?? productPricing(product).measure;
+    // Vendido por unidade, vale a quantidade informada na medida padrão
+    const standard = productPricing(product).measure;
+    const measure: Measure = dto.measure
+      ? {
+          quantity: dto.measure.quantity,
+          width: dto.measure.width || standard.width,
+          height: dto.measure.height || standard.height,
+        }
+      : standard;
     const engine = builder.build(product, assembly, measure);
     this.applyChoices(engine, dto);
 
@@ -378,8 +389,28 @@ export class ProductSaleService {
       lines
         .get(`${blockId}:${lineId}`)
         ?.options.find((option) => option.id === optionId)?.name;
+    const blockOf = (blockId: string) =>
+      engine.blocks.find((block) => block.id === blockId);
+    // O campo do produto, ou o campo extra legado da etapa ("block:<id>")
+    const extraName = (fieldId: string) => {
+      if (fieldId.startsWith('block:')) {
+        const block = blockOf(fieldId.slice('block:'.length));
+        return block ? rulesOf(block).extraFieldName || stageOf(block) : null;
+      }
+      return engine.fields?.find((field) => field.id === fieldId)?.name;
+    };
     // O resumo do que foi escolhido, para a lista de itens (IP-36)
     const summary = [
+      ...(choices.times ?? []).map((item) => {
+        const block = blockOf(item.blockId);
+        return block
+          ? `Tempo · ${stageOf(block)}: ${minutesText(item.minutes)}`
+          : null;
+      }),
+      ...(choices.extras ?? []).map((item) => {
+        const name = extraName(item.fieldId);
+        return name ? `${name}: ${numberText(item.value)}` : null;
+      }),
       ...(choices.choices ?? []).map((item) =>
         optionName(item.blockId, item.lineId, item.optionId),
       ),
