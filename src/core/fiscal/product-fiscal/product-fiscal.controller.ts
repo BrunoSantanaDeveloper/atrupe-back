@@ -13,6 +13,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import { PermissionsGuard } from '../../auth/abac/permissions.guard';
 import { HasPermission } from '../../auth/abac/has-permission.decorator';
+import { HasAnyPermission } from '../../auth/abac/has-any-permission.decorator';
 import { FeatureGuard } from '../../plan/guards/feature.guard';
 import { RequiresFeature } from '../../plan/decorators/requires-feature.decorator';
 import { ProductFiscalService } from './product-fiscal.service';
@@ -62,7 +63,12 @@ export class ProductFiscalController {
   }
 
   @Delete(':productId/st-rules/:ufDestino')
-  @HasPermission('delete', 'nota_fiscal:config')
+  // A regra de ST é linha de dentro da configuração fiscal do produto: edit,
+  // pela regra do time (salvar a regra já pede edit); delete também vale
+  @HasAnyPermission(
+    { action: 'edit', resource: 'nota_fiscal:config' },
+    { action: 'delete', resource: 'nota_fiscal:config' },
+  )
   @ApiOperation({ summary: 'Remover a regra de ST de uma UF' })
   async removeStRule(
     @Param('productId') productId: string,
