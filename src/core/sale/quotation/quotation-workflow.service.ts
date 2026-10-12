@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
@@ -22,6 +23,82 @@ import {
   ProductionStageJson,
 } from './quotation-financial.types';
 import { calculateFinalValue } from './quotation.utils';
+import { PlanControlService } from '../../plan/plan-control.service';
+
+export const ALREADY_APPROVED_MESSAGE = 'Este orçamento já está aprovado.';
+
+/** O que a aprovação lê do orçamento para a O.S., a agenda e o financeiro. */
+const APPROVAL_INCLUDE = Prisma.validator<Prisma.QuotationInclude>()({
+  deliveryInfo: {
+    select: {
+      id: true,
+      estimatedDate: true,
+      daysAfterApproval: true,
+      cost: true,
+      value: true,
+      supplierId: true,
+      deliveryType: true,
+    },
+  },
+  quotationPayment: {
+    select: {
+      billing: true,
+      totalValue: true,
+      finalValue: true,
+      discountTotal: true,
+      quotationInstallment: true,
+      commission: true,
+      downPayment: true,
+      downPaymentDueDate: true,
+      downPaymentAdditionalFee: true,
+      description: true,
+      downPaymentConditionId: true,
+      paymentCondition: {
+        select: {
+          id: true,
+          generateInvoice: true,
+          invoiceType: true,
+        },
+      },
+    },
+  },
+  quotationProduct: {
+    include: {
+      product: true,
+      items: true,
+    },
+  },
+  client: true,
+  series: {
+    select: {
+      id: true,
+      title: true,
+      code: true,
+      productionStatus: true,
+    },
+  },
+});
+
+type ApprovalQuotation = Prisma.QuotationGetPayload<{
+  include: typeof APPROVAL_INCLUDE;
+}>;
+
+/** Quanto existe de cada passo da aprovação; o reprocesso compara antes e depois. */
+type ApprovalState = {
+  order: number;
+  deliverySchedule: number;
+  receivables: number;
+  payables: number;
+  productionStages: number;
+};
+
+export type ApprovalReprocessResult = {
+  orderId: string;
+  /** Os passos que o reprocesso completou; vazio quando nada faltava. */
+  created: (keyof ApprovalState)[];
+  /** Os passos de depois da aprovação que falharam de novo. */
+  failed: { step: string; message: string }[];
+};
 
 /**
  * QuotationWorkflowService
@@ -35,6 +112,7 @@ export class QuotationWorkflowService {
     private prisma: PrismaService,
     private financialService: QuotationFinancialService,
     private deliveryScheduleService: DeliveryScheduleService,
+    private planControl: PlanControlService,
   ) {}
 
   /**
@@ -96,41 +174,26 @@ export class QuotationWorkflowService {
   // =====================================================
 
   /**
-   * Verifica se a empresa está em trial ou plano START
+   * A agenda da venda aprovada nasce em produção só para quem vê as abas de
+   * produção (`delivery_production_tabs`); sem a chave (o Start e o teste
+   * gratuito, na composição padrão), a venda vai direto para a entrega. A
+   * regra olhava o nome do plano, e um Start com a chave de cortesia pulava a
+   * produção mesmo assim.
+   *
+   * Sem assinatura (empresa migrada ainda sem plano) ou com erro na leitura,
+   * nasce em produção, como antes.
    */
-  private async checkTrialStatus(companyId: string): Promise<boolean> {
+  private async startsInProduction(companyId: string): Promise<boolean> {
     try {
-      const companyData = await this.prisma.company.findUnique({
-        where: { id: companyId },
-        select: {
-          Subscription: {
-            where: { status: 'ACTIVE' },
-            take: 1,
-            select: {
-              plan: { select: { planType: true } },
-              nextDueDate: true,
-            },
-          },
-        },
-      });
-
-      const subscription = companyData?.Subscription?.[0];
-      if (!subscription) return false;
-
-      if (subscription.plan?.planType === 'START') return true;
-
-      if (
-        subscription.plan?.planType === 'TRIAL' &&
-        subscription.nextDueDate &&
-        subscription.nextDueDate > new Date()
-      ) {
-        return true;
-      }
-
-      return false;
+      const planInfo = await this.planControl.getCompanyPlanInfo(companyId);
+      if (!planInfo) return true;
+      return !!planInfo.features['delivery_production_tabs'];
     } catch (error) {
-      this.logger.error('Error checking trial status:', error.stack);
-      return false;
+      this.logger.error(
+        'Error checking delivery production tabs feature:',
+        error.stack,
+      );
+      return true;
     }
   }
 
@@ -208,31 +271,44 @@ export class QuotationWorkflowService {
   }
 
   /**
-   * Cria o agendamento de entrega para o orçamento aprovado
+   * Cria o agendamento de entrega para o orçamento aprovado. A venda que já
+   * tem agenda fica como está: o reprocesso passa por aqui de novo.
    */
   private async createDeliveryScheduleForApproval(
     quotation: {
       id: string;
       companyId: string;
-      approvedAt: Date;
+      approvedAt: Date | null;
       deliveryInfo: {
         id: string;
         daysAfterApproval: number | null;
       } | null;
     },
     order: Order,
-    isTrial: boolean,
+    startsInProduction: boolean,
     prisma: Prisma.TransactionClient,
   ): Promise<void> {
     if (!quotation.deliveryInfo) return;
 
-    const deliveryStatus = isTrial ? 'DELIVERING' : 'IN_PRODUCTION';
+    const existing = await prisma.deliverySchedule.findFirst({
+      where: {
+        OR: [
+          { quotationId: quotation.id },
+          { deliveryInfoId: quotation.deliveryInfo.id },
+        ],
+      },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    const deliveryStatus = startsInProduction ? 'IN_PRODUCTION' : 'DELIVERING';
+    const approvedAt = quotation.approvedAt ?? new Date();
 
     const estimatedDate = quotation.deliveryInfo.daysAfterApproval
-      ? add(quotation.approvedAt, {
+      ? add(approvedAt, {
           days: quotation.deliveryInfo.daysAfterApproval,
         })
-      : quotation.approvedAt;
+      : approvedAt;
 
     await prisma.deliveryInfo.update({
       where: { id: quotation.deliveryInfo.id },
@@ -291,126 +367,89 @@ export class QuotationWorkflowService {
   // =====================================================
 
   /**
-   * Aprova um orçamento e cria pedido
+   * Aprova um orçamento e cria a O.S., em três passos:
+   * 1. confere antes de gravar: orçamento ainda não aprovado, informações de
+   *    entrega e cadastro do cliente;
+   * 2. numa transação só, APPROVED, O.S., agenda e financeiro: uma falha no
+   *    financeiro (venda sem parcelas, por exemplo) desfaz a aprovação
+   *    inteira, em vez de deixar a venda aprovada pela metade;
+   * 3. depois da transação, o que o reprocesso (`reprocessApproval`) refaz:
+   *    hoje, as etapas de produção da agenda.
    */
   async approve(
     quotationId: string,
     userId?: string,
     approvedAt?: Date,
   ): Promise<Order> {
-    const quotationBase = await this.prisma.quotation.findUnique({
+    const current = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
-      select: { companyId: true },
+      select: {
+        companyId: true,
+        status: true,
+        client: { select: { status: true } },
+        deliveryInfo: { select: { id: true } },
+      },
     });
 
-    if (!quotationBase) {
+    if (!current) {
       throw new NotFoundException(
         `Quotation with ID '${quotationId}' not found.`,
       );
     }
+    if (current.status === QuotationStatus.APPROVED) {
+      throw new ConflictException(ALREADY_APPROVED_MESSAGE);
+    }
+    if (!current.deliveryInfo) {
+      throw new BadRequestException(
+        'Informações de entrega ausentes na venda.',
+      );
+    }
+    await this.validateClientForApproval(current.client, userId, this.prisma);
 
-    const isTrial = await this.checkTrialStatus(quotationBase.companyId);
+    const startsInProduction = await this.startsInProduction(current.companyId);
 
-    // Core TX: status update + order creation (fast, critical)
     const { quotation, order } = await this.prisma.$transaction(
       async (prisma) => {
-        const quotation = await prisma.quotation.update({
-          where: { id: quotationId },
+        // Só uma aprovação passa: com dois cliques, a segunda espera a
+        // primeira terminar e encontra o orçamento já aprovado
+        const claimed = await prisma.quotation.updateMany({
+          where: {
+            id: quotationId,
+            status: { not: QuotationStatus.APPROVED },
+          },
           data: {
             status: QuotationStatus.APPROVED,
             approvedAt: approvedAt ?? new Date(),
           },
-          include: {
-            deliveryInfo: {
-              select: {
-                id: true,
-                estimatedDate: true,
-                daysAfterApproval: true,
-                cost: true,
-                value: true,
-                supplierId: true,
-                deliveryType: true,
-              },
-            },
-            quotationPayment: {
-              select: {
-                billing: true,
-                totalValue: true,
-                finalValue: true,
-                discountTotal: true,
-                quotationInstallment: true,
-                commission: true,
-                downPayment: true,
-                downPaymentDueDate: true,
-                downPaymentAdditionalFee: true,
-                description: true,
-                downPaymentConditionId: true,
-                paymentCondition: {
-                  select: {
-                    id: true,
-                    generateInvoice: true,
-                    invoiceType: true,
-                  },
-                },
-              },
-            },
-            quotationProduct: {
-              include: {
-                product: true,
-                items: true,
-              },
-            },
-            client: true,
-            series: {
-              select: {
-                id: true,
-                title: true,
-                code: true,
-                productionStatus: true,
-              },
-            },
-          },
         });
-
-        await this.validateClientForApproval(quotation.client, userId, prisma);
-
-        if (!quotation.deliveryInfo) {
-          throw new Error('Informações de entrega ausentes na venda.');
+        if (claimed.count === 0) {
+          throw new ConflictException(ALREADY_APPROVED_MESSAGE);
         }
 
-        const order = await this.createOrUpdateOrder(quotation, prisma);
-
+        const quotation = await prisma.quotation.findUniqueOrThrow({
+          where: { id: quotationId },
+          include: APPROVAL_INCLUDE,
+        });
+        const order = await this.completeApproval(
+          quotation,
+          startsInProduction,
+          prisma,
+        );
         return { quotation, order };
       },
-      { timeout: 5000 },
+      { timeout: 20000 },
     );
 
+    // Fora da transação: uma falha aqui não desfaz a venda, e o reprocesso
+    // cria as etapas que faltarem
     try {
-      // Side-effects TX: delivery schedule + financials (separate, longer timeout)
-      await this.prisma.$transaction(
-        async (prisma) => {
-          await this.createDeliveryScheduleForApproval(
-            quotation as any,
-            order,
-            isTrial,
-            prisma,
-          );
-
-          await this.handleApprovalFinancials(quotationId, quotation, prisma);
-        },
-        { timeout: 15000 },
-      );
+      await this.ensureProductionStages(quotationId);
     } catch (error) {
       this.logger.error(
-        'Error in approval side-effects (delivery/financials):',
+        `Etapas de produção não criadas na aprovação do orçamento ${quotationId} (o reprocesso refaz):`,
         error.stack,
       );
-      // Side-effects failed but core approval succeeded — log and rethrow
-      throw error;
     }
-
-    // Post-TX: production stages (non-transactional, idempotent)
-    await this.createProductionStages(order.quotationId);
 
     // History: register approval
     if (userId) {
@@ -433,8 +472,7 @@ export class QuotationWorkflowService {
     }
 
     // Signal: generate invoice if payment condition demands it
-    const paymentCondition = (quotation as any).quotationPayment
-      ?.paymentCondition;
+    const paymentCondition = quotation.quotationPayment?.paymentCondition;
     if (paymentCondition?.generateInvoice && paymentCondition?.invoiceType) {
       this.logger.log(
         `Quotation ${quotationId} approved with generateInvoice=${paymentCondition.invoiceType}. ` +
@@ -453,6 +491,121 @@ export class QuotationWorkflowService {
     }
 
     return order;
+  }
+
+  /**
+   * O.S., agenda e financeiro da venda aprovada. Cada passo confere o que já
+   * existe: o reprocesso completa uma aprovação antiga sem duplicar nada.
+   */
+  private async completeApproval(
+    quotation: ApprovalQuotation,
+    startsInProduction: boolean,
+    prisma: Prisma.TransactionClient,
+  ): Promise<Order> {
+    const order = await this.createOrUpdateOrder(quotation, prisma);
+    await this.createDeliveryScheduleForApproval(
+      quotation,
+      order,
+      startsInProduction,
+      prisma,
+    );
+    await this.handleApprovalFinancials(quotation.id, quotation, prisma);
+    return order;
+  }
+
+  /**
+   * Completa a aprovação de uma venda já aprovada: O.S., agenda, financeiro e
+   * etapas de produção que faltarem. Não muda status nem data de aprovação, e
+   * rodar de novo não duplica nada. Serve para as vendas aprovadas pela
+   * metade antes da transação única e para as etapas que falharam depois da
+   * aprovação.
+   */
+  async reprocessApproval(
+    quotationId: string,
+    userId?: string,
+  ): Promise<ApprovalReprocessResult> {
+    const current = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      select: {
+        companyId: true,
+        status: true,
+        order: { select: { status: true } },
+      },
+    });
+
+    if (!current) {
+      throw new NotFoundException(
+        `Orçamento com ID '${quotationId}' não encontrado.`,
+      );
+    }
+    if (current.status !== QuotationStatus.APPROVED) {
+      throw new ConflictException(
+        'Só a venda aprovada pode ter a aprovação reprocessada.',
+      );
+    }
+    if (current.order?.status === OrderStatus.CANCELED) {
+      throw new ConflictException(
+        'A ordem de serviço desta venda foi cancelada.',
+      );
+    }
+
+    const startsInProduction = await this.startsInProduction(current.companyId);
+    const before = await this.approvalState(quotationId);
+
+    const order = await this.prisma.$transaction(
+      async (prisma) => {
+        const quotation = await prisma.quotation.findUniqueOrThrow({
+          where: { id: quotationId },
+          include: APPROVAL_INCLUDE,
+        });
+        return this.completeApproval(quotation, startsInProduction, prisma);
+      },
+      { timeout: 20000 },
+    );
+
+    const failed: ApprovalReprocessResult['failed'] = [];
+    try {
+      await this.ensureProductionStages(quotationId);
+    } catch (error) {
+      this.logger.error(
+        `Reprocesso da aprovação do orçamento ${quotationId}: etapas de produção`,
+        error.stack,
+      );
+      failed.push({ step: 'productionStages', message: error.message });
+    }
+
+    const after = await this.approvalState(quotationId);
+    const created = (Object.keys(after) as (keyof ApprovalState)[]).filter(
+      (step) => after[step] > before[step],
+    );
+
+    if (userId && created.length > 0) {
+      const userName = await this.resolveUserName(userId);
+      await this.createQuotationHistoryEntry({
+        quotationId,
+        action: 'APPROVAL_REPROCESSED',
+        description: `Aprovação reprocessada por ${userName || 'Usuário'}`,
+        metadata: { created },
+        createdBy: userId,
+        createdByName: userName,
+      });
+    }
+
+    return { orderId: order.id, created, failed };
+  }
+
+  private async approvalState(quotationId: string): Promise<ApprovalState> {
+    const [order, deliverySchedule, receivables, payables, productionStages] =
+      await Promise.all([
+        this.prisma.order.count({ where: { quotationId } }),
+        this.prisma.deliverySchedule.count({ where: { quotationId } }),
+        this.prisma.receivable.count({ where: { quotationId } }),
+        this.prisma.payable.count({ where: { quotationId } }),
+        this.prisma.productionStage.count({
+          where: { schedule: { quotationId } },
+        }),
+      ]);
+    return { order, deliverySchedule, receivables, payables, productionStages };
   }
 
   /**
@@ -570,118 +723,135 @@ export class QuotationWorkflowService {
   }
 
   /**
-   * Cria etapas de produção para o orçamento
+   * Cria etapas de produção para o orçamento (erros vão para o log)
    */
   async createProductionStages(quotationId: string) {
     try {
-      const quotation = await this.prisma.quotation.findUnique({
-        where: { id: quotationId },
-        include: {
-          quotationProduct: true,
-          deliveryInfo: {
-            include: {
-              deliverySchedule: true,
-            },
+      await this.ensureProductionStages(quotationId);
+    } catch (error) {
+      this.logger.error('Erro ao criar etapas de produção:', error.stack);
+    }
+  }
+
+  /**
+   * As etapas de produção da agenda: uma por setor ativo nos produtos da
+   * venda, mais "Entrega" ou "Cliente Retira". A agenda que já tem etapas
+   * fica como está: aprovar e reprocessar não duplicam.
+   */
+  private async ensureProductionStages(quotationId: string): Promise<void> {
+    const quotation = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      include: {
+        quotationProduct: true,
+        deliveryInfo: {
+          include: {
+            deliverySchedule: true,
           },
         },
-      });
-      if (!quotation) {
-        this.logger.error('Orçamento não encontrado.');
-        return;
-      }
+      },
+    });
+    if (!quotation) {
+      this.logger.error('Orçamento não encontrado.');
+      return;
+    }
 
-      const quotationProductsIds = quotation.quotationProduct.map(
-        (product) => product.productId,
-      );
+    const scheduleId = quotation.deliveryInfo?.deliverySchedule?.id;
+    if (!scheduleId) return;
 
-      const products = await this.prisma.product.findMany({
+    const existingStages = await this.prisma.productionStage.count({
+      where: { scheduleId },
+    });
+    if (existingStages > 0) return;
+
+    const quotationProductsIds = quotation.quotationProduct.map(
+      (product) => product.productId,
+    );
+
+    const products = await this.prisma.product.findMany({
+      where: {
+        id: {
+          in: quotationProductsIds,
+        },
+        productionStages: {
+          not: null,
+        },
+      },
+      select: {
+        id: true,
+        productionStages: true,
+      },
+    });
+
+    const allStages = products.flatMap((product) => {
+      const stages =
+        typeof product.productionStages === 'string'
+          ? JSON.parse(product.productionStages)
+          : product.productionStages;
+
+      return stages.filter((stage: ProductionStageJson) => stage.isActive);
+    });
+
+    const uniqueStages = Array.from(
+      new Map(allStages.map((stage) => [stage.id, stage])).values(),
+    );
+
+    const productionStages = uniqueStages.map((stage, index) => ({
+      stageId: stage.id,
+      order: index + 1,
+      prevStatus: null,
+      scheduleId,
+    }));
+
+    if (quotation.deliveryInfo?.deliveryType === 'CARRIER') {
+      const systemStage = await this.prisma.companySector.findFirst({
         where: {
-          id: {
-            in: quotationProductsIds,
-          },
-          productionStages: {
-            not: null,
-          },
+          isSystem: true,
+          companyId: quotation.companyId,
+          name: 'Entrega',
         },
         select: {
           id: true,
-          productionStages: true,
+          name: true,
+          icon: true,
         },
       });
-
-      const allStages = products.flatMap((product) => {
-        const stages =
-          typeof product.productionStages === 'string'
-            ? JSON.parse(product.productionStages)
-            : product.productionStages;
-
-        return stages.filter((stage: ProductionStageJson) => stage.isActive);
+      if (systemStage) {
+        productionStages.push({
+          stageId: systemStage.id,
+          order: productionStages.length + 1,
+          prevStatus: null,
+          scheduleId,
+        });
+      }
+    }
+    if (quotation.deliveryInfo?.deliveryType === 'PICKUP') {
+      const systemStage = await this.prisma.companySector.findFirst({
+        where: {
+          isSystem: true,
+          companyId: quotation.companyId,
+          name: 'Cliente Retira',
+        },
+        select: {
+          id: true,
+          name: true,
+          icon: true,
+        },
       });
-
-      const uniqueStages = Array.from(
-        new Map(allStages.map((stage) => [stage.id, stage])).values(),
-      );
-
-      const productionStages = uniqueStages.map((stage, index) => ({
-        stageId: stage.id,
-        order: index + 1,
-        prevStatus: null,
-        scheduleId: quotation.deliveryInfo?.deliverySchedule?.id,
-      }));
-
-      if (quotation.deliveryInfo?.deliveryType === 'CARRIER') {
-        const systemStage = await this.prisma.companySector.findFirst({
-          where: {
-            isSystem: true,
-            companyId: quotation.companyId,
-            name: 'Entrega',
-          },
-          select: {
-            id: true,
-            name: true,
-            icon: true,
-          },
+      if (systemStage) {
+        productionStages.push({
+          stageId: systemStage.id,
+          order: productionStages.length + 1,
+          prevStatus: null,
+          scheduleId,
         });
-        if (systemStage) {
-          productionStages.push({
-            stageId: systemStage.id,
-            order: productionStages.length + 1,
-            prevStatus: null,
-            scheduleId: quotation.deliveryInfo?.deliverySchedule?.id,
-          });
-        }
       }
-      if (quotation.deliveryInfo?.deliveryType === 'PICKUP') {
-        const systemStage = await this.prisma.companySector.findFirst({
-          where: {
-            isSystem: true,
-            companyId: quotation.companyId,
-            name: 'Cliente Retira',
-          },
-          select: {
-            id: true,
-            name: true,
-            icon: true,
-          },
-        });
-        if (systemStage) {
-          productionStages.push({
-            stageId: systemStage.id,
-            order: productionStages.length + 1,
-            prevStatus: null,
-            scheduleId: quotation.deliveryInfo?.deliverySchedule?.id,
-          });
-        }
-      }
+    }
 
-      if (productionStages.length > 0) {
-        await this.prisma.productionStage.createMany({
-          data: productionStages,
-        });
-        this.logger.log('Etapas de produção criadas com sucesso!');
-      }
-    } catch (error) {
-      this.logger.error('Erro ao criar etapas de produção:', error.stack);
+    if (productionStages.length > 0) {
+      await this.prisma.productionStage.createMany({
+        data: productionStages,
+      });
+      this.logger.log('Etapas de produção criadas com sucesso!');
     }
   }
 

@@ -276,9 +276,16 @@ export class QuotationImportService {
             ? add(createdAt, { days: series.proposalValidity })
             : add(createdAt, { days: 7 });
 
+          const toApprove = row.confstatus_descr === 'Ordem de Serviço';
           let status = 'OPEN';
           if (row.confsubstatus_descr) {
             status = statusMap[row.confsubstatus_descr] || 'CANCELED';
+          }
+          // A aprovação grava APPROVED junto com a O.S., a agenda e o
+          // financeiro, e recusa o orçamento que já chega aprovado: a linha
+          // que vai ser aprovada nasce concluída
+          if (toApprove && status === 'APPROVED') {
+            status = 'DONE';
           }
 
           const quotation = await this.prisma.quotation.create({
@@ -459,7 +466,7 @@ export class QuotationImportService {
             }
           }
 
-          if (row.confstatus_descr === 'Ordem de Serviço') {
+          if (toApprove) {
             quotationsToApprove.push(quotation.id);
           }
 

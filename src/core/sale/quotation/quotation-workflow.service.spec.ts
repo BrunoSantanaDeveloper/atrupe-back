@@ -1,9 +1,18 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { QuotationWorkflowService } from './quotation-workflow.service';
+import {
+  ALREADY_APPROVED_MESSAGE,
+  QuotationWorkflowService,
+} from './quotation-workflow.service';
 import { QuotationFinancialService } from './quotation-financial.service';
 import { PrismaService } from 'nestjs-prisma';
 import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.service';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { PlanControlService } from '../../plan/plan-control.service';
+import {
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  Logger,
+} from '@nestjs/common';
 import { QuotationStatus, OrderStatus } from '@prisma/client';
 
 const mockCompanyId = 'company-uuid-123';
@@ -25,10 +34,17 @@ const mockQuotation = {
   totalValue: 10000,
 };
 
-const mockActiveSubscription = {
-  plan: { planType: 'FULL' },
-  nextDueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-};
+/** O orçamento como a transação da aprovação o lê, já aprovado. */
+const approvedQuotation = (overrides: Record<string, unknown> = {}) => ({
+  ...mockQuotation,
+  status: QuotationStatus.APPROVED,
+  approvedAt: new Date('2026-10-12T12:00:00Z'),
+  deliveryInfo: { id: 'delivery-info-id', daysAfterApproval: 7 },
+  quotationPayment: { billing: 'ON_ORDER', paymentCondition: null },
+  client: { status: 'ACTIVE' },
+  series: { productionStatus: 'IN_PRODUCTION' },
+  ...overrides,
+});
 
 const createMockPrismaService = () => ({
   quotation: {
@@ -41,6 +57,7 @@ const createMockPrismaService = () => ({
   order: {
     findUnique: jest.fn(),
     create: jest.fn(),
+    count: jest.fn(),
   },
   deliveryInfo: {
     update: jest.fn(),
@@ -48,12 +65,15 @@ const createMockPrismaService = () => ({
   deliverySchedule: {
     create: jest.fn(),
     update: jest.fn(),
+    count: jest.fn(),
   },
   receivable: {
     findMany: jest.fn(),
+    count: jest.fn(),
   },
   payable: {
     findMany: jest.fn(),
+    count: jest.fn(),
   },
   reasons: {
     findFirst: jest.fn(),
@@ -63,12 +83,16 @@ const createMockPrismaService = () => ({
   },
   productionStage: {
     createMany: jest.fn(),
+    count: jest.fn(),
   },
   companySector: {
     findFirst: jest.fn(),
   },
   user: {
     findUnique: jest.fn().mockResolvedValue({ name: mockUserName }),
+  },
+  sellerProfile: {
+    findFirst: jest.fn(),
   },
   quotationHistory: {
     create: jest.fn(),
@@ -86,6 +110,10 @@ const mockFinancialService = {
 
 const mockDeliveryScheduleService = {
   create: jest.fn(),
+};
+
+const mockPlanControl = {
+  getCompanyPlanInfo: jest.fn(),
 };
 
 describe('QuotationWorkflowService', () => {
@@ -111,6 +139,10 @@ describe('QuotationWorkflowService', () => {
           provide: DeliveryScheduleService,
           useValue: mockDeliveryScheduleService,
         },
+        {
+          provide: PlanControlService,
+          useValue: mockPlanControl,
+        },
       ],
     }).compile();
 
@@ -122,63 +154,91 @@ describe('QuotationWorkflowService', () => {
   });
 
   describe('approve', () => {
+    // Transação de mentira com a semântica do banco: o que o callback grava
+    // só vale se ele terminar sem erro
+    let committed: string[];
+    let pending: string[];
+    let claimCount: number;
+    let txQuotation: Record<string, unknown>;
+    let logError: jest.SpyInstance;
+
+    const currentQuotation = (overrides: Record<string, unknown> = {}) => ({
+      companyId: mockCompanyId,
+      status: QuotationStatus.DONE,
+      client: { status: 'ACTIVE' },
+      deliveryInfo: { id: 'delivery-info-id' },
+      ...overrides,
+    });
+
     beforeEach(() => {
-      prisma.quotation.findUnique.mockResolvedValue({
-        id: mockQuotationId,
-        companyId: mockCompanyId,
+      committed = [];
+      claimCount = 1;
+      txQuotation = approvedQuotation();
+      logError = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+
+      prisma.quotation.findUnique.mockImplementation(async (args) =>
+        args.select
+          ? currentQuotation()
+          : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
+      );
+      mockPlanControl.getCompanyPlanInfo.mockResolvedValue({
+        features: { delivery_production_tabs: true },
       });
-      prisma.company.findUnique.mockResolvedValue({
-        id: mockCompanyId,
-        Subscription: [mockActiveSubscription],
+      mockFinancialService.generateReceivableFromQuotation.mockImplementation(
+        async () => pending.push('receivable'),
+      );
+      mockFinancialService.generatePayableFromQuotation.mockImplementation(
+        async () => pending.push('payable'),
+      );
+
+      prisma.$transaction.mockImplementation(async (callback) => {
+        pending = [];
+        const result = await callback({
+          quotation: {
+            updateMany: jest.fn(async ({ data }) => {
+              if (claimCount > 0) pending.push(`quotation:${data.status}`);
+              return { count: claimCount };
+            }),
+            findUniqueOrThrow: jest.fn(async () => txQuotation),
+          },
+          order: {
+            findUnique: jest.fn().mockResolvedValue(null),
+            create: jest.fn(async () => {
+              pending.push('order');
+              return mockOrder;
+            }),
+          },
+          deliveryInfo: { update: jest.fn() },
+          deliverySchedule: {
+            findFirst: jest.fn().mockResolvedValue(null),
+            create: jest.fn(async ({ data }) => {
+              pending.push(`deliverySchedule:${data.status}`);
+            }),
+          },
+          receivable: { findMany: jest.fn().mockResolvedValue([]) },
+          payable: { findMany: jest.fn().mockResolvedValue([]) },
+        });
+        committed.push(...pending);
+        return result;
       });
     });
 
-    it('should approve quotation and create order', async () => {
-      prisma.$transaction.mockImplementation(async (callback) => {
-        const transactionClient = {
-          quotation: {
-            update: jest.fn().mockResolvedValue({
-              ...mockQuotation,
-              status: QuotationStatus.APPROVED,
-              approvedAt: new Date(),
-              deliveryInfo: { id: 'delivery-info-id', daysAfterApproval: 7 },
-              quotationPayment: { billing: 'ON_DELIVERY' },
-              client: { status: 'ACTIVE' },
-              series: { productionStatus: 'IN_PRODUCTION' },
-            }),
-          },
-          user: { findUnique: jest.fn().mockResolvedValue(null) },
-          sellerProfile: { findFirst: jest.fn().mockResolvedValue(null) },
-          order: {
-            findUnique: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockResolvedValue(mockOrder),
-          },
-          deliveryInfo: { update: jest.fn() },
-          deliverySchedule: { create: jest.fn() },
-          receivable: { findMany: jest.fn().mockResolvedValue([]) },
-          payable: { findMany: jest.fn().mockResolvedValue([]) },
-        };
-        return callback(transactionClient);
-      });
+    afterEach(() => {
+      logError.mockRestore();
+    });
 
-      // Mock for createProductionStages
-      prisma.quotation.findUnique.mockResolvedValueOnce({
-        id: mockQuotationId,
-        companyId: mockCompanyId,
-      });
-      prisma.quotation.findUnique.mockResolvedValue({
-        ...mockQuotation,
-        quotationProduct: [],
-        deliveryInfo: null,
-      });
-      prisma.product.findMany.mockResolvedValue([]);
-
+    it('aprova numa transação só: status, O.S., agenda e financeiro', async () => {
       const result = await service.approve(mockQuotationId, mockUserId);
 
-      expect(result).toBeDefined();
       expect(result.id).toBe(mockOrderId);
-
-      // Verify history was created
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(committed).toEqual([
+        'quotation:APPROVED',
+        'order',
+        'deliverySchedule:IN_PRODUCTION',
+        'receivable',
+        'payable',
+      ]);
       expect(prisma.quotationHistory.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           quotationId: mockQuotationId,
@@ -195,12 +255,338 @@ describe('QuotationWorkflowService', () => {
       });
     });
 
+    it('falha no financeiro desfaz a aprovação inteira: nada fica APPROVED', async () => {
+      mockFinancialService.generateReceivableFromQuotation.mockRejectedValue(
+        new BadRequestException('Não há parcelas para gerar contas a receber.'),
+      );
+
+      await expect(
+        service.approve(mockQuotationId, mockUserId),
+      ).rejects.toThrow('Não há parcelas para gerar contas a receber.');
+      expect(committed).toEqual([]);
+      expect(prisma.quotation.update).not.toHaveBeenCalled();
+      expect(prisma.productionStage.createMany).not.toHaveBeenCalled();
+      expect(prisma.quotationHistory.create).not.toHaveBeenCalled();
+    });
+
+    it('orçamento já aprovado: 409, sem abrir transação', async () => {
+      prisma.quotation.findUnique.mockResolvedValue(
+        currentQuotation({ status: QuotationStatus.APPROVED }),
+      );
+
+      await expect(
+        service.approve(mockQuotationId, mockUserId),
+      ).rejects.toThrow(new ConflictException(ALREADY_APPROVED_MESSAGE));
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('dois cliques: a segunda aprovação encontra o orçamento aprovado (409)', async () => {
+      claimCount = 0;
+
+      await expect(
+        service.approve(mockQuotationId, mockUserId),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(committed).toEqual([]);
+    });
+
+    it('sem informações de entrega: 400 antes de gravar', async () => {
+      prisma.quotation.findUnique.mockResolvedValue(
+        currentQuotation({ deliveryInfo: null }),
+      );
+
+      await expect(
+        service.approve(mockQuotationId, mockUserId),
+      ).rejects.toThrow(
+        new BadRequestException('Informações de entrega ausentes na venda.'),
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('cliente com cadastro não regular e usuário sem permissão: 400 antes de gravar', async () => {
+      prisma.quotation.findUnique.mockResolvedValue(
+        currentQuotation({ client: { status: 'PROSPECT' } }),
+      );
+      prisma.user.findUnique.mockResolvedValue({ employee: [] });
+      prisma.sellerProfile.findFirst.mockResolvedValue({
+        canApprovePreRegistration: false,
+      });
+
+      await expect(
+        service.approve(mockQuotationId, mockUserId),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('sem a chave das abas de produção, a agenda nasce na entrega', async () => {
+      mockPlanControl.getCompanyPlanInfo.mockResolvedValue({ features: {} });
+
+      await service.approve(mockQuotationId, mockUserId);
+
+      expect(committed).toContain('deliverySchedule:DELIVERING');
+    });
+
+    it('empresa sem assinatura: a agenda nasce em produção, como antes', async () => {
+      mockPlanControl.getCompanyPlanInfo.mockResolvedValue(null);
+
+      await service.approve(mockQuotationId, mockUserId);
+
+      expect(committed).toContain('deliverySchedule:IN_PRODUCTION');
+    });
+
+    it('financeiro na aprovação só com a cobrança no pedido', async () => {
+      txQuotation = approvedQuotation({
+        quotationPayment: { billing: 'ON_DELIVERY', paymentCondition: null },
+      });
+
+      await service.approve(mockQuotationId, mockUserId);
+
+      expect(committed).toEqual([
+        'quotation:APPROVED',
+        'order',
+        'deliverySchedule:IN_PRODUCTION',
+      ]);
+    });
+
+    it('falha nas etapas de produção não desfaz a venda aprovada', async () => {
+      prisma.quotation.findUnique.mockImplementation(async (args) =>
+        args.select
+          ? currentQuotation()
+          : {
+              ...mockQuotation,
+              quotationProduct: [{ productId: 'product-1' }],
+              deliveryInfo: {
+                deliveryType: 'INSTALLATION',
+                deliverySchedule: { id: 'schedule-1' },
+              },
+            },
+      );
+      prisma.productionStage.count.mockResolvedValue(0);
+      prisma.product.findMany.mockRejectedValue(new Error('banco fora'));
+
+      const result = await service.approve(mockQuotationId, mockUserId);
+
+      expect(result.id).toBe(mockOrderId);
+      expect(committed).toContain('quotation:APPROVED');
+      expect(logError).toHaveBeenCalled();
+    });
+
     it('should throw NotFoundException if quotation not found', async () => {
       prisma.quotation.findUnique.mockResolvedValue(null);
 
       await expect(service.approve('invalid-id', mockUserId)).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('reprocessApproval', () => {
+    // Venda aprovada pela metade: O.S. criada, sem agenda, financeiro nem
+    // etapas (o estado que a aprovação em duas transações deixava)
+    let state: {
+      order: number;
+      deliverySchedule: number;
+      receivables: number;
+      payables: number;
+      productionStages: number;
+    };
+    let orderStatus: OrderStatus;
+    let logError: jest.SpyInstance;
+
+    beforeEach(() => {
+      state = {
+        order: 1,
+        deliverySchedule: 0,
+        receivables: 0,
+        payables: 0,
+        productionStages: 0,
+      };
+      orderStatus = OrderStatus.IN_PRODUCTION;
+      logError = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+
+      prisma.quotation.findUnique.mockImplementation(async (args) =>
+        args.select
+          ? {
+              companyId: mockCompanyId,
+              status: QuotationStatus.APPROVED,
+              order: { status: orderStatus },
+            }
+          : {
+              ...mockQuotation,
+              quotationProduct: [{ productId: 'product-1' }],
+              deliveryInfo: {
+                deliveryType: 'PICKUP',
+                deliverySchedule: state.deliverySchedule
+                  ? { id: 'schedule-1' }
+                  : null,
+              },
+            },
+      );
+      prisma.order.count.mockImplementation(async () => state.order);
+      prisma.deliverySchedule.count.mockImplementation(
+        async () => state.deliverySchedule,
+      );
+      prisma.receivable.count.mockImplementation(async () => state.receivables);
+      prisma.payable.count.mockImplementation(async () => state.payables);
+      prisma.productionStage.count.mockImplementation(
+        async () => state.productionStages,
+      );
+      prisma.productionStage.createMany.mockImplementation(async ({ data }) => {
+        state.productionStages += data.length;
+      });
+      prisma.product.findMany.mockResolvedValue([
+        {
+          id: 'product-1',
+          productionStages: [
+            { id: 'sector-1', isActive: true },
+            { id: 'sector-2', isActive: false },
+          ],
+        },
+      ]);
+      prisma.companySector.findFirst.mockResolvedValue({ id: 'sector-pickup' });
+      mockPlanControl.getCompanyPlanInfo.mockResolvedValue({
+        features: { delivery_production_tabs: true },
+      });
+      mockFinancialService.generateReceivableFromQuotation.mockImplementation(
+        async () => state.receivables++,
+      );
+      mockFinancialService.generatePayableFromQuotation.mockImplementation(
+        async () => state.payables++,
+      );
+
+      prisma.$transaction.mockImplementation(async (callback) =>
+        callback({
+          quotation: {
+            findUniqueOrThrow: jest.fn().mockResolvedValue(approvedQuotation()),
+          },
+          order: {
+            findUnique: jest.fn(async () => (state.order ? mockOrder : null)),
+            create: jest.fn(async () => {
+              state.order++;
+              return mockOrder;
+            }),
+          },
+          deliveryInfo: { update: jest.fn() },
+          deliverySchedule: {
+            findFirst: jest.fn(async () =>
+              state.deliverySchedule ? { id: 'schedule-1' } : null,
+            ),
+            create: jest.fn(async () => {
+              state.deliverySchedule++;
+            }),
+          },
+          receivable: {
+            findMany: jest.fn(async () =>
+              state.receivables ? [{ id: 'receivable-1' }] : [],
+            ),
+          },
+          payable: {
+            findMany: jest.fn(async () =>
+              state.payables ? [{ id: 'payable-1' }] : [],
+            ),
+          },
+        }),
+      );
+    });
+
+    afterEach(() => {
+      logError.mockRestore();
+    });
+
+    it('completa o que falta sem mudar o status, e rodar de novo não duplica nada', async () => {
+      const first = await service.reprocessApproval(
+        mockQuotationId,
+        mockUserId,
+      );
+
+      expect(first).toEqual({
+        orderId: mockOrderId,
+        created: [
+          'deliverySchedule',
+          'receivables',
+          'payables',
+          'productionStages',
+        ],
+        failed: [],
+      });
+      expect(prisma.productionStage.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            stageId: 'sector-1',
+            order: 1,
+            prevStatus: null,
+            scheduleId: 'schedule-1',
+          },
+          {
+            stageId: 'sector-pickup',
+            order: 2,
+            prevStatus: null,
+            scheduleId: 'schedule-1',
+          },
+        ],
+      });
+      expect(prisma.quotation.update).not.toHaveBeenCalled();
+      expect(prisma.quotationHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'APPROVAL_REPROCESSED',
+          createdBy: mockUserId,
+        }),
+      });
+
+      const second = await service.reprocessApproval(
+        mockQuotationId,
+        mockUserId,
+      );
+
+      expect(second).toEqual({ orderId: mockOrderId, created: [], failed: [] });
+      expect(state).toEqual({
+        order: 1,
+        deliverySchedule: 1,
+        receivables: 1,
+        payables: 1,
+        productionStages: 2,
+      });
+      expect(prisma.productionStage.createMany).toHaveBeenCalledTimes(1);
+      expect(prisma.quotationHistory.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('venda que não está aprovada: 409', async () => {
+      prisma.quotation.findUnique.mockResolvedValue({
+        companyId: mockCompanyId,
+        status: QuotationStatus.DONE,
+        order: null,
+      });
+
+      await expect(
+        service.reprocessApproval(mockQuotationId, mockUserId),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('O.S. cancelada: 409, sem recriar agenda nem financeiro', async () => {
+      orderStatus = OrderStatus.CANCELED;
+
+      await expect(
+        service.reprocessApproval(mockQuotationId, mockUserId),
+      ).rejects.toThrow('A ordem de serviço desta venda foi cancelada.');
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('etapa que falha de novo volta em failed, com o resto completado', async () => {
+      prisma.product.findMany.mockRejectedValue(new Error('banco fora'));
+
+      const result = await service.reprocessApproval(
+        mockQuotationId,
+        mockUserId,
+      );
+
+      expect(result.created).toEqual([
+        'deliverySchedule',
+        'receivables',
+        'payables',
+      ]);
+      expect(result.failed).toEqual([
+        { step: 'productionStages', message: 'banco fora' },
+      ]);
     });
   });
 

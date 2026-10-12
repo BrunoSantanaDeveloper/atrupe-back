@@ -9,7 +9,10 @@ import { CancelOrderDto } from '../order/dto/create-order.dto';
 // Sub-services (Facade Pattern)
 import { QuotationCrudService } from './quotation-crud.service';
 import { QuotationItemsService } from './quotation-items.service';
-import { QuotationWorkflowService } from './quotation-workflow.service';
+import {
+  ApprovalReprocessResult,
+  QuotationWorkflowService,
+} from './quotation-workflow.service';
 import { QuotationFinancialService } from './quotation-financial.service';
 import { QuotationPdfService } from './quotation-pdf.service';
 import { QuotationImportService } from './quotation-import.service';
@@ -127,6 +130,13 @@ export class QuotationService {
     approvedAt?: Date,
   ): Promise<Order> {
     return this.workflowService.approve(quotationId, userId, approvedAt);
+  }
+
+  reprocessApproval(
+    quotationId: string,
+    userId?: string,
+  ): Promise<ApprovalReprocessResult> {
+    return this.workflowService.reprocessApproval(quotationId, userId);
   }
 
   billQuotation(quotationId: string) {

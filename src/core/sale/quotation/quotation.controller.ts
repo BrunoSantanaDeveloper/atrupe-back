@@ -407,6 +407,33 @@ export class QuotationController {
     return this.quotationService.approve(id, req.user?.userId, approvedAt);
   }
 
+  // Fora do contrato das telas (plano de 10/10, decisão D34): rota de
+  // suporte para completar uma aprovação que ficou pela metade
+  @Post(':id/approve/reprocess')
+  @RequireUnblocked()
+  @ApiOperation({
+    summary: 'Completa a aprovação de uma venda já aprovada',
+    description:
+      'Cria a O.S., a agenda, o financeiro e as etapas de produção que faltarem, sem mudar status nem data de aprovação. Rodar de novo não duplica nada.',
+  })
+  @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
+  @ApiResponse({
+    status: 201,
+    description:
+      'Passos completados (created) e os de depois da aprovação que falharam de novo (failed).',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Venda não aprovada, ou O.S. cancelada.',
+  })
+  async reprocessApproval(@Param('id') id: string, @Req() req) {
+    if (!isUUID(id, '4')) {
+      throw new BadRequestException('Invalid id');
+    }
+    await this.validateOwnership(id, req.user, 'edit');
+    return this.quotationService.reprocessApproval(id, req.user?.userId);
+  }
+
   @Post(':id/bill')
   @ApiOperation({ summary: 'Faturamento manual de um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
