@@ -10,6 +10,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { DeliveryService } from './delivery.service';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 import { CreateDeliveryInfoDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryInfoDto } from './dto/update-delivery.dto';
 import {
@@ -68,6 +69,41 @@ export class DeliveryController {
     status: 201,
     description: 'Entrega criada com sucesso.',
   })
+  /**
+   * A transportadora e o endereço vêm no corpo: precisam ser da empresa do
+   * orçamento (a da sessão, já conferida). O endereço vale se for o atual da
+   * própria entrega (o personalizado não tem dono) ou de um cliente da
+   * empresa; antes, o personalizado de outra empresa era sobrescrito ou
+   * apagado pela edição seguinte.
+   */
+  private async assertRefsOfCompany(
+    companyId: string,
+    dto: { supplierId?: string | null; clientAddressId?: string | null },
+    currentAddressId?: string | null,
+  ) {
+    await assertBelongsToCompany(
+      this.prisma.supplier,
+      dto.supplierId,
+      { companyId },
+      'Fornecedor não encontrado.',
+    );
+
+    const addressId = dto.clientAddressId;
+    if (
+      !addressId ||
+      addressId === 'custom' ||
+      addressId === currentAddressId
+    ) {
+      return;
+    }
+    await assertBelongsToCompany(
+      this.prisma.address,
+      addressId,
+      { client: { companyId } },
+      'Endereço não encontrado.',
+    );
+  }
+
   @Post(':quotationId')
   async createDeliveryInfo(
     @Param('quotationId') quotationId: string,
@@ -75,6 +111,7 @@ export class DeliveryController {
     @Req() req,
   ) {
     await this.validateOwnership(quotationId, req.user);
+    await this.assertRefsOfCompany(req.user.companyId, createDeliveryInfoDto);
     return this.deliveryService.createDeliveryInfo(
       quotationId,
       createDeliveryInfoDto,
@@ -96,12 +133,17 @@ export class DeliveryController {
   ) {
     const deliveryInfo = await this.prisma.deliveryInfo.findUnique({
       where: { id },
-      select: { quotationId: true },
+      select: { quotationId: true, clientAddressId: true },
     });
     if (!deliveryInfo) {
       throw new NotFoundException('Informações de entrega não encontradas');
     }
     await this.validateOwnership(deliveryInfo.quotationId, req.user);
+    await this.assertRefsOfCompany(
+      req.user.companyId,
+      updateDeliveryInfoDto,
+      deliveryInfo.clientAddressId,
+    );
 
     return this.deliveryService.updateDeliveryInfo(id, updateDeliveryInfoDto);
   }

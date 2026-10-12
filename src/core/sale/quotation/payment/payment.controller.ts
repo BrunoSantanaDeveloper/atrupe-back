@@ -12,6 +12,7 @@ import {
 import { PrismaService } from 'nestjs-prisma';
 import { AbacService } from 'src/core/auth/abac/abac.service';
 import { PaymentService } from './payment.service';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 import {
   ApiTags,
@@ -39,7 +40,11 @@ export class PaymentController {
     private readonly abacService: AbacService,
   ) {}
 
-  private async validateOwnership(quotationId: string, user: any) {
+  private async validateOwnership(
+    quotationId: string,
+    user: any,
+    action: 'view' | 'edit' = 'edit',
+  ) {
     const quotation = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
     });
@@ -51,7 +56,7 @@ export class PaymentController {
     }
 
     const canAccessOtherQuotations =
-      await this.abacService.canAccessOtherSellers(user, 'edit');
+      await this.abacService.canAccessOtherSellers(user, action);
 
     if (
       !canAccessOtherQuotations &&
@@ -60,9 +65,33 @@ export class PaymentController {
       quotation.sellerId !== user.employeeId
     ) {
       throw new ForbiddenException(
-        'Você não tem permissão para editar pagamentos de orçamentos de outros vendedores',
+        action === 'view'
+          ? 'Você não tem permissão para ver pagamentos de orçamentos de outros vendedores'
+          : 'Você não tem permissão para editar pagamentos de orçamentos de outros vendedores',
       );
     }
+  }
+
+  /**
+   * A condição de pagamento e o fornecedor da comissão vêm no corpo: precisam
+   * ser da empresa do orçamento (a da sessão, já conferida)
+   */
+  private async assertRefsOfCompany(
+    companyId: string,
+    refs: { paymentConditionIds?: (string | undefined)[]; supplierId?: string },
+  ) {
+    await assertBelongsToCompany(
+      this.prisma.paymentCondition,
+      refs.paymentConditionIds,
+      { companyId },
+      'Condição de pagamento não encontrada.',
+    );
+    await assertBelongsToCompany(
+      this.prisma.supplier,
+      refs.supplierId,
+      { companyId },
+      'Fornecedor não encontrado.',
+    );
   }
 
   @Get('condition/in-use')
@@ -84,7 +113,10 @@ export class PaymentController {
     summary: 'Buscar informações de pagamento de um orçamento pelo ID',
   })
   @ApiParam({ name: 'id', description: 'ID do registro de pagamento' })
-  async findOne(@Param('id') id: string) {
+  async findOne(@Req() req, @Param('id') id: string) {
+    // O id é o do orçamento: a leitura não conferia nada (valores, desconto,
+    // parcelas e comissão de outra empresa)
+    await this.validateOwnership(id, req.user, 'view');
     return this.paymentService.findOne(id);
   }
 
@@ -98,6 +130,16 @@ export class PaymentController {
     @Req() req,
   ) {
     await this.validateOwnership(quotationId, req.user);
+    await this.assertRefsOfCompany(req.user.companyId, {
+      paymentConditionIds: [
+        updatePaymentDto.paymentConditionId,
+        updatePaymentDto.downPayment?.paymentConditionId,
+        ...(updatePaymentDto.installments ?? []).map(
+          (installment) => installment.paymentConditionId,
+        ),
+      ],
+      supplierId: updatePaymentDto.commission?.supplier?.value,
+    });
     const updatedPayment = await this.paymentService.updatePayment(
       quotationId,
       updatePaymentDto,
@@ -112,6 +154,9 @@ export class PaymentController {
     @Req() req,
   ) {
     await this.validateOwnership(quotationId, req.user);
+    await this.assertRefsOfCompany(req.user.companyId, {
+      supplierId: updateCommissionDto.supplier?.value,
+    });
     await this.paymentService.updateCommission(
       quotationId,
       updateCommissionDto,
