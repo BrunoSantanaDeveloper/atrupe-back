@@ -490,9 +490,34 @@ describe('ClientService', () => {
       );
     });
 
+    it('grupo de outra empresa no corpo é recusado antes de gravar', async () => {
+      prismaMock.client.findUnique.mockResolvedValueOnce({
+        companyId: 'company-1',
+      });
+      (prismaMock as any).category = {
+        ...((prismaMock as any).category ?? {}),
+        count: jest.fn().mockResolvedValue(0),
+      };
+
+      await expect(
+        service.update('client-1', {
+          general: { name: 'X', categoryId: 'grupo-de-outra' },
+        } as any),
+      ).rejects.toThrow('Grupo não encontrado.');
+      expect((prismaMock as any).category.count).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['grupo-de-outra'] },
+          OR: [{ companyId: 'company-1' }, { isStandard: true }],
+        },
+      });
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
     it('deve manter status INACTIVE ao atualizar cliente inativo', async () => {
       const inactiveClient = makeClient({ status: 'INACTIVE' });
       prismaMock.client.findUnique
+        // a empresa do cliente, para conferir os ids do corpo
+        .mockResolvedValueOnce({ companyId: inactiveClient.companyId })
         .mockResolvedValueOnce(inactiveClient) // primeiro findUnique (busca para update)
         .mockResolvedValueOnce({
           // segundo findUnique (findOne no final)

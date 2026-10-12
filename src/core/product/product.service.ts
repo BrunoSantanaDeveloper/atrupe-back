@@ -13,6 +13,7 @@ import * as fs from 'fs';
 import * as fastCsv from 'fast-csv';
 import { ProductFiscalService } from '../fiscal/product-fiscal/product-fiscal.service';
 import { buildProductListWhere } from './product-list-where.util';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 const EXPORT_LIMIT = '10000';
 
@@ -23,7 +24,44 @@ export class ProductService {
     private readonly productFiscalService: ProductFiscalService,
   ) {}
 
+  /**
+   * O grupo, o setor e as etapas de produção (setores) vêm no corpo: precisam
+   * ser da empresa (o grupo pode ser o padrão do sistema)
+   */
+  private async assertRefsOfCompany(
+    companyId: string,
+    refs: {
+      categoryId?: string | null;
+      sectorId?: string | null;
+      productionStages?: { id?: string }[] | null;
+    },
+  ) {
+    await assertBelongsToCompany(
+      this.prisma.category,
+      refs.categoryId,
+      { OR: [{ companyId }, { isStandard: true }] },
+      'Grupo não encontrado.',
+    );
+    await assertBelongsToCompany(
+      this.prisma.companySector,
+      [
+        refs.sectorId,
+        ...(Array.isArray(refs.productionStages)
+          ? refs.productionStages.map((stage) => stage?.id)
+          : []),
+      ],
+      { companyId },
+      'Setor não encontrado.',
+    );
+  }
+
   async create(createProductDto: CreateProductDto) {
+    await this.assertRefsOfCompany(createProductDto.companyId, {
+      categoryId: createProductDto.categoryId,
+      sectorId: createProductDto.sectorId,
+      productionStages: createProductDto.productionStages as any,
+    });
+
     try {
       console.log(
         'Creating product with isService:',
@@ -278,8 +316,14 @@ export class ProductService {
       ? productionStages
       : [];
 
+    // Só os setores da empresa do produto: sem o filtro, as etapas do
+    // formulário traziam os setores de produção de todas as empresas
     const allSectors = await this.prisma.companySector.findMany({
-      where: { isProductionStage: true, isSystem: false },
+      where: {
+        companyId: product.companyId,
+        isProductionStage: true,
+        isSystem: false,
+      },
       select: { id: true, name: true, icon: true, isActive: true },
     });
 
@@ -333,6 +377,19 @@ export class ProductService {
   }
 
   async update(id: string, updateProductDto: UpdateProductDto) {
+    const owner = await this.prisma.product.findUnique({
+      where: { id },
+      select: { companyId: true },
+    });
+    // Sem o produto, o fluxo abaixo responde o 404
+    if (owner) {
+      await this.assertRefsOfCompany(owner.companyId, {
+        categoryId: updateProductDto.categoryId,
+        sectorId: updateProductDto.sectorId,
+        productionStages: updateProductDto.productionStages as any,
+      });
+    }
+
     try {
       console.log(
         'Updating product',

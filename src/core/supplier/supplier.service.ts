@@ -8,6 +8,7 @@ import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { SupplierFilterDTO } from './dto/filter.dto';
 import { ClientStatus, OwnerType, Prisma } from '@prisma/client';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 const EXPORT_LIMIT = '10000';
 
@@ -25,7 +26,39 @@ export class SupplierService {
     return document.replace(/[.\-/]/g, '');
   }
 
+  /**
+   * O grupo e as condições do limite de crédito vêm no corpo: precisam ser da
+   * empresa (o grupo pode ser o padrão do sistema)
+   */
+  private async assertRefsOfCompany(
+    companyId: string,
+    refs: {
+      categoryId?: string | null;
+      conditionIds?: (string | null | undefined)[];
+    },
+  ) {
+    await assertBelongsToCompany(
+      this.prisma.category,
+      refs.categoryId,
+      { OR: [{ companyId }, { isStandard: true }] },
+      'Grupo não encontrado.',
+    );
+    await assertBelongsToCompany(
+      this.prisma.paymentCondition,
+      refs.conditionIds,
+      { companyId },
+      'Condição de pagamento não encontrada.',
+    );
+  }
+
   async create(createDto: CreateSupplierDto) {
+    await this.assertRefsOfCompany(createDto.companyId, {
+      categoryId: createDto.general?.categoryId,
+      conditionIds: createDto.creditLimit?.conditions?.map(
+        (condition) => condition.id,
+      ),
+    });
+
     try {
       // Validar duplicidade de documento (CPF/CNPJ)
       // Ignora se o registro atual é filial OU se os registros existentes são filiais
@@ -403,6 +436,20 @@ export class SupplierService {
   }
 
   async update(id: string, updateSupplierDto: UpdateSupplierDto) {
+    const owner = await this.prisma.supplier.findUnique({
+      where: { id },
+      select: { companyId: true },
+    });
+    // Sem o fornecedor, o fluxo abaixo responde o 404
+    if (owner) {
+      await this.assertRefsOfCompany(owner.companyId, {
+        categoryId: updateSupplierDto.general?.categoryId,
+        conditionIds: updateSupplierDto.creditLimit?.conditions?.map(
+          (condition) => condition.id,
+        ),
+      });
+    }
+
     try {
       const supplier = await this.prisma.supplier.findUnique({ where: { id } });
       if (!supplier) {

@@ -12,6 +12,7 @@ import { ClientKind, ClientStatus, OwnerType, Prisma } from '@prisma/client';
 import * as fs from 'fs';
 import * as fastCsv from 'fast-csv';
 import { PlugService } from '../../svc/plug/plug.service';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 const EXPORT_LIMIT = '10000';
 
@@ -81,7 +82,48 @@ export class ClientService {
     return 'PROSPECT';
   }
 
+  /**
+   * O grupo, o responsável e as condições do limite de crédito vêm no corpo:
+   * precisam ser da empresa (o grupo pode ser o padrão do sistema). Antes, o
+   * id de outra empresa ligava o cadastro dela a este.
+   */
+  private async assertRefsOfCompany(
+    companyId: string,
+    refs: {
+      categoryId?: string | null;
+      responsibleId?: string | null;
+      conditionIds?: (string | null | undefined)[];
+    },
+  ) {
+    await assertBelongsToCompany(
+      this.prisma.category,
+      refs.categoryId?.trim() || undefined,
+      { OR: [{ companyId }, { isStandard: true }] },
+      'Grupo não encontrado.',
+    );
+    await assertBelongsToCompany(
+      this.prisma.employee,
+      refs.responsibleId,
+      { companyId },
+      'Colaborador não encontrado.',
+    );
+    await assertBelongsToCompany(
+      this.prisma.paymentCondition,
+      refs.conditionIds,
+      { companyId },
+      'Condição de pagamento não encontrada.',
+    );
+  }
+
   async create(createClientDto: CreateClientDto) {
+    await this.assertRefsOfCompany(createClientDto.companyId, {
+      categoryId: createClientDto.general?.categoryId,
+      responsibleId: createClientDto.responsibleId,
+      conditionIds: createClientDto.creditLimit?.conditions?.map(
+        (condition) => condition.id,
+      ),
+    });
+
     try {
       // Validar duplicidade de documento (CPF/CNPJ)
       // Ignora se o registro atual é filial OU se os registros existentes são filiais
@@ -225,6 +267,10 @@ export class ClientService {
   }
 
   async preRegisterClient(preRegisterClientDto: PreRegisterClientDto) {
+    await this.assertRefsOfCompany(preRegisterClientDto.companyId, {
+      categoryId: preRegisterClientDto.categoryId,
+    });
+
     try {
       return await this.prisma.client.create({
         data: {
@@ -579,6 +625,21 @@ export class ClientService {
   }
 
   async update(id: string, updateClientDto: UpdateClientDto) {
+    const owner = await this.prisma.client.findUnique({
+      where: { id },
+      select: { companyId: true },
+    });
+    // Sem o cliente, o fluxo abaixo responde o 404
+    if (owner) {
+      await this.assertRefsOfCompany(owner.companyId, {
+        categoryId: updateClientDto.general?.categoryId,
+        responsibleId: updateClientDto.responsibleId,
+        conditionIds: updateClientDto.creditLimit?.conditions?.map(
+          (condition) => condition.id,
+        ),
+      });
+    }
+
     try {
       const client = await this.prisma.client.findUnique({ where: { id } });
       if (!client) {
