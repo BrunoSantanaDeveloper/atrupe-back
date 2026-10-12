@@ -20,6 +20,7 @@ import {
   AuthUser,
   AuthUserRole,
   LoginResponse,
+  RefreshClaims,
   TokenResponse,
 } from './interfaces/auth.interfaces';
 
@@ -124,6 +125,7 @@ export class AuthService {
           isSystemAdmin: true,
           employeeId: null,
           subscription: 'FULL',
+          pwd: this.sessionAccess.passwordStamp(user.password),
         };
 
         const accessToken = this.jwtService.sign(payload);
@@ -203,6 +205,7 @@ export class AuthService {
         isSystemAdmin: false,
         employeeId: employee?.id || null,
         subscription: subscription,
+        pwd: this.sessionAccess.passwordStamp(user.password),
       };
 
       const accessToken = this.jwtService.sign(payload);
@@ -246,10 +249,23 @@ export class AuthService {
     }
   }
 
-  async refreshToken(userId: string): Promise<TokenResponse> {
+  /**
+   * Renova a sessão a partir das claims do refresh token. A conferência vem
+   * antes (usuário ativo, senha não trocada desde a emissão, vínculo com a
+   * empresa): sem ela, o refresh de 30 dias, que se renova a cada uso,
+   * seguia emitindo tokens para quem trocou a senha ou foi inativado.
+   */
+  async refreshToken(claims: RefreshClaims): Promise<TokenResponse> {
+    const pwd = await this.sessionAccess.assertRefreshable({
+      sub: claims.userId,
+      companyId: claims.companyId,
+      employeeId: claims.employeeId,
+      pwd: claims.pwd,
+    });
+
     try {
       // Buscar usuário atualizado
-      const user = await this.usersService.findOne(userId);
+      const user = await this.usersService.findOne(claims.userId);
       if (!user) {
         throw new Error('Usuário não encontrado');
       }
@@ -271,6 +287,7 @@ export class AuthService {
           isSystemAdmin: true,
           employeeId: null,
           subscription: 'FULL',
+          pwd,
         };
 
         const accessToken = this.jwtService.sign(payload);
@@ -301,6 +318,7 @@ export class AuthService {
         isSystemAdmin: false,
         employeeId: employee?.id || null,
         subscription: subscription,
+        pwd,
       };
 
       const accessToken = this.jwtService.sign(payload);

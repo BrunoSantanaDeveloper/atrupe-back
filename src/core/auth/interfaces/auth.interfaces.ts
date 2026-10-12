@@ -13,6 +13,16 @@ export interface JwtPayload {
   isSystemAdmin: boolean;
   employeeId: string | null;
   subscription: string;
+  /** Impressão da senha gravada (SessionAccessService.passwordStamp) */
+  pwd?: string;
+}
+
+/** O que o JwtRefreshStrategy põe em req.user: as claims do refresh token */
+export interface RefreshClaims {
+  userId: string;
+  companyId?: string | null;
+  employeeId?: string | null;
+  pwd?: string;
 }
 
 /** Estrutura de UserRole retornada pelo Prisma (include: { role: true }) */

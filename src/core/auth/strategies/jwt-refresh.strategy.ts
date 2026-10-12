@@ -24,6 +24,8 @@ export class JwtRefreshStrategy extends PassportStrategy(
       role: payload.role,
       isAdmin: payload.isAdmin,
       employeeId: payload.employeeId,
+      // A impressão da senha: a renovação confere se ainda é a gravada
+      pwd: payload.pwd,
     };
   }
 }

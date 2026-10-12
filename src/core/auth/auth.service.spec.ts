@@ -2,6 +2,7 @@ process.env.JWT_SECRET = 'test-secret';
 process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
@@ -14,6 +15,10 @@ import * as argon2 from 'argon2';
 describe('AuthService', () => {
   // Conta desativada por transferência: o login diz o motivo.
   const transferredAccess = jest.fn().mockResolvedValue(null);
+
+  // Impressão da senha nos tokens e conferência da renovação
+  const passwordStamp = jest.fn((hash: string) => `stamp-of-${hash}`);
+  const assertRefreshable = jest.fn().mockResolvedValue('stamp-atual');
 
   // Sessão da empresa no login: pagamento pendente e titularidade.
   const companySessionBuild = jest.fn().mockResolvedValue({
@@ -88,6 +93,7 @@ describe('AuthService', () => {
           provide: UserService,
           useValue: {
             findByEmail: jest.fn(),
+            findOne: jest.fn(),
           },
         },
         {
@@ -125,7 +131,11 @@ describe('AuthService', () => {
         },
         {
           provide: SessionAccessService,
-          useValue: { transferredAccess: transferredAccess },
+          useValue: {
+            transferredAccess: transferredAccess,
+            passwordStamp: passwordStamp,
+            assertRefreshable: assertRefreshable,
+          },
         },
       ],
     }).compile();
@@ -313,16 +323,67 @@ describe('AuthService', () => {
     });
   });
 
-  describe('refreshToken', () => {
-    it('should generate new tokens for valid user', async () => {
-      // Mock internal calls
-      jest
-        .spyOn(service as any, 'generateRefreshToken')
-        .mockReturnValue('new-refresh-token');
+  describe('impressão da senha nos tokens', () => {
+    it('o login de usuário de empresa leva a impressão da senha gravada', async () => {
+      await service.login(mockUser);
+      expect(passwordStamp).toHaveBeenCalledWith('hashed-password');
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        expect.objectContaining({ pwd: 'stamp-of-hashed-password' }),
+      );
+    });
 
-      // Note: refreshToken requires user lookup internally
-      // This test verifies token generation logic
-      expect(jwtService.sign).toBeDefined();
+    it('o login do superadmin também', async () => {
+      await service.login(mockSystemAdminUser);
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isSystemAdmin: true,
+          pwd: 'stamp-of-hashed-password',
+        }),
+      );
+    });
+  });
+
+  describe('refreshToken', () => {
+    const claims = {
+      userId: 'user-123',
+      companyId: 'company-123',
+      employeeId: 'emp-123',
+      pwd: 'stamp-do-token',
+    };
+
+    beforeEach(() => {
+      assertRefreshable.mockClear();
+      assertRefreshable.mockResolvedValue('stamp-atual');
+      (userService.findOne as jest.Mock).mockResolvedValue(mockUser);
+    });
+
+    it('confere a sessão antes de emitir tokens novos, com a impressão atual', async () => {
+      const result = await service.refreshToken(claims);
+
+      expect(assertRefreshable).toHaveBeenCalledWith({
+        sub: 'user-123',
+        companyId: 'company-123',
+        employeeId: 'emp-123',
+        pwd: 'stamp-do-token',
+      });
+      expect(result).toHaveProperty('access_token');
+      expect(result).toHaveProperty('refresh_token');
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        expect.objectContaining({ sub: 'user-123', pwd: 'stamp-atual' }),
+      );
+    });
+
+    it('sessão encerrada (senha trocada ou usuário inativo) responde 401 e não emite nada', async () => {
+      const revoked = new UnauthorizedException({
+        code: 'SESSION_REVOKED',
+        message: 'Sua sessão foi encerrada. Entre novamente.',
+      });
+      assertRefreshable.mockRejectedValueOnce(revoked);
+      (jwtService.sign as jest.Mock).mockClear();
+
+      await expect(service.refreshToken(claims)).rejects.toBe(revoked);
+      expect(userService.findOne).not.toHaveBeenCalled();
+      expect(jwtService.sign).not.toHaveBeenCalled();
     });
   });
 

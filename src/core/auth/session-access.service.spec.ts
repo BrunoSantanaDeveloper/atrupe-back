@@ -1,3 +1,6 @@
+process.env.JWT_REFRESH_SECRET =
+  process.env.JWT_REFRESH_SECRET || 'test-refresh-secret';
+
 import { UnauthorizedException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { SessionAccessService } from './session-access.service';
@@ -5,7 +8,7 @@ import { SessionAccessService } from './session-access.service';
 describe('SessionAccessService', () => {
   const prisma = {
     employee: { findUnique: jest.fn() },
-    user: { findFirst: jest.fn() },
+    user: { findFirst: jest.fn(), findUnique: jest.fn() },
     ownershipTransfer: { findFirst: jest.fn() },
   };
   let service: SessionAccessService;
@@ -27,6 +30,7 @@ describe('SessionAccessService', () => {
       prisma.employee.findUnique.mockResolvedValue({
         userId: 'user-1',
         companyId: 'company-1',
+        user: { isActive: true },
       });
 
       await service.assertLinked(claims);
@@ -64,6 +68,7 @@ describe('SessionAccessService', () => {
       prisma.employee.findUnique.mockResolvedValueOnce({
         userId: 'user-1',
         companyId: 'company-1',
+        user: { isActive: true },
       });
       await service.assertLinked(claims);
 
@@ -76,6 +81,140 @@ describe('SessionAccessService', () => {
       await expect(service.assertLinked(claims)).rejects.toBeInstanceOf(
         UnauthorizedException,
       );
+    });
+  });
+
+  describe('usuário inativado', () => {
+    it('a sessão cai na requisição seguinte, com a mensagem de sessão encerrada', async () => {
+      prisma.employee.findUnique.mockResolvedValue({
+        userId: 'user-1',
+        companyId: 'company-1',
+        user: { isActive: false },
+      });
+
+      await expect(service.assertLinked(claims)).rejects.toMatchObject({
+        response: {
+          code: 'SESSION_REVOKED',
+          message: 'Sua sessão foi encerrada. Entre novamente.',
+        },
+      });
+      expect(prisma.employee.findUnique).toHaveBeenCalledWith({
+        where: { id: 'emp-1' },
+        select: {
+          userId: true,
+          companyId: true,
+          user: { select: { isActive: true } },
+        },
+      });
+    });
+  });
+
+  describe('passwordStamp', () => {
+    it('é estável para o mesmo hash e muda quando o hash muda', async () => {
+      const first = await argon2.hash('Senha@123');
+      const again = await argon2.hash('Senha@123');
+
+      expect(service.passwordStamp(first)).toBe(service.passwordStamp(first));
+      // O hash tem sal: até a mesma senha gravada de novo muda a impressão
+      expect(service.passwordStamp(again)).not.toBe(
+        service.passwordStamp(first),
+      );
+      expect(service.passwordStamp(first)).not.toContain(first);
+    });
+  });
+
+  describe('assertRefreshable', () => {
+    const hash = 'hash-da-senha-gravada';
+    let stamp: string;
+
+    beforeEach(() => {
+      stamp = service.passwordStamp(hash);
+      prisma.employee.findUnique.mockResolvedValue({
+        userId: 'user-1',
+        companyId: 'company-1',
+        user: { isActive: true },
+      });
+    });
+
+    it('sessão em dia renova e devolve a impressão para os tokens novos', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        isActive: true,
+        password: hash,
+      });
+
+      await expect(
+        service.assertRefreshable({ ...claims, pwd: stamp }),
+      ).resolves.toBe(stamp);
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        select: { isActive: true, password: true },
+      });
+    });
+
+    it('senha trocada depois da emissão encerra a sessão', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        isActive: true,
+        password: 'hash-da-senha-nova',
+      });
+
+      await expect(
+        service.assertRefreshable({ ...claims, pwd: stamp }),
+      ).rejects.toMatchObject({ response: { code: 'SESSION_REVOKED' } });
+    });
+
+    it('usuário inativo não renova', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        isActive: false,
+        password: hash,
+      });
+
+      await expect(
+        service.assertRefreshable({ ...claims, pwd: stamp }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('token sem a impressão (emitido antes da conferência) não renova', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        isActive: true,
+        password: hash,
+      });
+
+      await expect(service.assertRefreshable(claims)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+
+    it('vínculo desfeito (transferência) também barra a renovação', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        isActive: true,
+        password: hash,
+      });
+      prisma.employee.findUnique.mockResolvedValue({
+        userId: null,
+        companyId: 'company-1',
+        user: null,
+      });
+
+      await expect(
+        service.assertRefreshable({ ...claims, pwd: stamp }),
+      ).rejects.toMatchObject({ response: { code: 'SESSION_REVOKED' } });
+    });
+
+    it('administrador do sistema renova sem conferir vínculo', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        isActive: true,
+        password: hash,
+      });
+
+      await expect(
+        service.assertRefreshable({
+          sub: 'admin',
+          companyId: null,
+          employeeId: null,
+          pwd: stamp,
+        }),
+      ).resolves.toBe(stamp);
+      expect(prisma.employee.findUnique).not.toHaveBeenCalled();
     });
   });
 

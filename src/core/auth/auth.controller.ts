@@ -138,7 +138,7 @@ export class AuthController {
   })
   @UseGuards(JwtRefreshGuard)
   async refresh(@Req() req) {
-    const response = await this.authService.refreshToken(req.user.userId);
+    const response = await this.authService.refreshToken(req.user);
     this.activityMonitorService
       .trackActivity({
         userId: req.user.userId,
