@@ -8,6 +8,14 @@ import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import axios from 'axios';
+
+/**
+ * Com a empresa, só as cobranças das assinaturas dela; sem ela (superadmin
+ * e chamadas internas, como cancelar e estornar), todas.
+ */
+function companyScope(companyId?: string) {
+  return companyId ? { subscription: { companyId } } : {};
+}
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -138,9 +146,9 @@ export class PaymentsService {
   /**
    * Lista payments de uma subscription específica
    */
-  async findBySubscription(subscriptionId: string) {
+  async findBySubscription(subscriptionId: string, companyId?: string) {
     const payments = await this.prisma.payment.findMany({
-      where: { subscriptionId },
+      where: { subscriptionId, ...companyScope(companyId) },
       orderBy: {
         dueDate: 'desc',
       },
@@ -158,9 +166,9 @@ export class PaymentsService {
   /**
    * Busca um payment específico
    */
-  async findOne(id: string) {
-    const payment = await this.prisma.payment.findUnique({
-      where: { id },
+  async findOne(id: string, companyId?: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id, ...companyScope(companyId) },
       include: {
         subscription: {
           include: {
@@ -181,8 +189,8 @@ export class PaymentsService {
   /**
    * Consulta status atualizado do payment no Asaas
    */
-  async getPaymentStatus(id: string) {
-    const payment = await this.findOne(id);
+  async getPaymentStatus(id: string, companyId?: string) {
+    const payment = await this.findOne(id, companyId);
 
     try {
       const config = await this.settingsService.getActiveAsaasConfig();

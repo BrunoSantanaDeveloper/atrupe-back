@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Param, UseGuards, Req } from '@nestjs/common';
+import {
+  Controller,
+  ForbiddenException,
+  Get,
+  Post,
+  Param,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -10,6 +18,19 @@ import { PaymentsService } from './payments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 import { PaymentResponseDto } from './dto/payment-response.dto';
+
+/**
+ * A cobrança é da conta da sessão. O superadmin vê qualquer uma; sem a
+ * empresa na sessão, ninguém vê.
+ */
+function companyOf(user: {
+  companyId?: string;
+  isSystemAdmin?: boolean;
+}): string | undefined {
+  if (user?.isSystemAdmin) return undefined;
+  if (!user?.companyId) throw new ForbiddenException('Acesso negado.');
+  return user.companyId;
+}
 
 @ApiTags('payments')
 @Controller('payments')
@@ -46,8 +67,14 @@ export class PaymentsController {
     status: 404,
     description: 'Nenhum pagamento encontrado',
   })
-  async findBySubscription(@Param('subscriptionId') subscriptionId: string) {
-    return this.paymentsService.findBySubscription(subscriptionId);
+  async findBySubscription(
+    @Param('subscriptionId') subscriptionId: string,
+    @Req() req,
+  ) {
+    return this.paymentsService.findBySubscription(
+      subscriptionId,
+      companyOf(req.user),
+    );
   }
 
   @Get(':id')
@@ -65,8 +92,8 @@ export class PaymentsController {
     status: 404,
     description: 'Payment não encontrado',
   })
-  async findOne(@Param('id') id: string) {
-    return this.paymentsService.findOne(id);
+  async findOne(@Param('id') id: string, @Req() req) {
+    return this.paymentsService.findOne(id, companyOf(req.user));
   }
 
   @Get(':id/status')
@@ -85,8 +112,8 @@ export class PaymentsController {
     status: 404,
     description: 'Payment não encontrado',
   })
-  async getPaymentStatus(@Param('id') id: string) {
-    return this.paymentsService.getPaymentStatus(id);
+  async getPaymentStatus(@Param('id') id: string, @Req() req) {
+    return this.paymentsService.getPaymentStatus(id, companyOf(req.user));
   }
 
   // Cancelar e estornar mexem em dinheiro e não recebem companyId: sem o guard,
