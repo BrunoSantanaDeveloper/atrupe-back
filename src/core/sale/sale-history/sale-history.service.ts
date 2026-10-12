@@ -28,10 +28,10 @@ export class SaleHistoryService {
    * Busca histórico unificado de todas as entidades relacionadas a uma venda (orçamento)
    * Inclui: histórico do orçamento, ordem de serviço, receitas e despesas
    */
-  async getSaleHistory(quotationId: string) {
-    // Buscar orçamento para validar
-    const quotation = await this.prisma.quotation.findUnique({
-      where: { id: quotationId },
+  async getSaleHistory(quotationId: string, companyId: string) {
+    // O orçamento precisa ser da empresa da sessão
+    const quotation = await this.prisma.quotation.findFirst({
+      where: { id: quotationId, companyId },
       include: {
         order: {
           select: { id: true },
@@ -214,9 +214,9 @@ export class SaleHistoryService {
   /**
    * Busca histórico unificado pelo ID da ordem de serviço
    */
-  async getSaleHistoryByOrderId(orderId: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
+  async getSaleHistoryByOrderId(orderId: string, companyId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, quotation: { companyId } },
       select: { quotationId: true },
     });
 
@@ -224,6 +224,6 @@ export class SaleHistoryService {
       throw new Error('Ordem de serviço não encontrada');
     }
 
-    return this.getSaleHistory(order.quotationId);
+    return this.getSaleHistory(order.quotationId, companyId);
   }
 }

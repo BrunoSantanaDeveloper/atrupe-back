@@ -44,9 +44,17 @@ export class QuotationItemsService {
         throw new NotFoundException('Orçamento não encontrado');
       }
 
-      // Busca o produto e verifica se ele existe
-      const product = await this.prisma.product.findUnique({
-        where: { id: data.productId },
+      // O produto precisa ser da empresa do orçamento: antes, o de outra
+      // empresa entrava, com nome, imagem e itens do catálogo dela
+      const product = await this.prisma.product.findFirst({
+        where: {
+          id: data.productId,
+          companyId: {
+            in: [quotation.companyId, quotation.subCompanyId].filter(
+              (companyId): companyId is string => !!companyId,
+            ),
+          },
+        },
         include: { items: true },
       });
       if (!product) {
@@ -152,6 +160,15 @@ export class QuotationItemsService {
 
       if (!product) {
         throw new NotFoundException(`Produto não encontrado`);
+      }
+
+      // Os itens do corpo precisam ser deste produto do orçamento: antes,
+      // o id de um item de outro orçamento (de outra empresa) era alterado
+      const ownItemIds = new Set(product.items.map((item) => item.id));
+      if (
+        (data.items ?? []).some((item) => item.id && !ownItemIds.has(item.id))
+      ) {
+        throw new NotFoundException('Item não encontrado no produto.');
       }
 
       // Atualiza o produto dentro do orçamento com valores do frontend

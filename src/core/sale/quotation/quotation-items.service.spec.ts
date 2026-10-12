@@ -20,6 +20,8 @@ const mockProduct = {
 
 const mockQuotation = {
   id: mockQuotationId,
+  companyId: 'company-uuid-1',
+  subCompanyId: 'company-uuid-1',
   status: QuotationStatus.OPEN,
   totalValue: 10000,
 };
@@ -63,6 +65,7 @@ const createMockPrismaService = () => ({
   },
   product: {
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
   },
   quotationProduct: {
     findFirst: jest.fn(),
@@ -112,7 +115,7 @@ describe('QuotationItemsService', () => {
   describe('addProductToQuotation', () => {
     it('should add product to quotation', async () => {
       prisma.quotation.findUnique.mockResolvedValue(mockQuotation);
-      prisma.product.findUnique.mockResolvedValue({
+      prisma.product.findFirst.mockResolvedValue({
         ...mockProduct,
         items: mockProduct.productItem,
       });
@@ -154,9 +157,30 @@ describe('QuotationItemsService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
+    it('produto de outra empresa: 404, sem entrar no orçamento', async () => {
+      prisma.quotation.findUnique.mockResolvedValue(mockQuotation);
+      prisma.product.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.addProductToQuotation(mockQuotationId, {
+          productId: 'produto-de-outra-empresa',
+          quantity: 1,
+          items: [],
+        }),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.product.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: 'produto-de-outra-empresa',
+          companyId: { in: ['company-uuid-1', 'company-uuid-1'] },
+        },
+        include: { items: true },
+      });
+      expect(prisma.quotationProduct.create).not.toHaveBeenCalled();
+    });
+
     it('should throw NotFoundException if product not found', async () => {
       prisma.quotation.findUnique.mockResolvedValue(mockQuotation);
-      prisma.product.findUnique.mockResolvedValue(null);
+      prisma.product.findFirst.mockResolvedValue(null);
 
       await expect(
         service.addProductToQuotation(mockQuotationId, {
@@ -169,6 +193,23 @@ describe('QuotationItemsService', () => {
   });
 
   describe('updateProductInQuotation', () => {
+    it('item de outro produto (de outro orçamento): 404, sem alterar nada', async () => {
+      prisma.quotationProduct.findUnique.mockResolvedValue({
+        ...mockQuotationProduct,
+        quotation: mockQuotation,
+        product: mockProduct,
+        items: mockQuotationProduct.items,
+      });
+
+      await expect(
+        service.updateProductInQuotation(mockQuotationProductId, {
+          items: [{ id: 'item-de-outro-orcamento', quantity: 9 }],
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.quotationProduct.update).not.toHaveBeenCalled();
+      expect(prisma.quotationProductItem.update).not.toHaveBeenCalled();
+    });
+
     it('should update product quantity', async () => {
       prisma.quotationProduct.findUnique.mockResolvedValue({
         ...mockQuotationProduct,

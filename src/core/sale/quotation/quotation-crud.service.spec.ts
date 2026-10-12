@@ -65,9 +65,20 @@ const createMockPrismaService = () => {
     saleSeries: {
       findUnique: jest.fn(),
       update: jest.fn(),
+      count: jest.fn().mockResolvedValue(1),
     },
+    // A conta da sessão: só a própria empresa, sem filiais
     company: {
       findUnique: jest.fn(),
+      findMany: jest
+        .fn()
+        .mockResolvedValue([{ id: mockCompanyId, principalCompanyId: null }]),
+    },
+    client: {
+      count: jest.fn().mockResolvedValue(1),
+    },
+    quotationTag: {
+      count: jest.fn().mockResolvedValue(1),
     },
     contact: {
       findFirst: jest.fn(),
@@ -96,9 +107,11 @@ const createMockPrismaService = () => {
     },
     contactSource: {
       findMany: jest.fn(),
+      count: jest.fn().mockResolvedValue(1),
     },
     employee: {
       findUnique: jest.fn(),
+      count: jest.fn().mockResolvedValue(1),
     },
   };
 
@@ -143,14 +156,18 @@ describe('QuotationCrudService', () => {
       prisma.paymentCondition.findFirst.mockResolvedValue(mockPaymentCondition);
       prisma.quotationPayment.create.mockResolvedValue({});
 
-      const result = await service.create({
-        companyId: mockCompanyId,
-        sellerId: mockSellerId,
-        seriesId: mockSeriesId,
-        clientId: 'client-uuid',
-        subCompanyId: null,
-        quotationNumber: 100,
-      });
+      const result = await service.create(
+        {
+          companyId: mockCompanyId,
+          sellerId: mockSellerId,
+          seriesId: mockSeriesId,
+          clientId: 'client-uuid',
+          subCompanyId: null,
+          quotationNumber: 100,
+        },
+        undefined,
+        mockCompanyId,
+      );
 
       expect(result).toBeDefined();
       expect(result.id).toBe(mockQuotationId);
@@ -166,13 +183,17 @@ describe('QuotationCrudService', () => {
       prisma.paymentCondition.findFirst.mockResolvedValue(mockPaymentCondition);
       prisma.quotationPayment.create.mockResolvedValue({});
 
-      await service.create({
-        companyId: mockCompanyId,
-        sellerId: mockSellerId,
-        seriesId: mockSeriesId,
-        subCompanyId: null,
-        quickSale: true,
-      });
+      await service.create(
+        {
+          companyId: mockCompanyId,
+          sellerId: mockSellerId,
+          seriesId: mockSeriesId,
+          subCompanyId: null,
+          quickSale: true,
+        },
+        undefined,
+        mockCompanyId,
+      );
 
       // Antes o create descartava o quickSale e a venda saía como orçamento.
       expect(prisma.quotation.create).toHaveBeenCalledWith(
@@ -187,14 +208,18 @@ describe('QuotationCrudService', () => {
 
     it('should throw BadRequestException if seriesId is missing', async () => {
       await expect(
-        service.create({
-          companyId: mockCompanyId,
-          sellerId: mockSellerId,
-          seriesId: undefined,
-          clientId: 'client-uuid',
-          subCompanyId: null,
-          quotationNumber: 100,
-        }),
+        service.create(
+          {
+            companyId: mockCompanyId,
+            sellerId: mockSellerId,
+            seriesId: undefined,
+            clientId: 'client-uuid',
+            subCompanyId: null,
+            quotationNumber: 100,
+          },
+          undefined,
+          mockCompanyId,
+        ),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -202,14 +227,18 @@ describe('QuotationCrudService', () => {
       prisma.saleSeries.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.create({
-          companyId: mockCompanyId,
-          sellerId: mockSellerId,
-          seriesId: mockSeriesId,
-          clientId: 'client-uuid',
-          subCompanyId: null,
-          quotationNumber: 100,
-        }),
+        service.create(
+          {
+            companyId: mockCompanyId,
+            sellerId: mockSellerId,
+            seriesId: mockSeriesId,
+            clientId: 'client-uuid',
+            subCompanyId: null,
+            quotationNumber: 100,
+          },
+          undefined,
+          mockCompanyId,
+        ),
       ).rejects.toThrow(NotFoundException);
     });
   });
@@ -286,9 +315,14 @@ describe('QuotationCrudService', () => {
         description: 'Updated',
       });
 
-      const result = await service.update(mockQuotationId, {
-        description: 'Updated',
-      });
+      const result = await service.update(
+        mockQuotationId,
+        {
+          description: 'Updated',
+        },
+        undefined,
+        mockCompanyId,
+      );
 
       expect(result.description).toBe('Updated');
     });
@@ -297,7 +331,12 @@ describe('QuotationCrudService', () => {
       prisma.quotation.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.update('invalid-id', { description: 'Updated' }),
+        service.update(
+          'invalid-id',
+          { description: 'Updated' },
+          undefined,
+          mockCompanyId,
+        ),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -323,7 +362,12 @@ describe('QuotationCrudService', () => {
         prisma.saleSeries.update.mockResolvedValue({ currentBudgetNumber: 12 });
         prisma.quotation.update.mockResolvedValue(quotationNaSerieAntiga);
 
-        await service.update(mockQuotationId, { seriesId: newSeriesId });
+        await service.update(
+          mockQuotationId,
+          { seriesId: newSeriesId },
+          undefined,
+          mockCompanyId,
+        );
 
         expect(prisma.saleSeries.update).toHaveBeenCalledWith({
           where: { id: newSeriesId },
@@ -343,10 +387,15 @@ describe('QuotationCrudService', () => {
         prisma.quotation.findUnique.mockResolvedValue(quotationNaSerieAntiga);
         prisma.quotation.update.mockResolvedValue(quotationNaSerieAntiga);
 
-        await service.update(mockQuotationId, {
-          seriesId: mockSeriesId,
-          description: 'Nova descrição',
-        });
+        await service.update(
+          mockQuotationId,
+          {
+            seriesId: mockSeriesId,
+            description: 'Nova descrição',
+          },
+          undefined,
+          mockCompanyId,
+        );
 
         expect(prisma.saleSeries.update).not.toHaveBeenCalled();
         const { data } = prisma.quotation.update.mock.calls[0][0];
@@ -362,7 +411,12 @@ describe('QuotationCrudService', () => {
         });
 
         await expect(
-          service.update(mockQuotationId, { seriesId: newSeriesId }),
+          service.update(
+            mockQuotationId,
+            { seriesId: newSeriesId },
+            undefined,
+            mockCompanyId,
+          ),
         ).rejects.toThrow(BadRequestException);
         expect(prisma.saleSeries.update).not.toHaveBeenCalled();
         expect(prisma.quotation.update).not.toHaveBeenCalled();
@@ -376,7 +430,12 @@ describe('QuotationCrudService', () => {
         });
 
         await expect(
-          service.update(mockQuotationId, { seriesId: newSeriesId }),
+          service.update(
+            mockQuotationId,
+            { seriesId: newSeriesId },
+            undefined,
+            mockCompanyId,
+          ),
         ).rejects.toThrow(BadRequestException);
         expect(prisma.saleSeries.update).not.toHaveBeenCalled();
       });
@@ -396,6 +455,7 @@ describe('QuotationCrudService', () => {
           mockQuotationId,
           { seriesId: newSeriesId },
           'user-1',
+          mockCompanyId,
         );
 
         const { data } = history.create.mock.calls[0][0];

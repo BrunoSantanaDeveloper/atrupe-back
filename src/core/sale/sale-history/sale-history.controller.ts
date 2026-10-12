@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Param,
+  Req,
   UseGuards,
   NotFoundException,
 } from '@nestjs/common';
@@ -21,9 +22,13 @@ export class SaleHistoryController {
   @Get('quotation/:quotationId')
   async getHistoryByQuotation(
     @Param('quotationId') quotationId: string,
+    @Req() req,
   ): Promise<SaleHistoryResponseDto> {
     try {
-      return await this.saleHistoryService.getSaleHistory(quotationId);
+      return await this.saleHistoryService.getSaleHistory(
+        quotationId,
+        req.user.companyId,
+      );
     } catch (error) {
       throw new NotFoundException(error.message);
     }
@@ -36,9 +41,13 @@ export class SaleHistoryController {
   @Get('order/:orderId')
   async getHistoryByOrder(
     @Param('orderId') orderId: string,
+    @Req() req,
   ): Promise<SaleHistoryResponseDto> {
     try {
-      return await this.saleHistoryService.getSaleHistoryByOrderId(orderId);
+      return await this.saleHistoryService.getSaleHistoryByOrderId(
+        orderId,
+        req.user.companyId,
+      );
     } catch (error) {
       throw new NotFoundException(error.message);
     }

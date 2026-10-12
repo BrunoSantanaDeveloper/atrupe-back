@@ -207,10 +207,14 @@ describe('QuotationService', () => {
       const dto = { companyId: mockCompanyId } as any;
       crudService.create.mockResolvedValue(mockQuotation);
 
-      const result = await service.create(dto);
+      const result = await service.create(dto, undefined, mockCompanyId);
 
       expect(result).toBe(mockQuotation);
-      expect(crudService.create).toHaveBeenCalledWith(dto, undefined);
+      expect(crudService.create).toHaveBeenCalledWith(
+        dto,
+        undefined,
+        mockCompanyId,
+      );
     });
 
     it('should delegate findOne to crudService', async () => {
@@ -406,13 +410,19 @@ describe('QuotationService', () => {
       const dto = { description: 'Updated' } as any;
       crudService.update.mockResolvedValue({ ...mockQuotation, ...dto });
 
-      const result = await service.update(mockQuotationId, dto);
+      const result = await service.update(
+        mockQuotationId,
+        dto,
+        undefined,
+        mockCompanyId,
+      );
 
       expect(result.description).toBe('Updated');
       expect(crudService.update).toHaveBeenCalledWith(
         mockQuotationId,
         dto,
         undefined,
+        mockCompanyId,
       );
     });
 
@@ -663,9 +673,9 @@ describe('QuotationService', () => {
         sellerId: '123',
       } as any;
 
-      await expect(service.create(dtoSemCliente)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.create(dtoSemCliente, undefined, mockCompanyId),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('deve calcular total corretamente com múltiplos itens (delega para ItemsService)', async () => {
@@ -701,11 +711,12 @@ describe('QuotationService', () => {
         quotationPayment: { paymentConditionId: 'novo-id' },
       } as any;
       crudService.update.mockResolvedValue(mockQuotation);
-      await service.update(mockQuotationId, dto);
+      await service.update(mockQuotationId, dto, undefined, mockCompanyId);
       expect(crudService.update).toHaveBeenCalledWith(
         mockQuotationId,
         dto,
         undefined,
+        mockCompanyId,
       );
     });
   });

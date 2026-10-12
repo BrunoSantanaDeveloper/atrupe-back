@@ -1176,6 +1176,7 @@ async function ensureData(ctx: Ctx, sellerEmployeeId: string | undefined) {
             description: quotation.description,
           },
           ctx.adminUserId,
+          ctx.companyId,
         );
         await prisma.quotation.update({
           where: { id: created.id },

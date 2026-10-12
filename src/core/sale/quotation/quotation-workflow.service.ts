@@ -25,6 +25,7 @@ import {
 } from './quotation-financial.types';
 import { calculateFinalValue } from './quotation.utils';
 import { PlanControlService } from '../../plan/plan-control.service';
+import { companyWithoutKeys } from 'src/shared/company/company-keys';
 
 export const ALREADY_APPROVED_MESSAGE = 'Este orçamento já está aprovado.';
 
@@ -715,7 +716,15 @@ export class QuotationWorkflowService {
             prisma,
           );
 
-        return { quotation, receivable, payable };
+        // A empresa vai inteira no include: sem as chaves do provedor fiscal
+        return {
+          quotation: {
+            ...quotation,
+            company: companyWithoutKeys(quotation.company),
+          },
+          receivable,
+          payable,
+        };
       },
       {
         timeout: 20000,

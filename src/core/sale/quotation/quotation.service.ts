@@ -42,8 +42,12 @@ export class QuotationService {
   // CRUD Operations → QuotationCrudService
   // =====================================================
 
-  create(dto: CreateQuotationDto, userId?: string): Promise<Quotation> {
-    return this.crudService.create(dto, userId);
+  create(
+    dto: CreateQuotationDto,
+    userId: string | undefined,
+    sessionCompanyId: string,
+  ): Promise<Quotation> {
+    return this.crudService.create(dto, userId, sessionCompanyId);
   }
 
   findAll(dto: FilterQuotationDto) {
@@ -66,8 +70,13 @@ export class QuotationService {
     return this.crudService.count(companyId);
   }
 
-  update(id: string, dto: UpdateQuotationDto, userId?: string) {
-    return this.crudService.update(id, dto, userId);
+  update(
+    id: string,
+    dto: UpdateQuotationDto,
+    userId: string | undefined,
+    sessionCompanyId: string,
+  ) {
+    return this.crudService.update(id, dto, userId, sessionCompanyId);
   }
 
   remove(id: string) {

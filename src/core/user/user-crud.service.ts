@@ -10,20 +10,7 @@ import { CacheService } from 'src/svc/cache/cache.service';
 import { PlugService } from 'src/svc/plug/plug.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import * as argon2 from 'argon2';
-
-/**
- * A empresa vai na resposta do /user/me, que toda sessão lê: sem as
- * chaves do provedor fiscal, que o modo legado grava em texto puro.
- */
-function companyWithoutKeys<T extends object | null | undefined>(
-  company: T,
-): T {
-  if (!company) return company;
-  const rest: any = { ...company };
-  delete rest.accessKey;
-  delete rest.partnerKey;
-  return rest;
-}
+import { companyWithoutKeys } from 'src/shared/company/company-keys';
 
 @Injectable()
 export class UserCrudService {

@@ -21,6 +21,7 @@ import { QUOTATION_FIND_ONE_INCLUDE } from './quotation.includes';
 import { transformQuotationToResponse } from './quotation.transformers';
 import { QuotationGroup } from './quotation.service';
 import { reassignQuotationSeries } from './quotation-series.util';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 const EXPORT_LIMIT = '10000';
 
@@ -60,11 +61,93 @@ export class QuotationCrudService {
   }
 
   /**
+   * As empresas da conta da sessão: a principal e as filiais dela, as que
+   * o formulário oferece como empresa do orçamento.
+   */
+  private async accountCompanies(sessionCompanyId: string) {
+    return this.prisma.company.findMany({
+      where: {
+        OR: [
+          { id: sessionCompanyId },
+          { principalCompanyId: sessionCompanyId },
+        ],
+      },
+      select: { id: true, principalCompanyId: true },
+    });
+  }
+
+  /**
+   * A empresa do corpo é a emissora e precisa ser da conta. Volta o par
+   * gravado no orçamento: a principal em companyId e a emissora em
+   * subCompanyId.
+   */
+  private async emitterOfAccount(companyId: string, sessionCompanyId: string) {
+    const companies = await this.accountCompanies(sessionCompanyId);
+    const emitter = companies.find((company) => company.id === companyId);
+    if (!emitter) {
+      throw new NotFoundException('Empresa não encontrada.');
+    }
+    return {
+      companyIds: companies.map((company) => company.id),
+      companyId: emitter.principalCompanyId ?? emitter.id,
+      subCompanyId: emitter.id,
+    };
+  }
+
+  /**
+   * Cliente, vendedor, origem de contato, status e série do corpo
+   * precisam ser da conta (a origem pode ser global, sem empresa).
+   */
+  private async assertRefsOfAccount(
+    companyIds: string[],
+    refs: {
+      clientId?: string | null;
+      sellerId?: string | null;
+      contactSourceId?: string | null;
+      tagId?: string | null;
+      seriesId?: string | null;
+    },
+  ) {
+    const scope = { companyId: { in: companyIds } };
+    await assertBelongsToCompany(
+      this.prisma.client,
+      refs.clientId,
+      scope,
+      'Cliente não encontrado.',
+    );
+    await assertBelongsToCompany(
+      this.prisma.employee,
+      refs.sellerId,
+      scope,
+      'Vendedor não encontrado.',
+    );
+    await assertBelongsToCompany(
+      this.prisma.contactSource,
+      refs.contactSourceId,
+      { OR: [scope, { companyId: null }] },
+      'Origem de contato não encontrada.',
+    );
+    await assertBelongsToCompany(
+      this.prisma.quotationTag,
+      refs.tagId,
+      scope,
+      'Status não encontrado.',
+    );
+    await assertBelongsToCompany(
+      this.prisma.saleSeries,
+      refs.seriesId,
+      scope,
+      'Série não encontrada.',
+    );
+  }
+
+  /**
    * Cria um novo orçamento
    */
   async create(
     createQuotationDto: CreateQuotationDto,
-    userId?: string,
+    userId: string | undefined,
+    sessionCompanyId: string,
   ): Promise<Quotation> {
     const {
       description,
@@ -82,6 +165,16 @@ export class QuotationCrudService {
           `Não é possível criar um orçamento sem uma série`,
         );
       }
+      // Empresa, série e cadastros do corpo precisam ser da conta da
+      // sessão: antes, o id de outra empresa criava o orçamento nela e
+      // consumia um número da série dela
+      const account = await this.emitterOfAccount(companyId, sessionCompanyId);
+      await this.assertRefsOfAccount(account.companyIds, {
+        clientId,
+        sellerId,
+        contactSourceId,
+        seriesId,
+      });
       const series = await this.prisma.saleSeries.findUnique({
         where: { id: seriesId },
       });
@@ -556,7 +649,8 @@ export class QuotationCrudService {
   async update(
     id: string,
     updateQuotationDto: UpdateQuotationDto,
-    userId?: string,
+    userId: string | undefined,
+    sessionCompanyId: string,
   ) {
     try {
       const existingQuotation = await this.prisma.quotation.findUnique({
@@ -568,7 +662,31 @@ export class QuotationCrudService {
         throw new NotFoundException(`Orçamento com ID '${id}' não encontrado.`);
       }
 
+      // Empresa e cadastros do corpo precisam ser da conta da sessão. O
+      // formulário reenvia a empresa emissora: dentro da conta, grava como
+      // na criação (antes ia direto para companyId, inclusive de outra
+      // empresa)
+      const account = updateQuotationDto.companyId
+        ? await this.emitterOfAccount(
+            updateQuotationDto.companyId,
+            sessionCompanyId,
+          )
+        : null;
+      const accountIds =
+        account?.companyIds ??
+        (await this.accountCompanies(sessionCompanyId)).map((c) => c.id);
+      await this.assertRefsOfAccount(accountIds, {
+        clientId: updateQuotationDto.clientId,
+        sellerId: updateQuotationDto.sellerId,
+        contactSourceId: updateQuotationDto.contactSourceId,
+        tagId: updateQuotationDto.tagId,
+      });
+
       const updateData: any = { ...updateQuotationDto };
+      if (account) {
+        updateData.companyId = account.companyId;
+        updateData.subCompanyId = account.subCompanyId;
+      }
 
       // O formulário reenvia a série atual em toda edição. Só a troca real
       // renumera; sem ela o campo sai do update e do histórico.
@@ -817,6 +935,34 @@ export class QuotationCrudService {
       throw new NotFoundException(
         `Orçamento com ID '${quotationId}' não encontrado.`,
       );
+    }
+
+    // Cliente e responsável do corpo: da empresa do orçamento de origem
+    await assertBelongsToCompany(
+      this.prisma.client,
+      duplicateDto.clientId,
+      {
+        companyId: {
+          in: [quotation.companyId, quotation.subCompanyId].filter(
+            (companyId): companyId is string => !!companyId,
+          ),
+        },
+      },
+      'Cliente não encontrado.',
+    );
+    if (duplicateDto.contactId) {
+      const clientId = duplicateDto.clientId || quotation.clientId;
+      const contact = clientId
+        ? await this.prisma.contact.findFirst({
+            where: { id: duplicateDto.contactId, clientId },
+            select: { id: true },
+          })
+        : null;
+      if (!contact) {
+        throw new BadRequestException(
+          'Contato não encontrado ou não pertence ao cliente informado',
+        );
+      }
     }
 
     // Atomic increment: increment first, then use the returned value

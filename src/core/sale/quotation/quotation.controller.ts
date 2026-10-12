@@ -153,7 +153,11 @@ export class QuotationController {
         'quotation_quick_sale',
       );
     }
-    return this.quotationService.create(createQuotationDto, req.user?.userId);
+    return this.quotationService.create(
+      createQuotationDto,
+      req.user?.userId,
+      req.user.companyId,
+    );
   }
 
   @Post(':id/add-product')
@@ -375,6 +379,7 @@ export class QuotationController {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
+    await this.validateOwnership(id, req.user, 'view');
 
     const userId = req.user?.sub || req.user?.id;
     return this.quotationService.duplicate(id, dto, userId);
@@ -449,10 +454,11 @@ export class QuotationController {
     status: 404,
     description: 'Orçamento não encontrado.',
   })
-  async bill(@Param('id') id: string) {
+  async bill(@Param('id') id: string, @Req() req) {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
+    await this.validateOwnership(id, req.user, 'edit');
     return this.quotationService.billQuotation(id);
   }
 
@@ -613,6 +619,7 @@ export class QuotationController {
       id,
       updateQuotationDto,
       req.user?.userId,
+      req.user.companyId,
     );
   }
   @Delete('delete-imported')
@@ -653,7 +660,9 @@ export class QuotationController {
     status: 404,
     description: 'Orçamento não encontrado.',
   })
-  remove(@Param('id') id: string) {
+  async remove(@Param('id') id: string, @Req() req) {
+    // Sem a conferência, inativava o orçamento de qualquer empresa
+    await this.validateOwnership(id, req.user, 'edit');
     return this.quotationService.remove(id);
   }
 
@@ -836,6 +845,7 @@ export class QuotationController {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
+    await this.validateOwnership(id, req.user, 'view');
     return await this.quotationService.getQuotationPdfData(id, req.user.userId);
   }
 }
