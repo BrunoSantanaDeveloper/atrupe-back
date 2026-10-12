@@ -27,6 +27,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AbacService } from '../../auth/abac/abac.service';
+import { permissionDenied } from '../../auth/abac/permissions.guard';
 import { PlanControlService } from '../../plan/plan-control.service';
 import { isUUID } from 'class-validator';
 
@@ -71,8 +72,13 @@ export class OrderController {
     status: 201,
     description: 'Ordem de serviço criada com sucesso.',
   })
-  create(@Body() createOrderDto: CreateOrderDto) {
-    return this.orderService.create(createOrderDto);
+  async create(@Req() req, @Body() createOrderDto: CreateOrderDto) {
+    if (
+      !(await this.abacService.hasPermission(req.user, 'create', 'sale:order'))
+    ) {
+      throw permissionDenied(['sale:order:create']);
+    }
+    return this.orderService.create(createOrderDto, req.user.companyId);
   }
 
   @Get()

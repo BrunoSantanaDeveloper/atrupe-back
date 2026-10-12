@@ -23,6 +23,9 @@ const mockSellerId = 'seller-uuid-101';
 
 const createMockPrismaService = () => {
   const mock: any = {
+    quotation: {
+      findFirst: jest.fn(),
+    },
     order: {
       create: jest.fn(),
       findUnique: jest.fn(),
@@ -88,17 +91,34 @@ describe('OrderService', () => {
         quotationId: mockQuotationId,
         status: OrderStatus.PENDING,
       };
+      prisma.quotation.findFirst.mockResolvedValue({ id: mockQuotationId });
       prisma.order.create.mockResolvedValue(mockOrder);
 
-      const result = await service.create({ quotationId: mockQuotationId });
+      const result = await service.create(
+        { quotationId: mockQuotationId },
+        mockCompanyId,
+      );
 
       expect(result.status).toBe(OrderStatus.PENDING);
+      expect(prisma.quotation.findFirst).toHaveBeenCalledWith({
+        where: { id: mockQuotationId, companyId: mockCompanyId },
+        select: { id: true },
+      });
       expect(prisma.order.create).toHaveBeenCalledWith({
         data: {
           quotationId: mockQuotationId,
           status: OrderStatus.PENDING,
         },
       });
+    });
+
+    it('não cria O.S. para orçamento de outra empresa', async () => {
+      prisma.quotation.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.create({ quotationId: mockQuotationId }, mockCompanyId),
+      ).rejects.toThrow(new NotFoundException('Orçamento não encontrado.'));
+      expect(prisma.order.create).not.toHaveBeenCalled();
     });
   });
 

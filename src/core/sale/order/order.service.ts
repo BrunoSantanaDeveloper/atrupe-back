@@ -63,7 +63,20 @@ export class OrderService {
   private readonly logger = new Logger(OrderService.name);
   constructor(private prisma: PrismaService) {}
 
-  async create(createOrderDto: CreateOrderDto) {
+  /**
+   * Nenhuma tela chama: a O.S. nasce na aprovação do orçamento. O orçamento
+   * precisa ser da empresa da sessão; sem isso, a rota criava O.S. para
+   * orçamento de outra empresa, que aparecia na lista dela.
+   */
+  async create(createOrderDto: CreateOrderDto, companyId: string) {
+    const quotation = await this.prisma.quotation.findFirst({
+      where: { id: createOrderDto.quotationId, companyId },
+      select: { id: true },
+    });
+    if (!quotation) {
+      throw new NotFoundException('Orçamento não encontrado.');
+    }
+
     const order = await this.prisma.order.create({
       data: {
         quotationId: createOrderDto.quotationId,
