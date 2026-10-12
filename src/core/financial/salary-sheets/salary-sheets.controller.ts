@@ -19,6 +19,8 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
+import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
+import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 
 import { GetSalarySheetsDto } from './dto/salaries-filters.dto';
@@ -34,7 +36,10 @@ const RESOURCE = 'payroll';
 const GROUP = 'financial';
 
 @ApiTags('Folhas de pagamento')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+// O TenantGuard confere que a folha (ou o item, pela folha) da rota é da
+// empresa da sessão: salários e adiantamentos de outra empresa eram lidos,
+// alterados e estornados pelo id
+@UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class SalarySheetsController {
@@ -83,8 +88,11 @@ export class SalarySheetsController {
     status: 400,
     description: 'Dados inválidos',
   })
-  async generateSalarySheets(@Body() dto: GenerateSalarySheetsDto) {
-    return this.salaryService.generateSalarySheetForEmployees(dto);
+  async generateSalarySheets(@Req() req, @Body() dto: GenerateSalarySheetsDto) {
+    return this.salaryService.generateSalarySheetForEmployees(
+      dto,
+      req.user.companyId,
+    );
   }
 
   @Get()
@@ -256,6 +264,7 @@ export class SalarySheetsController {
     status: 404,
     description: 'Folha de pagamento não encontrada',
   })
+  @TenantResource('payroll')
   async getSalarySheet(@Param('id') id: string) {
     return this.salaryService.getSalarySheetById(id);
   }
@@ -331,6 +340,7 @@ export class SalarySheetsController {
     status: 404,
     description: 'Folha de pagamento não encontrada.',
   })
+  @TenantResource('payroll')
   async getSalarySheetPdfData(@Param('id') id: string, @Req() req) {
     return await this.salaryService.getSalarySheetPdfData(id, req.user.userId);
   }
@@ -407,6 +417,7 @@ export class SalarySheetsController {
     status: 404,
     description: 'Item da folha de pagamento não encontrado.',
   })
+  @TenantResource('payrollItem', 'itemId', 'payroll')
   async getAdvanceItemPdfData(@Param('itemId') itemId: string, @Req() req) {
     return await this.salaryService.getAdvanceItemPdfData(
       itemId,
@@ -433,6 +444,7 @@ export class SalarySheetsController {
     status: 400,
     description: 'Dados inválidos ou folha não está aberta',
   })
+  @TenantResource('payroll', 'payrollId')
   async addSalaryItem(
     @Param('payrollId') payrollId: string,
     @Body() addSalaryItemDto: AddSalaryItemDto,
@@ -458,6 +470,7 @@ export class SalarySheetsController {
     status: 404,
     description: 'Item não encontrado',
   })
+  @TenantResource('payrollItem', 'itemId', 'payroll')
   async updateSalaryItem(
     @Param('itemId') itemId: string,
     @Body() updateSalaryItemDto: UpdateSalaryItemDto,
@@ -492,6 +505,7 @@ export class SalarySheetsController {
     status: 404,
     description: 'Item não encontrado',
   })
+  @TenantResource('payrollItem', 'itemId', 'payroll')
   async deleteSalaryItem(@Param('itemId') itemId: string) {
     return await this.salaryService.deleteSalaryItem(itemId);
   }
@@ -515,6 +529,7 @@ export class SalarySheetsController {
     status: 400,
     description: 'Item não é um adiantamento ou erro no cancelamento',
   })
+  @TenantResource('payrollItem', 'itemId', 'payroll')
   async cancelAdvance(@Param('itemId') itemId: string) {
     return await this.salaryService.cancelAdvance(itemId);
   }
@@ -532,7 +547,7 @@ export class SalarySheetsController {
     status: 400,
     description: 'Status inválido ou folha não encontrada',
   })
-  async toggleStatus(@Body() dto: ToggleSalarySheetStatusDto) {
-    return this.salaryService.toggleSalarySheetStatus(dto);
+  async toggleStatus(@Req() req, @Body() dto: ToggleSalarySheetStatusDto) {
+    return this.salaryService.toggleSalarySheetStatus(dto, req.user.companyId);
   }
 }

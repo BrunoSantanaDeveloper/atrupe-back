@@ -26,11 +26,14 @@ export class SalarySheetsService {
   ) {}
 
   // Recebe o mes, ano, e uma lista de colaboradores para gerar folha de pagamento.
-  async generateSalarySheetForEmployees(data: {
-    month: number;
-    year: number;
-    list: string[];
-  }): Promise<{
+  async generateSalarySheetForEmployees(
+    data: {
+      month: number;
+      year: number;
+      list: string[];
+    },
+    companyId: string,
+  ): Promise<{
     success: number;
     skipped: number;
     errors: Array<{ employeeId: string; reason: string }>;
@@ -60,10 +63,13 @@ export class SalarySheetsService {
       errors: [] as Array<{ employeeId: string; reason: string }>,
     };
 
-    // Busca todos os colaboradores de uma vez
+    // Busca todos os colaboradores de uma vez. Só os da empresa da sessão:
+    // o de outra empresa cai em "não encontrado" (antes, a folha e a despesa
+    // de salário eram geradas na empresa dele)
     const employees = await this.prisma.employee.findMany({
       where: {
         id: { in: employeeIds },
+        companyId,
       },
       include: {
         PayrollSetup: {
@@ -922,11 +928,16 @@ export class SalarySheetsService {
     };
   }
 
-  async toggleSalarySheetStatus(dto: ToggleSalarySheetStatusDto) {
+  async toggleSalarySheetStatus(
+    dto: ToggleSalarySheetStatusDto,
+    companyId: string,
+  ) {
     const { payrollId, status } = dto;
 
-    const payroll = await this.prisma.payroll.findUnique({
-      where: { id: payrollId },
+    // A folha do corpo precisa ser da empresa: a de outra conta como não
+    // encontrada (antes, abria ou fechava a folha dela)
+    const payroll = await this.prisma.payroll.findFirst({
+      where: { id: payrollId, companyId },
       select: {
         id: true,
         status: true,
