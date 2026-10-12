@@ -16,20 +16,27 @@ import { UpdateAcademySystemDto } from './dto/update-academy-system.dto';
 import { CreateAcademyProgressDto } from './dto/create-academy-progress.dto';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 
 @Controller('academy')
 export class AcademyController {
   constructor(private readonly academyService: AcademyService) {}
+  // Sem guarda, qualquer anônimo lia o catálogo de produtos da empresa base
+  // e criava, editava ou apagava o conteúdo da academia de todas as
+  // empresas. Quem escreve é a tela do superadmin (/admin/academy).
   @Get('extract')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
   async getExtra() {
     return await this.academyService.extractData();
   }
   @Post('')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
   createAcademySystem(@Body() data: CreateAcademySystemDto) {
     return this.academyService.createAcademySystem(data);
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
   updateAcademySystem(
     @Param('id') id: string,
     @Body() data: UpdateAcademySystemDto,
@@ -38,6 +45,7 @@ export class AcademyController {
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
   deleteAcademySystem(@Param('id') id: string) {
     return this.academyService.deleteAcademySystem(id);
   }
