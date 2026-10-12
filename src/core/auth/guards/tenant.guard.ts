@@ -47,34 +47,35 @@ export class TenantGuard implements CanActivate {
     const resourceId = request.params[tenantConfig.paramName];
     if (!resourceId) return true;
 
-    try {
-      const resource = await (
-        this.prisma[tenantConfig.model] as any
-      ).findUnique({
-        where: { id: resourceId },
-        select: { companyId: true },
-      });
-
-      if (!resource) {
-        // Let the service handle 404
-        return true;
-      }
-
-      if (resource.companyId !== user.companyId) {
-        this.logger.warn(
-          `Tenant violation: user ${user.userId} (company ${user.companyId}) tried to access ${tenantConfig.model} ${resourceId} (company ${resource.companyId})`,
-        );
-        throw new ForbiddenException('Acesso negado.');
-      }
-
-      return true;
-    } catch (error) {
-      if (error instanceof ForbiddenException) throw error;
-      // Model might not have companyId or doesn't exist
-      this.logger.warn(
-        `TenantGuard: Could not validate ${tenantConfig.model}.${resourceId}: ${error.message}`,
+    // Falha fechada. Antes, nome de model errado, model sem companyId ou
+    // erro do banco liberavam a requisição: a rota ficava aberta a outras
+    // empresas sem aviso. O nome e o companyId de cada @TenantResource são
+    // conferidos por tenant-resource.spec.ts; erro do banco sobe como 500.
+    const delegate = (this.prisma as any)[tenantConfig.model];
+    if (typeof delegate?.findUnique !== 'function') {
+      this.logger.error(
+        `TenantGuard: model desconhecido "${tenantConfig.model}" no @TenantResource`,
       );
+      throw new ForbiddenException('Acesso negado.');
+    }
+
+    const resource = await delegate.findUnique({
+      where: { id: resourceId },
+      select: { companyId: true },
+    });
+
+    if (!resource) {
+      // Let the service handle 404
       return true;
     }
+
+    if (resource.companyId !== user.companyId) {
+      this.logger.warn(
+        `Tenant violation: user ${user.userId} (company ${user.companyId}) tried to access ${tenantConfig.model} ${resourceId} (company ${resource.companyId})`,
+      );
+      throw new ForbiddenException('Acesso negado.');
+    }
+
+    return true;
   }
 }

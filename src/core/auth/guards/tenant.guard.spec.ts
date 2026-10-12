@@ -101,6 +101,27 @@ describe('TenantGuard', () => {
     await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
 
+  it('falha fechada com model desconhecido no @TenantResource', async () => {
+    reflector.get.mockReturnValue({ model: 'quotaton', paramName: 'id' });
+    const ctx = makeCtx(
+      { companyId: 'c-1', isSystemAdmin: false },
+      { id: 'quot-1' },
+    );
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('erro do banco não libera a requisição', async () => {
+    reflector.get.mockReturnValue({ model: 'quotation', paramName: 'id' });
+    prisma.quotation = {
+      findUnique: jest.fn().mockRejectedValue(new Error('conexão caiu')),
+    };
+    const ctx = makeCtx(
+      { companyId: 'c-1', isSystemAdmin: false },
+      { id: 'quot-1' },
+    );
+    await expect(guard.canActivate(ctx)).rejects.toThrow('conexão caiu');
+  });
+
   it('deve permitir quando recurso não é encontrado (404 tratado pela service)', async () => {
     reflector.get.mockReturnValue({ model: 'quotation', paramName: 'id' });
     prisma.quotation = { findUnique: jest.fn().mockResolvedValue(null) };
