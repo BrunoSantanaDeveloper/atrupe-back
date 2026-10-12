@@ -74,4 +74,47 @@ describe('EmployeeService: cargo e setor da empresa', () => {
     expect(prisma.employee.findUnique).not.toHaveBeenCalled();
     expect(prisma.role.count).not.toHaveBeenCalled();
   });
+
+  it('o endereço do corpo grava só os campos de endereço, sem empresa nem dono de outra', async () => {
+    const tx = {
+      employee: {
+        findUnique: jest.fn().mockResolvedValue({
+          userId: null,
+          company: { ownerUserId: null },
+        }),
+        update: jest.fn().mockResolvedValue({ id: 'emp-1' }),
+      },
+      address: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn(),
+        create: jest.fn(),
+      },
+    };
+    prisma.$transaction.mockImplementation(async (fn: any) => fn(tx));
+    const endereco = {
+      zipcode: '01310100',
+      state: 'SP',
+      city: 'São Paulo',
+      neighborhood: 'Bela Vista',
+      street: 'Avenida Paulista',
+      number: '1000',
+      complement: '',
+    };
+
+    await service
+      .update('emp-1', {
+        address: {
+          ...endereco,
+          id: 'endereco-x',
+          companyId: 'empresa-b',
+          ownerId: 'cliente-b',
+          supplierId: 'fornecedor-b',
+        },
+      } as any)
+      .catch(() => undefined);
+
+    expect(tx.address.create).toHaveBeenCalledWith({
+      data: { ...endereco, ownerType: 'EMPLOYEE', employeeId: 'emp-1' },
+    });
+  });
 });

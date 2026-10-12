@@ -189,8 +189,15 @@ export class QuotationCrudService {
         },
       });
 
-      // Validação do contactId se informado
-      if (contactId && clientId) {
+      // O responsável precisa ser do cliente informado, como na edição.
+      // Sem cliente no corpo, o contato de outra empresa era gravado sem
+      // conferência nenhuma
+      if (contactId) {
+        if (!clientId) {
+          throw new BadRequestException(
+            'Informe um cliente para vincular o responsável.',
+          );
+        }
         const contact = await this.prisma.contact.findFirst({
           where: {
             id: contactId,

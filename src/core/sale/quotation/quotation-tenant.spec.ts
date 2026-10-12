@@ -135,6 +135,28 @@ describe('Orçamento: outra empresa', () => {
       },
     );
 
+    it('criar com responsável e sem cliente: 400, sem consumir número de série', async () => {
+      prisma.saleSeries.findUnique.mockResolvedValue({ id: 'serie-a' });
+      prisma.company.findUnique.mockResolvedValue({
+        id: 'empresa-a',
+        principalCompanyId: null,
+      });
+
+      await expect(
+        service.create(
+          {
+            ...createDto,
+            clientId: undefined,
+            contactId: 'contato-de-outra-empresa',
+          },
+          'u-a',
+          'empresa-a',
+        ),
+      ).rejects.toThrow('Informe um cliente para vincular o responsável.');
+      expect(prisma.saleSeries.update).not.toHaveBeenCalled();
+      expect(prisma.quotation.create).not.toHaveBeenCalled();
+    });
+
     it('editar com status (tag) de outra empresa: 404, sem gravar', async () => {
       prisma.quotation.findUnique.mockResolvedValue({
         id: 'orcamento-a',

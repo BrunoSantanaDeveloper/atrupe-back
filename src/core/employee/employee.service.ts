@@ -503,9 +503,19 @@ export class EmployeeService {
         // Cria os novos endereços fornecidos no DTO
         const newAddresses = Array.isArray(address) ? address : [address];
         for (const address of newAddresses) {
+          // Só os campos de endereço. O objeto aninhado não passa pela
+          // validação do DTO, e espalhá-lo inteiro deixava gravar um
+          // endereço com companyId, ownerId ou supplierId de outra empresa
           await tx.address.create({
             data: {
-              ...address,
+              type: address.type,
+              zipcode: address.zipcode,
+              state: address.state,
+              city: address.city,
+              neighborhood: address.neighborhood,
+              street: address.street,
+              number: address.number,
+              complement: address.complement,
               ownerType: 'EMPLOYEE',
               employeeId: id,
             },
