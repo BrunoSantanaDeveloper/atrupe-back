@@ -11,7 +11,7 @@ import { ReportModule } from './svc/report/report.module';
 import configuration from './config/configuration';
 import { ConfigModule } from '@nestjs/config';
 import { PlugModule } from './svc/plug/plug.module';
-import { APP_PIPE, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_PIPE, APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 import { CacheModule } from './svc/cache/cache.module';
 import { UtilsModule } from './svc/utils/utils.module';
 import { PdfService } from './svc/pdf/pdf.service';
@@ -23,6 +23,7 @@ import { ActivityTrackingInterceptor } from './core/activity-monitor/interceptor
 import { ActivityMonitorService } from './core/activity-monitor/activity-monitor.service';
 import { PrismaService } from './config/prisma/prisma.service';
 import { PageLimitMiddleware } from './common/pagination/page-limit.middleware';
+import { AccountThrottlerGuard } from './common/throttler/account-throttler.guard';
 
 @Module({
   imports: [
@@ -55,6 +56,12 @@ import { PageLimitMiddleware } from './common/pagination/page-limit.middleware';
     {
       provide: APP_INTERCEPTOR,
       useClass: ActivityTrackingInterceptor,
+    },
+    // Requisições por conta e por minuto: observa por padrão
+    // (ACCOUNT_RATE_LIMIT_ENFORCE=true recusa com 429)
+    {
+      provide: APP_GUARD,
+      useClass: AccountThrottlerGuard,
     },
     ActivityMonitorService,
     PrismaService,
