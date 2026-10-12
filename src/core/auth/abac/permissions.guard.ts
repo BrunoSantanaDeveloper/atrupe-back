@@ -17,6 +17,20 @@ export const PERMISSION_DENIED = 'PERMISSION_DENIED';
 export const PERMISSION_DENIED_MESSAGE =
   'Você não tem permissão para esta ação.';
 
+/**
+ * A recusa do guard. Também serve a quem confere a permissão no handler,
+ * quando a chave depende do registro (a categoria pelo tipo, por exemplo).
+ */
+export function permissionDenied(permissions: string[]) {
+  return new ForbiddenException({
+    statusCode: 403,
+    error: 'Forbidden',
+    code: PERMISSION_DENIED,
+    message: PERMISSION_DENIED_MESSAGE,
+    permissions,
+  });
+}
+
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   private readonly logger = new Logger(PermissionsGuard.name);
@@ -79,13 +93,7 @@ export class PermissionsGuard implements CanActivate {
 
     // Recusar com `false` deixava o 403 padrão do Nest, "Forbidden resource",
     // que chegava em inglês à tela. Com o código, o front mostra a mensagem.
-    throw new ForbiddenException({
-      statusCode: 403,
-      error: 'Forbidden',
-      code: PERMISSION_DENIED,
-      message: PERMISSION_DENIED_MESSAGE,
-      permissions,
-    });
+    throw permissionDenied(permissions);
   }
 
   private isObserving(context: ExecutionContext): boolean {

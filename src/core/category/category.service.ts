@@ -1,15 +1,26 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { CategoryFilterDTO } from './dto/filter.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { BadRequestException } from '@nestjs/common';
 
+const CATEGORY_NOT_FOUND = 'Categoria não encontrada.';
+
 @Injectable()
 export class CategoryService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createCategoryDto: CreateCategoryDto) {
+    await this.assertSectorOfCompany(
+      createCategoryDto.sectorId,
+      createCategoryDto.companyId,
+    );
+
     try {
       return await this.prisma.category.create({ data: createCategoryDto });
     } catch (error) {
@@ -181,11 +192,49 @@ export class CategoryService {
     };
   }
 
-  findOne(id: string) {
-    return this.prisma.category.findUnique({ where: { id } });
+  /**
+   * Leitura por id: categoria da empresa ou padrão do sistema, as mesmas que
+   * as listas mostram. A de outra empresa responde 404, como um id que não
+   * existe.
+   */
+  async findOne(id: string, companyId: string) {
+    const category = await this.prisma.category.findFirst({
+      where: { id, OR: [{ companyId }, { isStandard: true }] },
+    });
+
+    if (!category) {
+      throw new NotFoundException(CATEGORY_NOT_FOUND);
+    }
+
+    return category;
   }
 
-  async update(id: string, updateCategoryDto: UpdateCategoryDto) {
+  /**
+   * A categoria que a empresa pode alterar ou excluir: a dela. A padrão do
+   * sistema aparece para todas as empresas, e mudar uma muda a de todas.
+   */
+  async findOwn(id: string, companyId: string) {
+    const category = await this.findOne(id, companyId);
+
+    if (category.isStandard || category.companyId !== companyId) {
+      throw new UnprocessableEntityException({
+        code: 'STANDARD_CATEGORY',
+        message:
+          'Este grupo é padrão do sistema e não pode ser alterado nem excluído.',
+      });
+    }
+
+    return category;
+  }
+
+  async update(
+    id: string,
+    companyId: string,
+    updateCategoryDto: UpdateCategoryDto,
+  ) {
+    await this.findOwn(id, companyId);
+    await this.assertSectorOfCompany(updateCategoryDto.sectorId, companyId);
+
     // Verificar se está tentando ativar uma categoria
     if (updateCategoryDto.isActive === true) {
       // Buscar a categoria atual para verificar se ela tem um setor associado
@@ -221,7 +270,9 @@ export class CategoryService {
     });
   }
 
-  async remove(id: string) {
+  async remove(id: string, companyId: string) {
+    await this.findOwn(id, companyId);
+
     const productsUsingCategory = await this.prisma.product.count({
       where: { categoryId: id },
     });
@@ -249,5 +300,21 @@ export class CategoryService {
     }
 
     return this.prisma.category.delete({ where: { id } });
+  }
+
+  /** O setor do grupo é da mesma empresa. */
+  private async assertSectorOfCompany(
+    sectorId: string | null | undefined,
+    companyId: string,
+  ) {
+    if (!sectorId) return;
+
+    const sector = await this.prisma.companySector.findFirst({
+      where: { id: sectorId, companyId },
+      select: { id: true },
+    });
+    if (!sector) {
+      throw new NotFoundException('Setor não encontrado.');
+    }
   }
 }
