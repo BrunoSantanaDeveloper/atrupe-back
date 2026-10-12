@@ -7,7 +7,10 @@ jest.mock('axios');
 describe('AiModelSelectionService', () => {
   const mockedAxios = axios as jest.Mocked<typeof axios>;
 
-  function makeService(existingSettings: Record<string, any> = {}) {
+  function makeService(
+    existingSettings: Record<string, any> = {},
+    configOverrides: Record<string, unknown> = {},
+  ) {
     const prisma = {
       systemSetting: {
         findUnique: jest.fn(({ where }) => {
@@ -35,6 +38,7 @@ describe('AiModelSelectionService', () => {
           'ai.modelMinContext': 128000,
           'ai.modelSwitchMinGain': 0.15,
           'ai.modelSwitchCooldownDays': 7,
+          ...configOverrides,
         };
         return values[key];
       }),
@@ -58,6 +62,29 @@ describe('AiModelSelectionService', () => {
     };
   }
 
+  // A avaliação lê a lista de modelos e a de endpoints de retenção zero.
+  // Sem a segunda lista informada, todo modelo tem retenção zero
+  function mockOpenRouter(
+    models: Array<{ id: string }>,
+    zeroRetention: Array<{
+      model_id: string;
+      supported_parameters: string[];
+    }> = models.map((item) => zdr(item.id)),
+  ) {
+    mockedAxios.get.mockReset();
+    mockedAxios.get.mockImplementation((url: string) =>
+      Promise.resolve({
+        data: {
+          data: url.endsWith('/endpoints/zdr') ? zeroRetention : models,
+        },
+      }),
+    );
+  }
+
+  function zdr(model_id: string, supported = ['tools', 'tool_choice']) {
+    return { model_id, supported_parameters: supported };
+  }
+
   it('usa AI_MODEL como fallback quando não há configuração salva', async () => {
     const { service } = makeService();
 
@@ -65,17 +92,13 @@ describe('AiModelSelectionService', () => {
   });
 
   it('ignora modelos fora da allowlist ou sem tool_choice', async () => {
-    mockedAxios.get.mockResolvedValueOnce({
-      data: {
-        data: [
-          model('openai/gpt-oss-120b'),
-          model('unknown/model'),
-          model('google/gemini-3.1-flash-lite', {
-            supported_parameters: ['tools'],
-          }),
-        ],
-      },
-    });
+    mockOpenRouter([
+      model('openai/gpt-oss-120b'),
+      model('unknown/model'),
+      model('google/gemini-3.1-flash-lite', {
+        supported_parameters: ['tools'],
+      }),
+    ]);
     const { service } = makeService();
 
     const result = await service.evaluateAndMaybeSwitch('manual');
@@ -85,18 +108,14 @@ describe('AiModelSelectionService', () => {
   });
 
   it('troca para candidato permitido com melhor score e respeita persistência', async () => {
-    mockedAxios.get.mockResolvedValueOnce({
-      data: {
-        data: [
-          model('openai/gpt-oss-120b', {
-            pricing: { prompt: '0.000001', completion: '0.000004' },
-          }),
-          model('google/gemini-3.1-flash-lite', {
-            pricing: { prompt: '0.00000003', completion: '0.00000008' },
-          }),
-        ],
-      },
-    });
+    mockOpenRouter([
+      model('openai/gpt-oss-120b', {
+        pricing: { prompt: '0.000001', completion: '0.000004' },
+      }),
+      model('google/gemini-3.1-flash-lite', {
+        pricing: { prompt: '0.00000003', completion: '0.00000008' },
+      }),
+    ]);
     const { service, prisma } = makeService();
 
     const result = await service.evaluateAndMaybeSwitch('manual');
@@ -111,18 +130,14 @@ describe('AiModelSelectionService', () => {
   });
 
   it('não troca quando cooldown está ativo', async () => {
-    mockedAxios.get.mockResolvedValueOnce({
-      data: {
-        data: [
-          model('openai/gpt-oss-120b', {
-            pricing: { prompt: '0.000001', completion: '0.000004' },
-          }),
-          model('google/gemini-3.1-flash-lite', {
-            pricing: { prompt: '0.00000003', completion: '0.00000008' },
-          }),
-        ],
-      },
-    });
+    mockOpenRouter([
+      model('openai/gpt-oss-120b', {
+        pricing: { prompt: '0.000001', completion: '0.000004' },
+      }),
+      model('google/gemini-3.1-flash-lite', {
+        pricing: { prompt: '0.00000003', completion: '0.00000008' },
+      }),
+    ]);
     const { service } = makeService({
       ai_model_config: {
         activeModel: 'openai/gpt-oss-120b',
@@ -138,5 +153,77 @@ describe('AiModelSelectionService', () => {
 
     expect(result.switched).toBe(false);
     expect(result.reason).toBe('Cooldown de troca ainda ativo.');
+  });
+
+  describe('retenção zero', () => {
+    const cheap = { prompt: '0.00000003', completion: '0.00000008' };
+    const expensive = { prompt: '0.000001', completion: '0.000004' };
+    const models = [
+      model('openai/gpt-oss-120b', { pricing: expensive }),
+      model('qwen/qwen3.7-max', { pricing: cheap }),
+    ];
+
+    it('modelo sem endpoint de retenção zero não é candidato, mesmo mais barato', async () => {
+      mockOpenRouter(models, [zdr('openai/gpt-oss-120b')]);
+      const { service } = makeService();
+
+      const result = await service.evaluateAndMaybeSwitch('manual');
+
+      expect(result.candidates.map((candidate) => candidate.id)).toEqual([
+        'openai/gpt-oss-120b',
+      ]);
+      expect(result.candidates[0].reasons).toContain(
+        'Tem provedor de retenção zero',
+      );
+      expect(result.switched).toBe(false);
+    });
+
+    it('endpoint de retenção zero que não aceita ferramentas não conta', async () => {
+      mockOpenRouter(models, [
+        zdr('openai/gpt-oss-120b'),
+        zdr('qwen/qwen3.7-max', ['temperature']),
+      ]);
+      const { service } = makeService();
+
+      const result = await service.evaluateAndMaybeSwitch('manual');
+
+      expect(result.candidates.map((candidate) => candidate.id)).toEqual([
+        'openai/gpt-oss-120b',
+      ]);
+    });
+
+    it('modelo ativo sem retenção zero é trocado pelo melhor que tem', async () => {
+      mockOpenRouter(models, [zdr('openai/gpt-oss-120b')]);
+      const { service } = makeService({
+        ai_model_config: {
+          activeModel: 'qwen/qwen3.7-max',
+          autoSelectionEnabled: true,
+          allowlist: ['openai/gpt-oss-120b', 'qwen/qwen3.7-max'],
+          blacklist: [],
+          minContext: 128000,
+        },
+      });
+
+      const result = await service.evaluateAndMaybeSwitch('scheduled');
+
+      expect(result.switched).toBe(true);
+      expect(result.selectedModel).toBe('openai/gpt-oss-120b');
+    });
+
+    it('com a política desligada, a lista não é consultada e o modelo volta a concorrer', async () => {
+      mockOpenRouter(models, [zdr('openai/gpt-oss-120b')]);
+      const { service } = makeService({}, { 'ai.zeroDataRetention': false });
+
+      const result = await service.evaluateAndMaybeSwitch('manual');
+
+      expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+      expect(mockedAxios.get.mock.calls[0][0]).toBe(
+        'https://openrouter.ai/api/v1/models',
+      );
+      expect(result.selectedModel).toBe('qwen/qwen3.7-max');
+      expect(result.candidates[0].reasons).not.toContain(
+        'Tem provedor de retenção zero',
+      );
+    });
   });
 });

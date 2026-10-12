@@ -8,6 +8,7 @@ import axios from 'axios';
 import { AiModelSelectionService } from '../ai-model-selection.service';
 import { AiMessage, AiProviderResponse, AiToolDefinition } from '../ai.types';
 import { AiProvider } from './ai-provider.interface';
+import { openRouterProviderPreferences } from './openrouter-data-policy';
 
 interface OpenRouterChoice {
   message?: {
@@ -62,6 +63,7 @@ export class OpenRouterAiProvider implements AiProvider {
             tool_choice: 'auto',
             stream: false,
             session_id: params.conversationId,
+            provider: openRouterProviderPreferences(this.config),
           },
           {
             headers: {
@@ -107,6 +109,11 @@ export class OpenRouterAiProvider implements AiProvider {
 
         const hasNextModel = index < models.length - 1;
         if (!failure.retryable || !hasNextModel) {
+          this.logger.error(
+            `Assistente de IA sem resposta. Modelo ${model}${
+              failure.statusCode ? ` (HTTP ${failure.statusCode})` : ''
+            }: ${failure.reason}`,
+          );
           throw new ServiceUnavailableException(
             'Assistente de IA indisponível no momento. Tente novamente em instantes.',
           );
@@ -149,7 +156,9 @@ export class OpenRouterAiProvider implements AiProvider {
       };
     }
 
-    if ([408, 409, 425, 429, 500, 502, 503, 504].includes(statusCode)) {
+    // 404 é do modelo, não da chamada: não existe, está sem provedor ou
+    // nenhum provedor dele atende à política de dados. O próximo pode ter
+    if ([404, 408, 409, 425, 429, 500, 502, 503, 504].includes(statusCode)) {
       return {
         retryable: true,
         reason,

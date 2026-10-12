@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OpenRouterAiProvider } from './openrouter-ai.provider';
 
@@ -145,5 +146,100 @@ describe('OpenRouterAiProvider', () => {
       'rate limit',
       429,
     );
+  });
+
+  describe('política de dados', () => {
+    const answer = (content: string) => ({
+      data: { choices: [{ message: { content, tool_calls: [] } }] },
+    });
+    const noEndpoint = {
+      response: {
+        status: 404,
+        data: {
+          error: { message: 'No endpoints found matching your data policy.' },
+        },
+      },
+    };
+    const complete = (provider: OpenRouterAiProvider) =>
+      provider.complete({
+        conversationId: 'conversation-1',
+        messages: [{ role: 'user', content: 'Oi' }],
+        tools: [],
+      });
+
+    it('pede ao provedor que não treine com as conversas nem as guarde', async () => {
+      mockedAxios.post.mockResolvedValueOnce(answer('Resposta final'));
+
+      await complete(
+        new OpenRouterAiProvider(makeConfig(), makeModelSelection() as any),
+      );
+
+      expect((mockedAxios.post.mock.calls[0][1] as any).provider).toEqual({
+        data_collection: 'deny',
+        zdr: true,
+      });
+    });
+
+    it('com a retenção zero desligada, continua recusando provedor que treina', async () => {
+      mockedAxios.post.mockResolvedValueOnce(answer('Resposta final'));
+
+      await complete(
+        new OpenRouterAiProvider(
+          makeConfig({ 'ai.zeroDataRetention': false }),
+          makeModelSelection() as any,
+        ),
+      );
+
+      expect((mockedAxios.post.mock.calls[0][1] as any).provider).toEqual({
+        data_collection: 'deny',
+      });
+    });
+
+    it('modelo sem provedor que atenda à política passa ao próximo da cadeia', async () => {
+      mockedAxios.post
+        .mockRejectedValueOnce(noEndpoint)
+        .mockResolvedValueOnce(answer('Resposta fallback'));
+      const modelSelection = makeModelSelection();
+
+      const result = await complete(
+        new OpenRouterAiProvider(makeConfig(), modelSelection as any),
+      );
+
+      expect(result.model).toBe('google/gemini-3.1-flash-lite');
+      expect(modelSelection.recordModelFailure).toHaveBeenCalledWith(
+        'openai/gpt-oss-120b',
+        'No endpoints found matching your data policy.',
+        404,
+      );
+    });
+
+    it('sem outro modelo na cadeia, o motivo vai para o log e o assistente fica indisponível', async () => {
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      mockedAxios.post.mockRejectedValueOnce(noEndpoint);
+      const modelSelection = makeModelSelection();
+
+      await expect(
+        complete(
+          new OpenRouterAiProvider(
+            makeConfig({ 'ai.modelMaxRetries': 0 }),
+            modelSelection as any,
+          ),
+        ),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+      expect(error).toHaveBeenCalledWith(
+        'Assistente de IA sem resposta. Modelo openai/gpt-oss-120b (HTTP 404): No endpoints found matching your data policy.',
+      );
+      // Fica também na configuração do modelo, que o superadmin consulta
+      expect(modelSelection.recordModelFailure).toHaveBeenCalledWith(
+        'openai/gpt-oss-120b',
+        'No endpoints found matching your data policy.',
+        404,
+      );
+      error.mockRestore();
+    });
   });
 });

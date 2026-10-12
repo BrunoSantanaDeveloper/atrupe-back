@@ -4,6 +4,7 @@ import { Cron } from '@nestjs/schedule';
 import axios from 'axios';
 import { PrismaService } from 'nestjs-prisma';
 import { UpdateAiModelConfigDto } from './dto/ai-model-config.dto';
+import { zeroDataRetentionRequired } from './providers/openrouter-data-policy';
 
 const CONFIG_KEY = 'ai_model_config';
 const CANDIDATES_KEY = 'ai_model_candidates';
@@ -55,6 +56,11 @@ interface OpenRouterModel {
     output_modalities?: string[];
   };
   output_modalities?: string[];
+}
+
+interface OpenRouterEndpoint {
+  model_id?: string;
+  supported_parameters?: string[];
 }
 
 @Injectable()
@@ -178,7 +184,8 @@ export class AiModelSelectionService {
   async evaluateAndMaybeSwitch(trigger: 'manual' | 'scheduled' = 'manual') {
     const modelConfig = await this.getConfig();
     const models = await this.fetchOpenRouterModels();
-    const candidates = this.rankCandidates(models, modelConfig);
+    const zeroRetention = await this.fetchZeroRetentionModels();
+    const candidates = this.rankCandidates(models, modelConfig, zeroRetention);
     const best = candidates[0] || null;
     const current = candidates.find(
       (item) => item.id === modelConfig.activeModel,
@@ -265,15 +272,46 @@ export class AiModelSelectionService {
     return response.data?.data || [];
   }
 
+  // Modelos com ao menos um endpoint de retenção zero que aceita
+  // ferramentas: fora deles a chamada do assistente é recusada pelo
+  // provedor. `null` quando a política está desligada
+  private async fetchZeroRetentionModels(): Promise<Set<string> | null> {
+    if (!zeroDataRetentionRequired(this.config)) return null;
+
+    const baseUrl = this.config.get<string>('ai.baseUrl');
+    const apiKey = this.config.get<string>('ai.apiKey');
+
+    const response = await axios.get(`${baseUrl}/endpoints/zdr`, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+      timeout: 30000,
+    });
+
+    const endpoints: OpenRouterEndpoint[] = response.data?.data || [];
+    return new Set(
+      endpoints
+        .filter((endpoint) => {
+          const parameters = endpoint.supported_parameters || [];
+          return (
+            parameters.includes('tools') && parameters.includes('tool_choice')
+          );
+        })
+        .map((endpoint) => endpoint.model_id)
+        .filter(Boolean),
+    );
+  }
+
   private rankCandidates(
     models: OpenRouterModel[],
     modelConfig: AiModelConfig,
+    zeroRetention: Set<string> | null,
   ): AiModelCandidate[] {
     const allowed = new Set(modelConfig.allowlist);
     const blocked = new Set(modelConfig.blacklist);
     const candidates = models
-      .filter((model) => this.isEligible(model, allowed, blocked, modelConfig))
-      .map((model) => this.toCandidate(model));
+      .filter((model) =>
+        this.isEligible(model, allowed, blocked, modelConfig, zeroRetention),
+      )
+      .map((model) => this.toCandidate(model, !!zeroRetention));
 
     const cheapest = Math.min(
       ...candidates.map((candidate) => candidate.estimatedQuestionCost),
@@ -296,9 +334,11 @@ export class AiModelSelectionService {
     allowed: Set<string>,
     blocked: Set<string>,
     modelConfig: AiModelConfig,
+    zeroRetention: Set<string> | null,
   ) {
     if (!model.id || !allowed.has(model.id)) return false;
     if (blocked.has(model.id)) return false;
+    if (zeroRetention && !zeroRetention.has(model.id)) return false;
     if (model.id.endsWith(':free') && !allowed.has(model.id)) return false;
     if ((model.context_length || 0) < modelConfig.minContext) return false;
 
@@ -316,7 +356,10 @@ export class AiModelSelectionService {
     return !!model.pricing?.prompt && !!model.pricing?.completion;
   }
 
-  private toCandidate(model: OpenRouterModel): AiModelCandidate {
+  private toCandidate(
+    model: OpenRouterModel,
+    zeroRetention: boolean,
+  ): AiModelCandidate {
     const promptPrice = Number(model.pricing.prompt);
     const completionPrice = Number(model.pricing.completion);
     const estimatedQuestionCost =
@@ -336,6 +379,7 @@ export class AiModelSelectionService {
         'Modelo permitido na allowlist',
         'Suporta tools e tool_choice',
         `Contexto ${model.context_length || 0}`,
+        ...(zeroRetention ? ['Tem provedor de retenção zero'] : []),
       ],
     };
   }

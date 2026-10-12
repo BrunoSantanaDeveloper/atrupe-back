@@ -44,6 +44,8 @@ export default () => ({
       : parseInt(process.env.AI_MODEL_MAX_RETRIES, 10),
     maxToolCalls: parseInt(process.env.AI_MAX_TOOL_CALLS, 10) || 5,
     maxHistoryMessages: parseInt(process.env.AI_MAX_HISTORY_MESSAGES, 10) || 20,
+    // Só endpoints de retenção zero no provedor; 'false' desliga
+    zeroDataRetention: process.env.AI_ZERO_DATA_RETENTION !== 'false',
   },
 });
 

@@ -262,6 +262,33 @@ describe('AiToolRegistry', () => {
     expect(getFiscalSetupContext).toHaveBeenCalledWith(user);
   });
 
+  it('o contexto da empresa leva só o nome e a situação da conta', async () => {
+    const { registry, prisma } = makeRegistry();
+    const context = {
+      name: 'Gráfica Teste',
+      blockLevel: 'NONE',
+      isActive: true,
+    };
+    prisma.company.findUnique.mockResolvedValue(context);
+
+    const result = await registry.execute(
+      'get_company_basic_context',
+      {},
+      user,
+    );
+
+    // CNPJ, razão social e id interno não vão ao provedor
+    expect(prisma.company.findUnique).toHaveBeenCalledWith({
+      where: { id: companyId },
+      select: { name: true, blockLevel: true, isActive: true },
+    });
+    expect(result).toEqual({
+      name: 'get_company_basic_context',
+      status: 'success',
+      content: context,
+    });
+  });
+
   it('encaminha consulta cadastral para a camada semantica', async () => {
     const query = jest.fn().mockResolvedValue({ total: 2 });
     const { registry } = makeRegistry({ registrationQuery: { query } });

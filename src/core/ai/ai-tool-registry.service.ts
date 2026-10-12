@@ -121,7 +121,7 @@ export class AiToolRegistry {
       ),
       this.tool(
         'get_company_basic_context',
-        'Contexto básico da empresa logada, sem dados sensíveis.',
+        'Nome e situação da conta (ativa, nível de bloqueio) da empresa logada.',
       ),
     ];
   }
@@ -421,17 +421,16 @@ export class AiToolRegistry {
     return this.safety.sanitizeToolArguments(args, allowedKeys).clean;
   }
 
+  // O provedor recebe o mínimo: o nome e a situação da conta. Nada que
+  // identifique a empresa fora do Atrupe (CNPJ e razão social, que no MEI
+  // é o nome do dono) nem o id interno
   private getCompanyContext(companyId: string) {
     return this.prisma.company.findUnique({
       where: { id: companyId },
       select: {
-        id: true,
         name: true,
-        legalName: true,
-        cnpj: true,
         blockLevel: true,
         isActive: true,
-        createdAt: true,
       },
     });
   }
