@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateRoleDto {
@@ -21,6 +21,8 @@ export class CreateRoleDto {
   sectorId?: string;
 
   @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   @ApiProperty({
     description: 'Array de permissões do cargo',
     example: '["home:create", "users:read", "users:update", "users:delete"]',

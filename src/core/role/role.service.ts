@@ -1,19 +1,37 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
+  NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { RoleFilterDTO } from './dto/filter.dto';
-import { Prisma } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
+
+/** Quem grava o cargo: o usuário da sessão (`req.user`). */
+export type RoleActor = {
+  companyId: string;
+  role?: string;
+  isAdmin?: boolean;
+  isSystemAdmin?: boolean;
+};
+
+const ROLE_NOT_FOUND = 'Cargo não encontrado.';
 
 @Injectable()
 export class RoleService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(createRoleDto: CreateRoleDto) {
+  async create(createRoleDto: CreateRoleDto, actor: RoleActor) {
+    await this.assertWildcardAllowed(createRoleDto.permissions, actor);
+    await this.assertSectorOfCompany(
+      createRoleDto.sectorId,
+      createRoleDto.companyId,
+    );
+
     return this.prisma.role.create({
       data: {
         ...createRoleDto,
@@ -116,15 +134,29 @@ export class RoleService {
     }
   }
 
-  findOne(id: string) {
-    return this.prisma.role.findUnique({
-      where: {
-        id: id,
-      },
+  /**
+   * Toda operação por id confere a empresa da sessão: sem isso, um id de
+   * outra empresa era lido, alterado ou desativado. O id de outra empresa
+   * responde 404, como um id que não existe.
+   */
+  async findOne(id: string, companyId: string) {
+    const role = await this.prisma.role.findFirst({
+      where: { id, companyId },
     });
+
+    if (!role) {
+      throw new NotFoundException(ROLE_NOT_FOUND);
+    }
+
+    return role;
   }
 
-  async update(id: string, updateRoleDto: UpdateRoleDto) {
+  async update(id: string, updateRoleDto: UpdateRoleDto, actor: RoleActor) {
+    const role = await this.findOne(id, actor.companyId);
+    this.assertNotAdminRole(role);
+    await this.assertWildcardAllowed(updateRoleDto.permissions, actor);
+    await this.assertSectorOfCompany(updateRoleDto.sectorId, actor.companyId);
+
     try {
       return await this.prisma.role.update({
         where: { id },
@@ -137,7 +169,11 @@ export class RoleService {
       throw new BadRequestException('Error updating role');
     }
   }
-  async remove(id: string) {
+
+  async remove(id: string, companyId: string) {
+    const role = await this.findOne(id, companyId);
+    this.assertNotAdminRole(role);
+
     return this.prisma.$transaction(async (tx) => {
       // O titular da conta é sempre administrador: o cargo dele não sai
       // debaixo dele.
@@ -157,6 +193,7 @@ export class RoleService {
       await tx.employee.updateMany({
         where: {
           roleId: id,
+          companyId,
         },
         data: {
           roleId: null,
@@ -171,5 +208,61 @@ export class RoleService {
 
       return role;
     });
+  }
+
+  /**
+   * O cargo de administrador passa em toda permissão sem olhar a lista; a
+   * tela de cargos não deixa editar nem excluir. A API segue a tela.
+   */
+  private assertNotAdminRole(role: Pick<Role, 'isAdmin'>) {
+    if (role.isAdmin) {
+      throw new UnprocessableEntityException({
+        code: 'ADMIN_ROLE',
+        message: 'O cargo de administrador não pode ser alterado nem excluído.',
+      });
+    }
+  }
+
+  /**
+   * `'*'` vale todas as permissões, como o cargo de administrador. Só quem já
+   * tem esse acesso pode concedê-lo: sem a regra, quem edita cargos
+   * transformava qualquer cargo, o próprio inclusive, em administrador. A
+   * tela de cargos não grava `'*'`.
+   */
+  private async assertWildcardAllowed(
+    permissions: string[] | undefined,
+    actor: RoleActor,
+  ) {
+    if (!permissions?.includes('*')) return;
+    if (actor.isSystemAdmin || actor.isAdmin) return;
+
+    const own = actor.role
+      ? await this.prisma.role.findUnique({
+          where: { id: actor.role },
+          select: { isAdmin: true, permissions: true },
+        })
+      : null;
+    if (own?.isAdmin || own?.permissions?.includes('*')) return;
+
+    throw new ForbiddenException({
+      code: 'ROLE_WILDCARD_ADMIN_ONLY',
+      message: 'Só um administrador pode dar acesso total a um cargo.',
+    });
+  }
+
+  /** O setor do cargo é da mesma empresa. */
+  private async assertSectorOfCompany(
+    sectorId: string | null | undefined,
+    companyId: string,
+  ) {
+    if (!sectorId) return;
+
+    const sector = await this.prisma.companySector.findFirst({
+      where: { id: sectorId, companyId },
+      select: { id: true },
+    });
+    if (!sector) {
+      throw new NotFoundException('Setor não encontrado.');
+    }
   }
 }
