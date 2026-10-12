@@ -280,19 +280,27 @@ export class NatureService {
     };
   }
 
-  async findOne(id: string) {
-    return await this.prisma.nature.findUnique({
-      where: { id },
-    });
-  }
-
-  async update(id: string, updateNatureDto: UpdateNatureDto) {
-    const nature = await this.prisma.nature.findUnique({
-      where: { id },
+  /**
+   * Toda operação por id confere a empresa da sessão: sem isso, um id de
+   * outra empresa era lido, alterado ou desativado. O id de outra empresa
+   * responde 404, como um id que não existe.
+   */
+  async findOne(id: string, companyId: string) {
+    const nature = await this.prisma.nature.findFirst({
+      where: { id, companyId },
     });
     if (!nature) {
       throw new NotFoundException('Natureza não encontrada!');
     }
+    return nature;
+  }
+
+  async update(
+    id: string,
+    companyId: string,
+    updateNatureDto: UpdateNatureDto,
+  ) {
+    const nature = await this.findOne(id, companyId);
 
     // Se houver alteração em qualquer um dos campos (level1, level2 ou code)
     if (
@@ -341,16 +349,10 @@ export class NatureService {
     }
   }
 
-  async remove(id: string) {
+  async remove(id: string, companyId: string) {
+    const nature = await this.findOne(id, companyId);
+
     try {
-      const nature = await this.prisma.nature.findUnique({
-        where: { id },
-      });
-
-      if (!nature) {
-        throw new NotFoundException('Natureza não encontrada!');
-      }
-
       await this.prisma.$transaction(async (prisma) => {
         await prisma.subCategory.updateMany({
           where: {
@@ -372,6 +374,12 @@ export class NatureService {
   }
 
   async createSubCategory(createSubCategoryDto: CreateSubCategoryDto) {
+    // A subcategoria nasce dentro de uma natureza da empresa da sessão
+    await this.findOne(
+      createSubCategoryDto.natureId,
+      createSubCategoryDto.companyId,
+    );
+
     const sub = await this.prisma.subCategory.findFirst({
       where: {
         nature: {
@@ -429,9 +437,9 @@ export class NatureService {
     });
   }
 
-  async findAllSubCategoryByNature(natureId: string) {
+  async findAllSubCategoryByNature(natureId: string, companyId: string) {
     return await this.prisma.subCategory.findMany({
-      where: { isActive: true, natureId },
+      where: { isActive: true, natureId, nature: { companyId } },
       select: {
         id: true,
         code: true,
@@ -456,7 +464,7 @@ export class NatureService {
   ) {
     try {
       const subCategory = await this.prisma.subCategory.findFirst({
-        where: { id },
+        where: { id, nature: { companyId } },
       });
 
       const nature = await this.prisma.nature.findFirst({
@@ -514,7 +522,15 @@ export class NatureService {
     }
   }
 
-  async removeSubCategory(id: string) {
+  async removeSubCategory(id: string, companyId: string) {
+    const subCategory = await this.prisma.subCategory.findFirst({
+      where: { id, nature: { companyId } },
+      select: { id: true },
+    });
+    if (!subCategory) {
+      throw new NotFoundException('Subcategoria nao encontrada');
+    }
+
     return this.prisma.subCategory.update({
       where: { id },
       data: { isActive: false },
