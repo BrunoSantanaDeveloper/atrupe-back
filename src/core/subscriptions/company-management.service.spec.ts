@@ -127,6 +127,7 @@ describe('CompanyManagementService', () => {
   const mockAsaasGateway = {
     cancelAsaasSubscription: jest.fn(),
     getAsaasSubscription: jest.fn(),
+    getInstallmentPayments: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -371,6 +372,89 @@ describe('CompanyManagementService', () => {
         service.assignManual(assignDto as any, 'admin-1'),
       ).rejects.toMatchObject({ response: { code: 'GATEWAY_BILLING_ACTIVE' } });
       expect(mockPrismaService.subscription.create).not.toHaveBeenCalled();
+    });
+
+    describe('anual parcelado (CR-6)', () => {
+      const parcelado = {
+        id: 'sub-anual',
+        asaasSubscriptionId: 'inst_local-1',
+        asaasInstallmentId: 'ins_asaas-1',
+        plan: { name: 'Atrupe Lite' },
+      };
+
+      beforeEach(() => {
+        mockPrismaService.user.findFirst.mockResolvedValue({
+          id: 'admin-1',
+          password: 'hashed',
+        });
+        (argon2.verify as jest.Mock).mockResolvedValue(true);
+        mockPrismaService.company.findUnique.mockResolvedValue({
+          id: 'company-1',
+          name: 'Test',
+          customer: [{ id: 'existing-cus' }],
+        });
+        mockPrismaService.plan.findFirst.mockResolvedValue({
+          id: 'plan-start',
+          name: 'Start',
+          planType: 'START',
+          basePrice: 14700,
+          isActive: true,
+        });
+        // A recorrente não acha nada; o parcelamento acha a assinatura anual
+        mockPrismaService.subscription.findMany.mockImplementation(
+          async ({ where }) => (where.asaasInstallmentId ? [parcelado] : []),
+        );
+        mockPrismaService.subscription.findFirst.mockResolvedValue(null);
+        mockPrismaService.subscription.create.mockResolvedValue({
+          id: 'sub-new',
+        });
+        mockPrismaService.subscription.findUnique.mockResolvedValue({
+          id: 'sub-new',
+        });
+      });
+
+      it('com parcela a receber no Asaas, recusa: as parcelas seguiriam cobradas no cartão', async () => {
+        mockAsaasGateway.getInstallmentPayments.mockResolvedValue([
+          { id: 'pay_1', status: 'RECEIVED' },
+          { id: 'pay_2', status: 'CONFIRMED' },
+          { id: 'pay_3', status: 'CONFIRMED' },
+        ]);
+
+        await expect(
+          service.assignManual(assignDto as any, 'admin-1'),
+        ).rejects.toMatchObject({
+          response: {
+            code: 'GATEWAY_BILLING_ACTIVE',
+            message: expect.stringContaining('2 parcela(s) a receber'),
+          },
+        });
+        expect(mockAsaasGateway.getInstallmentPayments).toHaveBeenCalledWith(
+          'ins_asaas-1',
+        );
+        expect(mockPrismaService.subscription.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              companyId: 'company-1',
+              status: { in: ['ACTIVE', 'INACTIVE'] },
+              asaasInstallmentId: { not: null },
+            },
+          }),
+        );
+        expect(mockPrismaService.subscription.update).not.toHaveBeenCalled();
+        expect(mockPrismaService.subscription.create).not.toHaveBeenCalled();
+      });
+
+      it('parcelamento já recebido (ou removido) não trava o plano manual', async () => {
+        mockAsaasGateway.getInstallmentPayments.mockResolvedValue([
+          { id: 'pay_1', status: 'RECEIVED' },
+          { id: 'pay_2', status: 'REFUNDED' },
+          { id: 'pay_3', status: 'PENDING', deleted: true },
+        ]);
+
+        await service.assignManual(assignDto as any, 'admin-1');
+
+        expect(mockPrismaService.subscription.create).toHaveBeenCalled();
+      });
     });
 
     it('should use existing customer when available', async () => {

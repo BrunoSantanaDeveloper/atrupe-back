@@ -15,6 +15,17 @@ import * as argon2 from 'argon2';
 
 const TRIAL_DAYS_DEFAULT = 7;
 
+/**
+ * Parcela que o Asaas ainda vai receber: a do cartão aprovada e ainda não
+ * liquidada (CONFIRMED) conta, porque o cliente segue pagando a fatura.
+ */
+const INSTALLMENT_TO_RECEIVE = [
+  'PENDING',
+  'OVERDUE',
+  'CONFIRMED',
+  'AWAITING_RISK_ANALYSIS',
+];
+
 @Injectable()
 export class CompanyManagementService {
   private readonly logger = new Logger(CompanyManagementService.name);
@@ -46,6 +57,37 @@ export class CompanyManagementService {
       );
       if (remote && !remote.deleted && remote.status === 'ACTIVE') {
         return { ...subscription, remoteValue: Number(remote.value) };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * O anual parcelado da empresa com parcela ainda a receber no Asaas. O
+   * parcelamento não é assinatura no Asaas (cada ano é uma cobrança
+   * parcelada no cartão): encerrar a assinatura aqui não para as parcelas.
+   * Vale também a assinatura que ficou inativa aqui, como na recorrente.
+   */
+  private async liveInstallment(companyId: string) {
+    const candidates = await this.prisma.subscription.findMany({
+      where: {
+        companyId,
+        status: { in: ['ACTIVE', 'INACTIVE'] },
+        asaasInstallmentId: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+      include: { plan: { select: { name: true } } },
+    });
+    for (const subscription of candidates) {
+      const payments = await this.asaasGateway.getInstallmentPayments(
+        subscription.asaasInstallmentId,
+      );
+      const toReceive = payments.filter(
+        (payment) =>
+          !payment.deleted && INSTALLMENT_TO_RECEIVE.includes(payment.status),
+      );
+      if (toReceive.length) {
+        return { ...subscription, toReceive: toReceive.length };
       }
     }
     return null;
@@ -113,6 +155,16 @@ export class CompanyManagementService {
       throw new ConflictException({
         code: 'GATEWAY_BILLING_ACTIVE',
         message: `A empresa tem uma cobrança ativa no Asaas (${charging.plan.name}, R$ ${charging.remoteValue.toFixed(2).replace('.', ',')}). Reative essa assinatura em vez de atribuir um plano manual, ou cancele a cobrança antes.`,
+      });
+    }
+
+    // O mesmo vale para o anual parcelado (CR-6): sem esta trava, a
+    // assinatura era encerrada e as parcelas seguiam cobradas no cartão
+    const installment = await this.liveInstallment(assignDto.companyId);
+    if (installment) {
+      throw new ConflictException({
+        code: 'GATEWAY_BILLING_ACTIVE',
+        message: `A empresa está no anual parcelado (${installment.plan.name}), com ${installment.toReceive} parcela(s) a receber no Asaas. Cancele o parcelamento antes de atribuir um plano manual.`,
       });
     }
 
