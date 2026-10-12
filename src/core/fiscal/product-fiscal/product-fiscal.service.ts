@@ -160,10 +160,10 @@ export class ProductFiscalService {
     return fiscalData;
   }
 
-  async create(dto: CreateProductFiscalDataDto) {
-    // Verificar se o produto existe
-    const product = await this.prisma.product.findUnique({
-      where: { id: dto.productId },
+  async create(dto: CreateProductFiscalDataDto, companyId: string) {
+    // O produto precisa ser da empresa da sessão
+    const product = await this.prisma.product.findFirst({
+      where: { id: dto.productId, companyId },
     });
 
     if (!product) {
@@ -212,10 +212,10 @@ export class ProductFiscalService {
     });
   }
 
-  async upsert(dto: CreateProductFiscalDataDto) {
-    // Verificar se o produto existe
-    const product = await this.prisma.product.findUnique({
-      where: { id: dto.productId },
+  async upsert(dto: CreateProductFiscalDataDto, companyId: string) {
+    // O produto precisa ser da empresa da sessão
+    const product = await this.prisma.product.findFirst({
+      where: { id: dto.productId, companyId },
     });
 
     if (!product) {

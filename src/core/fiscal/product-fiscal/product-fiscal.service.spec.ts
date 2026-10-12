@@ -16,6 +16,7 @@ describe('ProductFiscalService', () => {
       product: {
         findMany: jest.fn(),
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         count: jest.fn(),
       },
       productFiscalData: {
@@ -51,19 +52,34 @@ describe('ProductFiscalService', () => {
    */
   describe('cadastro de ST e FCP', () => {
     beforeEach(() => {
-      prisma.product.findUnique.mockResolvedValue({ id: 'produto-1' });
+      prisma.product.findFirst.mockResolvedValue({ id: 'produto-1' });
       prisma.productFiscalData.upsert.mockResolvedValue({});
     });
 
+    it('produto de outra empresa: 404, sem gravar', async () => {
+      prisma.product.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.upsert({ productId: 'produto-b' } as any, 'empresa-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.product.findFirst).toHaveBeenCalledWith({
+        where: { id: 'produto-b', companyId: 'empresa-1' },
+      });
+      expect(prisma.productFiscalData.upsert).not.toHaveBeenCalled();
+    });
+
     it('persiste os campos de ST e FCP informados', async () => {
-      await service.upsert({
-        productId: 'produto-1',
-        icmsStMva: 40,
-        icmsStReducao: 10,
-        icmsStRate: 18,
-        fcpRate: 2,
-        fcpStRate: 2,
-      } as any);
+      await service.upsert(
+        {
+          productId: 'produto-1',
+          icmsStMva: 40,
+          icmsStReducao: 10,
+          icmsStRate: 18,
+          fcpRate: 2,
+          fcpStRate: 2,
+        } as any,
+        'empresa-1',
+      );
 
       const { create, update } =
         prisma.productFiscalData.upsert.mock.calls[0][0];
@@ -79,7 +95,7 @@ describe('ProductFiscalService', () => {
     });
 
     it('grava nulo — e não zero — quando o campo não é informado', async () => {
-      await service.upsert({ productId: 'produto-1' } as any);
+      await service.upsert({ productId: 'produto-1' } as any, 'empresa-1');
 
       const { update } = prisma.productFiscalData.upsert.mock.calls[0][0];
       expect(update.icmsStMva).toBeNull();
@@ -87,11 +103,14 @@ describe('ProductFiscalService', () => {
     });
 
     it('preserva alíquota zero, que é diferente de não cadastrada', async () => {
-      await service.upsert({
-        productId: 'produto-1',
-        fcpRate: 0,
-        icmsStMva: 0,
-      } as any);
+      await service.upsert(
+        {
+          productId: 'produto-1',
+          fcpRate: 0,
+          icmsStMva: 0,
+        } as any,
+        'empresa-1',
+      );
 
       const { update } = prisma.productFiscalData.upsert.mock.calls[0][0];
       expect(update.fcpRate).toBe(0);
