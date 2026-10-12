@@ -23,7 +23,17 @@ describe('EmployeeService — titular da conta', () => {
       role: { findUnique: jest.fn() },
       address: { findMany: jest.fn().mockResolvedValue([]) },
     };
-    const prisma: any = { $transaction: jest.fn(async (fn) => fn(tx)) };
+    const prisma: any = {
+      $transaction: jest.fn(async (fn) => fn(tx)),
+      // O cargo e o setor do corpo são da empresa do colaborador
+      employee: {
+        findUnique: jest.fn().mockResolvedValue({ companyId: 'c1' }),
+      },
+      role: { count: jest.fn(async ({ where }) => where.id.in.length) },
+      companySector: {
+        count: jest.fn(async ({ where }) => where.id.in.length),
+      },
+    };
     const history: any = { createEmployeeHistory: jest.fn() };
     const planControl: any = {};
     service = new EmployeeService(prisma, history, planControl);

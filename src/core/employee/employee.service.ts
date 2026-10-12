@@ -10,6 +10,7 @@ import { FilterEmployeeDto } from './dto/filter-employee.dto';
 import { Prisma } from '@prisma/client';
 import { EmployeeHistoryService } from './history/history.service';
 import { PlanControlService } from '../plan/plan-control.service';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 @Injectable()
 export class EmployeeService {
@@ -19,11 +20,41 @@ export class EmployeeService {
     private readonly planControl: PlanControlService,
   ) {}
 
+  /**
+   * O cargo decide as permissões e o administrador do usuário: com o cargo
+   * de outra empresa, quem controla o acesso do colaborador passava a ser
+   * ela. O setor também precisa ser da empresa.
+   */
+  private async assertRoleAndSectorOfCompany(
+    companyId: string,
+    roleId: string | null | undefined,
+    sectorId: string | null | undefined,
+  ) {
+    await assertBelongsToCompany(
+      this.prisma.role,
+      roleId,
+      { companyId },
+      'Cargo não encontrado.',
+    );
+    await assertBelongsToCompany(
+      this.prisma.companySector,
+      sectorId,
+      { companyId },
+      'Setor não encontrado.',
+    );
+  }
+
   async create(
     createEmployeeDto: CreateEmployeeDto,
     userId?: string,
     userName?: string,
   ) {
+    await this.assertRoleAndSectorOfCompany(
+      createEmployeeDto.companyId,
+      createEmployeeDto.roleId,
+      createEmployeeDto.sectorId,
+    );
+
     try {
       return this.prisma.$transaction(async (tx) => {
         // 1. Criar o employee
@@ -388,6 +419,21 @@ export class EmployeeService {
     userName?: string,
   ) {
     const { isActive, address, ...rest } = updateEmployeeDto;
+
+    if (rest.roleId || rest.sectorId) {
+      const current = await this.prisma.employee.findUnique({
+        where: { id },
+        select: { companyId: true },
+      });
+      // Sem o colaborador, o fluxo abaixo responde como sempre
+      if (current) {
+        await this.assertRoleAndSectorOfCompany(
+          current.companyId,
+          rest.roleId,
+          rest.sectorId,
+        );
+      }
+    }
 
     return this.prisma.$transaction(async (tx) => {
       await this.assertOwnerStays(tx, id, {
