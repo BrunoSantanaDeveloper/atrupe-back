@@ -16,6 +16,11 @@ const mockNatureId = 'nature-uuid-404';
 const mockSubCategoryId = 'subcategory-uuid-505';
 const mockPaymentConditionId = 'payment-cond-uuid-606';
 
+// Os cadastros citados no corpo são da empresa, salvo quando o teste diz
+// o contrário: o count responde quantos ids foram consultados
+const allFound = () =>
+  jest.fn(async ({ where }: any) => where?.id?.in?.length ?? 0);
+
 const createMockPrismaService = () => ({
   payable: {
     create: jest.fn(),
@@ -42,6 +47,7 @@ const createMockPrismaService = () => ({
     deleteMany: jest.fn(),
   },
   bankAccount: {
+    count: allFound(),
     findFirst: jest.fn(),
   },
   bankAccountCashControl: {
@@ -55,12 +61,18 @@ const createMockPrismaService = () => ({
     create: jest.fn(),
   },
   supplier: {
+    count: allFound(),
     findUnique: jest.fn(),
   },
   employee: {
+    count: allFound(),
     findUnique: jest.fn(),
   },
   $transaction: jest.fn(),
+  client: { count: allFound() },
+  nature: { count: allFound() },
+  subCategory: { count: allFound() },
+  paymentCondition: { count: allFound() },
 });
 
 const createMockHistoryService = () => ({
@@ -143,6 +155,18 @@ describe('PayableService', () => {
         },
       ],
     };
+
+    it('recusa supplier de outra empresa, antes de gravar', async () => {
+      prisma.supplier.count.mockResolvedValueOnce(0);
+
+      await expect(
+        service.create(createDto as any, mockUserId, mockUserName),
+      ).rejects.toThrow(new NotFoundException('Fornecedor não encontrado.'));
+      expect(prisma.supplier.count).toHaveBeenCalledWith({
+        where: { id: { in: [mockSupplierId] }, companyId: mockCompanyId },
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
 
     it('should throw error when no installments provided', async () => {
       const emptyDto = { ...createDto, installments: [] };
@@ -471,6 +495,27 @@ describe('PayableService', () => {
     });
   });
 
+  // ─── updateInstallments ───────────────────────────────────────────
+
+  describe('updateInstallments', () => {
+    it('recusa parcela de outro título no corpo, antes de gravar', async () => {
+      prisma.payableInstallment.count.mockResolvedValueOnce(0);
+
+      await expect(
+        service.updateInstallments(mockPayableId, {
+          installments: [{ id: 'parcela-de-outro-titulo', amount: 10 }],
+        } as any),
+      ).rejects.toThrow(new NotFoundException('Parcela não encontrada.'));
+      expect(prisma.payableInstallment.count).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['parcela-de-outro-titulo'] },
+          payableId: mockPayableId,
+        },
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
   // ─── undoPaymentInstallment ───────────────────────────────────────
 
   describe('undoPaymentInstallment', () => {
@@ -668,6 +713,29 @@ describe('PayableService', () => {
       differenceNatureId: null,
       differenceCategoryId: null,
     };
+
+    it('recusa conta bancária de outra empresa: o pagamento cairia no caixa dela', async () => {
+      prisma.payableInstallment.findFirst.mockResolvedValue({
+        id: mockInstallmentId,
+        status: 'PENDING',
+        payable: {
+          natureId: mockNatureId,
+          subCategoryId: mockSubCategoryId,
+          companyId: mockCompanyId,
+        },
+      });
+      prisma.bankAccount.count.mockResolvedValueOnce(0);
+
+      await expect(
+        service.payInstallment(mockInstallmentId, payDto as any),
+      ).rejects.toThrow(
+        new NotFoundException('Conta bancária não encontrada.'),
+      );
+      expect(prisma.bankAccount.count).toHaveBeenCalledWith({
+        where: { id: { in: [mockBankAccountId] }, companyId: mockCompanyId },
+      });
+      expect(prisma.bankAccountCashControl.findFirst).not.toHaveBeenCalled();
+    });
 
     it('should throw NotFoundException when installment not found', async () => {
       prisma.payableInstallment.findFirst.mockResolvedValue(null);

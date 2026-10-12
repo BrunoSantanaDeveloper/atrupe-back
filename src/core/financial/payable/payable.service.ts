@@ -23,6 +23,11 @@ import { FinancialHistoryService } from '../history/history.service';
 import { FinancialNotesUtil } from '../utils/financial-notes.util';
 import { BaseTransactionService } from '../utils/base-transaction.service';
 import { InstallmentStatusCheck } from '../utils/financial.types';
+import {
+  assertFinancialRefsOfCompany,
+  FinancialRefs,
+} from '../utils/financial-refs';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 @Injectable()
 export class PayableService {
@@ -48,6 +53,19 @@ export class PayableService {
     if (installments.length === 0) {
       throw new Error('At least one installment is required.');
     }
+    await assertFinancialRefsOfCompany(this.prisma, dto.companyId, {
+      supplierId: dto.supplierId,
+      employeeId: dto.employeeId,
+      natureId: dto.natureId,
+      subCategoryId: dto.subCategoryId,
+      bankAccountId: [
+        bankAccountId,
+        ...installments.map((installment) => installment.bankAccountId),
+      ],
+      paymentConditionId: installments.map(
+        (installment) => installment.paymentConditionId,
+      ),
+    });
     try {
       const payable = await this.prisma.$transaction(async (tx) => {
         const totalAmount = installments
@@ -514,12 +532,33 @@ export class PayableService {
     };
   }
 
+  /**
+   * Os cadastros citados no corpo precisam ser da empresa do título. A
+   * empresa vem do próprio título (a rota já conferiu que é da sessão).
+   */
+  private async assertRefsOfPayable(payableId: string, refs: FinancialRefs) {
+    const payable = await this.prisma.payable.findUnique({
+      where: { id: payableId },
+      select: { companyId: true },
+    });
+    // Sem o título, o fluxo de cada rota responde o 404
+    if (!payable) return;
+    await assertFinancialRefsOfCompany(this.prisma, payable.companyId, refs);
+  }
+
   async updateTitle(
     id: string,
     dto: UpdatePayableDto,
     userId?: string,
     userName?: string,
   ) {
+    await this.assertRefsOfPayable(id, {
+      supplierId: dto.supplierId,
+      employeeId: dto.employeeId,
+      natureId: dto.natureId,
+      subCategoryId: dto.subCategoryId,
+    });
+
     try {
       // Capturar estado anterior
       const before = await this.prisma.payable.findUnique({
@@ -780,6 +819,7 @@ export class PayableService {
           select: {
             natureId: true,
             subCategoryId: true,
+            companyId: true,
           },
         },
       },
@@ -788,6 +828,18 @@ export class PayableService {
     if (!installmentData) {
       throw new NotFoundException('Parcela não encontrada.');
     }
+
+    // A conta bancária decide em que caixa o pagamento cai
+    await assertFinancialRefsOfCompany(
+      this.prisma,
+      installmentData.payable.companyId,
+      {
+        bankAccountId,
+        paymentConditionId,
+        natureId: differenceNatureId,
+        subCategoryId: differenceCategoryId,
+      },
+    );
 
     // Validar se o título possui natureza e categoria configuradas
     if (
@@ -1396,6 +1448,18 @@ export class PayableService {
     userId?: string,
     userName?: string,
   ): Promise<any> {
+    // A parcela do corpo é atualizada pelo id: precisa ser deste título
+    await assertBelongsToCompany(
+      this.prisma.payableInstallment,
+      dto.installments?.map((installment) => installment.id),
+      { payableId },
+      'Parcela não encontrada.',
+    );
+    await this.assertRefsOfPayable(payableId, {
+      bankAccountId: dto.installments?.map((i) => i.bankAccountId),
+      paymentConditionId: dto.installments?.map((i) => i.paymentConditionId),
+    });
+
     try {
       const { installments, totalAmount, changeNotes, changeReason } = dto;
       // let totalAmount = 0;
