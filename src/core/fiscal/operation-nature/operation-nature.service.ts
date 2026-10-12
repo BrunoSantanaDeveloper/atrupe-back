@@ -4,6 +4,7 @@ import {
   CreateOperationNatureDto,
   UpdateOperationNatureDto,
 } from './operation-nature.dto';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 @Injectable()
 export class OperationNatureService {
@@ -46,6 +47,7 @@ export class OperationNatureService {
    * Criar nova Natureza
    */
   async create(companyId: string, dto: CreateOperationNatureDto) {
+    await this.assertCfopsOfCompany(companyId, dto);
     return this.prisma.operationNature.create({
       data: {
         ...dto,
@@ -69,6 +71,7 @@ export class OperationNatureService {
     if (!nature) {
       throw new NotFoundException('Natureza de Operação não encontrada');
     }
+    await this.assertCfopsOfCompany(nature.companyId, dto);
 
     return this.prisma.operationNature.update({
       where: { id },
@@ -78,6 +81,22 @@ export class OperationNatureService {
         cfopExternal: true,
       },
     });
+  }
+
+  /**
+   * Os CFOPs ligados à natureza precisam ser da empresa: o de outra empresa
+   * vinha junto na resposta
+   */
+  private async assertCfopsOfCompany(
+    companyId: string,
+    dto: { cfopInternalId?: string | null; cfopExternalId?: string | null },
+  ) {
+    await assertBelongsToCompany(
+      this.prisma.cfopConfig,
+      [dto.cfopInternalId, dto.cfopExternalId],
+      { companyId },
+      'CFOP não encontrado.',
+    );
   }
 
   /**

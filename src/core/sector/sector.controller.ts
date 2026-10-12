@@ -28,11 +28,13 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
+import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 
 const RESOURCE = 'sector';
 
 @ApiTags('Setores')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, TenantGuard)
 @ApiBearerAuth()
 @Controller(RESOURCE)
 export class SectorController {
@@ -87,6 +89,7 @@ export class SectorController {
   }
 
   @Get(':id')
+  @TenantResource('companySector')
   @ApiOperation({ summary: 'Obtém um setor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do setor' })
   @ApiResponse({
@@ -102,6 +105,7 @@ export class SectorController {
   }
 
   @Patch(':id')
+  @TenantResource('companySector')
   @UseGuards(FeatureGuard)
   @RequiresFeature('sectors_configuration')
   @ApiOperation({ summary: 'Atualiza um setor pelo ID' })
@@ -136,6 +140,7 @@ export class SectorController {
   }
 
   @Delete(':id')
+  @TenantResource('companySector')
   @UseGuards(FeatureGuard)
   @RequiresFeature('sectors_configuration')
   @ApiOperation({ summary: 'Remove um setor pelo ID' })

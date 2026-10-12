@@ -21,10 +21,12 @@ import {
   CreateOperationNatureDto,
   UpdateOperationNatureDto,
 } from './operation-nature.dto';
+import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
+import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 
 @ApiTags('Fiscal - Naturezas de Operação')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, TenantGuard)
 @Controller('fiscal/naturezas') // Note: Path updated as per plan
 export class OperationNatureController {
   constructor(private readonly service: OperationNatureService) {}
@@ -36,6 +38,7 @@ export class OperationNatureController {
   }
 
   @Get(':id')
+  @TenantResource('operationNature')
   @ApiOperation({ summary: 'Obter Natureza por ID' })
   @ApiParam({ name: 'id', description: 'ID da Natureza' })
   async getById(@Param('id') id: string) {
@@ -49,6 +52,7 @@ export class OperationNatureController {
   }
 
   @Patch(':id')
+  @TenantResource('operationNature')
   @ApiOperation({ summary: 'Atualizar Natureza' })
   @ApiParam({ name: 'id', description: 'ID da Natureza' })
   async update(@Param('id') id: string, @Body() dto: UpdateOperationNatureDto) {
@@ -56,6 +60,7 @@ export class OperationNatureController {
   }
 
   @Delete(':id')
+  @TenantResource('operationNature')
   @ApiOperation({ summary: 'Excluir Natureza' })
   @ApiParam({ name: 'id', description: 'ID da Natureza' })
   async delete(@Param('id') id: string) {

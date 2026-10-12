@@ -15,10 +15,12 @@ import { ApiTags, ApiOperation, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { ImportService } from './import.service';
 import { UploadImportDto } from './dto';
+import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
+import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 
 @ApiTags('Import')
 @Controller('import')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, TenantGuard)
 export class ImportController {
   constructor(private importService: ImportService) {}
 
@@ -82,6 +84,7 @@ export class ImportController {
   }
 
   @Post(':id/validate')
+  @TenantResource('importLog')
   @ApiOperation({ summary: 'Validate CSV data before importing' })
   async validateImport(
     @Param('id') importId: string,
@@ -93,6 +96,7 @@ export class ImportController {
   }
 
   @Post(':id/references')
+  @TenantResource('importLog')
   @ApiOperation({
     summary:
       'Cria os cadastros citados no CSV (natureza, subcategoria, conta bancária) que a empresa ainda não tem',
@@ -102,6 +106,7 @@ export class ImportController {
   }
 
   @Post(':id/process')
+  @TenantResource('importLog')
   @ApiOperation({ summary: 'Process import after validation' })
   async processImport(@Param('id') importId: string) {
     const result = await this.importService.processImport(importId);
@@ -109,6 +114,7 @@ export class ImportController {
   }
 
   @Get(':id/status')
+  @TenantResource('importLog')
   @ApiOperation({ summary: 'Get import status' })
   async getStatus(@Param('id') importId: string) {
     return this.importService.getImportStatus(importId);

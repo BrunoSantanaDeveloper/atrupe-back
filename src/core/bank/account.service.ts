@@ -9,12 +9,20 @@ import { BankAccountFilterDTO } from './dto/filter-account.dto';
 import { BankAccount, Prisma } from '@prisma/client';
 import { UpdateBankAccountDto } from './dto/update-bank.dto';
 import { endOfDay, startOfDay } from 'date-fns';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 @Injectable()
 export class AccountService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateBankAccountDto): Promise<BankAccount> {
+    await assertBelongsToCompany(
+      this.prisma.paymentCondition,
+      dto.bankAccountCashControl?.map((item) => item.paymentConditionId),
+      { companyId: dto.companyId },
+      'Condição de pagamento não encontrada.',
+    );
+
     try {
       const bankAccount = await this.prisma.bankAccount.create({
         data: {
@@ -193,6 +201,22 @@ export class AccountService {
     accountId: string,
     updateBankAccountDto: UpdateBankAccountDto,
   ): Promise<BankAccount> {
+    // As condições dos controles de caixa precisam ser da empresa da conta
+    const owner = await this.prisma.bankAccount.findUnique({
+      where: { id: accountId },
+      select: { companyId: true },
+    });
+    if (owner) {
+      await assertBelongsToCompany(
+        this.prisma.paymentCondition,
+        updateBankAccountDto.bankAccountCashControl?.map(
+          (item) => item.paymentConditionId,
+        ),
+        { companyId: owner.companyId },
+        'Condição de pagamento não encontrada.',
+      );
+    }
+
     try {
       return await this.prisma.$transaction(
         async (tx) => {
@@ -223,8 +247,13 @@ export class AccountService {
 
             // Validate existing items in batch
             if (itemsToUpdate.length > 0) {
+              // Só os controles desta conta: o de outra conta (de outra
+              // empresa inclusive) conta como não encontrado
               const existingItems = await tx.bankAccountCashControl.findMany({
-                where: { id: { in: itemsToUpdate.map((item) => item.id) } },
+                where: {
+                  id: { in: itemsToUpdate.map((item) => item.id) },
+                  bankAccountId: accountId,
+                },
               });
 
               if (existingItems.length !== itemsToUpdate.length) {

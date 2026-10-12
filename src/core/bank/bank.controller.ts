@@ -30,11 +30,14 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
+import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
+import { SystemAdminGuard } from 'src/core/auth/guards/system-admin.guard';
 
 const RESOURCE = 'bank';
 
 @ApiTags('Banco e Conta bancária')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, TenantGuard)
 @ApiBearerAuth()
 @Controller(RESOURCE)
 export class BankController {
@@ -105,6 +108,9 @@ export class BankController {
   //---------------------------------------------------------------------------------
 
   @Post()
+  // O cadastro de bancos é um só para todas as empresas: só o superadmin
+  // escreve (nenhuma tela das empresas escreve)
+  @UseGuards(SystemAdminGuard)
   @ApiOperation({ summary: 'Cria um novo banco' })
   @ApiBody({
     description: 'Dados do novo banco',
@@ -130,6 +136,7 @@ export class BankController {
   }
 
   @Get('condition/:paymentCondition')
+  @TenantResource('paymentCondition', 'paymentCondition')
   @ApiOperation({
     summary: 'Obtém a lista de todos os bancos por condição de pagamento',
   })
@@ -193,6 +200,7 @@ export class BankController {
   }
 
   @Patch('account/:accountId')
+  @TenantResource('bankAccount', 'accountId')
   @ApiOperation({ summary: 'Atualiza uma conta bancária pelo ID' })
   @ApiParam({
     name: 'accountId',
@@ -225,6 +233,7 @@ export class BankController {
   }
 
   @Delete('account/:accountId')
+  @TenantResource('bankAccount', 'accountId')
   @ApiOperation({ summary: 'Remove uma conta bancária pelo ID' })
   @ApiParam({
     name: 'accountId',
@@ -265,6 +274,7 @@ export class BankController {
   }
 
   @Patch(':id')
+  @UseGuards(SystemAdminGuard)
   @ApiOperation({ summary: 'Atualiza um banco pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do banco' })
   @ApiBody({
@@ -284,6 +294,7 @@ export class BankController {
   }
 
   @Delete(':id')
+  @UseGuards(SystemAdminGuard)
   @ApiOperation({ summary: 'Remove um banco pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do banco' })
   @ApiResponse({

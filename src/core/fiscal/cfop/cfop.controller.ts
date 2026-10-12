@@ -18,10 +18,12 @@ import {
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import { CfopService } from './cfop.service';
 import { CreateCfopDto, UpdateCfopDto } from './cfop.dto';
+import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
+import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 
 @ApiTags('Fiscal - CFOPs')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, TenantGuard)
 @Controller('fiscal/cfops')
 export class CfopController {
   constructor(private readonly cfopService: CfopService) {}
@@ -39,6 +41,7 @@ export class CfopController {
   }
 
   @Get(':id')
+  @TenantResource('cfopConfig')
   @ApiOperation({ summary: 'Obter CFOP por ID' })
   @ApiParam({ name: 'id', description: 'ID do CFOP' })
   async getById(@Param('id') id: string) {
@@ -52,6 +55,7 @@ export class CfopController {
   }
 
   @Patch(':id')
+  @TenantResource('cfopConfig')
   @ApiOperation({ summary: 'Atualizar CFOP' })
   @ApiParam({ name: 'id', description: 'ID do CFOP' })
   async update(@Param('id') id: string, @Body() dto: UpdateCfopDto) {
@@ -59,6 +63,7 @@ export class CfopController {
   }
 
   @Delete(':id')
+  @TenantResource('cfopConfig')
   @ApiOperation({ summary: 'Excluir CFOP' })
   @ApiParam({ name: 'id', description: 'ID do CFOP' })
   async delete(@Param('id') id: string) {

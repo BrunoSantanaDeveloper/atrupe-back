@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, relative } from 'path';
 import { Prisma } from '@prisma/client';
-import { PATH_METADATA } from '@nestjs/common/constants';
+import { GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants';
+import { TenantGuard } from './tenant.guard';
 import { TENANT_RESOURCE_KEY } from './tenant-resource.decorator';
 
 /**
@@ -46,6 +47,7 @@ type Usage = {
   paramName: string;
   via?: string;
   paths: string[];
+  guarded: boolean;
 };
 
 // O model que tem a companyId: o próprio, ou o dono pela relação (via)
@@ -78,6 +80,11 @@ const usages: Usage[] = files.flatMap((file) => {
             model: config.model,
             paramName: config.paramName,
             via: config.via,
+            // Sem o TenantGuard (na classe ou na rota) o decorator não faz nada
+            guarded: [
+              ...(Reflect.getMetadata(GUARDS_METADATA, klass) ?? []),
+              ...(Reflect.getMetadata(GUARDS_METADATA, handler) ?? []),
+            ].includes(TenantGuard),
             paths: (Array.isArray(path) ? path : [path]).map(String),
           };
         })
@@ -98,6 +105,10 @@ describe('@TenantResource nos controllers', () => {
       expect({ model: usage.model, exists: !!model }).toEqual({
         model: usage.model,
         exists: true,
+      });
+      expect({ model: usage.model, guarded: usage.guarded }).toEqual({
+        model: usage.model,
+        guarded: true,
       });
       const owner = ownerOf(usage);
       expect({

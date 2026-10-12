@@ -24,12 +24,14 @@ import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { FeatureGuard } from 'src/core/plan/guards/feature.guard';
 import { RequiresFeature } from 'src/core/plan/decorators/requires-feature.decorator';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
+import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
+import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 
 @ApiTags('Status de Orçamento')
 @Controller('sale/status')
 @ApiBearerAuth()
 // Listar é livre (a lista de orçamentos usa); criar, editar e excluir status é recurso de plano.
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, TenantGuard)
 export class StatusController {
   constructor(private readonly statusQuotationService: StatusService) {}
 
@@ -58,6 +60,7 @@ export class StatusController {
   }
 
   @Get(':id')
+  @TenantResource('quotationTag')
   @ApiOperation({ summary: 'Buscar um status de orçamento específico' })
   @ApiResponse({ status: 200, description: 'Status de orçamento encontrado.' })
   @ApiResponse({
@@ -69,6 +72,7 @@ export class StatusController {
   }
 
   @Patch(':id')
+  @TenantResource('quotationTag')
   @UseGuards(FeatureGuard)
   @RequiresFeature('quotation_status_configuration')
   @ApiOperation({ summary: 'Atualizar um status de orçamento' })
@@ -84,6 +88,7 @@ export class StatusController {
   }
 
   @Delete(':id')
+  @TenantResource('quotationTag')
   @UseGuards(FeatureGuard)
   @RequiresFeature('quotation_status_configuration')
   @ApiOperation({ summary: 'Remover um status de orçamento' })

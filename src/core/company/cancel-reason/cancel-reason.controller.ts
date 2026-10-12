@@ -24,10 +24,12 @@ import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { FeatureGuard } from 'src/core/plan/guards/feature.guard';
 import { RequiresFeature } from 'src/core/plan/decorators/requires-feature.decorator';
 import { CancelReasonFilterDto } from './dto/cancel-reason-filters.dto';
+import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
+import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 
 const RESOURCE = 'cancel-reason';
 // Listar é livre; o cadastro de motivos é recurso de plano.
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, TenantGuard)
 @ApiBearerAuth()
 @Controller(RESOURCE)
 @ApiTags('Configurações de motivo de cancelamento ou rejeição')
@@ -61,6 +63,7 @@ export class CancelReasonController {
   @ApiResponse({ status: 400, description: 'Requisição inválida' })
   @ApiParam({ name: 'id', description: 'ID do motivo' })
   @Patch(':id')
+  @TenantResource('reasons')
   @UseGuards(FeatureGuard)
   @RequiresFeature('quotation_rejection_reasons')
   update(@Param('id') id: string, @Body() updateReasonDto: UpdateReasonDto) {
@@ -71,6 +74,7 @@ export class CancelReasonController {
   @ApiResponse({ status: 200, description: 'Motivo removido com sucesso' })
   @ApiParam({ name: 'id', description: 'ID do motivo' })
   @Delete(':id')
+  @TenantResource('reasons')
   @UseGuards(FeatureGuard)
   @RequiresFeature('quotation_rejection_reasons')
   remove(@Param('id') id: string) {

@@ -22,6 +22,7 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { SystemAdminGuard } from 'src/core/auth/guards/system-admin.guard';
 
 const RESOURCE = 'unit-of-measure';
 
@@ -33,6 +34,9 @@ export class UnitOfMeasureController {
   constructor(private readonly unitOfMeasureService: UnitOfMeasureService) {}
 
   @Post()
+  // A unidade padrão é uma só para todas as empresas: só o superadmin
+  // escreve (as telas só mexem nos padrões da empresa)
+  @UseGuards(SystemAdminGuard)
   @ApiOperation({ summary: 'Cria uma nova unidade de medida' })
   @ApiBody({
     description: 'Dados da nova unidade de medida',
@@ -218,6 +222,7 @@ export class UnitOfMeasureController {
   }
 
   @Patch(':id')
+  @UseGuards(SystemAdminGuard)
   @ApiOperation({ summary: 'Atualiza uma unidade de medida pelo ID' })
   @ApiParam({
     name: 'id',
@@ -244,6 +249,7 @@ export class UnitOfMeasureController {
   }
 
   @Delete(':id')
+  @UseGuards(SystemAdminGuard)
   @ApiOperation({ summary: 'Remove uma unidade de medida pelo ID' })
   @ApiParam({
     name: 'id',
