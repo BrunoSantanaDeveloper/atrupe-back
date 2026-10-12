@@ -23,11 +23,13 @@ describe('Orçamento: outra empresa', () => {
       },
     };
     const abac = { canAccessOtherSellers: jest.fn().mockResolvedValue(true) };
+    const lines = { preview: jest.fn(), add: jest.fn(), remove: jest.fn() };
     const controller = new QuotationController(
       service as any,
       abac as any,
       prisma as any,
       {} as any,
+      lines as any,
     );
     const req = { user: { userId: 'u-a', companyId: 'empresa-a' } };
     const id = '6f1c2b8e-4d3a-4f5b-9c7d-1e2f3a4b5c6d';
@@ -56,6 +58,28 @@ describe('Orçamento: outra empresa', () => {
     ] as const)('%s', async (_label, action, call) => {
       await expect(call()).rejects.toBeInstanceOf(ForbiddenException);
       expect(service[action]).not.toHaveBeenCalled();
+    });
+
+    // As linhas acrescentadas dentro do item (ORC-5, Fase 4.2)
+    it.each([
+      [
+        'POST /sale/quotation/:id/item/:itemId/line/preview',
+        'preview',
+        () => controller.previewItemLine(id, 'item-b', {} as any, req),
+      ],
+      [
+        'POST /sale/quotation/:id/item/:itemId/line',
+        'add',
+        () => controller.addItemLine(id, 'item-b', {} as any, req),
+      ],
+      [
+        'DELETE /sale/quotation/:id/item/:itemId/line/:lineId',
+        'remove',
+        () => controller.removeItemLine(id, 'item-b', 'linha-b', req),
+      ],
+    ] as const)('%s', async (_label, action, call) => {
+      await expect(call()).rejects.toBeInstanceOf(ForbiddenException);
+      expect(lines[action]).not.toHaveBeenCalled();
     });
   });
 

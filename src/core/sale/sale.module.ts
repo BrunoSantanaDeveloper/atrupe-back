@@ -7,6 +7,7 @@ import { DeliveryScheduleModule } from './delivery-schedule/delivery-schedule.mo
 import { ProductionStageModule } from './production-stage/production-stage.module';
 import { SaleHistoryModule } from './sale-history/sale-history.module';
 import { ContactSourceModule } from './contact-source/contact-source.module';
+import { SalesSettingsModule } from './sales-settings/sales-settings.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { ContactSourceModule } from './contact-source/contact-source.module';
     ProductionStageModule,
     SaleHistoryModule,
     ContactSourceModule,
+    SalesSettingsModule,
   ],
   exports: [SeriesModule, QuotationModule, OrderModule],
 })

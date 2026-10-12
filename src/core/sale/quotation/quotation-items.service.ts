@@ -12,14 +12,17 @@ import { SaleChoicesDto } from '../../assembly/dto/sale.dto';
 import { AddItemDto } from './dto/create-quotation.dto';
 import { UpdateItemDto } from './dto/update-quotation.dto';
 import { calculateFinalValue, DEFAULT_IMAGE_SIZE } from './quotation.utils';
+import {
+  copyItemLines,
+  QuotationLinesService,
+} from './quotation-lines.service';
+import { itemValue, recalculateQuotationTotal } from './quotation-totals';
 
-/** O valor do item: o desconto sobre o total e o acréscimo por fora (ALT-25). */
-export const itemFinalValue = (
-  totalValue: number,
-  discount: number | null,
-  discountType: string | null,
-  addition: number | null | undefined,
-) => calculateFinalValue(totalValue, discount, discountType) + (addition || 0);
+/**
+ * O valor do item: o desconto sobre o total e, por fora, o acréscimo
+ * (ALT-25) e as linhas acrescentadas (ORC-5).
+ */
+export const itemFinalValue = itemValue;
 
 // As escolhas vêm de classes de DTO: no banco vão como JSON simples
 const asJson = (value: unknown) =>
@@ -41,6 +44,7 @@ export class QuotationItemsService {
   constructor(
     private prisma: PrismaService,
     private productSale: ProductSaleService,
+    private lines: QuotationLinesService,
   ) {}
 
   /**
@@ -557,32 +561,29 @@ export class QuotationItemsService {
         });
       }
 
-      // O acréscimo entra por fora do desconto (ALT-25). Sem acréscimo, o
-      // valor fica como as contas acima deixaram
+      // Medida nova: as linhas que acompanham a base são refeitas e as de
+      // medida própria ficam (05/10/2026)
+      const linesRecalculated = measureChanged
+        ? await this.lines.recalculate(productId)
+        : 0;
+
+      // O acréscimo e as linhas entram por fora do desconto (ALT-25, ORC-5).
+      // Sem eles, o valor fica como as contas acima deixaram
       const addition = data.addition ?? product.addition;
-      if (data.addition !== undefined || addition) {
-        const current = await this.prisma.quotationProduct.findUnique({
-          where: { id: productId },
-        });
-        if (current) {
-          await this.prisma.quotationProduct.update({
-            where: { id: productId },
-            data: {
-              finalValue: itemFinalValue(
-                current.totalValue || 0,
-                current.discount,
-                current.discountType,
-                current.addition,
-              ),
-            },
-          });
-        }
+      if (
+        data.addition !== undefined ||
+        addition ||
+        product.linesTotal ||
+        linesRecalculated
+      ) {
+        await this.lines.refreshItem(productId);
       }
 
       // Atualizar o valor total do orçamento sem recalcular os itens
       await this.recalculateQuotationTotalValue(product.quotationId);
 
-      return updatedQuotationProduct;
+      // O retrato com custo nunca volta na resposta (ORC-7)
+      return { ...updatedQuotationProduct, linesRecalculated };
     } catch (error) {
       if (error instanceof HttpException) throw error;
       this.logger.error('Error updating product in quotation:', error.stack);
@@ -633,6 +634,7 @@ export class QuotationItemsService {
           origin: originalQuotationProduct.origin,
           variationId: originalQuotationProduct.variationId,
           addition: originalQuotationProduct.addition,
+          linesTotal: originalQuotationProduct.linesTotal,
           composition: originalQuotationProduct.composition ?? Prisma.DbNull,
           ...(originalQuotationProduct.snapshot && {
             snapshot: {
@@ -669,6 +671,12 @@ export class QuotationItemsService {
     await this.prisma.quotationProductItem.createMany({
       data: duplicatedItems,
     });
+    // As linhas acrescentadas vão junto, como estavam (ORC-5)
+    await copyItemLines(
+      this.prisma,
+      originalQuotationProduct.id,
+      duplicatedQuotationProduct.id,
+    );
 
     await this.recalculateQuotationTotalValue(
       originalQuotationProduct.quotationId,
@@ -759,6 +767,7 @@ export class QuotationItemsService {
       quotationProduct.discount,
       quotationProduct.discountType,
       quotationProduct.addition,
+      quotationProduct.linesTotal,
     );
 
     await this.prisma.quotationProduct.update({
@@ -776,27 +785,6 @@ export class QuotationItemsService {
    * Recalcula o valor total do orçamento
    */
   async recalculateQuotationTotalValue(quotationId: string) {
-    const quotationProducts = await this.prisma.quotationProduct.findMany({
-      where: { quotationId },
-      include: {
-        items: true,
-      },
-    });
-
-    const totalValue = quotationProducts.reduce((total, product) => {
-      return total + product.finalValue;
-    }, 0);
-
-    await this.prisma.quotation.update({
-      where: { id: quotationId },
-      data: { totalValue },
-    });
-
-    await this.prisma.quotationPayment.update({
-      where: {
-        quotationId: quotationId,
-      },
-      data: { totalValue },
-    });
+    await recalculateQuotationTotal(this.prisma, quotationId);
   }
 }

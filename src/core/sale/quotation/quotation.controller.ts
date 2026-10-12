@@ -19,6 +19,7 @@ import {
   ForbiddenException,
   Logger,
   Req,
+  HttpCode,
 } from '@nestjs/common';
 import { QuotationService } from './quotation.service';
 import { AddItemDto, CreateQuotationDto } from './dto/create-quotation.dto';
@@ -44,6 +45,9 @@ import { CancelOrderDto } from '../order/dto/create-order.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { AbacService } from '../../auth/abac/abac.service';
 import { PlanControlService } from '../../plan/plan-control.service';
+import { canViewValues } from '../../auth/abac/values-visibility.interceptor';
+import { ItemLineDto } from './dto/item-line.dto';
+import { QuotationLinesService } from './quotation-lines.service';
 
 const RESOURCE = 'quotation';
 const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
@@ -64,6 +68,7 @@ export class QuotationController {
     private readonly abacService: AbacService,
     private readonly prisma: PrismaService,
     private readonly planControlService: PlanControlService,
+    private readonly lines: QuotationLinesService,
   ) {}
 
   /**
@@ -315,6 +320,78 @@ export class QuotationController {
     if (!isDeleted) {
       throw new NotFoundException('Produto ou orçamento não encontrados.');
     }
+  }
+
+  /* --------------------------------------------------------------------
+   * Linhas acrescentadas dentro do item (ORC-5). Rotas novas: a permissão
+   * já recusa, e o dinheiro sai só com `values:values:view` (ORC-7)
+   * ------------------------------------------------------------------ */
+
+  @Post(':id/item/:itemId/line/preview')
+  @HttpCode(200)
+  @HasPermission('edit', 'sale:quotation')
+  @ObservePermissions(false)
+  @ApiOperation({ summary: 'O preço da linha antes de gravar' })
+  async previewItemLine(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: ItemLineDto,
+    @Req() req,
+  ) {
+    await this.validateOwnership(id, req.user, 'edit');
+    await this.planControlService.enforceFeature(
+      req.user.companyId,
+      'product_composition',
+    );
+    return this.lines.preview(
+      id,
+      itemId,
+      dto,
+      await canViewValues(req, this.abacService),
+    );
+  }
+
+  @Post(':id/item/:itemId/line')
+  @HasPermission('edit', 'sale:quotation')
+  @ObservePermissions(false)
+  @ApiOperation({ summary: 'Acrescenta uma linha ao item' })
+  async addItemLine(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: ItemLineDto,
+    @Req() req,
+  ) {
+    await this.validateOwnership(id, req.user, 'edit');
+    await this.planControlService.enforceFeature(
+      req.user.companyId,
+      'product_composition',
+    );
+    return this.lines.add(
+      id,
+      itemId,
+      dto,
+      await canViewValues(req, this.abacService),
+    );
+  }
+
+  // Retirar uma linha de dentro do registro é editar o registro
+  @Delete(':id/item/:itemId/line/:lineId')
+  @HasPermission('edit', 'sale:quotation')
+  @ObservePermissions(false)
+  @ApiOperation({ summary: 'Retira uma linha do item' })
+  async removeItemLine(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Param('lineId') lineId: string,
+    @Req() req,
+  ) {
+    await this.validateOwnership(id, req.user, 'edit');
+    return this.lines.remove(
+      id,
+      itemId,
+      lineId,
+      await canViewValues(req, this.abacService),
+    );
   }
 
   @Get()

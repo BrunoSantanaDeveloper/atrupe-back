@@ -16,7 +16,15 @@ export const MONEY_COLUMNS = {
     'variableTotalMonthlyCost',
   ],
   Quotation: ['totalValue'],
-  QuotationProduct: ['totalValue', 'discount', 'finalValue', 'addition'],
+  QuotationProduct: [
+    'totalValue',
+    'discount',
+    'finalValue',
+    'addition',
+    'linesTotal',
+  ],
+  // A linha acrescentada no item (ORC-5); o custo nem é lido pelo detalhe
+  QuotationItemLine: ['price', 'cost'],
   QuotationProductItem: ['totalValue', 'salePrice', 'unitCost'],
   QuotationPayment: [
     'totalValue',
@@ -74,6 +82,7 @@ export const QUOTATION_MONEY_FIELDS = [
   ...columnsOf(
     'Quotation',
     'QuotationProduct',
+    'QuotationItemLine',
     'QuotationProductItem',
     'QuotationPayment',
     'Commission',

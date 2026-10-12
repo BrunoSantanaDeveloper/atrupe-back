@@ -26,6 +26,7 @@ const NOT_MONEY: Record<keyof typeof MONEY_COLUMNS, string[]> = {
   Asset: ['usefulLife'],
   Quotation: ['quotationNumber'],
   QuotationProduct: ['quantity'],
+  QuotationItemLine: [],
   QuotationProductItem: [
     'quantity',
     'originalQuantity',

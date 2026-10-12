@@ -4,6 +4,8 @@ import { PrismaService } from 'nestjs-prisma';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { QuotationStatus } from '@prisma/client';
 import { ProductSaleService } from '../../assembly/product-sale.service';
+import { QuotationLinesService } from './quotation-lines.service';
+import { itemValue } from './quotation-totals';
 
 const mockQuotationId = 'quotation-uuid-456';
 const mockProductId = 'product-uuid-123';
@@ -94,16 +96,25 @@ const createMockPrismaService = () => ({
   productAssembly: {
     findFirst: jest.fn().mockResolvedValue(null),
   },
+  quotationItemLine: {
+    findMany: jest.fn().mockResolvedValue([]),
+    createMany: jest.fn(),
+  },
 });
 
 describe('QuotationItemsService', () => {
   let service: QuotationItemsService;
   let prisma: ReturnType<typeof createMockPrismaService>;
   let productSale: { itemComposition: jest.Mock };
+  let lines: { recalculate: jest.Mock; refreshItem: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     prisma = createMockPrismaService();
+    lines = {
+      recalculate: jest.fn().mockResolvedValue(0),
+      refreshItem: jest.fn().mockResolvedValue({}),
+    };
     productSale = {
       itemComposition: jest.fn().mockResolvedValue({
         composition: { choices: [], summary: ['Lona 440'] },
@@ -119,6 +130,7 @@ describe('QuotationItemsService', () => {
           useValue: prisma,
         },
         { provide: ProductSaleService, useValue: productSale },
+        { provide: QuotationLinesService, useValue: lines },
       ],
     }).compile();
 
@@ -226,10 +238,39 @@ describe('QuotationItemsService', () => {
         addition: 2500,
       } as any);
 
-      expect(prisma.quotationProduct.update).toHaveBeenCalledWith({
-        where: { id: mockQuotationProductId },
-        data: { finalValue: 11500 },
+      // O valor do item é refeito com o acréscimo e as linhas
+      expect(lines.refreshItem).toHaveBeenCalledWith(mockQuotationProductId);
+      expect(itemValue(10000, 1000, 'VALUE', 2500)).toBe(11500);
+    });
+
+    it('as linhas somam por fora do desconto, e o valor nunca fica negativo (ORC-5)', () => {
+      expect(itemValue(10000, 10, 'PERCENT', 0, 5000)).toBe(14000);
+      expect(itemValue(10000, 1000, 'VALUE', 2500, 3000)).toBe(14500);
+      expect(itemValue(1000, 5000, 'VALUE', 0, 0)).toBe(0);
+    });
+
+    it('medida nova refaz as linhas que acompanham a base e o valor do item', async () => {
+      prisma.quotationProduct.findUnique.mockResolvedValue({
+        ...mockQuotationProduct,
+        addition: 0,
+        linesTotal: 0,
+        composition: null,
+        snapshot: null,
+        variationId: null,
+        product: { ...mockProduct },
       });
+      prisma.quotationProduct.update.mockResolvedValue(mockQuotationProduct);
+      prisma.quotationProductItem.findMany.mockResolvedValue([]);
+      lines.recalculate.mockResolvedValue(2);
+
+      const result = await service.updateProductInQuotation(
+        mockQuotationProductId,
+        { quantity: 3 } as any,
+      );
+
+      expect(lines.recalculate).toHaveBeenCalledWith(mockQuotationProductId);
+      expect(lines.refreshItem).toHaveBeenCalledWith(mockQuotationProductId);
+      expect(result).toMatchObject({ linesRecalculated: 2 });
     });
   });
 

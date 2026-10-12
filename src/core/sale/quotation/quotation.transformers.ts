@@ -253,6 +253,9 @@ export function transformQuotationItem(qp: any) {
     finalValue: qp.finalValue,
     // Acréscimo em centavos, fora do desconto (ALT-25)
     addition: qp.addition ?? 0,
+    // As linhas acrescentadas dentro do item (ORC-5) e a soma delas
+    linesTotal: qp.linesTotal ?? 0,
+    lines: qp.lines ?? [],
     origin: qp.origin ?? 'PRODUCT',
     variation: qp.variation ?? null,
     composition: qp.composition ?? null,

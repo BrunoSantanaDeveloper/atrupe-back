@@ -105,6 +105,11 @@ const createMockPrismaService = () => {
     quotationProductItem: {
       create: jest.fn(),
     },
+    // As linhas acrescentadas no item vão junto na cópia (ORC-5)
+    quotationItemLine: {
+      findMany: jest.fn().mockResolvedValue([]),
+      createMany: jest.fn(),
+    },
     contactSource: {
       findMany: jest.fn(),
       count: jest.fn().mockResolvedValue(1),
@@ -595,6 +600,41 @@ describe('QuotationCrudService', () => {
           created[index - 1].createdAt.getTime(),
         );
       });
+    });
+
+    it('a cópia leva variação, composição, acréscimo, retrato e linhas (Fase 4)', async () => {
+      const composed = {
+        ...buildProduct('D'),
+        id: 'qp-d',
+        origin: 'PRODUCT',
+        variationId: 'v-m',
+        composition: { choices: [], summary: ['Lona 440'] },
+        addition: 2500,
+        linesTotal: 3000,
+        snapshot: { data: { cost: 1500, stages: [] } },
+      };
+      prisma.quotation.findUnique.mockResolvedValue({
+        ...mockQuotation,
+        seriesId: mockSeriesId,
+        deliveryInfo: {},
+        quotationPayment: {},
+        quotationProduct: [composed],
+      });
+
+      await service.duplicate(mockQuotationId, {});
+
+      expect(prisma.quotationProduct.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          variationId: 'v-m',
+          composition: { choices: [], summary: ['Lona 440'] },
+          addition: 2500,
+          linesTotal: 3000,
+          snapshot: { create: { data: { cost: 1500, stages: [] } } },
+        }),
+      });
+      expect(prisma.quotationItemLine.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { quotationProductId: 'qp-d' } }),
+      );
     });
   });
 

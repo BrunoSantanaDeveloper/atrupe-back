@@ -104,6 +104,7 @@ model Company {
   aiConversations        AiConversation[]
   contactSources         ContactSource[]
   hiddenContactSources   CompanyHiddenContactSource[]
+  saleSettings           SaleSettings?
 
   @@map("companies")
 }
@@ -402,6 +403,7 @@ model Supplier {
   receivable        Receivable[]
   scheduledExpense  ScheduledExpense[]
   paymentConditions SupplierPaymentCondition[]
+  quotationLines    QuotationItemLine[]
   company           Company                    @relation(fields: [companyId], references: [id])
   category          Category?                  @relation("SupplierToCategory", fields: [categoryId], references: [id])
 
@@ -1117,6 +1119,10 @@ model QuotationProduct {
   composition          Json?
   /// Acréscimo em centavos (ALT-25): fica fora do limite de desconto
   addition             Int                    @default(0)
+  /// Soma do preço das linhas acrescentadas dentro do item (ORC-5), em
+  /// centavos: entra no valor do item por fora do desconto
+  linesTotal           Int                    @default(0)
+  lines                QuotationItemLine[]
   items                QuotationProductItem[]
   product              Product                @relation(fields: [productId], references: [id])
   quotation            Quotation              @relation(fields: [quotationId], references: [id])
@@ -1137,6 +1143,57 @@ model QuotationItemSnapshot {
   quotationProduct   QuotationProduct @relation(fields: [quotationProductId], references: [id], onDelete: Cascade)
 
   @@map("quotation_item_snapshots")
+}
+
+/// Linha acrescentada dentro do item do orçamento (ORC-5, MS-15): um
+/// processo, um item pronto do catálogo (parte) ou um terceirizado avulso.
+/// Guarda o preço, o custo e o retrato do cálculo (ORC-10); custo e retrato
+/// nunca saem para a tela do orçamento (ORC-7)
+model QuotationItemLine {
+  id                 String            @id @default(uuid())
+  quotationProductId String
+  kind               QuotationLineKind
+  name               String
+  sector             String
+  tags               String[]          @default([])
+  processId          String?
+  productId          String?
+  supplierId         String?
+  supplierName       String?
+  /// Acompanha a medida do item: refeita quando ela muda (05/10/2026)
+  followsBase        Boolean?
+  /// A medida usada, em mm: { quantity, width, height }
+  measure            Json?
+  /// Os campos do processo informados na venda (km, tempo)
+  fields             Json?
+  /// Preço e custo em centavos
+  price              Int               @default(0)
+  cost               Int               @default(0)
+  /// Os recursos resolvidos com quantidade e custo (ORC-10)
+  resolved           Json?
+  resolvedAt         DateTime          @default(now())
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  quotationProduct   QuotationProduct  @relation(fields: [quotationProductId], references: [id], onDelete: Cascade)
+  process            Process?          @relation(fields: [processId], references: [id], onDelete: SetNull)
+  product            Product?          @relation(fields: [productId], references: [id], onDelete: SetNull)
+  supplier           Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  @@index([quotationProductId])
+  @@map("quotation_item_lines")
+}
+
+/// Configurações de venda da empresa (MS-16, T-4): o markup do
+/// terceirizado avulso, percentual com até duas casas (45 = 45 %)
+model SaleSettings {
+  id               String    @id @default(uuid())
+  companyId        String    @unique
+  outsourcedMarkup Float     @default(45)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime? @updatedAt
+  company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("sale_settings")
 }
 
 model QuotationProductItem {
@@ -1326,38 +1383,39 @@ model OrderHistory {
 }
 
 model Product {
-  id                   String             @id @default(uuid())
+  id                   String              @id @default(uuid())
   name                 String
   companyId            String?
   categoryId           String
-  isActive             Boolean            @default(true)
-  isStandard           Boolean            @default(false)
-  isService            Boolean            @default(false)
+  isActive             Boolean             @default(true)
+  isStandard           Boolean             @default(false)
+  isService            Boolean             @default(false)
   code                 String
   sectorId             String
-  allowEditDescription Boolean            @default(true)
-  allowEditValues      Boolean            @default(true)
+  allowEditDescription Boolean             @default(true)
+  allowEditValues      Boolean             @default(true)
   imageUrl             String?
   imageSize            String?
   technicalDescription String?
   productionStages     Json?
-  status               ProductStatus      @default(ACTIVE)
-  isImported           Boolean            @default(false)
+  status               ProductStatus       @default(ACTIVE)
+  isImported           Boolean             @default(false)
   /// Código do produto no sistema legado. Distingue o que a migração criou do
   /// que o cliente já tinha com o mesmo código.
   legacyId             String?
   items                ProductItem[]
-  category             Category           @relation(fields: [categoryId], references: [id])
-  company              Company?           @relation(fields: [companyId], references: [id])
-  sector               CompanySector      @relation(fields: [sectorId], references: [id])
+  category             Category            @relation(fields: [categoryId], references: [id])
+  company              Company?            @relation(fields: [companyId], references: [id])
+  sector               CompanySector       @relation(fields: [sectorId], references: [id])
   quotationProduct     QuotationProduct[]
-  quotations           Quotation[]        @relation("QuotationToProduct")
+  quotations           Quotation[]         @relation("QuotationToProduct")
   fiscalData           ProductFiscalData?
   stRules              ProductStRule[]
   variations           ProductVariation[]
   priceTiers           ProductPriceTier[]
   assemblies           ProductAssembly[]
-  partOfBlocks         AssemblyBlock[]    @relation("AssemblyPart")
+  partOfBlocks         AssemblyBlock[]     @relation("AssemblyPart")
+  quotationLines       QuotationItemLine[]
 
   @@unique([code, companyId])
   @@unique([companyId, legacyId])
@@ -1513,27 +1571,28 @@ model ProductPriceTier {
 /// Processo (MS-11): uma etapa reutilizável de um setor, guardada no
 /// formato da etapa da composição. Nunca é excluído, só inativado (PAD-7).
 model Process {
-  id                 String             @id @default(uuid())
+  id                 String              @id @default(uuid())
   companyId          String
   name               String
   sectorId           String
-  afterBase          ProcessAfterBase   @default(INHERIT)
-  setupMinutes       Int                @default(0)
+  afterBase          ProcessAfterBase    @default(INHERIT)
+  setupMinutes       Int                 @default(0)
   taskType           String
-  sellerInstructions String             @default("")
+  sellerInstructions String              @default("")
   /// Regras de venda (MS-3 a MS-6)
   rules              Json
-  isActive           Boolean            @default(true)
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  company            Company            @relation(fields: [companyId], references: [id])
-  sector             CompanySector      @relation(fields: [sectorId], references: [id])
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  company            Company             @relation(fields: [companyId], references: [id])
+  sector             CompanySector       @relation(fields: [sectorId], references: [id])
   lines              AssemblyLine[]
   fields             AssemblyField[]
   formulas           AssemblyFormula[]
   blocks             AssemblyBlock[]
-  usualAfter         ProcessUsualNext[] @relation("UsualFrom")
-  usualBefore        ProcessUsualNext[] @relation("UsualTo")
+  usualAfter         ProcessUsualNext[]  @relation("UsualFrom")
+  usualBefore        ProcessUsualNext[]  @relation("UsualTo")
+  quotationLines     QuotationItemLine[]
 
   @@index([companyId, isActive])
   @@map("processes")
@@ -2414,6 +2473,12 @@ enum AssemblyLineMode {
   SINGLE
   CHOOSE
   LIST
+}
+
+enum QuotationLineKind {
+  PROCESS
+  PART
+  LOOSE
 }
 
 enum QuotationItemOrigin {

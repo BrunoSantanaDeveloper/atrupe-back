@@ -397,6 +397,83 @@ export class ProcessService {
       : omitMoneyFields(result, ASSEMBLY_MONEY_FIELDS);
   }
 
+  /**
+   * O processo como linha acrescentada no item do orçamento (ORC-5): o
+   * cálculo na medida (mm) com os campos informados na venda, e os recursos
+   * resolvidos com custo para o retrato (ORC-10). Acompanhando a base, ele
+   * entra como etapa depois do item. Não grava nada.
+   */
+  async lineQuote(
+    companyId: string,
+    id: string,
+    measure: Measure,
+    fieldValues: { fieldId: string; value: number }[],
+    followsBase: boolean,
+  ) {
+    const row = await this.findProcess(companyId, id);
+    // Inativo não entra na venda (PAD-7); linha sem recurso é erro de
+    // cadastro (IP-37)
+    if (!row.isActive) bad('Este processo está inativo');
+    if (!row.lines.length || row.lines.some((line) => !line.options.length)) {
+      bad('Este processo tem linha sem recurso');
+    }
+    const values = new Map<string, number>();
+    for (const item of fieldValues) {
+      const field = row.fields.find((f) => f.id === item.fieldId);
+      if (!field) throw new NotFoundException(FIELD_NOT_FOUND);
+      integerCheck(field, item.value);
+      values.set(field.id, item.value);
+    }
+
+    const resources = await this.resources.resolve(
+      companyId,
+      resourceIdsOf(row.lines),
+    );
+    const engine = engineAssemblyOf(
+      row,
+      resources,
+      measure,
+      followsBase ? measure : null,
+    );
+    engine.fields = (engine.fields ?? []).map((field) => ({
+      ...field,
+      defaultValue: values.get(field.id) ?? field.defaultValue,
+    }));
+    const computed = computeAssembly(engine, {
+      referenceMarkup: await this.pricing.referenceMarkupOf(companyId),
+      partOf: () => null,
+      resourceName: (resourceId) => resources.get(resourceId)?.name,
+    });
+    const block = computed.blocks.find((item) => item.id !== SIM_BASE_ID)!;
+    const instructions = row.sellerInstructions.trim();
+
+    return {
+      name: row.name,
+      sector: row.sector.name,
+      // A preferência do processo: herda a medida da base (03/10/2026)
+      followsBaseDefault: row.afterBase === 'INHERIT',
+      instructions: instructions
+        ? [{ stage: row.name, text: instructions }]
+        : [],
+      price: block.sale,
+      cost: block.cost,
+      resolved: block.lines.map((line) => ({
+        lineId: line.id,
+        name: line.name,
+        kind: line.kind,
+        resourceId: line.selected?.resourceId ?? null,
+        resource: line.selected?.name ?? null,
+        quantity: line.quantity,
+        unit: line.selected?.unit ?? line.options[0]?.unit ?? '',
+        unitCost: line.selected?.unitCost ?? null,
+        cost: line.cost,
+        // O apontamento da produção preenche depois (ORC-9)
+        actualQuantity: null,
+        actualCost: null,
+      })),
+    };
+  }
+
   /** As etapas ligadas ao processo, para o diálogo de inativar (PAD-7). */
   async usage(companyId: string, id: string) {
     const process = await this.processForWrite(companyId, id);

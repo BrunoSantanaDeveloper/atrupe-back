@@ -9,6 +9,7 @@ import { PaymentModule } from './payment/payment.module';
 import { DeliveryScheduleModule } from '../delivery-schedule/delivery-schedule.module';
 import { PlanControlModule } from '../../plan/plan-control.module';
 import { AssemblyModule } from '../../assembly/assembly.module';
+import { SalesSettingsModule } from '../sales-settings/sales-settings.module';
 
 // Sub-services
 import { QuotationCrudService } from './quotation-crud.service';
@@ -17,6 +18,7 @@ import { QuotationWorkflowService } from './quotation-workflow.service';
 import { QuotationFinancialService } from './quotation-financial.service';
 import { QuotationPdfService } from './quotation-pdf.service';
 import { QuotationImportService } from './quotation-import.service';
+import { QuotationLinesService } from './quotation-lines.service';
 
 @Module({
   imports: [
@@ -29,6 +31,8 @@ import { QuotationImportService } from './quotation-import.service';
     PlanControlModule,
     // A composição escolhida no item e o retrato da venda (ORC-10)
     AssemblyModule,
+    // O markup do terceirizado avulso nas linhas do item (T-4)
+    SalesSettingsModule,
   ],
   controllers: [QuotationController],
   providers: [
@@ -39,6 +43,7 @@ import { QuotationImportService } from './quotation-import.service';
     QuotationFinancialService,
     QuotationPdfService,
     QuotationImportService,
+    QuotationLinesService,
   ],
   exports: [
     QuotationService,

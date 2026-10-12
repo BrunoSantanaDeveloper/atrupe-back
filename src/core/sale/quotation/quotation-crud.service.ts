@@ -21,6 +21,8 @@ import { QUOTATION_FIND_ONE_INCLUDE } from './quotation.includes';
 import { transformQuotationToResponse } from './quotation.transformers';
 import { QuotationGroup } from './quotation.service';
 import { reassignQuotationSeries } from './quotation-series.util';
+import { copyItemLines } from './quotation-lines.service';
+import { itemValue } from './quotation-totals';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 const EXPORT_LIMIT = '10000';
@@ -930,6 +932,8 @@ export class QuotationCrudService {
             items: {
               orderBy: { createdAt: 'asc' },
             },
+            // O retrato da venda vai junto para a cópia (ORC-10)
+            snapshot: { select: { data: true } },
           },
           orderBy: { createdAt: 'asc' },
         },
@@ -1134,9 +1138,42 @@ export class QuotationCrudService {
         createdAt: nextCreatedAt(),
       };
 
+      // A variação, a composição escolhida, o acréscimo e as linhas do
+      // item vão junto (Fase 4)
       const newProduct = await this.prisma.quotationProduct.create({
-        data: productDto,
+        data: {
+          ...productDto,
+          origin: product.origin,
+          variationId: product.variationId,
+          composition: product.composition ?? Prisma.DbNull,
+          addition: product.addition,
+          linesTotal: product.linesTotal,
+          ...(product.snapshot && {
+            snapshot: {
+              create: { data: product.snapshot.data as Prisma.InputJsonValue },
+            },
+          }),
+        },
       });
+      await copyItemLines(this.prisma, product.id, newProduct.id);
+      // Com preço novo, o valor refeito soma o acréscimo e as linhas
+      if (
+        duplicateDto.updatePrices &&
+        (product.addition || product.linesTotal)
+      ) {
+        await this.prisma.quotationProduct.update({
+          where: { id: newProduct.id },
+          data: {
+            finalValue: itemValue(
+              newProductTotalValue ?? 0,
+              product.discount,
+              product.discountType,
+              product.addition,
+              product.linesTotal,
+            ),
+          },
+        });
+      }
 
       for (const {
         item,

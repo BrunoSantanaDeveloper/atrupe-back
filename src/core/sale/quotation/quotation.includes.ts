@@ -182,6 +182,20 @@ export const QUOTATION_PRODUCT_ITEM_SELECT = {
   volume: true,
 } as const;
 
+/** O que sai da linha acrescentada no item: sem custo e sem retrato (ORC-7). */
+export const LINE_VIEW_SELECT = {
+  id: true,
+  kind: true,
+  name: true,
+  sector: true,
+  tags: true,
+  price: true,
+  followsBase: true,
+  measure: true,
+  processId: true,
+  productId: true,
+} as const;
+
 export const QUOTATION_PRODUCT_SELECT = {
   id: true,
   notes: true,
@@ -211,6 +225,12 @@ export const QUOTATION_PRODUCT_SELECT = {
   addition: true,
   // As escolhas da composição; o retrato (snapshot) tem custo e fica fora
   composition: true,
+  // As linhas acrescentadas (ORC-5), sem custo nem retrato (ORC-7)
+  linesTotal: true,
+  lines: {
+    select: LINE_VIEW_SELECT,
+    orderBy: { createdAt: 'asc' },
+  },
   variation: { select: { id: true, name: true } },
   description: true,
   quantity: true,
