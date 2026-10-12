@@ -20,7 +20,10 @@ export class ActivityMonitorController {
     private readonly activityMonitorService: ActivityMonitorService,
   ) {}
 
+  // As rotas de consulta são do superadmin: abertas, qualquer usuário logado
+  // lia sessões, IPs e acessos de outras empresas passando o id
   @Get('online')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
   async getOnlineUsers(
     @Query('companyId') companyId?: string,
     @Query('minutesThreshold') minutesThreshold?: string,
@@ -76,11 +79,13 @@ export class ActivityMonitorController {
   }
 
   @Get('last-activity/:userId')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
   async getUserLastActivity(@Param('userId') userId: string) {
     return this.activityMonitorService.getUserLastActivity(userId);
   }
 
   @Get('history/:userId')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
   async getUserActivityHistory(
     @Param('userId') userId: string,
     @Query('limit') limit?: string,
@@ -96,6 +101,7 @@ export class ActivityMonitorController {
   }
 
   @Get('statistics/:companyId')
+  @UseGuards(JwtAuthGuard, SystemAdminGuard)
   async getCompanyStatistics(
     @Param('companyId') companyId: string,
     @Query('days') days?: string,

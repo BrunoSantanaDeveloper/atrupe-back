@@ -57,6 +57,33 @@ describe('ActivityMonitorController', () => {
     expect(guards).toContain(SystemAdminGuard);
   });
 
+  it.each([
+    'getOnlineUsers',
+    'getUserLastActivity',
+    'getUserActivityHistory',
+    'getCompanyStatistics',
+  ])(
+    '%s é do superadmin: aberta, mostrava acessos de outras empresas',
+    (method) => {
+      const guards =
+        Reflect.getMetadata(
+          GUARDS_METADATA,
+          ActivityMonitorController.prototype[method],
+        ) || [];
+
+      expect(guards).toContain(SystemAdminGuard);
+    },
+  );
+
+  it('logout segue aberto a quem está logado', () => {
+    expect(
+      Reflect.getMetadata(
+        GUARDS_METADATA,
+        ActivityMonitorController.prototype.logout,
+      ),
+    ).toBeUndefined();
+  });
+
   it('throws not found when session details are missing', async () => {
     service.getSessionDetails.mockResolvedValue(null);
 
