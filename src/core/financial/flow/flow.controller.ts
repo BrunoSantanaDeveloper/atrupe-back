@@ -3,6 +3,8 @@ import { FlowService } from './flow.service';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
+import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
+import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 import { FinancialFlowFilterDTO } from './dto/filter.dto';
 import { PlanControlService } from 'src/core/plan/plan-control.service';
 import {
@@ -17,7 +19,7 @@ const RESOURCE = 'flow';
 const GROUP = 'financial';
 
 @ApiTags('Fluxo Financeiro')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
 @ApiBearerAuth()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class FlowController {
@@ -96,6 +98,7 @@ export class FlowController {
   }
 
   @Get('receivable/:id/details')
+  @TenantResource('receivable')
   @HasAnyPermission({ action: 'view', resource: 'financial:flow' })
   @ApiOperation({
     summary:
@@ -117,6 +120,7 @@ export class FlowController {
   }
 
   @Get('payable/:id/details')
+  @TenantResource('payable')
   @HasAnyPermission({ action: 'view', resource: 'financial:flow' })
   @ApiOperation({
     summary:

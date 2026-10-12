@@ -260,6 +260,8 @@ export class ClientController {
   }
 
   @Get(':id/contacts')
+  @TenantResource('client')
+  @HasPermission('view', 'register:client')
   @ApiOperation({ summary: 'Obtém os contatos/responsáveis de um cliente' })
   @ApiParam({ name: 'id', required: true, description: 'ID do cliente' })
   @ApiResponse({
@@ -309,6 +311,7 @@ export class ClientController {
   }
 
   @Patch(':id/status')
+  @TenantResource('client')
   @HasPermission('edit', 'register:client')
   @ApiOperation({
     summary: 'Ativa ou desativa um cliente',

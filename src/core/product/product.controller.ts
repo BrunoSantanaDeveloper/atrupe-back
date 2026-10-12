@@ -203,6 +203,8 @@ export class ProductController {
   }
 
   @Post(':id/toggle-status')
+  @TenantResource('product')
+  @HasPermission('edit', 'product_settings:products')
   @ApiOperation({ summary: 'Altera o status ativo/inativo de um produto' })
   @ApiParam({ name: 'id', required: true, description: 'ID do produto' })
   @ApiBody({
@@ -225,6 +227,9 @@ export class ProductController {
   }
 
   @Delete('item/:id')
+  // Item é linha de dentro do produto: edit, pela regra do time
+  @TenantResource('productItem', 'id', 'product')
+  @HasPermission('edit', 'product_settings:products')
   @ApiOperation({ summary: 'Remove um item de um produto pelo ID' })
   @ApiParam({
     name: 'id',

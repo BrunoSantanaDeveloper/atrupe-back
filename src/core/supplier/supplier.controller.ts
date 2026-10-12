@@ -110,6 +110,7 @@ export class SupplierController {
   }
 
   @Patch(':id/toggle-status')
+  @TenantResource('supplier')
   @HasPermission('edit', 'register:supplier')
   @ApiOperation({
     summary: 'Alterna o status (ativo/inativo) de um fornecedor',

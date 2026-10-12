@@ -166,6 +166,7 @@ export class EmployeeController {
   }
 
   @Get(':id/history')
+  @TenantResource('employee')
   @ApiOperation({
     summary: 'Obtém o histórico de alterações de um colaborador',
   })
