@@ -6,6 +6,17 @@ import axios from 'axios';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { v4 as uuidv4 } from 'uuid';
 
+// A empresa e o usuário vão só com a identificação: a linha inteira levava
+// as chaves fiscais da empresa e o hash da senha do usuário
+const COMPANY_SUMMARY = {
+  id: true,
+  name: true,
+  legalName: true,
+  cnpj: true,
+  email: true,
+} as const;
+const USER_SUMMARY = { id: true, name: true, email: true } as const;
+
 @Injectable()
 export class CustomersService {
   constructor(
@@ -82,9 +93,9 @@ export class CustomersService {
           },
         },
         include: {
-          company: true,
+          company: { select: COMPANY_SUMMARY },
           subscriptions: true,
-          user: true,
+          user: { select: USER_SUMMARY },
         },
       });
 
@@ -103,9 +114,9 @@ export class CustomersService {
           asaasCustomerId: asaasCustomer.id,
         },
         include: {
-          company: true,
+          company: { select: COMPANY_SUMMARY },
           subscriptions: true,
-          user: true,
+          user: { select: USER_SUMMARY },
         },
       });
     } catch (error) {
@@ -229,7 +240,7 @@ export class CustomersService {
   async findAll() {
     return this.prisma.customer.findMany({
       include: {
-        company: true,
+        company: { select: COMPANY_SUMMARY },
         subscriptions: true,
       },
     });
@@ -239,7 +250,7 @@ export class CustomersService {
     return this.prisma.customer.findUnique({
       where: { id },
       include: {
-        company: true,
+        company: { select: COMPANY_SUMMARY },
         subscriptions: true,
       },
     });
@@ -307,7 +318,7 @@ export class CustomersService {
       where: { id },
       data: updateCustomerDto,
       include: {
-        company: true,
+        company: { select: COMPANY_SUMMARY },
         subscriptions: true,
       },
     });

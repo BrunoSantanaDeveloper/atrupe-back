@@ -20,10 +20,18 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 
+/**
+ * Cliente de cobrança (Asaas) de cada empresa. Nenhuma tela usa estas
+ * rotas; a contratação cria o cliente por dentro. Abertas a qualquer usuário
+ * logado, listavam os clientes de cobrança de todas as empresas, com a
+ * empresa inteira, e alteravam ou apagavam o de outra pelo id (no Asaas
+ * também). Ficam com o superadmin.
+ */
 @Controller('customers')
 @ApiTags('Customers')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, SystemAdminGuard)
 @ApiBearerAuth()
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
