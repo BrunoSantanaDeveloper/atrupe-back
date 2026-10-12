@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -10,6 +11,7 @@ import { UpdateRoleDto } from './dto/update-role.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { RoleFilterDTO } from './dto/filter.dto';
 import { Prisma, Role } from '@prisma/client';
+import { isKnownPermission } from '../auth/abac/permission-catalog';
 
 /** Quem grava o cargo: o usuário da sessão (`req.user`). */
 export type RoleActor = {
@@ -23,10 +25,35 @@ const ROLE_NOT_FOUND = 'Cargo não encontrado.';
 
 @Injectable()
 export class RoleService {
+  private readonly logger = new Logger(RoleService.name);
+
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Chave fora do catálogo (permission-catalog.ts) só vai para o log: cargos
+   * antigos e a tela do fork podem ter chaves que o backend ainda não
+   * conhece, e recusar travaria o salvamento do cargo
+   */
+  private warnUnknownPermissions(
+    companyId: string,
+    permissions: string[] | undefined,
+  ) {
+    const unknown = (permissions ?? []).filter(
+      (permission) => !isKnownPermission(permission),
+    );
+    if (unknown.length) {
+      this.logger.warn(
+        `[catálogo] cargo da empresa ${companyId} recebeu chaves fora do catálogo: ${unknown.join(', ')}`,
+      );
+    }
+  }
 
   async create(createRoleDto: CreateRoleDto, actor: RoleActor) {
     await this.assertWildcardAllowed(createRoleDto.permissions, actor);
+    this.warnUnknownPermissions(
+      createRoleDto.companyId,
+      createRoleDto.permissions,
+    );
     await this.assertSectorOfCompany(
       createRoleDto.sectorId,
       createRoleDto.companyId,
@@ -156,6 +183,7 @@ export class RoleService {
     this.assertNotAdminRole(role);
     await this.assertWildcardAllowed(updateRoleDto.permissions, actor);
     await this.assertSectorOfCompany(updateRoleDto.sectorId, actor.companyId);
+    this.warnUnknownPermissions(actor.companyId, updateRoleDto.permissions);
 
     try {
       return await this.prisma.role.update({

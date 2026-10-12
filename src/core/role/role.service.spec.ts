@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   ForbiddenException,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -211,6 +212,29 @@ describe('RoleService', () => {
         where: { id: 'r-1' },
         data: wildcard,
       });
+    });
+
+    it('chave fora do catálogo vai para o log, sem recusar', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+      await service.update(
+        'r-1',
+        {
+          permissions: [
+            'client:view',
+            'sale:quotation:edit',
+            'sale:quotaton:edit',
+          ],
+        },
+        seller,
+      );
+
+      expect(prisma.role.update).toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain(
+        'client:view, sale:quotaton:edit',
+      );
+      warn.mockRestore();
     });
 
     it('lista sem acesso total não passa pela regra', async () => {
