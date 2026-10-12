@@ -1323,6 +1323,8 @@ model Product {
   quotations           Quotation[]        @relation("QuotationToProduct")
   fiscalData           ProductFiscalData?
   stRules              ProductStRule[]
+  variations           ProductVariation[]
+  priceTiers           ProductPriceTier[]
 
   @@unique([code, companyId])
   @@unique([companyId, legacyId])
@@ -1435,6 +1437,42 @@ model MaterialImportLink {
 
   @@unique([companyId, externalName])
   @@map("material_import_links")
+}
+
+/// Variação simples do produto (PV-6, já no START): nome e preço por
+/// unidade comercial. No PRO, a mesma variação ganha composição própria.
+model ProductVariation {
+  id         String             @id @default(uuid())
+  productId  String
+  name       String
+  /// Centavos por unidade comercial; nulo vale o preço do produto
+  unitPrice  Int?
+  position   Int                @default(0)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  product    Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  priceTiers ProductPriceTier[]
+
+  @@index([productId])
+  @@map("product_variations")
+}
+
+/// Preço por faixa de quantidade (FQ-1 a FQ-4): tabela de preço, não
+/// desconto. Sem variação, é a tabela do produto.
+model ProductPriceTier {
+  id          String            @id @default(uuid())
+  productId   String
+  variationId String?
+  /// A faixa vale a partir desta quantidade
+  from        Int
+  /// Centavos por unidade comercial, sem arredondar para reais
+  unitPrice   Int
+  createdAt   DateTime          @default(now())
+  product     Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variation   ProductVariation? @relation(fields: [variationId], references: [id], onDelete: Cascade)
+
+  @@index([productId, variationId])
+  @@map("product_price_tiers")
 }
 
 model DefaultUnitOfMeasure {
