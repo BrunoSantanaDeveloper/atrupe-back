@@ -1,4 +1,9 @@
-import { Module, ValidationPipe } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  ValidationPipe,
+} from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { CoreModule } from './core/core.module';
@@ -17,6 +22,7 @@ import { ContractModule } from './core/contract/contract.module';
 import { ActivityTrackingInterceptor } from './core/activity-monitor/interceptors/activity-tracking.interceptor';
 import { ActivityMonitorService } from './core/activity-monitor/activity-monitor.service';
 import { PrismaService } from './config/prisma/prisma.service';
+import { PageLimitMiddleware } from './common/pagination/page-limit.middleware';
 
 @Module({
   imports: [
@@ -55,4 +61,9 @@ import { PrismaService } from './config/prisma/prisma.service';
     PdfService,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    // Teto de paginação: observa por padrão (PAGE_LIMIT_ENFORCE=true corta)
+    consumer.apply(PageLimitMiddleware).forRoutes('*');
+  }
+}
