@@ -6,6 +6,7 @@ import {
   Param,
   Delete,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ProductionStageService } from './production-stage.service';
@@ -34,14 +35,14 @@ export class ProductionStageController {
 
   @Get()
   @ApiOperation({ summary: 'Listar todos os estágios de produção' })
-  findAll() {
-    return this.productionStageService.findAll();
+  findAll(@Req() req) {
+    return this.productionStageService.findAll(req.user.companyId);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Buscar um estágio de produção pelo ID' })
-  findOne(@Param('id') id: string) {
-    return this.productionStageService.findOne(id);
+  findOne(@Req() req, @Param('id') id: string) {
+    return this.productionStageService.findOne(id, req.user.companyId);
   }
 
   @Patch(':id')
@@ -50,10 +51,15 @@ export class ProductionStageController {
   @RequiresFeature('delivery_stage_status_change')
   @ApiOperation({ summary: 'Atualizar um estágio de produção' })
   update(
+    @Req() req,
     @Param('id') id: string,
     @Body() updateProductionStageDto: UpdateProductionStageDto,
   ) {
-    return this.productionStageService.update(id, updateProductionStageDto);
+    return this.productionStageService.update(
+      id,
+      updateProductionStageDto,
+      req.user.companyId,
+    );
   }
 
   @Get('schedule/:id')
@@ -61,8 +67,11 @@ export class ProductionStageController {
   @UseGuards(FeatureGuard)
   @RequiresFeature('delivery_stage_status_change')
   @ApiOperation({ summary: 'Atualizar um estágio de produção' })
-  async updateSchedule(@Param('id') id: string) {
-    return await this.productionStageService.updateStatusIfAllStagesAreDone(id);
+  async updateSchedule(@Req() req, @Param('id') id: string) {
+    return await this.productionStageService.updateScheduleOfCompany(
+      id,
+      req.user.companyId,
+    );
   }
 
   @Delete(':id')
@@ -70,7 +79,7 @@ export class ProductionStageController {
   @UseGuards(FeatureGuard)
   @RequiresFeature('delivery_stage_status_change')
   @ApiOperation({ summary: 'Excluir um estágio de produção' })
-  remove(@Param('id') id: string) {
-    return this.productionStageService.remove(id);
+  remove(@Req() req, @Param('id') id: string) {
+    return this.productionStageService.remove(id, req.user.companyId);
   }
 }

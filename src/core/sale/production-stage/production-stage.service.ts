@@ -4,29 +4,57 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { Prisma } from '@prisma/client';
 import { UpdateProductionStageDto } from './dto/update-production-stage.dto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
+
+const STAGE_NOT_FOUND = 'Etapa de produção nao encontrada';
+
+/**
+ * A agenda de entrega da empresa: a companyId da agenda é opcional, então
+ * vale também a empresa do orçamento ou do pedido dela.
+ */
+function scheduleOfCompany(
+  companyId: string,
+): Prisma.DeliveryScheduleWhereInput {
+  return {
+    OR: [
+      { companyId },
+      { quotation: { companyId } },
+      { order: { quotation: { companyId } } },
+    ],
+  };
+}
 
 @Injectable()
 export class ProductionStageService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll() {
-    return this.prisma.productionStage.findMany();
-  }
-
-  findOne(id: string) {
-    return this.prisma.productionStage.findUnique({ where: { id } });
-  }
-
-  async update(id: string, updateProductionStageDto: UpdateProductionStageDto) {
-    const productionStage = await this.prisma.productionStage.findUnique({
-      where: { id },
+  // Toda leitura e escrita fica nas agendas da empresa da sessão: a lista
+  // trazia as etapas de todas as empresas, e o id de outra empresa alterava
+  // ou apagava a etapa dela e recalculava a agenda dela
+  findAll(companyId: string) {
+    return this.prisma.productionStage.findMany({
+      where: { schedule: scheduleOfCompany(companyId) },
     });
+  }
 
+  async findOne(id: string, companyId: string) {
+    const productionStage = await this.prisma.productionStage.findFirst({
+      where: { id, schedule: scheduleOfCompany(companyId) },
+    });
     if (!productionStage) {
-      throw new NotFoundException('Etapa de produção nao encontrada');
+      throw new NotFoundException(STAGE_NOT_FOUND);
     }
+    return productionStage;
+  }
+
+  async update(
+    id: string,
+    updateProductionStageDto: UpdateProductionStageDto,
+    companyId: string,
+  ) {
+    const productionStage = await this.findOne(id, companyId);
 
     updateProductionStageDto.prevStatus = productionStage.status;
 
@@ -94,7 +122,20 @@ export class ProductionStageService {
     });
   }
 
-  remove(id: string) {
+  /** Recalcula a agenda pela rota: só a agenda da empresa da sessão */
+  async updateScheduleOfCompany(scheduleId: string, companyId: string) {
+    const schedule = await this.prisma.deliverySchedule.findFirst({
+      where: { id: scheduleId, ...scheduleOfCompany(companyId) },
+      select: { id: true },
+    });
+    if (!schedule) {
+      throw new NotFoundException('Agenda de entrega não encontrada.');
+    }
+    return this.updateStatusIfAllStagesAreDone(scheduleId);
+  }
+
+  async remove(id: string, companyId: string) {
+    await this.findOne(id, companyId);
     return this.prisma.productionStage.delete({ where: { id } });
   }
 }

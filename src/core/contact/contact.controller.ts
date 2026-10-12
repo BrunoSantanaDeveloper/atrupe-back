@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   UseGuards,
+  Req,
   Query,
 } from '@nestjs/common';
 import { ContactService } from './contact.service';
@@ -41,8 +42,8 @@ export class ContactController {
     status: 201,
     description: 'Contato criado com sucesso.',
   })
-  create(@Body() createContactDto: CreateContactDto) {
-    return this.contactService.create(createContactDto);
+  create(@Req() req, @Body() createContactDto: CreateContactDto) {
+    return this.contactService.create(createContactDto, req.user.companyId);
   }
 
   @Post('bulk')
@@ -55,8 +56,8 @@ export class ContactController {
     status: 201,
     description: 'Contatos criados com sucesso.',
   })
-  bulk(@Body() createContactDto: CreateContactDto[]) {
-    return this.contactService.bulk(createContactDto);
+  bulk(@Req() req, @Body() createContactDto: CreateContactDto[]) {
+    return this.contactService.bulk(createContactDto, req.user.companyId);
   }
 
   @Get()
@@ -67,8 +68,8 @@ export class ContactController {
     description: 'Lista de contatos retornada com sucesso.',
     isArray: true,
   })
-  findAll(@Query() filter: ContactFilterDTO) {
-    return this.contactService.findAll(filter);
+  findAll(@Req() req, @Query() filter: ContactFilterDTO) {
+    return this.contactService.findAll(filter, req.user.companyId);
   }
 
   @Get(':id')
@@ -82,8 +83,8 @@ export class ContactController {
     status: 404,
     description: 'Contato não encontrado.',
   })
-  findOne(@Param('id') id: string) {
-    return this.contactService.findOne(id);
+  findOne(@Req() req, @Param('id') id: string) {
+    return this.contactService.findOne(id, req.user.companyId);
   }
 
   @Patch(':id')
@@ -101,8 +102,12 @@ export class ContactController {
     status: 404,
     description: 'Contato não encontrado.',
   })
-  update(@Param('id') id: string, @Body() updateContactDto: UpdateContactDto) {
-    return this.contactService.update(id, updateContactDto);
+  update(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() updateContactDto: UpdateContactDto,
+  ) {
+    return this.contactService.update(id, updateContactDto, req.user.companyId);
   }
 
   @Delete(':id')
@@ -116,7 +121,7 @@ export class ContactController {
     status: 404,
     description: 'Contato não encontrado.',
   })
-  remove(@Param('id') id: string) {
-    return this.contactService.remove(id);
+  remove(@Req() req, @Param('id') id: string) {
+    return this.contactService.remove(id, req.user.companyId);
   }
 }

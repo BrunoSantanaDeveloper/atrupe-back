@@ -7,6 +7,7 @@ import {
   Param,
   Body,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { AddressService } from './address.service';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
@@ -52,7 +53,11 @@ export class AddressController {
     status: 404,
     description: 'Cliente não encontrado.',
   })
-  findClientAddresses(@Param('clientId') clientId: string) {
+  async findClientAddresses(@Req() req, @Param('clientId') clientId: string) {
+    await this.addressService.assertClientOfCompany(
+      clientId,
+      req.user.companyId,
+    );
     return this.addressService.findByOwner(clientId, OwnerType.CLIENT);
   }
 
@@ -63,10 +68,15 @@ export class AddressController {
     status: 201,
     description: 'Endereço criado com sucesso.',
   })
-  createClientAddress(
+  async createClientAddress(
+    @Req() req,
     @Param('clientId') clientId: string,
     @Body() createAddressDto: CreateAddressDto,
   ) {
+    await this.addressService.assertClientOfCompany(
+      clientId,
+      req.user.companyId,
+    );
     return this.addressService.create(
       createAddressDto,
       OwnerType.CLIENT,
@@ -81,8 +91,12 @@ export class AddressController {
     status: 200,
     description: 'Endereço atualizado com sucesso.',
   })
-  update(@Param('id') id: string, @Body() updateAddressDto: UpdateAddressDto) {
-    return this.addressService.update(id, updateAddressDto);
+  update(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() updateAddressDto: UpdateAddressDto,
+  ) {
+    return this.addressService.update(id, updateAddressDto, req.user.companyId);
   }
 
   @Delete('/:id')
@@ -92,7 +106,7 @@ export class AddressController {
     status: 200,
     description: 'Endereço excluído com sucesso.',
   })
-  delete(@Param('id') id: string) {
-    return this.addressService.delete(id);
+  delete(@Req() req, @Param('id') id: string) {
+    return this.addressService.delete(id, req.user.companyId);
   }
 }
