@@ -23,9 +23,13 @@ export interface DeliveryScheduleGroup {
 export class DeliveryScheduleService {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(createDeliveryScheduleDto: CreateDeliveryScheduleDto) {
+  create(
+    createDeliveryScheduleDto: CreateDeliveryScheduleDto,
+    companyId: string,
+  ) {
+    // A agenda nasce com a empresa da sessão (antes ficava sem empresa)
     return this.prisma.deliverySchedule.create({
-      data: createDeliveryScheduleDto,
+      data: { ...createDeliveryScheduleDto, companyId },
     });
   }
 

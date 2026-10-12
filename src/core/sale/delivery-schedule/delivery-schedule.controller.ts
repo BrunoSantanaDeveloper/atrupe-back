@@ -24,6 +24,7 @@ import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { PlanControlService } from 'src/core/plan/plan-control.service';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { DeliveryScheduleFitlerDto } from './dto/filter.dto';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 const RESOURCE = 'delivery-schedule';
 
 @ApiTags('Agenda de entrega')
@@ -56,11 +57,38 @@ export class DeliveryScheduleController {
     }
   }
 
+  /**
+   * O pedido do corpo precisa ser da empresa: com o de outra, a agenda
+   * criada (sem empresa) ou editada ficava ligada ao pedido dela, e concluir
+   * a agenda concluía o pedido dela
+   */
+  private async assertOrderOfCompany(
+    orderId: string | undefined,
+    companyId: string,
+  ) {
+    await assertBelongsToCompany(
+      this.prisma.order,
+      orderId,
+      { quotation: { companyId } },
+      'Pedido não encontrado.',
+    );
+  }
+
   @Post()
   @ApiOperation({ summary: 'Criar um agendamento de entrega' })
   @ApiResponse({ status: 201, description: 'Agendamento criado com sucesso.' })
-  create(@Body() createDeliveryScheduleDto: CreateDeliveryScheduleDto) {
-    return this.deliveryScheduleService.create(createDeliveryScheduleDto);
+  async create(
+    @Req() req,
+    @Body() createDeliveryScheduleDto: CreateDeliveryScheduleDto,
+  ) {
+    await this.assertOrderOfCompany(
+      createDeliveryScheduleDto.orderId,
+      req.user.companyId,
+    );
+    return this.deliveryScheduleService.create(
+      createDeliveryScheduleDto,
+      req.user.companyId,
+    );
   }
 
   @Get()
@@ -113,6 +141,10 @@ export class DeliveryScheduleController {
     @Body() updateDeliveryScheduleDto: UpdateDeliveryScheduleDto,
   ) {
     await this.assertOwnership(id, req.user.companyId);
+    await this.assertOrderOfCompany(
+      updateDeliveryScheduleDto.orderId,
+      req.user.companyId,
+    );
     return this.deliveryScheduleService.update(id, updateDeliveryScheduleDto);
   }
 

@@ -66,10 +66,16 @@ describe('DeliveryScheduleService', () => {
       const mockDelivery = { id: mockDeliveryId, ...dto };
       prisma.deliverySchedule.create.mockResolvedValue(mockDelivery);
 
-      const result = await service.create(dto as any);
+      const result = await service.create(
+        { ...dto, companyId: 'empresa-forjada' } as any,
+        mockCompanyId,
+      );
 
       expect(result.id).toBe(mockDeliveryId);
-      expect(prisma.deliverySchedule.create).toHaveBeenCalled();
+      // A agenda nasce com a empresa da sessão, mesmo que o corpo traga outra
+      expect(prisma.deliverySchedule.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ companyId: mockCompanyId }),
+      });
     });
   });
 

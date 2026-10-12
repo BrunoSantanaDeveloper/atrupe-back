@@ -10,12 +10,22 @@ import {
 } from './dto/create-scheduled-expense.dto';
 import { UpdateScheduledExpenseDto } from './dto/update-scheduled-expense.dto';
 import { PrismaService } from 'nestjs-prisma';
+import { assertFinancialRefsOfCompany } from '../utils/financial-refs';
 
 @Injectable()
 export class ScheduledExpenseService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateScheduledExpenseDto, companyId: string) {
+    // Fornecedor, natureza e subcategoria precisam ser da empresa (a resposta
+    // trazia o fornecedor de outra empresa completo, e o lançamento levava o
+    // vínculo para as contas a pagar)
+    await assertFinancialRefsOfCompany(this.prisma, companyId, {
+      supplierId: dto.supplierId,
+      natureId: dto.categoryId,
+      subCategoryId: dto.subCategoryId,
+    });
+
     try {
       return await this.prisma.scheduledExpense.create({
         data: {
@@ -191,6 +201,12 @@ export class ScheduledExpenseService {
   }
 
   async update(id: string, dto: UpdateScheduledExpenseDto, companyId: string) {
+    await assertFinancialRefsOfCompany(this.prisma, companyId, {
+      supplierId: dto.supplierId,
+      natureId: dto.categoryId,
+      subCategoryId: dto.subCategoryId,
+    });
+
     try {
       const expense = await this.findOne(id, companyId);
 

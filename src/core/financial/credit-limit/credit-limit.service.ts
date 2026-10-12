@@ -4,6 +4,7 @@ import {
   UpdateCreditLimitDefaultDto,
   UpdateCreditLimitTypeDto,
 } from './dto/update-credit-limit.dto';
+import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 @Injectable()
 export class CreditLimitService {
@@ -97,6 +98,17 @@ export class CreditLimitService {
 
   async update(dto: UpdateCreditLimitDefaultDto) {
     const { person, company, companyId } = dto;
+
+    // As condições do padrão vão para todos os clientes da empresa: precisam
+    // ser da empresa (a de outra voltava depois na leitura do limite)
+    await assertBelongsToCompany(
+      this.prisma.paymentCondition,
+      [...(person?.conditions ?? []), ...(company?.conditions ?? [])].map(
+        (condition) => condition.id,
+      ),
+      { companyId },
+      'Condição de pagamento não encontrada.',
+    );
 
     const result: Record<string, unknown> = {};
 

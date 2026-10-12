@@ -17,6 +17,8 @@ const createMockPrismaService = () => ({
   },
   paymentCondition: {
     findMany: jest.fn(),
+    // As condições do corpo são da empresa, salvo quando o teste diz o contrário
+    count: jest.fn(async ({ where }: any) => where.id.in.length),
   },
   client: {
     findMany: jest.fn(),
@@ -122,6 +124,22 @@ describe('CreditLimitService', () => {
   // ─── update ───────────────────────────────────────────────────────
 
   describe('update', () => {
+    it('condição de pagamento de outra empresa no padrão é recusada', async () => {
+      prisma.paymentCondition.count.mockResolvedValueOnce(0);
+
+      await expect(
+        service.update({
+          companyId: mockCompanyId,
+          person: { conditions: [{ id: 'pc-de-outra' }] },
+        } as any),
+      ).rejects.toThrow(
+        new NotFoundException('Condição de pagamento não encontrada.'),
+      );
+      expect(prisma.paymentCondition.count).toHaveBeenCalledWith({
+        where: { id: { in: ['pc-de-outra'] }, companyId: mockCompanyId },
+      });
+    });
+
     it('should update person credit limit', async () => {
       const dto = {
         companyId: mockCompanyId,
