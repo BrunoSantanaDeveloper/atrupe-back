@@ -324,7 +324,13 @@ export class ProductService {
         isProductionStage: true,
         isSystem: false,
       },
-      select: { id: true, name: true, icon: true, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        icon: true,
+        color: true,
+        isActive: true,
+      },
     });
 
     // Filtra apenas setores ativos

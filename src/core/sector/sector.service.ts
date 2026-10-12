@@ -3,7 +3,11 @@ import { CreateSectorDto } from './dto/create-sector.dto';
 import { UpdateSectorDto } from './dto/update-sector.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { SectorFilterDto } from './dto/filter.dto';
-import { Prisma } from '@prisma/client';
+import {
+  Prisma,
+  SectorAllocationCriterion,
+  SectorNature,
+} from '@prisma/client';
 
 @Injectable()
 export class SectorService {
@@ -39,6 +43,7 @@ export class SectorService {
         id: true,
         name: true,
         icon: true,
+        color: true,
       },
     });
   }
@@ -128,9 +133,23 @@ export class SectorService {
       });
     }
 
+    const data: Prisma.CompanySectorUncheckedUpdateInput = {
+      ...updateSectorDto,
+    };
+    // O setor administrativo não tem rateio entre equipamentos: o custo dele
+    // vai inteiro para o total administrativo. O rateio volta ao padrão; o
+    // percentual que ele recebia na Distribuição é zerado pela base de
+    // custos, quando ela existir.
+    if (updateSectorDto?.nature === SectorNature.ADMINISTRATIVE) {
+      data.allocationCriterion = SectorAllocationCriterion.ACQUISITION_VALUE;
+      data.allocationPercentages = Prisma.DbNull;
+      data.allocationPreviousCriterion = null;
+      data.allocationOutdated = false;
+    }
+
     return await this.prisma.companySector.update({
       where: { id: id },
-      data: updateSectorDto,
+      data,
     });
   }
 

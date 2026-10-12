@@ -106,6 +106,7 @@ export class ProductionStageService {
             id: true,
             name: true,
             icon: true,
+            color: true,
           },
         },
       },

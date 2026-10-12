@@ -159,6 +159,20 @@ model CompanySector {
   kind              SectorKind        @default(PRODUCTION)
   isProductionStage Boolean           @default(true)
   isSystem          Boolean           @default(false)
+  /// Como o setor vende: por hora ou pela unidade do equipamento (composição)
+  saleUnit          SectorSaleUnit    @default(HOUR)
+  /// #RRGGBB em maiúsculas; nulo = padrão do ícone, resolvido na tela
+  color             String?
+  /// Produtivo ou administrativo na base de custos
+  nature            SectorNature      @default(PRODUCTIVE)
+  /// Rateio entre os equipamentos do setor: só muda por /cost-base/sector/:id/allocation
+  allocationCriterion         SectorAllocationCriterion  @default(ACQUISITION_VALUE)
+  /// [{ assetId, percentage }], só no rateio manual
+  allocationPercentages       Json?
+  /// O critério automático de onde o manual nasceu
+  allocationPreviousCriterion SectorAllocationCriterion?
+  /// No manual, a lista de equipamentos mudou e o rateio precisa ser salvo de novo
+  allocationOutdated          Boolean                    @default(false)
   asset             Asset[]
   Category          Category[]
   employees         Employee[]
@@ -2003,6 +2017,25 @@ enum SectorKind {
   CLEANING
   OTHER
   SYSTEM
+}
+
+enum SectorSaleUnit {
+  HOUR
+  M2
+  M
+  UN
+  KM
+}
+
+enum SectorNature {
+  ADMINISTRATIVE
+  PRODUCTIVE
+}
+
+enum SectorAllocationCriterion {
+  ACQUISITION_VALUE
+  ACTIVITY_TIME
+  MANUAL
 }
 
 enum CategoryKind {

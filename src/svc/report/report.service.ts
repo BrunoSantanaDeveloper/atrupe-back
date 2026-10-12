@@ -1416,7 +1416,7 @@ export class ReportService {
     // Fetch all active sectors for the company
     const activeSectors = await this.prisma.companySector.findMany({
       where: { companyId, isActive: true },
-      select: { id: true, name: true, icon: true },
+      select: { id: true, name: true, icon: true, color: true },
       orderBy: { name: 'asc' },
     });
 

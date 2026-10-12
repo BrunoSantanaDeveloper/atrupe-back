@@ -124,6 +124,7 @@ export class DeliveryScheduleService {
                     id: true,
                     name: true,
                     icon: true,
+                    color: true,
                   },
                 },
               },
