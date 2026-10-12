@@ -1,3 +1,4 @@
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Get,
@@ -164,6 +165,12 @@ export class ReceivableController {
   }
 
   @Get(':id')
+  @HasAnyPermission(
+    { action: 'view', resource: 'financial:receivable' },
+    { action: 'view', resource: 'financial:flow' },
+  )
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   @TenantResource('receivable')
   @ApiOperation({ summary: 'Obtém uma conta a receber pelo ID' })
   @ApiParam({
@@ -254,6 +261,12 @@ export class ReceivableController {
   }
 
   @Patch(':id/upsert-installments')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:receivable' },
+    { action: 'edit', resource: 'financial:flow' },
+  )
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   @TenantResource('receivable')
   @ApiResponse({
     status: 200,
@@ -340,6 +353,12 @@ export class ReceivableController {
   }
 
   @Post(':id/undo-cancel')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:receivable' },
+    { action: 'edit', resource: 'financial:flow' },
+  )
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   @TenantResource('receivable')
   @ApiOperation({
     summary: 'Desfaz o cancelamento de uma conta a receber',
@@ -503,6 +522,12 @@ export class ReceivableController {
    * Aceita tanto `financial:flow:edit` (visão do fluxo) quanto `financial:receivable:edit`.
    */
   @Patch(':id/notes')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:receivable' },
+    { action: 'edit', resource: 'financial:flow' },
+  )
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   @TenantResource('receivable')
   @ApiOperation({ summary: 'Atualiza a observação de uma conta a receber' })
   @ApiParam({

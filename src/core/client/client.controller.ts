@@ -1,3 +1,5 @@
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
+import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
 import {
   Controller,
   Get,
@@ -104,6 +106,9 @@ export class ClientController {
   }
 
   @Post('import-csv')
+  @HasPermission('create', 'register:client')
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   async importCsv(@Req() req) {
     const companyId = req.user.companyId;
     const filePath =
@@ -116,6 +121,9 @@ export class ClientController {
   }
 
   @Post('import-csv-v2')
+  @HasPermission('create', 'register:client')
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   @ApiOperation({ summary: 'Importa clientes do CSV versão 2' })
   @ApiResponse({
     status: 201,
@@ -141,6 +149,13 @@ export class ClientController {
   }
 
   @Post('pre-register')
+  @HasAnyPermission(
+    { action: 'create', resource: 'register:client' },
+    { action: 'create', resource: 'sale:quotation' },
+    { action: 'edit', resource: 'sale:quotation' },
+  )
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   @ApiOperation({ summary: 'Pré-registro do cliente' })
   @ApiBody({
     description: 'Dados do novo cliente',
@@ -160,6 +175,9 @@ export class ClientController {
   }
 
   @Get('quantity')
+  @HasPermission('view', 'register:client')
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   @ApiOperation({
     summary: 'Obtém a quantidade de todos os clientes em seus status.',
   })

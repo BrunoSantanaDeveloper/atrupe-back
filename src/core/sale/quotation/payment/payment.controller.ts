@@ -1,3 +1,7 @@
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
+import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import {
   Body,
   Controller,
@@ -30,8 +34,12 @@ import {
 const RESOURCE = 'quotation/payment';
 
 @ApiTags('Informações de pagamento do orçamento')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(`sale/${RESOURCE}`)
 export class PaymentController {
   constructor(
@@ -109,6 +117,7 @@ export class PaymentController {
   }
 
   @Get(':id')
+  @HasPermission('view', 'sale:quotation')
   @ApiOperation({
     summary: 'Buscar informações de pagamento de um orçamento pelo ID',
   })
@@ -121,6 +130,10 @@ export class PaymentController {
   }
 
   @Patch(':quotationId')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'sale:quotation' },
+    { action: 'create', resource: 'sale:order' },
+  )
   @ApiOperation({
     summary: 'Atualizar o pagamento da cota com base no ID da cota',
   })
@@ -148,6 +161,9 @@ export class PaymentController {
   }
 
   @Patch('commission/:quotationId')
+  @HasPermission('edit', 'sales_settings:seller_profile')
+  // Sem uso no front e destrutiva: já recusa, sem passar pelo modo observar
+  @ObservePermissions(false)
   async updateCommission(
     @Param('quotationId') quotationId: string,
     @Body() updateCommissionDto: UpdateCommissionDto,

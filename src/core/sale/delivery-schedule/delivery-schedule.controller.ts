@@ -1,3 +1,6 @@
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import {
   NotFoundException,
   Controller,
@@ -30,8 +33,12 @@ const RESOURCE = 'delivery-schedule';
 @ApiTags('Agenda de entrega')
 // Todas as rotas exigem login: criar, ler, editar, excluir e finalizar um
 // agendamento estavam abertas.
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(`sale/${RESOURCE}`)
 export class DeliveryScheduleController {
   constructor(
@@ -75,6 +82,7 @@ export class DeliveryScheduleController {
   }
 
   @Post()
+  @HasPermission('create', 'production:delivery_schedule')
   @ApiOperation({ summary: 'Criar um agendamento de entrega' })
   @ApiResponse({ status: 201, description: 'Agendamento criado com sucesso.' })
   async create(
@@ -92,6 +100,7 @@ export class DeliveryScheduleController {
   }
 
   @Get()
+  @HasPermission('view', 'production:delivery_schedule')
   @ApiOperation({
     summary: 'Obtém a lista de todos os agendamentos de entrega',
   })
@@ -114,6 +123,7 @@ export class DeliveryScheduleController {
   }
 
   @Get('quantity')
+  @HasPermission('view', 'production:delivery_schedule')
   @ApiOperation({
     summary: 'Obtém a quantidade de todos os status de orçamentos',
   })
@@ -127,6 +137,7 @@ export class DeliveryScheduleController {
   }
 
   @Get(':id')
+  @HasPermission('view', 'production:delivery_schedule')
   @ApiOperation({ summary: 'Buscar um agendamento de entrega pelo ID' })
   async findOne(@Req() req, @Param('id') id: string) {
     await this.assertOwnership(id, req.user.companyId);
@@ -134,6 +145,7 @@ export class DeliveryScheduleController {
   }
 
   @Patch(':id')
+  @HasPermission('edit', 'production:delivery_schedule')
   @ApiOperation({ summary: 'Atualizar um agendamento de entrega' })
   async update(
     @Req() req,
@@ -149,6 +161,9 @@ export class DeliveryScheduleController {
   }
 
   @Delete(':id')
+  @HasPermission('delete', 'production:delivery_schedule')
+  // Sem uso no front e destrutiva: já recusa, sem passar pelo modo observar
+  @ObservePermissions(false)
   @ApiOperation({ summary: 'Excluir um agendamento de entrega' })
   async remove(@Req() req, @Param('id') id: string) {
     await this.assertOwnership(id, req.user.companyId);
@@ -156,6 +171,7 @@ export class DeliveryScheduleController {
   }
 
   @Patch('finish/:deliveryScheduleId')
+  @HasPermission('edit', 'production:delivery_schedule')
   @ApiOperation({ summary: 'Finalizar um agendamento de entrega' })
   @ApiResponse({
     status: 200,

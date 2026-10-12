@@ -1,3 +1,4 @@
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Get,
@@ -249,6 +250,9 @@ export class ProductController {
   }
 
   @Post('import-csv')
+  @HasPermission('create', 'product_settings:products')
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Import products from CSV file' })
   @ApiResponse({ status: 200, description: 'Products imported successfully' })

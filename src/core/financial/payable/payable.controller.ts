@@ -1,3 +1,4 @@
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Get,
@@ -101,6 +102,12 @@ export class PayableController {
   }
 
   @Get(':id')
+  @HasAnyPermission(
+    { action: 'view', resource: 'financial:payable' },
+    { action: 'view', resource: 'financial:flow' },
+  )
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   @TenantResource('payable')
   @ApiOperation({ summary: 'Obtém uma conta a pagar pelo ID' })
   @ApiParam({
@@ -191,6 +198,12 @@ export class PayableController {
   }
 
   @Patch(':id/upsert-installments')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:payable' },
+    { action: 'edit', resource: 'financial:flow' },
+  )
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   @TenantResource('payable')
   @ApiResponse({
     status: 200,
@@ -277,6 +290,12 @@ export class PayableController {
   }
 
   @Post(':id/undo-cancel')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:payable' },
+    { action: 'edit', resource: 'financial:flow' },
+  )
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   @TenantResource('payable')
   @ApiOperation({
     summary: 'Desfaz o cancelamento de uma conta a pagar',
@@ -440,6 +459,12 @@ export class PayableController {
    * Aceita tanto `financial:flow:edit` (visão do fluxo) quanto `financial:payable:edit`.
    */
   @Patch(':id/notes')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:payable' },
+    { action: 'edit', resource: 'financial:flow' },
+  )
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   @TenantResource('payable')
   @ApiOperation({ summary: 'Atualiza a observação de uma conta a pagar' })
   @ApiParam({ name: 'id', required: true, description: 'ID da conta a pagar' })

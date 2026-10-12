@@ -1,3 +1,6 @@
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import {
   Controller,
   Get,
@@ -34,8 +37,12 @@ import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 const RESOURCE = 'sector';
 
 @ApiTags('Setores')
-@UseGuards(JwtAuthGuard, TenantGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
 @ApiBearerAuth()
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(RESOURCE)
 export class SectorController {
   constructor(
@@ -48,6 +55,7 @@ export class SectorController {
   // editar e excluir é o recurso "Configurar Setores" do plano.
 
   @Post()
+  @HasPermission('create', 'company_settings:sectors')
   @UseGuards(FeatureGuard)
   @RequiresFeature('sectors_configuration')
   @ApiOperation({ summary: 'Cria um novo setor' })
@@ -77,6 +85,7 @@ export class SectorController {
   }
 
   @Get('with-products')
+  @HasPermission('view', 'sale:quotation')
   @ApiOperation({ summary: 'Obtém a lista de todos os setores com produtos' })
   @ApiResponse({
     status: 200,
@@ -89,6 +98,7 @@ export class SectorController {
   }
 
   @Get(':id')
+  @HasPermission('view', 'company_settings:sectors')
   @TenantResource('companySector')
   @ApiOperation({ summary: 'Obtém um setor pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do setor' })
@@ -105,6 +115,7 @@ export class SectorController {
   }
 
   @Patch(':id')
+  @HasPermission('edit', 'company_settings:sectors')
   @TenantResource('companySector')
   @UseGuards(FeatureGuard)
   @RequiresFeature('sectors_configuration')
@@ -140,6 +151,9 @@ export class SectorController {
   }
 
   @Delete(':id')
+  @HasPermission('delete', 'company_settings:sectors')
+  // Sem uso no front e destrutiva: já recusa, sem passar pelo modo observar
+  @ObservePermissions(false)
   @TenantResource('companySector')
   @UseGuards(FeatureGuard)
   @RequiresFeature('sectors_configuration')

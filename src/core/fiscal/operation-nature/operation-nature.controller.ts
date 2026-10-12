@@ -1,3 +1,6 @@
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Get,
@@ -26,7 +29,11 @@ import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 
 @ApiTags('Fiscal - Naturezas de Operação')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, TenantGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller('fiscal/naturezas') // Note: Path updated as per plan
 export class OperationNatureController {
   constructor(private readonly service: OperationNatureService) {}
@@ -38,6 +45,7 @@ export class OperationNatureController {
   }
 
   @Get(':id')
+  @HasPermission('view', 'nota_fiscal:config')
   @TenantResource('operationNature')
   @ApiOperation({ summary: 'Obter Natureza por ID' })
   @ApiParam({ name: 'id', description: 'ID da Natureza' })
@@ -46,12 +54,14 @@ export class OperationNatureController {
   }
 
   @Post()
+  @HasPermission('create', 'nota_fiscal:config')
   @ApiOperation({ summary: 'Criar nova Natureza' })
   async create(@Req() req, @Body() dto: CreateOperationNatureDto) {
     return this.service.create(req.user.companyId, dto);
   }
 
   @Patch(':id')
+  @HasPermission('edit', 'nota_fiscal:config')
   @TenantResource('operationNature')
   @ApiOperation({ summary: 'Atualizar Natureza' })
   @ApiParam({ name: 'id', description: 'ID da Natureza' })
@@ -60,6 +70,7 @@ export class OperationNatureController {
   }
 
   @Delete(':id')
+  @HasPermission('delete', 'nota_fiscal:config')
   @TenantResource('operationNature')
   @ApiOperation({ summary: 'Excluir Natureza' })
   @ApiParam({ name: 'id', description: 'ID da Natureza' })

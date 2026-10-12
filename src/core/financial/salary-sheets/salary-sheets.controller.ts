@@ -1,3 +1,6 @@
+import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Body,
   Controller,
@@ -41,11 +44,19 @@ const GROUP = 'financial';
 // alterados e estornados pelo id
 @UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
 @ApiBearerAuth()
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class SalarySheetsController {
   constructor(private readonly salaryService: SalarySheetsService) {}
 
   @Post('')
+  @HasAnyPermission(
+    { action: 'create', resource: 'financial:payroll' },
+    { action: 'edit', resource: 'financial:payroll' },
+  )
   @ApiOperation({
     summary: 'Gera folhas de pagamento para uma lista de colaboradores',
     description:
@@ -96,6 +107,7 @@ export class SalarySheetsController {
   }
 
   @Get()
+  @HasPermission('view', 'financial:payroll')
   @ApiOperation({
     summary: 'Listar folhas de pagamento',
     description:
@@ -138,6 +150,7 @@ export class SalarySheetsController {
   }
 
   @Get(':id')
+  @HasPermission('view', 'financial:payroll')
   @ApiOperation({
     summary: 'Retornar folha de pagamento por ID',
     description:
@@ -270,6 +283,7 @@ export class SalarySheetsController {
   }
 
   @Get(':id/pdf-data')
+  @HasPermission('view', 'financial:payroll')
   @ApiOperation({
     summary: 'Obtém os dados da folha de pagamento para geração de PDF',
     description:
@@ -346,6 +360,7 @@ export class SalarySheetsController {
   }
 
   @Get('item/:itemId/advance-pdf-data')
+  @HasPermission('view', 'financial:payroll')
   @ApiOperation({
     summary: 'Obtém os dados de um adiantamento específico para geração de PDF',
     description:
@@ -426,6 +441,7 @@ export class SalarySheetsController {
   }
 
   @Post('item/:payrollId')
+  @HasPermission('edit', 'financial:payroll')
   @ApiOperation({
     summary: 'Adicionar item à folha de pagamento',
     description:
@@ -453,6 +469,7 @@ export class SalarySheetsController {
   }
 
   @Patch('item/:itemId')
+  @HasPermission('edit', 'financial:payroll')
   @ApiOperation({
     summary: 'Atualizar item da folha de pagamento',
     description: 'Atualiza um item existente na folha de pagamento',
@@ -482,6 +499,10 @@ export class SalarySheetsController {
   }
 
   @Delete('item/:itemId')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:payroll' },
+    { action: 'delete', resource: 'financial:payroll' },
+  )
   @ApiOperation({
     summary: 'Excluir item da folha de pagamento',
     description:
@@ -511,6 +532,10 @@ export class SalarySheetsController {
   }
 
   @Post('item/:itemId/cancel-advance')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:payroll' },
+    { action: 'delete', resource: 'financial:payroll' },
+  )
   @ApiOperation({
     summary: 'Cancelar adiantamento pago',
     description:
@@ -535,6 +560,10 @@ export class SalarySheetsController {
   }
 
   @Patch('toggle')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:payroll' },
+    { action: 'delete', resource: 'financial:payroll' },
+  )
   @ApiOperation({
     summary: 'Alternar status da folha de pagamento',
     description: 'Altera o status da folha de pagamento entre aberta e fechada',

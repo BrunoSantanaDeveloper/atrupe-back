@@ -1,3 +1,7 @@
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
+import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import {
   Controller,
   Get,
@@ -37,8 +41,12 @@ const RESOURCE = 'order';
 const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
 
 @ApiTags('Ordem de serviço')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(`sale/${RESOURCE}`)
 export class OrderController {
   constructor(
@@ -84,6 +92,7 @@ export class OrderController {
   }
 
   @Get()
+  @HasPermission('view', 'sale:order')
   @ApiOperation({ summary: 'Obtém a lista de todas as ordens de serviço' })
   @ApiResponse({
     status: 200,
@@ -145,6 +154,7 @@ export class OrderController {
   }
 
   @Get('quantity')
+  @HasPermission('view', 'sale:order')
   @ApiOperation({
     summary: 'Obtém a quantidade de todos os status de ordens',
   })
@@ -169,6 +179,10 @@ export class OrderController {
   }
 
   @Get(UUID_ROUTE)
+  @HasAnyPermission(
+    { action: 'view', resource: 'sale:order' },
+    { action: 'create', resource: 'nota_fiscal:emitir' },
+  )
   @ApiOperation({ summary: 'Obtém uma ordem de serviço pelo ID' })
   @ApiParam({
     name: 'id',
@@ -215,6 +229,7 @@ export class OrderController {
   }
 
   @Patch(':id/info')
+  @HasPermission('edit', 'sale:order')
   @UseGuards(TenantGuard)
   @TenantResource('order', 'id', 'quotation')
   @ApiOperation({
@@ -235,6 +250,10 @@ export class OrderController {
   }
 
   @Post(':id/cancel')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'sale:order' },
+    { action: 'delete', resource: 'sale:order' },
+  )
   @UseGuards(TenantGuard)
   @TenantResource('order', 'id', 'quotation')
   @ApiOperation({ summary: 'Cancelar uma ordem de serviço' })
@@ -261,6 +280,9 @@ export class OrderController {
   }
 
   @Delete(':id')
+  @HasPermission('delete', 'sale:order')
+  // Sem uso no front e destrutiva: já recusa, sem passar pelo modo observar
+  @ObservePermissions(false)
   @UseGuards(TenantGuard)
   @TenantResource('order', 'id', 'quotation')
   @ApiOperation({ summary: 'Remove uma ordem de serviço pelo ID' })

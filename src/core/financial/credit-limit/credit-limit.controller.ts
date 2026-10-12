@@ -1,3 +1,6 @@
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Get,
@@ -20,8 +23,12 @@ const RESOURCE = 'credit-limit';
 const GROUP = 'financial';
 
 @ApiTags('Limite de Credito')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class CreditLimitController {
   constructor(private readonly creditLimitService: CreditLimitService) {}
@@ -50,6 +57,7 @@ export class CreditLimitController {
 
   // Ler o padrão é livre (o cadastro de cliente consulta); alterar é do plano.
   @Patch('')
+  @HasPermission('edit', 'financial_settings:credit_limits')
   @UseGuards(FeatureGuard)
   @RequiresFeature('credit_limit_configuration')
   @ApiBody({

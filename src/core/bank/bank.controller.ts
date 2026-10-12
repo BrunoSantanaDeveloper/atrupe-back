@@ -1,3 +1,6 @@
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Get,
@@ -37,8 +40,12 @@ import { SystemAdminGuard } from 'src/core/auth/guards/system-admin.guard';
 const RESOURCE = 'bank';
 
 @ApiTags('Banco e Conta bancária')
-@UseGuards(JwtAuthGuard, TenantGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
 @ApiBearerAuth()
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(RESOURCE)
 export class BankController {
   constructor(
@@ -167,6 +174,7 @@ export class BankController {
   }
 
   @Post('account')
+  @HasPermission('create', 'financial_settings:bank_accounts')
   @ApiOperation({ summary: 'Cria uma nova conta bancária' })
   @ApiBody({
     description: 'Dados da nova conta bancária',
@@ -200,6 +208,7 @@ export class BankController {
   }
 
   @Patch('account/:accountId')
+  @HasPermission('edit', 'financial_settings:bank_accounts')
   @TenantResource('bankAccount', 'accountId')
   @ApiOperation({ summary: 'Atualiza uma conta bancária pelo ID' })
   @ApiParam({
@@ -233,6 +242,7 @@ export class BankController {
   }
 
   @Delete('account/:accountId')
+  @HasPermission('delete', 'financial_settings:bank_accounts')
   @TenantResource('bankAccount', 'accountId')
   @ApiOperation({ summary: 'Remove uma conta bancária pelo ID' })
   @ApiParam({

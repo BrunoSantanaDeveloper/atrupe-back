@@ -1,3 +1,6 @@
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Post,
@@ -26,8 +29,12 @@ const RESOURCE = 'delivery';
 const GROUP = 'quotation';
 
 @ApiTags('Informações de entrega de orçamentos')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class DeliveryController {
   constructor(
@@ -105,6 +112,7 @@ export class DeliveryController {
   }
 
   @Post(':quotationId')
+  @HasPermission('edit', 'sale:quotation')
   async createDeliveryInfo(
     @Param('quotationId') quotationId: string,
     @Body() createDeliveryInfoDto: CreateDeliveryInfoDto,
@@ -126,6 +134,7 @@ export class DeliveryController {
     description: 'Entrega atualizada com sucesso.',
   })
   @Patch(':id')
+  @HasPermission('edit', 'sale:quotation')
   async updateDeliveryInfo(
     @Param('id') id: string,
     @Body() updateDeliveryInfoDto: UpdateDeliveryInfoDto,

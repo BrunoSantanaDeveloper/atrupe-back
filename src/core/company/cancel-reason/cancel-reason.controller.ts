@@ -1,3 +1,6 @@
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Get,
@@ -29,8 +32,12 @@ import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 
 const RESOURCE = 'cancel-reason';
 // Listar é livre; o cadastro de motivos é recurso de plano.
-@UseGuards(JwtAuthGuard, TenantGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
 @ApiBearerAuth()
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(RESOURCE)
 @ApiTags('Configurações de motivo de cancelamento ou rejeição')
 export class CancelReasonController {
@@ -40,6 +47,7 @@ export class CancelReasonController {
   @ApiResponse({ status: 201, description: 'Motivo criado com sucesso' })
   @ApiResponse({ status: 400, description: 'Requisição inválida' })
   @Post()
+  @HasPermission('create', 'sales_settings:rejection_reasons')
   @UseGuards(FeatureGuard)
   @RequiresFeature('quotation_rejection_reasons')
   create(@Req() req, @Body() createReasonDto: CreateReasonDto) {
@@ -63,6 +71,7 @@ export class CancelReasonController {
   @ApiResponse({ status: 400, description: 'Requisição inválida' })
   @ApiParam({ name: 'id', description: 'ID do motivo' })
   @Patch(':id')
+  @HasPermission('edit', 'sales_settings:rejection_reasons')
   @TenantResource('reasons')
   @UseGuards(FeatureGuard)
   @RequiresFeature('quotation_rejection_reasons')
@@ -74,6 +83,7 @@ export class CancelReasonController {
   @ApiResponse({ status: 200, description: 'Motivo removido com sucesso' })
   @ApiParam({ name: 'id', description: 'ID do motivo' })
   @Delete(':id')
+  @HasPermission('delete', 'sales_settings:rejection_reasons')
   @TenantResource('reasons')
   @UseGuards(FeatureGuard)
   @RequiresFeature('quotation_rejection_reasons')

@@ -1,3 +1,7 @@
+import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import {
   Controller,
   Get,
@@ -31,8 +35,12 @@ const RESOURCE = 'scheduled-expense';
 const GROUP = 'financial';
 
 @ApiTags('Despesas Fixas')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class ScheduledExpenseController {
   constructor(
@@ -40,6 +48,7 @@ export class ScheduledExpenseController {
   ) {}
 
   @Post()
+  @HasPermission('create', 'financial_settings:fixed_expenses')
   @ApiOperation({ summary: 'Cria uma nova despesa fixa' })
   @ApiBody({
     description: 'Dados da nova despesa fixa',
@@ -64,6 +73,7 @@ export class ScheduledExpenseController {
   }
 
   @Get('quantity')
+  @HasPermission('view', 'financial_settings:fixed_expenses')
   @ApiOperation({
     summary: 'Obtém a quantidade de despesas fixas agrupadas por status',
   })
@@ -84,6 +94,7 @@ export class ScheduledExpenseController {
   }
 
   @Get('by-level1/:level1')
+  @HasPermission('view', 'financial_settings:fixed_expenses')
   @ApiOperation({ summary: 'Obtém despesas fixas por nível 1 da natureza' })
   @ApiParam({
     name: 'level1',
@@ -109,6 +120,7 @@ export class ScheduledExpenseController {
   }
 
   @Get('by-level2/:level1/:level2')
+  @HasPermission('view', 'financial_settings:fixed_expenses')
   @ApiOperation({ summary: 'Obtém despesas fixas por nível 1 e 2 da natureza' })
   @ApiParam({
     name: 'level1',
@@ -140,6 +152,7 @@ export class ScheduledExpenseController {
   }
 
   @Get('by-nature/:natureCode')
+  @HasPermission('view', 'financial_settings:fixed_expenses')
   @ApiOperation({ summary: 'Obtém despesas fixas por código da natureza' })
   @ApiParam({
     name: 'natureCode',
@@ -164,6 +177,7 @@ export class ScheduledExpenseController {
   }
 
   @Get('grouped-by-supplier')
+  @HasPermission('view', 'financial:fixed_expense')
   @ApiOperation({
     summary: 'Obtém despesas fixas agrupadas por fornecedor',
     description:
@@ -231,6 +245,7 @@ export class ScheduledExpenseController {
   }
 
   @Get()
+  @HasPermission('view', 'financial_settings:fixed_expenses')
   @ApiOperation({ summary: 'Obtém a lista de todas as despesas fixas' })
   @ApiResponse({
     status: 200,
@@ -249,6 +264,7 @@ export class ScheduledExpenseController {
   }
 
   @Get(':id')
+  @HasPermission('view', 'financial_settings:fixed_expenses')
   @ApiOperation({ summary: 'Obtém uma despesa fixa pelo ID' })
   @ApiParam({
     name: 'id',
@@ -268,6 +284,7 @@ export class ScheduledExpenseController {
   }
 
   @Patch(':id')
+  @HasPermission('edit', 'financial_settings:fixed_expenses')
   @ApiOperation({ summary: 'Atualiza uma despesa fixa pelo ID' })
   @ApiParam({
     name: 'id',
@@ -299,6 +316,9 @@ export class ScheduledExpenseController {
   }
 
   @Delete(':id')
+  @HasPermission('delete', 'financial_settings:fixed_expenses')
+  // Sem uso no front e destrutiva: já recusa, sem passar pelo modo observar
+  @ObservePermissions(false)
   @ApiOperation({ summary: 'Remove uma despesa fixa pelo ID' })
   @ApiParam({
     name: 'id',
@@ -318,6 +338,10 @@ export class ScheduledExpenseController {
   }
 
   @Post('launch')
+  @HasAnyPermission(
+    { action: 'create', resource: 'financial:fixed_expense' },
+    { action: 'edit', resource: 'financial:fixed_expense' },
+  )
   @ApiOperation({
     summary: 'Lança despesas agendadas como contas a pagar',
     description:

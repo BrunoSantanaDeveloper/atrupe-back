@@ -1,3 +1,6 @@
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Post,
@@ -19,12 +22,24 @@ import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
 import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 
 @ApiTags('Import')
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller('import')
-@UseGuards(JwtAuthGuard, TenantGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
 export class ImportController {
   constructor(private importService: ImportService) {}
 
   @Post('upload')
+  @HasAnyPermission(
+    { action: 'create', resource: 'register:client' },
+    { action: 'create', resource: 'register:supplier' },
+    { action: 'create', resource: 'product_settings:products' },
+    { action: 'create', resource: 'sale:quotation' },
+    { action: 'create', resource: 'sale:order' },
+    { action: 'create', resource: 'financial:flow' },
+  )
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({ summary: 'Upload CSV file for import' })
   @ApiConsumes('multipart/form-data')
@@ -84,6 +99,14 @@ export class ImportController {
   }
 
   @Post(':id/validate')
+  @HasAnyPermission(
+    { action: 'create', resource: 'register:client' },
+    { action: 'create', resource: 'register:supplier' },
+    { action: 'create', resource: 'product_settings:products' },
+    { action: 'create', resource: 'sale:quotation' },
+    { action: 'create', resource: 'sale:order' },
+    { action: 'create', resource: 'financial:flow' },
+  )
   @TenantResource('importLog')
   @ApiOperation({ summary: 'Validate CSV data before importing' })
   async validateImport(
@@ -96,6 +119,14 @@ export class ImportController {
   }
 
   @Post(':id/references')
+  @HasAnyPermission(
+    { action: 'create', resource: 'register:client' },
+    { action: 'create', resource: 'register:supplier' },
+    { action: 'create', resource: 'product_settings:products' },
+    { action: 'create', resource: 'sale:quotation' },
+    { action: 'create', resource: 'sale:order' },
+    { action: 'create', resource: 'financial:flow' },
+  )
   @TenantResource('importLog')
   @ApiOperation({
     summary:
@@ -106,6 +137,14 @@ export class ImportController {
   }
 
   @Post(':id/process')
+  @HasAnyPermission(
+    { action: 'create', resource: 'register:client' },
+    { action: 'create', resource: 'register:supplier' },
+    { action: 'create', resource: 'product_settings:products' },
+    { action: 'create', resource: 'sale:quotation' },
+    { action: 'create', resource: 'sale:order' },
+    { action: 'create', resource: 'financial:flow' },
+  )
   @TenantResource('importLog')
   @ApiOperation({ summary: 'Process import after validation' })
   async processImport(@Param('id') importId: string) {
@@ -114,6 +153,14 @@ export class ImportController {
   }
 
   @Get(':id/status')
+  @HasAnyPermission(
+    { action: 'create', resource: 'register:client' },
+    { action: 'create', resource: 'register:supplier' },
+    { action: 'create', resource: 'product_settings:products' },
+    { action: 'create', resource: 'sale:quotation' },
+    { action: 'create', resource: 'sale:order' },
+    { action: 'create', resource: 'financial:flow' },
+  )
   @TenantResource('importLog')
   @ApiOperation({ summary: 'Get import status' })
   async getStatus(@Param('id') importId: string) {
@@ -121,6 +168,14 @@ export class ImportController {
   }
 
   @Get('list')
+  @HasAnyPermission(
+    { action: 'create', resource: 'register:client' },
+    { action: 'create', resource: 'register:supplier' },
+    { action: 'create', resource: 'product_settings:products' },
+    { action: 'create', resource: 'sale:quotation' },
+    { action: 'create', resource: 'sale:order' },
+    { action: 'create', resource: 'financial:flow' },
+  )
   @ApiOperation({ summary: 'List all imports for company' })
   async listImports(
     @Req() req,

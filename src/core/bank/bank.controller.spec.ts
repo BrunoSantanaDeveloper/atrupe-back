@@ -1,3 +1,4 @@
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { BankController } from './bank.controller';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
@@ -8,10 +9,11 @@ const guardsOf = (method: string) =>
   Reflect.getMetadata(GUARDS_METADATA, BankController.prototype[method]) ?? [];
 
 describe('BankController', () => {
-  it('a classe passa pelo login e pela empresa da conta', () => {
+  it('a classe passa pelo login, pela empresa da conta e pela permissão', () => {
     expect(Reflect.getMetadata(GUARDS_METADATA, BankController)).toEqual([
       JwtAuthGuard,
       TenantGuard,
+      PermissionsGuard,
     ]);
   });
 

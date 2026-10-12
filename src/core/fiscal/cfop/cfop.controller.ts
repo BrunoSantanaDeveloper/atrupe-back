@@ -1,3 +1,6 @@
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Get,
@@ -23,24 +26,31 @@ import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 
 @ApiTags('Fiscal - CFOPs')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, TenantGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller('fiscal/cfops')
 export class CfopController {
   constructor(private readonly cfopService: CfopService) {}
 
   @Get()
+  @HasPermission('view', 'nota_fiscal:config')
   @ApiOperation({ summary: 'Listar todos os CFOPs da empresa' })
   async getAll(@Req() req) {
     return this.cfopService.getAll(req.user.companyId);
   }
 
   @Get('active')
+  @HasPermission('view', 'nota_fiscal:config')
   @ApiOperation({ summary: 'Listar CFOPs ativos da empresa' })
   async getActive(@Req() req) {
     return this.cfopService.getActive(req.user.companyId);
   }
 
   @Get(':id')
+  @HasPermission('view', 'nota_fiscal:config')
   @TenantResource('cfopConfig')
   @ApiOperation({ summary: 'Obter CFOP por ID' })
   @ApiParam({ name: 'id', description: 'ID do CFOP' })
@@ -49,12 +59,14 @@ export class CfopController {
   }
 
   @Post()
+  @HasPermission('create', 'nota_fiscal:config')
   @ApiOperation({ summary: 'Criar novo CFOP' })
   async create(@Req() req, @Body() dto: CreateCfopDto) {
     return this.cfopService.create(req.user.companyId, dto);
   }
 
   @Patch(':id')
+  @HasPermission('edit', 'nota_fiscal:config')
   @TenantResource('cfopConfig')
   @ApiOperation({ summary: 'Atualizar CFOP' })
   @ApiParam({ name: 'id', description: 'ID do CFOP' })
@@ -63,6 +75,7 @@ export class CfopController {
   }
 
   @Delete(':id')
+  @HasPermission('delete', 'nota_fiscal:config')
   @TenantResource('cfopConfig')
   @ApiOperation({ summary: 'Excluir CFOP' })
   @ApiParam({ name: 'id', description: 'ID do CFOP' })

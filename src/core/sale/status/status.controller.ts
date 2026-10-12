@@ -1,3 +1,6 @@
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Get,
@@ -28,14 +31,19 @@ import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
 import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 
 @ApiTags('Status de Orçamento')
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller('sale/status')
 @ApiBearerAuth()
 // Listar é livre (a lista de orçamentos usa); criar, editar e excluir status é recurso de plano.
-@UseGuards(JwtAuthGuard, TenantGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
 export class StatusController {
   constructor(private readonly statusQuotationService: StatusService) {}
 
   @Post()
+  @HasPermission('create', 'sales_settings:quotation_status')
   @UseGuards(FeatureGuard)
   @RequiresFeature('quotation_status_configuration')
   @ApiOperation({ summary: 'Criar um novo status de orçamento' })
@@ -60,6 +68,7 @@ export class StatusController {
   }
 
   @Get(':id')
+  @HasPermission('view', 'sales_settings:quotation_status')
   @TenantResource('quotationTag')
   @ApiOperation({ summary: 'Buscar um status de orçamento específico' })
   @ApiResponse({ status: 200, description: 'Status de orçamento encontrado.' })
@@ -72,6 +81,7 @@ export class StatusController {
   }
 
   @Patch(':id')
+  @HasPermission('edit', 'sales_settings:quotation_status')
   @TenantResource('quotationTag')
   @UseGuards(FeatureGuard)
   @RequiresFeature('quotation_status_configuration')
@@ -88,6 +98,7 @@ export class StatusController {
   }
 
   @Delete(':id')
+  @HasPermission('delete', 'sales_settings:quotation_status')
   @TenantResource('quotationTag')
   @UseGuards(FeatureGuard)
   @RequiresFeature('quotation_status_configuration')

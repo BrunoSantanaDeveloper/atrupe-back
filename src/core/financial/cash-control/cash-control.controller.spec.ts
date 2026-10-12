@@ -1,3 +1,4 @@
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { CashControlController } from './cash-control.controller';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
@@ -12,9 +13,9 @@ const tenantOf = (method: string) =>
   );
 
 describe('CashControlController', () => {
-  it('a classe passa pelo login, pelo plano e pela empresa do caixa', () => {
+  it('a classe passa pelo login, pelo plano, pela empresa do caixa e pela permissão', () => {
     expect(Reflect.getMetadata(GUARDS_METADATA, CashControlController)).toEqual(
-      [JwtAuthGuard, FeatureGuard, TenantGuard],
+      [JwtAuthGuard, FeatureGuard, TenantGuard, PermissionsGuard],
     );
   });
 

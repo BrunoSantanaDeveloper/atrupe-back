@@ -1,3 +1,6 @@
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Post,
@@ -39,13 +42,18 @@ const GROUP = 'financial';
 // O controle de caixa inteiro é recurso de plano.
 // O TenantGuard confere que o caixa da rota é da empresa da sessão: as rotas
 // por id fechavam, reabriam, liam e lançavam no caixa de outra empresa
-@UseGuards(JwtAuthGuard, FeatureGuard, TenantGuard)
+@UseGuards(JwtAuthGuard, FeatureGuard, TenantGuard, PermissionsGuard)
 @RequiresFeature('cash_control')
 @ApiBearerAuth()
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(`${GROUP}/${RESOURCE}`)
 export class CashControlController {
   constructor(private readonly cashControlService: CashControlService) {}
   @Post('open')
+  @HasPermission('create', 'financial:cash_control')
   async openCashRegister(
     @Req() req,
     @Body() createCashRegisterDto: CreateCashRegisterDto,
@@ -55,6 +63,7 @@ export class CashControlController {
   }
 
   @Patch('close/:cashRegisterId')
+  @HasPermission('edit', 'financial:cash_control')
   @TenantResource('cashRegister', 'cashRegisterId')
   async closeCashRegister(
     @Param('cashRegisterId') cashRegisterId: string,
@@ -65,6 +74,7 @@ export class CashControlController {
   }
 
   @Get('quantity')
+  @HasPermission('view', 'financial:cash_control')
   @ApiOperation({
     summary:
       'Obtém a quantidade de todos os status de caixas abertos ou fechados.',
@@ -79,12 +89,14 @@ export class CashControlController {
   }
 
   @Get('')
+  @HasPermission('view', 'financial:cash_control')
   async listCashRegisters(@Req() req, @Query() query: ListCashRegistersDto) {
     query.companyId = req.user.companyId;
     return this.cashControlService.listCashRegisters(query);
   }
 
   @Get(':id')
+  @HasPermission('view', 'financial:cash_control')
   @ApiParam({
     name: 'id',
     description: 'ID do caixa',
@@ -96,6 +108,7 @@ export class CashControlController {
   }
 
   @Patch(':cashRegisterId')
+  @HasPermission('edit', 'financial:cash_control')
   @TenantResource('cashRegister', 'cashRegisterId')
   async editCashRegister(
     @Param('cashRegisterId') cashRegisterId: string,
@@ -106,6 +119,7 @@ export class CashControlController {
   }
 
   @Post('transfer')
+  @HasPermission('create', 'financial:cash_control')
   async transferFunds(@Req() req, @Body() transferDto: TransferDto) {
     return this.cashControlService.transferFunds(
       transferDto,
@@ -114,6 +128,7 @@ export class CashControlController {
   }
 
   @Post('reopen/:id')
+  @HasPermission('edit', 'financial:cash_control')
   @TenantResource('cashRegister')
   async reopenCashRegister(@Req() req, @Param('id') id: string) {
     return this.cashControlService.reopenCashRegister(id);

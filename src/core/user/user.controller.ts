@@ -1,3 +1,4 @@
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Body,
   Controller,
@@ -86,9 +87,15 @@ export class UserController {
     return await this.userService.create(body);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiBearerAuth()
   @Post('employee')
+  @HasAnyPermission(
+    { action: 'create', resource: 'company_settings:users' },
+    { action: 'edit', resource: 'company_settings:users' },
+  )
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   @ApiOperation({ summary: 'Cria um novo usário a partir de um funcionário' })
   @ApiResponse({
     status: 201,

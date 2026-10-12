@@ -1,3 +1,6 @@
+import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Get,
@@ -23,9 +26,13 @@ import {
 } from '@nestjs/swagger';
 
 const RESOURCE = 'address';
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 @ApiTags('Endereços')
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(RESOURCE)
 export class AddressController {
   constructor(private readonly addressService: AddressService) {}
@@ -62,6 +69,10 @@ export class AddressController {
   }
 
   @Post('/client/:clientId')
+  @HasAnyPermission(
+    { action: 'create', resource: 'nota_fiscal:emitir' },
+    { action: 'edit', resource: 'register:client' },
+  )
   @ApiOperation({ summary: 'Cria um novo endereço para o cliente' })
   @ApiParam({ name: 'clientId', required: true, description: 'ID do cliente' })
   @ApiResponse({
@@ -85,6 +96,10 @@ export class AddressController {
   }
 
   @Patch('/:id')
+  @HasAnyPermission(
+    { action: 'create', resource: 'nota_fiscal:emitir' },
+    { action: 'edit', resource: 'register:client' },
+  )
   @ApiOperation({ summary: 'Atualiza um endereço existente' })
   @ApiParam({ name: 'id', required: true, description: 'ID do endereço' })
   @ApiResponse({
@@ -100,6 +115,10 @@ export class AddressController {
   }
 
   @Delete('/:id')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'register:client' },
+    { action: 'delete', resource: 'register:client' },
+  )
   @ApiOperation({ summary: 'Exclui um endereço existente' })
   @ApiParam({ name: 'id', required: true, description: 'ID do endereço' })
   @ApiResponse({

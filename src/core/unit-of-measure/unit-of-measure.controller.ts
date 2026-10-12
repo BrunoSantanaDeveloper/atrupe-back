@@ -1,3 +1,6 @@
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Get,
@@ -27,8 +30,12 @@ import { SystemAdminGuard } from 'src/core/auth/guards/system-admin.guard';
 const RESOURCE = 'unit-of-measure';
 
 @ApiTags('Unidades de Medida')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(RESOURCE)
 export class UnitOfMeasureController {
   constructor(private readonly unitOfMeasureService: UnitOfMeasureService) {}
@@ -109,6 +116,7 @@ export class UnitOfMeasureController {
   }
 
   @Get('variants/:kind/with-defaults')
+  @HasPermission('view', 'company_settings:measurement_standards')
   @ApiOperation({
     summary:
       'Obtém as variantes disponíveis para um tipo de unidade com padrão da empresa marcado',
@@ -165,6 +173,7 @@ export class UnitOfMeasureController {
   }
 
   @Patch('default-variant/:kind')
+  @HasPermission('edit', 'company_settings:measurement_standards')
   @ApiOperation({
     summary: 'Atualiza a variante padrão para um tipo de unidade',
   })

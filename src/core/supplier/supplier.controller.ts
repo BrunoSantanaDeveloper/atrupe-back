@@ -1,3 +1,4 @@
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Get,
@@ -56,6 +57,9 @@ export class SupplierController {
   }
 
   @Get('quantity')
+  @HasPermission('view', 'register:supplier')
+  // Chave nova numa rota que estava livre: observar antes de recusar
+  @ObservePermissions()
   @ApiOperation({
     summary: 'Obtém a quantidade de todos os fornecedores em seus status.',
   })

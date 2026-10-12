@@ -1,3 +1,7 @@
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import {
   Controller,
   Get,
@@ -43,8 +47,12 @@ const RESOURCE = 'quotation';
 const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
 
 @ApiTags('Orçamentos')
-@UseGuards(JwtAuthGuard, BlockLevelGuard)
+@UseGuards(JwtAuthGuard, BlockLevelGuard, PermissionsGuard)
 @ApiBearerAuth()
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(`sale/${RESOURCE}`)
 export class QuotationController {
   private readonly logger = new Logger(QuotationController.name);
@@ -135,6 +143,7 @@ export class QuotationController {
     }
   }
   @Post()
+  @HasPermission('create', 'sale:quotation')
   @RequireUnblocked()
   @ApiOperation({ summary: 'Cria um novo orçamento' })
   @ApiResponse({
@@ -161,6 +170,7 @@ export class QuotationController {
   }
 
   @Post(':id/add-product')
+  @HasPermission('edit', 'sale:quotation')
   @ApiOperation({ summary: 'Adiciona um produto a um orçamento' })
   @ApiParam({ name: 'id', description: 'ID do orçamento' })
   async addProductToQuotation(
@@ -173,6 +183,10 @@ export class QuotationController {
   }
 
   @Patch('update-product/:productId')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'sale:quotation' },
+    { action: 'edit', resource: 'sale:order' },
+  )
   @ApiOperation({
     summary: 'Atualiza um produto dentro de um orçamento',
     description:
@@ -213,6 +227,10 @@ export class QuotationController {
   }
 
   @Post('duplicate-product/:productId')
+  @HasAnyPermission(
+    { action: 'create', resource: 'sale:quotation' },
+    { action: 'edit', resource: 'sale:quotation' },
+  )
   @ApiOperation({
     summary: 'Duplica um produto dentro de um orçamento',
     description:
@@ -250,6 +268,10 @@ export class QuotationController {
   }
 
   @Delete('remove-product/:productId')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'sale:quotation' },
+    { action: 'delete', resource: 'sale:quotation' },
+  )
   @ApiOperation({
     summary: 'Remove um produto de um orçamento',
     description: 'Remove um produto do orçamento especificado.',
@@ -281,6 +303,7 @@ export class QuotationController {
   }
 
   @Get()
+  @HasPermission('view', 'sale:quotation')
   @ApiOperation({ summary: 'Obtém a lista de todos os orçamentos' })
   @ApiResponse({
     status: 200,
@@ -332,6 +355,7 @@ export class QuotationController {
   }
 
   @Get('contact-sources')
+  @HasPermission('view', 'sale:quotation')
   @ApiOperation({ summary: 'Obtém a lista de todas as fontes de contato' })
   @ApiResponse({
     status: 200,
@@ -343,6 +367,7 @@ export class QuotationController {
   }
 
   @Get('quantity')
+  @HasPermission('view', 'sale:quotation')
   @ApiOperation({
     summary: 'Obtém a quantidade de todos os status de orçamentos',
   })
@@ -357,6 +382,7 @@ export class QuotationController {
   }
 
   @Post(':id/duplicate')
+  @HasPermission('create', 'sale:quotation')
   @ApiOperation({ summary: 'Duplica um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
   @ApiBody({
@@ -385,6 +411,10 @@ export class QuotationController {
     return this.quotationService.duplicate(id, dto, userId);
   }
   @Post(':id/approve')
+  @HasAnyPermission(
+    { action: 'create', resource: 'sale:order' },
+    { action: 'edit', resource: 'sale:quotation' },
+  )
   @RequireUnblocked()
   @ApiOperation({ summary: 'Aprova um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
@@ -415,6 +445,10 @@ export class QuotationController {
   // Fora do contrato das telas (plano de 10/10, decisão D34): rota de
   // suporte para completar uma aprovação que ficou pela metade
   @Post(':id/approve/reprocess')
+  @HasAnyPermission(
+    { action: 'create', resource: 'sale:order' },
+    { action: 'edit', resource: 'sale:quotation' },
+  )
   @RequireUnblocked()
   @ApiOperation({
     summary: 'Completa a aprovação de uma venda já aprovada',
@@ -440,6 +474,7 @@ export class QuotationController {
   }
 
   @Post(':id/bill')
+  @HasPermission('edit', 'production:delivery_schedule')
   @ApiOperation({ summary: 'Faturamento manual de um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
   @ApiResponse({
@@ -463,6 +498,10 @@ export class QuotationController {
   }
 
   @Post(':id/reject')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'sale:quotation' },
+    { action: 'delete', resource: 'sale:quotation' },
+  )
   @ApiOperation({ summary: 'Rejeita um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
   @ApiResponse({
@@ -494,6 +533,7 @@ export class QuotationController {
   }
 
   @Post(':id/finish')
+  @HasPermission('edit', 'sale:quotation')
   @ApiOperation({ summary: 'Finaliza um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
   @ApiResponse({
@@ -513,6 +553,7 @@ export class QuotationController {
   }
 
   @Post(':id/open')
+  @HasPermission('edit', 'sale:quotation')
   @ApiOperation({ summary: 'Reabre um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
   @ApiResponse({
@@ -532,6 +573,7 @@ export class QuotationController {
   }
 
   @Get(UUID_ROUTE)
+  @HasPermission('view', 'sale:quotation')
   @ApiOperation({ summary: 'Obtém um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
   @ApiResponse({
@@ -574,6 +616,7 @@ export class QuotationController {
   }
 
   @Patch(':id')
+  @HasPermission('edit', 'sale:quotation')
   @ApiOperation({ summary: 'Atualiza um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
   @ApiBody({
@@ -623,6 +666,9 @@ export class QuotationController {
     );
   }
   @Delete('delete-imported')
+  @HasPermission('delete', 'sale:quotation')
+  // Sem uso no front e destrutiva: já recusa, sem passar pelo modo observar
+  @ObservePermissions(false)
   @ApiOperation({
     summary: 'Deleta todos os orçamentos importados para uma empresa',
   })
@@ -646,6 +692,7 @@ export class QuotationController {
   }
 
   @Delete(':id')
+  @HasPermission('delete', 'sale:quotation')
   @ApiOperation({ summary: 'Remove um orçamento pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
   @ApiResponse({
@@ -667,6 +714,11 @@ export class QuotationController {
   }
 
   @Get(':id/pdf-data')
+  @HasAnyPermission(
+    { action: 'view', resource: 'sale:quotation' },
+    { action: 'view', resource: 'sale:order' },
+    { action: 'view', resource: 'production:delivery_schedule' },
+  )
   @ApiOperation({ summary: 'Obtém os dados do orçamento para geração de PDF' })
   @ApiParam({ name: 'id', required: true, description: 'ID do orçamento' })
   @ApiResponse({

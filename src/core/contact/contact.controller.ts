@@ -1,3 +1,7 @@
+import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Get,
@@ -27,12 +31,22 @@ import {
 const RESOURCE = 'contact';
 
 @ApiTags('Contatos')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(RESOURCE)
 export class ContactController {
   constructor(private readonly contactService: ContactService) {}
 
   @Post()
+  @HasAnyPermission(
+    { action: 'create', resource: 'sale:quotation' },
+    { action: 'edit', resource: 'sale:quotation' },
+    { action: 'edit', resource: 'sale:order' },
+    { action: 'edit', resource: 'register:client' },
+  )
   @ApiOperation({ summary: 'Cria um novo contato' })
   @ApiBody({
     description: 'Dados do novo contato',
@@ -47,6 +61,7 @@ export class ContactController {
   }
 
   @Post('bulk')
+  @HasPermission('create', 'register:client')
   @ApiOperation({ summary: 'Cria múltiplos contatos' })
   @ApiBody({
     description: 'Dados dos novos contatos',
@@ -61,6 +76,7 @@ export class ContactController {
   }
 
   @Get()
+  @HasPermission('view', 'register:client')
   @ApiOperation({ summary: 'Obtém a lista de todos os contatos' })
   @ApiQuery({ name: 'filter', type: ContactFilterDTO, required: false })
   @ApiResponse({
@@ -73,6 +89,7 @@ export class ContactController {
   }
 
   @Get(':id')
+  @HasPermission('view', 'register:client')
   @ApiOperation({ summary: 'Obtém um contato pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do contato' })
   @ApiResponse({
@@ -88,6 +105,7 @@ export class ContactController {
   }
 
   @Patch(':id')
+  @HasPermission('edit', 'register:client')
   @ApiOperation({ summary: 'Atualiza um contato pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do contato' })
   @ApiBody({
@@ -111,6 +129,10 @@ export class ContactController {
   }
 
   @Delete(':id')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'register:client' },
+    { action: 'delete', resource: 'register:client' },
+  )
   @ApiOperation({ summary: 'Remove um contato pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do contato' })
   @ApiResponse({

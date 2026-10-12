@@ -1,3 +1,7 @@
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
+import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
+import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
+import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import {
   Controller,
   Get,
@@ -30,8 +34,12 @@ import {
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 
 const RESOURCE = 'company';
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
+// Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
+// sem recusar, até a semana de log limpo; handler com
+// @ObservePermissions(false) já recusa.
+@ObservePermissions()
 @Controller(RESOURCE)
 @ApiTags('Empresa')
 export class CompanyController {
@@ -40,6 +48,7 @@ export class CompanyController {
   // Outra empresa na mesma conta (filial, outro CNPJ) é recurso de plano. A
   // empresa principal, criada no cadastro (`POST /company/main`), nunca.
   @Post()
+  @HasPermission('create', 'company_settings:company')
   @UseGuards(FeatureGuard)
   @RequiresFeature('multiple_companies')
   @ApiOperation({ summary: 'Cria uma empresa' })
@@ -93,6 +102,10 @@ export class CompanyController {
   }
 
   @Get('check/:cnpj')
+  @HasAnyPermission(
+    { action: 'create', resource: 'company_settings:company' },
+    { action: 'edit', resource: 'company_settings:company' },
+  )
   @ApiOperation({
     summary: 'Verifica o CNPJ fornecido em um serviço externo.',
   })
@@ -121,6 +134,7 @@ export class CompanyController {
   }
 
   @Get(':id')
+  @HasPermission('view', 'company_settings:company')
   @ApiOperation({ summary: 'Obtém uma empresa pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID da empresa' })
   @ApiResponse({
@@ -137,6 +151,7 @@ export class CompanyController {
   }
 
   @Patch(':id')
+  @HasPermission('edit', 'company_settings:company')
   @ApiOperation({ summary: 'Atualiza uma empresa pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID da empresa' })
   @ApiBody({ type: CreateCompanyDto })
@@ -158,6 +173,9 @@ export class CompanyController {
   }
 
   @Delete(':id')
+  @HasPermission('delete', 'company_settings:company')
+  // Sem uso no front e destrutiva: já recusa, sem passar pelo modo observar
+  @ObservePermissions(false)
   @ApiOperation({ summary: 'Remove uma empresa pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID da empresa' })
   @ApiResponse({
