@@ -1737,6 +1737,8 @@ export class ProductAssemblyService {
             ? (row.localTaskType ?? row.process.taskType)
             : row.taskType,
         rules: block.rules,
+        // As regras sem o ajuste deste produto: as do processo pela posição
+        originalRules: block.originalRules,
         rulesOverridden: row.type === 'PROCESS' && !!row.localRules,
         removedProcessLines: row.removedSourceLineIds.filter((id) =>
           sources.has(id),
@@ -1785,6 +1787,12 @@ export class ProductAssemblyService {
       code: product.code,
       unitKind: pricing.unitKind,
       unitPrice: computed.activeVariation?.unitPrice ?? pricing.unitPrice,
+      // O cadastro que a tela da composição mostra junto (CP-16)
+      unitAmount: pricing.unitAmount,
+      technicalDescription: product.technicalDescription ?? '',
+      allowEditValues: product.allowEditValues,
+      allowEditDescription: product.allowEditDescription,
+      priceTiers: product.priceTiers,
       status: assembly?.status ?? 'DRAFT',
       dimension: assembly?.dimension ?? 'SALE',
       allowRenameStages: assembly?.allowRenameStages ?? false,

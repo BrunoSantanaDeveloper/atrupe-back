@@ -71,6 +71,9 @@ export const PRODUCT_SELECT = {
   code: true,
   isActive: true,
   companyId: true,
+  technicalDescription: true,
+  allowEditValues: true,
+  allowEditDescription: true,
   // O item principal, como o GET /product/:id ordena
   items: {
     orderBy: { name: 'asc' },
@@ -162,11 +165,12 @@ export const productPricing = (product: ProductRow) => {
   return {
     unitKind,
     unitPrice: raw > 0 ? Math.round(raw * COMMERCIAL_FACTOR[unitKind]) : null,
-    // A medida padrão em mm; sem ela, 1 × 1 m
+    // A medida padrão em mm; sem ela, 1 × 1 m. Largura e altura também
+    // alimentam a composição do produto vendido por unidade ou por metro
     measure: {
       quantity: 1,
-      width: area && item?.width ? item.width : 1000,
-      height: area && item?.height ? item.height : 1000,
+      width: item?.width ? item.width : 1000,
+      height: item?.height ? item.height : 1000,
     },
     // Quanto de unidade comercial cada peça tem (o "Valor" do START)
     unitAmount:
