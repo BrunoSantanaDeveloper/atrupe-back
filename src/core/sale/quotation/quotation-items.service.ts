@@ -302,8 +302,12 @@ export class QuotationItemsService {
         throw new NotFoundException('Item não encontrado no produto.');
       }
 
+      // Da aprovação em diante, o retrato e as linhas ficam como foram
+      // vendidos (ORC-10): a edição da O.S. não refaz a conta
+      const frozen = product.quotation.status === 'APPROVED';
+
       const variationId =
-        data.variationId !== undefined
+        data.variationId !== undefined && !frozen
           ? await this.variationFor(product.productId, data.variationId, false)
           : product.variationId;
 
@@ -317,9 +321,10 @@ export class QuotationItemsService {
       const storedChoices = product.composition as SaleChoicesDto | null;
       const choices = data.composition ?? storedChoices ?? undefined;
       const refresh =
-        data.composition !== undefined ||
-        data.variationId !== undefined ||
-        (measureChanged && !!(product.composition || product.snapshot));
+        !frozen &&
+        (data.composition !== undefined ||
+          data.variationId !== undefined ||
+          (measureChanged && !!(product.composition || product.snapshot)));
       let composed: Awaited<ReturnType<typeof this.compositionFor>> = null;
       if (refresh) {
         const current = product.items[0];
@@ -376,7 +381,7 @@ export class QuotationItemsService {
               finalValue: data.finalValue,
             }),
             ...(data.addition !== undefined && { addition: data.addition }),
-            ...(data.variationId !== undefined && { variationId }),
+            ...(data.variationId !== undefined && !frozen && { variationId }),
             ...(composed && {
               composition: asJson(composed.composition),
               snapshot: {
@@ -563,9 +568,8 @@ export class QuotationItemsService {
 
       // Medida nova: as linhas que acompanham a base são refeitas e as de
       // medida própria ficam (05/10/2026)
-      const linesRecalculated = measureChanged
-        ? await this.lines.recalculate(productId)
-        : 0;
+      const linesRecalculated =
+        measureChanged && !frozen ? await this.lines.recalculate(productId) : 0;
 
       // O acréscimo e as linhas entram por fora do desconto (ALT-25, ORC-5).
       // Sem eles, o valor fica como as contas acima deixaram

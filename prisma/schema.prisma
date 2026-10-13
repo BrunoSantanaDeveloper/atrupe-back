@@ -2761,6 +2761,7 @@ enum FinancialType {
   COMMISSION // Comissão da venda (payable)
   DELIVERY // Entrega da venda (payable)
   ADVANCE // Adiantamento de salário (payable)
+  OUTSOURCED // Terceirizado avulso da venda (payable, T-3)
 }
 
 enum ExpenseSource {

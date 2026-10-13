@@ -272,6 +272,34 @@ describe('QuotationItemsService', () => {
       expect(lines.refreshItem).toHaveBeenCalledWith(mockQuotationProductId);
       expect(result).toMatchObject({ linesRecalculated: 2 });
     });
+
+    it('venda aprovada: a edição não refaz o retrato nem as linhas (ORC-10)', async () => {
+      prisma.quotationProduct.findUnique.mockResolvedValue({
+        ...mockQuotationProduct,
+        quotation: { ...mockQuotation, status: 'APPROVED' },
+        addition: 0,
+        linesTotal: 0,
+        composition: { choices: [] },
+        snapshot: { quotationProductId: mockQuotationProductId },
+        variationId: null,
+        product: { ...mockProduct },
+      });
+      prisma.quotationProduct.update.mockResolvedValue(mockQuotationProduct);
+      prisma.quotationProductItem.findMany.mockResolvedValue([]);
+
+      await service.updateProductInQuotation(mockQuotationProductId, {
+        quantity: 3,
+        composition: { choices: [] },
+        variationId: 'v-1',
+      } as any);
+
+      expect(productSale.itemComposition).not.toHaveBeenCalled();
+      expect(lines.recalculate).not.toHaveBeenCalled();
+      expect(prisma.productVariation.findMany).not.toHaveBeenCalled();
+      expect(
+        prisma.quotationProduct.update.mock.calls[0][0].data,
+      ).not.toHaveProperty('variationId');
+    });
   });
 
   describe('addProductToQuotation', () => {

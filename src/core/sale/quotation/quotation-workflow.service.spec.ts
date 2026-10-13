@@ -1,8 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   ALREADY_APPROVED_MESSAGE,
+  INACTIVE_PRODUCT_ITEMS,
+  PAYMENT_CONDITION_REQUIRED,
   QuotationWorkflowService,
 } from './quotation-workflow.service';
+import { ProductSaleService } from '../../assembly/product-sale.service';
 import { QuotationFinancialService } from './quotation-financial.service';
 import { PrismaService } from 'nestjs-prisma';
 import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.service';
@@ -100,6 +103,20 @@ const createMockPrismaService = () => ({
   orderHistory: {
     create: jest.fn(),
   },
+  // Os passos de depois da aprovação (Fase 4.3)
+  quotationProduct: {
+    findMany: jest.fn().mockResolvedValue([]),
+  },
+  quotationItemSnapshot: {
+    count: jest.fn().mockResolvedValue(0),
+    create: jest.fn(),
+  },
+  quotationItemLine: {
+    findMany: jest.fn().mockResolvedValue([]),
+  },
+  bankAccount: {
+    findFirst: jest.fn().mockResolvedValue(null),
+  },
   $transaction: jest.fn(),
 });
 
@@ -114,6 +131,10 @@ const mockDeliveryScheduleService = {
 
 const mockPlanControl = {
   getCompanyPlanInfo: jest.fn(),
+};
+
+const mockProductSale = {
+  itemComposition: jest.fn(),
 };
 
 describe('QuotationWorkflowService', () => {
@@ -143,6 +164,7 @@ describe('QuotationWorkflowService', () => {
           provide: PlanControlService,
           useValue: mockPlanControl,
         },
+        { provide: ProductSaleService, useValue: mockProductSale },
       ],
     }).compile();
 
@@ -165,8 +187,14 @@ describe('QuotationWorkflowService', () => {
     const currentQuotation = (overrides: Record<string, unknown> = {}) => ({
       companyId: mockCompanyId,
       status: QuotationStatus.DONE,
+      quickSale: false,
       client: { status: 'ACTIVE' },
       deliveryInfo: { id: 'delivery-info-id' },
+      quotationPayment: {
+        billing: 'ON_ORDER',
+        _count: { quotationInstallment: 1 },
+      },
+      quotationProduct: [],
       ...overrides,
     });
 
@@ -377,6 +405,171 @@ describe('QuotationWorkflowService', () => {
         NotFoundException,
       );
     });
+
+    it('sem condição de pagamento: 400 antes de gravar; a venda rápida passa', async () => {
+      prisma.quotation.findUnique.mockImplementation(async (args) =>
+        args.select
+          ? currentQuotation({
+              quotationPayment: {
+                billing: 'ON_ORDER',
+                _count: { quotationInstallment: 0 },
+              },
+            })
+          : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
+      );
+      await expect(
+        service.approve(mockQuotationId, mockUserId),
+      ).rejects.toThrow(new BadRequestException(PAYMENT_CONDITION_REQUIRED));
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+
+      prisma.quotation.findUnique.mockImplementation(async (args) =>
+        args.select
+          ? currentQuotation({
+              quickSale: true,
+              quotationPayment: {
+                billing: 'ON_ORDER',
+                _count: { quotationInstallment: 0 },
+              },
+            })
+          : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
+      );
+      await service.approve(mockQuotationId, mockUserId);
+      expect(committed).toContain('quotation:APPROVED');
+    });
+
+    it('produto ou parte inativa: 400 com os itens a trocar (PAD-7)', async () => {
+      prisma.quotation.findUnique.mockResolvedValue(
+        currentQuotation({
+          quotationProduct: [
+            {
+              id: 'item-1',
+              description: 'Banner 440',
+              product: { name: 'Banner', isActive: false },
+              lines: [],
+            },
+            {
+              id: 'item-2',
+              description: 'Fachada',
+              product: { name: 'Fachada', isActive: true },
+              lines: [{ product: { isActive: false } }],
+            },
+            {
+              id: 'item-3',
+              description: 'Cartão',
+              product: { name: 'Cartão', isActive: true },
+              lines: [{ product: { isActive: true } }],
+            },
+          ],
+        }),
+      );
+
+      const error = await service
+        .approve(mockQuotationId, mockUserId)
+        .catch((reason) => reason);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error.getResponse()).toEqual({
+        statusCode: 400,
+        message: INACTIVE_PRODUCT_ITEMS,
+        items: [
+          { itemId: 'item-1', name: 'Banner 440' },
+          { itemId: 'item-2', name: 'Fachada' },
+        ],
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('depois da aprovação: o retrato que falta e a conta do terceirizado (T-3)', async () => {
+      prisma.quotationProduct.findMany.mockResolvedValue([
+        {
+          id: 'item-1',
+          productId: 'product-1',
+          variationId: null,
+          quantity: 2,
+          composition: { choices: [] },
+          items: [{ width: 900, height: 1200 }],
+          product: { companyId: mockCompanyId },
+          quotation: { companyId: mockCompanyId },
+        },
+      ]);
+      mockProductSale.itemComposition.mockResolvedValue({
+        snapshot: { cost: 1500, stages: [] },
+      });
+      prisma.payable.count.mockResolvedValue(0);
+      prisma.quotationItemLine.findMany.mockResolvedValue([
+        {
+          name: 'Letra caixa',
+          cost: 20000,
+          supplierId: 'fornecedor-1',
+          supplierName: 'Letras & Cia',
+          quotationProduct: {
+            quotation: {
+              companyId: mockCompanyId,
+              quotationNumber: 3352,
+              series: { code: 'V1' },
+            },
+          },
+        },
+      ]);
+      const payableCreate = jest.fn().mockResolvedValue({ id: 'payable-1' });
+      const installmentCreate = jest.fn();
+      const approvalTx = prisma.$transaction.getMockImplementation();
+      prisma.$transaction.mockImplementation(async (callback) =>
+        committed.includes('quotation:APPROVED')
+          ? callback({
+              payable: { create: payableCreate },
+              payableInstallment: { create: installmentCreate },
+            })
+          : approvalTx!(callback),
+      );
+
+      await service.approve(mockQuotationId, mockUserId);
+
+      expect(mockProductSale.itemComposition).toHaveBeenCalledWith(
+        mockCompanyId,
+        'product-1',
+        null,
+        { quantity: 2, width: 900, height: 1200 },
+        { choices: [] },
+      );
+      expect(prisma.quotationItemSnapshot.create).toHaveBeenCalledWith({
+        data: {
+          quotationProductId: 'item-1',
+          data: { cost: 1500, stages: [] },
+        },
+      });
+      expect(payableCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          description:
+            'Terceirizado da venda 3352-V1: Letra caixa (Letras & Cia)',
+          totalAmount: 20000,
+          supplierId: 'fornecedor-1',
+          quotationId: mockQuotationId,
+          financialType: 'OUTSOURCED',
+        }),
+      });
+      expect(installmentCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          payableId: 'payable-1',
+          amount: 20000,
+          installmentNumber: 1,
+        }),
+      });
+    });
+
+    it('falha no retrato não desfaz a venda e não impede a conta do terceirizado', async () => {
+      prisma.quotationProduct.findMany.mockRejectedValue(
+        new Error('motor fora'),
+      );
+
+      const result = await service.approve(mockQuotationId, mockUserId);
+
+      expect(result.id).toBe(mockOrderId);
+      expect(committed).toContain('quotation:APPROVED');
+      expect(prisma.quotationItemLine.findMany).toHaveBeenCalled();
+      expect(logError).toHaveBeenCalledWith(
+        expect.stringContaining('snapshots não criado'),
+      );
+    });
   });
 
   describe('reprocessApproval', () => {
@@ -426,7 +619,9 @@ describe('QuotationWorkflowService', () => {
         async () => state.deliverySchedule,
       );
       prisma.receivable.count.mockImplementation(async () => state.receivables);
-      prisma.payable.count.mockImplementation(async () => state.payables);
+      prisma.payable.count.mockImplementation(async (args) =>
+        args?.where?.financialType === 'OUTSOURCED' ? 0 : state.payables,
+      );
       prisma.productionStage.count.mockImplementation(
         async () => state.productionStages,
       );
@@ -783,6 +978,49 @@ describe('QuotationWorkflowService', () => {
 
       await expect(service.finish(mockQuotationId, mockUserId)).rejects.toThrow(
         BadRequestException,
+      );
+    });
+
+    it('conclui sem condição de pagamento (sem parcelas): só a aprovação exige', async () => {
+      prisma.quotation.findUnique.mockResolvedValue({
+        ...mockQuotation,
+        status: QuotationStatus.OPEN,
+        seller: { sellerProfile: { minValue: 0, maxDiscount: 50 } },
+        quotationPayment: { billing: 'ON_ORDER', quotationInstallment: [] },
+        quotationProduct: [],
+        series: { proposalValidity: 30 },
+      });
+      prisma.quotation.update.mockResolvedValue({
+        ...mockQuotation,
+        status: QuotationStatus.DONE,
+      });
+
+      await expect(
+        service.finish(mockQuotationId, mockUserId),
+      ).resolves.toMatchObject({ status: QuotationStatus.DONE });
+    });
+
+    it('acréscimo e linhas acrescentadas não contam como desconto (ALT-25, ORC-5)', async () => {
+      // Base 100,00 com 10,00 de desconto, 30,00 de acréscimo e 50,00 de
+      // linhas: o valor final 170,00 tem 10 % de desconto, não menos
+      prisma.quotation.findUnique.mockResolvedValue({
+        ...mockQuotation,
+        totalValue: 17000,
+        status: QuotationStatus.OPEN,
+        seller: { sellerProfile: { minValue: 0, maxDiscount: 5 } },
+        quotationPayment: {
+          billing: 'ON_ORDER',
+          quotationInstallment: [{}],
+          finalValue: 17000,
+        },
+        quotationProduct: [
+          { totalValue: 10000, addition: 3000, linesTotal: 5000 },
+        ],
+        series: { proposalValidity: 30 },
+      });
+
+      await expect(service.finish(mockQuotationId, mockUserId)).rejects.toThrow(
+        'O desconto aplicado (10.00%) excede o limite máximo permitido para este vendedor (5%).',
       );
     });
   });

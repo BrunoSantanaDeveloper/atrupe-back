@@ -26,8 +26,19 @@ import {
 import { calculateFinalValue } from './quotation.utils';
 import { PlanControlService } from '../../plan/plan-control.service';
 import { companyWithoutKeys } from 'src/shared/company/company-keys';
+import { ProductSaleService } from '../../assembly/product-sale.service';
+import { SaleChoicesDto } from '../../assembly/dto/sale.dto';
 
 export const ALREADY_APPROVED_MESSAGE = 'Este orçamento já está aprovado.';
+export const PAYMENT_CONDITION_REQUIRED =
+  'Informe a condição de pagamento para aprovar';
+export const INACTIVE_PRODUCT_ITEMS =
+  'Este orçamento não pode ser aprovado: troque ou retire os itens com produto inativo';
+
+// A conta a pagar do terceirizado avulso (T-3): fora da conta "tem
+// financeiro?" da venda, que decide se gera receber e pagar no pedido
+const OUTSOURCED = 'OUTSOURCED' as const;
+const NOT_OUTSOURCED = { not: OUTSOURCED };
 
 /** O que a aprovação lê do orçamento para a O.S., a agenda e o financeiro. */
 const APPROVAL_INCLUDE = Prisma.validator<Prisma.QuotationInclude>()({
@@ -92,6 +103,8 @@ type ApprovalState = {
   receivables: number;
   payables: number;
   productionStages: number;
+  snapshots: number;
+  outsourcedPayables: number;
 };
 
 export type ApprovalReprocessResult = {
@@ -115,6 +128,7 @@ export class QuotationWorkflowService {
     private financialService: QuotationFinancialService,
     private deliveryScheduleService: DeliveryScheduleService,
     private planControl: PlanControlService,
+    private productSale: ProductSaleService,
   ) {}
 
   /**
@@ -343,7 +357,7 @@ export class QuotationWorkflowService {
         select: { id: true },
       }),
       prisma.payable.findMany({
-        where: { quotationId },
+        where: { quotationId, financialType: NOT_OUTSOURCED },
         select: { id: true },
       }),
     ]);
@@ -388,8 +402,26 @@ export class QuotationWorkflowService {
       select: {
         companyId: true,
         status: true,
+        quickSale: true,
         client: { select: { status: true } },
         deliveryInfo: { select: { id: true } },
+        quotationPayment: {
+          select: {
+            billing: true,
+            _count: { select: { quotationInstallment: true } },
+          },
+        },
+        quotationProduct: {
+          select: {
+            id: true,
+            description: true,
+            product: { select: { name: true, isActive: true } },
+            lines: {
+              where: { kind: 'PART' },
+              select: { product: { select: { isActive: true } } },
+            },
+          },
+        },
       },
     });
 
@@ -405,6 +437,33 @@ export class QuotationWorkflowService {
       throw new BadRequestException(
         'Informações de entrega ausentes na venda.',
       );
+    }
+    // Todo orçamento nasce com a condição padrão: sem condição é sem as
+    // parcelas definidas. Só a venda rápida aprova assim: a forma é com o
+    // caixa (FC-1). A cobrança sem nota não tem parcelas
+    const payment = current.quotationPayment;
+    const hasCondition =
+      payment?.billing === 'NO_INVOICE' ||
+      (payment?._count.quotationInstallment ?? 0) > 0;
+    if (!current.quickSale && !hasCondition) {
+      throw new BadRequestException(PAYMENT_CONDITION_REQUIRED);
+    }
+    // Produto, ou parte de uma linha, inativado depois de lançado (PAD-7):
+    // a tela recebe os itens a trocar ou retirar
+    const inactive = (current.quotationProduct ?? []).filter(
+      (item) =>
+        item.product?.isActive === false ||
+        (item.lines ?? []).some((line) => line.product?.isActive === false),
+    );
+    if (inactive.length) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: INACTIVE_PRODUCT_ITEMS,
+        items: inactive.map((item) => ({
+          itemId: item.id,
+          name: item.description || item.product?.name || '',
+        })),
+      });
     }
     await this.validateClientForApproval(current.client, userId, this.prisma);
 
@@ -443,13 +502,10 @@ export class QuotationWorkflowService {
     );
 
     // Fora da transação: uma falha aqui não desfaz a venda, e o reprocesso
-    // cria as etapas que faltarem
-    try {
-      await this.ensureProductionStages(quotationId);
-    } catch (error) {
+    // cria o que faltar
+    for (const failure of await this.afterApproval(quotationId)) {
       this.logger.error(
-        `Etapas de produção não criadas na aprovação do orçamento ${quotationId} (o reprocesso refaz):`,
-        error.stack,
+        `${failure.step} não criado na aprovação do orçamento ${quotationId} (o reprocesso refaz): ${failure.message}`,
       );
     }
 
@@ -565,15 +621,12 @@ export class QuotationWorkflowService {
       { timeout: 20000 },
     );
 
-    const failed: ApprovalReprocessResult['failed'] = [];
-    try {
-      await this.ensureProductionStages(quotationId);
-    } catch (error) {
+    const failed: ApprovalReprocessResult['failed'] =
+      await this.afterApproval(quotationId);
+    for (const failure of failed) {
       this.logger.error(
-        `Reprocesso da aprovação do orçamento ${quotationId}: etapas de produção`,
-        error.stack,
+        `Reprocesso da aprovação do orçamento ${quotationId}: ${failure.step}: ${failure.message}`,
       );
-      failed.push({ step: 'productionStages', message: error.message });
     }
 
     const after = await this.approvalState(quotationId);
@@ -597,17 +650,196 @@ export class QuotationWorkflowService {
   }
 
   private async approvalState(quotationId: string): Promise<ApprovalState> {
-    const [order, deliverySchedule, receivables, payables, productionStages] =
-      await Promise.all([
-        this.prisma.order.count({ where: { quotationId } }),
-        this.prisma.deliverySchedule.count({ where: { quotationId } }),
-        this.prisma.receivable.count({ where: { quotationId } }),
-        this.prisma.payable.count({ where: { quotationId } }),
-        this.prisma.productionStage.count({
-          where: { schedule: { quotationId } },
-        }),
-      ]);
-    return { order, deliverySchedule, receivables, payables, productionStages };
+    const [
+      order,
+      deliverySchedule,
+      receivables,
+      payables,
+      productionStages,
+      snapshots,
+      outsourcedPayables,
+    ] = await Promise.all([
+      this.prisma.order.count({ where: { quotationId } }),
+      this.prisma.deliverySchedule.count({ where: { quotationId } }),
+      this.prisma.receivable.count({ where: { quotationId } }),
+      this.prisma.payable.count({
+        where: { quotationId, financialType: NOT_OUTSOURCED },
+      }),
+      this.prisma.productionStage.count({
+        where: { schedule: { quotationId } },
+      }),
+      this.prisma.quotationItemSnapshot.count({
+        where: { quotationProduct: { quotationId } },
+      }),
+      this.prisma.payable.count({
+        where: { quotationId, financialType: OUTSOURCED },
+      }),
+    ]);
+    return {
+      order,
+      deliverySchedule,
+      receivables,
+      payables,
+      productionStages,
+      snapshots,
+      outsourcedPayables,
+    };
+  }
+
+  /**
+   * Os passos de depois da aprovação, cada um idempotente e isolado: a
+   * falha de um não impede os outros e volta na lista para o reprocesso.
+   */
+  private async afterApproval(
+    quotationId: string,
+  ): Promise<ApprovalReprocessResult['failed']> {
+    const steps: [string, () => Promise<void>][] = [
+      ['productionStages', () => this.ensureProductionStages(quotationId)],
+      ['snapshots', () => this.ensureSnapshots(quotationId)],
+      ['outsourcedPayables', () => this.ensureOutsourcedPayables(quotationId)],
+    ];
+    const failed: ApprovalReprocessResult['failed'] = [];
+    for (const [step, run] of steps) {
+      try {
+        await run();
+      } catch (error) {
+        failed.push({ step, message: error.message });
+      }
+    }
+    return failed;
+  }
+
+  /**
+   * O retrato da venda (ORC-10) de cada item com composição liberada que
+   * ainda não tem (lançado antes da Fase 4, ou com falha no cálculo): com
+   * as escolhas guardadas no item. Da aprovação em diante, o retrato não
+   * muda: a edição da O.S. não refaz a conta.
+   */
+  private async ensureSnapshots(quotationId: string): Promise<void> {
+    const items = await this.prisma.quotationProduct.findMany({
+      where: {
+        quotationId,
+        snapshot: { is: null },
+        product: {
+          assemblies: { some: { variationKey: '', status: 'RELEASED' } },
+        },
+      },
+      select: {
+        id: true,
+        productId: true,
+        variationId: true,
+        quantity: true,
+        composition: true,
+        items: { select: { width: true, height: true }, take: 1 },
+        product: { select: { companyId: true } },
+        quotation: { select: { companyId: true } },
+      },
+    });
+    const errors: string[] = [];
+    for (const item of items) {
+      try {
+        const { snapshot } = await this.productSale.itemComposition(
+          item.product.companyId ?? item.quotation.companyId,
+          item.productId,
+          item.variationId,
+          {
+            quantity: item.quantity,
+            width: item.items[0]?.width || undefined,
+            height: item.items[0]?.height || undefined,
+          },
+          (item.composition as SaleChoicesDto | null) ?? {},
+        );
+        await this.prisma.quotationItemSnapshot.create({
+          data: {
+            quotationProductId: item.id,
+            data: JSON.parse(JSON.stringify(snapshot)),
+          },
+        });
+      } catch (error) {
+        errors.push(`item ${item.id}: ${error.message}`);
+      }
+    }
+    if (errors.length) throw new Error(errors.join('; '));
+  }
+
+  /**
+   * O custo do terceirizado avulso vira conta a pagar ao fornecedor (T-3):
+   * uma por linha, parcela única em 30 dias, como a da entrega. Com as
+   * contas já criadas, fica como está.
+   */
+  private async ensureOutsourcedPayables(quotationId: string): Promise<void> {
+    const existing = await this.prisma.payable.count({
+      where: { quotationId, financialType: OUTSOURCED },
+    });
+    if (existing) return;
+    const lines = await this.prisma.quotationItemLine.findMany({
+      where: {
+        kind: 'LOOSE',
+        cost: { gt: 0 },
+        quotationProduct: { quotationId },
+      },
+      select: {
+        name: true,
+        cost: true,
+        supplierId: true,
+        supplierName: true,
+        quotationProduct: {
+          select: {
+            quotation: {
+              select: {
+                companyId: true,
+                quotationNumber: true,
+                series: { select: { code: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!lines.length) return;
+
+    const quotation = lines[0].quotationProduct.quotation;
+    const sale = [quotation.quotationNumber, quotation.series?.code]
+      .filter(Boolean)
+      .join('-');
+    const bankAccount = await this.prisma.bankAccount.findFirst({
+      where: { companyId: quotation.companyId, isActive: true },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    await this.prisma.$transaction(async (prisma) => {
+      for (const line of lines) {
+        const payable = await prisma.payable.create({
+          data: {
+            referenceDate: new Date(),
+            description: `Terceirizado da venda ${sale}: ${line.name}${line.supplierName ? ` (${line.supplierName})` : ''}`,
+            totalAmount: line.cost,
+            totalValue: line.cost,
+            mainAdditionalFee: 0,
+            installmentQty: 1,
+            status: 'PENDING',
+            supplierId: line.supplierId,
+            companyId: quotation.companyId,
+            quotationId,
+            financialType: OUTSOURCED,
+          },
+        });
+        await prisma.payableInstallment.create({
+          data: {
+            payableId: payable.id,
+            installmentNumber: 1,
+            dueDate: add(new Date(), { days: 30 }),
+            amount: line.cost,
+            additionalFee: 0,
+            paymentConditionId: null,
+            bankAccountId: bankAccount?.id ?? null,
+            status: 'PENDING',
+            paidDate: null,
+          },
+        });
+      }
+    });
   }
 
   /**
@@ -622,7 +854,7 @@ export class QuotationWorkflowService {
             select: { id: true },
           }),
           prisma.payable.findMany({
-            where: { quotationId },
+            where: { quotationId, financialType: NOT_OUTSOURCED },
             select: { id: true },
           }),
         ]);
@@ -1001,6 +1233,8 @@ export class QuotationWorkflowService {
             discountType: true,
             totalValue: true,
             finalValue: true,
+            addition: true,
+            linesTotal: true,
           },
         },
       },
@@ -1018,12 +1252,8 @@ export class QuotationWorkflowService {
       );
     }
 
-    if (
-      quotation.quotationPayment.quotationInstallment.length === 0 &&
-      quotation.quotationPayment.billing !== 'NO_INVOICE'
-    ) {
-      throw new BadRequestException('O orçamento não possui parcelas.');
-    }
+    // Concluir sem condição de pagamento (sem as parcelas) pode, decisão de
+    // 05/10/2026: só a aprovação exige. A tela avisa antes o que falta
 
     if (!quotation || !quotation.seller || !quotation.seller.sellerProfile) {
       throw new BadRequestException('Informações do vendedor não encontradas.');
@@ -1049,6 +1279,14 @@ export class QuotationWorkflowService {
           (sum, product) => sum + (product.totalValue || 0),
           0,
         ) || quotation.totalValue;
+      // O acréscimo e as linhas acrescentadas ficam fora do limite de
+      // desconto (ALT-25, ORC-5): entram no que foi vendido, não no desconto
+      const extras =
+        quotation.quotationProduct?.reduce(
+          (sum, product) =>
+            sum + (product.addition || 0) + (product.linesTotal || 0),
+          0,
+        ) ?? 0;
 
       let finalValue = quotation.quotationPayment?.finalValue;
 
@@ -1065,7 +1303,7 @@ export class QuotationWorkflowService {
         );
       }
 
-      const totalDiscount = originalValue - finalValue;
+      const totalDiscount = originalValue + extras - finalValue;
       // Arredonda antes de comparar: 10% de R$ 1.163,73 dá 10.000000000000002
       // em ponto flutuante, e o checkout recusava um desconto de exatamente
       // 10% com a mensagem "10.00% excede 10%". O mesmo valor arredondado vai
