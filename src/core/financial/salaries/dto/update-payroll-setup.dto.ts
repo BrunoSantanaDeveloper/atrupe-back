@@ -48,6 +48,11 @@ export class UpdatePayrollSetupDto {
   @IsOptional()
   isSet?: boolean;
 
+  // INSS ou FGTS: false volta a calcular pelo salário (F-4)
+  @IsBoolean()
+  @IsOptional()
+  manualOverride?: boolean;
+
   @ApiProperty({
     description: 'The employee ID associated with this payroll setup',
     example: '123e4567-e89b-12d3-a456-426614174000',

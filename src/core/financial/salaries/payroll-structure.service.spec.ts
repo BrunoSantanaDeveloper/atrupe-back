@@ -128,6 +128,41 @@ describe('PayrollStructureService: a linha do colaborador', () => {
     );
   });
 
+  it('o INSS volta a acompanhar o salário; o item comum não tem valor à mão', async () => {
+    const inss = row({
+      name: 'INSS',
+      behavior: 'INCREASE_AND_DISCOUNT',
+      manualOverride: true,
+      payrollTemplate: {
+        derivedFromSalary: true,
+        fixedByLaw: false,
+        isBase: false,
+        systemKey: 'INSS',
+      },
+    });
+    prisma.payrollSetup.findFirst.mockResolvedValue(inss);
+    prisma.payrollSetup.findMany.mockResolvedValue([
+      { ...inss, manualOverride: false },
+    ]);
+    const sync = jest.spyOn(service, 'syncEmployee');
+    const line = await service.updateLine('c-1', null, 'ps-1', {
+      manualOverride: false,
+    });
+    expect(prisma.payrollSetup.update).toHaveBeenCalledWith({
+      where: { id: 'ps-1' },
+      data: { manualOverride: false },
+    });
+    expect(sync).toHaveBeenCalledWith('c-1', 'e-1');
+    expect(line.manualOverride).toBe(false);
+
+    prisma.payrollSetup.findFirst.mockResolvedValue(row());
+    await expect(
+      service.updateLine('c-1', null, 'ps-1', { manualOverride: false }),
+    ).rejects.toThrow(
+      new BadRequestException('Só INSS e FGTS têm valor à mão'),
+    );
+  });
+
   it('13º e férias não se editam; o INSS à mão deixa de seguir o salário', async () => {
     prisma.payrollSetup.findFirst.mockResolvedValue(
       row({

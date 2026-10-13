@@ -239,7 +239,7 @@ export class SalariesService {
 
         if (employees.length === 0) {
           throw new BadRequestException(
-            'No active employees found in the company',
+            'A empresa não tem colaborador ativo para receber o item',
           );
         }
 

@@ -194,6 +194,7 @@ describe('payroll-math', () => {
         employeePayroll: 500000,
         totalIncrease: 580000,
         totalDiscount: 40000,
+        employeeProvision: 40000,
       });
     });
 

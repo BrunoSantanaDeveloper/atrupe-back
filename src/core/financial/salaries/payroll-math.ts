@@ -100,24 +100,32 @@ export const finalCostOf = (line: PayrollLine) => {
 
 /**
  * Os totais do colaborador: o custo (é o custo de mão de obra do setor na
- * base de custos, ALT-19) e a folha a pagar (sem as provisões nem o
- * adiantamento).
+ * base de custos, ALT-19), a folha a pagar (sem as provisões nem o
+ * adiantamento) e a provisão do mês (custa agora, é paga depois).
  */
 export const employeeTotalsOf = (lines: PayrollLine[]) => {
   let employeeCost = 0;
   let employeePayroll = 0;
   let totalIncrease = 0;
   let totalDiscount = 0;
+  let employeeProvision = 0;
   for (const line of lines) {
     if (!line.isSet) continue;
     const { behavior, increase, discount } = valuesOf(line);
     employeeCost += finalCostOf(line);
+    if (behavior === 'PROVISION') employeeProvision += finalCostOf(line);
     if (behavior === 'ADVANCE') continue;
     totalIncrease += increase;
     totalDiscount += discount;
     if (behavior !== 'PROVISION') employeePayroll += increase - discount;
   }
-  return { employeeCost, employeePayroll, totalIncrease, totalDiscount };
+  return {
+    employeeCost,
+    employeePayroll,
+    totalIncrease,
+    totalDiscount,
+    employeeProvision,
+  };
 };
 
 /**

@@ -123,6 +123,8 @@ export class SalaryTemplatesService {
         fixedByLaw: template.fixedByLaw,
         rate: template.rate,
         isBase,
+        // O item do sistema: BASE_SALARY, INSS, FGTS, THIRTEENTH, VACATION
+        systemKey: template.systemKey,
         linkedEmployees,
         canDelete: !isBase && !system && linkedEmployees === 0,
       };

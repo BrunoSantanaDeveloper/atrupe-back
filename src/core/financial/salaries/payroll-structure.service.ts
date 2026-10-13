@@ -62,6 +62,7 @@ export type PayrollLineDto = {
   increase?: number;
   discount?: number;
   isSet?: boolean;
+  manualOverride?: boolean;
   // O formato de antes, das telas de hoje
   amount?: number;
   type?: 'INCREASE' | 'DISCOUNT' | 'ADVANCE';
@@ -140,6 +141,14 @@ export class PayrollStructureService {
     if (!row) throw new NotFoundException(LINE_NOT_FOUND);
     const template = row.payrollTemplate;
     const isClt = row.employee.contract === 'CLT';
+
+    // INSS ou FGTS com valor à mão voltam a acompanhar o salário (F-4)
+    if (dto.manualOverride === false) {
+      if (!template?.derivedFromSalary || template.fixedByLaw) {
+        bad('Só INSS e FGTS têm valor à mão');
+      }
+      return this.resetOverride(companyId, userId, row);
+    }
     const editsValues =
       dto.behavior !== undefined ||
       dto.increase !== undefined ||
@@ -230,6 +239,38 @@ export class PayrollStructureService {
       userId,
       entity: 'PAYROLL_SETUP',
       entityId: id,
+      action: 'UPDATE',
+      before: this.lineView(row),
+      after: this.lineView(updated),
+    });
+    return {
+      ...this.lineView(updated),
+      employeeCost: totals.employeeCost,
+      employeePayroll: totals.employeePayroll,
+    };
+  }
+
+  private async resetOverride(
+    companyId: string,
+    userId: string | null,
+    row: LineRow,
+  ) {
+    await this.prisma.payrollSetup.update({
+      where: { id: row.id },
+      data: { manualOverride: false },
+    });
+    await this.syncEmployee(companyId, row.employeeId);
+    const lines = await this.prisma.payrollSetup.findMany({
+      where: { employeeId: row.employeeId },
+      select: LINE_SELECT,
+    });
+    const updated = lines.find((line) => line.id === row.id)!;
+    const totals = this.totalsOf(lines);
+    await this.audit.record({
+      companyId,
+      userId,
+      entity: 'PAYROLL_SETUP',
+      entityId: row.id,
       action: 'UPDATE',
       before: this.lineView(row),
       after: this.lineView(updated),
