@@ -15,7 +15,8 @@ import { SalesSettingsService } from './sales-settings.service';
 @ApiTags('Configurações de venda')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard, FeatureGuard)
-@Controller('sales-settings')
+// Rota por módulo (D35): /sale/settings, no lugar do /sales-settings do contrato
+@Controller('sale/settings')
 export class SalesSettingsController {
   constructor(private readonly service: SalesSettingsService) {}
 
