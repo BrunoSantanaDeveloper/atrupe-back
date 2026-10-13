@@ -368,6 +368,105 @@ export class CostBaseSnapshotService {
     };
   }
 
+  /**
+   * As máquinas da empresa como a precificação e a composição leem: cada
+   * configuração produtiva do bem detalhado e cada grupo de bens equivalentes
+   * como uma linha só (P-28), com o custo por unidade já com a parte do
+   * rateio do setor (o grupo, pelo custo médio por unidade dos bens dele).
+   */
+  async machineLines(companyId: string, snapshot: CostBaseSnapshot) {
+    const poolShare = new Map(
+      snapshot.allocations.flatMap((allocation) =>
+        allocation.equipment.map((item) => [item.id, item.poolShare] as const),
+      ),
+    );
+    const groups = await this.prisma.assetGroup.findMany({
+      where: { companyId },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        unit: true,
+        priceRule: true,
+        salePrice: true,
+        profit: true,
+        sector: { select: { name: true } },
+      },
+    });
+    const byGroup = new Map<string, number[]>();
+    const lines = [];
+    for (const { row } of snapshot.assets) {
+      const computed = computeAsset(
+        row,
+        snapshot.today,
+        poolShare.get(row.id) ?? 0,
+      );
+      if (row.groupId) {
+        if (computed.unitCost !== null) {
+          byGroup.set(row.groupId, [
+            ...(byGroup.get(row.groupId) ?? []),
+            computed.unitCost,
+          ]);
+        }
+        continue;
+      }
+      if (!row.detailed) continue;
+      for (const setup of row.setups) {
+        lines.push({
+          id: `setup:${setup.id}`,
+          kind: 'setup' as const,
+          refId: setup.id,
+          name: `${row.name} · ${setup.name}`,
+          code: setup.abbreviation || null,
+          sector: row.sector?.name ?? null,
+          unit: setup.unit,
+          cost: computed.setupUnitCosts.get(setup.id) ?? null,
+          rule: setup.priceRule,
+          price: setup.salePrice ?? null,
+          profit: setup.profit ?? null,
+        });
+      }
+    }
+    const groupLines = groups.map((group) => {
+      const costs = byGroup.get(group.id) ?? [];
+      return {
+        id: `group:${group.id}`,
+        kind: 'group' as const,
+        refId: group.id,
+        name: group.name,
+        code: null as string | null,
+        sector: group.sector?.name ?? null,
+        unit: group.unit,
+        cost: costs.length
+          ? Math.round(
+              costs.reduce((sum, value) => sum + value, 0) / costs.length,
+            )
+          : null,
+        rule: group.priceRule,
+        price: group.salePrice ?? null,
+        profit: group.profit ?? null,
+      };
+    });
+    return [...lines, ...groupLines];
+  }
+
+  /**
+   * O que a composição lê da base de custos (SEG-1): o custo-hora calculado
+   * de cada setor produtivo que já tem horas, e as máquinas com custo e
+   * preço por unidade.
+   */
+  async ratesOf(companyId: string) {
+    const snapshot = await this.load(companyId);
+    return {
+      hourCosts: new Map(
+        snapshot.labor
+          .filter((sector) => sector.costPerHour !== null)
+          .map((sector) => [sector.id, sector.costPerHour as number] as const),
+      ),
+      machines: await this.machineLines(companyId, snapshot),
+    };
+  }
+
   /** A parte do rateio do setor que cabe ao bem no mês (para o patrimônio). */
   async poolOf(companyId: string, assetId: string) {
     const { allocations } = await this.load(companyId);

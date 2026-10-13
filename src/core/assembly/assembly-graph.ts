@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { AssemblyResource } from './assembly-resource.service';
+import { AssemblyResource, hourCostOf } from './assembly-resource.service';
 import {
   LINE_INCLUDE,
   LineRow,
@@ -445,7 +445,7 @@ export class EngineBuilder {
             : block.type === 'PART'
               ? 0
               : block.setupMinutes,
-        sectorHourCost: sector?.hourCost ?? 0,
+        sectorHourCost: hourCostOf(this.graph.resources, sector),
         sectorHourSale: sector?.hourSale ?? 0,
         originalRules: rules.original,
         localRules: rules.local,

@@ -10,6 +10,7 @@ import { PricingParametersService } from '../pricing/pricing-parameters.service'
 import {
   AssemblyResource,
   AssemblyResourceService,
+  hourCostOf,
 } from './assembly-resource.service';
 import {
   ASSEMBLY_MONEY_FIELDS,
@@ -140,7 +141,7 @@ const processBlock = (
   dependsOn: [],
   baseBlockId: null,
   setupMinutes: row.setupMinutes,
-  sectorHourCost: row.sector.hourCost ?? 0,
+  sectorHourCost: hourCostOf(resources, row.sector),
   sectorHourSale: row.sector.hourSale ?? 0,
   originalRules: rulesOf(row.rules),
   localRules: null,

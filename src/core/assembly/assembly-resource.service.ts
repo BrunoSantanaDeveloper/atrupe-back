@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
+import { CostBaseSnapshotService } from '../cost-base/cost-base-snapshot.service';
 import { normalizeText, UNIT_SYMBOL } from '../material/material-text';
 import { EngineOption, ResourceKind } from './engine/types';
 
@@ -23,6 +24,26 @@ export type AssemblyResource = {
   profile?: { x: number; y: number; barLength: number | null };
   weight?: number;
 };
+
+/**
+ * Os recursos resolvidos para o motor, com o custo-hora de cada setor que a
+ * base de custos já calcula (módulo 4). Sem cálculo, vale o custo-hora
+ * informado no setor.
+ */
+export class ResourceMap extends Map<string, AssemblyResource> {
+  hourCosts = new Map<string, number>();
+}
+
+/** O custo-hora do setor da etapa: o calculado, senão o informado. */
+export const hourCostOf = (
+  resources: Map<string, AssemblyResource>,
+  sector: { id: string; hourCost: number | null } | null | undefined,
+) =>
+  sector
+    ? ((resources as ResourceMap).hourCosts?.get(sector.id) ??
+      sector.hourCost ??
+      0)
+    : 0;
 
 export type ResourceFilter = {
   kind?: ResourceKind;
@@ -114,14 +135,43 @@ type SectorRow = {
   hourSale: number | null;
 };
 
-/** A mão de obra do setor, por minuto: custo-hora ÷ 60 e hora vendida ÷ 60. */
-const laborResource = (sector: SectorRow): AssemblyResource => ({
+/**
+ * A mão de obra do setor, por minuto: custo-hora ÷ 60 (o da base de custos,
+ * quando ela já calcula) e hora vendida ÷ 60.
+ */
+const laborResource = (
+  sector: SectorRow,
+  hourCosts: Map<string, number>,
+): AssemblyResource => ({
   resourceId: `labor:${sector.id}`,
   kind: 'LABOR',
   name: `Mão de obra · ${sector.name}`,
   unit: 'min',
-  unitCost: (sector.hourCost ?? 0) / 60,
+  unitCost: (hourCosts.get(sector.id) ?? sector.hourCost ?? 0) / 60,
   unitSale: sector.hourSale === null ? null : sector.hourSale / 60,
+});
+
+type Rates = Awaited<ReturnType<CostBaseSnapshotService['ratesOf']>>;
+
+const NO_RATES: Rates = { hourCosts: new Map(), machines: [] };
+
+/**
+ * A máquina como recurso (CP-21): a configuração produtiva do patrimônio, ou
+ * o grupo de bens equivalentes como um recurso só (P-28), com o custo por
+ * unidade da base de custos e o preço da precificação.
+ */
+const machineResource = (
+  line: Rates['machines'][number],
+): AssemblyResource => ({
+  resourceId:
+    line.kind === 'setup'
+      ? `machine:${line.refId}`
+      : `machine-group:${line.refId}`,
+  kind: 'MACHINE',
+  name: line.name,
+  unit: UNIT_SYMBOL[line.unit],
+  unitCost: line.cost ?? 0,
+  unitSale: line.price,
 });
 
 /** O recurso como opção do motor: a folha passa para metros. */
@@ -168,21 +218,48 @@ export const toEngineOption = (
  *   equipamento não oferece mão de obra, AB-19), pelo custo-hora e pela hora
  *   vendida do setor.
  *
- * Máquina (configuração produtiva do patrimônio) e terceirizado entram com a
- * base de custos (módulo 4) e o orçamento (módulo 2).
+ * - máquina: a configuração produtiva do bem detalhado, ou o grupo de bens
+ *   equivalentes, com o custo por unidade da base de custos (módulo 4).
+ *
+ * O terceirizado entra pelo orçamento (módulo 2).
  */
 @Injectable()
 export class AssemblyResourceService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(AssemblyResourceService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly costBase?: CostBaseSnapshotService,
+  ) {}
+
+  /**
+   * O custo-hora e as máquinas da base de custos. Uma falha no cálculo não
+   * derruba a composição: vale o custo-hora informado e não há máquina.
+   */
+  private async ratesOf(companyId: string): Promise<Rates> {
+    if (!this.costBase) return NO_RATES;
+    try {
+      return await this.costBase.ratesOf(companyId);
+    } catch (error) {
+      this.logger.warn(
+        `Base de custos da empresa ${companyId} não calculada: ${error?.message}`,
+      );
+      return NO_RATES;
+    }
+  }
 
   async list(companyId: string, filter: ResourceFilter) {
     const page = filter.page ?? 1;
     const limit = Math.min(filter.limit ?? 50, RESOURCE_PAGE_LIMIT);
     const search = normalizeText(filter.search);
 
+    const rates = await this.ratesOf(companyId);
     const all = [
       ...(!filter.kind || filter.kind === 'LABOR'
-        ? await this.laborOf(companyId)
+        ? await this.laborOf(companyId, rates.hourCosts)
+        : []),
+      ...(!filter.kind || filter.kind === 'MACHINE'
+        ? rates.machines.map(machineResource)
         : []),
       ...(!filter.kind || filter.kind === 'MATERIAL'
         ? await this.materialsOf(companyId)
@@ -208,7 +285,10 @@ export class AssemblyResourceService {
     companyId: string,
     resourceIds: string[],
   ): Promise<Map<string, AssemblyResource>> {
-    const result = new Map<string, AssemblyResource>();
+    const result = new ResourceMap();
+    const rates = await this.ratesOf(companyId);
+    result.hourCosts = rates.hourCosts;
+    const wanted = new Set(resourceIds);
     const materialIds = new Set<string>();
     const sectorIds = new Set<string>();
     for (const id of resourceIds) {
@@ -216,6 +296,10 @@ export class AssemblyResourceService {
       if (kind === 'material' && key) materialIds.add(key);
       if (kind === 'labor' && key) sectorIds.add(key);
     }
+    rates.machines
+      .map(machineResource)
+      .filter((resource) => wanted.has(resource.resourceId))
+      .forEach((resource) => result.set(resource.resourceId, resource));
 
     if (materialIds.size) {
       const materials = await this.prisma.material.findMany({
@@ -244,7 +328,7 @@ export class AssemblyResourceService {
         },
       });
       sectors
-        .map(laborResource)
+        .map((sector) => laborResource(sector, rates.hourCosts))
         .forEach((resource) => result.set(resource.resourceId, resource));
     }
     return result;
@@ -259,7 +343,7 @@ export class AssemblyResourceService {
     return materials.flatMap(materialResources);
   }
 
-  private async laborOf(companyId: string) {
+  private async laborOf(companyId: string, hourCosts: Map<string, number>) {
     const sectors = await this.prisma.companySector.findMany({
       where: { companyId, isActive: true, saleUnit: 'HOUR' },
       orderBy: { name: 'asc' },
@@ -271,6 +355,6 @@ export class AssemblyResourceService {
         hourSale: true,
       },
     });
-    return sectors.map(laborResource);
+    return sectors.map((sector) => laborResource(sector, hourCosts));
   }
 }

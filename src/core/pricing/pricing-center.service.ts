@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { MaterialPriceRule } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
-import { computeAsset } from '../asset/asset.service';
 import { ProductAssemblyService } from '../assembly/product-assembly.service';
 import { CostAuditService } from '../cost-base/cost-audit.service';
 import {
@@ -18,6 +17,7 @@ import {
   priceStatusOf,
   variablePriceOf,
 } from '../material/material-pricing';
+import { UNIT_SYMBOL } from '../material/material-text';
 import {
   PRICING_GROUPS,
   PricingGroup,
@@ -37,17 +37,6 @@ const ITEM_NOT_FOUND = 'Item não encontrado';
 
 const bad = (message: string): never => {
   throw new BadRequestException(message);
-};
-
-const UNIT_LABEL: Record<string, string> = {
-  M2: 'm²',
-  M: 'm',
-  UNIT: 'un',
-  KM: 'km',
-  HOUR: 'h',
-  DAY: 'dia',
-  KG: 'kg',
-  L: 'l',
 };
 
 export type PricingItem = {
@@ -333,85 +322,25 @@ export class PricingCenterService {
   }
 
   /**
-   * Máquinas: cada configuração produtiva do bem detalhado, com o custo por
-   * unidade já com a parte do rateio do setor; o grupo de bens equivalentes
-   * entra como uma linha só, pelo custo médio por unidade (P-28).
+   * Máquinas: cada configuração produtiva do bem detalhado e cada grupo de
+   * bens equivalentes como uma linha só (P-28), com o custo por unidade já
+   * com a parte do rateio do setor. A composição lê a mesma lista.
    */
   private async machinesOf(companyId: string, snapshot: CostBaseSnapshot) {
     const costDate = this.costDateOf(snapshot);
-    const poolShare = new Map(
-      snapshot.allocations.flatMap((allocation) =>
-        allocation.equipment.map((item) => [item.id, item.poolShare] as const),
-      ),
-    );
-    const groups = await this.prisma.assetGroup.findMany({
-      where: { companyId },
-      orderBy: { name: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        unit: true,
-        priceRule: true,
-        salePrice: true,
-        profit: true,
-        sector: { select: { name: true } },
-      },
-    });
-    const byGroup = new Map<string, number[]>();
-    const lines = [];
-    for (const { row } of snapshot.assets) {
-      const computed = computeAsset(
-        row,
-        snapshot.today,
-        poolShare.get(row.id) ?? 0,
-      );
-      if (row.groupId) {
-        if (computed.unitCost !== null) {
-          byGroup.set(row.groupId, [
-            ...(byGroup.get(row.groupId) ?? []),
-            computed.unitCost,
-          ]);
-        }
-        continue;
-      }
-      if (!row.detailed) continue;
-      for (const setup of row.setups) {
-        const cost = computed.setupUnitCosts.get(setup.id) ?? null;
-        lines.push({
-          id: `setup:${setup.id}`,
-          name: `${row.name} · ${setup.name}`,
-          code: setup.abbreviation || null,
-          sector: row.sector?.name ?? null,
-          unit: UNIT_LABEL[setup.unit] ?? setup.unit,
-          cost,
-          costUpdatedAt: cost === null ? null : costDate,
-          rule: setup.priceRule,
-          price: setup.salePrice ?? null,
-          profit: setup.profit ?? null,
-        });
-      }
-    }
-    const groupLines = groups.map((group) => {
-      const costs = byGroup.get(group.id) ?? [];
-      const cost = costs.length
-        ? Math.round(
-            costs.reduce((sum, value) => sum + value, 0) / costs.length,
-          )
-        : null;
-      return {
-        id: `group:${group.id}`,
-        name: group.name,
-        code: null,
-        sector: group.sector?.name ?? null,
-        unit: UNIT_LABEL[group.unit] ?? group.unit,
-        cost,
-        costUpdatedAt: cost === null ? null : costDate,
-        rule: group.priceRule,
-        price: group.salePrice ?? null,
-        profit: group.profit ?? null,
-      };
-    });
-    return [...lines, ...groupLines];
+    const lines = await this.snapshots.machineLines(companyId, snapshot);
+    return lines.map((line) => ({
+      id: line.id,
+      name: line.name,
+      code: line.code,
+      sector: line.sector,
+      unit: UNIT_SYMBOL[line.unit],
+      cost: line.cost,
+      costUpdatedAt: line.cost === null ? null : costDate,
+      rule: line.rule,
+      price: line.price,
+      profit: line.profit,
+    }));
   }
 
   /** Materiais: o material, ou cada marca × cor dele (MT-3). */
@@ -448,7 +377,7 @@ export class PricingCenterService {
       const base = {
         code: material.code,
         sector: material.sector?.name ?? null,
-        unit: UNIT_LABEL[material.unit] ?? material.unit,
+        unit: UNIT_SYMBOL[material.unit],
         rule: material.priceRule,
       };
       const date = (value: Date | null) =>

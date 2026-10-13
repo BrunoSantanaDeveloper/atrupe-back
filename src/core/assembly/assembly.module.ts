@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from 'nestjs-prisma';
 import { AuthModule } from '../auth/auth.module';
+import { CostBaseModule } from '../cost-base/cost-base.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { ProductModule } from '../product/product.module';
 import { AssemblyResourceController } from './assembly-resource.controller';
@@ -20,7 +21,14 @@ import { ProductSaleService } from './product-sale.service';
  * servidor (SEG-1).
  */
 @Module({
-  imports: [AuthModule, PrismaModule, PricingModule, ProductModule],
+  // A base de custos dá o custo-hora calculado e as máquinas (módulo 4)
+  imports: [
+    AuthModule,
+    PrismaModule,
+    PricingModule,
+    ProductModule,
+    CostBaseModule,
+  ],
   controllers: [
     AssemblyResourceController,
     ProcessController,
