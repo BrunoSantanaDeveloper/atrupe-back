@@ -1716,6 +1716,13 @@ export class NfseService {
             IncCult: 2, // 2 = Não
             Status: 1, // 1 = Normal
             tpAmb: environment === 'PRODUCAO' ? 1 : 2,
+            // finNFSe e' 1-1 no layout da Reforma (v8, C36) e vem logo depois
+            // de tpAmb na sequencia do XSD. Nunca mandavamos: o provedor
+            // preenchia 0 sozinho e, no emissor fora do Simples, escrevia a
+            // tag entre tpEmit e cLocEmi do DPS, posicao que o Ambiente
+            // Nacional recusa (E1235). 0 = NFS-e regular; credito (1) e
+            // debito (2) sao outros fluxos, que o sistema nao emite.
+            finNFSe: 0,
             Prestador: {
               CNPJ_prest: (config.company.cnpj || '').replace(/\D/g, ''),
               xNome: config.company.legalName || '',

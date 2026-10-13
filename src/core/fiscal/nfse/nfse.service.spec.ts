@@ -297,6 +297,22 @@ describe('NfseService', () => {
       });
     });
 
+    /**
+     * finNFSe e' 1-1 no layout da Reforma do provedor e vem logo depois de
+     * tpAmb no XSD. Omitido, o provedor preenchia sozinho — e no emissor fora
+     * do Simples escrevia a tag fora de posicao no DPS (E1235).
+     */
+    it('declara a finalidade da NFS-e como regular', async () => {
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Serviço de consultoria em TI',
+      });
+
+      const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+      expect(documentos[0].Documento.RPS[0].finNFSe).toBe(0);
+    });
+
     it('should emit NFSe from order', async () => {
       const result = await service.emitFromOrder(mockCompanyId, {
         orderId: mockOrderId,

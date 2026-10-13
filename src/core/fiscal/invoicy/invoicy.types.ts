@@ -520,6 +520,8 @@ export interface InvoicyNfseRps {
   IncCult: number;
   Status: number;
   tpAmb: number;
+  /** Finalidade da NFS-e: 0 = regular, 1 = crédito, 2 = débito. 1-1 no layout. */
+  finNFSe?: number;
   Prestador: InvoicyNfsePrestador;
   ListaItens: InvoicyNfseListaItem[];
   Servico: InvoicyNfseServico;
