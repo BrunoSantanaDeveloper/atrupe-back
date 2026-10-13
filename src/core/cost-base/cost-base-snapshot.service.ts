@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { CostCriterion, Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 import { ASSET_INCLUDE, computeAsset } from '../asset/asset.service';
+import { chargesTotalOf } from '../pricing/pricing-math';
+import { PricingParametersService } from '../pricing/pricing-parameters.service';
 import { activityHoursOf } from '../asset/asset-math';
 import {
   employeeTotalsOf,
@@ -98,7 +100,10 @@ export const manualSharesOf = (value: unknown) =>
  */
 @Injectable()
 export class CostBaseSnapshotService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pricing: PricingParametersService,
+  ) {}
 
   async load(companyId: string, today = new Date()) {
     const reference = referenceMonthOf(today);
@@ -318,6 +323,7 @@ export class CostBaseSnapshotService {
       .filter((allocation) => allocation !== null);
 
     // A mão de obra de cada setor produtivo (F-11)
+    const charges = chargesTotalOf(await this.pricing.chargesOf(companyId));
     const hoursOf = new Map(
       workloads.map((workload) => [workload.employeeId, workload]),
     );
@@ -343,8 +349,8 @@ export class CostBaseSnapshotService {
             totalCost: costById.get(sector.id)?.totalCost ?? null,
             hours: collaborators.map((collaborator) => collaborator.hours),
             salePrice: sector.hourSale ?? null,
-            // Os encargos da precificação entram com ela (fatia 5.4)
-            charges: 0,
+            // A margem é a da precificação: depois dos encargos (PR-3)
+            charges,
           }),
           collaborators,
         };
