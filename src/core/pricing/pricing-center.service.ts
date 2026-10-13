@@ -35,6 +35,9 @@ import {
 
 const ITEM_NOT_FOUND = 'Item não encontrado';
 
+const count = (items: { status: string }[], status: string) =>
+  items.filter((item) => item.status === status).length;
+
 const bad = (message: string): never => {
   throw new BadRequestException(message);
 };
@@ -83,9 +86,12 @@ export class PricingCenterService {
       groups.push({
         group,
         total: items.length,
-        priced: items.filter((item) => !!item.price).length,
-        pending: items.filter((item) => !item.price).length,
-        belowCost: items.filter((item) => item.status === 'BELOW_COST').length,
+        // As contagens seguem a situação de cada item, como os filtros da
+        // lista: precificado (inclusive abaixo do custo), sem preço e sem custo
+        priced: count(items, 'PRICED') + count(items, 'BELOW_COST'),
+        pending: count(items, 'PENDING'),
+        noCost: count(items, 'NO_COST'),
+        belowCost: count(items, 'BELOW_COST'),
       });
     }
     return {
