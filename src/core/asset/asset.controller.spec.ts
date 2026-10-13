@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { AssetController } from './asset.controller';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
@@ -8,20 +9,29 @@ import {
 } from '../plan/guards/feature.guard';
 
 describe('AssetController', () => {
-  const req = { user: { companyId: 'c1', userId: 'u1' } };
-  let service: Record<string, jest.Mock>;
+  let assets: Record<string, jest.Mock>;
+  let groups: Record<string, jest.Mock>;
+  let abac: { hasPermission: jest.Mock };
   let controller: AssetController;
+  // Cada requisição nova: a resposta de "ver valores" fica guardada nela
+  const req = () => ({ user: { companyId: 'c1', userId: 'u1' } });
 
   beforeEach(() => {
-    service = {
-      create: jest.fn(),
-      findAll: jest.fn(),
-      findAllTypes: jest.fn(),
-      findOne: jest.fn(),
-      update: jest.fn(),
-      remove: jest.fn(),
+    const mock = () => jest.fn().mockResolvedValue({});
+    assets = {
+      list: mock(),
+      quantity: mock(),
+      detail: mock(),
+      create: mock(),
+      update: mock(),
+      toggle: mock(),
+      sell: mock(),
+      addCost: mock(),
+      addSetup: mock(),
     };
-    controller = new AssetController(service as any);
+    groups = { list: mock(), create: mock(), rename: mock(), remove: mock() };
+    abac = { hasPermission: jest.fn().mockResolvedValue(true) };
+    controller = new AssetController(assets as any, groups as any, abac as any);
   });
 
   it('a classe inteira exige a base de custos, depois do login', () => {
@@ -37,19 +47,31 @@ describe('AssetController', () => {
 
   it('toda rota usa a empresa da sessão', async () => {
     const dto: any = { name: 'Plotter', companyId: 'c2' };
+    await controller.findAll(req(), {});
+    await controller.findOne(req(), 'a-1');
+    await controller.create(req(), dto);
+    await controller.update(req(), 'a-1', dto);
+    await controller.createGroup(req(), dto);
 
-    await controller.create(req, dto);
-    await controller.findAll(req, 10, 1);
-    await controller.allTypes(req);
-    await controller.findOne(req, 'a-1');
-    await controller.update(req, 'a-1', dto);
-    await controller.remove(req, 'a-1');
+    expect(assets.list).toHaveBeenCalledWith('c1', {}, true);
+    expect(assets.detail).toHaveBeenCalledWith('c1', 'a-1', true);
+    expect(assets.create).toHaveBeenCalledWith('c1', 'u1', dto);
+    expect(assets.update).toHaveBeenCalledWith('c1', 'u1', 'a-1', dto);
+    expect(groups.create).toHaveBeenCalledWith('c1', 'u1', dto);
+  });
 
-    expect(service.create).toHaveBeenCalledWith('c1', dto);
-    expect(service.findAll).toHaveBeenCalledWith('c1', 10, 1);
-    expect(service.findAllTypes).toHaveBeenCalledWith('c1');
-    expect(service.findOne).toHaveBeenCalledWith('c1', 'a-1');
-    expect(service.update).toHaveBeenCalledWith('c1', 'a-1', dto);
-    expect(service.remove).toHaveBeenCalledWith('c1', 'a-1');
+  it('sem ver valores: a leitura sai sem valores e a escrita é recusada', async () => {
+    abac.hasPermission.mockResolvedValue(false);
+    await controller.findOne(req(), 'a-1');
+    expect(assets.detail).toHaveBeenCalledWith('c1', 'a-1', false);
+
+    await expect(controller.create(req(), {} as any)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await expect(
+      controller.sell(req(), 'a-1', {} as any),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(assets.create).not.toHaveBeenCalled();
+    expect(assets.sell).not.toHaveBeenCalled();
   });
 });

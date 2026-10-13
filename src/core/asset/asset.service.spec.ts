@@ -1,157 +1,173 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AssetService } from './asset.service';
 
 /**
- * Patrimônios de duas empresas no mesmo banco: a empresa da sessão só
- * enxerga e altera os seus.
+ * Patrimônios: a empresa da sessão só enxerga e altera os seus; o cadastro
+ * rápido nasce com 60 meses e 30 %; a venda calcula o restante pela
+ * depreciação acumulada até a data (P-25) e lança a receita.
  */
-const ASSETS = [
-  { id: 'a-1', name: 'Plotter', companyId: 'c1', sectorId: 's-1' },
-  { id: 'a-2', name: 'Router CNC', companyId: 'c2', sectorId: 's-2' },
-];
-const SECTORS = [
-  { id: 's-1', companyId: 'c1' },
-  { id: 's-2', companyId: 'c2' },
-];
-const TYPES = [
-  { id: 't-padrao', companyId: null },
-  { id: 't-c1', companyId: 'c1' },
-  { id: 't-c2', companyId: 'c2' },
-];
-
-/** Filtro de igualdade simples, com o `OR` de empresa dos tipos. */
-const matches = (row: any, where: any): boolean =>
-  Object.entries(where).every(([field, value]) =>
-    field === 'OR'
-      ? (value as any[]).some((alt) => matches(row, alt))
-      : row[field] === value,
-  );
-
-function buildPrisma() {
-  return {
-    asset: {
-      findMany: jest.fn(async ({ where }) =>
-        ASSETS.filter((a) => matches(a, where)),
-      ),
-      findFirst: jest.fn(
-        async ({ where }) => ASSETS.find((a) => matches(a, where)) ?? null,
-      ),
-      findUnique: jest.fn(
-        async ({ where }) => ASSETS.find((a) => a.id === where.id) ?? null,
-      ),
-      create: jest.fn(async ({ data }) => ({ id: 'a-novo', ...data })),
-      update: jest.fn(async ({ where, data }) => ({ id: where.id, ...data })),
-      delete: jest.fn(async ({ where }) => ({ id: where.id })),
+describe('AssetService', () => {
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    id: 'a-1',
+    companyId: 'c1',
+    name: 'Impressora Sublimática',
+    imageUrl: null,
+    kind: 'MACHINES',
+    sectorId: 's-1',
+    sector: {
+      id: 's-1',
+      name: 'Impressão',
+      allocationCriterion: 'ACQUISITION_VALUE',
     },
-    assetType: {
-      findMany: jest.fn(async ({ where }) =>
-        TYPES.filter((t) => matches(t, where)),
-      ),
-      findFirst: jest.fn(
-        async ({ where }) => TYPES.find((t) => matches(t, where)) ?? null,
-      ),
-    },
-    companySector: {
-      findFirst: jest.fn(
-        async ({ where }) => SECTORS.find((s) => matches(s, where)) ?? null,
-      ),
-    },
-  };
-}
+    groupId: null,
+    group: null,
+    detailed: true,
+    unit: 'M2',
+    monthlyProductivity: 164,
+    acquisitionDate: new Date('2022-05-27T00:00:00Z'),
+    acquisitionValue: 4_000_000,
+    usefulLifeMonths: 120,
+    residualPercent: 30,
+    usefulLifeReviewedAt: null,
+    active: true,
+    inactivatedAt: null,
+    inactiveReason: null,
+    soldAt: null,
+    saleValue: null,
+    saleResult: null,
+    saleReceivableId: null,
+    costs: [],
+    setups: [],
+    ...overrides,
+  });
 
-describe('AssetService — isolamento por empresa', () => {
-  let prisma: ReturnType<typeof buildPrisma>;
+  let prisma: any;
+  let audit: { record: jest.Mock };
   let service: AssetService;
 
   beforeEach(() => {
-    prisma = buildPrisma();
-    service = new AssetService(prisma as any);
-  });
-
-  it('a listagem traz só os patrimônios da empresa da sessão', async () => {
-    const list = await service.findAll('c1', 10, 1);
-
-    expect(list.map((a) => a.id)).toEqual(['a-1']);
-    expect(prisma.asset.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { companyId: 'c1' } }),
-    );
-  });
-
-  it('ler o patrimônio de outra empresa responde 404', async () => {
-    await expect(service.findOne('c1', 'a-2')).rejects.toThrow(
-      NotFoundException,
-    );
-    await expect(service.findOne('c1', 'a-1')).resolves.toMatchObject({
-      id: 'a-1',
-    });
-  });
-
-  it('editar ou excluir o patrimônio de outra empresa responde 404 e não grava', async () => {
-    await expect(
-      service.update('c1', 'a-2', { name: 'Trocado' }),
-    ).rejects.toThrow(NotFoundException);
-    await expect(service.remove('c1', 'a-2')).rejects.toThrow(
-      NotFoundException,
-    );
-
-    expect(prisma.asset.update).not.toHaveBeenCalled();
-    expect(prisma.asset.delete).not.toHaveBeenCalled();
-  });
-
-  it('criar usa a empresa da sessão e ignora a do corpo', async () => {
-    await service.create('c1', {
-      name: 'Impressora UV',
-      purchaseValue: 1000,
-      residualValue: 100,
-      usefulLife: 60,
-      typeId: 't-padrao',
-      sectorId: 's-1',
-      companyId: 'c2',
-    });
-
-    expect(prisma.asset.create).toHaveBeenCalledWith({
-      data: {
-        name: 'Impressora UV',
-        purchaseValue: 1000,
-        residualValue: 100,
-        usefulLife: 60,
-        typeId: 't-padrao',
-        sectorId: 's-1',
-        companyId: 'c1',
-      },
-    });
-  });
-
-  it('editar não muda a empresa do patrimônio', async () => {
-    await service.update('c1', 'a-1', { name: 'Plotter 2', companyId: 'c2' });
-
-    expect(prisma.asset.update).toHaveBeenCalledWith({
-      where: { id: 'a-1' },
-      data: { name: 'Plotter 2' },
-    });
-  });
-
-  it('setor ou tipo de outra empresa responde 404 e não grava', async () => {
-    const base = {
-      name: 'Laser',
-      purchaseValue: 1000,
-      residualValue: 0,
-      usefulLife: 60,
+    const tx = {
+      receivable: { create: jest.fn().mockResolvedValue({ id: 'r-1' }) },
+      receivableInstallment: { create: jest.fn() },
+      asset: { update: jest.fn() },
     };
-
-    await expect(
-      service.create('c1', { ...base, typeId: 't-c1', sectorId: 's-2' }),
-    ).rejects.toThrow(NotFoundException);
-    await expect(
-      service.create('c1', { ...base, typeId: 't-c2', sectorId: 's-1' }),
-    ).rejects.toThrow(NotFoundException);
-
-    expect(prisma.asset.create).not.toHaveBeenCalled();
+    prisma = {
+      asset: {
+        findFirst: jest.fn(async ({ where }) =>
+          where.id === 'a-1' && where.companyId === 'c1' ? row() : null,
+        ),
+        create: jest.fn(async ({ data }) => row({ ...data, id: 'a-novo' })),
+      },
+      companySector: {
+        findFirst: jest.fn(async ({ where }) =>
+          where.id === 's-1' && where.companyId === 'c1' ? { id: 's-1' } : null,
+        ),
+        updateMany: jest.fn(),
+      },
+      subCategory: { findFirst: jest.fn() },
+      bankAccount: { findFirst: jest.fn() },
+      assemblyLineOption: { findMany: jest.fn().mockResolvedValue([]) },
+      $transaction: jest.fn(async (fn) => fn(tx)),
+      tx,
+    };
+    audit = { record: jest.fn() };
+    service = new AssetService(prisma, audit as any);
   });
 
-  it('os tipos listados são os padrão e os da empresa', async () => {
-    const types = await service.findAllTypes('c1');
+  it('bem de outra empresa responde como inexistente', async () => {
+    await expect(service.detail('c2', 'a-1', true)).rejects.toThrow(
+      new NotFoundException('Patrimônio não encontrado'),
+    );
+  });
 
-    expect(types.map((t) => t.id)).toEqual(['t-padrao', 't-c1']);
+  it('cadastro rápido: setor da empresa, unidade no detalhado, 60 meses e 30 %', async () => {
+    const dto: any = {
+      name: 'Impressora UV',
+      kind: 'MACHINES',
+      sectorId: 's-1',
+      detailed: true,
+      unit: 'M2',
+      acquisitionValue: 6_000_000,
+    };
+    await expect(
+      service.create('c1', 'u1', { ...dto, sectorId: 's-9' }),
+    ).rejects.toThrow(new NotFoundException('Setor não encontrado'));
+    await expect(
+      service.create('c1', 'u1', { ...dto, unit: undefined }),
+    ).rejects.toThrow(
+      new BadRequestException('Informe a unidade do bem detalhado'),
+    );
+    await expect(
+      service.create('c1', 'u1', {
+        ...dto,
+        imageUrl: 'data:image/png;base64,AAA',
+      }),
+    ).rejects.toThrow(
+      new BadRequestException('Envie a foto pelo upload de arquivos'),
+    );
+
+    await service.create('c1', 'u1', dto);
+    expect(prisma.asset.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          companyId: 'c1',
+          usefulLifeMonths: 60,
+          residualPercent: 30,
+        }),
+      }),
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entity: 'ASSET',
+        action: 'CREATE',
+        userId: 'u1',
+      }),
+    );
+  });
+
+  it('venda: restante pela depreciação acumulada até a data e receita lançada', async () => {
+    prisma.subCategory.findFirst.mockResolvedValue({
+      id: 'conta-receita',
+      natureId: 'n-1',
+      nature: { level1: '01' },
+    });
+    const res = await service.sell('c1', 'u1', 'a-1', {
+      value: 1_500_000,
+      date: '2026-09-30',
+      financialNatureId: 'conta-receita',
+    });
+    // 4.000.000 − 23.333 × 52 meses
+    expect(res).toEqual({
+      received: 1_500_000,
+      remaining: 2_786_684,
+      result: -1_286_684,
+      financialEntryId: 'r-1',
+    });
+    expect(prisma.tx.receivable.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        companyId: 'c1',
+        totalAmount: 1_500_000,
+        subCategoryId: 'conta-receita',
+      }),
+    });
+    expect(prisma.tx.asset.update).toHaveBeenCalledWith({
+      where: { id: 'a-1' },
+      data: expect.objectContaining({ active: false, inactiveReason: 'Venda' }),
+    });
+  });
+
+  it('venda pede conta de receita', async () => {
+    prisma.subCategory.findFirst.mockResolvedValue({
+      id: 'conta-despesa',
+      natureId: 'n-2',
+      nature: { level1: '02' },
+    });
+    await expect(
+      service.sell('c1', 'u1', 'a-1', {
+        value: 100,
+        date: '2026-09-30',
+        financialNatureId: 'conta-despesa',
+      }),
+    ).rejects.toThrow('Escolha uma conta de receita do plano de contas');
   });
 });

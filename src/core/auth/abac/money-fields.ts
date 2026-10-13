@@ -14,6 +14,9 @@ export const MONEY_COLUMNS = {
     'fixedMonthlyCost',
     'variableQualityMonthlyCost',
     'variableTotalMonthlyCost',
+    'acquisitionValue',
+    'saleValue',
+    'saleResult',
   ],
   Quotation: ['totalValue'],
   QuotationProduct: [
@@ -50,7 +53,20 @@ const columnsOf = (...models: MoneyModel[]): string[] => [
 export const PRODUCT_MONEY_FIELDS = columnsOf('ProductItem');
 
 /** Patrimônio: aquisição, residual e custos mensais */
-export const ASSET_MONEY_FIELDS = columnsOf('Asset');
+export const ASSET_MONEY_FIELDS = [
+  ...columnsOf('Asset'),
+  // O que as respostas do patrimônio calculam (módulo 4); residualValue já
+  // é coluna (legada)
+  'depreciableValue',
+  'monthlyDepreciation',
+  'depreciatedValue',
+  'remainingValue',
+  'ownCost',
+  'unitCost',
+  'monthlyCost',
+  'salePrice',
+  'averageCost',
+];
 
 /**
  * Relatórios de venda que o painel inicial usa: resumo, evolução e

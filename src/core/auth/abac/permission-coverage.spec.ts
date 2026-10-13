@@ -28,17 +28,10 @@ const APOIO =
 const NO_HANDLER = 'permissão conferida no handler';
 const SEM_LOGIN = 'fluxo de acesso sem login (cadastro, senha, verificação)';
 const EXTERNO = 'consulta externa (CEP, CNPJ, documento), sem dado da empresa';
-const PATRIMONIO = 'patrimônio: as chaves entram com a tela do módulo';
 
 const ROTAS_LIVRES: Record<string, string> = {
   'AddressController.zipcode': EXTERNO,
   'AddressController.findClientAddresses': APOIO,
-  'AssetController.create': PATRIMONIO,
-  'AssetController.findAll': PATRIMONIO,
-  'AssetController.allTypes': PATRIMONIO,
-  'AssetController.findOne': PATRIMONIO,
-  'AssetController.update': PATRIMONIO,
-  'AssetController.remove': PATRIMONIO,
   'BankController.findAll': APOIO,
   'BankController.findAllByCondition': APOIO,
   'BankController.getBankAccountsInUse': APOIO,

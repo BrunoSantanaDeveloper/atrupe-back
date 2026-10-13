@@ -1,12 +1,15 @@
 import { Module } from '@nestjs/common';
-import { AssetService } from './asset.service';
-import { AssetController } from './asset.controller';
-import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from 'nestjs-prisma';
+import { AuthModule } from '../auth/auth.module';
+import { CostAuditModule } from '../cost-base/cost-audit.module';
+import { AssetGroupService } from './asset-group.service';
+import { AssetController } from './asset.controller';
+import { AssetService } from './asset.service';
 
 @Module({
-  imports: [AuthModule, PrismaModule],
+  imports: [AuthModule, PrismaModule, CostAuditModule],
   controllers: [AssetController],
-  providers: [AssetService],
+  providers: [AssetService, AssetGroupService],
+  exports: [AssetService, AssetGroupService],
 })
 export class AssetModule {}

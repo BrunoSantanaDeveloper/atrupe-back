@@ -80,10 +80,17 @@
     },
     {
       "method": "GET",
-      "path": "/asset/types",
+      "path": "/asset/quantity",
       "feature": "cost_base",
       "minPlan": "PRO",
-      "where": "src/core/asset/asset.controller.ts (classe, FeatureGuard)"
+      "where": "src/core/asset/asset.controller.ts (quantity, FeatureGuard)"
+    },
+    {
+      "method": "GET",
+      "path": "/asset/group?page=1&limit=1",
+      "feature": "cost_base",
+      "minPlan": "PRO",
+      "where": "src/core/asset/asset.controller.ts (findGroups, FeatureGuard)"
     },
     {
       "method": "GET",

@@ -1,79 +1,295 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
-  UseGuards,
+  Get,
+  HttpCode,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
   Query,
   Req,
+  UseGuards,
 } from '@nestjs/common';
-import { AssetService } from './asset.service';
-import { CreateAssetDto } from './dto/create-asset.dto';
-import { UpdateAssetDto } from './dto/update-asset.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt.guard';
-import { PermissionsGuard } from '../auth/abac/permissions.guard';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { AbacService } from '../auth/abac/abac.service';
+import { HasAnyPermission } from '../auth/abac/has-any-permission.decorator';
+import { HasPermission } from '../auth/abac/has-permission.decorator';
 import { MoneyFields } from '../auth/abac/money-fields.decorator';
 import { ASSET_MONEY_FIELDS } from '../auth/abac/money-fields';
-import { FeatureGuard } from '../plan/guards/feature.guard';
+import {
+  PermissionsGuard,
+  permissionDenied,
+} from '../auth/abac/permissions.guard';
+import {
+  VALUES_PERMISSION,
+  canViewValues,
+} from '../auth/abac/values-visibility.interceptor';
+import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { RequiresFeature } from '../plan/decorators/requires-feature.decorator';
+import { FeatureGuard } from '../plan/guards/feature.guard';
+import { AssetGroupService, GROUP_NOT_FOUND } from './asset-group.service';
+import { ASSET_NOT_FOUND, AssetService } from './asset.service';
+import {
+  AssetCostDto,
+  AssetFilterDto,
+  AssetSetupDto,
+  CreateAssetDto,
+  CreateAssetGroupDto,
+  GroupFilterDto,
+  RenameAssetGroupDto,
+  SellAssetDto,
+  ToggleAssetDto,
+  UpdateAssetCostDto,
+  UpdateAssetDto,
+  UpdateAssetSetupDto,
+} from './dto/asset.dto';
 
-const RESOURCE = 'asset';
-// Patrimônios são da base de custos (plano PRO). A empresa é sempre a da
-// sessão: o id de outra empresa responde 404. A reescrita completa
-// (permissões, filtros) é do módulo 4.
+const BASE = 'cost:base';
+
+// O id que não é UUID responde como o que não existe
+const AssetId = new ParseUUIDPipe({
+  exceptionFactory: () => new NotFoundException(ASSET_NOT_FOUND),
+});
+const GroupId = new ParseUUIDPipe({
+  exceptionFactory: () => new NotFoundException(GROUP_NOT_FOUND),
+});
+const ItemId = new ParseUUIDPipe({
+  exceptionFactory: () => new NotFoundException('Item não encontrado'),
+});
+
+/**
+ * Patrimônios (módulo 4, PRO): cadastro, depreciação, custos, configurações
+ * produtivas, venda e grupos de bens equivalentes. Tela de método (SEG-6):
+ * `cost:base`, a base de custos no plano e, para escrever, ver valores. Sem
+ * `values:values:view`, a leitura sai sem os valores. O acesso fica no
+ * registro de atividade; as escritas, no histórico de custo (SEG-4).
+ */
+@ApiTags('Patrimônios')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard, FeatureGuard)
 @RequiresFeature('cost_base')
-@Controller(RESOURCE)
+@Controller('asset')
 export class AssetController {
-  constructor(private readonly assetService: AssetService) {}
+  constructor(
+    private readonly assets: AssetService,
+    private readonly groups: AssetGroupService,
+    private readonly abac: AbacService,
+  ) {}
 
-  @Post()
-  // @HasPermission(AbacAction.Create, RESOURCE)
-  create(@Req() req, @Body() createAssetDto: CreateAssetDto) {
-    return this.assetService.create(req.user.companyId, createAssetDto);
+  // Escrever custo pede também ver valores
+  private async writer(req) {
+    if (!(await canViewValues(req, this.abac))) {
+      throw permissionDenied([VALUES_PERMISSION]);
+    }
+    return { companyId: req.user.companyId, userId: req.user.userId };
   }
+
+  /* --------------------------------------------- rotas literais antes de :id */
 
   @Get()
+  @HasPermission('view', BASE)
   @MoneyFields(...ASSET_MONEY_FIELDS)
-  // @HasPermission(AbacAction.List, RESOURCE)
-  findAll(
-    @Req() req,
-    @Query('pageSize') pageSize: number = 10,
-    @Query('page') page: number = 1,
-  ) {
-    return this.assetService.findAll(req.user.companyId, pageSize, page);
+  @ApiOperation({ summary: 'Lista os patrimônios com a depreciação' })
+  async findAll(@Req() req, @Query() filter: AssetFilterDto) {
+    return this.assets.list(
+      req.user.companyId,
+      filter,
+      await canViewValues(req, this.abac),
+    );
   }
 
-  // Antes de `:id`, para não ser lido como um id.
-  @Get('/types')
-  // @HasPermission(AbacAction.List, RESOURCE)
-  allTypes(@Req() req) {
-    return this.assetService.findAllTypes(req.user.companyId);
+  @Get('quantity')
+  @HasPermission('view', BASE)
+  @ApiOperation({ summary: 'Contagem por situação' })
+  quantity(@Req() req) {
+    return this.assets.quantity(req.user.companyId);
   }
+
+  @Get('group')
+  @HasPermission('view', BASE)
+  @MoneyFields(...ASSET_MONEY_FIELDS)
+  @ApiOperation({ summary: 'Grupos de bens equivalentes' })
+  async findGroups(@Req() req, @Query() filter: GroupFilterDto) {
+    return this.groups.list(
+      req.user.companyId,
+      filter,
+      await canViewValues(req, this.abac),
+    );
+  }
+
+  // A tela usa cost:base:edit no botão "novo": as duas valem (ALT-6)
+  @Post('group')
+  @HasAnyPermission(
+    { action: 'create', resource: BASE },
+    { action: 'edit', resource: BASE },
+  )
+  @ApiOperation({ summary: 'Cria um grupo de bens equivalentes' })
+  async createGroup(@Req() req, @Body() dto: CreateAssetGroupDto) {
+    const { companyId, userId } = await this.writer(req);
+    return this.groups.create(companyId, userId, dto);
+  }
+
+  @Patch('group/:id')
+  @HasPermission('edit', BASE)
+  @ApiOperation({ summary: 'Renomeia o grupo' })
+  async renameGroup(
+    @Req() req,
+    @Param('id', GroupId) id: string,
+    @Body() dto: RenameAssetGroupDto,
+  ) {
+    const { companyId, userId } = await this.writer(req);
+    return this.groups.rename(companyId, userId, id, dto);
+  }
+
+  @Delete('group/:id')
+  @HttpCode(204)
+  @HasPermission('delete', BASE)
+  @ApiOperation({ summary: 'Exclui o grupo vazio' })
+  async removeGroup(@Req() req, @Param('id', GroupId) id: string) {
+    await this.groups.remove(req.user.companyId, req.user.userId, id);
+  }
+
+  /* ------------------------------------------------------------------ bem */
 
   @Get(':id')
+  @HasPermission('view', BASE)
   @MoneyFields(...ASSET_MONEY_FIELDS)
-  // @HasPermission(AbacAction.Get, RESOURCE)
-  findOne(@Req() req, @Param('id') id: string) {
-    return this.assetService.findOne(req.user.companyId, id);
+  @ApiOperation({ summary: 'O bem com custos, configurações e processos' })
+  async findOne(@Req() req, @Param('id', AssetId) id: string) {
+    return this.assets.detail(
+      req.user.companyId,
+      id,
+      await canViewValues(req, this.abac),
+    );
+  }
+
+  @Post()
+  @HasAnyPermission(
+    { action: 'create', resource: BASE },
+    { action: 'edit', resource: BASE },
+  )
+  @ApiOperation({ summary: 'Cadastro rápido do patrimônio' })
+  async create(@Req() req, @Body() dto: CreateAssetDto) {
+    const { companyId, userId } = await this.writer(req);
+    return this.assets.create(companyId, userId, dto);
   }
 
   @Patch(':id')
-  // @HasPermission(AbacAction.Update, RESOURCE)
-  update(
+  @HasPermission('edit', BASE)
+  @ApiOperation({ summary: 'Edita o patrimônio' })
+  async update(
     @Req() req,
-    @Param('id') id: string,
-    @Body() updateAssetDto: UpdateAssetDto,
+    @Param('id', AssetId) id: string,
+    @Body() dto: UpdateAssetDto,
   ) {
-    return this.assetService.update(req.user.companyId, id, updateAssetDto);
+    const { companyId, userId } = await this.writer(req);
+    return this.assets.update(companyId, userId, id, dto);
   }
 
-  @Delete(':id')
-  // @HasPermission(AbacAction.Delete, RESOURCE)
-  remove(@Req() req, @Param('id') id: string) {
-    return this.assetService.remove(req.user.companyId, id);
+  @Patch(':id/toggle-status')
+  @HasPermission('edit', BASE)
+  @ApiOperation({ summary: 'Inativa ou reativa o bem (nunca exclui)' })
+  async toggle(
+    @Req() req,
+    @Param('id', AssetId) id: string,
+    @Body() dto: ToggleAssetDto,
+  ) {
+    const { companyId, userId } = await this.writer(req);
+    return this.assets.toggle(companyId, userId, id, dto);
+  }
+
+  @Post(':id/sell')
+  @HttpCode(200)
+  @HasPermission('edit', BASE)
+  @ApiOperation({ summary: 'Vende o bem e lança a receita' })
+  async sell(
+    @Req() req,
+    @Param('id', AssetId) id: string,
+    @Body() dto: SellAssetDto,
+  ) {
+    const { companyId, userId } = await this.writer(req);
+    return this.assets.sell(companyId, userId, id, dto);
+  }
+
+  /* -------------------------------------------------------- custos do bem */
+
+  @Post(':id/cost')
+  @HasPermission('edit', BASE)
+  @ApiOperation({ summary: 'Lança um custo do bem' })
+  async addCost(
+    @Req() req,
+    @Param('id', AssetId) id: string,
+    @Body() dto: AssetCostDto,
+  ) {
+    const { companyId, userId } = await this.writer(req);
+    return this.assets.addCost(companyId, userId, id, dto);
+  }
+
+  // PATCH e DELETE do custo não estão no contrato (só o POST): acrescentados
+  @Patch(':id/cost/:costId')
+  @HasPermission('edit', BASE)
+  @ApiOperation({ summary: 'Edita um custo do bem' })
+  async updateCost(
+    @Req() req,
+    @Param('id', AssetId) id: string,
+    @Param('costId', ItemId) costId: string,
+    @Body() dto: UpdateAssetCostDto,
+  ) {
+    const { companyId, userId } = await this.writer(req);
+    return this.assets.updateCost(companyId, userId, id, costId, dto);
+  }
+
+  @Delete(':id/cost/:costId')
+  @HasPermission('edit', BASE)
+  @ApiOperation({ summary: 'Retira um custo do bem' })
+  async removeCost(
+    @Req() req,
+    @Param('id', AssetId) id: string,
+    @Param('costId', ItemId) costId: string,
+  ) {
+    const { companyId, userId } = await this.writer(req);
+    return this.assets.removeCost(companyId, userId, id, costId);
+  }
+
+  /* --------------------------------------------- configurações produtivas */
+
+  @Post(':id/setup')
+  @HasPermission('edit', BASE)
+  @ApiOperation({ summary: 'Cria uma configuração produtiva' })
+  async addSetup(
+    @Req() req,
+    @Param('id', AssetId) id: string,
+    @Body() dto: AssetSetupDto,
+  ) {
+    const { companyId, userId } = await this.writer(req);
+    return this.assets.addSetup(companyId, userId, id, dto);
+  }
+
+  @Patch(':id/setup/:setupId')
+  @HasPermission('edit', BASE)
+  @ApiOperation({ summary: 'Edita uma configuração produtiva' })
+  async updateSetup(
+    @Req() req,
+    @Param('id', AssetId) id: string,
+    @Param('setupId', ItemId) setupId: string,
+    @Body() dto: UpdateAssetSetupDto,
+  ) {
+    const { companyId, userId } = await this.writer(req);
+    return this.assets.updateSetup(companyId, userId, id, setupId, dto);
+  }
+
+  @Delete(':id/setup/:setupId')
+  @HasPermission('edit', BASE)
+  @ApiOperation({ summary: 'Retira uma configuração produtiva' })
+  async removeSetup(
+    @Req() req,
+    @Param('id', AssetId) id: string,
+    @Param('setupId', ItemId) setupId: string,
+  ) {
+    const { companyId, userId } = await this.writer(req);
+    return this.assets.removeSetup(companyId, userId, id, setupId);
   }
 }

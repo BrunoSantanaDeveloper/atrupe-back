@@ -105,6 +105,7 @@ model Company {
   contactSources         ContactSource[]
   hiddenContactSources   CompanyHiddenContactSource[]
   saleSettings           SaleSettings?
+  assetGroups            AssetGroup[]
 
   @@map("companies")
 }
@@ -184,6 +185,7 @@ model CompanySector {
   /// A hora vendida do setor, em centavos (IP-25)
   hourSale                    Int?
   asset                       Asset[]
+  assetGroups                 AssetGroup[]
   materials                   Material[]
   processes                   Process[]
   assemblyBlocks              AssemblyBlock[]
@@ -521,25 +523,145 @@ model MailVerification {
   @@map("mail_verifications")
 }
 
+/// Patrimônio da empresa (módulo 4): máquina, móvel ou veículo, com
+/// depreciação, custos e configurações produtivas. Inativado, nunca
+/// excluído. Dinheiro em centavos; percentuais com até duas casas.
 model Asset {
   id                         String         @id @default(uuid())
   name                       String
   companyId                  String?
   createdAt                  DateTime       @default(now())
-  fixedMonthlyCost           Float?
-  purchaseValue              Float
-  residualValue              Float
   sectorId                   String?
-  typeId                     String?
   updatedAt                  DateTime?      @updatedAt
-  usefulLife                 Int
+  /// Legado, sem tela: ficam até a limpeza (valores copiados na migration)
+  fixedMonthlyCost           Float?
+  purchaseValue              Float?
+  residualValue              Float?
+  typeId                     String?
+  usefulLife                 Int?
   variableQualityMonthlyCost Float?
   variableTotalMonthlyCost   Float?
+  imageUrl                   String?
+  /// Só agrupa a lista (P-29)
+  kind                       AssetKind      @default(MACHINES)
+  groupId                    String?
+  /// Detalhado: tem unidade, produtividade e configurações (P-15)
+  detailed                   Boolean        @default(false)
+  unit                       AssetUnit?
+  /// Unidades por mês; no detalhado com configurações, a soma delas (P-31)
+  monthlyProductivity        Float?
+  acquisitionDate            DateTime?      @db.Date
+  acquisitionValue           Int            @default(0)
+  usefulLifeMonths           Int?
+  residualPercent            Float?
+  /// A vida útil revista ao fim dela: o bem segue depreciado, não em revisão
+  usefulLifeReviewedAt       DateTime?
+  active                     Boolean        @default(true)
+  inactivatedAt              DateTime?
+  inactiveReason             String?
+  /// Venda do bem (P-25): valor, resultado e a receita lançada
+  soldAt                     DateTime?
+  saleValue                  Int?
+  saleResult                 Int?
+  saleReceivableId           String?
   company                    Company?       @relation(fields: [companyId], references: [id])
   sector                     CompanySector? @relation(fields: [sectorId], references: [id])
   type                       AssetType?     @relation(fields: [typeId], references: [id])
+  group                      AssetGroup?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  costs                      AssetCost[]
+  setups                     AssetSetup[]
 
+  @@index([companyId, active])
   @@map("assets")
+}
+
+/// Grupo de bens equivalentes (P-5.2, P-13, P-28): mesma unidade e setor
+model AssetGroup {
+  id        String         @id @default(uuid())
+  companyId String
+  name      String
+  unit      AssetUnit
+  /// Nulo nos grupos que nascem cadastrados: o primeiro bem define
+  sectorId  String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  company   Company        @relation(fields: [companyId], references: [id])
+  sector    CompanySector? @relation(fields: [sectorId], references: [id])
+  assets    Asset[]
+
+  @@unique([companyId, name])
+  @@map("asset_groups")
+}
+
+/// Custo do bem com natureza e periodicidade (P-6, P-19, P-30)
+model AssetCost {
+  id             String          @id @default(uuid())
+  assetId        String
+  name           String
+  nature         AssetCostNature
+  /// Centavos pelo rendimento: no mês (fixo) ou por unidade (variável)
+  unitCost       Int
+  yieldAmount    Float
+  yieldUnit      AssetYieldUnit
+  /// A conta do plano de contas (subcategoria) do custo (P-17)
+  subCategoryId  String?
+  lastOccurrence DateTime?       @db.Date
+  setupId        String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  asset          Asset           @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  subCategory    SubCategory?    @relation(fields: [subCategoryId], references: [id])
+  setup          AssetSetup?     @relation(fields: [setupId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@map("asset_costs")
+}
+
+/// Configuração produtiva do bem detalhado (P-2, P-19, P-31)
+model AssetSetup {
+  id                  String      @id @default(uuid())
+  assetId             String
+  name                String
+  abbreviation        String      @default("")
+  unit                AssetUnit
+  /// Minutos por unidade
+  timePerUnit         Float       @default(0)
+  monthlyProductivity Float
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  asset               Asset       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  costs               AssetCost[]
+
+  @@unique([assetId, name])
+  @@map("asset_setups")
+}
+
+/// Histórico das escritas que mudam custo ou preço (SEG-4): antes, depois,
+/// quem e quando
+model CostAuditLog {
+  id        String   @id @default(uuid())
+  companyId String
+  userId    String?
+  entity    String
+  entityId  String
+  action    String
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now())
+
+  @@index([companyId, entity, entityId])
+  @@map("cost_audit_logs")
+}
+
+/// Marcas por empresa da base de custos (os grupos que nascem cadastrados)
+model CostBaseSettings {
+  id                  String    @id @default(uuid())
+  companyId           String    @unique
+  assetGroupsSeededAt DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@map("cost_base_settings")
 }
 
 model AssetType {
@@ -1879,6 +2001,7 @@ model SubCategory {
   scheduledExpense ScheduledExpense[]
   company          Company            @relation(fields: [companyId], references: [id])
   nature           Nature             @relation(fields: [natureId], references: [id])
+  assetCosts       AssetCost[]
 
   @@map("sub_categories")
 }
@@ -2473,6 +2596,33 @@ enum AssemblyLineMode {
   SINGLE
   CHOOSE
   LIST
+}
+
+enum AssetKind {
+  MACHINES
+  FURNITURE
+  VEHICLES
+}
+
+enum AssetUnit {
+  HR
+  M2
+  M
+  KM
+  UN
+  KG
+  LT
+}
+
+enum AssetCostNature {
+  FIXED
+  MACHINE_VARIABLE
+  SETUP_VARIABLE
+}
+
+enum AssetYieldUnit {
+  MONTH
+  UNIT
 }
 
 enum QuotationLineKind {

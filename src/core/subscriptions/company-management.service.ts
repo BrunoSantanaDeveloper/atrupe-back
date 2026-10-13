@@ -982,9 +982,20 @@ export class CompanyManagementService {
           });
           await tx.employee.deleteMany({ where: { companyId } });
 
-          // 13. Ativos
+          // 13. Ativos (os custos e as configurações do bem saem junto) e as
+          // marcas e o histórico da base de custos
           await tx.asset.deleteMany({ where: { companyId } });
+          await tx.assetGroup.deleteMany({ where: { companyId } });
           await tx.assetType.deleteMany({ where: { companyId } });
+          await tx.costBaseSettings.deleteMany({ where: { companyId } });
+          await tx.costAuditLog.deleteMany({ where: { companyId } });
+
+          // 13.1 Composição, processos e materiais (os produtos já saíram;
+          // linhas, campos e fórmulas saem junto)
+          await tx.productAssembly.deleteMany({ where: { companyId } });
+          await tx.process.deleteMany({ where: { companyId } });
+          await tx.materialImportLink.deleteMany({ where: { companyId } });
+          await tx.material.deleteMany({ where: { companyId } });
 
           // 14. Configurações Bancárias
           await tx.installment.deleteMany({

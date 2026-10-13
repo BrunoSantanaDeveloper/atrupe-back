@@ -23,7 +23,12 @@ const NOT_MONEY: Record<keyof typeof MONEY_COLUMNS, string[]> = {
     'weight',
     'width',
   ],
-  Asset: ['usefulLife'],
+  Asset: [
+    'usefulLife',
+    'usefulLifeMonths',
+    'residualPercent',
+    'monthlyProductivity',
+  ],
   Quotation: ['quotationNumber'],
   QuotationProduct: ['quantity'],
   QuotationItemLine: [],
@@ -80,9 +85,20 @@ describe('campos de dinheiro das rotas antigas', () => {
     }
   });
 
-  it('as listas de produto e de patrimônio são as colunas de dinheiro deles', () => {
+  it('as listas de produto e de patrimônio cobrem as colunas de dinheiro deles', () => {
     expect(PRODUCT_MONEY_FIELDS).toEqual(['unitCost', 'salePrice']);
-    expect(ASSET_MONEY_FIELDS).toEqual([...MONEY_COLUMNS.Asset]);
+    // O patrimônio leva também o que as respostas calculam (módulo 4)
+    expect(ASSET_MONEY_FIELDS).toEqual(
+      expect.arrayContaining([
+        ...MONEY_COLUMNS.Asset,
+        'monthlyDepreciation',
+        'depreciatedValue',
+        'remainingValue',
+        'unitCost',
+        'monthlyCost',
+        'averageCost',
+      ]),
+    );
   });
 
   it('a lista do orçamento cobre as colunas e os nomes que as respostas calculam', () => {

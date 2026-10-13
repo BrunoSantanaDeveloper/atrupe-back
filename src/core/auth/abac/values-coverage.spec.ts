@@ -60,7 +60,7 @@ const SEM_VALOR: Record<string, string> = {
   'QuotationController.findAllQuantity': CONTAGEM,
   'PaymentController.getPaymentConditionsInUse': APOIO,
   'OrderController.findAllQuantity': CONTAGEM,
-  'AssetController.allTypes': APOIO,
+  'AssetController.quantity': CONTAGEM,
   'ReportController.findAll':
     'menu de relatórios conforme as permissões da sessão',
   'ReportController.getSalesPermissions':
