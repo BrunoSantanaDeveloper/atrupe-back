@@ -7,6 +7,17 @@ import {
 import { PrismaService } from 'nestjs-prisma';
 import { ItemType } from '@prisma/client';
 import { UpdatePayrollTemplateDto } from './dto/update-payroll-template.dto';
+import {
+  coherent,
+  fromLegacy,
+  legacyOf,
+  setupFromTemplate,
+  valuesOf,
+} from './payroll-math';
+import { PayrollStructureService } from './payroll-structure.service';
+
+const FIXED_BY_LAW =
+  'Férias e 13º são calculados por lei e não podem ser editados';
 
 // Referências criadas pelo seed da empresa como salário base da folha
 const BASE_SALARY_REFERENCES = [
@@ -22,7 +33,10 @@ const isBaseSalary = (name: string, type: ItemType) =>
 
 @Injectable()
 export class SalaryTemplatesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private structure: PayrollStructureService,
+  ) {}
 
   async createTemplate(
     companyId: string,
@@ -73,7 +87,30 @@ export class SalaryTemplatesService {
 
     return templates.map((template) => {
       const linkedEmployees = linkedByTemplate.get(template.id) || 0;
-      const isBase = isBaseSalary(template.name, template.type);
+      const isBase =
+        template.isBase || isBaseSalary(template.name, template.type);
+      // Os itens que o sistema gera (encargos da CLT) não se excluem
+      const system = !!template.systemKey && !template.isBase;
+      const values = template.behavior
+        ? {
+            behavior: template.behavior,
+            defaultIncrease: template.defaultIncrease ?? 0,
+            defaultDiscount: template.defaultDiscount ?? 0,
+          }
+        : (({ behavior, increase, discount }) => ({
+            behavior,
+            defaultIncrease: increase,
+            defaultDiscount: discount,
+          }))(
+            valuesOf({
+              isSet: true,
+              behavior: null,
+              increase: null,
+              discount: null,
+              type: template.type,
+              amount: template.defaultAmount,
+            }),
+          );
 
       return {
         id: template.id,
@@ -81,9 +118,13 @@ export class SalaryTemplatesService {
         type: template.type,
         defaultAmount: template.defaultAmount,
         createdAt: template.createdAt,
+        ...values,
+        derivedFromSalary: template.derivedFromSalary,
+        fixedByLaw: template.fixedByLaw,
+        rate: template.rate,
         isBase,
         linkedEmployees,
-        canDelete: !isBase && linkedEmployees === 0,
+        canDelete: !isBase && !system && linkedEmployees === 0,
       };
     });
   }
@@ -103,8 +144,58 @@ export class SalaryTemplatesService {
 
     if (!template) throw new NotFoundException('Item de custo não encontrado.');
 
+    // A tela de hoje troca o tipo: o comportamento acompanha (ALT-18)
+    const typeBehavior =
+      !dto.behavior && dto.type && dto.type !== template.type
+        ? fromLegacy(dto.type, 0).behavior
+        : undefined;
+    const newBehavior = dto.behavior ?? typeBehavior;
+
+    // O salário base e os encargos da CLT têm o comportamento do sistema
+    if (
+      template.systemKey &&
+      newBehavior &&
+      newBehavior !== (template.behavior ?? newBehavior)
+    ) {
+      throw new BadRequestException('Este item faz parte da folha CLT');
+    }
+
+    // 13º e férias são da lei (F-14); só INSS e FGTS têm alíquota
+    if (
+      template.fixedByLaw &&
+      ((dto.behavior !== undefined && dto.behavior !== template.behavior) ||
+        dto.rate !== undefined ||
+        dto.defaultIncrease !== undefined ||
+        dto.defaultDiscount !== undefined)
+    ) {
+      throw new BadRequestException(FIXED_BY_LAW);
+    }
+    if (
+      dto.rate !== undefined &&
+      !['INSS', 'FGTS'].includes(template.systemKey ?? '')
+    ) {
+      throw new BadRequestException('Só INSS e FGTS têm alíquota');
+    }
+
     const name = dto.name?.trim() || template.name;
-    const type = dto.type || template.type;
+    const behavior = newBehavior ?? template.behavior;
+    const behaviorChanged = !!newBehavior && newBehavior !== template.behavior;
+    // Com o comportamento, o type sai dele (ADVANCE continua para o adiantamento)
+    const type = dto.behavior
+      ? legacyOf(dto.behavior, 0, 0).type
+      : dto.type || template.type;
+    // O valor padrão da tela de hoje vai para o acréscimo ou o desconto
+    const legacyDefaults =
+      dto.defaultAmount !== undefined &&
+      dto.defaultIncrease === undefined &&
+      dto.defaultDiscount === undefined &&
+      behavior !== 'PROVISION' &&
+      behavior !== 'INCREASE_AND_DISCOUNT'
+        ? (({ increase, discount }) => ({
+            defaultIncrease: increase,
+            defaultDiscount: discount,
+          }))(fromLegacy(type, dto.defaultAmount))
+        : {};
 
     if (!name) {
       throw new BadRequestException('Informe a referência do item de custo.');
@@ -122,23 +213,66 @@ export class SalaryTemplatesService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.payrollTemplate.update({
-        where: { id: templateId },
-        data: {
-          name,
-          type,
-          defaultAmount: dto.defaultAmount ?? undefined,
-        },
-      });
+    return this.prisma
+      .$transaction(async (tx) => {
+        const updated = await tx.payrollTemplate.update({
+          where: { id: templateId },
+          data: {
+            name,
+            type,
+            defaultAmount: dto.defaultAmount ?? undefined,
+            ...(behavior && { behavior }),
+            ...legacyDefaults,
+            ...(dto.defaultIncrease !== undefined && {
+              defaultIncrease: dto.defaultIncrease,
+            }),
+            ...(dto.defaultDiscount !== undefined && {
+              defaultDiscount: dto.defaultDiscount,
+            }),
+            ...(dto.rate !== undefined && { rate: dto.rate }),
+          },
+        });
 
-      await tx.payrollSetup.updateMany({
-        where: { templateId, companyId },
-        data: { name, type },
-      });
+        if (behaviorChanged) {
+          // O comportamento novo vale para as linhas de todos: os valores
+          // seguem coerentes com ele e o type/amount acompanha. Na troca de
+          // tipo da tela de hoje, o valor da linha muda de lado, como antes
+          const lines = await tx.payrollSetup.findMany({
+            where: { templateId, companyId },
+          });
+          for (const line of lines) {
+            const current = valuesOf(line);
+            const next = typeBehavior
+              ? fromLegacy(type, line.amount)
+              : coherent(behavior!, current.increase, current.discount);
+            const legacy = legacyOf(
+              next.behavior,
+              next.increase,
+              next.discount,
+            );
+            await tx.payrollSetup.update({
+              where: { id: line.id },
+              data: { name, ...next, ...legacy },
+            });
+          }
+        } else {
+          // Só o nome: o tipo de cada linha segue o comportamento dela (a
+          // de acréscimo e desconto pode estar do lado do desconto)
+          await tx.payrollSetup.updateMany({
+            where: { templateId, companyId },
+            data: { name },
+          });
+        }
 
-      return updated;
-    });
+        return updated;
+      })
+      .then(async (updated) => {
+        // A alíquota nova refaz os encargos de quem não tem valor à mão
+        if (dto.rate !== undefined) {
+          await this.structure.recomputeCompany(companyId);
+        }
+        return updated;
+      });
   }
 
   /**
@@ -152,10 +286,14 @@ export class SalaryTemplatesService {
 
     if (!template) throw new NotFoundException('Item de custo não encontrado.');
 
-    if (isBaseSalary(template.name, template.type)) {
+    if (template.isBase || isBaseSalary(template.name, template.type)) {
       throw new ConflictException(
         `O item "${template.name}" é a base da folha de pagamento e não pode ser excluído.`,
       );
+    }
+    // Os encargos da CLT (INSS, FGTS, 13º e férias) são do sistema
+    if (template.systemKey) {
+      throw new ConflictException('Este item faz parte da folha CLT');
     }
 
     const linkedEmployees = await this.prisma.payrollSetup.count({
@@ -205,10 +343,7 @@ export class SalaryTemplatesService {
       employees.map((employee) =>
         this.prisma.payrollSetup.create({
           data: {
-            name: template.name,
-            type: template.type,
-            amount: template.defaultAmount || 0,
-            isSet: true,
+            ...setupFromTemplate(template),
             employeeId: employee.id,
             companyId: template.companyId,
             templateId: template.id,
@@ -235,10 +370,7 @@ export class SalaryTemplatesService {
         if (!exists) {
           return this.prisma.payrollSetup.create({
             data: {
-              name: template.name,
-              type: template.type,
-              amount: template.defaultAmount || 0,
-              isSet: true,
+              ...setupFromTemplate(template),
               companyId,
               employeeId,
               templateId: template.id,

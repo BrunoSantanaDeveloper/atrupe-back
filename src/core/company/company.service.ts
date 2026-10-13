@@ -39,6 +39,7 @@ import { FiscalCredentialResolverService } from '../fiscal/shared/fiscal-credent
 import { InvoicyCompanyRegistrationService } from '../fiscal/invoicy/invoicy-company-registration.service';
 import { FiscalEnvironment } from '@prisma/client';
 import * as crypto from 'crypto';
+import { setupFromTemplate } from '../financial/salaries/payroll-math';
 
 export type CompanyWithFiscalRelations = Prisma.CompanyGetPayload<{
   include: {
@@ -187,10 +188,7 @@ export class CompanyService {
                 templates.map(async (template) => {
                   await tx.payrollSetup.create({
                     data: {
-                      name: template.name,
-                      type: template.type,
-                      amount: template.defaultAmount,
-                      isSet: true,
+                      ...setupFromTemplate(template),
                       company: {
                         connect: { id: companyId },
                       },
@@ -1949,6 +1947,12 @@ export class CompanyService {
         name: 'Salário',
         type: 'INCREASE',
         defaultAmount: 0,
+        // O salário base: o valor é o do cadastro do colaborador
+        behavior: 'ONLY_INCREASE',
+        defaultIncrease: 0,
+        defaultDiscount: 0,
+        isBase: true,
+        systemKey: 'BASE_SALARY',
         companyId,
       },
     });

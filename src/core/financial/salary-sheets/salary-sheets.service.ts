@@ -14,6 +14,7 @@ import { Logger } from '@nestjs/common';
 import { ItemType, Prisma } from '@prisma/client';
 import { SalaryExpenseService } from './salary-expense.service';
 import { SalaryPdfService } from './salary-pdf.service';
+import { payrollEntriesOf } from '../salaries/payroll-math';
 
 @Injectable()
 export class SalarySheetsService {
@@ -147,11 +148,21 @@ export class SalarySheetsService {
 
         // Calcular salário líquido antes de criar a folha
 
-        const totalIncreases = activeItems
+        // Os lançamentos pelo comportamento (ALT-18): a provisão não é paga
+        // no mês, e o acréscimo e o desconto viram dois lançamentos. Os
+        // itens de antes dão o mesmo lançamento do type/amount
+        const entries = activeItems.flatMap((item) =>
+          payrollEntriesOf(item).map((entry) => ({
+            ...entry,
+            description: item.name,
+          })),
+        );
+
+        const totalIncreases = entries
           .filter((item) => item.type === 'INCREASE')
           .reduce((sum, item) => sum + item.amount, 0);
 
-        const totalDiscounts = activeItems
+        const totalDiscounts = entries
           .filter((item) => item.type === 'DISCOUNT')
           .reduce((sum, item) => sum + item.amount, 0);
 
@@ -170,11 +181,11 @@ export class SalarySheetsService {
 
           // Criar itens da folha usando apenas itens ativos
           await prisma.payrollItem.createMany({
-            data: activeItems.map((item) => ({
+            data: entries.map((entry) => ({
               payrollId: payroll.id,
-              type: item.type,
-              amount: item.amount,
-              description: item.name,
+              type: entry.type,
+              amount: entry.amount,
+              description: entry.description,
             })),
           });
 

@@ -1,4 +1,13 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+} from 'class-validator';
+import { EmploymentContract } from '@prisma/client';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateEmployeeDto {
@@ -52,4 +61,14 @@ export class CreateEmployeeDto {
   sallary: string;
 
   signatureUrl?: string;
+
+  // Forma de contratação e salário base (centavos): geram os encargos
+  @IsOptional()
+  @IsEnum(EmploymentContract, { message: 'Forma de contratação inválida' })
+  contract?: EmploymentContract;
+
+  @IsOptional()
+  @IsInt({ message: 'O salário base vai em centavos' })
+  @Min(0, { message: 'O salário base não pode ser negativo' })
+  baseSalary?: number;
 }

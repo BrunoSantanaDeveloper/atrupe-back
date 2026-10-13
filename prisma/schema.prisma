@@ -414,15 +414,18 @@ model Supplier {
 }
 
 model Employee {
-  id              String            @id @default(uuid())
+  id              String              @id @default(uuid())
   companyId       String
   roleId          String?
   sectorId        String?
   userId          String?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime?         @updatedAt
-  isActive        Boolean           @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime?           @updatedAt
+  isActive        Boolean             @default(true)
   sallary         Float?
+  /// Forma de contratação e salário base (centavos): geram os encargos
+  contract        EmploymentContract?
+  baseSalary      Int?
   sellerProfileId String?
   name            String?
   avatarUrl       String?
@@ -432,14 +435,14 @@ model Employee {
   rg              String?
   signatureUrl    String?
   legacyId        String?
-  isImported      Boolean           @default(false)
+  isImported      Boolean             @default(false)
   address         Address[]
   client          Client[]
-  company         Company           @relation(fields: [companyId], references: [id])
-  role            Role?             @relation(fields: [roleId], references: [id])
-  sector          CompanySector?    @relation(fields: [sectorId], references: [id])
-  sellerProfile   SellerProfile?    @relation(fields: [sellerProfileId], references: [id])
-  user            User?             @relation(fields: [userId], references: [id])
+  company         Company             @relation(fields: [companyId], references: [id])
+  role            Role?               @relation(fields: [roleId], references: [id])
+  sector          CompanySector?      @relation(fields: [sectorId], references: [id])
+  sellerProfile   SellerProfile?      @relation(fields: [sellerProfileId], references: [id])
+  user            User?               @relation(fields: [userId], references: [id])
   quotation       Quotation[]
   PayrollSetup    PayrollSetup[]
   payroll         Payroll[]
@@ -890,6 +893,13 @@ model PayrollSetup {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime?        @updatedAt
   isSet           Boolean          @default(false)
+  /// Comportamento, acréscimo e desconto da linha (ALT-18), em centavos;
+  /// type e amount ficam em sincronia para as telas de hoje
+  behavior        PayrollBehavior?
+  increase        Int?
+  discount        Int?
+  /// INSS ou FGTS com valor à mão: o recálculo pelo salário não mexe (F-4)
+  manualOverride  Boolean          @default(false)
   company         Company          @relation(fields: [companyId], references: [id])
   employee        Employee         @relation(fields: [employeeId], references: [id])
   payrollTemplate PayrollTemplate? @relation(fields: [templateId], references: [id])
@@ -898,13 +908,28 @@ model PayrollSetup {
 }
 
 model PayrollTemplate {
-  id            String    @id @default(uuid())
-  name          String
-  type          ItemType  @default(INCREASE)
-  defaultAmount Float     @default(0)
-  companyId     String
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime? @updatedAt
+  id                String           @id @default(uuid())
+  name              String
+  type              ItemType         @default(INCREASE)
+  defaultAmount     Float            @default(0)
+  /// Comportamento do item (ALT-18): substitui o type; ADVANCE é o adiantamento
+  behavior          PayrollBehavior?
+  /// Valores padrão do item, em centavos
+  defaultIncrease   Int?
+  defaultDiscount   Int?
+  /// Alíquota dos encargos editáveis (INSS e FGTS), percentual com duas casas
+  rate              Float?
+  /// Encargo gerado do salário base (INSS, FGTS, 13º e férias)
+  derivedFromSalary Boolean          @default(false)
+  /// 13º e férias: calculados por lei, não se editam (F-14)
+  fixedByLaw        Boolean          @default(false)
+  /// O salário base: o valor é o do cadastro do colaborador
+  isBase            Boolean          @default(false)
+  /// Item do sistema: BASE_SALARY, INSS, FGTS, THIRTEENTH, VACATION
+  systemKey         String?
+  companyId         String
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime?        @updatedAt
 
   company      Company        @relation(fields: [companyId], references: [id])
   PayrollSetup PayrollSetup[]
@@ -2716,6 +2741,20 @@ enum SheetStatus {
   OPEN
   CLOSED
   EMPTY
+}
+
+enum PayrollBehavior {
+  ONLY_INCREASE
+  ONLY_DISCOUNT
+  INCREASE_AND_DISCOUNT
+  PROVISION
+  ADVANCE
+}
+
+enum EmploymentContract {
+  CLT
+  PRO_LABORE
+  MEI_PJ
 }
 
 enum ItemType {

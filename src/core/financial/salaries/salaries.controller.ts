@@ -115,6 +115,7 @@ export class SalariesController {
       id,
       req.user.companyId,
       updatePayrollSetupDto,
+      req.user.userId,
     );
   }
 

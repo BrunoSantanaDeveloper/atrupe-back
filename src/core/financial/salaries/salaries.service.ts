@@ -9,13 +9,22 @@ import { FilterPayrollSetupDto } from './dto/filter-payroll-setup.dto';
 import { UpdatePayrollSetupDto } from './dto/update-payroll-setup.dto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
+import { fromLegacy, legacyOf } from './payroll-math';
+import {
+  LINE_SELECT,
+  MONTHLY_HOURS,
+  PayrollStructureService,
+} from './payroll-structure.service';
 
 const PAYROLL_SETUP_NOT_FOUND = 'Item da folha não encontrado.';
 
 @Injectable()
 export class SalariesService {
   private readonly logger = new Logger(SalariesService.name);
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private structure: PayrollStructureService,
+  ) {}
 
   async findAll(filters: FilterPayrollSetupDto) {
     try {
@@ -78,6 +87,8 @@ export class SalariesService {
             id: true,
             name: true,
             avatarUrl: true,
+            contract: true,
+            baseSalary: true,
             sector: {
               select: {
                 id: true,
@@ -91,15 +102,7 @@ export class SalariesService {
               },
             },
             PayrollSetup: {
-              select: {
-                id: true,
-                name: true,
-                amount: true,
-                type: true,
-                isSet: true,
-                createdAt: true,
-                updatedAt: true,
-              },
+              select: LINE_SELECT,
               where: wherePayrollSetup,
               orderBy: {
                 createdAt: 'desc',
@@ -131,6 +134,9 @@ export class SalariesService {
           return 0;
         });
 
+        // A estrutura com comportamento (ALT-18) vai junto, no mesmo
+        // envelope que as telas de hoje leem
+        const totals = this.structure.totalsOf(employee.PayrollSetup);
         return {
           id: employee.id,
           name: employee.name,
@@ -139,12 +145,18 @@ export class SalariesService {
           roleId: employee.role.id,
           sectorName: employee.sector.name,
           roleName: employee.role.name,
-          items: sortedItems,
+          contract: employee.contract,
+          baseSalary: employee.baseSalary,
+          monthlyHours: MONTHLY_HOURS,
+          ...totals,
+          items: sortedItems.map((item) => this.structure.lineView(item)),
         };
       });
       return {
         total,
         totalPages: Math.ceil(total / limit),
+        page,
+        lastPage: Math.max(1, Math.ceil(total / limit)),
         data,
       };
     } catch (error) {
@@ -156,6 +168,28 @@ export class SalariesService {
   }
 
   async create(createPayrollSetupDto: CreatePayrollSetupDto) {
+    // Com o comportamento (ALT-18), o type/amount sai dele
+    if (createPayrollSetupDto.behavior) {
+      const legacy = legacyOf(
+        createPayrollSetupDto.behavior,
+        createPayrollSetupDto.defaultIncrease ?? 0,
+        createPayrollSetupDto.defaultDiscount ?? 0,
+      );
+      createPayrollSetupDto.type = legacy.type;
+      createPayrollSetupDto.amount = legacy.amount;
+    } else if (
+      !createPayrollSetupDto.type ||
+      createPayrollSetupDto.amount === undefined
+    ) {
+      throw new BadRequestException('Informe o comportamento do item');
+    }
+    const behavior = createPayrollSetupDto.behavior ?? null;
+    const increase = createPayrollSetupDto.behavior
+      ? (createPayrollSetupDto.defaultIncrease ?? 0)
+      : null;
+    const discount = createPayrollSetupDto.behavior
+      ? (createPayrollSetupDto.defaultDiscount ?? 0)
+      : null;
     try {
       return this.prisma.$transaction(async (tx) => {
         // 1. Criar ou buscar template existente
@@ -177,6 +211,9 @@ export class SalariesService {
               type: createPayrollSetupDto.type,
               defaultAmount: createPayrollSetupDto.amount,
               companyId: createPayrollSetupDto.companyId,
+              behavior,
+              defaultIncrease: increase,
+              defaultDiscount: discount,
             },
           });
         }
@@ -211,6 +248,9 @@ export class SalariesService {
                 employeeId: employee.id,
                 templateId: template.id, // Relacionamento com template
                 isSet: createPayrollSetupDto.isSet ?? true,
+                behavior,
+                increase,
+                discount,
               },
               include: {
                 employee: {
@@ -263,9 +303,20 @@ export class SalariesService {
     id: string,
     companyId: string,
     updatePayrollSetupDto: UpdatePayrollSetupDto,
+    userId?: string,
   ) {
+    // Sem troca de colaborador, a edição passa pela estrutura da folha:
+    // comportamento, acréscimo e desconto, com o type/amount junto
+    if (updatePayrollSetupDto.employeeId === undefined) {
+      return this.structure.updateLine(
+        companyId,
+        userId ?? null,
+        id,
+        updatePayrollSetupDto,
+      );
+    }
     try {
-      await this.findOwn(id, companyId);
+      const current = await this.findOwn(id, companyId);
 
       if (updatePayrollSetupDto.employeeId !== undefined) {
         const employee = await this.prisma.employee.findFirst({
@@ -294,6 +345,19 @@ export class SalariesService {
 
       if (updatePayrollSetupDto.type !== undefined) {
         updateData.type = updatePayrollSetupDto.type;
+      }
+      // O type/amount de antes leva o comportamento junto (ALT-18)
+      if (
+        updatePayrollSetupDto.amount !== undefined ||
+        updatePayrollSetupDto.type !== undefined
+      ) {
+        Object.assign(
+          updateData,
+          fromLegacy(
+            updatePayrollSetupDto.type ?? current.type,
+            updatePayrollSetupDto.amount ?? current.amount,
+          ),
+        );
       }
       if (updatePayrollSetupDto.employeeId !== undefined) {
         updateData.employee = {
@@ -345,7 +409,7 @@ export class SalariesService {
   private async findOwn(id: string, companyId: string) {
     const payrollSetup = await this.prisma.payrollSetup.findFirst({
       where: { id, companyId },
-      select: { id: true },
+      select: { id: true, type: true, amount: true },
     });
 
     if (!payrollSetup) {

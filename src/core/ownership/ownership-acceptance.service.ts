@@ -45,6 +45,7 @@ import {
   transferStateOf,
 } from './ownership.domain';
 import { CompanyForOwnership, OwnershipService } from './ownership.service';
+import { setupFromTemplate } from '../financial/salaries/payroll-math';
 
 export interface RequestMeta {
   ip?: string | null;
@@ -884,10 +885,7 @@ export class OwnershipAcceptanceService {
     for (const template of templates) {
       await tx.payrollSetup.create({
         data: {
-          name: template.name,
-          type: template.type,
-          amount: template.defaultAmount,
-          isSet: true,
+          ...setupFromTemplate(template),
           company: { connect: { id: input.companyId } },
           employee: { connect: { id: employee.id } },
           payrollTemplate: { connect: { id: template.id } },

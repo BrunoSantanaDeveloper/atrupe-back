@@ -19,7 +19,14 @@ describe('EmployeeService: cargo e setor da empresa', () => {
       companySector: { count: jest.fn() },
     };
     const history: any = { createEmployeeHistory: jest.fn() };
-    service = new EmployeeService(prisma, history, {} as any);
+    service = new EmployeeService(
+      prisma,
+      history,
+      {} as any,
+      {
+        syncEmployee: jest.fn(),
+      } as any,
+    );
   });
 
   it('criar com o cargo de outra empresa é recusado', async () => {

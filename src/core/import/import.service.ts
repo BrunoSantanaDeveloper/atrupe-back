@@ -38,6 +38,7 @@ import {
   sanitizeOptionalEmail,
 } from './optional-value-sanitizers';
 import { deleteImportedSales } from './imported-sale-cleanup';
+import { setupFromTemplate } from '../financial/salaries/payroll-math';
 
 /**
  * Unidades cujo preço total depende de uma medida (área, comprimento, peso…).
@@ -2079,6 +2080,8 @@ export class ImportService {
       mobile: row.celular || null,
       // sallary é gravado em centavos, como todo valor monetário do sistema
       sallary: this.toCents(row.salario),
+      // O salário base é o salário do cadastro (D33)
+      baseSalary: this.toCents(row.salario),
       isActive,
       sectorId: sector?.id ?? null,
       roleId: role?.id ?? null,
@@ -2125,11 +2128,8 @@ export class ImportService {
     });
     if (templates.length > 0) {
       await this.prisma.payrollSetup.createMany({
-        data: templates.map((template: any) => ({
-          name: template.name,
-          type: template.type,
-          amount: template.defaultAmount || 0,
-          isSet: true,
+        data: templates.map((template) => ({
+          ...setupFromTemplate(template),
           companyId,
           employeeId: employee.id,
           templateId: template.id,

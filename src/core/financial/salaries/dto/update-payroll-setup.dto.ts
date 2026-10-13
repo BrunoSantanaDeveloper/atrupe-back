@@ -6,7 +6,8 @@ import {
   IsEnum,
   IsBoolean,
 } from 'class-validator';
-import { ItemType } from '@prisma/client';
+import { IsInt, Min } from 'class-validator';
+import { ItemType, PayrollBehavior } from '@prisma/client';
 
 export class UpdatePayrollSetupDto {
   @ApiProperty({
@@ -55,4 +56,19 @@ export class UpdatePayrollSetupDto {
   @IsString()
   @IsOptional()
   employeeId?: string;
+
+  // A folha com comportamento (ALT-18): no lugar do amount único
+  @IsOptional()
+  @IsEnum(PayrollBehavior, { message: 'Comportamento inválido' })
+  behavior?: PayrollBehavior;
+
+  @IsOptional()
+  @IsInt({ message: 'O acréscimo vai em centavos' })
+  @Min(0, { message: 'O valor não pode ser negativo' })
+  increase?: number;
+
+  @IsOptional()
+  @IsInt({ message: 'O desconto vai em centavos' })
+  @Min(0, { message: 'O valor não pode ser negativo' })
+  discount?: number;
 }

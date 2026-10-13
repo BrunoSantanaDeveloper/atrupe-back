@@ -10,6 +10,8 @@ import { FilterEmployeeDto } from './dto/filter-employee.dto';
 import { Prisma } from '@prisma/client';
 import { EmployeeHistoryService } from './history/history.service';
 import { PlanControlService } from '../plan/plan-control.service';
+import { PayrollStructureService } from '../financial/salaries/payroll-structure.service';
+import { setupFromTemplate } from '../financial/salaries/payroll-math';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 @Injectable()
@@ -18,6 +20,7 @@ export class EmployeeService {
     private readonly prisma: PrismaService,
     private readonly historyService: EmployeeHistoryService,
     private readonly planControl: PlanControlService,
+    private readonly payroll: PayrollStructureService,
   ) {}
 
   /**
@@ -56,74 +59,88 @@ export class EmployeeService {
     );
 
     try {
-      return this.prisma.$transaction(async (tx) => {
-        // 1. Criar o employee
-        const employee = await tx.employee.create({
-          data: {
-            name: createEmployeeDto.name,
-            avatarUrl: createEmployeeDto.avatarUrl ?? null,
-            signatureUrl: createEmployeeDto.signatureUrl ?? null,
-            role: {
-              connect: {
-                id: createEmployeeDto.roleId,
-              },
-            },
-            sector: {
-              connect: {
-                id: createEmployeeDto.sectorId,
-              },
-            },
-            company: {
-              connect: {
-                id: createEmployeeDto.companyId,
-              },
-            },
-          },
-        });
-
-        // 2. Buscar todos os templates da empresa
-        const templates = await tx.payrollTemplate.findMany({
-          where: { companyId: createEmployeeDto.companyId },
-        });
-
-        // 3. Criar payroll setups baseados nos templates
-        if (templates.length > 0) {
-          await Promise.all(
-            templates.map(async (template) => {
-              await tx.payrollSetup.create({
-                data: {
-                  name: template.name,
-                  type: template.type,
-                  amount: template.defaultAmount || 0,
-                  isSet: true,
-                  companyId: createEmployeeDto.companyId,
-                  employeeId: employee.id,
-                  templateId: template.id,
+      return this.prisma
+        .$transaction(async (tx) => {
+          // 1. Criar o employee
+          const employee = await tx.employee.create({
+            data: {
+              name: createEmployeeDto.name,
+              avatarUrl: createEmployeeDto.avatarUrl ?? null,
+              signatureUrl: createEmployeeDto.signatureUrl ?? null,
+              contract: createEmployeeDto.contract ?? null,
+              baseSalary: createEmployeeDto.baseSalary ?? null,
+              // O salário base é o salário do cadastro (D33)
+              ...(createEmployeeDto.baseSalary !== undefined && {
+                sallary: createEmployeeDto.baseSalary,
+              }),
+              role: {
+                connect: {
+                  id: createEmployeeDto.roleId,
                 },
-              });
-            }),
-          );
-        }
-
-        // 4. Registrar no histórico
-        if (userId) {
-          await this.historyService.createEmployeeHistory({
-            employeeId: employee.id,
-            action: 'CREATE',
-            description: this.historyService.getCreateDescription(
-              employee.name || 'Sem nome',
-            ),
-            metadata: {
-              roleId: createEmployeeDto.roleId,
-              sectorId: createEmployeeDto.sectorId,
+              },
+              sector: {
+                connect: {
+                  id: createEmployeeDto.sectorId,
+                },
+              },
+              company: {
+                connect: {
+                  id: createEmployeeDto.companyId,
+                },
+              },
             },
-            createdBy: userId,
-            createdByName: userName,
           });
-        }
 
-        return employee;
-      });
+          // 2. Buscar todos os templates da empresa
+          const templates = await tx.payrollTemplate.findMany({
+            where: { companyId: createEmployeeDto.companyId },
+          });
+
+          // 3. Criar payroll setups baseados nos templates
+          if (templates.length > 0) {
+            await Promise.all(
+              templates.map(async (template) => {
+                await tx.payrollSetup.create({
+                  data: {
+                    ...setupFromTemplate(template),
+                    companyId: createEmployeeDto.companyId,
+                    employeeId: employee.id,
+                    templateId: template.id,
+                  },
+                });
+              }),
+            );
+          }
+
+          // 4. Registrar no histórico
+          if (userId) {
+            await this.historyService.createEmployeeHistory({
+              employeeId: employee.id,
+              action: 'CREATE',
+              description: this.historyService.getCreateDescription(
+                employee.name || 'Sem nome',
+              ),
+              metadata: {
+                roleId: createEmployeeDto.roleId,
+                sectorId: createEmployeeDto.sectorId,
+              },
+              createdBy: userId,
+              createdByName: userName,
+            });
+          }
+
+          return employee;
+        })
+        .then(async (employee) => {
+          // O salário base e, com a base de custos, os encargos da CLT (F-7)
+          if (
+            createEmployeeDto.baseSalary !== undefined ||
+            createEmployeeDto.contract !== undefined
+          ) {
+            await this.payroll.syncEmployee(employee.companyId, employee.id);
+          }
+          return employee;
+        });
     } catch (error) {
       console.log(error);
       throw new BadRequestException(error.message);
@@ -419,6 +436,15 @@ export class EmployeeService {
     userName?: string,
   ) {
     const { isActive, address, ...rest } = updateEmployeeDto;
+    // Só o salário base e a contratação da tela nova mexem na folha; o
+    // salário da tela de hoje acompanha sem mexer (D33)
+    const syncPayroll =
+      rest.baseSalary !== undefined || rest.contract !== undefined;
+    if (rest.baseSalary !== undefined && rest.sallary === undefined) {
+      rest.sallary = rest.baseSalary;
+    } else if (rest.sallary != null && rest.baseSalary === undefined) {
+      rest.baseSalary = Math.round(rest.sallary);
+    }
 
     if (rest.roleId || rest.sectorId) {
       const current = await this.prisma.employee.findUnique({
@@ -435,150 +461,160 @@ export class EmployeeService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      await this.assertOwnerStays(tx, id, {
-        deactivating: isActive === false,
-        roleId: rest.roleId,
-      });
+    return this.prisma
+      .$transaction(async (tx) => {
+        await this.assertOwnerStays(tx, id, {
+          deactivating: isActive === false,
+          roleId: rest.roleId,
+        });
 
-      // Capturar estado antes da atualização
-      // IMPORTANTE: Ao adicionar novos campos editáveis no Employee,
-      // inclua-os neste select para que sejam rastreados no histórico
-      const employeeBefore = await tx.employee.findUnique({
-        where: { id },
-        select: {
-          name: true,
-          isActive: true,
-          roleId: true,
-          sectorId: true,
-          avatarUrl: true,
-          signatureUrl: true,
-          sallary: true,
-          cpf: true,
-          mobile: true,
-          phone: true,
-          rg: true,
-        },
-      });
-
-      // Atualiza os dados do Employee
-      const employeeUpdate = await tx.employee.update({
-        where: { id },
-        data: {
-          ...rest,
-          isActive,
-        },
-      });
-
-      // Verifica se o campo isActive foi enviado
-      if (isActive !== undefined) {
-        const employee = await tx.employee.findUnique({
+        // Capturar estado antes da atualização
+        // IMPORTANTE: Ao adicionar novos campos editáveis no Employee,
+        // inclua-os neste select para que sejam rastreados no histórico
+        const employeeBefore = await tx.employee.findUnique({
           where: { id },
-          select: { userId: true },
+          select: {
+            name: true,
+            isActive: true,
+            roleId: true,
+            sectorId: true,
+            avatarUrl: true,
+            signatureUrl: true,
+            sallary: true,
+            baseSalary: true,
+            contract: true,
+            cpf: true,
+            mobile: true,
+            phone: true,
+            rg: true,
+          },
         });
 
-        // Desativa o usuário associado se isActive for false
-        if (!isActive && employee?.userId) {
-          await tx.user.update({
-            where: { id: employee.userId },
-            data: { isActive: false },
+        // Atualiza os dados do Employee
+        const employeeUpdate = await tx.employee.update({
+          where: { id },
+          data: {
+            ...rest,
+            isActive,
+          },
+        });
+
+        // Verifica se o campo isActive foi enviado
+        if (isActive !== undefined) {
+          const employee = await tx.employee.findUnique({
+            where: { id },
+            select: { userId: true },
           });
+
+          // Desativa o usuário associado se isActive for false
+          if (!isActive && employee?.userId) {
+            await tx.user.update({
+              where: { id: employee.userId },
+              data: { isActive: false },
+            });
+          }
         }
-      }
 
-      // Gerenciamento de endereços
-      if (address) {
-        // Verifica se o Employee já possui endereços associados
-        const existingAddresses = await tx.address.findMany({
-          where: { employeeId: id },
-        });
-
-        // Exclui os endereços existentes, se houver
-        if (existingAddresses.length > 0) {
-          await tx.address.deleteMany({
+        // Gerenciamento de endereços
+        if (address) {
+          // Verifica se o Employee já possui endereços associados
+          const existingAddresses = await tx.address.findMany({
             where: { employeeId: id },
           });
-        }
 
-        // Cria os novos endereços fornecidos no DTO
-        const newAddresses = Array.isArray(address) ? address : [address];
-        for (const address of newAddresses) {
-          // Só os campos de endereço. O objeto aninhado não passa pela
-          // validação do DTO, e espalhá-lo inteiro deixava gravar um
-          // endereço com companyId, ownerId ou supplierId de outra empresa
-          await tx.address.create({
-            data: {
-              type: address.type,
-              zipcode: address.zipcode,
-              state: address.state,
-              city: address.city,
-              neighborhood: address.neighborhood,
-              street: address.street,
-              number: address.number,
-              complement: address.complement,
-              ownerType: 'EMPLOYEE',
-              employeeId: id,
-            },
-          });
-        }
-      }
-
-      // Registrar no histórico
-      if (userId && employeeBefore) {
-        const changedFields: string[] = [];
-        const changes: any = { before: {}, after: {} };
-
-        // Detectar campos alterados
-        Object.keys(rest).forEach((key) => {
-          if (
-            employeeBefore[key] !== undefined &&
-            employeeBefore[key] !== rest[key]
-          ) {
-            changedFields.push(key);
-            changes.before[key] = employeeBefore[key];
-            changes.after[key] = rest[key];
+          // Exclui os endereços existentes, se houver
+          if (existingAddresses.length > 0) {
+            await tx.address.deleteMany({
+              where: { employeeId: id },
+            });
           }
-        });
 
-        // Tratamento especial para isActive
-        if (isActive !== undefined && employeeBefore.isActive !== isActive) {
-          const action = isActive ? 'REACTIVATE' : 'DEACTIVATE';
-          const description = isActive
-            ? this.historyService.getReactivateDescription(
-                employeeUpdate.name || 'Sem nome',
-              )
-            : this.historyService.getDeactivateDescription(
-                employeeUpdate.name || 'Sem nome',
-              );
-
-          await this.historyService.createEmployeeHistory({
-            employeeId: id,
-            action,
-            description,
-            changes: {
-              before: { isActive: employeeBefore.isActive },
-              after: { isActive },
-            },
-            createdBy: userId,
-            createdByName: userName,
-          });
-        } else if (changedFields.length > 0) {
-          // Registro de alterações normais
-          await this.historyService.createEmployeeHistory({
-            employeeId: id,
-            action: 'UPDATE',
-            description:
-              this.historyService.getUpdateDescription(changedFields),
-            changes,
-            metadata: { changedFields },
-            createdBy: userId,
-            createdByName: userName,
-          });
+          // Cria os novos endereços fornecidos no DTO
+          const newAddresses = Array.isArray(address) ? address : [address];
+          for (const address of newAddresses) {
+            // Só os campos de endereço. O objeto aninhado não passa pela
+            // validação do DTO, e espalhá-lo inteiro deixava gravar um
+            // endereço com companyId, ownerId ou supplierId de outra empresa
+            await tx.address.create({
+              data: {
+                type: address.type,
+                zipcode: address.zipcode,
+                state: address.state,
+                city: address.city,
+                neighborhood: address.neighborhood,
+                street: address.street,
+                number: address.number,
+                complement: address.complement,
+                ownerType: 'EMPLOYEE',
+                employeeId: id,
+              },
+            });
+          }
         }
-      }
 
-      return employeeUpdate;
-    });
+        // Registrar no histórico
+        if (userId && employeeBefore) {
+          const changedFields: string[] = [];
+          const changes: any = { before: {}, after: {} };
+
+          // Detectar campos alterados
+          Object.keys(rest).forEach((key) => {
+            if (
+              employeeBefore[key] !== undefined &&
+              employeeBefore[key] !== rest[key]
+            ) {
+              changedFields.push(key);
+              changes.before[key] = employeeBefore[key];
+              changes.after[key] = rest[key];
+            }
+          });
+
+          // Tratamento especial para isActive
+          if (isActive !== undefined && employeeBefore.isActive !== isActive) {
+            const action = isActive ? 'REACTIVATE' : 'DEACTIVATE';
+            const description = isActive
+              ? this.historyService.getReactivateDescription(
+                  employeeUpdate.name || 'Sem nome',
+                )
+              : this.historyService.getDeactivateDescription(
+                  employeeUpdate.name || 'Sem nome',
+                );
+
+            await this.historyService.createEmployeeHistory({
+              employeeId: id,
+              action,
+              description,
+              changes: {
+                before: { isActive: employeeBefore.isActive },
+                after: { isActive },
+              },
+              createdBy: userId,
+              createdByName: userName,
+            });
+          } else if (changedFields.length > 0) {
+            // Registro de alterações normais
+            await this.historyService.createEmployeeHistory({
+              employeeId: id,
+              action: 'UPDATE',
+              description:
+                this.historyService.getUpdateDescription(changedFields),
+              changes,
+              metadata: { changedFields },
+              createdBy: userId,
+              createdByName: userName,
+            });
+          }
+        }
+
+        return employeeUpdate;
+      })
+      .then(async (employeeUpdate) => {
+        // Salário base ou contratação mudou: a folha acompanha (F-7, F-8)
+        if (syncPayroll) {
+          await this.payroll.syncEmployee(employeeUpdate.companyId, id);
+        }
+        return employeeUpdate;
+      });
   }
 
   async remove(id: string, userId?: string, userName?: string) {

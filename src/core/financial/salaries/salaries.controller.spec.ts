@@ -51,9 +51,12 @@ describe('SalariesController (estrutura da folha por colaborador)', () => {
     await controller.delete(req, 'ps-1');
 
     expect(service.getSalaryDetails).toHaveBeenCalledWith('ps-1', 'c-1');
-    expect(service.update).toHaveBeenCalledWith('ps-1', 'c-1', {
-      amount: 10,
-    });
+    expect(service.update).toHaveBeenCalledWith(
+      'ps-1',
+      'c-1',
+      { amount: 10 },
+      'u-1',
+    );
     expect(service.delete).toHaveBeenCalledWith('ps-1', 'c-1');
   });
 });

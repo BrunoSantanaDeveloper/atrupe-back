@@ -26,7 +26,9 @@ describe('EmployeeService — quantidade e cota de usuários', () => {
       }),
     };
     const history: any = { createEmployeeHistory: jest.fn() };
-    service = new EmployeeService(prisma, history, planControl);
+    service = new EmployeeService(prisma, history, planControl, {
+      syncEmployee: jest.fn(),
+    } as any);
   });
 
   it('traz quem tem acesso e o limite do plano, já com os adicionais', async () => {
