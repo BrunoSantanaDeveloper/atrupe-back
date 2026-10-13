@@ -100,6 +100,14 @@ export const PDF_QUOTATION_PRODUCT_INCLUDE = {
       createdAt: 'asc' as const,
     },
   },
+  variation: { select: { name: true } },
+  // As linhas acrescentadas no item (ORC-5), sem custo
+  lines: {
+    select: { name: true, sector: true, tags: true, price: true },
+    orderBy: { createdAt: 'asc' as const },
+  },
+  // Só para repartir o valor entre as etapas: o retrato não sai (ORC-7)
+  snapshot: { select: { data: true } },
 } as const;
 
 export const PDF_DELIVERY_INFO_INCLUDE = {

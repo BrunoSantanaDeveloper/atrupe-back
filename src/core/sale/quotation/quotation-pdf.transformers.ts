@@ -4,6 +4,106 @@
  */
 import { DEFAULT_IMAGE_SIZE, FALLBACK_IMAGE_SIZE } from './quotation.utils';
 
+/**
+ * O nível de detalhe da proposta (IP-12): o resumo (só o descritivo), a
+ * lista (as etapas e o que cada uma usa) ou os valores (a lista com o valor
+ * do item repartido entre as etapas).
+ */
+export type PdfDetailLevel = 'resumo' | 'lista' | 'valores';
+
+export type PdfOptions = {
+  detailLevel: PdfDetailLevel;
+  // Sem `values:values:view`, os preços de linha e de etapa não saem
+  values: boolean;
+};
+
+const DEFAULT_OPTIONS: PdfOptions = { detailLevel: 'valores', values: true };
+
+/**
+ * O nível que vale: sem o recurso de plano do detalhamento, o resumo; sem
+ * a permissão de valores, os valores caem para a lista. Sem pedido, os
+ * valores para quem os vê e a lista para quem não vê.
+ */
+export function pdfDetailLevel(
+  requested: string | undefined,
+  { values, itemDetails }: { values: boolean; itemDetails: boolean },
+): PdfDetailLevel {
+  if (!itemDetails) return 'resumo';
+  const level =
+    requested === 'resumo' || requested === 'lista' || requested === 'valores'
+      ? requested
+      : values
+        ? 'valores'
+        : 'lista';
+  return level === 'valores' && !values ? 'lista' : level;
+}
+
+type RawStage = {
+  name?: string;
+  sector?: string;
+  sale?: number;
+  cost?: number;
+  lines?: {
+    name?: string;
+    resource?: string | null;
+    quantity?: number | null;
+    unit?: string;
+    entries?: { name: string; quantity: number; unit: string }[] | null;
+  }[];
+};
+
+/**
+ * As etapas da composição do item na proposta, pelo nome de venda (o
+ * retrato guarda o nome local da etapa). Nos valores, o valor do produto
+ * (o do item sem as linhas acrescentadas) é repartido pelo peso de cada
+ * etapa no preço sugerido, e as etapas somam esse valor. A etapa vazia não
+ * aparece; custo nenhum sai daqui.
+ */
+export function pdfStagesOf(qp: any, options: PdfOptions) {
+  if (options.detailLevel === 'resumo') return [];
+  const raw = (qp.snapshot?.data?.stages ?? []) as RawStage[];
+  const stages = raw.filter(
+    (stage) => (stage.lines?.length ?? 0) > 0 || (stage.cost ?? 0) > 0,
+  );
+  const listOf = (stage: RawStage) =>
+    (stage.lines ?? []).flatMap((line) =>
+      line.entries?.length
+        ? line.entries.map((entry) => ({
+            name: entry.name,
+            quantity: entry.quantity,
+            unit: entry.unit,
+          }))
+        : [
+            {
+              name: line.resource || line.name || '',
+              quantity: line.quantity ?? null,
+              unit: line.unit ?? '',
+            },
+          ],
+    );
+
+  const withPrices = options.detailLevel === 'valores' && options.values;
+  const value = Math.max(0, (qp.finalValue ?? 0) - (qp.linesTotal ?? 0));
+  const weights = stages.map((stage) => Math.max(0, stage.sale ?? 0));
+  const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
+  let given = 0;
+  return stages.map((stage, index) => {
+    const base = {
+      name: stage.name ?? '',
+      sector: stage.sector ?? '',
+      items: listOf(stage),
+    };
+    if (!withPrices || weightTotal <= 0) return base;
+    // A última leva o resto do arredondamento: as etapas somam o valor
+    const price =
+      index === stages.length - 1
+        ? value - given
+        : Math.round((value * weights[index]) / weightTotal);
+    given += price;
+    return { ...base, price };
+  });
+}
+
 type QuotationPdfRaw = {
   id: string;
   companyId: string;
@@ -193,7 +293,10 @@ export function transformPdfOrder(
   };
 }
 
-export function transformPdfQuotationItem(qp: any) {
+export function transformPdfQuotationItem(
+  qp: any,
+  options: PdfOptions = DEFAULT_OPTIONS,
+) {
   const unitValue = qp.items.reduce((total: number, item: any) => {
     return total + (item.unitCost || 0);
   }, 0);
@@ -263,11 +366,27 @@ export function transformPdfQuotationItem(qp: any) {
         volume: item.volume,
       })),
     },
+    origin: qp.origin ?? 'PRODUCT',
+    variation: qp.variation ? { name: qp.variation.name } : null,
+    // O valor do item já inclui as linhas e o acréscimo embutido (ALT-25):
+    // a proposta não tem linha própria de acréscimo
+    addition: qp.addition ?? 0,
+    linesTotal: qp.linesTotal ?? 0,
+    lines: (qp.lines ?? []).map((line: any) => ({
+      name: line.name,
+      sector: line.sector,
+      tags: line.tags ?? [],
+      ...(options.values ? { price: line.price } : {}),
+    })),
+    stages: pdfStagesOf(qp, options),
   };
 }
 
-export function transformPdfQuotationItems(quotationProducts: any[]) {
-  return quotationProducts.map(transformPdfQuotationItem);
+export function transformPdfQuotationItems(
+  quotationProducts: any[],
+  options: PdfOptions = DEFAULT_OPTIONS,
+) {
+  return quotationProducts.map((qp) => transformPdfQuotationItem(qp, options));
 }
 
 export function transformPdfDelivery(deliveryInfo: any) {
@@ -395,14 +514,19 @@ export function transformQuotationToPdfData(
   quotation: QuotationPdfRaw,
   availablePaymentMethods: string[] = [],
   loggedEmployeeSignatureUrl: string | null = null,
+  options: PdfOptions = DEFAULT_OPTIONS,
 ) {
   return {
+    detailLevel: options.detailLevel,
     company: transformPdfCompany(quotation.company),
     client: transformPdfClient(quotation.client),
     contact: transformPdfContact(quotation.contact),
     quotation: transformPdfQuotationInfo(quotation, loggedEmployeeSignatureUrl),
     order: transformPdfOrder(quotation.order, quotation.approvedAt),
-    quotationItems: transformPdfQuotationItems(quotation.quotationProduct),
+    quotationItems: transformPdfQuotationItems(
+      quotation.quotationProduct,
+      options,
+    ),
     delivery: transformPdfDelivery(quotation.deliveryInfo),
     payment: quotation.quotationPayment
       ? {

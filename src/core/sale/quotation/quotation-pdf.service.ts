@@ -6,7 +6,10 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { QUOTATION_PDF_DATA_INCLUDE } from './quotation-pdf.includes';
-import { transformQuotationToPdfData } from './quotation-pdf.transformers';
+import {
+  PdfOptions,
+  transformQuotationToPdfData,
+} from './quotation-pdf.transformers';
 import { QuotationFinancialService } from './quotation-financial.service';
 
 /**
@@ -25,7 +28,7 @@ export class QuotationPdfService {
   /**
    * Retorna dados formatados do orçamento para geração de PDF
    */
-  async getQuotationPdfData(id: string, userId?: string) {
+  async getQuotationPdfData(id: string, userId?: string, options?: PdfOptions) {
     try {
       const quotation = await this.prisma.quotation.findUnique({
         where: { id },
@@ -56,6 +59,7 @@ export class QuotationPdfService {
         quotation as any,
         availablePaymentMethods,
         loggedEmployee?.signatureUrl ?? null,
+        options,
       );
     } catch (error) {
       this.logger.error('Error generating quotation PDF data:', error.stack);

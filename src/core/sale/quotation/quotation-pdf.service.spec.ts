@@ -73,6 +73,7 @@ describe('QuotationPdfService', () => {
         mockQuotation,
         mockPaymentMethods,
         null,
+        undefined,
       );
       expect(result).toEqual(mockTransformedData);
     });
@@ -103,6 +104,7 @@ describe('QuotationPdfService', () => {
         mockQuotation,
         mockPaymentMethods,
         'https://example.com/employee-signature.png',
+        undefined,
       );
     });
 

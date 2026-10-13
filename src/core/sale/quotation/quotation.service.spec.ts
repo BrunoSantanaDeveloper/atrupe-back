@@ -332,6 +332,7 @@ describe('QuotationService', () => {
       expect(pdfService.getQuotationPdfData).toHaveBeenCalledWith(
         mockQuotationId,
         'user-1',
+        undefined,
       );
     });
 
@@ -753,6 +754,7 @@ describe('QuotationService', () => {
       expect(pdfService.getQuotationPdfData).toHaveBeenCalledWith(
         mockQuotationId,
         'user-1',
+        undefined,
       );
     });
   });

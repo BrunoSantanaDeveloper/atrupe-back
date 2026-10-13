@@ -9,6 +9,8 @@ import {
   transformPdfPayment,
   transformPdfTotal,
   transformQuotationToPdfData,
+  pdfDetailLevel,
+  pdfStagesOf,
 } from './quotation-pdf.transformers';
 
 describe('QuotationPdfTransformers', () => {
@@ -625,6 +627,74 @@ describe('QuotationPdfTransformers', () => {
       expect(result.quotationItems).toHaveLength(0);
       expect(result.delivery).toBeNull();
       expect(result.payment).toBeNull();
+    });
+  });
+
+  describe('detalhamento da proposta (IP-12, Fase 4.6)', () => {
+    it('o nível pela permissão de valores e pelo recurso do plano', () => {
+      const both = { values: true, itemDetails: true };
+      expect(pdfDetailLevel(undefined, both)).toBe('valores');
+      expect(pdfDetailLevel('lista', both)).toBe('lista');
+      expect(pdfDetailLevel('valores', { ...both, values: false })).toBe(
+        'lista',
+      );
+      expect(pdfDetailLevel('valores', { ...both, itemDetails: false })).toBe(
+        'resumo',
+      );
+    });
+
+    it('nos valores, as etapas repartem o valor do produto pelo peso e somam ele', () => {
+      const qp = {
+        finalValue: 10000,
+        linesTotal: 1000,
+        snapshot: {
+          data: {
+            stages: [
+              {
+                name: 'Impressão',
+                sector: 'Impressão',
+                sale: 2,
+                cost: 50,
+                lines: [{ resource: 'Lona', quantity: 2, unit: 'm²' }],
+              },
+              {
+                name: 'Vazia',
+                sector: 'Acabamento',
+                sale: 0,
+                cost: 0,
+                lines: [],
+              },
+              {
+                name: 'Instalação',
+                sector: 'Instalação',
+                sale: 1,
+                cost: 30,
+                lines: [{ name: 'Mão de obra', quantity: 60, unit: 'min' }],
+              },
+            ],
+          },
+        },
+      };
+      const stages = pdfStagesOf(qp, { detailLevel: 'valores', values: true });
+      expect(
+        stages.map((stage) => [
+          stage.name,
+          (stage as { price?: number }).price,
+        ]),
+      ).toEqual([
+        ['Impressão', 6000],
+        ['Instalação', 3000],
+      ]);
+      expect(stages[0].items).toEqual([
+        { name: 'Lona', quantity: 2, unit: 'm²' },
+      ]);
+      expect(JSON.stringify(stages)).not.toContain('cost');
+      expect(
+        pdfStagesOf(qp, { detailLevel: 'lista', values: true })[0],
+      ).not.toHaveProperty('price');
+      expect(pdfStagesOf(qp, { detailLevel: 'resumo', values: true })).toEqual(
+        [],
+      );
     });
   });
 });

@@ -15,6 +15,7 @@ import {
 } from './quotation-workflow.service';
 import { QuotationFinancialService } from './quotation-financial.service';
 import { QuotationPdfService } from './quotation-pdf.service';
+import { PdfOptions } from './quotation-pdf.transformers';
 import { QuotationImportService } from './quotation-import.service';
 
 export interface QuotationGroup {
@@ -246,8 +247,8 @@ export class QuotationService {
   // PDF Operations → QuotationPdfService
   // =====================================================
 
-  getQuotationPdfData(id: string, userId?: string) {
-    return this.pdfService.getQuotationPdfData(id, userId);
+  getQuotationPdfData(id: string, userId?: string, options?: PdfOptions) {
+    return this.pdfService.getQuotationPdfData(id, userId, options);
   }
 
   // =====================================================

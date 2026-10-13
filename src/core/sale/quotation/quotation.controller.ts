@@ -54,6 +54,7 @@ import {
 import { ValuesOnly } from '../../auth/abac/money-fields.decorator';
 import { permissionDenied } from '../../auth/abac/permissions.guard';
 import { QuotationResultService } from './quotation-result.service';
+import { pdfDetailLevel } from './quotation-pdf.transformers';
 import { ItemLineDto } from './dto/item-line.dto';
 import { QuotationLinesService } from './quotation-lines.service';
 
@@ -1066,11 +1067,28 @@ export class QuotationController {
     status: 404,
     description: 'Orçamento não encontrado.',
   })
-  async getQuotationPdfData(@Param('id') id: string, @Req() req) {
+  async getQuotationPdfData(
+    @Param('id') id: string,
+    @Req() req,
+    // resumo · lista · valores (IP-12)
+    @Query('detailLevel') detailLevel?: string,
+  ) {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
     await this.validateOwnership(id, req.user, 'view');
-    return await this.quotationService.getQuotationPdfData(id, req.user.userId);
+    const values = await canViewValues(req, this.abacService);
+    const itemDetails = await this.planControlService.hasFeature(
+      req.user.companyId,
+      'pdf_show_item_details',
+    );
+    return await this.quotationService.getQuotationPdfData(
+      id,
+      req.user.userId,
+      {
+        detailLevel: pdfDetailLevel(detailLevel, { values, itemDetails }),
+        values,
+      },
+    );
   }
 }
