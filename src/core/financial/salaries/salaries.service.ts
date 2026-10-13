@@ -87,6 +87,8 @@ export class SalariesService {
             id: true,
             name: true,
             avatarUrl: true,
+            // O código do colaborador é o do legado
+            legacyId: true,
             contract: true,
             baseSalary: true,
             sector: {
@@ -126,8 +128,12 @@ export class SalariesService {
             'Salário',
             'Salario',
           ];
-          const aIsBase = baseSalaryReferences.includes(a.name);
-          const bIsBase = baseSalaryReferences.includes(b.name);
+          const aIsBase =
+            !!a.payrollTemplate?.isBase ||
+            baseSalaryReferences.includes(a.name);
+          const bIsBase =
+            !!b.payrollTemplate?.isBase ||
+            baseSalaryReferences.includes(b.name);
 
           if (aIsBase && !bIsBase) return -1;
           if (!aIsBase && bIsBase) return 1;
@@ -139,6 +145,7 @@ export class SalariesService {
         const totals = this.structure.totalsOf(employee.PayrollSetup);
         return {
           id: employee.id,
+          code: employee.legacyId ?? null,
           name: employee.name,
           avatarUrl: employee.avatarUrl,
           sectorId: employee.sector.id,

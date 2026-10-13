@@ -29,6 +29,7 @@ const LINE_NOT_FOUND = 'Item não encontrado';
 const FIXED_BY_LAW =
   'Férias e 13º são calculados por lei e não podem ser editados';
 const CLT_ITEM = 'Este item faz parte da folha CLT';
+const BASE_ONLY_INCREASE = 'O salário base é sempre acréscimo';
 
 export const LINE_SELECT = {
   id: true,
@@ -183,6 +184,10 @@ export class PayrollStructureService {
         );
       }
     }
+    // O salário base é sempre acréscimo (é de onde saem os encargos)
+    if (template?.isBase && next.behavior !== 'ONLY_INCREASE') {
+      bad(BASE_ONLY_INCREASE);
+    }
     // Tirar zera os valores e mantém o item na empresa
     const isSet = dto.isSet ?? row.isSet;
     if (dto.isSet === false) next = { ...next, increase: 0, discount: 0 };
@@ -206,6 +211,15 @@ export class PayrollStructureService {
       },
       select: LINE_SELECT,
     });
+    // O salário base da folha é o salário do colaborador (D33): mudar aqui
+    // muda o cadastro e refaz os encargos (F-7)
+    if (template?.isBase && editsValues && isSet) {
+      await this.prisma.employee.update({
+        where: { id: row.employeeId },
+        data: { baseSalary: next.increase, sallary: next.increase },
+      });
+      await this.syncEmployee(companyId, row.employeeId);
+    }
     const siblings = await this.prisma.payrollSetup.findMany({
       where: { employeeId: row.employeeId },
       select: LINE_SELECT,

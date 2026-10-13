@@ -41,6 +41,8 @@ export const MONEY_COLUMNS = {
   Commission: ['commissionValue', 'totalCommission'],
   QuotationInstallment: ['value', 'additionalFee'],
   DeliveryInfo: ['cost', 'value'],
+  // O salário do cadastro e o salário base (D33)
+  Employee: ['sallary', 'baseSalary'],
 } as const;
 
 type MoneyModel = keyof typeof MONEY_COLUMNS;
@@ -48,6 +50,9 @@ type MoneyModel = keyof typeof MONEY_COLUMNS;
 const columnsOf = (...models: MoneyModel[]): string[] => [
   ...new Set(models.flatMap((model) => [...MONEY_COLUMNS[model]])),
 ];
+
+/** Colaborador: o salário só para quem vê valores (contrato, PATCH /employee) */
+export const EMPLOYEE_MONEY_FIELDS = columnsOf('Employee');
 
 /** Produto: custo e preço do produto e de cada item dele */
 export const PRODUCT_MONEY_FIELDS = columnsOf('ProductItem');

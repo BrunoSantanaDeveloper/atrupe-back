@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import {
   ASSET_MONEY_FIELDS,
+  EMPLOYEE_MONEY_FIELDS,
   MONEY_COLUMNS,
   PRODUCT_MONEY_FIELDS,
   QUOTATION_MONEY_FIELDS,
@@ -51,6 +52,7 @@ const NOT_MONEY: Record<keyof typeof MONEY_COLUMNS, string[]> = {
   Commission: [],
   QuotationInstallment: [],
   DeliveryInfo: ['daysAfterApproval'],
+  Employee: [],
 };
 
 const NUMERIC = ['Float', 'Decimal', 'Int', 'BigInt'];
@@ -78,6 +80,7 @@ describe('campos de dinheiro das rotas antigas', () => {
     for (const list of [
       PRODUCT_MONEY_FIELDS,
       ASSET_MONEY_FIELDS,
+      EMPLOYEE_MONEY_FIELDS,
       QUOTATION_MONEY_FIELDS,
     ]) {
       expect(list).not.toContain('total');

@@ -29,6 +29,8 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { FilterEmployeeDto } from './dto/filter-employee.dto';
+import { MoneyFields } from '../auth/abac/money-fields.decorator';
+import { EMPLOYEE_MONEY_FIELDS } from '../auth/abac/money-fields';
 
 @ApiTags('Employees')
 @UseGuards(JwtAuthGuard, PermissionsGuard, TenantGuard)
@@ -71,6 +73,7 @@ export class EmployeeController {
   }
 
   @Get('list')
+  @MoneyFields(...EMPLOYEE_MONEY_FIELDS)
   @ApiQuery({ type: FilterEmployeeDto })
   @ApiOperation({
     summary: 'Obtém a lista simples de todos os empregados sem agrupamento',
@@ -87,6 +90,7 @@ export class EmployeeController {
 
   @Get()
   @HasPermission('view', 'company_settings:users')
+  @MoneyFields(...EMPLOYEE_MONEY_FIELDS)
   @ApiQuery({ type: FilterEmployeeDto })
   @ApiOperation({ summary: 'Obtém a lista de todos os empregados' })
   @ApiResponse({
