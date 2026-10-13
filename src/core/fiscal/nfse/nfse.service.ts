@@ -1662,15 +1662,14 @@ export class NfseService {
             // nacional. Alguns municípios exigem um regime específico e outros
             // recusam a tag, então o emissor pode configurar; o padrão cobre o
             // caso comum.
-            // Sem regime configurado vai 0 ("nenhum") em vez de omitir a tag.
-            // Omitir nao mudava o que a prefeitura ve — o provedor escreve
-            // <regEspTrib>0</regEspTrib> de qualquer jeito —, mas a unica nota
-            // da base que saiu sem este campo (Fenix, Lucro Presumido) e' a
-            // unica cujo DPS trouxe <finNFSe> solto entre tpEmit e cLocEmi,
-            // que a prefeitura recusa (E1235). Como o XML resultante e' o
-            // mesmo, mandar 0 custa nada e desfaz a unica diferenca que
-            // explicaria o desvio no montador do provedor.
-            RegEspTrib: regimeEspecial ?? 0,
+            // Mandar 0 ("nenhum") em vez de omitir foi testado em 13/10/2026
+            // para ver se tirava o <finNFSe> que o provedor escreve fora de
+            // lugar no DPS do emissor fora do Simples (E1235): nao tirou
+            // (Fenix, RPS 103). Omitir volta a ser o certo — e' a semantica
+            // documentada do campo e ha' municipio que recusa a tag.
+            ...(regimeEspecial !== undefined
+              ? { RegEspTrib: regimeEspecial }
+              : {}),
             // OptSN: 1 = optante do Simples Nacional, 2 = não optante. O MEI
             // é optante — o Ambiente Nacional ainda confere a condição na base
             // do Simples Nacional na data de competência, mas mandar 2 numa

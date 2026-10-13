@@ -954,16 +954,9 @@ describe('NfseService', () => {
         expect(regimeEnviado().RegEspTrib).toBe(6);
       });
 
-      /**
-       * Fora do Simples nao ha' regime especial a declarar: o padrao antigo
-       * mandava 1 ("Microempresa Municipal"), falso para Lucro Presumido ou
-       * Real. Vai 0 ("nenhum"), que e' o que o provedor ja' escrevia no DPS
-       * quando a tag era omitida — e omitir era a unica diferenca entre a
-       * nota que saiu com <finNFSe> fora de lugar e as que saem certas.
-       */
-      it('declara "nenhum" fora do Simples em vez de microempresa municipal', async () => {
+      it('omite a tag fora do Simples em vez de declarar microempresa municipal', async () => {
         await emitirCom({ emitCrt: 3, regimeEspecialTributacao: null });
-        expect(regimeEnviado().RegEspTrib).toBe(0);
+        expect(regimeEnviado()).not.toHaveProperty('RegEspTrib');
       });
 
       it('respeita o regime configurado no emissor', async () => {
