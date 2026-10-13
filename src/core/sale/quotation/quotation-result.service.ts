@@ -100,6 +100,9 @@ export class QuotationResultService {
       select: {
         companyId: true,
         totalValue: true,
+        quotationNumber: true,
+        series: { select: { code: true } },
+        client: { select: { name: true } },
         seller: {
           select: { sellerProfile: { select: { commission: true } } },
         },
@@ -203,6 +206,11 @@ export class QuotationResultService {
     const result = revenue - productionCost - commission - taxes;
 
     return {
+      // A venda ("3352-V1") e o cliente, para o topo da tela
+      reference: [quotation.quotationNumber, quotation.series?.code]
+        .filter((part) => part !== null && part !== undefined && part !== '')
+        .join('-'),
+      client: quotation.client?.name ?? null,
       revenue,
       productionCost,
       commission: { percent: commissionPercent, value: commission },
