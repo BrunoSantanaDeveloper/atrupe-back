@@ -124,13 +124,12 @@ export const allocationOf = (input: {
  * (BC-3.1, BC-9); sem custo a repartir, pelos percentuais.
  */
 export const manualFits = (pool: number, percentages: number[]) =>
-  pool > 0
-    ? Math.abs(
-        percentages.reduce(
-          (sum, percentage) => sum + Math.round((pool * percentage) / 100),
-          0,
-        ) - pool,
-      ) <= 1
-    : Math.abs(
-        percentages.reduce((sum, percentage) => sum + percentage, 0) - 100,
-      ) < 0.0001;
+  Math.abs(percentages.reduce((sum, percentage) => sum + percentage, 0) - 100) <
+    0.0001 ||
+  (pool > 0 &&
+    Math.abs(
+      percentages.reduce(
+        (sum, percentage) => sum + Math.round((pool * percentage) / 100),
+        0,
+      ) - pool,
+    ) <= 1);

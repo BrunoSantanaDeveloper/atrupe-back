@@ -22,7 +22,7 @@ import {
   UpdateAdminExpenseDto,
 } from './dto/cost-base.dto';
 import { manualFits } from './engine/allocation';
-import { criterionValueOf, shareValueOf } from './engine/expenses';
+import { criterionValueOf } from './engine/expenses';
 import { toMinute } from './engine/labor';
 import { monthStart, monthsUpTo, shiftMonth } from './engine/months';
 import { distributionFits, summaryOf } from './engine/sectors';
@@ -157,16 +157,11 @@ export class CostBaseService {
       if (seen.has(share.sectorId)) bad('Setor repetido no rateio');
       seen.add(share.sectorId);
     }
-    // Pelo valor, com 1 centavo de tolerância; sem valor, pelos percentuais
-    const reference = account.referenceValue ?? 0;
-    const fits =
-      reference > 0
-        ? shares.reduce(
-            (sum, share) => sum + shareValueOf(reference, share.percentage),
-            0,
-          ) <=
-          reference + 1
-        : shares.reduce((sum, share) => sum + share.percentage, 0) <= 100;
+    // Pelos percentuais ou pelo valor, com 1 centavo de tolerância
+    const fits = distributionFits(
+      account.referenceValue ?? 0,
+      shares.map((share) => share.percentage),
+    );
     if (!fits) bad('O rateio não pode passar de 100% do custo de referência.');
 
     const allocations = shares.map(({ sectorId, percentage }) => ({

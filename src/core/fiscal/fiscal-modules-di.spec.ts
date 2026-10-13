@@ -58,7 +58,15 @@ describe('Módulos com PermissionsGuard têm AbacService no contexto', () => {
       // desta checagem estática.
       if (modules.length === 0) continue;
 
-      for (const modulePath of modules) {
+      // A pasta pode ter um módulo sem controller (auditoria, parâmetros):
+      // quem precisa do AbacService é o módulo que registra este controller.
+      // Se nenhum irmão o importa, todos seguem conferidos
+      const controllerFile = path.basename(controller, '.ts');
+      const owners = modules.filter((modulePath) =>
+        fs.readFileSync(modulePath, 'utf8').includes(`./${controllerFile}'`),
+      );
+
+      for (const modulePath of owners.length ? owners : modules) {
         const raw = fs.readFileSync(modulePath, 'utf8');
         const importaAuthModule = /AuthModule/.test(raw);
         const declaraAbac = /AbacService/.test(raw);

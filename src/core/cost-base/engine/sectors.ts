@@ -114,17 +114,16 @@ export const summaryOf = (costs: SectorCosts) => {
 };
 
 /**
- * A soma da distribuição conferida pelo valor, com 1 centavo de tolerância
- * (BC-5, design.md §6.8); sem custo administrativo, pelos percentuais.
+ * A soma cabe em 100 % (BC-5, design.md §6.8): pelos percentuais, ou pelo
+ * valor com 1 centavo de tolerância (o percentual que nasce de um valor em
+ * reais pode passar de 100 % por arredondamento sem passar no dinheiro, e a
+ * soma exata de 100 % pode passar centavos no arredondamento de cada parte).
  */
-export const distributionFits = (
-  administrativeCost: number,
-  percentages: number[],
-) =>
-  administrativeCost > 0
-    ? percentages.reduce(
-        (sum, percentage) => sum + receivedOf(administrativeCost, percentage),
-        0,
-      ) <=
-      administrativeCost + 1
-    : percentages.reduce((sum, percentage) => sum + percentage, 0) <= 100;
+export const distributionFits = (total: number, percentages: number[]) =>
+  percentages.reduce((sum, percentage) => sum + percentage, 0) <= 100 + 1e-9 ||
+  (total > 0 &&
+    percentages.reduce(
+      (sum, percentage) => sum + receivedOf(total, percentage),
+      0,
+    ) <=
+      total + 1);
