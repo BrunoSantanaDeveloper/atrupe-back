@@ -20,7 +20,9 @@ import {
   Logger,
   Req,
   HttpCode,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { QuotationService } from './quotation.service';
 import { AddItemDto, CreateQuotationDto } from './dto/create-quotation.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
@@ -45,7 +47,13 @@ import { CancelOrderDto } from '../order/dto/create-order.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { AbacService } from '../../auth/abac/abac.service';
 import { PlanControlService } from '../../plan/plan-control.service';
-import { canViewValues } from '../../auth/abac/values-visibility.interceptor';
+import {
+  VALUES_PERMISSION,
+  canViewValues,
+} from '../../auth/abac/values-visibility.interceptor';
+import { ValuesOnly } from '../../auth/abac/money-fields.decorator';
+import { permissionDenied } from '../../auth/abac/permissions.guard';
+import { QuotationResultService } from './quotation-result.service';
 import { ItemLineDto } from './dto/item-line.dto';
 import { QuotationLinesService } from './quotation-lines.service';
 
@@ -69,6 +77,7 @@ export class QuotationController {
     private readonly prisma: PrismaService,
     private readonly planControlService: PlanControlService,
     private readonly lines: QuotationLinesService,
+    private readonly results: QuotationResultService,
   ) {}
 
   /**
@@ -372,6 +381,74 @@ export class QuotationController {
       dto,
       await canViewValues(req, this.abacService),
     );
+  }
+
+  /* --------------------------------------------------------------------
+   * Resultado previsto da venda (ORC-8): tela de método, com permissão
+   * própria (desligada no perfil de vendedor), valores e a base de custos.
+   * O acesso fica no registro de atividade; a exportação, também no
+   * histórico do orçamento (SEG-4)
+   * ------------------------------------------------------------------ */
+
+  private async assertResultAccess(id: string, req) {
+    await this.validateOwnership(id, req.user, 'view');
+    if (!(await canViewValues(req, this.abacService))) {
+      throw permissionDenied([VALUES_PERMISSION]);
+    }
+    await this.planControlService.enforceFeature(
+      req.user.companyId,
+      'cost_base',
+    );
+  }
+
+  @Get(':id/result')
+  @HasPermission('view', 'sale:quotation_result')
+  @ObservePermissions(false)
+  @ValuesOnly()
+  @ApiOperation({ summary: 'O resultado previsto da venda' })
+  async getResult(@Param('id') id: string, @Req() req) {
+    await this.assertResultAccess(id, req);
+    return this.results.result(id);
+  }
+
+  @Get(':id/result/export')
+  @HasPermission('export', 'sale:quotation_result')
+  @ObservePermissions(false)
+  @ValuesOnly()
+  @ApiOperation({ summary: 'O resultado previsto em PDF identificado' })
+  async exportResult(
+    @Param('id') id: string,
+    @Req() req,
+    @Res() res: Response,
+  ) {
+    await this.assertResultAccess(id, req);
+    const user = await this.prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: { name: true },
+    });
+    const userName = user?.name || req.user.username || 'Usuário';
+    const { file, name } = await this.results.exportPdf(id, {
+      userName,
+      at: new Date(),
+    });
+    await this.prisma.quotationHistory
+      .create({
+        data: {
+          quotationId: id,
+          action: 'RESULT_EXPORTED',
+          description: `Resultado previsto exportado por ${userName}`,
+          createdBy: req.user.userId,
+          createdByName: userName,
+        },
+      })
+      .catch((error) =>
+        this.logger.error(
+          `Exportação do resultado sem registro no histórico: ${error.message}`,
+        ),
+      );
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    res.send(file);
   }
 
   // Retirar uma linha de dentro do registro é editar o registro

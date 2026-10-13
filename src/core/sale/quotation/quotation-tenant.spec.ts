@@ -24,12 +24,14 @@ describe('Orçamento: outra empresa', () => {
     };
     const abac = { canAccessOtherSellers: jest.fn().mockResolvedValue(true) };
     const lines = { preview: jest.fn(), add: jest.fn(), remove: jest.fn() };
+    const results = { result: jest.fn(), exportPdf: jest.fn() };
     const controller = new QuotationController(
       service as any,
       abac as any,
       prisma as any,
       {} as any,
       lines as any,
+      results as any,
     );
     const req = { user: { userId: 'u-a', companyId: 'empresa-a' } };
     const id = '6f1c2b8e-4d3a-4f5b-9c7d-1e2f3a4b5c6d';
@@ -80,6 +82,23 @@ describe('Orçamento: outra empresa', () => {
     ] as const)('%s', async (_label, action, call) => {
       await expect(call()).rejects.toBeInstanceOf(ForbiddenException);
       expect(lines[action]).not.toHaveBeenCalled();
+    });
+
+    // O resultado previsto da venda (ORC-8, Fase 4.6)
+    it.each([
+      [
+        'GET /sale/quotation/:id/result',
+        'result',
+        () => controller.getResult(id, req),
+      ],
+      [
+        'GET /sale/quotation/:id/result/export',
+        'exportPdf',
+        () => controller.exportResult(id, req, {} as any),
+      ],
+    ] as const)('%s', async (_label, action, call) => {
+      await expect(call()).rejects.toBeInstanceOf(ForbiddenException);
+      expect(results[action]).not.toHaveBeenCalled();
     });
   });
 

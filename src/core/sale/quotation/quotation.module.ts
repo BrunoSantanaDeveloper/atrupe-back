@@ -10,6 +10,7 @@ import { DeliveryScheduleModule } from '../delivery-schedule/delivery-schedule.m
 import { PlanControlModule } from '../../plan/plan-control.module';
 import { AssemblyModule } from '../../assembly/assembly.module';
 import { SalesSettingsModule } from '../sales-settings/sales-settings.module';
+import { PricingModule } from '../../pricing/pricing.module';
 
 // Sub-services
 import { QuotationCrudService } from './quotation-crud.service';
@@ -19,6 +20,7 @@ import { QuotationFinancialService } from './quotation-financial.service';
 import { QuotationPdfService } from './quotation-pdf.service';
 import { QuotationImportService } from './quotation-import.service';
 import { QuotationLinesService } from './quotation-lines.service';
+import { QuotationResultService } from './quotation-result.service';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { QuotationLinesService } from './quotation-lines.service';
     AssemblyModule,
     // O markup do terceirizado avulso nas linhas do item (T-4)
     SalesSettingsModule,
+    // Tributos da Precificação no resultado previsto (ORC-8)
+    PricingModule,
   ],
   controllers: [QuotationController],
   providers: [
@@ -44,6 +48,7 @@ import { QuotationLinesService } from './quotation-lines.service';
     QuotationPdfService,
     QuotationImportService,
     QuotationLinesService,
+    QuotationResultService,
   ],
   exports: [
     QuotationService,

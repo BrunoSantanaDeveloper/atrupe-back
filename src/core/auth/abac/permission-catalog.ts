@@ -18,7 +18,9 @@ export const PERMISSION_ACTIONS = [
 export const PERMISSION_CATALOG: Readonly<Record<string, readonly string[]>> = {
   values: ['values'],
   dashboard: ['financial', 'sales', 'quotations', 'rankings'],
-  sale: ['quotation', 'other_quotation', 'order'],
+  // quotation_result: o resultado previsto da venda (ORC-8), tela de
+  // método desligada no perfil de vendedor
+  sale: ['quotation', 'other_quotation', 'order', 'quotation_result'],
   financial: ['flow', 'cash_control', 'fixed_expense', 'payroll'],
   cost: ['base', 'pricing'],
   production: ['production', 'delivery_schedule'],
