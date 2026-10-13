@@ -64,6 +64,8 @@ const SECTOR_SELECT = {
   allocationPreviousCriterion: true,
   allocationOutdated: true,
   hourSale: true,
+  hourSaleRule: true,
+  hourSaleProfit: true,
 } satisfies Prisma.CompanySectorSelect;
 
 type SectorRow = Prisma.CompanySectorGetPayload<{
@@ -358,6 +360,16 @@ export class CostBaseSnapshotService {
       allocations,
       labor,
     };
+  }
+
+  /** A parte do rateio do setor que cabe ao bem no mês (para o patrimônio). */
+  async poolOf(companyId: string, assetId: string) {
+    const { allocations } = await this.load(companyId);
+    for (const allocation of allocations) {
+      const item = allocation.equipment.find((row) => row.id === assetId);
+      if (item) return item.poolShare;
+    }
+    return 0;
   }
 
   /**

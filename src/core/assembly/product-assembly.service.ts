@@ -423,6 +423,41 @@ export class ProductAssemblyService {
     };
   }
 
+  /**
+   * O custo e os preços do produto na medida padrão, por unidade comercial,
+   * sem gravar nada: a precificação lê daqui (grupo produtos). Sem
+   * composição, nulo (custo não calculado, DC-15).
+   */
+  async standardPricing(companyId: string, productId: string) {
+    const product = await this.product({ companyId, productId });
+    const all = await this.prisma.productAssembly.findMany({
+      where: { productId: product.id, companyId },
+      include: ASSEMBLY_INCLUDE,
+    });
+    const assembly = all.find((item) => item.variationKey === '') ?? null;
+    if (!assembly?.blocks.length) return null;
+    const graph = await this.loadGraph(companyId, all);
+    const markup = await this.pricing.referenceMarkupOf(companyId);
+    const pricing = productPricing(product);
+    const computed = this.compute(
+      new EngineBuilder(graph),
+      graph,
+      markup,
+      product,
+      assembly,
+      null,
+      pricing.measure,
+    );
+    return {
+      unitKind: pricing.unitKind,
+      unitCost: computed.cost
+        ? Math.round(computed.cost / Math.max(computed.saleAmount, 0.0001))
+        : null,
+      suggestedUnitPrice: computed.suggestedUnitPrice,
+      unitPrice: pricing.unitPrice,
+    };
+  }
+
   /* ================================================================ etapas */
 
   async addBlock(ctx: Ctx, dto: CreateBlockDto) {

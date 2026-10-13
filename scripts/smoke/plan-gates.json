@@ -122,6 +122,20 @@
     },
     {
       "method": "GET",
+      "path": "/pricing/summary",
+      "feature": "pricing_center",
+      "minPlan": "PRO",
+      "where": "src/core/pricing/pricing-center.controller.ts (classe, FeatureGuard)"
+    },
+    {
+      "method": "GET",
+      "path": "/pricing/item?group=labor&page=1&limit=1",
+      "feature": "pricing_center",
+      "minPlan": "PRO",
+      "where": "src/core/pricing/pricing-center.controller.ts (classe, FeatureGuard)"
+    },
+    {
+      "method": "GET",
       "path": "/material?page=1&limit=1",
       "feature": "cost_base",
       "minPlan": "PRO",

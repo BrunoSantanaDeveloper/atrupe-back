@@ -13,6 +13,7 @@ import { ContactModule } from './contact/contact.module';
 import { BankModule } from './bank/bank.module';
 import { AssetModule } from './asset/asset.module';
 import { CostBaseModule } from './cost-base/cost-base.module';
+import { PricingCenterModule } from './pricing/pricing-center.module';
 import { MaterialModule } from './material/material.module';
 import { ProductVariationModule } from './product-variation/product-variation.module';
 import { AssemblyModule } from './assembly/assembly.module';
@@ -59,6 +60,7 @@ import { OwnershipModule } from './ownership/ownership.module';
     BankModule,
     AssetModule,
     CostBaseModule,
+    PricingCenterModule,
     MaterialModule,
     ProductVariationModule,
     AssemblyModule,

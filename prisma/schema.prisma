@@ -181,6 +181,10 @@ model CompanySector {
   allocationOutdated          Boolean                    @default(false)
   /// Quanto do total administrativo o setor produtivo recebe, percentual com duas casas (BC-5)
   distributionPercentage      Float                      @default(0)
+  /// A regra do preço da hora (hourSale) na precificação; no variável, o
+  /// lucro em décimos de ponto que o preço preserva (PR-4)
+  hourSaleRule                MaterialPriceRule          @default(FIXED)
+  hourSaleProfit              Int?
   /// Custo da hora de mão de obra do setor, em centavos. Informado até a
   /// base de custos calcular (módulo 4); a composição custeia por ele
   hourCost                    Int?
@@ -582,16 +586,21 @@ model Asset {
 
 /// Grupo de bens equivalentes (P-5.2, P-13, P-28): mesma unidade e setor
 model AssetGroup {
-  id        String         @id @default(uuid())
+  id        String            @id @default(uuid())
   companyId String
   name      String
   unit      AssetUnit
   /// Nulo nos grupos que nascem cadastrados: o primeiro bem define
   sectorId  String?
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
-  company   Company        @relation(fields: [companyId], references: [id])
-  sector    CompanySector? @relation(fields: [sectorId], references: [id])
+  /// O preço do grupo como uma linha só na precificação (P-28), em
+  /// centavos; no variável, o lucro em décimos de ponto
+  priceRule MaterialPriceRule @default(FIXED)
+  salePrice Int?
+  profit    Int?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  company   Company           @relation(fields: [companyId], references: [id])
+  sector    CompanySector?    @relation(fields: [sectorId], references: [id])
   assets    Asset[]
 
   @@unique([companyId, name])
@@ -624,17 +633,22 @@ model AssetCost {
 
 /// Configuração produtiva do bem detalhado (P-2, P-19, P-31)
 model AssetSetup {
-  id                  String      @id @default(uuid())
+  id                  String            @id @default(uuid())
   assetId             String
   name                String
-  abbreviation        String      @default("")
+  abbreviation        String            @default("")
   unit                AssetUnit
   /// Minutos por unidade
-  timePerUnit         Float       @default(0)
+  timePerUnit         Float             @default(0)
   monthlyProductivity Float
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-  asset               Asset       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  /// O preço da configuração na precificação, em centavos por unidade;
+  /// no variável, o lucro em décimos de ponto (PR-4)
+  priceRule           MaterialPriceRule @default(FIXED)
+  salePrice           Int?
+  profit              Int?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  asset               Asset             @relation(fields: [assetId], references: [id], onDelete: Cascade)
   costs               AssetCost[]
 
   @@unique([assetId, name])
@@ -663,7 +677,7 @@ model CostAuditLog {
 /// contas): o critério do custo mensal de referência e o rateio por item
 /// entre os setores produtivos (BC-8). Sem linha, vale o critério padrão
 model CostBaseExpense {
-  id            String        @id @default(uuid())
+  id            String         @id @default(uuid())
   companyId     String
   subCategoryId String
   /// Nulo: o padrão, a média mais longa que já tem histórico
@@ -672,11 +686,26 @@ model CostBaseExpense {
   manualValue   Int?
   /// [{ sectorId, percentage }]: a parte de cada setor produtivo
   allocations   Json?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@unique([companyId, subCategoryId])
   @@map("cost_base_expenses")
+}
+
+/// Os parâmetros da precificação da empresa, em décimos de ponto (PR-4):
+/// os encargos sobre o preço e o lucro desejado que formam o markup
+model PricingParameters {
+  id            String   @id @default(uuid())
+  companyId     String   @unique
+  taxation      Int      @default(0)
+  commission    Int      @default(0)
+  financialCost Int      @default(0)
+  desiredMargin Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("pricing_parameters")
 }
 
 /// As horas do colaborador no mês (F-11): a carga do setor na mão de obra.

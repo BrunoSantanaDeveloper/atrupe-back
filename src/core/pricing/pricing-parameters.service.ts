@@ -1,30 +1,44 @@
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from 'nestjs-prisma';
 import { PricingCharges } from '../material/material-pricing';
+import { PricingParams, ZERO_PARAMS, markupOf } from './pricing-math';
 
 /**
- * Os encargos da Precificação da empresa (tributação, custo financeiro e
- * comissão), em décimos de ponto.
- *
- * Quem os grava é o módulo 4 (`PUT /pricing/parameters`), que ainda não
- * existe: até lá valem zero para toda empresa, e o preço variável sai só de
- * custo e lucro. É o mesmo número que a tela usa hoje sem os dados de
- * demonstração. Quando o módulo 4 nascer, a leitura da tabela entra aqui e
- * quem consome não muda.
+ * Os parâmetros da Precificação da empresa (tributação, comissão, custo
+ * financeiro e lucro desejado), em décimos de ponto, gravados por
+ * `PUT /pricing/parameters`. Sem parâmetros gravados, tudo zero: o preço
+ * variável sai só de custo e lucro, e o markup de referência é 1.
  */
 @Injectable()
 export class PricingParametersService {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async chargesOf(_companyId: string): Promise<PricingCharges> {
-    return { taxation: 0, financialCost: 0, commission: 0 };
+  constructor(private readonly prisma: PrismaService) {}
+
+  async parametersOf(companyId: string): Promise<PricingParams> {
+    const row = await this.prisma.pricingParameters.findUnique({
+      where: { companyId },
+    });
+    return row
+      ? {
+          taxation: row.taxation,
+          commission: row.commission,
+          financialCost: row.financialCost,
+          desiredMargin: row.desiredMargin,
+        }
+      : { ...ZERO_PARAMS };
+  }
+
+  async chargesOf(companyId: string): Promise<PricingCharges> {
+    const { taxation, financialCost, commission } =
+      await this.parametersOf(companyId);
+    return { taxation, financialCost, commission };
   }
 
   /**
    * O markup de referência (PR-1): multiplica o custo do recurso que não tem
-   * preço de venda próprio (IP-25). Nasce dos encargos e do lucro da
-   * Precificação; até o módulo 4, vale 1 e a venda desse recurso é o custo.
+   * preço de venda próprio (IP-25). Com encargos e lucro em 100 % ou mais,
+   * não há markup que os pague: vale 1, e a tela da precificação avisa.
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async referenceMarkupOf(_companyId: string): Promise<number> {
-    return 1;
+  async referenceMarkupOf(companyId: string): Promise<number> {
+    return markupOf(await this.parametersOf(companyId)) ?? 1;
   }
 }

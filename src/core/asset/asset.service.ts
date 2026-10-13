@@ -1,12 +1,15 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 import { CostAuditService } from '../cost-base/cost-audit.service';
+import { ASSET_POOL, AssetPool } from './asset-pool';
 import {
   AssetInput,
   activityHoursOf,
@@ -201,6 +204,8 @@ export class AssetService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: CostAuditService,
+    // A base de custos dá a parte do rateio do setor que cabe ao bem
+    @Optional() @Inject(ASSET_POOL) private readonly pool?: AssetPool,
   ) {}
 
   /* ---------------------------------------------------------------- leitura */
@@ -858,15 +863,19 @@ export class AssetService {
         monthlyProductivity: setup.monthlyProductivity,
         activityHours: Math.round(activityHoursOf(setup) * 100) / 100,
         unitCost: computed.setupUnitCosts.get(setup.id) ?? null,
-        // O preço praticado vem da Precificação › Máquinas
-        salePrice: null as number | null,
+        // O preço praticado, gravado pela Precificação › Máquinas
+        salePrice: setup.salePrice ?? null,
       })),
     };
   }
 
   /** O detalhe com os processos e as composições que usam as configurações. */
   private async detailView(row: AssetRow) {
-    const view = this.view(row, new Date(), true) as ReturnType<
+    const pool =
+      row.active && row.detailed && row.companyId
+        ? ((await this.pool?.poolOf(row.companyId, row.id)) ?? 0)
+        : 0;
+    const view = this.view(row, new Date(), true, pool) as ReturnType<
       AssetService['view']
     > & { setups: unknown[] };
     const usage = row.setups.length
