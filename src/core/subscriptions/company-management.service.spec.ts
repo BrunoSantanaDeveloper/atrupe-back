@@ -89,6 +89,8 @@ describe('CompanyManagementService', () => {
     assetType: { deleteMany: jest.fn() },
     assetGroup: { deleteMany: jest.fn() },
     costBaseSettings: { deleteMany: jest.fn() },
+    costBaseExpense: { deleteMany: jest.fn() },
+    employeeWorkload: { deleteMany: jest.fn() },
     costAuditLog: { deleteMany: jest.fn() },
     productAssembly: { deleteMany: jest.fn() },
     process: { deleteMany: jest.fn() },

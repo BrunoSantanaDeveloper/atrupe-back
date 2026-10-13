@@ -131,6 +131,7 @@ describe('Setor: unidade de venda, cor, natureza e rateio', () => {
           allocationPercentages: Prisma.DbNull,
           allocationPreviousCriterion: null,
           allocationOutdated: false,
+          distributionPercentage: 0,
         },
       });
     });

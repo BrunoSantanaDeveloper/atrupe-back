@@ -145,6 +145,8 @@ export class SectorService {
       data.allocationPercentages = Prisma.DbNull;
       data.allocationPreviousCriterion = null;
       data.allocationOutdated = false;
+      // O administrativo não recebe distribuição (BC-7)
+      data.distributionPercentage = 0;
     }
 
     return await this.prisma.companySector.update({

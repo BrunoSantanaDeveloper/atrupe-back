@@ -988,6 +988,8 @@ export class CompanyManagementService {
           await tx.assetGroup.deleteMany({ where: { companyId } });
           await tx.assetType.deleteMany({ where: { companyId } });
           await tx.costBaseSettings.deleteMany({ where: { companyId } });
+          await tx.costBaseExpense.deleteMany({ where: { companyId } });
+          await tx.employeeWorkload.deleteMany({ where: { companyId } });
           await tx.costAuditLog.deleteMany({ where: { companyId } });
 
           // 13.1 Composição, processos e materiais (os produtos já saíram;

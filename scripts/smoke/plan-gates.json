@@ -94,6 +94,34 @@
     },
     {
       "method": "GET",
+      "path": "/cost-base/summary",
+      "feature": "cost_base",
+      "minPlan": "PRO",
+      "where": "src/core/cost-base/cost-base.controller.ts (classe, FeatureGuard)"
+    },
+    {
+      "method": "GET",
+      "path": "/cost-base/admin-expense?page=1&limit=1",
+      "feature": "cost_base",
+      "minPlan": "PRO",
+      "where": "src/core/cost-base/cost-base.controller.ts (classe, FeatureGuard)"
+    },
+    {
+      "method": "GET",
+      "path": "/cost-base/sector",
+      "feature": "cost_base",
+      "minPlan": "PRO",
+      "where": "src/core/cost-base/cost-base.controller.ts (classe, FeatureGuard)"
+    },
+    {
+      "method": "GET",
+      "path": "/cost-base/labor",
+      "feature": "cost_base",
+      "minPlan": "PRO",
+      "where": "src/core/cost-base/cost-base.controller.ts (classe, FeatureGuard)"
+    },
+    {
+      "method": "GET",
       "path": "/material?page=1&limit=1",
       "feature": "cost_base",
       "minPlan": "PRO",

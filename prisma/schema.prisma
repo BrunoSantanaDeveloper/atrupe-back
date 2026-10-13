@@ -179,6 +179,8 @@ model CompanySector {
   allocationPreviousCriterion SectorAllocationCriterion?
   /// No manual, a lista de equipamentos mudou e o rateio precisa ser salvo de novo
   allocationOutdated          Boolean                    @default(false)
+  /// Quanto do total administrativo o setor produtivo recebe, percentual com duas casas (BC-5)
+  distributionPercentage      Float                      @default(0)
   /// Custo da hora de mão de obra do setor, em centavos. Informado até a
   /// base de custos calcular (módulo 4); a composição custeia por ele
   hourCost                    Int?
@@ -657,6 +659,41 @@ model CostAuditLog {
 }
 
 /// Marcas por empresa da base de custos (os grupos que nascem cadastrados)
+/// A conta administrativa na base de custos (subcategoria do plano de
+/// contas): o critério do custo mensal de referência e o rateio por item
+/// entre os setores produtivos (BC-8). Sem linha, vale o critério padrão
+model CostBaseExpense {
+  id            String        @id @default(uuid())
+  companyId     String
+  subCategoryId String
+  /// Nulo: o padrão, a média mais longa que já tem histórico
+  criterion     CostCriterion?
+  /// Valor mensal no critério manual, em centavos
+  manualValue   Int?
+  /// [{ sectorId, percentage }]: a parte de cada setor produtivo
+  allocations   Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@unique([companyId, subCategoryId])
+  @@map("cost_base_expenses")
+}
+
+/// As horas do colaborador no mês (F-11): a carga do setor na mão de obra.
+/// Vale para o setor do cadastro do colaborador (F-2)
+model EmployeeWorkload {
+  id         String   @id @default(uuid())
+  companyId  String
+  employeeId String   @unique
+  sectorId   String
+  hours      Float
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("employee_workloads")
+}
+
 model CostBaseSettings {
   id                  String    @id @default(uuid())
   companyId           String    @unique
@@ -2694,6 +2731,15 @@ enum SectorSaleUnit {
 enum SectorNature {
   ADMINISTRATIVE
   PRODUCTIVE
+}
+
+/// O custo mensal de referência da conta administrativa (DC-17)
+enum CostCriterion {
+  LAST_MONTH
+  AVG_3
+  AVG_6
+  AVG_12
+  MANUAL
 }
 
 enum SectorAllocationCriterion {
