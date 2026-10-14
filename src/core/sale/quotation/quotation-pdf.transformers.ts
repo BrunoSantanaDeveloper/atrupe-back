@@ -4,6 +4,7 @@
  */
 import { DEFAULT_IMAGE_SIZE, FALLBACK_IMAGE_SIZE } from './quotation.utils';
 import { itemProductName, itemValuesOf } from './item-origin';
+import { UNIT_SYMBOL } from '../../material/material-text';
 
 /**
  * O nível de detalhe da proposta (IP-12): o resumo (só o descritivo), a
@@ -336,6 +337,8 @@ export function transformPdfQuotationItem(
     product: {
       originalProductId: qp.productId ?? null,
       name: itemProductName(qp),
+      // A unidade do material de venda direta (m², m, kg…); nula nos outros
+      unit: qp.material ? (UNIT_SYMBOL[qp.material.unit] ?? null) : null,
       quantity: qp.quantity,
       unitValue,
       finalValue: totalValue,

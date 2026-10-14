@@ -95,7 +95,7 @@ export const PDF_QUOTATION_PRODUCT_INCLUDE = {
     },
   },
   // O material de venda direta (ORG-1): o nome dele no lugar do produto
-  material: { select: { name: true } },
+  material: { select: { name: true, unit: true } },
   materialVariation: { select: { brand: true, color: true } },
   items: {
     include: PDF_PRODUCT_ITEM_INCLUDE,
