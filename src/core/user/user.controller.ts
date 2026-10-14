@@ -37,6 +37,7 @@ import { PrismaService } from 'src/config/prisma/prisma.service';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
 import { HasAnyPermission } from '../auth/abac/has-any-permission.decorator';
+import { DOCUMENT_LOOKUP_PERMISSIONS } from '../auth/abac/document-lookup.permissions';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
@@ -138,9 +139,11 @@ export class UserController {
     return user;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiBearerAuth()
   @Get('check/:doc')
+  // Consulta paga, com dado pessoal: só quem cadastra pessoas
+  @HasAnyPermission(...DOCUMENT_LOOKUP_PERMISSIONS)
   @ApiOperation({
     summary: 'Verifica os dados de um usuário pelo documento fornecido',
   })

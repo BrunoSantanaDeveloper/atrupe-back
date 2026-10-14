@@ -7,7 +7,7 @@ import {
   NotFoundException,
   HttpException,
 } from '@nestjs/common';
-import { CancelOrderDto, CreateOrderDto } from './dto/create-order.dto';
+import { CancelOrderDto } from './dto/create-order.dto';
 import { PrismaService } from 'nestjs-prisma';
 import { FilterOrderDto } from './dto/filter.dto';
 import {
@@ -63,30 +63,6 @@ export interface OrderGroup {
 export class OrderService {
   private readonly logger = new Logger(OrderService.name);
   constructor(private prisma: PrismaService) {}
-
-  /**
-   * Nenhuma tela chama: a O.S. nasce na aprovação do orçamento. O orçamento
-   * precisa ser da empresa da sessão; sem isso, a rota criava O.S. para
-   * orçamento de outra empresa, que aparecia na lista dela.
-   */
-  async create(createOrderDto: CreateOrderDto, companyId: string) {
-    const quotation = await this.prisma.quotation.findFirst({
-      where: { id: createOrderDto.quotationId, companyId },
-      select: { id: true },
-    });
-    if (!quotation) {
-      throw new NotFoundException('Orçamento não encontrado.');
-    }
-
-    const order = await this.prisma.order.create({
-      data: {
-        quotationId: createOrderDto.quotationId,
-        status: OrderStatus.PENDING,
-      },
-    });
-
-    return order;
-  }
 
   async findAll(dto: FilterOrderDto) {
     try {

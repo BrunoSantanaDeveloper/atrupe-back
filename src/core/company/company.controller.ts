@@ -169,7 +169,7 @@ export class CompanyController {
     @Req() req,
   ) {
     await this.companyService.assertInAccount(id, req.user);
-    return await this.companyService.update(id, updateCompanyDto);
+    return await this.companyService.update(id, updateCompanyDto, req.user);
   }
 
   @Delete(':id')

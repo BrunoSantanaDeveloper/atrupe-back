@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
@@ -160,6 +161,25 @@ function formatarDataBr(isoDate: string): string {
  * que olhavam so' para AUTHORIZED tratavam essas notas como inexistentes.
  */
 const EMITIDA_NFE_STATUSES = [NfeStatus.AUTHORIZED, NfeStatus.CORRECTION_SENT];
+
+/**
+ * O que fazer quando a chave de acesso que o provedor devolveu já está em
+ * outra NF-e (a chave é única no banco):
+ * - da mesma empresa e sem valor fiscal (rascunho, rejeitada): a chave passa
+ *   para a nova;
+ * - da mesma empresa e emitida ou cancelada: a nova é duplicidade;
+ * - de outra empresa: nada é tocado e o suporte olha.
+ */
+export const accessKeyConflictAction = (
+  other: { companyId: string; status: NfeStatus },
+  companyId: string,
+): 'CLEAR_OLD' | 'DUPLICATE' | 'OTHER_COMPANY' =>
+  other.companyId !== companyId
+    ? 'OTHER_COMPANY'
+    : (EMITIDA_NFE_STATUSES as NfeStatus[]).includes(other.status) ||
+        other.status === NfeStatus.CANCELLED
+      ? 'DUPLICATE'
+      : 'CLEAR_OLD';
 
 @Injectable()
 export class NfeService {
@@ -2848,25 +2868,38 @@ export class NfeService {
     const isAuthorized =
       situacao?.SitCodigo === 100 || situacao?.SitCodigo === 150;
 
-    // Check for key collision before updating
-    if (doc.DocChaAcesso) {
+    // Chave de acesso que outra nota já guarda (a chave é única no banco)
+    let accessKey: string | null = doc.DocChaAcesso || null;
+    let duplicateMessage: string | null = null;
+    if (accessKey) {
       const conflictingNfe = await this.prisma.nfe.findFirst({
-        where: {
-          chaveAcesso: doc.DocChaAcesso,
-          id: { not: nfe.id },
-        },
+        where: { chaveAcesso: accessKey, id: { not: nfe.id } },
+        select: { id: true, companyId: true, status: true },
       });
-
-      if (conflictingNfe) {
+      const action = conflictingNfe
+        ? accessKeyConflictAction(conflictingNfe, nfe.companyId)
+        : 'NONE';
+      if (action === 'CLEAR_OLD') {
+        // A antiga, da mesma empresa, ficou sem autorização: a chave passa
+        // para a nova
         this.logger.warn(
-          `Conflito de chave de acesso detectado. NFe antiga: ${conflictingNfe.id}, Nova NFe: ${nfe.id}. Removendo chave da antiga para prosseguir.`,
+          `Chave de acesso repetida: a NF-e ${conflictingNfe!.id} (não autorizada) perde a chave para a ${nfe.id}.`,
         );
-        // Opção: Limpar a chave da antiga ou deletá-la se for lixo/rejeitada.
-        // Como estamos em um novo processo, vamos limpar a chave da antiga para permitir a atualização.
         await this.prisma.nfe.update({
-          where: { id: conflictingNfe.id },
+          where: { id: conflictingNfe!.id },
           data: { chaveAcesso: null },
         });
+      } else if (action !== 'NONE') {
+        // A antiga está autorizada ou cancelada, ou é de outra empresa: não
+        // é tocada. A nova é duplicidade e fica rejeitada, sem a chave
+        duplicateMessage =
+          action === 'OTHER_COMPANY'
+            ? 'A chave de acesso desta nota já pertence a outra nota do sistema. Fale com o suporte.'
+            : 'Duplicidade: esta nota já foi autorizada (ou cancelada) com outro registro. Confira as notas emitidas.';
+        this.logger.error(
+          `Chave de acesso repetida: a NF-e ${nfe.id} recebeu a chave da ${conflictingNfe!.id} (${action}). A antiga não foi alterada.`,
+        );
+        accessKey = null;
       }
     }
 
@@ -2874,20 +2907,29 @@ export class NfeService {
     const updatedNfe = await this.prisma.nfe.update({
       where: { id: nfe.id },
       data: {
-        status: isAuthorized ? NfeStatus.AUTHORIZED : NfeStatus.REJECTED,
-        chaveAcesso: doc.DocChaAcesso || null,
+        status:
+          isAuthorized && !duplicateMessage
+            ? NfeStatus.AUTHORIZED
+            : NfeStatus.REJECTED,
+        chaveAcesso: accessKey,
         protocolo: doc.DocProtocolo || null,
         invoicyId: doc.DocIDUnico || null,
         invoicyProtocol: doc.DocProtocolo || null,
         dataEmissao: new Date(),
-        dataAutorizacao: isAuthorized ? new Date() : null,
+        dataAutorizacao: isAuthorized && !duplicateMessage ? new Date() : null,
         danfeUrl: doc.DocPDFDownload || null,
         xmlAutorizado: doc.DocXMLBase64
           ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
           : null,
-        motivoRejeicao: !isAuthorized ? situacao?.SitDescricao : null,
+        motivoRejeicao:
+          duplicateMessage ?? (!isAuthorized ? situacao?.SitDescricao : null),
       },
     });
+
+    // Duplicidade: o número é da nota antiga e não volta para a fila
+    if (duplicateMessage) {
+      throw new ConflictException(duplicateMessage);
+    }
 
     if (!isAuthorized) {
       const orientacao = this.getRejectionHint(situacao?.SitCodigo);
@@ -4183,6 +4225,17 @@ export class NfeService {
     if (!config) {
       throw new BadRequestException('Configuração do Invoicy não encontrada.');
     }
+
+    // Inutilização é evento fiscal: exige o ambiente ativado, como a
+    // emissão e a inutilização da NFC-e. Sem isso a chamada falharia tarde,
+    // com erro genérico do Invoicy, depois de o usuário confirmar a faixa
+    const environment =
+      this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config, 'NFE');
+    await this.fiscalCredentialResolver.assertEnvironmentReady(
+      config.id,
+      environment,
+      'NFE',
+    );
 
     if (dto.justificativa.length < 15) {
       throw new BadRequestException(

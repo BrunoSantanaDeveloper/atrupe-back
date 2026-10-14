@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -303,6 +304,37 @@ export class ConditionService {
     return condition;
   }
 
+  /**
+   * A forma de pagamento de uma condição já usada não muda: as vendas e os
+   * títulos lançados com ela continuam dizendo como foram pagos. Parcelas,
+   * prazos e taxas mudam (valem para o que vier depois).
+   */
+  private async assertMethodKept(id: string, paymentMethodId?: string) {
+    if (paymentMethodId === undefined) return;
+    const condition = await this.prisma.paymentCondition.findUnique({
+      where: { id },
+      select: {
+        paymentMethodId: true,
+        _count: {
+          select: {
+            quotationPayments: true,
+            downPaymentConditions: true,
+            quotationInstallments: true,
+            payableInstallments: true,
+            receivableInstallments: true,
+          },
+        },
+      },
+    });
+    if (!condition || condition.paymentMethodId === paymentMethodId) return;
+    const used = Object.values(condition._count).some((count) => count > 0);
+    if (used) {
+      throw new ConflictException(
+        'Esta condição já foi usada: a forma de pagamento não muda. Para outra forma, crie uma condição nova.',
+      );
+    }
+  }
+
   private async assertOfCompany(id: string, companyId: string) {
     const condition = await this.prisma.paymentCondition.findFirst({
       where: { id, companyId },
@@ -316,6 +348,7 @@ export class ConditionService {
 
   async update(id: string, companyId: string, dto: UpdateConditionDto) {
     await this.assertOfCompany(id, companyId);
+    await this.assertMethodKept(id, dto.paymentMethodId);
 
     try {
       const { installments, ...conditionData } = dto;

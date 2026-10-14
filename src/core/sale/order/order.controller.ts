@@ -20,7 +20,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { OrderService } from './order.service';
-import { CancelOrderDto, CreateOrderDto } from './dto/create-order.dto';
+import { CancelOrderDto } from './dto/create-order.dto';
 import { FilterOrderDto } from './dto/filter.dto';
 import { UpdateOrderInfoDto } from './dto/update-order.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
@@ -30,12 +30,10 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBody,
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AbacService } from '../../auth/abac/abac.service';
-import { permissionDenied } from '../../auth/abac/permissions.guard';
 import { PlanControlService } from '../../plan/plan-control.service';
 import { isUUID } from 'class-validator';
 
@@ -74,24 +72,8 @@ export class OrderController {
     }
   }
 
-  @Post()
-  @ApiOperation({ summary: 'Cria uma nova ordem de serviço' })
-  @ApiBody({
-    description: 'Dados da nova ordem de serviço',
-    type: CreateOrderDto,
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Ordem de serviço criada com sucesso.',
-  })
-  async create(@Req() req, @Body() createOrderDto: CreateOrderDto) {
-    if (
-      !(await this.abacService.hasPermission(req.user, 'create', 'sale:order'))
-    ) {
-      throw permissionDenied(['sale:order:create']);
-    }
-    return this.orderService.create(createOrderDto, req.user.companyId);
-  }
+  // POST /sale/order saiu (14/10): a O.S. nasce na aprovação do orçamento
+  // e nenhuma tela criava O.S. avulsa
 
   @Get()
   @MoneyFields(...ORDER_MONEY_FIELDS)

@@ -6,8 +6,6 @@ import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import { HAS_PERMISSION_KEY } from 'src/core/auth/abac/has-permission.decorator';
 import { HAS_ANY_PERMISSION_KEY } from 'src/core/auth/abac/has-any-permission.decorator';
 
-const CONDITIONS_PERMISSION = 'financial_settings:payment_methods';
-
 describe('MethodController', () => {
   const guardsOf = (method: string) =>
     Reflect.getMetadata(GUARDS_METADATA, MethodController.prototype[method]);
@@ -19,20 +17,8 @@ describe('MethodController', () => {
     ]);
   });
 
-  it('criar aceita quem cria ou edita condição de pagamento', () => {
-    expect(
-      Reflect.getMetadata(
-        HAS_ANY_PERMISSION_KEY,
-        MethodController.prototype.create,
-      ),
-    ).toEqual([
-      { action: 'create', resource: CONDITIONS_PERMISSION },
-      { action: 'edit', resource: CONDITIONS_PERMISSION },
-    ]);
-  });
-
-  it.each(['update', 'remove'])(
-    '%s muda a forma de todas as empresas: só o superadmin',
+  it.each(['create', 'update', 'remove'])(
+    '%s muda a lista de todas as empresas: só o superadmin',
     (method) => {
       expect(guardsOf(method)).toEqual([SystemAdminGuard]);
     },

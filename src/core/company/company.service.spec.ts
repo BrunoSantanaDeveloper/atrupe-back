@@ -252,6 +252,10 @@ const mockPrismaService = {
   invoicyEnvironmentConfig: {
     updateMany: jest.fn(),
   },
+  companyEnvironmentCredential: {
+    count: jest.fn().mockResolvedValue(0),
+    updateMany: jest.fn(),
+  },
   $transaction: jest.fn((callback) => callback(mockPrismaService)),
 };
 
@@ -829,6 +833,52 @@ describe('CompanyService', () => {
       await service.update(mockCompanyId, updateWithNullCert);
 
       expect(prisma.digitalCertificate.delete).not.toHaveBeenCalled();
+    });
+
+    // Troca de CNPJ (decisão do PO, 14/10): com a nota ativada, só o
+    // superadmin; as credenciais do provedor saem e nada é reenviado a ele
+    describe('troca de CNPJ', () => {
+      const newCnpj = {
+        ...mockUpdateCompanyDto,
+        general: {
+          ...mockUpdateCompanyDto.general,
+          cnpj: '11.222.333/0001-81',
+        },
+      } as any;
+
+      it('com a nota ativada, a empresa não troca o CNPJ', async () => {
+        prisma.companyEnvironmentCredential.count.mockResolvedValueOnce(1);
+        await expect(
+          service.update(mockCompanyId, newCnpj, {}),
+        ).rejects.toThrow(
+          'Esta empresa já tem a nota fiscal ativada: a troca de CNPJ é feita pela equipe Atrupe.',
+        );
+        expect(prisma.company.update).not.toHaveBeenCalled();
+      });
+
+      it('o superadmin troca; as credenciais saem e o provedor não é chamado', async () => {
+        await service.update(mockCompanyId, newCnpj, { isSystemAdmin: true });
+        expect(
+          prisma.companyEnvironmentCredential.updateMany,
+        ).toHaveBeenCalledWith({
+          where: { companyId: mockCompanyId },
+          data: { providerAccessKeyEncrypted: null },
+        });
+        expect(prisma.company.update).toHaveBeenCalledWith({
+          where: { id: mockCompanyId },
+          data: { accessKey: null },
+        });
+        expect(
+          mockInvoicyCompanyRegistrationService.syncRegistrationData,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('sem a nota ativada, a empresa troca o CNPJ', async () => {
+        await service.update(mockCompanyId, newCnpj, {});
+        expect(
+          prisma.companyEnvironmentCredential.updateMany,
+        ).toHaveBeenCalled();
+      });
     });
   });
 

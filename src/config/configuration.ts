@@ -23,7 +23,8 @@ export default () => ({
       process.env.AI_MODEL_AUTO_SELECTION_ENABLED !== 'false',
     modelAllowlist: (
       process.env.AI_MODEL_ALLOWLIST ||
-      'openai/gpt-oss-120b,google/gemini-3.1-flash-lite,qwen/qwen3.7-max'
+      // Só modelos com provedor de retenção zero (decisão do PO, 14/10)
+      'openai/gpt-oss-120b,google/gemini-3.1-flash-lite'
     )
       .split(',')
       .map((model) => model.trim())

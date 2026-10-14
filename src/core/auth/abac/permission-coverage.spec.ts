@@ -59,7 +59,6 @@ const ROTAS_LIVRES: Record<string, string> = {
   'NatureController.findAllSubNaturesLevel2': APOIO,
   'NatureController.findAllSubCategory': APOIO,
   'OperationNatureController.getAll': APOIO,
-  'OrderController.create': NO_HANDLER,
   'OrderController.export': NO_HANDLER,
   'PaymentController.getPaymentConditionsInUse': APOIO,
   'ProductController.findAll': APOIO,
@@ -84,10 +83,10 @@ const ROTAS_LIVRES: Record<string, string> = {
   'UnitOfMeasureController.findOne': APOIO,
   'UserController.create': SEM_LOGIN,
   'UserController.me': 'dados da própria sessão',
-  'UserController.check': EXTERNO,
   'UserController.findOne':
     'o próprio usuário, o superadmin ou a mesma empresa (conferido no service)',
   'UserController.forgotPassword': SEM_LOGIN,
+  'UtilsController.zipcode': EXTERNO,
   'UserController.resetPassword': SEM_LOGIN,
   'UserController.verifyEmail': SEM_LOGIN,
   'UserController.resendVerification': SEM_LOGIN,
@@ -122,7 +121,6 @@ const CONTROLLERS_SEM_PERMISSAO: Record<string, string> = {
   SubscriptionsController:
     'assinatura da própria conta; as rotas de administração são do superadmin',
   SystemSettingsController: 'superadmin',
-  UtilsController: EXTERNO,
   WebhooksController:
     'webhook do provedor (token); reprocessar é do superadmin',
 };

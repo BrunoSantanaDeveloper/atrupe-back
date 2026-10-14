@@ -1,4 +1,3 @@
-import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
   Controller,
   Get,
@@ -105,8 +104,8 @@ export class EmployeeController {
 
   @Get(':id')
   @HasPermission('view', 'company_settings:users')
-  // Chave nova numa rota que estava livre: observar antes de recusar
-  @ObservePermissions()
+  // Dados e histórico do colaborador (salário, CPF, RG): só quem vê
+  // colaboradores (decisão do PO, 14/10)
   @TenantResource('employee')
   @ApiOperation({ summary: 'Obtém um colaborador pelo ID' })
   @ApiParam({ name: 'id', required: true, description: 'ID do colaborador' })
@@ -175,8 +174,8 @@ export class EmployeeController {
 
   @Get(':id/history')
   @HasPermission('view', 'company_settings:users')
-  // Chave nova numa rota que estava livre: observar antes de recusar
-  @ObservePermissions()
+  // Dados e histórico do colaborador (salário, CPF, RG): só quem vê
+  // colaboradores (decisão do PO, 14/10)
   @TenantResource('employee')
   @ApiOperation({
     summary: 'Obtém o histórico de alterações de um colaborador',

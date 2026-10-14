@@ -7,7 +7,11 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PlanControlService } from '../plan-control.service';
-import { OBSERVE_FEATURE_KEY } from '../decorators/observe-feature.decorator';
+import {
+  OBSERVE_FEATURE_KEY,
+  ObserveSetting,
+  isObservingNow,
+} from '../decorators/observe-feature.decorator';
 
 export const REQUIRED_FEATURE_KEY = 'requiredFeature';
 
@@ -74,10 +78,12 @@ export class FeatureGuard implements CanActivate {
   }
 
   private isObserving(context: ExecutionContext): boolean {
-    return !!this.reflector.getAllAndOverride<boolean>(OBSERVE_FEATURE_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    return isObservingNow(
+      this.reflector.getAllAndOverride<ObserveSetting>(OBSERVE_FEATURE_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]),
+    );
   }
 
   private warnOnce(request: any, feature: string | string[], reason: string) {

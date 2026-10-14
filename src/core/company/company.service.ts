@@ -1,5 +1,6 @@
 import {
   Injectable,
+  ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
@@ -882,7 +883,11 @@ export class CompanyService {
     }
   }
 
-  async update(id: string, updateCompanyDto: UpdateCompanyDto) {
+  async update(
+    id: string,
+    updateCompanyDto: UpdateCompanyDto,
+    actor?: { isSystemAdmin?: boolean },
+  ) {
     const { general, address, personalization, socialNetworks, fiscal } =
       updateCompanyDto;
     const data = {
@@ -928,6 +933,22 @@ export class CompanyService {
         municipalRegistration: true,
       },
     });
+
+    // Trocar o CNPJ de empresa com nota ativada é da equipe Atrupe: o
+    // cadastro no provedor é do CNPJ antigo e a ativação precisa ser
+    // refeita com o certificado do novo (decisão do PO, 14/10)
+    const cnpjChanging =
+      data.cnpj !== undefined && data.cnpj !== fiscalSnapshot?.cnpj;
+    if (cnpjChanging && !actor?.isSystemAdmin) {
+      const activated = await this.prisma.companyEnvironmentCredential.count({
+        where: { companyId: id, providerAccessKeyEncrypted: { not: null } },
+      });
+      if (activated) {
+        throw new ForbiddenException(
+          'Esta empresa já tem a nota fiscal ativada: a troca de CNPJ é feita pela equipe Atrupe.',
+        );
+      }
+    }
 
     try {
       // Update company basic data
@@ -1072,18 +1093,33 @@ export class CompanyService {
         });
       }
 
+      // CNPJ novo: as credenciais do provedor são do CNPJ antigo e saem. A
+      // ativação é refeita com o certificado do novo; nada é reenviado ao
+      // provedor sob o CNPJ novo, que pode ser o cadastro de outra empresa
+      if (cnpjChanged) {
+        await this.prisma.companyEnvironmentCredential.updateMany({
+          where: { companyId: id },
+          data: { providerAccessKeyEncrypted: null },
+        });
+        await this.prisma.company.update({
+          where: { id },
+          data: { accessKey: null },
+        });
+      }
+
       // O cadastro no Invoicy so' recebe esses dados na criacao. Sem reenviar
       // aqui, o provedor fica com o valor antigo para sempre e os documentos que
       // ele monta a partir do cadastro (DACCE) saem com campos defasados.
       const registrationChanged =
-        cnpjChanged ||
-        ieChanged ||
-        addressChanged ||
-        (data.legalName !== undefined &&
-          data.legalName !== fiscalSnapshot?.legalName) ||
-        (data.name !== undefined && data.name !== fiscalSnapshot?.name) ||
-        (data.municipalRegistration !== undefined &&
-          data.municipalRegistration !== fiscalSnapshot?.municipalRegistration);
+        !cnpjChanged &&
+        (ieChanged ||
+          addressChanged ||
+          (data.legalName !== undefined &&
+            data.legalName !== fiscalSnapshot?.legalName) ||
+          (data.name !== undefined && data.name !== fiscalSnapshot?.name) ||
+          (data.municipalRegistration !== undefined &&
+            data.municipalRegistration !==
+              fiscalSnapshot?.municipalRegistration));
 
       if (registrationChanged) {
         try {
