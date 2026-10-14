@@ -17,6 +17,15 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { NfeStatus } from '@prisma/client';
 
 export class NfeItemDto {
+  @ApiPropertyOptional({
+    description:
+      'Codigo cadastrado do produto. Vai para o cProd do XML, que e a coluna ' +
+      '"COD. PROD." do DANFE. Sem ele o campo cai no id interno (UUID).',
+  })
+  @IsString()
+  @IsOptional()
+  productCode?: string;
+
   @ApiProperty({ description: 'ID do produto' })
   @IsString()
   @IsNotEmpty()

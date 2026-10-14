@@ -1909,6 +1909,36 @@ describe('NfeService', () => {
       });
     });
 
+    /**
+     * cProd e a coluna "COD. PROD." do DANFE. Saia o id interno (UUID) porque
+     * o codigo cadastrado nao era enviado pela tela nem aceito pelo DTO, e era
+     * esse UUID que o cliente final via impresso na nota.
+     */
+    describe('codigo do produto no XML', () => {
+      const enviado = () =>
+        invoicyApiService.emitNfe.mock.calls[0][1][0].Documento;
+
+      it('usa o codigo cadastrado do produto', async () => {
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          items: [{ ...mockEmitDto.items[0], productCode: 'ADBLK-001' }],
+        });
+
+        expect(enviado().det[0].prod.cProd).toBe('ADBLK-001');
+      });
+
+      it('cai no id interno quando o produto nao tem codigo', async () => {
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          items: [{ ...mockEmitDto.items[0], productCode: undefined }],
+        });
+
+        expect(enviado().det[0].prod.cProd).toBe(
+          mockEmitDto.items[0].productId,
+        );
+      });
+    });
+
     it('should handle Invoicy failure', async () => {
       invoicyApiService.emitNfe.mockResolvedValue([
         { Codigo: 225, Descricao: 'Rejeitado pela SEFAZ' },

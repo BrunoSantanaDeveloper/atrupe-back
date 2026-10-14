@@ -2606,7 +2606,11 @@ export class NfeService {
           entrega: await this.buildEntregaInline(dto),
           det: dto.items.map((item, index) => ({
             prod: {
-              cProd: item.productId || `ITEM${index + 1}`,
+              // cProd e a coluna "COD. PROD." do DANFE: tem de ser o codigo
+              // cadastrado do produto. Vinha o id interno (UUID) porque o
+              // codigo nao era enviado pela tela nem existia no DTO, e era
+              // esse UUID que o cliente final via impresso na nota.
+              cProd: item.productCode || item.productId || `ITEM${index + 1}`,
               cEAN:
                 item.ean &&
                 /^\d+$/.test(item.ean) &&
