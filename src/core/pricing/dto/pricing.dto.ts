@@ -1,6 +1,10 @@
 import { MaterialPriceRule } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
   IsEnum,
   IsIn,
   IsInt,
@@ -95,4 +99,20 @@ export class UpdatePricingItemDto {
   @IsInt({ message: 'O lucro vai em décimos de ponto' })
   @Min(0)
   profit?: number;
+}
+
+/** Aplicar o preço sugerido a vários itens (CP-7): prévia, depois confirmação. */
+export class ApplySuggestedDto {
+  @IsIn(PRICING_GROUPS, { message: 'Grupo inválido' })
+  group: PricingGroup;
+
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Escolha ao menos um item' })
+  @ArrayMaxSize(100, { message: 'No máximo 100 itens por vez' })
+  @IsString({ each: true })
+  ids: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  confirmed?: boolean;
 }

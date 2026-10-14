@@ -1,6 +1,7 @@
 import {
   PayrollLine,
   chargesOf,
+  employerInssRateOf,
   coherent,
   employeeTotalsOf,
   finalCostOf,
@@ -204,20 +205,33 @@ describe('payroll-math', () => {
   });
 
   describe('os encargos da CLT (F-14)', () => {
-    it('INSS e FGTS pela alíquota; 13º e férias 1/12 com os encargos', () => {
-      expect(chargesOf('CLT', 500000, { inss: 8, fgts: 8 })).toEqual({
+    // INSS do colaborador nos dois lados; o da empresa (20 %) e o FGTS custam;
+    // 13º e férias levam o INSS da empresa e o FGTS (decisão do PO, 14/10)
+    const RATES = { inss: 8, inssEmployer: 20, fgts: 8 };
+
+    it('INSS, INSS da empresa e FGTS pela alíquota; 13º e férias 1/12 com os encargos da empresa', () => {
+      expect(chargesOf('CLT', 500000, RATES)).toEqual({
         INSS: { increase: 40000, discount: 40000 },
+        INSS_EMPLOYER: { increase: 100000, discount: 0 },
         FGTS: { increase: 40000, discount: 0 },
-        THIRTEENTH: { increase: 48333, discount: 0 },
-        VACATION: { increase: 48333, discount: 0 },
+        THIRTEENTH: { increase: 53333, discount: 0 },
+        VACATION: { increase: 53333, discount: 0 },
       });
     });
 
+    it('no Simples, o INSS da empresa é zero e o 13º leva só o FGTS', () => {
+      const charges = chargesOf('CLT', 500000, { ...RATES, inssEmployer: 0 });
+      expect(charges!.INSS_EMPLOYER.increase).toBe(0);
+      expect(charges!.THIRTEENTH.increase).toBe(45000);
+      expect([1, 2, 4].map(employerInssRateOf)).toEqual([0, 0, 0]);
+      expect([3, null].map(employerInssRateOf)).toEqual([20, 20]);
+    });
+
     it('pró-labore, MEI/PJ e quem não tem salário ficam sem encargos', () => {
-      expect(chargesOf('PRO_LABORE', 500000, { inss: 8, fgts: 8 })).toBeNull();
-      expect(chargesOf('MEI_PJ', 500000, { inss: 8, fgts: 8 })).toBeNull();
-      expect(chargesOf(null, 500000, { inss: 8, fgts: 8 })).toBeNull();
-      expect(chargesOf('CLT', 0, { inss: 8, fgts: 8 })).toBeNull();
+      expect(chargesOf('PRO_LABORE', 500000, RATES)).toBeNull();
+      expect(chargesOf('MEI_PJ', 500000, RATES)).toBeNull();
+      expect(chargesOf(null, 500000, RATES)).toBeNull();
+      expect(chargesOf('CLT', 0, RATES)).toBeNull();
     });
   });
 

@@ -6,6 +6,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ModuleRef } from '@nestjs/core';
+import { PayrollStructureService } from '../../financial/salaries/payroll-structure.service';
 import { PrismaService } from 'nestjs-prisma';
 import {
   CreateInvoicyConfigDto,
@@ -31,6 +33,7 @@ export class InvoicyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly moduleRef: ModuleRef,
     private readonly invoicyHttpService: InvoicyHttpService,
     private readonly encryptionService: EncryptionService,
     private readonly fiscalRolloutPolicy: FiscalRolloutPolicyService,
@@ -48,6 +51,35 @@ export class InvoicyService {
       environment:
         this.configService.get<string>('INVOICY_ENVIRONMENT') || 'HOMOLOGACAO',
     };
+  }
+
+  /** O regime (CRT) do emissor padrão da empresa; sem emissor, nulo. */
+  private async regimeOf(companyId: string) {
+    const config = await this.prisma.invoicyConfig.findFirst({
+      where: { companyId },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+      select: { emitCrt: true },
+    });
+    return config?.emitCrt ?? null;
+  }
+
+  /**
+   * O regime tributário mudou: a folha refaz o INSS da empresa (decisão do
+   * PO, 14/10). A folha é outro módulo: é achada pelo ModuleRef e uma
+   * falha dela não desfaz a gravação do emissor.
+   */
+  private async afterRegime(companyId: string, before: number | null) {
+    if ((await this.regimeOf(companyId)) === before) return;
+    try {
+      const payroll = this.moduleRef.get(PayrollStructureService, {
+        strict: false,
+      });
+      await payroll.regimeChanged(companyId);
+    } catch (error) {
+      this.logger.error(
+        `Regime da empresa ${companyId} mudou, mas a folha não foi refeita: ${error?.message}`,
+      );
+    }
   }
 
   private mapDtoToDb(dto: CreateInvoicyConfigDto | UpdateInvoicyConfigDto) {
@@ -528,6 +560,7 @@ export class InvoicyService {
    * Criar novo emissor
    */
   async create(companyId: string, dto: CreateInvoicyConfigDto) {
+    const regimeBefore = await this.regimeOf(companyId);
     // Verificar se já existe emissor com mesmo nome na empresa
     const existing = await this.prisma.invoicyConfig.findFirst({
       where: { companyId, name: dto.name },
@@ -618,6 +651,7 @@ export class InvoicyService {
       },
     });
 
+    await this.afterRegime(companyId, regimeBefore);
     return this.mapDbToResponse(result);
   }
 
@@ -634,6 +668,7 @@ export class InvoicyService {
     if (!config) {
       throw new NotFoundException('Emissor não encontrado');
     }
+    const regimeBefore = await this.regimeOf(config.companyId);
 
     // Se está alterando o nome, verificar duplicidade
     if (dto.name && dto.name !== config.name) {
@@ -689,6 +724,7 @@ export class InvoicyService {
       });
     });
 
+    await this.afterRegime(config.companyId, regimeBefore);
     return this.mapDbToResponse(result);
   }
 
@@ -816,6 +852,7 @@ export class InvoicyService {
 
     const wasDefault = config.isDefault;
     const companyId = config.companyId;
+    const regimeBefore = await this.regimeOf(companyId);
 
     await this.prisma.invoicyConfig.delete({
       where: { id },
@@ -835,6 +872,8 @@ export class InvoicyService {
         });
       }
     }
+
+    await this.afterRegime(companyId, regimeBefore);
 
     return { success: true };
   }

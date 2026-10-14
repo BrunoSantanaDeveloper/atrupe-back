@@ -159,7 +159,7 @@ describe('PayrollStructureService: a linha do colaborador', () => {
     await expect(
       service.updateLine('c-1', null, 'ps-1', { manualOverride: false }),
     ).rejects.toThrow(
-      new BadRequestException('Só INSS e FGTS têm valor à mão'),
+      new BadRequestException('Só os encargos de INSS e FGTS têm valor à mão'),
     );
   });
 
@@ -205,5 +205,54 @@ describe('PayrollStructureService: a linha do colaborador', () => {
         data: expect.objectContaining({ manualOverride: true }),
       }),
     );
+  });
+
+  it('tirar INSS ou FGTS de CLT é recusado (o recálculo os poria de volta)', async () => {
+    prisma.payrollSetup.findFirst.mockResolvedValue(
+      row({
+        name: 'FGTS',
+        behavior: 'PROVISION',
+        payrollTemplate: {
+          derivedFromSalary: true,
+          fixedByLaw: false,
+          isBase: false,
+          systemKey: 'FGTS',
+        },
+      }),
+    );
+    await expect(
+      service.updateLine('c-1', null, 'ps-1', { isSet: false }),
+    ).rejects.toThrow(
+      new BadRequestException('Este item faz parte da folha CLT'),
+    );
+  });
+
+  describe('INSS da empresa e o regime tributário', () => {
+    beforeEach(() => {
+      prisma.payrollTemplate = {
+        findFirst: jest.fn().mockResolvedValue({ id: 't-patronal', rate: 20 }),
+        update: jest.fn(),
+      };
+      prisma.invoicyConfig = { findFirst: jest.fn() };
+    });
+
+    it('o Simples zera a alíquota e refaz os encargos', async () => {
+      prisma.invoicyConfig.findFirst.mockResolvedValue({ emitCrt: 1 });
+      const recompute = jest
+        .spyOn(service, 'recomputeCompany')
+        .mockResolvedValue(undefined);
+      await service.regimeChanged('c-1');
+      expect(prisma.payrollTemplate.update).toHaveBeenCalledWith({
+        where: { id: 't-patronal' },
+        data: { rate: 0 },
+      });
+      expect(recompute).toHaveBeenCalledWith('c-1');
+    });
+
+    it('a mesma alíquota do regime não mexe em nada', async () => {
+      prisma.invoicyConfig.findFirst.mockResolvedValue({ emitCrt: 3 });
+      await service.regimeChanged('c-1');
+      expect(prisma.payrollTemplate.update).not.toHaveBeenCalled();
+    });
   });
 });

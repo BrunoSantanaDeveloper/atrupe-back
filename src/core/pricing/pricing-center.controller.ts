@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Put,
   Query,
   Req,
@@ -25,6 +26,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { RequiresFeature } from '../plan/decorators/requires-feature.decorator';
 import { FeatureGuard } from '../plan/guards/feature.guard';
 import {
+  ApplySuggestedDto,
   PricingItemFilterDto,
   PricingParametersDto,
   UpdatePricingItemDto,
@@ -95,6 +97,16 @@ export class PricingCenterController {
   async items(@Req() req, @Query() filter: PricingItemFilterDto) {
     const { companyId } = await this.session(req);
     return this.pricing.items(companyId, filter);
+  }
+
+  @Post('item/apply-suggested')
+  @HasPermission('edit', PRICING)
+  @ApiOperation({
+    summary: 'Aplica o preço sugerido a vários itens (prévia sem confirmed)',
+  })
+  async applySuggested(@Req() req, @Body() dto: ApplySuggestedDto) {
+    const { companyId, userId } = await this.session(req);
+    return this.pricing.applySuggested(companyId, userId, dto);
   }
 
   @Patch('item/:id')

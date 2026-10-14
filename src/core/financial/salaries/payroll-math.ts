@@ -192,7 +192,25 @@ export const setupFromTemplate = (template: {
 };
 
 /** Os itens da folha que o sistema gera do salário base (ALT-18). */
-export const CHARGE_KEYS = ['INSS', 'FGTS', 'THIRTEENTH', 'VACATION'] as const;
+export const CHARGE_KEYS = [
+  'INSS',
+  'INSS_EMPLOYER',
+  'FGTS',
+  'THIRTEENTH',
+  'VACATION',
+] as const;
+
+/** Os encargos com alíquota editável pela empresa. */
+export const RATE_KEYS = ['INSS', 'INSS_EMPLOYER', 'FGTS'];
+
+/**
+ * A alíquota padrão do INSS da empresa (patronal) pelo regime tributário
+ * do emissor padrão: 20 % no regime normal e sem configuração fiscal; no
+ * Simples Nacional (CRT 1 e 2) e no MEI (4), a contribuição já vai na guia
+ * única, então zero (decisão do PO, 14/10).
+ */
+export const employerInssRateOf = (crt: number | null | undefined) =>
+  crt === 1 || crt === 2 || crt === 4 ? 0 : 20;
 export type ChargeKey = (typeof CHARGE_KEYS)[number];
 
 export const CHARGE_TEMPLATES: Record<
@@ -208,6 +226,13 @@ export const CHARGE_TEMPLATES: Record<
     name: 'INSS',
     behavior: 'INCREASE_AND_DISCOUNT',
     rate: 8,
+    fixedByLaw: false,
+  },
+  // A parte da empresa: custa no mês e não sai na folha do colaborador
+  INSS_EMPLOYER: {
+    name: 'INSS da empresa',
+    behavior: 'PROVISION',
+    rate: 20,
     fixedByLaw: false,
   },
   FGTS: { name: 'FGTS', behavior: 'PROVISION', rate: 8, fixedByLaw: false },
@@ -226,24 +251,28 @@ export const CHARGE_TEMPLATES: Record<
 };
 
 /**
- * Os encargos da CLT a partir do salário base (F-14): INSS e FGTS pelas
- * alíquotas dos itens da empresa; 13º e férias 1/12 ao mês cada, com INSS e
- * FGTS sobre eles. Pró-labore e MEI/PJ não têm encargos da CLT (F-9, F-10).
+ * Os encargos da CLT a partir do salário base (F-14): o INSS do
+ * colaborador (descontado dele), o INSS da empresa e o FGTS pelas alíquotas
+ * dos itens da empresa; 13º e férias 1/12 ao mês cada, com o INSS da
+ * empresa e o FGTS sobre eles. Pró-labore e MEI/PJ não têm encargos da CLT
+ * (F-9, F-10).
  */
 export const chargesOf = (
   contract: 'CLT' | 'PRO_LABORE' | 'MEI_PJ' | null,
   baseSalary: number,
-  rates: { inss: number; fgts: number },
+  rates: { inss: number; inssEmployer: number; fgts: number },
 ): Record<ChargeKey, { increase: number; discount: number }> | null => {
   if (contract !== 'CLT' || !(baseSalary > 0)) return null;
   const inss = Math.round((baseSalary * rates.inss) / 100);
+  const inssEmployer = Math.round((baseSalary * rates.inssEmployer) / 100);
   const fgts = Math.round((baseSalary * rates.fgts) / 100);
   const twelfth = baseSalary / 12;
   const withCharges = Math.round(
-    twelfth * (1 + (rates.inss + rates.fgts) / 100),
+    twelfth * (1 + (rates.inssEmployer + rates.fgts) / 100),
   );
   return {
     INSS: { increase: inss, discount: inss },
+    INSS_EMPLOYER: { increase: inssEmployer, discount: 0 },
     FGTS: { increase: fgts, discount: 0 },
     THIRTEENTH: { increase: withCharges, discount: 0 },
     VACATION: { increase: withCharges, discount: 0 },

@@ -164,4 +164,56 @@ describe('PricingCenterService: gravar o preço', () => {
       'A soma dos parâmetros precisa ficar abaixo de 100%',
     );
   });
+
+  describe('aplicar o preço sugerido (CP-7)', () => {
+    it('a prévia não grava; item sem custo fica de fora com o motivo', async () => {
+      const result = await service.applySuggested('c', 'u', {
+        group: 'labor',
+        ids: ['impressao', 'producao', 'outro'],
+      });
+      expect(result.applied).toBe(0);
+      expect(
+        result.items.map((item) => [
+          item.id,
+          item.suggestedPrice,
+          item.skipped,
+        ]),
+      ).toEqual([
+        // 12,50 × 1,68
+        ['impressao', 2100, undefined],
+        ['producao', null, 'Este item ainda não tem custo calculado.'],
+        ['outro', null, 'Item não encontrado'],
+      ]);
+      expect(prisma.companySector.update).not.toHaveBeenCalled();
+    });
+
+    it('confirmado, grava como preço variável pelo lucro da empresa', async () => {
+      const result = await service.applySuggested('c', 'u', {
+        group: 'labor',
+        ids: ['impressao'],
+        confirmed: true,
+      });
+      expect(result.applied).toBe(1);
+      expect(prisma.companySector.update).toHaveBeenCalledWith({
+        where: { id: 'impressao' },
+        data: { hourSale: 2100, hourSaleRule: 'VARIABLE', hourSaleProfit: 300 },
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entity: 'PRICING_ITEM',
+          action: 'APPLY_SUGGESTED',
+        }),
+      );
+    });
+
+    it('material segue no cadastro do material', async () => {
+      await refuses(
+        service.applySuggested('c', null, {
+          group: 'materials',
+          ids: ['mat:x'],
+        }),
+        'O preço do material é gravado no cadastro do material',
+      );
+    });
+  });
 });

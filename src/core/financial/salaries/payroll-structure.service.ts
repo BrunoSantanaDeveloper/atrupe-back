@@ -15,6 +15,7 @@ import {
   PayrollLine,
   chargesOf,
   coherent,
+  employerInssRateOf,
   employeeTotalsOf,
   finalCostOf,
   fromLegacy,
@@ -145,7 +146,7 @@ export class PayrollStructureService {
     // INSS ou FGTS com valor à mão voltam a acompanhar o salário (F-4)
     if (dto.manualOverride === false) {
       if (!template?.derivedFromSalary || template.fixedByLaw) {
-        bad('Só INSS e FGTS têm valor à mão');
+        bad('Só os encargos de INSS e FGTS têm valor à mão');
       }
       return this.resetOverride(companyId, userId, row);
     }
@@ -158,11 +159,12 @@ export class PayrollStructureService {
 
     // 13º e férias são calculados por lei (F-14)
     if (template?.fixedByLaw && editsValues) bad(FIXED_BY_LAW);
-    // O salário base e os itens da lei não saem da folha CLT
+    // O salário base e os encargos não saem da folha CLT: o recálculo os
+    // poria de volta (decisão do PO, 14/10)
     if (
       dto.isSet === false &&
       isClt &&
-      (template?.fixedByLaw || template?.isBase)
+      (template?.fixedByLaw || template?.isBase || template?.derivedFromSalary)
     ) {
       bad(CLT_ITEM);
     }
@@ -333,6 +335,45 @@ export class PayrollStructureService {
     }
   }
 
+  /** O regime (CRT) do emissor padrão da empresa; sem emissor, nulo. */
+  async regimeOf(companyId: string) {
+    const config = await this.prisma.invoicyConfig.findFirst({
+      where: { companyId },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+      select: { emitCrt: true },
+    });
+    return config?.emitCrt ?? null;
+  }
+
+  /**
+   * O regime tributário mudou: a alíquota do INSS da empresa volta à do
+   * regime novo (um ajuste à mão vale até a próxima mudança de regime) e os
+   * encargos dos CLT são refeitos.
+   */
+  async regimeChanged(companyId: string) {
+    const template = await this.prisma.payrollTemplate.findFirst({
+      where: { companyId, systemKey: 'INSS_EMPLOYER' },
+      select: { id: true, rate: true },
+    });
+    if (!template) return;
+    const rate = employerInssRateOf(await this.regimeOf(companyId));
+    if (template.rate === rate) return;
+    await this.prisma.payrollTemplate.update({
+      where: { id: template.id },
+      data: { rate },
+    });
+    await this.audit.record({
+      companyId,
+      userId: null,
+      entity: 'PAYROLL_TEMPLATE',
+      entityId: template.id,
+      action: 'UPDATE',
+      before: { rate: template.rate, motivo: 'regime tributário' },
+      after: { rate },
+    });
+    await this.recomputeCompany(companyId);
+  }
+
   /** Os itens de encargo da empresa, criados uma vez (com a base de custos). */
   private async ensureChargeTemplates(companyId: string) {
     const existing = await this.prisma.payrollTemplate.findMany({
@@ -342,7 +383,13 @@ export class PayrollStructureService {
     const byKey = new Map(existing.map((row) => [row.systemKey, row]));
     for (const key of CHARGE_KEYS) {
       if (byKey.has(key)) continue;
-      const spec = CHARGE_TEMPLATES[key];
+      const spec = {
+        ...CHARGE_TEMPLATES[key],
+        // O INSS da empresa nasce pela alíquota do regime tributário
+        ...(key === 'INSS_EMPLOYER' && {
+          rate: employerInssRateOf(await this.regimeOf(companyId)),
+        }),
+      };
       const legacy = legacyOf(spec.behavior, 0, 0);
       // O item que a empresa já cadastrou com o mesmo nome é adotado
       const own = await this.prisma.payrollTemplate.findFirst({
@@ -406,6 +453,9 @@ export class PayrollStructureService {
   ) {
     const rates = {
       inss: templates.get('INSS')?.rate ?? CHARGE_TEMPLATES.INSS.rate!,
+      inssEmployer:
+        templates.get('INSS_EMPLOYER')?.rate ??
+        CHARGE_TEMPLATES.INSS_EMPLOYER.rate!,
       fgts: templates.get('FGTS')?.rate ?? CHARGE_TEMPLATES.FGTS.rate!,
     };
     const charges = chargesOf(

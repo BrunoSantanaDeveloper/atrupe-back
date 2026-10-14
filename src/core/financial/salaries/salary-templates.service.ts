@@ -8,6 +8,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { ItemType } from '@prisma/client';
 import { UpdatePayrollTemplateDto } from './dto/update-payroll-template.dto';
 import {
+  RATE_KEYS,
   coherent,
   fromLegacy,
   legacyOf,
@@ -174,9 +175,11 @@ export class SalaryTemplatesService {
     }
     if (
       dto.rate !== undefined &&
-      !['INSS', 'FGTS'].includes(template.systemKey ?? '')
+      !RATE_KEYS.includes(template.systemKey ?? '')
     ) {
-      throw new BadRequestException('Só INSS e FGTS têm alíquota');
+      throw new BadRequestException(
+        'Só os encargos de INSS e FGTS têm alíquota',
+      );
     }
 
     const name = dto.name?.trim() || template.name;

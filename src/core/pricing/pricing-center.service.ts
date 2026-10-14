@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { MaterialPriceRule } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 import { ProductAssemblyService } from '../assembly/product-assembly.service';
@@ -19,6 +21,7 @@ import {
 } from '../material/material-pricing';
 import { UNIT_SYMBOL } from '../material/material-text';
 import {
+  ApplySuggestedDto,
   PRICING_GROUPS,
   PricingGroup,
   PricingItemFilterDto,
@@ -67,6 +70,8 @@ export type PricingItem = {
  */
 @Injectable()
 export class PricingCenterService {
+  private readonly logger = new Logger(PricingCenterService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly parameters: PricingParametersService,
@@ -458,6 +463,174 @@ export class PricingCenterService {
         unitKind
       ] ?? 'un'
     );
+  }
+
+  /**
+   * Aplicar o preço sugerido a vários itens (CP-7): sem `confirmed`, só a
+   * prévia; com ele, grava. Produto: o preço da composição na medida padrão
+   * (o mesmo do "adotar preço sugerido" do cadastro). Mão de obra e máquina:
+   * custo × markup, gravado como preço variável pelo lucro desejado da
+   * empresa, que acompanha o custo. Item sem custo fica de fora com o motivo.
+   */
+  async applySuggested(
+    companyId: string,
+    userId: string | null,
+    dto: ApplySuggestedDto,
+  ) {
+    if (dto.group === 'materials') {
+      bad('O preço do material é gravado no cadastro do material');
+    }
+    const params = await this.parameters.parametersOf(companyId);
+    const snapshot = await this.snapshots.load(companyId);
+    const markup = markupOf(params);
+    const byId = new Map(
+      (await this.itemsOf(companyId, dto.group, snapshot, params)).map(
+        (item) => [item.id, item],
+      ),
+    );
+
+    const items: {
+      id: string;
+      name: string | null;
+      cost: number | null;
+      price: number | null;
+      suggestedPrice: number | null;
+      marginBefore: number | null;
+      marginAfter: number | null;
+      skipped?: string;
+    }[] = [];
+    for (const id of [...new Set(dto.ids)]) {
+      const item = byId.get(id);
+      if (!item) {
+        items.push({
+          id,
+          name: null,
+          cost: null,
+          price: null,
+          suggestedPrice: null,
+          marginBefore: null,
+          marginAfter: null,
+          skipped: ITEM_NOT_FOUND,
+        });
+        continue;
+      }
+      const suggestedPrice =
+        item.cost === null
+          ? null
+          : dto.group === 'products'
+            ? ((await this.assemblies.standardPricing(companyId, id))
+                ?.suggestedUnitPrice ?? null)
+            : markup
+              ? Math.round(item.cost * markup)
+              : null;
+      items.push({
+        id,
+        name: item.name,
+        cost: item.cost,
+        price: item.price,
+        suggestedPrice,
+        marginBefore: item.margin,
+        marginAfter: marginAfterChargesOf(suggestedPrice, item.cost, params),
+        ...(item.cost === null
+          ? { skipped: 'Este item ainda não tem custo calculado.' }
+          : !suggestedPrice
+            ? {
+                skipped:
+                  'Sem preço sugerido: os encargos e o lucro passam de 100%',
+              }
+            : {}),
+      });
+    }
+
+    if (!dto.confirmed) return { items, applied: 0 };
+
+    let applied = 0;
+    for (const item of items) {
+      if (item.skipped || item.suggestedPrice === item.price) continue;
+      if (dto.group === 'products') {
+        await this.assemblies.adoptSuggestedPrice({
+          companyId,
+          productId: item.id,
+        });
+      } else if (dto.group === 'labor') {
+        await this.prisma.companySector.update({
+          where: { id: item.id },
+          data: {
+            hourSale: item.suggestedPrice,
+            hourSaleRule: 'VARIABLE',
+            hourSaleProfit: params.desiredMargin,
+          },
+        });
+      } else {
+        const [kind, refId] = item.id.split(':');
+        const data = {
+          salePrice: item.suggestedPrice,
+          priceRule: 'VARIABLE' as const,
+          profit: params.desiredMargin,
+        };
+        if (kind === 'setup') {
+          await this.prisma.assetSetup.update({ where: { id: refId }, data });
+        } else {
+          await this.prisma.assetGroup.update({ where: { id: refId }, data });
+        }
+      }
+      await this.audit.record({
+        companyId,
+        userId,
+        entity: 'PRICING_ITEM',
+        entityId: item.id,
+        action: 'APPLY_SUGGESTED',
+        before: { price: item.price, cost: item.cost },
+        after: { price: item.suggestedPrice, cost: item.cost },
+      });
+      applied++;
+    }
+    return { items, applied };
+  }
+
+  /**
+   * Na virada do mês, o custo de mão de obra e de máquina muda (o mês de
+   * referência é outro): o preço variável é refeito em toda empresa que tem
+   * algum, preservando o lucro (decisão do PO, 14/10).
+   */
+  @Cron('30 4 1 * *', {
+    name: 'pricing-variable-month',
+    timeZone: 'America/Sao_Paulo',
+  })
+  async repriceMonth() {
+    const [sectors, setups, groups] = await Promise.all([
+      this.prisma.companySector.findMany({
+        where: { hourSaleRule: 'VARIABLE' },
+        select: { companyId: true },
+        distinct: ['companyId'],
+      }),
+      this.prisma.assetSetup.findMany({
+        where: { priceRule: 'VARIABLE', asset: { companyId: { not: null } } },
+        select: { asset: { select: { companyId: true } } },
+      }),
+      this.prisma.assetGroup.findMany({
+        where: { priceRule: 'VARIABLE' },
+        select: { companyId: true },
+        distinct: ['companyId'],
+      }),
+    ]);
+    const companies = new Set<string>([
+      ...sectors.map((row) => row.companyId),
+      ...setups.map((row) => row.asset.companyId!),
+      ...groups.map((row) => row.companyId),
+    ]);
+    for (const companyId of companies) {
+      try {
+        await this.repriceVariable(
+          companyId,
+          await this.parameters.chargesOf(companyId),
+        );
+      } catch (error) {
+        this.logger.error(
+          `Preço variável da empresa ${companyId} não refeito: ${error?.message}`,
+        );
+      }
+    }
   }
 
   /** O preço de todo item variável refeito pelos parâmetros novos. */
