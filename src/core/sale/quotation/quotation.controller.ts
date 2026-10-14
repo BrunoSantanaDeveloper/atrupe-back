@@ -24,6 +24,7 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { QuotationService } from './quotation.service';
+import { CreditCheckService } from './credit-check.service';
 import { AddItemDto, CreateQuotationDto } from './dto/create-quotation.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import {
@@ -60,6 +61,15 @@ import { QuotationLinesService } from './quotation-lines.service';
 
 const RESOURCE = 'quotation';
 const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
+// Os valores da conferência de crédito: sem ver valores, só os motivos
+const CREDIT_MONEY_FIELDS = [
+  'limit',
+  'openBalance',
+  'pendingApproved',
+  'used',
+  'available',
+  'requested',
+];
 
 @ApiTags('Orçamentos')
 @UseGuards(JwtAuthGuard, BlockLevelGuard, PermissionsGuard)
@@ -79,6 +89,7 @@ export class QuotationController {
     private readonly planControlService: PlanControlService,
     private readonly lines: QuotationLinesService,
     private readonly results: QuotationResultService,
+    private readonly creditCheck: CreditCheckService,
   ) {}
 
   /**
@@ -742,6 +753,39 @@ export class QuotationController {
     }
     await this.validateOwnership(id, req.user, 'edit');
     return this.quotationService.open(id, req.user?.userId);
+  }
+
+  // O aviso de crédito no orçamento (cliente bloqueado, condição fora das
+  // permitidas, limite): concluir só avisa, a aprovação recusa (PO, 14/10)
+  @Get(':id/credit')
+  @MoneyFields(...CREDIT_MONEY_FIELDS)
+  @HasPermission('view', 'sale:quotation')
+  @ApiOperation({ summary: 'Conferência de crédito do orçamento' })
+  async credit(@Param('id') id: string, @Req() req) {
+    if (!isUUID(id, '4')) {
+      throw new BadRequestException('Invalid id');
+    }
+    await this.validateOwnership(id, req.user, 'view');
+    return this.creditCheck.quotationCredit(id);
+  }
+
+  // A situação do cliente ao escolhê-lo no orçamento, antes de gravar
+  @Get('client-credit/:clientId')
+  @MoneyFields(...CREDIT_MONEY_FIELDS)
+  @HasPermission('view', 'sale:quotation')
+  @ApiOperation({ summary: 'Situação de crédito do cliente' })
+  async clientCredit(@Param('clientId') clientId: string, @Req() req) {
+    if (!isUUID(clientId, '4')) {
+      throw new BadRequestException('Invalid id');
+    }
+    const credit = await this.creditCheck.clientCredit(
+      req.user.companyId,
+      clientId,
+    );
+    if (!credit) {
+      throw new NotFoundException('Cliente não encontrado');
+    }
+    return credit;
   }
 
   @Get(UUID_ROUTE)

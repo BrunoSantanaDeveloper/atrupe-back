@@ -208,7 +208,8 @@ describe('plan-feature-rules', () => {
       productivity_tracking: firstPlan('productivity_tracking'),
       stock_control: firstPlan('stock_control'),
       invoice_entry: firstPlan('invoice_entry'),
-      // Fora de todo plano até o PO decidir (acompanha a Agenda de entrega).
+      credit_limit_enforcement: firstPlan('credit_limit_enforcement'),
+      // Acompanha a Agenda de entrega, aberta no Start (PO, 14/10/2026).
       can_bill_on_delivery_and_checkout: firstPlan(
         'can_bill_on_delivery_and_checkout',
       ),
@@ -221,9 +222,10 @@ describe('plan-feature-rules', () => {
       productivity_tracking: 'ELITE',
       stock_control: 'FULL',
       invoice_entry: 'FULL',
-      can_bill_on_delivery_and_checkout: null,
+      credit_limit_enforcement: 'LITE',
+      can_bill_on_delivery_and_checkout: 'START',
     });
-    expect(PLAN_CONFIGURATIONS.TRIAL.features).not.toContain(
+    expect(PLAN_CONFIGURATIONS.TRIAL.features).toContain(
       'can_bill_on_delivery_and_checkout',
     );
   });

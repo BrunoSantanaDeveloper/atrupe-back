@@ -7,7 +7,12 @@
  * ligada no próximo deploy —, nunca desliga nem sobrescreve o que o painel
  * decidiu. Estas listas também são o alvo do "Restaurar padrão" do painel.
  */
-const startFeatures = ['sectors_configuration'];
+// Faturar na entrega acompanha a Agenda de entrega, aberta no Start (PO,
+// 14/10/2026); faturar na frente de caixa continua pedindo a frente de caixa.
+const startFeatures = [
+  'sectors_configuration',
+  'can_bill_on_delivery_and_checkout',
+];
 
 const liteFeatures = [
   ...startFeatures,
@@ -39,11 +44,10 @@ const liteFeatures = [
   'payment_difference',
   'multiple_companies',
   'transaction_cancel_reasons',
+  'credit_limit_enforcement',
 ];
 
 // Cada plano tem tudo o que o anterior tem (regra cumulativa, 10/10/2026).
-// `can_bill_on_delivery_and_checkout` não está em nenhuma lista até o PO
-// decidir o plano.
 const proFeatures = [...liteFeatures, 'cost_base', 'pricing_center'];
 
 const eliteFeatures = [

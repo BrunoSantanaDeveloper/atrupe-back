@@ -256,6 +256,15 @@ export const BASE_FEATURES = [
     isActive: true,
   },
   {
+    key: 'credit_limit_enforcement',
+    name: 'Bloqueio pelo limite de crédito',
+    description:
+      'Aprovação do orçamento conferida pelo limite de crédito, pelo cliente bloqueado e pelas condições permitidas.',
+    category: 'financial',
+    price: 0,
+    isActive: true,
+  },
+  {
     key: 'can_bill_on_delivery_and_checkout',
     name: 'Faturar na entrega e na frente de caixa',
     description:

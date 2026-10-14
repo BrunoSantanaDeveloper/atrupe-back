@@ -28,6 +28,7 @@ import { PlanControlService } from '../../plan/plan-control.service';
 import { companyWithoutKeys } from 'src/shared/company/company-keys';
 import { ProductSaleService } from '../../assembly/product-sale.service';
 import { SaleChoicesDto } from '../../assembly/dto/sale.dto';
+import { CreditCheckService } from './credit-check.service';
 
 export const ALREADY_APPROVED_MESSAGE = 'Este orçamento já está aprovado.';
 export const PAYMENT_CONDITION_REQUIRED =
@@ -129,6 +130,7 @@ export class QuotationWorkflowService {
     private deliveryScheduleService: DeliveryScheduleService,
     private planControl: PlanControlService,
     private productSale: ProductSaleService,
+    private credit: CreditCheckService,
   ) {}
 
   /**
@@ -385,7 +387,8 @@ export class QuotationWorkflowService {
   /**
    * Aprova um orçamento e cria a O.S., em três passos:
    * 1. confere antes de gravar: orçamento ainda não aprovado, informações de
-   *    entrega e cadastro do cliente;
+   *    entrega, cadastro do cliente e o crédito dele (a importação não
+   *    confere o crédito: a venda já foi aprovada no sistema de origem);
    * 2. numa transação só, APPROVED, O.S., agenda e financeiro: uma falha no
    *    financeiro (venda sem parcelas, por exemplo) desfaz a aprovação
    *    inteira, em vez de deixar a venda aprovada pela metade;
@@ -396,6 +399,7 @@ export class QuotationWorkflowService {
     quotationId: string,
     userId?: string,
     approvedAt?: Date,
+    options: { creditCheck?: boolean } = {},
   ): Promise<Order> {
     const current = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
@@ -466,6 +470,9 @@ export class QuotationWorkflowService {
       });
     }
     await this.validateClientForApproval(current.client, userId, this.prisma);
+    if (options.creditCheck !== false) {
+      await this.credit.assertApproval(quotationId);
+    }
 
     const startsInProduction = await this.startsInProduction(current.companyId);
 

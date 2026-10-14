@@ -47,6 +47,8 @@ export const PLAN_FEATURE_KEYS = [
   'productivity_tracking',
   'stock_control',
   'invoice_entry',
+  // 14/10/2026: o bloqueio da venda pelo limite de crédito (LITE).
+  'credit_limit_enforcement',
 ] as const;
 
 export type PlanFeatureKey = (typeof PLAN_FEATURE_KEYS)[number];
@@ -83,6 +85,8 @@ export const FEATURE_DEPENDENCIES: Partial<
   productivity_tracking: ['production_manager'],
   // A entrada de nota alimenta o estoque.
   invoice_entry: ['stock_control'],
+  // O bloqueio confere o limite que a configuração cadastra.
+  credit_limit_enforcement: ['credit_limit_configuration'],
 };
 
 /** Quem depende de `key` (inverso de FEATURE_DEPENDENCIES). */
@@ -228,7 +232,8 @@ export const FEATURE_ENFORCEMENT: Record<
   },
   can_bill_on_delivery_and_checkout: {
     level: 'tela',
-    detail: 'O servidor passa a exigir quando o plano for decidido.',
+    detail:
+      'Opções de faturamento nas séries e condições (Start em diante, 14/10/2026). Faturar na frente de caixa continua pedindo a frente de caixa.',
   },
   cost_base: {
     level: 'api',
@@ -259,6 +264,11 @@ export const FEATURE_ENFORCEMENT: Record<
     level: 'tela',
     detail:
       'Telas em implantação; o servidor passa a exigir quando a API da entrada de nota nascer (módulo 5).',
+  },
+  credit_limit_enforcement: {
+    level: 'api',
+    detail:
+      'Aprovação do orçamento recusada com cliente bloqueado, condição fora das permitidas ou saldo acima do limite (antes da data de CREDIT_LIMIT_ENFORCE_FROM, só registra).',
   },
 };
 

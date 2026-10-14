@@ -287,7 +287,20 @@ describe('applyPlanDefaults', () => {
     expect(plansWith('productivity_tracking')).toEqual(['Elite', 'Full']);
     expect(plansWith('stock_control')).toEqual(['Full']);
     expect(plansWith('invoice_entry')).toEqual(['Full']);
-    expect(plansWith('can_bill_on_delivery_and_checkout')).toEqual([]);
+    expect(plansWith('can_bill_on_delivery_and_checkout')).toEqual([
+      'Elite',
+      'Full',
+      'Lite',
+      'Pro',
+      'Start',
+      'Trial',
+    ]);
+    expect(plansWith('credit_limit_enforcement')).toEqual([
+      'Elite',
+      'Full',
+      'Lite',
+      'Pro',
+    ]);
     expect(plansWith('cash_control')).toEqual(['Elite', 'Full', 'Lite']);
     // O Pro sem o caixa que o Lite tem fere a regra cumulativa: o seed só
     // relata, não liga.

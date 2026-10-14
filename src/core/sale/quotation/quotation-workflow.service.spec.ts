@@ -10,6 +10,7 @@ import { QuotationFinancialService } from './quotation-financial.service';
 import { PrismaService } from 'nestjs-prisma';
 import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.service';
 import { PlanControlService } from '../../plan/plan-control.service';
+import { CreditCheckService } from './credit-check.service';
 import {
   NotFoundException,
   BadRequestException,
@@ -137,6 +138,9 @@ const mockProductSale = {
   itemComposition: jest.fn(),
 };
 
+// O crédito tem teste próprio (credit-check.service.spec.ts)
+const mockCredit = { assertApproval: jest.fn().mockResolvedValue(undefined) };
+
 describe('QuotationWorkflowService', () => {
   let service: QuotationWorkflowService;
   let prisma: ReturnType<typeof createMockPrismaService>;
@@ -165,6 +169,7 @@ describe('QuotationWorkflowService', () => {
           useValue: mockPlanControl,
         },
         { provide: ProductSaleService, useValue: mockProductSale },
+        { provide: CreditCheckService, useValue: mockCredit },
       ],
     }).compile();
 

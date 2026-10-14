@@ -25,6 +25,7 @@ describe('Orçamento: outra empresa', () => {
     const abac = { canAccessOtherSellers: jest.fn().mockResolvedValue(true) };
     const lines = { preview: jest.fn(), add: jest.fn(), remove: jest.fn() };
     const results = { result: jest.fn(), exportPdf: jest.fn() };
+    const credit = { quotationCredit: jest.fn(), clientCredit: jest.fn() };
     const controller = new QuotationController(
       service as any,
       abac as any,
@@ -32,6 +33,7 @@ describe('Orçamento: outra empresa', () => {
       {} as any,
       lines as any,
       results as any,
+      credit as any,
     );
     const req = { user: { userId: 'u-a', companyId: 'empresa-a' } };
     const id = '6f1c2b8e-4d3a-4f5b-9c7d-1e2f3a4b5c6d';
@@ -99,6 +101,22 @@ describe('Orçamento: outra empresa', () => {
     ] as const)('%s', async (_label, action, call) => {
       await expect(call()).rejects.toBeInstanceOf(ForbiddenException);
       expect(results[action]).not.toHaveBeenCalled();
+    });
+
+    // A conferência de crédito (PO, 14/10)
+    it('GET /sale/quotation/:id/credit', async () => {
+      await expect(controller.credit(id, req)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(credit.quotationCredit).not.toHaveBeenCalled();
+    });
+
+    it('GET /sale/quotation/client-credit/:clientId lê o cliente pela empresa da sessão', async () => {
+      credit.clientCredit.mockResolvedValueOnce(null);
+      await expect(controller.clientCredit(id, req)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(credit.clientCredit).toHaveBeenCalledWith('empresa-a', id);
     });
   });
 

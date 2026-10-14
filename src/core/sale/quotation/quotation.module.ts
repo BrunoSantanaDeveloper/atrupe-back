@@ -21,6 +21,7 @@ import { QuotationPdfService } from './quotation-pdf.service';
 import { QuotationImportService } from './quotation-import.service';
 import { QuotationLinesService } from './quotation-lines.service';
 import { QuotationResultService } from './quotation-result.service';
+import { CreditCheckService } from './credit-check.service';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { QuotationResultService } from './quotation-result.service';
     QuotationImportService,
     QuotationLinesService,
     QuotationResultService,
+    CreditCheckService,
   ],
   exports: [
     QuotationService,
@@ -58,6 +60,7 @@ import { QuotationResultService } from './quotation-result.service';
     QuotationFinancialService,
     QuotationPdfService,
     QuotationImportService,
+    CreditCheckService,
   ],
 })
 export class QuotationModule {}

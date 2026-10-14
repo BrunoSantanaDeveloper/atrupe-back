@@ -483,7 +483,12 @@ export class QuotationImportService {
       if (this.workflowService) {
         for (const quotationId of quotationsToApprove) {
           try {
-            await this.workflowService.approve(quotationId);
+            await this.workflowService.approve(
+              quotationId,
+              undefined,
+              undefined,
+              { creditCheck: false },
+            );
           } catch (error) {
             this.logger.error(
               `Error approving quotation ${quotationId}:`,
