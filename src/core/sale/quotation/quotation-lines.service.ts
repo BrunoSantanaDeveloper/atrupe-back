@@ -10,6 +10,7 @@ import { COMMERCIAL_FACTOR } from '../../assembly/assembly-graph';
 import { UnitKind } from '../../assembly/engine/types';
 import { ProcessService } from '../../assembly/process.service';
 import { ProductSaleService } from '../../assembly/product-sale.service';
+import { PlanControlService } from '../../plan/plan-control.service';
 import {
   SalesSettingsService,
   outsourcedPrice,
@@ -21,6 +22,8 @@ import { LINE_VIEW_SELECT } from './quotation.includes';
 export const LINE_NOT_FOUND = 'Linha não encontrada';
 const ITEM_NOT_FOUND = 'Item não encontrado';
 const NOT_OPEN = 'Só dá para mexer no item com o orçamento em digitação';
+export const APPROVED_WITH_STOCK =
+  'Com o estoque ligado, a composição do item da O.S. aprovada fica como foi vendida';
 const MEASURE_REQUIRED = 'Informe a medida da linha';
 
 // Dinheiro das respostas das linhas: sem `values:values:view`, não sai
@@ -108,7 +111,18 @@ export class QuotationLinesService {
     private readonly processes: ProcessService,
     private readonly productSale: ProductSaleService,
     private readonly settings: SalesSettingsService,
+    private readonly planControl: PlanControlService,
   ) {}
+
+  /**
+   * A O.S. aprovada muda a composição do item (opções, variação e linhas) e
+   * refaz o retrato quando a conta não tem estoque: com ele, o material já
+   * pode ter sido baixado, e a venda fica como foi feita (decisão do PO,
+   * 14/10/2026).
+   */
+  async approvedEditable(companyId: string): Promise<boolean> {
+    return !(await this.planControl.hasFeature(companyId, 'stock_control'));
+  }
 
   /* ---------------------------------------------------------------- rotas */
 
@@ -322,7 +336,13 @@ export class QuotationLinesService {
       },
     });
     if (!row) throw new NotFoundException(ITEM_NOT_FOUND);
-    if (row.quotation.status !== 'OPEN') bad(NOT_OPEN);
+    if (row.quotation.status === 'APPROVED') {
+      if (!(await this.approvedEditable(row.quotation.companyId))) {
+        bad(APPROVED_WITH_STOCK);
+      }
+    } else if (row.quotation.status !== 'OPEN') {
+      bad(NOT_OPEN);
+    }
     return {
       id: row.id,
       companies: [row.quotation.companyId, row.quotation.subCompanyId].filter(

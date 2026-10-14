@@ -302,9 +302,11 @@ export class QuotationItemsService {
         throw new NotFoundException('Item não encontrado no produto.');
       }
 
-      // Da aprovação em diante, o retrato e as linhas ficam como foram
-      // vendidos (ORC-10): a edição da O.S. não refaz a conta
-      const frozen = product.quotation.status === 'APPROVED';
+      // Da aprovação em diante, com estoque, o retrato e as linhas ficam como
+      // foram vendidos (ORC-10); sem estoque, a O.S. refaz a conta (PO, 14/10)
+      const frozen =
+        product.quotation.status === 'APPROVED' &&
+        !(await this.lines.approvedEditable(product.quotation.companyId));
 
       const variationId =
         data.variationId !== undefined && !frozen

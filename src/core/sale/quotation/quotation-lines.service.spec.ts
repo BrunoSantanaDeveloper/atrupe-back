@@ -1,5 +1,8 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { QuotationLinesService } from './quotation-lines.service';
+import {
+  APPROVED_WITH_STOCK,
+  QuotationLinesService,
+} from './quotation-lines.service';
 
 /**
  * As linhas dentro do item (ORC-5): preço de cada tipo, a medida que a linha
@@ -21,6 +24,7 @@ describe('QuotationLinesService', () => {
   let processes: { lineQuote: jest.Mock };
   let productSale: { itemComposition: jest.Mock; saleForm: jest.Mock };
   let settings: { outsourcedMarkupOf: jest.Mock };
+  let plan: { hasFeature: jest.Mock };
   let service: QuotationLinesService;
 
   beforeEach(() => {
@@ -68,11 +72,13 @@ describe('QuotationLinesService', () => {
       saleForm: jest.fn().mockResolvedValue(null),
     };
     settings = { outsourcedMarkupOf: jest.fn().mockResolvedValue(45) };
+    plan = { hasFeature: jest.fn().mockResolvedValue(false) };
     service = new QuotationLinesService(
       prisma,
       processes as any,
       productSale as any,
       settings as any,
+      plan as any,
     );
   });
 
@@ -201,6 +207,21 @@ describe('QuotationLinesService', () => {
         true,
       ),
     ).rejects.toThrow('Só dá para mexer no item com o orçamento em digitação');
+
+    // O.S. aprovada numa conta com estoque: a composição fica como foi vendida
+    plan.hasFeature.mockResolvedValueOnce(true);
+    prisma.quotationProduct.findFirst.mockResolvedValueOnce(
+      itemRow('APPROVED'),
+    );
+    await expect(
+      service.add(
+        quotationId,
+        itemId,
+        { kind: 'LOOSE', description: 'X', cost: 100 } as any,
+        true,
+      ),
+    ).rejects.toThrow(APPROVED_WITH_STOCK);
+    expect(plan.hasFeature).toHaveBeenCalledWith('c-1', 'stock_control');
 
     prisma.quotationItemLine.findFirst.mockResolvedValue(null);
     await expect(

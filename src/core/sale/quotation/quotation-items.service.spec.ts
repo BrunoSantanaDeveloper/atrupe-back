@@ -106,7 +106,11 @@ describe('QuotationItemsService', () => {
   let service: QuotationItemsService;
   let prisma: ReturnType<typeof createMockPrismaService>;
   let productSale: { itemComposition: jest.Mock };
-  let lines: { recalculate: jest.Mock; refreshItem: jest.Mock };
+  let lines: {
+    recalculate: jest.Mock;
+    refreshItem: jest.Mock;
+    approvedEditable: jest.Mock;
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -114,6 +118,8 @@ describe('QuotationItemsService', () => {
     lines = {
       recalculate: jest.fn().mockResolvedValue(0),
       refreshItem: jest.fn().mockResolvedValue({}),
+      // Com estoque: a O.S. aprovada fica como foi vendida
+      approvedEditable: jest.fn().mockResolvedValue(false),
     };
     productSale = {
       itemComposition: jest.fn().mockResolvedValue({
@@ -273,7 +279,7 @@ describe('QuotationItemsService', () => {
       expect(result).toMatchObject({ linesRecalculated: 2 });
     });
 
-    it('venda aprovada: a edição não refaz o retrato nem as linhas (ORC-10)', async () => {
+    it('venda aprovada com estoque: a edição não refaz o retrato nem as linhas (ORC-10)', async () => {
       prisma.quotationProduct.findUnique.mockResolvedValue({
         ...mockQuotationProduct,
         quotation: { ...mockQuotation, status: 'APPROVED' },
@@ -299,6 +305,36 @@ describe('QuotationItemsService', () => {
       expect(
         prisma.quotationProduct.update.mock.calls[0][0].data,
       ).not.toHaveProperty('variationId');
+      expect(lines.approvedEditable).toHaveBeenCalledWith(
+        mockQuotation.companyId,
+      );
+    });
+
+    it('venda aprovada sem estoque: muda a composição e refaz o retrato (PO, 14/10)', async () => {
+      lines.approvedEditable.mockResolvedValue(true);
+      prisma.quotationProduct.findUnique.mockResolvedValue({
+        ...mockQuotationProduct,
+        quotation: { ...mockQuotation, status: 'APPROVED' },
+        addition: 0,
+        linesTotal: 0,
+        composition: { choices: [] },
+        snapshot: { quotationProductId: mockQuotationProductId },
+        variationId: null,
+        product: { ...mockProduct },
+      });
+      prisma.quotationProduct.update.mockResolvedValue(mockQuotationProduct);
+      prisma.quotationProductItem.findMany.mockResolvedValue([]);
+
+      await service.updateProductInQuotation(mockQuotationProductId, {
+        quantity: 3,
+        composition: { choices: [] },
+      } as any);
+
+      expect(productSale.itemComposition).toHaveBeenCalled();
+      expect(lines.recalculate).toHaveBeenCalledWith(mockQuotationProductId);
+      expect(
+        prisma.quotationProduct.update.mock.calls[0][0].data,
+      ).toHaveProperty('snapshot');
     });
   });
 
