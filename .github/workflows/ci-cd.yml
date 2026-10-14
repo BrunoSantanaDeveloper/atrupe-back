@@ -22,7 +22,9 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run build
-      - run: npm run test
+      # Com 2 CPUs o jest roda tudo num processo só e o heap estoura com as
+      # ~250 suítes (14/10/2026): dois workers, reciclados ao passar de 1 GB
+      - run: npm run test -- --maxWorkers=2 --workerIdleMemoryLimit=1024MB
 
   # Schema sem migration derruba a API: o Prisma passa a ler uma coluna que o
   # banco não tem, e o deploy sai como sucesso. Este job gera, num Postgres
