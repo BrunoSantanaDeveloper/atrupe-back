@@ -474,7 +474,8 @@ export class MaterialService {
         options: { some: usesMaterial(id) },
         OR: [
           { process: { companyId } },
-          { block: { assembly: { companyId } } },
+          // Só os produtos: o rascunho do item montado não tem nome (ORC-11)
+          { block: { assembly: { companyId, productId: { not: null } } } },
         ],
       },
       select: {
@@ -491,7 +492,10 @@ export class MaterialService {
     ];
     const linked = processIds.length
       ? await this.prisma.assemblyBlock.findMany({
-          where: { processId: { in: processIds }, assembly: { companyId } },
+          where: {
+            processId: { in: processIds },
+            assembly: { companyId, productId: { not: null } },
+          },
           select: USAGE_BLOCK,
         })
       : [];

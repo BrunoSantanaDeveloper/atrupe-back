@@ -26,6 +26,14 @@ describe('Orçamento: outra empresa', () => {
     const lines = { preview: jest.fn(), add: jest.fn(), remove: jest.fn() };
     const results = { result: jest.fn(), exportPdf: jest.fn() };
     const credit = { quotationCredit: jest.fn(), clientCredit: jest.fn() };
+    // O item montado na hora (ORC-11, Fase 4.5)
+    const composed = {
+      createDraft: jest.fn(),
+      draftOf: jest.fn(),
+      addComposed: jest.fn(),
+      saveAsProduct: jest.fn(),
+    };
+    const assemblies = { read: jest.fn(), addBlock: jest.fn() };
     const controller = new QuotationController(
       service as any,
       abac as any,
@@ -34,6 +42,8 @@ describe('Orçamento: outra empresa', () => {
       lines as any,
       results as any,
       credit as any,
+      composed as any,
+      assemblies as any,
     );
     const req = { user: { userId: 'u-a', companyId: 'empresa-a' } };
     const id = '6f1c2b8e-4d3a-4f5b-9c7d-1e2f3a4b5c6d';
@@ -101,6 +111,37 @@ describe('Orçamento: outra empresa', () => {
     ] as const)('%s', async (_label, action, call) => {
       await expect(call()).rejects.toBeInstanceOf(ForbiddenException);
       expect(results[action]).not.toHaveBeenCalled();
+    });
+
+    // O item montado na hora: o rascunho de outra empresa não é alcançado
+    const draftId = '7a2d3c4b-5e6f-4a1b-8c9d-0e1f2a3b4c5d';
+    it.each([
+      [
+        'POST /sale/quotation/:id/composed-draft',
+        () => controller.createComposedDraft(id, {} as any, req),
+      ],
+      [
+        'GET /sale/quotation/:id/composed-draft/:draftId/assembly',
+        () => controller.readComposedDraft(id, draftId, {} as any, req),
+      ],
+      [
+        'POST /sale/quotation/:id/composed-draft/:draftId/assembly/block',
+        () => controller.addComposedBlock(id, draftId, {} as any, req),
+      ],
+      [
+        'POST /sale/quotation/:id/add-composed',
+        () => controller.addComposedItem(id, { draftId } as any, req),
+      ],
+      [
+        'POST /sale/quotation/:id/composed-draft/:draftId/save-as-product',
+        () => controller.saveComposedAsProduct(id, draftId, {} as any, req),
+      ],
+    ] as const)('%s', async (_label, call) => {
+      await expect(call()).rejects.toBeInstanceOf(ForbiddenException);
+      expect(composed.createDraft).not.toHaveBeenCalled();
+      expect(composed.draftOf).not.toHaveBeenCalled();
+      expect(assemblies.read).not.toHaveBeenCalled();
+      expect(assemblies.addBlock).not.toHaveBeenCalled();
     });
 
     // A conferência de crédito (PO, 14/10)

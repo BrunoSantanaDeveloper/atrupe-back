@@ -256,6 +256,17 @@ export function transformQuotationItem(qp: any) {
     variation: qp.variation ?? null,
     composition: qp.composition ?? null,
     image: getImage(),
+    // O item montado na hora (ORC-11): o rascunho em que foi montado, a
+    // medida (mm) e as etapas; sem etapa, "Exige atenção" (MS-12)
+    draft: qp.draftId
+      ? {
+          id: qp.draftId,
+          width: qp.draft?.width ?? null,
+          height: qp.draft?.height ?? null,
+          stages: qp.draft?.assembly?._count?.blocks ?? 0,
+        }
+      : null,
+    attention: qp.origin === 'COMPOSED' && !qp.draft?.assembly?._count?.blocks,
     // O material de venda direta (ORG-1); nulo nos outros itens
     material: qp.materialId
       ? {

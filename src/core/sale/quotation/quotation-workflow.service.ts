@@ -29,6 +29,7 @@ import { companyWithoutKeys } from 'src/shared/company/company-keys';
 import { ProductSaleService } from '../../assembly/product-sale.service';
 import { SaleChoicesDto } from '../../assembly/dto/sale.dto';
 import { CreditCheckService } from './credit-check.service';
+import { snapshotStages } from './item-origin';
 
 export const ALREADY_APPROVED_MESSAGE = 'Este orçamento já está aprovado.';
 export const PAYMENT_CONDITION_REQUIRED =
@@ -261,6 +262,41 @@ export class QuotationWorkflowService {
   }
 
   /**
+   * O item montado na hora sem nenhuma etapa fica marcado e o orçamento
+   * não conclui nem aprova até as etapas existirem (MS-12, ORC-11).
+   */
+  private async assertComposedReady(
+    quotationId: string,
+    action: 'concluir' | 'aprovar',
+  ) {
+    const pending = await this.prisma.quotationProduct.findMany({
+      where: {
+        quotationId,
+        origin: 'COMPOSED',
+        OR: [
+          { draftId: null },
+          { draft: { is: { assembly: { is: null } } } },
+          { draft: { is: { assembly: { is: { blocks: { none: {} } } } } } },
+        ],
+      },
+      select: { id: true, description: true },
+    });
+    if (!pending.length) return;
+    throw new BadRequestException({
+      statusCode: 400,
+      message: `${
+        pending.length === 1
+          ? 'O item montado está sem etapas'
+          : 'Itens montados estão sem etapas'
+      }: monte as etapas antes de ${action}.`,
+      items: pending.map((item) => ({
+        itemId: item.id,
+        name: item.description || 'Item montado',
+      })),
+    });
+  }
+
+  /**
    * Cria ou retorna o pedido existente para o orçamento
    */
   private async createOrUpdateOrder(
@@ -473,6 +509,7 @@ export class QuotationWorkflowService {
         })),
       });
     }
+    await this.assertComposedReady(quotationId, 'aprovar');
     await this.validateClientForApproval(current.client, userId, this.prisma);
     if (options.creditCheck !== false) {
       await this.credit.assertApproval(quotationId);
@@ -1051,6 +1088,32 @@ export class QuotationWorkflowService {
         })
       : [];
 
+    // O item montado na hora passa pelos setores das etapas dele, quando
+    // são etapa de produção (ORC-11, PO 14/10/2026)
+    const composedSnapshots = await this.prisma.quotationItemSnapshot.findMany({
+      where: { quotationProduct: { quotationId, origin: 'COMPOSED' } },
+      select: { data: true },
+    });
+    const composedSectorIds = [
+      ...new Set(
+        composedSnapshots
+          .flatMap((row) => snapshotStages(row.data))
+          .map((stage) => stage.sectorId)
+          .filter(Boolean),
+      ),
+    ];
+    const composedSectors = composedSectorIds.length
+      ? await this.prisma.companySector.findMany({
+          where: {
+            id: { in: composedSectorIds },
+            companyId: quotation.companyId,
+            isProductionStage: true,
+            isActive: true,
+          },
+          select: { id: true },
+        })
+      : [];
+
     const allStages: ProductionStageJson[] = [
       ...products.flatMap((product) => {
         const stages =
@@ -1062,6 +1125,10 @@ export class QuotationWorkflowService {
       }),
       ...materialSectors.map((material) => ({
         id: material.sectorId,
+        isActive: true,
+      })),
+      ...composedSectors.map((sector) => ({
+        id: sector.id,
         isActive: true,
       })),
     ];
@@ -1284,6 +1351,7 @@ export class QuotationWorkflowService {
         'Não é possível concluir um orçamento com status aprovado.',
       );
     }
+    await this.assertComposedReady(quotationId, 'concluir');
 
     // Concluir sem condição de pagamento (sem as parcelas) pode, decisão de
     // 05/10/2026: só a aprovação exige. A tela avisa antes o que falta

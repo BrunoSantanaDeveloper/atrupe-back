@@ -22,6 +22,7 @@ import { QuotationImportService } from './quotation-import.service';
 import { QuotationLinesService } from './quotation-lines.service';
 import { QuotationResultService } from './quotation-result.service';
 import { CreditCheckService } from './credit-check.service';
+import { ComposedItemService } from './composed-item.service';
 
 @Module({
   imports: [
@@ -51,6 +52,8 @@ import { CreditCheckService } from './credit-check.service';
     QuotationLinesService,
     QuotationResultService,
     CreditCheckService,
+    // O item montado na hora (ORC-11, Fase 4.5)
+    ComposedItemService,
   ],
   exports: [
     QuotationService,

@@ -234,6 +234,16 @@ export const QUOTATION_PRODUCT_SELECT = {
     },
   },
   materialVariation: { select: { id: true, brand: true, color: true } },
+  // O item montado na hora (ORC-11): o rascunho, a medida e quantas etapas
+  draftId: true,
+  draft: {
+    select: {
+      id: true,
+      width: true,
+      height: true,
+      assembly: { select: { _count: { select: { blocks: true } } } },
+    },
+  },
   origin: true,
   addition: true,
   // As escolhas da composição; o retrato (snapshot) tem custo e fica fora

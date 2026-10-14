@@ -5,7 +5,9 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  Optional,
 } from '@nestjs/common';
+import { ComposedItemService } from './composed-item.service';
 import { PrismaService } from 'nestjs-prisma';
 import { Prisma, Quotation, QuotationStatus } from '@prisma/client';
 import { add, endOfDay } from 'date-fns';
@@ -35,7 +37,11 @@ const EXPORT_LIMIT = '10000';
 export class QuotationCrudService {
   private readonly logger = new Logger(QuotationCrudService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // Copia o rascunho do item montado ao duplicar (ORC-11)
+    @Optional() private composed?: ComposedItemService,
+  ) {}
 
   /**
    * Método auxiliar para buscar userId a partir de employeeId
@@ -1186,6 +1192,12 @@ export class QuotationCrudService {
           // O material de venda direta vai junto (ORG-1)
           materialId: product.materialId,
           materialVariationId: product.materialVariationId,
+          // O item montado ganha uma cópia do rascunho: editar a cópia
+          // não mexe no original (ORC-11)
+          draftId:
+            product.draftId && this.composed
+              ? await this.composed.cloneDraft(product.draftId, newQuotation.id)
+              : null,
           unitPrice:
             duplicateDto.updatePrices && currentUnitPrice != null
               ? currentUnitPrice

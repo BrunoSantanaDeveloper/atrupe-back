@@ -88,6 +88,7 @@ import { BASE_RULES, FINISHING_RULES, mergeRules, rulesOf } from './sale-rules';
 export const PRODUCT_NOT_FOUND = 'Produto não encontrado';
 export const VARIATION_NOT_FOUND = 'Variação não encontrada';
 export const BLOCK_NOT_FOUND = 'Etapa não encontrada';
+export const DRAFT_NOT_FOUND = 'Item montado não encontrado';
 const PROCESS_NOT_FOUND = 'Processo não encontrado';
 const OWN_ASSEMBLY_REQUIRED =
   'Esta variação usa a composição padrão: crie a composição própria dela primeiro';
@@ -103,7 +104,58 @@ type Ctx = {
   companyId: string;
   productId: string;
   variationId?: string | null;
+  /**
+   * O rascunho do item montado no orçamento (ORC-11): o dono da composição
+   * no lugar do produto. `productId` traz o mesmo id.
+   */
+  draftId?: string | null;
 };
+
+/** O produto da composição, ou o sintético do rascunho do orçamento. */
+export type OwnerRow = ProductRow & { draftId?: string };
+
+/** Onde está a composição: no produto ou no rascunho. */
+const ownerWhere = (owner: OwnerRow) =>
+  owner.draftId ? { draftId: owner.draftId } : { productId: owner.id };
+
+/**
+ * O rascunho como produto para o motor (ORC-11): vendido por unidade, na
+ * medida do rascunho, sem preço de cadastro, faixas nem variações. O preço
+ * do item é a soma das etapas (o sugerido).
+ */
+export const draftOwner = (draft: {
+  id: string;
+  companyId: string;
+  name: string;
+  width: number;
+  height: number;
+}): OwnerRow => ({
+  id: draft.id,
+  name: draft.name,
+  code: '',
+  isActive: true,
+  companyId: draft.companyId,
+  technicalDescription: '',
+  allowEditValues: true,
+  allowEditDescription: true,
+  items: [
+    {
+      id: draft.id,
+      unitKind: 'UNITY',
+      unitCost: null,
+      width: draft.width,
+      height: draft.height,
+      length: null,
+      volume: null,
+      weight: null,
+      distance: null,
+      duration: null,
+    },
+  ],
+  priceTiers: [],
+  variations: [],
+  draftId: draft.id,
+});
 
 type ResolvedLine =
   | { kind: 'own'; row: LineRow }
@@ -160,7 +212,7 @@ export class ProductAssemblyService {
     const product = await this.product(ctx);
     const variation = this.variationOf(product, query.variationId);
     const all = await this.prisma.productAssembly.findMany({
-      where: { productId: product.id, companyId: ctx.companyId },
+      where: { ...ownerWhere(product), companyId: ctx.companyId },
       include: ASSEMBLY_INCLUDE,
     });
     const assemblyOf = (variationId: string | null) =>
@@ -271,7 +323,7 @@ export class ProductAssemblyService {
       where: {
         id: query.blockId,
         assembly: {
-          productId: product.id,
+          ...ownerWhere(product),
           variationKey: variation?.assemblies.length ? variation.id : '',
         },
       },
@@ -340,7 +392,7 @@ export class ProductAssemblyService {
   /* ============================================================== cabeçalho */
 
   async updateHeader(ctx: Ctx, dto: UpdateAssemblyDto) {
-    const { assembly } = await this.writable(ctx);
+    const { product, assembly } = await this.writable(ctx);
     if (dto.status === 'RELEASED') {
       if (!assembly.blocks.length) {
         bad('Monte a composição antes de liberar o produto para venda');
@@ -356,6 +408,7 @@ export class ProductAssemblyService {
       if (open) {
         bad('Há linhas de escolha sem opção padrão. Escolha antes de liberar');
       }
+      await this.ensureCode(product);
     }
     const updated = await this.prisma.productAssembly.update({
       where: { id: assembly.id },
@@ -369,6 +422,27 @@ export class ProductAssemblyService {
       select: { status: true, dimension: true, allowRenameStages: true },
     });
     return { productId: ctx.productId, ...updated };
+  }
+
+  /**
+   * O produto salvo do item montado nasce sem código (ORC-11): ao liberar a
+   * composição para venda, ganha o próximo "MONT-nn" livre da empresa
+   * (PO, 14/10/2026), que pode ser trocado no cadastro.
+   */
+  private async ensureCode(product: OwnerRow) {
+    if (product.draftId || product.code) return;
+    const taken = await this.prisma.product.findMany({
+      where: { companyId: product.companyId, code: { startsWith: 'MONT-' } },
+      select: { code: true },
+    });
+    const numbers = taken
+      .map((row) => Number(row.code?.slice(5)))
+      .filter((value) => Number.isInteger(value));
+    const next = Math.max(0, ...numbers) + 1;
+    await this.prisma.product.update({
+      where: { id: product.id },
+      data: { code: `MONT-${String(next).padStart(2, '0')}` },
+    });
   }
 
   /**
@@ -1209,7 +1283,9 @@ export class ProductAssemblyService {
     source: AssemblyRow | null,
     target: {
       companyId: string;
-      productId: string;
+      productId?: string | null;
+      // O rascunho do item montado (ORC-11), no lugar do produto
+      draftId?: string | null;
       variationId: string | null;
     },
   ) {
@@ -1218,7 +1294,8 @@ export class ProductAssemblyService {
       data: {
         id,
         companyId: target.companyId,
-        productId: target.productId,
+        productId: target.productId ?? null,
+        draftId: target.draftId ?? null,
         variationId: target.variationId,
         variationKey: target.variationId ?? '',
         status: source?.status ?? 'DRAFT',
@@ -1331,7 +1408,21 @@ export class ProductAssemblyService {
 
   /* ================================================================== apoio */
 
-  async product(ctx: Ctx): Promise<ProductRow> {
+  async product(ctx: Ctx): Promise<OwnerRow> {
+    if (ctx.draftId) {
+      const draft = await this.prisma.quotationDraft.findFirst({
+        where: { id: ctx.draftId, companyId: ctx.companyId },
+        select: {
+          id: true,
+          companyId: true,
+          name: true,
+          width: true,
+          height: true,
+        },
+      });
+      if (!draft) throw new NotFoundException(DRAFT_NOT_FOUND);
+      return draftOwner(draft);
+    }
     const product = await this.prisma.product.findFirst({
       where: { id: ctx.productId, companyId: ctx.companyId },
       select: PRODUCT_SELECT,
@@ -1356,6 +1447,16 @@ export class ProductAssemblyService {
     });
   }
 
+  /** A composição do dono: a do produto (ou da variação) ou a do rascunho. */
+  assemblyOf(owner: OwnerRow, variationKey: string) {
+    return owner.draftId
+      ? this.prisma.productAssembly.findUnique({
+          where: { draftId: owner.draftId },
+          include: ASSEMBLY_INCLUDE,
+        })
+      : this.assemblyRow(owner.id, variationKey);
+  }
+
   /**
    * A composição em que se escreve: a padrão (criada na primeira escrita) ou
    * a própria da variação.
@@ -1365,21 +1466,33 @@ export class ProductAssemblyService {
     const variation = this.variationOf(product, ctx.variationId);
     if (variation && !variation.assemblies.length) bad(OWN_ASSEMBLY_REQUIRED);
     const key = variation?.id ?? '';
-    let assembly = await this.assemblyRow(product.id, key);
+    let assembly = await this.assemblyOf(product, key);
     if (!assembly) {
-      await this.prisma.productAssembly.upsert({
-        where: {
-          productId_variationKey: { productId: product.id, variationKey: key },
-        },
-        create: {
-          companyId: ctx.companyId,
-          productId: product.id,
-          variationId: variation?.id ?? null,
-          variationKey: key,
-        },
-        update: {},
-      });
-      assembly = (await this.assemblyRow(product.id, key))!;
+      if (product.draftId) {
+        // O rascunho do item montado: a composição nasce na primeira etapa
+        await this.prisma.productAssembly.upsert({
+          where: { draftId: product.draftId },
+          create: { companyId: ctx.companyId, draftId: product.draftId },
+          update: {},
+        });
+      } else {
+        await this.prisma.productAssembly.upsert({
+          where: {
+            productId_variationKey: {
+              productId: product.id,
+              variationKey: key,
+            },
+          },
+          create: {
+            companyId: ctx.companyId,
+            productId: product.id,
+            variationId: variation?.id ?? null,
+            variationKey: key,
+          },
+          update: {},
+        });
+      }
+      assembly = (await this.assemblyOf(product, key))!;
     }
     return { product, assembly };
   }
@@ -1695,7 +1808,8 @@ export class ProductAssemblyService {
       const blocks = await this.prisma.assemblyBlock.findMany({
         where: {
           partProductId: { in: frontier },
-          assembly: { companyId },
+          // O rascunho do item montado não contém produto (ORC-11)
+          assembly: { companyId, productId: { not: null } },
         },
         select: { assembly: { select: { productId: true } } },
       });

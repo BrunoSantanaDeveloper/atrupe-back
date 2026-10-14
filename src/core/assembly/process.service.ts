@@ -479,7 +479,11 @@ export class ProcessService {
   async usage(companyId: string, id: string) {
     const process = await this.processForWrite(companyId, id);
     const blocks = await this.prisma.assemblyBlock.findMany({
-      where: { processId: id, assembly: { companyId } },
+      // Só os produtos: o rascunho do item montado (ORC-11) não tem nome de produto
+      where: {
+        processId: id,
+        assembly: { companyId, productId: { not: null } },
+      },
       orderBy: [{ assembly: { product: { name: 'asc' } } }, { id: 'asc' }],
       select: {
         localName: true,
@@ -947,7 +951,10 @@ export class ProcessService {
       where: {
         formula: 'CUSTOM',
         formulaId,
-        block: { processId: id, assembly: { companyId } },
+        block: {
+          processId: id,
+          assembly: { companyId, productId: { not: null } },
+        },
       },
       select: {
         block: {
@@ -983,7 +990,10 @@ export class ProcessService {
     const byProcess = new Map<string, Map<string, string>>();
     if (!processIds.length) return byProcess;
     const blocks = await this.prisma.assemblyBlock.findMany({
-      where: { processId: { in: processIds }, assembly: { companyId } },
+      where: {
+        processId: { in: processIds },
+        assembly: { companyId, productId: { not: null } },
+      },
       select: {
         processId: true,
         assembly: {

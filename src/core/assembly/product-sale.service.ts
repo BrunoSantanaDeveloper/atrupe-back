@@ -10,6 +10,7 @@ import {
   EngineBuilder,
   ProductRow,
   assemblyFormulas,
+  blockSector,
   engineVariation,
   productPricing,
 } from './assembly-graph';
@@ -494,6 +495,103 @@ export class ProductSaleService {
         computedAt: new Date().toISOString(),
         measure,
         variationId: variation?.id ?? null,
+        cost: stages.reduce((sum, stage) => sum + stage.cost, 0),
+        suggestedPrice: computed.suggestedPrice,
+        stages,
+      },
+    };
+  }
+
+  /**
+   * O retrato do item montado na hora (ORC-11, Fase 4.5): a composição do
+   * rascunho na medida do item, com o custo e a venda de cada etapa. O
+   * preço do item é a soma das etapas (o sugerido). Sem etapa, o item fica
+   * marcado para atenção (MS-12) e vale zero. Cada etapa leva também o id
+   * do setor, para a agenda e o resultado por setor.
+   */
+  async draftComposition(
+    companyId: string,
+    draftId: string,
+    itemMeasure: { quantity: number; width?: number; height?: number },
+  ) {
+    const owner = await this.assemblies.product({
+      companyId,
+      productId: draftId,
+      draftId,
+    });
+    const assembly = await this.assemblies.assemblyOf(owner, '');
+    const standard = productPricing(owner).measure;
+    const measure: Measure = {
+      quantity: itemMeasure.quantity || 1,
+      width: itemMeasure.width || standard.width,
+      height: itemMeasure.height || standard.height,
+    };
+    const computedAt = new Date().toISOString();
+    if (!assembly?.blocks.length) {
+      return {
+        price: 0,
+        attention: true,
+        snapshot: {
+          computedAt,
+          measure,
+          variationId: null,
+          cost: 0,
+          suggestedPrice: 0,
+          stages: [],
+        },
+      };
+    }
+
+    const graph = await this.assemblies.loadGraph(companyId, [assembly]);
+    const builder = new EngineBuilder(graph);
+    const computed = computeAssembly(
+      builder.build(owner, assembly, measure),
+      {
+        referenceMarkup: await this.pricing.referenceMarkupOf(companyId),
+        partOf: builder.partOf,
+        resourceName: (id) => graph.resources.get(id)?.name,
+      },
+      engineVariation(undefined),
+    );
+    const sectorIds = new Map(
+      assembly.blocks.map((block) => [
+        block.id,
+        blockSector(block)?.id ?? null,
+      ]),
+    );
+    const stages = computed.blocks.map((block) => ({
+      blockId: block.id,
+      name: stageOf(block),
+      sector: block.sector,
+      sectorId: sectorIds.get(block.id) ?? null,
+      setupMinutes: block.setupMinutes + block.partSetupMinutes,
+      setupCost: block.setupCost,
+      cost: block.cost,
+      sale: block.sale,
+      lines: [...block.partLines, ...block.lines].map((line) => ({
+        lineId: line.id,
+        name: line.name,
+        kind: line.kind,
+        resourceId: line.selected?.resourceId ?? null,
+        resource: line.selected?.name ?? null,
+        quantity: line.quantity,
+        unit: line.selected?.unit ?? line.options[0]?.unit ?? '',
+        unitCost: line.selected?.unitCost ?? null,
+        cost: line.cost,
+        sale: line.sale,
+        entries: null,
+        // O apontamento da produção preenche depois (ORC-9)
+        actualQuantity: null,
+        actualCost: null,
+      })),
+    }));
+    return {
+      price: Math.round(computed.suggestedPrice),
+      attention: false,
+      snapshot: {
+        computedAt,
+        measure,
+        variationId: null,
         cost: stages.reduce((sum, stage) => sum + stage.cost, 0),
         suggestedPrice: computed.suggestedPrice,
         stages,

@@ -25,6 +25,24 @@ import {
 import { Response } from 'express';
 import { QuotationService } from './quotation.service';
 import { CreditCheckService } from './credit-check.service';
+import { ComposedItemService, withoutCost } from './composed-item.service';
+import {
+  AddComposedItemDto,
+  CreateComposedDraftDto,
+  SaveDraftAsProductDto,
+  UpdateComposedItemDto,
+} from './dto/composed-item.dto';
+import {
+  DRAFT_NOT_FOUND,
+  ProductAssemblyService,
+} from '../../assembly/product-assembly.service';
+import {
+  AssemblyQueryDto,
+  CreateBlockDto,
+  NextStepQueryDto,
+  PartCandidateQueryDto,
+  UpdateBlockDto,
+} from '../../assembly/dto/assembly.dto';
 import { AddItemDto, CreateQuotationDto } from './dto/create-quotation.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 import {
@@ -94,7 +112,27 @@ export class QuotationController {
     private readonly lines: QuotationLinesService,
     private readonly results: QuotationResultService,
     private readonly creditCheck: CreditCheckService,
+    private readonly composed: ComposedItemService,
+    private readonly assemblies: ProductAssemblyService,
   ) {}
+
+  /**
+   * O rascunho do item montado (ORC-11) como dono da composição: o
+   * orçamento é desta empresa e do vendedor, o plano tem a composição e o
+   * rascunho é deste orçamento.
+   */
+  private async composedCtx(req, quotationId: string, draftId: string) {
+    if (!isUUID(quotationId, '4') || !isUUID(draftId, '4')) {
+      throw new NotFoundException(DRAFT_NOT_FOUND);
+    }
+    await this.validateOwnership(quotationId, req.user, 'edit');
+    await this.planControlService.enforceFeature(
+      req.user.companyId,
+      'product_composition',
+    );
+    const draft = await this.composed.draftOf(quotationId, draftId);
+    return this.composed.draftCtx(draft.companyId, draft.id);
+  }
 
   /**
    * Aba de orçamentos no cadastro de cliente (filtro por clientId) é feature
@@ -258,6 +296,204 @@ export class QuotationController {
     }
     await this.validateOwnership(quotationId, req.user, 'edit');
     return this.quotationService.updateMaterialItem(itemId, dto);
+  }
+
+  /* -------------------------------- item montado na hora (ORC-11, 4.5) */
+
+  @Post(':id/composed-draft')
+  @HasPermission('edit', 'sale:quotation')
+  @ApiOperation({ summary: 'Cria o rascunho do item montado na hora' })
+  async createComposedDraft(
+    @Param('id') id: string,
+    @Body() dto: CreateComposedDraftDto,
+    @Req() req,
+  ) {
+    if (!isUUID(id, '4')) {
+      throw new BadRequestException('Invalid id');
+    }
+    await this.validateOwnership(id, req.user, 'edit');
+    await this.planControlService.enforceFeature(
+      req.user.companyId,
+      'product_composition',
+    );
+    return this.composed.createDraft(id, dto);
+  }
+
+  @Patch(':id/composed-draft/:draftId')
+  @HasPermission('edit', 'sale:quotation')
+  @ApiOperation({ summary: 'Nome e medida do rascunho' })
+  async updateComposedDraft(
+    @Param('id') id: string,
+    @Param('draftId') draftId: string,
+    @Body() dto: CreateComposedDraftDto,
+    @Req() req,
+  ) {
+    await this.composedCtx(req, id, draftId);
+    return this.composed.updateDraft(id, draftId, dto);
+  }
+
+  // A composição do rascunho na medida pedida: o preço de venda de cada
+  // etapa, só com valores, e nunca o custo (ORC-7)
+  @Get(':id/composed-draft/:draftId/assembly')
+  @HasPermission('edit', 'sale:quotation')
+  @ApiOperation({ summary: 'A composição do rascunho numa medida (mm)' })
+  async readComposedDraft(
+    @Param('id') id: string,
+    @Param('draftId') draftId: string,
+    @Query() query: AssemblyQueryDto,
+    @Req() req,
+  ) {
+    const ctx = await this.composedCtx(req, id, draftId);
+    const values = await canViewValues(req, this.abacService);
+    const view = await this.assemblies.read(
+      ctx,
+      { ...query, variationId: undefined },
+      { values },
+    );
+    return withoutCost(view);
+  }
+
+  @Get(':id/composed-draft/:draftId/assembly/next-step')
+  @HasPermission('edit', 'sale:quotation')
+  @ApiOperation({ summary: 'Processos para a próxima etapa do rascunho' })
+  async composedNextStep(
+    @Param('id') id: string,
+    @Param('draftId') draftId: string,
+    @Query() query: NextStepQueryDto,
+    @Req() req,
+  ) {
+    return this.assemblies.nextStep(await this.composedCtx(req, id, draftId), {
+      ...query,
+      variationId: undefined,
+    });
+  }
+
+  @Get(':id/composed-draft/:draftId/assembly/part-candidate')
+  @HasPermission('edit', 'sale:quotation')
+  @ApiOperation({ summary: 'Produtos que entram como parte no rascunho' })
+  async composedPartCandidates(
+    @Param('id') id: string,
+    @Param('draftId') draftId: string,
+    @Query() query: PartCandidateQueryDto,
+    @Req() req,
+  ) {
+    return this.assemblies.partCandidates(
+      await this.composedCtx(req, id, draftId),
+      query,
+    );
+  }
+
+  @Post(':id/composed-draft/:draftId/assembly/block')
+  @HasPermission('edit', 'sale:quotation')
+  @ApiOperation({ summary: 'Acrescenta uma etapa ao rascunho' })
+  async addComposedBlock(
+    @Param('id') id: string,
+    @Param('draftId') draftId: string,
+    @Body() dto: CreateBlockDto,
+    @Req() req,
+  ) {
+    return withoutCost(
+      await this.assemblies.addBlock(await this.composedCtx(req, id, draftId), {
+        ...dto,
+        variationId: undefined,
+      }),
+    );
+  }
+
+  @Patch(':id/composed-draft/:draftId/assembly/block/:blockId')
+  @HasPermission('edit', 'sale:quotation')
+  @ApiOperation({ summary: 'Ajusta a etapa do rascunho (ligações, processo)' })
+  async updateComposedBlock(
+    @Param('id') id: string,
+    @Param('draftId') draftId: string,
+    @Param('blockId') blockId: string,
+    @Body() dto: UpdateBlockDto,
+    @Req() req,
+  ) {
+    return withoutCost(
+      await this.assemblies.updateBlock(
+        await this.composedCtx(req, id, draftId),
+        blockId,
+        { ...dto, variationId: undefined },
+      ),
+    );
+  }
+
+  @Delete(':id/composed-draft/:draftId/assembly/block/:blockId')
+  @HasPermission('edit', 'sale:quotation')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Tira a etapa do rascunho' })
+  async removeComposedBlock(
+    @Param('id') id: string,
+    @Param('draftId') draftId: string,
+    @Param('blockId') blockId: string,
+    @Req() req,
+  ) {
+    await this.assemblies.removeBlock(
+      await this.composedCtx(req, id, draftId),
+      blockId,
+    );
+  }
+
+  @Post(':id/add-composed')
+  @HasPermission('edit', 'sale:quotation')
+  @MoneyFields(...QUOTATION_MONEY_FIELDS)
+  @ApiOperation({ summary: 'Inclui o item montado na hora' })
+  async addComposedItem(
+    @Param('id') id: string,
+    @Body() dto: AddComposedItemDto,
+    @Req() req,
+  ) {
+    await this.composedCtx(req, id, dto.draftId);
+    return this.composed.addComposed(id, dto);
+  }
+
+  @Patch('update-composed/:itemId')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'sale:quotation' },
+    { action: 'edit', resource: 'sale:order' },
+  )
+  @MoneyFields(...QUOTATION_MONEY_FIELDS)
+  @ApiOperation({ summary: 'Refaz o item montado com o rascunho de agora' })
+  async updateComposedItem(
+    @Param('itemId') itemId: string,
+    @Body() dto: UpdateComposedItemDto,
+    @Req() req,
+  ) {
+    const quotationId =
+      await this.quotationService.getQuotationIdByProductId(itemId);
+    if (!quotationId) {
+      throw new NotFoundException('Item não encontrado');
+    }
+    await this.validateOwnership(quotationId, req.user, 'edit');
+    return this.composed.updateComposed(itemId, dto);
+  }
+
+  // "Salvar como produto": cria cadastro, então pede também "Cria" em
+  // produtos e a base de custos, sem a qual a composição não se edita
+  @Post(':id/composed-draft/:draftId/save-as-product')
+  @HasPermission('edit', 'sale:quotation')
+  @ApiOperation({ summary: 'Salva o rascunho como produto em edição' })
+  async saveComposedAsProduct(
+    @Param('id') id: string,
+    @Param('draftId') draftId: string,
+    @Body() dto: SaveDraftAsProductDto,
+    @Req() req,
+  ) {
+    await this.composedCtx(req, id, draftId);
+    const canCreate = await this.abacService.hasPermission(
+      req.user,
+      'create',
+      'product_settings:products',
+    );
+    if (!canCreate) {
+      throw permissionDenied(['product_settings:products:create']);
+    }
+    await this.planControlService.enforceFeature(
+      req.user.companyId,
+      'cost_base',
+    );
+    return this.composed.saveAsProduct(id, draftId, dto);
   }
 
   @Patch('update-product/:productId')

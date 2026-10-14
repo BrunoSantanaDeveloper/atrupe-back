@@ -4,7 +4,9 @@ import {
   BadRequestException,
   Logger,
   HttpException,
+  Optional,
 } from '@nestjs/common';
+import { ComposedItemService } from './composed-item.service';
 import { PrismaService } from 'nestjs-prisma';
 import { Prisma } from '@prisma/client';
 import { ProductSaleService } from '../../assembly/product-sale.service';
@@ -58,6 +60,8 @@ export class QuotationItemsService {
     private prisma: PrismaService,
     private productSale: ProductSaleService,
     private lines: QuotationLinesService,
+    // Copia o rascunho do item montado ao duplicar o item (ORC-11)
+    @Optional() private composed?: ComposedItemService,
   ) {}
 
   /**
@@ -826,6 +830,14 @@ export class QuotationItemsService {
           // O material de venda direta vai junto (ORG-1)
           materialId: originalQuotationProduct.materialId,
           materialVariationId: originalQuotationProduct.materialVariationId,
+          // O item montado ganha uma cópia do rascunho (ORC-11)
+          draftId:
+            originalQuotationProduct.draftId && this.composed
+              ? await this.composed.cloneDraft(
+                  originalQuotationProduct.draftId,
+                  originalQuotationProduct.quotationId,
+                )
+              : null,
           unitPrice: originalQuotationProduct.unitPrice,
           addition: originalQuotationProduct.addition,
           linesTotal: originalQuotationProduct.linesTotal,

@@ -934,7 +934,10 @@ export class ImportService {
     });
 
     const byCode = new Map(
-      products.map((product) => [product.code.trim().toLowerCase(), product]),
+      // O produto salvo do item montado pode estar sem código (ORC-11)
+      products
+        .filter((product) => product.code)
+        .map((product) => [product.code.trim().toLowerCase(), product]),
     );
 
     const adopted: string[] = [];

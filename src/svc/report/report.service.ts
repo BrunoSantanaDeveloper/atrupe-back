@@ -50,7 +50,10 @@ import {
   differenceInCalendarMonths,
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { soldItemOf } from '../../core/sale/quotation/item-origin';
+import {
+  snapshotStages,
+  soldItemOf,
+} from '../../core/sale/quotation/item-origin';
 
 // Origin colors for chart - known origins get fixed colors
 const ORIGIN_COLORS: Record<string, string> = {
@@ -1448,6 +1451,8 @@ export class ReportService {
         },
         // O material de venda direta entra no setor dele (PO, 14/10/2026)
         material: { select: { sectorId: true } },
+        // O item montado se reparte pelos setores das etapas (ORC-11)
+        snapshot: { select: { data: true } },
       },
     });
 
@@ -1472,6 +1477,20 @@ export class ReportService {
     orderProducts.forEach((qp) => {
       const value = qp.finalValue ?? qp.totalValue ?? 0;
       generalTotal += value;
+
+      if (qp.origin === 'COMPOSED') {
+        // Pelo peso de cada etapa no preço do item
+        const stages = snapshotStages(qp.snapshot?.data).filter(
+          (stage) => stage.sectorId && sectorTotals[stage.sectorId],
+        );
+        const sale = stages.reduce((sum, stage) => sum + stage.sale, 0);
+        stages.forEach((stage) => {
+          if (sale > 0) {
+            sectorTotals[stage.sectorId!].value += (value * stage.sale) / sale;
+          }
+        });
+        return;
+      }
 
       const sectorId = qp.product?.sectorId ?? qp.material?.sectorId;
       if (!sectorId || !sectorTotals[sectorId]) return;

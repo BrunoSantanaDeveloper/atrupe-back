@@ -50,6 +50,16 @@ const approvedQuotation = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+// A consulta dos itens montados sem etapa (MS-12) responde vazio; as outras
+// consultas de itens, o que o teste pedir
+const itemsOnly =
+  (rows: unknown[] | Error) => (args?: { where?: { origin?: string } }) =>
+    args?.where?.origin === 'COMPOSED'
+      ? Promise.resolve([])
+      : rows instanceof Error
+        ? Promise.reject(rows)
+        : Promise.resolve(rows);
+
 const createMockPrismaService = () => ({
   quotation: {
     findUnique: jest.fn(),
@@ -111,6 +121,8 @@ const createMockPrismaService = () => ({
   quotationItemSnapshot: {
     count: jest.fn().mockResolvedValue(0),
     create: jest.fn(),
+    // O retrato dos itens montados para as etapas da agenda (ORC-11)
+    findMany: jest.fn().mockResolvedValue([]),
   },
   quotationItemLine: {
     findMany: jest.fn().mockResolvedValue([]),
@@ -484,18 +496,20 @@ describe('QuotationWorkflowService', () => {
     });
 
     it('depois da aprovação: o retrato que falta e a conta do terceirizado (T-3)', async () => {
-      prisma.quotationProduct.findMany.mockResolvedValue([
-        {
-          id: 'item-1',
-          productId: 'product-1',
-          variationId: null,
-          quantity: 2,
-          composition: { choices: [] },
-          items: [{ width: 900, height: 1200 }],
-          product: { companyId: mockCompanyId },
-          quotation: { companyId: mockCompanyId },
-        },
-      ]);
+      prisma.quotationProduct.findMany.mockImplementation(
+        itemsOnly([
+          {
+            id: 'item-1',
+            productId: 'product-1',
+            variationId: null,
+            quantity: 2,
+            composition: { choices: [] },
+            items: [{ width: 900, height: 1200 }],
+            product: { companyId: mockCompanyId },
+            quotation: { companyId: mockCompanyId },
+          },
+        ]),
+      );
       mockProductSale.itemComposition.mockResolvedValue({
         snapshot: { cost: 1500, stages: [] },
       });
@@ -562,8 +576,8 @@ describe('QuotationWorkflowService', () => {
     });
 
     it('falha no retrato não desfaz a venda e não impede a conta do terceirizado', async () => {
-      prisma.quotationProduct.findMany.mockRejectedValue(
-        new Error('motor fora'),
+      prisma.quotationProduct.findMany.mockImplementation(
+        itemsOnly(new Error('motor fora')),
       );
 
       const result = await service.approve(mockQuotationId, mockUserId);

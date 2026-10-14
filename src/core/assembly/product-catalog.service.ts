@@ -41,7 +41,11 @@ export class ProductCatalogService {
     await this.exists(companyId, productId);
     const [blocks, items] = await Promise.all([
       this.prisma.assemblyBlock.findMany({
-        where: { partProductId: productId, assembly: { companyId } },
+        // Só os produtos: o rascunho do item montado não entra (ORC-11)
+        where: {
+          partProductId: productId,
+          assembly: { companyId, productId: { not: null } },
+        },
         select: {
           name: true,
           assembly: {

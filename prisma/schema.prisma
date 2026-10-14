@@ -51,6 +51,7 @@ model Company {
   address                Address[]
   assetTypes             AssetType[]
   materials              Material[]
+  quotationDrafts        QuotationDraft[]
   processes              Process[]
   productAssemblies      ProductAssembly[]
   materialImportLinks    MaterialImportLink[]
@@ -1300,6 +1301,8 @@ model Quotation {
   nfes             Nfe[]
   nfses            Nfse[]
   nfces            Nfce[]
+  /// Os rascunhos dos itens montados na hora (ORC-11)
+  drafts           QuotationDraft[]
 
   @@unique([companyId, legacyId])
   @@index([id, companyId])
@@ -1346,6 +1349,10 @@ model QuotationProduct {
   product              Product?               @relation(fields: [productId], references: [id], onDelete: Restrict)
   material             Material?              @relation(fields: [materialId], references: [id], onDelete: Restrict)
   materialVariation    MaterialVariation?     @relation(fields: [materialVariationId], references: [id], onDelete: SetNull)
+  /// O item montado na hora (ORC-11, origin COMPOSED): o rascunho em que
+  /// foi montado, de onde a edição refaz o retrato
+  draftId              String?
+  draft                QuotationDraft?        @relation(fields: [draftId], references: [id], onDelete: SetNull)
   quotation            Quotation              @relation(fields: [quotationId], references: [id])
   variation            ProductVariation?      @relation(fields: [variationId], references: [id], onDelete: SetNull)
   /// O retrato da composição na venda (ORC-10), em tabela própria
@@ -1611,7 +1618,9 @@ model Product {
   isActive             Boolean             @default(true)
   isStandard           Boolean             @default(false)
   isService            Boolean             @default(false)
-  code                 String
+  /// Nulo no produto salvo do item montado (ORC-11): o código é gerado
+  /// quando a composição é liberada para venda (PO, 14/10/2026)
+  code                 String?
   sectorId             String
   allowEditDescription Boolean             @default(true)
   allowEditValues      Boolean             @default(true)
@@ -1838,10 +1847,13 @@ model ProcessUsualNext {
 }
 
 /// A composição do produto (CP-17), ou a própria de uma variação.
+/// A composição de um produto (ou da variação) ou do rascunho de um item
+/// montado no orçamento (ORC-11): um dos dois donos.
 model ProductAssembly {
   id                String            @id @default(uuid())
   companyId         String
-  productId         String
+  productId         String?
+  draftId           String?           @unique
   variationId       String?
   /// O id da variação, ou vazio na composição padrão: a chave única
   variationKey      String            @default("")
@@ -1851,7 +1863,8 @@ model ProductAssembly {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   company           Company           @relation(fields: [companyId], references: [id])
-  product           Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product           Product?          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  draft             QuotationDraft?   @relation(fields: [draftId], references: [id], onDelete: Cascade)
   variation         ProductVariation? @relation(fields: [variationId], references: [id], onDelete: Cascade)
   blocks            AssemblyBlock[]
   fields            AssemblyField[]
@@ -1860,6 +1873,30 @@ model ProductAssembly {
   @@unique([productId, variationKey])
   @@index([companyId])
   @@map("product_assemblies")
+}
+
+/// O rascunho do item montado na hora (ORC-11, Fase 4.5): a composição
+/// montada só para um item do orçamento, na medida dele. O que não virou
+/// item é apagado depois de 30 dias (PO, 14/10/2026).
+model QuotationDraft {
+  id          String             @id @default(uuid())
+  companyId   String
+  quotationId String
+  name        String             @default("Item composto")
+  /// A medida em que o rascunho é montado: largura e altura em mm
+  quantity    Int                @default(1)
+  width       Float              @default(1000)
+  height      Float              @default(1000)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  company     Company            @relation(fields: [companyId], references: [id])
+  quotation   Quotation          @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  assembly    ProductAssembly?
+  items       QuotationProduct[]
+
+  @@index([quotationId])
+  @@index([companyId, createdAt])
+  @@map("quotation_drafts")
 }
 
 /// A etapa do produto (IP-29): montada ali (OWN), preenchida por um

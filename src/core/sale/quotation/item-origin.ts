@@ -58,6 +58,25 @@ export const materialItemName = (
 };
 
 /**
+ * As etapas do retrato do item montado na hora (ORC-11): o setor e a venda
+ * de cada uma, para a agenda e o resultado por setor. O retrato antigo,
+ * sem o id do setor, devolve o setor nulo.
+ */
+export function snapshotStages(
+  data: unknown,
+): { sectorId: string | null; sale: number }[] {
+  const stages = (data as { stages?: unknown } | null)?.stages;
+  if (!Array.isArray(stages)) return [];
+  return stages.map((stage) => ({
+    sectorId:
+      typeof stage?.sectorId === 'string' && stage.sectorId
+        ? stage.sectorId
+        : null,
+    sale: Number(stage?.sale) || 0,
+  }));
+}
+
+/**
  * O que foi vendido, para os relatórios: o produto; o material com a
  * variação; ou o item montado, pelo nome dele.
  */

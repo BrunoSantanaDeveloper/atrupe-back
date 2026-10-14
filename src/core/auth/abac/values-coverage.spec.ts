@@ -58,6 +58,13 @@ const SEM_VALOR: Record<string, string> = {
   'ProductController.findAllQuantity': CONTAGEM,
   'QuotationController.findAllContactSources': APOIO,
   'QuotationController.findAllQuantity': CONTAGEM,
+  // O item montado na hora (ORC-11): processos e produtos para as etapas
+  'QuotationController.composedNextStep': APOIO,
+  'QuotationController.composedPartCandidates': APOIO,
+  // A leitura da composição do rascunho omite o preço sem a permissão e
+  // nunca devolve o custo (withoutCost), como a leitura da composição
+  'QuotationController.readComposedDraft':
+    'composição do rascunho: o serviço omite os valores e o custo',
   'PaymentController.getPaymentConditionsInUse': APOIO,
   'OrderController.findAllQuantity': CONTAGEM,
   'AssetController.quantity': CONTAGEM,
