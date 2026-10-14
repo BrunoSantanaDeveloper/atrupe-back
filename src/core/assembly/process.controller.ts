@@ -52,7 +52,9 @@ import { PROCESS_NOT_FOUND, ProcessService } from './process.service';
  * Os processos usam as chaves do cadastro de produtos até a composição ter
  * a dela (contrato, módulo 1: "[ver]" e "[editar]").
  */
-const PRODUCTS = 'product_settings:products';
+// Chave própria da composição (D18); a migração a deu a quem via ou
+// editava produtos
+const COMPOSITION_KEY = 'product_settings:composition';
 const FEATURE = 'cost_base';
 
 // O id que não é UUID responde como o que não existe
@@ -86,7 +88,7 @@ export class ProcessController {
   @Get()
   // O orçamento ("Acrescentar a este item") lê só os ativos
   @HasAnyPermission(
-    { action: 'view', resource: PRODUCTS },
+    { action: 'view', resource: COMPOSITION_KEY },
     { action: 'edit', resource: 'sale:quotation' },
   )
   @ApiOperation({ summary: 'Lista os processos da empresa' })
@@ -94,7 +96,7 @@ export class ProcessController {
     const readsRegistry = await this.abacService.hasPermission(
       req.user,
       'view',
-      PRODUCTS,
+      COMPOSITION_KEY,
     );
     return this.service.list(req.user.companyId, filter, {
       onlyActive: !readsRegistry,
@@ -102,7 +104,7 @@ export class ProcessController {
   }
 
   @Get('quantity')
-  @HasPermission('view', PRODUCTS)
+  @HasPermission('view', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Contagem de processos ativos e inativos' })
   quantity(@Req() req) {
     return this.service.quantity(req.user.companyId);
@@ -110,14 +112,14 @@ export class ProcessController {
 
   // Antes de qualquer rota com :id
   @Put('usual-next')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Liga ou desliga o par "vem depois de" (FL-7)' })
   setUsualNext(@Req() req, @Body() dto: UsualNextDto) {
     return this.service.setUsualNext(req.user.companyId, dto);
   }
 
   @Get(':id')
-  @HasPermission('view', PRODUCTS)
+  @HasPermission('view', COMPOSITION_KEY)
   @ApiOperation({
     summary: 'Detalhe do processo com a simulação numa medida (mm)',
   })
@@ -132,7 +134,7 @@ export class ProcessController {
   }
 
   @Post()
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Cria um processo vazio (MS-1)' })
   async create(@Req() req, @Body() dto: CreateProcessDto) {
     return this.service.create(req.user.companyId, dto, {
@@ -141,7 +143,7 @@ export class ProcessController {
   }
 
   @Patch(':id')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Altera a configuração e as regras do processo' })
   update(
     @Req() req,
@@ -152,7 +154,7 @@ export class ProcessController {
   }
 
   @Patch(':id/toggle-status')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Inativa ou reativa o processo (PAD-7)' })
   toggleStatus(
     @Req() req,
@@ -163,14 +165,14 @@ export class ProcessController {
   }
 
   @Get(':id/usage')
-  @HasPermission('view', PRODUCTS)
+  @HasPermission('view', COMPOSITION_KEY)
   @ApiOperation({ summary: 'As etapas de produto ligadas ao processo' })
   usage(@Req() req, @Param('id', ProcessId) id: string) {
     return this.service.usage(req.user.companyId, id);
   }
 
   @Get(':id/usual-next')
-  @HasPermission('view', PRODUCTS)
+  @HasPermission('view', COMPOSITION_KEY)
   @ApiOperation({ summary: '"Costuma vir depois de" e etapas seguintes' })
   usualNext(@Req() req, @Param('id', ProcessId) id: string) {
     return this.service.usualNext(req.user.companyId, id);
@@ -179,7 +181,7 @@ export class ProcessController {
   /* ----------------------------------------------------------------- linhas */
 
   @Post(':id/line')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Acrescenta uma linha ao processo' })
   addLine(
     @Req() req,
@@ -190,7 +192,7 @@ export class ProcessController {
   }
 
   @Patch(':id/line/:lineId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Ajusta uma linha do processo' })
   updateLine(
     @Req() req,
@@ -203,7 +205,7 @@ export class ProcessController {
 
   // Linha de dentro do processo: tirar é editar
   @Delete(':id/line/:lineId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Tira uma linha do processo' })
   removeLine(
     @Req() req,
@@ -214,7 +216,7 @@ export class ProcessController {
   }
 
   @Post(':id/line/:lineId/option')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Acrescenta uma opção à linha (IP-27)' })
   addOption(
     @Req() req,
@@ -226,7 +228,7 @@ export class ProcessController {
   }
 
   @Delete(':id/line/:lineId/option/:optionId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Tira uma opção da linha' })
   removeOption(
     @Req() req,
@@ -240,7 +242,7 @@ export class ProcessController {
   /* ---------------------------------------------------- campos do orçamento */
 
   @Post(':id/field')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Cria um campo do orçamento no processo (IP-4)' })
   addField(
     @Req() req,
@@ -251,7 +253,7 @@ export class ProcessController {
   }
 
   @Patch(':id/field/:fieldId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Altera um campo do orçamento do processo' })
   updateField(
     @Req() req,
@@ -263,7 +265,7 @@ export class ProcessController {
   }
 
   @Delete(':id/field/:fieldId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @HttpCode(204)
   @ApiOperation({ summary: 'Remove um campo que nenhuma linha lê' })
   async removeField(
@@ -277,7 +279,7 @@ export class ProcessController {
   /* ---------------------------------------------------------------- fórmulas */
 
   @Post(':id/formula')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Cria uma fórmula do processo (IP-2)' })
   addFormula(
     @Req() req,
@@ -288,7 +290,7 @@ export class ProcessController {
   }
 
   @Patch(':id/formula/:formulaId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Altera uma fórmula do processo' })
   updateFormula(
     @Req() req,
@@ -300,7 +302,7 @@ export class ProcessController {
   }
 
   @Delete(':id/formula/:formulaId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @HttpCode(204)
   @ApiOperation({ summary: 'Remove uma fórmula que nenhuma linha usa' })
   async removeFormula(

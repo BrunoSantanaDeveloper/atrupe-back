@@ -24,8 +24,8 @@ describe('ProcessController', () => {
 
   beforeEach(() => {
     granted = new Set([
-      'product_settings:products:view',
-      'product_settings:products:edit',
+      'product_settings:composition:view',
+      'product_settings:composition:edit',
       'values:values:view',
     ]);
     service = {
@@ -64,7 +64,7 @@ describe('ProcessController', () => {
         name,
         {
           action: method === RequestMethod.GET ? 'view' : 'edit',
-          resource: 'product_settings:products',
+          resource: 'product_settings:composition',
         },
       ]);
     }
@@ -77,7 +77,7 @@ describe('ProcessController', () => {
         ProcessController.prototype.findAll,
       ),
     ).toEqual([
-      { action: 'view', resource: 'product_settings:products' },
+      { action: 'view', resource: 'product_settings:composition' },
       { action: 'edit', resource: 'sale:quotation' },
     ]);
 
@@ -150,7 +150,7 @@ describe('AssemblyResourceController', () => {
         HAS_PERMISSION_KEY,
         AssemblyResourceController.prototype.list,
       ),
-    ).toEqual({ action: 'view', resource: 'product_settings:products' });
+    ).toEqual({ action: 'view', resource: 'product_settings:composition' });
     expect(
       Reflect.getMetadata(REQUIRED_FEATURE_KEY, AssemblyResourceController),
     ).toBe('cost_base');

@@ -1,4 +1,4 @@
-import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
+import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
 import { ObservePermissions } from 'src/core/auth/abac/observe-permissions.decorator';
 import {
@@ -24,6 +24,10 @@ import { ContactSourceService } from './contact-source.service';
 import { CreateContactSourceDto } from './dto/create-contact-source.dto';
 import { UpdateContactSourceDto } from './dto/update-contact-source.dto';
 
+// Item próprio na tela de cargos (decisão do PO, 14/10); a migração deu as
+// quatro ações a quem tinha qualquer configuração de vendas, que era a regra
+const CONTACT_SOURCES = 'sales_settings:contact_sources';
+
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 // Permissão no endpoint em modo observar (Fase 2): a recusa vai para o log
@@ -45,12 +49,7 @@ export class ContactSourceController {
   @ApiOperation({ summary: 'Criar origem de contato' })
   @ApiResponse({ status: 201, description: 'Origem criada com sucesso' })
   @Post()
-  @HasAnyPermission(
-    { action: 'view', resource: 'sales_settings:series' },
-    { action: 'view', resource: 'sales_settings:seller_profile' },
-    { action: 'view', resource: 'sales_settings:rejection_reasons' },
-    { action: 'view', resource: 'sales_settings:quotation_status' },
-  )
+  @HasPermission('create', CONTACT_SOURCES)
   create(@Req() req, @Body() dto: CreateContactSourceDto) {
     dto.companyId = req.user.companyId;
     return this.service.create(dto);
@@ -60,12 +59,7 @@ export class ContactSourceController {
   @ApiResponse({ status: 200, description: 'Origem atualizada com sucesso' })
   @ApiParam({ name: 'id', description: 'ID da origem' })
   @Patch(':id')
-  @HasAnyPermission(
-    { action: 'view', resource: 'sales_settings:series' },
-    { action: 'view', resource: 'sales_settings:seller_profile' },
-    { action: 'view', resource: 'sales_settings:rejection_reasons' },
-    { action: 'view', resource: 'sales_settings:quotation_status' },
-  )
+  @HasPermission('edit', CONTACT_SOURCES)
   update(
     @Req() req,
     @Param('id') id: string,
@@ -78,12 +72,7 @@ export class ContactSourceController {
   @ApiResponse({ status: 200, description: 'Origem removida com sucesso' })
   @ApiParam({ name: 'id', description: 'ID da origem' })
   @Delete(':id')
-  @HasAnyPermission(
-    { action: 'view', resource: 'sales_settings:series' },
-    { action: 'view', resource: 'sales_settings:seller_profile' },
-    { action: 'view', resource: 'sales_settings:rejection_reasons' },
-    { action: 'view', resource: 'sales_settings:quotation_status' },
-  )
+  @HasPermission('delete', CONTACT_SOURCES)
   remove(@Req() req, @Param('id') id: string) {
     return this.service.remove(id, req.user.companyId);
   }
@@ -92,12 +81,7 @@ export class ContactSourceController {
   @ApiResponse({ status: 201, description: 'Origem ocultada com sucesso' })
   @ApiParam({ name: 'id', description: 'ID da origem' })
   @Post(':id/hide')
-  @HasAnyPermission(
-    { action: 'view', resource: 'sales_settings:series' },
-    { action: 'view', resource: 'sales_settings:seller_profile' },
-    { action: 'view', resource: 'sales_settings:rejection_reasons' },
-    { action: 'view', resource: 'sales_settings:quotation_status' },
-  )
+  @HasPermission('edit', CONTACT_SOURCES)
   hide(@Req() req, @Param('id') id: string) {
     return this.service.hide(id, req.user.companyId);
   }
@@ -106,12 +90,7 @@ export class ContactSourceController {
   @ApiResponse({ status: 200, description: 'Origem restaurada com sucesso' })
   @ApiParam({ name: 'id', description: 'ID da origem' })
   @Delete(':id/hide')
-  @HasAnyPermission(
-    { action: 'view', resource: 'sales_settings:series' },
-    { action: 'view', resource: 'sales_settings:seller_profile' },
-    { action: 'view', resource: 'sales_settings:rejection_reasons' },
-    { action: 'view', resource: 'sales_settings:quotation_status' },
-  )
+  @HasPermission('edit', CONTACT_SOURCES)
   unhide(@Req() req, @Param('id') id: string) {
     return this.service.unhide(id, req.user.companyId);
   }

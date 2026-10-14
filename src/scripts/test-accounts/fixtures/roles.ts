@@ -10,8 +10,6 @@ import { RoleFixture } from './types';
  * composição em edição nem resultado previsto (SEG-6).
  *
  * Pendências que fecham esta lista:
- * - `values:values:view` no Vendedor é decisão do PO (o contrato condiciona
- *   custo e preço a ela); fica de fora até a decisão;
  * - o catálogo do fork muda as chaves de caixa e de produção: a lista fecha
  *   depois do merge dos catálogos de permissão;
  * - ELITE: `production:production:*` (gerenciador) entra quando a chave
@@ -23,6 +21,8 @@ function actions(resource: string, ...names: string[]): string[] {
 }
 
 const VENDEDOR = [
+  // Valores: decisão do PO (14/10)
+  ...actions('values:values', 'view'),
   ...actions('sale:quotation', 'view', 'create', 'edit', 'delete', 'export'),
   ...actions('sale:order', 'view'),
   ...actions('register:client', 'view', 'create', 'edit'),
@@ -30,11 +30,9 @@ const VENDEDOR = [
   ...actions('dashboard:quotations', 'view'),
 ];
 
-const PRODUCAO = [...actions('sale:order', 'view', 'edit')];
-
-/** LITE: agenda de entrega (abas de produção e etapas). */
-const PRODUCAO_LITE = [
-  ...PRODUCAO,
+/** A agenda de entrega vale do START (decisão do PO, 14/10). */
+const PRODUCAO = [
+  ...actions('sale:order', 'view', 'edit'),
   ...actions('production:delivery_schedule', 'view', 'edit'),
 ];
 
@@ -71,7 +69,7 @@ export function rolesForPlan(planType: TestPlanType): RoleFixture[] {
       roleName: 'Produção',
       sectorName: 'Produção',
       personName: 'Produção (teste)',
-      permissions: fromLite ? PRODUCAO_LITE : PRODUCAO,
+      permissions: PRODUCAO,
     },
   ];
 

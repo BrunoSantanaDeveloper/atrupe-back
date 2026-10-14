@@ -301,3 +301,9 @@ export class GroupFilterDto {
   @ApiProperty({ required: false })
   limit?: number;
 }
+
+/** As contas do plano: despesa para o custo do bem, receita para a venda. */
+export class AssetAccountsDto {
+  @IsIn(['payable', 'receivable'], { message: 'Tipo de conta inválido' })
+  type: 'payable' | 'receivable';
+}

@@ -160,14 +160,19 @@ describe('fixtures', () => {
     }
   });
 
-  it('nenhum cargo operacional vê custo, precificação ou valores (SEG-6)', () => {
+  // O Vendedor vê valores (decisão do PO, 14/10); custo e precificação,
+  // ninguém operacional
+  it('nenhum cargo operacional vê custo ou precificação (SEG-6)', () => {
     for (const plan of TEST_PLAN_TYPES) {
       for (const role of rolesForPlan(plan)) {
         for (const permission of role.permissions) {
           expect(permission).toMatch(
             /^[a-z_]+:[a-z_]+:(view|create|edit|delete|export)$/,
           );
-          expect(permission).not.toMatch(/^(cost|values|pricing):/);
+          expect(permission).not.toMatch(/^(cost|pricing):/);
+          if (permission.startsWith('values:')) {
+            expect(role.cargo).toBe('vendedor');
+          }
         }
       }
     }

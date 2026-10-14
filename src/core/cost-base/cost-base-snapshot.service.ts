@@ -28,17 +28,9 @@ import {
   shiftMonth,
 } from './engine/months';
 import { SectorCostItem, SectorInput, sectorCostsOf } from './engine/sectors';
+import { accountCodeOf } from '../financial/nature/account-code';
 
-/** O código da conta no plano: níveis da natureza + subconta (02.01.01.02). */
-export const accountCodeOf = (
-  nature: { level1: string | null; level2: string | null; code: string | null },
-  code: string | null,
-) =>
-  code && code.includes('.')
-    ? code
-    : [nature.level1, nature.level2, nature.code, code]
-        .filter(Boolean)
-        .join('.');
+export { accountCodeOf };
 
 // O realizado: lançado no contas a pagar, fora o cancelado e o provisionado,
 // e fora a folha (o custo dela entra pela mão de obra)

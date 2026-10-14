@@ -57,11 +57,9 @@ import {
   ProductAssemblyService,
 } from './product-assembly.service';
 
-/**
- * A composição usa as chaves do cadastro de produtos até ter a dela
- * (contrato, módulo 1: "[ver]" e "[editar]").
- */
-const PRODUCTS = 'product_settings:products';
+// Chave própria da composição (D18); a migração a deu a quem via ou
+// editava produtos
+const COMPOSITION_KEY = 'product_settings:composition';
 const COMPOSITION = 'product_composition';
 
 // O id que não é UUID responde como o que não existe
@@ -110,7 +108,7 @@ export class ProductAssemblyController {
   /* ---------------------------------------------------------------- leitura */
 
   @Get(':id/assembly')
-  @HasPermission('view', PRODUCTS)
+  @HasPermission('view', COMPOSITION_KEY)
   @ApiOperation({ summary: 'A composição calculada numa medida (mm)' })
   async read(
     @Req() req,
@@ -125,7 +123,7 @@ export class ProductAssemblyController {
   }
 
   @Get(':id/assembly/next-step')
-  @HasPermission('view', PRODUCTS)
+  @HasPermission('view', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Processos para a próxima etapa (FL-7)' })
   async nextStep(
     @Req() req,
@@ -139,7 +137,7 @@ export class ProductAssemblyController {
   }
 
   @Get(':id/assembly/part-candidate')
-  @HasPermission('view', PRODUCTS)
+  @HasPermission('view', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Produtos que podem entrar como parte (IP-9)' })
   async partCandidates(
     @Req() req,
@@ -155,7 +153,7 @@ export class ProductAssemblyController {
   /* ---------------------------------------------------------- cabeçalho */
 
   @Patch(':id/assembly')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Situação, dimensão e renomear etapas' })
   async updateHeader(
     @Req() req,
@@ -169,7 +167,7 @@ export class ProductAssemblyController {
   }
 
   @Post(':id/assembly/adopt-suggested-price')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Adota o preço sugerido (CP-16, DC-14)' })
   async adoptSuggestedPrice(
     @Req() req,
@@ -188,7 +186,7 @@ export class ProductAssemblyController {
   /* ------------------------------------------------------------- etapas */
 
   @Post(':id/assembly/block')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Acrescenta uma etapa' })
   async addBlock(
     @Req() req,
@@ -199,7 +197,7 @@ export class ProductAssemblyController {
   }
 
   @Patch(':id/assembly/block/:blockId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Ajusta a etapa: nome, tarefa, regras, ligações' })
   async updateBlock(
     @Req() req,
@@ -216,7 +214,7 @@ export class ProductAssemblyController {
 
   // Etapa de dentro do produto: tirar é editar
   @Delete(':id/assembly/block/:blockId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @HttpCode(204)
   @ApiOperation({ summary: 'Tira a etapa sem soltar o fluxo (FL-12)' })
   async removeBlock(
@@ -232,7 +230,7 @@ export class ProductAssemblyController {
   }
 
   @Post(':id/assembly/block/:blockId/restore-process-lines')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Traz de volta as linhas do processo (CP-21)' })
   async restoreProcessLines(
     @Req() req,
@@ -249,7 +247,7 @@ export class ProductAssemblyController {
   /* ------------------------------------------------------------- linhas */
 
   @Post(':id/assembly/block/:blockId/line')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Acrescenta uma linha à etapa (IP-31)' })
   async addLine(
     @Req() req,
@@ -265,7 +263,7 @@ export class ProductAssemblyController {
   }
 
   @Patch(':id/assembly/block/:blockId/line/:lineId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Ajusta a linha neste produto (IP-22)' })
   async updateLine(
     @Req() req,
@@ -283,7 +281,7 @@ export class ProductAssemblyController {
   }
 
   @Post(':id/assembly/block/:blockId/line/:lineId/reset')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Volta a linha a acompanhar o processo (CP-21)' })
   async resetLine(
     @Req() req,
@@ -300,7 +298,7 @@ export class ProductAssemblyController {
   }
 
   @Delete(':id/assembly/block/:blockId/line/:lineId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @HttpCode(204)
   @ApiOperation({ summary: 'Tira a linha da etapa' })
   async removeLine(
@@ -318,7 +316,7 @@ export class ProductAssemblyController {
   }
 
   @Post(':id/assembly/block/:blockId/line/:lineId/option')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Acrescenta uma opção à linha (IP-27)' })
   async addOption(
     @Req() req,
@@ -336,7 +334,7 @@ export class ProductAssemblyController {
   }
 
   @Delete(':id/assembly/block/:blockId/line/:lineId/option/:optionId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @HttpCode(204)
   @ApiOperation({ summary: 'Tira uma opção da linha' })
   async removeOption(
@@ -358,7 +356,7 @@ export class ProductAssemblyController {
   /* --------------------------------------------- campos do orçamento */
 
   @Post(':id/assembly/field')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Cria um campo do orçamento (IP-4)' })
   async addField(
     @Req() req,
@@ -369,7 +367,7 @@ export class ProductAssemblyController {
   }
 
   @Patch(':id/assembly/field/:fieldId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Altera um campo do orçamento' })
   async updateField(
     @Req() req,
@@ -385,7 +383,7 @@ export class ProductAssemblyController {
   }
 
   @Delete(':id/assembly/field/:fieldId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @HttpCode(204)
   @ApiOperation({ summary: 'Remove um campo que nenhuma linha lê' })
   async removeField(
@@ -403,7 +401,7 @@ export class ProductAssemblyController {
   /* -------------------------------------------------------- fórmulas */
 
   @Post(':id/assembly/formula')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Cria uma fórmula do produto (IP-2)' })
   async addFormula(
     @Req() req,
@@ -417,7 +415,7 @@ export class ProductAssemblyController {
   }
 
   @Patch(':id/assembly/formula/:formulaId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Altera uma fórmula do produto' })
   async updateFormula(
     @Req() req,
@@ -433,7 +431,7 @@ export class ProductAssemblyController {
   }
 
   @Delete(':id/assembly/formula/:formulaId')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @HttpCode(204)
   @ApiOperation({ summary: 'Remove uma fórmula que nenhuma linha usa' })
   async removeFormula(
@@ -451,7 +449,7 @@ export class ProductAssemblyController {
   /* ------------------------------------------- variação com composição */
 
   @Post(':id/variation')
-  @HasPermission('edit', PRODUCTS)
+  @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({
     summary: 'Cria uma variação com composição própria (cópia)',
   })

@@ -107,6 +107,8 @@ describe('catálogo de permissões', () => {
     expect(isKnownPermission('sale:quotaton:edit')).toBe(false);
     expect(isKnownPermission('sale:quotation:approve')).toBe(false);
     expect(isKnownPermission('sale:quotation')).toBe(false);
-    expect(isCatalogResource('financial:payable')).toBe(false);
+    // Contas a pagar e a receber entraram na tela de cargos (14/10)
+    expect(isCatalogResource('financial:payable')).toBe(true);
+    expect(isCatalogResource('financial:invoice')).toBe(false);
   });
 });

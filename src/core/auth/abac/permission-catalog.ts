@@ -21,7 +21,18 @@ export const PERMISSION_CATALOG: Readonly<Record<string, readonly string[]>> = {
   // quotation_result: o resultado previsto da venda (ORC-8), tela de
   // método desligada no perfil de vendedor
   sale: ['quotation', 'other_quotation', 'order', 'quotation_result'],
-  financial: ['flow', 'cash_control', 'fixed_expense', 'payroll'],
+  // payable, receivable, pdv e checkout: as telas já pediam e a tela de
+  // cargos passou a conceder (decisão do PO, 14/10)
+  financial: [
+    'flow',
+    'cash_control',
+    'fixed_expense',
+    'payroll',
+    'payable',
+    'receivable',
+    'pdv',
+    'checkout',
+  ],
   cost: ['base', 'pricing'],
   production: ['production', 'delivery_schedule'],
   stock: ['stock', 'invoice_entry'],
@@ -33,8 +44,10 @@ export const PERMISSION_CATALOG: Readonly<Record<string, readonly string[]>> = {
     'users',
     'roles',
     'sectors',
+    'subscription',
   ],
-  product_settings: ['products'],
+  // composition: a composição por etapas, os processos e os recursos (D18)
+  product_settings: ['products', 'composition'],
   financial_settings: [
     'bank_accounts',
     'payment_methods',
@@ -48,8 +61,20 @@ export const PERMISSION_CATALOG: Readonly<Record<string, readonly string[]>> = {
     'seller_profile',
     'rejection_reasons',
     'quotation_status',
+    'contact_sources',
   ],
   nota_fiscal: ['emitir', 'emitidas', 'cancelar', 'carta_correcao', 'config'],
+  // CFOP, naturezas de operação e emissores
+  invoice: ['nfse'],
+  import_settings: [
+    'import',
+    'clients',
+    'suppliers',
+    'products',
+    'quotations',
+    'financial',
+  ],
+  academy: ['academy'],
 };
 
 /**
@@ -57,15 +82,8 @@ export const PERMISSION_CATALOG: Readonly<Record<string, readonly string[]>> = {
  * atual os têm, e as rotas os aceitam junto com a chave do catálogo.
  * - `sale:other_sellers`: hoje `sale:other_quotation`
  *   (src/scripts/normalize-other-sellers-permission.ts migra os cargos).
- * - `financial:payable` e `financial:receivable`: as telas de contas a pagar
- *   e a receber pedem estas chaves, mas a tela de cargos concede só
- *   `financial:flow`; as rotas aceitam as duas.
  */
-export const LEGACY_RESOURCES: readonly string[] = [
-  'sale:other_sellers',
-  'financial:payable',
-  'financial:receivable',
-];
+export const LEGACY_RESOURCES: readonly string[] = ['sale:other_sellers'];
 
 export function isCatalogResource(resource: string): boolean {
   const [section, item, ...rest] = resource.split(':');

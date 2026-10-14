@@ -14,7 +14,9 @@ import { PricingParametersService } from '../pricing/pricing-parameters.service'
 import { AssemblyResourceService } from './assembly-resource.service';
 import { ResourceFilterDto } from './dto/process.dto';
 
-const PRODUCTS = 'product_settings:products';
+// Chave própria da composição (D18); a migração a deu a quem via ou
+// editava produtos
+const COMPOSITION_KEY = 'product_settings:composition';
 const RESOURCE_MONEY_FIELDS = new Set(['unitCost', 'unitSale']);
 
 /**
@@ -35,7 +37,7 @@ export class AssemblyResourceController {
   ) {}
 
   @Get('assembly-resource')
-  @HasPermission('view', PRODUCTS)
+  @HasPermission('view', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Recursos para as linhas da composição' })
   async list(@Req() req, @Query() filter: ResourceFilterDto) {
     const companyId = req.user.companyId;

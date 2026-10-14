@@ -33,6 +33,7 @@ import { FeatureGuard } from '../plan/guards/feature.guard';
 import { AssetGroupService, GROUP_NOT_FOUND } from './asset-group.service';
 import { ASSET_NOT_FOUND, AssetService } from './asset.service';
 import {
+  AssetAccountsDto,
   AssetCostDto,
   AssetFilterDto,
   AssetSetupDto,
@@ -99,6 +100,15 @@ export class AssetController {
       filter,
       await canViewValues(req, this.abac),
     );
+  }
+
+  @Get('accounts')
+  @HasPermission('view', BASE)
+  @ApiOperation({
+    summary: 'Contas do plano para custo (payable) e venda (receivable)',
+  })
+  accounts(@Req() req, @Query() query: AssetAccountsDto) {
+    return this.assets.accounts(req.user.companyId, query.type);
   }
 
   @Get('quantity')

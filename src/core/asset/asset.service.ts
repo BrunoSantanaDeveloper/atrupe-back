@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 import { CostAuditService } from '../cost-base/cost-audit.service';
 import { ASSET_POOL, AssetPool } from './asset-pool';
+import { accountCodeOf } from '../financial/nature/account-code';
 import {
   AssetInput,
   activityHoursOf,
@@ -254,6 +255,44 @@ export class AssetService {
   }
 
   /** As contagens das abas da situação. */
+  /**
+   * As contas do plano para o custo do bem (despesa, 02) e para a venda
+   * (receita, 01), numa lista plana: quem cuida de patrimônio pode não ter a
+   * permissão do plano de contas (decisão do PO, 14/10).
+   */
+  async accounts(companyId: string, type: 'payable' | 'receivable') {
+    const rows = await this.prisma.subCategory.findMany({
+      where: {
+        companyId,
+        isActive: true,
+        nature: {
+          isActive: true,
+          level1: type === 'payable' ? '02' : '01',
+        },
+      },
+      select: {
+        id: true,
+        code: true,
+        description: true,
+        nature: {
+          select: { code: true, level1: true, level2: true, description: true },
+        },
+      },
+    });
+    return rows
+      .map((row) => {
+        const code = accountCodeOf(row.nature, row.code);
+        return {
+          id: row.id,
+          code,
+          description: row.description ?? '',
+          group: row.nature.description ?? '',
+          label: [code, row.description].filter(Boolean).join(' — '),
+        };
+      })
+      .sort((a, b) => a.code.localeCompare(b.code, 'pt-BR', { numeric: true }));
+  }
+
   async quantity(companyId: string) {
     const rows = await this.prisma.asset.findMany({
       where: { companyId },
@@ -390,10 +429,15 @@ export class AssetService {
       else await this.assertGroup(companyId, groupId, unit, sectorId);
     }
 
-    // A vida útil revista depois do fim: o bem fica depreciado (P-26)
+    // A vida útil revista depois do fim: o bem fica depreciado (P-26). Só
+    // conta como revisão mudar a vida útil ou o residual: o formulário manda
+    // os dois em todo salvar (decisão do PO, 14/10)
     const usefulLifeMonths = dto.usefulLifeMonths ?? row.usefulLifeMonths;
     const reviewed =
-      dto.usefulLifeMonths !== undefined || dto.residualPercent !== undefined;
+      (dto.usefulLifeMonths !== undefined &&
+        dto.usefulLifeMonths !== row.usefulLifeMonths) ||
+      (dto.residualPercent !== undefined &&
+        dto.residualPercent !== row.residualPercent);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       if (row.detailed && !detailed) {

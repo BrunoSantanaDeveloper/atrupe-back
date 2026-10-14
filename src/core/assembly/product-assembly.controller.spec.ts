@@ -63,7 +63,7 @@ describe('ProductAssemblyController', () => {
         name,
         {
           action: method === RequestMethod.GET ? 'view' : 'edit',
-          resource: 'product_settings:products',
+          resource: 'product_settings:composition',
         },
       ]);
     }
