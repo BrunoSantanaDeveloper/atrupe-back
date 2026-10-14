@@ -83,6 +83,20 @@ describe('resposta do material', () => {
         wholeSheets: true,
         weight: 1.9,
       },
+      fiscal: {},
+    });
+  });
+
+  it('os dados fiscais da venda direta saem só com os campos conhecidos', () => {
+    const response = toMaterialResponse(
+      material({
+        fiscal: { ncm: '39269090', cfopInState: '5102', outro: 'x', cest: '' },
+      } as never),
+      { values: true },
+    );
+    expect((response as { fiscal: unknown }).fiscal).toEqual({
+      ncm: '39269090',
+      cfopInState: '5102',
     });
   });
 

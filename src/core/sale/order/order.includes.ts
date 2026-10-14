@@ -165,6 +165,9 @@ export const ORDER_QUOTATION_PRODUCT_ITEMS_SELECT = {
 
 export const ORDER_QUOTATION_PRODUCT_INCLUDE = {
   product: true,
+  // O material de venda direta (ORG-1)
+  material: { select: { name: true } },
+  materialVariation: { select: { brand: true, color: true } },
   items: {
     select: ORDER_QUOTATION_PRODUCT_ITEMS_SELECT,
     orderBy: {

@@ -1,6 +1,7 @@
 import { Material, MaterialVariation, Prisma } from '@prisma/client';
 import { marginOf, priceStatusOf } from './material-pricing';
 import { UNIT_SYMBOL } from './material-text';
+import { pickMaterialFiscal } from '../fiscal/utils/item-fiscal.util';
 
 /** O que toda leitura de material carrega: o setor e as variações em ordem. */
 export const MATERIAL_INCLUDE = Prisma.validator<Prisma.MaterialInclude>()({
@@ -93,6 +94,8 @@ export function toMaterialResponse(material: MaterialRow, view: MaterialView) {
     ),
     active: material.active,
     advanced: advancedOf(material),
+    // Os dados fiscais da venda direta (vazio: o padrão do emissor)
+    fiscal: pickMaterialFiscal(material.fiscal),
   };
 }
 

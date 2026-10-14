@@ -395,6 +395,7 @@ describe('ReportService', () => {
       expect(result.products).toEqual([
         {
           productId: 'p1',
+          type: 'Produto',
           name: 'Adesivo impresso',
           unit: 'M2',
           quantity: 5,
@@ -402,6 +403,57 @@ describe('ReportService', () => {
         },
       ]);
       expect(result.totalValue).toBe(750);
+    });
+
+    it('o material de venda direta sai como ele mesmo, na unidade dele, e o item montado pelo nome (Fase 4.4 e 4.5)', async () => {
+      const material = (overrides: Record<string, unknown> = {}) => ({
+        productId: null,
+        product: null,
+        materialId: 'm1',
+        materialVariationId: 'v1',
+        material: { name: 'Lona 440', unit: 'M2' },
+        materialVariation: { brand: 'Marca X', color: 'Branca' },
+        description: 'Lona 440 · Marca X Branca',
+        quantity: 4,
+        finalValue: 400,
+        totalValue: 400,
+        items: [],
+        ...overrides,
+      });
+      getPrisma().quotationProduct.findMany.mockResolvedValue([
+        material(),
+        material({ quantity: 6, finalValue: 600 }),
+        {
+          productId: null,
+          product: null,
+          materialId: null,
+          description: 'Placa montada',
+          quantity: 1,
+          finalValue: 900,
+          items: [],
+        },
+      ]);
+
+      const result = await service.getProductsSold('company-1', {});
+
+      expect(result.products).toEqual([
+        {
+          productId: null,
+          type: 'Material',
+          name: 'Lona 440 · Marca X Branca',
+          unit: 'M2',
+          quantity: 10,
+          value: 1000,
+        },
+        {
+          productId: null,
+          type: 'Item montado',
+          name: 'Placa montada',
+          unit: 'UN',
+          quantity: 1,
+          value: 900,
+        },
+      ]);
     });
 
     it('separa a linha quando o mesmo produto sai como unidade montada', async () => {

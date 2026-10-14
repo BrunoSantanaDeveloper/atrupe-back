@@ -1,3 +1,4 @@
+import { itemProductName, itemValuesOf } from '../quotation/item-origin';
 /**
  * Transformadores para dados de Order
  * Extraídos do método findOne() para melhor testabilidade
@@ -89,7 +90,12 @@ type AddressRaw = {
 
 type QuotationProductRaw = {
   id: string;
-  productId: string;
+  // Nulo no material de venda direta e no item montado na hora
+  productId: string | null;
+  totalValue?: number | null;
+  unitPrice?: number | null;
+  material?: { name: string } | null;
+  materialVariation?: { brand: string; color: string } | null;
   description: string | null;
   allowEditDescription: boolean;
   allowEditValues: boolean;
@@ -104,7 +110,7 @@ type QuotationProductRaw = {
     name: string;
     imageUrl: string | null;
     isService: boolean;
-  };
+  } | null;
   items: ProductItemRaw[];
 };
 
@@ -278,21 +284,15 @@ export function transformOrderDeliveryInfo(
 }
 
 export function transformOrderItem(qp: QuotationProductRaw) {
-  const unitValue = qp.items.reduce(
-    (total, item) => total + (item.unitCost || 0),
-    0,
-  );
-  const totalValue = qp.items.reduce(
-    (total, item) => total + item.totalValue,
-    0,
-  );
+  // O item sem produto (material, montado na hora) tem o valor nele mesmo
+  const { unitValue, totalValue } = itemValuesOf(qp);
 
   const image = (() => {
     if (qp.imageUrl) {
-      const isOriginal = qp.imageUrl === qp.product.imageUrl;
+      const isOriginal = qp.imageUrl === qp.product?.imageUrl;
       return { url: qp.imageUrl, original: isOriginal };
     }
-    return { url: qp.product.imageUrl, original: true };
+    return { url: qp.product?.imageUrl ?? null, original: true };
   })();
 
   return {
@@ -309,9 +309,9 @@ export function transformOrderItem(qp: QuotationProductRaw) {
     finalValue: qp.finalValue,
     image,
     product: {
-      originalProductId: qp.productId,
-      name: qp.product.name,
-      isService: qp.product.isService || false,
+      originalProductId: qp.productId ?? null,
+      name: itemProductName(qp),
+      isService: qp.product?.isService || false,
       quantity: qp.quantity,
       unitValue,
       finalValue: totalValue,

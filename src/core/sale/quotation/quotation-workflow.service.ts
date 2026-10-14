@@ -420,6 +420,8 @@ export class QuotationWorkflowService {
             id: true,
             description: true,
             product: { select: { name: true, isActive: true } },
+            // O material de venda direta inativado trava como o produto
+            material: { select: { name: true, active: true } },
             lines: {
               where: { kind: 'PART' },
               select: { product: { select: { isActive: true } } },
@@ -457,6 +459,7 @@ export class QuotationWorkflowService {
     const inactive = (current.quotationProduct ?? []).filter(
       (item) =>
         item.product?.isActive === false ||
+        item.material?.active === false ||
         (item.lines ?? []).some((line) => line.product?.isActive === false),
     );
     if (inactive.length) {
@@ -465,7 +468,8 @@ export class QuotationWorkflowService {
         message: INACTIVE_PRODUCT_ITEMS,
         items: inactive.map((item) => ({
           itemId: item.id,
-          name: item.description || item.product?.name || '',
+          name:
+            item.description || item.product?.name || item.material?.name || '',
         })),
       });
     }
@@ -1012,9 +1016,10 @@ export class QuotationWorkflowService {
     });
     if (existingStages > 0) return;
 
-    const quotationProductsIds = quotation.quotationProduct.map(
-      (product) => product.productId,
-    );
+    // O item sem produto (material, montado na hora) fica fora da busca
+    const quotationProductsIds = quotation.quotationProduct
+      .map((product) => product.productId)
+      .filter(Boolean);
 
     const products = await this.prisma.product.findMany({
       where: {
@@ -1031,14 +1036,35 @@ export class QuotationWorkflowService {
       },
     });
 
-    const allStages = products.flatMap((product) => {
-      const stages =
-        typeof product.productionStages === 'string'
-          ? JSON.parse(product.productionStages)
-          : product.productionStages;
+    // O material de venda direta passa pelo setor dele, quando o setor é
+    // etapa de produção (PO, 14/10/2026)
+    const materialIds = quotation.quotationProduct
+      .map((item) => item.materialId)
+      .filter(Boolean);
+    const materialSectors = materialIds.length
+      ? await this.prisma.material.findMany({
+          where: {
+            id: { in: materialIds },
+            sector: { isProductionStage: true, isActive: true },
+          },
+          select: { sectorId: true },
+        })
+      : [];
 
-      return stages.filter((stage: ProductionStageJson) => stage.isActive);
-    });
+    const allStages: ProductionStageJson[] = [
+      ...products.flatMap((product) => {
+        const stages =
+          typeof product.productionStages === 'string'
+            ? JSON.parse(product.productionStages)
+            : product.productionStages;
+
+        return stages.filter((stage: ProductionStageJson) => stage.isActive);
+      }),
+      ...materialSectors.map((material) => ({
+        id: material.sectorId,
+        isActive: true,
+      })),
+    ];
 
     const uniqueStages = Array.from(
       new Map(allStages.map((stage) => [stage.id, stage])).values(),

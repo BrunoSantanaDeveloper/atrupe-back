@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -34,6 +35,7 @@ import {
 } from './dto/import-material.dto';
 import { MaterialFilterDto } from './dto/material-filter.dto';
 import { UpdateMaterialPriceDto } from './dto/material-price.dto';
+import { MaterialFiscalDto } from './dto/material-fiscal.dto';
 import {
   CreateMaterialVariationsDto,
   UpdateMaterialVariationDto,
@@ -210,6 +212,23 @@ export class MaterialController {
       );
     }
     return this.materialService.updatePrice(req.user.companyId, id, dto);
+  }
+
+  @Put(':id/fiscal')
+  // Os dados fiscais são do módulo Nota Fiscal, como os do produto
+  @RequiresFeature('nota_fiscal')
+  @HasPermission('edit', 'nota_fiscal:config')
+  @ApiOperation({
+    summary: 'Grava os dados fiscais do material de venda direta',
+  })
+  async updateFiscal(
+    @Req() req,
+    @Param('id', MaterialId) id: string,
+    @Body() dto: MaterialFiscalDto,
+  ) {
+    return this.materialService.updateFiscal(req.user.companyId, id, dto, {
+      values: await canViewValues(req, this.abacService),
+    });
   }
 
   @Get(':id/usage')

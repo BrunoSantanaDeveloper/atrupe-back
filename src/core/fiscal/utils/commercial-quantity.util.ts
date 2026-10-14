@@ -95,15 +95,42 @@ function measurePerPiece(composition: QuotationComposition): number | null {
  * item AREA sem largura), a tela mostra 0 e aqui cai em `UN`. Emitir `qCOM = 0`
  * seria rejeitado pela SEFAZ, e uma nota errada é pior que um número feio.
  */
+/**
+ * A unidade comercial do material de venda direta (ORG-1): o item dele não
+ * tem composição, e a quantidade já está na unidade do material.
+ */
+export function materialUnitCode(unit?: string | null): string | null {
+  switch ((unit || '').toUpperCase()) {
+    case 'M2':
+      return 'M2';
+    case 'M':
+      return 'M';
+    case 'KM':
+      return 'KM';
+    case 'KG':
+      return 'KG';
+    case 'LT':
+      return 'L';
+    case 'HR':
+      return 'H';
+    case 'UN':
+      return 'UN';
+    default:
+      return null;
+  }
+}
+
 export function resolveCommercialQuantity(
   itemQuantity: number | null | undefined,
   compositions: QuotationComposition[] | null | undefined,
+  /** A unidade do item sem composição (o material de venda direta) */
+  ownUnit?: string | null,
 ): CommercialQuantity {
   const baseQuantity = itemQuantity || 1;
   const items = compositions || [];
 
   if (items.length !== 1) {
-    return { quantity: baseQuantity, unit: 'UN' };
+    return { quantity: baseQuantity, unit: (!items.length && ownUnit) || 'UN' };
   }
 
   const composition = items[0];

@@ -25,6 +25,8 @@ export const MONEY_COLUMNS = {
     'finalValue',
     'addition',
     'linesTotal',
+    // O preço por unidade do material de venda direta (ORG-1)
+    'unitPrice',
   ],
   // A linha acrescentada no item (ORC-5); o custo nem é lido pelo detalhe
   QuotationItemLine: ['price', 'cost'],

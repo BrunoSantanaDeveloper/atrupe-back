@@ -6,7 +6,10 @@
  * combinação produto + unidade vira uma linha.
  */
 export interface ProductSoldItem {
-  productId: string;
+  /** Nulo no material de venda direta e no item montado na hora */
+  productId: string | null;
+  /** Produto, Material ou Item montado */
+  type: string;
   name: string;
   quantity: number;
   /** Unidade comercial, a mesma que vai na NF-e: M2, UN, M, KG… */

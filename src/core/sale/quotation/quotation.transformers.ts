@@ -3,6 +3,11 @@
  * Extraídos do método findOne() para melhor testabilidade
  */
 import { DEFAULT_IMAGE_SIZE, FALLBACK_IMAGE_SIZE } from './quotation.utils';
+import {
+  itemProductName,
+  itemValuesOf,
+  materialVariationName,
+} from './item-origin';
 
 type QuotationWithRelations = {
   id: string;
@@ -207,24 +212,15 @@ export function transformPaymentConditions(quotationPayment: any) {
 }
 
 export function transformQuotationItem(qp: any) {
-  const unitValue = qp.items.reduce((total: number, item: any) => {
-    return total + (item.unitCost || 0);
-  }, 0);
-
-  const totalValue = qp.items.reduce(
-    (total: number, item: any) => total + item.totalValue,
-    0,
-  );
-
-  // Valor original do produto no catálogo (imutável, nunca alterado por edições no orçamento)
-  const originalValue = qp.items.reduce((total: number, item: any) => {
-    const catalogPrice = item.productItem?.salePrice ?? item.salePrice ?? 0;
-    return total + catalogPrice;
-  }, 0);
+  // Valor original do produto no catálogo (imutável, nunca alterado por
+  // edições no orçamento). O item sem produto tem o valor nele mesmo
+  const { unitValue, totalValue, originalValue } = itemValuesOf(qp);
 
   const getImage = () => {
     // Determina o tamanho da imagem: usa imageSize se disponível, senão fallback para lógica legada
-    const isOriginal = qp.imageUrl ? qp.imageUrl === qp.product.imageUrl : true;
+    const isOriginal = qp.imageUrl
+      ? qp.imageUrl === qp.product?.imageUrl
+      : true;
     const size =
       qp.imageSize || (isOriginal ? DEFAULT_IMAGE_SIZE : FALLBACK_IMAGE_SIZE);
 
@@ -232,7 +228,7 @@ export function transformQuotationItem(qp: any) {
       return { url: qp.imageUrl, original: isOriginal, size };
     }
     return {
-      url: qp.product.imageUrl,
+      url: qp.product?.imageUrl ?? null,
       original: true,
       size: DEFAULT_IMAGE_SIZE,
     };
@@ -260,11 +256,26 @@ export function transformQuotationItem(qp: any) {
     variation: qp.variation ?? null,
     composition: qp.composition ?? null,
     image: getImage(),
+    // O material de venda direta (ORG-1); nulo nos outros itens
+    material: qp.materialId
+      ? {
+          id: qp.materialId,
+          name: qp.material?.name ?? null,
+          unit: qp.material?.unit ?? null,
+          sector: qp.material?.sector?.name ?? null,
+          variationId: qp.materialVariation?.id ?? null,
+          variation: materialVariationName(qp.materialVariation),
+          unitPrice: qp.unitPrice ?? null,
+        }
+      : null,
     product: {
-      originalProductId: qp.productId,
-      name: qp.product.name,
-      isActive: qp.product.isActive ?? true,
-      hasComposition: !!qp.product.assemblies?.[0]?._count?.blocks,
+      // Nulo no material e no item montado na hora
+      originalProductId: qp.productId ?? null,
+      name: itemProductName(qp),
+      isActive: qp.product
+        ? (qp.product.isActive ?? true)
+        : (qp.material?.active ?? true),
+      hasComposition: !!qp.product?.assemblies?.[0]?._count?.blocks,
       quantity: qp.quantity,
       unitValue,
       finalValue: totalValue,

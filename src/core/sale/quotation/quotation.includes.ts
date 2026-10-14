@@ -221,6 +221,19 @@ export const QUOTATION_PRODUCT_SELECT = {
     },
   },
   productId: true,
+  // O material de venda direta (ORG-1): o material, a variação e o preço
+  materialId: true,
+  unitPrice: true,
+  material: {
+    select: {
+      id: true,
+      name: true,
+      unit: true,
+      active: true,
+      sector: { select: { name: true } },
+    },
+  },
+  materialVariation: { select: { id: true, brand: true, color: true } },
   origin: true,
   addition: true,
   // As escolhas da composição; o retrato (snapshot) tem custo e fica fora

@@ -20,6 +20,8 @@ import {
   UpdateMaterialVariationDto,
 } from './dto/material-variation.dto';
 import { UpdateMaterialPriceDto } from './dto/material-price.dto';
+import { MaterialFiscalDto } from './dto/material-fiscal.dto';
+import { pickMaterialFiscal } from '../fiscal/utils/item-fiscal.util';
 import { materialNumbers } from './material-number';
 import { PricingCharges, variablePriceOf } from './material-pricing';
 import {
@@ -524,6 +526,34 @@ export class MaterialService {
     }
     linked.forEach(addBlock);
     return { data: [...data.values()] };
+  }
+
+  /**
+   * Os dados fiscais da venda direta (PO, 14/10/2026). Só o material de
+   * venda direta vai sozinho para a nota; o campo vazio sai do padrão do
+   * emissor. Gravar sem nenhum campo limpa o cadastro fiscal.
+   */
+  async updateFiscal(
+    companyId: string,
+    id: string,
+    dto: MaterialFiscalDto,
+    view: MaterialView,
+  ) {
+    const material = await this.find(companyId, id);
+    if (!material.directSale) {
+      throw new BadRequestException(
+        'Só o material de venda direta tem dados fiscais.',
+      );
+    }
+    const fiscal = pickMaterialFiscal(dto);
+    const updated = await this.prisma.material.update({
+      where: { id },
+      data: {
+        fiscal: Object.keys(fiscal).length ? fiscal : Prisma.DbNull,
+      },
+      include: MATERIAL_INCLUDE,
+    });
+    return toMaterialResponse(updated, view);
   }
 
   /**

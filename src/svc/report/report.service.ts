@@ -34,7 +34,10 @@ import {
   parseProjectDayBoundary,
   toProjectDateKey,
 } from '../../core/fiscal/utils/project-date.util';
-import { resolveCommercialQuantity } from '../../core/fiscal/utils/commercial-quantity.util';
+import {
+  materialUnitCode,
+  resolveCommercialQuantity,
+} from '../../core/fiscal/utils/commercial-quantity.util';
 import { PayableService } from '../../core/financial/payable/payable.service';
 import { ReceivableService } from '../../core/financial/receivable/receivable.service';
 import {
@@ -47,6 +50,7 @@ import {
   differenceInCalendarMonths,
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { soldItemOf } from '../../core/sale/quotation/item-origin';
 
 // Origin colors for chart - known origins get fixed colors
 const ORIGIN_COLORS: Record<string, string> = {
@@ -949,27 +953,33 @@ export class ReportService {
       },
       include: {
         product: { select: { id: true, name: true } },
+        // O material de venda direta entra como ele mesmo (ORG-1)
+        material: { select: { name: true } },
+        materialVariation: { select: { brand: true, color: true } },
       },
     });
 
-    // Aggregate by product
-    const productTotals: Record<string, { name: string; value: number }> = {};
+    // Aggregate by product (o material e o item montado, cada um como é)
+    const productTotals: Record<
+      string,
+      { name: string; type: string; value: number }
+    > = {};
 
     orderProducts.forEach((qp) => {
-      const productId = qp.productId;
-      if (!productTotals[productId]) {
-        productTotals[productId] = {
-          name: qp.product?.name || 'Produto',
+      const sold = soldItemOf(qp);
+      if (!productTotals[sold.key]) {
+        productTotals[sold.key] = {
+          name: sold.name,
+          type: sold.type,
           value: 0,
         };
       }
-      productTotals[productId].value += qp.finalValue ?? qp.totalValue ?? 0;
+      productTotals[sold.key].value += qp.finalValue ?? qp.totalValue ?? 0;
     });
 
     return Object.values(productTotals)
       .sort((a, b) => b.value - a.value)
-      .slice(0, limit)
-      .map((p) => ({ ...p, type: 'Produto' }));
+      .slice(0, limit);
   }
 
   async getTopClients(
@@ -1436,6 +1446,8 @@ export class ReportService {
             sectorId: true,
           },
         },
+        // O material de venda direta entra no setor dele (PO, 14/10/2026)
+        material: { select: { sectorId: true } },
       },
     });
 
@@ -1461,7 +1473,7 @@ export class ReportService {
       const value = qp.finalValue ?? qp.totalValue ?? 0;
       generalTotal += value;
 
-      const sectorId = qp.product?.sectorId;
+      const sectorId = qp.product?.sectorId ?? qp.material?.sectorId;
       if (!sectorId || !sectorTotals[sectorId]) return;
 
       sectorTotals[sectorId].value += value;
@@ -4129,6 +4141,9 @@ export class ReportService {
       },
       include: {
         product: { select: { id: true, name: true } },
+        // O material de venda direta, na unidade dele (ORG-1)
+        material: { select: { name: true, unit: true } },
+        materialVariation: { select: { brand: true, color: true } },
         items: {
           select: {
             quantity: true,
@@ -4152,11 +4167,14 @@ export class ReportService {
       const { quantity, unit } = resolveCommercialQuantity(
         qp.quantity,
         qp.items,
+        materialUnitCode(qp.material?.unit),
       );
-      const key = `${qp.productId}|${unit}`;
+      const sold = soldItemOf(qp);
+      const key = `${sold.key}|${unit}`;
       const current = totals.get(key) ?? {
-        productId: qp.productId,
-        name: qp.product?.name || 'Produto',
+        productId: qp.productId ?? null,
+        type: sold.type,
+        name: sold.name,
         unit,
         quantity: 0,
         value: 0,

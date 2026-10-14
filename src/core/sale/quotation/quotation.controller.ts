@@ -58,6 +58,10 @@ import { QuotationResultService } from './quotation-result.service';
 import { pdfDetailLevel } from './quotation-pdf.transformers';
 import { ItemLineDto } from './dto/item-line.dto';
 import { QuotationLinesService } from './quotation-lines.service';
+import {
+  AddMaterialItemDto,
+  UpdateMaterialItemDto,
+} from './dto/material-item.dto';
 
 const RESOURCE = 'quotation';
 const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
@@ -215,6 +219,45 @@ export class QuotationController {
       );
     }
     return this.quotationService.addProductToQuotation(id, addItemDto);
+  }
+
+  // O material de venda direta como item (ORG-1, Fase 4.4)
+  @Post(':id/add-material')
+  @HasPermission('edit', 'sale:quotation')
+  @MoneyFields(...QUOTATION_MONEY_FIELDS)
+  @ApiOperation({ summary: 'Acrescenta um material de venda direta' })
+  @ApiParam({ name: 'id', description: 'ID do orçamento' })
+  async addMaterialItem(
+    @Param('id') id: string,
+    @Body() dto: AddMaterialItemDto,
+    @Req() req,
+  ) {
+    if (!isUUID(id, '4')) {
+      throw new BadRequestException('Invalid id');
+    }
+    await this.validateOwnership(id, req.user, 'edit');
+    return this.quotationService.addMaterialItem(id, dto);
+  }
+
+  @Patch('update-material/:itemId')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'sale:quotation' },
+    { action: 'edit', resource: 'sale:order' },
+  )
+  @MoneyFields(...QUOTATION_MONEY_FIELDS)
+  @ApiOperation({ summary: 'Muda a quantidade do item de material' })
+  async updateMaterialItem(
+    @Param('itemId') itemId: string,
+    @Body() dto: UpdateMaterialItemDto,
+    @Req() req,
+  ) {
+    const quotationId =
+      await this.quotationService.getQuotationIdByProductId(itemId);
+    if (!quotationId) {
+      throw new NotFoundException('Item não encontrado');
+    }
+    await this.validateOwnership(quotationId, req.user, 'edit');
+    return this.quotationService.updateMaterialItem(itemId, dto);
   }
 
   @Patch('update-product/:productId')

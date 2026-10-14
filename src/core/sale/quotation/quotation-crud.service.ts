@@ -1031,8 +1031,31 @@ export class QuotationCrudService {
     }
 
     let productsWithCurrentPrices = null;
+    // O material de venda direta (ORG-1) com preço novo: o de hoje do
+    // material ou da variação
+    let materialsWithCurrentPrices: {
+      id: string;
+      price: number | null;
+      variations: { id: string; price: number | null }[];
+    }[] = [];
     if (duplicateDto.updatePrices) {
-      const productIds = quotation.quotationProduct.map((p) => p.productId);
+      // O item sem produto (material, montado na hora) fica fora da busca
+      const productIds = quotation.quotationProduct
+        .map((p) => p.productId)
+        .filter(Boolean);
+      const materialIds = quotation.quotationProduct
+        .map((p) => p.materialId)
+        .filter(Boolean);
+      materialsWithCurrentPrices = materialIds.length
+        ? await this.prisma.material.findMany({
+            where: { id: { in: materialIds } },
+            select: {
+              id: true,
+              price: true,
+              variations: { select: { id: true, price: true } },
+            },
+          })
+        : [];
       productsWithCurrentPrices = await this.prisma.product.findMany({
         where: {
           id: { in: productIds },
@@ -1103,12 +1126,27 @@ export class QuotationCrudService {
 
       let newProductTotalValue = product.totalValue;
       let newProductFinalValue = product.finalValue;
+      // O preço por unidade do material de hoje; nulo nos outros itens ou
+      // quando o material ficou sem preço (fica o da venda)
+      const material = product.materialId
+        ? materialsWithCurrentPrices.find((m) => m.id === product.materialId)
+        : null;
+      const currentUnitPrice = material
+        ? (material.variations.find((v) => v.id === product.materialVariationId)
+            ?.price ?? material.price)
+        : null;
 
       if (duplicateDto.updatePrices) {
-        newProductTotalValue = calculatedItems.reduce(
-          (total, { calculatedSalePrice }) => total + calculatedSalePrice,
-          0,
-        );
+        // O produto pelo preço de hoje das linhas de composição; o
+        // material pelo preço de hoje; o item montado fica como foi
+        newProductTotalValue = product.productId
+          ? calculatedItems.reduce(
+              (total, { calculatedSalePrice }) => total + calculatedSalePrice,
+              0,
+            )
+          : currentUnitPrice !== null && currentUnitPrice !== undefined
+            ? Math.round(currentUnitPrice * product.quantity)
+            : product.totalValue;
 
         if (product.discount && product.discountType === 'PERCENT') {
           newProductFinalValue =
@@ -1145,6 +1183,13 @@ export class QuotationCrudService {
           ...productDto,
           origin: product.origin,
           variationId: product.variationId,
+          // O material de venda direta vai junto (ORG-1)
+          materialId: product.materialId,
+          materialVariationId: product.materialVariationId,
+          unitPrice:
+            duplicateDto.updatePrices && currentUnitPrice != null
+              ? currentUnitPrice
+              : product.unitPrice,
           composition: product.composition ?? Prisma.DbNull,
           addition: product.addition,
           linesTotal: product.linesTotal,

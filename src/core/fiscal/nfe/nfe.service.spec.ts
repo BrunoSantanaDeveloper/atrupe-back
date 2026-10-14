@@ -745,6 +745,82 @@ describe('NfeService', () => {
       });
     });
 
+    // O item sem produto (Fase 4.4 e 4.5, PO 14/10/2026)
+    describe('item sem produto', () => {
+      const semProduto = (over = {}) => ({
+        ...mockQuotation,
+        quotationProduct: [
+          {
+            id: 'qp-material',
+            productId: null,
+            product: null,
+            materialId: 'm-1',
+            material: {
+              code: 'MAT-01',
+              name: 'Lona 440',
+              unit: 'M2',
+              fiscal: { ncm: '39269090', cfopOutState: '6102' },
+            },
+            materialVariation: null,
+            description: 'Lona 440',
+            quantity: 14,
+            finalValue: 1400,
+            totalValue: 1400,
+            discount: 0,
+            items: [],
+            ...over,
+          },
+        ],
+      });
+
+      it('material de venda direta: o fiscal e a unidade do material, sem cadastro fiscal de produto', async () => {
+        mockProductFiscalService.getOrCreateWithDefaults.mockClear();
+        prisma.quotation.findFirst.mockResolvedValue(semProduto());
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.items[0]).toMatchObject({
+          productId: null,
+          quotationItemId: 'qp-material',
+          productCode: 'MAT-01',
+          description: 'Lona 440',
+          ncm: '39269090',
+          quantity: 14,
+          unit: 'M2',
+          needsConfiguration: false,
+        });
+        expect(
+          mockProductFiscalService.getOrCreateWithDefaults,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('item montado na hora: o padrão do emissor', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(
+          semProduto({
+            materialId: null,
+            material: null,
+            description: 'Placa montada',
+            quantity: 1,
+          }),
+        );
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.items[0]).toMatchObject({
+          productId: null,
+          description: 'Placa montada',
+          ncm: '49119900',
+          unit: 'UN',
+        });
+      });
+    });
+
     it('usa a descrição editada do item no lugar do nome do produto', async () => {
       prisma.quotation.findFirst.mockResolvedValue({
         ...mockQuotation,

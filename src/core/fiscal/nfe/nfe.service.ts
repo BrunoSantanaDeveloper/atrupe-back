@@ -28,7 +28,10 @@ import {
 } from '../invoicy/invoicy.types';
 import { fetchCepData } from '../utils/cep.util';
 import { getTPag } from '../utils/payment-method-map';
-import { resolveCommercialQuantity } from '../utils/commercial-quantity.util';
+import {
+  materialUnitCode,
+  resolveCommercialQuantity,
+} from '../utils/commercial-quantity.util';
 import { sanitizeInfCpl } from '../utils/fiscal-text.util';
 import {
   parseProjectDayBoundary,
@@ -64,6 +67,8 @@ import {
   UpdateNfeDraftDto,
 } from './dtos/nfe.dto';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
+import { itemFiscalData } from '../utils/item-fiscal.util';
+import { itemProductName } from '../../sale/quotation/item-origin';
 
 /** Leituras e validações comuns a emitir e pré-visualizar. */
 interface NfeEmissionContext {
@@ -267,6 +272,11 @@ export class NfeService {
                 fiscalData: true,
               },
             },
+            // O material de venda direta: o fiscal dele vai na nota (ORG-1)
+            material: {
+              select: { code: true, name: true, fiscal: true, unit: true },
+            },
+            materialVariation: { select: { brand: true, color: true } },
             // A quantidade medida (14 m2) vive nos items; sem esta relacao a
             // NF-e saia com a "Qtd. Item" (1) e o peso dos volumes zerado.
             items: true,
@@ -325,7 +335,13 @@ export class NfeService {
     const deliveryAddress = quotation.deliveryInfo?.clientAddress;
 
     // Ensure fiscal data exists for all products (auto-populate defaults if missing)
-    const productIds = quotation.quotationProduct.map((qp) => qp.productId);
+    // O item sem produto (material, montado na hora) fica de fora: o fiscal
+    // dele sai do material ou do padrão do emissor
+    const productIds = [
+      ...new Set<string>(
+        quotation.quotationProduct.map((qp) => qp.productId).filter(Boolean),
+      ),
+    ];
     await Promise.all(
       productIds.map((productId) =>
         this.productFiscalService.getOrCreateWithDefaults(productId, companyId),
@@ -346,6 +362,11 @@ export class NfeService {
                 fiscalData: true,
               },
             },
+            // O material de venda direta: o fiscal dele vai na nota (ORG-1)
+            material: {
+              select: { code: true, name: true, fiscal: true, unit: true },
+            },
+            materialVariation: { select: { brand: true, color: true } },
             // A quantidade medida (14 m2) vive nos items; sem esta relacao a
             // NF-e saia com a "Qtd. Item" (1) e o peso dos volumes zerado.
             items: true,
@@ -361,7 +382,11 @@ export class NfeService {
         const totalValueReais = totalValueCents / 100;
 
         // Quantidade COMERCIAL: a medida do que foi vendido, nao a "Qtd. Item".
-        const comercial = resolveCommercialQuantity(qp.quantity, qp.items);
+        const comercial = resolveCommercialQuantity(
+          qp.quantity,
+          qp.items,
+          materialUnitCode(qp.material?.unit),
+        );
 
         // Sem toFixed(2) de proposito: vProd sai de qCOM x vUnCom no payload,
         // e o leiaute aceita 10 casas em vUnCom. Arredondar aqui fazia
@@ -369,7 +394,11 @@ export class NfeService {
         const unitValue =
           comercial.quantity > 0 ? totalValueReais / comercial.quantity : 0;
         const discountReais = (qp.discount || 0) / 100;
-        const fiscalData = qp.product?.fiscalData;
+        // Sem produto: o do material de venda direta por cima do padrão do
+        // emissor; o item montado na hora fica com o padrão (PO, 14/10)
+        const fiscalData = qp.productId
+          ? qp.product?.fiscalData
+          : itemFiscalData(config, qp.material?.fiscal);
 
         const selectedCfop =
           (clientAddress?.state === config.emitUf
@@ -381,9 +410,13 @@ export class NfeService {
         return {
           itemNumber: index + 1,
           productId: qp.productId,
-          productCode: qp.product?.code || '',
+          // O item da O.S. (o rascunho casa por ele: o item sem produto
+          // não tem productId)
+          quotationItemId: qp.id,
+          productCode: qp.product?.code || qp.material?.code || '',
           // Descrição editada no item prevalece sobre o nome do produto do catálogo
-          description: qp.description || qp.product?.name || 'Produto/Serviço',
+          description:
+            qp.description || itemProductName(qp) || 'Produto/Serviço',
           ncm: fiscalData?.ncm || '',
           cfop: selectedCfop,
           cstIcms: fiscalData?.icmsCst || '102',
@@ -1563,6 +1596,11 @@ export class NfeService {
                 fiscalData: true,
               },
             },
+            // O material de venda direta: o fiscal dele vai na nota (ORG-1)
+            material: {
+              select: { code: true, name: true, fiscal: true, unit: true },
+            },
+            materialVariation: { select: { brand: true, color: true } },
             // A quantidade medida (14 m2) vive nos items; sem esta relacao a
             // NF-e saia com a "Qtd. Item" (1) e o peso dos volumes zerado.
             items: true,
@@ -1613,16 +1651,41 @@ export class NfeService {
       const totalValueReais = totalValueCents / 100;
       // Mesma quantidade comercial do prepare: sem isto a emissao a partir da
       // ordem e a emissao direta sairiam com quantidades diferentes.
-      const comercial = resolveCommercialQuantity(qp.quantity, qp.items);
+      const comercial = resolveCommercialQuantity(
+        qp.quantity,
+        qp.items,
+        materialUnitCode(qp.material?.unit),
+      );
       const unitValue =
         comercial.quantity > 0 ? totalValueReais / comercial.quantity : 0;
       const discountReais = (qp.discount || 0) / 100;
+      // O item sem produto leva o fiscal dele: o do material por cima do
+      // padrão do emissor (PO, 14/10/2026)
+      const own = qp.productId
+        ? null
+        : itemFiscalData(config, qp.material?.fiscal);
       return {
         productId: qp.productId,
         quantity: comercial.quantity,
         uCom: comercial.unit,
         unitValue,
         discount: discountReais,
+        ...(own && {
+          description: qp.description || itemProductName(qp),
+          ncm: own.ncm,
+          cfop:
+            parseInt(
+              (client.address?.[0]?.state === config.emitUf
+                ? own.cfopInState
+                : own.cfopOutState) || '',
+              10,
+            ) || undefined,
+          cstIcms: own.icmsCst,
+          cstPis: own.pisCst,
+          cstCofins: own.cofinsCst,
+          ...(own.ipiCst && { cstIpi: own.ipiCst }),
+          ...(own.cean && { ean: own.cean, ceantrib: own.cean }),
+        }),
       };
     });
 
@@ -3923,8 +3986,11 @@ export class NfeService {
           : preparedData.emissao,
         destinatario: draftData.destinatario || preparedData.destinatario,
         items: (draftData.items || preparedData.items).map((item: any) => {
-          const preparedItem = preparedData.items.find(
-            (pi) => pi.productId === item.productId,
+          // Pelo item da O.S.; o rascunho antigo, sem ele, pelo produto
+          const preparedItem = preparedData.items.find((pi) =>
+            item.quotationItemId
+              ? pi.quotationItemId === item.quotationItemId
+              : pi.productId === item.productId,
           );
           const quantity = item.quantity ?? 0;
           const unitValue = item.unitValue ?? 0;

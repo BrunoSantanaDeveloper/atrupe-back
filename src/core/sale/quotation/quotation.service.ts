@@ -17,6 +17,10 @@ import { QuotationFinancialService } from './quotation-financial.service';
 import { QuotationPdfService } from './quotation-pdf.service';
 import { PdfOptions } from './quotation-pdf.transformers';
 import { QuotationImportService } from './quotation-import.service';
+import {
+  AddMaterialItemDto,
+  UpdateMaterialItemDto,
+} from './dto/material-item.dto';
 
 export interface QuotationGroup {
   date: string;
@@ -118,6 +122,14 @@ export class QuotationService {
 
   getQuotationIdByProductId(productId: string) {
     return this.itemsService.getQuotationIdByProductId(productId);
+  }
+
+  addMaterialItem(quotationId: string, dto: AddMaterialItemDto) {
+    return this.itemsService.addMaterialItem(quotationId, dto);
+  }
+
+  updateMaterialItem(itemId: string, dto: UpdateMaterialItemDto) {
+    return this.itemsService.updateMaterialItem(itemId, dto);
   }
 
   recalculateQuotationProductsTotalValue(quotationProductId: string) {

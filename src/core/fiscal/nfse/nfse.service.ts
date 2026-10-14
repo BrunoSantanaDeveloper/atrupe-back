@@ -75,6 +75,18 @@ import { FiscalCredentialResolverService } from '../shared/fiscal-credential-res
 import { MailService } from '../../mail/mail.service';
 import { ProductFiscalService } from '../product-fiscal/product-fiscal.service';
 
+/**
+ * O item que dá o código de serviço, o ISS e a classificação da nota: o
+ * primeiro produto de serviço; sem ele, o primeiro com produto. O item sem
+ * produto (material de venda direta, montado na hora) é mercadoria e não
+ * entra (PO, 14/10/2026).
+ */
+const serviceItemOf = <T extends { product?: { isService?: boolean } | null }>(
+  items: T[] | undefined,
+) =>
+  items?.find((item) => item.product?.isService) ??
+  items?.find((item) => item.product);
+
 @Injectable()
 export class NfseService {
   private readonly logger = new Logger(NfseService.name);
@@ -610,7 +622,7 @@ export class NfseService {
       naturezaOperacao: 1, // Tributação no município
       codigoServico:
         dto.codigoServico ||
-        (quotation.quotationProduct[0]?.product as any)?.fiscalData
+        (serviceItemOf(quotation.quotationProduct)?.product as any)?.fiscalData
           ?.codigoServico ||
         config.codigoServico ||
         '',
@@ -619,13 +631,13 @@ export class NfseService {
       valorServicos,
       aliquotaIss:
         dto.aliquotaIss ??
-        (quotation.quotationProduct[0]?.product as any)?.fiscalData
+        (serviceItemOf(quotation.quotationProduct)?.product as any)?.fiscalData
           ?.aliquotaIss ??
         config.aliquotaIss ??
         0,
       issRetido: dto.issRetido || false,
       ...this.classificacaoFiscalDoServico(
-        (quotation.quotationProduct[0]?.product as any)?.fiscalData,
+        (serviceItemOf(quotation.quotationProduct)?.product as any)?.fiscalData,
       ),
       // Classificação escolhida na lista de serviços vence a do produto.
       ...(dto.nbs ? { nbs: dto.nbs } : {}),
@@ -892,7 +904,8 @@ export class NfseService {
       // Mesma cotacao de referencia: pela ordem do banco, a classificacao
       // fiscal da nota mudava conforme a O.S. que viesse primeiro.
       ...this.classificacaoFiscalDoServico(
-        (quotationPrincipal?.quotationProduct[0]?.product as any)?.fiscalData,
+        (serviceItemOf(quotationPrincipal?.quotationProduct)?.product as any)
+          ?.fiscalData,
       ),
       // Classificação escolhida na lista de serviços vence a do produto.
       ...(dto.nbs ? { nbs: dto.nbs } : {}),

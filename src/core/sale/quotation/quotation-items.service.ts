@@ -17,6 +17,13 @@ import {
   QuotationLinesService,
 } from './quotation-lines.service';
 import { itemValue, recalculateQuotationTotal } from './quotation-totals';
+import {
+  AddMaterialItemDto,
+  UpdateMaterialItemDto,
+} from './dto/material-item.dto';
+import { materialItemName } from './item-origin';
+import { QUOTATION_PRODUCT_SELECT } from './quotation.includes';
+import { transformQuotationItem } from './quotation.transformers';
 
 /**
  * O valor do item: o desconto sobre o total e, por fora, o acréscimo
@@ -32,6 +39,12 @@ type ItemMeasureSource = {
   width?: number | null;
   height?: number | null;
 };
+
+// O item sem produto (material, montado na hora; Fase 4.4 e 4.5)
+export const MATERIAL_ITEM_NOT_OPEN =
+  'Só dá para mexer no item com o orçamento em digitação';
+export const ITEM_WITHOUT_PRODUCT =
+  'Este item não tem produto do cadastro: a variação, a composição e as medidas não mudam por aqui';
 
 /**
  * QuotationItemsService
@@ -120,6 +133,141 @@ export class QuotationItemsService {
       );
       return null;
     }
+  }
+
+  /**
+   * O preço do material de venda direta (ORG-1): o da variação, senão o do
+   * material. Só material ativo e de venda direta da empresa.
+   */
+  private async materialSale(
+    companyId: string,
+    materialId: string,
+    variationId: string | null | undefined,
+    quantity: number,
+  ) {
+    const material = await this.prisma.material.findFirst({
+      where: { id: materialId, companyId, active: true, directSale: true },
+      include: { variations: true },
+    });
+    if (!material) throw new NotFoundException('Material não encontrado');
+    if (material.variations.length && !variationId) {
+      throw new BadRequestException('Escolha a variação do material');
+    }
+    const variation = variationId
+      ? material.variations.find((item) => item.id === variationId)
+      : null;
+    if (variationId && !variation) {
+      throw new NotFoundException('Variação não encontrada');
+    }
+    const unitPrice = variation?.price ?? material.price;
+    if (unitPrice === null || unitPrice === undefined) {
+      throw new BadRequestException('Este material está sem preço de venda');
+    }
+    return {
+      material,
+      variation,
+      unitPrice,
+      totalValue: Math.round(unitPrice * quantity),
+      description: materialItemName(material, variation),
+    };
+  }
+
+  /** O item como o detalhe do orçamento devolve. */
+  private async itemView(itemId: string) {
+    const item = await this.prisma.quotationProduct.findUnique({
+      where: { id: itemId },
+      select: QUOTATION_PRODUCT_SELECT,
+    });
+    return item ? transformQuotationItem(item) : null;
+  }
+
+  /**
+   * O material de venda direta como item do orçamento (ORG-1, Fase 4.4): a
+   * unidade e o preço do material (ou da variação), sem produto do cadastro.
+   * O fiscal sai do material na nota e o relatório o põe no setor dele.
+   */
+  async addMaterialItem(quotationId: string, dto: AddMaterialItemDto) {
+    const quotation = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      select: { id: true, companyId: true, status: true },
+    });
+    if (!quotation) throw new NotFoundException('Orçamento não encontrado');
+    if (quotation.status !== 'OPEN') {
+      throw new BadRequestException(MATERIAL_ITEM_NOT_OPEN);
+    }
+    const sale = await this.materialSale(
+      quotation.companyId,
+      dto.materialId,
+      dto.variationId,
+      dto.quantity,
+    );
+    const item = await this.prisma.quotationProduct.create({
+      data: {
+        quotationId,
+        origin: 'MATERIAL',
+        materialId: sale.material.id,
+        materialVariationId: sale.variation?.id ?? null,
+        unitPrice: sale.unitPrice,
+        quantity: dto.quantity,
+        description: sale.description,
+        totalValue: sale.totalValue,
+        finalValue: sale.totalValue,
+        // O preço é o do cadastro do material: o desconto fica no item
+        allowEditValues: false,
+      },
+      select: { id: true },
+    });
+    await this.recalculateQuotationTotalValue(quotationId);
+    return this.itemView(item.id);
+  }
+
+  /**
+   * Muda a quantidade (e a variação) do item de material e refaz o valor
+   * pelo preço de hoje. Na O.S. aprovada, só numa conta sem estoque.
+   */
+  async updateMaterialItem(itemId: string, dto: UpdateMaterialItemDto) {
+    const item = await this.prisma.quotationProduct.findUnique({
+      where: { id: itemId },
+      include: { quotation: { select: { companyId: true, status: true } } },
+    });
+    if (!item || item.origin !== 'MATERIAL' || !item.materialId) {
+      throw new NotFoundException('Item não encontrado');
+    }
+    const editable =
+      item.quotation.status === 'OPEN' ||
+      (item.quotation.status === 'APPROVED' &&
+        (await this.lines.approvedEditable(item.quotation.companyId)));
+    if (!editable) throw new BadRequestException(MATERIAL_ITEM_NOT_OPEN);
+
+    const sale = await this.materialSale(
+      item.quotation.companyId,
+      item.materialId,
+      dto.variationId !== undefined
+        ? dto.variationId
+        : item.materialVariationId,
+      dto.quantity,
+    );
+    await this.prisma.quotationProduct.update({
+      where: { id: itemId },
+      data: {
+        materialVariationId: sale.variation?.id ?? null,
+        unitPrice: sale.unitPrice,
+        quantity: dto.quantity,
+        description: sale.description,
+        totalValue: sale.totalValue,
+        finalValue: calculateFinalValue(
+          sale.totalValue,
+          item.discount,
+          item.discountType,
+        ),
+      },
+    });
+    // O acréscimo e as linhas entram por fora do desconto (ALT-25, ORC-5)
+    if (item.addition || item.linesTotal) {
+      await this.lines.refreshItem(itemId);
+    }
+    await this.recalculateQuotationTotalValue(item.quotationId);
+    return this.itemView(itemId);
   }
 
   /**
@@ -302,6 +450,19 @@ export class QuotationItemsService {
         throw new NotFoundException('Item não encontrado no produto.');
       }
 
+      // O item sem produto do cadastro (material de venda direta, montado
+      // na hora) não tem variação, composição escolhida nem as linhas de
+      // medida do produto (Fase 4.4 e 4.5)
+      const withoutProduct = !product.productId;
+      if (
+        withoutProduct &&
+        (data.variationId !== undefined ||
+          data.composition !== undefined ||
+          (data.items ?? []).length > 0)
+      ) {
+        throw new BadRequestException(ITEM_WITHOUT_PRODUCT);
+      }
+
       // Da aprovação em diante, com estoque, o retrato e as linhas ficam como
       // foram vendidos (ORC-10); sem estoque, a O.S. refaz a conta (PO, 14/10)
       const frozen =
@@ -324,6 +485,7 @@ export class QuotationItemsService {
       const choices = data.composition ?? storedChoices ?? undefined;
       const refresh =
         !frozen &&
+        !withoutProduct &&
         (data.composition !== undefined ||
           data.variationId !== undefined ||
           (measureChanged && !!(product.composition || product.snapshot)));
@@ -523,8 +685,30 @@ export class QuotationItemsService {
         });
       }
 
+      // O item sem produto refaz o valor pela quantidade: o material pelo
+      // preço por unidade da venda, o montado pela proporção
+      if (data.quantity && withoutProduct) {
+        const totalValue = product.unitPrice
+          ? Math.round(product.unitPrice * data.quantity)
+          : Math.round(
+              ((product.totalValue || 0) / (product.quantity || 1)) *
+                data.quantity,
+            );
+        await this.prisma.quotationProduct.update({
+          where: { id: productId },
+          data: {
+            totalValue,
+            finalValue: calculateFinalValue(
+              totalValue,
+              data.discount ?? product.discount,
+              data.discountType ?? product.discountType,
+            ),
+          },
+        });
+      }
+
       // Se mudou a quantidade do produto, atualizar quantidade e totalValue dos itens proporcionalmente
-      if (data.quantity && !data.items) {
+      if (data.quantity && !data.items && !withoutProduct) {
         const items = await this.prisma.quotationProductItem.findMany({
           where: {
             quotationProductId: productId,
@@ -639,6 +823,10 @@ export class QuotationItemsService {
           allowEditValues: originalQuotationProduct.allowEditValues,
           origin: originalQuotationProduct.origin,
           variationId: originalQuotationProduct.variationId,
+          // O material de venda direta vai junto (ORG-1)
+          materialId: originalQuotationProduct.materialId,
+          materialVariationId: originalQuotationProduct.materialVariationId,
+          unitPrice: originalQuotationProduct.unitPrice,
           addition: originalQuotationProduct.addition,
           linesTotal: originalQuotationProduct.linesTotal,
           composition: originalQuotationProduct.composition ?? Prisma.DbNull,

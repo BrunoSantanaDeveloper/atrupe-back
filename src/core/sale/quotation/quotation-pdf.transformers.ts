@@ -3,6 +3,7 @@
  * Extraídos do método getQuotationPdfData() para melhor testabilidade
  */
 import { DEFAULT_IMAGE_SIZE, FALLBACK_IMAGE_SIZE } from './quotation.utils';
+import { itemProductName, itemValuesOf } from './item-origin';
 
 /**
  * O nível de detalhe da proposta (IP-12): o resumo (só o descritivo), a
@@ -297,19 +298,13 @@ export function transformPdfQuotationItem(
   qp: any,
   options: PdfOptions = DEFAULT_OPTIONS,
 ) {
-  const unitValue = qp.items.reduce((total: number, item: any) => {
-    return total + (item.unitCost || 0);
-  }, 0);
-
-  const totalValue = qp.items.reduce(
-    (total: number, item: any) => total + item.totalValue,
-    0,
-  );
+  // O item sem produto (material, montado na hora) tem o valor nele mesmo
+  const { unitValue, totalValue } = itemValuesOf(qp);
 
   const getImage = () => {
     const hasCustomImage = qp.imageUrl !== null && qp.imageUrl !== undefined;
     const isOriginal = hasCustomImage
-      ? qp.imageUrl === qp.product.imageUrl
+      ? qp.imageUrl === qp.product?.imageUrl
       : true;
     // Usar imageSize do banco ou fallback para lógica legada
     const size =
@@ -319,7 +314,7 @@ export function transformPdfQuotationItem(
       return { url: qp.imageUrl, original: isOriginal, size };
     }
     return {
-      url: qp.product.imageUrl,
+      url: qp.product?.imageUrl ?? null,
       original: true,
       size: DEFAULT_IMAGE_SIZE,
     };
@@ -339,8 +334,8 @@ export function transformPdfQuotationItem(
     finalValue: qp.finalValue,
     image: getImage(),
     product: {
-      originalProductId: qp.productId,
-      name: qp.product.name,
+      originalProductId: qp.productId ?? null,
+      name: itemProductName(qp),
       quantity: qp.quantity,
       unitValue,
       finalValue: totalValue,
