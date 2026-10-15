@@ -245,6 +245,9 @@ model SellerProfile {
   minValue                  Float?
   canApprovePreRegistration Boolean      @default(false)
   canCancelSale             Boolean      @default(false)
+  /// Somente enviar ao caixa (FC-12.1): só a venda rápida enviada à frente
+  /// de caixa; a forma de pagamento e o faturamento ficam com o caixa
+  onlySendToCash            Boolean      @default(false)
   employees                 Employee[]
   company                   Company      @relation(fields: [companyId], references: [id])
   allowedSeries             SaleSeries[] @relation("SeriesAllowedProfiles")

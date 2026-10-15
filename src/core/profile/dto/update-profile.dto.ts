@@ -55,4 +55,14 @@ export class UpdateProfileDto {
   })
   @IsBoolean()
   canCancelSale?: boolean;
+
+  @IsOptional()
+  @ApiProperty({
+    description:
+      'Somente enviar ao caixa (FC-12.1): o vendedor só envia a venda rápida à frente de caixa',
+    example: false,
+    required: false,
+  })
+  @IsBoolean()
+  onlySendToCash?: boolean;
 }

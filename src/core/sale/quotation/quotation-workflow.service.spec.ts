@@ -63,6 +63,8 @@ const itemsOnly =
         : Promise.resolve(rows);
 
 const createMockPrismaService = () => ({
+  // O perfil do vendedor (somente enviar ao caixa, FC-12.1): sem perfil
+  employee: { findFirst: jest.fn().mockResolvedValue(null) },
   quotation: {
     findUnique: jest.fn(),
     update: jest.fn(),

@@ -54,6 +54,7 @@ export class ProfileService {
           minValue: true,
           canApprovePreRegistration: true,
           canCancelSale: true,
+          onlySendToCash: true,
           employees: {
             where: { isActive: true },
             select: {
@@ -95,6 +96,7 @@ export class ProfileService {
           minValue: profile.minValue,
           canApprovePreRegistration: profile.canApprovePreRegistration,
           canCancelSale: profile.canCancelSale,
+          onlySendToCash: profile.onlySendToCash,
         },
         employees: profile.employees.map((employee) => ({
           id: employee.id,

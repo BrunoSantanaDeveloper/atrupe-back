@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   Logger,
 } from '@nestjs/common';
@@ -39,6 +40,8 @@ import {
 } from '../quick-sale/quick-sale.rules';
 
 export const ALREADY_APPROVED_MESSAGE = 'Este orçamento já está aprovado.';
+export const ONLY_SEND_TO_CASH =
+  'Seu perfil só envia a venda rápida ao caixa: a forma de pagamento e o faturamento ficam com o caixa';
 export const PAYMENT_CONDITION_REQUIRED =
   'Informe a condição de pagamento para aprovar';
 export const INACTIVE_PRODUCT_ITEMS =
@@ -242,6 +245,20 @@ export class QuotationWorkflowService {
   /**
    * Valida se o cliente pode ter o orçamento aprovado
    */
+  /** O perfil do vendedor só envia ao caixa (FC-12.1); o Admin não. */
+  private async onlySendsToCash(userId: string | undefined, companyId: string) {
+    if (!userId) return false;
+    const employee = await this.prisma.employee.findFirst({
+      where: { userId, companyId },
+      select: {
+        role: { select: { name: true } },
+        sellerProfile: { select: { onlySendToCash: true } },
+      },
+    });
+    if (!employee || employee.role?.name === 'Admin') return false;
+    return !!employee.sellerProfile?.onlySendToCash;
+  }
+
   private async validateClientForApproval(
     client: { status: string } | null,
     userId: string | undefined,
@@ -511,6 +528,16 @@ export class QuotationWorkflowService {
     }
     if (quick === 'CASH_ONLY' && !options.charge) {
       throw new BadRequestException(QUICK_SALE_CHARGE_REQUIRED);
+    }
+    // Somente enviar ao caixa (FC-12.1): esse vendedor só envia a venda
+    // rápida à frente de caixa; cobrar na hora, ou aprovar o orçamento com
+    // forma de pagamento, é com o caixa. A importação não passa por aqui
+    if (
+      options.creditCheck !== false &&
+      (quick !== 'POS' || options.charge) &&
+      (await this.onlySendsToCash(userId, current.companyId))
+    ) {
+      throw new ForbiddenException(ONLY_SEND_TO_CASH);
     }
     if (!current.deliveryInfo) {
       throw new BadRequestException(
