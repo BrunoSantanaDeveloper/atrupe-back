@@ -4777,6 +4777,8 @@ model StockMovement {
   unitCost      Int?
   origin        String
   invoiceId     String?
+  /// A venda da baixa por consumo (ES-7): uma baixa só por venda
+  quotationId   String?
   date          DateTime
   createdById   String?
   createdByName String?
@@ -4785,6 +4787,7 @@ model StockMovement {
 
   @@index([companyId, date])
   @@index([invoiceId])
+  @@index([quotationId])
   @@map("stock_movements")
 }
 

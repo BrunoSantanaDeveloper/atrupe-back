@@ -85,6 +85,29 @@ export class InvoiceEntryFilterDto extends PageDto {
   search?: string;
 }
 
+/** O mínimo do material no estoque (a aba "Abaixo do mínimo"). */
+export class StockMinimumDto {
+  @ApiProperty()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  minimum: number;
+}
+
+/** O ajuste de inventário: a contagem física corrige o saldo, com motivo. */
+export class StockAdjustmentDto {
+  @ApiProperty({ description: 'A quantidade contada, na unidade do material' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  counted: number;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(300)
+  reason: string;
+}
+
 export class MatchInvoiceItemDto {
   @ApiProperty()
   @IsUUID()

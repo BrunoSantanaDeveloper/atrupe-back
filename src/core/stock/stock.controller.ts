@@ -36,7 +36,9 @@ import { StockService } from './stock.service';
 import {
   InvoiceEntryFilterDto,
   MatchInvoiceItemDto,
+  StockAdjustmentDto,
   StockFilterDto,
+  StockMinimumDto,
   StockMovementFilterDto,
 } from './dto/stock.dto';
 
@@ -54,6 +56,7 @@ export class StockController {
   constructor(
     private readonly stock: StockService,
     private readonly abac: AbacService,
+    private readonly prisma: PrismaService,
   ) {}
 
   // O custo médio e o da última entrada só com a permissão de valores
@@ -65,6 +68,34 @@ export class StockController {
       req.user.companyId,
       filter,
       await canViewValues(req, this.abac),
+    );
+  }
+
+  @Patch(':id/minimum')
+  @HasPermission('edit', 'stock:stock')
+  @ApiOperation({ summary: 'O mínimo do material no estoque' })
+  minimum(
+    @Req() req,
+    @Param('id', UUID) id: string,
+    @Body() dto: StockMinimumDto,
+  ) {
+    return this.stock.setMinimum(req.user.companyId, id, dto.minimum);
+  }
+
+  @Post(':id/adjustment')
+  @HasPermission('edit', 'stock:stock')
+  @ApiOperation({ summary: 'Ajuste de inventário pela contagem física' })
+  async adjustment(
+    @Req() req,
+    @Param('id', UUID) id: string,
+    @Body() dto: StockAdjustmentDto,
+  ) {
+    return this.stock.adjust(
+      req.user.companyId,
+      id,
+      dto.counted,
+      dto.reason,
+      await actorOfUser(this.prisma, req.user),
     );
   }
 

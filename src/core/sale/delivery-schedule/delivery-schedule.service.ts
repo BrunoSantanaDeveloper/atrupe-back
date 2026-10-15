@@ -14,6 +14,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { DeliveryScheduleFitlerDto } from './dto/filter.dto';
+import { consumeSale } from '../../stock/stock-consumption';
 
 export interface DeliveryScheduleGroup {
   date: string;
@@ -425,7 +426,7 @@ export class DeliveryScheduleService {
         throw new NotFoundException('Delivery Schedule not found');
       }
 
-      return await this.prisma.$transaction(async (prisma) => {
+      const finished = await this.prisma.$transaction(async (prisma) => {
         const status =
           deliverySchedule.quotation.receivable.length > 0
             ? 'DONE'
@@ -449,6 +450,14 @@ export class DeliveryScheduleService {
           );
         }
       });
+      // A baixa por consumo da venda (ES-7), se o projeto não a fez antes:
+      // fora da transação, uma falha não desfaz a entrega
+      await consumeSale(
+        this.prisma,
+        deliverySchedule.quotation.id,
+        'Agenda de entrega',
+      ).catch(() => undefined);
+      return finished;
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;

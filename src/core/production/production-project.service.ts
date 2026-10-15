@@ -28,6 +28,7 @@ import {
   dayKey,
   projectView,
 } from './production-view.service';
+import { consumeSale } from '../stock/stock-consumption';
 
 export const PRODUCTION_FEATURE = 'production_manager';
 const DEFAULT_TYPE = 'Produção';
@@ -830,6 +831,14 @@ export class ProductionProjectService {
         },
       },
     });
+    // A baixa por consumo nasce da produção (ES-7): fora do caminho, uma
+    // falha não desfaz a conclusão
+    await consumeSale(this.prisma, project.quotationId, viewer.name).catch(
+      (error) =>
+        this.logger.error(
+          `Baixa por consumo da venda ${project.quotationId}: ${error.message}`,
+        ),
+    );
     // A venda rápida no caixa passa a aguardar a retirada (FC-19)
     await this.prisma.pendingSale.updateMany({
       where: {

@@ -186,6 +186,63 @@ export class StockService {
     };
   }
 
+  private async stockItem(companyId: string, id: string) {
+    const item = await this.prisma.stockItem.findFirst({
+      where: { id, companyId },
+      include: {
+        material: { select: { name: true, unit: true } },
+        variation: { select: { brand: true, color: true } },
+      },
+    });
+    if (!item)
+      throw new NotFoundException('Material não encontrado no estoque');
+    return item;
+  }
+
+  /** O mínimo do material: abaixo dele, a aba "Abaixo do mínimo" avisa. */
+  async setMinimum(companyId: string, id: string, minimum: number) {
+    await this.stockItem(companyId, id);
+    await this.prisma.stockItem.update({ where: { id }, data: { minimum } });
+    return { id, minimum };
+  }
+
+  /**
+   * O ajuste de inventário: a contagem física corrige o saldo, com motivo e
+   * quem fez; o movimento é a diferença, e o custo médio não muda.
+   */
+  async adjust(
+    companyId: string,
+    id: string,
+    counted: number,
+    reason: string,
+    actor: CashActor,
+  ) {
+    if (!reason?.trim()) bad('Informe o motivo do ajuste');
+    const item = await this.stockItem(companyId, id);
+    const difference = counted - item.quantity;
+    if (!difference) bad('A contagem é igual ao saldo: não há o que ajustar');
+    await this.prisma.$transaction([
+      this.prisma.stockItem.update({
+        where: { id },
+        data: { quantity: counted },
+      }),
+      this.prisma.stockMovement.create({
+        data: {
+          companyId,
+          stockItemId: id,
+          kind: StockMovementKind.ADJUSTMENT,
+          quantity: difference,
+          unitCost: item.averageCost,
+          origin: `Ajuste de inventário: ${reason.trim()}`,
+          date: new Date(),
+          createdById: actor.id,
+          createdByName: actor.name,
+        },
+      }),
+    ]);
+    return { id, quantity: counted, difference };
+  }
+
   /* ---------------------------------------------------- entrada de nota */
 
   /** O nome do material vinculado, do cadastro (ES-3). */
