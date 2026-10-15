@@ -28,7 +28,7 @@ import {
  */
 
 /** Partes dentro de partes: no máximo três níveis (IP-9). */
-const MAX_PART_DEPTH = 3;
+export const MAX_PART_DEPTH = 3;
 
 export const round = (value: number, digits = 2) =>
   Math.round(value * 10 ** digits) / 10 ** digits;

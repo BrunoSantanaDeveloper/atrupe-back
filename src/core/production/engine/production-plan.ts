@@ -30,6 +30,8 @@ export type PlanStage = {
   note: string | null;
   setupMinutes: number;
   lines: PlanLine[];
+  /** As caixas de dentro da parte (FL-10); nulo na etapa comum */
+  parts?: PlanStage[] | null;
 };
 
 export type PlanItem = {
@@ -130,6 +132,44 @@ export const typeFor = (
   types.find((type) => key(type.name) === key(stage.taskType || '')) ??
   fallback;
 
+/**
+ * A parte vira as caixas de dentro dela (FL-10): cada uma é uma etapa no
+ * setor dela, com o fluxo de dentro da parte e o nome "Parte · Caixa". Duas
+ * etapas vazias fazem a ligação com o fluxo do item: a entrada (o que a
+ * parte esperava) e a saída (as últimas de dentro), que não viram tarefa e
+ * passam adiante as dependências.
+ */
+export const expandParts = (
+  stages: PlanStage[],
+  prefix = '',
+  entry: string | null = null,
+  namePrefix = '',
+): PlanStage[] =>
+  stages.flatMap((stage) => {
+    const id = prefix + stage.blockId;
+    const dependsOn = stage.dependsOn.length
+      ? stage.dependsOn.map((dep) => prefix + dep)
+      : entry
+        ? [entry]
+        : [];
+    const baseBlockId = stage.baseBlockId ? prefix + stage.baseBlockId : null;
+    const name = namePrefix + stage.name;
+    if (!stage.parts?.length) {
+      return [{ ...stage, blockId: id, name, dependsOn, baseBlockId }];
+    }
+    const inside = `${id}/`;
+    const used = new Set(stage.parts.flatMap((part) => part.dependsOn));
+    const exits = stage.parts
+      .filter((part) => !used.has(part.blockId))
+      .map((part) => inside + part.blockId);
+    const hollow = { ...stage, lines: [], setupMinutes: 0, parts: null };
+    return [
+      { ...hollow, blockId: `${id}>`, dependsOn, baseBlockId },
+      ...expandParts(stage.parts, inside, `${id}>`, `${name} · `),
+      { ...hollow, blockId: id, dependsOn: exits, baseBlockId: null },
+    ];
+  });
+
 export function planTasks(
   items: PlanItem[],
   types: PlanTaskType[],
@@ -137,10 +177,11 @@ export function planTasks(
 ): PlannedTask[] {
   const planned: PlannedTask[] = [];
   for (const item of items) {
-    const stages = new Map(item.stages.map((stage) => [stage.blockId, stage]));
+    const itemStages = expandParts(item.stages);
+    const stages = new Map(itemStages.map((stage) => [stage.blockId, stage]));
     // A etapa vazia nesta venda (a opcional desmarcada) não vira tarefa
     const kept = new Set(
-      item.stages
+      itemStages
         .filter((stage) => stage.lines.length || stage.setupMinutes > 0)
         .map((stage) => stage.blockId),
     );
@@ -155,7 +196,7 @@ export function planTasks(
       return [...new Set(stage.dependsOn.flatMap((id) => resolve(id, seen)))];
     };
 
-    for (const stage of item.stages) {
+    for (const stage of itemStages) {
       if (!kept.has(stage.blockId)) continue;
       const type = typeFor(stage, types, fallback);
       const flow = [...new Set(stage.dependsOn.flatMap((id) => resolve(id)))];

@@ -73,6 +73,27 @@ type SnapshotStage = Partial<PlanStage> & {
   lines?: PlanStage['lines'];
 };
 
+/** As caixas de dentro da parte no retrato (FL-10), como o plano lê. */
+const partsOf = (parts: unknown): PlanStage[] | null =>
+  Array.isArray(parts) && parts.length
+    ? (parts as SnapshotStage[])
+        .filter((part) => part.blockId)
+        .map((part) => ({
+          blockId: part.blockId!,
+          name: part.name ?? '',
+          sector: part.sector ?? '',
+          sectorId: part.sectorId ?? null,
+          taskType: part.taskType ?? '',
+          dependsOn: Array.isArray(part.dependsOn) ? part.dependsOn : [],
+          baseBlockId: part.baseBlockId ?? null,
+          fields: [],
+          note: null,
+          setupMinutes: Number(part.setupMinutes) || 0,
+          lines: Array.isArray(part.lines) ? part.lines : [],
+          parts: partsOf(part.parts),
+        }))
+    : null;
+
 const QUOTATION_SELECT = {
   id: true,
   companyId: true,
@@ -543,6 +564,7 @@ export class ProductionProjectService {
                 null),
             setupMinutes: Number(stage.setupMinutes) || 0,
             lines: Array.isArray(stage.lines) ? stage.lines : [],
+            parts: partsOf(stage.parts),
           };
         });
       // O processo acrescentado no item: uma etapa a mais, sobre a base

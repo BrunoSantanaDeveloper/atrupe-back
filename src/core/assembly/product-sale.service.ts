@@ -6,6 +6,7 @@ import {
 import { PrismaService } from 'nestjs-prisma';
 import { PricingParametersService } from '../pricing/pricing-parameters.service';
 import {
+  AssemblyGraph,
   AssemblyRow,
   EngineBuilder,
   ProductRow,
@@ -21,11 +22,13 @@ import {
   OPTION_NOT_FOUND,
 } from './composition-lines';
 import { SaleChoicesDto, SaleCompositionDto } from './dto/sale.dto';
-import { computeAssembly, orderBlocks } from './engine/compute';
+import { MAX_PART_DEPTH, computeAssembly, orderBlocks } from './engine/compute';
 import { formulaUsesName, normalizeName } from './engine/formula';
 import {
+  ComputedBlock,
   EngineAssembly,
   EngineBlock,
+  EngineDeps,
   EngineLine,
   Measure,
   QuoteField,
@@ -97,6 +100,77 @@ const taskTypeOf = (row?: {
   row?.type === 'PROCESS' && row.process
     ? (row.localTaskType ?? row.process.taskType)
     : (row?.taskType ?? '');
+
+/** A caixa de dentro da parte no retrato (FL-10): sem custo nem preço. */
+type PartStage = {
+  blockId: string;
+  name: string;
+  sector: string;
+  sectorId: string | null;
+  taskType: string;
+  dependsOn: string[];
+  baseBlockId: string | null;
+  setupMinutes: number;
+  lines: {
+    lineId: string;
+    name: string;
+    kind: string;
+    resourceId: string | null;
+    resource: string | null;
+    quantity: number | null;
+    unit: string;
+  }[];
+  parts: PartStage[] | null;
+};
+
+/**
+ * As caixas de dentro da parte (FL-10), cada uma com o seu setor e o seu
+ * tipo de tarefa, na medida da etapa: o projeto de produção faz uma tarefa
+ * de cada. As linhas continuam somadas na etapa da parte (custo, consumo e
+ * resultado leem só a etapa).
+ */
+const partStagesOf = (
+  graph: AssemblyGraph,
+  builder: EngineBuilder,
+  deps: EngineDeps,
+  block: ComputedBlock,
+  depth = 1,
+): PartStage[] | null => {
+  if (!block.partProductId || depth >= MAX_PART_DEPTH) return null;
+  const source = builder.partOf(block.partProductId);
+  const rows = graph.parts.get(block.partProductId)?.assembly?.blocks ?? [];
+  if (!source || !rows.length) return null;
+  const part = computeAssembly(
+    { ...source, measure: block.measure },
+    deps,
+    null,
+    depth,
+  );
+  const rowOf = new Map(rows.map((row) => [row.id, row]));
+  return part.blocks.map((inner) => {
+    const row = rowOf.get(inner.id);
+    return {
+      blockId: inner.id,
+      name: stageOf(inner),
+      sector: inner.sector,
+      sectorId: row ? (blockSector(row)?.id ?? null) : null,
+      taskType: taskTypeOf(row),
+      dependsOn: inner.dependsOn,
+      baseBlockId: inner.baseBlockId,
+      setupMinutes: inner.setupMinutes + inner.partSetupMinutes,
+      lines: [...inner.partLines, ...inner.lines].map((line) => ({
+        lineId: line.id,
+        name: line.name,
+        kind: line.kind,
+        resourceId: line.selected?.resourceId ?? null,
+        resource: line.selected?.name ?? null,
+        quantity: line.quantity,
+        unit: line.selected?.unit ?? line.options[0]?.unit ?? '',
+      })),
+      parts: partStagesOf(graph, builder, deps, inner, depth + 1),
+    };
+  });
+};
 
 /**
  * O produto na venda (IP-36): o formulário do vendedor e o relatório da
@@ -397,15 +471,12 @@ export class ProductSaleService {
     );
     this.applyChoices(engine, choices);
     const rows = new Map(assembly!.blocks.map((block) => [block.id, block]));
-    const computed = computeAssembly(
-      engine,
-      {
-        referenceMarkup: await this.pricing.referenceMarkupOf(companyId),
-        partOf: builder.partOf,
-        resourceName: (id) => graph.resources.get(id)?.name,
-      },
-      engineVariation(variation),
-    );
+    const deps: EngineDeps = {
+      referenceMarkup: await this.pricing.referenceMarkupOf(companyId),
+      partOf: builder.partOf,
+      resourceName: (id) => graph.resources.get(id)?.name,
+    };
+    const computed = computeAssembly(engine, deps, engineVariation(variation));
 
     const optionName = (blockId: string, lineId: string, optionId: string) =>
       lines
@@ -511,6 +582,7 @@ export class ProductSaleService {
         cost: block.cost + listCost,
         sale: block.sale,
         lines: stageLines,
+        parts: partStagesOf(graph, builder, deps, block),
       };
     });
 
@@ -577,13 +649,14 @@ export class ProductSaleService {
 
     const graph = await this.assemblies.loadGraph(companyId, [assembly]);
     const builder = new EngineBuilder(graph);
+    const deps: EngineDeps = {
+      referenceMarkup: await this.pricing.referenceMarkupOf(companyId),
+      partOf: builder.partOf,
+      resourceName: (id) => graph.resources.get(id)?.name,
+    };
     const computed = computeAssembly(
       builder.build(owner, assembly, measure),
-      {
-        referenceMarkup: await this.pricing.referenceMarkupOf(companyId),
-        partOf: builder.partOf,
-        resourceName: (id) => graph.resources.get(id)?.name,
-      },
+      deps,
       engineVariation(undefined),
     );
     const rows = new Map(assembly.blocks.map((block) => [block.id, block]));
@@ -619,6 +692,7 @@ export class ProductSaleService {
         actualQuantity: null,
         actualCost: null,
       })),
+      parts: partStagesOf(graph, builder, deps, block),
     }));
     return {
       price: Math.round(computed.suggestedPrice),

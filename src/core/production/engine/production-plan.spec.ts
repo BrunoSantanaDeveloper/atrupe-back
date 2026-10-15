@@ -260,6 +260,103 @@ describe('planTasks', () => {
     });
   });
 
+  describe('a parte vira as caixas de dentro dela (FL-10)', () => {
+    const serralheria = { sector: 'Serralheria', sectorId: 's-serr' };
+    const parte = stage({
+      blockId: 'parte',
+      name: 'Estrutura',
+      dependsOn: ['imp'],
+      // As linhas somadas da parte não viram tarefa
+      setupMinutes: 30,
+      parts: [
+        stage({ blockId: 'corte', name: 'Corte', ...serralheria }),
+        stage({
+          blockId: 'solda',
+          name: 'Solda',
+          dependsOn: ['corte'],
+          ...serralheria,
+        }),
+        stage({
+          blockId: 'pintura',
+          name: 'Pintura',
+          sector: 'Pintura',
+          sectorId: 's-pint',
+          dependsOn: ['solda'],
+        }),
+      ],
+    });
+
+    it('uma tarefa por caixa, no setor dela, ligada ao fluxo do item', () => {
+      const tasks = planTasks(
+        [
+          item([
+            stage({ blockId: 'imp' }),
+            parte,
+            stage({ blockId: 'inst', dependsOn: ['parte'] }),
+          ]),
+        ],
+        types,
+        fallback,
+      );
+      expect(
+        tasks.map((task) => [
+          task.key,
+          task.stageName,
+          task.sectorId,
+          task.dependsOnKeys,
+        ]),
+      ).toEqual([
+        ['i1:imp', 'imp', 's-prod', []],
+        ['i1:parte/corte', 'Estrutura · Corte', 's-serr', ['i1:imp']],
+        ['i1:parte/solda', 'Estrutura · Solda', 's-serr', ['i1:parte/corte']],
+        [
+          'i1:parte/pintura',
+          'Estrutura · Pintura',
+          's-pint',
+          ['i1:parte/solda'],
+        ],
+        ['i1:inst', 'inst', 's-prod', ['i1:parte/pintura']],
+      ]);
+      expect(tasks.map((task) => task.stageKey)).toContain('parte/solda');
+    });
+
+    it('parte dentro de parte também abre; sem caixas, a parte é uma tarefa', () => {
+      const nested = planTasks(
+        [
+          item([
+            stage({
+              blockId: 'parte',
+              name: 'Estrutura',
+              parts: [
+                stage({
+                  blockId: 'quadro',
+                  name: 'Quadro',
+                  parts: [stage({ blockId: 'tubo', name: 'Tubo' })],
+                }),
+                stage({ blockId: 'tela', name: 'Tela', dependsOn: ['quadro'] }),
+              ],
+            }),
+          ]),
+        ],
+        types,
+        fallback,
+      );
+      expect(
+        nested.map((task) => [task.key, task.stageName, task.dependsOnKeys]),
+      ).toEqual([
+        ['i1:parte/quadro/tubo', 'Estrutura · Quadro · Tubo', []],
+        ['i1:parte/tela', 'Estrutura · Tela', ['i1:parte/quadro/tubo']],
+      ]);
+      // O retrato antigo (sem as caixas) segue com a parte numa tarefa só
+      const old = planTasks(
+        [item([{ ...parte, parts: null, dependsOn: [] }])],
+        types,
+        fallback,
+      );
+      expect(old.map((task) => task.key)).toEqual(['i1:parte']);
+    });
+  });
+
   it('a medida sem largura e altura fica só com a quantidade', () => {
     expect(measureText({ quantity: 1000, width: null, height: null })).toBe(
       '1000 un',
