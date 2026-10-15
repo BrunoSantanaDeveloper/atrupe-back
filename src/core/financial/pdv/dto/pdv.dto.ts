@@ -164,6 +164,22 @@ export class CashFrontDto {
   @IsUUID()
   drawerAccountId?: string | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'A conta do PIX desta frente (vazio: a padrão da forma)',
+  })
+  @IsOptional()
+  @IsUUID()
+  pixAccountId?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'A conta do cartão desta frente (vazio: a padrão da forma)',
+  })
+  @IsOptional()
+  @IsUUID()
+  cardAccountId?: string | null;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()

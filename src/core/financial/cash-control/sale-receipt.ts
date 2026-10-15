@@ -42,15 +42,19 @@ export const METHOD_LABEL: Record<CashMethod, string> = {
 
 /**
  * A conta de cada parte (CX-2): a escolhida, se for da empresa e estiver
- * ativa, ou a padrão da forma. PIX e cartão precisam de conta: é para ela
- * que o valor vai; o dinheiro da frente de caixa fica na gaveta até o
- * fechamento.
+ * ativa; senão a da frente de caixa para aquela forma (cada frente pode ter
+ * a sua) e, por fim, a padrão da forma. PIX e cartão precisam de conta: é
+ * para ela que o valor vai; o dinheiro da frente de caixa fica na gaveta até
+ * o fechamento.
  */
 export async function resolveParts(
   tx: Tx,
   companyId: string,
   parts: ReceiptPart[],
-  options: { cashNeedsAccount: boolean },
+  options: {
+    cashNeedsAccount: boolean;
+    frontAccounts?: Partial<Record<CashMethod, string | null>>;
+  },
 ): Promise<ReceiptPart[]> {
   const conditionIds = [...new Set(parts.map((p) => p.paymentConditionId))];
   const conditions = await tx.paymentCondition.findMany({
@@ -70,7 +74,17 @@ export async function resolveParts(
       });
       if (!chosen) throw new BadRequestException('Conta não encontrada');
       bankAccountId = chosen.id;
-    } else {
+    }
+    // A conta da frente para a forma; inativa, vale a padrão
+    const frontAccount = options.frontAccounts?.[part.method];
+    if (!bankAccountId && frontAccount) {
+      const front = await tx.bankAccount.findFirst({
+        where: { id: frontAccount, companyId, isActive: true },
+        select: { id: true },
+      });
+      bankAccountId = front?.id ?? null;
+    }
+    if (!bankAccountId && !part.bankAccountId) {
       const rule = await tx.bankAccountCashControl.findFirst({
         where: {
           paymentConditionId: part.paymentConditionId,

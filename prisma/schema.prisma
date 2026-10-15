@@ -4613,6 +4613,10 @@ model CashFront {
   roundingLimit     Int              @default(100)
   /// A conta da gaveta (CASH), que recebe o dinheiro do fechamento
   drawerAccountId   String?
+  /// A conta do PIX e a do cartão desta frente (CX-2): sem elas, vale a
+  /// padrão da forma em Contas bancárias
+  pixAccountId      String?
+  cardAccountId     String?
   isActive          Boolean          @default(true)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt

@@ -892,6 +892,10 @@ export class PdvService {
       async (tx) => {
         const parts = await resolveParts(tx, user.companyId, dto.parts, {
           cashNeedsAccount: false,
+          frontAccounts: {
+            PIX: session.cashFront.pixAccountId,
+            CARD: session.cashFront.cardAccountId,
+          },
         });
         if (parts.length) {
           await tx.cashSessionMovement.create({
@@ -1324,6 +1328,14 @@ export class PdvService {
       drawerAccount: front.drawerAccountId
         ? (accounts.get(front.drawerAccountId) ?? null)
         : null,
+      pixAccountId: front.pixAccountId,
+      pixAccount: front.pixAccountId
+        ? (accounts.get(front.pixAccountId) ?? null)
+        : null,
+      cardAccountId: front.cardAccountId,
+      cardAccount: front.cardAccountId
+        ? (accounts.get(front.cardAccountId) ?? null)
+        : null,
       open: open.has(front.id),
     };
   }
@@ -1379,6 +1391,32 @@ export class PdvService {
       }
       data.drawerAccountId = dto.drawerAccountId || null;
     }
+    // A conta do PIX e a do cartão (CX-2): conta da empresa, ativa, que não
+    // seja um caixa físico
+    for (const [field, label] of [
+      ['pixAccountId', 'PIX'],
+      ['cardAccountId', 'cartão'],
+    ] as const) {
+      const value = dto[field];
+      if (value === undefined) continue;
+      if (value) {
+        const account = await this.prisma.bankAccount.findFirst({
+          where: {
+            id: value,
+            companyId,
+            isActive: true,
+            kind: { not: 'CASH' },
+          },
+          select: { id: true },
+        });
+        if (!account) {
+          bad(
+            `A conta do ${label} precisa ser um banco ou uma operadora da empresa`,
+          );
+        }
+      }
+      data[field] = value || null;
+    }
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
     if (dto.isDefault !== undefined) data.isDefault = dto.isDefault;
     return data;
@@ -1432,6 +1470,8 @@ export class PdvService {
         roundingType: model.roundingType,
         roundingLimit: model.roundingLimit,
         drawerAccountId: model.drawerAccountId,
+        pixAccountId: model.pixAccountId,
+        cardAccountId: model.cardAccountId,
         ...(data as Prisma.CashFrontUncheckedCreateInput),
         isDefault: !!dto.isDefault,
         isActive: dto.isActive ?? true,
