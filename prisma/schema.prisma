@@ -2986,6 +2986,8 @@ enum CashMovementKind {
   SHORTAGE
   OVERAGE
   REVERSAL
+  /// A taxa da operadora na liquidação do cartão (FC-10)
+  CARD_FEE
 }
 
 enum RecurringType {

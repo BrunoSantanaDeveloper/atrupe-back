@@ -582,8 +582,35 @@ export class PdvService {
     // PIX e cartão por conta: o recebido menos o estornado
     const byAccount = new Map<
       string,
-      { method: CashMethod; bankAccountId: string; amount: number }
+      {
+        method: CashMethod;
+        bankAccountId: string;
+        amount: number;
+        net: number;
+      }
     >();
+    // A taxa da operadora de cada forma de cartão, à vista (FC-10): só
+    // previsão; a taxa de verdade é a da liquidação
+    const cardConditions = [
+      ...new Set(
+        session.movements.flatMap((movement) =>
+          partsOf(movement.parts)
+            .filter((part) => part.method === 'CARD')
+            .map((part) => part.paymentConditionId),
+        ),
+      ),
+    ];
+    const rates = new Map(
+      (
+        await this.prisma.installment.findMany({
+          where: {
+            paymentConditionId: { in: cardConditions },
+            installment: 1,
+          },
+          select: { paymentConditionId: true, operatorFeeRate: true },
+        })
+      ).map((row) => [row.paymentConditionId, row.operatorFeeRate]),
+    );
     for (const movement of session.movements) {
       if (movement.kind !== 'SALE' && movement.kind !== 'REVERSAL') continue;
       for (const part of partsOf(movement.parts)) {
@@ -593,8 +620,15 @@ export class PdvService {
           method: part.method,
           bankAccountId: part.bankAccountId,
           amount: 0,
+          net: 0,
         };
         row.amount += part.amount * SIGN[movement.kind];
+        const rate =
+          part.method === 'CARD'
+            ? (rates.get(part.paymentConditionId) ?? 0)
+            : 0;
+        row.net +=
+          Math.round(part.amount * (1 - rate / 100)) * SIGN[movement.kind];
         byAccount.set(key, row);
       }
     }
@@ -616,6 +650,8 @@ export class PdvService {
       bankAccountId: string;
       destination: string;
       pending?: boolean;
+      // Cartão: o líquido previsto pela taxa da forma (FC-10)
+      net?: number;
     }[] = [];
     const date = new Date();
     try {
@@ -675,8 +711,11 @@ export class PdvService {
               `Fechamento FC nº ${session.number} · ${METHOD_LABEL[row.method]}`,
             );
             transfers.push({
-              ...row,
+              method: row.method,
+              amount: row.amount,
+              bankAccountId: row.bankAccountId,
               destination: names.get(row.bankAccountId) ?? '',
+              ...(row.method === 'CARD' ? { net: row.net } : {}),
             });
           }
           await tx.cashSession.update({

@@ -145,6 +145,16 @@ export class CashTransferDto {
   @Matches(DAY, { message: 'Data inválida' })
   date?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Liquidação da operadora de cartão (FC-10): a taxa, em centavos. O destino recebe o valor menos a taxa',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  fee?: number;
+
   @IsOptional()
   @IsUUID()
   sourceBankAccountId?: string;

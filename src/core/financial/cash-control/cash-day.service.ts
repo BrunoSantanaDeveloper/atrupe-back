@@ -804,11 +804,32 @@ export class CashDayService {
         companyId,
         isActive: true,
       },
-      select: { id: true, name: true },
+      select: { id: true, name: true, kind: true },
     });
     const from = accounts.find((item) => item.id === dto.fromId);
     const to = accounts.find((item) => item.id === dto.toId);
     if (!from || !to) throw new NotFoundException(ACCOUNT_NOT_FOUND);
+    // A liquidação do cartão (FC-10): a operadora baixa o valor cheio, o
+    // destino recebe o líquido e a diferença vai para "taxa de cartão"
+    const fee = dto.fee ?? 0;
+    if (fee > 0 && from.kind !== 'CARD') {
+      bad('A taxa só vale na liquidação da operadora de cartão');
+    }
+    if (fee >= dto.amount) bad('A taxa precisa ser menor que o valor');
+    const net = dto.amount - fee;
+    const feeCategory = fee
+      ? await this.prisma.subCategory.findFirst({
+          where: {
+            companyId,
+            isActive: true,
+            description: {
+              startsWith: 'Tarifa de Cartão',
+              mode: 'insensitive',
+            },
+          },
+          select: { id: true, natureId: true },
+        })
+      : null;
     const date = dto.date
       ? new Date(dayRange(dto.date).gte.getTime() + 12 * 3600000)
       : new Date();
@@ -819,7 +840,7 @@ export class CashDayService {
         await postMovement(tx, {
           bankAccountId: from.id,
           type: 'TRANSFER_OUTCOME',
-          amount: toReais(dto.amount),
+          amount: toReais(net),
           description: `Transferência para ${to.name}${method}`,
           date,
           linkedId,
@@ -828,17 +849,34 @@ export class CashDayService {
         await postMovement(tx, {
           bankAccountId: to.id,
           type: 'TRANSFER_INCOME',
-          amount: toReais(dto.amount),
+          amount: toReais(net),
           description: `Transferência de ${from.name}${method}`,
           date,
           linkedId,
           responsible: actor,
         }),
+        ...(fee
+          ? [
+              await postMovement(tx, {
+                bankAccountId: from.id,
+                type: 'OUTCOME',
+                kind: 'CARD_FEE',
+                amount: toReais(fee),
+                description: `Taxa de cartão · liquidação para ${to.name}`,
+                date,
+                linkedId,
+                responsible: actor,
+                natureId: feeCategory?.natureId ?? null,
+                subCategoryId: feeCategory?.id ?? null,
+              }),
+            ]
+          : []),
       ]);
       return {
         linkedId,
-        out: { id: out.id, amount: -dto.amount },
-        in: { id: into.id, amount: dto.amount },
+        out: { id: out.id, amount: -net },
+        in: { id: into.id, amount: net },
+        fee,
       };
     } catch (error) {
       if (error instanceof MissingCashDay) {
