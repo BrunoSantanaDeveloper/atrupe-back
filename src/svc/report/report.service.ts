@@ -3866,10 +3866,110 @@ export class ReportService {
     return { startDate, endDate };
   }
 
+  /**
+   * O modo pelo valor recebido (ALT-23): um registro por recebimento no
+   * período, das vendas do vendedor, inclusive as de meses anteriores e a
+   * venda cancelada com valor recebido (EC-18). A comissão incide no
+   * recebido.
+   */
+  private async commissionReceipts(
+    companyId: string,
+    filters: CommissionReportFilterDto,
+  ) {
+    const now = new Date();
+    const gte = filters.receivedStartDate
+      ? new Date(filters.receivedStartDate)
+      : startOfMonth(now);
+    const lte = filters.receivedEndDate
+      ? new Date(filters.receivedEndDate)
+      : now;
+    const installments = await this.prisma.receivableInstallment.findMany({
+      where: {
+        status: 'PAID',
+        paidDate: { gte, lte },
+        receivable: {
+          financialType: { in: ['MAIN', 'DOWN_PAYMENT'] },
+          quotation: {
+            companyId,
+            ...(filters.sellerId && { sellerId: filters.sellerId }),
+          },
+        },
+      },
+      select: {
+        id: true,
+        amount: true,
+        paidAmount: true,
+        paidDate: true,
+        receivable: {
+          select: {
+            quotation: {
+              select: {
+                id: true,
+                description: true,
+                totalValue: true,
+                approvedAt: true,
+                quotationNumber: true,
+                client: { select: { id: true, name: true } },
+                seller: {
+                  select: {
+                    id: true,
+                    name: true,
+                    sellerProfile: { select: { commission: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { paidDate: 'asc' },
+    });
+    return installments
+      .filter((inst) => inst.receivable?.quotation)
+      .map((inst) => {
+        const q = inst.receivable.quotation;
+        return {
+          id: inst.id,
+          quotationId: q.id,
+          clientName: q.client?.name || 'Não informado',
+          clientId: q.client?.id || '',
+          vendedorId: q.seller?.id || '',
+          vendedorName: q.seller?.name || 'Não informado',
+          description: `${q.quotationNumber || ''} - ${q.description || 'Sem descrição'}`,
+          saleDate: q.approvedAt ? format(q.approvedAt, 'dd/MM/yyyy') : '',
+          receivedDate: inst.paidDate
+            ? format(inst.paidDate, 'dd/MM/yyyy')
+            : '',
+          saleValue: q.totalValue || 0,
+          receivedValue: inst.paidAmount ?? inst.amount ?? 0,
+          percentage: q.seller?.sellerProfile?.commission || 0,
+        };
+      });
+  }
+
   async getCommissionSummary(
     companyId: string,
     filters: CommissionReportFilterDto,
   ) {
+    if (filters.commissionType === 'received_value') {
+      const receipts = await this.commissionReceipts(companyId, filters);
+      const sales = new Map(
+        receipts.map((row) => [row.quotationId, row.saleValue]),
+      );
+      return {
+        salesTotal: [...sales.values()].reduce((sum, value) => sum + value, 0),
+        salesCount: sales.size,
+        receivedTotal: receipts.reduce(
+          (sum, row) => sum + row.receivedValue,
+          0,
+        ),
+        receivedCount: receipts.length,
+        commissionTotal: receipts.reduce(
+          (sum, row) => sum + row.receivedValue * (row.percentage / 100),
+          0,
+        ),
+      };
+    }
     const { startDate, endDate } = this.getCommissionDateRange(filters);
 
     const receivedStart = filters.receivedStartDate
@@ -3963,6 +4063,7 @@ export class ReportService {
     const page = filters.page || 1;
     const limit = filters.limit || 10;
     const groupBy = filters.groupBy || 'none';
+    const received = filters.commissionType === 'received_value';
 
     const receivedStart = filters.receivedStartDate
       ? new Date(filters.receivedStartDate)
@@ -3971,82 +4072,88 @@ export class ReportService {
       ? new Date(filters.receivedEndDate)
       : undefined;
 
-    const orders = await this.prisma.order.findMany({
-      where: {
-        quotation: {
-          companyId,
-          approvedAt: { gte: startDate, lte: endDate },
-          ...(filters.sellerId && { sellerId: filters.sellerId }),
-        },
-      },
-      include: {
-        quotation: {
-          select: {
-            id: true,
-            description: true,
-            totalValue: true,
-            approvedAt: true,
-            quotationNumber: true,
-            client: { select: { id: true, name: true } },
-            seller: {
+    const orders = received
+      ? []
+      : await this.prisma.order.findMany({
+          where: {
+            quotation: {
+              companyId,
+              approvedAt: { gte: startDate, lte: endDate },
+              ...(filters.sellerId && { sellerId: filters.sellerId }),
+            },
+          },
+          include: {
+            quotation: {
               select: {
                 id: true,
-                name: true,
-                sellerProfile: { select: { commission: true } },
-              },
-            },
-            receivable: {
-              select: {
-                installments: {
-                  where: {
-                    status: 'PAID',
-                    paidDate: {
-                      ...(receivedStart && { gte: receivedStart }),
-                      ...(receivedEnd && { lte: receivedEnd }),
+                description: true,
+                totalValue: true,
+                approvedAt: true,
+                quotationNumber: true,
+                client: { select: { id: true, name: true } },
+                seller: {
+                  select: {
+                    id: true,
+                    name: true,
+                    sellerProfile: { select: { commission: true } },
+                  },
+                },
+                receivable: {
+                  select: {
+                    installments: {
+                      where: {
+                        status: 'PAID',
+                        paidDate: {
+                          ...(receivedStart && { gte: receivedStart }),
+                          ...(receivedEnd && { lte: receivedEnd }),
+                        },
+                      },
+                      select: { paidAmount: true, paidDate: true },
                     },
                   },
-                  select: { paidAmount: true, paidDate: true },
                 },
               },
             },
           },
-        },
-      },
-    });
+        });
 
     // Build flat records
-    const records = orders.map((order) => {
-      const q = order.quotation;
-      const commissionPct = q.seller?.sellerProfile?.commission || 0;
-      let receivedValue = 0;
-      let lastPaidDate: Date | null = null;
+    const records = received
+      ? await this.commissionReceipts(companyId, filters)
+      : orders.map((order) => {
+          const q = order.quotation;
+          const commissionPct = q.seller?.sellerProfile?.commission || 0;
+          let receivedValue = 0;
+          let lastPaidDate: Date | null = null;
 
-      q.receivable.forEach((rec) => {
-        rec.installments.forEach((inst) => {
-          receivedValue += inst.paidAmount || 0;
-          if (
-            inst.paidDate &&
-            (!lastPaidDate || inst.paidDate > lastPaidDate)
-          ) {
-            lastPaidDate = inst.paidDate;
-          }
+          q.receivable.forEach((rec) => {
+            rec.installments.forEach((inst) => {
+              receivedValue += inst.paidAmount || 0;
+              if (
+                inst.paidDate &&
+                (!lastPaidDate || inst.paidDate > lastPaidDate)
+              ) {
+                lastPaidDate = inst.paidDate;
+              }
+            });
+          });
+
+          return {
+            id: q.id,
+            clientName: q.client?.name || 'Não informado',
+            clientId: q.client?.id || '',
+            vendedorId: q.seller?.id || '',
+            vendedorName: q.seller?.name || 'Não informado',
+            description: `${q.quotationNumber || ''} - ${q.description || 'Sem descrição'}`,
+            saleDate: q.approvedAt ? format(q.approvedAt, 'dd/MM/yyyy') : '',
+            receivedDate: lastPaidDate
+              ? format(lastPaidDate, 'dd/MM/yyyy')
+              : '',
+            saleValue: q.totalValue || 0,
+            receivedValue,
+            percentage: commissionPct,
+          };
         });
-      });
-
-      return {
-        id: q.id,
-        clientName: q.client?.name || 'Não informado',
-        clientId: q.client?.id || '',
-        vendedorId: q.seller?.id || '',
-        vendedorName: q.seller?.name || 'Não informado',
-        description: `${q.quotationNumber || ''} - ${q.description || 'Sem descrição'}`,
-        saleDate: q.approvedAt ? format(q.approvedAt, 'dd/MM/yyyy') : '',
-        receivedDate: lastPaidDate ? format(lastPaidDate, 'dd/MM/yyyy') : '',
-        saleValue: q.totalValue || 0,
-        receivedValue,
-        percentage: commissionPct,
-      };
-    });
 
     // Sort
     switch (filters.orderBy) {
@@ -4061,10 +4168,18 @@ export class ReportService {
         );
         break;
       case 'valueDesc':
-        records.sort((a, b) => b.saleValue - a.saleValue);
+        records.sort((a, b) =>
+          received
+            ? b.receivedValue - a.receivedValue
+            : b.saleValue - a.saleValue,
+        );
         break;
       case 'valueAsc':
-        records.sort((a, b) => a.saleValue - b.saleValue);
+        records.sort((a, b) =>
+          received
+            ? a.receivedValue - b.receivedValue
+            : a.saleValue - b.saleValue,
+        );
         break;
     }
 
