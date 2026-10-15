@@ -218,6 +218,19 @@ export async function reverseTransaction(
   return reversal;
 }
 
+/**
+ * O fim do expediente da empresa (o cadastro do expediente, padrão 18:00):
+ * as telas do caixa avisam quem está com caixa aberto antes do bloqueio do
+ * dia seguinte (FC-14, CX-3).
+ */
+export async function workdayEndOf(prisma: Tx, companyId: string) {
+  const calendar = await prisma.productionCalendar.findUnique({
+    where: { companyId },
+    select: { endTime: true },
+  });
+  return calendar?.endTime ?? '18:00';
+}
+
 export type PostInput = {
   bankAccountId: string;
   type: TransactionType;

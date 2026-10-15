@@ -11,6 +11,7 @@ import {
   CashActor,
   MissingCashDay,
   actorOfUser,
+  workdayEndOf,
   brDay,
   dayOf,
   dayRange,
@@ -406,6 +407,8 @@ export class CashDayService {
     });
     return {
       today,
+      // O aviso antes do bloqueio do dia seguinte (CX-3)
+      workdayEnd: await workdayEndOf(this.prisma, companyId),
       accounts: await Promise.all(
         accounts.map(async (account) => {
           const stuck = account.cashRegister.find(

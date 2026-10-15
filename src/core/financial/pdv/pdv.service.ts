@@ -16,6 +16,7 @@ import {
   dayOf,
   postMovement,
   toReais,
+  workdayEndOf,
 } from '../cash-control/cash-ledger';
 import {
   CashMethod,
@@ -329,6 +330,8 @@ export class PdvService {
       session: session ? this.sessionView(session, accounts) : null,
       sales: sales.map((sale) => this.saleView(sale, claimers)),
       openCashFronts: open.length,
+      // O aviso antes do bloqueio do dia seguinte (FC-14)
+      workdayEnd: await workdayEndOf(this.prisma, user.companyId),
       forgotten: forgotten.map((row) => this.sessionView(row, accounts)),
     };
   }
