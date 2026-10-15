@@ -11,6 +11,7 @@ import { UnitKind } from '../../assembly/engine/types';
 import { ProcessService } from '../../assembly/process.service';
 import { ProductSaleService } from '../../assembly/product-sale.service';
 import { PlanControlService } from '../../plan/plan-control.service';
+import { ProductionProjectService } from '../../production/production-project.service';
 import {
   SalesSettingsService,
   outsourcedPrice,
@@ -112,7 +113,23 @@ export class QuotationLinesService {
     private readonly productSale: ProductSaleService,
     private readonly settings: SalesSettingsService,
     private readonly planControl: PlanControlService,
+    private readonly production: ProductionProjectService,
   ) {}
+
+  /**
+   * Depois de mudar o item da O.S. aprovada (ELITE): as tarefas de produção
+   * acompanham o retrato novo. A falha fica no log e não desfaz a edição,
+   * que já foi gravada.
+   */
+  async afterItemChange(itemId: string) {
+    try {
+      await this.production.syncItem(itemId);
+    } catch (error) {
+      this.logger.error(
+        `Tarefas de produção do item ${itemId} não acompanharam a O.S.: ${error.message}`,
+      );
+    }
+  }
 
   /**
    * A O.S. aprovada muda a composição do item (opções, variação e linhas) e
@@ -180,6 +197,7 @@ export class QuotationLinesService {
       select: LINE_VIEW_SELECT,
     });
     const summary = await this.refreshItem(item.id);
+    await this.afterItemChange(item.id);
     return omit({ line, item: summary }, values);
   }
 
@@ -196,7 +214,9 @@ export class QuotationLinesService {
     });
     if (!line) throw new NotFoundException(LINE_NOT_FOUND);
     await this.prisma.quotationItemLine.delete({ where: { id: line.id } });
-    return omit({ item: await this.refreshItem(item.id) }, values);
+    const summary = await this.refreshItem(item.id);
+    await this.afterItemChange(item.id);
+    return omit({ item: summary }, values);
   }
 
   /* ------------------------------------------------------- uso do item */

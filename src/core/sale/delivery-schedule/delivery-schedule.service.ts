@@ -86,6 +86,9 @@ export class DeliveryScheduleService {
                     client: true,
                     payable: true,
                     receivable: true,
+                    // Com projeto no gerenciador (ELITE), as etapas espelham
+                    // as tarefas e não se editam aqui (D20)
+                    productionProject: { select: { id: true } },
                     seller: {
                       include: {
                         user: {
@@ -179,6 +182,7 @@ export class DeliveryScheduleService {
             scheduledDate: delivery.scheduledDate,
             addScheduleTime: delivery.addScheduleTime,
             pendingDescription: delivery.pendingDescription,
+            managedByProduction: !!delivery.order?.quotation?.productionProject,
 
             financial: {
               billed: delivery.order?.quotation

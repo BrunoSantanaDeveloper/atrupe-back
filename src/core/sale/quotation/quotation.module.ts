@@ -11,6 +11,7 @@ import { PlanControlModule } from '../../plan/plan-control.module';
 import { AssemblyModule } from '../../assembly/assembly.module';
 import { SalesSettingsModule } from '../sales-settings/sales-settings.module';
 import { PricingModule } from '../../pricing/pricing.module';
+import { ProductionModule } from '../../production/production.module';
 
 // Sub-services
 import { QuotationCrudService } from './quotation-crud.service';
@@ -39,6 +40,8 @@ import { ComposedItemService } from './composed-item.service';
     SalesSettingsModule,
     // Tributos da Precificação no resultado previsto (ORC-8)
     PricingModule,
+    // O projeto de produção nasce da aprovação (ELITE, Fase 6)
+    ProductionModule,
   ],
   controllers: [QuotationController],
   providers: [

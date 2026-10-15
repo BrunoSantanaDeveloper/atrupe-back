@@ -9,5 +9,7 @@ import { AuthModule } from '../../auth/auth.module';
   imports: [AuthModule, PrismaModule],
   controllers: [ProductionStageController],
   providers: [ProductionStageService],
+  // O gerenciador espelha as tarefas nas etapas da agenda (D20)
+  exports: [ProductionStageService],
 })
 export class ProductionStageModule {}

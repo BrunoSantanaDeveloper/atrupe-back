@@ -776,6 +776,9 @@ export class QuotationItemsService {
       // Atualizar o valor total do orçamento sem recalcular os itens
       await this.recalculateQuotationTotalValue(product.quotationId);
 
+      // As tarefas de produção acompanham a O.S. alterada (ELITE)
+      await this.lines.afterItemChange(productId);
+
       // O retrato com custo nunca volta na resposta (ORC-7)
       return { ...updatedQuotationProduct, linesRecalculated };
     } catch (error) {

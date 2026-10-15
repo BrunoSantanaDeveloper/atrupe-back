@@ -34,7 +34,9 @@ export const PERMISSION_CATALOG: Readonly<Record<string, readonly string[]>> = {
     'checkout',
   ],
   cost: ['base', 'pricing'],
-  production: ['production', 'delivery_schedule'],
+  // Corrigir e lançar tempo (GP-44) e a produtividade por pessoa (PCP-3),
+  // chaves novas do gerenciador (Fase 6)
+  production: ['production', 'delivery_schedule', 'time_entry', 'productivity'],
   stock: ['stock', 'invoice_entry'],
   reports: ['sector_result', 'sales', 'financial', 'dfc', 'commission'],
   register: ['client', 'supplier', 'credit_limit'],

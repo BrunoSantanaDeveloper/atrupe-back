@@ -110,6 +110,7 @@ describe('QuotationItemsService', () => {
     recalculate: jest.Mock;
     refreshItem: jest.Mock;
     approvedEditable: jest.Mock;
+    afterItemChange: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -118,6 +119,7 @@ describe('QuotationItemsService', () => {
     lines = {
       recalculate: jest.fn().mockResolvedValue(0),
       refreshItem: jest.fn().mockResolvedValue({}),
+      afterItemChange: jest.fn().mockResolvedValue(undefined),
       // Com estoque: a O.S. aprovada fica como foi vendida
       approvedEditable: jest.fn().mockResolvedValue(false),
     };

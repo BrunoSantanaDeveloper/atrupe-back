@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,6 +11,8 @@ import { PrismaService } from 'src/config/prisma/prisma.service';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 const STAGE_NOT_FOUND = 'Etapa de produção nao encontrada';
+const MANAGED_BY_PRODUCTION =
+  'As etapas desta venda seguem o gerenciador de produção';
 
 /**
  * A agenda de entrega da empresa: a companyId da agenda é opcional, então
@@ -56,6 +59,7 @@ export class ProductionStageService {
     companyId: string,
   ) {
     const productionStage = await this.findOne(id, companyId);
+    await this.assertNotManaged(productionStage.scheduleId);
     // O setor da etapa (stageId) precisa ser da empresa: antes, o de outra
     // empresa era gravado e aparecia, com nome e ícone, na agenda
     await assertBelongsToCompany(
@@ -144,8 +148,31 @@ export class ProductionStageService {
     return this.updateStatusIfAllStagesAreDone(scheduleId);
   }
 
+  /**
+   * No ELITE, a venda com projeto de produção tem as etapas espelhadas das
+   * tarefas do gerenciador, sem edição na agenda (D20, PO 14/10/2026).
+   */
+  private async assertNotManaged(scheduleId: string) {
+    const managed = await this.prisma.productionProject.count({
+      where: {
+        quotation: {
+          OR: [
+            { DeliverySchedule: { is: { id: scheduleId } } },
+            {
+              deliveryInfo: {
+                is: { deliverySchedule: { is: { id: scheduleId } } },
+              },
+            },
+          ],
+        },
+      },
+    });
+    if (managed) throw new ConflictException(MANAGED_BY_PRODUCTION);
+  }
+
   async remove(id: string, companyId: string) {
-    await this.findOne(id, companyId);
+    const stage = await this.findOne(id, companyId);
+    await this.assertNotManaged(stage.scheduleId);
     return this.prisma.productionStage.delete({ where: { id } });
   }
 }

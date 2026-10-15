@@ -40,7 +40,10 @@ describe('item montado na hora (ORC-11, Fase 4.5)', () => {
       assemblyOf: jest.fn().mockResolvedValue({ blocks: [] }),
     };
     sale = { draftComposition: jest.fn() };
-    lines = { approvedEditable: jest.fn().mockResolvedValue(false) };
+    lines = {
+      approvedEditable: jest.fn().mockResolvedValue(false),
+      afterItemChange: jest.fn().mockResolvedValue(undefined),
+    };
     service = new ComposedItemService(prisma, assemblies, sale, lines);
   });
 

@@ -53,3 +53,12 @@ function getProjectOffset(date: Date): string {
   const match = name?.match(/GMT([+-]\d{2}:\d{2})/);
   return match ? match[1] : '-03:00';
 }
+
+/**
+ * O instante de um dia (YYYY-MM-DD) e uma hora (HH:mm) no fuso da operação:
+ * a agenda da produção grava o horário de parede.
+ */
+export function projectInstant(date: string, time: string): Date {
+  const reference = new Date(`${date}T12:00:00.000Z`);
+  return new Date(`${date}T${time}:00.000${getProjectOffset(reference)}`);
+}

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Quotation, Order } from '@prisma/client';
+import { Quotation } from '@prisma/client';
 import { AddItemDto, CreateQuotationDto } from './dto/create-quotation.dto';
 import { UpdateItemDto, UpdateQuotationDto } from './dto/update-quotation.dto';
 import { DuplicateQuotationDto } from './dto/duplicate-quotation.dto';
@@ -11,6 +11,7 @@ import { QuotationCrudService } from './quotation-crud.service';
 import { QuotationItemsService } from './quotation-items.service';
 import {
   ApprovalReprocessResult,
+  ApprovedOrder,
   QuotationWorkflowService,
 } from './quotation-workflow.service';
 import { QuotationFinancialService } from './quotation-financial.service';
@@ -150,7 +151,7 @@ export class QuotationService {
     quotationId: string,
     userId?: string,
     approvedAt?: Date,
-  ): Promise<Order> {
+  ): Promise<ApprovedOrder> {
     return this.workflowService.approve(quotationId, userId, approvedAt);
   }
 

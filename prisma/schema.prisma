@@ -107,6 +107,12 @@ model Company {
   hiddenContactSources   CompanyHiddenContactSource[]
   saleSettings           SaleSettings?
   assetGroups            AssetGroup[]
+  productionFlows        ProductionFlow[]
+  productionManagers     ProductionManager[]
+  productionProfiles     ProductionCollaborator[]
+  productionTaskTypes    ProductionTaskType[]
+  productionVehicles     ProductionVehicle[]
+  productionProjects     ProductionProject[]
 
   @@map("companies")
 }
@@ -201,6 +207,7 @@ model CompanySector {
   productionStage             ProductionStage[]
   product                     Product[]
   role                        Role[]
+  productionManagers          ProductionManager[]
   company                     Company                    @relation("CompanyToCompanySector", fields: [companyId], references: [id])
 
   @@map("sectors")
@@ -421,40 +428,44 @@ model Supplier {
 }
 
 model Employee {
-  id              String              @id @default(uuid())
-  companyId       String
-  roleId          String?
-  sectorId        String?
-  userId          String?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime?           @updatedAt
-  isActive        Boolean             @default(true)
-  sallary         Float?
+  id                     String                  @id @default(uuid())
+  companyId              String
+  roleId                 String?
+  sectorId               String?
+  userId                 String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime?               @updatedAt
+  isActive               Boolean                 @default(true)
+  sallary                Float?
   /// Forma de contratação e salário base (centavos): geram os encargos
-  contract        EmploymentContract?
-  baseSalary      Int?
-  sellerProfileId String?
-  name            String?
-  avatarUrl       String?
-  cpf             String?
-  mobile          String?
-  phone           String?
-  rg              String?
-  signatureUrl    String?
-  legacyId        String?
-  isImported      Boolean             @default(false)
-  address         Address[]
-  client          Client[]
-  company         Company             @relation(fields: [companyId], references: [id])
-  role            Role?               @relation(fields: [roleId], references: [id])
-  sector          CompanySector?      @relation(fields: [sectorId], references: [id])
-  sellerProfile   SellerProfile?      @relation(fields: [sellerProfileId], references: [id])
-  user            User?               @relation(fields: [userId], references: [id])
-  quotation       Quotation[]
-  PayrollSetup    PayrollSetup[]
-  payroll         Payroll[]
-  payables        Payable[]
-  employeeHistory EmployeeHistory[]
+  contract               EmploymentContract?
+  baseSalary             Int?
+  sellerProfileId        String?
+  name                   String?
+  avatarUrl              String?
+  cpf                    String?
+  mobile                 String?
+  phone                  String?
+  rg                     String?
+  signatureUrl           String?
+  legacyId               String?
+  isImported             Boolean                 @default(false)
+  address                Address[]
+  client                 Client[]
+  company                Company                 @relation(fields: [companyId], references: [id])
+  role                   Role?                   @relation(fields: [roleId], references: [id])
+  sector                 CompanySector?          @relation(fields: [sectorId], references: [id])
+  sellerProfile          SellerProfile?          @relation(fields: [sellerProfileId], references: [id])
+  user                   User?                   @relation(fields: [userId], references: [id])
+  quotation              Quotation[]
+  PayrollSetup           PayrollSetup[]
+  payroll                Payroll[]
+  payables               Payable[]
+  employeeHistory        EmployeeHistory[]
+  productionProfile      ProductionCollaborator?
+  productionManagerUsers ProductionManagerUser[]
+  productionTimeEntries  ProductionTimeEntry[]
+  productionTasks        ProductionTask[]        @relation("ProductionTaskAssignee")
 
   @@unique([companyId, legacyId])
   @@map("employees")
@@ -1257,52 +1268,54 @@ model QuotationTag {
 }
 
 model Quotation {
-  id               String             @id @default(uuid())
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime?          @updatedAt
-  description      String?
-  isActive         Boolean            @default(true)
-  sellerId         String
-  seriesId         String?
-  clientId         String?
-  companyId        String
-  status           QuotationStatus    @default(OPEN)
-  totalValue       Float              @default(0)
-  dueDate          DateTime?
-  approvedAt       DateTime?
-  contactSourceId  String?
-  tagId            String?
-  quickSale        Boolean            @default(false)
-  isImported       Boolean            @default(false)
-  quotationNumber  Int?
-  legacyId         String?
-  finishedAt       DateTime?
-  reasonId         String?
-  subCompanyId     String?
-  contactId        String?
-  deliveryInfo     DeliveryInfo?
-  DeliverySchedule DeliverySchedule?
-  order            Order?
-  payable          Payable[]
-  quotationPayment QuotationPayment?
-  quotationProduct QuotationProduct[]
-  client           Client?            @relation(fields: [clientId], references: [id])
-  company          Company            @relation("MainCompany", fields: [companyId], references: [id])
-  contact          Contact?           @relation(fields: [contactId], references: [id])
-  contactSource    ContactSource?     @relation(fields: [contactSourceId], references: [id])
-  reasons          Reasons?           @relation(fields: [reasonId], references: [id])
-  seller           Employee           @relation(fields: [sellerId], references: [id])
-  series           SaleSeries?        @relation(fields: [seriesId], references: [id])
-  subCompany       Company?           @relation("FiscalSubCompany", fields: [subCompanyId], references: [id])
-  tag              QuotationTag?      @relation(fields: [tagId], references: [id])
-  receivable       Receivable[]
-  products         Product[]          @relation("QuotationToProduct")
-  history          QuotationHistory[]
-  nfes             Nfe[]
-  nfses            Nfse[]
-  nfces            Nfce[]
+  id                String             @id @default(uuid())
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime?          @updatedAt
+  description       String?
+  isActive          Boolean            @default(true)
+  sellerId          String
+  seriesId          String?
+  clientId          String?
+  companyId         String
+  status            QuotationStatus    @default(OPEN)
+  totalValue        Float              @default(0)
+  dueDate           DateTime?
+  approvedAt        DateTime?
+  contactSourceId   String?
+  tagId             String?
+  quickSale         Boolean            @default(false)
+  isImported        Boolean            @default(false)
+  quotationNumber   Int?
+  legacyId          String?
+  finishedAt        DateTime?
+  reasonId          String?
+  subCompanyId      String?
+  contactId         String?
+  deliveryInfo      DeliveryInfo?
+  DeliverySchedule  DeliverySchedule?
+  order             Order?
+  payable           Payable[]
+  quotationPayment  QuotationPayment?
+  quotationProduct  QuotationProduct[]
+  client            Client?            @relation(fields: [clientId], references: [id])
+  company           Company            @relation("MainCompany", fields: [companyId], references: [id])
+  contact           Contact?           @relation(fields: [contactId], references: [id])
+  contactSource     ContactSource?     @relation(fields: [contactSourceId], references: [id])
+  reasons           Reasons?           @relation(fields: [reasonId], references: [id])
+  seller            Employee           @relation(fields: [sellerId], references: [id])
+  series            SaleSeries?        @relation(fields: [seriesId], references: [id])
+  subCompany        Company?           @relation("FiscalSubCompany", fields: [subCompanyId], references: [id])
+  tag               QuotationTag?      @relation(fields: [tagId], references: [id])
+  receivable        Receivable[]
+  products          Product[]          @relation("QuotationToProduct")
+  history           QuotationHistory[]
+  nfes              Nfe[]
+  nfses             Nfse[]
+  nfces             Nfce[]
   /// Os rascunhos dos itens montados na hora (ORC-11)
-  drafts           QuotationDraft[]
+  drafts            QuotationDraft[]
+  /// O projeto de produção da venda aprovada (ELITE)
+  productionProject ProductionProject?
 
   @@unique([companyId, legacyId])
   @@index([id, companyId])
@@ -4090,4 +4103,373 @@ model FiscalSecretRekeyJob {
 
   @@unique([oldKeyId, newKeyId])
   @@map("fiscal_secret_rekey_jobs")
+}
+
+/// Fluxo de produção (área 9 §4.6): agrupa os gerenciadores. Hoje um só
+/// por empresa, "Comunicação Visual", criado na primeira leitura.
+model ProductionFlow {
+  id        String              @id @default(uuid())
+  companyId String
+  name      String
+  createdAt DateTime            @default(now())
+  company   Company             @relation(fields: [companyId], references: [id])
+  managers  ProductionManager[]
+
+  @@unique([companyId, name])
+  @@map("production_flows")
+}
+
+/// Gerenciador de produção (GP-15, GP-43): um setor de trabalho, com o
+/// jeito de apontar o tempo e o intervalo entre tarefas na mesma máquina.
+model ProductionManager {
+  id              String                  @id @default(uuid())
+  companyId       String
+  name            String
+  sectorId        String
+  flowId          String
+  timeMode        ProductionTimeMode      @default(PLAY_STOP)
+  /// Minutos perdidos entre uma tarefa e a seguinte na mesma máquina (GP-20)
+  intervalMinutes Int                     @default(0)
+  isActive        Boolean                 @default(true)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  company         Company                 @relation(fields: [companyId], references: [id])
+  sector          CompanySector           @relation(fields: [sectorId], references: [id])
+  flow            ProductionFlow          @relation(fields: [flowId], references: [id])
+  users           ProductionManagerUser[]
+  steps           ProductionTaskStep[]
+
+  @@index([companyId])
+  @@map("production_managers")
+}
+
+/// O acesso de um colaborador ao gerenciador (GP-11): a tudo, ou só ao que
+/// está atribuído a ele.
+model ProductionManagerUser {
+  id           String            @id @default(uuid())
+  managerId    String
+  employeeId   String
+  onlyAssigned Boolean           @default(false)
+  manager      ProductionManager @relation(fields: [managerId], references: [id], onDelete: Cascade)
+  employee     Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([managerId, employeeId])
+  @@index([employeeId])
+  @@map("production_manager_users")
+}
+
+/// O perfil do colaborador na produção (GP-11). Sem linha, é operador.
+model ProductionCollaborator {
+  id         String         @id @default(uuid())
+  companyId  String
+  employeeId String         @unique
+  role       ProductionRole @default(OPERATOR)
+  updatedAt  DateTime       @updatedAt
+  company    Company        @relation(fields: [companyId], references: [id])
+  employee   Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("production_collaborators")
+}
+
+/// Tipo de tarefa (GP-13, GP-14): o nome casa com o tipo de tarefa da etapa
+/// da composição (IP-23); as etapas dizem por quais gerenciadores a tarefa
+/// passa. Nunca é excluído, só inativado.
+model ProductionTaskType {
+  id          String                @id @default(uuid())
+  companyId   String
+  name        String
+  /// O nome em minúsculas, sem espaços nas pontas: a chave única da empresa
+  nameKey     String
+  release     ProductionReleaseRule @default(AFTER_BASE)
+  timeControl Boolean               @default(true)
+  isActive    Boolean               @default(true)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  company     Company               @relation(fields: [companyId], references: [id])
+  steps       ProductionTaskStep[]
+  tasks       ProductionTask[]
+
+  @@unique([companyId, nameKey])
+  @@map("production_task_types")
+}
+
+/// Etapa do tipo de tarefa, num gerenciador. A tarefa aponta para a etapa
+/// em que está (não para a posição): reordenar não a muda de lugar.
+model ProductionTaskStep {
+  id         String             @id @default(uuid())
+  taskTypeId String
+  name       String
+  managerId  String
+  position   Int                @default(0)
+  createdAt  DateTime           @default(now())
+  taskType   ProductionTaskType @relation(fields: [taskTypeId], references: [id], onDelete: Cascade)
+  manager    ProductionManager  @relation(fields: [managerId], references: [id])
+  tasks      ProductionTask[]
+
+  @@index([taskTypeId])
+  @@index([managerId])
+  @@map("production_task_steps")
+}
+
+/// Veículo da frota (VS-7): a instalação e a entrega ocupam o veículo.
+model ProductionVehicle {
+  id        String           @id @default(uuid())
+  companyId String
+  name      String
+  plate     String           @default("")
+  isActive  Boolean          @default(true)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  company   Company          @relation(fields: [companyId], references: [id])
+  tasks     ProductionTask[]
+
+  @@index([companyId])
+  @@map("production_vehicles")
+}
+
+/// O projeto de produção da venda aprovada (PCP-4): um por venda. Nome do
+/// cliente e do vendedor copiados na criação, como a ficha imprime.
+model ProductionProject {
+  id           String                     @id @default(uuid())
+  companyId    String
+  quotationId  String                     @unique
+  number       String
+  clientName   String                     @default("")
+  sellerName   String                     @default("")
+  approvedAt   DateTime
+  deliveryType String                     @default("")
+  /// O primeiro prazo prometido e o atual (GP-8)
+  firstDue     DateTime                   @db.Date
+  due          DateTime                   @db.Date
+  status       ProductionProjectStatus    @default(STANDBY)
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+  company      Company                    @relation(fields: [companyId], references: [id])
+  quotation    Quotation                  @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  tasks        ProductionTask[]
+  history      ProductionProjectHistory[]
+
+  @@index([companyId, status])
+  @@map("production_projects")
+}
+
+model ProductionProjectHistory {
+  id        String            @id @default(uuid())
+  projectId String
+  at        DateTime          @default(now())
+  byUserId  String?
+  byName    String
+  text      String
+  /// O que mudou, quando há (a data de entrega: de e para)
+  data      Json?
+  project   ProductionProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("production_project_history")
+}
+
+/// A tarefa: uma etapa da composição do item vendido (GP-16, FL-10), com o
+/// consumo resolvido na medida da venda, sem custo nem preço (ORC-7).
+model ProductionTask {
+  id                 String                     @id @default(uuid())
+  companyId          String
+  projectId          String
+  /// Código curto, único no projeto, para achar a tarefa no chão de fábrica
+  code               String
+  quotationProductId String?
+  /// A etapa de origem no item (o bloco do retrato, ou line:<id> da linha
+  /// acrescentada): a O.S. alterada acompanha a tarefa por ela
+  stageKey           String                     @default("")
+  itemName           String
+  itemImage          String?
+  stageName          String
+  /// O setor da etapa na composição (a produtividade agrupa por ele)
+  sectorId           String?
+  sectorName         String                     @default("")
+  taskTypeId         String
+  /// A etapa do tipo em que a tarefa está; nula se a etapa saiu do tipo
+  currentStepId      String?
+  status             ProductionTaskStatus       @default(NOT_STARTED)
+  /// Tempo vendido (preparo + mão de obra das linhas) e o preparo, em minutos
+  estimatedMinutes   Int                        @default(0)
+  setupMinutes       Int                        @default(0)
+  machine            String?
+  /// A tarefa da base desta etapa, e as tarefas de que ela depende de fato
+  baseTaskId         String?
+  dependsOn          String[]
+  quantity           Int                        @default(1)
+  measureText        String                     @default("")
+  /// Os campos da venda com nome ("Nº de letras: 6")
+  fields             String[]
+  /// [{ kind, resource, quantity, unit }]
+  consumption        Json                       @default("[]")
+  note               String?
+  /// Agenda: dia, início HH:mm e minutos (GP-35)
+  scheduleDate       DateTime?                  @db.Date
+  scheduleStart      String?
+  scheduleMinutes    Int?
+  assigneeId         String?
+  pendencyText       String?
+  pendencyAt         DateTime?
+  pendencyBy         String?
+  /// Liberou a próxima etapa antes de concluir: { at, by, quantity, of }
+  releasedNext       Json?
+  completedBy        String?
+  completedAt        DateTime?
+  vehicleId          String?
+  km                 Float?
+  position           Int                        @default(0)
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  project            ProductionProject          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskType           ProductionTaskType         @relation(fields: [taskTypeId], references: [id])
+  currentStep        ProductionTaskStep?        @relation(fields: [currentStepId], references: [id], onDelete: SetNull)
+  assignee           Employee?                  @relation("ProductionTaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  vehicle            ProductionVehicle?         @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  timeEntries        ProductionTimeEntry[]
+  corrections        ProductionTimeCorrection[]
+  attachments        ProductionAttachment[]
+  history            ProductionTaskHistory[]
+
+  @@unique([projectId, code])
+  @@index([companyId, status])
+  @@index([currentStepId])
+  @@map("production_tasks")
+}
+
+/// Um trecho de tempo de uma pessoa numa tarefa (GP-32, GP-43). Aberto
+/// enquanto a pessoa trabalha: no máximo um aberto por pessoa (índice
+/// parcial na migration). O tempo fica em segundos inteiros.
+model ProductionTimeEntry {
+  id         String               @id @default(uuid())
+  companyId  String
+  taskId     String
+  employeeId String
+  start      DateTime
+  end        DateTime?
+  seconds    Int                  @default(0)
+  source     ProductionTimeSource @default(CLOCK)
+  note       String?
+  createdAt  DateTime             @default(now())
+  task       ProductionTask       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  employee   Employee             @relation(fields: [employeeId], references: [id])
+
+  @@index([taskId])
+  @@index([employeeId, end])
+  @@index([companyId, end])
+  @@map("production_time_entries")
+}
+
+/// A correção ou o lançamento de um trecho pelo gerente, com o antes e o
+/// depois (GP-44). No lançamento, before é nulo.
+model ProductionTimeCorrection {
+  id       String         @id @default(uuid())
+  taskId   String
+  entryId  String
+  at       DateTime       @default(now())
+  byUserId String?
+  byName   String
+  /// { collaboratorId, minutes }
+  before   Json?
+  after    Json
+  note     String
+  task     ProductionTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("production_time_corrections")
+}
+
+model ProductionTaskHistory {
+  id       String         @id @default(uuid())
+  taskId   String
+  at       DateTime       @default(now())
+  byUserId String?
+  byName   String
+  text     String
+  /// Quem foi afetado (a correção de tempo aparece para eles, GP-44)
+  affects  String[]
+  task     ProductionTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("production_task_history")
+}
+
+/// O anexo da etapa, com versões; uma delas é a válida (GP-25, GP-26).
+model ProductionAttachment {
+  id        String                        @id @default(uuid())
+  taskId    String
+  name      String
+  kind      ProductionAttachmentKind      @default(OTHER)
+  createdAt DateTime                      @default(now())
+  task      ProductionTask                @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  versions  ProductionAttachmentVersion[]
+
+  @@index([taskId])
+  @@map("production_attachments")
+}
+
+/// O arquivo fica no armazenamento de objetos, privado; a tela recebe um
+/// link assinado de 15 minutos a cada leitura (GP-27).
+model ProductionAttachmentVersion {
+  id           String               @id @default(uuid())
+  attachmentId String
+  version      Int
+  fileName     String
+  size         Int
+  mime         String
+  storageKey   String
+  uploadedById String?
+  uploadedBy   String
+  uploadedAt   DateTime             @default(now())
+  current      Boolean              @default(false)
+  attachment   ProductionAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+
+  @@unique([attachmentId, version])
+  @@map("production_attachment_versions")
+}
+
+enum ProductionTimeMode {
+  PLAY_STOP
+  DRAG_DROP
+}
+
+enum ProductionReleaseRule {
+  AFTER_BASE
+  WITH_BASE
+  DONE
+}
+
+enum ProductionRole {
+  OPERATOR
+  MANAGER
+}
+
+enum ProductionProjectStatus {
+  STANDBY
+  PRODUCTION
+  DONE
+  CANCELED
+}
+
+enum ProductionTaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  PAUSED
+  PENDING
+  DONE
+  CANCELED
+}
+
+enum ProductionTimeSource {
+  CLOCK
+  DRAG
+  CORRECTION
+}
+
+enum ProductionAttachmentKind {
+  ART
+  CUT
+  PHOTO
+  OTHER
 }

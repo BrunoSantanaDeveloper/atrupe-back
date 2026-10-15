@@ -11,6 +11,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.service';
 import { PlanControlService } from '../../plan/plan-control.service';
 import { CreditCheckService } from './credit-check.service';
+import { ProductionProjectService } from '../../production/production-project.service';
 import {
   NotFoundException,
   BadRequestException,
@@ -127,6 +128,9 @@ const createMockPrismaService = () => ({
   quotationItemLine: {
     findMany: jest.fn().mockResolvedValue([]),
   },
+  productionProject: {
+    count: jest.fn().mockResolvedValue(0),
+  },
   bankAccount: {
     findFirst: jest.fn().mockResolvedValue(null),
   },
@@ -152,6 +156,11 @@ const mockProductSale = {
 
 // O crédito tem teste próprio (credit-check.service.spec.ts)
 const mockCredit = { assertApproval: jest.fn().mockResolvedValue(undefined) };
+// O projeto de produção (ELITE): fora do ELITE, nada nasce
+const mockProduction = {
+  ensureFromQuotation: jest.fn().mockResolvedValue(undefined),
+  summaryOf: jest.fn().mockResolvedValue(null),
+};
 
 describe('QuotationWorkflowService', () => {
   let service: QuotationWorkflowService;
@@ -182,6 +191,7 @@ describe('QuotationWorkflowService', () => {
         },
         { provide: ProductSaleService, useValue: mockProductSale },
         { provide: CreditCheckService, useValue: mockCredit },
+        { provide: ProductionProjectService, useValue: mockProduction },
       ],
     }).compile();
 
@@ -298,6 +308,47 @@ describe('QuotationWorkflowService', () => {
           createdBy: mockUserId,
         }),
       });
+    });
+
+    it('o projeto de produção nasce depois do retrato e volta na resposta (ELITE)', async () => {
+      const calls: string[] = [];
+      prisma.quotationProduct.findMany.mockImplementation(async () => {
+        calls.push('snapshots');
+        return [];
+      });
+      mockProduction.ensureFromQuotation.mockImplementationOnce(async () => {
+        calls.push('productionProject');
+      });
+      mockProduction.summaryOf.mockResolvedValueOnce({
+        id: 'pj-1',
+        tasks: 3,
+        status: 'STANDBY',
+      });
+
+      const result = await service.approve(mockQuotationId, mockUserId);
+
+      expect(mockProduction.ensureFromQuotation).toHaveBeenCalledWith(
+        mockQuotationId,
+      );
+      expect(calls.indexOf('productionProject')).toBeGreaterThan(
+        calls.indexOf('snapshots'),
+      );
+      expect(result.productionProject).toEqual({
+        id: 'pj-1',
+        tasks: 3,
+        status: 'STANDBY',
+      });
+    });
+
+    it('falha ao criar o projeto não desfaz a venda aprovada', async () => {
+      mockProduction.ensureFromQuotation.mockRejectedValueOnce(
+        new Error('Nenhum gerenciador de produção ativo'),
+      );
+
+      const result = await service.approve(mockQuotationId, mockUserId);
+
+      expect(result.id).toBe(mockOrderId);
+      expect(result.productionProject).toBeNull();
     });
 
     it('falha no financeiro desfaz a aprovação inteira: nada fica APPROVED', async () => {

@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { ProductionStageService } from './production-stage.service';
 
 describe('ProductionStageService: etapas das agendas da empresa', () => {
@@ -27,6 +27,7 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
         update: jest.fn(),
       },
       companySector: { count: jest.fn().mockResolvedValue(1) },
+      productionProject: { count: jest.fn().mockResolvedValue(0) },
     };
     service = new ProductionStageService(prisma);
   });
@@ -100,4 +101,31 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
     );
     expect(prisma.deliverySchedule.update).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [
+      'alterar',
+      (s: ProductionStageService) =>
+        s.update('st-1', { status: 'DONE' } as any, 'c-1'),
+    ],
+    ['apagar', (s: ProductionStageService) => s.remove('st-1', 'c-1')],
+  ])(
+    '%s a etapa espelhada do gerenciador (ELITE) responde 409',
+    async (_label, act) => {
+      prisma.productionStage.findFirst.mockResolvedValue({
+        id: 'st-1',
+        status: 'PENDING',
+        scheduleId: 'ag-1',
+      });
+      prisma.productionProject.count.mockResolvedValue(1);
+
+      await expect(act(service)).rejects.toThrow(
+        new ConflictException(
+          'As etapas desta venda seguem o gerenciador de produção',
+        ),
+      );
+      expect(prisma.productionStage.update).not.toHaveBeenCalled();
+      expect(prisma.productionStage.delete).not.toHaveBeenCalled();
+    },
+  );
 });

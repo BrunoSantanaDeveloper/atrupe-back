@@ -251,6 +251,8 @@ export class ComposedItemService {
       await this.lines.refreshItem(itemId);
     }
     await recalculateQuotationTotal(this.prisma, item.quotationId);
+    // As tarefas de produção acompanham a O.S. alterada (ELITE)
+    await this.lines.afterItemChange(itemId);
     return { ...(await this.itemView(itemId)), attention: computed.attention };
   }
 

@@ -28,6 +28,8 @@ import {
   EngineBlock,
   EngineLine,
   Measure,
+  QuoteField,
+  SaleRules,
 } from './engine/types';
 import {
   BLOCK_NOT_FOUND,
@@ -51,6 +53,50 @@ const stageOf = (block: EngineBlock) => block.localName || block.name;
 const rulesOf = (block: EngineBlock) => block.localRules ?? block.originalRules;
 const hasTimeLine = (block: EngineBlock) =>
   block.lines.some((line) => TIME_FORMULAS.includes(line.formula));
+
+/**
+ * Os campos da venda que a etapa lê, com o valor vendido ("Nº de letras:
+ * 6"): o tempo informado, o campo extra legado da etapa e os campos do
+ * produto lidos pelas linhas dela.
+ */
+const stageFieldTexts = (
+  block: { rules: SaleRules; lines: { fieldName?: string }[] },
+  fields: QuoteField[],
+) => {
+  const rules = block.rules;
+  const fieldNames = [
+    ...new Set(
+      block.lines
+        .filter((line) => line.fieldName)
+        .map((line) => line.fieldName!),
+    ),
+  ];
+  return [
+    rules.timeField
+      ? `tempo ${minutesText(rules.timeFieldDefault || 0)}`
+      : null,
+    rules.extraField === 'NONE' || fieldNames.length
+      ? null
+      : `${rules.extraFieldName}: ${numberText(rules.extraFieldDefault)}`,
+    ...fieldNames.map((name) => {
+      const field = fields.find(
+        (item) => normalizeName(item.name) === normalizeName(name),
+      );
+      return `${name}: ${numberText(field?.defaultValue ?? 0)}`;
+    }),
+  ].filter((text): text is string => !!text);
+};
+
+/** O tipo de tarefa da etapa (IP-23): o do processo, ou o próprio. */
+const taskTypeOf = (row?: {
+  type: string;
+  taskType: string;
+  localTaskType: string | null;
+  process?: { taskType: string } | null;
+}) =>
+  row?.type === 'PROCESS' && row.process
+    ? (row.localTaskType ?? row.process.taskType)
+    : (row?.taskType ?? '');
 
 /**
  * O produto na venda (IP-36): o formulário do vendedor e o relatório da
@@ -254,30 +300,7 @@ export class ProductSaleService {
       variation: variation?.name ?? null,
       blocks: computed.blocks.map((block) => {
         const row = rows.get(block.id);
-        const rules = block.rules;
-        const fieldNames = [
-          ...new Set(
-            block.lines
-              .filter((line) => line.fieldName)
-              .map((line) => line.fieldName!),
-          ),
-        ];
-        const extra = [
-          rules.timeField
-            ? `tempo ${minutesText(rules.timeFieldDefault || 0)}`
-            : null,
-          rules.extraField === 'NONE' || fieldNames.length
-            ? null
-            : `${rules.extraFieldName}: ${numberText(rules.extraFieldDefault)}`,
-          ...fieldNames.map((name) => {
-            const field = fields.find(
-              (item) => normalizeName(item.name) === normalizeName(name),
-            );
-            return `${name}: ${numberText(field?.defaultValue ?? 0)}`;
-          }),
-        ]
-          .filter(Boolean)
-          .join(' · ');
+        const extra = stageFieldTexts(block, fields).join(' · ');
         const base = computed.blocks.find(
           (item) => item.id === block.baseBlockId,
         );
@@ -285,10 +308,7 @@ export class ProductSaleService {
           id: block.id,
           name: stageOf(block),
           sector: block.sector,
-          taskType:
-            row?.type === 'PROCESS' && row.process
-              ? (row.localTaskType ?? row.process.taskType)
-              : (row?.taskType ?? ''),
+          taskType: taskTypeOf(row),
           role: block.dependsOn.length ? 'FINISHING' : 'BASE',
           baseName: base ? stageOf(base) : null,
           measure: measureMm(block.measure),
@@ -376,6 +396,7 @@ export class ProductSaleService {
       ),
     );
     this.applyChoices(engine, choices);
+    const rows = new Map(assembly!.blocks.map((block) => [block.id, block]));
     const computed = computeAssembly(
       engine,
       {
@@ -469,10 +490,22 @@ export class ProductSaleService {
       const listCost = stageLines
         .filter((line) => line.entries)
         .reduce((sum, line) => sum + (line.cost ?? 0), 0);
+      const row = rows.get(block.id);
       return {
         blockId: block.id,
         name: stageOf(block),
         sector: block.sector,
+        // O que o projeto de produção lê (Fase 6): setor, tipo de tarefa,
+        // o fluxo dentro do item, os campos vendidos e a observação
+        sectorId: row ? (blockSector(row)?.id ?? null) : null,
+        taskType: taskTypeOf(row),
+        dependsOn: block.dependsOn,
+        baseBlockId: block.baseBlockId,
+        fields: stageFieldTexts(block, computed.fields),
+        note:
+          choices.notes
+            ?.find((item) => item.blockId === block.id)
+            ?.text.trim() || null,
         setupMinutes: block.setupMinutes + block.partSetupMinutes,
         setupCost: block.setupCost,
         cost: block.cost + listCost,
@@ -553,17 +586,19 @@ export class ProductSaleService {
       },
       engineVariation(undefined),
     );
-    const sectorIds = new Map(
-      assembly.blocks.map((block) => [
-        block.id,
-        blockSector(block)?.id ?? null,
-      ]),
-    );
+    const rows = new Map(assembly.blocks.map((block) => [block.id, block]));
     const stages = computed.blocks.map((block) => ({
       blockId: block.id,
       name: stageOf(block),
       sector: block.sector,
-      sectorId: sectorIds.get(block.id) ?? null,
+      sectorId: rows.has(block.id)
+        ? (blockSector(rows.get(block.id)!)?.id ?? null)
+        : null,
+      taskType: taskTypeOf(rows.get(block.id)),
+      dependsOn: block.dependsOn,
+      baseBlockId: block.baseBlockId,
+      fields: stageFieldTexts(block, computed.fields),
+      note: null,
       setupMinutes: block.setupMinutes + block.partSetupMinutes,
       setupCost: block.setupCost,
       cost: block.cost,

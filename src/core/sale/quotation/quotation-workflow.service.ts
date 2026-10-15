@@ -29,6 +29,7 @@ import { companyWithoutKeys } from 'src/shared/company/company-keys';
 import { ProductSaleService } from '../../assembly/product-sale.service';
 import { SaleChoicesDto } from '../../assembly/dto/sale.dto';
 import { CreditCheckService } from './credit-check.service';
+import { ProductionProjectService } from '../../production/production-project.service';
 import { snapshotStages } from './item-origin';
 
 export const ALREADY_APPROVED_MESSAGE = 'Este orçamento já está aprovado.';
@@ -98,6 +99,11 @@ type ApprovalQuotation = Prisma.QuotationGetPayload<{
   include: typeof APPROVAL_INCLUDE;
 }>;
 
+/** A O.S. da aprovação, com o projeto de produção que nasceu (ou nulo). */
+export type ApprovedOrder = Order & {
+  productionProject: { id: string; tasks: number; status: string } | null;
+};
+
 /** Quanto existe de cada passo da aprovação; o reprocesso compara antes e depois. */
 type ApprovalState = {
   order: number;
@@ -107,6 +113,7 @@ type ApprovalState = {
   productionStages: number;
   snapshots: number;
   outsourcedPayables: number;
+  productionProject: number;
 };
 
 export type ApprovalReprocessResult = {
@@ -132,6 +139,7 @@ export class QuotationWorkflowService {
     private planControl: PlanControlService,
     private productSale: ProductSaleService,
     private credit: CreditCheckService,
+    private production: ProductionProjectService,
   ) {}
 
   /**
@@ -436,7 +444,7 @@ export class QuotationWorkflowService {
     userId?: string,
     approvedAt?: Date,
     options: { creditCheck?: boolean } = {},
-  ): Promise<Order> {
+  ): Promise<ApprovedOrder> {
     const current = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
       select: {
@@ -596,7 +604,10 @@ export class QuotationWorkflowService {
       });
     }
 
-    return order;
+    // O projeto de produção que nasceu (ELITE), ou nulo
+    return Object.assign(order, {
+      productionProject: await this.production.summaryOf(quotationId),
+    });
   }
 
   /**
@@ -706,6 +717,7 @@ export class QuotationWorkflowService {
       productionStages,
       snapshots,
       outsourcedPayables,
+      productionProject,
     ] = await Promise.all([
       this.prisma.order.count({ where: { quotationId } }),
       this.prisma.deliverySchedule.count({ where: { quotationId } }),
@@ -722,6 +734,7 @@ export class QuotationWorkflowService {
       this.prisma.payable.count({
         where: { quotationId, financialType: OUTSOURCED },
       }),
+      this.prisma.productionProject.count({ where: { quotationId } }),
     ]);
     return {
       order,
@@ -731,6 +744,7 @@ export class QuotationWorkflowService {
       productionStages,
       snapshots,
       outsourcedPayables,
+      productionProject,
     };
   }
 
@@ -745,6 +759,11 @@ export class QuotationWorkflowService {
       ['productionStages', () => this.ensureProductionStages(quotationId)],
       ['snapshots', () => this.ensureSnapshots(quotationId)],
       ['outsourcedPayables', () => this.ensureOutsourcedPayables(quotationId)],
+      // Depois do retrato: as tarefas nascem dele (ELITE, Fase 6)
+      [
+        'productionProject',
+        () => this.production.ensureFromQuotation(quotationId),
+      ],
     ];
     const failed: ApprovalReprocessResult['failed'] = [];
     for (const [step, run] of steps) {

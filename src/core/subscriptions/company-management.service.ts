@@ -858,6 +858,16 @@ export class CompanyManagementService {
           await tx.digitalCertificate.deleteMany({ where: { companyId } });
 
           // 2. Produção e Entregas
+          // O gerenciador de produção (ELITE): projetos com as tarefas,
+          // depois o cadastro, que as tarefas e as etapas referenciam
+          await tx.productionProject.deleteMany({ where: { companyId } });
+          await tx.productionTaskType.deleteMany({ where: { companyId } });
+          await tx.productionManager.deleteMany({ where: { companyId } });
+          await tx.productionFlow.deleteMany({ where: { companyId } });
+          await tx.productionVehicle.deleteMany({ where: { companyId } });
+          await tx.productionCollaborator.deleteMany({
+            where: { companyId },
+          });
           await tx.productionStage.deleteMany({
             where: { schedule: { companyId } },
           });

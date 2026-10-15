@@ -79,6 +79,7 @@ describe('QuotationLinesService', () => {
       productSale as any,
       settings as any,
       plan as any,
+      { syncItem: jest.fn().mockResolvedValue(undefined) } as any,
     );
   });
 
