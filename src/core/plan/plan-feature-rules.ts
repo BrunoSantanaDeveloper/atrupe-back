@@ -257,14 +257,13 @@ export const FEATURE_ENFORCEMENT: Record<
       'Telas em implantação; o servidor passa a exigir quando a API da produtividade nascer (módulo 3).',
   },
   stock_control: {
-    level: 'tela',
-    detail:
-      'Telas em implantação; o servidor passa a exigir quando a API do estoque nascer (módulo 5).',
+    level: 'api',
+    detail: 'Saldo e movimentos do estoque, com o custo médio (Fase 7.5).',
   },
   invoice_entry: {
-    level: 'tela',
+    level: 'api',
     detail:
-      'Telas em implantação; o servidor passa a exigir quando a API da entrada de nota nascer (módulo 5).',
+      'Entrada de nota pelo XML da NF-e, conciliação com o de-para do fornecedor e entrada no estoque (Fase 7.5).',
   },
   credit_limit_enforcement: {
     level: 'api',

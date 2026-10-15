@@ -117,6 +117,8 @@ model Company {
   quickSaleSettings      QuickSaleSettings?
   cashFronts             CashFront[]
   pendingSales           PendingSale[]
+  stockItems             StockItem[]
+  inboundInvoices        InboundInvoice[]
 
   @@map("companies")
 }
@@ -1787,6 +1789,9 @@ model Material {
   /// módulo Nota Fiscal: o que faltar sai do padrão do emissor (PO, 14/10)
   fiscal             Json?
   quotationItems     QuotationProduct[]
+  /// O saldo no estoque e o de-para dos fornecedores (FULL)
+  stockItems         StockItem[]
+  supplierLinks      SupplierItemLink[]
 
   @@unique([companyId, number])
   @@index([companyId, active])
@@ -1810,6 +1815,7 @@ model MaterialVariation {
   updatedAt      DateTime           @updatedAt
   material       Material           @relation(fields: [materialId], references: [id], onDelete: Cascade)
   quotationItems QuotationProduct[]
+  stockItems     StockItem[]
 
   @@unique([materialId, matchKey])
   @@map("material_variations")
@@ -4709,4 +4715,134 @@ enum CashSessionMovementKind {
 enum PendingSaleKind {
   QUICK
   QUOTATION
+}
+
+/// O saldo do estoque por material e variação (ES-2, FULL). Quantidade na
+/// unidade do material; custos em centavos por unidade.
+model StockItem {
+  id            String             @id @default(uuid())
+  companyId     String
+  materialId    String
+  variationId   String?
+  /// material|variação (vazia sem variação): um saldo por par
+  key           String
+  quantity      Float              @default(0)
+  minimum       Float              @default(0)
+  /// Custo médio ponderado (ES-5)
+  averageCost   Int                @default(0)
+  lastEntryCost Int?
+  lastEntryDate DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  company       Company            @relation(fields: [companyId], references: [id])
+  material      Material           @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  variation     MaterialVariation? @relation(fields: [variationId], references: [id], onDelete: Cascade)
+  movements     StockMovement[]
+
+  @@unique([companyId, key])
+  @@map("stock_items")
+}
+
+/// Entrada, consumo ou ajuste, com a origem (ES-6).
+model StockMovement {
+  id            String            @id @default(uuid())
+  companyId     String
+  stockItemId   String
+  kind          StockMovementKind
+  /// Com sinal: a entrada soma, o consumo tira
+  quantity      Float
+  /// Centavos por unidade do material
+  unitCost      Int?
+  origin        String
+  invoiceId     String?
+  date          DateTime
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime          @default(now())
+  stockItem     StockItem         @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, date])
+  @@index([invoiceId])
+  @@map("stock_movements")
+}
+
+/// A nota de entrada com os itens do fornecedor e a conciliação (ES-1, ES-3).
+/// Valores em centavos.
+model InboundInvoice {
+  id               String               @id @default(uuid())
+  companyId        String
+  number           String
+  series           String?
+  /// A chave de acesso da NF-e: a mesma nota não entra duas vezes
+  accessKey        String?
+  supplierId       String?
+  supplierName     String
+  /// CNPJ ou CPF do emitente, só dígitos
+  supplierDocument String?
+  issueDate        DateTime
+  total            Int
+  status           InboundInvoiceStatus @default(PENDING)
+  enteredAt        DateTime?
+  enteredById      String?
+  enteredByName    String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  company          Company              @relation(fields: [companyId], references: [id])
+  items            InboundInvoiceItem[]
+
+  @@unique([companyId, accessKey])
+  @@index([companyId, status])
+  @@map("inbound_invoices")
+}
+
+model InboundInvoiceItem {
+  id               String         @id @default(uuid())
+  invoiceId        String
+  position         Int
+  supplierCode     String
+  description      String
+  supplierUnit     String
+  quantity         Float
+  /// Centavos por unidade do fornecedor
+  unitValue        Int
+  gtin             String?
+  materialId       String?
+  variationId      String?
+  /// 1 unidade do fornecedor = N unidades do material
+  conversionFactor Float?
+  invoice          InboundInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("inbound_invoice_items")
+}
+
+/// O de-para do fornecedor (ES-3): o código dele → o material e o fator.
+/// Vale nas próximas notas do mesmo fornecedor.
+model SupplierItemLink {
+  id               String   @id @default(uuid())
+  companyId        String
+  /// O documento do fornecedor (só dígitos) ou, sem ele, o nome normalizado
+  supplierKey      String
+  supplierCode     String
+  materialId       String
+  variationId      String?
+  conversionFactor Float
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  material         Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, supplierKey, supplierCode])
+  @@map("supplier_item_links")
+}
+
+enum StockMovementKind {
+  ENTRY
+  CONSUMPTION
+  ADJUSTMENT
+}
+
+enum InboundInvoiceStatus {
+  PENDING
+  MATCHED
+  ENTERED
 }
