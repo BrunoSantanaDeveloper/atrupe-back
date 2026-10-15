@@ -16,6 +16,7 @@ import {
   METHOD_SETTING,
   recordSaleReceipt,
   resolveParts,
+  roundingOf,
 } from '../../financial/cash-control/sale-receipt';
 import {
   CashActor,
@@ -38,8 +39,8 @@ const ALL_METHODS = ['dinheiro', 'pix', 'cartao'];
 export const QUICK_SALE_NOT_CONFIGURED =
   'Venda rápida ainda não configurada: escolha o cliente padrão e a série em Configurações › Vendas › Venda rápida';
 
-/** O limite do arredondamento no balcão sem frente de caixa (FC-18). */
-const DEFAULT_ROUNDING_LIMIT = 100;
+/** O arredondamento no balcão sem frente de caixa (FC-18): R$ 1,00. */
+const DEFAULT_ROUNDING = { roundingType: 'VALUE' as const, roundingLimit: 100 };
 
 type Settings = {
   enabled: boolean;
@@ -53,6 +54,8 @@ type Settings = {
   seriesId: string;
   serviceTypeId: string;
   responsibleId: string | null;
+  roundingType: 'VALUE' | 'PERCENT';
+  roundingLimit: number;
 };
 
 /** A situação da venda rápida no caixa (FC-11), em centavos. */
@@ -175,6 +178,8 @@ export class QuickSaleService {
       seriesId: saved?.seriesId || fallback?.seriesId || '',
       serviceTypeId: saved?.serviceTypeId || fallback?.serviceTypeId || '',
       responsibleId: saved?.responsibleId ?? null,
+      // O arredondamento no balcão da frente padrão (FC-18), para o "Cobrar"
+      ...(await this.rounding(companyId)),
     };
   }
 
@@ -299,14 +304,17 @@ export class QuickSaleService {
     );
   }
 
-  /** O limite do arredondamento no balcão: o da frente de caixa padrão. */
-  private async roundingLimit(companyId: string) {
+  /**
+   * O arredondamento no balcão (FC-18): o da frente de caixa padrão, em
+   * valor ou em percentual.
+   */
+  private async rounding(companyId: string) {
     const front = await this.prisma.cashFront.findFirst({
       where: { companyId, isActive: true },
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
-      select: { roundingLimit: true },
+      select: { roundingType: true, roundingLimit: true },
     });
-    return front?.roundingLimit ?? DEFAULT_ROUNDING_LIMIT;
+    return front ?? DEFAULT_ROUNDING;
   }
 
   /**
@@ -348,15 +356,16 @@ export class QuickSaleService {
     );
     if (refused) bad('Forma de pagamento fora das aceitas na venda rápida');
     const discount = dto.discount ?? 0;
-    if (discount > (await this.roundingLimit(user.companyId))) {
-      bad('Arredondamento acima do limite do balcão');
-    }
+    const rounding = await this.rounding(user.companyId);
     const date = new Date();
     let state: CashStatus | null = null;
     try {
       await this.workflow.approve(quotationId, user.userId, undefined, {
         charge: async (tx, approved) => {
           const total = saleTotalCents(approved);
+          if (discount > roundingOf(rounding, total)) {
+            bad('Arredondamento acima do limite do balcão');
+          }
           const paid = dto.parts.reduce((sum, part) => sum + part.amount, 0);
           if (paid + discount !== total) {
             bad(

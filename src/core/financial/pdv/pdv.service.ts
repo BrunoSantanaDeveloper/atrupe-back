@@ -22,6 +22,7 @@ import {
   ReceiptPart,
   recordSaleReceipt,
   resolveParts,
+  roundingOf,
 } from '../cash-control/sale-receipt';
 import { QuickSaleService } from '../../sale/quick-sale/quick-sale.service';
 import { QuotationFinancialService } from '../../sale/quotation/quotation-financial.service';
@@ -32,6 +33,7 @@ import {
   BillSaleDto,
   CashSessionMovementDto,
   CloseCashSessionDto,
+  CashFrontDto,
   OpenCashSessionDto,
   ReceiveSaleDto,
 } from './dto/pdv.dto';
@@ -103,6 +105,12 @@ const cashOnHand = (session: {
     session.openingBalance,
   );
 
+/** O dia da sessão aberta num dia anterior (esquecida, FC-14), ou nulo. */
+const staleDay = (session: { openedAt: Date }) => {
+  const day = dayOf(session.openedAt);
+  return day < dayOf(new Date()) ? day : null;
+};
+
 /**
  * A frente de caixa (FC-1 a FC-20): a sessão do operador, a sangria e o
  * suprimento, o fechamento que leva o recebido às contas e a fila das vendas
@@ -144,8 +152,8 @@ export class PdvService {
 
   /**
    * As frentes da empresa. A primeira nasce sozinha ("Caixa 1", padrão,
-   * conferência simples, sem tolerância, R$ 1,00 de arredondamento): o
-   * cadastro ainda não tem tela (FC-3).
+   * conferência simples, sem tolerância, R$ 1,00 de arredondamento). O
+   * cadastro muda pela rota da frente (FC-15).
    */
   private async fronts(companyId: string) {
     const fronts = await this.prisma.cashFront.findMany({
@@ -180,7 +188,11 @@ export class PdvService {
       status: session.status,
       blindCount: session.cashFront.blindCount,
       shortageTolerance: session.cashFront.shortageTolerance,
+      roundingType: session.cashFront.roundingType,
       roundingLimit: session.cashFront.roundingLimit,
+      // Aberta num dia anterior: só fecha (FC-14)
+      stale: session.status === 'OPEN' && !!staleDay(session),
+      closedBy: session.closedByName ?? undefined,
       closingNote: session.closingNote ?? undefined,
       movements: session.movements.map((movement) => ({
         id: movement.id,
@@ -316,13 +328,19 @@ export class PdvService {
    * todas ocupadas nasce a próxima ("Caixa 2"), com o cadastro da padrão.
    */
   async openSession(user: User, dto: OpenCashSessionDto, actor: CashActor) {
-    if (await this.mySession(user.companyId, user.userId)) {
-      bad('Você já tem um caixa aberto: feche-o antes de abrir outro');
+    const mine = await this.mySession(user.companyId, user.userId);
+    if (mine) {
+      const day = staleDay(mine);
+      bad(
+        day
+          ? `Seu caixa de ${brDay(day)} ainda está aberto: feche-o antes de abrir outro`
+          : 'Você já tem um caixa aberto: feche-o antes de abrir outro',
+      );
     }
     const fronts = await this.fronts(user.companyId);
     const busy = await this.prisma.cashSession.findMany({
       where: { companyId: user.companyId, status: 'OPEN' },
-      select: { cashFrontId: true, operatorName: true },
+      select: { cashFrontId: true, operatorName: true, openedAt: true },
     });
     let front = dto.cashFrontId
       ? fronts.find((item) => item.id === dto.cashFrontId)
@@ -331,7 +349,12 @@ export class PdvService {
     const occupied = busy.find((row) => row.cashFrontId === front?.id);
     // FC-14: a sessão de outro dia ainda aberta na frente também bloqueia
     if (occupied) {
-      bad(`Este caixa já está aberto por ${occupied.operatorName}`);
+      const day = staleDay(occupied);
+      bad(
+        day
+          ? `Este caixa ficou aberto em ${brDay(day)} por ${occupied.operatorName}: quem tem a permissão fecha o caixa esquecido, com justificativa`
+          : `Este caixa já está aberto por ${occupied.operatorName}`,
+      );
     }
     if (!front) {
       const model = fronts[0];
@@ -341,11 +364,17 @@ export class PdvService {
           name: `Caixa ${fronts.length + 1}`,
           blindCount: model.blindCount,
           shortageTolerance: model.shortageTolerance,
+          roundingType: model.roundingType,
           roundingLimit: model.roundingLimit,
           drawerAccountId: model.drawerAccountId,
         },
       });
     }
+    // Ligar a frente de caixa liga o controle de caixa na gaveta (CX-1)
+    const controlEnabled = await this.enableDrawerControl(
+      user.companyId,
+      front.drawerAccountId,
+    );
     const last = await this.prisma.cashSession.aggregate({
       where: { companyId: user.companyId },
       _max: { number: true },
@@ -361,21 +390,66 @@ export class PdvService {
       },
       include: SESSION_INCLUDE,
     });
-    return this.sessionView(created, new Map());
+    return { ...this.sessionView(created, new Map()), controlEnabled };
   }
 
-  /** A sessão aberta do operador (ou qualquer uma, para o administrador). */
-  private async ownSession(user: User, id: string) {
+  /**
+   * Liga o controle de caixa na conta da gaveta (CX-1): a frente de caixa
+   * entrega o dinheiro nela, conferido no caixa do dia. Devolve o nome da
+   * conta quando ligou, para a tela avisar.
+   */
+  private async enableDrawerControl(
+    companyId: string,
+    drawerAccountId: string | null,
+  ) {
+    const drawer = await this.drawerAccount(companyId, drawerAccountId);
+    if (!drawer) return null;
+    const account = await this.prisma.bankAccount.findUnique({
+      where: { id: drawer.id },
+      select: { cashControl: true },
+    });
+    if (account?.cashControl) return null;
+    await this.prisma.bankAccount.update({
+      where: { id: drawer.id },
+      data: { cashControl: true },
+    });
+    return drawer.name;
+  }
+
+  /**
+   * A sessão aberta do operador (ou qualquer uma, para o administrador). A
+   * esquecida de outro dia, quem tem a permissão de fechar também fecha
+   * (destravamento, FC-14).
+   */
+  private async ownSession(
+    user: User,
+    id: string,
+    options: { forgotten?: boolean } = {},
+  ) {
     const session = await this.prisma.cashSession.findFirst({
       where: { id, companyId: user.companyId },
       include: SESSION_INCLUDE,
     });
     if (!session) throw new NotFoundException('Caixa não encontrado');
-    if (session.operatorId !== user.userId && !user.isAdmin) {
+    if (
+      session.operatorId !== user.userId &&
+      !user.isAdmin &&
+      !(options.forgotten && staleDay(session))
+    ) {
       throw new ForbiddenException('Este caixa é de outro operador');
     }
     if (session.status !== 'OPEN') bad(NO_SESSION);
     return session;
+  }
+
+  /** FC-14: o caixa de um dia anterior ainda aberto não lança; fecha antes. */
+  private assertCurrent(session: { openedAt: Date }) {
+    const day = staleDay(session);
+    if (day) {
+      bad(
+        `O caixa de ${brDay(day)} ainda está aberto: feche-o antes de lançar`,
+      );
+    }
   }
 
   private missingDay(error: unknown, what: string): never {
@@ -395,6 +469,7 @@ export class PdvService {
     actor: CashActor,
   ) {
     const session = await this.ownSession(user, id);
+    this.assertCurrent(session);
     if (!dto.reason?.trim()) {
       bad(
         'Informe o motivo: sangria e suprimento registram motivo e responsável',
@@ -472,7 +547,7 @@ export class PdvService {
     dto: CloseCashSessionDto,
     actor: CashActor,
   ) {
-    const session = await this.ownSession(user, id);
+    const session = await this.ownSession(user, id, { forgotten: true });
     const keep = dto.keep ?? 0;
     if (keep < 0 || keep > dto.countedCash) {
       bad('O valor que fica na gaveta não pode passar do contado');
@@ -485,6 +560,11 @@ export class PdvService {
       difference !== 0 &&
       (tolerance === null || Math.abs(difference) > tolerance);
     if (posted && !note) bad('A contagem não bate: explique a diferença');
+    // Fechar o caixa esquecido de outro operador pede justificativa; a
+    // diferença fica no nome de quem operava (FC-14)
+    if (session.operatorId !== actor.id && !note) {
+      bad('Informe a justificativa do fechamento do caixa de outro operador');
+    }
 
     // PIX e cartão por conta: o recebido menos o estornado
     const byAccount = new Map<
@@ -596,6 +676,8 @@ export class PdvService {
               expected,
               difference,
               closingNote: note || null,
+              closedById: actor.id,
+              closedByName: actor.name,
             },
           });
           // A reserva das vendas que este caixa puxou e não recebeu se solta
@@ -657,11 +739,33 @@ export class PdvService {
     const sale = await this.sale(user.companyId, id);
     const session = await this.mySession(user.companyId, user.userId);
     if (!session) bad('Abra o caixa antes de atender');
+    this.assertCurrent(session);
     const other = await this.otherClaimer(sale, session.id);
     if (other) bad(`Esta venda já está com o ${other}`);
     await this.prisma.pendingSale.update({
       where: { id: sale.id },
       data: { claimedSessionId: session.id },
+    });
+    return this.view(await this.sale(user.companyId, id));
+  }
+
+  /**
+   * Devolve a venda à fila (FC-5): quem a puxou e ainda não recebeu nada
+   * dela. O administrador devolve a de qualquer caixa.
+   */
+  async release(user: User, id: string) {
+    const sale = await this.sale(user.companyId, id);
+    if (!sale.claimedSessionId) return this.view(sale);
+    const session = await this.mySession(user.companyId, user.userId);
+    if (sale.claimedSessionId !== session?.id && !user.isAdmin) {
+      bad('Só o caixa que puxou a venda a devolve à fila');
+    }
+    if (sale.paid > 0) {
+      bad('A venda já tem valor recebido: ela fica com o caixa que recebeu');
+    }
+    await this.prisma.pendingSale.update({
+      where: { id: sale.id },
+      data: { claimedSessionId: null },
     });
     return this.view(await this.sale(user.companyId, id));
   }
@@ -682,10 +786,11 @@ export class PdvService {
     if (!sale.goesToCash) bad('Esta venda foi faturada para o cliente');
     const session = await this.mySession(user.companyId, user.userId);
     if (!session) bad('Abra o caixa antes de receber');
+    this.assertCurrent(session);
     const other = await this.otherClaimer(sale, session.id);
     if (other) bad(`Esta venda está sendo atendida no ${other}`);
     const discount = dto.discount ?? 0;
-    const limit = session.cashFront.roundingLimit;
+    const limit = roundingOf(session.cashFront, sale.total);
     if (discount > limit) {
       bad(
         `O arredondamento no balcão vai até ${money(limit)}. Acima disso, vale o limite de desconto do perfil do vendedor`,
@@ -906,6 +1011,7 @@ export class PdvService {
       ? await this.mySession(user.companyId, user.userId)
       : null;
     if (sale.paid && !session) bad('Abra o caixa antes de estornar');
+    if (session) this.assertCurrent(session);
     const closed = await this.prisma.cashSessionMovement.count({
       where: {
         pendingSaleId: sale.id,
@@ -1029,6 +1135,7 @@ export class PdvService {
     }
     const session = await this.mySession(user.companyId, user.userId);
     if (!session) bad('Abra o caixa antes de faturar');
+    this.assertCurrent(session);
     const client = await this.prisma.client.findFirst({
       where: { id: dto.clientId, companyId: user.companyId },
       select: { id: true, name: true, status: true },
@@ -1138,5 +1245,159 @@ export class PdvService {
       );
     });
     return this.view(await this.saleRow(sale.id));
+  }
+
+  /* ------------------------------------------------- cadastro (FC-15) */
+
+  private frontView(
+    front: Prisma.CashFrontGetPayload<object>,
+    accounts: Map<string, string>,
+    open: Set<string>,
+  ) {
+    return {
+      id: front.id,
+      name: front.name,
+      isDefault: front.isDefault,
+      isActive: front.isActive,
+      blindCount: front.blindCount,
+      shortageTolerance: front.shortageTolerance,
+      roundingType: front.roundingType,
+      roundingLimit: front.roundingLimit,
+      drawerAccountId: front.drawerAccountId,
+      drawerAccount: front.drawerAccountId
+        ? (accounts.get(front.drawerAccountId) ?? null)
+        : null,
+      open: open.has(front.id),
+    };
+  }
+
+  /** As frentes da empresa, com a padrão primeiro. */
+  async listFronts(companyId: string) {
+    await this.fronts(companyId);
+    const [fronts, accounts, open] = await Promise.all([
+      this.prisma.cashFront.findMany({
+        where: { companyId },
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+      }),
+      this.accountNames(companyId),
+      this.prisma.cashSession.findMany({
+        where: { companyId, status: 'OPEN' },
+        select: { cashFrontId: true },
+      }),
+    ]);
+    const openFronts = new Set(open.map((row) => row.cashFrontId));
+    return fronts.map((front) => this.frontView(front, accounts, openFronts));
+  }
+
+  /** Confere e monta o que muda no cadastro. */
+  private async frontData(companyId: string, dto: CashFrontDto) {
+    const data: Prisma.CashFrontUncheckedUpdateInput = {};
+    if (dto.name !== undefined) {
+      if (!dto.name.trim()) bad('Dê um nome para a frente de caixa');
+      data.name = dto.name.trim();
+    }
+    if (dto.blindCount !== undefined) data.blindCount = dto.blindCount;
+    if (dto.shortageTolerance !== undefined) {
+      data.shortageTolerance = dto.shortageTolerance;
+    }
+    if (dto.roundingType !== undefined) data.roundingType = dto.roundingType;
+    if (dto.roundingType === 'PERCENT' && (dto.roundingLimit ?? 0) > 10000) {
+      bad('O arredondamento em percentual vai até 100%');
+    }
+    if (dto.roundingLimit !== undefined) data.roundingLimit = dto.roundingLimit;
+    if (dto.drawerAccountId !== undefined) {
+      if (dto.drawerAccountId) {
+        const drawer = await this.prisma.bankAccount.findFirst({
+          where: {
+            id: dto.drawerAccountId,
+            companyId,
+            isActive: true,
+            kind: 'CASH',
+          },
+          select: { id: true },
+        });
+        if (!drawer) {
+          bad('A gaveta precisa ser uma conta Caixa (caixa físico) da empresa');
+        }
+      }
+      data.drawerAccountId = dto.drawerAccountId || null;
+    }
+    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    if (dto.isDefault !== undefined) data.isDefault = dto.isDefault;
+    return data;
+  }
+
+  private async afterFrontSave(companyId: string, id: string) {
+    const front = await this.prisma.cashFront.findUniqueOrThrow({
+      where: { id },
+    });
+    // Uma padrão por empresa: marcar numa desmarca nas outras; sem nenhuma
+    // ativa marcada, a mais antiga ativa vira a padrão
+    if (front.isDefault && front.isActive) {
+      await this.prisma.cashFront.updateMany({
+        where: { companyId, id: { not: id } },
+        data: { isDefault: false },
+      });
+    }
+    const defaults = await this.prisma.cashFront.count({
+      where: { companyId, isActive: true, isDefault: true },
+    });
+    if (!defaults) {
+      const first = await this.prisma.cashFront.findFirst({
+        where: { companyId, isActive: true },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+      if (first) {
+        await this.prisma.cashFront.update({
+          where: { id: first.id },
+          data: { isDefault: true },
+        });
+      }
+    }
+    const view = (await this.listFronts(companyId)).find(
+      (row) => row.id === id,
+    );
+    return view;
+  }
+
+  /** Cria uma frente de caixa (FC-5, FC-15), com o cadastro da padrão. */
+  async createFront(companyId: string, dto: CashFrontDto) {
+    if (!dto.name?.trim()) bad('Dê um nome para a frente de caixa');
+    const [model] = await this.fronts(companyId);
+    const data = await this.frontData(companyId, dto);
+    const created = await this.prisma.cashFront.create({
+      data: {
+        companyId,
+        name: dto.name.trim(),
+        blindCount: model.blindCount,
+        shortageTolerance: model.shortageTolerance,
+        roundingType: model.roundingType,
+        roundingLimit: model.roundingLimit,
+        drawerAccountId: model.drawerAccountId,
+        ...(data as Prisma.CashFrontUncheckedCreateInput),
+        isDefault: !!dto.isDefault,
+        isActive: dto.isActive ?? true,
+      } as Prisma.CashFrontUncheckedCreateInput,
+    });
+    return this.afterFrontSave(companyId, created.id);
+  }
+
+  /** Muda o cadastro da frente (FC-7, FC-18, CX-2). */
+  async updateFront(companyId: string, id: string, dto: CashFrontDto) {
+    const front = await this.prisma.cashFront.findFirst({
+      where: { id, companyId },
+      select: { id: true },
+    });
+    if (!front) throw new NotFoundException('Frente de caixa não encontrada');
+    if (dto.isActive === false) {
+      const open = await this.prisma.cashSession.count({
+        where: { cashFrontId: id, status: 'OPEN' },
+      });
+      if (open) bad('Feche o caixa aberto nesta frente antes de desativá-la');
+    }
+    const data = await this.frontData(companyId, dto);
+    await this.prisma.cashFront.update({ where: { id }, data });
+    return this.afterFrontSave(companyId, id);
   }
 }

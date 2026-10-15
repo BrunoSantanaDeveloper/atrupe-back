@@ -1,9 +1,11 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Req,
   UseGuards,
@@ -19,6 +21,7 @@ import { RequiresFeature } from '../../plan/decorators/requires-feature.decorato
 import { PdvService } from './pdv.service';
 import {
   BillSaleDto,
+  CashFrontDto,
   CashSessionMovementDto,
   CloseCashSessionDto,
   OpenCashSessionDto,
@@ -50,6 +53,33 @@ export class PdvController {
   @ApiOperation({ summary: 'A sessão do operador e a fila do caixa' })
   state(@Req() req) {
     return this.pdv.state(req.user);
+  }
+
+  // O cadastro das frentes (FC-15): ler é de quem usa a frente de caixa;
+  // criar e mudar é "Configurar frente de caixa"
+  @Get('front')
+  @HasPermission('view', 'financial:pdv')
+  @ApiOperation({ summary: 'As frentes de caixa da empresa' })
+  fronts(@Req() req) {
+    return this.pdv.listFronts(req.user.companyId);
+  }
+
+  @Post('front')
+  @HasPermission('edit', 'financial:pdv_settings')
+  @ApiOperation({ summary: 'Cria uma frente de caixa (FC-5, FC-15)' })
+  createFront(@Req() req, @Body() dto: CashFrontDto) {
+    return this.pdv.createFront(req.user.companyId, dto);
+  }
+
+  @Patch('front/:id')
+  @HasPermission('edit', 'financial:pdv_settings')
+  @ApiOperation({ summary: 'Muda o cadastro da frente (FC-7, FC-18)' })
+  updateFront(
+    @Req() req,
+    @Param('id', UUID) id: string,
+    @Body() dto: CashFrontDto,
+  ) {
+    return this.pdv.updateFront(req.user.companyId, id, dto);
   }
 
   @Post('session')
@@ -95,6 +125,13 @@ export class PdvController {
   @ApiOperation({ summary: 'Puxa a venda para este caixa (FC-5)' })
   claim(@Req() req, @Param('id', UUID) id: string) {
     return this.pdv.claim(req.user, id);
+  }
+
+  @Delete('sale/:id/claim')
+  @HasPermission('edit', 'financial:pdv')
+  @ApiOperation({ summary: 'Devolve a venda à fila (FC-5)' })
+  release(@Req() req, @Param('id', UUID) id: string) {
+    return this.pdv.release(req.user, id);
   }
 
   @Post('sale/:id/receive')

@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { CashRoundingType, Prisma } from '@prisma/client';
 import { postMovement, toReais } from './cash-ledger';
 
 type Tx = Prisma.TransactionClient;
@@ -14,6 +14,18 @@ export type ReceiptPart = {
   bankAccountId?: string | null;
   amount: number;
 };
+
+/**
+ * O limite do arredondamento no balcão para a venda (FC-18): em valor
+ * (centavos) ou em percentual do total (centésimos de ponto).
+ */
+export const roundingOf = (
+  front: { roundingType: CashRoundingType; roundingLimit: number },
+  total: number,
+) =>
+  front.roundingType === 'PERCENT'
+    ? Math.floor((Math.max(0, total) * front.roundingLimit) / 10000)
+    : front.roundingLimit;
 
 /** A forma da configuração da venda rápida (dinheiro, pix, cartao). */
 export const METHOD_SETTING: Record<CashMethod, string> = {

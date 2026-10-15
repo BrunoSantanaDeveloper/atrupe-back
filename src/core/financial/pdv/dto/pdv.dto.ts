@@ -1,9 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CashRoundingType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEnum,
   IsIn,
   IsInt,
   IsOptional,
@@ -103,6 +105,65 @@ export class SaleReasonDto {
   @IsString()
   @MaxLength(1000)
   reason: string;
+}
+
+/** O cadastro da frente de caixa (FC-7, FC-15, FC-18): o que vier muda. */
+export class CashFrontDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  name?: string;
+
+  @ApiPropertyOptional({ description: 'Contagem às cegas no fechamento' })
+  @IsOptional()
+  @IsBoolean()
+  blindCount?: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Tolerância da quebra, em centavos; nula = sem tolerância',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  shortageTolerance?: number | null;
+
+  @ApiPropertyOptional({ enum: CashRoundingType })
+  @IsOptional()
+  @IsEnum(CashRoundingType)
+  roundingType?: CashRoundingType;
+
+  @ApiPropertyOptional({
+    description:
+      'Em valor: centavos (até R$ 1.000,00); em percentual: centésimos de ponto (500 = 5%)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  roundingLimit?: number;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'A conta Caixa da gaveta',
+  })
+  @IsOptional()
+  @IsUUID()
+  drawerAccountId?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 export class BillSaleDto {

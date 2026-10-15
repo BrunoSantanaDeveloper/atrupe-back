@@ -4593,20 +4593,22 @@ model QuickSaleSettings {
 /// O cadastro da frente de caixa (FC-3, FC-7, FC-18): uma padrão por
 /// empresa. Valores em centavos (tabela nova).
 model CashFront {
-  id                String        @id @default(uuid())
+  id                String           @id @default(uuid())
   companyId         String
-  name              String        @default("Caixa 1")
-  isDefault         Boolean       @default(false)
-  blindCount        Boolean       @default(false)
+  name              String           @default("Caixa 1")
+  isDefault         Boolean          @default(false)
+  blindCount        Boolean          @default(false)
   shortageTolerance Int?
-  /// O arredondamento no balcão (FC-18), em centavos
-  roundingLimit     Int           @default(100)
+  /// O arredondamento no balcão (FC-18): em valor (centavos) ou em
+  /// percentual (centésimos de ponto: 500 = 5%)
+  roundingType      CashRoundingType @default(VALUE)
+  roundingLimit     Int              @default(100)
   /// A conta da gaveta (CASH), que recebe o dinheiro do fechamento
   drawerAccountId   String?
-  isActive          Boolean       @default(true)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  company           Company       @relation(fields: [companyId], references: [id])
+  isActive          Boolean          @default(true)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  company           Company          @relation(fields: [companyId], references: [id])
   sessions          CashSession[]
 
   @@index([companyId])
@@ -4630,6 +4632,9 @@ model CashSession {
   expected       Int?
   difference     Int?
   closingNote    String?
+  /// Quem fechou: o operador, ou o responsável que fechou o caixa esquecido (FC-14)
+  closedById     String?
+  closedByName   String?
   cashFront      CashFront             @relation(fields: [cashFrontId], references: [id])
   movements      CashSessionMovement[]
 
@@ -4710,6 +4715,11 @@ enum CashSessionMovementKind {
   WITHDRAWAL
   SUPPLY
   REVERSAL
+}
+
+enum CashRoundingType {
+  VALUE
+  PERCENT
 }
 
 enum PendingSaleKind {

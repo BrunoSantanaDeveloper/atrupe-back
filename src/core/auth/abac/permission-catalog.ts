@@ -31,6 +31,8 @@ export const PERMISSION_CATALOG: Readonly<Record<string, readonly string[]>> = {
     'cash_control_reopen',
     'pdv_down_payment',
     'pdv_billing',
+    // "Configurar frente de caixa" (FC-15): o cadastro das frentes
+    'pdv_settings',
     'fixed_expense',
     'payroll',
     'payable',
