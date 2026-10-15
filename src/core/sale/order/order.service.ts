@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { CancelOrderDto } from './dto/create-order.dto';
 import { PrismaService } from 'nestjs-prisma';
+import { cancelProjectOfQuotationInTx } from '../../production/production-follow';
 import { FilterOrderDto } from './dto/filter.dto';
 import {
   NfceStatus,
@@ -788,6 +789,17 @@ export class OrderService {
         await prisma.deliverySchedule.updateMany({
           where: { quotationId },
           data: { status: 'CANCELED' },
+        });
+
+        // O projeto de produção em aberto (ELITE) para com a O.S.: fecha
+        // os relógios e cancela as tarefas (decisão de 15/10/2026)
+        const actor = await prisma.user.findUnique({
+          where: { id: sellerId },
+          select: { name: true },
+        });
+        await cancelProjectOfQuotationInTx(prisma, quotationId, {
+          userId: sellerId,
+          name: actor?.name || 'Usuário',
         });
 
         // Cancel the order

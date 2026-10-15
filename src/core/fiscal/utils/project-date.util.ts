@@ -62,3 +62,13 @@ export function projectInstant(date: string, time: string): Date {
   const reference = new Date(`${date}T12:00:00.000Z`);
   return new Date(`${date}T${time}:00.000${getProjectOffset(reference)}`);
 }
+
+/** A hora (HH:mm) do instante no fuso da operação. */
+export function toProjectTimeKey(date: Date): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: PROJECT_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date);
+}

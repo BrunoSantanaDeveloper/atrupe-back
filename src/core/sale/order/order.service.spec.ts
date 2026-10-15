@@ -59,6 +59,15 @@ const createMockPrismaService = () => {
     deliverySchedule: {
       updateMany: jest.fn(),
     },
+    user: { findUnique: jest.fn().mockResolvedValue({ name: 'Gerente' }) },
+    // O projeto de produção (ELITE): sem projeto, por padrão
+    productionProject: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      update: jest.fn(),
+    },
+    productionTask: { findMany: jest.fn(), updateMany: jest.fn() },
+    productionTaskHistory: { createMany: jest.fn() },
+    productionTimeEntry: { update: jest.fn() },
   };
   // $transaction executes callback with the same mock (pass-through)
   mock.$transaction = jest.fn((cb: (prisma: any) => Promise<any>) => cb(mock));
@@ -380,6 +389,71 @@ describe('OrderService', () => {
       expect(result.keptInstallments.receivables).toBe(1);
       expect(result.keptInstallments.payables).toBe(1);
       expect(result.summary.totalInstallments).toBe(5);
+    });
+
+    it('cancela junto o projeto de produção em aberto (ELITE)', async () => {
+      prisma.receivableInstallment.count.mockResolvedValue(0);
+      prisma.payableInstallment.count.mockResolvedValue(0);
+      prisma.receivable.findMany.mockResolvedValue([]);
+      prisma.payable.findMany.mockResolvedValue([]);
+      prisma.deliverySchedule.updateMany.mockResolvedValue({ count: 1 });
+      prisma.order.update.mockResolvedValue({
+        id: mockOrderId,
+        status: OrderStatus.CANCELED,
+      });
+      prisma.productionProject.findUnique.mockResolvedValue({
+        id: 'pj-1',
+        status: 'PRODUCTION',
+      });
+      prisma.productionTask.findMany.mockResolvedValue([
+        {
+          id: 'tk-1',
+          timeEntries: [{ id: 'te-1', start: new Date(Date.now() - 60000) }],
+        },
+      ]);
+
+      await service.cancelOrder(mockOrderId, {}, mockSellerId);
+
+      expect(prisma.productionTimeEntry.update).toHaveBeenCalledWith({
+        where: { id: 'te-1' },
+        data: { end: expect.any(Date), seconds: expect.any(Number) },
+      });
+      expect(prisma.productionTask.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['tk-1'] } },
+        data: { status: 'CANCELED' },
+      });
+      expect(prisma.productionProject.update).toHaveBeenCalledWith({
+        where: { id: 'pj-1' },
+        data: expect.objectContaining({
+          status: 'CANCELED',
+          history: {
+            create: expect.objectContaining({
+              byName: 'Gerente',
+              text: 'Cancelado com a ordem de serviço',
+            }),
+          },
+        }),
+      });
+    });
+
+    it('o projeto concluído fica como está', async () => {
+      prisma.receivableInstallment.count.mockResolvedValue(0);
+      prisma.payableInstallment.count.mockResolvedValue(0);
+      prisma.receivable.findMany.mockResolvedValue([]);
+      prisma.payable.findMany.mockResolvedValue([]);
+      prisma.deliverySchedule.updateMany.mockResolvedValue({ count: 1 });
+      prisma.order.update.mockResolvedValue({
+        id: mockOrderId,
+        status: OrderStatus.CANCELED,
+      });
+      prisma.productionProject.findUnique.mockResolvedValue({
+        id: 'pj-1',
+        status: 'DONE',
+      });
+
+      await service.cancelOrder(mockOrderId, {}, mockSellerId);
+
+      expect(prisma.productionProject.update).not.toHaveBeenCalled();
     });
 
     it('should handle no financial records gracefully', async () => {

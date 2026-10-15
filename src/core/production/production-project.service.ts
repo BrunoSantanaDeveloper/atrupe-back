@@ -20,6 +20,7 @@ import {
   typeFor,
 } from './engine/production-plan';
 import { ProductionViewer } from './production-access.service';
+import { cancelProjectInTx, moveScheduleInTx } from './production-follow';
 import { ProductionMirrorService } from './production-mirror.service';
 import {
   PROJECT_NOT_FOUND,
@@ -740,7 +741,13 @@ export class ProductionProjectService {
   private async projectOf(companyId: string, id: string) {
     const project = await this.prisma.productionProject.findFirst({
       where: { id, companyId },
-      select: { id: true, status: true, firstDue: true, due: true },
+      select: {
+        id: true,
+        quotationId: true,
+        status: true,
+        firstDue: true,
+        due: true,
+      },
     });
     if (!project) throw new NotFoundException(PROJECT_NOT_FOUND);
     return project;
@@ -833,58 +840,14 @@ export class ProductionProjectService {
     if (project.status === 'DONE' || project.status === 'CANCELED') {
       throw new ConflictException(PROJECT_CLOSED);
     }
-    const now = new Date();
-    const open = await this.prisma.productionTask.findMany({
-      where: { projectId: id, status: { notIn: ['DONE', 'CANCELED'] } },
-      select: {
-        id: true,
-        timeEntries: {
-          where: { end: null },
-          select: { id: true, start: true },
-        },
-      },
-    });
-    await this.prisma.$transaction([
-      ...open.flatMap((task) =>
-        task.timeEntries.map((entry) =>
-          this.prisma.productionTimeEntry.update({
-            where: { id: entry.id },
-            data: {
-              end: now,
-              seconds: Math.max(
-                0,
-                Math.round((now.getTime() - entry.start.getTime()) / 1000),
-              ),
-            },
-          }),
-        ),
+    await this.prisma.$transaction((tx) =>
+      cancelProjectInTx(
+        tx,
+        id,
+        { userId: viewer.userId, name: viewer.name },
+        { project: 'Cancelou o projeto', task: 'Cancelada com o projeto' },
       ),
-      this.prisma.productionTask.updateMany({
-        where: { id: { in: open.map((task) => task.id) } },
-        data: { status: 'CANCELED' },
-      }),
-      this.prisma.productionTaskHistory.createMany({
-        data: open.map((task) => ({
-          taskId: task.id,
-          byUserId: viewer.userId,
-          byName: viewer.name,
-          text: 'Cancelada com o projeto',
-        })),
-      }),
-      this.prisma.productionProject.update({
-        where: { id },
-        data: {
-          status: 'CANCELED',
-          history: {
-            create: {
-              byUserId: viewer.userId,
-              byName: viewer.name,
-              text: 'Cancelou o projeto',
-            },
-          },
-        },
-      }),
-    ]);
+    );
     await this.mirror.sync(id);
     return { id, status: 'CANCELED', autoDone: 0 };
   }
@@ -900,25 +863,36 @@ export class ProductionProjectService {
       throw new BadRequestException('Informe a nova data');
     }
     const before = dayKey(project.due);
-    await this.prisma.productionProject.update({
-      where: { id },
-      data: {
-        due: dateColumn(due),
-        history: {
-          create: {
-            byUserId: viewer.userId,
-            byName: viewer.name,
-            text: `Alterou a entrega de ${brDate(before)} para ${brDate(due)}`,
-            data: { from: before, to: due },
+    // A Agenda de entrega vai junto (decisão de 15/10/2026)
+    const moved = await this.prisma.$transaction(async (tx) => {
+      await tx.productionProject.update({
+        where: { id },
+        data: {
+          due: dateColumn(due),
+          history: {
+            create: {
+              byUserId: viewer.userId,
+              byName: viewer.name,
+              text: `Alterou a entrega de ${brDate(before)} para ${brDate(due)}`,
+              data: { from: before, to: due },
+            },
           },
         },
-      },
+      });
+      return moveScheduleInTx(tx, project.quotationId, due);
     });
     const ctx = await this.view.context(viewer, { id });
     const summary = ctx.chain.projectSummary(
       id,
       ctx.rows.map((row) => ctx.chain.task(row.id)!),
     );
-    return { id, firstDue: dayKey(project.firstDue), due, risk: summary.risk };
+    return {
+      id,
+      firstDue: dayKey(project.firstDue),
+      due,
+      risk: summary.risk,
+      // A Agenda de entrega também mudou
+      scheduleMoved: moved,
+    };
   }
 }

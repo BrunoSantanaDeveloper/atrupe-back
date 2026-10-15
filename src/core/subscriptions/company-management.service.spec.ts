@@ -49,6 +49,7 @@ describe('CompanyManagementService', () => {
     productionFlow: { deleteMany: jest.fn() },
     productionVehicle: { deleteMany: jest.fn() },
     productionCollaborator: { deleteMany: jest.fn() },
+    productionCalendar: { deleteMany: jest.fn() },
     productionStage: { deleteMany: jest.fn() },
     deliverySchedule: { deleteMany: jest.fn() },
     orderHistory: { deleteMany: jest.fn() },

@@ -113,6 +113,7 @@ model Company {
   productionTaskTypes    ProductionTaskType[]
   productionVehicles     ProductionVehicle[]
   productionProjects     ProductionProject[]
+  productionCalendar     ProductionCalendar?
 
   @@map("companies")
 }
@@ -4210,6 +4211,24 @@ model ProductionTaskStep {
   @@index([taskTypeId])
   @@index([managerId])
   @@map("production_task_steps")
+}
+
+/// O expediente da produção (§4.8): os dias e o horário de trabalho e os
+/// feriados da empresa, para a cadeia de alertas. Sem linha, segunda a sexta,
+/// das 08:00 às 18:00 (o fim de semana não conta como expediente).
+model ProductionCalendar {
+  id        String   @id @default(uuid())
+  companyId String   @unique
+  /// 0 = domingo … 6 = sábado
+  workDays  Int[]    @default([1, 2, 3, 4, 5])
+  startTime String   @default("08:00")
+  endTime   String   @default("18:00")
+  /// YYYY-MM-DD
+  holidays  String[]
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id])
+
+  @@map("production_calendars")
 }
 
 /// Veículo da frota (VS-7): a instalação e a entrega ocupam o veículo.

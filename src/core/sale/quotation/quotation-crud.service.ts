@@ -26,6 +26,7 @@ import { reassignQuotationSeries } from './quotation-series.util';
 import { copyItemLines } from './quotation-lines.service';
 import { itemValue } from './quotation-totals';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
+import { followDeliveryInTx } from '../../production/production-follow';
 
 const EXPORT_LIMIT = '10000';
 
@@ -816,6 +817,12 @@ export class QuotationCrudService {
               await prisma.deliverySchedule.updateMany({
                 where: { quotationId: id },
                 data: { scheduledDate: estimatedDate },
+              });
+
+              // A entrega do projeto de produção vai junto (ELITE)
+              await followDeliveryInTx(prisma, id, estimatedDate, {
+                userId: userId ?? null,
+                name: 'Edição da venda',
               });
             }
           }

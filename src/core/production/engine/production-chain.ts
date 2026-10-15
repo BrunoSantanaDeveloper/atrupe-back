@@ -46,11 +46,35 @@ export type ChainClock = {
   at: (date: string, time: string) => Date;
   /** O dia (YYYY-MM-DD) do instante no fuso da empresa */
   dayOf: (instant: Date) => string;
+  /** O expediente da empresa; sem ele, o padrão */
+  calendar?: WorkCalendar;
+};
+
+/** O expediente (§4.8): dias da semana (0 = domingo), horário e feriados. */
+export type WorkCalendar = {
+  workDays: number[];
+  startTime: string;
+  endTime: string;
+  holidays: string[];
 };
 
 /** O expediente de referência até existir calendário (§4.8): 8h às 18h. */
 export const WORK_START = '08:00';
 export const WORK_END = '18:00';
+
+/**
+ * O expediente sem cadastro: segunda a sexta, das 08:00 às 18:00. O fim de
+ * semana não conta, para a cadeia não acusar risco falso (decisão de
+ * 15/10/2026); quem trabalha no sábado marca no expediente.
+ */
+export const DEFAULT_CALENDAR: WorkCalendar = {
+  workDays: [1, 2, 3, 4, 5],
+  startTime: WORK_START,
+  endTime: WORK_END,
+  holidays: [],
+};
+
+const weekdayOf = (day: string) => new Date(`${day}T12:00:00.000Z`).getUTCDay();
 
 /** Quantos dias a conta do expediente percorre, no máximo. */
 const MAX_DAYS = 400;
@@ -192,14 +216,26 @@ export class ProductionChain {
   workMinutesUntil(due: string) {
     const cached = this.available.get(due);
     if (cached !== undefined) return cached;
+    const calendar = this.clock.calendar ?? DEFAULT_CALENDAR;
     const now = this.clock.now.getTime();
-    const deadline = this.clock.at(due, WORK_END).getTime();
+    const deadline = this.clock.at(due, calendar.endTime).getTime();
     let minutes = 0;
     let day = this.clock.dayOf(this.clock.now);
     for (let count = 0; day <= due && count < MAX_DAYS; count++) {
-      const from = Math.max(now, this.clock.at(day, WORK_START).getTime());
-      const to = Math.min(deadline, this.clock.at(day, WORK_END).getTime());
-      if (to > from) minutes += (to - from) / 60000;
+      if (
+        calendar.workDays.includes(weekdayOf(day)) &&
+        !calendar.holidays.includes(day)
+      ) {
+        const from = Math.max(
+          now,
+          this.clock.at(day, calendar.startTime).getTime(),
+        );
+        const to = Math.min(
+          deadline,
+          this.clock.at(day, calendar.endTime).getTime(),
+        );
+        if (to > from) minutes += (to - from) / 60000;
+      }
       day = nextDay(day);
     }
     this.available.set(due, minutes);

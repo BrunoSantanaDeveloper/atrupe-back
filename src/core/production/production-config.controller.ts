@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { RequiresFeature } from '../plan/decorators/requires-feature.decorator';
 import { FeatureGuard } from '../plan/guards/feature.guard';
 import {
+  CalendarDto,
   CollaboratorRoleDto,
   InactivateManagerDto,
   ManagerDto,
@@ -180,6 +181,13 @@ export class ProductionConfigController {
     @Param('stepId') stepId: string,
   ) {
     return this.config.removeStep(req.user.companyId, id, stepId);
+  }
+
+  @Put('calendar')
+  @HasPermission('edit', PRODUCTION)
+  @ApiOperation({ summary: 'O expediente: dias, horário e feriados (§4.8)' })
+  updateCalendar(@Req() req, @Body() dto: CalendarDto) {
+    return this.config.updateCalendar(req.user.companyId, dto);
   }
 
   @Post('vehicle')

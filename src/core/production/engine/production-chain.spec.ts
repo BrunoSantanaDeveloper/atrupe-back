@@ -1,4 +1,9 @@
-import { ChainProject, ChainTask, ProductionChain } from './production-chain';
+import {
+  ChainProject,
+  ChainTask,
+  ProductionChain,
+  WorkCalendar,
+} from './production-chain';
 
 // Relógio fixo em UTC-3, como São Paulo: quarta, 07/10/2026, 10:00
 const at = (date: string, time: string) =>
@@ -209,6 +214,44 @@ describe('ProductionChain', () => {
       ]);
       expect(() => chain.alert(chain.task('a')!)).not.toThrow();
       expect(chain.remainingAhead(chain.task('a')!)).toBeGreaterThan(0);
+    });
+  });
+
+  describe('o expediente (§4.8)', () => {
+    // Sexta, 09/10/2026, 10:00; a entrega na terça, 13/10
+    const friday = at('2026-10-09', '10:00');
+    const chainAt = (calendar?: WorkCalendar) =>
+      new ProductionChain([], new Map(), {
+        now: friday,
+        at,
+        dayOf,
+        ...(calendar ? { calendar } : {}),
+      });
+
+    it('sem cadastro, o fim de semana não conta', () => {
+      // Sexta 480 + segunda 600 + terça 600
+      expect(chainAt().workMinutesUntil('2026-10-13')).toBe(1680);
+    });
+
+    it('o sábado conta quando a empresa trabalha', () => {
+      const calendar = {
+        workDays: [1, 2, 3, 4, 5, 6],
+        startTime: '08:00',
+        endTime: '12:00',
+        holidays: [],
+      };
+      // Sexta 120 + sábado 240 + segunda 240 + terça 240
+      expect(chainAt(calendar).workMinutesUntil('2026-10-13')).toBe(840);
+    });
+
+    it('o feriado não conta', () => {
+      const calendar = {
+        workDays: [1, 2, 3, 4, 5],
+        startTime: '08:00',
+        endTime: '18:00',
+        holidays: ['2026-10-12'],
+      };
+      expect(chainAt(calendar).workMinutesUntil('2026-10-13')).toBe(1080);
     });
   });
 

@@ -865,6 +865,7 @@ export class CompanyManagementService {
           await tx.productionManager.deleteMany({ where: { companyId } });
           await tx.productionFlow.deleteMany({ where: { companyId } });
           await tx.productionVehicle.deleteMany({ where: { companyId } });
+          await tx.productionCalendar.deleteMany({ where: { companyId } });
           await tx.productionCollaborator.deleteMany({
             where: { companyId },
           });

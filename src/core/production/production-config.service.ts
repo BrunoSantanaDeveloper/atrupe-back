@@ -6,7 +6,9 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
+import { DEFAULT_CALENDAR } from './engine/production-chain';
 import {
+  CalendarDto,
   CollaboratorRoleDto,
   ManagerDto,
   ManagerUserDto,
@@ -127,9 +129,41 @@ export class ProductionConfigService {
     });
   }
 
+  /** O expediente da empresa; sem cadastro, o padrão (segunda a sexta). */
+  async calendar(companyId: string) {
+    const row = await this.prisma.productionCalendar.findUnique({
+      where: { companyId },
+      select: {
+        workDays: true,
+        startTime: true,
+        endTime: true,
+        holidays: true,
+      },
+    });
+    return row ?? { ...DEFAULT_CALENDAR };
+  }
+
+  async updateCalendar(companyId: string, dto: CalendarDto) {
+    if (dto.endTime <= dto.startTime) {
+      bad('O fim do expediente vem depois do início');
+    }
+    const data = {
+      workDays: [...dto.workDays].sort((a, b) => a - b),
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+      holidays: [...new Set(dto.holidays ?? [])].sort(),
+    };
+    await this.prisma.productionCalendar.upsert({
+      where: { companyId },
+      create: { companyId, ...data },
+      update: data,
+    });
+    return data;
+  }
+
   async config(companyId: string) {
     await this.defaultFlow(companyId);
-    const [flows, managers, taskTypes, collaborators, vehicles] =
+    const [flows, managers, taskTypes, collaborators, vehicles, calendar] =
       await Promise.all([
         this.prisma.productionFlow.findMany({
           where: { companyId },
@@ -152,6 +186,7 @@ export class ProductionConfigService {
           orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
           select: { id: true, name: true, plate: true, isActive: true },
         }),
+        this.calendar(companyId),
       ]);
     return {
       flows,
@@ -159,6 +194,7 @@ export class ProductionConfigService {
       taskTypes: taskTypes.map(taskTypeView),
       collaborators,
       vehicles: vehicles.map(vehicleView),
+      calendar,
     };
   }
 

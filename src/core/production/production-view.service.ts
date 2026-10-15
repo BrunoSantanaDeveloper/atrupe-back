@@ -257,7 +257,7 @@ export class ProductionViewService {
       select: PROJECT_SELECT,
     });
     const projectIds = projects.map((project) => project.id);
-    const [rows, types, managers, collaborators] = await Promise.all([
+    const [rows, types, managers, collaborators, calendar] = await Promise.all([
       projectIds.length
         ? this.prisma.productionTask.findMany({
             where: { projectId: { in: projectIds } },
@@ -274,6 +274,7 @@ export class ProductionViewService {
         select: MANAGER_SELECT,
       }),
       this.config.collaborators(companyId),
+      this.config.calendar(companyId),
     ]);
     const projectMap = new Map(
       projects.map((project) => [project.id, project]),
@@ -286,7 +287,7 @@ export class ProductionViewService {
           { id: project.id, status: project.status, due: dayKey(project.due)! },
         ]),
       ),
-      productionClock(now),
+      { ...productionClock(now), calendar },
     );
     return {
       viewer,

@@ -1,12 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
   IsString,
+  Matches,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -112,6 +116,38 @@ export class StepOrderDto {
   @ArrayMaxSize(100)
   @IsString({ each: true })
   stepIds: string[];
+}
+
+/** O expediente da produção (§4.8): dias, horário e feriados. */
+export class CalendarDto {
+  @ApiProperty({ example: [1, 2, 3, 4, 5], description: '0 = domingo' })
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Escolha ao menos um dia de trabalho' })
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  workDays: number[];
+
+  @ApiProperty({ example: '08:00' })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'Horário de início inválido',
+  })
+  startTime: string;
+
+  @ApiProperty({ example: '18:00' })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'Horário de fim inválido' })
+  endTime: string;
+
+  @ApiPropertyOptional({ example: ['2026-11-02'] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    each: true,
+    message: 'Feriado com data inválida',
+  })
+  holidays?: string[];
 }
 
 export class VehicleDto {
