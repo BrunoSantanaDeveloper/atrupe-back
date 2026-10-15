@@ -24,6 +24,8 @@ import { QuotationLinesService } from './quotation-lines.service';
 import { QuotationResultService } from './quotation-result.service';
 import { CreditCheckService } from './credit-check.service';
 import { ComposedItemService } from './composed-item.service';
+import { QuickSaleService } from '../quick-sale/quick-sale.service';
+import { QuickSaleController } from '../quick-sale/quick-sale.controller';
 
 @Module({
   imports: [
@@ -43,7 +45,8 @@ import { ComposedItemService } from './composed-item.service';
     // O projeto de produção nasce da aprovação (ELITE, Fase 6)
     ProductionModule,
   ],
-  controllers: [QuotationController],
+  // A venda rápida (Fase 7.3) é o mesmo orçamento
+  controllers: [QuotationController, QuickSaleController],
   providers: [
     QuotationService,
     QuotationCrudService,
@@ -57,6 +60,7 @@ import { ComposedItemService } from './composed-item.service';
     CreditCheckService,
     // O item montado na hora (ORC-11, Fase 4.5)
     ComposedItemService,
+    QuickSaleService,
   ],
   exports: [
     QuotationService,
@@ -67,6 +71,7 @@ import { ComposedItemService } from './composed-item.service';
     QuotationPdfService,
     QuotationImportService,
     CreditCheckService,
+    QuickSaleService,
   ],
 })
 export class QuotationModule {}

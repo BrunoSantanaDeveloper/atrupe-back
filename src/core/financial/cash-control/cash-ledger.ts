@@ -13,6 +13,32 @@ import {
 
 type Tx = Prisma.TransactionClient;
 
+/** Quem age: o usuário da sessão (CX-2). */
+export type CashActor = { id: string | null; name: string };
+
+/** Quem age: o colaborador da empresa, ou o usuário. */
+export async function actorOfUser(
+  prisma: Tx,
+  user: { userId?: string; companyId: string },
+): Promise<CashActor> {
+  if (!user.userId) return { id: null, name: 'Usuário' };
+  const employee = await prisma.employee.findFirst({
+    where: { userId: user.userId, companyId: user.companyId },
+    select: { name: true, user: { select: { name: true } } },
+  });
+  const name =
+    employee?.name ||
+    employee?.user?.name ||
+    (
+      await prisma.user.findUnique({
+        where: { id: user.userId },
+        select: { name: true },
+      })
+    )?.name ||
+    'Usuário';
+  return { id: user.userId, name };
+}
+
 /** Reais (banco) → centavos (API). */
 export const toCents = (reais: number | null | undefined) =>
   reais === null || reais === undefined ? null : Math.round(reais * 100);

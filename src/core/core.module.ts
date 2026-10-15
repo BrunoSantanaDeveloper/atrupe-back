@@ -21,6 +21,7 @@ import { AssemblyModule } from './assembly/assembly.module';
 import { SaleModule } from './sale/sale.module';
 import { EmployeeModule } from './employee/employee.module';
 import { FinancialModule } from './financial/financial.module';
+import { PdvModule } from './financial/pdv/pdv.module';
 import { PaymentModule } from './payment/payment.module';
 import { CategoryModule } from './category/category.module';
 import { UnitOfMeasureModule } from './unit-of-measure/unit-of-measure.module';
@@ -69,6 +70,8 @@ import { OwnershipModule } from './ownership/ownership.module';
     SaleModule,
     EmployeeModule,
     FinancialModule,
+    // A frente de caixa (Fase 7.4) depende do orçamento
+    PdvModule,
     PaymentModule,
     CategoryModule,
     UnitOfMeasureModule,

@@ -80,6 +80,9 @@ import {
   AddMaterialItemDto,
   UpdateMaterialItemDto,
 } from './dto/material-item.dto';
+import { QuickSaleService } from '../quick-sale/quick-sale.service';
+import { QUICK_SALE_LOCKED, isAtCashier } from '../quick-sale/quick-sale.rules';
+import { ReceiptDto } from '../../financial/cash-control/dto/receipt-part.dto';
 
 const RESOURCE = 'quotation';
 const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
@@ -114,7 +117,22 @@ export class QuotationController {
     private readonly creditCheck: CreditCheckService,
     private readonly composed: ComposedItemService,
     private readonly assemblies: ProductAssemblyService,
+    private readonly quickSale: QuickSaleService,
   ) {}
+
+  /**
+   * Mexer nos itens: o dono do orçamento, e a venda rápida que já está no
+   * caixa (enviada ou cobrada) não muda mais (FC-11).
+   */
+  private async validateItemEdit(
+    quotationId: string,
+    user: Parameters<QuotationController['validateOwnership']>[1],
+  ) {
+    await this.validateOwnership(quotationId, user, 'edit');
+    if (await isAtCashier(this.prisma, quotationId)) {
+      throw new BadRequestException(QUICK_SALE_LOCKED);
+    }
+  }
 
   /**
    * O rascunho do item montado (ORC-11) como dono da composição: o
@@ -125,7 +143,7 @@ export class QuotationController {
     if (!isUUID(quotationId, '4') || !isUUID(draftId, '4')) {
       throw new NotFoundException(DRAFT_NOT_FOUND);
     }
-    await this.validateOwnership(quotationId, req.user, 'edit');
+    await this.validateItemEdit(quotationId, req.user);
     await this.planControlService.enforceFeature(
       req.user.companyId,
       'product_composition',
@@ -239,6 +257,66 @@ export class QuotationController {
     );
   }
 
+  // Cria a venda rápida com os padrões da configuração (ALT-22, VR-1, VR-2)
+  @Post('quick-sale')
+  @HasPermission('create', 'sale:quotation')
+  @ObservePermissions(false)
+  @RequireUnblocked()
+  @ApiOperation({ summary: 'Cria a venda rápida com os padrões (ALT-22)' })
+  async createQuickSale(@Req() req) {
+    await this.planControlService.enforceFeature(
+      req.user.companyId,
+      'quotation_quick_sale',
+    );
+    return this.quickSale.create(req.user);
+  }
+
+  // Cobrar na hora, só à vista (VR-5): recebe e aprova junto
+  @Post(':id/quick-sale/charge')
+  @HasAnyPermission(
+    { action: 'create', resource: 'sale:order' },
+    { action: 'edit', resource: 'sale:quotation' },
+  )
+  @ObservePermissions(false)
+  @RequireUnblocked()
+  @MoneyFields('total', 'paid', 'amount')
+  @ApiOperation({ summary: 'Cobra a venda rápida na hora e aprova (VR-5)' })
+  @ApiParam({ name: 'id', description: 'ID do orçamento' })
+  async chargeQuickSale(
+    @Param('id') id: string,
+    @Body() dto: ReceiptDto,
+    @Req() req,
+  ) {
+    if (!isUUID(id, '4'))
+      throw new NotFoundException('Orçamento não encontrado');
+    await this.validateOwnership(id, req.user, 'edit');
+    await this.planControlService.enforceFeature(
+      req.user.companyId,
+      'quotation_quick_sale',
+    );
+    return this.quickSale.charge(
+      id,
+      req.user,
+      dto,
+      await this.quickSale.actorOf(req.user),
+    );
+  }
+
+  // A situação no caixa, para o vendedor acompanhar (a tela consulta a cada
+  // 15 s): rota leve, sem o resto do orçamento
+  @Get(':id/cash-status')
+  @HasPermission('view', 'sale:quotation')
+  @ObservePermissions(false)
+  @MoneyFields('total', 'paid', 'amount')
+  @ApiOperation({ summary: 'A situação da venda rápida no caixa (FC-11)' })
+  @ApiParam({ name: 'id', description: 'ID do orçamento' })
+  async cashStatus(@Param('id') id: string, @Req() req) {
+    if (!isUUID(id, '4'))
+      throw new NotFoundException('Orçamento não encontrado');
+    await this.validateOwnership(id, req.user, 'view');
+    return this.quickSale.cashStatus(id, req.user.companyId);
+  }
+
   @Post(':id/add-product')
   @HasPermission('edit', 'sale:quotation')
   @ApiOperation({ summary: 'Adiciona um produto a um orçamento' })
@@ -248,7 +326,7 @@ export class QuotationController {
     @Body() addItemDto: AddItemDto,
     @Req() req,
   ) {
-    await this.validateOwnership(id, req.user, 'edit');
+    await this.validateItemEdit(id, req.user);
     // A composição escolhida é recurso de plano (contrato, módulo 2)
     if (addItemDto.composition) {
       await this.planControlService.enforceFeature(
@@ -273,7 +351,7 @@ export class QuotationController {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
-    await this.validateOwnership(id, req.user, 'edit');
+    await this.validateItemEdit(id, req.user);
     return this.quotationService.addMaterialItem(id, dto);
   }
 
@@ -294,7 +372,7 @@ export class QuotationController {
     if (!quotationId) {
       throw new NotFoundException('Item não encontrado');
     }
-    await this.validateOwnership(quotationId, req.user, 'edit');
+    await this.validateItemEdit(quotationId, req.user);
     return this.quotationService.updateMaterialItem(itemId, dto);
   }
 
@@ -311,7 +389,7 @@ export class QuotationController {
     if (!isUUID(id, '4')) {
       throw new BadRequestException('Invalid id');
     }
-    await this.validateOwnership(id, req.user, 'edit');
+    await this.validateItemEdit(id, req.user);
     await this.planControlService.enforceFeature(
       req.user.companyId,
       'product_composition',
@@ -465,7 +543,7 @@ export class QuotationController {
     if (!quotationId) {
       throw new NotFoundException('Item não encontrado');
     }
-    await this.validateOwnership(quotationId, req.user, 'edit');
+    await this.validateItemEdit(quotationId, req.user);
     return this.composed.updateComposed(itemId, dto);
   }
 
@@ -528,7 +606,7 @@ export class QuotationController {
     if (!quotationId) {
       throw new NotFoundException('Produto ou orçamento não encontrados.');
     }
-    await this.validateOwnership(quotationId, req.user, 'edit');
+    await this.validateItemEdit(quotationId, req.user);
     if (updateQuotationProductDto.composition) {
       await this.planControlService.enforceFeature(
         req.user.companyId,
@@ -577,7 +655,7 @@ export class QuotationController {
     if (!quotationId) {
       throw new NotFoundException('Produto ou orçamento não encontrados.');
     }
-    await this.validateOwnership(quotationId, req.user, 'edit');
+    await this.validateItemEdit(quotationId, req.user);
 
     const updatedProduct =
       await this.quotationService.duplicateProductInQuotation(productId);
@@ -613,7 +691,7 @@ export class QuotationController {
     if (!quotationId) {
       throw new NotFoundException('Produto ou orçamento não encontrados.');
     }
-    await this.validateOwnership(quotationId, req.user, 'edit');
+    await this.validateItemEdit(quotationId, req.user);
 
     const isDeleted =
       await this.quotationService.removeProductFromQuotation(productId);
@@ -661,7 +739,7 @@ export class QuotationController {
     @Body() dto: ItemLineDto,
     @Req() req,
   ) {
-    await this.validateOwnership(id, req.user, 'edit');
+    await this.validateItemEdit(id, req.user);
     await this.planControlService.enforceFeature(
       req.user.companyId,
       'product_composition',
@@ -753,7 +831,7 @@ export class QuotationController {
     @Param('lineId') lineId: string,
     @Req() req,
   ) {
-    await this.validateOwnership(id, req.user, 'edit');
+    await this.validateItemEdit(id, req.user);
     return this.lines.remove(
       id,
       itemId,

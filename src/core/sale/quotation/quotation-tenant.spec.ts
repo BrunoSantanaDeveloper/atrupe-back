@@ -21,6 +21,7 @@ describe('Orçamento: outra empresa', () => {
           .fn()
           .mockResolvedValue({ companyId: 'empresa-b', sellerId: 'v-b' }),
       },
+      pendingSale: { findUnique: jest.fn().mockResolvedValue(null) },
     };
     const abac = { canAccessOtherSellers: jest.fn().mockResolvedValue(true) };
     const lines = { preview: jest.fn(), add: jest.fn(), remove: jest.fn() };
@@ -44,6 +45,8 @@ describe('Orçamento: outra empresa', () => {
       credit as any,
       composed as any,
       assemblies as any,
+      // A venda rápida (Fase 7.3)
+      { create: jest.fn(), charge: jest.fn(), cashStatus: jest.fn() } as any,
     );
     const req = { user: { userId: 'u-a', companyId: 'empresa-a' } };
     const id = '6f1c2b8e-4d3a-4f5b-9c7d-1e2f3a4b5c6d';

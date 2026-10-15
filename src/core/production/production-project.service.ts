@@ -830,6 +830,16 @@ export class ProductionProjectService {
         },
       },
     });
+    // A venda rápida no caixa passa a aguardar a retirada (FC-19)
+    await this.prisma.pendingSale.updateMany({
+      where: {
+        quotationId: project.quotationId,
+        delivered: false,
+        ready: false,
+        cancelled: false,
+      },
+      data: { ready: true, readyAt: new Date() },
+    });
     await this.mirror.sync(id);
     return { id, status: 'DONE', autoDone: 0 };
   }

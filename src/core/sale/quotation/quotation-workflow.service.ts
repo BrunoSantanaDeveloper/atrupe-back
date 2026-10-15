@@ -31,6 +31,12 @@ import { SaleChoicesDto } from '../../assembly/dto/sale.dto';
 import { CreditCheckService } from './credit-check.service';
 import { ProductionProjectService } from '../../production/production-project.service';
 import { snapshotStages } from './item-origin';
+import {
+  QUICK_SALE_ALREADY_SENT,
+  QUICK_SALE_CHARGE_REQUIRED,
+  ensurePendingSale,
+  quickSaleMode,
+} from '../quick-sale/quick-sale.rules';
 
 export const ALREADY_APPROVED_MESSAGE = 'Este orçamento já está aprovado.';
 export const PAYMENT_CONDITION_REQUIRED =
@@ -95,9 +101,18 @@ const APPROVAL_INCLUDE = Prisma.validator<Prisma.QuotationInclude>()({
   },
 });
 
-type ApprovalQuotation = Prisma.QuotationGetPayload<{
+export type ApprovalQuotation = Prisma.QuotationGetPayload<{
   include: typeof APPROVAL_INCLUDE;
 }>;
+
+/**
+ * O "Cobrar" da venda rápida (VR-5): recebe as partes na mesma transação da
+ * aprovação, para a venda não ficar aprovada sem o recebimento.
+ */
+export type QuickSaleCharge = (
+  prisma: Prisma.TransactionClient,
+  quotation: ApprovalQuotation,
+) => Promise<void>;
 
 /** A O.S. da aprovação, com o projeto de produção que nasceu (ou nulo). */
 export type ApprovedOrder = Order & {
@@ -438,12 +453,16 @@ export class QuotationWorkflowService {
    *    inteira, em vez de deixar a venda aprovada pela metade;
    * 3. depois da transação, o que o reprocesso (`reprocessApproval`) refaz:
    *    hoje, as etapas de produção da agenda.
+   *
+   * A venda rápida (FC-1, FC-12, VR-5) aprova sem condição de pagamento e
+   * sem o título da condição: com a frente de caixa, aprovar é enviar ao
+   * caixa; cobrada na hora, só o "Cobrar" aprova (`options.charge`).
    */
   async approve(
     quotationId: string,
     userId?: string,
     approvedAt?: Date,
-    options: { creditCheck?: boolean } = {},
+    options: { creditCheck?: boolean; charge?: QuickSaleCharge } = {},
   ): Promise<ApprovedOrder> {
     const current = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
@@ -451,6 +470,7 @@ export class QuotationWorkflowService {
         companyId: true,
         status: true,
         quickSale: true,
+        pendingSale: { select: { id: true } },
         client: { select: { status: true } },
         deliveryInfo: { select: { id: true } },
         quotationPayment: {
@@ -480,8 +500,17 @@ export class QuotationWorkflowService {
         `Quotation with ID '${quotationId}' not found.`,
       );
     }
+    const quick = current.quickSale
+      ? await quickSaleMode(this.prisma, this.planControl, current.companyId)
+      : null;
+    if (quick && current.pendingSale) {
+      throw new ConflictException(QUICK_SALE_ALREADY_SENT);
+    }
     if (current.status === QuotationStatus.APPROVED) {
       throw new ConflictException(ALREADY_APPROVED_MESSAGE);
+    }
+    if (quick === 'CASH_ONLY' && !options.charge) {
+      throw new BadRequestException(QUICK_SALE_CHARGE_REQUIRED);
     }
     if (!current.deliveryInfo) {
       throw new BadRequestException(
@@ -518,8 +547,13 @@ export class QuotationWorkflowService {
       });
     }
     await this.assertComposedReady(quotationId, 'aprovar');
-    await this.validateClientForApproval(current.client, userId, this.prisma);
-    if (options.creditCheck !== false) {
+    // A venda rápida é paga no caixa, em nome do cliente de balcão: o
+    // faturamento para o cliente confere o cadastro e o crédito na frente de
+    // caixa (FC-4)
+    if (!quick) {
+      await this.validateClientForApproval(current.client, userId, this.prisma);
+    }
+    if (options.creditCheck !== false && !quick) {
       await this.credit.assertApproval(quotationId);
     }
 
@@ -551,7 +585,10 @@ export class QuotationWorkflowService {
           quotation,
           startsInProduction,
           prisma,
+          !!quick,
         );
+        if (quick === 'POS') await ensurePendingSale(prisma, quotation);
+        if (options.charge) await options.charge(prisma, quotation);
         return { quotation, order };
       },
       { timeout: 20000 },
@@ -571,7 +608,13 @@ export class QuotationWorkflowService {
       await this.createQuotationHistoryEntry({
         quotationId,
         action: 'APPROVED',
-        description: `Orçamento aprovado por ${userName || 'Usuário'}`,
+        description: `${
+          quick === 'POS'
+            ? 'Venda rápida enviada ao caixa'
+            : options.charge
+              ? 'Venda rápida cobrada e aprovada'
+              : 'Orçamento aprovado'
+        } por ${userName || 'Usuário'}`,
         createdBy: userId,
         createdByName: userName,
       });
@@ -613,11 +656,14 @@ export class QuotationWorkflowService {
   /**
    * O.S., agenda e financeiro da venda aprovada. Cada passo confere o que já
    * existe: o reprocesso completa uma aprovação antiga sem duplicar nada.
+   * A venda rápida recebe no caixa ou no "Cobrar": a condição de pagamento
+   * dela não gera título.
    */
   private async completeApproval(
     quotation: ApprovalQuotation,
     startsInProduction: boolean,
     prisma: Prisma.TransactionClient,
+    quickSale = false,
   ): Promise<Order> {
     const order = await this.createOrUpdateOrder(quotation, prisma);
     await this.createDeliveryScheduleForApproval(
@@ -626,7 +672,9 @@ export class QuotationWorkflowService {
       startsInProduction,
       prisma,
     );
-    await this.handleApprovalFinancials(quotation.id, quotation, prisma);
+    if (!quickSale) {
+      await this.handleApprovalFinancials(quotation.id, quotation, prisma);
+    }
     return order;
   }
 
@@ -646,6 +694,7 @@ export class QuotationWorkflowService {
       select: {
         companyId: true,
         status: true,
+        quickSale: true,
         order: { select: { status: true } },
       },
     });
@@ -667,6 +716,9 @@ export class QuotationWorkflowService {
     }
 
     const startsInProduction = await this.startsInProduction(current.companyId);
+    const quickSale =
+      current.quickSale &&
+      !!(await quickSaleMode(this.prisma, this.planControl, current.companyId));
     const before = await this.approvalState(quotationId);
 
     const order = await this.prisma.$transaction(
@@ -675,7 +727,12 @@ export class QuotationWorkflowService {
           where: { id: quotationId },
           include: APPROVAL_INCLUDE,
         });
-        return this.completeApproval(quotation, startsInProduction, prisma);
+        return this.completeApproval(
+          quotation,
+          startsInProduction,
+          prisma,
+          quickSale,
+        );
       },
       { timeout: 20000 },
     );

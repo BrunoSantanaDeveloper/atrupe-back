@@ -12,6 +12,7 @@ import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.
 import { PlanControlService } from '../../plan/plan-control.service';
 import { CreditCheckService } from './credit-check.service';
 import { ProductionProjectService } from '../../production/production-project.service';
+import { QUICK_SALE_CHARGE_REQUIRED } from '../quick-sale/quick-sale.rules';
 import {
   NotFoundException,
   BadRequestException,
@@ -131,6 +132,12 @@ const createMockPrismaService = () => ({
   productionProject: {
     count: jest.fn().mockResolvedValue(0),
   },
+  // A venda rápida (Fase 7.3): sem configuração, cobrada na hora
+  quickSaleSettings: { findUnique: jest.fn().mockResolvedValue(null) },
+  pendingSale: {
+    findUnique: jest.fn().mockResolvedValue(null),
+    create: jest.fn().mockResolvedValue({ id: 'ps-1' }),
+  },
   bankAccount: {
     findFirst: jest.fn().mockResolvedValue(null),
   },
@@ -148,6 +155,7 @@ const mockDeliveryScheduleService = {
 
 const mockPlanControl = {
   getCompanyPlanInfo: jest.fn(),
+  hasFeature: jest.fn().mockResolvedValue(true),
 };
 
 const mockProductSale = {
@@ -272,6 +280,8 @@ describe('QuotationWorkflowService', () => {
           },
           receivable: { findMany: jest.fn().mockResolvedValue([]) },
           payable: { findMany: jest.fn().mockResolvedValue([]) },
+          // A fila da frente de caixa (FC-12)
+          pendingSale: prisma.pendingSale,
         });
         committed.push(...pending);
         return result;
@@ -501,8 +511,23 @@ describe('QuotationWorkflowService', () => {
             })
           : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
       );
+      // Cobrada na hora: só o "Cobrar" aprova (VR-5)
+      await expect(
+        service.approve(mockQuotationId, mockUserId),
+      ).rejects.toThrow(new BadRequestException(QUICK_SALE_CHARGE_REQUIRED));
+      // Enviada ao caixa: aprova sem condição, entra na fila e não gera o
+      // título da condição (FC-1, FC-12)
+      prisma.quickSaleSettings.findUnique.mockResolvedValue({ payment: 'POS' });
       await service.approve(mockQuotationId, mockUserId);
       expect(committed).toContain('quotation:APPROVED');
+      expect(prisma.pendingSale.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ kind: 'QUICK', path: 'POS' }),
+        }),
+      );
+      expect(
+        mockFinancialService.generateReceivableFromQuotation,
+      ).not.toHaveBeenCalled();
     });
 
     it('produto ou parte inativa: 400 com os itens a trocar (PAD-7)', async () => {

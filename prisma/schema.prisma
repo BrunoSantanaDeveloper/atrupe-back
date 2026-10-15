@@ -114,6 +114,9 @@ model Company {
   productionVehicles     ProductionVehicle[]
   productionProjects     ProductionProject[]
   productionCalendar     ProductionCalendar?
+  quickSaleSettings      QuickSaleSettings?
+  cashFronts             CashFront[]
+  pendingSales           PendingSale[]
 
   @@map("companies")
 }
@@ -1364,6 +1367,8 @@ model Quotation {
   drafts            QuotationDraft[]
   /// O projeto de produção da venda aprovada (ELITE)
   productionProject ProductionProject?
+  /// A situação no caixa da venda rápida (FC-11)
+  pendingSale       PendingSale?
 
   @@unique([companyId, legacyId])
   @@index([id, companyId])
@@ -4554,4 +4559,154 @@ enum ProductionAttachmentKind {
   CUT
   PHOTO
   OTHER
+}
+
+/// A configuração da venda rápida (VR-4, VR-5, FC-17): uma por empresa.
+model QuickSaleSettings {
+  id                  String           @id @default(uuid())
+  companyId           String           @unique
+  enabled             Boolean          @default(true)
+  /// Cobrar na hora, ou enviar à frente de caixa (VR-5)
+  payment             QuickSalePayment @default(CASH_ONLY)
+  /// dinheiro, pix, cartao
+  cashMethods         String[]         @default(["dinheiro", "pix", "cartao"])
+  downPaymentRequired Boolean          @default(false)
+  downPaymentPercent  Int              @default(50)
+  clientId            String?
+  description         String           @default("")
+  seriesId            String?
+  /// O atendimento (origem de contato)
+  serviceTypeId       String?
+  responsibleId       String?
+  updatedAt           DateTime         @updatedAt
+  company             Company          @relation(fields: [companyId], references: [id])
+
+  @@map("quick_sale_settings")
+}
+
+/// O cadastro da frente de caixa (FC-3, FC-7, FC-18): uma padrão por
+/// empresa. Valores em centavos (tabela nova).
+model CashFront {
+  id                String        @id @default(uuid())
+  companyId         String
+  name              String        @default("Caixa 1")
+  isDefault         Boolean       @default(false)
+  blindCount        Boolean       @default(false)
+  shortageTolerance Int?
+  /// O arredondamento no balcão (FC-18), em centavos
+  roundingLimit     Int           @default(100)
+  /// A conta da gaveta (CASH), que recebe o dinheiro do fechamento
+  drawerAccountId   String?
+  isActive          Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  company           Company       @relation(fields: [companyId], references: [id])
+  sessions          CashSession[]
+
+  @@index([companyId])
+  @@map("cash_fronts")
+}
+
+/// A sessão do operador na frente de caixa (FC-7, FC-14).
+model CashSession {
+  id             String                @id @default(uuid())
+  companyId      String
+  cashFrontId    String
+  number         Int
+  operatorId     String?
+  operatorName   String
+  openedAt       DateTime              @default(now())
+  openingBalance Int                   @default(0)
+  status         CashSessionStatus     @default(OPEN)
+  closedAt       DateTime?
+  countedCash    Int?
+  keep           Int?
+  expected       Int?
+  difference     Int?
+  closingNote    String?
+  cashFront      CashFront             @relation(fields: [cashFrontId], references: [id])
+  movements      CashSessionMovement[]
+
+  @@index([companyId, status])
+  @@map("cash_sessions")
+}
+
+/// Recebimento, sangria, suprimento ou estorno na sessão (FC-8, FC-9, FC-13).
+model CashSessionMovement {
+  id              String                  @id @default(uuid())
+  sessionId       String
+  kind            CashSessionMovementKind
+  description     String
+  /// [{ method, paymentConditionId, bankAccountId, amount }] em centavos
+  parts           Json                    @default("[]")
+  discount        Int                     @default(0)
+  reason          String?
+  responsibleId   String?
+  responsibleName String?
+  bankAccountId   String?
+  pendingSaleId   String?
+  createdAt       DateTime                @default(now())
+  session         CashSession             @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([pendingSaleId])
+  @@map("cash_session_movements")
+}
+
+/// A venda na fila do caixa, ou cobrada na hora (FC-2, FC-11, VR-5): a
+/// situação no caixa do orçamento. Valores em centavos.
+model PendingSale {
+  id               String           @id @default(uuid())
+  companyId        String
+  quotationId      String           @unique
+  kind             PendingSaleKind  @default(QUICK)
+  path             QuickSalePayment @default(POS)
+  total            Int
+  paid             Int              @default(0)
+  discount         Int              @default(0)
+  delivered        Boolean          @default(false)
+  /// false: o caixa faturou para o cliente (FC-4), fica só como registro
+  goesToCash       Boolean          @default(true)
+  claimedSessionId String?
+  billing          String?
+  billedSessionId  String?
+  ready            Boolean          @default(false)
+  readyAt          DateTime?
+  cancelled        Boolean          @default(false)
+  cancelledAt      DateTime?
+  cancelReason     String?
+  loss             Int?
+  discardedByName  String?
+  discardedAt      DateTime?
+  approvedAt       DateTime
+  sentAt           DateTime         @default(now())
+  /// Tudo o que entrou: [{ method, paymentConditionId, bankAccountId, amount }]
+  parts            Json             @default("[]")
+  company          Company          @relation(fields: [companyId], references: [id])
+  quotation        Quotation        @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, delivered, cancelled])
+  @@map("pending_sales")
+}
+
+enum QuickSalePayment {
+  CASH_ONLY
+  POS
+}
+
+enum CashSessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum CashSessionMovementKind {
+  SALE
+  WITHDRAWAL
+  SUPPLY
+  REVERSAL
+}
+
+enum PendingSaleKind {
+  QUICK
+  QUOTATION
 }

@@ -172,8 +172,9 @@ export const FEATURE_ENFORCEMENT: Record<
       'Ligar ou desligar o controle de caixa de uma conta bancária (sem o recurso, a API ignora a mudança).',
   },
   pdv_screen: {
-    level: 'tela',
-    detail: 'A frente de caixa ainda não tem API: só a tela é bloqueada.',
+    level: 'api',
+    detail:
+      'Frente de caixa inteira: sessão do operador, fila das vendas e enviar a venda rápida ao caixa (Fase 7.4).',
   },
   bank_account_creation: {
     level: 'api',

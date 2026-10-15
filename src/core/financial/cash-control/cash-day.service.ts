@@ -8,7 +8,9 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import {
+  CashActor,
   MissingCashDay,
+  actorOfUser,
   brDay,
   dayOf,
   dayRange,
@@ -33,8 +35,7 @@ const bad = (message: string): never => {
 const DAY_NOT_FOUND = 'Caixa não encontrado';
 const ACCOUNT_NOT_FOUND = 'Conta não encontrada';
 
-/** Quem age: o usuário da sessão (CX-2). */
-export type CashActor = { id: string | null; name: string };
+export type { CashActor };
 
 const MOVEMENT_SELECT = {
   id: true,
@@ -164,23 +165,8 @@ export class CashDayService {
   constructor(private readonly prisma: PrismaService) {}
 
   /** Quem age: o colaborador da empresa, ou o usuário. */
-  async actorOf(user: { userId?: string; companyId: string }) {
-    if (!user.userId) return { id: null, name: 'Usuário' };
-    const employee = await this.prisma.employee.findFirst({
-      where: { userId: user.userId, companyId: user.companyId },
-      select: { name: true, user: { select: { name: true } } },
-    });
-    const name =
-      employee?.name ||
-      employee?.user?.name ||
-      (
-        await this.prisma.user.findUnique({
-          where: { id: user.userId },
-          select: { name: true },
-        })
-      )?.name ||
-      'Usuário';
-    return { id: user.userId, name };
+  actorOf(user: { userId?: string; companyId: string }) {
+    return actorOfUser(this.prisma, user);
   }
 
   /* ------------------------------------------------------------ leitura */
