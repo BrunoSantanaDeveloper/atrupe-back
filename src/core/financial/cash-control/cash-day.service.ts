@@ -297,6 +297,8 @@ export class CashDayService {
       informed: toCents(row.informed) ?? undefined,
       note: row.notes ?? undefined,
       reopenings: (row.reopenings as unknown[]) ?? [],
+      // Sem nenhum lançamento: não trava o dia seguinte (vira o caixa dele)
+      untouched: !row.transactions.length,
       totals: dayTotals(opening, movements),
       movements,
     };
@@ -392,6 +394,7 @@ export class CashDayService {
                 where: { awaitingApproval: true },
                 select: { id: true },
               },
+              _count: { select: { transactions: true } },
             },
           },
         },
@@ -406,7 +409,9 @@ export class CashDayService {
       accounts: await Promise.all(
         accounts.map(async (account) => {
           const stuck = account.cashRegister.find(
-            (register) => dayOf(register.openingDate) < today,
+            (register) =>
+              dayOf(register.openingDate) < today &&
+              register._count.transactions > 0,
           );
           const todayDay = todayRows.find(
             (register) => register.bankAccountId === account.id,
@@ -491,7 +496,11 @@ export class CashDayService {
           openingDate: { lt: range.gte },
         },
         orderBy: { openingDate: 'asc' },
-        select: { openingDate: true },
+        select: {
+          id: true,
+          openingDate: true,
+          _count: { select: { transactions: true } },
+        },
       }),
       this.prisma.cashRegister.count({
         where: { bankAccountId: account.id, openingDate: { gt: range.lte } },
@@ -499,7 +508,10 @@ export class CashDayService {
     ]);
     if (sameDay)
       throw new ConflictException('Esta conta já tem caixa nesse dia');
-    if (stuck) {
+    // O caixa aberto que nunca recebeu lançamento (o que o cadastro da
+    // empresa abre) não trava o dia: ele passa a ser o caixa pedido
+    const untouched = stuck && !stuck._count.transactions ? stuck : null;
+    if (stuck && !untouched) {
       throw new ConflictException(
         `O caixa de ${brDay(dayOf(stuck.openingDate))} desta conta ainda está aberto. Feche-o antes de abrir outro dia`,
       );
@@ -511,13 +523,29 @@ export class CashDayService {
     }
     // A abertura é o saldo do caixa anterior da mesma conta (CX-3)
     const previous = await this.prisma.cashRegister.findFirst({
-      where: { bankAccountId: account.id, openingDate: { lt: range.gte } },
+      where: {
+        bankAccountId: account.id,
+        openingDate: { lt: range.gte },
+        ...(untouched ? { id: { not: untouched.id } } : {}),
+      },
       orderBy: { openingDate: 'desc' },
       select: { id: true },
     });
     const opening = previous
       ? await this.balanceOfDay(previous.id)
       : (toCents(account.openingBalance) ?? 0);
+    if (untouched) {
+      await this.prisma.cashRegister.update({
+        where: { id: untouched.id },
+        data: {
+          openingDate: new Date(range.gte.getTime() + 12 * 3600000),
+          openingBalance: toReais(opening),
+          openedById: actor.id,
+          openedByName: actor.name,
+        },
+      });
+      return this.detail(companyId, untouched.id);
+    }
     const last = await this.prisma.cashRegister.aggregate({
       where: { companyId },
       _max: { number: true },
