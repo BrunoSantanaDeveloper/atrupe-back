@@ -12,6 +12,7 @@ import {
   MissingCashDay,
   actorOfUser,
   brDay,
+  dayRange,
   dayOf,
   postMovement,
   toReais,
@@ -311,12 +312,24 @@ export class PdvService {
       orderBy: { approvedAt: 'asc' },
     });
     const claimers = await this.claimers(sales.map((s) => s.claimedSessionId));
+    // Os caixas de outros operadores esquecidos abertos de um dia anterior:
+    // quem tem a permissão de fechar fecha, com justificativa (FC-14)
+    const forgotten = await this.prisma.cashSession.findMany({
+      where: {
+        companyId: user.companyId,
+        status: 'OPEN',
+        operatorId: { not: user.userId },
+        openedAt: { lt: dayRange(dayOf(new Date())).gte },
+      },
+      include: SESSION_INCLUDE,
+      orderBy: { openedAt: 'asc' },
+    });
+    const accounts = await this.accountNames(user.companyId);
     return {
-      session: session
-        ? this.sessionView(session, await this.accountNames(user.companyId))
-        : null,
+      session: session ? this.sessionView(session, accounts) : null,
       sales: sales.map((sale) => this.saleView(sale, claimers)),
       openCashFronts: open.length,
+      forgotten: forgotten.map((row) => this.sessionView(row, accounts)),
     };
   }
 
