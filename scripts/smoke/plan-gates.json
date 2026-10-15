@@ -196,6 +196,34 @@
       "feature": "productivity_tracking",
       "minPlan": "ELITE",
       "where": "src/core/production/production.controller.ts (productivity, @RequiresFeature na rota)"
+    },
+    {
+      "method": "GET",
+      "path": "/sale/quick-sale/settings",
+      "feature": "quotation_quick_sale",
+      "minPlan": "LITE",
+      "where": "src/core/sale/quick-sale/quick-sale.controller.ts (@RequiresFeature na classe)"
+    },
+    {
+      "method": "GET",
+      "path": "/stock?page=1&limit=1",
+      "feature": "stock_control",
+      "minPlan": "FULL",
+      "where": "src/core/stock/stock.controller.ts (StockController, @RequiresFeature na classe)"
+    },
+    {
+      "method": "GET",
+      "path": "/stock/movement?page=1&limit=1",
+      "feature": "stock_control",
+      "minPlan": "FULL",
+      "where": "src/core/stock/stock.controller.ts (StockController, @RequiresFeature na classe)"
+    },
+    {
+      "method": "GET",
+      "path": "/stock/invoice-entry?page=1&limit=1",
+      "feature": "invoice_entry",
+      "minPlan": "FULL",
+      "where": "src/core/stock/stock.controller.ts (InvoiceEntryController, @RequiresFeature na classe)"
     }
   ]
 }
