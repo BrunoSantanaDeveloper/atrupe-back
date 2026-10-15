@@ -182,6 +182,23 @@ function sortByDeliveryDate(orders: SalesOrderRow[]): SalesOrderRow[] {
   });
 }
 
+/**
+ * O dia do recebimento no filtro do relatório de comissões: o paidDate é
+ * gravado como a data da baixa (meia-noite UTC), e o fluxo financeiro filtra
+ * na janela UTC do dia. Com new Date('AAAA-MM-DD') no fim, o último dia do
+ * período ficava de fora.
+ */
+function receivedDay(value: string | undefined, boundary: 'start' | 'end') {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    if (boundary === 'start') date.setUTCHours(0, 0, 0, 0);
+    else date.setUTCHours(23, 59, 59, 999);
+  }
+  return date;
+}
+
 @Injectable()
 export class ReportService {
   constructor(
@@ -3877,12 +3894,9 @@ export class ReportService {
     filters: CommissionReportFilterDto,
   ) {
     const now = new Date();
-    const gte = filters.receivedStartDate
-      ? new Date(filters.receivedStartDate)
-      : startOfMonth(now);
-    const lte = filters.receivedEndDate
-      ? new Date(filters.receivedEndDate)
-      : now;
+    const gte =
+      receivedDay(filters.receivedStartDate, 'start') ?? startOfMonth(now);
+    const lte = receivedDay(filters.receivedEndDate, 'end') ?? now;
     const installments = await this.prisma.receivableInstallment.findMany({
       where: {
         status: 'PAID',
@@ -3972,12 +3986,8 @@ export class ReportService {
     }
     const { startDate, endDate } = this.getCommissionDateRange(filters);
 
-    const receivedStart = filters.receivedStartDate
-      ? new Date(filters.receivedStartDate)
-      : undefined;
-    const receivedEnd = filters.receivedEndDate
-      ? new Date(filters.receivedEndDate)
-      : undefined;
+    const receivedStart = receivedDay(filters.receivedStartDate, 'start');
+    const receivedEnd = receivedDay(filters.receivedEndDate, 'end');
 
     const orders = await this.prisma.order.findMany({
       where: {
@@ -4065,12 +4075,8 @@ export class ReportService {
     const groupBy = filters.groupBy || 'none';
     const received = filters.commissionType === 'received_value';
 
-    const receivedStart = filters.receivedStartDate
-      ? new Date(filters.receivedStartDate)
-      : undefined;
-    const receivedEnd = filters.receivedEndDate
-      ? new Date(filters.receivedEndDate)
-      : undefined;
+    const receivedStart = receivedDay(filters.receivedStartDate, 'start');
+    const receivedEnd = receivedDay(filters.receivedEndDate, 'end');
 
     const orders = received
       ? []
