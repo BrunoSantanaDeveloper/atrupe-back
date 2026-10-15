@@ -60,6 +60,21 @@ export interface OrderGroup {
   orders: Order[];
 }
 
+/**
+ * A situação do título depois do cancelamento da O.S. (ALT-7, 7.1): com
+ * parcela paga ou provisionada, o título fica (pago, ou provisionado); sem
+ * nada recebido, cancelado.
+ */
+const settledStatus = (installments: { status: string }[]) => {
+  const kept = installments.filter(
+    (row) => row.status === 'PAID' || row.status === 'PROVISIONED',
+  );
+  if (!kept.length) return 'CANCELED' as const;
+  return kept.every((row) => row.status === 'PAID')
+    ? ('PAID' as const)
+    : ('PROVISIONED' as const);
+};
+
 @Injectable()
 export class OrderService {
   private readonly logger = new Logger(OrderService.name);
@@ -747,10 +762,12 @@ export class OrderService {
             canceledReceivableInstallmentsCount += pendingCount;
           }
 
+          // O recebido fica na venda cancelada (ALT-7, 7.1): só o título sem
+          // nada recebido é cancelado
           await prisma.receivable.update({
             where: { id: receivable.id },
             data: {
-              status: 'CANCELED',
+              status: settledStatus(receivable.installments),
               cancelReason:
                 'Cancelado automaticamente pelo cancelamento da ordem de serviço',
             },
@@ -778,7 +795,7 @@ export class OrderService {
           await prisma.payable.update({
             where: { id: payable.id },
             data: {
-              status: 'CANCELED',
+              status: settledStatus(payable.installments),
               cancelReason:
                 'Cancelado automaticamente pelo cancelamento da ordem de serviço',
             },

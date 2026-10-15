@@ -464,23 +464,12 @@ export class CompanySeedsService {
       data: {
         name: 'Caixa Empresa',
         description: 'Caixa Empresa',
-        cashControl: true,
+        // Empresa nova começa com o controle de caixa desligado (CX-1)
+        cashControl: false,
         // O caixa físico da empresa (CX-3): a gaveta se conta
         kind: 'CASH',
         bankId: bank.id,
         companyId,
-      },
-    });
-
-    await this.prisma.cashRegister.create({
-      data: {
-        openingDate: new Date(),
-        openingBalance: 0,
-        companyId,
-        bankAccountId: bankAccount.id,
-        status: 'OPEN',
-        number: 1,
-        openedByName: 'Cadastro da empresa',
       },
     });
 

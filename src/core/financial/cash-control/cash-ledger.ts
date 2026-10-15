@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { Prisma, TransactionType } from '@prisma/client';
 import {
   parseProjectDayBoundary,
@@ -121,6 +122,100 @@ export async function postingRegisterRow(
         operationDate: date,
       }
     : null;
+}
+
+/**
+ * Onde a baixa do a receber e do a pagar entra (CX-2, CX-3): na conta com
+ * controle, no caixa do dia (ou retroativo no aberto); na conta sem controle,
+ * ou sem nenhum caixa aberto, direto na conta, sem caixa. A baixa nunca é
+ * recusada por falta de caixa (CX-0): o saldo da conta é calculado dos
+ * lançamentos e precisa de todos eles.
+ */
+export async function baixaTarget(tx: Tx, bankAccountId: string, date: Date) {
+  const account = await tx.bankAccount.findUnique({
+    where: { id: bankAccountId },
+    select: { cashControl: true, kind: true },
+  });
+  const controlled = !!account?.cashControl && account.kind !== 'CARD';
+  const row = controlled
+    ? await postingRegisterRow(tx, bankAccountId, date)
+    : null;
+  return (
+    row ?? {
+      id: null as string | null,
+      bankAccountId,
+      retroactive: false,
+      operationDate: date,
+    }
+  );
+}
+
+/**
+ * Estorna um lançamento (CX-2, ALT-7): nada com histórico é apagado; entra
+ * o lançamento inverso, ligado ao original, como movimentação do dia (no
+ * caixa aberto da conta, ou direto na conta sem controle). O que entrou num
+ * caixa já fechado só o administrador estorna.
+ */
+export async function reverseTransaction(
+  tx: Tx,
+  transactionId: string,
+  by: CashActor & { isAdmin?: boolean },
+  reason?: string | null,
+) {
+  const original = await tx.transaction.findUnique({
+    where: { id: transactionId },
+    include: {
+      cashRegister: { select: { status: true, bankAccountId: true } },
+    },
+  });
+  if (!original) return null;
+  if (original.cashRegister?.status === 'CLOSED' && !by.isAdmin) {
+    throw new ForbiddenException(
+      'Esta baixa entrou num caixa já fechado: só o administrador estorna',
+    );
+  }
+  const bankAccountId =
+    original.bankAccountId ?? original.cashRegister?.bankAccountId;
+  if (!bankAccountId) return null;
+  const now = new Date();
+  const target = await baixaTarget(tx, bankAccountId, now);
+  const type: TransactionType =
+    original.type === 'INCOME'
+      ? 'OUTCOME'
+      : original.type === 'OUTCOME'
+        ? 'INCOME'
+        : original.type === 'TRANSFER_INCOME'
+          ? 'TRANSFER_OUTCOME'
+          : 'TRANSFER_INCOME';
+  const reversal = await tx.transaction.create({
+    data: {
+      type,
+      kind: 'REVERSAL',
+      amount: original.amount,
+      description: `Estorno · ${original.description ?? ''}`.trim(),
+      reason: reason?.trim() || null,
+      transactionDate: now,
+      operationDate: now,
+      cashRegisterId: target.id,
+      bankAccountId,
+      retroactive: target.retroactive,
+      linkedId: original.id,
+      responsibleId: by.id,
+      responsibleName: by.name,
+      paymentConditionId: original.paymentConditionId,
+      natureId: original.natureId,
+      subCategoryId: original.subCategoryId,
+    },
+  });
+  if (target.id) {
+    await tx.cashRegister.update({
+      where: { id: target.id },
+      data: INCOMING.includes(type)
+        ? { totalIncomes: { increment: original.amount } }
+        : { totalOutcomes: { increment: original.amount } },
+    });
+  }
+  return reversal;
 }
 
 export type PostInput = {

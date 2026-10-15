@@ -30,7 +30,7 @@ import {
   FinancialRefs,
 } from '../utils/financial-refs';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
-import { postingRegisterRow } from '../cash-control/cash-ledger';
+import { baixaTarget, reverseTransaction } from '../cash-control/cash-ledger';
 
 @Injectable()
 export class ReceivableService {
@@ -148,7 +148,7 @@ export class ReceivableService {
             // Busca o caixa aberto
             // O caixa em que a baixa entra: o do dia, o aberto, ou retroativo no
             // aberto quando o dia do fato fechou (CX-3)
-            const openCashRegister = await postingRegisterRow(
+            const openCashRegister = await baixaTarget(
               tx,
               createdInstallment.bankAccountId,
               paidDate,
@@ -164,7 +164,9 @@ export class ReceivableService {
                   receivableInstallment: {
                     connect: { id: createdInstallment.id },
                   },
-                  cashRegister: { connect: { id: openCashRegister.id } },
+                  ...(openCashRegister.id
+                    ? { cashRegister: { connect: { id: openCashRegister.id } } }
+                    : {}),
                   bankAccount: {
                     connect: { id: openCashRegister.bankAccountId },
                   },
@@ -174,10 +176,11 @@ export class ReceivableService {
               });
 
               // Atualiza o valor total do caixa
-              await tx.cashRegister.update({
-                where: { id: openCashRegister.id },
-                data: { totalIncomes: { increment: amount } },
-              });
+              if (openCashRegister.id)
+                await tx.cashRegister.update({
+                  where: { id: openCashRegister.id },
+                  data: { totalIncomes: { increment: amount } },
+                });
             }
           }
         }
@@ -961,7 +964,7 @@ export class ReceivableService {
               // Busca o caixa aberto
               // O caixa em que a baixa entra: o do dia, o aberto, ou retroativo no
               // aberto quando o dia do fato fechou (CX-3)
-              const openCashRegister = await postingRegisterRow(
+              const openCashRegister = await baixaTarget(
                 tx,
                 bankAccountId,
                 new Date(paidDate),
@@ -977,7 +980,13 @@ export class ReceivableService {
                     payableInstallment: {
                       connect: { id: newPayableInstallment.id },
                     },
-                    cashRegister: { connect: { id: openCashRegister.id } },
+                    ...(openCashRegister.id
+                      ? {
+                          cashRegister: {
+                            connect: { id: openCashRegister.id },
+                          },
+                        }
+                      : {}),
                     bankAccount: {
                       connect: { id: openCashRegister.bankAccountId },
                     },
@@ -987,10 +996,11 @@ export class ReceivableService {
                 });
 
                 // Atualiza o valor total do caixa
-                await tx.cashRegister.update({
-                  where: { id: openCashRegister.id },
-                  data: { totalOutcomes: { increment: amount } },
-                });
+                if (openCashRegister.id)
+                  await tx.cashRegister.update({
+                    where: { id: openCashRegister.id },
+                    data: { totalOutcomes: { increment: amount } },
+                  });
               }
             }
           } else {
@@ -1042,7 +1052,7 @@ export class ReceivableService {
               // Busca o caixa aberto
               // O caixa em que a baixa entra: o do dia, o aberto, ou retroativo no
               // aberto quando o dia do fato fechou (CX-3)
-              const openCashRegister = await postingRegisterRow(
+              const openCashRegister = await baixaTarget(
                 tx,
                 bankAccountId,
                 new Date(paidDate),
@@ -1058,7 +1068,13 @@ export class ReceivableService {
                     receivableInstallment: {
                       connect: { id: newReceivableInstallment.id },
                     },
-                    cashRegister: { connect: { id: openCashRegister.id } },
+                    ...(openCashRegister.id
+                      ? {
+                          cashRegister: {
+                            connect: { id: openCashRegister.id },
+                          },
+                        }
+                      : {}),
                     bankAccount: {
                       connect: { id: openCashRegister.bankAccountId },
                     },
@@ -1068,10 +1084,11 @@ export class ReceivableService {
                 });
 
                 // Atualiza o valor total do caixa
-                await tx.cashRegister.update({
-                  where: { id: openCashRegister.id },
-                  data: { totalIncomes: { increment: amount } },
-                });
+                if (openCashRegister.id)
+                  await tx.cashRegister.update({
+                    where: { id: openCashRegister.id },
+                    data: { totalIncomes: { increment: amount } },
+                  });
               }
             }
           }
@@ -1180,17 +1197,11 @@ export class ReceivableService {
       // Busca o caixa aberto
       // O caixa em que a baixa entra: o do dia, o aberto, ou retroativo no
       // aberto quando o dia do fato fechou (CX-3)
-      const openCashRegister = await postingRegisterRow(
+      const openCashRegister = await baixaTarget(
         tx,
         bankAccountId,
         endOfDay(new Date(paidDateFormatted)),
       );
-
-      if (!openCashRegister) {
-        throw new BadRequestException(
-          'Nenhum caixa aberto encontrado para esta data.',
-        );
-      }
 
       await tx.transaction.create({
         data: {
@@ -1199,7 +1210,9 @@ export class ReceivableService {
           description: `Pagamento da parcela ${installment.id}`,
           transactionDate: new Date(paidDateFormatted),
           receivableInstallment: { connect: { id: installment.id } },
-          cashRegister: { connect: { id: openCashRegister.id } },
+          ...(openCashRegister.id
+            ? { cashRegister: { connect: { id: openCashRegister.id } } }
+            : {}),
           bankAccount: { connect: { id: openCashRegister.bankAccountId } },
           retroactive: openCashRegister.retroactive,
           operationDate: openCashRegister.operationDate,
@@ -1207,10 +1220,11 @@ export class ReceivableService {
       });
 
       // Atualiza o valor total do caixa
-      await tx.cashRegister.update({
-        where: { id: openCashRegister.id },
-        data: { totalIncomes: { increment: amount } },
-      });
+      if (openCashRegister.id)
+        await tx.cashRegister.update({
+          where: { id: openCashRegister.id },
+          data: { totalIncomes: { increment: amount } },
+        });
 
       await tx.receivableInstallment.update({
         where: { id: installmentId },
@@ -1226,6 +1240,8 @@ export class ReceivableService {
     installmentId: string,
     userId?: string,
     userName?: string,
+    isAdmin = false,
+    reason?: string,
   ) {
     try {
       const installmentData = await this.prisma.receivableInstallment.findFirst(
@@ -1247,7 +1263,24 @@ export class ReceivableService {
         );
       }
 
-      const paymentAmount = installmentData.paidAmount;
+      // A venda recebida na frente de caixa se estorna pelo cancelamento
+      // dela no caixa (FC-13): o dinheiro está na gaveta, não na conta
+      const atCashier = await this.prisma.pendingSale.findFirst({
+        where: {
+          path: 'POS',
+          cancelled: false,
+          quotation: {
+            receivable: { some: { id: installmentData.receivableId } },
+          },
+        },
+        select: { id: true },
+      });
+      if (atCashier) {
+        throw new BadRequestException(
+          'Esta venda foi recebida na frente de caixa: o estorno é pelo cancelamento da venda no caixa',
+        );
+      }
+
       const previousStatus = installmentData.status;
       const previousPaidDate = installmentData.paidDate;
       const previousPaidAmount = installmentData.paidAmount;
@@ -1293,6 +1326,8 @@ export class ReceivableService {
             paidAmount: null,
             paidDate: null,
             provisionDate: null,
+            // O lançamento estornado fica; a parcela se solta dele
+            transactionId: null,
             // paymentConditionId e bankAccountId são mantidos
           },
         });
@@ -1319,31 +1354,14 @@ export class ReceivableService {
           }
 
           if (relatedTransaction) {
-            // Remove a transação de pagamento
-            await tx.transaction.delete({
-              where: { id: relatedTransaction.id },
-            });
-
-            // Atualiza o valor total do caixa se houver um caixa aberto
-            if (relatedTransaction.cashRegisterId) {
-              const cashRegister = await tx.cashRegister.findUnique({
-                where: { id: relatedTransaction.cashRegisterId },
-              });
-              if (cashRegister.status !== 'OPEN') {
-                throw new BadRequestException(
-                  'Caixa não está aberto para desfazer o pagamento.',
-                );
-              }
-
-              if (cashRegister) {
-                await tx.cashRegister.update({
-                  where: { id: cashRegister.id },
-                  data: {
-                    totalIncomes: { decrement: paymentAmount },
-                  },
-                });
-              }
-            }
+            // Nada com histórico é apagado (CX-2): entra o lançamento
+            // inverso, ligado ao original, como movimentação do dia
+            await reverseTransaction(
+              tx,
+              relatedTransaction.id,
+              { id: userId ?? null, name: userName || 'Usuário', isAdmin },
+              reason,
+            );
           }
         }
       });

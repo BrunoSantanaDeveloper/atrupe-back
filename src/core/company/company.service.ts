@@ -1497,19 +1497,12 @@ export class CompanyService {
       data: {
         name: 'Caixa Empresa',
         description: 'Caixa Empresa',
-        cashControl: true,
+        // Empresa nova começa com o controle de caixa desligado (CX-1)
+        cashControl: false,
+        // O caixa físico da empresa (CX-3): a gaveta se conta
+        kind: 'CASH',
         bankId: bank.id,
         companyId,
-      },
-    });
-
-    await this.prisma.cashRegister.create({
-      data: {
-        openingDate: new Date(),
-        openingBalance: 0,
-        companyId,
-        bankAccountId: bankAccount.id,
-        status: 'OPEN',
       },
     });
 
@@ -1528,6 +1521,8 @@ export class CompanyService {
           acceptMultipleCashRegisters: false,
           paymentType: 'PAYSOFF',
           incomeType: 'PAYSOFF',
+          // A única conta da empresa nova é a padrão de toda forma (CX-2)
+          isDefault: true,
         },
       });
     }

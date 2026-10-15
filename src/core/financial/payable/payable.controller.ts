@@ -434,6 +434,8 @@ export class PayableController {
       installmentId,
       req.user.userId,
       req.user.name,
+      !!req.user.isAdmin,
+      req.body?.reason,
     );
   }
 

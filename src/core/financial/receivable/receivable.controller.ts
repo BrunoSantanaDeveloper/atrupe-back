@@ -497,6 +497,8 @@ export class ReceivableController {
       installmentId,
       req.user.userId,
       req.user.name,
+      !!req.user.isAdmin,
+      req.body?.reason,
     );
   }
 

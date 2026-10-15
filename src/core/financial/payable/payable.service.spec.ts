@@ -22,6 +22,7 @@ const allFound = () =>
   jest.fn(async ({ where }: any) => where?.id?.in?.length ?? 0);
 
 const createMockPrismaService = () => ({
+  pendingSale: { findFirst: jest.fn().mockResolvedValue(null) },
   payable: {
     create: jest.fn(),
     findUnique: jest.fn(),
@@ -842,6 +843,11 @@ describe('PayableService', () => {
               .fn()
               .mockResolvedValue({ id: 'new-rec-inst-1', paidAmount: 50 }),
           },
+          bankAccount: {
+            findUnique: jest
+              .fn()
+              .mockResolvedValue({ cashControl: true, kind: 'BANK' }),
+          },
           cashRegister: {
             findFirst: jest.fn().mockResolvedValue({ id: 'cash-1' }),
             update: jest.fn(),
@@ -915,6 +921,11 @@ describe('PayableService', () => {
               update: jest.fn().mockResolvedValue(mockUpdatedInstallment),
             },
             payable: { findUnique: jest.fn() },
+            bankAccount: {
+              findUnique: jest
+                .fn()
+                .mockResolvedValue({ cashControl: true, kind: 'BANK' }),
+            },
             cashRegister: {
               findFirst: jest.fn().mockResolvedValue({
                 id: 'cash-1',
@@ -940,6 +951,11 @@ describe('PayableService', () => {
                 bankAccountId: mockBankAccountId,
               }),
               update: jest.fn().mockResolvedValue({}),
+            },
+            bankAccount: {
+              findUnique: jest
+                .fn()
+                .mockResolvedValue({ cashControl: true, kind: 'BANK' }),
             },
             cashRegister: {
               findFirst: jest.fn().mockResolvedValue({ id: 'cash-1' }),
