@@ -1046,6 +1046,16 @@ model CashRegister {
   bankAccountId  String
   description    String?
   notes          String?
+  /// Número sequencial na empresa; quem abriu e quem fechou (CX-2)
+  number         Int?
+  openedById     String?
+  openedByName   String?
+  closedById     String?
+  closedByName   String?
+  /// O que foi contado na gaveta ou o saldo do extrato, em reais
+  informed       Float?
+  /// [{ at, by, reason }]: cada reabertura, com o motivo (ALT-7)
+  reopenings     Json                     @default("[]")
   cashControls   BankAccountCashControl[] // Analisar pra que precisa dessas configurações da conta bancária aqui
   bankAccount    BankAccount              @relation(fields: [bankAccountId], references: [id])
   company        Company                  @relation(fields: [companyId], references: [id])
@@ -1062,12 +1072,36 @@ model Transaction {
   amount                Float                   @default(0)
   description           String?
   transactionDate       DateTime                @default(now())
-  cashRegisterId        String
+  /// Nulo na conta sem controle de caixa: o lançamento vai direto na conta
+  cashRegisterId        String?
+  bankAccountId         String?
   reason                String?
+  /// O que não é recebimento nem pagamento comum: ajuste, quebra, estorno
+  kind                  CashMovementKind?
+  /// A data do fato; com dia já fechado, entra no caixa aberto como retroativo (CX-3)
+  operationDate         DateTime?
+  retroactive           Boolean                 @default(false)
+  /// O dinheiro que chega da frente de caixa espera a aprovação (CX-4)
+  awaitingApproval      Boolean                 @default(false)
+  approvedById          String?
+  approvedByName        String?
+  approvedAt            DateTime?
+  /// Quem lançou (CX-2)
+  responsibleId         String?
+  responsibleName       String?
+  /// O plano de contas do ajuste (CX-5)
+  natureId              String?
+  subCategoryId         String?
+  /// O par da transferência ou do estorno (CX-2)
+  linkedId              String?
+  paymentConditionId    String?
   payableInstallment    PayableInstallment[]
   receivableInstallment ReceivableInstallment[]
-  cashRegister          CashRegister            @relation(fields: [cashRegisterId], references: [id])
+  cashRegister          CashRegister?           @relation(fields: [cashRegisterId], references: [id], onDelete: Restrict)
+  bankAccount           BankAccount?            @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
 
+  @@index([bankAccountId, transactionDate])
+  @@index([linkedId])
   @@map("transactions")
 }
 
@@ -1141,12 +1175,23 @@ model BankAccount {
   companyId              String
   bankId                 String
   cashControl            Boolean                  @default(false)
+  /// CASH caixa físico, BANK banco, CARD operadora (CX-3): decide como o dia fecha
+  kind                   BankAccountKind          @default(BANK)
+  /// Só na conta CASH com controle: a contagem às cegas (FC-7)
+  blindCount             Boolean                  @default(false)
+  /// Tolerância da quebra, em reais; nula = toda diferença é quebra (4.1)
+  shortageTolerance      Float?
+  /// Saldo inicial em reais e a data dele (CX-2)
+  openingBalance         Float                    @default(0)
+  openingDate            DateTime?                @db.Date
   bankAccountCashControl BankAccountCashControl[]
   bank                   Bank                     @relation(fields: [bankId], references: [id])
   company                Company                  @relation(fields: [companyId], references: [id])
   cashRegister           CashRegister[]
   PayableInstallment     PayableInstallment[]
   ReceivableInstallment  ReceivableInstallment[]
+  /// Lançamentos da conta (sem controle, vão direto, sem caixa do dia)
+  transactions           Transaction[]
 
   @@map("bank_accounts")
 }
@@ -1163,6 +1208,8 @@ model BankAccountCashControl {
   bankAccountId               String
   cashRegisterId              String?
   acceptMultipleCashRegisters Boolean                    @default(false)
+  /// A conta que vem pré-selecionada nesta forma; uma só por forma na empresa
+  isDefault                   Boolean                    @default(false)
   bankAccount                 BankAccount                @relation(fields: [bankAccountId], references: [id])
   cashRegister                CashRegister?              @relation(fields: [cashRegisterId], references: [id])
   paymentCondition            PaymentCondition           @relation(fields: [paymentConditionId], references: [id])
@@ -2912,6 +2959,22 @@ enum TransactionType {
 enum CashRegisterStatus {
   OPEN
   CLOSED
+}
+
+/// O tipo da conta (CX-3): a gaveta se conta, o banco se concilia, a
+/// operadora não fecha o dia
+enum BankAccountKind {
+  CASH
+  BANK
+  CARD
+}
+
+/// O que o lançamento é, além do sentido (type)
+enum CashMovementKind {
+  ADJUSTMENT
+  SHORTAGE
+  OVERAGE
+  REVERSAL
 }
 
 enum RecurringType {

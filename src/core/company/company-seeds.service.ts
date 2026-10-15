@@ -465,6 +465,8 @@ export class CompanySeedsService {
         name: 'Caixa Empresa',
         description: 'Caixa Empresa',
         cashControl: true,
+        // O caixa físico da empresa (CX-3): a gaveta se conta
+        kind: 'CASH',
         bankId: bank.id,
         companyId,
       },
@@ -477,6 +479,8 @@ export class CompanySeedsService {
         companyId,
         bankAccountId: bankAccount.id,
         status: 'OPEN',
+        number: 1,
+        openedByName: 'Cadastro da empresa',
       },
     });
 
@@ -495,6 +499,8 @@ export class CompanySeedsService {
           acceptMultipleCashRegisters: false,
           paymentType: 'PAYSOFF',
           incomeType: 'PAYSOFF',
+          // A única conta da empresa nova é a padrão de toda forma (CX-2)
+          isDefault: true,
         },
       });
     }

@@ -28,6 +28,7 @@ import {
   FinancialRefs,
 } from '../utils/financial-refs';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
+import { postingRegisterRow } from '../cash-control/cash-ledger';
 
 @Injectable()
 export class PayableService {
@@ -152,18 +153,13 @@ export class PayableService {
             const paidDate = new Date(originalInstallment.paidDate);
 
             // Busca o caixa aberto
-            const openCashRegister = await tx.cashRegister.findFirst({
-              where: {
-                bankAccountId: createdInstallment.bankAccountId,
-                status: 'OPEN',
-                openingDate: {
-                  lte: paidDate,
-                },
-              },
-              orderBy: {
-                openingDate: 'desc',
-              },
-            });
+            // O caixa em que a baixa entra: o do dia, o aberto, ou retroativo no
+            // aberto quando o dia do fato fechou (CX-3)
+            const openCashRegister = await postingRegisterRow(
+              tx,
+              createdInstallment.bankAccountId,
+              paidDate,
+            );
 
             if (openCashRegister) {
               await tx.transaction.create({
@@ -176,6 +172,11 @@ export class PayableService {
                     connect: { id: createdInstallment.id },
                   },
                   cashRegister: { connect: { id: openCashRegister.id } },
+                  bankAccount: {
+                    connect: { id: openCashRegister.bankAccountId },
+                  },
+                  retroactive: openCashRegister.retroactive,
+                  operationDate: openCashRegister.operationDate,
                 },
               });
 
@@ -971,18 +972,13 @@ export class PayableService {
               const amount = newPayableInstallment.paidAmount || 0;
 
               // Busca o caixa aberto
-              const openCashRegister = await tx.cashRegister.findFirst({
-                where: {
-                  bankAccountId,
-                  status: 'OPEN',
-                  openingDate: {
-                    lte: new Date(paidDate),
-                  },
-                },
-                orderBy: {
-                  openingDate: 'desc',
-                },
-              });
+              // O caixa em que a baixa entra: o do dia, o aberto, ou retroativo no
+              // aberto quando o dia do fato fechou (CX-3)
+              const openCashRegister = await postingRegisterRow(
+                tx,
+                bankAccountId,
+                new Date(paidDate),
+              );
 
               if (openCashRegister) {
                 await tx.transaction.create({
@@ -995,6 +991,11 @@ export class PayableService {
                       connect: { id: newPayableInstallment.id },
                     },
                     cashRegister: { connect: { id: openCashRegister.id } },
+                    bankAccount: {
+                      connect: { id: openCashRegister.bankAccountId },
+                    },
+                    retroactive: openCashRegister.retroactive,
+                    operationDate: openCashRegister.operationDate,
                   },
                 });
 
@@ -1052,18 +1053,13 @@ export class PayableService {
               const amount = newReceivableInstallment.paidAmount || 0;
 
               // Busca o caixa aberto
-              const openCashRegister = await tx.cashRegister.findFirst({
-                where: {
-                  bankAccountId,
-                  status: 'OPEN',
-                  openingDate: {
-                    lte: new Date(paidDate),
-                  },
-                },
-                orderBy: {
-                  openingDate: 'desc',
-                },
-              });
+              // O caixa em que a baixa entra: o do dia, o aberto, ou retroativo no
+              // aberto quando o dia do fato fechou (CX-3)
+              const openCashRegister = await postingRegisterRow(
+                tx,
+                bankAccountId,
+                new Date(paidDate),
+              );
 
               if (openCashRegister) {
                 await tx.transaction.create({
@@ -1076,6 +1072,11 @@ export class PayableService {
                       connect: { id: newReceivableInstallment.id },
                     },
                     cashRegister: { connect: { id: openCashRegister.id } },
+                    bankAccount: {
+                      connect: { id: openCashRegister.bankAccountId },
+                    },
+                    retroactive: openCashRegister.retroactive,
+                    operationDate: openCashRegister.operationDate,
                   },
                 });
 
@@ -1216,18 +1217,13 @@ export class PayableService {
       }
 
       // Busca o caixa aberto
-      const openCashRegister = await tx.cashRegister.findFirst({
-        where: {
-          bankAccountId,
-          status: 'OPEN',
-          openingDate: {
-            lte: endOfDay(new Date(paidDateFormatted)),
-          },
-        },
-        orderBy: {
-          openingDate: 'desc',
-        },
-      });
+      // O caixa em que a baixa entra: o do dia, o aberto, ou retroativo no
+      // aberto quando o dia do fato fechou (CX-3)
+      const openCashRegister = await postingRegisterRow(
+        tx,
+        bankAccountId,
+        endOfDay(new Date(paidDateFormatted)),
+      );
 
       if (!openCashRegister) {
         throw new BadRequestException(
@@ -1243,6 +1239,9 @@ export class PayableService {
           transactionDate: new Date(paidDateFormatted),
           payableInstallment: { connect: { id: installment.id } },
           cashRegister: { connect: { id: openCashRegister.id } },
+          bankAccount: { connect: { id: openCashRegister.bankAccountId } },
+          retroactive: openCashRegister.retroactive,
+          operationDate: openCashRegister.operationDate,
         },
       });
 

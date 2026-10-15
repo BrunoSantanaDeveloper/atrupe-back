@@ -16,7 +16,11 @@ import {
 } from '@nestjs/common';
 import { BankService } from './bank.service';
 import { CreateBankDto } from './dto/create-bank.dto';
-import { UpdateBankAccountDto, UpdateBankDto } from './dto/update-bank.dto';
+import {
+  ToggleAccountDto,
+  UpdateBankAccountDto,
+  UpdateBankDto,
+} from './dto/update-bank.dto';
 import { CreateBankAccountDto } from './dto/create-account.dto';
 import { AccountService } from './account.service';
 import { BankAccountFilterDTO } from './dto/filter-account.dto';
@@ -36,6 +40,8 @@ import {
 import { TenantGuard } from 'src/core/auth/guards/tenant.guard';
 import { TenantResource } from 'src/core/auth/guards/tenant-resource.decorator';
 import { SystemAdminGuard } from 'src/core/auth/guards/system-admin.guard';
+import { AbacService } from 'src/core/auth/abac/abac.service';
+import { canViewValues } from 'src/core/auth/abac/values-visibility.interceptor';
 
 const RESOURCE = 'bank';
 
@@ -53,6 +59,7 @@ export class BankController {
     private readonly accountService: AccountService,
     private readonly planControl: PlanControlService,
     private readonly prisma: PrismaService,
+    private readonly abac: AbacService,
   ) {}
 
   /**
@@ -204,7 +211,28 @@ export class BankController {
   })
   async listAccounts(@Req() req, @Query() filter: BankAccountFilterDTO) {
     filter.companyId = req.user.companyId;
-    return await this.accountService.findAll(filter);
+    // O saldo calculado só para quem vê valores (contrato)
+    return await this.accountService.findAll(
+      filter,
+      await canViewValues(req, this.abac),
+    );
+  }
+
+  @Patch('account/:accountId/toggle-status')
+  @HasPermission('edit', 'financial_settings:bank_accounts')
+  @ObservePermissions(false)
+  @TenantResource('bankAccount', 'accountId')
+  @ApiOperation({
+    summary: 'Reativa a conta; inativar segue as regras do excluir (CX-2)',
+  })
+  async toggleAccountStatus(
+    @Param('accountId') accountId: string,
+    @Body() body: ToggleAccountDto,
+  ) {
+    return await this.accountService.toggleStatus(
+      accountId,
+      body?.active ?? true,
+    );
   }
 
   @Patch('account/:accountId')

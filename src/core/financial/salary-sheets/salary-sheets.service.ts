@@ -480,7 +480,9 @@ export class SalarySheetsService {
                           transactionDate:
                             installment.transactions.transactionDate,
                           reason: installment.transactions.reason,
-                          cashRegister: {
+                          // Sem controle de caixa, o lançamento vai direto na conta
+                          cashRegister: installment.transactions
+                            .cashRegister && {
                             id: installment.transactions.cashRegister.id,
                             description:
                               installment.transactions.cashRegister.description,

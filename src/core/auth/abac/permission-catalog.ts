@@ -26,6 +26,11 @@ export const PERMISSION_CATALOG: Readonly<Record<string, readonly string[]>> = {
   financial: [
     'flow',
     'cash_control',
+    // Reabrir caixa fechado (ALT-7), dispensar o sinal e reverter a venda
+    // rápida para faturamento (PO, 13/10/2026): chaves próprias (Fase 7)
+    'cash_control_reopen',
+    'pdv_down_payment',
+    'pdv_billing',
     'fixed_expense',
     'payroll',
     'payable',

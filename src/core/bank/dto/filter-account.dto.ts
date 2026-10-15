@@ -1,4 +1,5 @@
-import { IsBoolean, IsOptional, IsUUID } from 'class-validator';
+import { BankAccountKind } from '@prisma/client';
+import { IsBoolean, IsEnum, IsIn, IsOptional, IsUUID } from 'class-validator';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
@@ -42,4 +43,15 @@ export class BankAccountFilterDTO extends BaseFilterDTO {
     required: false,
   })
   cashControl?: boolean;
+
+  // As inativas também (a tela de contas as separa); sem o filtro, só as ativas
+  @IsOptional()
+  @IsIn(['true', 'false', 'all'])
+  @ApiProperty({ required: false, enum: ['true', 'false', 'all'] })
+  isActive?: 'true' | 'false' | 'all';
+
+  @IsOptional()
+  @IsEnum(BankAccountKind)
+  @ApiProperty({ required: false, enum: BankAccountKind })
+  kind?: BankAccountKind;
 }

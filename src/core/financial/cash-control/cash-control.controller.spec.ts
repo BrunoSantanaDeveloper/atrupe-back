@@ -34,7 +34,11 @@ describe('CashControlController', () => {
 
   it('a transferência confere as contas com a empresa da sessão', async () => {
     const service = { transferFunds: jest.fn() };
-    const controller = new CashControlController(service as any);
+    const controller = new CashControlController(
+      service as any,
+      {} as any,
+      {} as any,
+    );
     const dto: any = { sourceBankAccountId: 'a', targetBankAccountId: 'b' };
 
     await controller.transferFunds({ user: { companyId: 'c-1' } }, dto);
