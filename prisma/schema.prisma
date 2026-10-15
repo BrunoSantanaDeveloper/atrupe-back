@@ -4653,6 +4653,8 @@ model CashSessionMovement {
   /// [{ method, paymentConditionId, bankAccountId, amount }] em centavos
   parts           Json                    @default("[]")
   discount        Int                     @default(0)
+  /// O troco dado neste recebimento (FC-2), para o comprovante (FC-16)
+  change          Int                     @default(0)
   reason          String?
   responsibleId   String?
   responsibleName String?
@@ -4677,6 +4679,8 @@ model PendingSale {
   total            Int
   paid             Int              @default(0)
   discount         Int              @default(0)
+  /// O troco do último recebimento, para o comprovante (FC-16)
+  change           Int              @default(0)
   delivered        Boolean          @default(false)
   /// false: o caixa faturou para o cliente (FC-4), fica só como registro
   goesToCash       Boolean          @default(true)

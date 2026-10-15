@@ -20,6 +20,10 @@ describe('QuotationPdfService', () => {
       employee: {
         findFirst: jest.fn(),
       },
+      // A venda rápida no caixa (FC-16): sem ela, o PDF não muda
+      pendingSale: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
     };
 
     financialServiceMock = {

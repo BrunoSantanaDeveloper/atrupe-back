@@ -94,6 +94,15 @@ export class ReceiveSaleDto {
   @Min(0)
   discount?: number;
 
+  @ApiPropertyOptional({
+    description: 'O troco dado, em centavos (fica no comprovante, FC-16)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  change?: number;
+
   @ApiPropertyOptional({ description: 'Dispensar o sinal mínimo (FC-17)' })
   @IsOptional()
   @IsBoolean()

@@ -12,6 +12,41 @@ import {
 } from './quotation-pdf.transformers';
 import { QuotationFinancialService } from './quotation-financial.service';
 
+const METHOD_NAME: Record<string, string> = {
+  CASH: 'Dinheiro',
+  PIX: 'PIX',
+  CARD: 'Cartão',
+};
+
+/** O recebimento da venda no caixa para o comprovante (FC-16). */
+const cashReceiptOf = (sale: {
+  path: string;
+  total: number;
+  paid: number;
+  discount: number;
+  change: number;
+  delivered: boolean;
+  cancelled: boolean;
+  parts: unknown;
+}) => ({
+  path: sale.path,
+  total: sale.total,
+  paid: sale.paid,
+  remaining: Math.max(0, sale.total - sale.paid),
+  discount: sale.discount,
+  change: sale.change,
+  delivered: sale.delivered,
+  cancelled: sale.cancelled,
+  parts: (Array.isArray(sale.parts)
+    ? (sale.parts as { method: string; amount: number }[])
+    : []
+  ).map((part) => ({
+    method: part.method,
+    label: METHOD_NAME[part.method] ?? part.method,
+    amount: part.amount,
+  })),
+});
+
 /**
  * QuotationPdfService
  * Responsável por geração de dados para PDF do orçamento.
@@ -55,12 +90,18 @@ export class QuotationPdfService {
           })
         : null;
 
-      return transformQuotationToPdfData(
+      const data = transformQuotationToPdfData(
         quotation as any,
         availablePaymentMethods,
         loggedEmployee?.signatureUrl ?? null,
         options,
       );
+      // A venda rápida recebida no caixa: o comprovante a pedido (FC-16)
+      // mostra as formas, o troco e o que falta, em centavos
+      const sale = await this.prisma.pendingSale.findUnique({
+        where: { quotationId: id },
+      });
+      return sale ? { ...data, cashReceipt: cashReceiptOf(sale) } : data;
     } catch (error) {
       this.logger.error('Error generating quotation PDF data:', error.stack);
       throw new InternalServerErrorException(

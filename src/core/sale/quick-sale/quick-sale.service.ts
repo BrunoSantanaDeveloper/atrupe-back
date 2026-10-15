@@ -68,6 +68,9 @@ export type CashStatus = {
   delivered: boolean;
   cancelled: boolean;
   parts: { method: string; amount: number }[];
+  /** O arredondamento no balcão e o troco do último recebimento (FC-16) */
+  discount: number;
+  change: number;
 };
 
 /**
@@ -400,6 +403,7 @@ export class QuickSaleService {
               total: total - discount,
               paid,
               discount,
+              change: dto.change ?? 0,
               delivered: true,
               goesToCash: false,
               approvedAt: approved.approvedAt ?? date,
@@ -430,6 +434,8 @@ export class QuickSaleService {
     delivered: boolean;
     cancelled: boolean;
     parts: unknown;
+    discount: number;
+    change: number;
   }): CashStatus {
     const parts = Array.isArray(sale.parts)
       ? (sale.parts as { method: string; amount: number }[])
@@ -442,6 +448,8 @@ export class QuickSaleService {
       paid: sale.paid,
       delivered: sale.delivered,
       cancelled: sale.cancelled,
+      discount: sale.discount,
+      change: sale.change,
       parts: parts.map((part) => ({
         method: part.method,
         amount: part.amount,
