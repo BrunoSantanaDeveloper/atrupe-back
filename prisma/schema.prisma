@@ -119,6 +119,7 @@ model Company {
   pendingSales           PendingSale[]
   stockItems             StockItem[]
   inboundInvoices        InboundInvoice[]
+  bankStatementLines     BankStatementLine[]
 
   @@map("companies")
 }
@@ -1200,6 +1201,8 @@ model BankAccount {
   ReceivableInstallment  ReceivableInstallment[]
   /// Lançamentos da conta (sem controle, vão direto, sem caixa do dia)
   transactions           Transaction[]
+  /// O extrato importado (CX-6)
+  statementLines         BankStatementLine[]
 
   @@map("bank_accounts")
 }
@@ -4864,4 +4867,45 @@ enum InboundInvoiceStatus {
   PENDING
   MATCHED
   ENTERED
+}
+
+/// A linha do extrato importado em OFX (CX-6): casada com um lançamento do
+/// sistema, sugerida, sobrando, lançada a partir dela ou ignorada. Centavos,
+/// com sinal: positivo entrou na conta.
+model BankStatementLine {
+  id                      String              @id @default(uuid())
+  companyId               String
+  bankAccountId           String
+  /// O identificador do banco (FITID): o extrato importado de novo não duplica
+  fitId                   String
+  date                    DateTime            @db.Date
+  amount                  Int
+  memo                    String              @default("")
+  status                  StatementLineStatus @default(UNMATCHED)
+  /// O lançamento casado (ou o sugerido, na sugestão)
+  transactionId           String?
+  /// A parcela provisionada sugerida: casar a realiza
+  receivableInstallmentId String?
+  payableInstallmentId    String?
+  importId                String
+  fileName                String?
+  importedAt              DateTime            @default(now())
+  importedByName          String?
+  matchedAt               DateTime?
+  matchedByName           String?
+  company                 Company             @relation(fields: [companyId], references: [id])
+  bankAccount             BankAccount         @relation(fields: [bankAccountId], references: [id])
+
+  @@unique([bankAccountId, fitId])
+  @@index([companyId, bankAccountId, status])
+  @@index([transactionId])
+  @@map("bank_statement_lines")
+}
+
+enum StatementLineStatus {
+  MATCHED
+  SUGGESTED
+  UNMATCHED
+  CREATED
+  IGNORED
 }
