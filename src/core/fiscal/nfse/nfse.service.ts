@@ -2048,8 +2048,17 @@ export class NfseService {
         take: 1,
       },
       nfses: {
-        where: { status: { in: this.activeNfseStatuses } },
-        select: { id: true, status: true },
+        // `numero > 0` entra junto com os status ativos: a prefeitura so'
+        // numera o que autorizou, entao uma nota numerada e' documento fiscal
+        // existente mesmo que o status local diga outra coisa. Sem isso, um
+        // status errado desarmava a trava e a O.S. recebia uma segunda nota.
+        where: {
+          OR: [
+            { status: { in: this.activeNfseStatuses } },
+            { numero: { gt: 0 } },
+          ],
+        },
+        select: { id: true, status: true, numero: true },
         take: 1,
       },
       nfces: {
@@ -2223,6 +2232,15 @@ export class NfseService {
 
       const nfseExistente = order.nfses?.[0];
       if (!nfseExistente) continue;
+
+      // Antes dos demais ramos: numero atribuido quer dizer nota registrada
+      // na prefeitura, e reemitir cria documento fiscal duplicado.
+      if ((nfseExistente.numero ?? 0) > 0) {
+        throw new ConflictException(
+          `Esta ordem já tem a NFS-e nº ${nfseExistente.numero} registrada na ` +
+            'prefeitura. Se ela está incorreta, cancele-a antes de emitir outra.',
+        );
+      }
 
       if (nfseExistente.status === NfseStatus.PROCESSING) {
         const liberada = await this.tentarLiberarNfseEmProcessamento(
@@ -2487,21 +2505,63 @@ export class NfseService {
     }
 
     const situacao = doc.Situacao;
-    const isAuthorized = situacao?.SitCodigo === 100;
-    const isCancelled = situacao?.SitCodigo === 101;
+    // Number(): a consulta ja' devolveu o codigo como string em alguns
+    // retornos, e `=== 100` reprovava uma nota autorizada.
+    const sitCodigo = Number(situacao?.SitCodigo);
+    const isAuthorized = sitCodigo === 100;
+    const isCancelled = sitCodigo === 101;
+    const motivo = situacao?.SitDescricao?.trim();
 
+    /**
+     * Situacao ilegivel NAO e' rejeicao.
+     *
+     * O ternario anterior caia em REJECTED para qualquer coisa que nao fosse
+     * 100 nem 101 — inclusive para um retorno sem o bloco `Situacao`. Como o
+     * update era incondicional, uma nota ja' autorizada era rebaixada, e o
+     * motivo ia a NULL (`SitDescricao || null`). Foi o que aconteceu com
+     * quatro notas da Armazem 76 e uma da Plottec: numero municipal e chave
+     * de acesso gravados, retorno da emissao dizendo "Efetivado", status
+     * REJECTED e motivo vazio. O usuario leu "Rejeitada" e reemitiu — duas
+     * NFS-e autorizadas de R$ 8.920 para a mesma O.S.
+     *
+     * Regras agora:
+     * - so' 100 e 101 movem o status; o resto e' inconclusivo;
+     * - rejeicao sem motivo e' inconclusiva (a prefeitura sempre diz por que);
+     * - nota ja' numerada nunca vira rejeitada (a prefeitura nao numera o que
+     *   recusou — `reconcilePending` ja' trata "REJECTED com numero" como
+     *   estado impossivel).
+     */
+    const rejeicaoLegivel = !isAuthorized && !isCancelled && Boolean(motivo);
+    const jaNumerada = (nfse.numero ?? 0) > 0;
     const novoStatus = isAuthorized
       ? NfseStatus.AUTHORIZED
       : isCancelled
         ? NfseStatus.CANCELLED
-        : NfseStatus.REJECTED;
+        : rejeicaoLegivel && !jaNumerada
+          ? NfseStatus.REJECTED
+          : null;
 
-    const statusAlterado = novoStatus !== nfse.status;
+    if (novoStatus === null) {
+      this.logger.warn(
+        `Consulta da NFS-e ${nfse.id} (RPS ${nfse.rpsNumero}/${nfse.rpsSerie}) ` +
+          `veio inconclusiva; status ${nfse.status} mantido. Situacao recebida: ` +
+          JSON.stringify(situacao ?? null),
+      );
+    }
+
+    const statusAlterado = novoStatus !== null && novoStatus !== nfse.status;
 
     const atualizada = await this.prisma.nfse.update({
       where: { id: nfse.id },
       data: {
-        status: novoStatus,
+        // Sem status no update quando a consulta nao conclui: os demais
+        // campos tem fallback para o valor atual, entao nada se perde.
+        ...(novoStatus !== null
+          ? {
+              status: novoStatus,
+              motivoRejeicao: isAuthorized ? null : motivo || null,
+            }
+          : {}),
         numero: doc.NFSe?.NFSeNumero || nfse.numero,
         codigoVerificacao:
           doc.NFSe?.NFSeCodVerificacao || nfse.codigoVerificacao,
@@ -2509,7 +2569,6 @@ export class NfseService {
         invoicyId: doc.DocIDUnico || nfse.invoicyId,
         pdfUrl: doc.DocPDFDownload || nfse.pdfUrl,
         xmlRetorno: doc.DocXMLBase64 || nfse.xmlRetorno,
-        motivoRejeicao: isAuthorized ? null : situacao?.SitDescricao || null,
       },
     });
 
@@ -2530,12 +2589,15 @@ export class NfseService {
       statusAnterior: nfse.status,
       status: atualizada.status,
       statusAlterado,
+      // A tela precisa distinguir "confirmei no provedor" de "nao consegui
+      // ler a situacao": antes as duas viravam um toast de sucesso.
+      inconclusivo: novoStatus === null,
       codigoVerificacao: atualizada.codigoVerificacao,
       protocolo: atualizada.protocolo,
       pdfUrl: atualizada.pdfUrl,
       dataEmissao: atualizada.dataEmissao,
       valorServicos: atualizada.valorServicos,
-      situacaoProvedor: situacao?.SitDescricao || null,
+      situacaoProvedor: motivo || null,
     };
   }
 

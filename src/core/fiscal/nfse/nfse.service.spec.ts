@@ -1745,6 +1745,114 @@ describe('NfseService', () => {
       });
     });
 
+    /**
+     * Caso Armazem 76 / Plottec: a consulta voltou sem `Situacao` legivel e o
+     * ternario antigo caia em REJECTED, com update incondicional e motivo
+     * NULL. Quatro notas autorizadas (numero e chave gravados) viraram
+     * "Rejeitada" na tela — e o usuario reemitiu, gerando duas NFS-e de
+     * R$ 8.920 para a mesma O.S.
+     */
+    it('nao rebaixa nota autorizada quando a consulta vem sem situacao', async () => {
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.AUTHORIZED,
+        numero: 2,
+        codigoVerificacao: 'CHAVE',
+      });
+      invoicyApiService.consultNfse.mockResolvedValue([
+        { Codigo: 100, Documentos: [{ NFSe: { NFSeNumero: 2 } }] },
+      ]);
+
+      const result = await service.consultStatus(mockNfseId, mockCompanyId);
+
+      expect(result.inconclusivo).toBe(true);
+      expect(result.statusAlterado).toBe(false);
+      expect(prisma.nfse.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({ status: expect.anything() }),
+        }),
+      );
+    });
+
+    /** Rejeicao de verdade vem com motivo; sem motivo a consulta nao conclui. */
+    it('nao grava rejeicao sem motivo', async () => {
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.PROCESSING,
+        numero: 0,
+      });
+      prisma.nfse.update.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.PROCESSING,
+        numero: 0,
+      });
+      invoicyApiService.consultNfse.mockResolvedValue([
+        { Codigo: 100, Documentos: [{ Situacao: { SitCodigo: 999 } }] },
+      ]);
+
+      const result = await service.consultStatus(mockNfseId, mockCompanyId);
+
+      expect(result.inconclusivo).toBe(true);
+      expect(result.status).toBe(NfseStatus.PROCESSING);
+    });
+
+    /** A prefeitura nao numera o que recusou: numero > 0 nunca vira rejeicao. */
+    it('nao rebaixa nota ja numerada mesmo com rejeicao descrita', async () => {
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.AUTHORIZED,
+        numero: 4,
+      });
+      prisma.nfse.update.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.AUTHORIZED,
+        numero: 4,
+      });
+      invoicyApiService.consultNfse.mockResolvedValue([
+        {
+          Codigo: 100,
+          Documentos: [
+            { Situacao: { SitCodigo: 999, SitDescricao: 'Rejeitado - X' } },
+          ],
+        },
+      ]);
+
+      const result = await service.consultStatus(mockNfseId, mockCompanyId);
+
+      expect(result.inconclusivo).toBe(true);
+      expect(result.status).toBe(NfseStatus.AUTHORIZED);
+    });
+
+    /** O provedor ja' devolveu o codigo como string nesta rota. */
+    it('aceita SitCodigo como texto', async () => {
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.PROCESSING,
+        numero: 0,
+      });
+      prisma.nfse.update.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.AUTHORIZED,
+        numero: 7,
+      });
+      invoicyApiService.consultNfse.mockResolvedValue([
+        {
+          Codigo: 100,
+          Documentos: [
+            {
+              Situacao: { SitCodigo: '100', SitDescricao: 'Efetivado' },
+              NFSe: { NFSeNumero: 7 },
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.consultStatus(mockNfseId, mockCompanyId);
+
+      expect(result.status).toBe(NfseStatus.AUTHORIZED);
+      expect(result.inconclusivo).toBe(false);
+    });
+
     it('reconcilia nota autorizada no provedor que estava REJECTED local', async () => {
       // Caso real: a prefeitura autorizou a nota, mas o sistema gravou a
       // rejeição de uma tentativa anterior do mesmo RPS.
