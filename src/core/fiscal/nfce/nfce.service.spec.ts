@@ -842,6 +842,49 @@ describe('NfceService', () => {
       // Autorizado: número já pertence à nota, não devolver
       expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
     });
+
+    it('recusa do provedor (Codigo ≠ 100): REJECTED com o motivo do Invoicy, sem devolver número', async () => {
+      // Caso de produção (16/10/2026): o Invoicy respondeu 607 em HTTP 200 e
+      // a NFC-e ficava em UNKNOWN com "falha de comunicação".
+      invoicyApiService.emitNfe.mockResolvedValueOnce([
+        {
+          Codigo: 607,
+          Descricao:
+            'A licença da sua empresa está CANCELADA e não será mais possível emitir este tipo de documento.',
+        },
+      ]);
+
+      const error = await service
+        .emit(mockCompanyId, {
+          naturezaOperacao: 'Venda',
+          itens: [
+            {
+              productId: '1',
+              codigo: '001',
+              descricao: 'Produto',
+              ncm: '12345678',
+              cfop: '5102',
+              unidade: 'UN',
+              quantidade: 1,
+              valorUnitario: 100,
+            },
+          ],
+          pagamentos: [{ tipo: '01', valor: 100 }],
+        })
+        .catch((e) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error.message).toContain('CANCELADA');
+      expect(error.message).not.toContain('Falha de comunicação');
+
+      const gravado = prisma.nfce.update.mock.calls.at(-1)[0].data;
+      expect(gravado.status).toBe(NfceStatus.REJECTED);
+      expect(gravado.motivoRejeicao).toContain('código 607');
+
+      // A linha REJECTED segue com o número; devolvê-lo faria a próxima
+      // emissão colidir no unique (companyId, numero, serie, ambiente).
+      expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
+    });
   });
 
   describe('cancel', () => {
@@ -1539,6 +1582,32 @@ describe('NfceService', () => {
         'config-1',
         'HOMOLOGACAO',
       );
+    });
+
+    it('recusa do provedor no reenvio: mantém UNKNOWN e repassa o motivo', async () => {
+      prisma.nfce.findFirst.mockResolvedValueOnce(unknownNfce);
+      prisma.invoicyConfig.findFirst.mockResolvedValueOnce({ id: 'config-1' });
+      invoicyApiService.emitNfe.mockResolvedValueOnce([
+        {
+          Codigo: 607,
+          Descricao:
+            'A licença da sua empresa está CANCELADA e não será mais possível emitir este tipo de documento.',
+        },
+      ]);
+
+      const error = await service
+        .reprocess(mockNfceId, mockCompanyId)
+        .catch((e) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error.message).toContain('CANCELADA');
+      expect(error.message).not.toContain('Falha de comunicacao');
+
+      // A recusa é do reenvio; o resultado da transmissão original segue
+      // desconhecido, então a nota não pode virar REJECTED.
+      const gravado = prisma.nfce.update.mock.calls.at(-1)[0].data;
+      expect(gravado.status).toBe(NfceStatus.UNKNOWN);
+      expect(gravado.motivoRejeicao).toContain('código 607');
     });
   });
 });

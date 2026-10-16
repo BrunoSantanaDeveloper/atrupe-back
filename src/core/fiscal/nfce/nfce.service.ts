@@ -11,6 +11,7 @@ import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import {
   InvoicyNfeRequest,
+  InvoicyResponse,
   INVOICY_SUCCESS_CODES,
 } from '../invoicy/invoicy.types';
 import { fetchCepData } from '../utils/cep.util';
@@ -794,9 +795,28 @@ export class NfceService {
       }
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-        throw new Error(
-          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+        // O provedor RESPONDEU e recusou o lote (ex.: 607, licença de NFC-e
+        // cancelada no Invoicy): o documento não foi processado e não chegou
+        // à SEFAZ, então o resultado é conclusivo. Lançado como Error comum,
+        // caía no catch sem `error.response` e era lido como falha de
+        // transporte — a nota ficava em UNKNOWN, o usuário via "falha de
+        // comunicação" e o motivo real só existia no log.
+        //
+        // O número não é devolvido: a linha REJECTED continua com ele, e o
+        // unique (companyId, numero, serie, ambiente) barraria a próxima
+        // emissão que o reservasse de novo.
+        const motivo = this.describeProviderRefusal(response);
+        await this.prisma.nfce.update({
+          where: { id: nfce.id },
+          data: {
+            status: NfceStatus.REJECTED,
+            motivoRejeicao: motivo,
+          },
+        });
+        this.logger.warn(
+          `Emissão NFC-e ${nfce.numero}/${environment} recusada pelo Invoicy (código ${response.Codigo})`,
         );
+        throw new BadRequestException(`NFC-e recusada pelo Invoicy: ${motivo}`);
       }
 
       const doc = response.Documentos?.[0];
@@ -965,6 +985,19 @@ export class NfceService {
         `Falha ao devolver o numero ${reservedNumber} a sequencia de NFC-e: ${error.message}`,
       );
     }
+  }
+
+  /**
+   * Motivo de uma recusa do provedor no nível do lote (`Codigo` ≠ 100), com o
+   * código junto: é por ele que o suporte do Invoicy localiza o caso.
+   */
+  private describeProviderRefusal(response: InvoicyResponse): string {
+    const descricao = (response.Descricao || response.ErrorInvoicy || '')
+      .trim()
+      .slice(0, 500);
+    return descricao
+      ? `${descricao} (código ${response.Codigo})`
+      : `Código ${response.Codigo} sem descrição`;
   }
 
   private extractSafeErrorMessage(error: any): string {
@@ -1289,6 +1322,27 @@ export class NfceService {
         throw new Error('Nenhuma resposta recebida do Invoicy');
       }
 
+      if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
+        // O provedor recusou ESTE reenvio, que não foi processado. Isso não
+        // diz nada sobre a transmissão original — foi ela que deixou a nota
+        // em UNKNOWN —, então a nota continua desconhecida. O que muda é o
+        // motivo: sem esta checagem a recusa virava "Documento nao
+        // retornado", lida como falha de comunicação, e o usuário era
+        // mandado tentar de novo contra uma recusa que não passa sozinha.
+        const motivo = this.describeProviderRefusal(response);
+        await this.prisma.nfce.update({
+          where: { id: nfce.id },
+          data: {
+            status: NfceStatus.UNKNOWN,
+            motivoRejeicao: `Reenvio recusado pelo Invoicy: ${motivo}`,
+          },
+        });
+        throw new BadRequestException(
+          `O Invoicy recusou o reenvio da NFC-e: ${motivo}. ` +
+            'A nota continua com resultado desconhecido; resolva a recusa antes de reprocessar.',
+        );
+      }
+
       const doc = response.Documentos?.[0];
       if (!doc) {
         throw new Error('Documento nao retornado pelo Invoicy');
@@ -1325,6 +1379,14 @@ export class NfceService {
         },
       });
     } catch (error) {
+      // Recusa do provedor que nós mesmos lançamos acima, com status e motivo
+      // já gravados. HttpException tem `response` (o corpo do erro) sem
+      // `status`, então sem este repasse ela cairia no ramo de rejeição
+      // abaixo e a nota viraria REJECTED.
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
       // Erros de programação (RangeError, TypeError...) nunca são falha de
       // transporte; sem esta exclusão mantinham a NFC-e em UNKNOWN e pediam
       // nova tentativa, escondendo a causa real.
