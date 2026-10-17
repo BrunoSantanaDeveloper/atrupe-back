@@ -9,7 +9,7 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
-import { NfceStatus, OrderStatus } from '@prisma/client';
+import { NfceStatus, OrderStatus, Prisma } from '@prisma/client';
 
 const mockCompanyId = 'company-uuid-123';
 const mockNfceId = 'nfce-uuid-789';
@@ -131,6 +131,8 @@ describe('NfceService', () => {
       callback(mockPrismaService),
     );
     mockPrismaService.nfce.updateMany.mockResolvedValue({ count: 1 });
+    // Número reservado livre, salvo quando o teste diz o contrário.
+    mockPrismaService.nfce.findUnique.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -843,7 +845,7 @@ describe('NfceService', () => {
       expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
     });
 
-    it('recusa do provedor (Codigo ≠ 100): REJECTED com o motivo do Invoicy, sem devolver número', async () => {
+    it('recusa do provedor (Codigo ≠ 100): REJECTED com o motivo do Invoicy e número devolvido', async () => {
       // Caso de produção (16/10/2026): o Invoicy respondeu 607 em HTTP 200 e
       // a NFC-e ficava em UNKNOWN com "falha de comunicação".
       invoicyApiService.emitNfe.mockResolvedValueOnce([
@@ -881,9 +883,181 @@ describe('NfceService', () => {
       expect(gravado.status).toBe(NfceStatus.REJECTED);
       expect(gravado.motivoRejeicao).toContain('código 607');
 
-      // A linha REJECTED segue com o número; devolvê-lo faria a próxima
-      // emissão colidir no unique (companyId, numero, serie, ambiente).
-      expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
+      // O lote não chegou à SEFAZ: o número continua livre e volta à
+      // sequência; a próxima emissão reaproveita a linha REJECTED.
+      expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
+    });
+
+    describe('número devolvido à sequência', () => {
+      const dtoSimples = {
+        naturezaOperacao: 'Venda',
+        itens: [
+          {
+            productId: '1',
+            codigo: '001',
+            descricao: 'Produto',
+            ncm: '12345678',
+            cfop: '5102',
+            unidade: 'UN',
+            quantidade: 1,
+            valorUnitario: 100,
+          },
+        ],
+        pagamentos: [{ tipo: '01', valor: 100 }],
+      };
+
+      it('reaproveita a linha da tentativa rejeitada em vez de criar outra', async () => {
+        // Antes o create batia no unique nfce_unique_emission e toda emissão
+        // seguinte do emissor falhava no mesmo número (P2002).
+        prisma.nfce.findUnique.mockResolvedValueOnce({
+          id: 'nfce-rejeitada',
+          status: NfceStatus.REJECTED,
+          protocolo: null,
+        });
+
+        await service.emit(mockCompanyId, dtoSimples);
+
+        expect(prisma.nfce.findUnique).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              nfce_unique_emission: {
+                companyId: mockCompanyId,
+                numero: 1,
+                serie: 1,
+                ambiente: 2,
+              },
+            },
+          }),
+        );
+        expect(prisma.nfce.create).not.toHaveBeenCalled();
+
+        const [reaproveitamento] = prisma.nfce.update.mock.calls[0];
+        expect(reaproveitamento.where).toEqual({
+          id: 'nfce-rejeitada',
+          status: NfceStatus.REJECTED,
+          protocolo: null,
+        });
+        expect(reaproveitamento.data).toEqual(
+          expect.objectContaining({
+            status: NfceStatus.PROCESSING,
+            chaveAcesso: null,
+            motivoRejeicao: null,
+            xmlAutorizado: null,
+            orderId: null,
+            invoicyPayloadEnvio: expect.any(Object),
+            createdAt: expect.any(Date),
+          }),
+        );
+
+        // Toda coluna é reescrita: uma coluna nova que ficasse de fora levaria
+        // o valor da tentativa rejeitada para a nova emissão.
+        const colunas = Object.values(Prisma.NfceScalarFieldEnum).filter(
+          (coluna) => coluna !== 'id' && coluna !== 'updatedAt',
+        );
+        expect(Object.keys(reaproveitamento.data).sort()).toEqual(
+          [...colunas].sort(),
+        );
+      });
+
+      it.each([
+        [
+          'nota autorizada',
+          { status: NfceStatus.AUTHORIZED, protocolo: '135260000000001' },
+        ],
+        [
+          'nota com resultado desconhecido',
+          { status: NfceStatus.UNKNOWN, protocolo: null },
+        ],
+        [
+          'nota em contingência',
+          { status: NfceStatus.CONTINGENCY, protocolo: null },
+        ],
+        [
+          'rejeição com protocolo (denegação)',
+          { status: NfceStatus.REJECTED, protocolo: '135260000000002' },
+        ],
+      ])(
+        'número ocupado por %s: Conflict acionável, sem transmitir',
+        async (_caso, ocupante) => {
+          prisma.nfce.findUnique.mockResolvedValueOnce({
+            id: 'nfce-ocupante',
+            ...ocupante,
+          });
+
+          const error = await service
+            .emit(mockCompanyId, dtoSimples)
+            .catch((e) => e);
+
+          expect(error).toBeInstanceOf(ConflictException);
+          expect(error.message).toContain('Ajuste o próximo número');
+          expect(prisma.nfce.create).not.toHaveBeenCalled();
+          expect(prisma.nfce.update).not.toHaveBeenCalled();
+          expect(invoicyApiService.emitNfe).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each([
+        [
+          'duplicidade (539)',
+          {
+            SitCodigo: 539,
+            SitDescricao:
+              'Rejeição: Duplicidade de NF-e com diferença na Chave de Acesso',
+          },
+        ],
+        ['denegação (110)', { SitCodigo: 110, SitDescricao: 'Uso Denegado' }],
+        ['resposta sem cStat', undefined],
+      ])('%s não devolve o número', async (_caso, situacao) => {
+        invoicyApiService.emitNfe.mockResolvedValueOnce([
+          {
+            Codigo: 100,
+            Descricao: 'Documentos processados',
+            Documentos: [
+              {
+                DocChaAcesso: mockInvoicyResponse.data.chaveAcesso,
+                DocProtocolo: null,
+                Situacao: situacao,
+              },
+            ],
+          },
+        ]);
+
+        await expect(service.emit(mockCompanyId, dtoSimples)).rejects.toThrow(
+          BadRequestException,
+        );
+
+        // O número tem dono na SEFAZ (ou não há prova de que não tenha):
+        // devolvê-lo levaria a próxima emissão à mesma recusa.
+        expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
+      });
+
+      it('rejeição em contingência não devolve o número: a linha segue como documento', async () => {
+        const configPadrao = await invoicyService.getConfig(mockCompanyId);
+        invoicyService.getConfig.mockResolvedValueOnce({
+          ...configPadrao,
+          contingenciaNfceAtiva: true,
+        });
+        invoicyApiService.emitNfe.mockResolvedValueOnce([
+          {
+            Codigo: 100,
+            Descricao: 'Documentos processados',
+            Documentos: [
+              {
+                DocChaAcesso: mockInvoicyResponse.data.chaveAcesso,
+                DocProtocolo: null,
+                Situacao: { SitCodigo: 999, SitDescricao: 'Rejeição 999' },
+              },
+            ],
+          },
+        ]);
+
+        await service.emit(mockCompanyId, dtoSimples).catch(() => undefined);
+
+        expect(prisma.nfce.update.mock.calls.at(-1)[0].data.status).toBe(
+          NfceStatus.CONTINGENCY,
+        );
+        expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
+      });
     });
   });
 

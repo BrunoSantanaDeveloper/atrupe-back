@@ -6,7 +6,13 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
-import { NfceStatus, NfeStatus, NfseStatus, OrderStatus } from '@prisma/client';
+import {
+  NfceStatus,
+  NfeStatus,
+  NfseStatus,
+  OrderStatus,
+  Prisma,
+} from '@prisma/client';
 import { InvoicyService } from '../invoicy/invoicy.service';
 import { InvoicyApiService } from '../invoicy/invoicy-api.service';
 import {
@@ -56,6 +62,52 @@ import {
   aliquotasReformaTributaria,
   calcularVNFIBScbsIS,
 } from '../utils/ibs-cbs-nfe.util';
+
+/**
+ * Recusas da SEFAZ que NÃO liberam o número da NFC-e: a denegação registra o
+ * documento (com protocolo), e as demais dizem que o número já tem dono na
+ * SEFAZ. Na dúvida, um código fica aqui — número não devolvido só deixa um vão
+ * a inutilizar; número devolvido indevidamente faz a próxima emissão repetir a
+ * mesma recusa no mesmo número.
+ */
+const CSTAT_NUMERO_CONSUMIDO = new Set([
+  110, // Uso Denegado
+  204, // Duplicidade de NF-e
+  205, // NF-e está denegada na base de dados da SEFAZ
+  206, // NF-e já está inutilizada na base de dados da SEFAZ
+  218, // NF-e já está cancelada na base de dados da SEFAZ
+  301, // Uso Denegado: irregularidade fiscal do emitente
+  302, // Irregularidade fiscal do destinatário
+  303, // Uso Denegado: destinatário não habilitado a operar na UF
+  539, // Duplicidade de NF-e com diferença na chave de acesso
+]);
+
+/**
+ * Campos que só a transmissão de uma tentativa preenche. Ao reaproveitar a
+ * linha de uma tentativa rejeitada eles voltam ao estado de uma linha nova —
+ * senão a chave, o XML ou o motivo da tentativa anterior apareceriam na nova.
+ */
+const NFCE_CAMPOS_DA_TENTATIVA_ZERADOS = {
+  chaveAcesso: null,
+  protocolo: null,
+  dataEmissao: null,
+  dataAutorizacao: null,
+  xmlEnvio: null,
+  xmlRetorno: null,
+  xmlAutorizado: null,
+  qrCodeUrl: null,
+  urlConsulta: null,
+  danfeUrl: null,
+  motivoRejeicao: null,
+  motivoCancelamento: null,
+  dataCancelamento: null,
+  protocoloCancelamento: null,
+  contingencia: false,
+  dataContingencia: null,
+  motivoContingencia: null,
+  invoicyId: null,
+  invoicyProtocol: null,
+};
 
 @Injectable()
 export class NfceService {
@@ -744,32 +796,62 @@ export class NfceService {
           serie: series,
         });
 
-        // Criar registro da NFC-e (numero já reservado atomicamente)
-        const nfce = await tx.nfce.create({
-          data: {
-            companyId,
-            invoicyConfigId: config.id,
-            orderId: dto.orderId,
-            quotationId: dto.quotationId,
-            numero: reservedNumber,
-            serie: series,
-            status: isContingency
-              ? NfceStatus.CONTINGENCY
-              : NfceStatus.PROCESSING,
-            ambiente: environment === 'PRODUCAO' ? 1 : 2,
-            valorTotal,
-            valorDesconto,
-            valorTroco,
-            formaPagamento: dto.pagamentos[0]?.tipo || '01',
-            cpfConsumidor: dto.cpfConsumidor || null,
-            consumidorNome: dto.consumidorNome || null,
-            informacoesComplementares:
-              dto.informacoesComplementares || config.taxInfoText || null,
-            itensSnapshot: dto.itens as any,
-            pagamentosSnapshot: dto.pagamentos as any,
-            invoicyPayloadEnvio: invoicyRequest as any,
-          },
+        const ambiente = environment === 'PRODUCAO' ? 1 : 2;
+        // null explícito em vez de undefined: no reaproveitamento abaixo,
+        // undefined manteria o pedido/orçamento da tentativa anterior.
+        const dados = {
+          companyId,
+          invoicyConfigId: config.id,
+          orderId: dto.orderId ?? null,
+          quotationId: dto.quotationId ?? null,
+          numero: reservedNumber,
+          serie: series,
+          status: isContingency
+            ? NfceStatus.CONTINGENCY
+            : NfceStatus.PROCESSING,
+          ambiente,
+          valorTotal,
+          valorDesconto,
+          valorTroco,
+          formaPagamento: dto.pagamentos[0]?.tipo || '01',
+          cpfConsumidor: dto.cpfConsumidor || null,
+          consumidorNome: dto.consumidorNome || null,
+          informacoesComplementares:
+            dto.informacoesComplementares || config.taxInfoText || null,
+          itensSnapshot: dto.itens as any,
+          pagamentosSnapshot: dto.pagamentos as any,
+          invoicyPayloadEnvio: invoicyRequest as any,
+        };
+
+        // Um número devolvido por releaseRejectedNfceNumber volta com a linha
+        // REJECTED da tentativa anterior ainda ocupando (companyId, numero,
+        // serie, ambiente). Criar outra linha batia no unique
+        // nfce_unique_emission e, como a reserva era desfeita junto, TODA
+        // emissão seguinte do emissor parava no mesmo número.
+        const tentativaRejeitada = await this.findReusableRejectedNfce(tx, {
+          companyId,
+          numero: reservedNumber,
+          serie: series,
+          ambiente,
         });
+
+        // A linha é a NFC-e nº N do emissor: a tentativa rejeitada nunca
+        // existiu na SEFAZ e a nova emissão toma o lugar dela. O createdAt
+        // renova porque a listagem filtra e ordena por ele.
+        const nfce = tentativaRejeitada
+          ? await tx.nfce.update({
+              where: {
+                id: tentativaRejeitada.id,
+                status: NfceStatus.REJECTED,
+                protocolo: null,
+              },
+              data: {
+                ...dados,
+                ...NFCE_CAMPOS_DA_TENTATIVA_ZERADOS,
+                createdAt: new Date(),
+              },
+            })
+          : await tx.nfce.create({ data: dados });
 
         return { nfce, invoicyRequest };
       },
@@ -797,14 +879,10 @@ export class NfceService {
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
         // O provedor RESPONDEU e recusou o lote (ex.: 607, licença de NFC-e
         // cancelada no Invoicy): o documento não foi processado e não chegou
-        // à SEFAZ, então o resultado é conclusivo. Lançado como Error comum,
-        // caía no catch sem `error.response` e era lido como falha de
-        // transporte — a nota ficava em UNKNOWN, o usuário via "falha de
-        // comunicação" e o motivo real só existia no log.
-        //
-        // O número não é devolvido: a linha REJECTED continua com ele, e o
-        // unique (companyId, numero, serie, ambiente) barraria a próxima
-        // emissão que o reservasse de novo.
+        // à SEFAZ, então o resultado é conclusivo e o número continua livre.
+        // Lançado como Error comum, caía no catch sem `error.response` e era
+        // lido como falha de transporte — a nota ficava em UNKNOWN, o usuário
+        // via "falha de comunicação" e o motivo real só existia no log.
         const motivo = this.describeProviderRefusal(response);
         await this.prisma.nfce.update({
           where: { id: nfce.id },
@@ -813,6 +891,11 @@ export class NfceService {
             motivoRejeicao: motivo,
           },
         });
+        await this.releaseRejectedNfceNumber(
+          config.id,
+          environment,
+          nfce.numero,
+        );
         this.logger.warn(
           `Emissão NFC-e ${nfce.numero}/${environment} recusada pelo Invoicy (código ${response.Codigo})`,
         );
@@ -860,11 +943,23 @@ export class NfceService {
         // numero continua livre. Devolver aqui e o unico ponto seguro — no
         // catch abaixo cai tambem falha de transporte, onde a nota PODE ter
         // sido autorizada.
-        await this.releaseRejectedNfceNumber(
-          config.id,
-          environment,
-          nfce.numero,
-        );
+        //
+        // Excecoes: sem cStat nao ha prova de recusa; denegacao, duplicidade
+        // e afins (CSTAT_NUMERO_CONSUMIDO) dizem que o numero tem dono; e a
+        // linha em contingencia segue valendo como documento. Devolver nesses
+        // casos mandaria a proxima emissao para um numero ocupado.
+        const cStat = Number(situacao?.SitCodigo);
+        const numeroLivre =
+          !isContingency &&
+          Number.isFinite(cStat) &&
+          !CSTAT_NUMERO_CONSUMIDO.has(cStat);
+        if (numeroLivre) {
+          await this.releaseRejectedNfceNumber(
+            config.id,
+            environment,
+            nfce.numero,
+          );
+        }
 
         throw new BadRequestException(
           `NFC-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}`,
@@ -936,13 +1031,17 @@ export class NfceService {
   }
 
   /**
-   * Devolve a sequencia ao numero reservado quando a SEFAZ rejeita a NFC-e.
+   * Devolve a sequencia ao numero reservado quando a SEFAZ rejeita a NFC-e ou
+   * o provedor recusa o lote.
    *
    * A reserva e atomica e acontece ANTES da transmissao — e isso que impede
    * duas emissoes concorrentes de montarem o payload com o mesmo numero. O
    * custo e que toda rejeicao queima um numero: a nota nunca existiu na SEFAZ,
    * mas a sequencia ja andou, e o vao resultante so se regulariza com
    * inutilizacao. Reaproveitar numero de nota rejeitada e legitimo.
+   *
+   * A linha REJECTED continua com o numero; quem o reservar de novo
+   * reaproveita essa linha (findReusableRejectedNfce) em vez de criar outra.
    *
    * O UPDATE e condicional de proposito: so devolve se a sequencia ainda
    * estiver exatamente em `numero + 1`, ou seja, se ninguem reservou no
@@ -985,6 +1084,47 @@ export class NfceService {
         `Falha ao devolver o numero ${reservedNumber} a sequencia de NFC-e: ${error.message}`,
       );
     }
+  }
+
+  /**
+   * Quem ocupa o número recém-reservado, se alguém ocupa.
+   *
+   * Só uma tentativa REJECTED sem protocolo cede o lugar: rejeição da SEFAZ
+   * não gera protocolo (nenhuma das 223 NF-e e 5 NFC-e rejeitadas em produção
+   * em 16/10/2026 tinha um), enquanto autorização e denegação geram — e aí o
+   * documento existe na SEFAZ. Qualquer outro ocupante quer dizer que a
+   * sequência ficou atrás de uma nota real; emitir com o número dela só
+   * renderia duplicidade, então a emissão para com uma mensagem acionável em
+   * vez do P2002 cru do unique.
+   */
+  private async findReusableRejectedNfce(
+    tx: Prisma.TransactionClient,
+    chave: {
+      companyId: string;
+      numero: number;
+      serie: number;
+      ambiente: number;
+    },
+  ): Promise<{ id: string } | null> {
+    const ocupante = await tx.nfce.findUnique({
+      where: { nfce_unique_emission: chave },
+      select: { id: true, status: true, protocolo: true },
+    });
+    if (!ocupante) {
+      return null;
+    }
+
+    if (ocupante.status === NfceStatus.REJECTED && !ocupante.protocolo) {
+      this.logger.log(
+        `NFC-e ${chave.numero}/${chave.serie} reaproveita a linha da tentativa rejeitada ${ocupante.id}`,
+      );
+      return { id: ocupante.id };
+    }
+
+    throw new ConflictException(
+      `O próximo número de NFC-e (${chave.numero}, série ${chave.serie}) já pertence a uma nota com status ${ocupante.status}. ` +
+        'Ajuste o próximo número em Configurações > Emissores, na aba do documento, com o ambiente correto selecionado.',
+    );
   }
 
   /**
