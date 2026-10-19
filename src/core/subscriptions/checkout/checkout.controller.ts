@@ -170,10 +170,13 @@ export class CheckoutController {
   @ApiOperation({
     summary: 'Sessão da empresa: plano, bloqueio e situação da cobrança',
     description:
-      'Para a tela refletir contratação, pagamento e bloqueio sem novo login.',
+      'Para a tela refletir contratação, pagamento e bloqueio sem novo login. Com cobrança em aberto em foco, confere as cobranças com o Asaas antes de responder (no máximo uma vez por minuto por empresa).',
   })
   async companySession(@Req() req) {
-    return this.session.build(req.user.companyId, req.user.userId);
+    return this.session.buildWithGatewayCheck(
+      req.user.companyId,
+      req.user.userId,
+    );
   }
 
   private userOf(req) {

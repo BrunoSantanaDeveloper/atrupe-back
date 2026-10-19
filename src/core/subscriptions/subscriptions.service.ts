@@ -901,15 +901,40 @@ export class SubscriptionsService {
       );
     }
 
-    const result = await this.checkAndSyncSubscriptionStatus(companyId);
+    const result = await this.evaluateSubscriptionStatus(companyId);
     return { ...result, charges };
   }
 
   /**
-   * Verifica o status da subscription e sincroniza com o Asaas
-   * Útil para quando o webhook não é disparado (ex: sandbox)
+   * "Verificar pagamento" do cliente: a volta da fatura (/assinatura/concluir)
+   * e a sincronização em segundo plano do login. Alinha as cobranças ao Asaas
+   * e então reavalia ativação e bloqueio.
+   *
+   * Antes só reavaliava, com o banco como estava. Sem o webhook, uma cobrança
+   * paga seguia PENDING aqui até a rotina das 03:00, e a assinatura ativa saía
+   * com "already_active" sem que ninguém olhasse a cobrança: quem acabava de
+   * contratar e pagar via "pagamento pendente", e quem pagava a vencida seguia
+   * bloqueado. Falha no Asaas não impede a reavaliação, que segue com o banco.
    */
   async checkAndSyncSubscriptionStatus(companyId: string) {
+    if (companyId) {
+      try {
+        await this.subscriptionBlockService.syncCompanyCharges(companyId);
+      } catch (error) {
+        this.logger.warn(
+          `Cobranças da empresa ${companyId} não alinhadas ao Asaas: ${error.message}`,
+        );
+      }
+    }
+
+    return this.evaluateSubscriptionStatus(companyId);
+  }
+
+  /**
+   * Reavalia ativação e bloqueio a partir do banco e, na assinatura que ainda
+   * não está ativa, da cobrança no Asaas. Quem chama alinha as cobranças antes.
+   */
+  private async evaluateSubscriptionStatus(companyId: string) {
     if (!companyId) {
       this.logger.warn(
         'Tentativa de sincronizar subscription com companyId nulo',
