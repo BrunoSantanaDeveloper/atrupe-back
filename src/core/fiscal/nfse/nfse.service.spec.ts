@@ -1013,18 +1013,16 @@ describe('NfseService', () => {
        * sublimite, que o MEI nao tem.
        */
       /**
-       * Fora do Simples o campo ia omitido. Era a ultima diferenca de payload
-       * entre a Fenix (Lucro Presumido, cujo DPS sai com <finNFSe> fora de
-       * posicao) e as contas que a prefeitura aceita — todas optantes, todas
-       * mandando este campo. 3 = IBS e CBS apurados pelo regime regular, que
-       * e' a situacao real de quem nao e' do Simples.
+       * regApIBSCBSSN e' campo do optante. Mandar fora do Simples foi testado
+       * na Fenix (RPS 106/107, 20/10/2026) e a prefeitura recusou o esquema:
+       * o provedor escreve a tag dentro de <regTrib>, onde o schema 1.01 so'
+       * aceita regApTribSN e regEspTrib.
        */
-      it('declara apuracao pelo regime regular fora do Simples', async () => {
+      it('nao declara regime de apuracao do Simples fora do Simples', async () => {
         await emitirCom({ emitCrt: 3, regimeEspecialTributacao: null });
         const rps = regimeEnviado();
-        expect(rps.regApIBSCBSSN).toBe(3);
+        expect(rps).not.toHaveProperty('regApIBSCBSSN');
         expect(rps.OptSN).toBe(2);
-        expect(rps).not.toHaveProperty('regApTribSN');
       });
 
       it('declara MEI com regime 5, como optante e sem regApTribSN', async () => {

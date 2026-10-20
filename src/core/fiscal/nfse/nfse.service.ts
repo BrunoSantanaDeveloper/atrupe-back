@@ -1562,6 +1562,7 @@ export class NfseService {
       valorDeducoes,
       regimeEspecial,
       indicadorOperacao,
+      optanteSimples,
       regimeApuracaoIbsCbs,
       valoresIbsCbs,
       omitirAliquotaIss,
@@ -1703,19 +1704,17 @@ export class NfseService {
             // para o MEI, que não tem sublimite a ultrapassar.
             ...(config.emitCrt === 1 ? { regApTribSN: 1 } : {}),
             // regApIBSCBSSN: 1 = IBS e CBS apurados pelo SN, 2 = CBS pelo SN e
-            // IBS regular, 3 = ambos pelo regime regular.
+            // IBS regular, 3 = ambos pelo regime regular. So' para optante.
             //
-            // Vai tambem fora do Simples, com 3, que e' a situacao real de quem
-            // apura tudo pelo regime regular. O layout v8 diz "Informar quando
-            // opSimpNac (OptSN) = 2, 3 ou 4" e a frase e' ambigua: pelo dominio
-            // nacional (opSimpNac) 2/3/4 sao os optantes, mas pelo dominio do
-            // proprio campo do provedor (OptSN: 1=Sim, 2=Nao) a regra manda
-            // justamente o nao optante informar. Das 112 emissoes com XML
-            // guardado, todas as que a prefeitura aceita mandam este campo; a
-            // unica que nunca mandou e' a unica cujo DPS sai com <finNFSe> fora
-            // de posicao (E1235). Omitir era a unica diferenca de payload que
-            // ainda restava do nosso lado.
-            regApIBSCBSSN: regimeApuracaoIbsCbs,
+            // Mandar tambem fora do Simples (valor 3) foi testado em
+            // 20/10/2026 na Fenix (RPS 106 e 107) e piorou: o provedor escreveu
+            // <regApIBSCBSSN> dentro de <regTrib> e o Ambiente Nacional recusou
+            // com E1235 — "invalid child element regApIBSCBSSN; expected
+            // regApTribSN, regEspTrib". O campo e' da Reforma (NT 009) e nao
+            // existe no schema 1.01 que o ADN valida hoje. A frase ambigua do
+            // layout v8 ("Informar quando opSimpNac (OptSN) = 2, 3 ou 4") vale
+            // pelo dominio nacional: 2, 3 e 4 sao os optantes.
+            ...(optanteSimples ? { regApIBSCBSSN: regimeApuracaoIbsCbs } : {}),
             // Campos da Reforma Tributária (Layout NFS-e RT v8). Omitidos
             // quando não informados — a nota continua saindo como antes.
             // Todos moram no grupo <IBSCBS> da DPS, que só é válido com
