@@ -301,6 +301,13 @@ describe('applyPlanDefaults', () => {
       'Lite',
       'Pro',
     ]);
+    // Papéis no LITE (13/10/2026), cumulativo
+    expect(plansWith('paper_register')).toEqual([
+      'Elite',
+      'Full',
+      'Lite',
+      'Pro',
+    ]);
     expect(plansWith('cash_control')).toEqual(['Elite', 'Full', 'Lite']);
     // O Pro sem o caixa que o Lite tem fere a regra cumulativa: o seed só
     // relata, não liga.

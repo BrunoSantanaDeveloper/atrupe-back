@@ -45,6 +45,8 @@ const liteFeatures = [
   'multiple_companies',
   'transaction_cancel_reasons',
   'credit_limit_enforcement',
+  // Papéis e contagem de folhas, sem custo (PO, 13/10/2026)
+  'paper_register',
 ];
 
 // Cada plano tem tudo o que o anterior tem (regra cumulativa, 10/10/2026).

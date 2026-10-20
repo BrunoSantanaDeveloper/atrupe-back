@@ -49,6 +49,9 @@ export const PLAN_FEATURE_KEYS = [
   'invoice_entry',
   // 14/10/2026: o bloqueio da venda pelo limite de crédito (LITE).
   'credit_limit_enforcement',
+  // 13/10/2026: Papéis no LITE (gráfica rápida). O papel é um material com a
+  // forma "folha", sem custo nem preço; a contagem de folhas sai no item.
+  'paper_register',
 ] as const;
 
 export type PlanFeatureKey = (typeof PLAN_FEATURE_KEYS)[number];
@@ -269,6 +272,11 @@ export const FEATURE_ENFORCEMENT: Record<
     level: 'api',
     detail:
       'Aprovação do orçamento recusada com cliente bloqueado, condição fora das permitidas ou saldo acima do limite (antes da data de CREDIT_LIMIT_ENFORCE_FROM, só registra).',
+  },
+  paper_register: {
+    level: 'api',
+    detail:
+      'Cadastros › Papéis sem a base de custos: GET /material?paper=true lista só os papéis, sem custo nem preço, e POST e PATCH /material aceitam só os campos do papel. Com a base de custos, vale a tela completa de Materiais.',
   },
 };
 

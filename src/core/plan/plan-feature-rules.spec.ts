@@ -230,6 +230,27 @@ describe('plan-feature-rules', () => {
     );
   });
 
+  it('Papéis nasce no Lite, sem depender da base de custos (PO, 13/10/2026)', () => {
+    const firstPlan = cumulativeChain().find((c) =>
+      (c.features as string[]).includes('paper_register'),
+    )?.plan.planType;
+
+    expect(firstPlan).toBe('LITE');
+    expect(PLAN_CONFIGURATIONS.TRIAL.features).not.toContain('paper_register');
+    // O papel do Lite não tem custo: a chave vale sozinha
+    expect(FEATURE_DEPENDENCIES.paper_register).toBeUndefined();
+    expect(dependentsOf('paper_register')).toEqual([]);
+    expect(FEATURE_ENFORCEMENT.paper_register.level).toBe('api');
+    expect(BASE_FEATURES.find((f) => f.key === 'paper_register')).toEqual(
+      expect.objectContaining({
+        name: 'Papéis',
+        category: 'products',
+        price: 0,
+        isActive: true,
+      }),
+    );
+  });
+
   it('todo bloqueio no código usa uma chave do catálogo', () => {
     const root = path.resolve(__dirname, '../..');
     const files: string[] = [];

@@ -264,6 +264,17 @@ export const BASE_FEATURES = [
     price: 0,
     isActive: true,
   },
+  // Papéis no LITE (decisão do PO de 13/10/2026). A migration
+  // 20261020140000_chave_paper_register grava o mesmo texto.
+  {
+    key: 'paper_register',
+    name: 'Papéis',
+    description:
+      'Cadastro de papéis (gramatura, formato da folha e área útil, sem custo nem preço) e contagem de folhas no item e na ficha.',
+    category: 'products',
+    price: 0,
+    isActive: true,
+  },
   {
     key: 'can_bill_on_delivery_and_checkout',
     name: 'Faturar na entrega e na frente de caixa',
