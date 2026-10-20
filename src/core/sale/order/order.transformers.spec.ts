@@ -394,6 +394,32 @@ describe('OrderTransformers', () => {
         unitValue: 100,
       });
     });
+
+    it('a O.S. conta as folhas da variação com papel, sem custo (Papéis no LITE)', () => {
+      const result = transformOrderItem({
+        ...mockQuotationProduct,
+        variation: {
+          name: 'Sulfite',
+          paper: {
+            name: 'Sulfite 75 g',
+            sheetWidth: 210,
+            sheetHeight: 297,
+            usableWidth: null,
+            usableHeight: null,
+          },
+        },
+        // 5 peças de 140 × 60 mm: 6 por folha (deitadas), 1 folha
+        items: [{ ...mockQuotationProduct.items[0], width: 140, height: 60 }],
+      });
+
+      expect(result.sheetCount).toEqual({
+        paperName: 'Sulfite 75 g',
+        piecesPerSheet: 6,
+        sheets: 1,
+        warning: null,
+      });
+      expect(transformOrderItem(mockQuotationProduct).sheetCount).toBeNull();
+    });
   });
 
   // ===========================================

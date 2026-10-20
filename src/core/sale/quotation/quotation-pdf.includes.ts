@@ -1,3 +1,5 @@
+import { PAPER_SELECT } from '../../material/paper';
+
 /**
  * Includes reutilizáveis para queries de PDF de Quotation
  * Extraídos do método getQuotationPdfData() para melhor manutenibilidade
@@ -103,7 +105,8 @@ export const PDF_QUOTATION_PRODUCT_INCLUDE = {
       createdAt: 'asc' as const,
     },
   },
-  variation: { select: { name: true } },
+  // A variação e o papel dela: a ficha conta as folhas (Papéis no LITE)
+  variation: { select: { name: true, paper: { select: PAPER_SELECT } } },
   // As linhas acrescentadas no item (ORC-5), sem custo
   lines: {
     select: { name: true, sector: true, tags: true, price: true },

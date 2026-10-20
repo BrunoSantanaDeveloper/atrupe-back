@@ -1,4 +1,5 @@
 import { NfceStatus, NfseStatus } from '@prisma/client';
+import { PAPER_SELECT } from '../../material/paper';
 
 /**
  * Includes reutilizáveis para queries de Order
@@ -168,6 +169,8 @@ export const ORDER_QUOTATION_PRODUCT_INCLUDE = {
   // O material de venda direta (ORG-1)
   material: { select: { name: true } },
   materialVariation: { select: { brand: true, color: true } },
+  // O papel da variação: a O.S. conta as folhas (Papéis no LITE)
+  variation: { select: { name: true, paper: { select: PAPER_SELECT } } },
   items: {
     select: ORDER_QUOTATION_PRODUCT_ITEMS_SELECT,
     orderBy: {

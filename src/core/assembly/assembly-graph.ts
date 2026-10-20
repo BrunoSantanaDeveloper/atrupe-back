@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { PAPER_SELECT } from '../material/paper';
 import { AssemblyResource, hourCostOf } from './assembly-resource.service';
 import {
   LINE_INCLUDE,
@@ -107,6 +108,8 @@ export const PRODUCT_SELECT = {
         select: { from: true, unitPrice: true },
       },
       assemblies: { select: { id: true } },
+      // O papel da variação: a venda conta as folhas (Papéis no LITE)
+      paper: { select: PAPER_SELECT },
     },
   },
 } satisfies Prisma.ProductSelect;

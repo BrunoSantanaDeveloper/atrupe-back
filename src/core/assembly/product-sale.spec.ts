@@ -236,6 +236,80 @@ describe('ProductSaleService', () => {
     ).rejects.toThrow(new NotFoundException('Opção não encontrada'));
   });
 
+  describe('a variação com papel conta as folhas (Papéis no LITE)', () => {
+    const couche = {
+      id: 'v-1',
+      name: 'Couché',
+      unitPrice: null,
+      priceTiers: [],
+      assemblies: [],
+      paper: {
+        id: 'mat-1',
+        name: 'Couché 300 g',
+        grammage: 300,
+        sheetFormat: 'SRA3',
+        sheetWidth: 320,
+        sheetHeight: 450,
+        usableWidth: 310,
+        usableHeight: 440,
+      },
+    };
+
+    beforeEach(() => {
+      // O cartão: 90 × 50 mm no cadastro
+      assemblies.product.mockResolvedValue(
+        product({
+          items: [{ unitKind: 'UNITY', unitCost: 0, width: 90, height: 50 }],
+          variations: [couche],
+        }),
+      );
+      assemblies.variationOf.mockReturnValue(couche);
+    });
+
+    it('o formulário traz as peças por folha na medida do cadastro', async () => {
+      const form = (await service.saleForm('c-1', 'pr-1', 'v-1'))!;
+      expect(form.sheetCount).toEqual({
+        paperName: 'Couché 300 g',
+        piecesPerSheet: 24,
+        sheets: 1,
+        warning: null,
+      });
+    });
+
+    it('o relatório conta as folhas da quantidade vendida, sem custo', async () => {
+      const report = await service.saleComposition('c-1', 'pr-1', {
+        variationId: 'v-1',
+        measure: { quantity: 1000, width: 0, height: 0 },
+      });
+      expect(report.sheetCount).toEqual({
+        paperName: 'Couché 300 g',
+        piecesPerSheet: 24,
+        sheets: 42,
+        warning: null,
+      });
+      expect(JSON.stringify(report.sheetCount)).not.toMatch(/cost|price/i);
+
+      // A medida informada vale sobre a do cadastro; maior que a área útil,
+      // não cabe
+      const big = await service.saleComposition('c-1', 'pr-1', {
+        variationId: 'v-1',
+        measure: { quantity: 10, width: 500, height: 320 },
+      });
+      expect(big.sheetCount).toMatchObject({
+        piecesPerSheet: 0,
+        warning: 'A peça não cabe na área útil do papel',
+      });
+    });
+
+    it('sem papel na variação, nada', async () => {
+      assemblies.variationOf.mockReturnValue({ ...couche, paper: null });
+      const report = await service.saleComposition('c-1', 'pr-1', {
+        variationId: 'v-1',
+      });
+      expect(report.sheetCount).toBeNull();
+    });
+  });
+
   it('vendido por unidade: a quantidade informada na medida padrão (AP-5)', async () => {
     const report = await service.saleComposition('c-1', 'pr-1', {
       measure: { quantity: 3, width: 0, height: 0 },

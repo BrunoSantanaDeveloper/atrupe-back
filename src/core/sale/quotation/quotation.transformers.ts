@@ -8,6 +8,7 @@ import {
   itemValuesOf,
   materialVariationName,
 } from './item-origin';
+import { itemSheetCount } from '../../material/sheet-count';
 
 type QuotationWithRelations = {
   id: string;
@@ -253,7 +254,12 @@ export function transformQuotationItem(qp: any) {
     linesTotal: qp.linesTotal ?? 0,
     lines: qp.lines ?? [],
     origin: qp.origin ?? 'PRODUCT',
-    variation: qp.variation ?? null,
+    variation: qp.variation
+      ? { id: qp.variation.id, name: qp.variation.name }
+      : null,
+    // A variação com papel: peças por folha e folhas do item, sem custo
+    // (Papéis no LITE, 13/10/2026); nula sem papel
+    sheetCount: itemSheetCount(qp),
     composition: qp.composition ?? null,
     image: getImage(),
     // O item montado na hora (ORC-11): o rascunho em que foi montado, a

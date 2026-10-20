@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
+import { sheetCountOf } from '../material/sheet-count';
 import { PricingParametersService } from '../pricing/pricing-parameters.service';
 import {
   AssemblyGraph,
@@ -188,7 +189,7 @@ export class ProductSaleService {
 
   /** As escolhas do produto no item do orçamento; nulo sem composição. */
   async saleForm(companyId: string, productId: string, variationId?: string) {
-    const { product, assembly, builder } = await this.load(
+    const { product, variation, assembly, builder } = await this.load(
       companyId,
       productId,
       variationId,
@@ -247,6 +248,9 @@ export class ProductSaleService {
       lists: [] as unknown[],
       instructions: [] as { blockId: string; stage: string; text: string }[],
       requiresMeasure: this.requiresMeasure(product),
+      // A variação com papel: peças por folha na medida padrão, uma peça
+      // (o relatório conta as folhas da quantidade vendida)
+      sheetCount: this.sheetCount(product, variation, null, 1),
     };
 
     for (const block of blocks) {
@@ -372,6 +376,13 @@ export class ProductSaleService {
       technicalDescription: detail?.technicalDescription ?? '',
       measure,
       variation: variation?.name ?? null,
+      // A variação com papel: peças por folha e folhas desta venda, sem custo
+      sheetCount: this.sheetCount(
+        product,
+        variation,
+        dto.measure ?? null,
+        measure.quantity,
+      ),
       blocks: computed.blocks.map((block) => {
         const row = rows.get(block.id);
         const extra = stageFieldTexts(block, fields).join(' · ');
@@ -730,6 +741,29 @@ export class ProductSaleService {
       graph,
       builder: new EngineBuilder(graph),
     };
+  }
+
+  /**
+   * A contagem de folhas da variação com papel (Papéis no LITE, 13/10/2026):
+   * a peça é a medida informada na venda ou a do cadastro, em mm (sem a
+   * medida, o aviso). Nula sem papel. Sem custo.
+   */
+  private sheetCount(
+    product: ProductRow,
+    variation: ProductRow['variations'][number] | undefined,
+    measure: { width?: number; height?: number } | null,
+    quantity: number,
+  ) {
+    if (!variation?.paper) return null;
+    const item = product.items[0];
+    return sheetCountOf(
+      {
+        width: measure?.width || item?.width || null,
+        height: measure?.height || item?.height || null,
+      },
+      variation.paper,
+      quantity,
+    );
   }
 
   /** Sem medida padrão no cadastro, a venda informa a medida (IP-15, IP-16). */

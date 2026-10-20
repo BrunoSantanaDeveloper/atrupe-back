@@ -456,6 +456,38 @@ describe('QuotationPdfTransformers', () => {
       expect(result.image.original).toBe(true);
       expect(result.image.size).toBe('small');
     });
+
+    it('a ficha leva a contagem de folhas da variação com papel (Papéis no LITE)', () => {
+      const item = {
+        id: 'qp-7',
+        productId: 'prod-1',
+        quantity: 100,
+        imageUrl: null,
+        product: { name: 'Folheto', imageUrl: null },
+        variation: {
+          name: 'Couché 150 g',
+          paper: {
+            name: 'Couché 150 g',
+            sheetWidth: 329,
+            sheetHeight: 483,
+            usableWidth: 319,
+            usableHeight: 473,
+          },
+        },
+        // A5 (148 × 210): 4 por folha no A3+
+        items: [{ id: 'i-1', quantity: 100, width: 148, height: 210 }],
+      };
+
+      const result = transformPdfQuotationItem(item);
+
+      expect(result.variation).toEqual({ name: 'Couché 150 g' });
+      expect(result.sheetCount).toEqual({
+        paperName: 'Couché 150 g',
+        piecesPerSheet: 4,
+        sheets: 25,
+        warning: null,
+      });
+    });
   });
 
   describe('transformPdfDelivery', () => {

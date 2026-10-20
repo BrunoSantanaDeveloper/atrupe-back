@@ -1,3 +1,5 @@
+import { PAPER_SELECT } from '../../material/paper';
+
 /**
  * Includes reutilizáveis para queries de Quotation
  * Extraídos do método findOne() para melhor manutenibilidade
@@ -254,7 +256,10 @@ export const QUOTATION_PRODUCT_SELECT = {
     select: LINE_VIEW_SELECT,
     orderBy: { createdAt: 'asc' },
   },
-  variation: { select: { id: true, name: true } },
+  // A variação e o papel dela: o item conta as folhas (Papéis no LITE)
+  variation: {
+    select: { id: true, name: true, paper: { select: PAPER_SELECT } },
+  },
   description: true,
   quantity: true,
   totalValue: true,

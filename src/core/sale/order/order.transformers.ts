@@ -1,4 +1,5 @@
 import { itemProductName, itemValuesOf } from '../quotation/item-origin';
+import { SheetCountPaper, itemSheetCount } from '../../material/sheet-count';
 /**
  * Transformadores para dados de Order
  * Extraídos do método findOne() para melhor testabilidade
@@ -96,6 +97,8 @@ type QuotationProductRaw = {
   unitPrice?: number | null;
   material?: { name: string } | null;
   materialVariation?: { brand: string; color: string } | null;
+  // A variação e o papel dela (Papéis no LITE)
+  variation?: { name: string; paper: SheetCountPaper | null } | null;
   description: string | null;
   allowEditDescription: boolean;
   allowEditValues: boolean;
@@ -308,6 +311,9 @@ export function transformOrderItem(qp: QuotationProductRaw) {
     totalValue,
     finalValue: qp.finalValue,
     image,
+    // A variação com papel: peças por folha e folhas do item, sem custo
+    // (Papéis no LITE, 13/10/2026); nula sem papel
+    sheetCount: itemSheetCount(qp),
     product: {
       originalProductId: qp.productId ?? null,
       name: itemProductName(qp),

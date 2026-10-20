@@ -197,6 +197,8 @@ export class ProductCatalogService {
               name: variation.name,
               unitPrice: variation.unitPrice,
               position: variation.position,
+              // O papel é da mesma empresa: a cópia sai no mesmo papel
+              paperId: variation.paperId,
             },
             select: { id: true },
           });

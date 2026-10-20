@@ -540,6 +540,57 @@ describe('Quotation Transformers', () => {
       expect(result.image.original).toBe(false);
       expect(result.image.size).toBe('large');
     });
+
+    it('a variação com papel conta as folhas do item, sem custo (Papéis no LITE)', () => {
+      const qp = {
+        id: 'qp-9',
+        productId: 'prod-1',
+        quantity: 1000,
+        product: { name: 'Cartão de visita', imageUrl: null },
+        variation: {
+          id: 'v-1',
+          name: 'Couché 300 g',
+          paper: {
+            id: 'mat-1',
+            name: 'Couché 300 g',
+            grammage: 300,
+            sheetFormat: 'SRA3',
+            sheetWidth: 320,
+            sheetHeight: 450,
+            usableWidth: 310,
+            usableHeight: 440,
+          },
+        },
+        items: [
+          {
+            id: 'item-1',
+            productItemId: 'pi-1',
+            name: 'Cartão',
+            unitKind: 'UNITY',
+            quantity: 1000,
+            originalQuantity: 1,
+            unitCost: 25,
+            totalValue: 25000,
+            width: 90,
+            height: 50,
+          },
+        ],
+      };
+
+      const result = transformQuotationItem(qp);
+
+      // A variação sai como antes; o papel vem na contagem
+      expect(result.variation).toEqual({ id: 'v-1', name: 'Couché 300 g' });
+      expect(result.sheetCount).toEqual({
+        paperName: 'Couché 300 g',
+        piecesPerSheet: 24,
+        sheets: 42,
+        warning: null,
+      });
+      expect(
+        transformQuotationItem({ ...qp, variation: null }).sheetCount,
+      ).toBeNull();
+    });
   });
 
   describe('transformQuotationItems', () => {
