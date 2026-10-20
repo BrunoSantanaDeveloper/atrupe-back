@@ -24,7 +24,30 @@ export type MaterialView = {
    * escolher, e nunca o custo (SEG-6, ORC-7).
    */
   directSale?: boolean;
+  /**
+   * Papéis no LITE (sem a base de custos): só os campos do papel, nunca
+   * custo nem preço (13/10/2026).
+   */
+  paper?: boolean;
 };
+
+/** O papel do cadastro do LITE: os campos da tela Papéis, sem dinheiro. */
+export function toPaperResponse(material: MaterialRow) {
+  return {
+    id: material.id,
+    code: material.code,
+    name: material.name,
+    sectorId: material.sectorId,
+    sector: material.sector.name,
+    grammage: material.grammage ?? null,
+    sheetFormat: material.sheetFormat ?? null,
+    sheetWidth: material.sheetWidth,
+    sheetHeight: material.sheetHeight,
+    usableWidth: material.usableWidth ?? null,
+    usableHeight: material.usableHeight ?? null,
+    active: material.active,
+  };
+}
 
 const advancedOf = (material: Material) =>
   material.shape
@@ -94,6 +117,11 @@ export function toMaterialResponse(material: MaterialRow, view: MaterialView) {
     ),
     active: material.active,
     advanced: advancedOf(material),
+    // O papel (forma SHEET): a folha é advanced.width × advanced.height
+    grammage: material.grammage ?? null,
+    sheetFormat: material.sheetFormat ?? null,
+    usableWidth: material.usableWidth ?? null,
+    usableHeight: material.usableHeight ?? null,
     // Os dados fiscais da venda direta (vazio: o padrão do emissor)
     fiscal: pickMaterialFiscal(material.fiscal),
   };

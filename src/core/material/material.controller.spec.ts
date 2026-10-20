@@ -1,5 +1,6 @@
-import { ForbiddenException } from '@nestjs/common';
-import { MaterialController } from './material.controller';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { REQUIRED_FEATURE_KEY } from '../plan/guards/feature.guard';
+import { MaterialController, PAPER_WITHOUT_COST } from './material.controller';
 
 /**
  * O que o controller decide antes do service: quem lê a lista (a busca de
@@ -46,8 +47,12 @@ describe('MaterialController', () => {
     };
     planControl = {
       hasFeature: jest.fn(async (_company, key) => features.has(key)),
-      enforceFeature: jest.fn(async (_company, key) => {
-        if (!features.has(key)) throw new ForbiddenException(`sem ${key}`);
+      // Com uma lista, basta uma das chaves (como o PlanControlService)
+      enforceFeature: jest.fn(async (_company, key: string | string[]) => {
+        const keys = Array.isArray(key) ? key : [key];
+        if (!keys.some((item) => features.has(item))) {
+          throw new ForbiddenException(`sem ${keys.join(',')}`);
+        }
       }),
     };
     controller = new MaterialController(
@@ -224,5 +229,120 @@ describe('MaterialController', () => {
       false,
       { values: true },
     );
+  });
+
+  describe('Papéis no LITE (paper_register sem a base de custos)', () => {
+    beforeEach(() => {
+      features = new Set(['paper_register']);
+      granted = new Set([
+        'product_settings:products:view',
+        'product_settings:products:edit',
+        'values:values:view',
+      ]);
+      materialService.createPaper = jest.fn().mockResolvedValue({ id: 'p' });
+      materialService.updatePaper = jest.fn().mockResolvedValue({ id: 'p' });
+      materialService.isPaper = jest.fn().mockResolvedValue(true);
+    });
+
+    it('cadastro e edição deixam passar o guard com uma das duas chaves', () => {
+      for (const name of ['create', 'update'] as const) {
+        expect(
+          Reflect.getMetadata(
+            REQUIRED_FEATURE_KEY,
+            MaterialController.prototype[name],
+          ),
+        ).toEqual(['cost_base', 'paper_register']);
+      }
+      // As outras rotas continuam só da base de custos
+      expect(
+        Reflect.getMetadata(REQUIRED_FEATURE_KEY, MaterialController),
+      ).toBe('cost_base');
+    });
+
+    it('a lista dos papéis sai sem custo nem preço, mesmo com valores', async () => {
+      await controller.findAll(request(), { paper: true });
+
+      expect(materialService.findAll).toHaveBeenCalledWith(
+        'c-1',
+        { paper: true },
+        { values: false, paper: true },
+      );
+    });
+
+    it('sem ?paper=true, a lista continua pedindo a base de custos', async () => {
+      await expect(controller.findAll(request(), {})).rejects.toThrow(
+        'sem cost_base',
+      );
+      expect(materialService.findAll).not.toHaveBeenCalled();
+    });
+
+    it('sem nenhuma das duas chaves, nem a lista dos papéis', async () => {
+      features = new Set();
+
+      await expect(
+        controller.findAll(request(), { paper: true }),
+      ).rejects.toThrow('sem cost_base,paper_register');
+    });
+
+    it('o cadastro cria o papel', async () => {
+      const dto = { name: 'Couché 300 g', sheetFormat: 'SRA3' as const };
+
+      await controller.create(request(), dto);
+
+      expect(materialService.createPaper).toHaveBeenCalledWith('c-1', dto);
+      expect(materialService.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['custo', { cost: 95 }],
+      ['preço', { price: 180 }],
+    ])('%s é recusado com o motivo do plano', async (_label, extra) => {
+      await expect(
+        controller.create(request(), { name: 'Couché', ...extra } as any),
+      ).rejects.toThrow(new BadRequestException(PAPER_WITHOUT_COST));
+      await expect(
+        controller.update(request(), ID, extra as any),
+      ).rejects.toThrow(PAPER_WITHOUT_COST);
+      expect(materialService.createPaper).not.toHaveBeenCalled();
+      expect(materialService.updatePaper).not.toHaveBeenCalled();
+    });
+
+    it('campo da tela completa de Materiais pede a base de custos', async () => {
+      await expect(
+        controller.create(request(), { name: 'Lona', unit: 'M2' } as any),
+      ).rejects.toThrow('sem cost_base');
+      expect(planControl.enforceFeature).toHaveBeenCalledWith(
+        'c-1',
+        'cost_base',
+      );
+      expect(materialService.createPaper).not.toHaveBeenCalled();
+    });
+
+    it('a edição do papel vai para o papel; o material que não é papel, 403', async () => {
+      await controller.update(request(), ID, { grammage: 250 });
+      expect(materialService.isPaper).toHaveBeenCalledWith('c-1', ID);
+      expect(materialService.updatePaper).toHaveBeenCalledWith('c-1', ID, {
+        grammage: 250,
+      });
+
+      materialService.isPaper.mockResolvedValue(false);
+      await expect(
+        controller.update(request(), ID, { name: 'Lona' }),
+      ).rejects.toThrow('sem cost_base');
+      expect(materialService.updatePaper).toHaveBeenCalledTimes(1);
+      expect(materialService.update).not.toHaveBeenCalled();
+    });
+
+    it('com a base de custos, tudo como hoje (a tela completa)', async () => {
+      features.add('cost_base');
+
+      await controller.create(request(), { name: 'Couché' } as any);
+      await controller.update(request(), ID, { cost: 95 });
+
+      expect(materialService.create).toHaveBeenCalled();
+      expect(materialService.update).toHaveBeenCalled();
+      expect(materialService.createPaper).not.toHaveBeenCalled();
+      expect(materialService.updatePaper).not.toHaveBeenCalled();
+    });
   });
 });

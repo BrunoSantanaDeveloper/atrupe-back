@@ -1,6 +1,7 @@
 import {
   MaterialRow,
   toMaterialResponse,
+  toPaperResponse,
   toPricingItem,
 } from './material.presenter';
 
@@ -83,7 +84,60 @@ describe('resposta do material', () => {
         wholeSheets: true,
         weight: 1.9,
       },
+      grammage: null,
+      sheetFormat: null,
+      usableWidth: null,
+      usableHeight: null,
       fiscal: {},
+    });
+  });
+
+  describe('papel (Papéis no LITE, 13/10/2026)', () => {
+    const couche = material({
+      name: 'Couché 300 g',
+      unit: 'UN',
+      cost: 95,
+      price: 180,
+      shape: 'SHEET',
+      profileX: null,
+      profileY: null,
+      barLength: null,
+      weight: null,
+      sheetWidth: 320,
+      sheetHeight: 450,
+      grammage: 300,
+      sheetFormat: 'SRA3',
+      usableWidth: 310,
+      usableHeight: 440,
+    });
+
+    it('a tela completa mostra os campos do papel; a folha é a do bloco avançado', () => {
+      expect(toMaterialResponse(couche, { values: true })).toMatchObject({
+        cost: 95,
+        price: 180,
+        advanced: { shape: 'SHEET', width: 320, height: 450 },
+        grammage: 300,
+        sheetFormat: 'SRA3',
+        usableWidth: 310,
+        usableHeight: 440,
+      });
+    });
+
+    it('o papel do LITE sai só com os campos do papel, nunca com dinheiro', () => {
+      expect(toPaperResponse(couche)).toEqual({
+        id: 'm-1',
+        code: 'MAT-06',
+        name: 'Couché 300 g',
+        sectorId: 's-3',
+        sector: 'Serralheria',
+        grammage: 300,
+        sheetFormat: 'SRA3',
+        sheetWidth: 320,
+        sheetHeight: 450,
+        usableWidth: 310,
+        usableHeight: 440,
+        active: true,
+      });
     });
   });
 

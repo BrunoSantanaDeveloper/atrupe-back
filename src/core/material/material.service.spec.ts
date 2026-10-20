@@ -822,4 +822,324 @@ describe('MaterialService', () => {
       });
     });
   });
+
+  describe('a tela completa e os campos novos', () => {
+    const dto = {
+      name: 'Couché 300 g',
+      sectorId: 's-3',
+      unit: 'UN' as const,
+    };
+
+    it('o preço tem rota própria; setor e unidade seguem obrigatórios', async () => {
+      await expect(
+        service.create('c-1', { ...dto, price: 180 }, VALUES),
+      ).rejects.toThrow(
+        'O preço do material tem rota própria: PATCH /material/:id/price',
+      );
+      await expect(
+        service.update('c-1', 'm-1', { price: 180 }, VALUES),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.create('c-1', { name: 'X', unit: 'UN' }, VALUES),
+      ).rejects.toThrow('Informe o setor do material');
+      await expect(
+        service.create('c-1', { name: 'X', sectorId: 's-3' }, VALUES),
+      ).rejects.toThrow('Unidade inválida: use HR, M2, M, KM, UN, KG ou LT.');
+      expect(prisma.material.create).not.toHaveBeenCalled();
+    });
+
+    it('o papel na tela completa: forma SHEET, e o formato preenche a folha', async () => {
+      await expect(
+        service.create('c-1', { ...dto, grammage: 300 }, VALUES),
+      ).rejects.toThrow(/são do papel/);
+
+      await service.create(
+        'c-1',
+        {
+          ...dto,
+          cost: 95,
+          advanced: { shape: 'SHEET', width: null, height: null },
+          grammage: 300,
+          sheetFormat: 'SRA3',
+          usableWidth: 310,
+          usableHeight: 440,
+        },
+        VALUES,
+      );
+
+      expect(prisma.material.create.mock.calls[0][0].data).toMatchObject({
+        cost: 95,
+        shape: 'SHEET',
+        sheetWidth: 320,
+        sheetHeight: 450,
+        grammage: 300,
+        sheetFormat: 'SRA3',
+        usableWidth: 310,
+        usableHeight: 440,
+      });
+    });
+
+    it('a forma que deixa de ser SHEET leva o papel junto', async () => {
+      prisma.material.findFirst.mockResolvedValue(
+        material({
+          shape: 'SHEET',
+          sheetWidth: 320,
+          sheetHeight: 450,
+          grammage: 300,
+          sheetFormat: 'SRA3',
+          usableWidth: 310,
+          usableHeight: 440,
+        }),
+      );
+
+      await service.update(
+        'c-1',
+        'm-1',
+        { advanced: { shape: 'PROFILE', x: 50, y: 30 } },
+        VALUES,
+      );
+
+      expect(prisma.material.update.mock.calls[0][0].data).toMatchObject({
+        shape: 'PROFILE',
+        sheetWidth: null,
+        sheetHeight: null,
+        grammage: null,
+        sheetFormat: null,
+        usableWidth: null,
+        usableHeight: null,
+      });
+    });
+
+    it('a medida do bloco avançado diferente do formato padrão gravado é recusada', async () => {
+      prisma.material.findFirst.mockResolvedValue(
+        material({
+          shape: 'SHEET',
+          sheetWidth: 210,
+          sheetHeight: 297,
+          sheetFormat: 'A4',
+        }),
+      );
+
+      await expect(
+        service.update(
+          'c-1',
+          'm-1',
+          { advanced: { shape: 'SHEET', width: 1220, height: 2440 } },
+          VALUES,
+        ),
+      ).rejects.toThrow('A folha A4 tem 210 × 297 mm');
+      // Com o formato personalizado, vale a medida
+      await service.update(
+        'c-1',
+        'm-1',
+        {
+          advanced: { shape: 'SHEET', width: 1220, height: 2440 },
+          sheetFormat: 'CUSTOM',
+        },
+        VALUES,
+      );
+      expect(prisma.material.update.mock.calls[0][0].data).toMatchObject({
+        sheetWidth: 1220,
+        sheetHeight: 2440,
+        sheetFormat: 'CUSTOM',
+      });
+    });
+
+    it('active no PATCH inativa como o toggle-status', async () => {
+      prisma.material.findFirst.mockResolvedValue(material());
+
+      await service.update('c-1', 'm-1', { active: false }, VALUES);
+
+      expect(prisma.assemblyLine.findMany).toHaveBeenCalled();
+      expect(prisma.material.update.mock.calls[0][0].data).toEqual({
+        active: false,
+      });
+    });
+
+    it('a lista dos papéis filtra a forma folha; sem papel, o resto', async () => {
+      await service.findAll('c-1', { paper: true }, VALUES);
+      await service.findAll('c-1', { paper: false }, VALUES);
+
+      expect(prisma.material.findMany.mock.calls[0][0].where).toEqual({
+        companyId: 'c-1',
+        active: true,
+        shape: 'SHEET',
+      });
+      expect(prisma.material.findMany.mock.calls[1][0].where).toEqual({
+        companyId: 'c-1',
+        active: true,
+        NOT: { shape: { equals: 'SHEET' } },
+      });
+    });
+  });
+
+  describe('Papéis no LITE (sem a base de custos)', () => {
+    const sheet = (over: Record<string, unknown> = {}) =>
+      material({
+        name: 'Couché 300 g',
+        unit: 'UN',
+        cost: null,
+        subcategory: 'Papéis',
+        shape: 'SHEET',
+        sheetWidth: 320,
+        sheetHeight: 450,
+        grammage: 300,
+        sheetFormat: 'SRA3',
+        usableWidth: null,
+        usableHeight: null,
+        ...over,
+      });
+
+    beforeEach(() => {
+      prisma.companySector.findMany = jest.fn().mockResolvedValue([
+        { id: 's-adm', kind: 'ADMINISTRATIVE' },
+        { id: 's-alm', kind: 'PRODUCTION' },
+      ]);
+    });
+
+    it('nasce papel: folha, por unidade, de produção, fora da venda direta, sem custo', async () => {
+      const created = await service.createPaper('c-1', {
+        name: 'Couché 300 g',
+        grammage: 300,
+        sheetFormat: 'SRA3',
+        usableWidth: 310,
+        usableHeight: 440,
+      });
+
+      const data = prisma.material.create.mock.calls[0][0].data;
+      expect(data).toMatchObject({
+        companyId: 'c-1',
+        code: 'MAT-08',
+        name: 'Couché 300 g',
+        // Sem setor, o primeiro setor de produção ativo
+        sectorId: 's-alm',
+        subcategory: 'Papéis',
+        unit: 'UN',
+        directSale: false,
+        productionMaterial: true,
+        active: true,
+        shape: 'SHEET',
+        sheetWidth: 320,
+        sheetHeight: 450,
+        grammage: 300,
+        sheetFormat: 'SRA3',
+        usableWidth: 310,
+        usableHeight: 440,
+      });
+      expect(data).not.toHaveProperty('cost');
+      expect(prisma.companySector.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { companyId: 'c-1', isActive: true, isSystem: false },
+        }),
+      );
+      for (const key of ['cost', 'price', 'margin', 'priceStatus']) {
+        expect(created).not.toHaveProperty(key);
+      }
+      expect(created).toMatchObject({ sheetFormat: 'SRA3', sheetWidth: 320 });
+    });
+
+    it('o setor informado precisa ser da empresa; sem setor ativo, não há papel', async () => {
+      prisma.companySector.findFirst.mockResolvedValue(null);
+      await expect(
+        service.createPaper('c-1', {
+          name: 'Sulfite',
+          sectorId: 's-9',
+          sheetFormat: 'A4',
+        }),
+      ).rejects.toThrow('Setor não encontrado');
+
+      prisma.companySector.findMany.mockResolvedValue([]);
+      await expect(
+        service.createPaper('c-1', { name: 'Sulfite', sheetFormat: 'A4' }),
+      ).rejects.toThrow('Cadastre um setor ativo para guardar o papel');
+      await expect(
+        service.createPaper('c-1', { name: 'Sulfite' }),
+      ).rejects.toThrow();
+      expect(prisma.material.create).not.toHaveBeenCalled();
+    });
+
+    it('o formato é obrigatório no cadastro do papel', async () => {
+      await expect(
+        service.createPaper('c-1', { name: 'Sulfite', grammage: 75 }),
+      ).rejects.toThrow('Informe o formato da folha');
+    });
+
+    it('a edição grava só o que mudou do papel', async () => {
+      prisma.material.findFirst.mockResolvedValue(sheet());
+
+      await service.updatePaper('c-1', 'm-1', {
+        name: 'Couché brilho 300 g',
+        sheetFormat: 'A3_PLUS',
+        usableWidth: 319,
+        usableHeight: 473,
+      });
+
+      expect(prisma.material.update.mock.calls[0][0].data).toEqual({
+        name: 'Couché brilho 300 g',
+        searchName: 'couche brilho 300 g',
+        sheetFormat: 'A3_PLUS',
+        sheetWidth: 329,
+        sheetHeight: 483,
+        usableWidth: 319,
+        usableHeight: 473,
+      });
+    });
+
+    it('inativar o papel tira o material das composições', async () => {
+      prisma.material.findFirst.mockResolvedValue(sheet());
+
+      const result = await service.updatePaper('c-1', 'm-1', { active: false });
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.assemblyLine.findMany).toHaveBeenCalled();
+      expect(prisma.material.update.mock.calls[0][0].data).toEqual({
+        active: false,
+      });
+      expect(result).toMatchObject({ active: false });
+    });
+
+    it('o material que não é papel não se edita como papel', async () => {
+      prisma.material.findFirst.mockResolvedValue(material());
+
+      await expect(
+        service.updatePaper('c-1', 'm-1', { name: 'X' }),
+      ).rejects.toThrow('Este material não é um papel');
+      expect(await service.isPaper('c-1', 'm-1')).toBe(false);
+      prisma.material.findFirst.mockResolvedValue(sheet());
+      expect(await service.isPaper('c-1', 'm-1')).toBe(true);
+      prisma.material.findFirst.mockResolvedValue(null);
+      await expect(service.isPaper('c-1', 'm-9')).rejects.toThrow(
+        'Material não encontrado',
+      );
+      expect(prisma.material.update).not.toHaveBeenCalled();
+    });
+
+    it('a lista do papel não traz custo nem preço', async () => {
+      prisma.material.findMany.mockResolvedValue([sheet({ cost: 95 })]);
+      prisma.material.count.mockResolvedValue(1);
+
+      const result = await service.findAll(
+        'c-1',
+        { paper: true },
+        { values: false, paper: true },
+      );
+
+      expect(result.data).toEqual([
+        {
+          id: 'm-1',
+          code: 'MAT-06',
+          name: 'Couché 300 g',
+          sectorId: 's-3',
+          sector: 'Serralheria',
+          grammage: 300,
+          sheetFormat: 'SRA3',
+          sheetWidth: 320,
+          sheetHeight: 450,
+          usableWidth: null,
+          usableHeight: null,
+          active: true,
+        },
+      ]);
+    });
+  });
 });

@@ -68,4 +68,14 @@ export class MaterialFilterDto {
   @IsBoolean()
   @ApiProperty({ required: false })
   productionMaterial?: boolean;
+
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean()
+  @ApiProperty({
+    required: false,
+    description:
+      'Só os papéis (forma SHEET). Sem a base de custos (Papéis no LITE), é a única lista e não traz custo nem preço',
+  })
+  paper?: boolean;
 }

@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { MaterialPriceRule, Prisma } from '@prisma/client';
+import { MaterialPriceRule, MaterialShape, Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 import { PricingParametersService } from '../pricing/pricing-parameters.service';
 import {
@@ -29,12 +29,28 @@ import {
   MaterialRow,
   MaterialView,
   toMaterialResponse,
+  toPaperResponse,
   toPricingItem,
   toVariationResponse,
 } from './material.presenter';
 import { materialCode, normalizeText, variationKey } from './material-text';
+import {
+  NOT_A_PAPER,
+  NO_PAPER,
+  PAPER_FIELDS_NEED_SHEET,
+  PaperColumns,
+  PaperInput,
+  changedPaperColumns,
+  hasPaperValues,
+  paperColumnsOf,
+  paperInputOf,
+  resolvePaper,
+} from './paper';
 
 const NOT_FOUND = 'Material não encontrado';
+
+/** O papel do LITE fica na subcategoria dele na tela completa do PRO. */
+const PAPER_SUBCATEGORY = 'Papéis';
 
 /**
  * A criação espera a vez quando outra da mesma empresa está em curso (uma
@@ -110,6 +126,50 @@ function advancedColumns(advanced: MaterialAdvancedDto | null | undefined) {
   };
 }
 
+/** O preço tem rota própria; o corpo do cadastro não o grava. */
+const PRICE_HAS_OWN_ROUTE =
+  'O preço do material tem rota própria: PATCH /material/:id/price';
+
+/**
+ * As colunas do papel na tela completa (com a base de custos). Os campos do
+ * papel só valem na forma SHEET; a folha que vier fora (`sheetWidth`,
+ * `sheetHeight`) vale sobre a do bloco avançado, que é a mesma coluna. Quando
+ * a forma deixa de ser SHEET, o papel sai junto.
+ */
+function fullPaperColumns(
+  current: PaperColumns,
+  advanced: ReturnType<typeof advancedColumns>,
+  shape: MaterialShape | null,
+  dto: CreateMaterialDto | UpdateMaterialDto,
+): Partial<PaperColumns> {
+  const input = paperInputOf(dto);
+  if (shape !== 'SHEET') {
+    if (hasPaperValues(input)) {
+      throw new BadRequestException(PAPER_FIELDS_NEED_SHEET);
+    }
+    // A folha do bloco avançado fica como veio; o papel sai
+    return changedPaperColumns(current, {
+      ...NO_PAPER,
+      sheetWidth: current.sheetWidth,
+      sheetHeight: current.sheetHeight,
+    });
+  }
+  // A folha do bloco avançado conta como a medida enviada agora
+  const base: PaperColumns = {
+    ...current,
+    ...('sheetWidth' in advanced
+      ? { sheetWidth: advanced.sheetWidth, sheetHeight: advanced.sheetHeight }
+      : {}),
+  };
+  const sent: PaperInput = {
+    ...('sheetWidth' in advanced
+      ? { sheetWidth: advanced.sheetWidth, sheetHeight: advanced.sheetHeight }
+      : {}),
+    ...input,
+  };
+  return changedPaperColumns(base, resolvePaper(base, sent));
+}
+
 /** As opções que usam o material, em qualquer variação. */
 const usesMaterial = (materialId: string) =>
   ({
@@ -163,6 +223,13 @@ export class MaterialService {
       ...(filter.productionMaterial !== undefined
         ? { productionMaterial: filter.productionMaterial }
         : {}),
+      // O papel é o material com a forma folha (Papéis no LITE)
+      ...(filter.paper === true ? { shape: MaterialShape.SHEET } : {}),
+      ...(filter.paper === false
+        ? {
+            NOT: { shape: { equals: MaterialShape.SHEET } },
+          }
+        : {}),
       ...(search
         ? {
             OR: [
@@ -190,17 +257,42 @@ export class MaterialService {
     ]);
 
     return {
-      data: rows.map((row) => toMaterialResponse(row, view)),
+      // O papel do LITE sai só com os campos do papel, sem dinheiro
+      data: rows.map((row) =>
+        view.paper ? toPaperResponse(row) : toMaterialResponse(row, view),
+      ),
       page,
       lastPage: Math.max(1, Math.ceil(total / limit)),
       total,
     };
   }
 
+  /**
+   * O cadastro da tela completa (com a base de custos). Os campos do papel
+   * entram na forma SHEET, com as mesmas regras do papel do LITE.
+   */
   async create(companyId: string, dto: CreateMaterialDto, view: MaterialView) {
+    if (dto.price !== undefined) {
+      throw new BadRequestException(PRICE_HAS_OWN_ROUTE);
+    }
+    if (!dto.sectorId) {
+      throw new BadRequestException('Informe o setor do material');
+    }
+    if (!dto.unit) {
+      throw new BadRequestException(
+        'Unidade inválida: use HR, M2, M, KM, UN, KG ou LT.',
+      );
+    }
     await this.assertSector(companyId, dto.sectorId);
     // O custo só entra de quem pode ver valores; sem a permissão, fica nulo
     const cost = view.values ? (dto.cost ?? null) : null;
+    const advanced = advancedColumns(dto.advanced ?? undefined);
+    const paper = fullPaperColumns(
+      NO_PAPER,
+      advanced,
+      dto.advanced?.shape ?? null,
+      dto,
+    );
 
     const created = await this.prisma.$transaction(
       async (tx) => {
@@ -219,7 +311,9 @@ export class MaterialService {
             productionMaterial: dto.productionMaterial ?? true,
             cost,
             costUpdatedAt: cost === null ? null : new Date(),
-            ...advancedColumns(dto.advanced ?? undefined),
+            ...(dto.active === false ? { active: false } : {}),
+            ...advanced,
+            ...paper,
           },
           include: MATERIAL_INCLUDE,
         });
@@ -236,9 +330,13 @@ export class MaterialService {
     dto: UpdateMaterialDto,
     view: MaterialView,
   ) {
+    if (dto.price !== undefined) {
+      throw new BadRequestException(PRICE_HAS_OWN_ROUTE);
+    }
     const material = await this.find(companyId, id);
     if (dto.sectorId != null) await this.assertSector(companyId, dto.sectorId);
 
+    const advanced = advancedColumns(dto.advanced);
     const data: Prisma.MaterialUncheckedUpdateInput = {
       ...(dto.name != null
         ? { name: dto.name, searchName: normalizeText(dto.name) }
@@ -250,7 +348,15 @@ export class MaterialService {
       ...(dto.productionMaterial != null
         ? { productionMaterial: dto.productionMaterial }
         : {}),
-      ...advancedColumns(dto.advanced),
+      ...advanced,
+      ...fullPaperColumns(
+        paperColumnsOf(material),
+        advanced,
+        dto.advanced === undefined
+          ? material.shape
+          : (dto.advanced?.shape ?? null),
+        dto,
+      ),
     };
 
     // Com variação, custo e preço vivem nela: o modal de edição manda `cost`
@@ -271,12 +377,133 @@ export class MaterialService {
       );
     }
 
-    const updated = await this.prisma.material.update({
-      where: { id },
-      data,
-      include: MATERIAL_INCLUDE,
-    });
+    const updated = await this.save(companyId, material, data, dto.active);
     return toMaterialResponse(updated, view);
+  }
+
+  /**
+   * O papel do LITE (Papéis, sem a base de custos): só os campos do papel.
+   * Nasce com a forma folha, como material de produção, fora da venda
+   * direta, por folha (UN) e sem custo nem preço. Sem setor, vai para o
+   * primeiro setor ativo da empresa.
+   */
+  async createPaper(companyId: string, dto: CreateMaterialDto) {
+    const sectorId = await this.paperSector(companyId, dto.sectorId);
+    const paper = resolvePaper(NO_PAPER, paperInputOf(dto), {
+      requireFormat: true,
+    });
+
+    const created = await this.prisma.$transaction(
+      async (tx) => {
+        const number = (await materialNumbers(tx, companyId))();
+        return tx.material.create({
+          data: {
+            companyId,
+            number,
+            code: materialCode(number),
+            name: dto.name,
+            searchName: normalizeText(dto.name),
+            sectorId,
+            subcategory: PAPER_SUBCATEGORY,
+            unit: 'UN',
+            directSale: false,
+            productionMaterial: true,
+            active: dto.active ?? true,
+            shape: MaterialShape.SHEET,
+            wholeSheets: true,
+            ...paper,
+          },
+          include: MATERIAL_INCLUDE,
+        });
+      },
+      { timeout: CREATE_TIMEOUT_MS },
+    );
+    return toPaperResponse(created);
+  }
+
+  /**
+   * A edição do papel do LITE: nome, setor, ativo e os campos do papel. O
+   * material que não é papel não se edita por aqui (o controller responde o
+   * 403 da base de custos antes).
+   */
+  async updatePaper(companyId: string, id: string, dto: UpdateMaterialDto) {
+    const material = await this.find(companyId, id);
+    if (material.shape !== MaterialShape.SHEET) {
+      throw new BadRequestException(NOT_A_PAPER);
+    }
+    if (dto.sectorId != null) await this.assertSector(companyId, dto.sectorId);
+
+    const current = paperColumnsOf(material);
+    const data: Prisma.MaterialUncheckedUpdateInput = {
+      ...(dto.name != null
+        ? { name: dto.name, searchName: normalizeText(dto.name) }
+        : {}),
+      ...(dto.sectorId != null ? { sectorId: dto.sectorId } : {}),
+      ...changedPaperColumns(current, resolvePaper(current, paperInputOf(dto))),
+    };
+    const updated = await this.save(companyId, material, data, dto.active);
+    return toPaperResponse(updated);
+  }
+
+  /** Se o material da empresa é um papel (forma folha); 404 se não existe. */
+  async isPaper(companyId: string, id: string) {
+    const material = await this.find(companyId, id);
+    return material.shape === MaterialShape.SHEET;
+  }
+
+  /**
+   * Grava a edição. Com `active` diferente do atual, inativa ou reativa como
+   * o toggle-status: ao inativar, o material sai das composições na mesma
+   * transação.
+   */
+  private async save(
+    companyId: string,
+    material: MaterialRow,
+    data: Prisma.MaterialUncheckedUpdateInput,
+    active: boolean | undefined,
+  ) {
+    if (active === undefined || active === material.active) {
+      return this.prisma.material.update({
+        where: { id: material.id },
+        data,
+        include: MATERIAL_INCLUDE,
+      });
+    }
+    return this.prisma.$transaction(async (tx) => {
+      if (!active) {
+        await this.removeFromCompositions(tx, companyId, material.id);
+      }
+      return tx.material.update({
+        where: { id: material.id },
+        data: { ...data, active },
+        include: MATERIAL_INCLUDE,
+      });
+    });
+  }
+
+  /**
+   * O setor do papel: o informado (da empresa) ou o primeiro setor ativo,
+   * de produção antes, fora os de sistema. Não há setor padrão para
+   * materiais (ver a importação).
+   */
+  private async paperSector(companyId: string, sectorId?: string | null) {
+    if (sectorId) {
+      await this.assertSector(companyId, sectorId);
+      return sectorId;
+    }
+    const sectors = await this.prisma.companySector.findMany({
+      where: { companyId, isActive: true, isSystem: false },
+      select: { id: true, kind: true },
+      orderBy: { name: 'asc' },
+    });
+    const sector =
+      sectors.find((item) => item.kind === 'PRODUCTION') ?? sectors[0];
+    if (!sector) {
+      throw new BadRequestException(
+        'Cadastre um setor ativo para guardar o papel',
+      );
+    }
+    return sector.id;
   }
 
   /** Cria em lote as combinações marca × cor que ainda não existem (MT-3). */

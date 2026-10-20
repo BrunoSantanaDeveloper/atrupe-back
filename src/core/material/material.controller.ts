@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -47,6 +48,21 @@ import { MaterialService } from './material.service';
 
 const PRODUCTS = 'product_settings:products';
 const FEATURE = 'cost_base';
+// Papéis no LITE (13/10/2026): o papel sem custo, sem a base de custos
+const PAPER_FEATURE = 'paper_register';
+
+/** No papel do LITE, custo e preço não entram (400). */
+const COST_FIELDS = ['cost', 'price'] as const;
+export const PAPER_WITHOUT_COST =
+  'No seu plano o papel não tem custo nem preço';
+/** Os campos da tela completa de Materiais: pedem a base de custos (403). */
+const FULL_REGISTRY_FIELDS = [
+  'subcategory',
+  'unit',
+  'directSale',
+  'productionMaterial',
+  'advanced',
+] as const;
 
 // O id que não é UUID responde como o que não existe
 const MaterialId = new ParseUUIDPipe({
@@ -61,6 +77,11 @@ const VariationId = new ParseUUIDPipe({
  * sessão. O cadastro usa a permissão de produtos; custo e preço pedem também
  * `values:values:view`, que aqui é conferida de verdade: são rotas novas,
  * sem tela antiga que dependa do campo.
+ *
+ * Papéis no LITE (PO, 13/10/2026): com `paper_register` e sem a base de
+ * custos, a lista (`?paper=true`), o cadastro e a edição valem só para o
+ * papel (forma SHEET), sem custo nem preço. Material que não é papel
+ * continua pedindo a base de custos.
  */
 @ApiTags('Materiais')
 @ApiBearerAuth()
@@ -104,6 +125,17 @@ export class MaterialController {
 
     if (!(await this.planControlService.hasFeature(user.companyId, FEATURE))) {
       if (directSaleSearch) return { data: [], page: 1, lastPage: 1, total: 0 };
+      // Papéis no LITE: a lista dos papéis, sem custo nem preço
+      if (filter.paper === true) {
+        await this.planControlService.enforceFeature(user.companyId, [
+          FEATURE,
+          PAPER_FEATURE,
+        ]);
+        return this.materialService.findAll(user.companyId, filter, {
+          values: false,
+          paper: true,
+        });
+      }
       await this.planControlService.enforceFeature(user.companyId, FEATURE);
     }
 
@@ -115,11 +147,21 @@ export class MaterialController {
 
   @Post()
   @HasPermission('edit', PRODUCTS)
-  @ApiOperation({ summary: 'Cadastra um material' })
+  // O plano é conferido no handler: sem a base de custos, só o papel
+  @RequiresFeature([FEATURE, PAPER_FEATURE])
+  @ApiOperation({
+    summary:
+      'Cadastra um material; sem a base de custos, só o papel (Papéis no LITE)',
+  })
   async create(@Req() req, @Body() dto: CreateMaterialDto) {
-    return this.materialService.create(req.user.companyId, dto, {
-      values: await canViewValues(req, this.abacService),
-    });
+    const companyId = req.user.companyId;
+    if (await this.planControlService.hasFeature(companyId, FEATURE)) {
+      return this.materialService.create(companyId, dto, {
+        values: await canViewValues(req, this.abacService),
+      });
+    }
+    await this.assertPaperBody(companyId, dto);
+    return this.materialService.createPaper(companyId, dto);
   }
 
   @Post('import/preview')
@@ -142,15 +184,29 @@ export class MaterialController {
 
   @Patch(':id')
   @HasPermission('edit', PRODUCTS)
-  @ApiOperation({ summary: 'Edita o cadastro e a configuração avançada' })
+  // O plano é conferido no handler: sem a base de custos, só o papel
+  @RequiresFeature([FEATURE, PAPER_FEATURE])
+  @ApiOperation({
+    summary:
+      'Edita o cadastro e a configuração avançada; sem a base de custos, só o papel',
+  })
   async update(
     @Req() req,
     @Param('id', MaterialId) id: string,
     @Body() dto: UpdateMaterialDto,
   ) {
-    return this.materialService.update(req.user.companyId, id, dto, {
-      values: await canViewValues(req, this.abacService),
-    });
+    const companyId = req.user.companyId;
+    if (await this.planControlService.hasFeature(companyId, FEATURE)) {
+      return this.materialService.update(companyId, id, dto, {
+        values: await canViewValues(req, this.abacService),
+      });
+    }
+    await this.assertPaperBody(companyId, dto);
+    // O material que não é papel continua sendo da base de custos (403)
+    if (!(await this.materialService.isPaper(companyId, id))) {
+      await this.planControlService.enforceFeature(companyId, FEATURE);
+    }
+    return this.materialService.updatePaper(companyId, id, dto);
   }
 
   @Post(':id/variation')
@@ -261,6 +317,20 @@ export class MaterialController {
   private async requireValues(req: any) {
     if (!(await canViewValues(req, this.abacService))) {
       throw permissionDenied([VALUES_PERMISSION]);
+    }
+  }
+
+  /**
+   * O corpo do papel do LITE: nome, setor, ativo e os campos do papel.
+   * Custo e preço são recusados (400); o campo da tela completa de
+   * Materiais pede a base de custos (o 403 diz de qual plano em diante).
+   */
+  private async assertPaperBody(companyId: string, dto: UpdateMaterialDto) {
+    if (COST_FIELDS.some((field) => dto[field] !== undefined)) {
+      throw new BadRequestException(PAPER_WITHOUT_COST);
+    }
+    if (FULL_REGISTRY_FIELDS.some((field) => dto[field] !== undefined)) {
+      await this.planControlService.enforceFeature(companyId, FEATURE);
     }
   }
 }

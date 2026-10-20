@@ -1836,6 +1836,14 @@ model Material {
   wholeSheets        Boolean              @default(true)
   /// Quilos por unidade de venda do material
   weight             Float?
+  /// O papel (forma SHEET; Papéis no LITE, PO 13/10/2026): a gramatura em
+  /// g/m² e o formato da folha (o padrão preenche sheetWidth × sheetHeight)
+  grammage           Int?
+  sheetFormat        SheetFormat?
+  /// A área útil do papel, em mm, menor ou igual à folha: vazia = a folha
+  /// inteira. A contagem de folhas do item lê esta área
+  usableWidth        Float?
+  usableHeight       Float?
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
   company            Company              @relation(fields: [companyId], references: [id])
@@ -2926,6 +2934,16 @@ enum MaterialShape {
   PROFILE
   SHEET
   OTHER
+}
+
+/// O formato da folha do papel: o padrão tem a medida fixa (A4 210 × 297,
+/// A3 297 × 420, SRA3 320 × 450, A3+ 329 × 483 mm); CUSTOM leva a medida
+enum SheetFormat {
+  A4
+  A3
+  SRA3
+  A3_PLUS
+  CUSTOM
 }
 
 enum SectorSaleUnit {
