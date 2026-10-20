@@ -541,7 +541,12 @@ export class CostBaseSnapshotService {
     for (const payable of payables) {
       const months = byAccount.get(payable.subCategoryId!) ?? new Map();
       const month = monthOfDate(payable.referenceDate);
-      months.set(month, (months.get(month) ?? 0) + payable.totalAmount);
+      // O contas a pagar guarda reais (Float); a base de custos calcula em
+      // centavos (antes a despesa administrativa saía 100 vezes menor)
+      months.set(
+        month,
+        (months.get(month) ?? 0) + Math.round(payable.totalAmount * 100),
+      );
       byAccount.set(payable.subCategoryId!, months);
     }
     const firstMonth = new Map(
