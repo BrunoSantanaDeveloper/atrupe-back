@@ -3,10 +3,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { MaterialShape, Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 import { normalizeText } from '../material/material-text';
+import { PAPER_SELECT } from '../material/paper';
 import {
+  PAPER_OF_COMPANY,
   ProductVariationRowDto,
   UpdateProductVariationDto,
 } from './dto/product-variation.dto';
@@ -19,6 +21,8 @@ const VARIATION_SELECT = {
   id: true,
   name: true,
   unitPrice: true,
+  // O papel da variação (Papéis no LITE): sem custo nem preço
+  paper: { select: PAPER_SELECT },
   _count: { select: { priceTiers: true, assemblies: true } },
 } satisfies Prisma.ProductVariationSelect;
 
@@ -30,9 +34,14 @@ const toVariation = (variation: VariationRow) => ({
   id: variation.id,
   name: variation.name,
   unitPrice: variation.unitPrice,
+  paper: variation.paper ?? null,
   hasOwnAssembly: variation._count.assemblies > 0,
   hasOwnTiers: variation._count.priceTiers > 0,
 });
+
+/** `undefined` não mexe no papel; nulo solta; o id liga. */
+const paperData = (paperId: string | null | undefined) =>
+  paperId === undefined ? {} : { paperId };
 
 const toTiers = (tiers: { from: number; unitPrice: number }[]) =>
   tiers.map(({ from, unitPrice }) => ({ from, unitPrice }));
@@ -96,6 +105,10 @@ export class ProductVariationService {
       }
     }
     const kept = new Set(rows.map((row) => row.id).filter(Boolean));
+    await this.assertPapers(
+      companyId,
+      rows.map((row) => row.paperId),
+    );
 
     await this.prisma.$transaction(async (tx) => {
       const removed = current
@@ -115,11 +128,22 @@ export class ProductVariationService {
         if (existing) {
           await tx.productVariation.update({
             where: { id: existing.id },
-            data: { name: names[position], unitPrice, position },
+            data: {
+              name: names[position],
+              unitPrice,
+              position,
+              ...paperData(row.paperId),
+            },
           });
         } else {
           await tx.productVariation.create({
-            data: { productId, name: names[position], unitPrice, position },
+            data: {
+              productId,
+              name: names[position],
+              unitPrice,
+              position,
+              ...paperData(row.paperId),
+            },
           });
         }
       }
@@ -137,8 +161,11 @@ export class ProductVariationService {
   ) {
     await this.findProduct(companyId, productId);
     const variation = await this.findVariation(productId, variationId);
+    await this.assertPapers(companyId, [dto.paperId]);
 
-    const data: Prisma.ProductVariationUpdateInput = {};
+    const data: Prisma.ProductVariationUncheckedUpdateInput = {
+      ...paperData(dto.paperId),
+    };
     if (dto.name !== undefined) {
       const name = dto.name.trim();
       if (!name) throw new BadRequestException('Dê um nome à variação');
@@ -243,6 +270,24 @@ export class ProductVariationService {
       select: VARIATION_SELECT,
     });
     return rows.map(toVariation);
+  }
+
+  /**
+   * O papel da variação (Papéis no LITE, 13/10/2026): um material da
+   * empresa com a forma folha. Nulo e ausente não pedem nada.
+   */
+  private async assertPapers(
+    companyId: string,
+    paperIds: (string | null | undefined)[],
+  ) {
+    const ids = [...new Set(paperIds.filter((id): id is string => !!id))];
+    if (!ids.length) return;
+    const found = await this.prisma.material.count({
+      where: { id: { in: ids }, companyId, shape: MaterialShape.SHEET },
+    });
+    if (found !== ids.length) {
+      throw new BadRequestException(PAPER_OF_COMPANY);
+    }
   }
 
   private async findProduct(companyId: string, productId: string) {

@@ -1857,6 +1857,8 @@ model Material {
   /// O saldo no estoque e o de-para dos fornecedores (FULL)
   stockItems         StockItem[]
   supplierLinks      SupplierItemLink[]
+  /// As variações de produto que saem neste papel (Papéis no LITE)
+  paperVariations    ProductVariation[]
 
   @@unique([companyId, number])
   @@index([companyId, active])
@@ -1911,9 +1913,14 @@ model ProductVariation {
   /// Centavos por unidade comercial; nulo vale o preço do produto
   unitPrice      Int?
   position       Int                @default(0)
+  /// O papel da variação (Papéis no LITE, PO 13/10/2026): um material da
+  /// empresa com a forma SHEET. A contagem de folhas do item lê a folha e a
+  /// área útil dele
+  paperId        String?
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
   product        Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  paper          Material?          @relation(fields: [paperId], references: [id], onDelete: SetNull)
   priceTiers     ProductPriceTier[]
   assemblies     ProductAssembly[]
   quotationItems QuotationProduct[]

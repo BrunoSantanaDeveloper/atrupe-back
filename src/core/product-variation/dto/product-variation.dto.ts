@@ -16,6 +16,8 @@ import { ApiProperty } from '@nestjs/swagger';
 export const MAX_VARIATIONS = 100;
 
 const CENTS = 'O preço vai em centavos, sem casas decimais.';
+/** O papel da variação (Papéis no LITE, 13/10/2026). */
+export const PAPER_OF_COMPANY = 'Escolha um papel da empresa';
 
 export class ProductVariationRowDto {
   @IsOptional()
@@ -42,6 +44,16 @@ export class ProductVariationRowDto {
     example: 5200,
   })
   unitPrice?: number | null;
+
+  @IsOptional()
+  @IsUUID(undefined, { message: PAPER_OF_COMPANY })
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'O papel da variação (material da empresa com a forma SHEET); nulo solta, ausente mantém o que estava',
+  })
+  paperId?: string | null;
 }
 
 /** A lista inteira das variações simples (PV-6): nome e preço. */
@@ -71,4 +83,14 @@ export class UpdateProductVariationDto {
     description: 'Nulo volta ao preço do produto',
   })
   unitPrice?: number | null;
+
+  @IsOptional()
+  @IsUUID(undefined, { message: PAPER_OF_COMPANY })
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'O papel da variação (material da empresa com a forma SHEET); nulo solta',
+  })
+  paperId?: string | null;
 }

@@ -81,6 +81,7 @@ describe('ProductVariationService', () => {
             id: V1,
             name: 'P',
             unitPrice: 4900,
+            paper: null,
             hasOwnAssembly: false,
             hasOwnTiers: true,
           },
@@ -88,6 +89,7 @@ describe('ProductVariationService', () => {
             id: V2,
             name: 'M',
             unitPrice: null,
+            paper: null,
             hasOwnAssembly: false,
             hasOwnTiers: false,
           },
@@ -241,6 +243,108 @@ describe('ProductVariationService', () => {
         select: { id: true },
       });
       expect(prisma.productVariation.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('o papel da variação (Papéis no LITE, 13/10/2026)', () => {
+    const PAPER = '5c6d7e8f-3a4b-4c5d-8e9f-223344556677';
+    const couche = {
+      id: PAPER,
+      name: 'Couché 300 g',
+      grammage: 300,
+      sheetFormat: 'SRA3',
+      sheetWidth: 320,
+      sheetHeight: 450,
+      usableWidth: 310,
+      usableHeight: 440,
+    };
+
+    beforeEach(() => {
+      prisma.material = { count: jest.fn().mockResolvedValue(1) };
+    });
+
+    it('a leitura traz o papel, sem custo nem preço', async () => {
+      prisma.productVariation.findMany.mockResolvedValue([
+        { ...variation(V1, 'P', 4900), paper: couche },
+      ]);
+
+      const { data } = await service.list('c-1', P);
+
+      expect(data[0].paper).toEqual(couche);
+      expect(prisma.productVariation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({
+            paper: {
+              select: {
+                id: true,
+                name: true,
+                grammage: true,
+                sheetFormat: true,
+                sheetWidth: true,
+                sheetHeight: true,
+                usableWidth: true,
+                usableHeight: true,
+              },
+            },
+          }),
+        }),
+      );
+    });
+
+    it('liga, solta e, ausente, mantém o papel', async () => {
+      prisma.productVariation.findMany.mockResolvedValueOnce([
+        { id: V1, unitPrice: 4900 },
+        { id: V2, unitPrice: 5200 },
+      ]);
+
+      await service.replace(
+        'c-1',
+        P,
+        [
+          { id: V1, name: 'P', paperId: PAPER },
+          { id: V2, name: 'M', paperId: null },
+          { name: 'G' },
+        ],
+        true,
+      );
+
+      expect(prisma.material.count).toHaveBeenCalledWith({
+        where: { id: { in: [PAPER] }, companyId: 'c-1', shape: 'SHEET' },
+      });
+      expect(
+        prisma.productVariation.update.mock.calls.map(
+          ([{ data }]: any) => data.paperId,
+        ),
+      ).toEqual([PAPER, null]);
+      expect(
+        prisma.productVariation.create.mock.calls[0][0].data,
+      ).not.toHaveProperty('paperId');
+
+      await service.update('c-1', P, V1, { paperId: null }, false);
+      expect(prisma.productVariation.update.mock.calls[2][0].data).toEqual({
+        paperId: null,
+      });
+    });
+
+    it('papel de outra empresa, ou material que não é papel, é recusado', async () => {
+      prisma.material.count.mockResolvedValue(0);
+
+      await expect(
+        service.update('c-1', P, V1, { paperId: PAPER }, true),
+      ).rejects.toThrow(new BadRequestException('Escolha um papel da empresa'));
+      prisma.productVariation.findMany.mockResolvedValueOnce([
+        { id: V1, unitPrice: 4900 },
+      ]);
+      await expect(
+        service.replace(
+          'c-1',
+          P,
+          [{ id: V1, name: 'P', paperId: PAPER }],
+          true,
+        ),
+      ).rejects.toThrow('Escolha um papel da empresa');
+      expect(prisma.productVariation.update).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
 
