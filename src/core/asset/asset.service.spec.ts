@@ -160,7 +160,8 @@ describe('AssetService', () => {
     expect(prisma.tx.receivable.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         companyId: 'c1',
-        totalAmount: 1_500_000,
+        // R$ 15.000,00: o contas a receber guarda reais
+        totalAmount: 15_000,
         subCategoryId: 'conta-receita',
       }),
     });

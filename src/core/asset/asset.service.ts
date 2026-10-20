@@ -600,6 +600,8 @@ export class AssetService {
       row.acquisitionValue - (depreciation.depreciatedValue ?? 0);
     const result = dto.value - remaining;
 
+    // O valor chega em centavos; o contas a receber guarda reais (Float)
+    const saleReais = dto.value / 100;
     const receivableId = await this.prisma.$transaction(async (tx) => {
       let entryId: string | null = null;
       if (dto.value > 0) {
@@ -608,8 +610,8 @@ export class AssetService {
             companyId,
             description: `Venda do patrimônio ${row.name}`,
             referenceDate: date,
-            totalAmount: dto.value,
-            totalValue: dto.value,
+            totalAmount: saleReais,
+            totalValue: saleReais,
             installmentQty: 1,
             mainAdditionalFee: 0,
             natureId: account!.natureId,
@@ -621,7 +623,7 @@ export class AssetService {
             receivableId: receivable.id,
             installmentNumber: 1,
             dueDate: date,
-            amount: dto.value,
+            amount: saleReais,
             additionalFee: 0,
             bankAccountId: dto.bankAccountId ?? null,
           },
