@@ -27,8 +27,15 @@ const addLines = (
   >,
   data: unknown,
 ) => {
+  // O retrato tem as linhas por etapa; o processo acrescentado no item
+  // guarda as linhas resolvidas soltas (sem etapas)
+  type Line = NonNullable<
+    NonNullable<SnapshotStages['stages']>[number]['lines']
+  >[number];
   const stages = Array.isArray(data)
-    ? (data as SnapshotStages['stages'])
+    ? data.some((entry) => Array.isArray(entry?.lines))
+      ? (data as SnapshotStages['stages'])
+      : [{ lines: data as Line[] }]
     : ((data as SnapshotStages | null)?.stages ?? []);
   for (const stage of stages ?? []) {
     for (const line of stage.lines ?? []) {
