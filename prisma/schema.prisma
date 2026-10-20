@@ -791,11 +791,17 @@ model EmployeeWorkload {
 }
 
 model CostBaseSettings {
-  id                  String    @id @default(uuid())
-  companyId           String    @unique
-  assetGroupsSeededAt DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  id                         String    @id @default(uuid())
+  companyId                  String    @unique
+  assetGroupsSeededAt        DateTime?
+  /// As contas das fontes sem bem no comparativo (§10): o material das
+  /// vendas e o custo financeiro. Nulas, vale a conta padrão pela
+  /// descrição; a escolhida que deixar de valer (inativa, administrativa)
+  /// também volta ao padrão, por isso sem chave estrangeira
+  materialSubCategoryId      String?
+  financialCostSubCategoryId String?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
 
   @@map("cost_base_settings")
 }

@@ -145,3 +145,16 @@ export class ComparisonFilterDto extends PageDto {
   @IsIn(COMPARISON_STATUS, { message: 'Situação inválida' })
   status?: string;
 }
+
+const EXPENSE_ACCOUNT = 'Escolha uma conta de despesa da empresa';
+
+/** As contas das fontes sem bem no comparativo; `null` volta ao padrão. */
+export class ComparisonSettingsDto {
+  @IsOptional()
+  @IsUUID('all', { message: EXPENSE_ACCOUNT })
+  materialSubCategoryId?: string | null;
+
+  @IsOptional()
+  @IsUUID('all', { message: EXPENSE_ACCOUNT })
+  financialCostSubCategoryId?: string | null;
+}

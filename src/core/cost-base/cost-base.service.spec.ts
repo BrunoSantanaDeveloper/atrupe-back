@@ -314,4 +314,124 @@ describe('CostBaseService: as escritas', () => {
       );
     });
   });
+
+  describe('contas do comparativo', () => {
+    // O plano da empresa: o aluguel é administrativo e não entra
+    const account = (
+      id: string,
+      code: string,
+      description: string,
+      nature: string,
+      level2 = '02',
+      natureCode = '01',
+    ) => ({
+      id,
+      code,
+      description,
+      nature: { code: natureCode, level1: '02', level2, description: nature },
+    });
+
+    beforeEach(() => {
+      prisma.subCategory = {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            account(
+              'cartao',
+              '02',
+              'Tarifa de Cartão de Crédito',
+              'Despesas Financeiras',
+              '02',
+              '04',
+            ),
+            account('tinta', '06', 'Tinta', 'Operacional'),
+            account('mp', '01', 'Matéria Prima', 'Operacional'),
+            account('aluguel', '02', 'Aluguel', 'Administrativo', '01'),
+          ]),
+      };
+      prisma.costBaseSettings = {
+        findUnique: jest.fn().mockResolvedValue(null),
+        // Sem linha gravada: o que veio no create, o resto nulo
+        upsert: jest.fn(async ({ update }) => ({
+          materialSubCategoryId: null,
+          financialCostSubCategoryId: null,
+          ...update,
+        })),
+      };
+    });
+
+    it('sem escolha, as contas padrão; a lista é a do comparativo, na ordem do plano', async () => {
+      expect(await service.comparisonSettings('c')).toEqual({
+        materialSubCategoryId: 'mp',
+        financialCostSubCategoryId: 'cartao',
+        accounts: [
+          { id: 'mp', chartAccount: '02.02.01.01', name: 'Matéria Prima' },
+          { id: 'tinta', chartAccount: '02.02.01.06', name: 'Tinta' },
+          {
+            id: 'cartao',
+            chartAccount: '02.02.04.02',
+            name: 'Tarifa de Cartão de Crédito',
+          },
+        ],
+      });
+      expect(prisma.subCategory.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            companyId: 'c',
+            isActive: true,
+            nature: { level1: '02', isActive: true },
+          },
+        }),
+      );
+    });
+
+    it('só conta do comparativo: nem administrativa, nem de fora', async () => {
+      for (const id of ['aluguel', 'de-outra-empresa']) {
+        await refuses(
+          service.updateComparisonSettings('c', 'u', {
+            materialSubCategoryId: id,
+          }),
+          'Escolha uma conta de despesa da empresa',
+        );
+      }
+      expect(prisma.costBaseSettings.upsert).not.toHaveBeenCalled();
+    });
+
+    it('a escolha muda só o campo que veio; null volta ao padrão; vai para o histórico', async () => {
+      const chosen = await service.updateComparisonSettings('c', 'u', {
+        materialSubCategoryId: 'tinta',
+      });
+      expect(prisma.costBaseSettings.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: { companyId: 'c', materialSubCategoryId: 'tinta' },
+          update: { materialSubCategoryId: 'tinta' },
+        }),
+      );
+      expect([
+        chosen.materialSubCategoryId,
+        chosen.financialCostSubCategoryId,
+      ]).toEqual(['tinta', 'cartao']);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entity: 'COST_BASE_COMPARISON_SETTINGS',
+          before: {
+            materialSubCategoryId: null,
+            financialCostSubCategoryId: null,
+          },
+          after: {
+            materialSubCategoryId: 'tinta',
+            financialCostSubCategoryId: null,
+          },
+        }),
+      );
+
+      const reset = await service.updateComparisonSettings('c', 'u', {
+        materialSubCategoryId: null,
+      });
+      expect(prisma.costBaseSettings.upsert).toHaveBeenLastCalledWith(
+        expect.objectContaining({ update: { materialSubCategoryId: null } }),
+      );
+      expect(reset.materialSubCategoryId).toBe('mp');
+    });
+  });
 });

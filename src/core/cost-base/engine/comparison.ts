@@ -451,3 +451,32 @@ export const defaultAccountOf = (
     null
   );
 };
+
+/** As contas escolhidas em CostBaseSettings (nula: o padrão). */
+export type ChosenAccounts = {
+  materialSubCategoryId: string | null;
+  financialCostSubCategoryId: string | null;
+};
+
+/**
+ * A conta de cada fonte sem bem: a escolhida, enquanto ela for uma das
+ * contas do comparativo (ativa, de despesa, fora do administrativo); senão,
+ * a do padrão. Sem nenhuma das duas, nula.
+ */
+export const sourceAccountsOf = (
+  accounts: ExpenseAccount[],
+  chosen: ChosenAccounts | null,
+) => {
+  const valid = (id: string | null | undefined) =>
+    id && accounts.some((account) => account.id === id) ? id : null;
+  return {
+    material:
+      valid(chosen?.materialSubCategoryId) ??
+      defaultAccountOf(accounts, DEFAULT_ACCOUNTS.material)?.id ??
+      null,
+    financialCost:
+      valid(chosen?.financialCostSubCategoryId) ??
+      defaultAccountOf(accounts, DEFAULT_ACCOUNTS.financialCost)?.id ??
+      null,
+  };
+};

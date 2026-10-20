@@ -15,6 +15,7 @@ import {
 import {
   AdminExpenseFilterDto,
   ComparisonFilterDto,
+  ComparisonSettingsDto,
   DistributionDto,
   ExpenseAllocationDto,
   LaborHoursDto,
@@ -24,18 +25,17 @@ import {
 import { manualFits } from './engine/allocation';
 import {
   ComparisonSource,
-  DEFAULT_ACCOUNTS,
   ExpenseAccount,
   MachineAsset,
   Reading,
   SoldUse,
   assetCostSourceOf,
-  defaultAccountOf,
   financialCostSourceOf,
   itemMaterialCostOf,
   materialSourceOf,
   readingVolumeOf,
   soldVolumesOf,
+  sourceAccountsOf,
   usesOf,
   volumeOf,
 } from './engine/comparison';
@@ -517,7 +517,7 @@ export class CostBaseService {
 
     const accounts = await this.comparisonAccountsOf(companyId, snapshot);
     const ids = accounts.map((account) => account.id);
-    const linked = this.sourceAccountsOf(accounts);
+    const linked = await this.linkedAccountsOf(companyId, accounts);
 
     // O volume de cada bem e de cada configuração no período
     const machines: MachineAsset[] = snapshot.assets.map(
@@ -680,6 +680,75 @@ export class CostBaseService {
     };
   }
 
+  /**
+   * As contas das fontes sem bem do comparativo ("Conta do material" e
+   * "Conta do custo financeiro"), já resolvidas com o padrão, e as contas
+   * que podem ser escolhidas: as do comparativo.
+   */
+  async comparisonSettings(companyId: string) {
+    const snapshot = await this.snapshots.load(companyId);
+    const accounts = await this.comparisonAccountsOf(companyId, snapshot);
+    return this.comparisonSettingsView(
+      accounts,
+      await this.linkedAccountsOf(companyId, accounts),
+    );
+  }
+
+  /**
+   * Escolhe as contas das fontes sem bem; `null` volta ao padrão e o campo
+   * que não vem fica como está. Só uma das contas do comparativo: de
+   * despesa, ativa, da empresa e fora do administrativo (a administrativa
+   * não aparece no comparativo, a fonte sumiria).
+   */
+  async updateComparisonSettings(
+    companyId: string,
+    userId: string | null,
+    dto: ComparisonSettingsDto,
+  ) {
+    const snapshot = await this.snapshots.load(companyId);
+    const accounts = await this.comparisonAccountsOf(companyId, snapshot);
+    for (const id of [
+      dto.materialSubCategoryId,
+      dto.financialCostSubCategoryId,
+    ]) {
+      if (id && !accounts.some((account) => account.id === id)) {
+        bad('Escolha uma conta de despesa da empresa');
+      }
+    }
+    const before = await this.chosenAccountsOf(companyId);
+    const data = {
+      ...(dto.materialSubCategoryId !== undefined && {
+        materialSubCategoryId: dto.materialSubCategoryId,
+      }),
+      ...(dto.financialCostSubCategoryId !== undefined && {
+        financialCostSubCategoryId: dto.financialCostSubCategoryId,
+      }),
+    };
+    const after = await this.prisma.costBaseSettings.upsert({
+      where: { companyId },
+      create: { companyId, ...data },
+      update: data,
+      select: { materialSubCategoryId: true, financialCostSubCategoryId: true },
+    });
+    // O histórico guarda a escolha (nula = o padrão)
+    await this.audit.record({
+      companyId,
+      userId,
+      entity: 'COST_BASE_COMPARISON_SETTINGS',
+      entityId: companyId,
+      action: 'UPDATE',
+      before: before ?? {
+        materialSubCategoryId: null,
+        financialCostSubCategoryId: null,
+      },
+      after,
+    });
+    return this.comparisonSettingsView(
+      accounts,
+      sourceAccountsOf(accounts, after),
+    );
+  }
+
   /* ------------------------------------------- apoio */
 
   /**
@@ -758,16 +827,38 @@ export class CostBaseService {
       );
   }
 
+  /** As contas escolhidas para as fontes sem bem, como estão gravadas. */
+  private async chosenAccountsOf(companyId: string) {
+    return this.prisma.costBaseSettings.findUnique({
+      where: { companyId },
+      select: { materialSubCategoryId: true, financialCostSubCategoryId: true },
+    });
+  }
+
   /**
-   * A conta de cada fonte sem bem: a do padrão pelo nome ("Matéria Prima",
-   * "Tarifa de Cartão de Crédito"), entre as do comparativo.
+   * A conta de cada fonte sem bem: a escolhida em "Conta do material" e
+   * "Conta do custo financeiro", senão a do padrão pelo nome ("Matéria
+   * Prima", "Tarifa de Cartão de Crédito"), entre as do comparativo.
    */
-  private sourceAccountsOf(accounts: ExpenseAccount[]) {
+  private async linkedAccountsOf(
+    companyId: string,
+    accounts: ExpenseAccount[],
+  ) {
+    return sourceAccountsOf(accounts, await this.chosenAccountsOf(companyId));
+  }
+
+  private comparisonSettingsView(
+    accounts: (ExpenseAccount & { chartAccount: string })[],
+    linked: ReturnType<typeof sourceAccountsOf>,
+  ) {
     return {
-      material:
-        defaultAccountOf(accounts, DEFAULT_ACCOUNTS.material)?.id ?? null,
-      financialCost:
-        defaultAccountOf(accounts, DEFAULT_ACCOUNTS.financialCost)?.id ?? null,
+      materialSubCategoryId: linked.material,
+      financialCostSubCategoryId: linked.financialCost,
+      accounts: accounts.map((account) => ({
+        id: account.id,
+        chartAccount: account.chartAccount,
+        name: account.description ?? '',
+      })),
     };
   }
 

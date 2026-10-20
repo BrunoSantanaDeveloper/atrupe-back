@@ -14,6 +14,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AbacService } from '../auth/abac/abac.service';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
+import { ObservePermissions } from '../auth/abac/observe-permissions.decorator';
 import {
   PermissionsGuard,
   permissionDenied,
@@ -29,6 +30,7 @@ import { CostBaseService } from './cost-base.service';
 import {
   AdminExpenseFilterDto,
   ComparisonFilterDto,
+  ComparisonSettingsDto,
   DistributionDto,
   ExpenseAllocationDto,
   LaborHoursDto,
@@ -217,5 +219,31 @@ export class CostBaseController {
   async comparison(@Req() req, @Query() filter: ComparisonFilterDto) {
     const { companyId } = await this.session(req);
     return this.costBase.comparison(companyId, filter);
+  }
+
+  // Rotas novas: a permissão já recusa
+  @Get('comparison/settings')
+  @HasPermission('view', BASE)
+  @ObservePermissions(false)
+  @ApiOperation({
+    summary: 'As contas do material e do custo financeiro no comparativo',
+  })
+  async comparisonSettings(@Req() req) {
+    const { companyId } = await this.session(req);
+    return this.costBase.comparisonSettings(companyId);
+  }
+
+  @Patch('comparison/settings')
+  @HasPermission('edit', BASE)
+  @ObservePermissions(false)
+  @ApiOperation({
+    summary: 'Escolhe as contas do material e do custo financeiro',
+  })
+  async updateComparisonSettings(
+    @Req() req,
+    @Body() dto: ComparisonSettingsDto,
+  ) {
+    const { companyId, userId } = await this.session(req);
+    return this.costBase.updateComparisonSettings(companyId, userId, dto);
   }
 }

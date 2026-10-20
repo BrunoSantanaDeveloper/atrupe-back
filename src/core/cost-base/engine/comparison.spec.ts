@@ -8,6 +8,7 @@ import {
   materialSourceOf,
   readingVolumeOf,
   soldVolumesOf,
+  sourceAccountsOf,
   usesOf,
   volumeOf,
 } from './comparison';
@@ -513,5 +514,42 @@ describe('comparativo: as fontes sem bem', () => {
       ),
     ).toBeNull();
     expect(defaultAccountOf([], DEFAULT_ACCOUNTS.material)).toBeNull();
+  });
+});
+
+describe('comparativo: as contas escolhidas', () => {
+  const account = (id: string, description: string, nature: string) => ({
+    id,
+    description,
+    nature: { description: nature },
+  });
+  const accounts = [
+    account('mp', 'Matéria Prima', 'Operacional'),
+    account('tinta', 'Tinta', 'Operacional'),
+    account('cartao', 'Tarifa de Cartão de Crédito', 'Despesas Financeiras'),
+  ];
+
+  it('a escolhida vale enquanto for uma das contas do comparativo', () => {
+    expect(
+      sourceAccountsOf(accounts, {
+        materialSubCategoryId: 'tinta',
+        financialCostSubCategoryId: null,
+      }),
+    ).toEqual({ material: 'tinta', financialCost: 'cartao' });
+    // Inativa, administrativa ou de outra empresa: volta ao padrão
+    expect(
+      sourceAccountsOf(accounts, {
+        materialSubCategoryId: 'sumiu',
+        financialCostSubCategoryId: 'tinta',
+      }),
+    ).toEqual({ material: 'mp', financialCost: 'tinta' });
+    expect(sourceAccountsOf(accounts, null)).toEqual({
+      material: 'mp',
+      financialCost: 'cartao',
+    });
+    expect(sourceAccountsOf([accounts[1]], null)).toEqual({
+      material: null,
+      financialCost: null,
+    });
   });
 });
