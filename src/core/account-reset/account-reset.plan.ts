@@ -363,6 +363,13 @@ export const RESET_STEPS: ResetStep[] = [
     group: 'registries',
     where: (companyId) => ({ companyId }),
   },
+  // As leituras do contador saem com o bem (o banco apagaria junto; aqui a
+  // prévia conta e a cópia de segurança guarda)
+  {
+    model: 'AssetReading',
+    group: 'registries',
+    where: (companyId) => ({ companyId }),
+  },
   {
     model: 'Asset',
     label: 'Patrimônio',

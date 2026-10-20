@@ -17,6 +17,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -300,6 +301,21 @@ export class GroupFilterDto {
   @Min(1)
   @ApiProperty({ required: false })
   limit?: number;
+}
+
+export class ReadingFilterDto extends GroupFilterDto {}
+
+/** A leitura do contador do bem, na unidade dele, no dia. */
+export class AssetReadingDto {
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Data da leitura inválida' })
+  @IsDateString({}, { message: 'Data da leitura inválida' })
+  @ApiProperty({ example: '2026-10-20' })
+  date: string;
+
+  @IsNumber({}, { message: 'Informe o que o contador marca' })
+  @Min(0, { message: 'A leitura não pode ser negativa' })
+  @ApiProperty({ description: 'o contador, na unidade do bem' })
+  value: number;
 }
 
 /** As contas do plano: despesa para o custo do bem, receita para a venda. */

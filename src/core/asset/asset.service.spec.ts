@@ -67,6 +67,20 @@ describe('AssetService', () => {
       subCategory: { findFirst: jest.fn() },
       bankAccount: { findFirst: jest.fn() },
       assemblyLineOption: { findMany: jest.fn().mockResolvedValue([]) },
+      assetReading: {
+        count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn(async ({ data }) => ({
+          ...data,
+          id: 'r-novo',
+          createdAt: new Date('2026-10-20T15:00:00Z'),
+        })),
+        delete: jest.fn(),
+      },
+      employee: {
+        findFirst: jest.fn().mockResolvedValue({ name: 'Ana', user: null }),
+      },
       $transaction: jest.fn(async (fn) => fn(tx)),
       tx,
     };
@@ -153,6 +167,134 @@ describe('AssetService', () => {
     expect(prisma.tx.asset.update).toHaveBeenCalledWith({
       where: { id: 'a-1' },
       data: expect.objectContaining({ active: false, inactiveReason: 'Venda' }),
+    });
+  });
+
+  describe('leituras do contador', () => {
+    const reading = (date: string, value: number) => ({
+      id: `r-${date}`,
+      date: new Date(`${date}T00:00:00Z`),
+      value,
+      createdById: 'u0',
+      createdByName: 'Bia',
+      createdAt: new Date(`${date}T12:00:00Z`),
+    });
+    const user = { userId: 'u1', companyId: 'c1' };
+
+    it('o contador não volta: nem abaixo da leitura anterior, nem acima da posterior', async () => {
+      prisma.assetReading.findFirst.mockImplementation(async ({ where }) =>
+        where.date.lt
+          ? reading('2026-10-01', 1000)
+          : reading('2026-10-15', 2000.5),
+      );
+      await expect(
+        service.addReading('c1', user, 'a-1', {
+          date: '2026-10-10',
+          value: 999,
+        }),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'A leitura não pode voltar: em 01/10/2026 o contador marcava 1.000 m²',
+        ),
+      );
+      await expect(
+        service.addReading('c1', user, 'a-1', {
+          date: '2026-10-10',
+          value: 2001,
+        }),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'A leitura não pode voltar: em 15/10/2026 o contador marcava 2.000,5 m²',
+        ),
+      );
+      expect(prisma.assetReading.create).not.toHaveBeenCalled();
+
+      const saved = await service.addReading('c1', user, 'a-1', {
+        date: '2026-10-10',
+        value: 1500,
+      });
+      expect(prisma.assetReading.create).toHaveBeenCalledWith({
+        data: {
+          companyId: 'c1',
+          assetId: 'a-1',
+          date: new Date('2026-10-10T00:00:00Z'),
+          value: 1500,
+          createdById: 'u1',
+          createdByName: 'Ana',
+        },
+      });
+      expect(saved).toEqual(
+        expect.objectContaining({
+          date: '2026-10-10',
+          value: 1500,
+          createdByName: 'Ana',
+        }),
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ entity: 'ASSET_READING', action: 'CREATE' }),
+      );
+    });
+
+    it('dia que ainda não chegou e bem de outra empresa são recusados', async () => {
+      await expect(
+        service.addReading('c1', user, 'a-1', {
+          date: '2999-01-01',
+          value: 10,
+        }),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'A leitura não pode ser de um dia que ainda não chegou',
+        ),
+      );
+      await expect(
+        service.addReading('c2', user, 'a-1', {
+          date: '2026-10-10',
+          value: 10,
+        }),
+      ).rejects.toThrow(new NotFoundException('Patrimônio não encontrado'));
+      await expect(service.readings('c2', 'a-1', {})).rejects.toThrow(
+        new NotFoundException('Patrimônio não encontrado'),
+      );
+    });
+
+    it('a lista sai da mais recente para a mais antiga, com a unidade do bem', async () => {
+      prisma.assetReading.count.mockResolvedValue(2);
+      prisma.assetReading.findMany.mockResolvedValue([
+        reading('2026-10-15', 2000),
+        reading('2026-10-01', 1000),
+      ]);
+      const res = await service.readings('c1', 'a-1', { limit: 500 });
+      expect(prisma.assetReading.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { assetId: 'a-1', companyId: 'c1' },
+          orderBy: [{ date: 'desc' }, { value: 'desc' }, { createdAt: 'desc' }],
+          // O teto da página (SEG-2)
+          take: 100,
+        }),
+      );
+      expect(res).toEqual(
+        expect.objectContaining({ unit: 'M2', page: 1, lastPage: 1, total: 2 }),
+      );
+      expect(res.data.map((row) => [row.date, row.value])).toEqual([
+        ['2026-10-15', 2000],
+        ['2026-10-01', 1000],
+      ]);
+    });
+
+    it('apagar: só a leitura do bem da empresa', async () => {
+      await expect(
+        service.removeReading('c1', 'u1', 'a-1', 'r-9'),
+      ).rejects.toThrow(new NotFoundException('Leitura não encontrada'));
+      expect(prisma.assetReading.findFirst).toHaveBeenCalledWith({
+        where: { id: 'r-9', assetId: 'a-1', companyId: 'c1' },
+      });
+      prisma.assetReading.findFirst.mockResolvedValue(
+        reading('2026-10-01', 1000),
+      );
+      await service.removeReading('c1', 'u1', 'a-1', 'r-2026-10-01');
+      expect(prisma.assetReading.delete).toHaveBeenCalledWith({
+        where: { id: 'r-2026-10-01' },
+      });
     });
   });
 

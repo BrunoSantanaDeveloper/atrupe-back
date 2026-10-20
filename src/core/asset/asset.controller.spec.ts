@@ -28,6 +28,9 @@ describe('AssetController', () => {
       sell: mock(),
       addCost: mock(),
       addSetup: mock(),
+      readings: mock(),
+      addReading: mock(),
+      removeReading: mock(),
     };
     groups = { list: mock(), create: mock(), rename: mock(), remove: mock() };
     abac = { hasPermission: jest.fn().mockResolvedValue(true) };
@@ -73,5 +76,27 @@ describe('AssetController', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(assets.create).not.toHaveBeenCalled();
     expect(assets.sell).not.toHaveBeenCalled();
+  });
+
+  it('leituras: a empresa da sessão; ler sem valores, gravar como as escritas do bem', async () => {
+    const dto = { date: '2026-10-10', value: 1500 };
+    await controller.readings(req(), 'a-1', {});
+    await controller.addReading(req(), 'a-1', dto);
+    await controller.removeReading(req(), 'a-1', 'r-1');
+    expect(assets.readings).toHaveBeenCalledWith('c1', 'a-1', {});
+    expect(assets.addReading).toHaveBeenCalledWith(
+      'c1',
+      { companyId: 'c1', userId: 'u1' },
+      'a-1',
+      dto,
+    );
+    expect(assets.removeReading).toHaveBeenCalledWith('c1', 'u1', 'a-1', 'r-1');
+
+    abac.hasPermission.mockResolvedValue(false);
+    await controller.readings(req(), 'a-1', {});
+    await expect(
+      controller.addReading(req(), 'a-1', dto),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(assets.addReading).toHaveBeenCalledTimes(1);
   });
 });

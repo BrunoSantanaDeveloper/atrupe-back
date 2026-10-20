@@ -69,6 +69,8 @@ const SEM_VALOR: Record<string, string> = {
   'OrderController.findAllQuantity': CONTAGEM,
   'AssetController.quantity': CONTAGEM,
   'AssetController.accounts': APOIO,
+  // O contador do bem (km, horas, m²) e quem leu: medida, não dinheiro
+  'AssetController.readings': 'leituras do contador do bem, sem valor',
   'ReportController.findAll':
     'menu de relatórios conforme as permissões da sessão',
   'ReportController.getSalesPermissions':

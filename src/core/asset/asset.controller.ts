@@ -19,6 +19,7 @@ import { HasAnyPermission } from '../auth/abac/has-any-permission.decorator';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
 import { MoneyFields } from '../auth/abac/money-fields.decorator';
 import { ASSET_MONEY_FIELDS } from '../auth/abac/money-fields';
+import { ObservePermissions } from '../auth/abac/observe-permissions.decorator';
 import {
   PermissionsGuard,
   permissionDenied,
@@ -31,15 +32,21 @@ import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { RequiresFeature } from '../plan/decorators/requires-feature.decorator';
 import { FeatureGuard } from '../plan/guards/feature.guard';
 import { AssetGroupService, GROUP_NOT_FOUND } from './asset-group.service';
-import { ASSET_NOT_FOUND, AssetService } from './asset.service';
+import {
+  ASSET_NOT_FOUND,
+  AssetService,
+  READING_NOT_FOUND,
+} from './asset.service';
 import {
   AssetAccountsDto,
   AssetCostDto,
   AssetFilterDto,
+  AssetReadingDto,
   AssetSetupDto,
   CreateAssetDto,
   CreateAssetGroupDto,
   GroupFilterDto,
+  ReadingFilterDto,
   RenameAssetGroupDto,
   SellAssetDto,
   ToggleAssetDto,
@@ -59,6 +66,9 @@ const GroupId = new ParseUUIDPipe({
 });
 const ItemId = new ParseUUIDPipe({
   exceptionFactory: () => new NotFoundException('Item não encontrado'),
+});
+const ReadingId = new ParseUUIDPipe({
+  exceptionFactory: () => new NotFoundException(READING_NOT_FOUND),
 });
 
 /**
@@ -301,5 +311,48 @@ export class AssetController {
   ) {
     const { companyId, userId } = await this.writer(req);
     return this.assets.removeSetup(companyId, userId, id, setupId);
+  }
+
+  /* ------------------------------------------------- leituras do contador */
+
+  // Rotas novas: a permissão já recusa. A leitura não é valor (sai para
+  // quem vê o patrimônio); gravar e apagar seguem as escritas do bem
+  @Get(':id/readings')
+  @HasPermission('view', BASE)
+  @ObservePermissions(false)
+  @ApiOperation({ summary: 'Leituras do contador do bem' })
+  readings(
+    @Req() req,
+    @Param('id', AssetId) id: string,
+    @Query() filter: ReadingFilterDto,
+  ) {
+    return this.assets.readings(req.user.companyId, id, filter);
+  }
+
+  @Post(':id/readings')
+  @HasPermission('edit', BASE)
+  @ObservePermissions(false)
+  @ApiOperation({ summary: 'Grava o que o contador do bem marcava no dia' })
+  async addReading(
+    @Req() req,
+    @Param('id', AssetId) id: string,
+    @Body() dto: AssetReadingDto,
+  ) {
+    const { companyId } = await this.writer(req);
+    return this.assets.addReading(companyId, req.user, id, dto);
+  }
+
+  @Delete(':id/readings/:readingId')
+  @HttpCode(204)
+  @HasPermission('edit', BASE)
+  @ObservePermissions(false)
+  @ApiOperation({ summary: 'Apaga uma leitura do contador' })
+  async removeReading(
+    @Req() req,
+    @Param('id', AssetId) id: string,
+    @Param('readingId', ReadingId) readingId: string,
+  ) {
+    const { companyId, userId } = await this.writer(req);
+    await this.assets.removeReading(companyId, userId, id, readingId);
   }
 }

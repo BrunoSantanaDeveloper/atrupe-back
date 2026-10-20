@@ -993,8 +993,8 @@ export class CompanyManagementService {
           });
           await tx.employee.deleteMany({ where: { companyId } });
 
-          // 13. Ativos (os custos e as configurações do bem saem junto) e as
-          // marcas e o histórico da base de custos
+          // 13. Ativos (os custos, as configurações e as leituras do bem
+          // saem junto) e as marcas e o histórico da base de custos
           await tx.asset.deleteMany({ where: { companyId } });
           await tx.assetGroup.deleteMany({ where: { companyId } });
           await tx.assetType.deleteMany({ where: { companyId } });

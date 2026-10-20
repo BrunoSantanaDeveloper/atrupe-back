@@ -10,7 +10,10 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 import { CostAuditService } from '../cost-base/cost-audit.service';
 import { ASSET_POOL, AssetPool } from './asset-pool';
+import { actorOfUser } from '../financial/cash-control/cash-ledger';
 import { accountCodeOf } from '../financial/nature/account-code';
+import { toProjectDateKey } from '../fiscal/utils/project-date.util';
+import { UNIT_SYMBOL } from '../material/material-text';
 import {
   AssetInput,
   activityHoursOf,
@@ -24,8 +27,10 @@ import {
 import {
   AssetCostDto,
   AssetFilterDto,
+  AssetReadingDto,
   AssetSetupDto,
   CreateAssetDto,
+  ReadingFilterDto,
   SellAssetDto,
   ToggleAssetDto,
   UpdateAssetCostDto,
@@ -34,11 +39,39 @@ import {
 } from './dto/asset.dto';
 
 export const ASSET_NOT_FOUND = 'Patrimônio não encontrado';
+export const READING_NOT_FOUND = 'Leitura não encontrada';
 /** Teto de itens por página (SEG-2). */
 export const ASSET_PAGE_LIMIT = 100;
 
 const COST_NOT_FOUND = 'Custo não encontrado';
 const SETUP_NOT_FOUND = 'Configuração não encontrada';
+
+type ReadingRow = {
+  id: string;
+  date: Date;
+  value: number;
+  createdById: string | null;
+  createdByName: string;
+  createdAt: Date;
+};
+
+const readingView = (row: ReadingRow) => ({
+  id: row.id,
+  date: row.date.toISOString().slice(0, 10),
+  value: row.value,
+  createdById: row.createdById,
+  createdByName: row.createdByName,
+  createdAt: row.createdAt,
+});
+
+// "A leitura não pode voltar: em 05/10/2026 o contador marcava 12.345 km"
+const backwardsMessage = (row: ReadingRow, unit: string | null) => {
+  const day = row.date.toISOString().slice(0, 10).split('-').reverse();
+  const value = row.value.toLocaleString('pt-BR', {
+    maximumFractionDigits: 3,
+  });
+  return `A leitura não pode voltar: em ${day.join('/')} o contador marcava ${value}${unit ? ` ${unit}` : ''}`;
+};
 
 /** O recurso de máquina da composição: a configuração ou o grupo (P-28). */
 export const machineResourceId = (setupId: string) => `machine:${setupId}`;
@@ -841,6 +874,116 @@ export class AssetService {
       before: current,
     });
     return this.detail(companyId, id, true);
+  }
+
+  /* ------------------------------------------------- leituras do contador */
+
+  /**
+   * As leituras do contador do bem (hodômetro, horímetro, contador de m²),
+   * a mais recente primeiro, com a unidade do bem para a tela.
+   */
+  async readings(companyId: string, id: string, filter: ReadingFilterDto) {
+    const row = await this.findRow(companyId, id);
+    const page = filter.page ?? 1;
+    const limit = Math.min(filter.limit ?? 50, ASSET_PAGE_LIMIT);
+    const where = { assetId: id, companyId };
+    const [total, rows] = await Promise.all([
+      this.prisma.assetReading.count({ where }),
+      this.prisma.assetReading.findMany({
+        where,
+        // No mesmo dia, o contador maior é o mais recente
+        orderBy: [{ date: 'desc' }, { value: 'desc' }, { createdAt: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ]);
+    return {
+      unit: row.unit,
+      data: rows.map(readingView),
+      page,
+      lastPage: Math.max(1, Math.ceil(total / limit)),
+      total,
+    };
+  }
+
+  /**
+   * Grava o que o contador marcava no dia. O contador não volta: a leitura
+   * não fica abaixo da maior de um dia anterior nem acima da menor de um
+   * dia posterior (no mesmo dia, qualquer ordem vale). Só bem ativo.
+   */
+  async addReading(
+    companyId: string,
+    user: { userId?: string; companyId: string },
+    id: string,
+    dto: AssetReadingDto,
+  ) {
+    const row = await this.activeRow(companyId, id);
+    const day = dto.date.slice(0, 10);
+    // O dia de hoje é o de São Paulo, como o resto do sistema
+    if (day > toProjectDateKey(new Date())) {
+      bad('A leitura não pode ser de um dia que ainda não chegou');
+    }
+    const date = toDate(day)!;
+    const [before, after] = await Promise.all([
+      this.prisma.assetReading.findFirst({
+        where: { assetId: id, companyId, date: { lt: date } },
+        orderBy: [{ value: 'desc' }, { date: 'desc' }],
+      }),
+      this.prisma.assetReading.findFirst({
+        where: { assetId: id, companyId, date: { gt: date } },
+        orderBy: [{ value: 'asc' }, { date: 'asc' }],
+      }),
+    ]);
+    const unit = row.unit ? UNIT_SYMBOL[row.unit] : null;
+    if (before && dto.value < before.value) {
+      bad(backwardsMessage(before, unit));
+    }
+    if (after && dto.value > after.value) bad(backwardsMessage(after, unit));
+
+    const actor = await actorOfUser(this.prisma, user);
+    const created = await this.prisma.assetReading.create({
+      data: {
+        companyId,
+        assetId: id,
+        date,
+        value: dto.value,
+        createdById: actor.id,
+        createdByName: actor.name,
+      },
+    });
+    const view = readingView(created);
+    await this.audit.record({
+      companyId,
+      userId: actor.id,
+      entity: 'ASSET_READING',
+      entityId: created.id,
+      action: 'CREATE',
+      after: view,
+    });
+    return view;
+  }
+
+  /** Apaga a leitura digitada errado (a ordem das outras continua valendo). */
+  async removeReading(
+    companyId: string,
+    userId: string,
+    id: string,
+    readingId: string,
+  ) {
+    await this.findRow(companyId, id);
+    const reading = await this.prisma.assetReading.findFirst({
+      where: { id: readingId, assetId: id, companyId },
+    });
+    if (!reading) throw new NotFoundException(READING_NOT_FOUND);
+    await this.prisma.assetReading.delete({ where: { id: readingId } });
+    await this.audit.record({
+      companyId,
+      userId,
+      entity: 'ASSET_READING',
+      entityId: readingId,
+      action: 'DELETE',
+      before: readingView(reading),
+    });
   }
 
   /* ---------------------------------------------------------------- apoio */

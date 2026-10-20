@@ -624,6 +624,7 @@ model Asset {
   group                      AssetGroup?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
   costs                      AssetCost[]
   setups                     AssetSetup[]
+  readings                   AssetReading[]
 
   @@index([companyId, active])
   @@map("assets")
@@ -698,6 +699,27 @@ model AssetSetup {
 
   @@unique([assetId, name])
   @@map("asset_setups")
+}
+
+/// Leitura do contador do bem (hodômetro, horímetro, contador de m²): a
+/// diferença entre duas leituras é o volume do período no comparativo da
+/// base de custos. O contador não volta: cada leitura fica entre a anterior
+/// e a posterior
+model AssetReading {
+  id            String   @id @default(uuid())
+  companyId     String
+  assetId       String
+  date          DateTime @db.Date
+  /// Na unidade do bem
+  value         Float
+  createdById   String?
+  createdByName String
+  createdAt     DateTime @default(now())
+  asset         Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, date])
+  @@index([companyId, date])
+  @@map("asset_readings")
 }
 
 /// Histórico das escritas que mudam custo ou preço (SEG-4): antes, depois,
