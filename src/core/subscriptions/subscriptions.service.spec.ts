@@ -706,6 +706,10 @@ describe('SubscriptionsService', () => {
         id: 'admin-1',
         name: 'Ana (Sincronizar com Asaas)',
       });
+      // Alinha uma vez só: a reavaliação não repete o alinhamento.
+      expect(
+        mockSubscriptionBlockService.syncCompanyCharges,
+      ).toHaveBeenCalledTimes(1);
       expect(result).toEqual(
         expect.objectContaining({
           status: 'already_active',
@@ -731,6 +735,95 @@ describe('SubscriptionsService', () => {
         service.syncCompanyWithAsaas('company-1', 'admin-1'),
       ).rejects.toThrow(BadRequestException);
       expect(mockPrismaService.subscription.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Verificar pagamento do cliente (check-status)', () => {
+    const activeSubscription = {
+      id: 'sub-1',
+      companyId: 'company-1',
+      status: 'ACTIVE',
+      asaasSubscriptionId: 'sub_asaas',
+      plan: { name: 'Start' },
+      payments: [],
+    };
+
+    beforeEach(() => {
+      mockPrismaService.subscription.findFirst.mockResolvedValue(
+        activeSubscription,
+      );
+    });
+
+    it('alinha as cobranças ao Asaas antes de reavaliar (a contratação paga sai confirmada)', async () => {
+      mockSubscriptionBlockService.syncCompanyCharges.mockResolvedValue({
+        created: 0,
+        updated: 1,
+        canceled: 0,
+      });
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        blockLevel: 'NONE',
+      });
+
+      const result: any =
+        await service.checkAndSyncSubscriptionStatus('company-1');
+
+      expect(
+        mockSubscriptionBlockService.syncCompanyCharges,
+      ).toHaveBeenCalledWith('company-1');
+      expect(
+        mockSubscriptionBlockService.syncCompanyCharges.mock
+          .invocationCallOrder[0],
+      ).toBeLessThan(
+        mockPrismaService.subscription.findFirst.mock.invocationCallOrder[0],
+      );
+      expect(result.status).toBe('already_active');
+    });
+
+    it('quem pagou a vencida é desbloqueado na volta da fatura', async () => {
+      mockSubscriptionBlockService.syncCompanyCharges.mockResolvedValue({
+        created: 0,
+        updated: 1,
+        canceled: 0,
+      });
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        blockLevel: 'PARTIAL',
+      });
+      // Depois de alinhada, a vencida já não está em aberto aqui.
+      mockPrismaService.payment.findFirst.mockResolvedValue(null);
+
+      const result: any =
+        await service.checkAndSyncSubscriptionStatus('company-1');
+
+      expect(mockSubscriptionBlockService.unblockCompany).toHaveBeenCalledWith(
+        'company-1',
+      );
+      expect(result.status).toBe('unblocked');
+    });
+
+    it('Asaas fora do ar: reavalia com o banco, sem erro', async () => {
+      mockSubscriptionBlockService.syncCompanyCharges.mockRejectedValue(
+        new Error('timeout'),
+      );
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        blockLevel: 'NONE',
+      });
+
+      const result: any =
+        await service.checkAndSyncSubscriptionStatus('company-1');
+
+      expect(result.status).toBe('already_active');
+    });
+
+    it('sem empresa, não consulta o Asaas', async () => {
+      const result: any = await service.checkAndSyncSubscriptionStatus('');
+
+      expect(result).toEqual({
+        success: false,
+        message: 'ID da empresa não informado',
+      });
+      expect(
+        mockSubscriptionBlockService.syncCompanyCharges,
+      ).not.toHaveBeenCalled();
     });
   });
 });

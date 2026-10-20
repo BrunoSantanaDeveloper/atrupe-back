@@ -46,6 +46,7 @@ import { SystemSettingsModule } from './system-settings/system-settings.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { AiModule } from './ai/ai.module';
 import { OwnershipModule } from './ownership/ownership.module';
+import { AccountResetModule } from './account-reset/account-reset.module';
 
 @Module({
   imports: [
@@ -98,6 +99,7 @@ import { OwnershipModule } from './ownership/ownership.module';
     SystemSettingsModule,
     AiModule,
     OwnershipModule,
+    AccountResetModule,
   ],
 })
 export class CoreModule {}

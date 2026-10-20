@@ -301,6 +301,22 @@ describe('NfseService', () => {
       });
     });
 
+    /**
+     * finNFSe e' 1-1 no layout da Reforma do provedor e vem logo depois de
+     * tpAmb no XSD. Omitido, o provedor preenchia sozinho — e no emissor fora
+     * do Simples escrevia a tag fora de posicao no DPS (E1235).
+     */
+    it('declara a finalidade da NFS-e como regular', async () => {
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Serviço de consultoria em TI',
+      });
+
+      const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
+      expect(documentos[0].Documento.RPS[0].finNFSe).toBe(0);
+    });
+
     it('should emit NFSe from order', async () => {
       const result = await service.emitFromOrder(mockCompanyId, {
         orderId: mockOrderId,
@@ -996,6 +1012,21 @@ describe('NfseService', () => {
        * no Simples Nacional. Ja' o regApTribSN e' campo de quem ultrapassa
        * sublimite, que o MEI nao tem.
        */
+      /**
+       * Fora do Simples o campo ia omitido. Era a ultima diferenca de payload
+       * entre a Fenix (Lucro Presumido, cujo DPS sai com <finNFSe> fora de
+       * posicao) e as contas que a prefeitura aceita — todas optantes, todas
+       * mandando este campo. 3 = IBS e CBS apurados pelo regime regular, que
+       * e' a situacao real de quem nao e' do Simples.
+       */
+      it('declara apuracao pelo regime regular fora do Simples', async () => {
+        await emitirCom({ emitCrt: 3, regimeEspecialTributacao: null });
+        const rps = regimeEnviado();
+        expect(rps.regApIBSCBSSN).toBe(3);
+        expect(rps.OptSN).toBe(2);
+        expect(rps).not.toHaveProperty('regApTribSN');
+      });
+
       it('declara MEI com regime 5, como optante e sem regApTribSN', async () => {
         await emitirCom({ emitCrt: 4, regimeEspecialTributacao: null });
         const rps = regimeEnviado();
@@ -1753,6 +1784,114 @@ describe('NfseService', () => {
         id: 'config-1',
         ambiente: 2,
       });
+    });
+
+    /**
+     * Caso Armazem 76 / Plottec: a consulta voltou sem `Situacao` legivel e o
+     * ternario antigo caia em REJECTED, com update incondicional e motivo
+     * NULL. Quatro notas autorizadas (numero e chave gravados) viraram
+     * "Rejeitada" na tela — e o usuario reemitiu, gerando duas NFS-e de
+     * R$ 8.920 para a mesma O.S.
+     */
+    it('nao rebaixa nota autorizada quando a consulta vem sem situacao', async () => {
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.AUTHORIZED,
+        numero: 2,
+        codigoVerificacao: 'CHAVE',
+      });
+      invoicyApiService.consultNfse.mockResolvedValue([
+        { Codigo: 100, Documentos: [{ NFSe: { NFSeNumero: 2 } }] },
+      ]);
+
+      const result = await service.consultStatus(mockNfseId, mockCompanyId);
+
+      expect(result.inconclusivo).toBe(true);
+      expect(result.statusAlterado).toBe(false);
+      expect(prisma.nfse.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({ status: expect.anything() }),
+        }),
+      );
+    });
+
+    /** Rejeicao de verdade vem com motivo; sem motivo a consulta nao conclui. */
+    it('nao grava rejeicao sem motivo', async () => {
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.PROCESSING,
+        numero: 0,
+      });
+      prisma.nfse.update.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.PROCESSING,
+        numero: 0,
+      });
+      invoicyApiService.consultNfse.mockResolvedValue([
+        { Codigo: 100, Documentos: [{ Situacao: { SitCodigo: 999 } }] },
+      ]);
+
+      const result = await service.consultStatus(mockNfseId, mockCompanyId);
+
+      expect(result.inconclusivo).toBe(true);
+      expect(result.status).toBe(NfseStatus.PROCESSING);
+    });
+
+    /** A prefeitura nao numera o que recusou: numero > 0 nunca vira rejeicao. */
+    it('nao rebaixa nota ja numerada mesmo com rejeicao descrita', async () => {
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.AUTHORIZED,
+        numero: 4,
+      });
+      prisma.nfse.update.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.AUTHORIZED,
+        numero: 4,
+      });
+      invoicyApiService.consultNfse.mockResolvedValue([
+        {
+          Codigo: 100,
+          Documentos: [
+            { Situacao: { SitCodigo: 999, SitDescricao: 'Rejeitado - X' } },
+          ],
+        },
+      ]);
+
+      const result = await service.consultStatus(mockNfseId, mockCompanyId);
+
+      expect(result.inconclusivo).toBe(true);
+      expect(result.status).toBe(NfseStatus.AUTHORIZED);
+    });
+
+    /** O provedor ja' devolveu o codigo como string nesta rota. */
+    it('aceita SitCodigo como texto', async () => {
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.PROCESSING,
+        numero: 0,
+      });
+      prisma.nfse.update.mockResolvedValue({
+        ...mockNfse,
+        status: NfseStatus.AUTHORIZED,
+        numero: 7,
+      });
+      invoicyApiService.consultNfse.mockResolvedValue([
+        {
+          Codigo: 100,
+          Documentos: [
+            {
+              Situacao: { SitCodigo: '100', SitDescricao: 'Efetivado' },
+              NFSe: { NFSeNumero: 7 },
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.consultStatus(mockNfseId, mockCompanyId);
+
+      expect(result.status).toBe(NfseStatus.AUTHORIZED);
+      expect(result.inconclusivo).toBe(false);
     });
 
     it('reconcilia nota autorizada no provedor que estava REJECTED local', async () => {

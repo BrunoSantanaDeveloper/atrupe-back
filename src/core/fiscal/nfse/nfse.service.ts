@@ -1562,7 +1562,6 @@ export class NfseService {
       valorDeducoes,
       regimeEspecial,
       indicadorOperacao,
-      optanteSimples,
       regimeApuracaoIbsCbs,
       valoresIbsCbs,
       omitirAliquotaIss,
@@ -1685,6 +1684,11 @@ export class NfseService {
             // nacional. Alguns municípios exigem um regime específico e outros
             // recusam a tag, então o emissor pode configurar; o padrão cobre o
             // caso comum.
+            // Mandar 0 ("nenhum") em vez de omitir foi testado em 13/10/2026
+            // para ver se tirava o <finNFSe> que o provedor escreve fora de
+            // lugar no DPS do emissor fora do Simples (E1235): nao tirou
+            // (Fenix, RPS 103). Omitir volta a ser o certo — e' a semantica
+            // documentada do campo e ha' municipio que recusa a tag.
             ...(regimeEspecial !== undefined
               ? { RegEspTrib: regimeEspecial }
               : {}),
@@ -1698,10 +1702,20 @@ export class NfseService {
             // 1 = tributos federais e municipais apurados pelo SN. Não vale
             // para o MEI, que não tem sublimite a ultrapassar.
             ...(config.emitCrt === 1 ? { regApTribSN: 1 } : {}),
-            // regApIBSCBSSN: qual regime apura IBS e CBS do optante do
-            // Simples. 1 = ambos pelo SN, 2 = CBS pelo SN e IBS regular,
-            // 3 = ambos regulares. Fora do Simples nao se aplica.
-            ...(optanteSimples ? { regApIBSCBSSN: regimeApuracaoIbsCbs } : {}),
+            // regApIBSCBSSN: 1 = IBS e CBS apurados pelo SN, 2 = CBS pelo SN e
+            // IBS regular, 3 = ambos pelo regime regular.
+            //
+            // Vai tambem fora do Simples, com 3, que e' a situacao real de quem
+            // apura tudo pelo regime regular. O layout v8 diz "Informar quando
+            // opSimpNac (OptSN) = 2, 3 ou 4" e a frase e' ambigua: pelo dominio
+            // nacional (opSimpNac) 2/3/4 sao os optantes, mas pelo dominio do
+            // proprio campo do provedor (OptSN: 1=Sim, 2=Nao) a regra manda
+            // justamente o nao optante informar. Das 112 emissoes com XML
+            // guardado, todas as que a prefeitura aceita mandam este campo; a
+            // unica que nunca mandou e' a unica cujo DPS sai com <finNFSe> fora
+            // de posicao (E1235). Omitir era a unica diferenca de payload que
+            // ainda restava do nosso lado.
+            regApIBSCBSSN: regimeApuracaoIbsCbs,
             // Campos da Reforma Tributária (Layout NFS-e RT v8). Omitidos
             // quando não informados — a nota continua saindo como antes.
             // Todos moram no grupo <IBSCBS> da DPS, que só é válido com
@@ -1734,6 +1748,13 @@ export class NfseService {
             IncCult: 2, // 2 = Não
             Status: 1, // 1 = Normal
             tpAmb: environment === 'PRODUCAO' ? 1 : 2,
+            // finNFSe e' 1-1 no layout da Reforma (v8, C36) e vem logo depois
+            // de tpAmb na sequencia do XSD. Nunca mandavamos: o provedor
+            // preenchia 0 sozinho e, no emissor fora do Simples, escrevia a
+            // tag entre tpEmit e cLocEmi do DPS, posicao que o Ambiente
+            // Nacional recusa (E1235). 0 = NFS-e regular; credito (1) e
+            // debito (2) sao outros fluxos, que o sistema nao emite.
+            finNFSe: 0,
             Prestador: {
               CNPJ_prest: (config.company.cnpj || '').replace(/\D/g, ''),
               xNome: config.company.legalName || '',
@@ -2059,8 +2080,17 @@ export class NfseService {
         take: 1,
       },
       nfses: {
-        where: { status: { in: this.activeNfseStatuses } },
-        select: { id: true, status: true },
+        // `numero > 0` entra junto com os status ativos: a prefeitura so'
+        // numera o que autorizou, entao uma nota numerada e' documento fiscal
+        // existente mesmo que o status local diga outra coisa. Sem isso, um
+        // status errado desarmava a trava e a O.S. recebia uma segunda nota.
+        where: {
+          OR: [
+            { status: { in: this.activeNfseStatuses } },
+            { numero: { gt: 0 } },
+          ],
+        },
+        select: { id: true, status: true, numero: true },
         take: 1,
       },
       nfces: {
@@ -2234,6 +2264,15 @@ export class NfseService {
 
       const nfseExistente = order.nfses?.[0];
       if (!nfseExistente) continue;
+
+      // Antes dos demais ramos: numero atribuido quer dizer nota registrada
+      // na prefeitura, e reemitir cria documento fiscal duplicado.
+      if ((nfseExistente.numero ?? 0) > 0) {
+        throw new ConflictException(
+          `Esta ordem já tem a NFS-e nº ${nfseExistente.numero} registrada na ` +
+            'prefeitura. Se ela está incorreta, cancele-a antes de emitir outra.',
+        );
+      }
 
       if (nfseExistente.status === NfseStatus.PROCESSING) {
         const liberada = await this.tentarLiberarNfseEmProcessamento(
@@ -2498,21 +2537,63 @@ export class NfseService {
     }
 
     const situacao = doc.Situacao;
-    const isAuthorized = situacao?.SitCodigo === 100;
-    const isCancelled = situacao?.SitCodigo === 101;
+    // Number(): a consulta ja' devolveu o codigo como string em alguns
+    // retornos, e `=== 100` reprovava uma nota autorizada.
+    const sitCodigo = Number(situacao?.SitCodigo);
+    const isAuthorized = sitCodigo === 100;
+    const isCancelled = sitCodigo === 101;
+    const motivo = situacao?.SitDescricao?.trim();
 
+    /**
+     * Situacao ilegivel NAO e' rejeicao.
+     *
+     * O ternario anterior caia em REJECTED para qualquer coisa que nao fosse
+     * 100 nem 101 — inclusive para um retorno sem o bloco `Situacao`. Como o
+     * update era incondicional, uma nota ja' autorizada era rebaixada, e o
+     * motivo ia a NULL (`SitDescricao || null`). Foi o que aconteceu com
+     * quatro notas da Armazem 76 e uma da Plottec: numero municipal e chave
+     * de acesso gravados, retorno da emissao dizendo "Efetivado", status
+     * REJECTED e motivo vazio. O usuario leu "Rejeitada" e reemitiu — duas
+     * NFS-e autorizadas de R$ 8.920 para a mesma O.S.
+     *
+     * Regras agora:
+     * - so' 100 e 101 movem o status; o resto e' inconclusivo;
+     * - rejeicao sem motivo e' inconclusiva (a prefeitura sempre diz por que);
+     * - nota ja' numerada nunca vira rejeitada (a prefeitura nao numera o que
+     *   recusou — `reconcilePending` ja' trata "REJECTED com numero" como
+     *   estado impossivel).
+     */
+    const rejeicaoLegivel = !isAuthorized && !isCancelled && Boolean(motivo);
+    const jaNumerada = (nfse.numero ?? 0) > 0;
     const novoStatus = isAuthorized
       ? NfseStatus.AUTHORIZED
       : isCancelled
         ? NfseStatus.CANCELLED
-        : NfseStatus.REJECTED;
+        : rejeicaoLegivel && !jaNumerada
+          ? NfseStatus.REJECTED
+          : null;
 
-    const statusAlterado = novoStatus !== nfse.status;
+    if (novoStatus === null) {
+      this.logger.warn(
+        `Consulta da NFS-e ${nfse.id} (RPS ${nfse.rpsNumero}/${nfse.rpsSerie}) ` +
+          `veio inconclusiva; status ${nfse.status} mantido. Situacao recebida: ` +
+          JSON.stringify(situacao ?? null),
+      );
+    }
+
+    const statusAlterado = novoStatus !== null && novoStatus !== nfse.status;
 
     const atualizada = await this.prisma.nfse.update({
       where: { id: nfse.id },
       data: {
-        status: novoStatus,
+        // Sem status no update quando a consulta nao conclui: os demais
+        // campos tem fallback para o valor atual, entao nada se perde.
+        ...(novoStatus !== null
+          ? {
+              status: novoStatus,
+              motivoRejeicao: isAuthorized ? null : motivo || null,
+            }
+          : {}),
         numero: doc.NFSe?.NFSeNumero || nfse.numero,
         codigoVerificacao:
           doc.NFSe?.NFSeCodVerificacao || nfse.codigoVerificacao,
@@ -2520,7 +2601,6 @@ export class NfseService {
         invoicyId: doc.DocIDUnico || nfse.invoicyId,
         pdfUrl: doc.DocPDFDownload || nfse.pdfUrl,
         xmlRetorno: doc.DocXMLBase64 || nfse.xmlRetorno,
-        motivoRejeicao: isAuthorized ? null : situacao?.SitDescricao || null,
       },
     });
 
@@ -2541,12 +2621,15 @@ export class NfseService {
       statusAnterior: nfse.status,
       status: atualizada.status,
       statusAlterado,
+      // A tela precisa distinguir "confirmei no provedor" de "nao consegui
+      // ler a situacao": antes as duas viravam um toast de sucesso.
+      inconclusivo: novoStatus === null,
       codigoVerificacao: atualizada.codigoVerificacao,
       protocolo: atualizada.protocolo,
       pdfUrl: atualizada.pdfUrl,
       dataEmissao: atualizada.dataEmissao,
       valorServicos: atualizada.valorServicos,
-      situacaoProvedor: situacao?.SitDescricao || null,
+      situacaoProvedor: motivo || null,
     };
   }
 

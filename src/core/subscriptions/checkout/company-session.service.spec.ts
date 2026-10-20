@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { PlanControlService } from '../../plan/plan-control.service';
 import { SubscriptionQuoteService } from '../pricing/subscription-quote.service';
+import { SubscriptionBlockService } from '../subscription-block.service';
 import { CompanySessionService } from './company-session.service';
 
 // Meio-dia local de 25/08: as datas de vencimento são meia-noite UTC do dia.
@@ -22,6 +23,7 @@ describe('CompanySessionService', () => {
   const prisma = { company: { findUnique: jest.fn() } };
   const planControl = { getCompanyPlanInfo: jest.fn() };
   const quoteService = { getBillingContext: jest.fn() };
+  const subscriptionBlock = { syncCompanyCharges: jest.fn() };
 
   const context = (payments: any[], extra: Record<string, any> = {}) => ({
     current: { payments },
@@ -52,6 +54,7 @@ describe('CompanySessionService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: PlanControlService, useValue: planControl },
         { provide: SubscriptionQuoteService, useValue: quoteService },
+        { provide: SubscriptionBlockService, useValue: subscriptionBlock },
       ],
     }).compile();
     service = module.get(CompanySessionService);
@@ -168,6 +171,132 @@ describe('CompanySessionService', () => {
       name: 'TRIAL',
       active: false,
       features: [],
+    });
+  });
+
+  describe('sessão do cliente conferida com o Asaas', () => {
+    // Contratou e a primeira cobrança está em aberto aqui.
+    const pendente = context([payment('PENDING', '2026-08-27')], {
+      firstChargePending: true,
+    });
+    // O que o banco diz depois de alinhado: a primeira cobrança foi paga.
+    const paga = context([payment('RECEIVED', '2026-08-27')]);
+
+    it('sem cobrança em foco, não consulta o Asaas', async () => {
+      quoteService.getBillingContext.mockResolvedValue(
+        context([payment('CONFIRMED', '2026-08-15')]),
+      );
+
+      const s = await service.buildWithGatewayCheck(
+        'company-1',
+        'user-1',
+        HOJE,
+      );
+
+      expect(s.billing.chargeInFocus).toBeNull();
+      expect(subscriptionBlock.syncCompanyCharges).not.toHaveBeenCalled();
+    });
+
+    it('primeira cobrança paga no Asaas: alinha e responde já sem a pendência', async () => {
+      quoteService.getBillingContext
+        .mockResolvedValueOnce(pendente)
+        .mockResolvedValueOnce(paga);
+      subscriptionBlock.syncCompanyCharges.mockResolvedValue({
+        created: 0,
+        updated: 1,
+        canceled: 0,
+      });
+
+      const s = await service.buildWithGatewayCheck(
+        'company-1',
+        'user-1',
+        HOJE,
+      );
+
+      expect(subscriptionBlock.syncCompanyCharges).toHaveBeenCalledWith(
+        'company-1',
+      );
+      expect(s.billing.paymentPending).toBe(false);
+      expect(s.billing.chargeInFocus).toBeNull();
+    });
+
+    it('nada mudou no Asaas: não remonta a sessão', async () => {
+      quoteService.getBillingContext.mockResolvedValue(pendente);
+      subscriptionBlock.syncCompanyCharges.mockResolvedValue({
+        created: 0,
+        updated: 0,
+        canceled: 0,
+      });
+
+      const s = await service.buildWithGatewayCheck(
+        'company-1',
+        'user-1',
+        HOJE,
+      );
+
+      expect(s.billing.paymentPending).toBe(true);
+      expect(quoteService.getBillingContext).toHaveBeenCalledTimes(1);
+    });
+
+    it('confere cada empresa no máximo uma vez por minuto', async () => {
+      quoteService.getBillingContext.mockResolvedValue(pendente);
+      subscriptionBlock.syncCompanyCharges.mockResolvedValue({
+        created: 0,
+        updated: 0,
+        canceled: 0,
+      });
+
+      await service.buildWithGatewayCheck('company-1', 'user-1', HOJE);
+      await service.buildWithGatewayCheck('company-1', 'user-2', HOJE);
+      expect(subscriptionBlock.syncCompanyCharges).toHaveBeenCalledTimes(1);
+
+      // Outra empresa não espera a primeira.
+      await service.buildWithGatewayCheck('company-2', 'user-3', HOJE);
+      expect(subscriptionBlock.syncCompanyCharges).toHaveBeenCalledTimes(2);
+
+      // Passado o minuto, confere de novo.
+      (service as any).lastGatewayCheck.set('company-1', Date.now() - 61_000);
+      await service.buildWithGatewayCheck('company-1', 'user-1', HOJE);
+      expect(subscriptionBlock.syncCompanyCharges).toHaveBeenCalledTimes(3);
+    });
+
+    it('Asaas fora do ar: responde com o banco, sem erro', async () => {
+      quoteService.getBillingContext.mockResolvedValue(pendente);
+      subscriptionBlock.syncCompanyCharges.mockRejectedValue(
+        new Error('timeout'),
+      );
+
+      const s = await service.buildWithGatewayCheck(
+        'company-1',
+        'user-1',
+        HOJE,
+      );
+
+      expect(s.billing.paymentPending).toBe(true);
+    });
+
+    it('Asaas lento: não segura a resposta além do tempo-limite', async () => {
+      (service as any).gatewayCheckTimeoutMs = 20;
+      quoteService.getBillingContext.mockResolvedValue(pendente);
+      let finishSync: (value: unknown) => void = () => undefined;
+      const slowSync = new Promise((resolve) => {
+        finishSync = resolve;
+      });
+      subscriptionBlock.syncCompanyCharges.mockReturnValue(slowSync);
+
+      const s = await service.buildWithGatewayCheck(
+        'company-1',
+        'user-1',
+        HOJE,
+      );
+
+      // Saiu o que o banco dizia, sem esperar o Asaas.
+      expect(s.billing.paymentPending).toBe(true);
+      expect(quoteService.getBillingContext).toHaveBeenCalledTimes(1);
+
+      // O alinhamento termina sozinho depois, sem erro solto.
+      finishSync({ created: 0, updated: 1, canceled: 0 });
+      await slowSync;
     });
   });
 });

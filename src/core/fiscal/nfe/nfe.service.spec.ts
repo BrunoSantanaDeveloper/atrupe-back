@@ -603,6 +603,74 @@ describe('NfeService', () => {
         );
       });
     });
+
+    /**
+     * A opcao "Cancelada" existia na tela antiga de gestao e se perdeu quando
+     * ela foi integrada a' tela de emissao. O backend ja' respondia por este
+     * status nas avulsas; faltava a opcao no seletor e o branch dos pedidos
+     * procurava a coisa errada.
+     */
+    describe('filtro de canceladas', () => {
+      it('filtra as notas avulsas pelo status cancelado', async () => {
+        await service.findUnified(mockCompanyId, {
+          recordType: 'NOTAS_AVULSAS',
+          status: 'CANCELADA',
+        });
+
+        for (const model of ['nfe', 'nfse', 'nfce'] as const) {
+          expect(prisma[model].findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: expect.objectContaining({ status: 'CANCELLED' }),
+            }),
+          );
+          // O count usa o mesmo where: sem isso a paginacao conta outra coisa.
+          expect(prisma[model].count).toHaveBeenCalledWith({
+            where: expect.objectContaining({ status: 'CANCELLED' }),
+          });
+        }
+      });
+
+      /**
+       * Cancelar a NF-e de uma O.S. nao cancela a O.S.. O branch antigo
+       * filtrava `order.status = 'CANCELED'`, entao justamente o caso comum
+       * ficava fora da lista — e entravam vendas canceladas sem nota nenhuma.
+       */
+      it('acha o pedido pelo documento cancelado, nao pelo pedido cancelado', async () => {
+        await service.findUnified(mockCompanyId, {
+          recordType: 'PEDIDOS',
+          status: 'CANCELADA',
+        });
+
+        const { where } = prisma.order.findMany.mock.calls[0][0];
+
+        expect(where.OR).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              nfes: { some: expect.objectContaining({ status: 'CANCELLED' }) },
+            }),
+            expect.objectContaining({
+              nfses: { some: expect.objectContaining({ status: 'CANCELLED' }) },
+            }),
+          ]),
+        );
+        expect(where.status).toBeUndefined();
+      });
+
+      it('respeita o ambiente filtrado ao procurar o documento cancelado', async () => {
+        await service.findUnified(mockCompanyId, {
+          recordType: 'PEDIDOS',
+          status: 'CANCELADA',
+          ambiente: '1',
+        });
+
+        const { where } = prisma.order.findMany.mock.calls[0][0];
+        expect(where.OR).toEqual(
+          expect.arrayContaining([
+            { nfes: { some: { status: 'CANCELLED', ambiente: 1 } } },
+          ]),
+        );
+      });
+    });
   });
 
   describe('findById', () => {
@@ -2026,6 +2094,36 @@ describe('NfeService', () => {
         });
 
         expect(enviado().ide.dhSaiEnt).toBe(amanha.toISOString());
+      });
+    });
+
+    /**
+     * cProd e a coluna "COD. PROD." do DANFE. Saia o id interno (UUID) porque
+     * o codigo cadastrado nao era enviado pela tela nem aceito pelo DTO, e era
+     * esse UUID que o cliente final via impresso na nota.
+     */
+    describe('codigo do produto no XML', () => {
+      const enviado = () =>
+        invoicyApiService.emitNfe.mock.calls[0][1][0].Documento;
+
+      it('usa o codigo cadastrado do produto', async () => {
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          items: [{ ...mockEmitDto.items[0], productCode: 'ADBLK-001' }],
+        });
+
+        expect(enviado().det[0].prod.cProd).toBe('ADBLK-001');
+      });
+
+      it('cai no id interno quando o produto nao tem codigo', async () => {
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          items: [{ ...mockEmitDto.items[0], productCode: undefined }],
+        });
+
+        expect(enviado().det[0].prod.cProd).toBe(
+          mockEmitDto.items[0].productId,
+        );
       });
     });
 

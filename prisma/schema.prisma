@@ -120,8 +120,31 @@ model Company {
   stockItems             StockItem[]
   inboundInvoices        InboundInvoice[]
   bankStatementLines     BankStatementLine[]
+  dataResets             CompanyDataReset[]
 
   @@map("companies")
+}
+
+/// "Zerar dados da conta" feito pelo superadmin: apaga documentos, cadastros e
+/// lançamentos e mantém a conta, os usuários, a assinatura e o fiscal. Guarda o
+/// que foi apagado (JSON compactado) por um prazo, para restaurar se preciso.
+model CompanyDataReset {
+  id              String    @id @default(uuid())
+  createdAt       DateTime  @default(now())
+  companyId       String
+  createdByUserId String
+  createdByName   String
+  /// Opções escolhidas (configurações, documentos fiscais).
+  options         Json
+  /// Quantos registros saíram de cada tabela.
+  summary         Json
+  /// As linhas apagadas, em JSON compactado com gzip. Vira nulo no fim do prazo.
+  backup          Bytes?
+  backupExpiresAt DateTime?
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@map("company_data_resets")
 }
 
 model CompanyHistory {

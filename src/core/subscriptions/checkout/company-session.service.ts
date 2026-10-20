@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { PlanControlService } from '../../plan/plan-control.service';
 import { SubscriptionQuoteService } from '../pricing/subscription-quote.service';
+import { SubscriptionBlockService } from '../subscription-block.service';
 
 export type BillingSituationKind =
   | 'EM_DIA'
@@ -46,6 +47,9 @@ export interface CompanySessionBlock {
 
 const DAY_MS = 86_400_000;
 
+/** Intervalo mínimo entre duas conferências da mesma empresa com o Asaas. */
+const GATEWAY_CHECK_INTERVAL_MS = 60_000;
+
 /**
  * Monta a sessão da empresa a partir do banco.
  *
@@ -57,11 +61,77 @@ const DAY_MS = 86_400_000;
 export class CompanySessionService {
   private readonly logger = new Logger(CompanySessionService.name);
 
+  /** Última conferência com o Asaas, por empresa. */
+  private readonly lastGatewayCheck = new Map<string, number>();
+
+  /** Quanto a resposta espera pelo Asaas antes de seguir com o banco. */
+  private readonly gatewayCheckTimeoutMs = 8_000;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly planControl: PlanControlService,
     private readonly quoteService: SubscriptionQuoteService,
+    private readonly subscriptionBlock: SubscriptionBlockService,
   ) {}
+
+  /**
+   * A sessão que o cliente consulta — ao abrir o app, ao voltar à aba e a cada
+   * 5 minutos —, conferida com o Asaas quando há cobrança em foco.
+   *
+   * O banco só ficava sabendo de um pagamento pelo webhook, que não chega à
+   * API, ou pela rotina das 03:00. Quem contratava e pagava na hora seguia
+   * vendo "Pagamento da contratação pendente" até o dia seguinte (Zip Ideias,
+   * 19/10). Com cobrança em foco — a primeira ainda não paga, ou uma vencida —,
+   * as cobranças da empresa são alinhadas ao Asaas antes de responder.
+   *
+   * No máximo uma conferência por empresa a cada minuto. A resposta não espera
+   * mais que o tempo-limite: passado ele, sai o que o banco diz, e o
+   * alinhamento, que segue sozinho, vale na atualização seguinte. Falha no
+   * Asaas não derruba a sessão.
+   */
+  async buildWithGatewayCheck(
+    companyId: string,
+    userId?: string,
+    now: Date = new Date(),
+  ): Promise<CompanySessionBlock> {
+    const block = await this.build(companyId, userId, now);
+    if (!block.billing.chargeInFocus || !this.claimGatewayCheck(companyId)) {
+      return block;
+    }
+
+    const sync = this.subscriptionBlock
+      .syncCompanyCharges(companyId)
+      .then(
+        ({ created, updated, canceled }) => created + updated + canceled > 0,
+      )
+      .catch((error) => {
+        this.logger.warn(
+          `Cobranças da empresa ${companyId} não conferidas no Asaas: ${error.message}`,
+        );
+        return false;
+      });
+
+    let timer: NodeJS.Timeout | undefined;
+    const timedOut = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), this.gatewayCheckTimeoutMs);
+    });
+    const changed = await Promise.race([sync, timedOut]).finally(() =>
+      clearTimeout(timer),
+    );
+
+    return changed ? this.build(companyId, userId, now) : block;
+  }
+
+  /** Reserva a conferência da empresa; falso se houve uma há menos de um minuto. */
+  private claimGatewayCheck(companyId: string): boolean {
+    const now = Date.now();
+    const last = this.lastGatewayCheck.get(companyId);
+    if (last !== undefined && now - last < GATEWAY_CHECK_INTERVAL_MS) {
+      return false;
+    }
+    this.lastGatewayCheck.set(companyId, now);
+    return true;
+  }
 
   async build(
     companyId: string,
