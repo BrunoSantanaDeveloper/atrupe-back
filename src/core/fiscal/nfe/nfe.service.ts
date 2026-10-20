@@ -5000,7 +5000,34 @@ export class NfeService {
         ];
         orderWhere.status = { not: 'CANCELED' };
       } else if (status === 'CANCELADA') {
-        orderWhere.status = 'CANCELED';
+        /**
+         * O filtro se chama "Status da NF": o que se procura e' pedido cujo
+         * DOCUMENTO foi cancelado. Antes este branch filtrava
+         * `orderWhere.status = 'CANCELED'`, que e' o pedido cancelado — coisa
+         * diferente. Com isso o caso comum (cancelar a NF-e de uma O.S. que
+         * segue ativa) nao aparecia, e apareciam vendas canceladas que nunca
+         * tiveram nota. O pedido cancelado continua na lista quando tem
+         * documento cancelado, porque e' o documento que o OR procura.
+         */
+        orderWhere.OR = [
+          {
+            nfes: {
+              some: { status: NfeStatus.CANCELLED, ambiente: envNfe },
+            },
+          },
+          {
+            nfeOrders: {
+              some: {
+                nfe: { status: NfeStatus.CANCELLED, ambiente: envNfe },
+              },
+            },
+          },
+          {
+            nfses: {
+              some: { status: NfseStatus.CANCELLED, ambiente: envNfse },
+            },
+          },
+        ];
       }
 
       // Precisa vir DEPOIS dos branches acima, que atribuem orderWhere.AND

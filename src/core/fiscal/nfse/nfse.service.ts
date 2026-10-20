@@ -1539,7 +1539,6 @@ export class NfseService {
       valorDeducoes,
       regimeEspecial,
       indicadorOperacao,
-      optanteSimples,
       regimeApuracaoIbsCbs,
       valoresIbsCbs,
       omitirAliquotaIss,
@@ -1680,10 +1679,20 @@ export class NfseService {
             // 1 = tributos federais e municipais apurados pelo SN. Não vale
             // para o MEI, que não tem sublimite a ultrapassar.
             ...(config.emitCrt === 1 ? { regApTribSN: 1 } : {}),
-            // regApIBSCBSSN: qual regime apura IBS e CBS do optante do
-            // Simples. 1 = ambos pelo SN, 2 = CBS pelo SN e IBS regular,
-            // 3 = ambos regulares. Fora do Simples nao se aplica.
-            ...(optanteSimples ? { regApIBSCBSSN: regimeApuracaoIbsCbs } : {}),
+            // regApIBSCBSSN: 1 = IBS e CBS apurados pelo SN, 2 = CBS pelo SN e
+            // IBS regular, 3 = ambos pelo regime regular.
+            //
+            // Vai tambem fora do Simples, com 3, que e' a situacao real de quem
+            // apura tudo pelo regime regular. O layout v8 diz "Informar quando
+            // opSimpNac (OptSN) = 2, 3 ou 4" e a frase e' ambigua: pelo dominio
+            // nacional (opSimpNac) 2/3/4 sao os optantes, mas pelo dominio do
+            // proprio campo do provedor (OptSN: 1=Sim, 2=Nao) a regra manda
+            // justamente o nao optante informar. Das 112 emissoes com XML
+            // guardado, todas as que a prefeitura aceita mandam este campo; a
+            // unica que nunca mandou e' a unica cujo DPS sai com <finNFSe> fora
+            // de posicao (E1235). Omitir era a unica diferenca de payload que
+            // ainda restava do nosso lado.
+            regApIBSCBSSN: regimeApuracaoIbsCbs,
             // Campos da Reforma Tributária (Layout NFS-e RT v8). Omitidos
             // quando não informados — a nota continua saindo como antes.
             // Todos moram no grupo <IBSCBS> da DPS, que só é válido com

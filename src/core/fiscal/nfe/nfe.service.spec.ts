@@ -593,6 +593,74 @@ describe('NfeService', () => {
         );
       });
     });
+
+    /**
+     * A opcao "Cancelada" existia na tela antiga de gestao e se perdeu quando
+     * ela foi integrada a' tela de emissao. O backend ja' respondia por este
+     * status nas avulsas; faltava a opcao no seletor e o branch dos pedidos
+     * procurava a coisa errada.
+     */
+    describe('filtro de canceladas', () => {
+      it('filtra as notas avulsas pelo status cancelado', async () => {
+        await service.findUnified(mockCompanyId, {
+          recordType: 'NOTAS_AVULSAS',
+          status: 'CANCELADA',
+        });
+
+        for (const model of ['nfe', 'nfse', 'nfce'] as const) {
+          expect(prisma[model].findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: expect.objectContaining({ status: 'CANCELLED' }),
+            }),
+          );
+          // O count usa o mesmo where: sem isso a paginacao conta outra coisa.
+          expect(prisma[model].count).toHaveBeenCalledWith({
+            where: expect.objectContaining({ status: 'CANCELLED' }),
+          });
+        }
+      });
+
+      /**
+       * Cancelar a NF-e de uma O.S. nao cancela a O.S.. O branch antigo
+       * filtrava `order.status = 'CANCELED'`, entao justamente o caso comum
+       * ficava fora da lista — e entravam vendas canceladas sem nota nenhuma.
+       */
+      it('acha o pedido pelo documento cancelado, nao pelo pedido cancelado', async () => {
+        await service.findUnified(mockCompanyId, {
+          recordType: 'PEDIDOS',
+          status: 'CANCELADA',
+        });
+
+        const { where } = prisma.order.findMany.mock.calls[0][0];
+
+        expect(where.OR).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              nfes: { some: expect.objectContaining({ status: 'CANCELLED' }) },
+            }),
+            expect.objectContaining({
+              nfses: { some: expect.objectContaining({ status: 'CANCELLED' }) },
+            }),
+          ]),
+        );
+        expect(where.status).toBeUndefined();
+      });
+
+      it('respeita o ambiente filtrado ao procurar o documento cancelado', async () => {
+        await service.findUnified(mockCompanyId, {
+          recordType: 'PEDIDOS',
+          status: 'CANCELADA',
+          ambiente: '1',
+        });
+
+        const { where } = prisma.order.findMany.mock.calls[0][0];
+        expect(where.OR).toEqual(
+          expect.arrayContaining([
+            { nfes: { some: { status: 'CANCELLED', ambiente: 1 } } },
+          ]),
+        );
+      });
+    });
   });
 
   describe('findById', () => {

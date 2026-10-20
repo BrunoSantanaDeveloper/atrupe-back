@@ -504,6 +504,11 @@ export interface InvoicyNfseRps {
   // Obrigatório para ME/EPP optante do SN. 1 = tributos federais e municipais
   // apurados pelo SN, 2 = ISSQN por fora do SN, 3 = federais e municipais por fora.
   regApTribSN?: number;
+  /**
+   * Regime de apuração do IBS/CBS: 1 = ambos pelo Simples, 2 = CBS pelo
+   * Simples e IBS regular, 3 = ambos pelo regime regular.
+   */
+  regApIBSCBSSN?: number;
   // ── Reforma Tributária (Layout_Recepcao_NFSe_Reforma_Tributaria v8) ──
   /** Código indicador da operação, tabela Anexo VII (6 dígitos). */
   cIndOp?: string;
