@@ -36,6 +36,7 @@ export class CreateUnitOfMeasureDto {
     'DURATION',
     'UNITY',
     'AREA',
+    'SHEET',
   ])
   @ApiProperty({
     description: 'Tipo da unidade de medida',
@@ -47,6 +48,7 @@ export class CreateUnitOfMeasureDto {
       'DURATION',
       'UNITY',
       'AREA',
+      'SHEET',
     ],
     example: 'WEIGHT',
     required: false,
@@ -67,6 +69,11 @@ export class CreateUnitOfMeasureDto {
     'HH',
     'UN',
     'M2',
+    'A4',
+    'A3',
+    'SRA3',
+    'A3_PLUS',
+    'CUSTOM',
   ])
   @ApiProperty({
     description: 'Variante da unidade de medida',
@@ -83,6 +90,11 @@ export class CreateUnitOfMeasureDto {
       'HH',
       'UN',
       'M2',
+      'A4',
+      'A3',
+      'SRA3',
+      'A3_PLUS',
+      'CUSTOM',
     ],
     example: 'KG',
     required: false,

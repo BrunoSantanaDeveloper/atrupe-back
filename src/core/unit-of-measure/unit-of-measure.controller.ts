@@ -105,6 +105,7 @@ export class UnitOfMeasureController {
       'DURATION',
       'UNITY',
       'AREA',
+      'SHEET',
     ],
   })
   @ApiResponse({
@@ -133,6 +134,7 @@ export class UnitOfMeasureController {
       'DURATION',
       'UNITY',
       'AREA',
+      'SHEET',
     ],
   })
   @ApiResponse({
@@ -162,6 +164,7 @@ export class UnitOfMeasureController {
       'DURATION',
       'UNITY',
       'AREA',
+      'SHEET',
     ],
   })
   @ApiResponse({
@@ -189,6 +192,7 @@ export class UnitOfMeasureController {
       'DURATION',
       'UNITY',
       'AREA',
+      'SHEET',
     ],
   })
   @ApiBody({

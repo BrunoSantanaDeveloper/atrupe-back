@@ -132,6 +132,8 @@ export const COMMERCIAL_FACTOR: Record<UnitKind, number> = {
   DISTANCE: 1_000,
   DURATION: 3_600,
   UNITY: 1,
+  // Por folha, como a unidade (Papéis no LITE, 13/10/2026)
+  SHEET: 1,
 };
 
 type MainItem = ProductRow['items'][number];

@@ -1,8 +1,41 @@
 import { Injectable } from '@nestjs/common';
+import { SheetFormat } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
+import { SHEET_FORMAT_LABELS, sheetSizeOf } from '../material/paper';
 import { CreateUnitOfMeasureDto } from './dto/create-unit-of-measure.dto';
 import { UpdateUnitOfMeasureDto } from './dto/update-unit-of-measure.dto';
 import { UpdateDefaultVariantDto } from './dto/update-default-variant.dto';
+
+/** O padrão de exibição de cada tipo, quando a empresa não escolheu. */
+export const UNIT_DEFAULTS = {
+  LENGTH: 'MT', // Metros (padrão de exibição)
+  WEIGHT: 'KG', // Quilogramas (padrão de exibição)
+  CAPACITY: 'LT', // Litros (padrão de exibição)
+  DISTANCE: 'KM', // Quilômetros (padrão de exibição)
+  DURATION: 'HH', // Horas (padrão de exibição)
+  UNITY: 'UN', // Unidades (padrão de exibição)
+  AREA: 'M2', // Metros quadrados (padrão de exibição)
+  SHEET: 'A4', // Folha A4 (Papéis no LITE, 13/10/2026)
+};
+
+/**
+ * As variantes da folha (Papéis no LITE, 13/10/2026): o código é o do
+ * formato do papel (SheetFormat) e a medida vai em mm; a personalizada não
+ * tem medida.
+ */
+export const SHEET_VARIANTS = (
+  ['A4', 'A3', 'SRA3', 'A3_PLUS', 'CUSTOM'] as SheetFormat[]
+).map((code) => {
+  const size = sheetSizeOf(code);
+  return {
+    code,
+    name: size
+      ? `${SHEET_FORMAT_LABELS[code]} (${size.width} × ${size.height} mm)`
+      : SHEET_FORMAT_LABELS[code],
+    width: size?.width ?? null,
+    height: size?.height ?? null,
+  };
+});
 
 @Injectable()
 export class UnitOfMeasureService {
@@ -96,17 +129,12 @@ export class UnitOfMeasureService {
       select: { unitDefaults: true },
     });
 
-    return (
-      (company?.unitDefaults as any) || {
-        LENGTH: 'MT', // Metros (padrão de exibição)
-        WEIGHT: 'KG', // Quilogramas (padrão de exibição)
-        CAPACITY: 'LT', // Litros (padrão de exibição)
-        DISTANCE: 'KM', // Quilômetros (padrão de exibição)
-        DURATION: 'HH', // Horas (padrão de exibição)
-        UNITY: 'UN', // Unidades (padrão de exibição)
-        AREA: 'M2', // Metros quadrados (padrão de exibição)
-      }
-    );
+    // O tipo que a empresa ainda não escolheu (a folha, que chegou depois
+    // dos padrões gravados) vale o padrão de exibição
+    return {
+      ...UNIT_DEFAULTS,
+      ...((company?.unitDefaults as Record<string, string>) ?? {}),
+    };
   }
 
   async getCompanyDefaultUnits(companyId: string) {
@@ -177,6 +205,8 @@ export class UnitOfMeasureService {
         { code: 'CM2', name: 'Centímetro Quadrado (cm²)' },
         { code: 'M2', name: 'Metro Quadrado (m²)' },
       ],
+      // A folha leva a medida em mm (largura × altura)
+      SHEET: SHEET_VARIANTS,
     };
 
     return variants[kind] || [];

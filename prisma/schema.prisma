@@ -3239,6 +3239,9 @@ enum UnitKind {
   DURATION
   UNITY
   AREA
+  /// A folha (Papéis no LITE, 13/10/2026): A4, A3, SRA3, A3+ e
+  /// personalizada; vendida por folha, como a unidade
+  SHEET
 }
 
 enum FinancialType {

@@ -16,6 +16,12 @@ export class UpdateDefaultVariantDto {
     'HH',
     'UN',
     'M2',
+    // A folha (Papéis no LITE, 13/10/2026): o código é o do formato do papel
+    'A4',
+    'A3',
+    'SRA3',
+    'A3_PLUS',
+    'CUSTOM',
   ])
   @ApiProperty({
     description: 'Nova variante padrão para a unidade de medida',
@@ -32,6 +38,11 @@ export class UpdateDefaultVariantDto {
       'HH',
       'UN',
       'M2',
+      'A4',
+      'A3',
+      'SRA3',
+      'A3_PLUS',
+      'CUSTOM',
     ],
     example: 'MM',
   })

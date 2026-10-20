@@ -114,6 +114,54 @@ export const BASE_UNIT_OF_MEASURES = [
     variant: 'M2',
     isActive: true,
   },
+  // Folha (Papéis no LITE, 13/10/2026): o código é o do formato do papel; a
+  // medida em mm sai das variantes (unit-of-measure.service › SHEET_VARIANTS).
+  // A migration 20261020170100_unidades_da_folha grava estas linhas
+  {
+    id: 'unit-sheet-a4',
+    name: 'Folha A4',
+    code: 'A4',
+    description: 'Folha A4, 210 × 297 mm',
+    kind: 'SHEET',
+    variant: 'A4',
+    isActive: true,
+  },
+  {
+    id: 'unit-sheet-a3',
+    name: 'Folha A3',
+    code: 'A3',
+    description: 'Folha A3, 297 × 420 mm',
+    kind: 'SHEET',
+    variant: 'A3',
+    isActive: true,
+  },
+  {
+    id: 'unit-sheet-sra3',
+    name: 'Folha SRA3',
+    code: 'SRA3',
+    description: 'Folha SRA3, 320 × 450 mm',
+    kind: 'SHEET',
+    variant: 'SRA3',
+    isActive: true,
+  },
+  {
+    id: 'unit-sheet-a3-plus',
+    name: 'Folha A3+',
+    code: 'A3_PLUS',
+    description: 'Folha A3+, 329 × 483 mm',
+    kind: 'SHEET',
+    variant: 'A3_PLUS',
+    isActive: true,
+  },
+  {
+    id: 'unit-sheet-custom',
+    name: 'Folha personalizada',
+    code: 'CUSTOM',
+    description: 'Folha na medida informada',
+    kind: 'SHEET',
+    variant: 'CUSTOM',
+    isActive: true,
+  },
 ];
 
 export const CONVERSION_FACTORS = {

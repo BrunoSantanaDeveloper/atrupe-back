@@ -69,7 +69,9 @@ export type UnitKind =
   | 'CAPACITY'
   | 'DISTANCE'
   | 'DURATION'
-  | 'UNITY';
+  | 'UNITY'
+  // A folha (Papéis no LITE, 13/10/2026): vendida por folha, como a unidade
+  | 'SHEET';
 
 export type Measure = { quantity: number; width: number; height: number };
 
