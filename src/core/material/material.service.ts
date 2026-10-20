@@ -225,9 +225,15 @@ export class MaterialService {
         : {}),
       // O papel é o material com a forma folha (Papéis no LITE)
       ...(filter.paper === true ? { shape: MaterialShape.SHEET } : {}),
+      // O `not` do Prisma deixa o nulo de fora: o material sem forma entra
+      // pelo OR, dentro do AND para não brigar com o OR da busca
       ...(filter.paper === false
         ? {
-            NOT: { shape: { equals: MaterialShape.SHEET } },
+            AND: [
+              {
+                OR: [{ shape: null }, { shape: { not: MaterialShape.SHEET } }],
+              },
+            ],
           }
         : {}),
       ...(search
@@ -439,7 +445,13 @@ export class MaterialService {
         ? { name: dto.name, searchName: normalizeText(dto.name) }
         : {}),
       ...(dto.sectorId != null ? { sectorId: dto.sectorId } : {}),
-      ...changedPaperColumns(current, resolvePaper(current, paperInputOf(dto))),
+      ...changedPaperColumns(
+        current,
+        // No LITE o papel tem formato: limpar o formato é recusado
+        resolvePaper(current, paperInputOf(dto), {
+          requireFormat: dto.sheetFormat === null,
+        }),
+      ),
     };
     const updated = await this.save(companyId, material, data, dto.active);
     return toPaperResponse(updated);

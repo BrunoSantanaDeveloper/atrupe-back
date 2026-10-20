@@ -242,7 +242,7 @@ export const FEATURE_ENFORCEMENT: Record<
   cost_base: {
     level: 'api',
     detail:
-      'Patrimônios (/asset) e materiais (/material) já exigem; processos, composição e base de custos exigem quando a API de cada módulo nascer.',
+      'Patrimônios (/asset) e materiais (/material; sem ela, só o papel do LITE, com paper_register) já exigem; processos, composição e base de custos exigem quando a API de cada módulo nascer.',
   },
   pricing_center: {
     level: 'tela',

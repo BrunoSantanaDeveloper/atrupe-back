@@ -956,19 +956,24 @@ describe('MaterialService', () => {
       });
     });
 
-    it('a lista dos papéis filtra a forma folha; sem papel, o resto', async () => {
+    it('a lista dos papéis filtra a forma folha; sem papel, o resto (sem forma inclusive)', async () => {
       await service.findAll('c-1', { paper: true }, VALUES);
-      await service.findAll('c-1', { paper: false }, VALUES);
+      await service.findAll('c-1', { paper: false, search: 'lona' }, VALUES);
 
       expect(prisma.material.findMany.mock.calls[0][0].where).toEqual({
         companyId: 'c-1',
         active: true,
         shape: 'SHEET',
       });
+      // O `not` deixaria o nulo de fora; o OR da busca continua valendo
       expect(prisma.material.findMany.mock.calls[1][0].where).toEqual({
         companyId: 'c-1',
         active: true,
-        NOT: { shape: { equals: 'SHEET' } },
+        AND: [{ OR: [{ shape: null }, { shape: { not: 'SHEET' } }] }],
+        OR: [
+          { searchName: { contains: 'lona' } },
+          { code: { contains: 'lona', mode: 'insensitive' } },
+        ],
       });
     });
   });
@@ -1058,10 +1063,16 @@ describe('MaterialService', () => {
       expect(prisma.material.create).not.toHaveBeenCalled();
     });
 
-    it('o formato é obrigatório no cadastro do papel', async () => {
+    it('o formato é obrigatório no cadastro do papel, e não se limpa na edição', async () => {
       await expect(
         service.createPaper('c-1', { name: 'Sulfite', grammage: 75 }),
       ).rejects.toThrow('Informe o formato da folha');
+
+      prisma.material.findFirst.mockResolvedValue(sheet());
+      await expect(
+        service.updatePaper('c-1', 'm-1', { sheetFormat: null }),
+      ).rejects.toThrow('Informe o formato da folha');
+      expect(prisma.material.update).not.toHaveBeenCalled();
     });
 
     it('a edição grava só o que mudou do papel', async () => {
