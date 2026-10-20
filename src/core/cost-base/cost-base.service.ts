@@ -22,13 +22,31 @@ import {
   UpdateAdminExpenseDto,
 } from './dto/cost-base.dto';
 import { manualFits } from './engine/allocation';
+import {
+  ComparisonSource,
+  MachineAsset,
+  Reading,
+  SoldUse,
+  assetCostSourceOf,
+  readingVolumeOf,
+  soldVolumesOf,
+  usesOf,
+  volumeOf,
+} from './engine/comparison';
 import { criterionValueOf } from './engine/expenses';
 import { toMinute } from './engine/labor';
-import { monthStart, monthsUpTo, shiftMonth } from './engine/months';
+import {
+  monthStart,
+  monthStartInstant,
+  monthsUpTo,
+  shiftMonth,
+} from './engine/months';
 import { distributionFits, summaryOf } from './engine/sectors';
 
 const ACCOUNT_NOT_FOUND = 'Conta não encontrada';
 const SECTOR_NOT_FOUND = 'Setor não encontrado';
+/** Itens vendidos lidos por vez no comparativo (o ano inteiro de retratos) */
+const SOLD_PAGE = 500;
 
 const bad = (message: string): never => {
   throw new BadRequestException(message);
@@ -465,17 +483,24 @@ export class CostBaseService {
 
   /**
    * Previsto × realizado nas contas de despesa que não são administrativas
-   * (§10). O previsto sai, por enquanto, só dos custos dos bens ligados à
-   * conta (custo mensal × meses do período); km rodados, m² vendidos, custo
-   * financeiro e material das composições vendidas ainda não têm volume
-   * guardado (entrega parcial). Depreciação não entra (ORG-5).
+   * (§10). O previsto de cada custo de bem ligado à conta é a estimativa do
+   * cadastro × o volume do período: o fixo, custo mensal × meses; o
+   * variável da máquina, pelas leituras do contador, pelo vendido nas
+   * composições ou pela produtividade do cadastro, nessa ordem; o variável
+   * da configuração, pelo vendido nela ou pela produtividade dela. Custo
+   * financeiro e material das composições vendidas ainda não entram.
+   * Depreciação não entra (ORG-5).
    */
   async comparison(companyId: string, filter: ComparisonFilterDto) {
     const snapshot = await this.snapshots.load(companyId);
     const months = Number(filter.period ?? '12');
     const reference = snapshot.referenceMonth;
-    const start = monthStart(shiftMonth(reference, -(months - 1)));
-    const end = monthStart(shiftMonth(reference, 1));
+    const firstMonth = shiftMonth(reference, -(months - 1));
+    const nextMonth = shiftMonth(reference, 1);
+    // Datas sem horário (competência, leitura) pela meia-noite UTC; a
+    // aprovação da venda é um instante, pelo mês de São Paulo
+    const start = monthStart(firstMonth);
+    const end = monthStart(nextMonth);
     const admin = new Set(snapshot.expenses.accounts.map((item) => item.id));
 
     const accounts = await this.prisma.subCategory.findMany({
@@ -506,18 +531,85 @@ export class CostBaseService {
       actual.map((row) => [row.subCategoryId, row._sum.totalAmount ?? 0]),
     );
 
+    // O volume de cada bem e de cada configuração no período
+    const machines: MachineAsset[] = snapshot.assets.map(
+      ({ row, computed }) => ({
+        id: row.id,
+        groupId: row.groupId,
+        productivity: computed.productivity,
+        setups: row.setups.map((setup) => ({
+          id: setup.id,
+          unit: setup.unit,
+          timePerUnit: setup.timePerUnit,
+          monthlyProductivity: setup.monthlyProductivity,
+        })),
+      }),
+    );
+    const [readings, uses, groups] = await Promise.all([
+      this.readingsOf(companyId, start, end),
+      this.soldUsesOf(
+        companyId,
+        monthStartInstant(firstMonth),
+        monthStartInstant(nextMonth),
+      ),
+      this.prisma.assetGroup.findMany({
+        where: { companyId },
+        select: { id: true, unit: true },
+      }),
+    ]);
+    const sold = soldVolumesOf(uses, machines, groups);
+
+    // As fontes de cada conta: os custos dos bens ligados a ela
+    const sourcesOf = new Map<string, ComparisonSource[]>();
+    for (const { row, computed } of snapshot.assets) {
+      const readingVolume = readingVolumeOf(
+        readings.get(row.id) ?? [],
+        start,
+        end,
+      );
+      for (const cost of computed.costs) {
+        if (!cost.subCategoryId) continue;
+        const setup =
+          cost.nature === 'SETUP_VARIABLE'
+            ? row.setups.find((item) => item.id === cost.setupId)
+            : undefined;
+        const volume = setup
+          ? volumeOf({
+              readings: null,
+              sold: sold.setups.get(setup.id) ?? 0,
+              productivity: setup.monthlyProductivity,
+              months,
+            })
+          : volumeOf({
+              readings: readingVolume,
+              sold: sold.assets.get(row.id) ?? 0,
+              productivity: computed.productivity,
+              months,
+            });
+        const source = assetCostSourceOf({
+          assetName: row.name,
+          unit: row.unit,
+          cost: {
+            id: cost.id,
+            label: setup ? `${cost.name} (${setup.name})` : cost.name,
+            unitCost: cost.unitCost,
+            yieldAmount: cost.yieldAmount,
+            yieldUnit: cost.yieldUnit,
+            monthlyCost: cost.monthlyCost,
+          },
+          volume,
+          months,
+        });
+        sourcesOf.set(cost.subCategoryId, [
+          ...(sourcesOf.get(cost.subCategoryId) ?? []),
+          source,
+        ]);
+      }
+    }
+
     const rows = rest
       .map((account) => {
-        const sources = snapshot.assets.flatMap(({ row, computed }) =>
-          computed.costs
-            .filter((cost) => cost.subCategoryId === account.id)
-            .map((cost) => ({
-              id: cost.id,
-              name: row.name,
-              detail: cost.name,
-              value: cost.monthlyCost * months,
-            })),
-        );
+        const sources = sourcesOf.get(account.id) ?? [];
         const estimated = sources.length
           ? sources.reduce((sum, source) => sum + source.value, 0)
           : null;
@@ -568,6 +660,87 @@ export class CostBaseService {
   }
 
   /* ------------------------------------------- apoio */
+
+  /**
+   * As leituras do contador que o período usa, por bem: as de dentro dele e
+   * a última antes do início (o resto do histórico não muda a conta).
+   */
+  private async readingsOf(companyId: string, start: Date, end: Date) {
+    const select = { assetId: true, date: true, value: true } as const;
+    const [inside, previous] = await Promise.all([
+      this.prisma.assetReading.findMany({
+        where: { companyId, date: { gte: start, lt: end } },
+        select,
+      }),
+      this.prisma.assetReading.groupBy({
+        by: ['assetId'],
+        where: { companyId, date: { lt: start } },
+        _max: { date: true },
+      }),
+    ]);
+    const before = previous.length
+      ? await this.prisma.assetReading.findMany({
+          where: {
+            companyId,
+            OR: previous.map((row) => ({
+              assetId: row.assetId,
+              date: row._max.date!,
+            })),
+          },
+          select,
+        })
+      : [];
+    const byAsset = new Map<string, Reading[]>();
+    for (const row of [...before, ...inside]) {
+      byAsset.set(row.assetId, [
+        ...(byAsset.get(row.assetId) ?? []),
+        { date: row.date, value: row.value },
+      ]);
+    }
+    return byAsset;
+  }
+
+  /**
+   * As linhas de máquina vendidas no período: as vendas aprovadas nele, com
+   * a O.S. de pé (o mesmo recorte dos relatórios de venda), lidas em
+   * páginas para não carregar o ano inteiro de retratos de uma vez. Entram o
+   * retrato de cada item e as linhas acrescentadas nele (ORC-5).
+   */
+  private async soldUsesOf(companyId: string, start: Date, end: Date) {
+    const uses: SoldUse[] = [];
+    let cursor: string | null = null;
+    for (;;) {
+      const page = await this.prisma.quotationProduct.findMany({
+        where: {
+          quotation: {
+            companyId,
+            approvedAt: { gte: start, lt: end },
+            order: { status: { not: 'CANCELED' } },
+          },
+        },
+        orderBy: { id: 'asc' },
+        take: SOLD_PAGE,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: {
+          id: true,
+          snapshot: { select: { data: true } },
+          lines: { select: { resolved: true } },
+        },
+      });
+      for (const item of page) {
+        const all = [
+          ...usesOf(item.snapshot?.data),
+          ...item.lines.flatMap((line) => usesOf(line.resolved)),
+        ];
+        uses.push(
+          ...all.filter((use) => use.resourceId?.startsWith('machine')),
+        );
+      }
+      if (page.length < SOLD_PAGE) break;
+      cursor = page[page.length - 1].id;
+    }
+    return uses;
+  }
 
   private accountOf(snapshot: CostBaseSnapshot, id: string) {
     const account = snapshot.expenses.accounts.find((item) => item.id === id);

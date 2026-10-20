@@ -37,3 +37,11 @@ export const monthsUpTo = (reference: string, count: number) =>
 /** O primeiro dia do mês, à meia-noite UTC (para filtrar datas sem horário). */
 export const monthStart = (month: string) =>
   new Date(`${month}-01T00:00:00.000Z`);
+
+/**
+ * O começo do mês em São Paulo, para filtrar instantes (a aprovação da
+ * venda, o lançamento do caixa): a venda das 22h do último dia é do mês
+ * que acabou.
+ */
+export const monthStartInstant = (month: string) =>
+  new Date(monthStart(month).getTime() + SAO_PAULO_OFFSET_MS);
