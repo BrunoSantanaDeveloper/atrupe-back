@@ -5028,6 +5028,36 @@ export class NfeService {
             },
           },
         ];
+      } else if (status === 'REJEITADA') {
+        /**
+         * Mesma ideia do branch acima, para o pedido cujo documento foi
+         * recusado. Sem este branch o valor caia no fim da cadeia e a lista de
+         * pedidos voltava sem filtro nenhum, enquanto as avulsas vinham
+         * filtradas — duas respostas diferentes para o mesmo seletor.
+         *
+         * `excludedNfeIds` entra aqui pelo mesmo motivo que entra nas avulsas:
+         * sao rejeicoes que ja' ganharam uma versao autorizada depois, com o
+         * mesmo numero e serie. Quem filtra "Rejeitada" procura o que ainda
+         * precisa de atencao, nao o que ja' foi resolvido numa segunda
+         * tentativa. A lista nao cobre NFS-e porque essa deduplicacao so'
+         * existe para NF-e.
+         */
+        const nfeRejeitada: any = {
+          status: NfeStatus.REJECTED,
+          ambiente: envNfe,
+          ...(excludedNfeIds.length > 0
+            ? { id: { notIn: excludedNfeIds } }
+            : {}),
+        };
+        orderWhere.OR = [
+          { nfes: { some: nfeRejeitada } },
+          { nfeOrders: { some: { nfe: nfeRejeitada } } },
+          {
+            nfses: {
+              some: { status: NfseStatus.REJECTED, ambiente: envNfse },
+            },
+          },
+        ];
       }
 
       // Precisa vir DEPOIS dos branches acima, que atribuem orderWhere.AND

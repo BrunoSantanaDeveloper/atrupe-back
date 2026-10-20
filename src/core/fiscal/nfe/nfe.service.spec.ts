@@ -661,6 +661,77 @@ describe('NfeService', () => {
         );
       });
     });
+
+    /**
+     * "Rejeitada" tinha o mesmo buraco de "Cancelada", e pior: as avulsas
+     * vinham filtradas e os pedidos voltavam sem filtro algum, porque o valor
+     * caia no fim da cadeia de branches.
+     */
+    describe('filtro de rejeitadas', () => {
+      it('filtra as notas avulsas pelo status rejeitado', async () => {
+        await service.findUnified(mockCompanyId, {
+          recordType: 'NOTAS_AVULSAS',
+          status: 'REJEITADA',
+        });
+
+        for (const model of ['nfe', 'nfse', 'nfce'] as const) {
+          expect(prisma[model].findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: expect.objectContaining({ status: 'REJECTED' }),
+            }),
+          );
+        }
+      });
+
+      it('filtra tambem os pedidos, em vez de devolver a lista inteira', async () => {
+        await service.findUnified(mockCompanyId, {
+          recordType: 'PEDIDOS',
+          status: 'REJEITADA',
+        });
+
+        const { where } = prisma.order.findMany.mock.calls[0][0];
+
+        expect(where.OR).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              nfes: { some: expect.objectContaining({ status: 'REJECTED' }) },
+            }),
+            expect.objectContaining({
+              nfses: { some: expect.objectContaining({ status: 'REJECTED' }) },
+            }),
+          ]),
+        );
+      });
+
+      /**
+       * Rejeicao que ja' ganhou uma versao autorizada depois esta' resolvida;
+       * mante-la no filtro mandaria o usuario conferir um problema que nao
+       * existe mais. E' a mesma exclusao que a lista de avulsas aplica.
+       */
+      it('ignora a rejeicao que ja tem versao autorizada posterior', async () => {
+        prisma.$queryRaw.mockResolvedValue([
+          { id: 'nfe-rejeitada-substituida' },
+        ]);
+
+        await service.findUnified(mockCompanyId, {
+          recordType: 'PEDIDOS',
+          status: 'REJEITADA',
+        });
+
+        const { where } = prisma.order.findMany.mock.calls[0][0];
+        expect(where.OR).toEqual(
+          expect.arrayContaining([
+            {
+              nfes: {
+                some: expect.objectContaining({
+                  id: { notIn: ['nfe-rejeitada-substituida'] },
+                }),
+              },
+            },
+          ]),
+        );
+      });
+    });
   });
 
   describe('findById', () => {
