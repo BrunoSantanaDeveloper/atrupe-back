@@ -1,12 +1,13 @@
 import { AssetUnit } from '@prisma/client';
-import { UNIT_SYMBOL } from '../../material/material-text';
+import { UNIT_SYMBOL, normalizeText } from '../../material/material-text';
 
 /**
  * O comparativo da base de custos (§10), sem banco: o previsto de cada
  * fonte é a estimativa unitária do cadastro × o volume do período. O volume
  * do bem sai, nesta ordem, das leituras do contador, do vendido pelas
- * composições ou da produtividade do cadastro × meses. Dinheiro em
- * centavos.
+ * composições ou da produtividade do cadastro × meses; o custo financeiro é
+ * o percentual da Precificação × o recebido; o material, o estimado nas
+ * composições vendidas. Dinheiro em centavos.
  */
 
 /* --------------------------------------------------------------- leituras */
@@ -345,4 +346,108 @@ export const assetCostSourceOf = (input: {
           : `${base} pela produtividade do cadastro (${amount(perMonth)}/mês × ${monthsText(months)})`,
     value: Math.round(rate * volume),
   };
+};
+
+/* ------------------------------------------- custo financeiro e material */
+
+/**
+ * O custo financeiro (PR-4) sobre o recebido no período: o percentual da
+ * Precificação, em décimos de ponto (15 = 1,5 %), × o que entrou. Sem
+ * percentual informado, não há estimativa (nula).
+ */
+export const financialCostSourceOf = (
+  financialCost: number,
+  received: number,
+): ComparisonSource | null =>
+  financialCost > 0
+    ? {
+        id: 'financial-cost',
+        name: 'Custo financeiro',
+        detail: `${(financialCost / 10).toLocaleString('pt-BR', {
+          maximumFractionDigits: 1,
+        })}% do recebido (${moneyText(received)})`,
+        value: Math.round((received * financialCost) / 1000),
+      }
+    : null;
+
+/** Um item vendido como o comparativo lê. */
+export type SoldItem = {
+  origin: string;
+  quantity: number;
+  /** Centavos por unidade do material de venda direta, hoje */
+  materialCost: number | null;
+  /** Os recursos do retrato do item e das linhas acrescentadas nele */
+  uses: SoldUse[];
+};
+
+/**
+ * O material estimado de um item vendido: as linhas de material do retrato
+ * do item e das linhas acrescentadas, pelo custo guardado na venda (as da
+ * parte já estão somadas na etapa); o material de venda direta (ORG-1), pela
+ * quantidade × o custo de hoje do material ou da variação, que a venda não
+ * guarda.
+ */
+export const itemMaterialCostOf = (item: SoldItem) =>
+  item.uses
+    .filter((use) => use.kind === 'MATERIAL')
+    .reduce((sum, use) => sum + use.cost, 0) +
+  (item.origin === 'MATERIAL' ? item.quantity * (item.materialCost ?? 0) : 0);
+
+/** O material das composições vendidas no período, com quantas vendas. */
+export const materialSourceOf = (
+  cost: number,
+  sales: number,
+): ComparisonSource => ({
+  id: 'sold-material',
+  name: 'Material das vendas',
+  detail: `Material das composições vendidas (${sales} ${
+    sales === 1 ? 'venda' : 'vendas'
+  })`,
+  value: Math.round(cost),
+});
+
+/* --------------------------------------------------- as contas das fontes */
+
+export type ExpenseAccount = {
+  id: string;
+  description: string | null;
+  nature: { description: string | null };
+};
+
+/**
+ * A conta padrão de cada fonte sem bem, pela descrição do plano de contas
+ * que toda empresa ganha, sem acento e sem caixa: "Matéria Prima"
+ * (Operacional) e "Tarifa de Cartão de Crédito" (Despesas Financeiras).
+ */
+export const DEFAULT_ACCOUNTS = {
+  material: { account: 'materia prima', nature: 'operacional' },
+  financialCost: {
+    account: 'tarifa de cartao de credito',
+    nature: 'despesas financeiras',
+  },
+} as const;
+
+// Sem acento e sem caixa; o hífen ("matéria-prima") conta como espaço
+const keyOf = (value: string | null) =>
+  normalizeText((value ?? '').replace(/[-‐–]/g, ' '));
+
+/**
+ * A conta padrão entre as elegíveis (na ordem do plano): a da descrição na
+ * natureza esperada; se a empresa mudou a natureza, a da descrição em
+ * qualquer uma. Sem nenhuma, nula: a fonte não aparece.
+ */
+export const defaultAccountOf = (
+  accounts: ExpenseAccount[],
+  target: { account: string; nature: string },
+) => {
+  const named = accounts.filter(
+    (account) => keyOf(account.description) === target.account,
+  );
+  return (
+    named.find(
+      (account) => keyOf(account.nature.description) === target.nature,
+    ) ??
+    named[0] ??
+    null
+  );
 };

@@ -24,10 +24,16 @@ import {
 import { manualFits } from './engine/allocation';
 import {
   ComparisonSource,
+  DEFAULT_ACCOUNTS,
+  ExpenseAccount,
   MachineAsset,
   Reading,
   SoldUse,
   assetCostSourceOf,
+  defaultAccountOf,
+  financialCostSourceOf,
+  itemMaterialCostOf,
+  materialSourceOf,
   readingVolumeOf,
   soldVolumesOf,
   usesOf,
@@ -483,13 +489,17 @@ export class CostBaseService {
 
   /**
    * Previsto × realizado nas contas de despesa que não são administrativas
-   * (§10). O previsto de cada custo de bem ligado à conta é a estimativa do
-   * cadastro × o volume do período: o fixo, custo mensal × meses; o
-   * variável da máquina, pelas leituras do contador, pelo vendido nas
-   * composições ou pela produtividade do cadastro, nessa ordem; o variável
-   * da configuração, pelo vendido nela ou pela produtividade dela. Custo
-   * financeiro e material das composições vendidas ainda não entram.
-   * Depreciação não entra (ORG-5).
+   * (§10). O previsto é a soma das fontes da conta, cada uma a estimativa
+   * do cadastro × o volume do período:
+   * - custo do bem ligado à conta: o fixo, custo mensal × meses; o variável
+   *   da máquina, pelas leituras do contador, pelo vendido nas composições
+   *   ou pela produtividade do cadastro, nessa ordem; o variável da
+   *   configuração, pelo vendido nela ou pela produtividade dela;
+   * - custo financeiro: o percentual da Precificação × o recebido, na conta
+   *   do custo financeiro;
+   * - material das composições vendidas no período, na conta do material.
+   * O realizado é o contas a pagar realizado na conta mais as saídas do
+   * caixa lançadas direto nela, sem parcela. Depreciação não entra (ORG-5).
    */
   async comparison(companyId: string, filter: ComparisonFilterDto) {
     const snapshot = await this.snapshots.load(companyId);
@@ -497,39 +507,17 @@ export class CostBaseService {
     const reference = snapshot.referenceMonth;
     const firstMonth = shiftMonth(reference, -(months - 1));
     const nextMonth = shiftMonth(reference, 1);
-    // Datas sem horário (competência, leitura) pela meia-noite UTC; a
-    // aprovação da venda é um instante, pelo mês de São Paulo
+    // Datas sem horário (competência, leitura, pagamento da parcela) pela
+    // meia-noite UTC; a aprovação da venda e o lançamento do caixa são
+    // instantes, pelo mês de São Paulo
     const start = monthStart(firstMonth);
     const end = monthStart(nextMonth);
-    const admin = new Set(snapshot.expenses.accounts.map((item) => item.id));
+    const startInstant = monthStartInstant(firstMonth);
+    const endInstant = monthStartInstant(nextMonth);
 
-    const accounts = await this.prisma.subCategory.findMany({
-      where: {
-        companyId,
-        isActive: true,
-        nature: { level1: '02', isActive: true },
-      },
-      select: {
-        id: true,
-        code: true,
-        description: true,
-        nature: { select: { code: true, level1: true, level2: true } },
-      },
-    });
-    const rest = accounts.filter((account) => !admin.has(account.id));
-    const actual = await this.prisma.payable.groupBy({
-      by: ['subCategoryId'],
-      where: {
-        companyId,
-        subCategoryId: { in: rest.map((account) => account.id) },
-        referenceDate: { gte: start, lt: end },
-        ...REALIZED_PAYABLE,
-      },
-      _sum: { totalAmount: true },
-    });
-    const actualOf = new Map(
-      actual.map((row) => [row.subCategoryId, row._sum.totalAmount ?? 0]),
-    );
+    const accounts = await this.comparisonAccountsOf(companyId, snapshot);
+    const ids = accounts.map((account) => account.id);
+    const linked = this.sourceAccountsOf(accounts);
 
     // O volume de cada bem e de cada configuração no período
     const machines: MachineAsset[] = snapshot.assets.map(
@@ -545,22 +533,47 @@ export class CostBaseService {
         })),
       }),
     );
-    const [readings, uses, groups] = await Promise.all([
-      this.readingsOf(companyId, start, end),
-      this.soldUsesOf(
-        companyId,
-        monthStartInstant(firstMonth),
-        monthStartInstant(nextMonth),
-      ),
-      this.prisma.assetGroup.findMany({
-        where: { companyId },
-        select: { id: true, unit: true },
-      }),
-    ]);
-    const sold = soldVolumesOf(uses, machines, groups);
+    const [payables, outflows, readings, sales, groups, received, pricing] =
+      await Promise.all([
+        this.prisma.payable.groupBy({
+          by: ['subCategoryId'],
+          where: {
+            companyId,
+            subCategoryId: { in: ids },
+            referenceDate: { gte: start, lt: end },
+            ...REALIZED_PAYABLE,
+          },
+          _sum: { totalAmount: true },
+        }),
+        this.cashOutflowsOf(companyId, ids, startInstant, endInstant),
+        this.readingsOf(companyId, start, end),
+        this.soldOf(companyId, startInstant, endInstant),
+        this.prisma.assetGroup.findMany({
+          where: { companyId },
+          select: { id: true, unit: true },
+        }),
+        linked.financialCost ? this.receivedOf(companyId, start, end) : 0,
+        this.prisma.pricingParameters.findUnique({
+          where: { companyId },
+          select: { financialCost: true },
+        }),
+      ]);
+    const sold = soldVolumesOf(sales.uses, machines, groups);
+
+    // O realizado, em centavos: o contas a pagar guarda reais
+    const actualOf = new Map(outflows);
+    for (const row of payables) {
+      actualOf.set(
+        row.subCategoryId!,
+        (actualOf.get(row.subCategoryId!) ?? 0) +
+          Math.round((row._sum.totalAmount ?? 0) * 100),
+      );
+    }
 
     // As fontes de cada conta: os custos dos bens ligados a ela
     const sourcesOf = new Map<string, ComparisonSource[]>();
+    const push = (accountId: string, source: ComparisonSource) =>
+      sourcesOf.set(accountId, [...(sourcesOf.get(accountId) ?? []), source]);
     for (const { row, computed } of snapshot.assets) {
       const readingVolume = readingVolumeOf(
         readings.get(row.id) ?? [],
@@ -600,24 +613,32 @@ export class CostBaseService {
           volume,
           months,
         });
-        sourcesOf.set(cost.subCategoryId, [
-          ...(sourcesOf.get(cost.subCategoryId) ?? []),
-          source,
-        ]);
+        push(cost.subCategoryId, source);
       }
     }
+    // As fontes sem bem, cada uma na sua conta (sem conta, não aparece)
+    if (linked.material) {
+      push(
+        linked.material,
+        materialSourceOf(sales.materialCost, sales.materialSales),
+      );
+    }
+    const financial = linked.financialCost
+      ? financialCostSourceOf(pricing?.financialCost ?? 0, received)
+      : null;
+    if (financial) push(linked.financialCost!, financial);
 
-    const rows = rest
+    const rows = accounts
       .map((account) => {
         const sources = sourcesOf.get(account.id) ?? [];
         const estimated = sources.length
           ? sources.reduce((sum, source) => sum + source.value, 0)
           : null;
-        const realized = Math.round(actualOf.get(account.id) ?? 0);
+        const realized = actualOf.get(account.id) ?? 0;
         const difference = estimated === null ? null : estimated - realized;
         return {
           id: account.id,
-          chartAccount: accountCodeOf(account.nature, account.code),
+          chartAccount: account.chartAccount,
           name: account.description ?? '',
           estimated,
           actual: realized,
@@ -701,13 +722,67 @@ export class CostBaseService {
   }
 
   /**
-   * As linhas de máquina vendidas no período: as vendas aprovadas nele, com
-   * a O.S. de pé (o mesmo recorte dos relatórios de venda), lidas em
-   * páginas para não carregar o ano inteiro de retratos de uma vez. Entram o
-   * retrato de cada item e as linhas acrescentadas nele (ORC-5).
+   * As contas do comparativo: as de despesa ativas que não são
+   * administrativas (§10), com o código como o plano mostra, na ordem dele.
    */
-  private async soldUsesOf(companyId: string, start: Date, end: Date) {
+  private async comparisonAccountsOf(
+    companyId: string,
+    snapshot: CostBaseSnapshot,
+  ) {
+    const admin = new Set(snapshot.expenses.accounts.map((item) => item.id));
+    const rows = await this.prisma.subCategory.findMany({
+      where: {
+        companyId,
+        isActive: true,
+        nature: { level1: '02', isActive: true },
+      },
+      select: {
+        id: true,
+        code: true,
+        description: true,
+        nature: {
+          select: { code: true, level1: true, level2: true, description: true },
+        },
+      },
+    });
+    return rows
+      .filter((row) => !admin.has(row.id))
+      .map((row) => ({
+        ...row,
+        chartAccount: accountCodeOf(row.nature, row.code),
+      }))
+      .sort((a, b) =>
+        a.chartAccount.localeCompare(b.chartAccount, 'pt-BR', {
+          numeric: true,
+        }),
+      );
+  }
+
+  /**
+   * A conta de cada fonte sem bem: a do padrão pelo nome ("Matéria Prima",
+   * "Tarifa de Cartão de Crédito"), entre as do comparativo.
+   */
+  private sourceAccountsOf(accounts: ExpenseAccount[]) {
+    return {
+      material:
+        defaultAccountOf(accounts, DEFAULT_ACCOUNTS.material)?.id ?? null,
+      financialCost:
+        defaultAccountOf(accounts, DEFAULT_ACCOUNTS.financialCost)?.id ?? null,
+    };
+  }
+
+  /**
+   * O que foi vendido no período: as vendas aprovadas nele, com a O.S. de
+   * pé (o mesmo recorte dos relatórios de venda), lidas em páginas para não
+   * carregar o ano inteiro de retratos de uma vez. Do retrato de cada item e
+   * das linhas acrescentadas nele (ORC-5) saem as linhas de máquina (o
+   * volume vendido) e o material estimado, com quantas vendas tiveram
+   * material.
+   */
+  private async soldOf(companyId: string, start: Date, end: Date) {
     const uses: SoldUse[] = [];
+    let materialCost = 0;
+    const withMaterial = new Set<string>();
     let cursor: string | null = null;
     for (;;) {
       const page = await this.prisma.quotationProduct.findMany({
@@ -723,23 +798,119 @@ export class CostBaseService {
         ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
         select: {
           id: true,
+          quotationId: true,
+          origin: true,
+          quantity: true,
+          material: { select: { cost: true } },
+          materialVariation: { select: { cost: true } },
           snapshot: { select: { data: true } },
           lines: { select: { resolved: true } },
         },
       });
       for (const item of page) {
-        const all = [
+        const itemUses = [
           ...usesOf(item.snapshot?.data),
           ...item.lines.flatMap((line) => usesOf(line.resolved)),
         ];
         uses.push(
-          ...all.filter((use) => use.resourceId?.startsWith('machine')),
+          ...itemUses.filter((use) => use.resourceId?.startsWith('machine')),
         );
+        const cost = itemMaterialCostOf({
+          origin: item.origin,
+          quantity: item.quantity,
+          // Com variação, o custo é o dela (MT-3)
+          materialCost:
+            item.materialVariation?.cost ?? item.material?.cost ?? null,
+          uses: itemUses,
+        });
+        if (cost > 0) {
+          materialCost += cost;
+          withMaterial.add(item.quotationId);
+        }
       }
       if (page.length < SOLD_PAGE) break;
       cursor = page[page.length - 1].id;
     }
-    return uses;
+    return { uses, materialCost, materialSales: withMaterial.size };
+  }
+
+  /**
+   * As saídas do caixa lançadas direto numa conta do comparativo, sem
+   * parcela do contas a pagar ou a receber (a taxa da operadora na
+   * liquidação do cartão, o lançamento criado pela conciliação do extrato,
+   * o ajuste de saída): o contas a pagar não as vê. Não entram a
+   * transferência (só a saída comum, OUTCOME, conta), o estorno (REVERSAL) e
+   * o lançamento estornado (o estorno aponta para ele pelo linkedId): o par
+   * se anula, em qualquer mês que o estorno caia. Reais no banco; aqui,
+   * centavos por conta.
+   */
+  private async cashOutflowsOf(
+    companyId: string,
+    accountIds: string[],
+    start: Date,
+    end: Date,
+  ) {
+    const byAccount = new Map<string, number>();
+    if (!accountIds.length) return byAccount;
+    const rows = await this.prisma.transaction.findMany({
+      where: {
+        type: 'OUTCOME',
+        subCategoryId: { in: accountIds },
+        transactionDate: { gte: start, lt: end },
+        payableInstallment: { none: {} },
+        receivableInstallment: { none: {} },
+        AND: [
+          // `not` sozinho deixaria de fora o lançamento sem kind
+          { OR: [{ kind: null }, { kind: { not: 'REVERSAL' } }] },
+          // A conta sem controle lança sem caixa; o caixa antigo, sem conta
+          {
+            OR: [
+              { bankAccount: { companyId } },
+              { cashRegister: { companyId } },
+            ],
+          },
+        ],
+      },
+      select: { id: true, subCategoryId: true, amount: true },
+    });
+    if (!rows.length) return byAccount;
+    const reversals = await this.prisma.transaction.findMany({
+      where: { kind: 'REVERSAL', linkedId: { in: rows.map((row) => row.id) } },
+      select: { linkedId: true },
+    });
+    const reversed = new Set(reversals.map((row) => row.linkedId));
+    for (const row of rows) {
+      if (reversed.has(row.id)) continue;
+      byAccount.set(
+        row.subCategoryId!,
+        (byAccount.get(row.subCategoryId!) ?? 0) + Math.round(row.amount * 100),
+      );
+    }
+    return byAccount;
+  }
+
+  /**
+   * O recebido no período: as parcelas do contas a receber pagas, pela
+   * data do pagamento; a provisionada (cartão a compensar) vale pela data da
+   * provisão, como no fluxo de caixa, e a compensada não conta duas vezes.
+   * O valor pago (sem ele, o da parcela), em reais no banco; aqui, centavos.
+   */
+  private async receivedOf(companyId: string, start: Date, end: Date) {
+    const rows = await this.prisma.receivableInstallment.findMany({
+      where: {
+        status: { in: ['PAID', 'PROVISIONED'] },
+        receivable: { companyId, status: { not: 'CANCELED' } },
+        OR: [
+          { provisionDate: { gte: start, lt: end } },
+          { provisionDate: null, paidDate: { gte: start, lt: end } },
+        ],
+      },
+      select: { amount: true, paidAmount: true },
+    });
+    return rows.reduce(
+      (sum, row) => sum + Math.round((row.paidAmount ?? row.amount) * 100),
+      0,
+    );
   }
 
   private accountOf(snapshot: CostBaseSnapshot, id: string) {

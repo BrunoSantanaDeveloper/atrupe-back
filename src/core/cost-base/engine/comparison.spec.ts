@@ -1,6 +1,11 @@
 import {
+  DEFAULT_ACCOUNTS,
   MachineAsset,
   assetCostSourceOf,
+  defaultAccountOf,
+  financialCostSourceOf,
+  itemMaterialCostOf,
+  materialSourceOf,
   readingVolumeOf,
   soldVolumesOf,
   usesOf,
@@ -405,5 +410,108 @@ describe('comparativo: as fontes dos custos dos bens', () => {
         months: 1,
       }).detail,
     ).toBe('Seguro — todo mês');
+  });
+});
+
+describe('comparativo: as fontes sem bem', () => {
+  it('custo financeiro: o percentual da Precificação × o recebido', () => {
+    // 1,5 % (15 décimos de ponto) de R$ 120.000,00
+    expect(financialCostSourceOf(15, 12_000_000)).toEqual({
+      id: 'financial-cost',
+      name: 'Custo financeiro',
+      detail: '1,5% do recebido (R$ 120.000,00)',
+      value: 180_000,
+    });
+    expect(financialCostSourceOf(30, 0)?.detail).toBe(
+      '3% do recebido (R$ 0,00)',
+    );
+    // Sem percentual na Precificação, não há estimativa
+    expect(financialCostSourceOf(0, 12_000_000)).toBeNull();
+  });
+
+  it('material do item: as linhas de material do retrato e das linhas acrescentadas', () => {
+    const uses = usesOf({
+      stages: [
+        {
+          lines: [
+            { kind: 'MATERIAL', cost: 3_750 },
+            { kind: 'MACHINE', cost: 725 },
+            { kind: 'LABOR', cost: 1_000 },
+          ],
+          parts: [{ lines: [{ kind: 'MATERIAL', cost: 9_999 }] }],
+        },
+      ],
+    });
+    const added = usesOf([{ kind: 'MATERIAL', cost: 250 }]);
+    expect(
+      itemMaterialCostOf({
+        origin: 'PRODUCT',
+        quantity: 3,
+        materialCost: 1_000,
+        uses: [...uses, ...added],
+      }),
+    ).toBe(4_000);
+  });
+
+  it('material de venda direta: quantidade × o custo de hoje', () => {
+    expect(
+      itemMaterialCostOf({
+        origin: 'MATERIAL',
+        quantity: 4,
+        materialCost: 1_250,
+        uses: [],
+      }),
+    ).toBe(5_000);
+    // Sem custo no cadastro, não soma
+    expect(
+      itemMaterialCostOf({
+        origin: 'MATERIAL',
+        quantity: 4,
+        materialCost: null,
+        uses: [],
+      }),
+    ).toBe(0);
+  });
+
+  it('o texto do material conta as vendas', () => {
+    expect(materialSourceOf(123_456.4, 42)).toEqual({
+      id: 'sold-material',
+      name: 'Material das vendas',
+      detail: 'Material das composições vendidas (42 vendas)',
+      value: 123_456,
+    });
+    expect(materialSourceOf(0, 1).detail).toBe(
+      'Material das composições vendidas (1 venda)',
+    );
+  });
+
+  it('a conta padrão: pela descrição, sem acento e sem caixa, na natureza esperada', () => {
+    const account = (id: string, description: string, nature: string) => ({
+      id,
+      description,
+      nature: { description: nature },
+    });
+    const accounts = [
+      account('a1', 'Materia prima', 'Despesas Variáveis'),
+      account('a2', '  MATÉRIA-PRIMA ', 'operacional'),
+      account('a3', 'Matéria Prima', 'Operacional'),
+      account('a4', 'Tarifa de Cartao de Credito', 'Outras'),
+    ];
+    // Na natureza esperada, a primeira na ordem do plano; o hífen da
+    // grafia "matéria-prima" conta como espaço
+    expect(defaultAccountOf(accounts, DEFAULT_ACCOUNTS.material)?.id).toBe(
+      'a2',
+    );
+    // Fora da natureza esperada, ainda vale a da descrição
+    expect(defaultAccountOf(accounts, DEFAULT_ACCOUNTS.financialCost)?.id).toBe(
+      'a4',
+    );
+    expect(
+      defaultAccountOf(
+        [account('x', 'Matérias primas', 'Operacional')],
+        DEFAULT_ACCOUNTS.material,
+      ),
+    ).toBeNull();
+    expect(defaultAccountOf([], DEFAULT_ACCOUNTS.material)).toBeNull();
   });
 });
