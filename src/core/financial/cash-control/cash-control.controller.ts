@@ -75,7 +75,10 @@ export class CashControlController {
   /* ------------------------------------------------------------------
    * O caixa do dia (Fase 7.2, contrato seção 5): valores em centavos.
    * As rotas antigas (open, close/:id, reopen/:id, PATCH :id) seguem
-   * para a tela antiga até ela sair. As novas já recusam sem permissão.
+   * para a tela antiga de produção até o front novo sair (aí, remover). Elas
+   * também recusam sem permissão, e reabrir pede a chave restrita da rota
+   * nova (revisão de 23/10/2026): antes, quem não tinha a chave reabria por
+   * reopen/:id.
    * ------------------------------------------------------------------ */
 
   @Post('')
@@ -172,6 +175,7 @@ export class CashControlController {
   }
   @Post('open')
   @HasPermission('create', 'financial:cash_control')
+  @ObservePermissions(false)
   async openCashRegister(
     @Req() req,
     @Body() createCashRegisterDto: CreateCashRegisterDto,
@@ -182,6 +186,7 @@ export class CashControlController {
 
   @Patch('close/:cashRegisterId')
   @HasPermission('edit', 'financial:cash_control')
+  @ObservePermissions(false)
   @TenantResource('cashRegister', 'cashRegisterId')
   async closeCashRegister(
     @Param('cashRegisterId') cashRegisterId: string,
@@ -239,6 +244,7 @@ export class CashControlController {
 
   @Patch(':cashRegisterId')
   @HasPermission('edit', 'financial:cash_control')
+  @ObservePermissions(false)
   @TenantResource('cashRegister', 'cashRegisterId')
   async editCashRegister(
     @Param('cashRegisterId') cashRegisterId: string,
@@ -250,6 +256,7 @@ export class CashControlController {
 
   @Post('transfer')
   @HasPermission('create', 'financial:cash_control')
+  @ObservePermissions(false)
   async transferFunds(@Req() req, @Body() dto: CashTransferDto) {
     // O corpo novo (fromId/toId, centavos) faz o par ligado (CX-2)
     if (dto.fromId || dto.toId) {
@@ -266,7 +273,9 @@ export class CashControlController {
   }
 
   @Post('reopen/:id')
-  @HasPermission('edit', 'financial:cash_control')
+  // A mesma chave restrita da rota nova (ALT-7)
+  @HasPermission('edit', 'financial:cash_control_reopen')
+  @ObservePermissions(false)
   @TenantResource('cashRegister')
   async reopenCashRegister(@Req() req, @Param('id') id: string) {
     return this.cashControlService.reopenCashRegister(id);
