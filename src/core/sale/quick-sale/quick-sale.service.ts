@@ -2,8 +2,10 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from 'nestjs-prisma';
 import { QuickSalePayment } from '@prisma/client';
 import { PlanControlService } from '../../plan/plan-control.service';
@@ -38,6 +40,9 @@ const ALL_METHODS = ['dinheiro', 'pix', 'cartao'];
 
 export const QUICK_SALE_NOT_CONFIGURED =
   'Venda rápida ainda não configurada: escolha o cliente padrão e a série em Configurações › Vendas › Venda rápida';
+
+/** Quanto a venda rápida sem item espera antes de sair da lista. */
+const EMPTY_QUICK_SALE_TTL_HOURS = 12;
 
 /** O arredondamento no balcão sem frente de caixa (FC-18): R$ 1,00. */
 const DEFAULT_ROUNDING = { roundingType: 'VALUE' as const, roundingLimit: 100 };
@@ -80,6 +85,8 @@ export type CashStatus = {
  */
 @Injectable()
 export class QuickSaleService {
+  private readonly logger = new Logger(QuickSaleService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly planControl: PlanControlService,
@@ -87,6 +94,43 @@ export class QuickSaleService {
     private readonly financial: QuotationFinancialService,
     private readonly workflow: QuotationWorkflowService,
   ) {}
+
+  /**
+   * A venda rápida nasce quando a tela abre (ALT-22): quem sai sem lançar
+   * item deixa um registro vazio na lista. A tela o exclui ao sair, mas
+   * fechar a aba não passa por ali. Toda madrugada, a venda rápida aberta,
+   * sem item, que não foi ao caixa e tem mais de 12 horas sai da lista como
+   * no "excluir" da tela, inativa (revisão de 23/10/2026).
+   */
+  @Cron('25 3 * * *', {
+    name: 'quick-sale-empty-cleanup',
+    timeZone: 'America/Sao_Paulo',
+  })
+  async cleanupEmpty(now = new Date()) {
+    const limit = new Date(
+      now.getTime() - EMPTY_QUICK_SALE_TTL_HOURS * 3_600_000,
+    );
+    try {
+      const { count } = await this.prisma.quotation.updateMany({
+        where: {
+          quickSale: true,
+          isActive: true,
+          status: 'OPEN',
+          createdAt: { lt: limit },
+          quotationProduct: { none: {} },
+          pendingSale: { is: null },
+        },
+        data: { isActive: false },
+      });
+      if (count) this.logger.log(`${count} vendas rápidas sem item retiradas`);
+      return count;
+    } catch (error) {
+      this.logger.error(
+        `Vendas rápidas sem item não retiradas: ${error?.message}`,
+      );
+      return 0;
+    }
+  }
 
   /** Quem age: o colaborador da sessão (CX-2). */
   actorOf(user: { userId?: string; companyId: string }) {
