@@ -34,6 +34,11 @@ export async function quickSaleMode(
  * O valor da venda, em centavos: os itens, a entrega e a comissão somada,
  * menos o desconto das condições. É o que o título da venda comum soma,
  * sem as parcelas.
+ *
+ * Os valores do orçamento já estão em centavos (o detalhe devolve 5000
+ * para R$ 50,00): não se multiplica por 100. Multiplicado, o "Cobrar"
+ * esperava 100 vezes o total e recusava toda venda ("cobrada pelo total"),
+ * e a venda enviada ao caixa chegava com 100 vezes o valor.
  */
 export const saleTotalCents = (quotation: {
   totalValue: number;
@@ -49,13 +54,12 @@ export const saleTotalCents = (quotation: {
   Math.max(
     0,
     Math.round(
-      ((quotation.totalValue ?? 0) +
+      (quotation.totalValue ?? 0) +
         (quotation.deliveryInfo?.value ?? 0) -
         (quotation.quotationPayment?.discountTotal ?? 0) +
         (quotation.quotationPayment?.commission?.type === 'ADD'
           ? (quotation.quotationPayment.commission.totalCommission ?? 0)
-          : 0)) *
-        100,
+          : 0),
     ),
   );
 
