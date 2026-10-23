@@ -10,6 +10,8 @@ import {
   IsString,
   IsUUID,
   Matches,
+  MaxLength,
+  ValidateIf,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -90,13 +92,28 @@ export class CreateBankAccountDto {
   })
   name: string;
 
-  @IsNotEmpty()
+  // A operadora de cartão não escolhe banco: sem ele, fica no banco
+  // genérico "Operadora de cartão" (revisão de 23/10/2026)
+  @ValidateIf((dto) => dto.kind !== 'CARD' || dto.bankId !== undefined)
+  @IsNotEmpty({ message: 'Escolha o banco da conta' })
   @IsUUID()
   @ApiProperty({
-    description: 'ID do banco associado',
+    description:
+      'ID do banco associado; opcional na operadora de cartão (kind CARD)',
     example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
   })
-  bankId: string;
+  bankId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  @ApiProperty({
+    description: 'Nome da operadora de cartão (só na conta CARD)',
+    example: 'Rede',
+    required: false,
+  })
+  operator?: string;
 
   companyId: string;
 

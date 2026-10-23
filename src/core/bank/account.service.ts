@@ -19,6 +19,9 @@ import { toCents, toReais } from '../financial/cash-control/cash-ledger';
 
 const ACCOUNT_NOT_FOUND = 'Conta não encontrada';
 
+/** O "banco" das contas de operadora de cartão. */
+const CARD_OPERATOR_BANK = { code: 'CARD', name: 'Operadora de cartão' };
+
 const bad = (message: string): never => {
   throw new BadRequestException(message);
 };
@@ -89,6 +92,24 @@ export class AccountService {
     };
   }
 
+  /**
+   * O banco genérico da operadora de cartão (código CARD), como o 000 da
+   * gaveta: a conta CARD não escolhe banco. A migration o cria; aqui ele
+   * nasce se faltar (o seed do homolog pode ter rodado antes).
+   */
+  private async cardOperatorBankId() {
+    const existing = await this.prisma.bank.findFirst({
+      where: { code: CARD_OPERATOR_BANK.code },
+      select: { id: true },
+    });
+    if (existing) return existing.id;
+    const created = await this.prisma.bank.create({
+      data: CARD_OPERATOR_BANK,
+      select: { id: true },
+    });
+    return created.id;
+  }
+
   /** A padrão só vale onde a conta recebe (CX-2). */
   private ruleDefault(rule: BankAccountCashControlDto) {
     return !!rule.isDefault && rule.acceptIncomes !== false;
@@ -128,12 +149,18 @@ export class AccountService {
     if (!dto.name?.trim()) bad('Dê um nome para a conta');
     const rules = this.accountRules(dto);
     const opening = this.openingOf(dto);
+    const bankId =
+      dto.bankId ??
+      (rules.kind === 'CARD'
+        ? await this.cardOperatorBankId()
+        : bad('Escolha o banco da conta'));
 
     return this.prisma.$transaction(async (tx) => {
       const bankAccount = await tx.bankAccount.create({
         data: {
           name: dto.name.trim(),
-          bankId: dto.bankId,
+          bankId,
+          operator: rules.kind === 'CARD' ? dto.operator?.trim() || null : null,
           companyId: dto.companyId,
           description: dto.description,
           ...rules,
@@ -514,6 +541,16 @@ export class AccountService {
                 : {}),
               ...(updateBankAccountDto.bankId !== undefined
                 ? { bankId: updateBankAccountDto.bankId }
+                : {}),
+              // O nome da operadora só vale na conta CARD
+              ...(updateBankAccountDto.operator !== undefined ||
+              (updateBankAccountDto.kind !== undefined && rules.kind !== 'CARD')
+                ? {
+                    operator:
+                      rules.kind === 'CARD'
+                        ? updateBankAccountDto.operator?.trim() || null
+                        : null,
+                  }
                 : {}),
               ...(updateBankAccountDto.description !== undefined
                 ? { description: updateBankAccountDto.description }

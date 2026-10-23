@@ -99,4 +99,11 @@ export const BASE_BANKS = [
     code: '197',
     icon: 'stonePagamentos',
   },
+  // A conta da operadora de cartão, que não escolhe banco (revisão de
+  // 23/10/2026): o nome da operadora fica na conta (operator)
+  {
+    name: 'Operadora de cartão',
+    code: 'CARD',
+    icon: undefined,
+  },
 ];

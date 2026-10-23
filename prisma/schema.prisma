@@ -1248,6 +1248,9 @@ model BankAccount {
   /// Saldo inicial em reais e a data dele (CX-2)
   openingBalance         Float                    @default(0)
   openingDate            DateTime?                @db.Date
+  /// O nome da operadora de cartão (Rede, Cielo, Stone…): a conta CARD não
+  /// escolhe banco e fica no banco genérico "Operadora de cartão"
+  operator               String?
   bankAccountCashControl BankAccountCashControl[]
   bank                   Bank                     @relation(fields: [bankId], references: [id])
   company                Company                  @relation(fields: [companyId], references: [id])
