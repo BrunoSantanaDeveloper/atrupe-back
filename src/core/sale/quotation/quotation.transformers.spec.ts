@@ -40,7 +40,7 @@ describe('Quotation Transformers', () => {
         id: 'seller-1',
         name: 'João Vendedor',
         user: { id: 'user-1', name: 'João User' },
-        sellerProfile: { maxDiscount: 15 },
+        sellerProfile: { maxDiscount: 15, onlySendToCash: true },
       };
       const result = transformSeller(seller);
 
@@ -48,6 +48,8 @@ describe('Quotation Transformers', () => {
         id: 'seller-1',
         name: 'João Vendedor',
         maxDiscount: 15,
+        // A tela esconde o "Cobrar" (FC-12.1, revisão de 23/10/2026)
+        onlySendToCash: true,
       });
     });
 
@@ -64,6 +66,7 @@ describe('Quotation Transformers', () => {
         id: 'seller-1',
         name: 'João User',
         maxDiscount: null,
+        onlySendToCash: false,
       });
     });
   });

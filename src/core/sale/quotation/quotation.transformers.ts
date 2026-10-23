@@ -33,7 +33,10 @@ type QuotationWithRelations = {
     id: string;
     name: string | null;
     user: { id: string; name: string };
-    sellerProfile?: { maxDiscount: number | null } | null;
+    sellerProfile?: {
+      maxDiscount: number | null;
+      onlySendToCash?: boolean;
+    } | null;
   } | null;
   contact?: { id: string; name: string } | null;
   contactSource?: { id: string; name: string } | null;
@@ -72,6 +75,9 @@ export function transformSeller(seller: QuotationWithRelations['seller']) {
     id: seller.id,
     name: seller.name ?? seller.user.name,
     maxDiscount: seller.sellerProfile?.maxDiscount ?? null,
+    // O vendedor que só envia ao caixa não cobra a venda rápida: sem o campo,
+    // a tela mostrava "Cobrar" e ele só descobria na recusa (FC-12.1)
+    onlySendToCash: seller.sellerProfile?.onlySendToCash ?? false,
   };
 }
 

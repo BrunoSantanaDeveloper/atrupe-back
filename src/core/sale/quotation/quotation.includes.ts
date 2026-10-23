@@ -37,6 +37,8 @@ export const QUOTATION_SELLER_INCLUDE = {
   sellerProfile: {
     select: {
       maxDiscount: true,
+      // "Somente enviar ao caixa" (FC-12.1): a tela esconde o "Cobrar"
+      onlySendToCash: true,
     },
   },
 } as const;
