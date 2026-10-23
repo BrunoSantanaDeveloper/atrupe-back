@@ -987,15 +987,15 @@ describe('NfseService', () => {
        * sublimite, que o MEI nao tem.
        */
       /**
-       * regApIBSCBSSN e' campo do optante. Mandar fora do Simples foi testado
-       * na Fenix (RPS 106/107, 20/10/2026) e a prefeitura recusou o esquema:
-       * o provedor escreve a tag dentro de <regTrib>, onde o schema 1.01 so'
-       * aceita regApTribSN e regEspTrib.
+       * A v9 do layout (16/10/2026) tirou a condicao "informar quando
+       * opSimpNac = 2, 3 ou 4" do regApIBSCBSSN, e o suporte do provedor
+       * pediu o envio conforme a v9. Fora do Simples vai 3 — IBS e CBS
+       * apurados pelo regime regular.
        */
-      it('nao declara regime de apuracao do Simples fora do Simples', async () => {
+      it('declara apuracao pelo regime regular fora do Simples', async () => {
         await emitirCom({ emitCrt: 3, regimeEspecialTributacao: null });
         const rps = regimeEnviado();
-        expect(rps).not.toHaveProperty('regApIBSCBSSN');
+        expect(rps.regApIBSCBSSN).toBe(3);
         expect(rps.OptSN).toBe(2);
       });
 
