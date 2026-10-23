@@ -9,6 +9,7 @@ import {
   materialVariationName,
 } from './item-origin';
 import { itemSheetCount } from '../../material/sheet-count';
+import { BasePriceContext, basePriceOf } from './item-base-price';
 
 type QuotationWithRelations = {
   id: string;
@@ -218,7 +219,7 @@ export function transformPaymentConditions(quotationPayment: any) {
   };
 }
 
-export function transformQuotationItem(qp: any) {
+export function transformQuotationItem(qp: any, base?: BasePriceContext) {
   // Valor original do produto no catálogo (imutável, nunca alterado por
   // edições no orçamento). O item sem produto tem o valor nele mesmo
   const { unitValue, totalValue, originalValue } = itemValuesOf(qp);
@@ -253,6 +254,9 @@ export function transformQuotationItem(qp: any) {
     unitValue,
     totalValue,
     originalValue,
+    // O preço do cadastro na medida e na quantidade do item, sem a edição do
+    // vendedor (EC-2, ALT-8); nulo sem referência. Só no detalhe
+    ...(base ? { basePrice: basePriceOf(qp, base) } : {}),
     finalValue: qp.finalValue,
     // Acréscimo em centavos, fora do desconto (ALT-25)
     addition: qp.addition ?? 0,
@@ -323,8 +327,11 @@ export function transformQuotationItem(qp: any) {
   };
 }
 
-export function transformQuotationItems(quotationProducts: any[]) {
-  return quotationProducts.map(transformQuotationItem);
+export function transformQuotationItems(
+  quotationProducts: any[],
+  base?: BasePriceContext,
+) {
+  return quotationProducts.map((item) => transformQuotationItem(item, base));
 }
 
 /**
@@ -332,6 +339,7 @@ export function transformQuotationItems(quotationProducts: any[]) {
  */
 export function transformQuotationToResponse(
   quotation: QuotationWithRelations,
+  base?: BasePriceContext,
 ) {
   const isOverdue =
     quotation.dueDate &&
@@ -360,6 +368,6 @@ export function transformQuotationToResponse(
     client: transformClient(quotation.client),
     deliveryInfo: transformDeliveryInfo(quotation.deliveryInfo),
     paymentConditions: transformPaymentConditions(quotation.quotationPayment),
-    quotationItems: transformQuotationItems(quotation.quotationProduct),
+    quotationItems: transformQuotationItems(quotation.quotationProduct, base),
   };
 }

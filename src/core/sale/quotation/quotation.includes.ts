@@ -218,6 +218,11 @@ export const QUOTATION_PRODUCT_SELECT = {
       imageUrl: true,
       // Produto inativo no orçamento aberto (PAD-7) e a marca da composição
       isActive: true,
+      // As faixas de quantidade do produto, para o preço base (FQ-1, ALT-8)
+      priceTiers: {
+        where: { variationId: null },
+        select: { from: true, unitPrice: true },
+      },
       assemblies: {
         where: { variationKey: '' },
         select: { status: true, _count: { select: { blocks: true } } },
@@ -260,7 +265,13 @@ export const QUOTATION_PRODUCT_SELECT = {
   },
   // A variação e o papel dela: o item conta as folhas (Papéis no LITE)
   variation: {
-    select: { id: true, name: true, paper: { select: PAPER_SELECT } },
+    select: {
+      id: true,
+      name: true,
+      // O preço da variação vale no lugar do produto no preço base (ALT-8)
+      unitPrice: true,
+      paper: { select: PAPER_SELECT },
+    },
   },
   description: true,
   quantity: true,
@@ -286,6 +297,8 @@ export const QUOTATION_PRODUCT_SELECT = {
       productItem: {
         select: {
           salePrice: true,
+          // O preço do cadastro por unidade bruta, para o preço base (ALT-8)
+          unitCost: true,
         },
       },
     },

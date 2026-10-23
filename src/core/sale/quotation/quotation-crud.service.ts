@@ -21,6 +21,8 @@ import {
 import { FilterQuotationDto } from './dto/filter.dto';
 import { QUOTATION_FIND_ONE_INCLUDE } from './quotation.includes';
 import { transformQuotationToResponse } from './quotation.transformers';
+import { basePriceContext } from './item-base-price';
+import { PlanControlService } from '../../plan/plan-control.service';
 import { QuotationGroup } from './quotation.service';
 import { reassignQuotationSeries } from './quotation-series.util';
 import { copyItemLines } from './quotation-lines.service';
@@ -42,6 +44,8 @@ export class QuotationCrudService {
     private prisma: PrismaService,
     // Copia o rascunho do item montado ao duplicar (ORC-11)
     @Optional() private composed?: ComposedItemService,
+    // As faixas de quantidade do preço base valem com o recurso do plano
+    @Optional() private planControl?: PlanControlService,
   ) {}
 
   /**
@@ -637,7 +641,17 @@ export class QuotationCrudService {
       throw new NotFoundException(`Orçamento com ID '${id}' não encontrado.`);
     }
 
-    return transformQuotationToResponse(quotation as any);
+    // O preço base de cada item (EC-2, ALT-8): o retrato do item montado e
+    // as faixas do plano entram por fora do include
+    const base = await basePriceContext(
+      this.prisma,
+      this.planControl,
+      quotation.companyId,
+      quotation.quotationProduct
+        .filter((item) => item.origin === 'COMPOSED')
+        .map((item) => item.id),
+    );
+    return transformQuotationToResponse(quotation as any, base);
   }
 
   /**
