@@ -378,6 +378,7 @@ export class AccountService {
         kind: true,
         cashControl: true,
         openingDate: true,
+        openingBalance: true,
       },
     });
     if (!owner) throw new NotFoundException(ACCOUNT_NOT_FOUND);
@@ -396,15 +397,24 @@ export class AccountService {
       bad('Dê um nome para a conta');
     }
     const opening = this.openingOf(updateBankAccountDto);
-    // A data do saldo inicial não muda depois que a conta tem lançamentos
-    if (
+    // O saldo inicial (valor e data) não muda pela rota comum depois que a
+    // conta tem lançamentos: muda a abertura de todos os caixas seguintes
+    // (revisão de 23/10/2026). Mandar o mesmo valor não é troca
+    const dateChanged =
       'openingDate' in opening &&
       (opening.openingDate?.getTime() ?? null) !==
-        (owner.openingDate?.getTime() ?? null) &&
+        (owner.openingDate?.getTime() ?? null);
+    const balanceChanged =
+      'openingBalance' in opening &&
+      updateBankAccountDto.openingBalance !== toCents(owner.openingBalance);
+    if (
+      (dateChanged || balanceChanged) &&
       (await this.historyOf([accountId])).has(accountId)
     ) {
       bad(
-        'A data do saldo inicial não muda depois que a conta tem lançamentos',
+        dateChanged
+          ? 'A data do saldo inicial não muda depois que a conta tem lançamentos'
+          : 'O saldo inicial não muda depois que a conta tem lançamentos',
       );
     }
     const rules = this.accountRules(updateBankAccountDto, owner);
