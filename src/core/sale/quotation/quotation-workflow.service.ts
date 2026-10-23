@@ -123,6 +123,24 @@ export type ApprovedOrder = Order & {
 };
 
 /** Quanto existe de cada passo da aprovação; o reprocesso compara antes e depois. */
+/** O que a conta do limite de desconto do vendedor lê do orçamento. */
+type DiscountInput = {
+  totalValue: number;
+  quotationPayment?: {
+    finalValue?: number | null;
+    discountTotal?: number | null;
+    discountValue?: number | null;
+    discountType?: string | null;
+  } | null;
+  quotationProduct?:
+    | {
+        totalValue?: number | null;
+        addition?: number | null;
+        linesTotal?: number | null;
+      }[]
+    | null;
+};
+
 type ApprovalState = {
   order: number;
   deliverySchedule: number;
@@ -305,6 +323,64 @@ export class QuotationWorkflowService {
    * O item montado na hora sem nenhuma etapa fica marcado e o orçamento
    * não conclui nem aprova até as etapas existirem (MS-12, ORC-11).
    */
+  /**
+   * O limite de desconto do vendedor (EC-2): o desconto do orçamento sobre a
+   * soma dos itens, com o acréscimo e as linhas acrescentadas fora dele
+   * (ALT-25, ORC-5). O /finish confere; a aprovação e o "Cobrar" da venda
+   * rápida, que não passam por ele, também (revisão de 23/10/2026).
+   */
+  private assertDiscountLimit(
+    quotation: DiscountInput,
+    maxDiscount: number | null | undefined,
+  ) {
+    if (maxDiscount === null || maxDiscount === undefined) return;
+    const originalValue =
+      quotation.quotationProduct?.reduce(
+        (sum, product) => sum + (product.totalValue || 0),
+        0,
+      ) || quotation.totalValue;
+    // O acréscimo e as linhas acrescentadas ficam fora do limite de
+    // desconto (ALT-25, ORC-5): entram no que foi vendido, não no desconto
+    const extras =
+      quotation.quotationProduct?.reduce(
+        (sum, product) =>
+          sum + (product.addition || 0) + (product.linesTotal || 0),
+        0,
+      ) ?? 0;
+
+    let finalValue = quotation.quotationPayment?.finalValue;
+
+    if (!finalValue && quotation.quotationPayment?.discountTotal) {
+      finalValue =
+        quotation.totalValue - quotation.quotationPayment.discountTotal;
+    }
+
+    if (!finalValue) {
+      finalValue = calculateFinalValue(
+        quotation.totalValue,
+        quotation.quotationPayment?.discountValue ?? null,
+        quotation.quotationPayment?.discountType ?? null,
+      );
+    }
+    if (!originalValue) return;
+
+    const totalDiscount = originalValue + extras - finalValue;
+    // Arredonda antes de comparar: 10% de R$ 1.163,73 dá 10.000000000000002
+    // em ponto flutuante, e o checkout recusava um desconto de exatamente
+    // 10% com a mensagem "10.00% excede 10%". O mesmo valor arredondado vai
+    // na mensagem, para o texto nunca contradizer a comparação.
+    const discountPercentage =
+      Math.round(
+        ((totalDiscount / originalValue) * 100 + Number.EPSILON) * 100,
+      ) / 100;
+
+    if (discountPercentage > maxDiscount) {
+      throw new BadRequestException(
+        `O desconto aplicado (${discountPercentage.toFixed(2)}%) excede o limite máximo permitido para este vendedor (${maxDiscount}%).`,
+      );
+    }
+  }
+
   private async assertComposedReady(
     quotationId: string,
     action: 'concluir' | 'aprovar',
@@ -487,12 +563,21 @@ export class QuotationWorkflowService {
         companyId: true,
         status: true,
         quickSale: true,
+        totalValue: true,
         pendingSale: { select: { id: true } },
         client: { select: { status: true } },
         deliveryInfo: { select: { id: true } },
+        // O limite de desconto do vendedor do orçamento (EC-2)
+        seller: {
+          select: { sellerProfile: { select: { maxDiscount: true } } },
+        },
         quotationPayment: {
           select: {
             billing: true,
+            finalValue: true,
+            discountTotal: true,
+            discountValue: true,
+            discountType: true,
             _count: { select: { quotationInstallment: true } },
           },
         },
@@ -500,6 +585,9 @@ export class QuotationWorkflowService {
           select: {
             id: true,
             description: true,
+            totalValue: true,
+            addition: true,
+            linesTotal: true,
             product: { select: { name: true, isActive: true } },
             // O material de venda direta inativado trava como o produto
             material: { select: { name: true, active: true } },
@@ -574,6 +662,14 @@ export class QuotationWorkflowService {
       });
     }
     await this.assertComposedReady(quotationId, 'aprovar');
+    // O limite de desconto do vendedor vale aqui também: a venda rápida vai
+    // direto ao "Cobrar" ou ao caixa, sem o /finish. A importação não confere
+    if (options.creditCheck !== false) {
+      this.assertDiscountLimit(
+        current,
+        current.seller?.sellerProfile?.maxDiscount,
+      );
+    }
     // A venda rápida é paga no caixa, em nome do cliente de balcão: o
     // faturamento para o cliente confere o cadastro e o crédito na frente de
     // caixa (FC-4)
@@ -1477,52 +1573,7 @@ export class QuotationWorkflowService {
     }
 
     // Validação de desconto máximo
-    if (maxDiscount !== null && maxDiscount !== undefined) {
-      const originalValue =
-        quotation.quotationProduct?.reduce(
-          (sum, product) => sum + (product.totalValue || 0),
-          0,
-        ) || quotation.totalValue;
-      // O acréscimo e as linhas acrescentadas ficam fora do limite de
-      // desconto (ALT-25, ORC-5): entram no que foi vendido, não no desconto
-      const extras =
-        quotation.quotationProduct?.reduce(
-          (sum, product) =>
-            sum + (product.addition || 0) + (product.linesTotal || 0),
-          0,
-        ) ?? 0;
-
-      let finalValue = quotation.quotationPayment?.finalValue;
-
-      if (!finalValue && quotation.quotationPayment?.discountTotal) {
-        finalValue =
-          quotation.totalValue - quotation.quotationPayment.discountTotal;
-      }
-
-      if (!finalValue) {
-        finalValue = calculateFinalValue(
-          quotation.totalValue,
-          quotation.quotationPayment?.discountValue ?? null,
-          quotation.quotationPayment?.discountType ?? null,
-        );
-      }
-
-      const totalDiscount = originalValue + extras - finalValue;
-      // Arredonda antes de comparar: 10% de R$ 1.163,73 dá 10.000000000000002
-      // em ponto flutuante, e o checkout recusava um desconto de exatamente
-      // 10% com a mensagem "10.00% excede 10%". O mesmo valor arredondado vai
-      // na mensagem, para o texto nunca contradizer a comparação.
-      const discountPercentage =
-        Math.round(
-          ((totalDiscount / originalValue) * 100 + Number.EPSILON) * 100,
-        ) / 100;
-
-      if (discountPercentage > maxDiscount) {
-        throw new BadRequestException(
-          `O desconto aplicado (${discountPercentage.toFixed(2)}%) excede o limite máximo permitido para este vendedor (${maxDiscount}%).`,
-        );
-      }
-    }
+    this.assertDiscountLimit(quotation, maxDiscount);
 
     const finishedAt = new Date();
     const proposalValidity = quotation.series?.proposalValidity || 0;

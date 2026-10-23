@@ -294,6 +294,63 @@ describe('QuotationWorkflowService', () => {
       logError.mockRestore();
     });
 
+    // O limite de desconto do vendedor só era conferido no /finish: aprovar
+    // direto, ou o "Cobrar" da venda rápida, passava (revisão de 23/10/2026)
+    describe('limite de desconto do vendedor', () => {
+      const withDiscount = (finalValue: number) =>
+        currentQuotation({
+          totalValue: finalValue,
+          seller: { sellerProfile: { maxDiscount: 5 } },
+          quotationPayment: {
+            billing: 'ON_ORDER',
+            finalValue,
+            _count: { quotationInstallment: 1 },
+          },
+          quotationProduct: [
+            { id: 'item-1', totalValue: 10000, addition: 0, linesTotal: 0 },
+          ],
+        });
+
+      it('recusa aprovar com desconto acima do limite, sem abrir transação', async () => {
+        prisma.quotation.findUnique.mockImplementation(async (args) =>
+          args.select ? withDiscount(9000) : mockQuotation,
+        );
+
+        await expect(
+          service.approve(mockQuotationId, mockUserId),
+        ).rejects.toThrow(
+          'O desconto aplicado (10.00%) excede o limite máximo permitido para este vendedor (5%).',
+        );
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      });
+
+      it('aprova com desconto dentro do limite', async () => {
+        prisma.quotation.findUnique.mockImplementation(async (args) =>
+          args.select
+            ? withDiscount(9500)
+            : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
+        );
+
+        await expect(
+          service.approve(mockQuotationId, mockUserId),
+        ).resolves.toMatchObject({ id: mockOrderId });
+      });
+
+      it('a importação (creditCheck false) não confere o limite', async () => {
+        prisma.quotation.findUnique.mockImplementation(async (args) =>
+          args.select
+            ? withDiscount(9000)
+            : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
+        );
+
+        await expect(
+          service.approve(mockQuotationId, mockUserId, undefined, {
+            creditCheck: false,
+          }),
+        ).resolves.toMatchObject({ id: mockOrderId });
+      });
+    });
+
     it('aprova numa transação só: status, O.S., agenda e financeiro', async () => {
       const result = await service.approve(mockQuotationId, mockUserId);
 
