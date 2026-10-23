@@ -1,5 +1,6 @@
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateClientDto } from './create-client.dto';
+import { Transform } from 'class-transformer';
 import { IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -66,14 +67,17 @@ export class UpdateClientDto extends PartialType(CreateClientDto) {
   })
   financialNotes: string;
 
+  // "Sem responsável" chega como null ou "": os dois limpam o campo
+  @Transform(({ value }) => (value === '' ? null : value))
   @IsOptional()
   @IsUUID()
   @ApiProperty({
-    description: 'ID do responsável pelo cliente',
+    description: 'ID do responsável pelo cliente; null limpa',
     example: '123e4567-e89b-12d3-a456-426614174000',
     required: false,
+    nullable: true,
   })
-  responsibleId: string;
+  responsibleId?: string | null;
 
   @IsOptional()
   @IsUUID()

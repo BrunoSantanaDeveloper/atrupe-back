@@ -764,6 +764,11 @@ export class ClientService {
                 stateRegistration:
                   updateClientDto.general?.stateRegistration ?? undefined,
                 indicadorIE: updateClientDto.general?.indicadorIE ?? undefined,
+                // Responsável: ausente mantém; null (ou "") é "Sem responsável"
+                responsibleId:
+                  updateClientDto.responsibleId === undefined
+                    ? undefined
+                    : updateClientDto.responsibleId || null,
               },
             });
 

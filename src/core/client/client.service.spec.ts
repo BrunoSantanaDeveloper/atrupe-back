@@ -78,6 +78,9 @@ const prismaMock = {
   paymentCondition: {
     findMany: jest.fn(),
   },
+  employee: {
+    count: jest.fn(),
+  },
   $transaction: jest.fn(),
 };
 
@@ -544,6 +547,42 @@ describe('ClientService', () => {
       const updateCall = prismaMock.client.update.mock.calls[0][0];
       // finalStatus deve ser undefined (não alterar status INACTIVE)
       expect(updateCall.data.status).toBeUndefined();
+    });
+
+    // O PATCH não levava o responsável: nem trocava nem limpava (revisão de
+    // 23/10/2026). Ausente mantém; null ou "" é "Sem responsável"
+    it.each([
+      ['troca', 'emp-2', 'emp-2'],
+      ['limpa com null', null, null],
+      ['limpa com ""', '', null],
+      ['mantém quando não vem', undefined, undefined],
+    ])('responsável: %s', async (_case, responsibleId, expected) => {
+      const client = makeClient({ responsibleId: 'emp-1' });
+      prismaMock.client.findUnique
+        .mockResolvedValueOnce({ companyId: client.companyId })
+        .mockResolvedValueOnce(client)
+        .mockResolvedValueOnce({
+          ...client,
+          contacts: [],
+          address: [],
+          paymentConditions: [],
+        });
+      prismaMock.client.findFirst.mockResolvedValue(null);
+      prismaMock.employee.count.mockResolvedValue(1);
+      prismaMock.client.update.mockClear();
+      prismaMock.$transaction.mockImplementation(async (fn) => {
+        prismaMock.client.update.mockResolvedValue(client);
+        return fn(prismaMock);
+      });
+      prismaMock.paymentCondition.findMany.mockResolvedValue([]);
+
+      await service.update('client-1', {
+        general: { name: 'Empresa Teste', isBranch: false },
+        responsibleId,
+      } as any);
+
+      const updateCall = prismaMock.client.update.mock.calls[0][0];
+      expect(updateCall.data.responsibleId).toBe(expected);
     });
   });
 });
