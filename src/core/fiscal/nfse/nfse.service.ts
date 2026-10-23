@@ -1562,7 +1562,6 @@ export class NfseService {
       valorDeducoes,
       regimeEspecial,
       indicadorOperacao,
-      optanteSimples,
       regimeApuracaoIbsCbs,
       valoresIbsCbs,
       omitirAliquotaIss,
@@ -1704,17 +1703,21 @@ export class NfseService {
             // para o MEI, que não tem sublimite a ultrapassar.
             ...(config.emitCrt === 1 ? { regApTribSN: 1 } : {}),
             // regApIBSCBSSN: 1 = IBS e CBS apurados pelo SN, 2 = CBS pelo SN e
-            // IBS regular, 3 = ambos pelo regime regular. So' para optante.
+            // IBS regular, 3 = ambos pelo regime regular.
             //
-            // Mandar tambem fora do Simples (valor 3) foi testado em
-            // 20/10/2026 na Fenix (RPS 106 e 107) e piorou: o provedor escreveu
-            // <regApIBSCBSSN> dentro de <regTrib> e o Ambiente Nacional recusou
-            // com E1235 — "invalid child element regApIBSCBSSN; expected
-            // regApTribSN, regEspTrib". O campo e' da Reforma (NT 009) e nao
-            // existe no schema 1.01 que o ADN valida hoje. A frase ambigua do
-            // layout v8 ("Informar quando opSimpNac (OptSN) = 2, 3 ou 4") vale
-            // pelo dominio nacional: 2, 3 e 4 sao os optantes.
-            ...(optanteSimples ? { regApIBSCBSSN: regimeApuracaoIbsCbs } : {}),
+            // Vai sempre, inclusive fora do Simples (com 3, que e' a situacao
+            // de quem apura tudo pelo regime regular). A v8 condicionava o
+            // campo a "opSimpNac (OptSN) = 2, 3 ou 4", frase ambigua que nos
+            // fez omiti-lo; a **v9 (16/10/2026) removeu essa condicao**, e o
+            // suporte do provedor, no ticket 49872934516, pediu o envio de
+            // finNFSe e regApIBSCBSSN conforme a v9.
+            //
+            // Historico: enviar o campo em 20/10 (Fenix, RPS 106 e 107) fez o
+            // provedor escreve-lo dentro de <regTrib>, onde o schema 1.01 do
+            // ADN so' aceita regApTribSN e regEspTrib — E1235. Se a rejeicao
+            // voltar igual, o problema nao esta' no nosso envio: esta' no
+            // gerador do provedor emitindo campo da NT 009 num DPS 1.01.
+            regApIBSCBSSN: regimeApuracaoIbsCbs,
             // Campos da Reforma Tributária (Layout NFS-e RT v8). Omitidos
             // quando não informados — a nota continua saindo como antes.
             // Todos moram no grupo <IBSCBS> da DPS, que só é válido com
