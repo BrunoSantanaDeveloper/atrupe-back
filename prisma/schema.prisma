@@ -1112,6 +1112,10 @@ model CashRegister {
   openedByName   String?
   closedById     String?
   closedByName   String?
+  /// Fechado pelo sistema ao abrir o dia seguinte: o caixa ficou aberto sem
+  /// nenhum lançamento, e fecha com o fechamento igual à abertura (revisão de
+  /// 23/10/2026)
+  closedBySystem Boolean                  @default(false)
   /// O que foi contado na gaveta ou o saldo do extrato, em reais
   informed       Float?
   /// [{ at, by, reason }]: cada reabertura, com o motivo (ALT-7)

@@ -65,6 +65,11 @@ const MOVEMENT_SELECT = {
   },
 } satisfies Prisma.TransactionSelect;
 
+/** Quem fecha o caixa sem lançamento ao abrir o dia seguinte. */
+const SYSTEM_CLOSER = 'Sistema';
+const EMPTY_DAY_NOTE =
+  'Caixa sem lançamento: fechado pelo sistema ao abrir o dia seguinte';
+
 const DAY_SELECT = {
   id: true,
   number: true,
@@ -75,6 +80,7 @@ const DAY_SELECT = {
   openedByName: true,
   createdAt: true,
   closedByName: true,
+  closedBySystem: true,
   closingDate: true,
   informed: true,
   notes: true,
@@ -295,10 +301,12 @@ export class CashDayService {
       openedAt: row.createdAt.toISOString(),
       closedBy: row.closedByName ?? undefined,
       closedAt: row.closingDate?.toISOString(),
+      // "Caixa sem lançamento": fechado pelo sistema ao abrir o dia seguinte
+      closedBySystem: row.closedBySystem,
       informed: toCents(row.informed) ?? undefined,
       note: row.notes ?? undefined,
       reopenings: (row.reopenings as unknown[]) ?? [],
-      // Sem nenhum lançamento: não trava o dia seguinte (vira o caixa dele)
+      // Sem nenhum lançamento: não trava o dia seguinte (o sistema o fecha)
       untouched: !row.transactions.length,
       totals: dayTotals(opening, movements),
       movements,
@@ -471,7 +479,13 @@ export class CashDayService {
 
   /* -------------------------------------------------------- mudanças */
 
-  /** Abre o caixa da conta num dia (FC-14: dia anterior aberto trava). */
+  /**
+   * Abre o caixa da conta num dia (FC-14: dia anterior aberto trava). O
+   * anterior aberto sem nenhum lançamento, e que nunca foi fechado, não
+   * trava: o sistema o fecha com o fechamento igual à abertura, sem quebra,
+   * e o dia pedido abre (revisão de 23/10/2026; antes ele virava o caixa do
+   * dia novo, levando data, saldo e quem abriu).
+   */
   async open(companyId: string, dto: CashDayOpenDto, actor: CashActor) {
     const account = await this.prisma.bankAccount.findFirst({
       where: { id: dto.bankAccountId, companyId, isActive: true },
@@ -488,11 +502,11 @@ export class CashDayService {
     }
     const day = dto.date ?? dayOf(new Date());
     const range = dayRange(day);
-    const [sameDay, stuck, later] = await Promise.all([
+    const [sameDay, before, later] = await Promise.all([
       this.prisma.cashRegister.count({
         where: { bankAccountId: account.id, openingDate: range },
       }),
-      this.prisma.cashRegister.findFirst({
+      this.prisma.cashRegister.findMany({
         where: {
           bankAccountId: account.id,
           status: 'OPEN',
@@ -502,6 +516,8 @@ export class CashDayService {
         select: {
           id: true,
           openingDate: true,
+          openingBalance: true,
+          reopenings: true,
           _count: { select: { transactions: true } },
         },
       }),
@@ -511,10 +527,14 @@ export class CashDayService {
     ]);
     if (sameDay)
       throw new ConflictException('Esta conta já tem caixa nesse dia');
-    // O caixa aberto que nunca recebeu lançamento (o que o cadastro da
-    // empresa abre) não trava o dia: ele passa a ser o caixa pedido
-    const untouched = stuck && !stuck._count.transactions ? stuck : null;
-    if (stuck && !untouched) {
+    // Com lançamento, ou já fechado uma vez (reaberto), o anterior trava
+    const empty = before.filter(
+      (row) =>
+        !row._count.transactions &&
+        !((row.reopenings as unknown[]) ?? []).length,
+    );
+    const stuck = before.find((row) => !empty.includes(row));
+    if (stuck) {
       throw new ConflictException(
         `O caixa de ${brDay(dayOf(stuck.openingDate))} desta conta ainda está aberto. Feche-o antes de abrir outro dia`,
       );
@@ -524,48 +544,51 @@ export class CashDayService {
         'Esta conta já tem caixa depois desse dia: a abertura dele mudaria',
       );
     }
-    // A abertura é o saldo do caixa anterior da mesma conta (CX-3)
+    // A abertura é o saldo do caixa anterior da mesma conta (CX-3); o sem
+    // lançamento fecha com a própria abertura, que passa adiante
     const previous = await this.prisma.cashRegister.findFirst({
-      where: {
-        bankAccountId: account.id,
-        openingDate: { lt: range.gte },
-        ...(untouched ? { id: { not: untouched.id } } : {}),
-      },
+      where: { bankAccountId: account.id, openingDate: { lt: range.gte } },
       orderBy: { openingDate: 'desc' },
       select: { id: true },
     });
     const opening = previous
       ? await this.balanceOfDay(previous.id)
       : (toCents(account.openingBalance) ?? 0);
-    if (untouched) {
-      await this.prisma.cashRegister.update({
-        where: { id: untouched.id },
-        data: {
-          openingDate: new Date(range.gte.getTime() + 12 * 3600000),
-          openingBalance: toReais(opening),
-          openedById: actor.id,
-          openedByName: actor.name,
-        },
-      });
-      return this.detail(companyId, untouched.id);
-    }
     const last = await this.prisma.cashRegister.aggregate({
       where: { companyId },
       _max: { number: true },
     });
-    const created = await this.prisma.cashRegister.create({
-      data: {
-        companyId,
-        bankAccountId: account.id,
-        // O meio do dia no fuso da empresa: a data não escorrega
-        openingDate: new Date(range.gte.getTime() + 12 * 3600000),
-        openingBalance: toReais(opening),
-        status: 'OPEN',
-        number: (last._max.number ?? 0) + 1,
-        openedById: actor.id,
-        openedByName: actor.name,
-      },
-      select: { id: true },
+    const created = await this.prisma.$transaction(async (tx) => {
+      const closedAt = new Date();
+      for (const row of empty) {
+        await tx.cashRegister.update({
+          where: { id: row.id },
+          data: {
+            status: 'CLOSED',
+            closingDate: closedAt,
+            closedById: null,
+            closedByName: SYSTEM_CLOSER,
+            closedBySystem: true,
+            informed: row.openingBalance,
+            closingBalance: row.openingBalance,
+            notes: EMPTY_DAY_NOTE,
+          },
+        });
+      }
+      return tx.cashRegister.create({
+        data: {
+          companyId,
+          bankAccountId: account.id,
+          // O meio do dia no fuso da empresa: a data não escorrega
+          openingDate: new Date(range.gte.getTime() + 12 * 3600000),
+          openingBalance: toReais(opening),
+          status: 'OPEN',
+          number: (last._max.number ?? 0) + 1,
+          openedById: actor.id,
+          openedByName: actor.name,
+        },
+        select: { id: true },
+      });
     });
     return this.detail(companyId, created.id);
   }
@@ -756,6 +779,7 @@ export class CashDayService {
           closingDate: null,
           closedById: null,
           closedByName: null,
+          closedBySystem: false,
           reopenings: [
             ...((day.reopenings as unknown[]) ?? []),
             { at: new Date().toISOString(), by: actor.name, reason },
