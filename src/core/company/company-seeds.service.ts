@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createSectorBaseProducts } from 'src/seeds/sector-base-products';
 import {
   ClientKind,
   Prisma,
@@ -790,8 +791,10 @@ export class CompanySeedsService {
             productionStages.length > 0 ? productionStages : null,
           isStandard: true,
           imageUrl: productData.imageUrl,
-          allowEditValues: true,
-          allowEditDescription: true,
+          // Sem as liberações: o limite de desconto vale sobre o preço do
+          // cadastro; o que não está cadastrado vai pelo Produto base do setor
+          allowEditValues: false,
+          allowEditDescription: false,
         },
       });
 
@@ -823,8 +826,15 @@ export class CompanySeedsService {
       }
     }
 
+    const baseCount = await createSectorBaseProducts(
+      this.prisma,
+      companyId,
+      sectors,
+      categories,
+    );
+
     this.logger.log(
-      `${BASE_PRODUCTS.length} produtos padrão criados com sucesso!`,
+      `${BASE_PRODUCTS.length} produtos padrão e ${baseCount} produtos base criados com sucesso!`,
     );
   }
 
