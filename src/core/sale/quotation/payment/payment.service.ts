@@ -170,29 +170,6 @@ export class PaymentService {
                 where: { quotationPaymentId: updatedPayment.id },
               });
 
-              const installmentPaymentConditionIds = [
-                ...new Set(
-                  installments
-                    .map(
-                      (installmentData) =>
-                        installmentData.paymentConditionId ||
-                        paymentConditionId,
-                    )
-                    .filter((id): id is string => Boolean(id)),
-                ),
-              ];
-
-              const conditionConfigs =
-                installmentPaymentConditionIds.length > 0
-                  ? await prisma.paymentCondition.findMany({
-                      where: { id: { in: installmentPaymentConditionIds } },
-                    })
-                  : [];
-
-              const conditionConfigById = new Map(
-                conditionConfigs.map((condition) => [condition.id, condition]),
-              );
-
               // Prepare installments data for batch insert
               const installmentsData = installments
                 .filter(
@@ -202,14 +179,15 @@ export class PaymentService {
                 .map((installmentData) => {
                   const installmentPaymentConditionId =
                     installmentData.paymentConditionId || paymentConditionId;
-                  const conditionConfig = installmentPaymentConditionId
-                    ? conditionConfigById.get(installmentPaymentConditionId)
-                    : null;
-                  const additionalFee =
-                    conditionConfig?.costType === 'VALUE'
-                      ? installmentData.additionalFee || 0
-                      : ((installmentData.additionalFee || 0) / 100) *
-                        installmentData.amount;
+                  // O acréscimo vem do front já em dinheiro (centavos), para
+                  // qualquer tipo de taxa: em %, o front aplica a taxa da
+                  // venda em Nx sobre a parcela; em R$, o valor por parcela.
+                  // Antes, na condição em %, o valor era tratado como taxa e
+                  // multiplicado pela parcela: 3% de R$ 50,00 virava
+                  // R$ 0,03 ou R$ 25,00, conforme o que o front mandava.
+                  // Tudo o que lê o acréscimo depois (a receber, limite de
+                  // crédito, financeiro da venda) já o soma como dinheiro.
+                  const additionalFee = installmentData.additionalFee || 0;
 
                   return {
                     quotationPaymentId: updatedPayment.id,
