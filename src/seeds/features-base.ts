@@ -25,6 +25,17 @@ export const BASE_FEATURES = [
     price: 0,
     isActive: true,
   },
+  // Terceirizado avulso dentro do item do orçamento, já no START (T-5,
+  // 24/10/2026): terceirizar produção é comum na empresa pequena
+  {
+    key: 'outsourced_item',
+    name: 'Terceirizado avulso',
+    description:
+      'Lançar um terceirizado (fornecedor, custo e preço) dentro do item do orçamento',
+    category: 'quotations',
+    price: 0,
+    isActive: true,
+  },
   {
     key: 'quotation_quick_sale',
     name: 'Venda Rápida',

@@ -39,6 +39,10 @@ export class SalesSettingsService {
   }
 }
 
-/** O preço sugerido do terceirizado avulso, em centavos. */
+/**
+ * O preço sugerido do terceirizado avulso, em centavos: custo + acréscimo
+ * sobre o custo (T-5, 24/10/2026). R$ 200 com 45 % → R$ 290. Antes era
+ * custo ÷ (1 − %), que é margem sobre o preço, não o que o produto quer.
+ */
 export const outsourcedPrice = (cost: number, markup: number) =>
-  Math.round(cost / (1 - markup / 100));
+  Math.round(cost * (1 + markup / 100));

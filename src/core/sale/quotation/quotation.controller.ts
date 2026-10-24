@@ -96,6 +96,13 @@ const CREDIT_MONEY_FIELDS = [
   'requested',
 ];
 
+// O terceirizado avulso (LOOSE) existe já no START (T-5); processo e produto
+// do catálogo dentro do item pedem a composição
+const lineFeatures = (dto: ItemLineDto) =>
+  dto.kind === 'LOOSE'
+    ? ['outsourced_item', 'product_composition']
+    : 'product_composition';
+
 @ApiTags('Orçamentos')
 @UseGuards(JwtAuthGuard, BlockLevelGuard, PermissionsGuard)
 @ApiBearerAuth()
@@ -719,7 +726,7 @@ export class QuotationController {
     await this.validateOwnership(id, req.user, 'edit');
     await this.planControlService.enforceFeature(
       req.user.companyId,
-      'product_composition',
+      lineFeatures(dto),
     );
     return this.lines.preview(
       id,
@@ -742,7 +749,7 @@ export class QuotationController {
     await this.validateItemEdit(id, req.user);
     await this.planControlService.enforceFeature(
       req.user.companyId,
-      'product_composition',
+      lineFeatures(dto),
     );
     return this.lines.add(
       id,

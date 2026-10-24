@@ -169,7 +169,7 @@ describe('QuotationLinesService', () => {
     expect(prisma.quotationItemLine.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          price: 36364,
+          price: 29000, // R$ 200 + 45 % sobre o custo (T-5)
           cost: 20000,
           sector: 'Terceirizado · Letras & Cia',
         }),

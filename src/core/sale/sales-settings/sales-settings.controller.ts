@@ -27,11 +27,11 @@ export class SalesSettingsController {
     return this.service.get(req.user.companyId);
   }
 
-  // O terceirizado avulso existe do LITE em diante, com a composição
+  // O terceirizado avulso existe já no START (T-5); a composição também o tem
   @Put()
   @HasPermission('edit', 'sales_settings:series')
-  @RequiresFeature('product_composition')
-  @ApiOperation({ summary: 'Muda o markup do terceirizado avulso' })
+  @RequiresFeature(['outsourced_item', 'product_composition'])
+  @ApiOperation({ summary: 'Muda o acréscimo sobre o custo do terceirizado' })
   update(@Req() req, @Body() dto: UpdateSalesSettingsDto) {
     return this.service.update(req.user.companyId, dto);
   }

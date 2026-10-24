@@ -12,6 +12,8 @@
 const startFeatures = [
   'sectors_configuration',
   'can_bill_on_delivery_and_checkout',
+  // Terceirizado avulso dentro do item (T-5, 24/10/2026)
+  'outsourced_item',
 ];
 
 const liteFeatures = [
