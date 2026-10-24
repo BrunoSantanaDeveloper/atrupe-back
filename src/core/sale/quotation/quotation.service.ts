@@ -155,6 +155,11 @@ export class QuotationService {
     return this.workflowService.approve(quotationId, userId, approvedAt);
   }
 
+  /** O terceirizado abaixo do custo só o administrador aprova (T-5). */
+  async assertOutsourcedAboveCost(quotationId: string, isAdmin?: boolean) {
+    return this.workflowService.assertOutsourcedAboveCost(quotationId, isAdmin);
+  }
+
   reprocessApproval(
     quotationId: string,
     userId?: string,

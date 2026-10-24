@@ -1,14 +1,14 @@
 import {
+  IsArray,
   IsBoolean,
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
-  IsArray,
-  ValidateNested,
-  IsNumber,
   Min,
-  IsNotEmpty,
-  IsEnum,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -159,6 +159,26 @@ export class CreateProductItemDto {
 }
 
 export class CreateProductDto {
+  // Produto terceirizado (T-5, 24/10/2026): comprado de fornecedor e
+  // revendido; a venda aprovada gera a conta a pagar ao fornecedor
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({ required: false, example: false })
+  isOutsourced?: boolean;
+
+  // Custo do fornecedor por unidade de venda, na base do unitCost do item
+  @IsOptional()
+  @IsNumber()
+  @Min(0, { message: 'Informe o custo do fornecedor' })
+  @ApiProperty({ required: false, example: 0.00004 })
+  outsourcedCost?: number | null;
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true, message: 'Fornecedor inválido' })
+  @ApiProperty({ required: false, type: [String] })
+  supplierIds?: string[];
+
   @IsUUID()
   @IsOptional()
   @ApiProperty({

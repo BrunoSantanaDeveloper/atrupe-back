@@ -1010,43 +1010,27 @@ export class QuotationWorkflowService {
   }
 
   /**
-   * O custo do terceirizado avulso vira conta a pagar ao fornecedor (T-3):
-   * uma por linha, parcela única em 30 dias, como a da entrega. Com as
-   * contas já criadas, fica como está.
+   * O custo do terceirizado vira conta a pagar ao fornecedor (T-3, T-5):
+   * uma por linha avulsa e uma por item de produto terceirizado, parcela
+   * única em 30 dias, como a da entrega. Com as contas já criadas, fica
+   * como está.
    */
   private async ensureOutsourcedPayables(quotationId: string): Promise<void> {
     const existing = await this.prisma.payable.count({
       where: { quotationId, financialType: OUTSOURCED },
     });
     if (existing) return;
-    const lines = await this.prisma.quotationItemLine.findMany({
-      where: {
-        kind: 'LOOSE',
-        cost: { gt: 0 },
-        quotationProduct: { quotationId },
-      },
+    const quotation = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
       select: {
-        name: true,
-        cost: true,
-        supplierId: true,
-        supplierName: true,
-        quotationProduct: {
-          select: {
-            quotation: {
-              select: {
-                companyId: true,
-                quotationNumber: true,
-                series: { select: { code: true } },
-              },
-            },
-          },
-        },
+        companyId: true,
+        quotationNumber: true,
+        series: { select: { code: true } },
       },
-      orderBy: { createdAt: 'asc' },
     });
-    if (!lines.length) return;
-
-    const quotation = lines[0].quotationProduct.quotation;
+    if (!quotation) return;
+    const entries = await this.outsourcedCosts(quotationId);
+    if (!entries.length) return;
     const sale = [quotation.quotationNumber, quotation.series?.code]
       .filter(Boolean)
       .join('-');
@@ -1056,17 +1040,17 @@ export class QuotationWorkflowService {
       select: { id: true },
     });
     await this.prisma.$transaction(async (prisma) => {
-      for (const line of lines) {
+      for (const entry of entries) {
         const payable = await prisma.payable.create({
           data: {
             referenceDate: new Date(),
-            description: `Terceirizado da venda ${sale}: ${line.name}${line.supplierName ? ` (${line.supplierName})` : ''}`,
-            totalAmount: line.cost,
-            totalValue: line.cost,
+            description: `Terceirizado da venda ${sale}: ${entry.name}${entry.supplierName ? ` (${entry.supplierName})` : ''}`,
+            totalAmount: entry.cost,
+            totalValue: entry.cost,
             mainAdditionalFee: 0,
             installmentQty: 1,
             status: 'PENDING',
-            supplierId: line.supplierId,
+            supplierId: entry.supplierId,
             companyId: quotation.companyId,
             quotationId,
             financialType: OUTSOURCED,
@@ -1077,7 +1061,7 @@ export class QuotationWorkflowService {
             payableId: payable.id,
             installmentNumber: 1,
             dueDate: add(new Date(), { days: 30 }),
-            amount: line.cost,
+            amount: entry.cost,
             additionalFee: 0,
             paymentConditionId: null,
             bankAccountId: bankAccount?.id ?? null,
@@ -1087,6 +1071,96 @@ export class QuotationWorkflowService {
         });
       }
     });
+  }
+
+  /**
+   * O que a venda deve aos fornecedores: as linhas avulsas (custo informado
+   * na hora) e os produtos terceirizados do catálogo (custo do fornecedor
+   * por unidade × a medida vendida × a quantidade). A medida sai do item
+   * como foi vendido: preço ÷ preço por unidade; no produto por unidade, 1.
+   * Devolve também o preço, para a trava de venda abaixo do custo (T-5).
+   */
+  async outsourcedCosts(quotationId: string) {
+    const [lines, products] = await Promise.all([
+      this.prisma.quotationItemLine.findMany({
+        where: {
+          kind: 'LOOSE',
+          cost: { gt: 0 },
+          quotationProduct: { quotationId },
+        },
+        select: {
+          name: true,
+          cost: true,
+          price: true,
+          supplierId: true,
+          supplierName: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.quotationProduct.findMany({
+        where: { quotationId, product: { isOutsourced: true } },
+        select: {
+          id: true,
+          description: true,
+          quantity: true,
+          finalValue: true,
+          product: {
+            select: {
+              name: true,
+              outsourcedCost: true,
+              suppliers: {
+                take: 1,
+                orderBy: { name: 'asc' },
+                select: { id: true, name: true },
+              },
+            },
+          },
+          items: { select: { salePrice: true, unitCost: true } },
+        },
+      }),
+    ]);
+    const fromLines = lines.map((line) => ({
+      name: line.name,
+      cost: line.cost,
+      price: line.price as number | null,
+      supplierId: line.supplierId,
+      supplierName: line.supplierName,
+    }));
+    const fromProducts = products
+      .map((item) => {
+        const unitCost = item.product?.outsourcedCost ?? 0;
+        const measure =
+          (item.items ?? []).reduce(
+            (sum, row) =>
+              sum + (row.unitCost ? (row.salePrice ?? 0) / row.unitCost : 1),
+            0,
+          ) || 1;
+        const supplier = (item.product?.suppliers ?? [])[0];
+        return {
+          name: item.description || item.product?.name || 'Terceirizado',
+          cost: Math.round(unitCost * measure * (item.quantity || 1)),
+          price: (item.finalValue ?? 0) as number | null,
+          supplierId: supplier?.id ?? null,
+          supplierName: supplier?.name ?? null,
+        };
+      })
+      .filter((entry) => entry.cost > 0);
+    return [...fromLines, ...fromProducts];
+  }
+
+  /**
+   * O terceirizado nunca vende abaixo do custo (T-5, 24/10/2026): só o
+   * administrador aprova um item assim.
+   */
+  async assertOutsourcedAboveCost(quotationId: string, isAdmin?: boolean) {
+    if (isAdmin) return;
+    const below = (await this.outsourcedCosts(quotationId)).filter(
+      (entry) => entry.price !== null && entry.price < entry.cost,
+    );
+    if (!below.length) return;
+    throw new BadRequestException(
+      `O item "${below[0].name}" está abaixo do custo do terceirizado. Só o administrador aprova assim.`,
+    );
   }
 
   /**

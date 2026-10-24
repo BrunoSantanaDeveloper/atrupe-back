@@ -413,48 +413,49 @@ model Client {
 }
 
 model Supplier {
-  id                String                     @id @default(uuid())
-  legacyId          String?
-  name              String
-  email             String?
-  companyId         String
-  createdAt         DateTime                   @default(now())
-  status            ClientStatus               @default(ACTIVE)
-  updatedAt         DateTime?                  @updatedAt
-  birthdate         DateTime?
-  financialNotes    String?
-  nickname          String?
-  notes             String?
-  site              String?
-  activity          String?
-  cnpj              String?
-  corporateName     String?
-  cpf               String?
-  mobile            String?
-  phone             String?
-  rg                String?
-  tradeName         String?
-  type              ClientKind                 @default(PERSON)
-  blockClient       Boolean                    @default(false)
-  categoryId        String?
-  maxValue          Float?
-  minValue          Float?
-  isBranch          Boolean                    @default(false)
-  isImported        Boolean                    @default(false)
-  stateRegistration String? // IE (Inscrição Estadual)
-  indicadorIE       Int?                       @default(9) // 1=Contribuinte ICMS, 2=Isento, 9=Não contribuinte
-  address           Address[]
-  client            Client[]
-  commission        Commission[]
-  contacts          Contact[]
-  deliveryInfo      DeliveryInfo[]
-  payable           Payable[]
-  receivable        Receivable[]
-  scheduledExpense  ScheduledExpense[]
-  paymentConditions SupplierPaymentCondition[]
-  quotationLines    QuotationItemLine[]
-  company           Company                    @relation(fields: [companyId], references: [id])
-  category          Category?                  @relation("SupplierToCategory", fields: [categoryId], references: [id])
+  id                 String                     @id @default(uuid())
+  legacyId           String?
+  name               String
+  email              String?
+  companyId          String
+  createdAt          DateTime                   @default(now())
+  status             ClientStatus               @default(ACTIVE)
+  updatedAt          DateTime?                  @updatedAt
+  birthdate          DateTime?
+  financialNotes     String?
+  nickname           String?
+  notes              String?
+  outsourcedProducts Product[]                  @relation("ProductSuppliers")
+  site               String?
+  activity           String?
+  cnpj               String?
+  corporateName      String?
+  cpf                String?
+  mobile             String?
+  phone              String?
+  rg                 String?
+  tradeName          String?
+  type               ClientKind                 @default(PERSON)
+  blockClient        Boolean                    @default(false)
+  categoryId         String?
+  maxValue           Float?
+  minValue           Float?
+  isBranch           Boolean                    @default(false)
+  isImported         Boolean                    @default(false)
+  stateRegistration  String? // IE (Inscrição Estadual)
+  indicadorIE        Int?                       @default(9) // 1=Contribuinte ICMS, 2=Isento, 9=Não contribuinte
+  address            Address[]
+  client             Client[]
+  commission         Commission[]
+  contacts           Contact[]
+  deliveryInfo       DeliveryInfo[]
+  payable            Payable[]
+  receivable         Receivable[]
+  scheduledExpense   ScheduledExpense[]
+  paymentConditions  SupplierPaymentCondition[]
+  quotationLines     QuotationItemLine[]
+  company            Company                    @relation(fields: [companyId], references: [id])
+  category           Category?                  @relation("SupplierToCategory", fields: [categoryId], references: [id])
 
   @@unique([companyId, legacyId])
   @@map("suppliers")
@@ -1769,6 +1770,13 @@ model Product {
   /// Código do produto no sistema legado. Distingue o que a migração criou do
   /// que o cliente já tinha com o mesmo código.
   legacyId             String?
+  /// Produto terceirizado (T-5, 24/10/2026): comprado de fornecedor e
+  /// revendido; cada venda aprovada gera a conta a pagar ao fornecedor
+  isOutsourced         Boolean             @default(false)
+  /// Custo do fornecedor por unidade de venda, na mesma base do unitCost do
+  /// item (centavos por mm², mm, ml, un…)
+  outsourcedCost       Float?
+  suppliers            Supplier[]          @relation("ProductSuppliers")
   items                ProductItem[]
   category             Category            @relation(fields: [categoryId], references: [id])
   company              Company?            @relation(fields: [companyId], references: [id])
@@ -2931,6 +2939,8 @@ enum QuotationItemOrigin {
   PRODUCT
   COMPOSED
   MATERIAL
+  /// O serviço terceirizado avulso lançado como item (T-6)
+  OUTSOURCED
 }
 
 enum MaterialUnit {

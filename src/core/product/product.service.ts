@@ -55,6 +55,51 @@ export class ProductService {
     );
   }
 
+  /**
+   * O bloco do produto terceirizado (T-5): fornecedor obrigatório (um ou
+   * mais, da empresa) e custo do fornecedor por unidade; desligado, limpa
+   * os dois. Sem o campo no corpo, não mexe.
+   */
+  private async outsourcedData(
+    companyId: string | null | undefined,
+    dto: {
+      isOutsourced?: boolean;
+      outsourcedCost?: number | null;
+      supplierIds?: string[];
+    },
+    mode: 'create' | 'update',
+  ) {
+    if (dto.isOutsourced === undefined) return {};
+    if (!dto.isOutsourced) {
+      return {
+        isOutsourced: false,
+        outsourcedCost: null,
+        ...(mode === 'update' ? { suppliers: { set: [] } } : {}),
+      };
+    }
+    const ids = [...new Set(dto.supplierIds ?? [])];
+    if (!ids.length) {
+      throw new BadRequestException(
+        'Informe pelo menos um fornecedor do terceirizado',
+      );
+    }
+    if (!(Number(dto.outsourcedCost) > 0)) {
+      throw new BadRequestException('Informe o custo do fornecedor');
+    }
+    const found = await this.prisma.supplier.count({
+      where: { id: { in: ids }, ...(companyId ? { companyId } : {}) },
+    });
+    if (found !== ids.length) {
+      throw new NotFoundException('Fornecedor não encontrado');
+    }
+    const refs = ids.map((id) => ({ id }));
+    return {
+      isOutsourced: true,
+      outsourcedCost: Number(dto.outsourcedCost),
+      suppliers: mode === 'create' ? { connect: refs } : { set: refs },
+    };
+  }
+
   async create(createProductDto: CreateProductDto) {
     await this.assertRefsOfCompany(createProductDto.companyId, {
       categoryId: createProductDto.categoryId,
@@ -97,6 +142,11 @@ export class ProductService {
 
       const productionStages = createProductDto.productionStages || [];
 
+      const outsourced = await this.outsourcedData(
+        createProductDto.companyId,
+        createProductDto,
+        'create',
+      );
       // Criação do produto com tratamento para inserção condicional de itens
       const created = await this.prisma.product.create({
         data: {
@@ -112,6 +162,7 @@ export class ProductService {
             createProductDto.technicalDescription || undefined,
           allowEditDescription: createProductDto.allowEditDescription,
           allowEditValues: createProductDto.allowEditValues,
+          ...outsourced,
           imageUrl: createProductDto.imageUrl || undefined,
           imageSize: createProductDto.imageSize || undefined,
           items: {
@@ -179,6 +230,7 @@ export class ProductService {
             name: true,
             code: true,
             isActive: true,
+            isOutsourced: true,
             category: {
               select: {
                 id: true,
@@ -269,6 +321,7 @@ export class ProductService {
           salePrice,
           fiscalData: fiscalData || null,
           hasComposition: !!composition?._count.blocks,
+          isOutsourced: product.isOutsourced,
           compositionStatus: composition?._count.blocks
             ? composition.status
             : null,
@@ -315,6 +368,7 @@ export class ProductService {
             name: 'asc',
           },
         },
+        suppliers: { select: { id: true, name: true } },
       },
     });
 
@@ -444,6 +498,11 @@ export class ProductService {
         }
       }
 
+      const outsourced = await this.outsourcedData(
+        product.companyId,
+        updateProductDto,
+        'update',
+      );
       const items = updateProductDto.items?.map((item) => ({
         id: item.id,
         name: item.name,
@@ -534,6 +593,7 @@ export class ProductService {
           }),
           ...(updateProductDto.allowEditValues !== undefined && {
             allowEditValues: updateProductDto.allowEditValues,
+            ...outsourced,
           }),
           items: {
             upsert: itemsWithId?.map((item) => ({

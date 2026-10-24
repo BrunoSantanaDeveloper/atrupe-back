@@ -75,6 +75,10 @@ import { permissionDenied } from '../../auth/abac/permissions.guard';
 import { QuotationResultService } from './quotation-result.service';
 import { pdfDetailLevel } from './quotation-pdf.transformers';
 import { ItemLineDto } from './dto/item-line.dto';
+import {
+  AddOutsourcedItemDto,
+  PreviewOutsourcedItemDto,
+} from './dto/outsourced-item.dto';
 import { QuotationLinesService } from './quotation-lines.service';
 import {
   AddMaterialItemDto,
@@ -760,6 +764,54 @@ export class QuotationController {
   }
 
   /* --------------------------------------------------------------------
+   * O serviço terceirizado avulso como item do orçamento (T-6): nome,
+   * fornecedor, quantidade e custo; já no START (outsourced_item)
+   * ------------------------------------------------------------------ */
+
+  @Post(':id/add-outsourced/preview')
+  @HttpCode(200)
+  @HasPermission('edit', 'sale:quotation')
+  @ObservePermissions(false)
+  @ApiOperation({ summary: 'O preço sugerido do terceirizado avulso' })
+  async previewOutsourcedItem(
+    @Param('id') id: string,
+    @Body() dto: PreviewOutsourcedItemDto,
+    @Req() req,
+  ) {
+    await this.validateOwnership(id, req.user, 'edit');
+    await this.planControlService.enforceFeature(req.user.companyId, [
+      'outsourced_item',
+      'product_composition',
+    ]);
+    return this.lines.previewOutsourced(
+      id,
+      dto,
+      await canViewValues(req, this.abacService),
+    );
+  }
+
+  @Post(':id/add-outsourced')
+  @HasPermission('edit', 'sale:quotation')
+  @ObservePermissions(false)
+  @ApiOperation({ summary: 'Lança um serviço terceirizado como item' })
+  async addOutsourcedItem(
+    @Param('id') id: string,
+    @Body() dto: AddOutsourcedItemDto,
+    @Req() req,
+  ) {
+    await this.validateItemEdit(id, req.user);
+    await this.planControlService.enforceFeature(req.user.companyId, [
+      'outsourced_item',
+      'product_composition',
+    ]);
+    return this.lines.addOutsourced(
+      id,
+      dto,
+      await canViewValues(req, this.abacService),
+    );
+  }
+
+  /* --------------------------------------------------------------------
    * Resultado previsto da venda (ORC-8): tela de método, com permissão
    * própria (desligada no perfil de vendedor), valores e a base de custos.
    * O acesso fica no registro de atividade; a exportação, também no
@@ -986,6 +1038,11 @@ export class QuotationController {
       req.user?.isAdmin && body?.approvedAt
         ? new Date(body.approvedAt)
         : undefined;
+    // O terceirizado abaixo do custo só o administrador aprova (T-5)
+    await this.quotationService.assertOutsourcedAboveCost(
+      id,
+      !!req.user?.isAdmin,
+    );
     return this.quotationService.approve(id, req.user?.userId, approvedAt);
   }
 

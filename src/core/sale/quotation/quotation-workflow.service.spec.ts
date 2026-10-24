@@ -223,6 +223,9 @@ describe('QuotationWorkflowService', () => {
 
     const currentQuotation = (overrides: Record<string, unknown> = {}) => ({
       companyId: mockCompanyId,
+      // A conta do terceirizado descreve a venda pelo número e pela série
+      quotationNumber: 3352,
+      series: { code: 'V1' },
       status: QuotationStatus.DONE,
       quickSale: false,
       client: { status: 'ACTIVE' },

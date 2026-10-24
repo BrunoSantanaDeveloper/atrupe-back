@@ -17,6 +17,10 @@ import {
   outsourcedPrice,
 } from '../sales-settings/sales-settings.service';
 import { ItemLineDto } from './dto/item-line.dto';
+import {
+  AddOutsourcedItemDto,
+  PreviewOutsourcedItemDto,
+} from './dto/outsourced-item.dto';
 import { itemValue, recalculateQuotationTotal } from './quotation-totals';
 import { LINE_VIEW_SELECT } from './quotation.includes';
 
@@ -199,6 +203,84 @@ export class QuotationLinesService {
     const summary = await this.refreshItem(item.id);
     await this.afterItemChange(item.id);
     return omit({ line, item: summary }, values);
+  }
+
+  /* ------------------------------------- terceirizado como item (T-6) */
+
+  private async quotationCompany(quotationId: string) {
+    const quotation = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      select: { companyId: true },
+    });
+    if (!quotation) throw new NotFoundException('Orçamento não encontrado');
+    return quotation.companyId;
+  }
+
+  /** O preço sugerido do serviço avulso: custo + acréscimo sobre o custo. */
+  async previewOutsourced(
+    quotationId: string,
+    dto: PreviewOutsourcedItemDto,
+    values: boolean,
+  ) {
+    const companyId = await this.quotationCompany(quotationId);
+    const markup = await this.settings.outsourcedMarkupOf(companyId);
+    const suggestedPrice = outsourcedPrice(dto.cost, markup);
+    return omit({ markup, suggestedPrice }, values);
+  }
+
+  /**
+   * O serviço terceirizado avulso como item do orçamento (T-6): um item sem
+   * produto (origin OUTSOURCED) com uma linha avulsa guardando fornecedor,
+   * custo e preço, para a conta a pagar nascer na aprovação como a do
+   * terceirizado dentro do item. Só quantidade e custo unitário, sem medida.
+   */
+  async addOutsourced(
+    quotationId: string,
+    dto: AddOutsourcedItemDto,
+    values: boolean,
+  ) {
+    const companyId = await this.quotationCompany(quotationId);
+    const name = dto.name?.trim();
+    if (!name) bad('Informe o nome do serviço');
+    const supplier = await this.prisma.supplier.findFirst({
+      where: { id: dto.supplierId, companyId },
+      select: { id: true, name: true },
+    });
+    if (!supplier) throw new NotFoundException('Fornecedor não encontrado');
+    const markup = await this.settings.outsourcedMarkupOf(companyId);
+    const suggestedPrice = outsourcedPrice(dto.cost, markup);
+    // O preço digitado só vale de quem vê valores; os outros gravam o sugerido
+    const unitPrice =
+      values && dto.price !== undefined ? dto.price : suggestedPrice;
+    const quantity = dto.quantity || 1;
+    const item = await this.prisma.quotationProduct.create({
+      data: {
+        quotationId,
+        origin: 'OUTSOURCED',
+        description: name,
+        quantity,
+        // O valor fica na linha avulsa, por fora do desconto (linesTotal)
+        totalValue: 0,
+        finalValue: 0,
+        lines: {
+          create: {
+            kind: 'LOOSE',
+            name,
+            sector: `Terceirizado · ${supplier.name}`,
+            tags: ['terceirizado'],
+            supplierId: supplier.id,
+            supplierName: supplier.name,
+            price: unitPrice * quantity,
+            // Vira despesa no financeiro quando a venda acontece (T-3)
+            cost: dto.cost * quantity,
+          },
+        },
+      },
+      select: { id: true },
+    });
+    const summary = await this.refreshItem(item.id);
+    await this.afterItemChange(item.id);
+    return omit({ item: summary, suggestedPrice, markup }, values);
   }
 
   async remove(

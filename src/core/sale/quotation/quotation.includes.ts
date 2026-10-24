@@ -218,6 +218,8 @@ export const QUOTATION_PRODUCT_SELECT = {
       imageUrl: true,
       // Produto inativo no orçamento aberto (PAD-7) e a marca da composição
       isActive: true,
+      // A marca discreta do produto terceirizado (T-3, T-5)
+      isOutsourced: true,
       // As faixas de quantidade do produto, para o preço base (FQ-1, ALT-8)
       priceTiers: {
         where: { variationId: null },
