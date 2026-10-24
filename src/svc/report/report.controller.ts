@@ -181,6 +181,18 @@ export class ReportController {
     return this.reportService.getApprovedRejected(companyId, filters);
   }
 
+  // Perdas por motivo (24/10/2026): rejeições e cancelamentos do período
+  @Get('sales/losses-by-reason')
+  @HasAnyPermission({ action: 'view', resource: 'reports:sales' })
+  async getLossesByReason(
+    @Query() filters: SalesReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    await this.enforceSalesPermission(req, filters);
+    return this.reportService.getLossesByReason(companyId, filters);
+  }
+
   @Get('sales/quotations-origin')
   @HasAnyPermission({ action: 'view', resource: 'reports:sales' })
   async getQuotationsOrigin(

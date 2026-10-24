@@ -1061,9 +1061,16 @@ export class QuotationController {
       throw new BadRequestException('Invalid id');
     }
     await this.validateOwnership(id, req.user, 'edit');
-    // Rejeitar com motivo (cadastro de motivos) é recurso de plano; sem motivo
-    // é livre.
-    if (dto.reasonId) {
+    // O cadastro de motivos é recurso de plano (LITE). Com ele, o motivo é
+    // obrigatório (decisão do produto, 24/10/2026); sem ele, rejeita livre.
+    const hasReasons = await this.planControlService.hasFeature(
+      req.user.companyId,
+      'quotation_rejection_reasons',
+    );
+    if (hasReasons && !dto.reasonId) {
+      throw new BadRequestException('Informe o motivo da rejeição');
+    }
+    if (dto.reasonId && !hasReasons) {
       await this.planControlService.enforceFeature(
         req.user.companyId,
         'quotation_rejection_reasons',

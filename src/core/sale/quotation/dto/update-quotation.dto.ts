@@ -14,6 +14,8 @@ import {
   IsUUID,
   Min,
   ValidateNested,
+  ValidateIf,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
@@ -119,6 +121,28 @@ export class UpdateQuotationDto extends PartialType(CreateQuotationDto) {
     required: false,
   })
   tagId?: string;
+
+  // Acompanhamento comercial (24/10/2026)
+  @IsOptional()
+  @ValidateIf((o) => o.nextContactAt !== null)
+  @IsDateString()
+  @ApiProperty({
+    description: 'Próximo contato com o cliente (ISO); null limpa',
+    required: false,
+    nullable: true,
+  })
+  nextContactAt?: string | null;
+
+  @IsOptional()
+  @ValidateIf((o) => o.nextContactNote !== null)
+  @IsString()
+  @MaxLength(500)
+  @ApiProperty({
+    description: 'O que ficou combinado para o próximo contato; null limpa',
+    required: false,
+    nullable: true,
+  })
+  nextContactNote?: string | null;
 
   @IsOptional()
   @IsDateString()

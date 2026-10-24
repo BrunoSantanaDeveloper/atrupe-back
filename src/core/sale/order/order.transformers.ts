@@ -469,6 +469,7 @@ export function transformOrderToResponse(
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
     canceledAt: order.canceledAt,
+    cancelReason: (order as any).cancelReason ?? null,
     deliveredAt: order.deliveredAt,
     status: order.status,
     quotation: transformOrderQuotation(order.quotation, financialTableData),

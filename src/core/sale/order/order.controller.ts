@@ -256,8 +256,16 @@ export class OrderController {
     @Body() dto: CancelOrderDto,
     @Req() req,
   ) {
-    // Cancelar com motivo é recurso de plano; sem motivo é livre.
-    if (dto.reasonId) {
+    // O cadastro de motivos é recurso de plano (LITE). Com ele, o motivo é
+    // obrigatório (decisão do produto, 24/10/2026); sem ele, cancela livre.
+    const hasReasons = await this.planControlService.hasFeature(
+      req.user.companyId,
+      'service_order_cancellation_reason',
+    );
+    if (hasReasons && !dto.reasonId) {
+      throw new BadRequestException('Informe o motivo do cancelamento');
+    }
+    if (dto.reasonId && !hasReasons) {
       await this.planControlService.enforceFeature(
         req.user.companyId,
         'service_order_cancellation_reason',

@@ -1400,6 +1400,10 @@ model Quotation {
   approvedAt        DateTime?
   contactSourceId   String?
   tagId             String?
+  // Acompanhamento comercial (24/10/2026): quando retomar o contato e o que
+  // ficou combinado
+  nextContactAt     DateTime?
+  nextContactNote   String?
   quickSale         Boolean            @default(false)
   isImported        Boolean            @default(false)
   quotationNumber   Int?

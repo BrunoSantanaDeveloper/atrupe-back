@@ -316,6 +316,8 @@ export const QUOTATION_FIND_ONE_INCLUDE = {
   series: {
     select: QUOTATION_SERIES_SELECT,
   },
+  // Motivo da rejeição (24/10/2026)
+  reasons: { select: { id: true, reason: true } },
   order: {
     select: QUOTATION_ORDER_SELECT,
   },

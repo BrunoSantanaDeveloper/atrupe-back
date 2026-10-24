@@ -276,6 +276,8 @@ export const ORDER_QUOTATION_INCLUDE = {
  * Usado para carregar todos os dados necessários para a tela de detalhes do pedido
  */
 export const ORDER_FIND_ONE_INCLUDE = {
+  // Motivo do cancelamento (24/10/2026)
+  cancelReason: { select: { id: true, reason: true } },
   quotation: {
     include: ORDER_QUOTATION_INCLUDE,
   },

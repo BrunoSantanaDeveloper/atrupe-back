@@ -229,6 +229,79 @@ export class ReportService {
    * fora — uma venda aprovada em 31/08 não aparecia no relatório de agosto.
    * `parseProjectDayBoundary` monta início/fim do dia no fuso da operação.
    */
+  /**
+   * Perdas por motivo (24/10/2026): os orçamentos rejeitados e as vendas
+   * canceladas no período, agrupados pelo motivo informado. Sem motivo (START
+   * ou registro antigo) entra como "Sem motivo". Valor em centavos, como o
+   * orçamento.
+   */
+  async getLossesByReason(companyId: string, filters: SalesReportFilterDto) {
+    const { startDate, endDate } = this.getDateRange(filters);
+    const base = this.getSalesQuotationFilters(companyId, filters);
+    const group = (
+      rows: {
+        reason: { id: string; reason: string } | null;
+        value: number;
+      }[],
+    ) => {
+      const map = new Map<
+        string,
+        { id: string | null; reason: string; count: number; value: number }
+      >();
+      for (const row of rows) {
+        const key = row.reason?.id ?? 'none';
+        const entry = map.get(key) ?? {
+          id: row.reason?.id ?? null,
+          reason: row.reason?.reason ?? 'Sem motivo',
+          count: 0,
+          value: 0,
+        };
+        entry.count += 1;
+        entry.value += Math.round(row.value || 0);
+        map.set(key, entry);
+      }
+      return [...map.values()].sort((a, b) => b.count - a.count);
+    };
+
+    const [rejected, canceled] = await Promise.all([
+      this.prisma.quotation.findMany({
+        where: {
+          ...base,
+          isActive: true,
+          status: 'REJECTED',
+          updatedAt: { gte: startDate, lte: endDate },
+        },
+        select: {
+          totalValue: true,
+          reasons: { select: { id: true, reason: true } },
+        },
+      }),
+      this.prisma.order.findMany({
+        where: {
+          status: 'CANCELED',
+          canceledAt: { gte: startDate, lte: endDate },
+          quotation: base,
+        },
+        select: {
+          cancelReason: { select: { id: true, reason: true } },
+          quotation: { select: { totalValue: true } },
+        },
+      }),
+    ]);
+
+    return {
+      rejections: group(
+        rejected.map((q) => ({ reason: q.reasons, value: q.totalValue })),
+      ),
+      cancellations: group(
+        canceled.map((o) => ({
+          reason: o.cancelReason,
+          value: o.quotation?.totalValue ?? 0,
+        })),
+      ),
+    };
+  }
+
   private getDateRange(filters: SalesReportFilterDto) {
     const now = new Date();
     const startDate = filters.startDate

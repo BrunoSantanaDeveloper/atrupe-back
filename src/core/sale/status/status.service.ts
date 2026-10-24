@@ -28,7 +28,19 @@ export class StatusService {
       }),
       this.prisma.quotationTag.findMany({
         where: { isActive: true, companyId },
-        select: { id: true, title: true, color: true },
+        select: {
+          id: true,
+          title: true,
+          color: true,
+          // Quantos orçamentos em negociação têm o marcador (24/10/2026)
+          _count: {
+            select: {
+              quotation: {
+                where: { isActive: true, status: { in: ['OPEN', 'DONE'] } },
+              },
+            },
+          },
+        },
         orderBy: { title: 'asc' },
         skip,
         take: +limit,
@@ -39,7 +51,12 @@ export class StatusService {
       total,
       page,
       limit,
-      quotationTags,
+      quotationTags: quotationTags.map((tag) => ({
+        id: tag.id,
+        title: tag.title,
+        color: tag.color,
+        quotations: tag._count.quotation,
+      })),
     };
   }
 

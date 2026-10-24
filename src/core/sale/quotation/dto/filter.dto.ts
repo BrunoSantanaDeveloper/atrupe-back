@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  IsIn,
 } from 'class-validator';
 import { QuotationStatus } from '@prisma/client';
 import { BaseFilterDTO } from '../../../../shared/dto/filter.dto';
@@ -82,4 +83,23 @@ export class FilterQuotationDto extends BaseFilterDTO {
     required: false,
   })
   clientId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description:
+      'Marcador de acompanhamento (status de orçamento) para filtrar',
+    required: false,
+  })
+  tagId?: string;
+
+  @IsOptional()
+  @IsIn(['due'])
+  @ApiProperty({
+    description:
+      '"due": orçamentos em Digitação ou Aguardando com próximo contato até hoje (a lista "para retomar")',
+    required: false,
+    enum: ['due'],
+  })
+  nextContact?: 'due';
 }

@@ -377,10 +377,21 @@ export class QuotationCrudService {
       const status = isOverdue ? 'OVERDUE' : quotation.status;
       statusCount[status]++;
     });
+    // "Para retomar hoje": próximo contato até o fim de hoje, em negociação
+    const retomar = await this.prisma.quotation.count({
+      where: {
+        companyId,
+        isActive: true,
+        status: { in: ['OPEN', 'DONE'] },
+        nextContactAt: { lte: endOfDay(new Date()) },
+        ...(sellerId ? { sellerId } : {}),
+      },
+    });
 
     const total = Object.values(statusCount).reduce((acc, cur) => acc + cur, 0);
 
     return {
+      retomar,
       ...statusCount,
       TOTAL: total,
     };
@@ -469,6 +480,20 @@ export class QuotationCrudService {
         where = { ...where, clientId: dto.clientId };
       }
 
+      if (dto.tagId) {
+        where = { ...where, tagId: dto.tagId };
+      }
+
+      // "Para retomar": próximo contato até o fim de hoje, com o orçamento
+      // ainda em negociação (acompanhamento comercial, 24/10/2026)
+      if (dto.nextContact === 'due') {
+        where = {
+          ...where,
+          status: { in: ['OPEN', 'DONE'] },
+          nextContactAt: { lte: endOfDay(new Date()) },
+        };
+      }
+
       if (dto.date) {
         const date = add(new Date(dto.date), { days: 1 });
         where = {
@@ -503,6 +528,7 @@ export class QuotationCrudService {
           where,
           include: {
             tag: true,
+            reasons: { select: { id: true, reason: true } },
             series: true,
             client: true,
             order: {
@@ -576,6 +602,15 @@ export class QuotationCrudService {
                 }
               : null,
             quickSale: quotation.quickSale || false,
+            // Motivo da rejeição e acompanhamento (24/10/2026)
+            rejectionReason: (quotation as any).reasons
+              ? {
+                  id: (quotation as any).reasons.id,
+                  reason: (quotation as any).reasons.reason,
+                }
+              : null,
+            nextContactAt: (quotation as any).nextContactAt ?? null,
+            nextContactNote: (quotation as any).nextContactNote ?? null,
             serie: quotation.series
               ? {
                   id: quotation.series.id,
@@ -713,6 +748,12 @@ export class QuotationCrudService {
       });
 
       const updateData: any = { ...updateQuotationDto };
+      // Próximo contato: data ISO vira Date; null limpa
+      if (updateQuotationDto.nextContactAt !== undefined) {
+        updateData.nextContactAt = updateQuotationDto.nextContactAt
+          ? new Date(updateQuotationDto.nextContactAt)
+          : null;
+      }
       if (account) {
         updateData.companyId = account.companyId;
         updateData.subCompanyId = account.subCompanyId;

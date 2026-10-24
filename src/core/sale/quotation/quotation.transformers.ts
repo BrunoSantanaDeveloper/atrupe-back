@@ -361,6 +361,15 @@ export function transformQuotationToResponse(
     totalValue: quotation.totalValue,
     contactSource: quotation.contactSource,
     quickSale: quotation.quickSale || false,
+    // Motivo da rejeição e acompanhamento comercial (24/10/2026)
+    rejectionReason: (quotation as any).reasons
+      ? {
+          id: (quotation as any).reasons.id,
+          reason: (quotation as any).reasons.reason,
+        }
+      : null,
+    nextContactAt: (quotation as any).nextContactAt ?? null,
+    nextContactNote: (quotation as any).nextContactNote ?? null,
     serie: transformSeries(quotation.series, quotation.quotationNumber),
     seller: transformSeller(quotation.seller),
     contact: transformContact(quotation.contact),
