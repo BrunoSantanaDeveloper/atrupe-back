@@ -1,5 +1,7 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsIn,
   IsUUID,
   IsBoolean,
   IsOptional,
@@ -37,6 +39,15 @@ export class UpdateCreditLimitTypeDto {
   @IsOptional()
   @IsBoolean()
   applyPaymentMethodsToAll?: boolean;
+
+  @ApiPropertyOptional({
+    enum: ['PROSPECT', 'ACTIVE', 'ALL'],
+    description:
+      'A quem o "aplicar" vale: pré-cadastros (PROSPECT) ou cadastros aprovados (ACTIVE). Sem o campo ou com ALL, todos menos os inativos.',
+  })
+  @IsOptional()
+  @IsIn(['PROSPECT', 'ACTIVE', 'ALL'])
+  applyTo?: 'PROSPECT' | 'ACTIVE' | 'ALL';
 
   @IsOptional()
   @ValidateNested({ each: true })

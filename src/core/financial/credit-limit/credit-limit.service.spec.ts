@@ -211,11 +211,35 @@ describe('CreditLimitService', () => {
 
       await service.update(dto as any);
 
-      // Should apply to all clients of PERSON type
+      // Vale para os clientes PERSON menos os inativos (sem applyTo = todos)
       expect(prisma.client.updateMany).toHaveBeenCalledTimes(2); // min + max
       expect(prisma.client.updateMany).toHaveBeenCalledWith({
-        where: { companyId: mockCompanyId, type: 'PERSON' },
+        where: {
+          companyId: mockCompanyId,
+          type: 'PERSON',
+          status: { not: 'INACTIVE' },
+        },
         data: { minValue: 300 },
+      });
+    });
+
+    it('applyTo restringe aos pré-cadastros ou aos aprovados', async () => {
+      prisma.creditLimitDefault.findFirst.mockResolvedValue({
+        id: 'cl-1',
+        type: 'COMPANY',
+        paymentConditions: [],
+      });
+      prisma.creditLimitDefault.update.mockResolvedValue({ id: 'cl-1' });
+      prisma.client.updateMany.mockResolvedValue({ count: 3 });
+
+      await service.update({
+        companyId: mockCompanyId,
+        company: { minValue: 500, applyMinValueToAll: true, applyTo: 'ACTIVE' },
+      } as any);
+
+      expect(prisma.client.updateMany).toHaveBeenCalledWith({
+        where: { companyId: mockCompanyId, type: 'COMPANY', status: 'ACTIVE' },
+        data: { minValue: 500 },
       });
     });
   });

@@ -142,11 +142,18 @@ export class CreditLimitService {
   ) {
     const { applyMinValueToAll, applyMaxValueToAll, applyPaymentMethodsToAll } =
       data;
+    // A quem o "aplicar" vale (decisão do produto, 24/10/2026): pré-cadastros
+    // ou cadastros aprovados; sem o campo, todos — e os inativos nunca
+    // recebem, sempre do tipo da aba
+    const scope =
+      data.applyTo && data.applyTo !== 'ALL'
+        ? { status: data.applyTo }
+        : { status: { not: 'INACTIVE' as const } };
 
     // Atualizar minValue em todos os clientes do tipo
     if (applyMinValueToAll) {
       await this.prisma.client.updateMany({
-        where: { companyId, type },
+        where: { companyId, type, ...scope },
         data: { minValue: data.minValue },
       });
     }
@@ -154,7 +161,7 @@ export class CreditLimitService {
     // Atualizar maxValue em todos os clientes do tipo
     if (applyMaxValueToAll) {
       await this.prisma.client.updateMany({
-        where: { companyId, type },
+        where: { companyId, type, ...scope },
         data: { maxValue: data.maxValue },
       });
     }
@@ -162,7 +169,7 @@ export class CreditLimitService {
     // Atualizar métodos de pagamento em todos os clientes do tipo
     if (applyPaymentMethodsToAll) {
       const clients = await this.prisma.client.findMany({
-        where: { companyId, type },
+        where: { companyId, type, ...scope },
         include: { paymentConditions: true },
       });
 
