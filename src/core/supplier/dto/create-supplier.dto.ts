@@ -8,6 +8,7 @@ import {
   IsNumber,
   ValidateNested,
   IsUUID,
+  MaxLength,
 } from 'class-validator';
 import { ClientKind } from '@prisma/client';
 import { IsCpf } from '../../../helpers/validators/cpf';
@@ -135,7 +136,46 @@ class CreditLimitDto {
   blockClient: boolean;
 }
 
+// Dados de pagamento do fornecedor (26/10/2026): como pagar as contas a
+// pagar dele — Pix, banco, agência, conta, titular e o prazo/forma habitual
+export class SupplierPaymentDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  pixKey?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  bankName?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  bankAgency?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  bankAccount?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  accountHolder?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  paymentTerms?: string | null;
+}
+
 export class CreateSupplierDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SupplierPaymentDto)
+  payment?: SupplierPaymentDto;
+
   @IsOptional()
   @IsEnum(ClientKind)
   type: ClientKind;

@@ -51,6 +51,28 @@ export class SupplierService {
     );
   }
 
+  /** As colunas dos dados de pagamento, só as que vieram no corpo. */
+  private paymentData(payment?: {
+    pixKey?: string | null;
+    bankName?: string | null;
+    bankAgency?: string | null;
+    bankAccount?: string | null;
+    accountHolder?: string | null;
+    paymentTerms?: string | null;
+  }) {
+    if (!payment) return {};
+    const clean = (value?: string | null) =>
+      value === undefined ? undefined : value?.trim() || null;
+    return {
+      pixKey: clean(payment.pixKey),
+      bankName: clean(payment.bankName),
+      bankAgency: clean(payment.bankAgency),
+      bankAccount: clean(payment.bankAccount),
+      accountHolder: clean(payment.accountHolder),
+      paymentTerms: clean(payment.paymentTerms),
+    };
+  }
+
   async create(createDto: CreateSupplierDto) {
     await this.assertRefsOfCompany(createDto.companyId, {
       categoryId: createDto.general?.categoryId,
@@ -120,6 +142,7 @@ export class SupplierService {
             activity: createDto.general.activity,
             notes: createDto.general.notes,
             isBranch: createDto.general.isBranch || false,
+            ...this.paymentData(createDto.payment),
             // minValue: createDto.creditLimit.minValue,
             // maxValue: createDto.creditLimit.maxValue,
             // blockClient: createDto.creditLimit.blockClient,
@@ -395,6 +418,14 @@ export class SupplierService {
       type: supplier.type,
       status: supplier.status,
       createdAt: supplier.createdAt,
+      payment: {
+        pixKey: supplier.pixKey,
+        bankName: supplier.bankName,
+        bankAgency: supplier.bankAgency,
+        bankAccount: supplier.bankAccount,
+        accountHolder: supplier.accountHolder,
+        paymentTerms: supplier.paymentTerms,
+      },
       general: {
         name: supplier.name,
         email: supplier.email,
@@ -528,6 +559,7 @@ export class SupplierService {
             minValue: updateSupplierDto.creditLimit?.minValue,
             maxValue: updateSupplierDto.creditLimit?.maxValue,
             blockClient: updateSupplierDto.creditLimit?.blockClient,
+            ...this.paymentData(updateSupplierDto.payment),
             isBranch: updateSupplierDto.general?.isBranch,
           },
         });

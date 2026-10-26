@@ -444,6 +444,15 @@ model Supplier {
   isImported         Boolean                    @default(false)
   stateRegistration  String? // IE (Inscrição Estadual)
   indicadorIE        Int?                       @default(9) // 1=Contribuinte ICMS, 2=Isento, 9=Não contribuinte
+  /// Dados de pagamento do fornecedor (decisão do produto, 26/10/2026):
+  /// para pagar as contas a pagar, inclusive as do terceirizado
+  pixKey             String?
+  bankName           String?
+  bankAgency         String?
+  bankAccount        String?
+  accountHolder      String?
+  /// Prazo e forma habitual, em texto ("30 dias, boleto")
+  paymentTerms       String?
   address            Address[]
   client             Client[]
   commission         Commission[]
