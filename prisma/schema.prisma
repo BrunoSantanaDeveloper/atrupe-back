@@ -1772,6 +1772,10 @@ model Product {
   sectorId             String
   allowEditDescription Boolean             @default(true)
   allowEditValues      Boolean             @default(true)
+  /// Quantidade mínima na unidade comercial do produto (0,5 m², 3 un),
+  /// 27/10/2026: abaixo dela o item é cobrado pelo mínimo; por unidade, o
+  /// item nasce com ela. Nulo = sem mínimo
+  minQuantity          Float?
   imageUrl             String?
   imageSize            String?
   technicalDescription String?

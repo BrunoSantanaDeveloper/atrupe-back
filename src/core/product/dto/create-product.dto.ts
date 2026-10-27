@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   IsNumber,
   IsOptional,
+  IsPositive,
   IsString,
   IsUUID,
   Min,
@@ -273,6 +274,16 @@ export class CreateProductDto {
     required: false,
   })
   allowEditValues: boolean = true;
+
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  @ApiPropertyOptional({
+    description:
+      'Quantidade mínima na unidade comercial do produto (0,5 m², 3 un): abaixo dela o item é cobrado pelo mínimo; nulo = sem mínimo',
+    example: 0.5,
+  })
+  minQuantity?: number | null;
 
   @IsBoolean()
   @ApiPropertyOptional({

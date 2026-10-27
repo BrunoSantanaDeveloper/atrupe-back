@@ -162,6 +162,7 @@ export class ProductService {
             createProductDto.technicalDescription || undefined,
           allowEditDescription: createProductDto.allowEditDescription,
           allowEditValues: createProductDto.allowEditValues,
+          minQuantity: createProductDto.minQuantity ?? null,
           ...outsourced,
           imageUrl: createProductDto.imageUrl || undefined,
           imageSize: createProductDto.imageSize || undefined,
@@ -597,6 +598,9 @@ export class ProductService {
           // O terceirizado vale por si: dentro do bloco acima, só gravava
           // quando o corpo trazia também o allowEditValues
           ...outsourced,
+          ...(updateProductDto.minQuantity !== undefined && {
+            minQuantity: updateProductDto.minQuantity,
+          }),
           items: {
             upsert: itemsWithId?.map((item) => ({
               where: { id: item.id },
