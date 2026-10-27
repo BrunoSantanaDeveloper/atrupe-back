@@ -132,8 +132,8 @@ export class QuotationController {
   ) {}
 
   /**
-   * Mexer nos itens: o dono do orçamento, e a venda rápida que já está no
-   * caixa (enviada ou cobrada) não muda mais (FC-11).
+   * Mexer nos itens: o dono do orçamento, e a venda que já está no caixa
+   * (enviada ou cobrada) não muda mais (FC-11).
    */
   private async validateItemEdit(
     quotationId: string,
@@ -282,7 +282,8 @@ export class QuotationController {
     return this.quickSale.create(req.user);
   }
 
-  // Cobrar na hora, só à vista (VR-5): recebe e aprova junto
+  // Cobrar na hora, só à vista (VR-5): recebe e aprova junto. Vale para
+  // qualquer orçamento cuja série fatura na frente de caixa (26/10/2026)
   @Post(':id/quick-sale/charge')
   @HasAnyPermission(
     { action: 'create', resource: 'sale:order' },
@@ -291,7 +292,7 @@ export class QuotationController {
   @ObservePermissions(false)
   @RequireUnblocked()
   @MoneyFields('total', 'paid', 'amount')
-  @ApiOperation({ summary: 'Cobra a venda rápida na hora e aprova (VR-5)' })
+  @ApiOperation({ summary: 'Cobra a venda na hora e aprova (VR-5)' })
   @ApiParam({ name: 'id', description: 'ID do orçamento' })
   async chargeQuickSale(
     @Param('id') id: string,
@@ -301,10 +302,6 @@ export class QuotationController {
     if (!isUUID(id, '4'))
       throw new NotFoundException('Orçamento não encontrado');
     await this.validateOwnership(id, req.user, 'edit');
-    await this.planControlService.enforceFeature(
-      req.user.companyId,
-      'quotation_quick_sale',
-    );
     return this.quickSale.charge(
       id,
       req.user,
@@ -319,7 +316,7 @@ export class QuotationController {
   @HasPermission('view', 'sale:quotation')
   @ObservePermissions(false)
   @MoneyFields('total', 'paid', 'amount')
-  @ApiOperation({ summary: 'A situação da venda rápida no caixa (FC-11)' })
+  @ApiOperation({ summary: 'A situação da venda no caixa (FC-11)' })
   @ApiParam({ name: 'id', description: 'ID do orçamento' })
   async cashStatus(@Param('id') id: string, @Req() req) {
     if (!isUUID(id, '4'))

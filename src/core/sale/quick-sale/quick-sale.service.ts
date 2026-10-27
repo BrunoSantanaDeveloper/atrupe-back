@@ -15,7 +15,6 @@ import { QuotationWorkflowService } from '../quotation/quotation-workflow.servic
 import { QuickSaleSettingsDto } from './dto/quick-sale.dto';
 import { ReceiptDto } from '../../financial/cash-control/dto/receipt-part.dto';
 import {
-  METHOD_SETTING,
   recordSaleReceipt,
   resolveParts,
   roundingOf,
@@ -26,8 +25,8 @@ import {
   actorOfUser,
 } from '../../financial/cash-control/cash-ledger';
 import {
+  NOT_AT_CHECKOUT,
   QUICK_SALE_ALREADY_SENT,
-  quickSaleMode,
   saleReference,
   saleTotalCents,
 } from './quick-sale.rules';
@@ -244,19 +243,8 @@ export class QuickSaleService {
     ) {
       bad('O sinal precisa ser um percentual entre 1% e 100%');
     }
-    if (dto.payment === 'CASH_ONLY' && !dto.cashMethods.length) {
-      bad('Escolha ao menos uma forma para cobrar na hora');
-    }
-    // Enviar ao caixa só com a frente de caixa no plano: senão a venda
-    // ficaria numa fila que ninguém atende
-    if (
-      dto.payment === 'POS' &&
-      !(await this.planControl.hasFeature(companyId, 'pdv_screen'))
-    ) {
-      bad(
-        'A frente de caixa não está no seu plano: cobre a venda rápida na hora',
-      );
-    }
+    // `payment` e `cashMethods` ficam gravados por compatibilidade, mas não
+    // decidem mais nada: o recebimento é da série (VR-5, 26/10/2026)
     // Cadastros da empresa da sessão
     if (clientId) {
       const client = await this.prisma.client.findFirst({
@@ -293,8 +281,8 @@ export class QuickSaleService {
     }
     const data = {
       enabled: dto.enabled,
-      payment: dto.payment,
-      cashMethods: [...new Set(dto.cashMethods)],
+      payment: dto.payment ?? 'CASH_ONLY',
+      cashMethods: [...new Set(dto.cashMethods ?? ALL_METHODS)],
       downPaymentRequired: dto.downPaymentRequired,
       downPaymentPercent: dto.downPaymentPercent,
       clientId,
@@ -375,6 +363,9 @@ export class QuickSaleService {
     dto: ReceiptDto,
     actor: CashActor,
   ) {
+    // O recebimento é da série (VR-5, 26/10/2026): qualquer orçamento cuja
+    // série fatura na frente de caixa pode ser cobrado à vista pelo vendedor,
+    // em dinheiro, PIX ou cartão
     const quotation = await this.prisma.quotation.findFirst({
       where: { id: quotationId, companyId: user.companyId },
       select: {
@@ -382,26 +373,16 @@ export class QuickSaleService {
         status: true,
         quickSale: true,
         pendingSale: { select: { id: true } },
+        quotationPayment: { select: { billing: true } },
       },
     });
     if (!quotation) throw new NotFoundException('Orçamento não encontrado');
-    if (!quotation.quickSale) bad('Só a venda rápida é cobrada na hora');
+    if (quotation.quotationPayment?.billing !== 'ON_CHECKOUT') {
+      bad(NOT_AT_CHECKOUT);
+    }
     if (quotation.pendingSale)
       throw new ConflictException(QUICK_SALE_ALREADY_SENT);
     if (quotation.status !== 'OPEN') bad('A venda já não está aberta');
-    const mode = await quickSaleMode(
-      this.prisma,
-      this.planControl,
-      user.companyId,
-    );
-    if (mode !== 'CASH_ONLY') {
-      bad('Esta empresa envia a venda rápida ao caixa: use "Enviar ao caixa"');
-    }
-    const settings = await this.settings(user.companyId);
-    const refused = dto.parts.find(
-      (part) => !settings.cashMethods.includes(METHOD_SETTING[part.method]),
-    );
-    if (refused) bad('Forma de pagamento fora das aceitas na venda rápida');
     const discount = dto.discount ?? 0;
     const rounding = await this.rounding(user.companyId);
     const date = new Date();
@@ -416,7 +397,7 @@ export class QuickSaleService {
           const paid = dto.parts.reduce((sum, part) => sum + part.amount, 0);
           if (paid + discount !== total) {
             bad(
-              'A venda rápida é cobrada pelo total. Para parcelar ou cobrar depois, use um orçamento comum',
+              'O "Cobrar" recebe pelo total. Para parcelar ou cobrar depois, envie ao caixa ou use uma série que fatura no pedido',
             );
           }
           const parts = await resolveParts(tx, user.companyId, dto.parts, {
@@ -442,7 +423,7 @@ export class QuickSaleService {
             data: {
               companyId: approved.companyId,
               quotationId,
-              kind: 'QUICK',
+              kind: quotation.quickSale ? 'QUICK' : 'QUOTATION',
               path: 'CASH_ONLY',
               total: total - discount,
               paid,
@@ -460,9 +441,7 @@ export class QuickSaleService {
       });
     } catch (error) {
       if (error instanceof MissingCashDay) {
-        bad(
-          `${error.message}: o dinheiro da venda rápida entra no caixa do dia`,
-        );
+        bad(`${error.message}: o dinheiro da venda entra no caixa do dia`);
       }
       throw error;
     }

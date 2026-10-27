@@ -20,17 +20,21 @@ export class QuickSaleSettingsDto {
   @IsBoolean()
   enabled: boolean;
 
-  @ApiProperty({ enum: QuickSalePayment })
+  // Sem efeito desde 26/10/2026 (o recebimento é da série, VR-5); aceitos
+  // para as telas antigas que ainda os enviam
+  @ApiPropertyOptional({ enum: QuickSalePayment })
+  @IsOptional()
   @IsEnum(QuickSalePayment)
-  payment: QuickSalePayment;
+  payment?: QuickSalePayment;
 
-  @ApiProperty({ type: [String], example: ['dinheiro', 'pix', 'cartao'] })
+  @ApiPropertyOptional({ type: [String], example: ['dinheiro', 'pix', 'cartao'] })
+  @IsOptional()
   @IsArray()
   @IsIn(['dinheiro', 'pix', 'cartao'], {
     each: true,
     message: 'As formas da venda rápida são dinheiro, PIX e cartão',
   })
-  cashMethods: string[];
+  cashMethods?: string[];
 
   @ApiProperty()
   @IsBoolean()

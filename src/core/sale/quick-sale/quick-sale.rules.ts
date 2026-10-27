@@ -1,34 +1,19 @@
-import { Prisma, QuickSalePayment } from '@prisma/client';
+import { PendingSaleKind, Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
-import { PlanControlService } from '../../plan/plan-control.service';
 
 type Tx = Prisma.TransactionClient;
 
 export const QUICK_SALE_ALREADY_SENT = 'Esta venda já foi enviada ao caixa';
-export const QUICK_SALE_CHARGE_REQUIRED =
-  'A venda rápida é cobrada na hora: conclua pelo "Cobrar", que recebe e aprova';
 export const QUICK_SALE_LOCKED =
-  'A venda rápida já está no caixa: os itens não mudam mais';
+  'A venda já está no caixa: os itens não mudam mais';
+export const CASH_FRONT_NOT_IN_PLAN =
+  'A frente de caixa não está no seu plano: cobre a venda na hora';
+export const NOT_AT_CHECKOUT =
+  'Só a venda cuja série fatura na frente de caixa é cobrada na hora';
 
-/**
- * O caminho da venda rápida na empresa (VR-5): cobrada na hora ou enviada à
- * frente de caixa. Sem o recurso no plano, o orçamento marcado como venda
- * rápida segue o caminho comum (nulo).
- */
-export async function quickSaleMode(
-  prisma: PrismaService | Tx,
-  planControl: PlanControlService,
-  companyId: string,
-): Promise<QuickSalePayment | null> {
-  if (!(await planControl.hasFeature(companyId, 'quotation_quick_sale'))) {
-    return null;
-  }
-  const settings = await prisma.quickSaleSettings.findUnique({
-    where: { companyId },
-    select: { payment: true },
-  });
-  return settings?.payment ?? 'CASH_ONLY';
-}
+// O recebimento é da série (VR-5, revista em 26/10/2026): a venda rápida é
+// só a abertura do orçamento. O que manda a venda ao caixa, ou ao "Cobrar"
+// do vendedor, é a série com "Faturar na frente de caixa" (ON_CHECKOUT).
 
 /**
  * O valor da venda, em centavos: os itens, a entrega e a comissão somada,
@@ -74,7 +59,7 @@ export const saleReference = (quotation: {
 
 /**
  * Coloca a venda aprovada na fila da frente de caixa (FC-12): aprovar a
- * venda rápida é enviar ao caixa. Uma vez só por venda.
+ * venda da série da frente de caixa é enviar ao caixa. Uma vez só por venda.
  */
 export async function ensurePendingSale(
   tx: Tx,
@@ -83,6 +68,7 @@ export async function ensurePendingSale(
     companyId: string;
     approvedAt: Date | null;
   },
+  kind: PendingSaleKind = 'QUICK',
 ) {
   const existing = await tx.pendingSale.findUnique({
     where: { quotationId: quotation.id },
@@ -93,7 +79,7 @@ export async function ensurePendingSale(
     data: {
       companyId: quotation.companyId,
       quotationId: quotation.id,
-      kind: 'QUICK',
+      kind,
       path: 'POS',
       total: saleTotalCents(quotation),
       approvedAt: quotation.approvedAt ?? new Date(),
@@ -103,8 +89,8 @@ export async function ensurePendingSale(
 }
 
 /**
- * A venda rápida que está no caixa (enviada ou cobrada, e não cancelada) não
- * muda mais os itens (FC-11).
+ * A venda que está no caixa (enviada ou cobrada, e não cancelada) não muda
+ * mais os itens (FC-11).
  */
 export async function isAtCashier(
   prisma: PrismaService | Tx,

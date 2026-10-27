@@ -12,7 +12,7 @@ import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.
 import { PlanControlService } from '../../plan/plan-control.service';
 import { CreditCheckService } from './credit-check.service';
 import { ProductionProjectService } from '../../production/production-project.service';
-import { QUICK_SALE_CHARGE_REQUIRED } from '../quick-sale/quick-sale.rules';
+import { CASH_FRONT_NOT_IN_PLAN } from '../quick-sale/quick-sale.rules';
 import {
   NotFoundException,
   BadRequestException,
@@ -735,10 +735,13 @@ describe('QuotationWorkflowService', () => {
       );
     });
 
-    it('sem condição de pagamento: 400 antes de gravar; a venda rápida passa', async () => {
+    it('sem condição de pagamento: 400 antes de gravar; a série da frente de caixa passa', async () => {
+      // A venda rápida com série "Faturar no pedido" é um orçamento comum:
+      // precisa da condição (VR-5, revista em 26/10/2026)
       prisma.quotation.findUnique.mockImplementation(async (args) =>
         args.select
           ? currentQuotation({
+              quickSale: true,
               quotationPayment: {
                 billing: 'ON_ORDER',
                 _count: { quotationInstallment: 0 },
@@ -751,34 +754,58 @@ describe('QuotationWorkflowService', () => {
       ).rejects.toThrow(new BadRequestException(PAYMENT_CONDITION_REQUIRED));
       expect(prisma.$transaction).not.toHaveBeenCalled();
 
+      // Orçamento comum com série "Faturar na frente de caixa": aprova sem
+      // condição, entra na fila como QUOTATION e não gera o título (FC-1,
+      // FC-12)
       prisma.quotation.findUnique.mockImplementation(async (args) =>
         args.select
           ? currentQuotation({
-              quickSale: true,
+              quickSale: false,
               quotationPayment: {
-                billing: 'ON_ORDER',
+                billing: 'ON_CHECKOUT',
                 _count: { quotationInstallment: 0 },
               },
             })
           : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
       );
-      // Cobrada na hora: só o "Cobrar" aprova (VR-5)
-      await expect(
-        service.approve(mockQuotationId, mockUserId),
-      ).rejects.toThrow(new BadRequestException(QUICK_SALE_CHARGE_REQUIRED));
-      // Enviada ao caixa: aprova sem condição, entra na fila e não gera o
-      // título da condição (FC-1, FC-12)
-      prisma.quickSaleSettings.findUnique.mockResolvedValue({ payment: 'POS' });
       await service.approve(mockQuotationId, mockUserId);
       expect(committed).toContain('quotation:APPROVED');
       expect(prisma.pendingSale.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ kind: 'QUICK', path: 'POS' }),
+          data: expect.objectContaining({ kind: 'QUOTATION', path: 'POS' }),
         }),
       );
       expect(
         mockFinancialService.generateReceivableFromQuotation,
       ).not.toHaveBeenCalled();
+    });
+
+    it('série da frente de caixa sem o PDV no plano: só o "Cobrar" aprova', async () => {
+      prisma.quotation.findUnique.mockImplementation(async (args) =>
+        args.select
+          ? currentQuotation({
+              quickSale: true,
+              quotationPayment: {
+                billing: 'ON_CHECKOUT',
+                _count: { quotationInstallment: 0 },
+              },
+            })
+          : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
+      );
+      mockPlanControl.hasFeature.mockImplementation(
+        async (_company: string, feature: string) => feature !== 'pdv_screen',
+      );
+      await expect(
+        service.approve(mockQuotationId, mockUserId),
+      ).rejects.toThrow(new BadRequestException(CASH_FRONT_NOT_IN_PLAN));
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+
+      // Com o charge, aprova e não entra na fila (o charge cria o registro)
+      const charge = jest.fn();
+      await service.approve(mockQuotationId, mockUserId, undefined, { charge });
+      expect(charge).toHaveBeenCalled();
+      expect(prisma.pendingSale.create).not.toHaveBeenCalled();
+      mockPlanControl.hasFeature.mockResolvedValue(true);
     });
 
     it('produto ou parte inativa: 400 com os itens a trocar (PAD-7)', async () => {
