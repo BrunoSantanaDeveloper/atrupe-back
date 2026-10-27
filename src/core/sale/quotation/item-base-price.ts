@@ -67,6 +67,26 @@ function rawMeasure(row: Row, unitKind: string) {
   }
 }
 
+/**
+ * A medida vendida do item na unidade bruta da linha (mm², mm, ml, mg, m, s
+ * ou unidade), com a quantidade, somada das linhas: a mesma conta do
+ * formulário do item (a de uma linha leva a quantidade dela; a de várias, a
+ * dela × a do item). É o que multiplica um preço ou custo por unidade bruta.
+ */
+export function soldMeasureOf(item: {
+  quantity?: number | null;
+  items?: Row[] | null;
+}) {
+  const rows = item.items ?? [];
+  const single = rows.length === 1;
+  return rows.reduce((sum, row) => {
+    const quantity = single
+      ? (row.quantity ?? 1)
+      : (row.quantity ?? 1) * (item.quantity ?? 1);
+    return sum + rawMeasure(row, row.unitKind ?? 'UNITY') * quantity;
+  }, 0);
+}
+
 export type BasePriceContext = {
   /** O preço sugerido do retrato do item montado na hora (centavos) */
   suggested: Map<string, number>;

@@ -25,6 +25,7 @@ import {
   ProductionStageJson,
 } from './quotation-financial.types';
 import { calculateFinalValue } from './quotation.utils';
+import { soldMeasureOf } from './item-base-price';
 import { PlanControlService } from '../../plan/plan-control.service';
 import { companyWithoutKeys } from 'src/shared/company/company-keys';
 import { ProductSaleService } from '../../assembly/product-sale.service';
@@ -1115,7 +1116,20 @@ export class QuotationWorkflowService {
               },
             },
           },
-          items: { select: { salePrice: true, unitCost: true } },
+          // A medida vendida de cada linha, como o formulário a calcula
+          items: {
+            select: {
+              unitKind: true,
+              quantity: true,
+              width: true,
+              height: true,
+              length: true,
+              volume: true,
+              weight: true,
+              distance: true,
+              duration: true,
+            },
+          },
         },
       }),
     ]);
@@ -1129,16 +1143,15 @@ export class QuotationWorkflowService {
     const fromProducts = products
       .map((item) => {
         const unitCost = item.product?.outsourcedCost ?? 0;
-        const measure =
-          (item.items ?? []).reduce(
-            (sum, row) =>
-              sum + (row.unitCost ? (row.salePrice ?? 0) / row.unitCost : 1),
-            0,
-          ) || 1;
+        // A medida vendida já leva a quantidade (a da linha, e a do item no
+        // produto de várias linhas); sem linha, a quantidade do item
+        const measure = item.items?.length
+          ? soldMeasureOf(item)
+          : item.quantity || 1;
         const supplier = (item.product?.suppliers ?? [])[0];
         return {
           name: item.description || item.product?.name || 'Terceirizado',
-          cost: Math.round(unitCost * measure * (item.quantity || 1)),
+          cost: Math.round(unitCost * measure),
           price: (item.finalValue ?? 0) as number | null,
           supplierId: supplier?.id ?? null,
           supplierName: supplier?.name ?? null,

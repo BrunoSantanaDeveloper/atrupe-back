@@ -212,6 +212,61 @@ describe('QuotationWorkflowService', () => {
     expect(service).toBeDefined();
   });
 
+  // A conta a pagar do produto terceirizado (T-5): custo do fornecedor por
+  // unidade bruta × a medida vendida, que já leva a quantidade. O pacote de
+  // 26/10 multiplicava de novo pela quantidade do item
+  describe('outsourcedCosts', () => {
+    const outsourcedItem = (overrides: Record<string, unknown> = {}) => ({
+      id: 'qp-1',
+      description: 'Fachada em ACM',
+      quantity: 10,
+      finalValue: 500000,
+      product: {
+        name: 'Fachada',
+        // R$ 200,00/m² = 0,02 centavo por mm²
+        outsourcedCost: 0.02,
+        suppliers: [{ id: 'sup-1', name: 'Letras & Cia' }],
+      },
+      items: [{ unitKind: 'AREA', quantity: 10, width: 1000, height: 1000 }],
+      ...overrides,
+    });
+
+    it('10 peças de 1 m² a R$ 200,00/m² devem R$ 2.000,00 ao fornecedor', async () => {
+      prisma.quotationProduct.findMany.mockResolvedValue([outsourcedItem()]);
+
+      await expect(service.outsourcedCosts(mockQuotationId)).resolves.toEqual([
+        {
+          name: 'Fachada em ACM',
+          cost: 200000,
+          price: 500000,
+          supplierId: 'sup-1',
+          supplierName: 'Letras & Cia',
+        },
+      ]);
+    });
+
+    it('produto de várias linhas leva a quantidade do item uma vez', async () => {
+      prisma.quotationProduct.findMany.mockResolvedValue([
+        outsourcedItem({
+          quantity: 2,
+          items: [
+            { unitKind: 'UNITY', quantity: 1 },
+            { unitKind: 'UNITY', quantity: 3 },
+          ],
+          product: {
+            name: 'Kit',
+            outsourcedCost: 1000,
+            suppliers: [{ id: 'sup-1', name: 'Letras & Cia' }],
+          },
+        }),
+      ]);
+
+      const [entry] = await service.outsourcedCosts(mockQuotationId);
+      // (1 + 3) peças por kit × 2 kits × R$ 10,00
+      expect(entry.cost).toBe(8000);
+    });
+  });
+
   describe('approve', () => {
     // Transação de mentira com a semântica do banco: o que o callback grava
     // só vale se ele terminar sem erro
