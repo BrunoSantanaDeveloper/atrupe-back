@@ -19,6 +19,7 @@ import {
   workdayEndOf,
 } from '../cash-control/cash-ledger';
 import {
+  accountForMethod,
   CashMethod,
   METHOD_LABEL,
   ReceiptPart,
@@ -1247,14 +1248,13 @@ export class PdvService {
         where: { quotationId: sale.quotationId },
         data: { paymentConditionId: condition.id, installmentQty: qty },
       });
-      const rule = await tx.bankAccountCashControl.findFirst({
-        where: {
-          paymentConditionId: condition.id,
-          isDefault: true,
-          bankAccount: { companyId: user.companyId, isActive: true },
-        },
-        select: { bankAccountId: true },
-      });
+      // A conta em que a parcela deve cair: a que o sistema escolhe para a
+      // forma (CX-2, sem a "padrão" marcada)
+      const bankAccountId = await accountForMethod(
+        tx,
+        user.companyId,
+        condition.id,
+      );
       const categories = await this.financial.findSalesCategories(
         sale.companyId,
         tx,
@@ -1282,7 +1282,7 @@ export class PdvService {
                 index === qty - 1 ? sale.total - base * (qty - 1) : base,
               ),
               paymentConditionId: condition.id,
-              bankAccountId: rule?.bankAccountId ?? null,
+              bankAccountId,
               status: 'PENDING' as const,
             })),
           },

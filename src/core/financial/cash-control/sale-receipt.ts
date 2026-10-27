@@ -41,11 +41,50 @@ export const METHOD_LABEL: Record<CashMethod, string> = {
 };
 
 /**
+ * A conta que o sistema escolhe sozinho para a forma (CX-2, regra de
+ * 26/10/2026): a tela de contas não marca mais uma "padrão". Dinheiro vai
+ * para a Caixa Empresa (banco 000) e, sem ela, para o primeiro caixa físico;
+ * as outras formas, para a primeira conta ativa que recebe a forma (a mais
+ * antiga). Sem a forma do caixa (o faturamento), vale a regra da forma de
+ * pagamento. Sem nenhuma conta, nulo.
+ */
+export async function accountForMethod(
+  tx: Tx,
+  companyId: string,
+  paymentConditionId: string,
+  method?: CashMethod,
+): Promise<string | null> {
+  if (method === 'CASH') {
+    const drawers = await tx.bankAccount.findMany({
+      where: {
+        companyId,
+        isActive: true,
+        OR: [{ bank: { code: '000' } }, { kind: 'CASH' }],
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, bank: { select: { code: true } } },
+    });
+    const company = drawers.find((account) => account.bank?.code === '000');
+    return (company ?? drawers[0])?.id ?? null;
+  }
+  const rule = await tx.bankAccountCashControl.findFirst({
+    where: {
+      paymentConditionId,
+      acceptIncomes: true,
+      bankAccount: { companyId, isActive: true },
+    },
+    orderBy: { bankAccount: { createdAt: 'asc' } },
+    select: { bankAccountId: true },
+  });
+  return rule?.bankAccountId ?? null;
+}
+
+/**
  * A conta de cada parte (CX-2): a escolhida, se for da empresa e estiver
  * ativa; senão a da frente de caixa para aquela forma (cada frente pode ter
- * a sua) e, por fim, a padrão da forma. PIX e cartão precisam de conta: é
- * para ela que o valor vai; o dinheiro da frente de caixa fica na gaveta até
- * o fechamento.
+ * a sua) e, por fim, a que o sistema escolhe para a forma
+ * (`accountForMethod`). PIX e cartão precisam de conta: é para ela que o
+ * valor vai; o dinheiro da frente de caixa fica na gaveta até o fechamento.
  */
 export async function resolveParts(
   tx: Tx,
@@ -85,22 +124,19 @@ export async function resolveParts(
       bankAccountId = front?.id ?? null;
     }
     if (!bankAccountId && !part.bankAccountId) {
-      const rule = await tx.bankAccountCashControl.findFirst({
-        where: {
-          paymentConditionId: part.paymentConditionId,
-          isDefault: true,
-          bankAccount: { companyId, isActive: true },
-        },
-        select: { bankAccountId: true },
-      });
-      bankAccountId = rule?.bankAccountId ?? null;
+      bankAccountId = await accountForMethod(
+        tx,
+        companyId,
+        part.paymentConditionId,
+        part.method,
+      );
     }
     if (
       !bankAccountId &&
       (part.method !== 'CASH' || options.cashNeedsAccount)
     ) {
       throw new BadRequestException(
-        `Escolha a conta do ${METHOD_LABEL[part.method]}: nenhuma conta é a padrão dessa forma em Contas bancárias`,
+        `Escolha a conta do ${METHOD_LABEL[part.method]}: nenhuma conta ativa recebe essa forma em Contas bancárias`,
       );
     }
     resolved.push({ ...part, bankAccountId });
