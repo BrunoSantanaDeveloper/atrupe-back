@@ -8,6 +8,7 @@ import { PrismaService } from '../../../config/prisma/prisma.service';
 import { EncryptionService } from '../../../shared/services/encryption.service';
 import { FiscalRolloutPolicyService } from './fiscal-rollout-policy.service';
 import { FiscalEnvironment } from '@prisma/client';
+import { aparaCsc } from '../utils/csc.util';
 
 @Injectable()
 export class FiscalCredentialResolverService {
@@ -152,17 +153,18 @@ export class FiscalCredentialResolverService {
         });
       }
 
+      // Aparado na leitura para cobrir também o que já foi gravado com espaço.
       return {
-        cscId: envConfig?.cscId || null,
-        cscToken,
+        cscId: aparaCsc(envConfig?.cscId),
+        cscToken: aparaCsc(cscToken),
         nfceSeries: envConfig?.nfceSeries ?? 1,
         nfceNextNumber: envConfig?.nfceNextNumber ?? 1,
       };
     } else {
       // Fallback
       return {
-        cscId: invoicyConfig.cscId,
-        cscToken: invoicyConfig.cscToken,
+        cscId: aparaCsc(invoicyConfig.cscId),
+        cscToken: aparaCsc(invoicyConfig.cscToken),
         nfceSeries: invoicyConfig.serieNfce ?? 1,
         nfceNextNumber: invoicyConfig.proximoNumeroNfce ?? 1,
       };
@@ -295,8 +297,8 @@ export class FiscalCredentialResolverService {
     }
 
     return {
-      cscId: envConfig?.cscId ?? null,
-      cscToken,
+      cscId: aparaCsc(envConfig?.cscId),
+      cscToken: aparaCsc(cscToken),
       nfceSeries: envConfig?.nfceSeries ?? 1,
       nfceNextNumber: envConfig?.nfceNextNumber ?? 1,
     };

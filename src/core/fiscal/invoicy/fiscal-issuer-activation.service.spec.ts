@@ -4,6 +4,7 @@ import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { FiscalActivationStatus, FiscalEnvironment } from '@prisma/client';
 import { FiscalIssuerActivationService } from './fiscal-issuer-activation.service';
@@ -293,6 +294,132 @@ describe('FiscalIssuerActivationService — lease / concorrência', () => {
     // CAS falhou → não deve atualizar o ambiente nem o emissor.
     expect(tx.invoicyEnvironmentConfig.update).not.toHaveBeenCalled();
     expect(tx.invoicyConfig.update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * O Invoicy monta o QR Code com o CSC do cadastro dele, não com o salvo no
+ * emissor. Até 23/10/2026 a ativação da NFC-e terminava "ativa" com o CSC só no
+ * nosso banco; agora ela o envia logo depois de garantir o cadastro.
+ */
+describe('FiscalIssuerActivationService — CSC da NFC-e no provedor', () => {
+  let service: FiscalIssuerActivationService;
+
+  const prisma = { invoicyConfig: { findUnique: jest.fn() } };
+  const rolloutPolicy = {
+    isRolloutActivationEnabled: jest.fn(),
+    isProductionActivationEnabled: jest.fn(),
+  };
+  const auditService = { commitWithOutcome: jest.fn() };
+  const readinessService = {
+    checkLocalReadiness: jest.fn(),
+    checkFullReadiness: jest.fn(),
+  };
+  const registrationService = {
+    ensureRegistered: jest.fn(),
+    syncNfceCsc: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        FiscalIssuerActivationService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: FiscalRolloutPolicyService, useValue: rolloutPolicy },
+        { provide: FiscalAuditService, useValue: auditService },
+        { provide: FiscalIssuerReadinessService, useValue: readinessService },
+        {
+          provide: InvoicyCompanyRegistrationService,
+          useValue: registrationService,
+        },
+      ],
+    }).compile();
+
+    service = module.get(FiscalIssuerActivationService);
+
+    prisma.invoicyConfig.findUnique.mockResolvedValue({
+      id: 'e1',
+      companyId: 'company-1',
+    });
+    rolloutPolicy.isRolloutActivationEnabled.mockResolvedValue(true);
+    readinessService.checkLocalReadiness.mockResolvedValue({
+      localReady: true,
+      checks: [],
+    });
+    readinessService.checkFullReadiness.mockResolvedValue({
+      ready: true,
+      checks: [],
+    });
+    registrationService.ensureRegistered.mockResolvedValue(undefined);
+    registrationService.syncNfceCsc.mockResolvedValue({ alterado: true });
+
+    // Lease e commits têm testes próprios acima; aqui só o fluxo importa.
+    jest
+      .spyOn(service as any, 'acquireLease')
+      .mockResolvedValue({ attemptId: 'att-1', replayed: false });
+    jest.spyOn(service as any, 'renewLease').mockResolvedValue(true);
+    jest.spyOn(service as any, 'commitSuccess').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'commitFailure').mockResolvedValue(undefined);
+  });
+
+  afterEach(() => jest.clearAllMocks());
+
+  it('NFC-e: envia o CSC depois de garantir o cadastro e antes do readiness do provedor', async () => {
+    await expect(
+      service.activate('company-1', 'e1', FiscalEnvironment.HOMOLOGACAO, {
+        docType: 'NFCE',
+      }),
+    ).resolves.toEqual({ success: true });
+
+    expect(registrationService.syncNfceCsc).toHaveBeenCalledWith(
+      'company-1',
+      'e1',
+      FiscalEnvironment.HOMOLOGACAO,
+      expect.anything(),
+    );
+    const [registro] =
+      registrationService.ensureRegistered.mock.invocationCallOrder;
+    const [csc] = registrationService.syncNfceCsc.mock.invocationCallOrder;
+    const [provedor] =
+      readinessService.checkFullReadiness.mock.invocationCallOrder;
+    expect(registro).toBeLessThan(csc);
+    expect(csc).toBeLessThan(provedor);
+  });
+
+  it('NF-e não tem CSC: não chama o envio', async () => {
+    await service.activate('company-1', 'e1', FiscalEnvironment.HOMOLOGACAO, {
+      docType: 'NFE',
+    });
+
+    expect(registrationService.syncNfceCsc).not.toHaveBeenCalled();
+  });
+
+  it('falha no envio do CSC barra a ativação com motivo próprio', async () => {
+    registrationService.syncNfceCsc.mockRejectedValue(
+      new Error('O ID do CSC tem até 6 dígitos'),
+    );
+
+    const erro = await service
+      .activate('company-1', 'e1', FiscalEnvironment.HOMOLOGACAO, {
+        docType: 'NFCE',
+      })
+      .catch((e) => e);
+
+    expect(erro).toBeInstanceOf(UnprocessableEntityException);
+    expect(erro.getResponse()).toEqual({
+      errorCode: 'PROVIDER_CSC_SYNC_FAILED',
+      message: expect.stringContaining('O ID do CSC tem até 6 dígitos'),
+    });
+    expect(readinessService.checkFullReadiness).not.toHaveBeenCalled();
+    expect((service as any).commitFailure).toHaveBeenCalledWith(
+      'company-1',
+      'e1',
+      FiscalEnvironment.HOMOLOGACAO,
+      'NFCE',
+      'att-1',
+      'PROVIDER_CSC_SYNC_FAILED',
+      'sistema',
+    );
   });
 });
 

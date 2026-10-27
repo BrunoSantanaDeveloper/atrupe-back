@@ -54,6 +54,10 @@ import {
 } from '../utils/ibs-cbs-nfe.util';
 import { IcmsAliquotaInternaService } from '../shared/icms-aliquota-interna.service';
 import {
+  mensagemComOrientacao,
+  orientacaoRejeicaoFiscal,
+} from '../utils/orientacao-rejeicao.util';
+import {
   EmitNfeDto,
   EmitNfeFromOrderDto,
   CancelNfeDto,
@@ -2873,6 +2877,14 @@ export class NfeService {
 
     if (!isAuthorized) {
       const orientacao = this.getRejectionHint(situacao?.SitCodigo);
+      // Recusa cuja providência está fora da nota (habilitação, situação
+      // cadastral). Vai na mensagem, e é ela que tratarFalhaEmissao grava
+      // como motivo — por isso aparece também no modal de motivo.
+      const providencia = orientacaoRejeicaoFiscal({
+        origem: 'SEFAZ',
+        codigo: situacao?.SitCodigo,
+        modelo: 'NF-e',
+      });
       // Resposta CONCLUSIVA da SEFAZ: a nota nao foi autorizada, entao o
       // numero continua livre. Devolver aqui e o unico ponto seguro — no
       // catch abaixo cai tambem falha de transporte, onde a nota PODE ter
@@ -2880,8 +2892,11 @@ export class NfeService {
       await this.releaseRejectedNfeNumber(config.id, environment, numero);
 
       throw new BadRequestException(
-        `NF-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}` +
-          (orientacao ? ` — ${orientacao}` : ''),
+        mensagemComOrientacao(
+          `NF-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}` +
+            (orientacao ? ` — ${orientacao}` : ''),
+          providencia,
+        ),
       );
     }
 

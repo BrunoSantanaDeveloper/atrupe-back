@@ -184,3 +184,185 @@ describe('InvoicyHttpService response parsing', () => {
     ).rejects.toThrow(INVOICY_COMPANY_LINKED_TO_ANOTHER_PARTNER_MESSAGE);
   });
 });
+
+/**
+ * O Invoicy monta o QR Code da NFC-e com o CSC do cadastro da empresa, não com
+ * o que vai na nota. O PUT de atualização não documenta se preserva o que não
+ * é enviado; por isso o método devolve `Parametros` inteiro como o provedor o
+ * tem e confere o resultado numa nova consulta.
+ */
+describe('InvoicyHttpService.updateCompanyNfceCsc', () => {
+  const CNPJ = '13205998000102';
+  const CSC = 'ABCDEF12-3456-7890-ABCD-EF1234567890';
+
+  const cadastro = (nfce: Record<string, any>) => ({
+    EmpCNPJ: CNPJ,
+    EmpRazSocial: 'Atrupe Sistemas',
+    EmpNomFantasia: 'Atrupe Sistemas Administrativos LTDA',
+    EmpApelido: 'Atrupe',
+    EmpIE: '256318743',
+    Certificado: { Validade: '2027-01-01' },
+    Licenciamento: [{ Modulo: 'NFC-e' }],
+    Parametros: {
+      NFe: { FormaRetornoPDFIntegracao: 3 },
+      NFCe: {
+        FormaRetornoPDFIntegracao: 3,
+        PossuiLeituraX: 'N',
+        IDTokenCscSEFAZ: '',
+        CscSEFAZ: '',
+        ...nfce,
+      },
+    },
+  });
+
+  // Mesmo formato da resposta real: [{ Codigo, Descricao, RetornoConsulta: [...] }].
+  const consulta = (registro: any) => [
+    { Codigo: 100, Descricao: 'OK', RetornoConsulta: [registro] },
+  ];
+
+  const makeService = () => {
+    const service = new InvoicyHttpService(
+      {} as any,
+      { get: jest.fn(() => '') } as any,
+      {} as any,
+    ) as any;
+    service.authenticateAsPartner = jest.fn().mockResolvedValue('token');
+    service.httpClient.put = jest
+      .fn()
+      .mockResolvedValue({ data: [{ Codigo: 100, Descricao: 'Recebida' }] });
+    jest.spyOn(service.logger, 'error').mockImplementation(() => undefined);
+    jest.spyOn(service.logger, 'log').mockImplementation(() => undefined);
+    return service;
+  };
+
+  const enviar = (service: any) =>
+    service.updateCompanyNfceCsc({
+      cnpj: '13.205.998/0001-02',
+      cscId: '1',
+      cscToken: CSC,
+      environment: 'PRODUCAO',
+    });
+
+  it('devolve Parametros inteiro, trocando só o CSC, sem certificado nem licenças', async () => {
+    const service = makeService();
+    service.consultCompany = jest
+      .fn()
+      .mockResolvedValueOnce(consulta(cadastro({})))
+      .mockResolvedValueOnce(
+        consulta(cadastro({ IDTokenCscSEFAZ: '1', CscSEFAZ: CSC })),
+      );
+
+    await expect(enviar(service)).resolves.toEqual({ alterado: true });
+
+    const [url, payload] = service.httpClient.put.mock.calls[0];
+    expect(url).toBe('https://apibr.invoicy.com.br/companies');
+    expect(payload).toEqual([
+      {
+        EmpCNPJ: CNPJ,
+        EmpRazSocial: 'Atrupe Sistemas',
+        EmpNomFantasia: 'Atrupe Sistemas Administrativos LTDA',
+        EmpApelido: 'Atrupe',
+        Parametros: {
+          NFe: { FormaRetornoPDFIntegracao: 3 },
+          NFCe: {
+            FormaRetornoPDFIntegracao: 3,
+            PossuiLeituraX: 'N',
+            IDTokenCscSEFAZ: '1',
+            CscSEFAZ: CSC,
+          },
+        },
+      },
+    ]);
+    expect(service.logger.error).not.toHaveBeenCalled();
+  });
+
+  it('não reescreve o cadastro quando o CSC já é o mesmo ("000001" = "1")', async () => {
+    const service = makeService();
+    service.consultCompany = jest
+      .fn()
+      .mockResolvedValue(
+        consulta(
+          cadastro({ IDTokenCscSEFAZ: '000001', CscSEFAZ: CSC.toLowerCase() }),
+        ),
+      );
+
+    await expect(enviar(service)).resolves.toEqual({ alterado: false });
+    expect(service.httpClient.put).not.toHaveBeenCalled();
+  });
+
+  it('falha quando a consulta seguinte não mostra o CSC', async () => {
+    const service = makeService();
+    service.consultCompany = jest
+      .fn()
+      .mockResolvedValue(consulta(cadastro({})));
+
+    await expect(enviar(service)).rejects.toThrow(
+      'o CSC não aparece no cadastro',
+    );
+  });
+
+  it('falha quando o provedor recusa a atualização no código de topo', async () => {
+    const service = makeService();
+    service.consultCompany = jest
+      .fn()
+      .mockResolvedValue(consulta(cadastro({})));
+    service.httpClient.put = jest.fn().mockResolvedValue({
+      data: [{ Codigo: 101, Descricao: 'Dados inválidos' }],
+    });
+
+    await expect(enviar(service)).rejects.toThrow(
+      'Codigo 101 - Dados inválidos',
+    );
+  });
+
+  it('não confunde item 102 ("certificado não informado") com recusa', async () => {
+    const service = makeService();
+    service.consultCompany = jest
+      .fn()
+      .mockResolvedValueOnce(consulta(cadastro({})))
+      .mockResolvedValueOnce(
+        consulta(cadastro({ IDTokenCscSEFAZ: '1', CscSEFAZ: CSC })),
+      );
+    service.httpClient.put = jest.fn().mockResolvedValue({
+      data: [
+        {
+          Codigo: 100,
+          Descricao: 'Solicitação de cadastro de empresa recebida.',
+          RetornoCadastro: [
+            { Codigo: 102, Descricao: 'Certificado não informado' },
+          ],
+        },
+      ],
+    });
+
+    await expect(enviar(service)).resolves.toEqual({ alterado: true });
+  });
+
+  it('registra, sem valores, outros campos que o PUT tenha mudado', async () => {
+    const service = makeService();
+    const depois = cadastro({ IDTokenCscSEFAZ: '1', CscSEFAZ: CSC });
+    depois.Certificado = undefined as any;
+    service.consultCompany = jest
+      .fn()
+      .mockResolvedValueOnce(consulta(cadastro({})))
+      .mockResolvedValueOnce(consulta(depois));
+
+    await expect(enviar(service)).resolves.toEqual({ alterado: true });
+
+    const linha = service.logger.error.mock.calls[0][0];
+    expect(linha).toContain('$.Certificado');
+    expect(linha).not.toContain('2027-01-01');
+  });
+
+  it('falha com mensagem clara quando a empresa não está no cadastro', async () => {
+    const service = makeService();
+    service.consultCompany = jest
+      .fn()
+      .mockResolvedValue([{ Codigo: 100, RetornoConsulta: [] }]);
+
+    await expect(enviar(service)).rejects.toThrow(
+      'não encontrada no cadastro do Invoicy',
+    );
+    expect(service.httpClient.put).not.toHaveBeenCalled();
+  });
+});

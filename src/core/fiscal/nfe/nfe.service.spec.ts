@@ -1844,6 +1844,37 @@ describe('NfeService', () => {
     });
 
     /**
+     * A 203 diz que o CNPJ/IE nao esta habilitado na SEFAZ: a providencia e do
+     * contador, fora do Atrupe, e o texto cru nao diz isso. A mensagem leva a
+     * orientacao, e e ela que tratarFalhaEmissao grava como motivo.
+     */
+    it('203 (emissor nao habilitado) aponta a providencia na SEFAZ', async () => {
+      invoicyApiService.emitNfe.mockResolvedValue([
+        {
+          Codigo: 100,
+          Documentos: [
+            {
+              Situacao: {
+                SitCodigo: 203,
+                SitDescricao:
+                  'Rejeicao: Emissor nao habilitado para emissao da NF-e',
+              },
+            },
+          ],
+        },
+      ]);
+
+      await expect(service.emit(mockCompanyId, mockEmitDto)).rejects.toThrow(
+        /Emissor nao habilitado.*O que fazer \(habilitação na SEFAZ, fora do Atrupe\)/,
+      );
+
+      const motivoGravado =
+        prisma.nfe.update.mock.calls.at(-1)[0].data.motivoRejeicao;
+      expect(motivoGravado).toContain('O que fazer (habilitação na SEFAZ');
+      expect(motivoGravado).toContain('contador');
+    });
+
+    /**
      * Toda devolucao era rejeitada com a 321 ("nao possui documento fiscal
      * referenciado") mesmo com a chave preenchida na tela: o payload usava
      * `NFref` (grafia da tag XML da SEFAZ) e o provedor so reconhece `NFRef`.

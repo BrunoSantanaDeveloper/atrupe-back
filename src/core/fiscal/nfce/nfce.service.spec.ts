@@ -888,6 +888,111 @@ describe('NfceService', () => {
       expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
     });
 
+    /**
+     * Caso de 23/10/2026: a nota chegou à SEFAZ e voltou "Emissor nao
+     * habilitado"; antes disso o provedor tinha recusado com 607. Os dois
+     * textos crus não dizem a quem recorrer, e o usuário achou que o problema
+     * era no Atrupe.
+     */
+    describe('orientação quando a providência está fora da nota', () => {
+      const dto = {
+        naturezaOperacao: 'Venda',
+        itens: [
+          {
+            productId: '1',
+            codigo: '001',
+            descricao: 'Produto',
+            ncm: '12345678',
+            cfop: '5102',
+            unidade: 'UN',
+            quantidade: 1,
+            valorUnitario: 100,
+          },
+        ],
+        pagamentos: [{ tipo: '01', valor: 100 }],
+      };
+
+      it('203: grava o retorno da SEFAZ e, depois de uma linha em branco, o que fazer', async () => {
+        invoicyApiService.emitNfe.mockResolvedValueOnce([
+          {
+            Codigo: 100,
+            Descricao: 'Documentos processados',
+            Documentos: [
+              {
+                DocChaAcesso: mockInvoicyResponse.data.chaveAcesso,
+                DocProtocolo: null,
+                Situacao: {
+                  SitCodigo: 203,
+                  SitDescricao:
+                    'Rejeicao: Emissor nao habilitado para emissao da NF-e/NFC-e',
+                },
+              },
+            ],
+          },
+        ]);
+
+        const error = await service.emit(mockCompanyId, dto).catch((e) => e);
+
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect(error.message).toContain(
+          'O que fazer (habilitação na SEFAZ, fora do Atrupe)',
+        );
+
+        const motivo = prisma.nfce.update.mock.calls.at(-1)[0].data
+          .motivoRejeicao as string;
+        expect(motivo).toMatch(
+          /^Rejeicao: Emissor nao habilitado para emissao da NF-e\/NFC-e\n\nO que fazer \(habilitação na SEFAZ/,
+        );
+        expect(motivo).toContain('CSC ativo');
+      });
+
+      it('607: a recusa do provedor diz que nada foi à SEFAZ e quem reativa a licença', async () => {
+        invoicyApiService.emitNfe.mockResolvedValueOnce([
+          {
+            Codigo: 607,
+            Descricao:
+              'A licença da sua empresa está CANCELADA e não será mais possível emitir este tipo de documento.',
+          },
+        ]);
+
+        const error = await service.emit(mockCompanyId, dto).catch((e) => e);
+
+        expect(error.message).toContain('suporte da Atrupe');
+        const motivo = prisma.nfce.update.mock.calls.at(-1)[0].data
+          .motivoRejeicao as string;
+        expect(motivo).toContain(
+          '(código 607)\n\nO que fazer (licença no provedor fiscal)',
+        );
+        expect(motivo).toContain('nada foi enviado à SEFAZ');
+      });
+
+      it('rejeição sem entrada na lista fica como a SEFAZ mandou', async () => {
+        invoicyApiService.emitNfe.mockResolvedValueOnce([
+          {
+            Codigo: 100,
+            Descricao: 'Documentos processados',
+            Documentos: [
+              {
+                DocChaAcesso: mockInvoicyResponse.data.chaveAcesso,
+                DocProtocolo: null,
+                Situacao: {
+                  SitCodigo: 999,
+                  SitDescricao: 'Rejeicao: CFOP invalido',
+                },
+              },
+            ],
+          },
+        ]);
+
+        const error = await service.emit(mockCompanyId, dto).catch((e) => e);
+
+        expect(error.message).toBe('NFC-e rejeitada: Rejeicao: CFOP invalido');
+        expect(
+          prisma.nfce.update.mock.calls.at(-1)[0].data.motivoRejeicao,
+        ).toBe('Rejeicao: CFOP invalido');
+      });
+    });
+
     describe('número devolvido à sequência', () => {
       const dtoSimples = {
         naturezaOperacao: 'Venda',

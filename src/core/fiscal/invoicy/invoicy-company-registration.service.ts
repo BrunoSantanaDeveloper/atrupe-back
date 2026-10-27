@@ -6,6 +6,8 @@ import {
 import { PrismaService } from '../../../config/prisma/prisma.service';
 import { EncryptionService } from '../../../shared/services/encryption.service';
 import { FiscalAuditService } from '../shared/fiscal-audit.service';
+import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
+import { problemaNoCsc } from '../utils/csc.util';
 import { InvoicyHttpService } from './invoicy-http.service';
 import {
   FiscalConfigAction,
@@ -21,6 +23,7 @@ export class InvoicyCompanyRegistrationService {
     private readonly encryptionService: EncryptionService,
     private readonly fiscalAuditService: FiscalAuditService,
     private readonly invoicyHttpService: InvoicyHttpService,
+    private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
   ) {}
 
   /**
@@ -268,5 +271,53 @@ export class InvoicyCompanyRegistrationService {
     }
 
     return updated;
+  }
+
+  /**
+   * Envia ao cadastro da empresa no Invoicy o CSC da NFC-e salvo no emissor.
+   *
+   * O Invoicy monta o QR Code com o CSC do cadastro dele, não com o que vai na
+   * nota; até aqui o CSC salvo no Atrupe nunca chegava lá. Chamado na ativação
+   * da NFC-e, depois do ensureRegistered — trocar o CSC devolve o ambiente a
+   * DRAFT, então todo CSC novo passa por aqui antes de valer.
+   *
+   * Formato errado é recusado com mensagem para quem configura (o identificador
+   * de 18 dígitos que já existiu num emissor nunca caberia no provedor).
+   */
+  async syncNfceCsc(
+    companyId: string,
+    invoicyConfigId: string,
+    environment: FiscalEnvironment,
+    signal?: AbortSignal,
+  ): Promise<{ alterado: boolean }> {
+    const company = await this.prisma.company.findUniqueOrThrow({
+      where: { id: companyId },
+      select: { cnpj: true },
+    });
+    const cnpj = (company.cnpj ?? '').replace(/\D/g, '');
+    if (!cnpj) {
+      throw new BadRequestException(
+        'Empresa sem CNPJ: complete o cadastro antes de ativar a NFC-e.',
+      );
+    }
+
+    const { cscId, cscToken } =
+      await this.fiscalCredentialResolver.getEmissorCredentialsForValidation(
+        companyId,
+        invoicyConfigId,
+        environment,
+      );
+    const problema = problemaNoCsc(cscId, cscToken);
+    if (problema) {
+      throw new BadRequestException(problema);
+    }
+
+    return this.invoicyHttpService.updateCompanyNfceCsc({
+      cnpj,
+      cscId,
+      cscToken,
+      environment: environment as InvoicyEnvironment,
+      signal,
+    });
   }
 }

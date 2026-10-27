@@ -155,6 +155,25 @@ export class FiscalIssuerActivationService {
         signal,
       );
 
+      // 7b. NFC-e: o Invoicy monta o QR Code com o CSC do cadastro dele, não
+      // com o salvo no emissor. Sem este envio o ambiente ficava "ativo" com
+      // o CSC só no nosso banco.
+      if ((options.docType ?? 'NFCE') === 'NFCE') {
+        try {
+          await this.registrationService.syncNfceCsc(
+            companyId,
+            invoicyConfigId,
+            environment,
+            signal,
+          );
+        } catch (error) {
+          throw new ReadinessFailedError(
+            'PROVIDER_CSC_SYNC_FAILED',
+            `Não foi possível cadastrar o CSC da NFC-e no provedor fiscal: ${error.message}`,
+          );
+        }
+      }
+
       // 8. Readiness completo (inclui provider)
       const fullReadiness = await this.readinessService.checkFullReadiness(
         companyId,
