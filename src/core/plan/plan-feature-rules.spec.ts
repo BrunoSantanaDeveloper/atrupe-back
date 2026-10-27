@@ -230,6 +230,17 @@ describe('plan-feature-rules', () => {
     );
   });
 
+  it('o terceirizado avulso nasce no Start e no Trial, sem depender da composição (T-5, 24/10/2026)', () => {
+    const firstPlan = cumulativeChain().find((c) =>
+      (c.features as string[]).includes('outsourced_item'),
+    )?.plan.planType;
+
+    expect(firstPlan).toBe('START');
+    expect(PLAN_CONFIGURATIONS.TRIAL.features).toContain('outsourced_item');
+    expect(FEATURE_DEPENDENCIES.outsourced_item).toBeUndefined();
+    expect(FEATURE_ENFORCEMENT.outsourced_item.level).toBe('api');
+  });
+
   it('Papéis nasce no Lite, sem depender da base de custos (PO, 13/10/2026)', () => {
     const firstPlan = cumulativeChain().find((c) =>
       (c.features as string[]).includes('paper_register'),

@@ -52,6 +52,9 @@ export const PLAN_FEATURE_KEYS = [
   // 13/10/2026: Papéis no LITE (gráfica rápida). O papel é um material com a
   // forma "folha", sem custo nem preço; a contagem de folhas sai no item.
   'paper_register',
+  // 24/10/2026: o terceirizado avulso já no START (T-5): a linha avulsa
+  // dentro do item e o serviço terceirizado como item, sem a composição.
+  'outsourced_item',
 ] as const;
 
 export type PlanFeatureKey = (typeof PLAN_FEATURE_KEYS)[number];
@@ -277,6 +280,11 @@ export const FEATURE_ENFORCEMENT: Record<
     level: 'api',
     detail:
       'Cadastros › Papéis sem a base de custos: GET /material?paper=true lista só os papéis, sem custo nem preço, e POST e PATCH /material aceitam só os campos do papel. Com a base de custos, vale a tela completa de Materiais.',
+  },
+  outsourced_item: {
+    level: 'api',
+    detail:
+      'Terceirizado avulso: a linha avulsa (LOOSE) dentro do item (POST :id/item/:itemId/line e a prévia), o serviço terceirizado como item (POST :id/add-outsourced e a prévia) e o acréscimo sobre o custo (PUT /sale/settings). A composição (product_composition) também libera os três.',
   },
 };
 
