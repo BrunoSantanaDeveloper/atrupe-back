@@ -112,4 +112,25 @@ describe('SubscriptionsController', () => {
       'admin-1',
     );
   });
+
+  // A assinatura saiu do cargo (pacote de 26/10/2026, item 8): ver, cotar,
+  // conferir o pagamento e cancelar pedem o administrador
+  describe('só o administrador vê e gerencia a assinatura', () => {
+    const colaborador = { user: { userId: 'u-2', companyId: 'c-1' } };
+
+    it.each([
+      ['plan-states', () => controller.planStates(colaborador)],
+      ['quote', () => controller.quote({} as any, colaborador)],
+      ['active', () => controller.getActive(colaborador)],
+      ['check-status', () => controller.checkSubscriptionStatus(colaborador)],
+      [
+        'cancel',
+        () => controller.cancelSubscription('s-1', {} as any, colaborador),
+      ],
+    ])('%s recusa quem não é administrador', async (_route, call) => {
+      await expect(call()).rejects.toThrow(
+        'Só o administrador da conta vê e gerencia a assinatura',
+      );
+    });
+  });
 });

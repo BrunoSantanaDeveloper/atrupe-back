@@ -11,6 +11,7 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -348,6 +349,7 @@ export class SubscriptionsController {
       'Calcula o que seria cobrado (ciclo, módulos, usuários, cupom, crédito de evolução e parcelamento) sem criar nada. Usa o mesmo motor de preço da contratação.',
   })
   async quote(@Body() quoteDto: QuoteSubscriptionDto, @Req() req) {
+    this.assertSubscriptionAdmin(req);
     return this.subscriptionQuoteService.quote(req.user.companyId, quoteDto);
   }
 
@@ -358,6 +360,7 @@ export class SubscriptionsController {
       'Estado de cada plano do Método para a empresa: concluído, atual, elegível, em breve ou bloqueado.',
   })
   async planStates(@Req() req) {
+    this.assertSubscriptionAdmin(req);
     return this.subscriptionQuoteService.getPlanStates(req.user.companyId);
   }
 
@@ -369,6 +372,7 @@ export class SubscriptionsController {
   })
   @ApiResponse({ status: 404, description: 'No active subscription found' })
   async getActive(@Req() req) {
+    this.assertSubscriptionAdmin(req);
     return await this.subscriptionsService.findActiveByCompanyId(
       req.user.companyId,
     );
@@ -405,6 +409,7 @@ export class SubscriptionsController {
     description: 'Erro ao verificar status',
   })
   async checkSubscriptionStatus(@Req() req) {
+    this.assertSubscriptionAdmin(req);
     return await this.subscriptionsService.checkAndSyncSubscriptionStatus(
       req.user.companyId,
     );
@@ -509,6 +514,19 @@ export class SubscriptionsController {
     );
   }
 
+  /**
+   * A assinatura é do administrador (pacote de 26/10/2026, item 8): o cargo
+   * não a concede mais. Ver, cotar, conferir o pagamento e cancelar pedem o
+   * administrador; contratar, evoluir e retirar módulo seguem pedindo o
+   * administrador principal (Usuário nº 1).
+   */
+  private assertSubscriptionAdmin(req) {
+    if (req.user?.isAdmin || req.user?.isSystemAdmin) return;
+    throw new ForbiddenException(
+      'Só o administrador da conta vê e gerencia a assinatura',
+    );
+  }
+
   private contractingUser(req) {
     return {
       userId: req.user.userId,
@@ -545,6 +563,7 @@ export class SubscriptionsController {
     @Body() cancelDto: CancelSubscriptionDto,
     @Req() req,
   ) {
+    this.assertSubscriptionAdmin(req);
     return await this.subscriptionsService.cancelSubscription(
       subscriptionId,
       cancelDto,

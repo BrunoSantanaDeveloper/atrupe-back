@@ -53,7 +53,8 @@ export const PERMISSION_CATALOG: Readonly<Record<string, readonly string[]>> = {
     'users',
     'roles',
     'sectors',
-    'subscription',
+    // A assinatura saiu do cargo (pacote de 26/10/2026): só o administrador
+    // a vê e gerencia
   ],
   // composition: a composição por etapas, os processos e os recursos (D18)
   product_settings: ['products', 'composition'],
