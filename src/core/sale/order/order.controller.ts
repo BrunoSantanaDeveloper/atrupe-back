@@ -258,11 +258,16 @@ export class OrderController {
   ) {
     // O cadastro de motivos é recurso de plano (LITE). Com ele, o motivo é
     // obrigatório (decisão do produto, 24/10/2026); sem ele, cancela livre.
+    // Sem nenhum motivo de cancelamento cadastrado, a tela não teria o que
+    // oferecer: o cancelamento segue livre até a empresa cadastrar um
     const hasReasons = await this.planControlService.hasFeature(
       req.user.companyId,
       'service_order_cancellation_reason',
     );
-    if (hasReasons && !dto.reasonId) {
+    const required =
+      hasReasons &&
+      (await this.orderService.countCancelReasons(req.user.companyId)) > 0;
+    if (required && !dto.reasonId) {
       throw new BadRequestException('Informe o motivo do cancelamento');
     }
     if (dto.reasonId && !hasReasons) {

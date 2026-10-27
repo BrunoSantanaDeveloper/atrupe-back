@@ -1127,11 +1127,18 @@ export class QuotationController {
     await this.validateOwnership(id, req.user, 'edit');
     // O cadastro de motivos é recurso de plano (LITE). Com ele, o motivo é
     // obrigatório (decisão do produto, 24/10/2026); sem ele, rejeita livre.
+    // Sem nenhum motivo de rejeição cadastrado, a tela não teria o que
+    // oferecer: a rejeição segue livre até a empresa cadastrar um
     const hasReasons = await this.planControlService.hasFeature(
       req.user.companyId,
       'quotation_rejection_reasons',
     );
-    if (hasReasons && !dto.reasonId) {
+    const required =
+      hasReasons &&
+      (await this.prisma.reasons.count({
+        where: { companyId: req.user.companyId, type: 'REJECTION' },
+      })) > 0;
+    if (required && !dto.reasonId) {
       throw new BadRequestException('Informe o motivo da rejeição');
     }
     if (dto.reasonId && !hasReasons) {

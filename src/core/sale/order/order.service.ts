@@ -80,6 +80,13 @@ export class OrderService {
   private readonly logger = new Logger(OrderService.name);
   constructor(private prisma: PrismaService) {}
 
+  /** Quantos motivos de cancelamento a empresa tem cadastrados. */
+  countCancelReasons(companyId: string) {
+    return this.prisma.reasons.count({
+      where: { companyId, type: 'CANCELLATION' },
+    });
+  }
+
   async findAll(dto: FilterOrderDto) {
     try {
       const where: Prisma.OrderWhereInput = {};
