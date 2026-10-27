@@ -352,6 +352,59 @@ describe('QuotationWorkflowService', () => {
       logError.mockRestore();
     });
 
+    // O cliente bloqueado recusa sempre (pacote de 26/10/2026): em qualquer
+    // plano, antes da data de corte do crédito e na venda rápida
+    describe('cliente bloqueado', () => {
+      const blocked = (overrides: Record<string, unknown> = {}) =>
+        currentQuotation({
+          client: { status: 'ACTIVE', blockClient: true },
+          ...overrides,
+        });
+
+      it('recusa aprovar, sem abrir transação', async () => {
+        prisma.quotation.findUnique.mockImplementation(async (args) =>
+          args.select ? blocked() : mockQuotation,
+        );
+
+        await expect(
+          service.approve(mockQuotationId, mockUserId),
+        ).rejects.toMatchObject({
+          response: {
+            statusCode: 409,
+            code: 'CREDIT_CHECK',
+            issues: [{ code: 'CLIENT_BLOCKED' }],
+          },
+        });
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      });
+
+      it('recusa também o "Cobrar" da venda rápida (o crédito não é conferido nela)', async () => {
+        prisma.quotation.findUnique.mockImplementation(async (args) =>
+          args.select ? blocked({ quickSale: true }) : mockQuotation,
+        );
+        const charge = jest.fn();
+
+        await expect(
+          service.approve(mockQuotationId, mockUserId, undefined, { charge }),
+        ).rejects.toThrow('Este cliente está bloqueado no cadastro.');
+        expect(charge).not.toHaveBeenCalled();
+      });
+
+      it('a importação (creditCheck false) não confere', async () => {
+        prisma.quotation.findUnique.mockImplementation(async (args) =>
+          args.select
+            ? blocked()
+            : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
+        );
+
+        await expect(
+          service.approve(mockQuotationId, mockUserId, undefined, {
+            creditCheck: false,
+          }),
+        ).resolves.toMatchObject({ id: mockOrderId });
+      });
+    });
+
     // O limite de desconto do vendedor só era conferido no /finish: aprovar
     // direto, ou o "Cobrar" da venda rápida, passava (revisão de 23/10/2026)
     describe('limite de desconto do vendedor', () => {
@@ -1238,6 +1291,17 @@ describe('QuotationWorkflowService', () => {
   });
 
   describe('billQuotation', () => {
+    it('recusa faturar para o cliente bloqueado', async () => {
+      prisma.quotation.findUnique.mockResolvedValue({
+        client: { blockClient: true },
+      });
+
+      await expect(service.billQuotation(mockQuotationId)).rejects.toThrow(
+        'Este cliente está bloqueado no cadastro.',
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
     it('should skip if financials already exist', async () => {
       prisma.$transaction.mockResolvedValue({
         receivables: [{ id: 'existing-receivable' }],

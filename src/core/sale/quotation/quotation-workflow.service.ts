@@ -30,7 +30,11 @@ import { PlanControlService } from '../../plan/plan-control.service';
 import { companyWithoutKeys } from 'src/shared/company/company-keys';
 import { ProductSaleService } from '../../assembly/product-sale.service';
 import { SaleChoicesDto } from '../../assembly/dto/sale.dto';
-import { CreditCheckService } from './credit-check.service';
+import {
+  CLIENT_BLOCKED_MESSAGE,
+  CREDIT_APPROVAL_HINT,
+  CreditCheckService,
+} from './credit-check.service';
 import { ProductionProjectService } from '../../production/production-project.service';
 import { snapshotStages } from './item-origin';
 import {
@@ -325,6 +329,23 @@ export class QuotationWorkflowService {
    * não conclui nem aprova até as etapas existirem (MS-12, ORC-11).
    */
   /**
+   * O cliente bloqueado recusa sempre (pacote de 26/10/2026): aprovar, o
+   * "Cobrar" e o "Enviar ao caixa" da venda rápida e faturar. Mesmo formato
+   * da conferência de crédito (409 CREDIT_CHECK), que a tela já trata.
+   */
+  private assertClientNotBlocked(
+    client: { blockClient?: boolean | null } | null | undefined,
+  ) {
+    if (!client?.blockClient) return;
+    throw new ConflictException({
+      statusCode: 409,
+      code: 'CREDIT_CHECK',
+      message: `${CLIENT_BLOCKED_MESSAGE} ${CREDIT_APPROVAL_HINT}`,
+      issues: [{ code: 'CLIENT_BLOCKED' }],
+    });
+  }
+
+  /**
    * O limite de desconto do vendedor (EC-2): o desconto do orçamento sobre a
    * soma dos itens, com o acréscimo e as linhas acrescentadas fora dele
    * (ALT-25, ORC-5). O /finish confere; a aprovação e o "Cobrar" da venda
@@ -566,7 +587,7 @@ export class QuotationWorkflowService {
         quickSale: true,
         totalValue: true,
         pendingSale: { select: { id: true } },
-        client: { select: { status: true } },
+        client: { select: { status: true, blockClient: true } },
         deliveryInfo: { select: { id: true } },
         // O limite de desconto do vendedor do orçamento (EC-2)
         seller: {
@@ -627,6 +648,12 @@ export class QuotationWorkflowService {
       (await this.onlySendsToCash(userId, current.companyId))
     ) {
       throw new ForbiddenException(ONLY_SEND_TO_CASH);
+    }
+    // O cliente bloqueado no cadastro não compra: é decisão explícita de quem
+    // o bloqueou, vale sempre (em qualquer plano e antes da data de corte do
+    // crédito), também na venda rápida. A importação não confere
+    if (options.creditCheck !== false) {
+      this.assertClientNotBlocked(current.client);
     }
     if (!current.deliveryInfo) {
       throw new BadRequestException(
@@ -1180,6 +1207,11 @@ export class QuotationWorkflowService {
    * Faturamento manual de um orçamento
    */
   async billQuotation(quotationId: string) {
+    const owner = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      select: { client: { select: { blockClient: true } } },
+    });
+    this.assertClientNotBlocked(owner?.client);
     const existingFinancials = await this.prisma.$transaction(
       async (prisma) => {
         const [existingReceivables, existingPayables] = await Promise.all([
