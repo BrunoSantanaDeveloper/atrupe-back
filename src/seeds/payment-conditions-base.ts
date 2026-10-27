@@ -42,7 +42,9 @@ export const BASE_PAYMENT_CONDITIONS = [
   {
     name: 'Boleto',
     acceptInstallments: false,
-    costType: 'PERCENT',
+    // A tarifa do boleto é em reais por parcela, não percentual (pacote de
+    // 26/10/2026); vale para empresa nova
+    costType: 'VALUE',
     maxInstallments: 1,
     minInstallments: 1,
     dayInterval: 0,
