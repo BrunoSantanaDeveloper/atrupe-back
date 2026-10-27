@@ -16,22 +16,41 @@ export class SalesSettingsService {
   async get(companyId: string) {
     const row = await this.prisma.saleSettings.findUnique({
       where: { companyId },
-      select: { outsourcedMarkup: true },
+      select: { outsourcedMarkup: true, minItemValue: true },
     });
     return {
       outsourcedMarkup: row?.outsourcedMarkup ?? DEFAULT_OUTSOURCED_MARKUP,
+      // Venda mínima por item, em centavos (27/10/2026); 0 = sem mínimo
+      minItemValue: row?.minItemValue ?? 0,
     };
   }
 
-  /** Vale para as próximas linhas; as já gravadas não mudam. */
+  /**
+   * Vale para as próximas linhas; as já gravadas não mudam. Cada campo só
+   * muda quando vem no corpo (27/10/2026).
+   */
   async update(companyId: string, dto: UpdateSalesSettingsDto) {
     const row = await this.prisma.saleSettings.upsert({
       where: { companyId },
-      create: { companyId, outsourcedMarkup: dto.outsourcedMarkup },
-      update: { outsourcedMarkup: dto.outsourcedMarkup },
-      select: { outsourcedMarkup: true },
+      create: {
+        companyId,
+        outsourcedMarkup: dto.outsourcedMarkup ?? DEFAULT_OUTSOURCED_MARKUP,
+        minItemValue: dto.minItemValue ?? 0,
+      },
+      update: {
+        ...(dto.outsourcedMarkup !== undefined && {
+          outsourcedMarkup: dto.outsourcedMarkup,
+        }),
+        ...(dto.minItemValue !== undefined && {
+          minItemValue: dto.minItemValue,
+        }),
+      },
+      select: { outsourcedMarkup: true, minItemValue: true },
     });
-    return { outsourcedMarkup: row.outsourcedMarkup };
+    return {
+      outsourcedMarkup: row.outsourcedMarkup,
+      minItemValue: row.minItemValue,
+    };
   }
 
   async outsourcedMarkupOf(companyId: string) {

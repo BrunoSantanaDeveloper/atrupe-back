@@ -31,7 +31,9 @@ export class SalesSettingsController {
   @Put()
   @HasPermission('edit', 'sales_settings:series')
   @RequiresFeature(['outsourced_item', 'product_composition'])
-  @ApiOperation({ summary: 'Muda o acréscimo sobre o custo do terceirizado' })
+  @ApiOperation({
+    summary: 'Muda o acréscimo do terceirizado e a venda mínima por item',
+  })
   update(@Req() req, @Body() dto: UpdateSalesSettingsDto) {
     return this.service.update(req.user.companyId, dto);
   }
